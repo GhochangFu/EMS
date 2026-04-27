@@ -1,0 +1,146 @@
+import { Inject, Injectable } from "@nestjs/common";
+import type { Pool } from "pg";
+
+import type { MapSiteDto, MapSiteLive } from "@bms/shared";
+
+import { POOL_TOKEN } from "../database/database.tokens";
+
+type LocRow = {
+  id: string;
+  slug: string;
+  name: string;
+  kind: string;
+  site_name: string | null;
+  latitude: string;
+  longitude: string;
+  capacity_mw: string | null;
+  station_type: string | null;
+  station_category: string | null;
+  province: string | null;
+  station_operating_status: string | null;
+};
+
+@Injectable()
+export class MapService {
+  constructor(@Inject(POOL_TOKEN) private readonly pool: Pool) {}
+
+  /** All map locations with per-site live health derived from alarms + telemetry freshness. */
+  async sitesLive(): Promise<MapSiteDto[]> {
+    const locs = await this.pool.query<LocRow>(
+      `SELECT id, slug, name, kind, site_name, latitude, longitude, capacity_mw,
+              station_type, station_category, province, station_operating_status
+       FROM bms.map_locations
+       ORDER BY kind DESC, name ASC`,
+    );
+
+    const alarmRows = await this.pool.query<{
+      site_name: string;
+      open_alarms: string;
+      critical_alarms: string;
+    }>(
+      `SELECT a.site_name,
+              COUNT(*) FILTER (WHERE al.acknowledged_at IS NULL)::int AS open_alarms,
+              COUNT(*) FILTER (WHERE al.acknowledged_at IS NULL AND al.severity = 'critical')::int AS critical_alarms
+       FROM bms.alarms al
+       INNER JOIN bms.assets a ON a.id = al.asset_id
+       GROUP BY a.site_name`,
+    );
+    const alarmMap = new Map(
+      alarmRows.rows.map((r) => [
+        r.site_name,
+        {
+          open: Number(r.open_alarms),
+          critical: Number(r.critical_alarms),
+        },
+      ]),
+    );
+
+    const commRows = await this.pool.query<{
+      site_name: string;
+      asset_count: string;
+      fresh_count: string;
+    }>(
+      `WITH latest AS (
+         SELECT DISTINCT ON (asset_id) asset_id, time AS kw_time
+         FROM telemetry.point_values
+         WHERE point_key = 'kw'
+         ORDER BY asset_id, time DESC
+       )
+       SELECT a.site_name,
+              COUNT(a.id)::int AS asset_count,
+              COUNT(l.asset_id) FILTER (WHERE l.kw_time > now() - interval '25 seconds')::int AS fresh_count
+       FROM bms.assets a
+       LEFT JOIN latest l ON l.asset_id = a.id
+       GROUP BY a.site_name`,
+    );
+    const commMap = new Map(
+      commRows.rows.map((r) => [
+        r.site_name,
+        {
+          total: Number(r.asset_count),
+          fresh: Number(r.fresh_count),
+        },
+      ]),
+    );
+
+    return locs.rows.map((loc) => {
+      const base = {
+        id: loc.id,
+        slug: loc.slug,
+        name: loc.name,
+        kind: loc.kind as MapSiteDto["kind"],
+        siteName: loc.site_name,
+        latitude: Number(loc.latitude),
+        longitude: Number(loc.longitude),
+        capacityMw: loc.capacity_mw ? Number(loc.capacity_mw) : null,
+        stationType: loc.station_type,
+        stationCategory: loc.station_category,
+        province: loc.province,
+        stationOperatingStatus: loc.station_operating_status,
+      };
+
+      if (loc.kind === "smoc_campus" && loc.site_name) {
+        const a = alarmMap.get(loc.site_name) ?? { open: 0, critical: 0 };
+        const c = commMap.get(loc.site_name) ?? { total: 0, fresh: 0 };
+        const live = this.campusLive(a, c);
+        return { ...base, live };
+      }
+
+      const live = this.stationLive(loc.station_operating_status);
+      return { ...base, live };
+    });
+  }
+
+  private campusLive(
+    a: { open: number; critical: number },
+    c: { total: number; fresh: number },
+  ): MapSiteLive {
+    const ratio = c.total === 0 ? 1 : c.fresh / c.total;
+    let status: MapSiteLive["status"] = "healthy";
+    if (a.critical > 0) {
+      status = "critical";
+    } else if (a.open > 0) {
+      status = "warning";
+    } else if (ratio < 1) {
+      status = "offline";
+    }
+    return {
+      status,
+      openAlarms: a.open,
+      criticalAlarms: a.critical,
+      assetsTotal: c.total,
+      assetsFresh: c.fresh,
+    };
+  }
+
+  private stationLive(op: string | null): MapSiteLive {
+    const nominal = op === "op";
+    return {
+      status: nominal ? "nominal" : "unknown",
+      openAlarms: 0,
+      criticalAlarms: 0,
+      assetsTotal: 0,
+      assetsFresh: 0,
+    };
+  }
+}

@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Prototype (Sprint 0).
+> **Active phase:** Prototype (Sprint 8).
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -24,7 +24,7 @@ laptop. Pipeline:
 `apps/sim → Postgres+Timescale → apps/api (NestJS) → WebSocket → apps/web (React) → user`
 
 ### Sprint 0 — Documentation & decisions (this week)
-- **Status:** active
+- **Status:** complete
 - **Deliverables**
   - `AGENTS.md` (active rulebook) ✅
   - `docs/AGENTS.production.md` (north star) ✅
@@ -36,6 +36,7 @@ laptop. Pipeline:
   pnpm + Node installed, repo cloned into WSL).
 
 ### Sprint 1 — Foundation (Week 1)
+- **Status:** complete
 - **Goal:** monorepo skeleton + AppShell + login working end-to-end.
 - **Deliverables**
   - pnpm monorepo: `apps/web`, `apps/api`, `apps/sim`,
@@ -53,6 +54,7 @@ laptop. Pipeline:
   their name and role in the top bar.
 
 ### Sprint 2 — Telemetry pipeline (Week 2)
+- **Status:** complete
 - **Goal:** prove the live data path before any feature screen is
   built on top of it.
 - **Deliverables**
@@ -70,6 +72,7 @@ laptop. Pipeline:
   console, sourced from the simulator via DB → API → WS.
 
 ### Sprint 3 — Executive Dashboard (Week 3)
+- **Status:** complete
 - **Goal:** first user-facing screen, fully live.
 - **Deliverables**
   - KPI tile row: total kW, sites online, alarms open, PUE estimate.
@@ -80,6 +83,7 @@ laptop. Pipeline:
   out makes tiles go to "stale" within 10 s.
 
 ### Sprint 4 — Alarm Centre (Week 4)
+- **Status:** complete
 - **Goal:** live alarms with acknowledgement.
 - **Deliverables**
   - Threshold engine in API: simulator values exceeding limits insert
@@ -93,6 +97,7 @@ laptop. Pipeline:
   2 s without refresh; ack persists and updates state for all clients.
 
 ### Sprint 5 — World Map (Week 5)
+- **Status:** complete
 - **Goal:** geographic view of Eskom stations and SMOC campuses.
 - **Deliverables**
   - Leaflet, dark tile theme, Eskom station + SMOC campus markers
@@ -104,6 +109,7 @@ laptop. Pipeline:
   flips its parent site to a degraded colour live.
 
 ### Sprint 6 — Electrical SLD (Week 6)
+- **Status:** complete
 - **Goal:** animated single-line diagram, telemetry-bound.
 - **Deliverables**
   - Hand-laid SVG schematic (transformer, main breaker, busbars,
@@ -120,6 +126,7 @@ laptop. Pipeline:
   data, and the component pattern is reusable for CRAC.
 
 ### Sprint 7 — CRAC / Cooling (Week 7)
+- **Status:** complete
 - **Goal:** second domain proves the pipeline generalises.
 - **Deliverables**
   - Simulator extended with HVAC domain: 4–6 CRAC units, supply &
@@ -132,6 +139,7 @@ laptop. Pipeline:
   no architectural changes to API, only new data points.
 
 ### Sprint 8 — Energy Centre + polish (Week 8)
+- **Status:** complete
 - **Goal:** breadth of narrative + demo readiness.
 - **Deliverables**
   - Energy Centre dashboard (mockup `R.en`), pure ECharts:

@@ -1,0 +1,33 @@
+/* Electrical SLD — aligned with mockup `R.sld` animation tokens (ESKOM_SMOC.html). */
+
+@keyframes sld-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sld-flow {
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+
+@keyframes sld-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.sld-spin {
+  transform-origin: center;
+  animation: sld-spin 1.4s linear infinite;
+}
+
+.sld-flow {
+  stroke-dasharray: 6 20;
+  animation: sld-flow var(--sld-flow-duration, 1.2s) linear infinite;
+}
+
+.sld-blink {
+  animation: sld-blink 1s infinite;
+}

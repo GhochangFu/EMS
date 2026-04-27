@@ -1,0 +1,23 @@
+/* CRAC loop — chilled-water flow animation (mockup `R.crac` `class="flow"`). */
+
+@keyframes crac-flow {
+  to {
+    stroke-dashoffset: -50;
+  }
+}
+
+@keyframes crac-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.crac-flow-line {
+  stroke-dasharray: 10 30;
+  animation: crac-flow var(--crac-flow-dur, 2s) linear infinite;
+}
+
+.crac-spin {
+  transform-origin: center;
+  animation: crac-spin var(--crac-spin-dur, 1.4s) linear infinite;
+}

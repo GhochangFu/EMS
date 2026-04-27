@@ -23,16 +23,20 @@ Docker required. See **[`docs/local-setup.md`](./docs/local-setup.md)**
 for the full installation walkthrough; once dependencies are in place:
 
 ```bash
+cp apps/api/.env.example apps/api/.env
+cp apps/web/.env.example apps/web/.env
+
 pnpm install
 pnpm db:migrate && pnpm db:seed
 
 # In three terminals:
 pnpm --filter api dev    # NestJS on :4000
 pnpm --filter web dev    # Vite on :5173
-pnpm --filter sim start  # telemetry simulator
+pnpm --filter sim start  # telemetry simulator (Sprint 2: live data)
 ```
 
-Open `http://localhost:5173`.
+Open `http://localhost:5173`. Sign in as `admin@bms.local` / `admin123`
+(seeded).
 
 ## Stack (prototype)
 
@@ -55,6 +59,9 @@ Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 
 ## Status
 
-Sprint 0 — Documentation & decisions. See
-[`docs/roadmap.md`](./docs/roadmap.md) for the active sprint and
-upcoming work.
+Sprint 5 — World Map (`bms.map_locations`, `GET /api/v1/map/sites`,
+`/map`). Sprint 6 — Electrical SLD (`/sld`, `SchematicTelemetryProvider`).
+Sprint 7 — CRAC (`HVAC_POINT_KEYS`, `/crac`, domain-aware sim). Sprint 8 —
+Energy Centre (`/energy`, dashboard energy API + ECharts, nav polish,
+[`docs/demo-script.md`](./docs/demo-script.md)). Prototype screen set is
+complete; see [`docs/roadmap.md`](./docs/roadmap.md) for post-prototype phases.

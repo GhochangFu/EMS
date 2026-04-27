@@ -193,6 +193,8 @@ JWT_SECRET=change-me-in-prototype
 JWT_TTL=8h
 PORT=4000
 LOG_LEVEL=info
+# Optional — indicative Energy Centre cost (ZAR/kWh); default 2.15 in code
+# ENERGY_TARIFF_ZAR_PER_KWH=2.15
 ```
 
 Create `apps/web/.env` (do not commit):
@@ -207,7 +209,8 @@ Create `apps/sim/.env` (do not commit):
 ```env
 DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms
 SIM_RATE_HZ=1
-SIM_ASSET_COUNT=6
+# Include all seeded assets (8+ after Sprint 7); low values skip later rows alphabetically.
+SIM_ASSET_COUNT=32
 ```
 
 `.env.example` files (committed) ship sanitised copies.
@@ -220,7 +223,7 @@ SIM_ASSET_COUNT=6
 pnpm install
 
 pnpm db:migrate    # Drizzle migrations + Timescale hypertable creation
-pnpm db:seed       # admin user, sample assets, baseline alarms
+pnpm db:seed       # admin user, sample assets, baseline alarms, map markers
 
 # Three terminals (or use a tmux/zellij split)
 pnpm --filter api dev    # NestJS on :4000
@@ -229,8 +232,25 @@ pnpm --filter sim start  # telemetry simulator
 ```
 
 Open `http://localhost:5173` in your Windows browser. Login as
-`admin@bms.local` / `admin123` (seeded). The Executive Dashboard
-should tick once the simulator is running.
+`admin@bms.local` / `admin123` (seeded). With **api**, **web**, and
+**sim** running, the Executive Summary shows live KPI tiles (total kW,
+sites online, open alarms, estimated PUE), an area trend of total kW,
+and a **Live / Stale** ribbon (stale after ~10 s without telemetry). Stop
+the simulator to confirm stale state.
+
+Use the sidebar **Alarms** link for the Alarm Centre: thresholded
+telemetry creates rows within seconds; the table updates over
+`/ws/alarms` without refresh. Acknowledgements require a reason and are
+written to `bms.audit_log`.
+
+Open **Map** (`/map`) for Eskom and SMOC markers on a dark basemap.
+Markers reflect open alarms and telemetry freshness for SMOC sites;
+stopping the simulator should move those sites toward offline or
+degraded within the refetch window.
+
+**Electrical SLD** (`/sld`): single-line diagram with live kW, flow animation, and breaker-based fault colouring; click equipment for a read-only detail drawer.
+
+**CRAC schematic** (`/crac`): four precision cooling units with live air/CHW/fan telemetry and animated loop (stop sim to see stale/offline).
 
 ---
 
