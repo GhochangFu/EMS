@@ -1,0 +1,245 @@
+# AGENTS.md — Eskom SMOC BMS (Prototype Phase)
+
+> **Status:** ACTIVE — prototype phase.
+> **North star:** see `docs/AGENTS.production.md` for the full production
+> rules we will promote from as the system grows.
+
+This file is the rulebook humans and AI agents must follow **right now**.
+We are building a working prototype of the Eskom SMOC BMS based on the
+UX defined in `ESKOM_SMOC.html` (at the repo root). Production hardening
+comes after the prototype is signed off.
+
+---
+
+## 1. Goal
+
+Build a credible, demo-able prototype in ≈ 7–8 weeks that proves the
+end-to-end pipeline:
+
+`simulated device → Postgres/Timescale → NestJS API → WebSocket → React UI → user`
+
+Quality-first; schedule is open. Demo is aimed at a mixed audience
+(internal team, Eskom buyer, investor) so breadth of narrative
+(electrical + mechanical + energy + alarms + map) matters as much as
+depth on any single screen.
+
+Seven screens are in scope:
+
+1. **Login** — simple JWT
+2. **Executive Dashboard** — live KPIs + trend chart
+3. **Alarm Centre** — live alarms + ack
+4. **World Map** — Eskom stations + SMOC campuses on Leaflet
+5. **Electrical SLD** — animated single-line diagram with live power flow
+6. **CRAC / Cooling** — animated HVAC schematic, supply/return temps,
+   chilled-water loop, fan speeds
+7. **Energy Centre** — energy KPIs, source mix, peak demand, top
+   consumers (charts only, no schematic)
+
+Everything else from the mockup is out of scope until the corresponding
+add-on phase begins (see §6).
+
+Rationale for the seven-screen scope is captured in `docs/decisions.md`
+entry **D-0001**.
+
+---
+
+## 2. Stack (locked for prototype)
+
+| Layer        | Technology |
+|--------------|------------|
+| Frontend     | React 18, TypeScript 5, Vite, Tailwind CSS, TanStack Query, Zustand, React Router, Leaflet, ECharts |
+| Backend API  | NestJS (Node 20 LTS, TypeScript) |
+| Realtime     | NestJS WebSocket gateway over Socket.IO (in-process, no Redis adapter yet) |
+| Auth         | Local JWT, hardcoded users in DB. **No Keycloak / MFA / SSO yet.** |
+| OLTP DB      | PostgreSQL 16 |
+| Telemetry DB | TimescaleDB extension on the same Postgres |
+| Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
+| Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
+| Local dev    | WSL2 Ubuntu 22.04, native Postgres + Timescale install, no Docker |
+
+No new dependencies may be added without a one-line note in
+`docs/decisions.md`.
+
+---
+
+## 3. Repository Layout
+
+```
+bms/
+├── AGENTS.md                  ← this file (active)
+├── README.md
+├── ESKOM_SMOC.html            ← UX reference (do not edit)
+├── package.json               ← pnpm workspace root
+├── pnpm-workspace.yaml
+├── apps/
+│   ├── web/                   ← React SPA
+│   ├── api/                   ← NestJS REST + WebSocket
+│   └── sim/                   ← telemetry simulator (Node script)
+├── packages/
+│   ├── shared/                ← cross-cutting TS types & constants
+│   └── db/                    ← Drizzle schema, migrations, seeds
+└── docs/
+    ├── AGENTS.production.md   ← future-state rulebook (reference)
+    ├── decisions.md           ← lightweight ADR log for prototype
+    ├── roadmap.md             ← phase plan (prototype + add-ons)
+    └── local-setup.md         ← WSL + Postgres setup steps
+```
+
+Do not add top-level folders without updating this section.
+
+---
+
+## 4. Code Rules (lightweight)
+
+### 4.1 TypeScript
+- `strict: true`. No `any`. Use `unknown` and narrow.
+- Exported functions get a one-line JSDoc.
+
+### 4.2 React
+- Functional components only. One component per file.
+- Data fetching via TanStack Query hooks in `apps/web/src/api/`.
+- UI state via Zustand stores. No Redux.
+- Styling via Tailwind utilities. Inline `style` only for dynamic values.
+
+### 4.3 NestJS
+- Module-per-domain: `auth`, `assets`, `alarms`, `telemetry`, `audit`.
+- Controllers thin → services do work → repositories touch the DB.
+- Validate every DTO with Zod. Never trust input.
+
+### 4.4 SQL (Postgres / TimescaleDB)
+- Schema-qualified (`bms.assets`, `telemetry.point_values`).
+- Snake_case columns. `TIMESTAMPTZ` everywhere.
+- Parameterised queries only.
+- Migrations are forward-only. Never edit a merged migration.
+- Telemetry table is a Timescale hypertable; `chunk_time_interval = 1 day`.
+
+### 4.5 Style hygiene
+- File names: `kebab-case` for files, `PascalCase` for React components.
+- No abbreviated domain words (`asset`, not `as`; `alarm`, not `alm`).
+- Max **1000 lines per file** in prototype phase.
+- No `console.log` in committed code; use the shared logger (Pino).
+- No emoji in code or commits unless explicitly requested.
+
+---
+
+## 5. Visual Reference
+
+`ESKOM_SMOC.html` is the UX spec. Match its look and feel:
+
+- Dark top bar, green nav, left module sidebar, KPI ribbon, dark status bar.
+- IBM Plex font family.
+- Green accent `#00A651`, status colour palette as defined in the file.
+
+Do **not** copy its string-concatenation render style. Build proper typed
+React components in `apps/web/src/components/`.
+
+---
+
+## 6. Out of Scope for the Prototype
+
+These are intentionally deferred. Do not implement them yet:
+
+- Multi-tenancy, row-level security
+- Keycloak / OIDC / MFA / SSO
+- Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT)
+- EMQX broker
+- Redis cache and pub/sub
+- MinIO / object storage
+- Two-way commanding with approval workflows
+- Audit hash-chaining (we keep a simple audit table only)
+- Maintenance / work orders / rule-engine UI
+- Energy reports (PDF / XLSX)
+- Three.js Control Room 3D
+- AI Copilot
+- NERSA / ISO compliance reports
+- Docker, Kubernetes, CI/CD, Prometheus / Grafana / Loki
+
+When any of these are needed, follow §10 (Promotion Process).
+
+---
+
+## 7. Definition of Done (Prototype)
+
+A task is done when:
+
+1. It works end-to-end against the real local DB.
+2. UI matches the relevant mockup screen.
+3. WebSocket path updates live (where applicable).
+4. Manual happy-path test passes.
+5. README updated if a new env var, command, or seed is introduced.
+6. `docs/decisions.md` has a one-liner if a non-obvious choice was made.
+
+Tests, coverage gates, audit hardening, and CI checks are part of the
+production rulebook — they are not blockers in the prototype phase.
+
+---
+
+## 8. Local Dev Setup
+
+Single source of truth lives in `docs/local-setup.md`. Summary:
+
+1. Windows 11 + WSL2 + Ubuntu 22.04.
+2. Inside Ubuntu: install Node 20, pnpm 9, Postgres 16, TimescaleDB.
+3. Clone repo into the WSL filesystem (not `/mnt/c/...`).
+4. `pnpm install`.
+5. `pnpm db:migrate && pnpm db:seed`.
+6. Three terminals:
+   - `pnpm --filter api dev`
+   - `pnpm --filter web dev`
+   - `pnpm --filter sim start`
+
+No Docker. No Keycloak. No broker. Just Postgres + Node.
+
+---
+
+## 9. AI Agent Operating Rules (Prototype)
+
+1. **Read this file and the affected source files before editing.**
+2. Read `docs/AGENTS.production.md` for context on where the system is
+   heading — but do **not** implement production-only concerns yet.
+3. Match the style of existing modules. If unsure, copy the closest
+   pattern.
+4. Never add a dependency without noting it in `docs/decisions.md`.
+5. Never invent file paths or library APIs.
+6. Never log secrets, tokens, or full PII payloads.
+7. Do not introduce Docker, Keycloak, Redis, EMQX, MinIO, or any item
+   from §6 without a Promotion PR (see §10).
+8. Do not bypass the audit middleware, even in the prototype.
+9. Do not mass-rename or mass-format unrelated code.
+10. Update this file only via a PR prefixed `chore(agents): ...`.
+
+---
+
+## 10. Promotion Process (prototype → production rules)
+
+When an add-on phase begins (e.g. "introduce Keycloak", "wire MQTT
+ingestion"):
+
+1. Open a PR titled `chore(agents): promote <section> from production`.
+2. Copy the relevant section from `docs/AGENTS.production.md` into this
+   file (replacing or extending the current rules).
+3. Remove the same item from §6 (Out of Scope).
+4. Update `docs/roadmap.md` to mark the phase as active.
+5. Land the PR before any feature code for that phase is merged.
+
+This keeps the active rules in lockstep with the codebase and ensures AI
+agents are never asked to enforce rules that do not yet apply.
+
+---
+
+## 11. Glossary (short)
+
+- **SMOC** — Smart Metering Operating Centre.
+- **BMS** — Building Management System.
+- **SLD** — Single-Line (electrical) Diagram.
+- **CRAC** — Computer Room Air Conditioner.
+- **PUE** — Power Usage Effectiveness.
+
+Full glossary lives in `docs/AGENTS.production.md`.
+
+---
+
+## 12. Living Document
+
+This file evolves with the system. Every sprint exit reviews `AGENTS.md`
+for accuracy. Every promotion PR updates it.

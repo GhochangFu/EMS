@@ -1,0 +1,61 @@
+# --- Dependencies -----------------------------------------------------------
+node_modules/
+.pnpm-store/
+
+# --- Build output -----------------------------------------------------------
+dist/
+build/
+out/
+.next/
+.nuxt/
+.turbo/
+.cache/
+.vite/
+
+# --- TypeScript -------------------------------------------------------------
+*.tsbuildinfo
+
+# --- Env files --------------------------------------------------------------
+# Real env files are never committed. Examples (.env.example) are committed.
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+!.env.*.example
+
+# --- Logs -------------------------------------------------------------------
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# --- Test / coverage --------------------------------------------------------
+coverage/
+.nyc_output/
+.vitest-cache/
+playwright-report/
+test-results/
+
+# --- IDE / OS ---------------------------------------------------------------
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.recommended.json
+.idea/
+*.swp
+*.swo
+
+# --- Local DB / scratch -----------------------------------------------------
+pgdata/
+postgres-data/
+*.dump
+*.sql.bak
+.scratch/
+TODO.local.md
+
+# --- Drizzle local artifacts -----------------------------------------------
+drizzle/.snapshot.json.bak

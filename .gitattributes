@@ -1,0 +1,23 @@
+# Default to LF line endings everywhere. Windows + WSL workflow demands this
+# so checkouts on either side never produce CRLF noise in diffs.
+* text=auto eol=lf
+
+# Windows-only script formats keep CRLF
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.woff  binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.zip binary
+*.gz  binary
+*.pdf binary
