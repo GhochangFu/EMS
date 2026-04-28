@@ -15,6 +15,9 @@ files or deployment secret stores.
 | `OIDC_ISSUER` | OIDC only | `http://localhost:8080/realms/bms` | Expected issuer claim for Keycloak tokens. |
 | `OIDC_JWKS_URI` | OIDC only | `http://keycloak:8080/realms/bms/protocol/openid-connect/certs` | API-internal URL used to fetch the Keycloak signing keys. |
 | `OIDC_AUDIENCE` | No | unset | Optional audience check for access tokens. |
+| `OTEL_SERVICE_NAME` | No | `bms-api` in compose | Service name attached to OpenTelemetry spans and Prometheus default labels. |
+| `OTEL_SDK_DISABLED` | No | unset | Set to `true` to disable API OpenTelemetry SDK startup. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | No | unset | Optional OTLP HTTP collector base URL. When unset, tracing instrumentation starts without export. |
 | `PORT` | No | `4000` | API HTTP and Socket.IO port. |
 | `LOG_LEVEL` | No | `info` | Pino log level. |
 | `ENERGY_TARIFF_ZAR_PER_KWH` | No | `2.15` | Indicative Energy Centre cost calculation. |
@@ -51,6 +54,18 @@ re-login during demos.
 | `DATABASE_URL` | Yes | `postgres://bms_app:bms_app_dev@postgres:5432/bms` | Postgres/TimescaleDB connection string. |
 | `SIM_RATE_HZ` | No | `1` | Simulator write frequency. |
 | `SIM_ASSET_COUNT` | No | `32` | Maximum seeded assets loaded by the simulator. |
+| `SIM_METRICS_PORT` | No | `9101` | Prometheus metrics HTTP port exposed by the simulator. |
+
+## Observability Containers
+
+These services run only with the `observability` compose profile.
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| `prometheus` | `9090` | Scrapes API `/metrics`, simulator `/metrics`, and Prometheus self-metrics. |
+| `grafana` | `3000` | Dashboard UI. Local admin credentials are `admin` / `admin`. |
+| `loki` | `3100` | Local log storage. |
+| `promtail` | none | Collects Docker container logs and ships them to Loki. |
 
 ## Database Container
 

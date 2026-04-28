@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 1 Sprint D ready.
+> **Active phase:** Part 2 / Phase 2 ready.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -163,9 +163,9 @@ graduates the listed items out of `AGENTS.md` §6 via the Promotion
 Process (`AGENTS.md` §10).
 
 ### Phase 1 — Pilot-ready hardening (~3 weeks)
-- **Status:** in progress — Sprint A-C complete; Sprint D ready
-- **Graduates:** Docker / Kubernetes / CI/CD, Prometheus / Grafana /
-  Loki, Keycloak / OIDC / MFA / SSO, Redis cache & pub/sub.
+- **Status:** complete
+- **Graduates:** Docker Compose / CI/CD, Prometheus / Grafana / Loki,
+  Keycloak / OIDC, Redis pub/sub for Socket.IO fan-out.
 - **Goal:** deployable to a single VM for an internal pilot.
 - **Highlights:** Dockerfiles per app, `docker-compose.yml`, GitHub
   Actions CI, Keycloak realm + OIDC integration replacing local JWT,
@@ -221,7 +221,7 @@ Process (`AGENTS.md` §10).
   and call protected API routes with the expected role claims.
 
 #### Phase 1 Sprint D — Observability baseline
-- **Status:** ready
+- **Status:** complete
 - **Goal:** make the pilot stack diagnosable before real users touch it.
 - **Deliverables**
   - OpenTelemetry SDK added to API and other long-running Node services.
@@ -235,7 +235,7 @@ Process (`AGENTS.md` §10).
   use Grafana to confirm the API, websocket, and simulator are healthy.
 
 ### Phase 2 — Real ingestion (~4 weeks)
-- **Status:** pending
+- **Status:** ready
 - **Graduates:** Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA,
   REST poller), EMQX broker, MQTT subscriber.
 - **Goal:** replace the simulator with at least one real device per

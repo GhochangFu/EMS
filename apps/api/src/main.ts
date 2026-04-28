@@ -1,4 +1,5 @@
 import "./load-env";
+import "./observability/tracing";
 
 import { Logger, RequestMethod } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
@@ -15,7 +16,10 @@ async function bootstrap(): Promise<void> {
   app.useLogger(app.get(PinoLogger));
   app.useWebSocketAdapter(await createSocketIoAdapter(app));
   app.setGlobalPrefix("api/v1", {
-    exclude: [{ path: "health", method: RequestMethod.GET }],
+    exclude: [
+      { path: "health", method: RequestMethod.GET },
+      { path: "metrics", method: RequestMethod.GET },
+    ],
   });
   app.enableCors({
     origin: ["http://localhost:5173", "http://127.0.0.1:5173"],

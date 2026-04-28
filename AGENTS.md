@@ -1,6 +1,6 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 1 Sprint C Complete)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 1 Complete)
 
-> **Status:** ACTIVE — Phase 1 Sprint C complete; Phase 1 Sprint D ready.
+> **Status:** ACTIVE — Phase 1 complete; Phase 2 ready.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -8,8 +8,10 @@ This file is the rulebook humans and AI agents must follow **right now**.
 The seven-screen prototype is complete. Phase 1 Sprint A added
 container foundations and CI. Sprint B added Redis-backed Socket.IO
 fan-out. Sprint C added Keycloak/OIDC authentication for the web app and
-protected API routes. Phase 1 Sprint D is ready next, but observability
-remains out of scope until that sprint is explicitly promoted.
+protected API routes. Sprint D added an optional observability baseline
+for local/pilot diagnostics. Phase 2 real ingestion is ready next, but
+protocol adapters and brokers remain out of scope until that phase is
+explicitly promoted.
 
 ---
 
@@ -19,14 +21,13 @@ The prototype has completed the seven-screen end-to-end pipeline:
 
 `simulated device → Postgres/Timescale → NestJS API → WebSocket → React UI → user`
 
-Phase 1 Sprint C replaced the prototype-only local login path with
-pilot-ready identity:
+Phase 1 Sprint D made the pilot stack diagnosable:
 
-1. Keycloak service and realm export for local/pilot development.
-2. Web OIDC login flow using Authorization Code + PKCE.
-3. API validation of Keycloak-issued bearer tokens.
-4. Role mapping for the current prototype roles.
-5. Clear fallback/migration notes for native WSL local-auth development.
+1. API and simulator metrics exposed for Prometheus.
+2. OpenTelemetry SDK bootstrap in the API.
+3. Optional Prometheus, Grafana, Loki, and Promtail compose profile.
+4. Basic Grafana dashboard as code.
+5. Minimal runbook for checking service health during demos.
 
 The completed prototype screens are:
 
@@ -56,6 +57,7 @@ entry **D-0001**.
 | Backend API  | NestJS (Node 20 LTS, TypeScript) |
 | Realtime     | NestJS WebSocket gateway over Socket.IO with Redis adapter when `REDIS_URL` is set |
 | Auth         | Keycloak/OIDC for pilot compose; local JWT fallback only for native WSL development |
+| Observability | Optional Prometheus, Grafana, Loki, Promtail, and OpenTelemetry baseline |
 | OLTP DB      | PostgreSQL 16 |
 | Telemetry DB | TimescaleDB extension on the same Postgres |
 | Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
@@ -82,7 +84,8 @@ bms/
 ├── .github/
 │   └── workflows/             ← GitHub Actions CI
 ├── infra/
-│   └── keycloak/              ← Phase 1 Sprint C realm export
+│   ├── keycloak/              ← Phase 1 Sprint C realm export
+│   └── observability/         ← Phase 1 Sprint D Prometheus/Grafana/Loki config
 ├── apps/
 │   ├── web/                   ← React SPA
 │   ├── api/                   ← NestJS REST + WebSocket
@@ -95,6 +98,7 @@ bms/
     ├── AGENTS.production.md   ← future-state rulebook (reference)
     ├── decisions.md           ← lightweight ADR log for prototype
     ├── env-inventory.md       ← committed environment variable inventory
+    ├── observability-runbook.md ← Sprint D local/pilot health checks
     ├── roadmap.md             ← phase plan (prototype + add-ons)
     └── local-setup.md         ← WSL + Postgres setup steps
 ```
@@ -166,16 +170,16 @@ These are intentionally deferred. Do not implement them yet:
 - AI Copilot
 - NERSA / ISO compliance reports
 - Kubernetes production manifests
-- Prometheus / Grafana / Loki
 
 Docker Compose, Dockerfiles, GitHub Actions CI, Redis-backed Socket.IO
-pub/sub, and Keycloak/OIDC authentication are now in scope for Phase 1
-Sprint A-C only. Redis must not be used for unrelated caching or job
-queues until a later promotion. Keycloak is limited to local/pilot OIDC
-authentication; MFA, SSO federation, advanced identity governance, and
-the observability stack remain out of scope until their sprint is
-promoted. When any other item above is needed, follow §10 (Promotion
-Process).
+pub/sub, Keycloak/OIDC authentication, and the observability baseline are
+now in scope for Phase 1 only. Redis must not be used for unrelated
+caching or job queues until a later promotion. Keycloak is limited to
+local/pilot OIDC authentication; MFA, SSO federation, and advanced
+identity governance remain out of scope. Observability is limited to
+optional local/pilot diagnostics. Real protocol adapters and brokers
+remain out of scope until Phase 2 is promoted. When any other item above
+is needed, follow §10 (Promotion Process).
 
 ---
 
@@ -191,11 +195,16 @@ A task is done when:
 6. Web login uses OIDC Authorization Code + PKCE when OIDC env is enabled.
 7. API protected routes accept Keycloak-issued bearer tokens with mapped
    prototype roles.
-8. A local-auth fallback remains documented for native WSL development.
-9. CI installs dependencies and builds/typechecks from a clean checkout.
-10. Migration validation runs against a real Postgres/TimescaleDB service.
-11. README/local setup are updated for any new env var or command.
-12. `docs/adr/` captures non-obvious architecture choices.
+8. API and simulator expose Prometheus metrics.
+9. Optional observability compose profile starts Prometheus, Grafana, Loki,
+   and Promtail without being required for the core app.
+10. A Grafana dashboard can show API health, request latency, websocket
+    activity, alarm volume, and simulator ingest rate.
+11. A local-auth fallback remains documented for native WSL development.
+12. CI installs dependencies and builds/typechecks from a clean checkout.
+13. Migration validation runs against a real Postgres/TimescaleDB service.
+14. README/local setup are updated for any new env var or command.
+15. `docs/adr/` captures non-obvious architecture choices.
 
 ---
 
@@ -212,12 +221,12 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
    - `pnpm --filter api dev`
    - `pnpm --filter web dev`
    - `pnpm --filter sim start`
-7. Optional Phase 1 compose profiles, including Keycloak, are documented
-   in `README.md`.
+7. Optional Phase 1 compose profiles, including Keycloak and
+   observability, are documented in `README.md`.
 
-No protocol broker or observability stack yet. Just Postgres, Redis for
-realtime fan-out, Keycloak for local/pilot OIDC, Node, and optional Docker
-Compose for reproducible development.
+No protocol broker yet. Just Postgres, Redis for realtime fan-out,
+Keycloak for local/pilot OIDC, optional observability services, Node, and
+Docker Compose for reproducible development.
 
 ---
 
@@ -233,7 +242,8 @@ Compose for reproducible development.
 6. Never log secrets, tokens, or full PII payloads.
 7. Do not introduce EMQX, MinIO, or any item from §6 without a Promotion
    PR (see §10). Redis is only approved for Socket.IO fan-out; Keycloak is
-   only approved for Sprint C local/pilot OIDC.
+   only approved for local/pilot OIDC; observability is only approved for
+   optional local/pilot diagnostics.
 8. Do not bypass the audit middleware.
 9. Do not mass-rename or mass-format unrelated code.
 10. Update this file only via a PR prefixed `chore(agents): ...`.

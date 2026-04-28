@@ -7,6 +7,8 @@ import {
 import type { AlarmListItem } from "@bms/shared";
 import { Server } from "socket.io";
 
+import { MetricsService } from "../observability/metrics.service";
+
 @WebSocketGateway({
   namespace: "/ws/alarms",
   cors: {
@@ -20,15 +22,21 @@ export class AlarmsGateway implements OnGatewayInit {
 
   private readonly logger = new Logger(AlarmsGateway.name);
 
+  constructor(private readonly metrics: MetricsService) {}
+
   afterInit(): void {
     this.logger.log("WebSocket namespace /ws/alarms ready");
   }
 
   broadcastCreated(alarm: AlarmListItem): void {
     this.server.emit("alarm", { type: "created", alarm });
+    this.metrics.countWebsocketEvent("/ws/alarms", "alarm");
+    this.metrics.countAlarmEvent("created");
   }
 
   broadcastAcknowledged(alarm: AlarmListItem): void {
     this.server.emit("alarm", { type: "acknowledged", alarm });
+    this.metrics.countWebsocketEvent("/ws/alarms", "alarm");
+    this.metrics.countAlarmEvent("acknowledged");
   }
 }

@@ -23,4 +23,6 @@ ENV NODE_ENV="production"
 
 WORKDIR /app/apps/sim
 
+EXPOSE 9101
+
 CMD ["node", "src/index.js"]

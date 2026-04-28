@@ -72,6 +72,7 @@ services:
       AUTH_MODE: oidc
       OIDC_ISSUER: http://localhost:8080/realms/bms
       OIDC_JWKS_URI: http://keycloak:8080/realms/bms/protocol/openid-connect/certs
+      OTEL_SERVICE_NAME: bms-api
     ports:
       - "4000:4000"
     depends_on:
@@ -134,11 +135,67 @@ services:
       DATABASE_URL: postgres://bms_app:bms_app_dev@postgres:5432/bms
       SIM_RATE_HZ: 1
       SIM_ASSET_COUNT: 32
+      SIM_METRICS_PORT: 9101
+    ports:
+      - "9101:9101"
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
 
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:v2.55.1
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=24h"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - bms-prometheus-data:/prometheus
+
+  loki:
+    profiles: ["observability"]
+    image: grafana/loki:3.2.1
+    command: ["-config.file=/etc/loki/local-config.yml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./infra/observability/loki-config.yml:/etc/loki/local-config.yml:ro
+      - bms-loki-data:/loki
+
+  promtail:
+    profiles: ["observability"]
+    image: grafana/promtail:3.2.1
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./infra/observability/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:11.3.1
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_DEFAULT_THEME: dark
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./infra/observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./infra/observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./infra/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - bms-grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+
 volumes:
   bms-postgres-data:
+  bms-prometheus-data:
+  bms-loki-data:
+  bms-grafana-data:

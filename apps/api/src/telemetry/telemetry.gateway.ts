@@ -7,6 +7,7 @@ import {
 import type { TelemetryReading } from "@bms/shared";
 import { Server } from "socket.io";
 
+import { MetricsService } from "../observability/metrics.service";
 import { TelemetryBroadcastHub } from "./telemetry-broadcast.hub";
 
 @WebSocketGateway({
@@ -22,11 +23,16 @@ export class TelemetryGateway implements OnGatewayInit {
 
   private readonly logger = new Logger(TelemetryGateway.name);
 
-  constructor(private readonly hub: TelemetryBroadcastHub) {}
+  constructor(
+    private readonly hub: TelemetryBroadcastHub,
+    private readonly metrics: MetricsService,
+  ) {}
 
   afterInit(): void {
     this.hub.on("readings", (readings: TelemetryReading[]) => {
       this.server.emit("telemetry", { readings });
+      this.metrics.countWebsocketEvent("/ws/telemetry", "telemetry");
+      this.metrics.countTelemetryReadings(readings.length);
     });
     this.logger.log("WebSocket namespace /ws/telemetry ready");
   }

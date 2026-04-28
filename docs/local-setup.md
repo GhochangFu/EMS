@@ -213,6 +213,7 @@ DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms
 SIM_RATE_HZ=1
 # Include all seeded assets (8+ after Sprint 7); low values skip later rows alphabetically.
 SIM_ASSET_COUNT=32
+SIM_METRICS_PORT=9101
 ```
 
 `.env.example` files (committed) ship sanitised copies.
@@ -276,6 +277,9 @@ docker compose --profile migrate run --rm migrate
 docker compose --profile sim up --build sim
 docker compose stop sim
 
+# Optional observability stack: Prometheus, Grafana, Loki, and Promtail.
+docker compose --profile core --profile sim --profile observability up --build
+
 # Stop Docker services.
 docker compose down
 ```
@@ -284,6 +288,12 @@ click **Sign in with Keycloak** and use `admin@bms.local` / `admin123`.
 The Keycloak admin console is available at `http://localhost:8080` with
 `admin` / `admin`. Compose variables are documented in
 [`docs/env-inventory.md`](./env-inventory.md).
+
+For observability, open Grafana at `http://localhost:3000` with
+`admin` / `admin`, then open the **BMS Pilot Overview** dashboard.
+Prometheus is available at `http://localhost:9090`, Loki at
+`http://localhost:3100`, and simulator metrics at
+`http://localhost:9101/metrics`.
 
 For a demo-like run with API, web, simulator, and migration/seed ordering:
 
@@ -334,10 +344,10 @@ pnpm --filter web smoke:realtime
 To keep Phase 1 lean and laptop-friendly:
 
 - No EMQX / Mosquitto
-- No Prometheus / Grafana / Loki
 - No MinIO
 
-Redis and Keycloak are now in scope for Phase 1 Sprint B-C. The remaining
-items arrive in later add-on sprints and phases. Until then, do not
-install or wire them up, even "just to try" — they are blocked by
-`AGENTS.md` §9 rule 7 and require a Promotion PR to enter the codebase.
+Redis, Keycloak, Prometheus, Grafana, Loki, and Promtail are now in scope
+for Phase 1 Sprint B-D. The remaining items arrive in later add-on
+sprints and phases. Until then, do not install or wire them up, even "just
+to try" — they are blocked by `AGENTS.md` §9 rule 7 and require a
+Promotion PR to enter the codebase.

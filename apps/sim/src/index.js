@@ -4,9 +4,11 @@
  * `pg_notify('bms_telemetry', …)` for the API WebSocket fan-out.
  */
 import { config } from "dotenv";
+import http from "node:http";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import pg from "pg";
+import promClient from "prom-client";
 
 const require = createRequire(import.meta.url);
 const { ELECTRICAL_POINT_KEYS, HVAC_POINT_KEYS } = require("@bms/shared");
@@ -23,6 +25,7 @@ if (!databaseUrl) {
 const rateHz = Math.max(0.1, Number(process.env.SIM_RATE_HZ ?? "1"));
 const intervalMs = 1000 / rateHz;
 const assetLimit = Math.min(64, Math.max(1, Number(process.env.SIM_ASSET_COUNT ?? "32")));
+const metricsPort = Number(process.env.SIM_METRICS_PORT ?? "9101");
 
 const NOTIFY_CHANNEL = "bms_telemetry";
 
@@ -30,6 +33,34 @@ const NOTIFY_CHANNEL = "bms_telemetry";
 const MAX_NOTIFY_UTF8_BYTES = 7000;
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
+
+const metricsRegistry = new promClient.Registry();
+metricsRegistry.setDefaultLabels({ service: "bms-sim" });
+promClient.collectDefaultMetrics({
+  prefix: "bms_sim_",
+  register: metricsRegistry,
+});
+const ticksTotal = new promClient.Counter({
+  name: "bms_sim_ticks_total",
+  help: "Simulator ticks completed.",
+  registers: [metricsRegistry],
+});
+const pointsWritten = new promClient.Counter({
+  name: "bms_sim_points_written_total",
+  help: "Telemetry points written by the simulator.",
+  registers: [metricsRegistry],
+});
+const notifyChunks = new promClient.Counter({
+  name: "bms_sim_notify_chunks_total",
+  help: "Postgres NOTIFY chunks emitted by the simulator.",
+  registers: [metricsRegistry],
+});
+const tickDuration = new promClient.Histogram({
+  name: "bms_sim_tick_duration_seconds",
+  help: "Simulator tick duration in seconds.",
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5],
+  registers: [metricsRegistry],
+});
 
 /** @type {Map<string, { v: number, i: number, kw: number, pf: number }>} */
 const elecState = new Map();
@@ -160,6 +191,7 @@ async function loadAssets() {
 }
 
 async function tick(rows) {
+  const endTimer = tickDuration.startTimer();
   const client = await pool.connect();
   try {
     const outRows = [];
@@ -190,19 +222,38 @@ async function tick(rows) {
       `insert into telemetry.point_values ("time", asset_id, point_key, value, unit) values ${values}`,
       flat,
     );
+    pointsWritten.inc(outRows.length);
 
     for (const part of chunkReadingsForNotify(readings)) {
       await client.query("select pg_notify($1, $2)", [
         NOTIFY_CHANNEL,
         JSON.stringify({ readings: part }),
       ]);
+      notifyChunks.inc();
     }
+    ticksTotal.inc();
   } finally {
+    endTimer();
     client.release();
   }
 }
 
+function startMetricsServer() {
+  const server = http.createServer(async (req, res) => {
+    if (req.url !== "/metrics") {
+      res.writeHead(404).end("not found");
+      return;
+    }
+    res.setHeader("Content-Type", metricsRegistry.contentType);
+    res.end(await metricsRegistry.metrics());
+  });
+  server.listen(metricsPort, "0.0.0.0", () => {
+    process.stdout.write(`[sim] metrics listening on :${metricsPort}/metrics\n`);
+  });
+}
+
 async function main() {
+  startMetricsServer();
   const assetRows = await loadAssets();
   if (assetRows.length === 0) {
     throw new Error("No assets in bms.assets — run pnpm db:seed");

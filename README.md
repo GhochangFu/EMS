@@ -2,9 +2,9 @@
 
 A real-time Building Management System for Eskom's Smart Metering
 Operating Centres. The seven-screen prototype is complete; the project
-is now **Part 2 / Phase 1 Sprint D ready** after completing container
-foundations, CI, Redis-backed realtime fan-out, and Keycloak / OIDC
-authentication.
+has completed **Part 2 / Phase 1 pilot-ready hardening**. Phase 2 real
+ingestion is ready next, but protocol adapters and brokers remain out of
+scope until that phase is explicitly promoted.
 
 ## Repository tour
 
@@ -16,6 +16,7 @@ authentication.
 | [`docs/roadmap.md`](./docs/roadmap.md) | Prototype week-by-week plan + numbered post-prototype phases. |
 | [`docs/local-setup.md`](./docs/local-setup.md) | Exact WSL2 + Postgres + Timescale + Node setup steps. |
 | [`docs/env-inventory.md`](./docs/env-inventory.md) | Environment variables for native and compose-based development. |
+| [`docs/observability-runbook.md`](./docs/observability-runbook.md) | Sprint D Prometheus/Grafana/Loki health-check steps. |
 | [`docs/decisions.md`](./docs/decisions.md) | ADR-lite log of non-obvious choices made during the prototype. |
 | [`docs/adr/`](./docs/adr) | Phase 1+ architecture decisions. |
 
@@ -79,6 +80,17 @@ docker compose --profile realtime-smoke up -d --build api api-replica
 pnpm --filter web smoke:realtime
 ```
 
+To start the optional Sprint D observability stack alongside the core app:
+
+```bash
+docker compose --profile core --profile sim --profile observability up --build
+```
+
+Open Grafana at `http://localhost:3000` (`admin` / `admin`) and use the
+**BMS Pilot Overview** dashboard. Prometheus is exposed on
+`localhost:9090`, Loki on `localhost:3100`, and simulator metrics on
+`localhost:9101`.
+
 If the database volume already exists and you need a clean local compose
 DB, stop the stack and remove only the compose volume:
 
@@ -91,8 +103,8 @@ docker volume rm bms_bms-postgres-data
 
 React 18 + Vite · Tailwind · TanStack Query · Zustand · Leaflet ·
 ECharts · NestJS (Node 20) · Socket.IO · Redis · PostgreSQL 16 ·
-TimescaleDB · Drizzle ORM · Keycloak/OIDC · Docker Compose · GitHub
-Actions · pnpm monorepo.
+TimescaleDB · Drizzle ORM · Keycloak/OIDC · Prometheus · Grafana · Loki ·
+OpenTelemetry · Docker Compose · GitHub Actions · pnpm monorepo.
 
 Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 
@@ -111,5 +123,5 @@ Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 
 Prototype screen set is complete. Phase 1 Sprint B Redis-backed realtime
 fan-out is complete. Phase 1 Sprint C Keycloak / OIDC authentication is
-complete. Phase 1 Sprint D observability baseline is ready; see
+complete. Phase 1 Sprint D observability baseline is complete; see
 [`docs/roadmap.md`](./docs/roadmap.md) for the full phase breakdown.

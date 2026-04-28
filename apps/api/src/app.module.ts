@@ -8,6 +8,7 @@ import { DashboardModule } from "./dashboard/dashboard.module";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
 import { MapModule } from "./map/map.module";
+import { ObservabilityModule } from "./observability/observability.module";
 import { TelemetryModule } from "./telemetry/telemetry.module";
 
 @Module({
@@ -25,6 +26,7 @@ import { TelemetryModule } from "./telemetry/telemetry.module";
       },
     }),
     DatabaseModule,
+    ObservabilityModule,
     HealthModule,
     AuthModule,
     AssetsModule,
