@@ -3,6 +3,8 @@
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "scripts": {
+    "build": "pnpm --filter @bms/shared build && pnpm --filter @bms/db build && pnpm --filter api build && pnpm --filter web build",
+    "typecheck": "pnpm build",
     "postinstall": "pnpm --filter @bms/shared build && pnpm --filter @bms/db build",
     "db:migrate": "pnpm --filter @bms/db migrate",
     "db:seed": "pnpm --filter @bms/db seed",

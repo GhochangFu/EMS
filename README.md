@@ -1,9 +1,8 @@
 # Eskom SMOC BMS
 
 A real-time Building Management System for Eskom's Smart Metering
-Operating Centres. Currently in **prototype phase** — a working,
-demo-able laptop build covering seven core screens. Production
-hardening follows after sign-off.
+Operating Centres. The seven-screen prototype is complete; the project
+is now in **Part 2 / Phase 1 Sprint A** for container foundations and CI.
 
 ## Repository tour
 
@@ -14,13 +13,15 @@ hardening follows after sign-off.
 | [`docs/AGENTS.production.md`](./docs/AGENTS.production.md) | North-star rulebook for the production target. Reference, not enforcement. |
 | [`docs/roadmap.md`](./docs/roadmap.md) | Prototype week-by-week plan + numbered post-prototype phases. |
 | [`docs/local-setup.md`](./docs/local-setup.md) | Exact WSL2 + Postgres + Timescale + Node setup steps. |
+| [`docs/env-inventory.md`](./docs/env-inventory.md) | Environment variables for native and compose-based development. |
 | [`docs/decisions.md`](./docs/decisions.md) | ADR-lite log of non-obvious choices made during the prototype. |
+| [`docs/adr/`](./docs/adr) | Phase 1+ architecture decisions. |
 
-## Quick start
+## Quick start: native WSL
 
-The prototype runs entirely on a single laptop (Windows 11 + WSL2). No
-Docker required. See **[`docs/local-setup.md`](./docs/local-setup.md)**
-for the full installation walkthrough; once dependencies are in place:
+Native WSL remains the lightest day-to-day development path. See
+**[`docs/local-setup.md`](./docs/local-setup.md)** for the full
+installation walkthrough; once dependencies are in place:
 
 ```bash
 cp apps/api/.env.example apps/api/.env
@@ -38,30 +39,61 @@ pnpm --filter sim start  # telemetry simulator (Sprint 2: live data)
 Open `http://localhost:5173`. Sign in as `admin@bms.local` / `admin123`
 (seeded).
 
-## Stack (prototype)
+## Quick start: Docker Compose
+
+Sprint A adds a reproducible compose path for fresh machines and pilot
+VMs. Use profiles so an 8 GB laptop does not need to run optional
+services all day.
+
+```bash
+# Build and start Postgres/TimescaleDB, migrations/seed, API, and web.
+docker compose --profile core up --build
+
+# Optional: run migrations and seed data explicitly.
+docker compose --profile migrate run --rm migrate
+
+# Optional: start live telemetry; this also waits for migrations/seed.
+docker compose --profile sim up --build sim
+```
+
+Open `http://localhost:5173`. The compose database is exposed on
+`localhost:5432`; the API is exposed on `localhost:4000`.
+
+For a demo-like run with API, web, simulator, and migration/seed ordering:
+
+```bash
+docker compose --profile pilot up --build
+```
+
+If the database volume already exists and you need a clean local compose
+DB, stop the stack and remove only the compose volume:
+
+```bash
+docker compose down
+docker volume rm bms_bms-postgres-data
+```
+
+## Stack (active)
 
 React 18 + Vite · Tailwind · TanStack Query · Zustand · Leaflet ·
 ECharts · NestJS (Node 20) · Socket.IO · PostgreSQL 16 · TimescaleDB ·
-Drizzle ORM · pnpm monorepo.
+Drizzle ORM · Docker Compose · GitHub Actions · pnpm monorepo.
 
 Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 
 ## Working in this repo
 
 1. Read [`AGENTS.md`](./AGENTS.md) — it defines the active scope, code
-   rules, and what is **out of scope** for the prototype.
+   rules, and what is **out of scope** for the current sprint.
 2. Match the style of existing modules. When in doubt, copy the
    nearest pattern.
-3. Capture non-obvious choices as a one-liner in
-   [`docs/decisions.md`](./docs/decisions.md).
+3. Capture Phase 1+ non-obvious choices as ADRs in
+   [`docs/adr/`](./docs/adr).
 4. Anything from `AGENTS.md` §6 (Out of Scope) requires a Promotion PR
    per `AGENTS.md` §10 before it can land.
 
 ## Status
 
-Sprint 5 — World Map (`bms.map_locations`, `GET /api/v1/map/sites`,
-`/map`). Sprint 6 — Electrical SLD (`/sld`, `SchematicTelemetryProvider`).
-Sprint 7 — CRAC (`HVAC_POINT_KEYS`, `/crac`, domain-aware sim). Sprint 8 —
-Energy Centre (`/energy`, dashboard energy API + ECharts, nav polish,
-[`docs/demo-script.md`](./docs/demo-script.md)). Prototype screen set is
-complete; see [`docs/roadmap.md`](./docs/roadmap.md) for post-prototype phases.
+Prototype screen set is complete. Phase 1 Sprint A is adding Dockerfiles,
+compose profiles, environment inventory, and GitHub Actions CI; see
+[`docs/roadmap.md`](./docs/roadmap.md) for the full phase breakdown.

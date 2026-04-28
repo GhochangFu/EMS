@@ -9,3 +9,10 @@ export function withAuth(init: RequestInit = {}): RequestInit {
   }
   return { ...init, headers };
 }
+
+/** Clears stale local auth when the API rejects a protected request. */
+export function clearSessionOnAuthFailure(res: Response): void {
+  if (res.status === 401 || res.status === 403) {
+    useAuthStore.getState().clearSession();
+  }
+}

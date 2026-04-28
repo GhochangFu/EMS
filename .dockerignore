@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+dist
+**/dist
+build
+coverage
+.git
+.github
+.cache
+.vite
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+!.env.*.example

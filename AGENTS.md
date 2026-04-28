@@ -1,29 +1,33 @@
-# AGENTS.md — Eskom SMOC BMS (Prototype Phase)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 1 Sprint A)
 
-> **Status:** ACTIVE — prototype phase.
+> **Status:** ACTIVE — Phase 1 Sprint A container foundation and CI.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
 This file is the rulebook humans and AI agents must follow **right now**.
-We are building a working prototype of the Eskom SMOC BMS based on the
-UX defined in `ESKOM_SMOC.html` (at the repo root). Production hardening
-comes after the prototype is signed off.
+The seven-screen prototype is complete. We are now promoting the first
+add-on slice from the production north star: container foundations and
+CI for a pilot-ready single-VM deployment path.
 
 ---
 
 ## 1. Goal
 
-Build a credible, demo-able prototype in ≈ 7–8 weeks that proves the
-end-to-end pipeline:
+The prototype has completed the seven-screen end-to-end pipeline:
 
 `simulated device → Postgres/Timescale → NestJS API → WebSocket → React UI → user`
 
-Quality-first; schedule is open. Demo is aimed at a mixed audience
-(internal team, Eskom buyer, investor) so breadth of narrative
-(electrical + mechanical + energy + alarms + map) matters as much as
-depth on any single screen.
+Phase 1 Sprint A now makes that prototype reproducible outside the
+original native WSL setup:
 
-Seven screens are in scope:
+1. Dockerfiles for API, web, and simulator.
+2. Docker Compose profiles for local development and a single-VM pilot.
+3. GitHub Actions CI for install, build/typecheck, and migration
+   validation.
+4. Environment inventory and setup docs that keep laptop development
+   practical.
+
+The completed prototype screens are:
 
 1. **Login** — simple JWT
 2. **Executive Dashboard** — live KPIs + trend chart
@@ -35,15 +39,15 @@ Seven screens are in scope:
 7. **Energy Centre** — energy KPIs, source mix, peak demand, top
    consumers (charts only, no schematic)
 
-Everything else from the mockup is out of scope until the corresponding
-add-on phase begins (see §6).
+Everything else from the mockup or production north star is out of scope
+until the corresponding add-on phase begins (see §6).
 
 Rationale for the seven-screen scope is captured in `docs/decisions.md`
 entry **D-0001**.
 
 ---
 
-## 2. Stack (locked for prototype)
+## 2. Stack (active)
 
 | Layer        | Technology |
 |--------------|------------|
@@ -55,10 +59,11 @@ entry **D-0001**.
 | Telemetry DB | TimescaleDB extension on the same Postgres |
 | Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
-| Local dev    | WSL2 Ubuntu 22.04, native Postgres + Timescale install, no Docker |
+| Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, and DB |
+| CI/CD        | GitHub Actions for install, build/typecheck, and migration validation |
+| Local dev    | WSL2 Ubuntu 22.04; native Postgres remains supported, Docker Compose is optional |
 
-No new dependencies may be added without a one-line note in
-`docs/decisions.md`.
+No new dependencies may be added without an ADR in `docs/adr/`.
 
 ---
 
@@ -71,6 +76,9 @@ bms/
 ├── ESKOM_SMOC.html            ← UX reference (do not edit)
 ├── package.json               ← pnpm workspace root
 ├── pnpm-workspace.yaml
+├── docker-compose.yml         ← Phase 1 local/pilot compose entrypoint
+├── .github/
+│   └── workflows/             ← GitHub Actions CI
 ├── apps/
 │   ├── web/                   ← React SPA
 │   ├── api/                   ← NestJS REST + WebSocket
@@ -79,8 +87,10 @@ bms/
 │   ├── shared/                ← cross-cutting TS types & constants
 │   └── db/                    ← Drizzle schema, migrations, seeds
 └── docs/
+    ├── adr/                   ← Phase 1+ architecture decisions
     ├── AGENTS.production.md   ← future-state rulebook (reference)
     ├── decisions.md           ← lightweight ADR log for prototype
+    ├── env-inventory.md       ← committed environment variable inventory
     ├── roadmap.md             ← phase plan (prototype + add-ons)
     └── local-setup.md         ← WSL + Postgres setup steps
 ```
@@ -116,7 +126,7 @@ Do not add top-level folders without updating this section.
 ### 4.5 Style hygiene
 - File names: `kebab-case` for files, `PascalCase` for React components.
 - No abbreviated domain words (`asset`, not `as`; `alarm`, not `alm`).
-- Max **1000 lines per file** in prototype phase.
+- Max **1000 lines per file** in the current phase.
 - No `console.log` in committed code; use the shared logger (Pino).
 - No emoji in code or commits unless explicitly requested.
 
@@ -135,7 +145,7 @@ React components in `apps/web/src/components/`.
 
 ---
 
-## 6. Out of Scope for the Prototype
+## 6. Out of Scope for the Current Sprint
 
 These are intentionally deferred. Do not implement them yet:
 
@@ -152,25 +162,25 @@ These are intentionally deferred. Do not implement them yet:
 - Three.js Control Room 3D
 - AI Copilot
 - NERSA / ISO compliance reports
-- Docker, Kubernetes, CI/CD, Prometheus / Grafana / Loki
+- Kubernetes production manifests
+- Prometheus / Grafana / Loki
 
-When any of these are needed, follow §10 (Promotion Process).
+Docker Compose, Dockerfiles, and GitHub Actions CI are now in scope for
+Phase 1 Sprint A only. When any other item above is needed, follow §10
+(Promotion Process).
 
 ---
 
-## 7. Definition of Done (Prototype)
+## 7. Definition of Done (Current Sprint)
 
 A task is done when:
 
-1. It works end-to-end against the real local DB.
-2. UI matches the relevant mockup screen.
-3. WebSocket path updates live (where applicable).
-4. Manual happy-path test passes.
-5. README updated if a new env var, command, or seed is introduced.
-6. `docs/decisions.md` has a one-liner if a non-obvious choice was made.
-
-Tests, coverage gates, audit hardening, and CI checks are part of the
-production rulebook — they are not blockers in the prototype phase.
+1. Native WSL development still works.
+2. Compose can start the core app path against Postgres/TimescaleDB.
+3. CI installs dependencies and builds/typechecks from a clean checkout.
+4. Migration validation runs against a real Postgres/TimescaleDB service.
+5. README/local setup are updated for any new env var or command.
+6. `docs/adr/` captures non-obvious architecture choices.
 
 ---
 
@@ -183,28 +193,30 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
 3. Clone repo into the WSL filesystem (not `/mnt/c/...`).
 4. `pnpm install`.
 5. `pnpm db:migrate && pnpm db:seed`.
-6. Three terminals:
+6. Three native terminals:
    - `pnpm --filter api dev`
    - `pnpm --filter web dev`
    - `pnpm --filter sim start`
+7. Optional Phase 1 compose profiles are documented in `README.md`.
 
-No Docker. No Keycloak. No broker. Just Postgres + Node.
+No Keycloak, Redis, broker, or observability stack yet. Just Postgres,
+Node, and optional Docker Compose for reproducible development.
 
 ---
 
-## 9. AI Agent Operating Rules (Prototype)
+## 9. AI Agent Operating Rules (Current Sprint)
 
 1. **Read this file and the affected source files before editing.**
 2. Read `docs/AGENTS.production.md` for context on where the system is
-   heading — but do **not** implement production-only concerns yet.
+   heading — but do **not** implement later-phase concerns yet.
 3. Match the style of existing modules. If unsure, copy the closest
    pattern.
-4. Never add a dependency without noting it in `docs/decisions.md`.
+4. Never add a dependency without an ADR in `docs/adr/`.
 5. Never invent file paths or library APIs.
 6. Never log secrets, tokens, or full PII payloads.
-7. Do not introduce Docker, Keycloak, Redis, EMQX, MinIO, or any item
-   from §6 without a Promotion PR (see §10).
-8. Do not bypass the audit middleware, even in the prototype.
+7. Do not introduce Keycloak, Redis, EMQX, MinIO, or any item from §6
+   without a Promotion PR (see §10).
+8. Do not bypass the audit middleware.
 9. Do not mass-rename or mass-format unrelated code.
 10. Update this file only via a PR prefixed `chore(agents): ...`.
 

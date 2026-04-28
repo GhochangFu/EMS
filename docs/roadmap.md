@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Prototype (Sprint 8).
+> **Active phase:** Part 2 / Phase 1 Sprint B ready.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -163,7 +163,7 @@ graduates the listed items out of `AGENTS.md` §6 via the Promotion
 Process (`AGENTS.md` §10).
 
 ### Phase 1 — Pilot-ready hardening (~3 weeks)
-- **Status:** pending
+- **Status:** in progress — Sprint A complete; Sprint B ready
 - **Graduates:** Docker / Kubernetes / CI/CD, Prometheus / Grafana /
   Loki, Keycloak / OIDC / MFA / SSO, Redis cache & pub/sub.
 - **Goal:** deployable to a single VM for an internal pilot.
@@ -171,6 +171,65 @@ Process (`AGENTS.md` §10).
   Actions CI, Keycloak realm + OIDC integration replacing local JWT,
   Redis adapter on Socket.IO, OpenTelemetry SDK in every service,
   Prometheus + Grafana + Loki stack, basic SLO dashboards.
+- **Development note:** laptop development remains supported. Heavy
+  services should be run through compose profiles or on a small remote
+  dev VM so an 8 GB development laptop does not need to keep the full
+  pilot stack running at all times.
+
+#### Phase 1 Sprint A — Container foundation and CI
+- **Status:** complete
+- **Goal:** make the prototype reproducible outside the current native
+  WSL setup.
+- **Deliverables**
+  - Dockerfiles for `apps/api`, `apps/web`, and `apps/sim`.
+  - `docker-compose.yml` with profiles for minimum local development,
+    pilot-like local stack, and optional support services.
+  - Environment variable inventory for API, web, database, and
+    simulator configuration.
+  - GitHub Actions workflow for install, typecheck, lint/build, and
+    basic migration validation.
+  - README or local setup updates for compose-based development and
+    single-VM pilot startup.
+- **Exit criteria:** a fresh machine can start the core app through
+  compose, and CI proves the repo still builds from a clean checkout.
+
+#### Phase 1 Sprint B — Redis-backed realtime
+- **Goal:** prepare realtime for more than one API process.
+- **Deliverables**
+  - Redis service added to compose.
+  - Socket.IO Redis adapter wired into the telemetry and alarm gateways.
+  - Configuration for Redis URL, reconnect behaviour, and local fallback
+    expectations.
+  - Smoke test or manual test script showing realtime broadcasts still
+    reach clients when more than one API instance is running.
+- **Exit criteria:** telemetry and alarm events still update the UI when
+  the API is scaled beyond one process in the pilot-like compose profile.
+
+#### Phase 1 Sprint C — Keycloak / OIDC authentication
+- **Goal:** replace prototype local JWT login with pilot-ready identity.
+- **Deliverables**
+  - Keycloak service and realm export for local/pilot development.
+  - API JWT validation against Keycloak-issued tokens.
+  - Web login flow updated to OIDC while preserving the existing app
+    shell and route guards.
+  - Role mapping for the current prototype roles.
+  - Migration notes for retiring or bypassing the prototype local auth
+    path.
+- **Exit criteria:** a user can log in through Keycloak, open the app,
+  and call protected API routes with the expected role claims.
+
+#### Phase 1 Sprint D — Observability baseline
+- **Goal:** make the pilot stack diagnosable before real users touch it.
+- **Deliverables**
+  - OpenTelemetry SDK added to API and other long-running Node services.
+  - Prometheus, Grafana, and Loki compose services behind an optional
+    observability profile.
+  - Structured logs routed to Loki.
+  - Basic dashboards for API health, request latency, websocket activity,
+    alarm volume, and telemetry ingest rate.
+  - Minimal runbook for checking service health during a demo or pilot.
+- **Exit criteria:** a developer can start the observability profile and
+  use Grafana to confirm the API, websocket, and simulator are healthy.
 
 ### Phase 2 — Real ingestion (~4 weeks)
 - **Status:** pending

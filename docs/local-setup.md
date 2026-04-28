@@ -1,14 +1,16 @@
 # Local Development Setup
 
-Single-developer setup for the prototype phase. Target environment:
+Single-developer setup for the completed prototype and Phase 1 Sprint A.
+Target environment:
 
 - **Host:** Windows 11
 - **Dev shell:** WSL2 + Ubuntu 22.04 LTS
 - **Editor:** Cursor (Windows) connected to WSL via the Remote-WSL extension
 - **Runtime:** Node 20 LTS, pnpm 9
 - **Database:** Postgres 16 + TimescaleDB 2.x, installed natively in WSL
-- **No Docker, no Keycloak, no broker** in the prototype phase — see
-`AGENTS.md` §6.
+  for the lightest local loop, or via Docker Compose for Phase 1 Sprint A.
+- **No Keycloak, Redis, broker, or observability stack** in Sprint A —
+  see `AGENTS.md` §6.
 
 If you are setting up a brand-new laptop, follow the sections in order.
 Each section is idempotent — re-running the steps is safe.
@@ -61,8 +63,6 @@ fnm install 20
 fnm default 20
 node --version   # v20.x.x
 ```
-
-
 
 Add this to `~/.bashrc` (already done by the installer, verify):
 
@@ -254,7 +254,41 @@ degraded within the refetch window.
 
 ---
 
-## 11. Cursor IDE on WSL
+## 11. Optional Docker Compose path
+
+Phase 1 Sprint A adds Docker Compose for reproducible development and a
+single-VM pilot path. Native WSL remains supported and is still the
+lightest option on an 8 GB laptop.
+
+Install Docker Engine or Docker Desktop with WSL integration, then from
+the repo root:
+
+```bash
+# Core app path: Postgres/TimescaleDB, migrations/seed, API, and web.
+docker compose --profile core up --build
+
+# Optional explicit migration/seed run.
+docker compose --profile migrate run --rm migrate
+
+# Optional live telemetry; this waits for migrations/seed.
+docker compose --profile sim up --build sim
+docker compose stop sim
+
+# Stop Docker services.
+docker compose down
+```
+Open `http://localhost:5173`. Compose uses the variables documented in
+[`docs/env-inventory.md`](./env-inventory.md).
+
+For a demo-like run with API, web, simulator, and migration/seed ordering:
+
+```bash
+docker compose --profile pilot up --build
+```
+
+---
+
+## 12. Cursor IDE on WSL
 
 1. Install Cursor on Windows.
 2. Install the **Remote - WSL** extension.
@@ -267,7 +301,7 @@ degraded within the refetch window.
 
 ---
 
-## 12. Common issues
+## 13. Common issues
 
 
 | Symptom                                          | Fix                                                                                                                                                    |
@@ -278,22 +312,21 @@ degraded within the refetch window.
 | File watch limit errors from Vite                | `echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf && sudo sysctl -p`.                                                            |
 | Slow `pnpm install`                              | Make sure the repo is under `~/projects`, **not** `/mnt/c/...`.                                                                                        |
 | Cursor terminal opens PowerShell instead of bash | Open the workspace via "Connect to WSL" — bottom-left status bar should read "WSL: Ubuntu-22.04".                                                      |
+| Compose API starts before seeded data exists     | Run `docker compose --profile migrate run --rm migrate` once, then restart the `api`, `web`, and `sim` services.                                       |
 
 
 ---
 
-## 13. What is intentionally not installed
+## 14. What is intentionally not installed
 
-To keep the prototype lean and laptop-friendly:
+To keep Phase 1 Sprint A lean and laptop-friendly:
 
-- No Docker / Docker Desktop
 - No Keycloak
 - No EMQX / Mosquitto
 - No Redis
 - No Prometheus / Grafana / Loki
 - No MinIO
 
-These arrive in **Phase 1** of `docs/roadmap.md` (Pilot-ready
-hardening) and onwards. Until then, do not install or wire them up,
-even "just to try" — they are blocked by `AGENTS.md` §9 rule 7 and
-require a Promotion PR to enter the codebase.
+These arrive in later add-on sprints and phases. Until then, do not
+install or wire them up, even "just to try" — they are blocked by
+`AGENTS.md` §9 rule 7 and require a Promotion PR to enter the codebase.

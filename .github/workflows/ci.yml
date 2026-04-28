@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-migrate:
+    name: Build and validate migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg16
+        env:
+          POSTGRES_DB: bms
+          POSTGRES_USER: bms_app
+          POSTGRES_PASSWORD: bms_app_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bms_app -d bms"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://bms_app:bms_app_dev@localhost:5432/bms
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and typecheck
+        run: pnpm typecheck
+
+      - name: Initialise database schemas
+        run: |
+          docker exec "${{ job.services.postgres.id }}" \
+            psql -U bms_app -d bms \
+            -c "CREATE EXTENSION IF NOT EXISTS timescaledb; CREATE SCHEMA IF NOT EXISTS bms AUTHORIZATION bms_app; CREATE SCHEMA IF NOT EXISTS telemetry AUTHORIZATION bms_app;"
+
+      - name: Validate migrations
+        run: pnpm db:migrate

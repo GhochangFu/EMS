@@ -1,6 +1,6 @@
 import type { AlarmListItem } from "@bms/shared";
 
-import { withAuth } from "./http";
+import { clearSessionOnAuthFailure, withAuth } from "./http";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -19,6 +19,7 @@ export async function fetchAlarmsPage(
   }
   const res = await fetch(`${base}/api/v1/alarms?${params}`, withAuth());
   if (!res.ok) {
+    clearSessionOnAuthFailure(res);
     throw new Error(`alarms ${res.status}`);
   }
   return res.json() as Promise<AlarmsListResponse>;
@@ -36,6 +37,7 @@ export async function ackAlarm(
     }),
   });
   if (!res.ok) {
+    clearSessionOnAuthFailure(res);
     const text = await res.text();
     throw new Error(text || `ack ${res.status}`);
   }
