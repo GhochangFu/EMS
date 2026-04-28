@@ -5,9 +5,9 @@ import {
 } from "@nestjs/common";
 import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
 
-import { alarms, assets, auditLog } from "@bms/db";
+import { alarms, assets, auditLog, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AlarmListItem } from "@bms/shared";
+import type { AlarmListItem, JwtPayload } from "@bms/shared";
 
 import { DRIZZLE } from "../database/database.tokens";
 import { AlarmsGateway } from "./alarms.gateway";
@@ -120,15 +120,22 @@ export class AlarmsService {
    */
   async acknowledge(
     alarmId: string,
-    actorId: string,
+    actor: Pick<JwtPayload, "sub" | "email">,
     reason: string,
   ): Promise<AlarmListItem> {
+    const [actorRow] = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
+      .limit(1);
+    const dbActorId = actorRow?.id ?? null;
+
     return this.db.transaction(async (tx) => {
       const updated = await tx
         .update(alarms)
         .set({
           acknowledgedAt: new Date(),
-          acknowledgedBy: actorId,
+          acknowledgedBy: dbActorId,
         })
         .where(and(eq(alarms.id, alarmId), isNull(alarms.acknowledgedAt)))
         .returning({ id: alarms.id });
@@ -138,12 +145,16 @@ export class AlarmsService {
       }
 
       await tx.insert(auditLog).values({
-        actorId,
+        actorId: dbActorId,
         action: "alarm_ack",
         entityType: "alarm",
         entityId: alarmId,
         reason,
-        payload: { alarmId },
+        payload: {
+          alarmId,
+          oidcSubject: actor.sub,
+          actorEmail: actor.email,
+        },
       });
 
       const [row] = await tx

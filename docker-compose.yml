@@ -29,6 +29,20 @@ services:
       timeout: 5s
       retries: 10
 
+  keycloak:
+    profiles: ["core", "identity", "pilot"]
+    image: quay.io/keycloak/keycloak:24.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./infra/keycloak:/opt/keycloak/data/import:ro
+
   migrate:
     profiles: ["core", "migrate", "sim", "pilot", "realtime-smoke"]
     build:
@@ -55,6 +69,9 @@ services:
       LOG_LEVEL: info
       ENERGY_TARIFF_ZAR_PER_KWH: 2.15
       REDIS_URL: redis://redis:6379
+      AUTH_MODE: oidc
+      OIDC_ISSUER: http://localhost:8080/realms/bms
+      OIDC_JWKS_URI: http://keycloak:8080/realms/bms/protocol/openid-connect/certs
     ports:
       - "4000:4000"
     depends_on:
@@ -62,6 +79,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      keycloak:
+        condition: service_started
       migrate:
         condition: service_completed_successfully
 
@@ -96,6 +115,10 @@ services:
       args:
         VITE_API_URL: http://localhost:4000
         VITE_WS_URL: ws://localhost:4000
+        VITE_AUTH_MODE: oidc
+        VITE_OIDC_ISSUER: http://localhost:8080/realms/bms
+        VITE_OIDC_CLIENT_ID: bms-web
+        VITE_OIDC_REDIRECT_URI: http://localhost:5173/auth/callback
     ports:
       - "5173:80"
     depends_on:

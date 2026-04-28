@@ -2,8 +2,9 @@
 
 A real-time Building Management System for Eskom's Smart Metering
 Operating Centres. The seven-screen prototype is complete; the project
-is now in **Part 2 / Phase 1 Sprint C ready** after completing container
-foundations, CI, and Redis-backed realtime fan-out.
+is now **Part 2 / Phase 1 Sprint D ready** after completing container
+foundations, CI, Redis-backed realtime fan-out, and Keycloak / OIDC
+authentication.
 
 ## Repository tour
 
@@ -47,7 +48,7 @@ VMs. Use profiles so an 8 GB laptop does not need to run every service
 all day.
 
 ```bash
-# Build and start Postgres/TimescaleDB, Redis, migrations/seed, API, and web.
+# Build and start Postgres/TimescaleDB, Redis, Keycloak, migrations/seed, API, and web.
 docker compose --profile core up --build
 
 # Optional: run migrations and seed data explicitly.
@@ -58,7 +59,12 @@ docker compose --profile sim up --build sim
 ```
 
 Open `http://localhost:5173`. The compose database is exposed on
-`localhost:5432`; the API is exposed on `localhost:4000`.
+`localhost:5432`; the API is exposed on `localhost:4000`; Keycloak is
+exposed on `localhost:8080`.
+
+With the compose path, sign in through Keycloak as `admin@bms.local` /
+`admin123`. Native WSL can still use the local login form when
+`VITE_AUTH_MODE=local` and `AUTH_MODE=local`.
 
 For a demo-like run with API, web, simulator, and migration/seed ordering:
 
@@ -85,8 +91,8 @@ docker volume rm bms_bms-postgres-data
 
 React 18 + Vite · Tailwind · TanStack Query · Zustand · Leaflet ·
 ECharts · NestJS (Node 20) · Socket.IO · Redis · PostgreSQL 16 ·
-TimescaleDB · Drizzle ORM · Docker Compose · GitHub Actions · pnpm
-monorepo.
+TimescaleDB · Drizzle ORM · Keycloak/OIDC · Docker Compose · GitHub
+Actions · pnpm monorepo.
 
 Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 
@@ -104,6 +110,6 @@ Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 ## Status
 
 Prototype screen set is complete. Phase 1 Sprint B Redis-backed realtime
-fan-out is complete. Phase 1 Sprint C is ready and will introduce
-Keycloak / OIDC authentication; see
+fan-out is complete. Phase 1 Sprint C Keycloak / OIDC authentication is
+complete. Phase 1 Sprint D observability baseline is ready; see
 [`docs/roadmap.md`](./docs/roadmap.md) for the full phase breakdown.

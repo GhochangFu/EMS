@@ -1,6 +1,6 @@
 # Local Development Setup
 
-Single-developer setup for the completed prototype and Phase 1 Sprint A.
+Single-developer setup for the completed prototype and Phase 1 Sprint C.
 Target environment:
 
 - **Host:** Windows 11
@@ -8,9 +8,9 @@ Target environment:
 - **Editor:** Cursor (Windows) connected to WSL via the Remote-WSL extension
 - **Runtime:** Node 20 LTS, pnpm 9
 - **Database:** Postgres 16 + TimescaleDB 2.x, installed natively in WSL
-  for the lightest local loop, or via Docker Compose for Phase 1 Sprint A.
-- **No Keycloak, Redis, broker, or observability stack** in Sprint A —
-  see `AGENTS.md` §6.
+  for the lightest local loop, or via Docker Compose for Phase 1.
+- **Identity:** Keycloak is used by the compose/pilot path in Sprint C.
+  Native WSL may still use local auth while Sprint C is in progress.
 
 If you are setting up a brand-new laptop, follow the sections in order.
 Each section is idempotent — re-running the steps is safe.
@@ -191,6 +191,7 @@ Create `apps/api/.env` (do not commit):
 DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms
 JWT_SECRET=change-me-in-prototype
 JWT_TTL=8h
+AUTH_MODE=local
 PORT=4000
 LOG_LEVEL=info
 # Optional — indicative Energy Centre cost (ZAR/kWh); default 2.15 in code
@@ -202,6 +203,7 @@ Create `apps/web/.env` (do not commit):
 ```env
 VITE_API_URL=http://localhost:4000
 VITE_WS_URL=ws://localhost:4000
+VITE_AUTH_MODE=local
 ```
 
 Create `apps/sim/.env` (do not commit):
@@ -264,7 +266,7 @@ Install Docker Engine or Docker Desktop with WSL integration, then from
 the repo root:
 
 ```bash
-# Core app path: Postgres/TimescaleDB, Redis, migrations/seed, API, and web.
+# Core app path: Postgres/TimescaleDB, Redis, Keycloak, migrations/seed, API, and web.
 docker compose --profile core up --build
 
 # Optional explicit migration/seed run.
@@ -277,7 +279,10 @@ docker compose stop sim
 # Stop Docker services.
 docker compose down
 ```
-Open `http://localhost:5173`. Compose uses the variables documented in
+Open `http://localhost:5173`. Compose uses Keycloak/OIDC by default:
+click **Sign in with Keycloak** and use `admin@bms.local` / `admin123`.
+The Keycloak admin console is available at `http://localhost:8080` with
+`admin` / `admin`. Compose variables are documented in
 [`docs/env-inventory.md`](./env-inventory.md).
 
 For a demo-like run with API, web, simulator, and migration/seed ordering:
@@ -326,14 +331,13 @@ pnpm --filter web smoke:realtime
 
 ## 14. What is intentionally not installed
 
-To keep Phase 1 Sprint A lean and laptop-friendly:
+To keep Phase 1 lean and laptop-friendly:
 
-- No Keycloak
 - No EMQX / Mosquitto
-- No Redis
 - No Prometheus / Grafana / Loki
 - No MinIO
 
-These arrive in later add-on sprints and phases. Until then, do not
+Redis and Keycloak are now in scope for Phase 1 Sprint B-C. The remaining
+items arrive in later add-on sprints and phases. Until then, do not
 install or wire them up, even "just to try" — they are blocked by
 `AGENTS.md` §9 rule 7 and require a Promotion PR to enter the codebase.

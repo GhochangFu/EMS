@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 1 Sprint C ready.
+> **Active phase:** Part 2 / Phase 1 Sprint D ready.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -163,7 +163,7 @@ graduates the listed items out of `AGENTS.md` §6 via the Promotion
 Process (`AGENTS.md` §10).
 
 ### Phase 1 — Pilot-ready hardening (~3 weeks)
-- **Status:** in progress — Sprint A-B complete; Sprint C ready
+- **Status:** in progress — Sprint A-C complete; Sprint D ready
 - **Graduates:** Docker / Kubernetes / CI/CD, Prometheus / Grafana /
   Loki, Keycloak / OIDC / MFA / SSO, Redis cache & pub/sub.
 - **Goal:** deployable to a single VM for an internal pilot.
@@ -207,6 +207,7 @@ Process (`AGENTS.md` §10).
   the API is scaled beyond one process in the pilot-like compose profile.
 
 #### Phase 1 Sprint C — Keycloak / OIDC authentication
+- **Status:** complete
 - **Goal:** replace prototype local JWT login with pilot-ready identity.
 - **Deliverables**
   - Keycloak service and realm export for local/pilot development.
@@ -220,6 +221,7 @@ Process (`AGENTS.md` §10).
   and call protected API routes with the expected role claims.
 
 #### Phase 1 Sprint D — Observability baseline
+- **Status:** ready
 - **Goal:** make the pilot stack diagnosable before real users touch it.
 - **Deliverables**
   - OpenTelemetry SDK added to API and other long-running Node services.

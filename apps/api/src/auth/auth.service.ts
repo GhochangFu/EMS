@@ -21,6 +21,10 @@ export class AuthService {
    * Validates credentials against `bms.users` and returns a signed JWT.
    */
   async login(body: LoginBody): Promise<LoginResponse> {
+    if (process.env.AUTH_MODE === "oidc") {
+      throw new UnauthorizedException("Local login is disabled in OIDC mode");
+    }
+
     const row = await this.db
       .select({
         id: users.id,

@@ -7,6 +7,7 @@ import { MapPage } from "./pages/map-page";
 import { CracPage } from "./pages/crac-page";
 import { EnergyPage } from "./pages/energy-page";
 import { SldPage } from "./pages/sld-page";
+import { AuthCallbackPage } from "./pages/auth-callback-page";
 import { LoginPage } from "./pages/login-page";
 import { useAuthStore } from "./stores/auth-store";
 
@@ -46,6 +47,7 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/auth/callback" element={<AuthCallbackPage />} />
       <Route
         path="/"
         element={

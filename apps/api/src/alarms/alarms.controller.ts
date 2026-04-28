@@ -45,7 +45,7 @@ export class AlarmsController {
   ) {
     try {
       const dto = alarmAckBodySchema.parse(body);
-      return this.alarms.acknowledge(id, user.sub, dto.reason);
+      return this.alarms.acknowledge(id, user, dto.reason);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

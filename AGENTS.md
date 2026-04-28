@@ -1,13 +1,15 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 1 Sprint B)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 1 Sprint C Complete)
 
-> **Status:** ACTIVE — Phase 1 Sprint B Redis-backed realtime.
+> **Status:** ACTIVE — Phase 1 Sprint C complete; Phase 1 Sprint D ready.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
 This file is the rulebook humans and AI agents must follow **right now**.
 The seven-screen prototype is complete. Phase 1 Sprint A added
-container foundations and CI. We are now promoting the next pilot-ready
-slice: Redis-backed Socket.IO fan-out for multi-process API runtime.
+container foundations and CI. Sprint B added Redis-backed Socket.IO
+fan-out. Sprint C added Keycloak/OIDC authentication for the web app and
+protected API routes. Phase 1 Sprint D is ready next, but observability
+remains out of scope until that sprint is explicitly promoted.
 
 ---
 
@@ -17,12 +19,14 @@ The prototype has completed the seven-screen end-to-end pipeline:
 
 `simulated device → Postgres/Timescale → NestJS API → WebSocket → React UI → user`
 
-Phase 1 Sprint B prepares realtime for more than one API process:
+Phase 1 Sprint C replaced the prototype-only local login path with
+pilot-ready identity:
 
-1. Redis service in Docker Compose.
-2. Socket.IO Redis adapter in the NestJS API.
-3. Clear fallback rules for native WSL development without Redis.
-4. Smoke verification for alarm fan-out across two API processes.
+1. Keycloak service and realm export for local/pilot development.
+2. Web OIDC login flow using Authorization Code + PKCE.
+3. API validation of Keycloak-issued bearer tokens.
+4. Role mapping for the current prototype roles.
+5. Clear fallback/migration notes for native WSL local-auth development.
 
 The completed prototype screens are:
 
@@ -51,7 +55,7 @@ entry **D-0001**.
 | Frontend     | React 18, TypeScript 5, Vite, Tailwind CSS, TanStack Query, Zustand, React Router, Leaflet, ECharts |
 | Backend API  | NestJS (Node 20 LTS, TypeScript) |
 | Realtime     | NestJS WebSocket gateway over Socket.IO with Redis adapter when `REDIS_URL` is set |
-| Auth         | Local JWT, hardcoded users in DB. **No Keycloak / MFA / SSO yet.** |
+| Auth         | Keycloak/OIDC for pilot compose; local JWT fallback only for native WSL development |
 | OLTP DB      | PostgreSQL 16 |
 | Telemetry DB | TimescaleDB extension on the same Postgres |
 | Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
@@ -77,6 +81,8 @@ bms/
 ├── docker-compose.yml         ← Phase 1 local/pilot compose entrypoint
 ├── .github/
 │   └── workflows/             ← GitHub Actions CI
+├── infra/
+│   └── keycloak/              ← Phase 1 Sprint C realm export
 ├── apps/
 │   ├── web/                   ← React SPA
 │   ├── api/                   ← NestJS REST + WebSocket
@@ -148,7 +154,7 @@ React components in `apps/web/src/components/`.
 These are intentionally deferred. Do not implement them yet:
 
 - Multi-tenancy, row-level security
-- Keycloak / OIDC / MFA / SSO
+- MFA / SSO / AD federation
 - Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT)
 - EMQX broker
 - MinIO / object storage
@@ -162,10 +168,13 @@ These are intentionally deferred. Do not implement them yet:
 - Kubernetes production manifests
 - Prometheus / Grafana / Loki
 
-Docker Compose, Dockerfiles, GitHub Actions CI, and Redis-backed
-Socket.IO pub/sub are now in scope for Phase 1 Sprint A-B only. Redis
-must not be used for unrelated caching or job queues until a later
-promotion. When any other item above is needed, follow §10 (Promotion
+Docker Compose, Dockerfiles, GitHub Actions CI, Redis-backed Socket.IO
+pub/sub, and Keycloak/OIDC authentication are now in scope for Phase 1
+Sprint A-C only. Redis must not be used for unrelated caching or job
+queues until a later promotion. Keycloak is limited to local/pilot OIDC
+authentication; MFA, SSO federation, advanced identity governance, and
+the observability stack remain out of scope until their sprint is
+promoted. When any other item above is needed, follow §10 (Promotion
 Process).
 
 ---
@@ -178,12 +187,15 @@ A task is done when:
 2. Compose can start the core app path against Postgres/TimescaleDB.
 3. Redis-backed Socket.IO starts when `REDIS_URL` is configured.
 4. Missing `REDIS_URL` falls back to in-process Socket.IO for native WSL.
-5. A smoke check proves an alarm event emitted by one API process reaches
-   a client connected to another API process.
-6. CI installs dependencies and builds/typechecks from a clean checkout.
-7. Migration validation runs against a real Postgres/TimescaleDB service.
-8. README/local setup are updated for any new env var or command.
-9. `docs/adr/` captures non-obvious architecture choices.
+5. Keycloak starts from a committed realm export in compose.
+6. Web login uses OIDC Authorization Code + PKCE when OIDC env is enabled.
+7. API protected routes accept Keycloak-issued bearer tokens with mapped
+   prototype roles.
+8. A local-auth fallback remains documented for native WSL development.
+9. CI installs dependencies and builds/typechecks from a clean checkout.
+10. Migration validation runs against a real Postgres/TimescaleDB service.
+11. README/local setup are updated for any new env var or command.
+12. `docs/adr/` captures non-obvious architecture choices.
 
 ---
 
@@ -200,11 +212,12 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
    - `pnpm --filter api dev`
    - `pnpm --filter web dev`
    - `pnpm --filter sim start`
-7. Optional Phase 1 compose profiles are documented in `README.md`.
+7. Optional Phase 1 compose profiles, including Keycloak, are documented
+   in `README.md`.
 
-No Keycloak, protocol broker, or observability stack yet. Just Postgres,
-Redis for realtime fan-out, Node, and optional Docker Compose for
-reproducible development.
+No protocol broker or observability stack yet. Just Postgres, Redis for
+realtime fan-out, Keycloak for local/pilot OIDC, Node, and optional Docker
+Compose for reproducible development.
 
 ---
 
@@ -218,8 +231,9 @@ reproducible development.
 4. Never add a dependency without an ADR in `docs/adr/`.
 5. Never invent file paths or library APIs.
 6. Never log secrets, tokens, or full PII payloads.
-7. Do not introduce Keycloak, EMQX, MinIO, or any item from §6 without a
-   Promotion PR (see §10). Redis is only approved for Socket.IO fan-out.
+7. Do not introduce EMQX, MinIO, or any item from §6 without a Promotion
+   PR (see §10). Redis is only approved for Socket.IO fan-out; Keycloak is
+   only approved for Sprint C local/pilot OIDC.
 8. Do not bypass the audit middleware.
 9. Do not mass-rename or mass-format unrelated code.
 10. Update this file only via a PR prefixed `chore(agents): ...`.
