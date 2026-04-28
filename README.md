@@ -2,7 +2,8 @@
 
 A real-time Building Management System for Eskom's Smart Metering
 Operating Centres. The seven-screen prototype is complete; the project
-is now in **Part 2 / Phase 1 Sprint A** for container foundations and CI.
+is now in **Part 2 / Phase 1 Sprint C ready** after completing container
+foundations, CI, and Redis-backed realtime fan-out.
 
 ## Repository tour
 
@@ -102,6 +103,7 @@ Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 
 ## Status
 
-Prototype screen set is complete. Phase 1 Sprint B is adding
-Redis-backed realtime fan-out; see [`docs/roadmap.md`](./docs/roadmap.md)
-for the full phase breakdown.
+Prototype screen set is complete. Phase 1 Sprint B Redis-backed realtime
+fan-out is complete. Phase 1 Sprint C is ready and will introduce
+Keycloak / OIDC authentication; see
+[`docs/roadmap.md`](./docs/roadmap.md) for the full phase breakdown.
