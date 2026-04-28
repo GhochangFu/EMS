@@ -41,12 +41,12 @@ Open `http://localhost:5173`. Sign in as `admin@bms.local` / `admin123`
 
 ## Quick start: Docker Compose
 
-Sprint A adds a reproducible compose path for fresh machines and pilot
-VMs. Use profiles so an 8 GB laptop does not need to run optional
-services all day.
+Phase 1 adds a reproducible compose path for fresh machines and pilot
+VMs. Use profiles so an 8 GB laptop does not need to run every service
+all day.
 
 ```bash
-# Build and start Postgres/TimescaleDB, migrations/seed, API, and web.
+# Build and start Postgres/TimescaleDB, Redis, migrations/seed, API, and web.
 docker compose --profile core up --build
 
 # Optional: run migrations and seed data explicitly.
@@ -65,6 +65,13 @@ For a demo-like run with API, web, simulator, and migration/seed ordering:
 docker compose --profile pilot up --build
 ```
 
+To verify Redis-backed Socket.IO fan-out across two API processes:
+
+```bash
+docker compose --profile realtime-smoke up -d --build api api-replica
+pnpm --filter web smoke:realtime
+```
+
 If the database volume already exists and you need a clean local compose
 DB, stop the stack and remove only the compose volume:
 
@@ -76,8 +83,9 @@ docker volume rm bms_bms-postgres-data
 ## Stack (active)
 
 React 18 + Vite · Tailwind · TanStack Query · Zustand · Leaflet ·
-ECharts · NestJS (Node 20) · Socket.IO · PostgreSQL 16 · TimescaleDB ·
-Drizzle ORM · Docker Compose · GitHub Actions · pnpm monorepo.
+ECharts · NestJS (Node 20) · Socket.IO · Redis · PostgreSQL 16 ·
+TimescaleDB · Drizzle ORM · Docker Compose · GitHub Actions · pnpm
+monorepo.
 
 Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 
@@ -94,6 +102,6 @@ Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 
 ## Status
 
-Prototype screen set is complete. Phase 1 Sprint A is adding Dockerfiles,
-compose profiles, environment inventory, and GitHub Actions CI; see
-[`docs/roadmap.md`](./docs/roadmap.md) for the full phase breakdown.
+Prototype screen set is complete. Phase 1 Sprint B is adding
+Redis-backed realtime fan-out; see [`docs/roadmap.md`](./docs/roadmap.md)
+for the full phase breakdown.

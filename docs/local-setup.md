@@ -256,15 +256,15 @@ degraded within the refetch window.
 
 ## 11. Optional Docker Compose path
 
-Phase 1 Sprint A adds Docker Compose for reproducible development and a
-single-VM pilot path. Native WSL remains supported and is still the
-lightest option on an 8 GB laptop.
+Phase 1 adds Docker Compose for reproducible development and a single-VM
+pilot path. Native WSL remains supported and is still the lightest
+option on an 8 GB laptop.
 
 Install Docker Engine or Docker Desktop with WSL integration, then from
 the repo root:
 
 ```bash
-# Core app path: Postgres/TimescaleDB, migrations/seed, API, and web.
+# Core app path: Postgres/TimescaleDB, Redis, migrations/seed, API, and web.
 docker compose --profile core up --build
 
 # Optional explicit migration/seed run.
@@ -284,6 +284,13 @@ For a demo-like run with API, web, simulator, and migration/seed ordering:
 
 ```bash
 docker compose --profile pilot up --build
+```
+
+To verify Redis-backed Socket.IO fan-out across two API processes:
+
+```bash
+docker compose --profile realtime-smoke up -d --build api api-replica
+pnpm --filter web smoke:realtime
 ```
 
 ---

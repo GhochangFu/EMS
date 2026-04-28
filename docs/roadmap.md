@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 1 Sprint B ready.
+> **Active phase:** Part 2 / Phase 1 Sprint C ready.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -163,7 +163,7 @@ graduates the listed items out of `AGENTS.md` §6 via the Promotion
 Process (`AGENTS.md` §10).
 
 ### Phase 1 — Pilot-ready hardening (~3 weeks)
-- **Status:** in progress — Sprint A complete; Sprint B ready
+- **Status:** in progress — Sprint A-B complete; Sprint C ready
 - **Graduates:** Docker / Kubernetes / CI/CD, Prometheus / Grafana /
   Loki, Keycloak / OIDC / MFA / SSO, Redis cache & pub/sub.
 - **Goal:** deployable to a single VM for an internal pilot.
@@ -194,6 +194,7 @@ Process (`AGENTS.md` §10).
   compose, and CI proves the repo still builds from a clean checkout.
 
 #### Phase 1 Sprint B — Redis-backed realtime
+- **Status:** complete
 - **Goal:** prepare realtime for more than one API process.
 - **Deliverables**
   - Redis service added to compose.

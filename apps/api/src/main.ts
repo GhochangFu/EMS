@@ -2,18 +2,18 @@ import "./load-env";
 
 import { Logger, RequestMethod } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
-import { IoAdapter } from "@nestjs/platform-socket.io";
 import { type NestExpressApplication } from "@nestjs/platform-express";
 import { Logger as PinoLogger } from "nestjs-pino";
 
 import { AppModule } from "./app.module";
+import { createSocketIoAdapter } from "./realtime/redis-io.adapter";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     bufferLogs: true,
   });
   app.useLogger(app.get(PinoLogger));
-  app.useWebSocketAdapter(new IoAdapter(app));
+  app.useWebSocketAdapter(await createSocketIoAdapter(app));
   app.setGlobalPrefix("api/v1", {
     exclude: [{ path: "health", method: RequestMethod.GET }],
   });

@@ -18,8 +18,19 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    profiles: ["core", "pilot", "realtime-smoke"]
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   migrate:
-    profiles: ["core", "migrate", "sim", "pilot"]
+    profiles: ["core", "migrate", "sim", "pilot", "realtime-smoke"]
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -43,10 +54,36 @@ services:
       PORT: 4000
       LOG_LEVEL: info
       ENERGY_TARIFF_ZAR_PER_KWH: 2.15
+      REDIS_URL: redis://redis:6379
     ports:
       - "4000:4000"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  api-replica:
+    profiles: ["realtime-smoke"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgres://bms_app:bms_app_dev@postgres:5432/bms
+      JWT_SECRET: change-me-in-compose
+      JWT_TTL: 8h
+      PORT: 4001
+      LOG_LEVEL: info
+      ENERGY_TARIFF_ZAR_PER_KWH: 2.15
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "4001:4001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully

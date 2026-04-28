@@ -1,13 +1,13 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 1 Sprint A)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 1 Sprint B)
 
-> **Status:** ACTIVE — Phase 1 Sprint A container foundation and CI.
+> **Status:** ACTIVE — Phase 1 Sprint B Redis-backed realtime.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
 This file is the rulebook humans and AI agents must follow **right now**.
-The seven-screen prototype is complete. We are now promoting the first
-add-on slice from the production north star: container foundations and
-CI for a pilot-ready single-VM deployment path.
+The seven-screen prototype is complete. Phase 1 Sprint A added
+container foundations and CI. We are now promoting the next pilot-ready
+slice: Redis-backed Socket.IO fan-out for multi-process API runtime.
 
 ---
 
@@ -17,15 +17,12 @@ The prototype has completed the seven-screen end-to-end pipeline:
 
 `simulated device → Postgres/Timescale → NestJS API → WebSocket → React UI → user`
 
-Phase 1 Sprint A now makes that prototype reproducible outside the
-original native WSL setup:
+Phase 1 Sprint B prepares realtime for more than one API process:
 
-1. Dockerfiles for API, web, and simulator.
-2. Docker Compose profiles for local development and a single-VM pilot.
-3. GitHub Actions CI for install, build/typecheck, and migration
-   validation.
-4. Environment inventory and setup docs that keep laptop development
-   practical.
+1. Redis service in Docker Compose.
+2. Socket.IO Redis adapter in the NestJS API.
+3. Clear fallback rules for native WSL development without Redis.
+4. Smoke verification for alarm fan-out across two API processes.
 
 The completed prototype screens are:
 
@@ -53,7 +50,7 @@ entry **D-0001**.
 |--------------|------------|
 | Frontend     | React 18, TypeScript 5, Vite, Tailwind CSS, TanStack Query, Zustand, React Router, Leaflet, ECharts |
 | Backend API  | NestJS (Node 20 LTS, TypeScript) |
-| Realtime     | NestJS WebSocket gateway over Socket.IO (in-process, no Redis adapter yet) |
+| Realtime     | NestJS WebSocket gateway over Socket.IO with Redis adapter when `REDIS_URL` is set |
 | Auth         | Local JWT, hardcoded users in DB. **No Keycloak / MFA / SSO yet.** |
 | OLTP DB      | PostgreSQL 16 |
 | Telemetry DB | TimescaleDB extension on the same Postgres |
@@ -61,6 +58,7 @@ entry **D-0001**.
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, and DB |
 | CI/CD        | GitHub Actions for install, build/typecheck, and migration validation |
+| Cache / pub-sub | Redis 7 for Socket.IO adapter fan-out |
 | Local dev    | WSL2 Ubuntu 22.04; native Postgres remains supported, Docker Compose is optional |
 
 No new dependencies may be added without an ADR in `docs/adr/`.
@@ -153,7 +151,6 @@ These are intentionally deferred. Do not implement them yet:
 - Keycloak / OIDC / MFA / SSO
 - Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT)
 - EMQX broker
-- Redis cache and pub/sub
 - MinIO / object storage
 - Two-way commanding with approval workflows
 - Audit hash-chaining (we keep a simple audit table only)
@@ -165,9 +162,11 @@ These are intentionally deferred. Do not implement them yet:
 - Kubernetes production manifests
 - Prometheus / Grafana / Loki
 
-Docker Compose, Dockerfiles, and GitHub Actions CI are now in scope for
-Phase 1 Sprint A only. When any other item above is needed, follow §10
-(Promotion Process).
+Docker Compose, Dockerfiles, GitHub Actions CI, and Redis-backed
+Socket.IO pub/sub are now in scope for Phase 1 Sprint A-B only. Redis
+must not be used for unrelated caching or job queues until a later
+promotion. When any other item above is needed, follow §10 (Promotion
+Process).
 
 ---
 
@@ -177,10 +176,14 @@ A task is done when:
 
 1. Native WSL development still works.
 2. Compose can start the core app path against Postgres/TimescaleDB.
-3. CI installs dependencies and builds/typechecks from a clean checkout.
-4. Migration validation runs against a real Postgres/TimescaleDB service.
-5. README/local setup are updated for any new env var or command.
-6. `docs/adr/` captures non-obvious architecture choices.
+3. Redis-backed Socket.IO starts when `REDIS_URL` is configured.
+4. Missing `REDIS_URL` falls back to in-process Socket.IO for native WSL.
+5. A smoke check proves an alarm event emitted by one API process reaches
+   a client connected to another API process.
+6. CI installs dependencies and builds/typechecks from a clean checkout.
+7. Migration validation runs against a real Postgres/TimescaleDB service.
+8. README/local setup are updated for any new env var or command.
+9. `docs/adr/` captures non-obvious architecture choices.
 
 ---
 
@@ -199,8 +202,9 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
    - `pnpm --filter sim start`
 7. Optional Phase 1 compose profiles are documented in `README.md`.
 
-No Keycloak, Redis, broker, or observability stack yet. Just Postgres,
-Node, and optional Docker Compose for reproducible development.
+No Keycloak, protocol broker, or observability stack yet. Just Postgres,
+Redis for realtime fan-out, Node, and optional Docker Compose for
+reproducible development.
 
 ---
 
@@ -214,8 +218,8 @@ Node, and optional Docker Compose for reproducible development.
 4. Never add a dependency without an ADR in `docs/adr/`.
 5. Never invent file paths or library APIs.
 6. Never log secrets, tokens, or full PII payloads.
-7. Do not introduce Keycloak, Redis, EMQX, MinIO, or any item from §6
-   without a Promotion PR (see §10).
+7. Do not introduce Keycloak, EMQX, MinIO, or any item from §6 without a
+   Promotion PR (see §10). Redis is only approved for Socket.IO fan-out.
 8. Do not bypass the audit middleware.
 9. Do not mass-rename or mass-format unrelated code.
 10. Update this file only via a PR prefixed `chore(agents): ...`.

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:realtime": "node scripts/realtime-smoke.mjs"
   },
   "dependencies": {
     "@bms/shared": "workspace:*",

@@ -14,6 +14,7 @@ for reproducible development. Real secrets still belong in uncommitted
 | `PORT` | No | `4000` | API HTTP and Socket.IO port. |
 | `LOG_LEVEL` | No | `info` | Pino log level. |
 | `ENERGY_TARIFF_ZAR_PER_KWH` | No | `2.15` | Indicative Energy Centre cost calculation. |
+| `REDIS_URL` | No | `redis://redis:6379` in compose | Enables Socket.IO Redis fan-out. Native WSL may omit it for in-process fallback. |
 
 ## Web
 
