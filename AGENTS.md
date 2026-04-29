@@ -1,6 +1,6 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 1 Complete)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 2 Sprint 0)
 
-> **Status:** ACTIVE — Phase 1 complete; Phase 2 ready.
+> **Status:** ACTIVE — Phase 2 Sprint 0 real-ingestion readiness.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -9,9 +9,11 @@ The seven-screen prototype is complete. Phase 1 Sprint A added
 container foundations and CI. Sprint B added Redis-backed Socket.IO
 fan-out. Sprint C added Keycloak/OIDC authentication for the web app and
 protected API routes. Sprint D added an optional observability baseline
-for local/pilot diagnostics. Phase 2 real ingestion is ready next, but
-protocol adapters and brokers remain out of scope until that phase is
-explicitly promoted.
+for local/pilot diagnostics. Phase 2 Sprint 0 is active as a readiness
+and decision sprint. Real protocol adapters and brokers remain out of
+scope until Sprint 0 confirms Path A and a specific implementation sprint
+is promoted. If Sprint 0 confirms no real access, Phase 5 operations
+modules are planned next.
 
 ---
 
@@ -21,13 +23,17 @@ The prototype has completed the seven-screen end-to-end pipeline:
 
 `simulated device → Postgres/Timescale → NestJS API → WebSocket → React UI → user`
 
-Phase 1 Sprint D made the pilot stack diagnosable:
+The current planning direction is:
 
-1. API and simulator metrics exposed for Prometheus.
-2. OpenTelemetry SDK bootstrap in the API.
-3. Optional Prometheus, Grafana, Loki, and Promtail compose profile.
-4. Basic Grafana dashboard as code.
-5. Minimal runbook for checking service health during demos.
+1. Keep the simulator as the active source until real access is available.
+2. Complete Phase 2 Sprint 0 readiness work before declaring Path A or
+   Path B.
+3. If Path B is selected, proceed next with Phase 5 operations modules,
+   starting with work order foundation.
+4. Defer MinIO/object storage until persisted report files are actually
+   needed.
+5. Plan Phase 6 as Three.js Control Room only.
+6. Keep AI Copilot / chatbot out of scope.
 
 The completed prototype screens are:
 
@@ -99,7 +105,9 @@ bms/
     ├── decisions.md           ← lightweight ADR log for prototype
     ├── env-inventory.md       ← committed environment variable inventory
     ├── observability-runbook.md ← Sprint D local/pilot health checks
+    ├── phase-2-ingestion-readiness.md ← Sprint 0 source readiness workbook
     ├── roadmap.md             ← phase plan (prototype + add-ons)
+    ├── windows-vm-docker-deploy.md ← Windows VM + Docker Desktop pilot
     └── local-setup.md         ← WSL + Postgres setup steps
 ```
 
@@ -173,13 +181,18 @@ These are intentionally deferred. Do not implement them yet:
 
 Docker Compose, Dockerfiles, GitHub Actions CI, Redis-backed Socket.IO
 pub/sub, Keycloak/OIDC authentication, and the observability baseline are
-now in scope for Phase 1 only. Redis must not be used for unrelated
-caching or job queues until a later promotion. Keycloak is limited to
-local/pilot OIDC authentication; MFA, SSO federation, and advanced
-identity governance remain out of scope. Observability is limited to
-optional local/pilot diagnostics. Real protocol adapters and brokers
-remain out of scope until Phase 2 is promoted. When any other item above
-is needed, follow §10 (Promotion Process).
+now in scope for Phase 1 only. Phase 2 Sprint 0 promotes documentation
+and readiness analysis only. Redis must not be used for unrelated caching
+or job queues until a later promotion. Keycloak is limited to local/pilot
+OIDC authentication; MFA, SSO federation, and advanced identity
+governance remain out of scope. Observability is limited to optional
+local/pilot diagnostics. Real protocol adapters and brokers remain out of
+scope until a later Phase 2 implementation sprint selects and promotes a
+specific source/protocol after Sprint 0. Phase 5 is planned after the
+Sprint 0 decision, but work orders, maintenance tasks, rules, reports, and
+storage remain out of scope until their specific sprint is promoted. AI
+Copilot / chatbot remains deferred. When any other item above is needed,
+follow §10 (Promotion Process).
 
 ---
 
@@ -187,24 +200,18 @@ is needed, follow §10 (Promotion Process).
 
 A task is done when:
 
-1. Native WSL development still works.
-2. Compose can start the core app path against Postgres/TimescaleDB.
-3. Redis-backed Socket.IO starts when `REDIS_URL` is configured.
-4. Missing `REDIS_URL` falls back to in-process Socket.IO for native WSL.
-5. Keycloak starts from a committed realm export in compose.
-6. Web login uses OIDC Authorization Code + PKCE when OIDC env is enabled.
-7. API protected routes accept Keycloak-issued bearer tokens with mapped
-   prototype roles.
-8. API and simulator expose Prometheus metrics.
-9. Optional observability compose profile starts Prometheus, Grafana, Loki,
-   and Promtail without being required for the core app.
-10. A Grafana dashboard can show API health, request latency, websocket
-    activity, alarm volume, and simulator ingest rate.
-11. A local-auth fallback remains documented for native WSL development.
-12. CI installs dependencies and builds/typechecks from a clean checkout.
-13. Migration validation runs against a real Postgres/TimescaleDB service.
-14. README/local setup are updated for any new env var or command.
-15. `docs/adr/` captures non-obvious architecture choices.
+1. Native WSL development and the Phase 1 compose path remain unchanged.
+2. `docs/phase-2-ingestion-readiness.md` is filled with candidate source
+   inventory, access constraints, protocol details, mapping questions, and
+   source-health rules.
+3. Sprint 0 explicitly selects Path A or Path B based on real access.
+4. `docs/roadmap.md` records the selected path and any downstream Phase 5
+   or Phase 6 sequencing.
+5. Phase 5 is broken into reviewable sprints before implementation starts.
+6. Phase 6 is limited to Three.js Control Room; AI Copilot remains
+   deferred.
+7. No Phase 5, Phase 6, or real-ingestion feature code lands until the
+   relevant sprint is promoted.
 
 ---
 
@@ -222,11 +229,14 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
    - `pnpm --filter web dev`
    - `pnpm --filter sim start`
 7. Optional Phase 1 compose profiles, including Keycloak and
-   observability, are documented in `README.md`.
+   observability, are documented in `README.md`. Windows VM Docker-only
+   deployment steps live in `docs/windows-vm-docker-deploy.md`.
 
 No protocol broker yet. Just Postgres, Redis for realtime fan-out,
 Keycloak for local/pilot OIDC, optional observability services, Node, and
-Docker Compose for reproducible development.
+Docker Compose for reproducible development. Phase 2 Sprint 0 is a
+readiness sprint. Phase 5 is planned after the Sprint 0 decision but is
+not yet promoted for implementation in this rulebook.
 
 ---
 
@@ -243,7 +253,10 @@ Docker Compose for reproducible development.
 7. Do not introduce EMQX, MinIO, or any item from §6 without a Promotion
    PR (see §10). Redis is only approved for Socket.IO fan-out; Keycloak is
    only approved for local/pilot OIDC; observability is only approved for
-   optional local/pilot diagnostics.
+   optional local/pilot diagnostics. Phase 2 Sprint 0 may document
+   real-ingestion candidates, but it must not implement adapters or
+   brokers. Phase 5 and Phase 6 feature work also requires sprint
+   promotion before implementation.
 8. Do not bypass the audit middleware.
 9. Do not mass-rename or mass-format unrelated code.
 10. Update this file only via a PR prefixed `chore(agents): ...`.

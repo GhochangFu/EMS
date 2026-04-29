@@ -3,8 +3,9 @@
 A real-time Building Management System for Eskom's Smart Metering
 Operating Centres. The seven-screen prototype is complete; the project
 has completed **Part 2 / Phase 1 pilot-ready hardening**. Phase 2 real
-ingestion is ready next, but protocol adapters and brokers remain out of
-scope until that phase is explicitly promoted.
+ingestion Sprint 0 is the next readiness and decision step. Protocol
+adapters, brokers, Phase 5 operations modules, and AI Copilot remain out
+of scope until explicitly promoted.
 
 ## Repository tour
 
@@ -15,8 +16,10 @@ scope until that phase is explicitly promoted.
 | [`docs/AGENTS.production.md`](./docs/AGENTS.production.md) | North-star rulebook for the production target. Reference, not enforcement. |
 | [`docs/roadmap.md`](./docs/roadmap.md) | Prototype week-by-week plan + numbered post-prototype phases. |
 | [`docs/local-setup.md`](./docs/local-setup.md) | Exact WSL2 + Postgres + Timescale + Node setup steps. |
+| [`docs/windows-vm-docker-deploy.md`](./docs/windows-vm-docker-deploy.md) | Windows VM + Docker Desktop pilot deploy (compose only; no host Postgres). |
 | [`docs/env-inventory.md`](./docs/env-inventory.md) | Environment variables for native and compose-based development. |
 | [`docs/observability-runbook.md`](./docs/observability-runbook.md) | Sprint D Prometheus/Grafana/Loki health-check steps. |
+| [`docs/phase-2-ingestion-readiness.md`](./docs/phase-2-ingestion-readiness.md) | Phase 2 Sprint 0 source inventory, mapping, and Path A / Path B decision workbook. |
 | [`docs/decisions.md`](./docs/decisions.md) | ADR-lite log of non-obvious choices made during the prototype. |
 | [`docs/adr/`](./docs/adr) | Phase 1+ architecture decisions. |
 
@@ -123,5 +126,7 @@ Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 
 Prototype screen set is complete. Phase 1 Sprint B Redis-backed realtime
 fan-out is complete. Phase 1 Sprint C Keycloak / OIDC authentication is
-complete. Phase 1 Sprint D observability baseline is complete; see
+complete. Phase 1 Sprint D observability baseline is complete. Phase 2
+Sprint 0 real-ingestion readiness is active. Phase 5 is planned after the
+Sprint 0 decision, followed by Phase 6 Three.js visuals without AI; see
 [`docs/roadmap.md`](./docs/roadmap.md) for the full phase breakdown.

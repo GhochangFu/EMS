@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 2 ready.
+> **Active phase:** Part 2 / Phase 2 Sprint 0.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -235,7 +235,7 @@ Process (`AGENTS.md` §10).
   use Grafana to confirm the API, websocket, and simulator are healthy.
 
 ### Phase 2 — Real ingestion (~4 weeks)
-- **Status:** ready
+- **Status:** in progress — Sprint 0 readiness
 - **Graduates:** Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA,
   REST poller), EMQX broker, MQTT subscriber.
 - **Goal:** replace the simulator with at least one real device per
@@ -243,6 +243,33 @@ Process (`AGENTS.md` §10).
 - **Highlights:** EMQX with TLS + ACL, `apps/ingest/mqtt` first, then
   one adapter per protocol; gateway model + `bms.gateways` filled in;
   buffer + backpressure rules from `docs/AGENTS.production.md` §7.
+
+#### Phase 2 Sprint 0 — Real ingestion readiness
+- **Status:** in progress
+- **Goal:** prepare for real ingestion without adding protocol adapters,
+  brokers, or live-device dependencies before access is confirmed.
+- **Deliverables**
+  - Candidate data source inventory covering REST, MQTT, BACnet/IP,
+    Modbus TCP, SNMP, OPC-UA, and CSV/manual export fallbacks.
+  - Readiness checklist for each candidate: host/IP, network path,
+    credentials, protocol details, sample payload/register/object list,
+    polling/message rate, point names, units, and security constraints.
+  - Mapping plan from external gateway/device/point identifiers to the
+    current `bms.assets` and `telemetry.point_values` model.
+  - Source-health and stale-data rules for future ingestion services.
+  - Decision record for the first Phase 2 implementation path:
+    **Path A** when real access exists, or **Path B** when only contract
+    and mock-gateway work is possible.
+- **Non-goals**
+  - No EMQX broker.
+  - No BACnet, Modbus, SNMP, OPC-UA, MQTT, or REST adapter code.
+  - No schema migration unless the readiness analysis proves it is needed
+    before Sprint 1.
+- **Exit criteria:** complete the readiness workbook and choose the next
+  path. Use **Path A** only if a reachable data source, credentials,
+  sample payload/register/object list, and source owner are confirmed. Use
+  **Path B** if real access is still unavailable and only contracts or
+  mock-gateway planning can proceed.
 
 ### Phase 3 — Multi-tenancy (~2 weeks)
 - **Status:** pending
@@ -262,19 +289,128 @@ Process (`AGENTS.md` §10).
   coverage (95%).
 
 ### Phase 5 — Operations modules (~3 weeks)
+- **Status:** planned after Phase 2 Sprint 0 decision
+- **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
+  reports. MinIO / object storage graduates only when report files need
+  persisted storage.
+- **Goal:** add operational workflows on top of existing assets, alarms,
+  simulator telemetry, and Energy Centre data while real ingestion remains
+  paused.
+- **Highlights:** work orders linked to alarms/assets, maintenance tasks,
+  simple rules and execution history, energy report previews and exports,
+  optional stored report history.
+
+#### Phase 5 Sprint A — Work order foundation
 - **Status:** pending
-- **Graduates:** Maintenance / work orders, rule-engine UI, energy
-  reports (PDF/XLSX), MinIO / object storage.
-- **Highlights:** `bms.work_orders` + tasks, `bms.automation_rules` +
-  rule executions, MinIO bucket for generated reports, headless PDF
-  rendering for energy reports, scheduled report runs.
+- **Goal:** create the operational backbone for alarm-driven and
+  asset-driven work.
+- **Deliverables**
+  - `bms.work_orders` and supporting task/status schema.
+  - Work order statuses: open, assigned, in progress, resolved, closed.
+  - Priority/severity and links to assets and alarms.
+  - API endpoints for list, create, update status, and close.
+  - Seed/demo data.
+- **Exit criteria:** API can create and transition a work order linked to
+  an existing asset or alarm.
+
+#### Phase 5 Sprint B — Work order UI
+- **Status:** pending
+- **Goal:** make work orders usable from the web app.
+- **Deliverables**
+  - Work Orders page.
+  - Create/edit/close workflows.
+  - Filters for status, asset, and priority.
+  - "Create work order from alarm" action in Alarm Centre.
+  - Audit entry for work order state changes.
+- **Exit criteria:** an operator can create a work order from an alarm,
+  track it, and close it from the UI.
+
+#### Phase 5 Sprint C — Maintenance tasks
+- **Status:** pending
+- **Goal:** support preventive maintenance, not only alarm-driven work.
+- **Deliverables**
+  - Maintenance task templates.
+  - Recurring schedule model.
+  - Asset-linked maintenance history.
+  - Upcoming and overdue maintenance view.
+- **Exit criteria:** upcoming and overdue maintenance can be viewed per
+  asset and converted into work orders.
+
+#### Phase 5 Sprint D — Basic rule engine
+- **Status:** pending
+- **Goal:** introduce rules carefully without a complex visual builder.
+- **Deliverables**
+  - Rule model for simple threshold and time-based rules.
+  - Rule execution log.
+  - UI to view, enable, and disable rules.
+  - Clear distinction between simulator thresholds and future real-source
+    rules.
+- **Exit criteria:** a simple rule can be enabled, evaluated, and traced
+  through an execution log.
+
+#### Phase 5 Sprint E — Energy reports
+- **Status:** pending
+- **Goal:** generate useful reports from current Energy Centre data.
+- **Deliverables**
+  - Report preview screen.
+  - Date range selection.
+  - Energy summary: kWh, peak demand, PUE, indicative cost.
+  - CSV export first; PDF only after the report content stabilizes.
+- **Exit criteria:** a user can preview and export an energy summary for
+  a selected date range.
+
+#### Phase 5 Sprint F — Report storage
+- **Status:** pending
+- **Goal:** persist generated report files only after reports are useful.
+- **Deliverables**
+  - Promote MinIO/object storage if persisted report files are required.
+  - Store generated report files.
+  - Report history page.
+  - Download previous reports.
+- **Exit criteria:** generated reports can be persisted and downloaded
+  from history. Skip this sprint if report storage is not needed.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
-- **Graduates:** Three.js Control Room 3D, AI Copilot.
+- **Graduates:** Three.js Control Room 3D only.
 - **Highlights:** GLB/GLTF model of the SMOC control room, live data
-  bound to 3D screens; Copilot service wired to alarms, assets, and
-  energy data via tool-calling.
+  bound to 3D screens, alarm indicators, and clickable zones/assets that
+  navigate back to existing 2D screens.
+- **Explicit deferral:** AI Copilot / chatbot remains out of scope and is
+  not part of this Phase 6 plan.
+
+#### Phase 6 Sprint A — 3D feasibility
+- **Status:** pending
+- **Goal:** prove Three.js fits without rewriting the React app.
+- **Deliverables**
+  - Choose the 3D integration approach.
+  - Add one isolated 3D route/page.
+  - Load a placeholder room scene or simple model.
+  - Bind a few live KPIs to 3D labels/screens.
+- **Exit criteria:** a prototype 3D route renders acceptably and consumes
+  existing live data without destabilizing the current UI.
+
+#### Phase 6 Sprint B — 3D control room MVP
+- **Status:** pending
+- **Goal:** make the 3D control-room view demo-worthy.
+- **Deliverables**
+  - Control-room scene.
+  - Live status panels.
+  - Alarm indicators.
+  - Clickable zones/assets that navigate back to existing screens.
+- **Exit criteria:** the 3D view can be used in a demo to show live status
+  and drill back into established 2D operational screens.
+
+#### Phase 6 Sprint C — 3D polish
+- **Status:** pending
+- **Goal:** make the premium visual layer stable and presentable.
+- **Deliverables**
+  - Performance tuning.
+  - Loading and error states.
+  - Browser compatibility check.
+  - Demo script update.
+- **Exit criteria:** the 3D view runs smoothly enough for the target demo
+  machine and has clear fallback/loading behavior.
 
 ### Phase 7 — Compliance (~2 weeks)
 - **Status:** pending
@@ -294,13 +430,13 @@ Process (`AGENTS.md` §10).
 | Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT) | Phase 2 |
 | EMQX broker | Phase 2 |
 | Redis cache and pub/sub | Phase 1 |
-| MinIO / object storage | Phase 5 |
+| MinIO / object storage | Phase 5 Sprint F only if persisted report storage is needed |
 | Two-way commanding with approval workflow | Phase 4 |
 | Audit hash-chaining | Phase 4 |
 | Maintenance / work orders / rule-engine UI | Phase 5 |
 | Energy reports (PDF/XLSX) | Phase 5 |
 | Three.js Control Room 3D | Phase 6 |
-| AI Copilot | Phase 6 |
+| AI Copilot | Deferred; not included in the current Phase 6 plan |
 | NERSA / ISO compliance reports | Phase 7 |
 | Docker, Kubernetes, CI/CD, Prometheus / Grafana / Loki | Phase 1 |
 
