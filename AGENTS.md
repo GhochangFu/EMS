@@ -1,6 +1,6 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 2 Sprint 0)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Ready)
 
-> **Status:** ACTIVE — Phase 2 Sprint 0 real-ingestion readiness.
+> **Status:** ACTIVE — Phase 2 Sprint 0 closed as Path B; Phase 5 ready.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -9,11 +9,11 @@ The seven-screen prototype is complete. Phase 1 Sprint A added
 container foundations and CI. Sprint B added Redis-backed Socket.IO
 fan-out. Sprint C added Keycloak/OIDC authentication for the web app and
 protected API routes. Sprint D added an optional observability baseline
-for local/pilot diagnostics. Phase 2 Sprint 0 is active as a readiness
-and decision sprint. Real protocol adapters and brokers remain out of
-scope until Sprint 0 confirms Path A and a specific implementation sprint
-is promoted. If Sprint 0 confirms no real access, Phase 5 operations
-modules are planned next.
+for local/pilot diagnostics. Phase 2 Sprint 0 selected Path B because no
+real device/source information is available yet. Real protocol adapters
+and brokers remain out of scope until a future Phase 2 implementation
+sprint promotes one confirmed source/protocol. Phase 5 operations modules
+are ready next, starting with work order foundation.
 
 ---
 
@@ -26,14 +26,12 @@ The prototype has completed the seven-screen end-to-end pipeline:
 The current planning direction is:
 
 1. Keep the simulator as the active source until real access is available.
-2. Complete Phase 2 Sprint 0 readiness work before declaring Path A or
-   Path B.
-3. If Path B is selected, proceed next with Phase 5 operations modules,
+2. Proceed next with Phase 5 operations modules,
    starting with work order foundation.
-4. Defer MinIO/object storage until persisted report files are actually
+3. Defer MinIO/object storage until persisted report files are actually
    needed.
-5. Plan Phase 6 as Three.js Control Room only.
-6. Keep AI Copilot / chatbot out of scope.
+4. Plan Phase 6 as Three.js Control Room only.
+5. Keep AI Copilot / chatbot out of scope.
 
 The completed prototype screens are:
 
@@ -181,18 +179,18 @@ These are intentionally deferred. Do not implement them yet:
 
 Docker Compose, Dockerfiles, GitHub Actions CI, Redis-backed Socket.IO
 pub/sub, Keycloak/OIDC authentication, and the observability baseline are
-now in scope for Phase 1 only. Phase 2 Sprint 0 promotes documentation
-and readiness analysis only. Redis must not be used for unrelated caching
-or job queues until a later promotion. Keycloak is limited to local/pilot
-OIDC authentication; MFA, SSO federation, and advanced identity
-governance remain out of scope. Observability is limited to optional
-local/pilot diagnostics. Real protocol adapters and brokers remain out of
-scope until a later Phase 2 implementation sprint selects and promotes a
-specific source/protocol after Sprint 0. Phase 5 is planned after the
-Sprint 0 decision, but work orders, maintenance tasks, rules, reports, and
-storage remain out of scope until their specific sprint is promoted. AI
-Copilot / chatbot remains deferred. When any other item above is needed,
-follow §10 (Promotion Process).
+now in scope for Phase 1 only. Phase 2 Sprint 0 promoted documentation
+and readiness analysis only, then selected Path B because real access is
+not available. Redis must not be used for unrelated caching or job queues
+until a later promotion. Keycloak is limited to local/pilot OIDC
+authentication; MFA, SSO federation, and advanced identity governance
+remain out of scope. Observability is limited to optional local/pilot
+diagnostics. Real protocol adapters and brokers remain out of scope until
+a later Phase 2 implementation sprint selects and promotes a specific
+source/protocol. Phase 5 is ready next, but work orders, maintenance
+tasks, rules, reports, and storage remain out of scope until their
+specific sprint is promoted. AI Copilot / chatbot remains deferred. When
+any other item above is needed, follow §10 (Promotion Process).
 
 ---
 
@@ -201,16 +199,14 @@ follow §10 (Promotion Process).
 A task is done when:
 
 1. Native WSL development and the Phase 1 compose path remain unchanged.
-2. `docs/phase-2-ingestion-readiness.md` is filled with candidate source
-   inventory, access constraints, protocol details, mapping questions, and
-   source-health rules.
-3. Sprint 0 explicitly selects Path A or Path B based on real access.
-4. `docs/roadmap.md` records the selected path and any downstream Phase 5
-   or Phase 6 sequencing.
-5. Phase 5 is broken into reviewable sprints before implementation starts.
-6. Phase 6 is limited to Three.js Control Room; AI Copilot remains
+2. `docs/roadmap.md` records Phase 2 as paused on Path B and Phase 5 as
+   the next implementation phase.
+3. `docs/phase-2-ingestion-readiness.md` records why real ingestion is
+   paused until data-source access exists.
+4. Phase 5 is broken into reviewable sprints before implementation starts.
+5. Phase 6 is limited to Three.js Control Room; AI Copilot remains
    deferred.
-7. No Phase 5, Phase 6, or real-ingestion feature code lands until the
+6. No Phase 5, Phase 6, or real-ingestion feature code lands until the
    relevant sprint is promoted.
 
 ---
@@ -234,9 +230,9 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
 
 No protocol broker yet. Just Postgres, Redis for realtime fan-out,
 Keycloak for local/pilot OIDC, optional observability services, Node, and
-Docker Compose for reproducible development. Phase 2 Sprint 0 is a
-readiness sprint. Phase 5 is planned after the Sprint 0 decision but is
-not yet promoted for implementation in this rulebook.
+Docker Compose for reproducible development. Phase 2 remains paused until
+real source access exists. Phase 5 is planned next but not yet promoted
+for implementation in this rulebook.
 
 ---
 
@@ -253,9 +249,9 @@ not yet promoted for implementation in this rulebook.
 7. Do not introduce EMQX, MinIO, or any item from §6 without a Promotion
    PR (see §10). Redis is only approved for Socket.IO fan-out; Keycloak is
    only approved for local/pilot OIDC; observability is only approved for
-   optional local/pilot diagnostics. Phase 2 Sprint 0 may document
-   real-ingestion candidates, but it must not implement adapters or
-   brokers. Phase 5 and Phase 6 feature work also requires sprint
+   optional local/pilot diagnostics. Phase 2 may document real-ingestion
+   candidates, but it must not implement adapters or brokers until real
+   access exists. Phase 5 and Phase 6 feature work also requires sprint
    promotion before implementation.
 8. Do not bypass the audit middleware.
 9. Do not mass-rename or mass-format unrelated code.

@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 2 Sprint 0.
+> **Active phase:** Part 2 / Phase 5 ready.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -235,7 +235,7 @@ Process (`AGENTS.md` §10).
   use Grafana to confirm the API, websocket, and simulator are healthy.
 
 ### Phase 2 — Real ingestion (~4 weeks)
-- **Status:** in progress — Sprint 0 readiness
+- **Status:** paused after Sprint 0 — Path B selected for now
 - **Graduates:** Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA,
   REST poller), EMQX broker, MQTT subscriber.
 - **Goal:** replace the simulator with at least one real device per
@@ -245,9 +245,15 @@ Process (`AGENTS.md` §10).
   buffer + backpressure rules from `docs/AGENTS.production.md` §7.
 
 #### Phase 2 Sprint 0 — Real ingestion readiness
-- **Status:** in progress
+- **Status:** complete — Path B selected for now
 - **Goal:** prepare for real ingestion without adding protocol adapters,
   brokers, or live-device dependencies before access is confirmed.
+- **Outcome:** no real device, gateway, broker, API, file export, protocol
+  details, credentials, network route, or sample payload/register/object
+  list is available yet. Current simulator-to-telemetry baseline,
+  point-key model, mapping questions, and source-health targets are
+  documented in `docs/phase-2-ingestion-readiness.md`. Phase 2
+  implementation is paused until real access exists.
 - **Deliverables**
   - Candidate data source inventory covering REST, MQTT, BACnet/IP,
     Modbus TCP, SNMP, OPC-UA, and CSV/manual export fallbacks.
@@ -265,11 +271,10 @@ Process (`AGENTS.md` §10).
   - No BACnet, Modbus, SNMP, OPC-UA, MQTT, or REST adapter code.
   - No schema migration unless the readiness analysis proves it is needed
     before Sprint 1.
-- **Exit criteria:** complete the readiness workbook and choose the next
-  path. Use **Path A** only if a reachable data source, credentials,
-  sample payload/register/object list, and source owner are confirmed. Use
-  **Path B** if real access is still unavailable and only contracts or
-  mock-gateway planning can proceed.
+- **Decision:** Path B selected. Do not add EMQX, protocol adapters, or
+  live-device dependencies. Resume Phase 2 implementation only when a
+  reachable source, credentials, sample payload/register/object list, and
+  source owner are confirmed.
 
 ### Phase 3 — Multi-tenancy (~2 weeks)
 - **Status:** pending
@@ -289,7 +294,7 @@ Process (`AGENTS.md` §10).
   coverage (95%).
 
 ### Phase 5 — Operations modules (~3 weeks)
-- **Status:** planned after Phase 2 Sprint 0 decision
+- **Status:** ready — next implementation phase
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
   reports. MinIO / object storage graduates only when report files need
   persisted storage.
@@ -301,7 +306,7 @@ Process (`AGENTS.md` §10).
   optional stored report history.
 
 #### Phase 5 Sprint A — Work order foundation
-- **Status:** pending
+- **Status:** ready
 - **Goal:** create the operational backbone for alarm-driven and
   asset-driven work.
 - **Deliverables**

@@ -3,9 +3,10 @@
 A real-time Building Management System for Eskom's Smart Metering
 Operating Centres. The seven-screen prototype is complete; the project
 has completed **Part 2 / Phase 1 pilot-ready hardening**. Phase 2 real
-ingestion Sprint 0 is the next readiness and decision step. Protocol
-adapters, brokers, Phase 5 operations modules, and AI Copilot remain out
-of scope until explicitly promoted.
+ingestion Sprint 0 selected Path B because no real device/source
+information is available yet. Phase 5 operations modules are ready next;
+protocol adapters, brokers, and AI Copilot remain out of scope until
+explicitly promoted.
 
 ## Repository tour
 
@@ -127,6 +128,6 @@ Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 Prototype screen set is complete. Phase 1 Sprint B Redis-backed realtime
 fan-out is complete. Phase 1 Sprint C Keycloak / OIDC authentication is
 complete. Phase 1 Sprint D observability baseline is complete. Phase 2
-Sprint 0 real-ingestion readiness is active. Phase 5 is planned after the
-Sprint 0 decision, followed by Phase 6 Three.js visuals without AI; see
+Sprint 0 real-ingestion readiness selected Path B for now. Phase 5 is
+planned next, followed by Phase 6 Three.js visuals without AI; see
 [`docs/roadmap.md`](./docs/roadmap.md) for the full phase breakdown.
