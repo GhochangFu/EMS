@@ -10,6 +10,7 @@ import { HealthModule } from "./health/health.module";
 import { MapModule } from "./map/map.module";
 import { ObservabilityModule } from "./observability/observability.module";
 import { TelemetryModule } from "./telemetry/telemetry.module";
+import { WorkOrdersModule } from "./work-orders/work-orders.module";
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { TelemetryModule } from "./telemetry/telemetry.module";
     TelemetryModule,
     DashboardModule,
     AlarmsModule,
+    WorkOrdersModule,
     MapModule,
   ],
 })

@@ -6,7 +6,14 @@ import pg from "pg";
 
 import { mapLocationRowsForInsert } from "./map-locations-seed";
 import { createDb } from "./client";
-import { alarms, assets, mapLocations, users } from "./schema/bms-schema";
+import {
+  alarms,
+  assets,
+  mapLocations,
+  users,
+  workOrderTasks,
+  workOrders,
+} from "./schema/bms-schema";
 
 const pkgRoot = process.cwd();
 
@@ -156,6 +163,65 @@ async function main(): Promise<void> {
           acknowledgedBy: adminId,
         },
       ]);
+    }
+
+    const existingWorkOrders = await db
+      .select({ id: workOrders.id })
+      .from(workOrders)
+      .limit(1);
+    if (existingWorkOrders.length === 0) {
+      const seededAlarms = await db
+        .select({ id: alarms.id, assetId: alarms.assetId })
+        .from(alarms)
+        .limit(2);
+      const alarmSeed = seededAlarms[0];
+      const upsAsset = assetRows.find((row) => row.code === "UPS-A") ?? assetRows[0];
+      const cracAsset =
+        assetRows.find((row) => row.code === "CH-CRAC-101") ?? assetRows[0];
+
+      const insertedWorkOrders = await db
+        .insert(workOrders)
+        .values([
+          {
+            assetId: alarmSeed?.assetId ?? upsAsset.id,
+            alarmId: alarmSeed?.id,
+            title: "Investigate alarm follow-up",
+            description:
+              "Demo work order linked to an existing alarm for operator handover.",
+            status: "open",
+            priority: "high",
+            createdBy: adminId,
+            dueAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+          },
+          {
+            assetId: cracAsset.id,
+            title: "Inspect CRAC condensate drain",
+            description:
+              "Demo asset-driven work order for preventive operations follow-up.",
+            status: "assigned",
+            priority: "medium",
+            assignedTo: adminId,
+            createdBy: adminId,
+            dueAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        ])
+        .returning({ id: workOrders.id, title: workOrders.title });
+
+      const taskRows = insertedWorkOrders.flatMap((workOrder, index) => [
+        {
+          workOrderId: workOrder.id,
+          title: index === 0 ? "Review alarm history" : "Inspect equipment locally",
+          sortOrder: 1,
+        },
+        {
+          workOrderId: workOrder.id,
+          title: index === 0 ? "Record corrective action" : "Record inspection notes",
+          sortOrder: 2,
+        },
+      ]);
+      if (taskRows.length > 0) {
+        await db.insert(workOrderTasks).values(taskRows);
+      }
     }
 
     for (const row of mapLocationRowsForInsert()) {

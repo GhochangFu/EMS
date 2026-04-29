@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 5 ready.
+> **Active phase:** Part 2 / Phase 5 Sprint B ready.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -294,7 +294,7 @@ Process (`AGENTS.md` §10).
   coverage (95%).
 
 ### Phase 5 — Operations modules (~3 weeks)
-- **Status:** ready — next implementation phase
+- **Status:** in progress — Sprint A complete, Sprint B ready
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
   reports. MinIO / object storage graduates only when report files need
   persisted storage.
@@ -306,7 +306,7 @@ Process (`AGENTS.md` §10).
   optional stored report history.
 
 #### Phase 5 Sprint A — Work order foundation
-- **Status:** ready
+- **Status:** complete
 - **Goal:** create the operational backbone for alarm-driven and
   asset-driven work.
 - **Deliverables**
@@ -315,11 +315,11 @@ Process (`AGENTS.md` §10).
   - Priority/severity and links to assets and alarms.
   - API endpoints for list, create, update status, and close.
   - Seed/demo data.
-- **Exit criteria:** API can create and transition a work order linked to
-  an existing asset or alarm.
+- **Exit criteria:** complete — live Compose migration/seed, API route
+  mapping, and authenticated create/status/close smoke passed.
 
 #### Phase 5 Sprint B — Work order UI
-- **Status:** pending
+- **Status:** ready
 - **Goal:** make work orders usable from the web app.
 - **Deliverables**
   - Work Orders page.

@@ -48,6 +48,43 @@ export const alarms = bmsSchema.table("alarms", {
   acknowledgedBy: uuid("acknowledged_by").references(() => users.id),
 });
 
+export const workOrders = bmsSchema.table("work_orders", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  assetId: uuid("asset_id")
+    .notNull()
+    .references(() => assets.id),
+  alarmId: uuid("alarm_id").references(() => alarms.id),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  status: varchar("status", { length: 32 }).notNull().default("open"),
+  priority: varchar("priority", { length: 32 }).notNull().default("medium"),
+  assignedTo: uuid("assigned_to").references(() => users.id),
+  createdBy: uuid("created_by").references(() => users.id),
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const workOrderTasks = bmsSchema.table("work_order_tasks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workOrderId: uuid("work_order_id")
+    .notNull()
+    .references(() => workOrders.id),
+  title: varchar("title", { length: 255 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("open"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const auditLog = bmsSchema.table("audit_log", {
   id: uuid("id").primaryKey().defaultRandom(),
   actorId: uuid("actor_id").references(() => users.id),

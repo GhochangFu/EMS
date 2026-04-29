@@ -1,6 +1,6 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Ready)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint A Complete)
 
-> **Status:** ACTIVE — Phase 2 Sprint 0 closed as Path B; Phase 5 ready.
+> **Status:** ACTIVE — Phase 5 Sprint A complete; Sprint B ready.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -12,8 +12,10 @@ protected API routes. Sprint D added an optional observability baseline
 for local/pilot diagnostics. Phase 2 Sprint 0 selected Path B because no
 real device/source information is available yet. Real protocol adapters
 and brokers remain out of scope until a future Phase 2 implementation
-sprint promotes one confirmed source/protocol. Phase 5 operations modules
-are ready next, starting with work order foundation.
+sprint promotes one confirmed source/protocol. Phase 5 Sprint A added the
+work order foundation: schema, seed/demo data, and protected API endpoints
+for listing, creating, and transitioning work orders. Phase 5 Sprint B
+work order UI is ready next but not yet promoted.
 
 ---
 
@@ -26,12 +28,12 @@ The prototype has completed the seven-screen end-to-end pipeline:
 The current planning direction is:
 
 1. Keep the simulator as the active source until real access is available.
-2. Proceed next with Phase 5 operations modules,
-   starting with work order foundation.
-3. Defer MinIO/object storage until persisted report files are actually
+2. Treat Phase 5 Sprint A work order foundation as complete.
+3. Proceed next with Phase 5 Sprint B work order UI only after promotion.
+4. Defer MinIO/object storage until persisted report files are actually
    needed.
-4. Plan Phase 6 as Three.js Control Room only.
-5. Keep AI Copilot / chatbot out of scope.
+5. Plan Phase 6 as Three.js Control Room only.
+6. Keep AI Copilot / chatbot out of scope.
 
 The completed prototype screens are:
 
@@ -66,6 +68,7 @@ entry **D-0001**.
 | Telemetry DB | TimescaleDB extension on the same Postgres |
 | Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
+| Operations   | Work order foundation linked to assets and alarms |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, and DB |
 | CI/CD        | GitHub Actions for install, build/typecheck, and migration validation |
 | Cache / pub-sub | Redis 7 for Socket.IO adapter fan-out |
@@ -170,7 +173,7 @@ These are intentionally deferred. Do not implement them yet:
 - MinIO / object storage
 - Two-way commanding with approval workflows
 - Audit hash-chaining (we keep a simple audit table only)
-- Maintenance / work orders / rule-engine UI
+- Maintenance schedules / rule-engine UI
 - Energy reports (PDF / XLSX)
 - Three.js Control Room 3D
 - AI Copilot
@@ -187,10 +190,11 @@ authentication; MFA, SSO federation, and advanced identity governance
 remain out of scope. Observability is limited to optional local/pilot
 diagnostics. Real protocol adapters and brokers remain out of scope until
 a later Phase 2 implementation sprint selects and promotes a specific
-source/protocol. Phase 5 is ready next, but work orders, maintenance
-tasks, rules, reports, and storage remain out of scope until their
-specific sprint is promoted. AI Copilot / chatbot remains deferred. When
-any other item above is needed, follow §10 (Promotion Process).
+source/protocol. Work order foundation is in scope for Phase 5 Sprint A
+only. Maintenance schedules, rule-engine UI, reports, and storage remain
+out of scope until their specific sprint is promoted. AI Copilot / chatbot
+remains deferred. When any other item above is needed, follow §10
+(Promotion Process).
 
 ---
 
@@ -199,15 +203,16 @@ any other item above is needed, follow §10 (Promotion Process).
 A task is done when:
 
 1. Native WSL development and the Phase 1 compose path remain unchanged.
-2. `docs/roadmap.md` records Phase 2 as paused on Path B and Phase 5 as
-   the next implementation phase.
-3. `docs/phase-2-ingestion-readiness.md` records why real ingestion is
-   paused until data-source access exists.
-4. Phase 5 is broken into reviewable sprints before implementation starts.
-5. Phase 6 is limited to Three.js Control Room; AI Copilot remains
-   deferred.
-6. No Phase 5, Phase 6, or real-ingestion feature code lands until the
-   relevant sprint is promoted.
+2. `bms.work_orders` and supporting work-order task/status schema are
+   migrated forward-only.
+3. Seed/demo data creates at least one work order linked to an existing
+   asset and optionally an alarm.
+4. Protected API endpoints list, create, update status, and close work
+   orders with Zod validation.
+5. Work order state changes write lightweight audit rows.
+6. Maintenance schedules, rule-engine UI, reports, storage, Phase 6, and
+   real-ingestion feature code remain out of scope.
+7. Typecheck/build and migration validation still pass.
 
 ---
 
@@ -231,8 +236,9 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
 No protocol broker yet. Just Postgres, Redis for realtime fan-out,
 Keycloak for local/pilot OIDC, optional observability services, Node, and
 Docker Compose for reproducible development. Phase 2 remains paused until
-real source access exists. Phase 5 is planned next but not yet promoted
-for implementation in this rulebook.
+real source access exists. Phase 5 Sprint A used the existing API and
+database stack only; Sprint B must remain UI-only unless promoted
+otherwise.
 
 ---
 
@@ -251,8 +257,9 @@ for implementation in this rulebook.
    only approved for local/pilot OIDC; observability is only approved for
    optional local/pilot diagnostics. Phase 2 may document real-ingestion
    candidates, but it must not implement adapters or brokers until real
-   access exists. Phase 5 and Phase 6 feature work also requires sprint
-   promotion before implementation.
+   access exists. Phase 5 Sprint A is limited to work order foundation.
+   Later Phase 5 and Phase 6 feature work requires sprint promotion before
+   implementation.
 8. Do not bypass the audit middleware.
 9. Do not mass-rename or mass-format unrelated code.
 10. Update this file only via a PR prefixed `chore(agents): ...`.

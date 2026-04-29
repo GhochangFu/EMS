@@ -150,6 +150,36 @@ export type AlarmSocketEvent =
   | { type: "created"; alarm: AlarmListItem }
   | { type: "acknowledged"; alarm: AlarmListItem };
 
+export type WorkOrderStatus =
+  | "open"
+  | "assigned"
+  | "in_progress"
+  | "resolved"
+  | "closed";
+
+export type WorkOrderPriority = "low" | "medium" | "high" | "critical";
+
+/** One work order row for Phase 5 Sprint A API responses. */
+export type WorkOrderListItem = {
+  id: string;
+  assetId: string;
+  alarmId: string | null;
+  title: string;
+  description: string | null;
+  status: WorkOrderStatus;
+  priority: WorkOrderPriority;
+  assignedTo: string | null;
+  createdBy: string | null;
+  dueAt: string | null;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  assetCode: string;
+  assetName: string;
+  siteName: string;
+};
+
 /** Live map marker (`GET /api/v1/map/sites`). */
 export type MapSiteLive = {
   status:
