@@ -1,6 +1,6 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint E Active)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint E Complete)
 
-> **Status:** ACTIVE — Phase 5 Sprint E in progress.
+> **Status:** ACTIVE — Phase 5 Sprint E complete; Sprint F ready.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -21,7 +21,7 @@ schedules, asset-linked history, and conversion into work orders from a
 dedicated Schedule Centre companion screen. Phase 5 Sprint D added the
 basic rule engine: simple threshold/time-window rules, execution history,
 and enable/disable UI without a complex visual builder. Phase 5 Sprint E
-is active and adds Energy report previews plus CSV export only.
+added Energy report previews plus CSV export only.
 
 ---
 
@@ -38,8 +38,8 @@ The current planning direction is:
 3. Treat Phase 5 Sprint B work order UI as complete.
 4. Treat Phase 5 Sprint C Maintenance Schedule Centre as complete.
 5. Treat Phase 5 Sprint D basic rule engine as complete.
-6. Deliver Phase 5 Sprint E Energy report previews and CSV export without
-   persisted report storage.
+6. Treat Phase 5 Sprint E Energy report previews and CSV export as
+   complete.
 7. Complete Phase 5 before revisiting completed screens for a broad
    UI/UX alignment pass.
 8. Defer MinIO/object storage until persisted report files are actually
@@ -229,7 +229,7 @@ chatbot remains deferred. When any other item above is needed, follow §10
 
 ## 7. Definition of Done (Phase 5 Sprint E)
 
-Phase 5 Sprint E is done when:
+Phase 5 Sprint E is done:
 
 1. Native WSL development and the Phase 1 compose path remain unchanged.
 2. A protected API previews an Energy Consumption report for a selected
