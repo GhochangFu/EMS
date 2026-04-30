@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { desc, eq, or } from "drizzle-orm";
+import { asc, desc, eq, inArray, or } from "drizzle-orm";
 
 import { alarms, assets, auditLog, users, workOrders } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -17,7 +17,9 @@ import type {
 
 import { DRIZZLE } from "../database/database.tokens";
 import type {
+  CloseWorkOrderBody,
   CreateWorkOrderBody,
+  ReorderWorkOrdersBody,
   UpdateWorkOrderStatusBody,
 } from "./work-order.schema";
 
@@ -35,6 +37,7 @@ export class WorkOrdersService {
     description: string | null;
     status: string;
     priority: string;
+    sortOrder: number;
     assignedTo: string | null;
     createdBy: string | null;
     dueAt: Date | null;
@@ -54,6 +57,7 @@ export class WorkOrdersService {
       description: r.description,
       status: r.status as WorkOrderStatus,
       priority: r.priority as WorkOrderPriority,
+      sortOrder: r.sortOrder,
       assignedTo: r.assignedTo,
       createdBy: r.createdBy,
       dueAt: r.dueAt?.toISOString() ?? null,
@@ -88,6 +92,7 @@ export class WorkOrdersService {
         description: workOrders.description,
         status: workOrders.status,
         priority: workOrders.priority,
+        sortOrder: workOrders.sortOrder,
         assignedTo: workOrders.assignedTo,
         createdBy: workOrders.createdBy,
         dueAt: workOrders.dueAt,
@@ -121,6 +126,7 @@ export class WorkOrdersService {
         description: workOrders.description,
         status: workOrders.status,
         priority: workOrders.priority,
+        sortOrder: workOrders.sortOrder,
         assignedTo: workOrders.assignedTo,
         createdBy: workOrders.createdBy,
         dueAt: workOrders.dueAt,
@@ -134,7 +140,12 @@ export class WorkOrdersService {
       })
       .from(workOrders)
       .innerJoin(assets, eq(workOrders.assetId, assets.id))
-      .orderBy(desc(workOrders.createdAt), desc(workOrders.id))
+      .orderBy(
+        asc(workOrders.status),
+        asc(workOrders.sortOrder),
+        desc(workOrders.createdAt),
+        desc(workOrders.id),
+      )
       .limit(limit);
     return { items: rows.map((row) => this.mapRow(row)) };
   }
@@ -223,6 +234,7 @@ export class WorkOrdersService {
         .update(workOrders)
         .set({
           status: dto.status,
+          sortOrder: dto.sortOrder,
           assignedTo: dto.assignedTo === undefined ? undefined : dto.assignedTo,
           resolvedAt: dto.status === "resolved" ? now : undefined,
           closedAt: dto.status === "closed" ? now : undefined,
@@ -239,6 +251,7 @@ export class WorkOrdersService {
         payload: {
           fromStatus: current.status,
           toStatus: dto.status,
+          sortOrder: dto.sortOrder ?? current.sortOrder,
           oidcSubject: actor.sub,
           actorEmail: actor.email,
         },
@@ -252,8 +265,98 @@ export class WorkOrdersService {
   async close(
     id: string,
     actor: Pick<JwtPayload, "sub" | "email">,
-    reason: string,
+    dto: CloseWorkOrderBody,
   ): Promise<WorkOrderListItem> {
-    return this.updateStatus(id, { status: "closed", reason }, actor);
+    return this.updateStatus(
+      id,
+      { status: "closed", reason: dto.reason, sortOrder: dto.sortOrder },
+      actor,
+    );
+  }
+
+  /** Persists Kanban order and audited status transitions from drag/drop. */
+  async reorder(
+    dto: ReorderWorkOrdersBody,
+    actor: Pick<JwtPayload, "sub" | "email">,
+  ): Promise<{ items: WorkOrderListItem[] }> {
+    const ids = dto.items.map((item) => item.id);
+    const uniqueIds = new Set(ids);
+    if (uniqueIds.size !== ids.length) {
+      throw new BadRequestException("Duplicate work order ids in reorder request");
+    }
+
+    const currentRows = await this.db
+      .select({ id: workOrders.id, status: workOrders.status })
+      .from(workOrders)
+      .where(inArray(workOrders.id, ids));
+    if (currentRows.length !== ids.length) {
+      throw new NotFoundException("One or more work orders were not found");
+    }
+
+    const currentById = new Map(
+      currentRows.map((row) => [row.id, row.status as WorkOrderStatus]),
+    );
+    for (const item of dto.items) {
+      const currentStatus = currentById.get(item.id);
+      if (!currentStatus) {
+        throw new NotFoundException("Work order not found");
+      }
+      if (currentStatus === "closed" && item.status !== "closed") {
+        throw new BadRequestException("Closed work orders cannot be reopened");
+      }
+      if (currentStatus !== "closed" && item.status === "closed") {
+        throw new BadRequestException("Use the close workflow for Done");
+      }
+    }
+
+    const now = new Date();
+    const actorId = await this.resolveActorId(actor);
+    await this.db.transaction(async (tx) => {
+      for (const item of dto.items) {
+        const currentStatus = currentById.get(item.id);
+        await tx
+          .update(workOrders)
+          .set({
+            status: item.status,
+            sortOrder: item.sortOrder,
+            resolvedAt: item.status === "resolved" ? now : undefined,
+            updatedAt: now,
+          })
+          .where(eq(workOrders.id, item.id));
+
+        if (currentStatus && currentStatus !== item.status) {
+          await tx.insert(auditLog).values({
+            actorId,
+            action: "work_order_status_update",
+            entityType: "work_order",
+            entityId: item.id,
+            reason: dto.reason ?? `Moved to ${item.status} by Kanban drag`,
+            payload: {
+              fromStatus: currentStatus,
+              toStatus: item.status,
+              sortOrder: item.sortOrder,
+              oidcSubject: actor.sub,
+              actorEmail: actor.email,
+            },
+          });
+        }
+      }
+
+      await tx.insert(auditLog).values({
+        actorId,
+        action: "work_order_reorder",
+        entityType: "work_order",
+        entityId: null,
+        reason: dto.reason ?? "Kanban order updated",
+        payload: {
+          count: dto.items.length,
+          oidcSubject: actor.sub,
+          actorEmail: actor.email,
+        },
+      });
+    });
+
+    const items = await Promise.all(ids.map((id) => this.getById(id)));
+    return { items };
   }
 }

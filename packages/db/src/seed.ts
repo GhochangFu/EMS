@@ -9,6 +9,8 @@ import { createDb } from "./client";
 import {
   alarms,
   assets,
+  maintenanceSchedules,
+  maintenanceTaskTemplates,
   mapLocations,
   users,
   workOrderTasks,
@@ -223,6 +225,102 @@ async function main(): Promise<void> {
         await db.insert(workOrderTasks).values(taskRows);
       }
     }
+
+    const existingMaintenance = await db
+      .select({ id: maintenanceTaskTemplates.id })
+      .from(maintenanceTaskTemplates)
+      .limit(1);
+    if (existingMaintenance.length === 0) {
+      const day = 24 * 60 * 60 * 1000;
+      const upsAsset = assetRows.find((row) => row.code === "UPS-A") ?? assetRows[0];
+      const cracAsset =
+        assetRows.find((row) => row.code === "CH-CRAC-101") ?? assetRows[0];
+      const pvAsset =
+        assetRows.find((row) => row.code === "PV-INV-01") ?? assetRows[0];
+      const insertedTemplates = await db
+        .insert(maintenanceTaskTemplates)
+        .values([
+          {
+            assetId: upsAsset.id,
+            title: "UPS battery string inspection",
+            description:
+              "Preventive inspection for terminals, impedance trend, and autonomy test readiness.",
+            category: "preventive",
+            generationMode: "calendar",
+            ownerTeam: "Electrical maintenance",
+            priority: "high",
+            estimatedMinutes: 90,
+          },
+          {
+            assetId: cracAsset.id,
+            title: "CRAC filter and condensate check",
+            description:
+              "Clean intake filter, inspect condensate drain, and confirm supply-air temperature stability.",
+            category: "condition_based",
+            generationMode: "condition",
+            ownerTeam: "Cooling operations",
+            triggerSummary: "Filter pressure and condensate condition review",
+            priority: "medium",
+            estimatedMinutes: 60,
+          },
+          {
+            assetId: pvAsset.id,
+            title: "PV inverter thermal inspection",
+            description:
+              "Inspect fans, heatsink temperature, DC isolator condition, and event log.",
+            category: "energy_optimization",
+            generationMode: "predictive",
+            ownerTeam: "Energy operations",
+            triggerSummary: "Thermal trend and inverter derating review",
+            priority: "medium",
+            estimatedMinutes: 45,
+          },
+        ])
+        .returning({
+          id: maintenanceTaskTemplates.id,
+          title: maintenanceTaskTemplates.title,
+        });
+
+      const scheduleRows = insertedTemplates.map((template, index) => ({
+        templateId: template.id,
+        intervalDays: index === 0 ? 30 : index === 1 ? 14 : 60,
+        nextDueAt:
+          index === 0
+            ? new Date(Date.now() - 2 * day)
+            : new Date(Date.now() + (index + 2) * day),
+        lastCompletedAt:
+          index === 0 ? new Date(Date.now() - 32 * day) : undefined,
+      }));
+      if (scheduleRows.length > 0) {
+        await db.insert(maintenanceSchedules).values(scheduleRows);
+      }
+    }
+    await db
+      .update(maintenanceTaskTemplates)
+      .set({
+        ownerTeam: "Electrical maintenance",
+      })
+      .where(eq(maintenanceTaskTemplates.title, "UPS battery string inspection"));
+    await db
+      .update(maintenanceTaskTemplates)
+      .set({
+        category: "condition_based",
+        generationMode: "condition",
+        ownerTeam: "Cooling operations",
+        triggerSummary: "Filter pressure and condensate condition review",
+      })
+      .where(
+        eq(maintenanceTaskTemplates.title, "CRAC filter and condensate check"),
+      );
+    await db
+      .update(maintenanceTaskTemplates)
+      .set({
+        category: "energy_optimization",
+        generationMode: "predictive",
+        ownerTeam: "Energy operations",
+        triggerSummary: "Thermal trend and inverter derating review",
+      })
+      .where(eq(maintenanceTaskTemplates.title, "PV inverter thermal inspection"));
 
     for (const row of mapLocationRowsForInsert()) {
       const exists = await db

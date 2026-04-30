@@ -29,6 +29,34 @@
       "when": 1777420800000,
       "tag": "0003_phase5_work_order_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777507200000,
+      "tag": "0004_phase5_work_order_sort_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777593600000,
+      "tag": "0005_phase5_maintenance_tasks",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777680000000,
+      "tag": "0006_phase5_maintenance_schedule_centre",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777766400000,
+      "tag": "0007_phase5_maintenance_demo_categories",
+      "breakpoints": true
     }
   ]
 }

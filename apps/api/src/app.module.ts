@@ -7,6 +7,7 @@ import { AuthModule } from "./auth/auth.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
+import { MaintenanceModule } from "./maintenance/maintenance.module";
 import { MapModule } from "./map/map.module";
 import { ObservabilityModule } from "./observability/observability.module";
 import { TelemetryModule } from "./telemetry/telemetry.module";
@@ -35,6 +36,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     DashboardModule,
     AlarmsModule,
     WorkOrdersModule,
+    MaintenanceModule,
     MapModule,
   ],
 })

@@ -1,4 +1,5 @@
 import {
+  boolean,
   doublePrecision,
   integer,
   jsonb,
@@ -58,6 +59,7 @@ export const workOrders = bmsSchema.table("work_orders", {
   description: text("description"),
   status: varchar("status", { length: 32 }).notNull().default("open"),
   priority: varchar("priority", { length: 32 }).notNull().default("medium"),
+  sortOrder: integer("sort_order").notNull().default(0),
   assignedTo: uuid("assigned_to").references(() => users.id),
   createdBy: uuid("created_by").references(() => users.id),
   dueAt: timestamp("due_at", { withTimezone: true }),
@@ -80,6 +82,70 @@ export const workOrderTasks = bmsSchema.table("work_order_tasks", {
   status: varchar("status", { length: 32 }).notNull().default("open"),
   sortOrder: integer("sort_order").notNull().default(0),
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const maintenanceTaskTemplates = bmsSchema.table(
+  "maintenance_task_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    assetId: uuid("asset_id")
+      .notNull()
+      .references(() => assets.id),
+    title: varchar("title", { length: 255 }).notNull(),
+    description: text("description"),
+    category: varchar("category", { length: 64 }).notNull().default("preventive"),
+    generationMode: varchar("generation_mode", { length: 32 })
+      .notNull()
+      .default("calendar"),
+    ownerTeam: varchar("owner_team", { length: 128 }),
+    vendorName: varchar("vendor_name", { length: 128 }),
+    complianceRef: varchar("compliance_ref", { length: 128 }),
+    triggerSummary: text("trigger_summary"),
+    safetyCritical: boolean("safety_critical").notNull().default(false),
+    priority: varchar("priority", { length: 32 }).notNull().default("medium"),
+    estimatedMinutes: integer("estimated_minutes").notNull().default(60),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+);
+
+export const maintenanceSchedules = bmsSchema.table("maintenance_schedules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  templateId: uuid("template_id")
+    .notNull()
+    .references(() => maintenanceTaskTemplates.id),
+  intervalDays: integer("interval_days").notNull(),
+  nextDueAt: timestamp("next_due_at", { withTimezone: true }).notNull(),
+  lastCompletedAt: timestamp("last_completed_at", { withTimezone: true }),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const maintenanceHistory = bmsSchema.table("maintenance_history", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  templateId: uuid("template_id")
+    .notNull()
+    .references(() => maintenanceTaskTemplates.id),
+  scheduleId: uuid("schedule_id")
+    .notNull()
+    .references(() => maintenanceSchedules.id),
+  assetId: uuid("asset_id")
+    .notNull()
+    .references(() => assets.id),
+  workOrderId: uuid("work_order_id").references(() => workOrders.id),
+  eventType: varchar("event_type", { length: 32 }).notNull(),
+  notes: text("notes"),
+  createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -18,6 +18,8 @@ const modules = [
   { label: "Electrical", path: "/sld" },
   { label: "Cooling", path: "/crac" },
   { label: "Energy", path: "/energy" },
+  { label: "Maintenance", path: "/work-orders" },
+  { label: "Maintenance Schedules", path: "/maintenance-schedules" },
 ] as const;
 
 type AppShellProps = {

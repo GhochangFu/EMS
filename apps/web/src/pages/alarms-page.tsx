@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { io, type Socket } from "socket.io-client";
 
 import { ackAlarm, fetchAlarmsPage } from "../api/alarms";
@@ -34,6 +35,7 @@ function severityStyle(sev: string): string {
 
 export function AlarmsPage({ user }: AlarmsPageProps) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [ackTarget, setAckTarget] = useState<AlarmListItem | null>(null);
   const [reason, setReason] = useState("");
   const [ackError, setAckError] = useState<string | null>(null);
@@ -82,6 +84,16 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
     }
     setAckError(null);
     ackM.mutate({ id: ackTarget.id, r: reason.trim() });
+  }
+
+  function startWorkOrder(alarm: AlarmListItem): void {
+    const params = new URLSearchParams({
+      alarmId: alarm.id,
+      assetId: alarm.assetId,
+      title: `Investigate ${alarm.assetCode} alarm`,
+      description: alarm.message,
+    });
+    navigate(`/work-orders?${params}`);
   }
 
   return (
@@ -168,7 +180,15 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                         )}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        {!a.acknowledgedAt ? (
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            className="rounded border border-gray-300 px-2.5 py-1 text-xs font-semibold text-bms-ink hover:bg-gray-50"
+                            onClick={() => startWorkOrder(a)}
+                          >
+                            Work order
+                          </button>
+                          {!a.acknowledgedAt ? (
                           <button
                             type="button"
                             className="rounded bg-bms-green px-2.5 py-1 text-xs font-semibold text-white hover:bg-bms-green-dark"
@@ -180,7 +200,8 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                           >
                             Ack
                           </button>
-                        ) : null}
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))

@@ -263,3 +263,66 @@ nominal DG/grid with metered data is a future schema + query change, not
 a UI rewrite. NOTIFY payloads from the sim stay under Postgres limits via
 chunking (separate fix in `apps/sim`).
 
+---
+
+## D-0010 — Finish Phase 5 before broad UI/UX revisit
+
+Date: 2026-04-30
+Status: accepted
+
+**Context.** Phase 5 introduces operations workflows that were present in
+the original `ESKOM_SMOC.html` mockup but only partially promoted into the
+active prototype. The Work Orders UI exposed a gap: the feature worked,
+but the first implementation read more like a generic table than the
+mockup's Operations → Maintenance Kanban · Work Orders screen.
+
+**Decision.**
+
+1. Every new module must identify the closest `ESKOM_SMOC.html` route /
+   renderer before implementation and match that UX as strictly as the
+   React architecture and available data allow.
+2. Complete Phase 5 functionality first: Work Orders UI, maintenance
+   tasks, basic rule engine, energy reports, and report storage only if
+   persisted report files are required.
+3. After Phase 5 functionality is complete, run a dedicated UI/UX revisit
+   sprint across all completed pages rather than interrupting each
+   feature sprint with broad redesign work.
+
+**Consequences.** Remaining Phase 5 sprints must cite their mockup source
+(`R.mt`, `R.rl`, `R.rp`) and preserve the original navigation / layout
+language wherever possible. Existing completed pages are not rewritten
+mid-Phase 5, but they are explicitly queued for a focused visual alignment
+pass before moving on to later phases.
+
+---
+
+## D-0011 — Split maintenance schedules from Work Orders Kanban
+
+Date: 2026-04-30
+Status: accepted
+
+**Context.** Phase 5 Sprint C expanded maintenance beyond alarm-generated
+and preventive work orders to include predictive, condition-based,
+compliance, AMC, calibration, runtime, seasonal, inspection, follow-up,
+deferred, outage, energy-optimization, and safety-critical schedule types.
+Keeping those template and schedule controls inside the existing
+`R.mt`-style Work Orders Kanban made the Maintenance screen too crowded.
+
+**Decision.**
+
+1. Keep `/work-orders` focused on Kanban-style work-order execution:
+   create, drag/drop, status update, and close.
+2. Add `/maintenance-schedules` as a dedicated Schedule Centre for
+   creating and managing schedule templates, filtering due work, and
+   generating related work orders.
+3. Treat Schedule Centre as a companion Operations / Maintenance screen
+   under the same `R.mt` domain, not as Rule Engine (`R.rl`) automation.
+4. Store runtime, condition, and predictive triggers as metadata only in
+   Sprint C; automatic evaluation remains deferred to the Rule Engine
+   sprint.
+
+**Consequences.** Operators get a cleaner flow: schedules are planned and
+generated in Schedule Centre, while generated work orders are executed in
+the Kanban. No broker, background scheduler, or rule automation is added
+in Sprint C.
+

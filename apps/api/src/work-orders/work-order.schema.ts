@@ -28,11 +28,27 @@ export const createWorkOrderBodySchema = z.object({
 export const updateWorkOrderStatusBodySchema = z.object({
   status: workOrderStatusSchema,
   reason: z.string().min(3).max(2000).optional(),
+  sortOrder: z.number().int().min(0).max(100_000).optional(),
   assignedTo: z.string().uuid().nullable().optional(),
 });
 
 export const closeWorkOrderBodySchema = z.object({
   reason: z.string().min(3).max(2000),
+  sortOrder: z.number().int().min(0).max(100_000).optional(),
+});
+
+export const reorderWorkOrdersBodySchema = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        status: workOrderStatusSchema,
+        sortOrder: z.number().int().min(0).max(100_000),
+      }),
+    )
+    .min(1)
+    .max(100),
+  reason: z.string().min(3).max(2000).optional(),
 });
 
 export type CreateWorkOrderBody = z.infer<typeof createWorkOrderBodySchema>;
@@ -40,3 +56,4 @@ export type UpdateWorkOrderStatusBody = z.infer<
   typeof updateWorkOrderStatusBodySchema
 >;
 export type CloseWorkOrderBody = z.infer<typeof closeWorkOrderBodySchema>;
+export type ReorderWorkOrdersBody = z.infer<typeof reorderWorkOrdersBodySchema>;

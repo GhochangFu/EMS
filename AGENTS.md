@@ -1,6 +1,6 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint A Complete)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint C Complete)
 
-> **Status:** ACTIVE — Phase 5 Sprint A complete; Sprint B ready.
+> **Status:** ACTIVE — Phase 5 Sprint C complete; Sprint D ready.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -15,7 +15,11 @@ and brokers remain out of scope until a future Phase 2 implementation
 sprint promotes one confirmed source/protocol. Phase 5 Sprint A added the
 work order foundation: schema, seed/demo data, and protected API endpoints
 for listing, creating, and transitioning work orders. Phase 5 Sprint B
-work order UI is ready next but not yet promoted.
+added the web UI for operators to create, track, reorder, and close work
+orders. Phase 5 Sprint C added maintenance schedule templates, recurring
+schedules, asset-linked history, and conversion into work orders from a
+dedicated Schedule Centre companion screen. Phase 5 Sprint D basic rule
+engine work is ready next but not yet promoted.
 
 ---
 
@@ -29,11 +33,16 @@ The current planning direction is:
 
 1. Keep the simulator as the active source until real access is available.
 2. Treat Phase 5 Sprint A work order foundation as complete.
-3. Proceed next with Phase 5 Sprint B work order UI only after promotion.
-4. Defer MinIO/object storage until persisted report files are actually
+3. Treat Phase 5 Sprint B work order UI as complete.
+4. Treat Phase 5 Sprint C Maintenance Schedule Centre as complete.
+5. Proceed next with Phase 5 Sprint D basic rule engine only after
+   promotion.
+6. Complete Phase 5 before revisiting completed screens for a broad
+   UI/UX alignment pass.
+7. Defer MinIO/object storage until persisted report files are actually
    needed.
-5. Plan Phase 6 as Three.js Control Room only.
-6. Keep AI Copilot / chatbot out of scope.
+8. Plan Phase 6 as Three.js Control Room only.
+9. Keep AI Copilot / chatbot out of scope.
 
 The completed prototype screens are:
 
@@ -68,7 +77,7 @@ entry **D-0001**.
 | Telemetry DB | TimescaleDB extension on the same Postgres |
 | Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
-| Operations   | Work order foundation linked to assets and alarms |
+| Operations   | Work orders plus completed Sprint C maintenance schedules linked to assets |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, and DB |
 | CI/CD        | GitHub Actions for install, build/typecheck, and migration validation |
 | Cache / pub-sub | Redis 7 for Socket.IO adapter fan-out |
@@ -151,14 +160,27 @@ Do not add top-level folders without updating this section.
 
 ## 5. Visual Reference
 
-`ESKOM_SMOC.html` is the UX spec. Match its look and feel:
+`ESKOM_SMOC.html` is the UX spec. Match it as strictly as the current
+React architecture allows:
 
 - Dark top bar, green nav, left module sidebar, KPI ribbon, dark status bar.
 - IBM Plex font family.
 - Green accent `#00A651`, status colour palette as defined in the file.
+- For every new module, identify the closest original route / renderer
+  before implementation (for example `R.mt` for Maintenance Kanban · Work
+  Orders, `R.rl` for Rule Engine, `R.rp` for Reports).
+- Match the original screen's information architecture first: sidebar
+  section, page title, actions, card/table/Kanban layout, status pills,
+  counts, and empty/loading/error states.
+- If backend scope is smaller than the mockup, keep the same layout
+  language and clearly omit only the unavailable controls/data.
 
 Do **not** copy its string-concatenation render style. Build proper typed
 React components in `apps/web/src/components/`.
+
+The current sprint sequence is: finish Phase 5 functionality first, then
+run a dedicated UI/UX revisit sprint to bring all completed pages closer
+to `ESKOM_SMOC.html`.
 
 ---
 
@@ -173,7 +195,7 @@ These are intentionally deferred. Do not implement them yet:
 - MinIO / object storage
 - Two-way commanding with approval workflows
 - Audit hash-chaining (we keep a simple audit table only)
-- Maintenance schedules / rule-engine UI
+- Rule-engine UI
 - Energy reports (PDF / XLSX)
 - Three.js Control Room 3D
 - AI Copilot
@@ -190,29 +212,37 @@ authentication; MFA, SSO federation, and advanced identity governance
 remain out of scope. Observability is limited to optional local/pilot
 diagnostics. Real protocol adapters and brokers remain out of scope until
 a later Phase 2 implementation sprint selects and promotes a specific
-source/protocol. Work order foundation is in scope for Phase 5 Sprint A
-only. Maintenance schedules, rule-engine UI, reports, and storage remain
-out of scope until their specific sprint is promoted. AI Copilot / chatbot
+source/protocol. Work-order UI is complete for Phase 5 Sprint B. Phase 5
+Sprint C Maintenance Schedule Centre is complete. Rule-engine UI,
+reports, and storage remain out of scope until their specific sprint is
+promoted. AI Copilot / chatbot
 remains deferred. When any other item above is needed, follow §10
 (Promotion Process).
 
 ---
 
-## 7. Definition of Done (Current Sprint)
+## 7. Definition of Done (Phase 5 Sprint C)
 
-A task is done when:
+Phase 5 Sprint C is done when:
 
 1. Native WSL development and the Phase 1 compose path remain unchanged.
-2. `bms.work_orders` and supporting work-order task/status schema are
-   migrated forward-only.
-3. Seed/demo data creates at least one work order linked to an existing
-   asset and optionally an alarm.
-4. Protected API endpoints list, create, update status, and close work
-   orders with Zod validation.
-5. Work order state changes write lightweight audit rows.
-6. Maintenance schedules, rule-engine UI, reports, storage, Phase 6, and
-   real-ingestion feature code remain out of scope.
-7. Typecheck/build and migration validation still pass.
+2. Maintenance task templates and recurring schedules are migrated
+   forward-only and linked to existing assets.
+3. Seed/demo data includes upcoming and overdue maintenance rows.
+4. A protected API lists upcoming and overdue maintenance per asset,
+   category, due state, and priority.
+5. Operators can create and manage maintenance schedules from the
+   dedicated Schedule Centre UI.
+6. Operators can convert an upcoming or overdue maintenance item into a
+   work order.
+7. Conversion writes asset-linked maintenance history and lightweight
+   audit rows.
+8. The Work Orders UI stays Kanban-only, while schedule generation and
+   management live in a separate Operations screen that still belongs to
+   the `ESKOM_SMOC.html` Maintenance (`R.mt`) domain.
+9. Rule-engine UI, reports, storage, Phase 6, and real-ingestion feature
+   code remain out of scope.
+10. Typecheck/build and migration validation still pass.
 
 ---
 
@@ -237,8 +267,9 @@ No protocol broker yet. Just Postgres, Redis for realtime fan-out,
 Keycloak for local/pilot OIDC, optional observability services, Node, and
 Docker Compose for reproducible development. Phase 2 remains paused until
 real source access exists. Phase 5 Sprint A used the existing API and
-database stack only; Sprint B must remain UI-only unless promoted
-otherwise.
+database stack only; Sprint B added the Maintenance Kanban UI and
+`sort_order` persistence for drag/drop. Sprint C added the Maintenance
+Schedule Centre, schedule metadata, history, and work-order conversion.
 
 ---
 
@@ -247,8 +278,9 @@ otherwise.
 1. **Read this file and the affected source files before editing.**
 2. Read `docs/AGENTS.production.md` for context on where the system is
    heading — but do **not** implement later-phase concerns yet.
-3. Match the style of existing modules. If unsure, copy the closest
-   pattern.
+3. Match the style of existing modules and the closest matching
+   `ESKOM_SMOC.html` screen. If these conflict, preserve React/codebase
+   architecture but prefer the mockup's user-facing layout and labels.
 4. Never add a dependency without an ADR in `docs/adr/`.
 5. Never invent file paths or library APIs.
 6. Never log secrets, tokens, or full PII payloads.

@@ -159,6 +159,31 @@ export type WorkOrderStatus =
 
 export type WorkOrderPriority = "low" | "medium" | "high" | "critical";
 
+export type MaintenanceDueState = "overdue" | "upcoming";
+
+export type MaintenanceScheduleCategory =
+  | "preventive"
+  | "predictive"
+  | "condition_based"
+  | "compliance"
+  | "amc"
+  | "calibration"
+  | "runtime_based"
+  | "seasonal"
+  | "inspection_round"
+  | "corrective_follow_up"
+  | "deferred_backlog"
+  | "shutdown_outage"
+  | "energy_optimization"
+  | "safety_critical";
+
+export type MaintenanceGenerationMode =
+  | "manual"
+  | "calendar"
+  | "runtime"
+  | "condition"
+  | "predictive";
+
 /** One work order row for Phase 5 Sprint A API responses. */
 export type WorkOrderListItem = {
   id: string;
@@ -168,6 +193,7 @@ export type WorkOrderListItem = {
   description: string | null;
   status: WorkOrderStatus;
   priority: WorkOrderPriority;
+  sortOrder: number;
   assignedTo: string | null;
   createdBy: string | null;
   dueAt: string | null;
@@ -178,6 +204,32 @@ export type WorkOrderListItem = {
   assetCode: string;
   assetName: string;
   siteName: string;
+};
+
+/** Maintenance schedule item shown in the Phase 5 Sprint C Schedule Centre. */
+export type MaintenanceScheduleItem = {
+  id: string;
+  templateId: string;
+  assetId: string;
+  title: string;
+  description: string | null;
+  category: MaintenanceScheduleCategory;
+  generationMode: MaintenanceGenerationMode;
+  ownerTeam: string | null;
+  vendorName: string | null;
+  complianceRef: string | null;
+  triggerSummary: string | null;
+  safetyCritical: boolean;
+  priority: WorkOrderPriority;
+  estimatedMinutes: number;
+  intervalDays: number;
+  nextDueAt: string;
+  lastCompletedAt: string | null;
+  dueState: MaintenanceDueState;
+  assetCode: string;
+  assetName: string;
+  siteName: string;
+  activeWorkOrderId: string | null;
 };
 
 /** Live map marker (`GET /api/v1/map/sites`). */

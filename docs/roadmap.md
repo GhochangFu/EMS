@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 5 Sprint B ready.
+> **Active phase:** Part 2 / Phase 5 Sprint C ready.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -13,6 +13,12 @@ This roadmap has two parts:
 
 Calendar weeks are nominal. Schedule is open per `D-0001`; quality
 beats the calendar.
+
+UI rule for all remaining module work: each module must map to the
+closest route / renderer in `ESKOM_SMOC.html` and match that UX as
+strictly as the active React architecture and available data allow.
+Complete Phase 5 functionality first; then run a dedicated UI/UX revisit
+pass across all completed pages.
 
 ---
 
@@ -294,7 +300,7 @@ Process (`AGENTS.md` §10).
   coverage (95%).
 
 ### Phase 5 — Operations modules (~3 weeks)
-- **Status:** in progress — Sprint A complete, Sprint B ready
+- **Status:** in progress — Sprint C complete, Sprint D ready
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
   reports. MinIO / object storage graduates only when report files need
   persisted storage.
@@ -304,6 +310,11 @@ Process (`AGENTS.md` §10).
 - **Highlights:** work orders linked to alarms/assets, maintenance tasks,
   simple rules and execution history, energy report previews and exports,
   optional stored report history.
+- **UX source:** `ESKOM_SMOC.html` Operations sidebar. Work orders map to
+  `R.mt` ("Maintenance Kanban · Work Orders"). The Schedule Centre is a
+  companion management screen in the same Maintenance domain so the Kanban
+  remains work-order focused. Rules map to `R.rl`, and reports map to
+  `R.rp`.
 
 #### Phase 5 Sprint A — Work order foundation
 - **Status:** complete
@@ -319,48 +330,75 @@ Process (`AGENTS.md` §10).
   mapping, and authenticated create/status/close smoke passed.
 
 #### Phase 5 Sprint B — Work order UI
-- **Status:** ready
-- **Goal:** make work orders usable from the web app.
+- **Status:** complete
+- **Goal:** make work orders usable from the web app while matching
+  `ESKOM_SMOC.html` Operations → Maintenance (`R.mt`) as closely as the
+  Sprint A API allows.
 - **Deliverables**
-  - Work Orders page.
+  - Work Orders page placed under the Operations / Maintenance concept
+    from the mockup.
   - Create/edit/close workflows.
+  - Drag/drop Kanban ticket ordering persisted by
+    `bms.work_orders.sort_order`.
   - Filters for status, asset, and priority.
   - "Create work order from alarm" action in Alarm Centre.
   - Audit entry for work order state changes.
-- **Exit criteria:** an operator can create a work order from an alarm,
-  track it, and close it from the UI.
+  - Layout, labels, status colours, and actions aligned with the mockup's
+    "Maintenance Kanban · Work Orders" screen where data exists.
+- **Exit criteria:** complete — an operator can create a work order from
+  an alarm, track it in the Maintenance Kanban, persist drag/drop order,
+  and close it from the UI. Build, migration, compose migration, route
+  mapping, and persistence smoke checks passed.
 
-#### Phase 5 Sprint C — Maintenance tasks
-- **Status:** pending
-- **Goal:** support preventive maintenance, not only alarm-driven work.
+#### Phase 5 Sprint C — Maintenance Schedule Centre
+- **Status:** complete
+- **Goal:** support scheduled maintenance, not only alarm-driven work, while
+  keeping the existing `R.mt` Maintenance Kanban focused on work-order
+  execution.
 - **Deliverables**
-  - Maintenance task templates.
-  - Recurring schedule model.
+  - Dedicated Maintenance Schedule Centre at `/maintenance-schedules`.
+  - Maintenance task templates, including UI creation and management.
+  - Recurring schedule model with category and trigger metadata.
   - Asset-linked maintenance history.
-  - Upcoming and overdue maintenance view.
-- **Exit criteria:** upcoming and overdue maintenance can be viewed per
-  asset and converted into work orders.
+  - Upcoming and overdue maintenance view with asset, category, due-state,
+    and priority filters.
+  - Schedule categories for preventive, predictive, condition-based,
+    compliance, AMC, calibration, runtime, seasonal, inspection,
+    corrective follow-up, deferred backlog, outage, energy optimization,
+    and safety-critical work.
+  - Work-order generation from schedule rows into the Maintenance Kanban.
+- **Exit criteria:** complete — maintenance schedules can be created and
+  managed in a dedicated Schedule Centre, viewed per asset/category, and
+  converted into work orders while the Work Orders page remains Kanban-only.
+  Build, migration, compose migration, route mapping, database category,
+  and manual UI smoke checks passed.
 
 #### Phase 5 Sprint D — Basic rule engine
-- **Status:** pending
-- **Goal:** introduce rules carefully without a complex visual builder.
+- **Status:** ready
+- **Goal:** introduce rules carefully without a complex visual builder,
+  using the mockup's Rule Engine (`R.rl`) as the UX reference.
 - **Deliverables**
   - Rule model for simple threshold and time-based rules.
   - Rule execution log.
   - UI to view, enable, and disable rules.
   - Clear distinction between simulator thresholds and future real-source
     rules.
+  - Rule cards/table/actions aligned with `ESKOM_SMOC.html` where the
+    active scope supports them.
 - **Exit criteria:** a simple rule can be enabled, evaluated, and traced
   through an execution log.
 
 #### Phase 5 Sprint E — Energy reports
 - **Status:** pending
-- **Goal:** generate useful reports from current Energy Centre data.
+- **Goal:** generate useful reports from current Energy Centre data,
+  using the mockup's Reports & Analytics (`R.rp`) as the UX reference.
 - **Deliverables**
   - Report preview screen.
   - Date range selection.
   - Energy summary: kWh, peak demand, PUE, indicative cost.
   - CSV export first; PDF only after the report content stabilizes.
+  - Report template cards and preview layout aligned with
+    `ESKOM_SMOC.html` where current report scope allows.
 - **Exit criteria:** a user can preview and export an energy summary for
   a selected date range.
 
@@ -374,6 +412,22 @@ Process (`AGENTS.md` §10).
   - Download previous reports.
 - **Exit criteria:** generated reports can be persisted and downloaded
   from history. Skip this sprint if report storage is not needed.
+
+#### Phase 5 Sprint G — Completed-page UI/UX alignment
+- **Status:** planned after Phase 5 functionality
+- **Goal:** revisit all completed pages and bring their UI/UX closer to
+  `ESKOM_SMOC.html` after the Phase 5 operational workflows are complete.
+- **Deliverables**
+  - Compare every completed page against its closest mockup route /
+    renderer (`R.dash`, `R.alm`, maps, `R.sld`, `R.crac`, `R.en`, `R.mt`,
+    `R.rl`, `R.rp`).
+  - Align navigation labels, sidebar grouping, page headers, action bars,
+    cards, tables, status pills, and spacing.
+  - Preserve existing API contracts and working data flows unless a small
+    UI-only adapter is enough.
+  - Update `docs/demo-script.md` after visual changes.
+- **Exit criteria:** completed pages read as one coherent implementation
+  of the original mockup without destabilising Phase 5 functionality.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending

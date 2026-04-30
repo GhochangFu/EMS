@@ -20,6 +20,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import {
   closeWorkOrderBodySchema,
   createWorkOrderBodySchema,
+  reorderWorkOrdersBodySchema,
   updateWorkOrderStatusBodySchema,
 } from "./work-order.schema";
 import { WorkOrdersService } from "./work-orders.service";
@@ -45,6 +46,19 @@ export class WorkOrdersController {
     try {
       const dto = createWorkOrderBodySchema.parse(body);
       return await this.workOrders.create(dto, user);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  @Patch("reorder")
+  async reorder(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    try {
+      const dto = reorderWorkOrdersBodySchema.parse(body);
+      return await this.workOrders.reorder(dto, user);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -81,7 +95,7 @@ export class WorkOrdersController {
     try {
       const workOrderId = idParamSchema.parse(id);
       const dto = closeWorkOrderBodySchema.parse(body);
-      return await this.workOrders.close(workOrderId, user, dto.reason);
+      return await this.workOrders.close(workOrderId, user, dto);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
