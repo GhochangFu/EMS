@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 5 Sprint C ready.
+> **Active phase:** Part 2 / Phase 5 Sprint E ready.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -300,7 +300,7 @@ Process (`AGENTS.md` §10).
   coverage (95%).
 
 ### Phase 5 — Operations modules (~3 weeks)
-- **Status:** in progress — Sprint C complete, Sprint D ready
+- **Status:** in progress — Sprint D complete, Sprint E ready
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
   reports. MinIO / object storage graduates only when report files need
   persisted storage.
@@ -374,7 +374,7 @@ Process (`AGENTS.md` §10).
   and manual UI smoke checks passed.
 
 #### Phase 5 Sprint D — Basic rule engine
-- **Status:** ready
+- **Status:** complete
 - **Goal:** introduce rules carefully without a complex visual builder,
   using the mockup's Rule Engine (`R.rl`) as the UX reference.
 - **Deliverables**
@@ -385,8 +385,9 @@ Process (`AGENTS.md` §10).
     rules.
   - Rule cards/table/actions aligned with `ESKOM_SMOC.html` where the
     active scope supports them.
-- **Exit criteria:** a simple rule can be enabled, evaluated, and traced
-  through an execution log.
+- **Exit criteria:** complete — a simple rule can be enabled, evaluated,
+  and traced through an execution log. Build, migration, seed, and
+  browser-based Rule Engine smoke checks passed.
 
 #### Phase 5 Sprint E — Energy reports
 - **Status:** pending
@@ -413,7 +414,43 @@ Process (`AGENTS.md` §10).
 - **Exit criteria:** generated reports can be persisted and downloaded
   from history. Skip this sprint if report storage is not needed.
 
-#### Phase 5 Sprint G — Completed-page UI/UX alignment
+#### Phase 5 Sprint G — Guided visual rule builder
+- **Status:** future / not promoted
+- **Goal:** let operators create and edit simple rules from the UI without
+  introducing a free-form node graph or unsafe command automation.
+- **Prerequisites**
+  - Phase 5 Sprint D rule model, execution log, and enable/disable flow are
+    complete and stable.
+  - The available rule inputs are known from current assets and telemetry
+    point keys.
+  - Rule actions remain limited to notification, review, trace-only, or
+    other explicitly promoted non-commanding actions.
+- **Deliverables**
+  - Guided IF/THEN builder for threshold and time-window rules.
+  - Asset and telemetry-point picker backed by current API data.
+  - Rule create, edit, duplicate, archive, and draft/publish API endpoints.
+  - Server-side validation for asset/point compatibility, supported
+    operators, threshold ranges, time windows, and action payloads.
+  - Preview/test action that evaluates a draft rule against latest
+    available telemetry without enabling it.
+  - Audit rows for create, edit, publish, archive, enable, and disable.
+  - UI states for draft, enabled, disabled, archived, invalid, and
+    never-evaluated rules.
+  - Clear copy separating operator-created rules from simulator alarm
+    thresholds and future real-source rules.
+- **Non-goals**
+  - No two-way commands, setpoint changes, breaker actions, or approval
+    workflow.
+  - No real protocol adapter rules until Phase 2 resumes with confirmed
+    source access.
+  - No job queue or scheduler dependency unless a later sprint promotes it.
+  - No complex drag-and-drop node graph until the guided builder proves the
+    model and UX.
+- **Exit criteria:** an operator can create a draft threshold or time-window
+  rule, preview it against current data, publish it, enable/disable it, and
+  see subsequent execution traces with audit history.
+
+#### Phase 5 Sprint H — Completed-page UI/UX alignment
 - **Status:** planned after Phase 5 functionality
 - **Goal:** revisit all completed pages and bring their UI/UX closer to
   `ESKOM_SMOC.html` after the Phase 5 operational workflows are complete.

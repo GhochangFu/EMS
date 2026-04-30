@@ -151,6 +151,46 @@ export const maintenanceHistory = bmsSchema.table("maintenance_history", {
     .defaultNow(),
 });
 
+export const automationRules = bmsSchema.table("automation_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: varchar("code", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 64 }).notNull().default("operations"),
+  ruleType: varchar("rule_type", { length: 32 }).notNull(),
+  source: varchar("source", { length: 64 }).notNull().default("operator_rule"),
+  enabled: boolean("enabled").notNull().default(true),
+  assetId: uuid("asset_id").references(() => assets.id),
+  pointKey: varchar("point_key", { length: 128 }),
+  operator: varchar("operator", { length: 16 }),
+  thresholdValue: doublePrecision("threshold_value"),
+  severity: varchar("severity", { length: 32 }),
+  condition: jsonb("condition").notNull().default({}),
+  action: jsonb("action").notNull().default({}),
+  lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const ruleExecutions = bmsSchema.table("rule_executions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ruleId: uuid("rule_id")
+    .notNull()
+    .references(() => automationRules.id),
+  evaluatedAt: timestamp("evaluated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  status: varchar("status", { length: 32 }).notNull(),
+  matched: boolean("matched").notNull().default(false),
+  observedValue: doublePrecision("observed_value"),
+  message: text("message"),
+  trace: jsonb("trace"),
+});
+
 export const auditLog = bmsSchema.table("audit_log", {
   id: uuid("id").primaryKey().defaultRandom(),
   actorId: uuid("actor_id").references(() => users.id),

@@ -8,6 +8,7 @@ import { mapLocationRowsForInsert } from "./map-locations-seed";
 import { createDb } from "./client";
 import {
   alarms,
+  automationRules,
   assets,
   maintenanceSchedules,
   maintenanceTaskTemplates,
@@ -321,6 +322,66 @@ async function main(): Promise<void> {
         triggerSummary: "Thermal trend and inverter derating review",
       })
       .where(eq(maintenanceTaskTemplates.title, "PV inverter thermal inspection"));
+
+    const existingRules = await db
+      .select({ id: automationRules.id })
+      .from(automationRules)
+      .limit(1);
+    if (existingRules.length === 0) {
+      const upsAsset = assetRows.find((row) => row.code === "UPS-A") ?? assetRows[0];
+      const cracAsset =
+        assetRows.find((row) => row.code === "CH-CRAC-101") ?? assetRows[0];
+      const pvAsset =
+        assetRows.find((row) => row.code === "PV-INV-01") ?? assetRows[0];
+      await db.insert(automationRules).values([
+        {
+          code: "demand_ceiling_notify",
+          name: "Energy demand ceiling notification",
+          description:
+            "IF current demand is above 115 kW THEN notify Energy Manager.",
+          category: "energy",
+          ruleType: "threshold",
+          assetId: upsAsset.id,
+          pointKey: "kw",
+          operator: "gte",
+          thresholdValue: 115,
+          severity: "warning",
+          condition: { window: "latest", unit: "kW" },
+          action: { type: "notify", target: "Energy Manager" },
+        },
+        {
+          code: "crac_supply_temp_high",
+          name: "CRAC supply temperature watch",
+          description:
+            "IF supply air temperature is above 24 C THEN flag cooling operations.",
+          category: "comfort",
+          ruleType: "threshold",
+          assetId: cracAsset.id,
+          pointKey: "supply_air_temp_c",
+          operator: "gte",
+          thresholdValue: 24,
+          severity: "warning",
+          condition: { window: "latest", unit: "C" },
+          action: { type: "notify", target: "Cooling operations" },
+        },
+        {
+          code: "weekday_energy_review",
+          name: "Weekday energy review window",
+          description:
+            "IF it is a weekday between 06:00 and 08:00 THEN prompt energy review.",
+          category: "energy",
+          ruleType: "time_window",
+          assetId: pvAsset.id,
+          enabled: false,
+          condition: {
+            days: ["mon", "tue", "wed", "thu", "fri"],
+            startTime: "06:00",
+            endTime: "08:00",
+          },
+          action: { type: "review", target: "Energy operations" },
+        },
+      ]);
+    }
 
     for (const row of mapLocationRowsForInsert()) {
       const exists = await db

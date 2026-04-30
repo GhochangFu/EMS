@@ -9,6 +9,7 @@ import { EnergyPage } from "./pages/energy-page";
 import { SldPage } from "./pages/sld-page";
 import { WorkOrdersPage } from "./pages/work-orders-page";
 import { MaintenanceSchedulesPage } from "./pages/maintenance-schedules-page";
+import { RulesPage } from "./pages/rules-page";
 import { AuthCallbackPage } from "./pages/auth-callback-page";
 import { LoginPage } from "./pages/login-page";
 import { useAuthStore } from "./stores/auth-store";
@@ -125,6 +126,16 @@ export function App() {
         element={
           accessToken && user ? (
             <MaintenanceSchedulesPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/rules"
+        element={
+          accessToken && user ? (
+            <RulesPage user={user} />
           ) : (
             <Navigate to="/login" replace />
           )

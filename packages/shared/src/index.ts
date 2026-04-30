@@ -184,6 +184,66 @@ export type MaintenanceGenerationMode =
   | "condition"
   | "predictive";
 
+export type AutomationRuleType = "threshold" | "time_window";
+export type AutomationRuleCategory = "comfort" | "energy" | "safety" | "operations";
+export type AutomationRuleOperator = "gt" | "gte" | "lt" | "lte" | "eq";
+export type RuleExecutionStatus = "matched" | "not_matched" | "skipped" | "error";
+
+export type AutomationRuleCondition =
+  | {
+      window: "latest";
+      unit?: string;
+    }
+  | {
+      days: string[];
+      startTime: string;
+      endTime: string;
+    };
+
+export type AutomationRuleAction = {
+  type: "notify" | "review" | "trace_only";
+  target: string;
+};
+
+/** Basic automation rule row for Phase 5 Sprint D Rule Engine responses. */
+export type RuleListItem = {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  category: AutomationRuleCategory;
+  ruleType: AutomationRuleType;
+  source: "operator_rule" | "simulator_threshold";
+  enabled: boolean;
+  assetId: string | null;
+  assetCode: string | null;
+  assetName: string | null;
+  siteName: string | null;
+  pointKey: string | null;
+  operator: AutomationRuleOperator | null;
+  thresholdValue: number | null;
+  severity: string | null;
+  condition: AutomationRuleCondition;
+  action: AutomationRuleAction;
+  lastEvaluatedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** One evaluation trace row for the Phase 5 Sprint D Rule Engine. */
+export type RuleExecutionItem = {
+  id: string;
+  ruleId: string;
+  ruleCode: string;
+  ruleName: string;
+  evaluatedAt: string;
+  status: RuleExecutionStatus;
+  matched: boolean;
+  observedValue: number | null;
+  message: string | null;
+  trace: Record<string, unknown> | null;
+};
+
 /** One work order row for Phase 5 Sprint A API responses. */
 export type WorkOrderListItem = {
   id: string;

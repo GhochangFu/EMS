@@ -1,6 +1,6 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint C Complete)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint D Complete)
 
-> **Status:** ACTIVE — Phase 5 Sprint C complete; Sprint D ready.
+> **Status:** ACTIVE — Phase 5 Sprint D complete; Sprint E ready.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -18,8 +18,9 @@ for listing, creating, and transitioning work orders. Phase 5 Sprint B
 added the web UI for operators to create, track, reorder, and close work
 orders. Phase 5 Sprint C added maintenance schedule templates, recurring
 schedules, asset-linked history, and conversion into work orders from a
-dedicated Schedule Centre companion screen. Phase 5 Sprint D basic rule
-engine work is ready next but not yet promoted.
+dedicated Schedule Centre companion screen. Phase 5 Sprint D added the
+basic rule engine: simple threshold/time-window rules, execution history,
+and enable/disable UI without a complex visual builder.
 
 ---
 
@@ -35,8 +36,7 @@ The current planning direction is:
 2. Treat Phase 5 Sprint A work order foundation as complete.
 3. Treat Phase 5 Sprint B work order UI as complete.
 4. Treat Phase 5 Sprint C Maintenance Schedule Centre as complete.
-5. Proceed next with Phase 5 Sprint D basic rule engine only after
-   promotion.
+5. Treat Phase 5 Sprint D basic rule engine as complete.
 6. Complete Phase 5 before revisiting completed screens for a broad
    UI/UX alignment pass.
 7. Defer MinIO/object storage until persisted report files are actually
@@ -77,7 +77,7 @@ entry **D-0001**.
 | Telemetry DB | TimescaleDB extension on the same Postgres |
 | Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
-| Operations   | Work orders plus completed Sprint C maintenance schedules linked to assets |
+| Operations   | Work orders, maintenance schedules, and active Sprint D basic rules linked to assets/telemetry |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, and DB |
 | CI/CD        | GitHub Actions for install, build/typecheck, and migration validation |
 | Cache / pub-sub | Redis 7 for Socket.IO adapter fan-out |
@@ -195,8 +195,8 @@ These are intentionally deferred. Do not implement them yet:
 - MinIO / object storage
 - Two-way commanding with approval workflows
 - Audit hash-chaining (we keep a simple audit table only)
-- Rule-engine UI
 - Energy reports (PDF / XLSX)
+- Complex visual rule builders
 - Three.js Control Room 3D
 - AI Copilot
 - NERSA / ISO compliance reports
@@ -213,35 +213,37 @@ remain out of scope. Observability is limited to optional local/pilot
 diagnostics. Real protocol adapters and brokers remain out of scope until
 a later Phase 2 implementation sprint selects and promotes a specific
 source/protocol. Work-order UI is complete for Phase 5 Sprint B. Phase 5
-Sprint C Maintenance Schedule Centre is complete. Rule-engine UI,
-reports, and storage remain out of scope until their specific sprint is
-promoted. AI Copilot / chatbot
-remains deferred. When any other item above is needed, follow §10
-(Promotion Process).
+Sprint C Maintenance Schedule Centre is complete. Phase 5 Sprint D basic
+rule-engine UI is complete for simple threshold/time-window rules,
+enable/disable controls, manual evaluation, and execution history. Reports,
+storage, and complex visual rule builders remain out of scope until their
+specific sprint is promoted. AI Copilot / chatbot remains deferred. When
+any other item above is needed, follow §10 (Promotion Process).
 
 ---
 
-## 7. Definition of Done (Phase 5 Sprint C)
+## 7. Definition of Done (Phase 5 Sprint D)
 
-Phase 5 Sprint C is done when:
+Phase 5 Sprint D is done:
 
 1. Native WSL development and the Phase 1 compose path remain unchanged.
-2. Maintenance task templates and recurring schedules are migrated
-   forward-only and linked to existing assets.
-3. Seed/demo data includes upcoming and overdue maintenance rows.
-4. A protected API lists upcoming and overdue maintenance per asset,
-   category, due state, and priority.
-5. Operators can create and manage maintenance schedules from the
-   dedicated Schedule Centre UI.
-6. Operators can convert an upcoming or overdue maintenance item into a
-   work order.
-7. Conversion writes asset-linked maintenance history and lightweight
-   audit rows.
-8. The Work Orders UI stays Kanban-only, while schedule generation and
-   management live in a separate Operations screen that still belongs to
-   the `ESKOM_SMOC.html` Maintenance (`R.mt`) domain.
-9. Rule-engine UI, reports, storage, Phase 6, and real-ingestion feature
-   code remain out of scope.
+2. Basic automation rule tables and execution history are migrated
+   forward-only and linked to existing assets/telemetry where applicable.
+3. Seed/demo data includes enabled and disabled threshold/time-window
+   rules.
+4. A protected API lists rules, lists execution history, toggles rule
+   enablement, and evaluates enabled rules on demand.
+5. Threshold rules evaluate against the latest simulator telemetry without
+   replacing the existing simulator alarm thresholds.
+6. Time-window rules can be evaluated and traced without adding a job
+   queue or scheduler dependency.
+7. Operators can view, enable, disable, and manually evaluate rules from a
+   dedicated Rule Engine screen mapped to `ESKOM_SMOC.html` Rule Engine
+   (`R.rl`).
+8. Rule executions record match/no-match/error outcomes with lightweight
+   trace details.
+9. Reports, storage, Phase 6, real-ingestion feature code, and complex
+   visual rule builders remain out of scope.
 10. Typecheck/build and migration validation still pass.
 
 ---
