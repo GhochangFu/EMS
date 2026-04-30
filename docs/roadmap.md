@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 5 Sprint E ready.
+> **Active phase:** Part 2 / Phase 5 Sprint E active.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -300,7 +300,7 @@ Process (`AGENTS.md` §10).
   coverage (95%).
 
 ### Phase 5 — Operations modules (~3 weeks)
-- **Status:** in progress — Sprint D complete, Sprint E ready
+- **Status:** in progress — Sprint E active
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
   reports. MinIO / object storage graduates only when report files need
   persisted storage.
@@ -390,7 +390,7 @@ Process (`AGENTS.md` §10).
   browser-based Rule Engine smoke checks passed.
 
 #### Phase 5 Sprint E — Energy reports
-- **Status:** pending
+- **Status:** in progress
 - **Goal:** generate useful reports from current Energy Centre data,
   using the mockup's Reports & Analytics (`R.rp`) as the UX reference.
 - **Deliverables**

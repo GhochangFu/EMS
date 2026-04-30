@@ -1,6 +1,6 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint D Complete)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint E Active)
 
-> **Status:** ACTIVE — Phase 5 Sprint D complete; Sprint E ready.
+> **Status:** ACTIVE — Phase 5 Sprint E in progress.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -20,7 +20,8 @@ orders. Phase 5 Sprint C added maintenance schedule templates, recurring
 schedules, asset-linked history, and conversion into work orders from a
 dedicated Schedule Centre companion screen. Phase 5 Sprint D added the
 basic rule engine: simple threshold/time-window rules, execution history,
-and enable/disable UI without a complex visual builder.
+and enable/disable UI without a complex visual builder. Phase 5 Sprint E
+is active and adds Energy report previews plus CSV export only.
 
 ---
 
@@ -37,12 +38,14 @@ The current planning direction is:
 3. Treat Phase 5 Sprint B work order UI as complete.
 4. Treat Phase 5 Sprint C Maintenance Schedule Centre as complete.
 5. Treat Phase 5 Sprint D basic rule engine as complete.
-6. Complete Phase 5 before revisiting completed screens for a broad
+6. Deliver Phase 5 Sprint E Energy report previews and CSV export without
+   persisted report storage.
+7. Complete Phase 5 before revisiting completed screens for a broad
    UI/UX alignment pass.
-7. Defer MinIO/object storage until persisted report files are actually
+8. Defer MinIO/object storage until persisted report files are actually
    needed.
-8. Plan Phase 6 as Three.js Control Room only.
-9. Keep AI Copilot / chatbot out of scope.
+9. Plan Phase 6 as Three.js Control Room only.
+10. Keep AI Copilot / chatbot out of scope.
 
 The completed prototype screens are:
 
@@ -215,36 +218,31 @@ a later Phase 2 implementation sprint selects and promotes a specific
 source/protocol. Work-order UI is complete for Phase 5 Sprint B. Phase 5
 Sprint C Maintenance Schedule Centre is complete. Phase 5 Sprint D basic
 rule-engine UI is complete for simple threshold/time-window rules,
-enable/disable controls, manual evaluation, and execution history. Reports,
-storage, and complex visual rule builders remain out of scope until their
-specific sprint is promoted. AI Copilot / chatbot remains deferred. When
-any other item above is needed, follow §10 (Promotion Process).
+enable/disable controls, manual evaluation, and execution history. Phase 5
+Sprint E Energy report preview and CSV export are now in scope. Report
+PDF/XLSX output, persisted report storage, and complex visual rule builders
+remain out of scope until their specific sprint is promoted. AI Copilot /
+chatbot remains deferred. When any other item above is needed, follow §10
+(Promotion Process).
 
 ---
 
-## 7. Definition of Done (Phase 5 Sprint D)
+## 7. Definition of Done (Phase 5 Sprint E)
 
-Phase 5 Sprint D is done:
+Phase 5 Sprint E is done when:
 
 1. Native WSL development and the Phase 1 compose path remain unchanged.
-2. Basic automation rule tables and execution history are migrated
-   forward-only and linked to existing assets/telemetry where applicable.
-3. Seed/demo data includes enabled and disabled threshold/time-window
-   rules.
-4. A protected API lists rules, lists execution history, toggles rule
-   enablement, and evaluates enabled rules on demand.
-5. Threshold rules evaluate against the latest simulator telemetry without
-   replacing the existing simulator alarm thresholds.
-6. Time-window rules can be evaluated and traced without adding a job
-   queue or scheduler dependency.
-7. Operators can view, enable, disable, and manually evaluate rules from a
-   dedicated Rule Engine screen mapped to `ESKOM_SMOC.html` Rule Engine
-   (`R.rl`).
-8. Rule executions record match/no-match/error outcomes with lightweight
-   trace details.
-9. Reports, storage, Phase 6, real-ingestion feature code, and complex
-   visual rule builders remain out of scope.
-10. Typecheck/build and migration validation still pass.
+2. A protected API previews an Energy Consumption report for a selected
+   date range using current Energy Centre telemetry.
+3. The preview includes kWh, peak demand, estimated PUE, indicative cost,
+   source mix totals, and top consumers.
+4. Operators can open a Reports & Analytics screen mapped to
+   `ESKOM_SMOC.html` Reports (`R.rp`).
+5. Operators can select a date range, preview the Energy Consumption
+   report, and export CSV.
+6. PDF/XLSX output, MinIO/object storage, report history, and scheduled
+   delivery remain out of scope.
+7. Typecheck/build, API smoke, and UI smoke pass.
 
 ---
 

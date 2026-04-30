@@ -130,6 +130,35 @@ export type EnergyTopConsumer = {
   estimatedKwh: number;
 };
 
+export type EnergyReportTemplate = {
+  id: "energy_consumption";
+  title: string;
+  description: string;
+  formats: string[];
+  active: boolean;
+};
+
+export type EnergyReportSourceTotals = {
+  gridKwh: number;
+  solarKwh: number;
+  dgKwh: number;
+};
+
+/** Preview payload for Phase 5 Sprint E Energy Consumption reports. */
+export type EnergyReportPreview = {
+  template: EnergyReportTemplate;
+  range: {
+    startDate: string;
+    endDate: string;
+    durationHours: number;
+  };
+  generatedAt: string;
+  summary: EnergyCentreSummary;
+  sourceTotals: EnergyReportSourceTotals;
+  topConsumers: EnergyTopConsumer[];
+  notes: string[];
+};
+
 /** One alarm row for list / WebSocket payloads (`GET /api/v1/alarms`). */
 export type AlarmListItem = {
   id: string;
