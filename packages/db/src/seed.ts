@@ -31,6 +31,7 @@ async function main(): Promise<void> {
 
   const pool = new pg.Pool({ connectionString: databaseUrl });
   const db = createDb(pool);
+  const controlRoomSiteName = "SMOC Cape Town";
 
   try {
     const adminEmail = "admin@bms.local";
@@ -107,6 +108,114 @@ async function main(): Promise<void> {
         siteName: "SMOC Cape Town",
         domain: "electrical",
       },
+      {
+        code: "CR-UTILITY-11KV",
+        name: "Control Room Utility 11 kV Incomer",
+        siteName: controlRoomSiteName,
+        domain: "electrical",
+      },
+      {
+        code: "CR-XFMR-100KVA",
+        name: "Control Room Transformer 100 kVA",
+        siteName: controlRoomSiteName,
+        domain: "electrical",
+      },
+      {
+        code: "CR-MAIN-BUS",
+        name: "Control Room Main Bus 415 V",
+        siteName: controlRoomSiteName,
+        domain: "electrical",
+      },
+      {
+        code: "CR-UPS-OUT-BUS",
+        name: "Control Room UPS Output Bus",
+        siteName: controlRoomSiteName,
+        domain: "electrical",
+      },
+      ...Array.from({ length: 12 }, (_, i) => ({
+        code: `CR-Q${i + 1}`,
+        name: `Control Room Breaker Q${i + 1}`,
+        siteName: controlRoomSiteName,
+        domain: "electrical",
+      })),
+      {
+        code: "CR-UPS-1",
+        name: "Control Room UPS 1",
+        siteName: controlRoomSiteName,
+        domain: "electrical",
+      },
+      {
+        code: "CR-UPS-2",
+        name: "Control Room UPS 2",
+        siteName: controlRoomSiteName,
+        domain: "electrical",
+      },
+      {
+        code: "CR-BATT-1",
+        name: "Control Room Battery String 1",
+        siteName: controlRoomSiteName,
+        domain: "electrical",
+      },
+      {
+        code: "CR-BATT-2",
+        name: "Control Room Battery String 2",
+        siteName: controlRoomSiteName,
+        domain: "electrical",
+      },
+      {
+        code: "CR-HVAC-1",
+        name: "Control Room HVAC 1",
+        siteName: controlRoomSiteName,
+        domain: "electrical",
+      },
+      {
+        code: "CR-HVAC-2",
+        name: "Control Room HVAC 2",
+        siteName: controlRoomSiteName,
+        domain: "electrical",
+      },
+      {
+        code: "CR-LIGHT-AUX",
+        name: "Control Room Lighting and Auxiliary Loads",
+        siteName: controlRoomSiteName,
+        domain: "electrical",
+      },
+      {
+        code: "CR-NET-RACK",
+        name: "Control Room Network Rack",
+        siteName: controlRoomSiteName,
+        domain: "it",
+      },
+      {
+        code: "CR-VW-SRV-RACK",
+        name: "Control Room Videowall Server Rack",
+        siteName: controlRoomSiteName,
+        domain: "it",
+      },
+      {
+        code: "CR-NET-RACK-PDU-A",
+        name: "Network Rack PDU A",
+        siteName: controlRoomSiteName,
+        domain: "it",
+      },
+      {
+        code: "CR-NET-RACK-PDU-B",
+        name: "Network Rack PDU B",
+        siteName: controlRoomSiteName,
+        domain: "it",
+      },
+      {
+        code: "CR-VW-RACK-PDU-A",
+        name: "Videowall Server Rack PDU A",
+        siteName: controlRoomSiteName,
+        domain: "it",
+      },
+      {
+        code: "CR-VW-RACK-PDU-B",
+        name: "Videowall Server Rack PDU B",
+        siteName: controlRoomSiteName,
+        domain: "it",
+      },
     ] as const;
 
     const assetRows: { id: string; code: string }[] = [];
@@ -117,6 +226,14 @@ async function main(): Promise<void> {
         .where(eq(assets.code, a.code))
         .limit(1);
       if (row[0]) {
+        await db
+          .update(assets)
+          .set({
+            name: a.name,
+            siteName: a.siteName,
+            domain: a.domain,
+          })
+          .where(eq(assets.id, row[0].id));
         assetRows.push({ id: row[0].id, code: a.code });
         continue;
       }
@@ -381,6 +498,106 @@ async function main(): Promise<void> {
           action: { type: "review", target: "Energy operations" },
         },
       ]);
+    }
+
+    const crBreakerRules = [
+      ["CR-Q1", "Main MCCB"],
+      ["CR-Q2", "UPS-1 input feeder"],
+      ["CR-Q3", "UPS-2 input feeder"],
+      ["CR-Q4", "UPS-1 output feeder"],
+      ["CR-Q5", "UPS-2 output feeder"],
+      ["CR-Q6", "Network Rack PDU-A feeder"],
+      ["CR-Q7", "Network Rack PDU-B feeder"],
+      ["CR-Q8", "Videowall PDU-A feeder"],
+      ["CR-Q9", "Videowall PDU-B feeder"],
+      ["CR-Q10", "HVAC-1 feeder"],
+      ["CR-Q11", "HVAC-2 feeder"],
+      ["CR-Q12", "Control Room lighting feeder"],
+    ] as const;
+
+    for (const [assetCode, feederName] of crBreakerRules) {
+      const breakerAsset = assetRows.find((row) => row.code === assetCode);
+      if (!breakerAsset) {
+        continue;
+      }
+      const breakerNumber = assetCode.replace("CR-Q", "Q");
+      const ruleCode =
+        assetCode === "CR-Q9"
+          ? "cr_q9_vw_pdu_b_current_warning"
+          : `${assetCode.toLowerCase().replace("-", "_")}_current_warning`;
+      const ruleValues = {
+        name: `CR ${breakerNumber} current warning`,
+        description: `IF ${breakerNumber} current is above 3 A THEN flag the ${feederName}.`,
+        category: "operations",
+        ruleType: "threshold",
+        assetId: breakerAsset.id,
+        pointKey: "current_a",
+        operator: "gt",
+        thresholdValue: 3,
+        severity: "warning",
+        condition: { window: "latest", unit: "A" },
+        action: { type: "notify", target: "Control room operations" },
+      } as const;
+      const existingCrRule = await db
+        .select({ id: automationRules.id })
+        .from(automationRules)
+        .where(eq(automationRules.code, ruleCode))
+        .limit(1);
+      if (existingCrRule[0]) {
+        await db
+          .update(automationRules)
+          .set(ruleValues)
+          .where(eq(automationRules.id, existingCrRule[0].id));
+        continue;
+      }
+      await db.insert(automationRules).values({
+        code: ruleCode,
+        ...ruleValues,
+      });
+    }
+
+    const crPduRules = [
+      ["CR-NET-RACK-PDU-A", "Network Rack PDU-A"],
+      ["CR-NET-RACK-PDU-B", "Network Rack PDU-B"],
+      ["CR-VW-RACK-PDU-A", "Videowall Rack PDU-A"],
+      ["CR-VW-RACK-PDU-B", "Videowall Rack PDU-B"],
+    ] as const;
+
+    for (const [assetCode, pduName] of crPduRules) {
+      const pduAsset = assetRows.find((row) => row.code === assetCode);
+      if (!pduAsset) {
+        continue;
+      }
+      const ruleCode = `${assetCode.toLowerCase().replaceAll("-", "_")}_util_warning`;
+      const ruleValues = {
+        name: `${pduName} utilisation warning`,
+        description: `IF ${pduName} utilisation is above 85% THEN flag rack power capacity.`,
+        category: "operations",
+        ruleType: "threshold",
+        assetId: pduAsset.id,
+        pointKey: "pdu_util_pct",
+        operator: "gt",
+        thresholdValue: 85,
+        severity: "warning",
+        condition: { window: "latest", unit: "%" },
+        action: { type: "notify", target: "Control room operations" },
+      } as const;
+      const existingPduRule = await db
+        .select({ id: automationRules.id })
+        .from(automationRules)
+        .where(eq(automationRules.code, ruleCode))
+        .limit(1);
+      if (existingPduRule[0]) {
+        await db
+          .update(automationRules)
+          .set(ruleValues)
+          .where(eq(automationRules.id, existingPduRule[0].id));
+        continue;
+      }
+      await db.insert(automationRules).values({
+        code: ruleCode,
+        ...ruleValues,
+      });
     }
 
     for (const row of mapLocationRowsForInsert()) {

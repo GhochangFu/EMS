@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 5 Sprint F ready.
+> **Active phase:** Part 2 / Phase 5 Sprint H active.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -300,7 +300,7 @@ Process (`AGENTS.md` §10).
   coverage (95%).
 
 ### Phase 5 — Operations modules (~3 weeks)
-- **Status:** in progress — Sprint E complete, Sprint F ready
+- **Status:** in progress — Sprint H active
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
   reports. MinIO / object storage graduates only when report files need
   persisted storage.
@@ -405,7 +405,7 @@ Process (`AGENTS.md` §10).
   browser-based Reports smoke checks passed.
 
 #### Phase 5 Sprint F — Report storage
-- **Status:** pending
+- **Status:** skipped for now — revisit later if persisted report history is needed
 - **Goal:** persist generated report files only after reports are useful.
 - **Deliverables**
   - Promote MinIO/object storage if persisted report files are required.
@@ -415,8 +415,40 @@ Process (`AGENTS.md` §10).
 - **Exit criteria:** generated reports can be persisted and downloaded
   from history. Skip this sprint if report storage is not needed.
 
-#### Phase 5 Sprint G — Guided visual rule builder
-- **Status:** future / not promoted
+#### Phase 5 Sprint G — Control Room foundation
+- **Status:** complete
+- **Goal:** bring the first IBMS Control Room 2D screens into the React app
+  with seeded assets and simulator telemetry before broader UI alignment or
+  future 3D work.
+- **UX source:** `ESKOM_SMOC.html` Control Room routes `R.crOv`,
+  `R.crSld`, and `R.crIT`.
+- **Deliverables**
+  - Seed DB assets for the Control Room electrical path, UPS/battery
+    equipment, rack PDUs, Network Rack, and Videowall Server Rack.
+  - Extend the simulator so these Control Room assets emit live electrical,
+    UPS/battery, rack, and PDU telemetry.
+  - Add `/cr-overview` for CR Main Dashboard with KPI ribbon, mini-SLD,
+    UPS/HVAC tiles, rack summaries, energy snapshot, active rule warnings,
+    and drilldowns for the completed CR modules.
+  - Add `/cr-sld` for CR Electrical SLD with metering banner, detailed SLD,
+    and Q1-Q12 breaker status/energy table driven by live telemetry and
+    enabled rules.
+  - Add `/cr-it` for CR IT & Rack Load with rack cards, PDU statuses,
+    server inventory, and rule-driven UPS source mapping.
+  - Keep the existing `/schematic/sld` DC1 electrical SLD unchanged.
+- **Non-goals**
+  - No CR UPS Monitoring, Battery Bank, HVAC System, Environment, Security,
+    Alarm Management, or Trends pages in this sprint.
+  - No Three.js Control Room 3D.
+  - No two-way commanding, setpoint changes, breaker operations, or approval
+    workflow.
+  - No real ingestion/protocol adapters.
+- **Exit criteria:** complete — Control Room assets exist in DB, simulator
+  telemetry is present for those assets, and browser smoke verifies
+  `/cr-overview`, `/cr-sld`, and `/cr-it` render live values.
+
+#### Phase 5 Sprint H — Guided visual rule builder
+- **Status:** in progress
 - **Goal:** let operators create and edit simple rules from the UI without
   introducing a free-form node graph or unsafe command automation.
 - **Prerequisites**
@@ -451,7 +483,7 @@ Process (`AGENTS.md` §10).
   rule, preview it against current data, publish it, enable/disable it, and
   see subsequent execution traces with audit history.
 
-#### Phase 5 Sprint H — Completed-page UI/UX alignment
+#### Phase 5 Sprint I — Completed-page UI/UX alignment
 - **Status:** planned after Phase 5 functionality
 - **Goal:** revisit all completed pages and bring their UI/UX closer to
   `ESKOM_SMOC.html` after the Phase 5 operational workflows are complete.

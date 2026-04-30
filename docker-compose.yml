@@ -134,7 +134,7 @@ services:
     environment:
       DATABASE_URL: postgres://bms_app:bms_app_dev@postgres:5432/bms
       SIM_RATE_HZ: 1
-      SIM_ASSET_COUNT: 32
+      SIM_ASSET_COUNT: all
       SIM_METRICS_PORT: 9101
     ports:
       - "9101:9101"

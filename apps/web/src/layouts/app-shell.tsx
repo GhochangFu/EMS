@@ -20,6 +20,9 @@ const modules = [
   { label: "Energy", path: "/energy" },
   { label: "Rule Engine", path: "/rules" },
   { label: "Reports", path: "/reports" },
+  { label: "CR · Main Dashboard", path: "/cr-overview" },
+  { label: "CR · Electrical SLD", path: "/cr-sld" },
+  { label: "CR · IT & Rack Load", path: "/cr-it" },
   { label: "Maintenance", path: "/work-orders" },
   { label: "Maintenance Schedules", path: "/maintenance-schedules" },
 ] as const;

@@ -1,6 +1,6 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint E Complete)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint H Active)
 
-> **Status:** ACTIVE — Phase 5 Sprint E complete; Sprint F ready.
+> **Status:** ACTIVE — Phase 5 Sprint H in progress.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -21,7 +21,12 @@ schedules, asset-linked history, and conversion into work orders from a
 dedicated Schedule Centre companion screen. Phase 5 Sprint D added the
 basic rule engine: simple threshold/time-window rules, execution history,
 and enable/disable UI without a complex visual builder. Phase 5 Sprint E
-added Energy report previews plus CSV export only.
+added Energy report previews plus CSV export only. Phase 5 Sprint F report
+storage is skipped for now and can be revisited later. Phase 5 Sprint G
+added the first 2D IBMS Control Room foundation screens: CR Main Dashboard,
+CR Electrical SLD, and CR IT & Rack Load. Phase 5 Sprint H is active and
+adds a guided IF/THEN visual rule builder for the existing simple
+threshold/time-window rule model.
 
 ---
 
@@ -40,12 +45,19 @@ The current planning direction is:
 5. Treat Phase 5 Sprint D basic rule engine as complete.
 6. Treat Phase 5 Sprint E Energy report previews and CSV export as
    complete.
-7. Complete Phase 5 before revisiting completed screens for a broad
+7. Skip Phase 5 Sprint F report storage for now; revisit only if persisted
+   report files/history are needed.
+8. Treat Phase 5 Sprint G Control Room foundation as complete: 2D React
+   screens backed by seeded assets, simulator telemetry, and rule-driven
+   status where current data exists.
+9. Deliver Phase 5 Sprint H guided visual rule builder without two-way
+   commanding, free-form node graphs, schedulers, or real-ingestion rules.
+10. Complete Phase 5 before revisiting completed screens for a broad
    UI/UX alignment pass.
-8. Defer MinIO/object storage until persisted report files are actually
+11. Defer MinIO/object storage until persisted report files are actually
    needed.
-9. Plan Phase 6 as Three.js Control Room only.
-10. Keep AI Copilot / chatbot out of scope.
+12. Plan Phase 6 as Three.js Control Room only.
+13. Keep AI Copilot / chatbot out of scope.
 
 The completed prototype screens are:
 
@@ -80,7 +92,7 @@ entry **D-0001**.
 | Telemetry DB | TimescaleDB extension on the same Postgres |
 | Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
-| Operations   | Work orders, maintenance schedules, and active Sprint D basic rules linked to assets/telemetry |
+| Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, and completed 2D Control Room foundation screens |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, and DB |
 | CI/CD        | GitHub Actions for install, build/typecheck, and migration validation |
 | Cache / pub-sub | Redis 7 for Socket.IO adapter fan-out |
@@ -199,7 +211,7 @@ These are intentionally deferred. Do not implement them yet:
 - Two-way commanding with approval workflows
 - Audit hash-chaining (we keep a simple audit table only)
 - Energy reports (PDF / XLSX)
-- Complex visual rule builders
+- Complex drag-and-drop node graph rule builders
 - Three.js Control Room 3D
 - AI Copilot
 - NERSA / ISO compliance reports
@@ -219,30 +231,45 @@ source/protocol. Work-order UI is complete for Phase 5 Sprint B. Phase 5
 Sprint C Maintenance Schedule Centre is complete. Phase 5 Sprint D basic
 rule-engine UI is complete for simple threshold/time-window rules,
 enable/disable controls, manual evaluation, and execution history. Phase 5
-Sprint E Energy report preview and CSV export are now in scope. Report
-PDF/XLSX output, persisted report storage, and complex visual rule builders
-remain out of scope until their specific sprint is promoted. AI Copilot /
-chatbot remains deferred. When any other item above is needed, follow §10
-(Promotion Process).
+Sprint E Energy report preview and CSV export are complete. Phase 5 Sprint
+G 2D Control Room foundation is complete for CR Main Dashboard, CR
+Electrical SLD, and CR IT & Rack Load only. Phase 5 Sprint H guided visual
+rule builder is now in scope for simple threshold/time-window rule creation,
+draft preview, publish, archive, duplicate, and audit history. Report
+PDF/XLSX output, persisted report storage, the remaining CR modules, Phase
+6 3D, two-way commands, real-ingestion rules, scheduler/job queues, and
+complex node graph builders remain out of scope until their specific sprint
+is promoted. AI Copilot / chatbot remains deferred. When any other item
+above is needed, follow §10 (Promotion Process).
 
 ---
 
-## 7. Definition of Done (Phase 5 Sprint E)
+## 7. Definition of Done (Phase 5 Sprint H)
 
-Phase 5 Sprint E is done:
+Phase 5 Sprint H is done when:
 
 1. Native WSL development and the Phase 1 compose path remain unchanged.
-2. A protected API previews an Energy Consumption report for a selected
-   date range using current Energy Centre telemetry.
-3. The preview includes kWh, peak demand, estimated PUE, indicative cost,
-   source mix totals, and top consumers.
-4. Operators can open a Reports & Analytics screen mapped to
-   `ESKOM_SMOC.html` Reports (`R.rp`).
-5. Operators can select a date range, preview the Energy Consumption
-   report, and export CSV.
-6. PDF/XLSX output, MinIO/object storage, report history, and scheduled
-   delivery remain out of scope.
-7. Typecheck/build, API smoke, and UI smoke pass.
+2. Operators can open a guided Rule Builder flow from the Rule Engine
+   screen mapped to `ESKOM_SMOC.html` Rule Engine (`R.rl`).
+3. The builder supports threshold and time-window rules using the existing
+   `bms.automation_rules` model.
+4. Operators can select a current asset and compatible telemetry point
+   from API-backed data.
+5. Server-side validation rejects unsupported asset/point/operator/action
+   combinations, unsafe payloads, and invalid threshold/time-window ranges.
+6. Operators can save drafts, preview/test a draft against latest telemetry
+   without enabling it, publish it, duplicate it, archive it, and toggle
+   enabled/disabled state.
+7. Create, edit, publish, archive, enable, disable, duplicate, and preview
+   actions write lightweight audit rows.
+8. UI states clearly show draft, enabled, disabled, archived, invalid, and
+   never-evaluated rules.
+9. The UI copy separates operator-created rules from simulator alarm
+   thresholds and future real-source rules.
+10. Two-way commands, setpoint changes, breaker actions, approval workflow,
+    real-ingestion rules, scheduler/job queue dependencies, and complex
+    drag-and-drop node graphs remain out of scope.
+11. Typecheck/build, API smoke, and browser smoke pass.
 
 ---
 

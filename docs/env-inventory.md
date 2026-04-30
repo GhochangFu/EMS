@@ -53,7 +53,7 @@ re-login during demos.
 |----------|----------|-------------------------|---------|
 | `DATABASE_URL` | Yes | `postgres://bms_app:bms_app_dev@postgres:5432/bms` | Postgres/TimescaleDB connection string. |
 | `SIM_RATE_HZ` | No | `1` | Simulator write frequency. |
-| `SIM_ASSET_COUNT` | No | `32` | Maximum seeded assets loaded by the simulator. |
+| `SIM_ASSET_COUNT` | No | `all` in Compose | Maximum seeded assets loaded by the simulator; use `all` for full coverage or a number to cap rows ordered by asset code. |
 | `SIM_METRICS_PORT` | No | `9101` | Prometheus metrics HTTP port exposed by the simulator. |
 
 ## Observability Containers

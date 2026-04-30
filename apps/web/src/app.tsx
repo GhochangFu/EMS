@@ -11,6 +11,9 @@ import { WorkOrdersPage } from "./pages/work-orders-page";
 import { MaintenanceSchedulesPage } from "./pages/maintenance-schedules-page";
 import { RulesPage } from "./pages/rules-page";
 import { ReportsPage } from "./pages/reports-page";
+import { ControlRoomOverviewPage } from "./pages/control-room-overview-page";
+import { ControlRoomSldPage } from "./pages/control-room-sld-page";
+import { ControlRoomItPage } from "./pages/control-room-it-page";
 import { AuthCallbackPage } from "./pages/auth-callback-page";
 import { LoginPage } from "./pages/login-page";
 import { useAuthStore } from "./stores/auth-store";
@@ -147,6 +150,36 @@ export function App() {
         element={
           accessToken && user ? (
             <ReportsPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/cr-overview"
+        element={
+          accessToken && user ? (
+            <ControlRoomOverviewPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/cr-sld"
+        element={
+          accessToken && user ? (
+            <ControlRoomSldPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/cr-it"
+        element={
+          accessToken && user ? (
+            <ControlRoomItPage user={user} />
           ) : (
             <Navigate to="/login" replace />
           )

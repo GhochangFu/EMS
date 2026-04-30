@@ -211,8 +211,8 @@ Create `apps/sim/.env` (do not commit):
 ```env
 DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms
 SIM_RATE_HZ=1
-# Include all seeded assets (8+ after Sprint 7); low values skip later rows alphabetically.
-SIM_ASSET_COUNT=32
+# Use `all` to cover every seeded asset, or a number to cap rows ordered by asset code.
+SIM_ASSET_COUNT=all
 SIM_METRICS_PORT=9101
 ```
 

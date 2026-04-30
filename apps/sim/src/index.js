@@ -11,7 +11,13 @@ import pg from "pg";
 import promClient from "prom-client";
 
 const require = createRequire(import.meta.url);
-const { ELECTRICAL_POINT_KEYS, HVAC_POINT_KEYS } = require("@bms/shared");
+const {
+  CONTROL_ROOM_ELECTRICAL_POINT_KEYS,
+  CONTROL_ROOM_IT_POINT_KEYS,
+  CONTROL_ROOM_UPS_POINT_KEYS,
+  ELECTRICAL_POINT_KEYS,
+  HVAC_POINT_KEYS,
+} = require("@bms/shared");
 
 const pkgRoot = process.cwd();
 config({ path: resolve(pkgRoot, "../../apps/api/.env") });
@@ -24,7 +30,11 @@ if (!databaseUrl) {
 
 const rateHz = Math.max(0.1, Number(process.env.SIM_RATE_HZ ?? "1"));
 const intervalMs = 1000 / rateHz;
-const assetLimit = Math.min(64, Math.max(1, Number(process.env.SIM_ASSET_COUNT ?? "32")));
+const assetCountRaw = String(process.env.SIM_ASSET_COUNT ?? "64").trim().toLowerCase();
+const assetLimit =
+  assetCountRaw === "all"
+    ? null
+    : Math.min(96, Math.max(1, Number(assetCountRaw)));
 const metricsPort = Number(process.env.SIM_METRICS_PORT ?? "9101");
 
 const NOTIFY_CHANNEL = "bms_telemetry";
@@ -68,6 +78,9 @@ const elecState = new Map();
 /** @type {Map<string, { supplyC: number, returnC: number, fanRpm: number, fanPct: number, chwSup: number, chwRet: number, flow: number, coolingKw: number, compressorOk: number }>} */
 const hvacState = new Map();
 
+/** @type {Map<string, { rackKw: number, rackTempC: number, utilPct: number, outletsUsed: number, pduAStatus: number, pduBStatus: number }>} */
+const itState = new Map();
+
 function rndWalk(prev, delta, min, max) {
   const x = prev + (Math.random() * 2 - 1) * delta;
   return Math.min(max, Math.max(min, x));
@@ -85,6 +98,35 @@ function ensureElecState(assetId) {
     elecState.set(assetId, s);
   }
   return s;
+}
+
+function crProfile(code) {
+  const profiles = {
+    "CR-UTILITY-11KV": { kw: 4.8, current: 15, breaker: 1 },
+    "CR-XFMR-100KVA": { kw: 4.6, current: 14, breaker: 1 },
+    "CR-MAIN-BUS": { kw: 4.4, current: 13.8, breaker: 1 },
+    "CR-UPS-OUT-BUS": { kw: 4.2, current: 13.2, breaker: 1 },
+    "CR-Q1": { kw: 4.21, current: 13.6, breaker: 1 },
+    "CR-Q2": { kw: 2.61, current: 7.4, breaker: 1 },
+    "CR-Q3": { kw: 2.01, current: 5.6, breaker: 1 },
+    "CR-Q4": { kw: 1.74, current: 8.1, breaker: 1 },
+    "CR-Q5": { kw: 1.3, current: 5.9, breaker: 1 },
+    "CR-Q6": { kw: 1.4, current: 6.2, breaker: 1 },
+    "CR-Q7": { kw: 1.41, current: 6.4, breaker: 1 },
+    "CR-Q8": { kw: 0.81, current: 3.6, breaker: 1 },
+    "CR-Q9": { kw: 0.61, current: 3.0, breaker: 1 },
+    "CR-Q10": { kw: 2.81, current: 12.4, breaker: 1 },
+    "CR-Q11": { kw: 0, current: 0, breaker: 0 },
+    "CR-Q12": { kw: 0.41, current: 1.8, breaker: 1 },
+    "CR-UPS-1": { kw: 1.74, current: 8.1, breaker: 1, loadPct: 62 },
+    "CR-UPS-2": { kw: 1.3, current: 5.9, breaker: 1, loadPct: 48 },
+    "CR-BATT-1": { kw: 0.18, current: 0.5, breaker: 1, batteryV: 384.2 },
+    "CR-BATT-2": { kw: 0.08, current: 0.2, breaker: 1, batteryV: 386.1 },
+    "CR-HVAC-1": { kw: 2.81, current: 12.4, breaker: 1 },
+    "CR-HVAC-2": { kw: 0, current: 0, breaker: 0 },
+    "CR-LIGHT-AUX": { kw: 0.41, current: 1.8, breaker: 1 },
+  };
+  return profiles[code] ?? null;
 }
 
 function ensureHvacState(assetId) {
@@ -106,23 +148,80 @@ function ensureHvacState(assetId) {
   return s;
 }
 
-function stepElectrical(assetId) {
+function ensureItState(assetId, code) {
+  let s = itState.get(assetId);
+  if (!s) {
+    const isVideoWall = code.includes("VW");
+    const isWarnPdu = code === "CR-VW-RACK-PDU-B";
+    s = {
+      rackKw: isVideoWall ? 1.42 : 2.81,
+      rackTempC: isVideoWall ? 25.8 : 24.5,
+      utilPct: isWarnPdu ? 88 : isVideoWall ? 72 : 64,
+      outletsUsed: isVideoWall ? 11 : 18,
+      pduAStatus: 1,
+      pduBStatus: isWarnPdu ? 0.5 : 1,
+    };
+    itState.set(assetId, s);
+  }
+  return s;
+}
+
+function stepElectrical(assetId, code = "") {
   const s = ensureElecState(assetId);
-  s.v = rndWalk(s.v, 0.4, 220, 240);
-  s.i = rndWalk(s.i, 3, 40, 520);
+  const profile = crProfile(code);
+  s.v = rndWalk(profile ? 230 : s.v, 0.4, 220, 240);
+  s.i = profile
+    ? rndWalk(profile.current, 0.3, Math.max(0, profile.current - 1.5), profile.current + 1.5)
+    : rndWalk(s.i, 3, 40, 520);
   s.pf = rndWalk(s.pf, 0.01, 0.82, 0.99);
-  s.kw = (s.v * s.i * s.pf) / 1000;
+  s.kw = profile ? rndWalk(profile.kw, 0.05, Math.max(0, profile.kw - 0.3), profile.kw + 0.3) : (s.v * s.i * s.pf) / 1000;
   const kva = (s.v * s.i) / 1000;
   const kvar = Math.sqrt(Math.max(0, kva * kva - s.kw * s.kw));
-  const breaker = Math.random() > 0.002 ? 1 : 0;
+  const breaker = profile ? profile.breaker : Math.random() > 0.002 ? 1 : 0;
   const t = new Date();
-  return [
+  const points = [
     { assetId, pointKey: "voltage_l1_v", value: s.v, unit: "V", time: t },
     { assetId, pointKey: "current_a", value: s.i, unit: "A", time: t },
     { assetId, pointKey: "kw", value: s.kw, unit: "kW", time: t },
     { assetId, pointKey: "kvar", value: kvar, unit: "kVAR", time: t },
     { assetId, pointKey: "pf", value: s.pf, unit: null, time: t },
     { assetId, pointKey: "breaker_main", value: breaker, unit: null, time: t },
+  ];
+  if (code.startsWith("CR-")) {
+    points.push(
+      { assetId, pointKey: "frequency_hz", value: rndWalk(50.02, 0.02, 49.8, 50.2), unit: "Hz", time: t },
+      { assetId, pointKey: "kwh_today", value: Math.max(0, s.kw * 14.2), unit: "kWh", time: t },
+    );
+    if (code.startsWith("CR-UPS") || code.startsWith("CR-BATT")) {
+      const loadPct = profile?.loadPct ?? Math.min(100, Math.max(0, (s.kw / 2.8) * 100));
+      const batteryV = profile?.batteryV ?? (code.endsWith("2") ? 386.1 : 384.2);
+      points.push(
+        { assetId, pointKey: "load_pct", value: rndWalk(loadPct, 1.2, 0, 100), unit: "%", time: t },
+        { assetId, pointKey: "output_voltage_v", value: rndWalk(230, 0.4, 225, 235), unit: "V", time: t },
+        { assetId, pointKey: "output_freq_hz", value: rndWalk(50, 0.01, 49.8, 50.2), unit: "Hz", time: t },
+        { assetId, pointKey: "battery_v", value: rndWalk(batteryV, 0.3, 360, 392), unit: "V", time: t },
+        { assetId, pointKey: "battery_temp_c", value: rndWalk(code.endsWith("2") ? 25.8 : 26.4, 0.08, 20, 32), unit: "°C", time: t },
+        { assetId, pointKey: "backup_min", value: rndWalk(code.endsWith("2") ? 54 : 42, 0.4, 5, 80), unit: "min", time: t },
+        { assetId, pointKey: "health_pct", value: rndWalk(code.endsWith("2") ? 94 : 96, 0.2, 70, 100), unit: "%", time: t },
+      );
+    }
+  }
+  return points;
+}
+
+function stepIt(assetId, code) {
+  const s = ensureItState(assetId, code);
+  s.rackKw = rndWalk(s.rackKw, 0.04, 0.2, code.includes("NET") ? 3.1 : 2.2);
+  s.rackTempC = rndWalk(s.rackTempC, 0.08, 20, 32);
+  s.utilPct = rndWalk(s.utilPct, 0.8, 20, 96);
+  const t = new Date();
+  return [
+    { assetId, pointKey: "rack_kw", value: s.rackKw, unit: "kW", time: t },
+    { assetId, pointKey: "rack_temp_c", value: s.rackTempC, unit: "°C", time: t },
+    { assetId, pointKey: "pdu_a_status", value: s.pduAStatus, unit: null, time: t },
+    { assetId, pointKey: "pdu_b_status", value: s.pduBStatus, unit: null, time: t },
+    { assetId, pointKey: "pdu_util_pct", value: s.utilPct, unit: "%", time: t },
+    { assetId, pointKey: "outlets_used", value: s.outletsUsed, unit: null, time: t },
   ];
 }
 
@@ -183,10 +282,13 @@ function stepHvac(assetId) {
 }
 
 async function loadAssets() {
-  const res = await pool.query(
-    `select id, domain from bms.assets order by code asc limit $1`,
-    [assetLimit],
-  );
+  const res =
+    assetLimit === null
+      ? await pool.query(`select id, code, domain from bms.assets order by code asc`)
+      : await pool.query(
+          `select id, code, domain from bms.assets order by code asc limit $1`,
+          [assetLimit],
+        );
   return res.rows;
 }
 
@@ -198,7 +300,11 @@ async function tick(rows) {
     const readings = [];
     for (const row of rows) {
       const batch =
-        row.domain === "hvac" ? stepHvac(row.id) : stepElectrical(row.id);
+        row.domain === "it"
+          ? stepIt(row.id, row.code)
+          : row.domain === "hvac"
+            ? stepHvac(row.id)
+            : stepElectrical(row.id, row.code);
       for (const r of batch) {
         outRows.push([r.time, r.assetId, r.pointKey, r.value, r.unit]);
         readings.push({
@@ -259,10 +365,14 @@ async function main() {
     throw new Error("No assets in bms.assets — run pnpm db:seed");
   }
   const hvacN = assetRows.filter((r) => r.domain === "hvac").length;
-  const elecN = assetRows.length - hvacN;
+  const itN = assetRows.filter((r) => r.domain === "it").length;
+  const elecN = assetRows.length - hvacN - itN;
   process.stdout.write(
-    `[sim] ${assetRows.length} assets (${elecN} electrical, ${hvacN} hvac) @ ${rateHz} Hz\n` +
+    `[sim] ${assetRows.length} assets (${elecN} electrical, ${hvacN} hvac, ${itN} it) @ ${rateHz} Hz\n` +
       `  electrical: ${ELECTRICAL_POINT_KEYS.join(", ")}\n` +
+      `  control-room electrical: ${CONTROL_ROOM_ELECTRICAL_POINT_KEYS.join(", ")}\n` +
+      `  control-room ups: ${CONTROL_ROOM_UPS_POINT_KEYS.join(", ")}\n` +
+      `  control-room it: ${CONTROL_ROOM_IT_POINT_KEYS.join(", ")}\n` +
       `  hvac: ${HVAC_POINT_KEYS.join(", ")}\n`,
   );
 

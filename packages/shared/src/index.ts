@@ -52,6 +52,42 @@ export const HVAC_POINT_KEYS = [
 
 export type HvacPointKey = (typeof HVAC_POINT_KEYS)[number];
 
+/** Control Room UPS/battery points used by the 2D IBMS screens. */
+export const CONTROL_ROOM_UPS_POINT_KEYS = [
+  "load_pct",
+  "output_voltage_v",
+  "output_freq_hz",
+  "battery_v",
+  "battery_temp_c",
+  "backup_min",
+  "health_pct",
+] as const;
+
+export type ControlRoomUpsPointKey =
+  (typeof CONTROL_ROOM_UPS_POINT_KEYS)[number];
+
+/** Control Room rack/PDU points used by the 2D IBMS screens. */
+export const CONTROL_ROOM_IT_POINT_KEYS = [
+  "rack_kw",
+  "rack_temp_c",
+  "pdu_a_status",
+  "pdu_b_status",
+  "pdu_util_pct",
+  "outlets_used",
+] as const;
+
+export type ControlRoomItPointKey = (typeof CONTROL_ROOM_IT_POINT_KEYS)[number];
+
+/** Control Room electrical points beyond the generic SLD set. */
+export const CONTROL_ROOM_ELECTRICAL_POINT_KEYS = [
+  ...ELECTRICAL_POINT_KEYS,
+  "frequency_hz",
+  "kwh_today",
+] as const;
+
+export type ControlRoomElectricalPointKey =
+  (typeof CONTROL_ROOM_ELECTRICAL_POINT_KEYS)[number];
+
 /** One telemetry sample (DB row / WebSocket payload). */
 export type TelemetryReading = {
   time: string;

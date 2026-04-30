@@ -23,10 +23,26 @@ const FRESH_MS = 25_000;
 
 export type SchematicTelemetrySlice = {
   kw: number | null;
+  kvar: number | null;
   breaker: number | null;
   voltage: number | null;
   current: number | null;
   pf: number | null;
+  frequencyHz: number | null;
+  kwhToday: number | null;
+  loadPct: number | null;
+  outputVoltageV: number | null;
+  outputFreqHz: number | null;
+  batteryV: number | null;
+  batteryTempC: number | null;
+  backupMin: number | null;
+  healthPct: number | null;
+  rackKw: number | null;
+  rackTempC: number | null;
+  pduAStatus: number | null;
+  pduBStatus: number | null;
+  pduUtilPct: number | null;
+  outletsUsed: number | null;
   supplyAirTempC: number | null;
   returnAirTempC: number | null;
   fanRpm: number | null;
@@ -56,10 +72,26 @@ const SchematicTelemetryContext = createContext<Ctx | null>(null);
 function emptySlice(): SchematicTelemetrySlice {
   return {
     kw: null,
+    kvar: null,
     breaker: null,
     voltage: null,
     current: null,
     pf: null,
+    frequencyHz: null,
+    kwhToday: null,
+    loadPct: null,
+    outputVoltageV: null,
+    outputFreqHz: null,
+    batteryV: null,
+    batteryTempC: null,
+    backupMin: null,
+    healthPct: null,
+    rackKw: null,
+    rackTempC: null,
+    pduAStatus: null,
+    pduBStatus: null,
+    pduUtilPct: null,
+    outletsUsed: null,
     supplyAirTempC: null,
     returnAirTempC: null,
     fanRpm: null,
@@ -82,6 +114,8 @@ function applyReading(
   switch (r.pointKey) {
     case "kw":
       return { ...next, kw: r.value };
+    case "kvar":
+      return { ...next, kvar: r.value };
     case "breaker_main":
       return { ...next, breaker: r.value };
     case "voltage_l1_v":
@@ -90,6 +124,36 @@ function applyReading(
       return { ...next, current: r.value };
     case "pf":
       return { ...next, pf: r.value };
+    case "frequency_hz":
+      return { ...next, frequencyHz: r.value };
+    case "kwh_today":
+      return { ...next, kwhToday: r.value };
+    case "load_pct":
+      return { ...next, loadPct: r.value };
+    case "output_voltage_v":
+      return { ...next, outputVoltageV: r.value };
+    case "output_freq_hz":
+      return { ...next, outputFreqHz: r.value };
+    case "battery_v":
+      return { ...next, batteryV: r.value };
+    case "battery_temp_c":
+      return { ...next, batteryTempC: r.value };
+    case "backup_min":
+      return { ...next, backupMin: r.value };
+    case "health_pct":
+      return { ...next, healthPct: r.value };
+    case "rack_kw":
+      return { ...next, rackKw: r.value };
+    case "rack_temp_c":
+      return { ...next, rackTempC: r.value };
+    case "pdu_a_status":
+      return { ...next, pduAStatus: r.value };
+    case "pdu_b_status":
+      return { ...next, pduBStatus: r.value };
+    case "pdu_util_pct":
+      return { ...next, pduUtilPct: r.value };
+    case "outlets_used":
+      return { ...next, outletsUsed: r.value };
     case "supply_air_temp_c":
       return { ...next, supplyAirTempC: r.value };
     case "return_air_temp_c":

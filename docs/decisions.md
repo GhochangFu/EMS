@@ -220,8 +220,9 @@ same `telemetry.point_values` hypertable without new API modules.
 1. Add `HVAC_POINT_KEYS` in `@bms/shared` (air temps, fan rpm / %, CHW
    flow and temps, `compressor_ok`, `cooling_kw`).
 2. Extend `apps/sim` to load `id` + `domain` per asset and emit
-   electrical vs HVAC point batches. Default `SIM_ASSET_COUNT` raised to
-   32 so mixed fleets fit; seed adds `CH-CRAC-103` and `CH-CRAC-104`.
+   electrical vs HVAC point batches. `SIM_ASSET_COUNT` can be set to `all`
+   for full seeded-asset coverage or to a number for capped local runs;
+   seed adds `CH-CRAC-103` and `CH-CRAC-104`.
 3. Generalise `SchematicTelemetryProvider` with a `pointKeys` argument;
    CRAC page uses `HVAC_POINT_KEYS`. `CracSchematic` reuses the Sprint 6
    live-SVG pattern (mockup `R.crac`).
