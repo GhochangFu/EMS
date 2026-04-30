@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 5 Sprint H active.
+> **Active phase:** Part 2 / Phase 5 Sprint H complete; Sprint I planned.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -300,7 +300,7 @@ Process (`AGENTS.md` §10).
   coverage (95%).
 
 ### Phase 5 — Operations modules (~3 weeks)
-- **Status:** in progress — Sprint H active
+- **Status:** in progress — Sprint H complete; Sprint I planned
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
   reports. MinIO / object storage graduates only when report files need
   persisted storage.
@@ -448,7 +448,7 @@ Process (`AGENTS.md` §10).
   `/cr-overview`, `/cr-sld`, and `/cr-it` render live values.
 
 #### Phase 5 Sprint H — Guided visual rule builder
-- **Status:** in progress
+- **Status:** complete
 - **Goal:** let operators create and edit simple rules from the UI without
   introducing a free-form node graph or unsafe command automation.
 - **Prerequisites**
@@ -479,12 +479,14 @@ Process (`AGENTS.md` §10).
   - No job queue or scheduler dependency unless a later sprint promotes it.
   - No complex drag-and-drop node graph until the guided builder proves the
     model and UX.
-- **Exit criteria:** an operator can create a draft threshold or time-window
-  rule, preview it against current data, publish it, enable/disable it, and
-  see subsequent execution traces with audit history.
+- **Exit criteria:** complete — an operator can create a draft threshold or
+  time-window rule, preview it against current data, publish it,
+  enable/disable it, duplicate/archive it, and see execution traces with
+  audit history. Compose migration/seed, API/browser smoke, audit checks,
+  duplicate-code cleanup, and build/lint verification passed.
 
 #### Phase 5 Sprint I — Completed-page UI/UX alignment
-- **Status:** planned after Phase 5 functionality
+- **Status:** planned next
 - **Goal:** revisit all completed pages and bring their UI/UX closer to
   `ESKOM_SMOC.html` after the Phase 5 operational workflows are complete.
 - **Deliverables**

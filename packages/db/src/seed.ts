@@ -523,8 +523,8 @@ async function main(): Promise<void> {
       const breakerNumber = assetCode.replace("CR-Q", "Q");
       const ruleCode =
         assetCode === "CR-Q9"
-          ? "cr_q9_vw_pdu_b_current_warning"
-          : `${assetCode.toLowerCase().replace("-", "_")}_current_warning`;
+          ? "CR_Q9_VW_PDU_B_CURRENT_WARNING"
+          : `${assetCode.replace("-", "_")}_CURRENT_WARNING`;
       const ruleValues = {
         name: `CR ${breakerNumber} current warning`,
         description: `IF ${breakerNumber} current is above 3 A THEN flag the ${feederName}.`,
@@ -538,16 +538,18 @@ async function main(): Promise<void> {
         condition: { window: "latest", unit: "A" },
         action: { type: "notify", target: "Control room operations" },
       } as const;
-      const existingCrRule = await db
-        .select({ id: automationRules.id })
+      const existingCrRules = await db
+        .select({ id: automationRules.id, code: automationRules.code })
         .from(automationRules)
-        .where(eq(automationRules.code, ruleCode))
-        .limit(1);
-      if (existingCrRule[0]) {
+        .orderBy(automationRules.createdAt);
+      const existingCrRule = existingCrRules.find(
+        (rule) => rule.code.trim().toUpperCase() === ruleCode,
+      );
+      if (existingCrRule) {
         await db
           .update(automationRules)
-          .set(ruleValues)
-          .where(eq(automationRules.id, existingCrRule[0].id));
+          .set({ code: ruleCode })
+          .where(eq(automationRules.id, existingCrRule.id));
         continue;
       }
       await db.insert(automationRules).values({
@@ -568,7 +570,7 @@ async function main(): Promise<void> {
       if (!pduAsset) {
         continue;
       }
-      const ruleCode = `${assetCode.toLowerCase().replaceAll("-", "_")}_util_warning`;
+      const ruleCode = `${assetCode.replaceAll("-", "_")}_UTIL_WARNING`;
       const ruleValues = {
         name: `${pduName} utilisation warning`,
         description: `IF ${pduName} utilisation is above 85% THEN flag rack power capacity.`,
@@ -582,16 +584,18 @@ async function main(): Promise<void> {
         condition: { window: "latest", unit: "%" },
         action: { type: "notify", target: "Control room operations" },
       } as const;
-      const existingPduRule = await db
-        .select({ id: automationRules.id })
+      const existingPduRules = await db
+        .select({ id: automationRules.id, code: automationRules.code })
         .from(automationRules)
-        .where(eq(automationRules.code, ruleCode))
-        .limit(1);
-      if (existingPduRule[0]) {
+        .orderBy(automationRules.createdAt);
+      const existingPduRule = existingPduRules.find(
+        (rule) => rule.code.trim().toUpperCase() === ruleCode,
+      );
+      if (existingPduRule) {
         await db
           .update(automationRules)
-          .set(ruleValues)
-          .where(eq(automationRules.id, existingPduRule[0].id));
+          .set({ code: ruleCode })
+          .where(eq(automationRules.id, existingPduRule.id));
         continue;
       }
       await db.insert(automationRules).values({

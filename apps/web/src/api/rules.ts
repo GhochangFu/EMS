@@ -1,4 +1,14 @@
-import type { RuleExecutionItem, RuleListItem } from "@bms/shared";
+import type {
+  AutomationRuleAction,
+  AutomationRuleCategory,
+  AutomationRuleCondition,
+  AutomationRuleOperator,
+  AutomationRuleType,
+  RuleBuilderCatalogAsset,
+  RuleExecutionItem,
+  RuleListItem,
+  RulePreviewResult,
+} from "@bms/shared";
 
 import { clearSessionOnAuthFailure, withAuth } from "./http";
 
@@ -12,6 +22,25 @@ export type RuleExecutionsResponse = {
   items: RuleExecutionItem[];
 };
 
+export type RuleBuilderCatalogResponse = {
+  assets: RuleBuilderCatalogAsset[];
+};
+
+export type RuleDraftPayload = {
+  code?: string;
+  name: string;
+  description?: string | null;
+  category: AutomationRuleCategory;
+  ruleType: AutomationRuleType;
+  assetId?: string | null;
+  pointKey?: string | null;
+  operator?: AutomationRuleOperator | null;
+  thresholdValue?: number | null;
+  severity?: "info" | "warning" | "critical" | null;
+  condition: AutomationRuleCondition;
+  action: AutomationRuleAction;
+};
+
 /** GET /api/v1/rules */
 export async function fetchRules(): Promise<RulesResponse> {
   const res = await fetch(`${base}/api/v1/rules`, withAuth());
@@ -20,6 +49,16 @@ export async function fetchRules(): Promise<RulesResponse> {
     throw new Error(`rules ${res.status}`);
   }
   return res.json() as Promise<RulesResponse>;
+}
+
+/** GET /api/v1/rules/catalog */
+export async function fetchRuleBuilderCatalog(): Promise<RuleBuilderCatalogResponse> {
+  const res = await fetch(`${base}/api/v1/rules/catalog`, withAuth());
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    throw new Error(`rule-catalog ${res.status}`);
+  }
+  return res.json() as Promise<RuleBuilderCatalogResponse>;
 }
 
 /** GET /api/v1/rules/executions */
@@ -70,4 +109,104 @@ export async function evaluateRules(): Promise<RuleExecutionsResponse> {
     throw new Error(text || `rule-evaluate ${res.status}`);
   }
   return res.json() as Promise<RuleExecutionsResponse>;
+}
+
+/** POST /api/v1/rules */
+export async function createRuleDraft(input: RuleDraftPayload): Promise<RuleListItem> {
+  const res = await fetch(`${base}/api/v1/rules`, {
+    ...withAuth({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  });
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    const text = await res.text();
+    throw new Error(text || `rule-create ${res.status}`);
+  }
+  return res.json() as Promise<RuleListItem>;
+}
+
+/** PATCH /api/v1/rules/:id */
+export async function updateRuleDraft(input: {
+  id: string;
+  payload: Partial<RuleDraftPayload> & { reason?: string };
+}): Promise<RuleListItem> {
+  const res = await fetch(`${base}/api/v1/rules/${input.id}`, {
+    ...withAuth({
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input.payload),
+    }),
+  });
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    const text = await res.text();
+    throw new Error(text || `rule-update ${res.status}`);
+  }
+  return res.json() as Promise<RuleListItem>;
+}
+
+/** POST /api/v1/rules/preview */
+export async function previewRuleDraft(
+  input: RuleDraftPayload & { id?: string },
+): Promise<RulePreviewResult> {
+  const res = await fetch(`${base}/api/v1/rules/preview`, {
+    ...withAuth({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  });
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    const text = await res.text();
+    throw new Error(text || `rule-preview ${res.status}`);
+  }
+  return res.json() as Promise<RulePreviewResult>;
+}
+
+/** POST /api/v1/rules/:id/publish */
+export async function publishRule(input: {
+  id: string;
+  reason?: string;
+}): Promise<RuleListItem> {
+  return ruleLifecycleRequest(input.id, "publish", input.reason);
+}
+
+/** POST /api/v1/rules/:id/duplicate */
+export async function duplicateRule(input: {
+  id: string;
+  reason?: string;
+}): Promise<RuleListItem> {
+  return ruleLifecycleRequest(input.id, "duplicate", input.reason);
+}
+
+/** POST /api/v1/rules/:id/archive */
+export async function archiveRule(input: {
+  id: string;
+  reason?: string;
+}): Promise<RuleListItem> {
+  return ruleLifecycleRequest(input.id, "archive", input.reason);
+}
+
+async function ruleLifecycleRequest(
+  id: string,
+  action: "publish" | "duplicate" | "archive",
+  reason?: string,
+): Promise<RuleListItem> {
+  const res = await fetch(`${base}/api/v1/rules/${id}/${action}`, {
+    ...withAuth({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    }),
+  });
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    const text = await res.text();
+    throw new Error(text || `rule-${action} ${res.status}`);
+  }
+  return res.json() as Promise<RuleListItem>;
 }

@@ -8,14 +8,18 @@ import type {
 } from "@bms/shared";
 
 import {
+  archiveRule,
+  duplicateRule,
   evaluateRules,
   fetchRuleExecutions,
   fetchRules,
   setRuleEnabled,
 } from "../api/rules";
+import { RuleBuilderPanel } from "./rule-builder-panel";
 
 type RuleFilter = AutomationRuleCategory | "all";
 type StatusFilter = "all" | "enabled" | "disabled";
+type LifecycleFilter = "all" | "draft" | "published" | "archived";
 
 const categoryLabels: Record<AutomationRuleCategory, string> = {
   comfort: "Comfort",
@@ -55,6 +59,19 @@ function statusStyle(item: RuleExecutionItem): string {
   }
 }
 
+function lifecycleStyle(rule: RuleListItem): string {
+  if (rule.lifecycleStatus === "draft") {
+    return "border-amber-200 bg-amber-50 text-amber-900";
+  }
+  if (rule.lifecycleStatus === "archived") {
+    return "border-gray-300 bg-gray-100 text-gray-500";
+  }
+  if (rule.enabled) {
+    return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+  }
+  return "border-gray-200 bg-gray-50 text-bms-muted";
+}
+
 function ruleSummary(rule: RuleListItem): string {
   if (rule.ruleType === "threshold") {
     return `${rule.assetCode ?? "Asset"} · ${rule.pointKey ?? "point"} ${
@@ -82,6 +99,8 @@ export function RulesPanel() {
   const qc = useQueryClient();
   const [categoryFilter, setCategoryFilter] = useState<RuleFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleFilter>("all");
+  const [selectedRule, setSelectedRule] = useState<RuleListItem | null>(null);
 
   const rulesQ = useQuery({
     queryKey: ["rules", "list"],
@@ -107,8 +126,28 @@ export function RulesPanel() {
     },
   });
 
+  const duplicateM = useMutation({
+    mutationFn: duplicateRule,
+    onSuccess: (rule) => {
+      setSelectedRule(rule);
+      void qc.invalidateQueries({ queryKey: ["rules", "list"] });
+    },
+  });
+
+  const archiveM = useMutation({
+    mutationFn: archiveRule,
+    onSuccess: () => {
+      setSelectedRule(null);
+      void qc.invalidateQueries({ queryKey: ["rules", "list"] });
+    },
+  });
+
   const rules = rulesQ.data?.items ?? [];
-  const activeCount = rules.filter((rule) => rule.enabled).length;
+  const activeCount = rules.filter(
+    (rule) => rule.enabled && rule.lifecycleStatus === "published",
+  ).length;
+  const draftCount = rules.filter((rule) => rule.lifecycleStatus === "draft").length;
+  const archivedCount = rules.filter((rule) => rule.lifecycleStatus === "archived").length;
   const thresholdCount = rules.filter((rule) => rule.ruleType === "threshold").length;
   const timeWindowCount = rules.length - thresholdCount;
 
@@ -120,19 +159,21 @@ export function RulesPanel() {
         const statusMatch =
           statusFilter === "all" ||
           (statusFilter === "enabled" ? rule.enabled : !rule.enabled);
-        return categoryMatch && statusMatch;
+        const lifecycleMatch =
+          lifecycleFilter === "all" || rule.lifecycleStatus === lifecycleFilter;
+        return categoryMatch && statusMatch && lifecycleMatch;
       }),
-    [categoryFilter, rules, statusFilter],
+    [categoryFilter, lifecycleFilter, rules, statusFilter],
   );
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
       <section className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-4">
           <Kpi label="Active Rules" value={`${activeCount}/${rules.length}`} />
-          <Kpi label="Threshold" value={String(thresholdCount)} />
-          <Kpi label="Time Window" value={String(timeWindowCount)} />
-          <Kpi label="Source" value="Operator rules" />
+          <Kpi label="Drafts" value={String(draftCount)} />
+          <Kpi label="Archived" value={String(archivedCount)} />
+          <Kpi label="Rule Types" value={`${thresholdCount}/${timeWindowCount}`} />
         </div>
 
         <div className="rounded border border-gray-200 bg-white">
@@ -168,6 +209,18 @@ export function RulesPanel() {
                 <option value="enabled">Enabled</option>
                 <option value="disabled">Disabled</option>
               </select>
+              <select
+                className="rounded border border-gray-300 bg-white px-2 py-1 text-xs"
+                value={lifecycleFilter}
+                onChange={(e) =>
+                  setLifecycleFilter(e.target.value as LifecycleFilter)
+                }
+              >
+                <option value="all">All lifecycle states</option>
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+                <option value="archived">Archived</option>
+              </select>
               <button
                 className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
                 disabled={evaluateM.isPending || activeCount === 0}
@@ -191,6 +244,20 @@ export function RulesPanel() {
                   key={rule.id}
                   rule={rule}
                   pending={toggleM.isPending}
+                  lifecyclePending={duplicateM.isPending || archiveM.isPending}
+                  onEdit={() => setSelectedRule(rule)}
+                  onDuplicate={() =>
+                    duplicateM.mutate({
+                      id: rule.id,
+                      reason: "Operator duplicated rule from Rule Engine",
+                    })
+                  }
+                  onArchive={() =>
+                    archiveM.mutate({
+                      id: rule.id,
+                      reason: "Operator archived rule from Rule Engine",
+                    })
+                  }
                   onToggle={() =>
                     toggleM.mutate({
                       id: rule.id,
@@ -207,28 +274,34 @@ export function RulesPanel() {
         </div>
       </section>
 
-      <aside className="rounded border border-gray-200 bg-white">
-        <div className="border-b border-gray-200 px-4 py-3">
-          <h2 className="font-condensed text-lg font-bold text-bms-ink">
-            Execution Log
-          </h2>
-          <p className="text-xs text-bms-muted">Most recent rule evaluations.</p>
-        </div>
-        {executionsQ.isLoading ? (
-          <p className="p-4 text-sm text-bms-muted">Loading executions...</p>
-        ) : executionsQ.isError ? (
-          <p className="p-4 text-sm text-red-600">Could not load executions.</p>
-        ) : (executionsQ.data?.items ?? []).length === 0 ? (
-          <p className="p-4 text-sm text-bms-muted">
-            No executions yet. Run Evaluate now to create a trace.
-          </p>
-        ) : (
-          <div className="divide-y divide-gray-200">
-            {(executionsQ.data?.items ?? []).map((item) => (
-              <ExecutionRow key={item.id} item={item} />
-            ))}
+      <aside className="space-y-4">
+        <RuleBuilderPanel
+          selectedRule={selectedRule}
+          onClearSelected={() => setSelectedRule(null)}
+        />
+        <section className="rounded border border-gray-200 bg-white">
+          <div className="border-b border-gray-200 px-4 py-3">
+            <h2 className="font-condensed text-lg font-bold text-bms-ink">
+              Execution Log
+            </h2>
+            <p className="text-xs text-bms-muted">Most recent rule evaluations.</p>
           </div>
-        )}
+          {executionsQ.isLoading ? (
+            <p className="p-4 text-sm text-bms-muted">Loading executions...</p>
+          ) : executionsQ.isError ? (
+            <p className="p-4 text-sm text-red-600">Could not load executions.</p>
+          ) : (executionsQ.data?.items ?? []).length === 0 ? (
+            <p className="p-4 text-sm text-bms-muted">
+              No executions yet. Run Evaluate now to create a trace.
+            </p>
+          ) : (
+            <div className="divide-y divide-gray-200">
+              {(executionsQ.data?.items ?? []).map((item) => (
+                <ExecutionRow key={item.id} item={item} />
+              ))}
+            </div>
+          )}
+        </section>
       </aside>
     </div>
   );
@@ -248,19 +321,29 @@ function Kpi({ label, value }: { label: string; value: string }) {
 function RuleCard({
   rule,
   pending,
+  lifecyclePending,
+  onEdit,
+  onDuplicate,
+  onArchive,
   onToggle,
 }: {
   rule: RuleListItem;
   pending: boolean;
+  lifecyclePending: boolean;
+  onEdit: () => void;
+  onDuplicate: () => void;
+  onArchive: () => void;
   onToggle: () => void;
 }) {
+  const canToggle = rule.lifecycleStatus === "published";
+  const canArchive = rule.lifecycleStatus !== "archived";
   return (
     <article className="flex items-start gap-3 px-4 py-3">
       <button
         className={`mt-1 h-5 w-10 rounded-full p-0.5 transition ${
           rule.enabled ? "bg-bms-green" : "bg-gray-300"
         }`}
-        disabled={pending}
+        disabled={pending || !canToggle}
         onClick={onToggle}
         title={rule.enabled ? "Disable rule" : "Enable rule"}
       >
@@ -283,6 +366,18 @@ function RuleCard({
           <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-bms-muted">
             {ruleTypeLabels[rule.ruleType]}
           </span>
+          <span
+            className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${lifecycleStyle(
+              rule,
+            )}`}
+          >
+            {rule.lifecycleStatus}
+            {rule.lifecycleStatus === "published"
+              ? rule.enabled
+                ? " · enabled"
+                : " · disabled"
+              : ""}
+          </span>
         </div>
         <p className="mt-1 text-sm text-bms-muted">{rule.description}</p>
         <div className="mt-2 flex flex-wrap gap-2 text-xs text-bms-muted">
@@ -293,6 +388,28 @@ function RuleCard({
           <span className="rounded bg-gray-100 px-2 py-1">
             Action: {rule.action.type} · {rule.action.target}
           </span>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            className="rounded border border-gray-300 px-2 py-1 text-[11px] font-semibold text-bms-muted"
+            onClick={onEdit}
+          >
+            Edit in builder
+          </button>
+          <button
+            className="rounded border border-gray-300 px-2 py-1 text-[11px] font-semibold text-bms-muted disabled:opacity-50"
+            disabled={lifecyclePending}
+            onClick={onDuplicate}
+          >
+            Duplicate
+          </button>
+          <button
+            className="rounded border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-700 disabled:opacity-50"
+            disabled={lifecyclePending || !canArchive}
+            onClick={onArchive}
+          >
+            Archive
+          </button>
         </div>
       </div>
     </article>

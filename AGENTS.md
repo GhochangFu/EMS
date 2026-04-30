@@ -1,6 +1,6 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint H Active)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint H Complete)
 
-> **Status:** ACTIVE — Phase 5 Sprint H in progress.
+> **Status:** ACTIVE — Phase 5 Sprint H complete; Sprint I planned.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -24,8 +24,8 @@ and enable/disable UI without a complex visual builder. Phase 5 Sprint E
 added Energy report previews plus CSV export only. Phase 5 Sprint F report
 storage is skipped for now and can be revisited later. Phase 5 Sprint G
 added the first 2D IBMS Control Room foundation screens: CR Main Dashboard,
-CR Electrical SLD, and CR IT & Rack Load. Phase 5 Sprint H is active and
-adds a guided IF/THEN visual rule builder for the existing simple
+CR Electrical SLD, and CR IT & Rack Load. Phase 5 Sprint H added a guided
+IF/THEN visual rule builder for the existing simple
 threshold/time-window rule model.
 
 ---
@@ -50,10 +50,10 @@ The current planning direction is:
 8. Treat Phase 5 Sprint G Control Room foundation as complete: 2D React
    screens backed by seeded assets, simulator telemetry, and rule-driven
    status where current data exists.
-9. Deliver Phase 5 Sprint H guided visual rule builder without two-way
-   commanding, free-form node graphs, schedulers, or real-ingestion rules.
-10. Complete Phase 5 before revisiting completed screens for a broad
-   UI/UX alignment pass.
+9. Treat Phase 5 Sprint H guided visual rule builder as complete without
+   two-way commanding, free-form node graphs, schedulers, or real-ingestion
+   rules.
+10. Plan Phase 5 Sprint I as the completed-page UI/UX alignment pass.
 11. Defer MinIO/object storage until persisted report files are actually
    needed.
 12. Plan Phase 6 as Three.js Control Room only.
@@ -92,7 +92,7 @@ entry **D-0001**.
 | Telemetry DB | TimescaleDB extension on the same Postgres |
 | Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
-| Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, and completed 2D Control Room foundation screens |
+| Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, and completed guided rule builder |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, and DB |
 | CI/CD        | GitHub Actions for install, build/typecheck, and migration validation |
 | Cache / pub-sub | Redis 7 for Socket.IO adapter fan-out |
@@ -234,19 +234,20 @@ enable/disable controls, manual evaluation, and execution history. Phase 5
 Sprint E Energy report preview and CSV export are complete. Phase 5 Sprint
 G 2D Control Room foundation is complete for CR Main Dashboard, CR
 Electrical SLD, and CR IT & Rack Load only. Phase 5 Sprint H guided visual
-rule builder is now in scope for simple threshold/time-window rule creation,
-draft preview, publish, archive, duplicate, and audit history. Report
-PDF/XLSX output, persisted report storage, the remaining CR modules, Phase
-6 3D, two-way commands, real-ingestion rules, scheduler/job queues, and
-complex node graph builders remain out of scope until their specific sprint
-is promoted. AI Copilot / chatbot remains deferred. When any other item
-above is needed, follow §10 (Promotion Process).
+rule builder is complete for simple threshold/time-window rule creation,
+draft preview, publish, archive, duplicate, enable/disable, preview, and
+audit history. Report PDF/XLSX output, persisted report storage, the
+remaining CR modules, Phase 6 3D, two-way commands, real-ingestion rules,
+scheduler/job queues, and complex node graph builders remain out of scope
+until their specific sprint is promoted. AI Copilot / chatbot remains
+deferred. When any other item above is needed, follow §10 (Promotion
+Process).
 
 ---
 
 ## 7. Definition of Done (Phase 5 Sprint H)
 
-Phase 5 Sprint H is done when:
+Phase 5 Sprint H is done:
 
 1. Native WSL development and the Phase 1 compose path remain unchanged.
 2. Operators can open a guided Rule Builder flow from the Rule Engine

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, asc, desc, eq, or } from "drizzle-orm";
 
 import {
   assets,
@@ -19,16 +19,33 @@ import type {
   AutomationRuleAction,
   AutomationRuleCategory,
   AutomationRuleCondition,
+  AutomationRuleLifecycleStatus,
   AutomationRuleOperator,
   AutomationRuleType,
+  RuleBuilderCatalogAsset,
   JwtPayload,
   RuleExecutionItem,
   RuleExecutionStatus,
   RuleListItem,
+  RulePreviewResult,
+} from "@bms/shared";
+import {
+  CONTROL_ROOM_ELECTRICAL_POINT_KEYS,
+  CONTROL_ROOM_IT_POINT_KEYS,
+  CONTROL_ROOM_UPS_POINT_KEYS,
+  ELECTRICAL_POINT_KEYS,
+  HVAC_POINT_KEYS,
 } from "@bms/shared";
 
 import { DRIZZLE } from "../database/database.tokens";
-import type { ListRuleExecutionsQuery, RuleToggleBody } from "./rules.schema";
+import type {
+  ListRuleExecutionsQuery,
+  RuleDraftBody,
+  RuleLifecycleBody,
+  RulePreviewBody,
+  RuleToggleBody,
+  RuleUpdateBody,
+} from "./rules.schema";
 
 type RuleRow = {
   id: string;
@@ -50,6 +67,10 @@ type RuleRow = {
   condition: unknown;
   action: unknown;
   lastEvaluatedAt: Date | null;
+  lifecycleStatus: string;
+  publishedAt: Date | null;
+  archivedAt: Date | null;
+  duplicatedFromRuleId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -62,6 +83,21 @@ type EvaluationResult = {
   trace: Record<string, unknown>;
 };
 
+type RuleDraftValues = {
+  code?: string;
+  name: string;
+  description: string | null;
+  category: AutomationRuleCategory;
+  ruleType: AutomationRuleType;
+  assetId: string | null;
+  pointKey: string | null;
+  operator: AutomationRuleOperator | null;
+  thresholdValue: number | null;
+  severity: string | null;
+  condition: AutomationRuleCondition;
+  action: AutomationRuleAction;
+};
+
 const daySlugs = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
 @Injectable()
@@ -72,6 +108,267 @@ export class RulesService {
   async listRules(): Promise<{ items: RuleListItem[] }> {
     const rows = await this.ruleRows();
     return { items: rows.map((row) => this.mapRuleRow(row)) };
+  }
+
+  /** Lists assets and supported telemetry points for the guided rule builder. */
+  async getBuilderCatalog(): Promise<{ assets: RuleBuilderCatalogAsset[] }> {
+    const rows = await this.db
+      .select({
+        id: assets.id,
+        code: assets.code,
+        name: assets.name,
+        siteName: assets.siteName,
+        domain: assets.domain,
+      })
+      .from(assets)
+      .orderBy(asc(assets.siteName), asc(assets.code));
+
+    return {
+      assets: rows.map((row) => ({
+        ...row,
+        pointKeys: this.pointKeysForAsset(row.domain, row.code),
+      })),
+    };
+  }
+
+  /** Creates an operator rule draft without enabling it. */
+  async createDraft(
+    dto: RuleDraftBody,
+    actor: Pick<JwtPayload, "sub" | "email">,
+  ): Promise<RuleListItem> {
+    const values = await this.validateRuleDraft(dto);
+    const actorId = await this.resolveActorId(actor);
+    const now = new Date();
+
+    const [created] = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(automationRules)
+        .values({
+          ...values,
+          code: values.code ?? (await this.nextRuleCode(dto.name)),
+          source: "operator_rule",
+          enabled: false,
+          lifecycleStatus: "draft",
+          publishedAt: null,
+          archivedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning({ id: automationRules.id });
+
+      if (!row) {
+        throw new BadRequestException("Could not create rule draft");
+      }
+
+      await tx.insert(auditLog).values({
+        actorId,
+        action: "rule_draft_create",
+        entityType: "automation_rule",
+        entityId: row.id,
+        reason: "Operator created rule draft",
+        payload: {
+          code: values.code,
+          name: dto.name,
+          oidcSubject: actor.sub,
+          actorEmail: actor.email,
+        },
+      });
+
+      return [row];
+    });
+
+    return this.mapRuleRow(await this.getRuleRow(created.id));
+  }
+
+  /** Updates a draft or published operator-created rule after validation. */
+  async updateRule(
+    id: string,
+    dto: RuleUpdateBody,
+    actor: Pick<JwtPayload, "sub" | "email">,
+  ): Promise<RuleListItem> {
+    const current = await this.getRuleRow(id);
+    if (current.lifecycleStatus === "archived") {
+      throw new BadRequestException("Archived rules cannot be edited");
+    }
+    const merged = this.mergeRuleDraft(current, dto);
+    const values = await this.validateRuleDraft(merged, id);
+    const actorId = await this.resolveActorId(actor);
+    const now = new Date();
+
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(automationRules)
+        .set({ ...values, updatedAt: now })
+        .where(eq(automationRules.id, id));
+
+      await tx.insert(auditLog).values({
+        actorId,
+        action: "rule_update",
+        entityType: "automation_rule",
+        entityId: id,
+        reason: dto.reason ?? "Operator updated rule",
+        payload: {
+          code: current.code,
+          lifecycleStatus: current.lifecycleStatus,
+          oidcSubject: actor.sub,
+          actorEmail: actor.email,
+        },
+      });
+    });
+
+    return this.mapRuleRow(await this.getRuleRow(id));
+  }
+
+  /** Evaluates a draft payload against current data without enabling it. */
+  async previewRule(
+    dto: RulePreviewBody,
+    actor: Pick<JwtPayload, "sub" | "email">,
+  ): Promise<RulePreviewResult> {
+    const values = await this.validateRuleDraft(dto, dto.id);
+    const actorId = await this.resolveActorId(actor);
+    const result = await this.evaluateRule({
+      id: dto.id ?? "00000000-0000-0000-0000-000000000000",
+      code: values.code ?? "DRAFT",
+      name: values.name,
+      description: values.description,
+      category: values.category,
+      ruleType: values.ruleType,
+      source: "operator_rule",
+      enabled: false,
+      assetId: values.assetId ?? null,
+      assetCode: null,
+      assetName: null,
+      siteName: null,
+      pointKey: values.pointKey ?? null,
+      operator: values.operator ?? null,
+      thresholdValue: values.thresholdValue ?? null,
+      severity: values.severity ?? null,
+      condition: values.condition,
+      action: values.action,
+      lastEvaluatedAt: null,
+      lifecycleStatus: "draft",
+      publishedAt: null,
+      archivedAt: null,
+      duplicatedFromRuleId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await this.db.insert(auditLog).values({
+      actorId,
+      action: "rule_preview",
+      entityType: "automation_rule",
+      entityId: dto.id ?? null,
+      reason: "Operator previewed rule draft",
+      payload: {
+        code: values.code,
+        name: values.name,
+        status: result.status,
+        matched: result.matched,
+        oidcSubject: actor.sub,
+        actorEmail: actor.email,
+      },
+    });
+
+    return result;
+  }
+
+  /** Publishes a valid rule draft and enables it for evaluation. */
+  async publishRule(
+    id: string,
+    dto: RuleLifecycleBody,
+    actor: Pick<JwtPayload, "sub" | "email">,
+  ): Promise<RuleListItem> {
+    const current = await this.getRuleRow(id);
+    if (current.lifecycleStatus === "archived") {
+      throw new BadRequestException("Archived rules cannot be published");
+    }
+    await this.validateRuleDraft(this.ruleBodyFromRow(current), id);
+    await this.writeLifecycleUpdate(id, "rule_publish", dto, actor, {
+      lifecycleStatus: "published",
+      enabled: true,
+      publishedAt: new Date(),
+      archivedAt: null,
+    });
+    return this.mapRuleRow(await this.getRuleRow(id));
+  }
+
+  /** Archives a rule and removes it from active evaluation. */
+  async archiveRule(
+    id: string,
+    dto: RuleLifecycleBody,
+    actor: Pick<JwtPayload, "sub" | "email">,
+  ): Promise<RuleListItem> {
+    await this.getRuleRow(id);
+    await this.writeLifecycleUpdate(id, "rule_archive", dto, actor, {
+      lifecycleStatus: "archived",
+      enabled: false,
+      archivedAt: new Date(),
+    });
+    return this.mapRuleRow(await this.getRuleRow(id));
+  }
+
+  /** Copies an existing rule into a disabled draft for operator editing. */
+  async duplicateRule(
+    id: string,
+    dto: RuleLifecycleBody,
+    actor: Pick<JwtPayload, "sub" | "email">,
+  ): Promise<RuleListItem> {
+    const current = await this.getRuleRow(id);
+    const actorId = await this.resolveActorId(actor);
+    const now = new Date();
+    const code = await this.nextRuleCode(`${current.code}-COPY`);
+
+    const [created] = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(automationRules)
+        .values({
+          code,
+          name: `${current.name} copy`,
+          description: current.description,
+          category: current.category,
+          ruleType: current.ruleType,
+          source: "operator_rule",
+          enabled: false,
+          assetId: current.assetId,
+          pointKey: current.pointKey,
+          operator: current.operator,
+          thresholdValue: current.thresholdValue,
+          severity: current.severity,
+          condition: current.condition,
+          action: current.action,
+          lifecycleStatus: "draft",
+          publishedAt: null,
+          archivedAt: null,
+          duplicatedFromRuleId: current.id,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning({ id: automationRules.id });
+
+      if (!row) {
+        throw new BadRequestException("Could not duplicate rule");
+      }
+
+      await tx.insert(auditLog).values({
+        actorId,
+        action: "rule_duplicate",
+        entityType: "automation_rule",
+        entityId: row.id,
+        reason: dto.reason ?? "Operator duplicated rule",
+        payload: {
+          fromRuleId: current.id,
+          fromCode: current.code,
+          code,
+          oidcSubject: actor.sub,
+          actorEmail: actor.email,
+        },
+      });
+
+      return [row];
+    });
+
+    return this.mapRuleRow(await this.getRuleRow(created.id));
   }
 
   /** Lists recent rule execution traces. */
@@ -119,6 +416,9 @@ export class RulesService {
     actor: Pick<JwtPayload, "sub" | "email">,
   ): Promise<RuleListItem> {
     const current = await this.getRuleRow(id);
+    if (current.lifecycleStatus !== "published") {
+      throw new BadRequestException("Only published rules can be enabled or disabled");
+    }
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
 
@@ -151,7 +451,9 @@ export class RulesService {
   async evaluateEnabledRules(
     actor: Pick<JwtPayload, "sub" | "email">,
   ): Promise<{ items: RuleExecutionItem[] }> {
-    const rows = (await this.ruleRows()).filter((row) => row.enabled);
+    const rows = (await this.ruleRows()).filter(
+      (row) => row.enabled && row.lifecycleStatus === "published",
+    );
     const items: RuleExecutionItem[] = [];
 
     for (const row of rows) {
@@ -221,6 +523,10 @@ export class RulesService {
         condition: automationRules.condition,
         action: automationRules.action,
         lastEvaluatedAt: automationRules.lastEvaluatedAt,
+        lifecycleStatus: automationRules.lifecycleStatus,
+        publishedAt: automationRules.publishedAt,
+        archivedAt: automationRules.archivedAt,
+        duplicatedFromRuleId: automationRules.duplicatedFromRuleId,
         createdAt: automationRules.createdAt,
         updatedAt: automationRules.updatedAt,
       })
@@ -255,9 +561,13 @@ export class RulesService {
       operator: row.operator as AutomationRuleOperator | null,
       thresholdValue: row.thresholdValue,
       severity: row.severity,
+      lifecycleStatus: row.lifecycleStatus as AutomationRuleLifecycleStatus,
       condition: this.asCondition(row.condition),
       action: this.asAction(row.action),
       lastEvaluatedAt: row.lastEvaluatedAt?.toISOString() ?? null,
+      publishedAt: row.publishedAt?.toISOString() ?? null,
+      archivedAt: row.archivedAt?.toISOString() ?? null,
+      duplicatedFromRuleId: row.duplicatedFromRuleId,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };
@@ -412,6 +722,204 @@ export class RulesService {
       throw new BadRequestException(`Invalid rule time ${value}`);
     }
     return h * 60 + m;
+  }
+
+  private async validateRuleDraft(
+    dto: RuleDraftBody,
+    currentId?: string,
+  ): Promise<RuleDraftValues> {
+    const code = dto.code?.trim().toUpperCase();
+    if (code) {
+      const existingRules = await this.db
+        .select({
+          id: automationRules.id,
+          code: automationRules.code,
+          lifecycleStatus: automationRules.lifecycleStatus,
+        })
+        .from(automationRules)
+        .orderBy(automationRules.createdAt);
+      const existing = existingRules.find(
+        (rule) =>
+          rule.id !== currentId &&
+          rule.lifecycleStatus !== "archived" &&
+          rule.code.trim().toUpperCase() === code,
+      );
+      if (existing) {
+        throw new BadRequestException("Rule code already exists");
+      }
+    }
+
+    if (dto.ruleType === "threshold") {
+      if (
+        !dto.assetId ||
+        !dto.pointKey ||
+        !dto.operator ||
+        dto.thresholdValue === null ||
+        dto.thresholdValue === undefined
+      ) {
+        throw new BadRequestException(
+          "Threshold rules require asset, point, operator, and threshold value",
+        );
+      }
+      await this.assertCompatiblePoint(dto.assetId, dto.pointKey);
+      if (!("window" in dto.condition) || dto.condition.window !== "latest") {
+        throw new BadRequestException("Threshold rules must use the latest-value window");
+      }
+      return {
+        code,
+        name: dto.name.trim(),
+        description: dto.description?.trim() || null,
+        category: dto.category,
+        ruleType: dto.ruleType,
+        assetId: dto.assetId,
+        pointKey: dto.pointKey,
+        operator: dto.operator,
+        thresholdValue: dto.thresholdValue,
+        severity: dto.severity ?? "warning",
+        condition: dto.condition,
+        action: dto.action,
+      };
+    }
+
+    if (!("days" in dto.condition)) {
+      throw new BadRequestException("Time-window rules require days and start/end times");
+    }
+
+    return {
+      code,
+      name: dto.name.trim(),
+      description: dto.description?.trim() || null,
+      category: dto.category,
+      ruleType: dto.ruleType,
+      assetId: dto.assetId ?? null,
+      pointKey: null,
+      operator: null,
+      thresholdValue: null,
+      severity: dto.severity ?? "info",
+      condition: dto.condition,
+      action: dto.action,
+    };
+  }
+
+  private async assertCompatiblePoint(assetId: string, pointKey: string): Promise<void> {
+    const [asset] = await this.db
+      .select({ code: assets.code, domain: assets.domain })
+      .from(assets)
+      .where(eq(assets.id, assetId))
+      .limit(1);
+    if (!asset) {
+      throw new BadRequestException("Selected asset does not exist");
+    }
+    if (!this.pointKeysForAsset(asset.domain, asset.code).includes(pointKey)) {
+      throw new BadRequestException("Selected telemetry point is not compatible with asset");
+    }
+  }
+
+  private pointKeysForAsset(domain: string, code: string): string[] {
+    if (code.startsWith("CR-RACK") || code.startsWith("CR-PDU")) {
+      return [...CONTROL_ROOM_IT_POINT_KEYS];
+    }
+    if (code.startsWith("CR-UPS") || code.startsWith("CR-BATT")) {
+      return [...CONTROL_ROOM_UPS_POINT_KEYS];
+    }
+    if (domain === "hvac") {
+      return [...HVAC_POINT_KEYS];
+    }
+    if (code.startsWith("CR-")) {
+      return [...CONTROL_ROOM_ELECTRICAL_POINT_KEYS];
+    }
+    return [...ELECTRICAL_POINT_KEYS];
+  }
+
+  private mergeRuleDraft(row: RuleRow, dto: RuleUpdateBody): RuleDraftBody {
+    const current = this.ruleBodyFromRow(row);
+    return {
+      ...current,
+      ...dto,
+      description: dto.description === undefined ? current.description : dto.description,
+      assetId: dto.assetId === undefined ? current.assetId : dto.assetId,
+      pointKey: dto.pointKey === undefined ? current.pointKey : dto.pointKey,
+      operator: dto.operator === undefined ? current.operator : dto.operator,
+      thresholdValue:
+        dto.thresholdValue === undefined ? current.thresholdValue : dto.thresholdValue,
+      severity: dto.severity === undefined ? current.severity : dto.severity,
+      condition: dto.condition === undefined ? current.condition : dto.condition,
+      action: dto.action === undefined ? current.action : dto.action,
+    };
+  }
+
+  private ruleBodyFromRow(row: RuleRow): RuleDraftBody {
+    return {
+      code: row.code,
+      name: row.name,
+      description: row.description,
+      category: row.category as AutomationRuleCategory,
+      ruleType: row.ruleType as AutomationRuleType,
+      assetId: row.assetId,
+      pointKey: row.pointKey,
+      operator: row.operator as AutomationRuleOperator | null,
+      thresholdValue: row.thresholdValue,
+      severity: row.severity as "info" | "warning" | "critical" | null,
+      condition: this.asCondition(row.condition),
+      action: this.asAction(row.action),
+    };
+  }
+
+  private async writeLifecycleUpdate(
+    id: string,
+    action: "rule_publish" | "rule_archive",
+    dto: RuleLifecycleBody,
+    actor: Pick<JwtPayload, "sub" | "email">,
+    values: Partial<{
+      lifecycleStatus: AutomationRuleLifecycleStatus;
+      enabled: boolean;
+      publishedAt: Date | null;
+      archivedAt: Date | null;
+    }>,
+  ): Promise<void> {
+    const actorId = await this.resolveActorId(actor);
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(automationRules)
+        .set({ ...values, updatedAt: new Date() })
+        .where(eq(automationRules.id, id));
+
+      await tx.insert(auditLog).values({
+        actorId,
+        action,
+        entityType: "automation_rule",
+        entityId: id,
+        reason:
+          dto.reason ?? (action === "rule_publish" ? "Rule published" : "Rule archived"),
+        payload: {
+          oidcSubject: actor.sub,
+          actorEmail: actor.email,
+        },
+      });
+    });
+  }
+
+  private async nextRuleCode(seed: string): Promise<string> {
+    const base = seed
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 48);
+    const prefix = base.length >= 3 ? base : "OPERATOR-RULE";
+
+    for (let index = 0; index < 100; index += 1) {
+      const candidate = index === 0 ? prefix : `${prefix}-${index + 1}`;
+      const [existing] = await this.db
+        .select({ id: automationRules.id })
+        .from(automationRules)
+        .where(eq(automationRules.code, candidate))
+        .limit(1);
+      if (!existing) {
+        return candidate;
+      }
+    }
+
+    throw new BadRequestException("Could not generate a unique rule code");
   }
 
   private async resolveActorId(

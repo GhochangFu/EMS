@@ -252,6 +252,7 @@ export type MaintenanceGenerationMode =
 export type AutomationRuleType = "threshold" | "time_window";
 export type AutomationRuleCategory = "comfort" | "energy" | "safety" | "operations";
 export type AutomationRuleOperator = "gt" | "gte" | "lt" | "lte" | "eq";
+export type AutomationRuleLifecycleStatus = "draft" | "published" | "archived";
 export type RuleExecutionStatus = "matched" | "not_matched" | "skipped" | "error";
 
 export type AutomationRuleCondition =
@@ -288,11 +289,32 @@ export type RuleListItem = {
   operator: AutomationRuleOperator | null;
   thresholdValue: number | null;
   severity: string | null;
+  lifecycleStatus: AutomationRuleLifecycleStatus;
   condition: AutomationRuleCondition;
   action: AutomationRuleAction;
   lastEvaluatedAt: string | null;
+  publishedAt: string | null;
+  archivedAt: string | null;
+  duplicatedFromRuleId: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type RuleBuilderCatalogAsset = {
+  id: string;
+  code: string;
+  name: string;
+  siteName: string;
+  domain: string;
+  pointKeys: string[];
+};
+
+export type RulePreviewResult = {
+  status: RuleExecutionStatus;
+  matched: boolean;
+  observedValue: number | null;
+  message: string;
+  trace: Record<string, unknown>;
 };
 
 /** One evaluation trace row for the Phase 5 Sprint D Rule Engine. */

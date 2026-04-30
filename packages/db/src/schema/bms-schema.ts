@@ -168,6 +168,12 @@ export const automationRules = bmsSchema.table("automation_rules", {
   condition: jsonb("condition").notNull().default({}),
   action: jsonb("action").notNull().default({}),
   lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }),
+  lifecycleStatus: varchar("lifecycle_status", { length: 32 })
+    .notNull()
+    .default("published"),
+  publishedAt: timestamp("published_at", { withTimezone: true }).defaultNow(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  duplicatedFromRuleId: uuid("duplicated_from_rule_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
