@@ -1,6 +1,6 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Control Room Extension Complete)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint I Complete)
 
-> **Status:** ACTIVE — Phase 5 Control Room extension complete; Sprint I ready.
+> **Status:** ACTIVE — Phase 5 Sprint I complete; next sprint not promoted.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -29,6 +29,9 @@ IF/THEN visual rule builder for the existing simple
 threshold/time-window rule model. The Phase 5 Control Room extension added
 the previously deferred UPS Monitoring, Battery Bank, HVAC System,
 Environment, and CR Dashboard integration screens before Sprint I.
+Phase 5 Sprint I aligned completed pages to the `ESKOM_SMOC.html` shell,
+headers, cards, status pills, disabled command affordances, and demo flow
+without changing backend contracts.
 
 ---
 
@@ -58,8 +61,7 @@ The current planning direction is:
 10. Treat the Phase 5 Control Room extension as complete for CR UPS
    Monitoring, Battery Bank, HVAC System, Environment, and CR Dashboard
    integration.
-11. Proceed next with Phase 5 Sprint I as the completed-page UI/UX
-   alignment pass.
+11. Treat Phase 5 Sprint I completed-page UI/UX alignment as complete.
 12. Defer MinIO/object storage until persisted report files are actually
    needed.
 13. Plan Phase 6 as Three.js Control Room only.
@@ -199,9 +201,10 @@ React architecture allows:
 Do **not** copy its string-concatenation render style. Build proper typed
 React components in `apps/web/src/components/`.
 
-The current sprint sequence is: finish Phase 5 functionality first, then
-run a dedicated UI/UX revisit sprint to bring all completed pages closer
-to `ESKOM_SMOC.html`.
+Phase 5 Sprint I completed the dedicated UI/UX revisit pass. Future
+completed pages should continue using the shared shell, page header,
+card, status pill, and disabled command affordance language introduced in
+that sprint.
 
 ---
 
@@ -244,7 +247,9 @@ builder is complete for simple threshold/time-window rule creation, draft
 preview, publish, archive, duplicate, enable/disable, preview, and audit
 history. The Phase 5 Control Room extension is complete for CR UPS
 Monitoring, Battery Bank, HVAC System, Environment, and Dashboard
-integration only. Report PDF/XLSX output, persisted report storage, CR
+integration only. Phase 5 Sprint I UI/UX alignment is complete for all
+completed pages and did not add backend contracts. Report PDF/XLSX output,
+persisted report storage, CR
 Security, CR Alarm Management, CR Trends, Phase 6 3D, two-way commands,
 setpoint changes, manual bypass, battery tests, equalize charge, HVAC
 force-changeover, sensor calibration/test execution, real-ingestion rules,
@@ -255,37 +260,28 @@ Process).
 
 ---
 
-## 7. Definition of Done (Phase 5 Control Room Extension)
+## 7. Definition of Done (Phase 5 Sprint I)
 
-The Phase 5 Control Room extension is done:
+Phase 5 Sprint I is done:
 
 1. Native WSL development and the Phase 1 compose path remain unchanged.
-2. Operators can open `/cr-ups`, `/cr-battery`, `/cr-hvac`, and `/cr-env`
-   from the app shell and CR Dashboard drilldowns.
-3. CR UPS Monitoring matches `ESKOM_SMOC.html` `R.crUps`: UPS-1, UPS-2,
-   combined summary, live KPIs, dynamic block diagram, and rule-driven
-   status.
-4. CR Battery Bank matches `ESKOM_SMOC.html` `R.crBat`: two battery
-   strings, cell grid, string KPIs, temperature summary, alerts, and
-   rule-driven status.
-5. CR HVAC System matches `ESKOM_SMOC.html` `R.crHvac`: two precision AC
-   units, lead/lag status, animated airflow diagram, run-hour balance, and
-   rule-driven status.
-6. CR Environment matches `ESKOM_SMOC.html` `R.crEnv`: zone
-   temperature/humidity, floorplan sensor markers, water leak table, smoke
-   table, and rule-driven status where current data exists.
-7. Seed/demo data and simulator telemetry cover the promoted UPS, battery,
-   HVAC, environment, leak, and smoke assets without real protocol
-   adapters.
-8. CR Dashboard reflects UPS, battery, HVAC, and environment status in KPI
-   tiles, summaries, drilldowns, and active warning rollups.
-9. Manual Bypass, Battery Test, Equalize Charge, Capacity Test, Force
-   Changeover, Set Schedule, Test Sensors, and Calibrate controls remain
-   visible only as disabled/non-commanding UI affordances.
-10. CR Security, CR Alarm Management, CR Trends, Phase 6 3D, real
-    ingestion, two-way commands, and approval workflows remain out of scope.
-11. Typecheck/build, seed/simulator telemetry checks, API smoke, and
-    browser smoke pass.
+2. `AppShell` uses the completed mockup chrome: dark top bar, green route
+   nav, grouped module sidebar, KPI ribbon, and dark status bar.
+3. Core prototype pages use consistent headers, KPI/card framing, status
+   pills, tables, loading/empty/error states, and route labels.
+4. Operations pages for work orders, schedules, rules, and reports align
+   with `R.mt`, `R.rl`, and `R.rp` without changing API payloads.
+5. Completed Control Room routes align with `R.crOv`, `R.crSld`,
+   `R.crIT`, `R.crUps`, `R.crBat`, `R.crHvac`, and `R.crEnv`, including
+   `/cr-ups` for CR UPS Monitoring and `/cr-battery` for CR Battery Bank.
+6. Disabled/non-commanding controls stay visibly disabled for commands
+   that remain out of scope.
+7. `docs/demo-script.md` reflects the completed shell, Operations, and
+   Control Room demo flow.
+8. `pnpm --filter @bms/shared build`, `pnpm --filter web smoke:cr`,
+   `pnpm --filter web build`, `pnpm --filter @bms/db build`,
+   `pnpm --filter api build`, and `node --check apps/sim/src/index.js`
+   pass.
 
 ---
 

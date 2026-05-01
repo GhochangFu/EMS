@@ -17,8 +17,8 @@ per [`local-setup.md`](./local-setup.md). Three terminals: `api` (:4000),
 2. Stay on **Overview** (Executive Dashboard). Call out: live KPIs,
    load trend, PUE band — all from the same `kw` aggregates the Energy
    Centre will reuse.
-3. Mention **green top bar**: Overview, Sites, Energy are real routes;
-   Settings is placeholder.
+3. Mention the aligned shell: dark top bar, green route nav, grouped module
+   sidebar, KPI ribbon, and dark status bar.
 
 ## 2–4 min — Alarm Centre
 
@@ -54,6 +54,20 @@ per [`local-setup.md`](./local-setup.md). Three terminals: `api` (:4000),
 5. **Top consumers**: horizontal bars = rough kWh from avg kW × window
    length.
 6. Footer: clock + “Prototype · telemetry-driven”.
+
+## Optional extension — Operations & Control Room
+
+1. **Maintenance**: show the Kanban, status counts, filters, and create
+   action. Note that schedule-generated work orders land here.
+2. **Schedule Centre**: show due/overdue rows and the conversion action.
+3. **Rule Engine**: open a rule, show the guided IF/THEN builder and
+   execution trace without changing thresholds during the demo.
+4. **Reports**: preview Energy Consumption and point out that CSV is the
+   active Sprint E export; PDF/XLSX and persisted storage remain deferred.
+5. **CR · Main Dashboard**: show drilldowns into Electrical SLD, IT/Racks,
+   UPS, Battery, HVAC, and Environment. Each promoted CR page uses the same
+   shell/header pattern, rule-driven status colours, and disabled command
+   buttons for controls that are intentionally out of scope.
 
 ## Close
 

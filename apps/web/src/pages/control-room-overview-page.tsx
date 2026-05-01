@@ -14,6 +14,8 @@ import {
   SchematicTelemetryProvider,
   useSchematicTelemetryByCode,
 } from "../components/live-svg/schematic-telemetry-context";
+import { PageHeader } from "../components/page-header";
+import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -314,19 +316,12 @@ function ControlRoomOverviewContent() {
     ).length || 1);
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
-      <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
-            SMOC Control Room · Main Dashboard
-          </h1>
-          <p className="mt-1 text-sm text-bms-muted">
-            Operator Console Overview · CR Electrical SLD · UPS · Battery · HVAC · Environment
-          </p>
-        </div>
-        <div className="rounded border border-bms-green/20 bg-bms-green/10 px-3 py-2 text-xs font-semibold text-bms-green">
-          2D Control Room foundation
-        </div>
-      </header>
+      <PageHeader
+        eyebrow="R.crOv"
+        title="SMOC Control Room · Main Dashboard"
+        subtitle="Operator console overview · CR Electrical SLD · UPS · Battery · HVAC · Environment"
+        actions={<StatusPill label="2D foundation" />}
+      />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <KpiTile label="Rule Warnings" status="ready" value={String(activeRuleStates.length)} tone={activeRuleStates.length > 0 ? "warning" : "default"} hint="enabled CR rules currently matched" />

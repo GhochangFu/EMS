@@ -29,11 +29,17 @@ export function KpiTile({
       : tone === "warning"
         ? "border-amber-200"
         : "border-gray-200";
+  const toneBar =
+    tone === "critical"
+      ? "after:bg-red-600"
+      : tone === "warning"
+        ? "after:bg-amber-500"
+        : "after:bg-bms-green";
   const staleRing = stale ? "ring-2 ring-amber-400/70 ring-offset-2" : "";
 
   return (
     <div
-      className={`flex flex-col rounded-lg border bg-white p-4 shadow-sm ${toneBorder} ${staleRing}`}
+      className={`relative flex flex-col overflow-hidden rounded-lg border bg-white p-4 shadow-sm after:absolute after:left-0 after:right-0 after:top-0 after:h-0.5 ${toneBorder} ${toneBar} ${staleRing}`}
     >
       <div className="flex items-start justify-between gap-2">
         <span className="text-[11px] font-medium uppercase tracking-wide text-bms-muted">

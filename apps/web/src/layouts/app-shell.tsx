@@ -11,24 +11,44 @@ const topNav = [
   { label: "Energy", to: "/energy" },
 ] as const;
 
-const modules = [
-  { label: "Dashboard", path: "/" },
-  { label: "Alarms", path: "/alarms" },
-  { label: "Map", path: "/map" },
-  { label: "Electrical", path: "/sld" },
-  { label: "Cooling", path: "/crac" },
-  { label: "Energy", path: "/energy" },
-  { label: "Rule Engine", path: "/rules" },
-  { label: "Reports", path: "/reports" },
-  { label: "CR · Main Dashboard", path: "/cr-overview" },
-  { label: "CR · Electrical SLD", path: "/cr-sld" },
-  { label: "CR · IT & Rack Load", path: "/cr-it" },
-  { label: "CR · UPS Monitoring", path: "/cr-ups" },
-  { label: "CR · Battery Bank", path: "/cr-battery" },
-  { label: "CR · HVAC System", path: "/cr-hvac" },
-  { label: "CR · Environment", path: "/cr-env" },
-  { label: "Maintenance", path: "/work-orders" },
-  { label: "Maintenance Schedules", path: "/maintenance-schedules" },
+const moduleGroups = [
+  {
+    title: "Operations",
+    items: [
+      { label: "Dashboard", path: "/" },
+      { label: "Alarm Centre", path: "/alarms" },
+      { label: "Sites Map", path: "/map" },
+      { label: "Electrical SLD", path: "/sld" },
+      { label: "HVAC · CRAC", path: "/crac" },
+      { label: "Energy Analytics", path: "/energy" },
+    ],
+  },
+  {
+    title: "Control Room 2D",
+    items: [
+      { label: "CR · Main Dashboard", path: "/cr-overview" },
+      { label: "CR · Electrical SLD", path: "/cr-sld" },
+      { label: "CR · UPS Monitoring", path: "/cr-ups" },
+      { label: "CR · Battery Bank", path: "/cr-battery" },
+      { label: "CR · HVAC System", path: "/cr-hvac" },
+      { label: "CR · Environment", path: "/cr-env" },
+      { label: "CR · IT & Rack Load", path: "/cr-it" },
+    ],
+  },
+  {
+    title: "Maintenance",
+    items: [
+      { label: "Maintenance", path: "/work-orders" },
+      { label: "Schedule Centre", path: "/maintenance-schedules" },
+    ],
+  },
+  {
+    title: "Automation",
+    items: [
+      { label: "Rule Engine", path: "/rules" },
+      { label: "Reports", path: "/reports" },
+    ],
+  },
 ] as const;
 
 type AppShellProps = {
@@ -79,38 +99,34 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
       </nav>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="w-52 shrink-0 border-r border-gray-200 bg-white py-3 text-sm">
-          <div className="px-3 pb-2 font-condensed text-xs font-bold uppercase tracking-wide text-bms-muted">
-            Modules
-          </div>
-          <ul className="space-y-0.5">
-            {modules.map((m) =>
-              m.path.startsWith("/") ? (
-                <li key={m.path}>
-                  <Link
-                    to={m.path}
-                    className={`block w-full px-3 py-2 hover:bg-bms-canvas ${
-                      location.pathname === m.path
-                        ? "border-l-2 border-bms-green bg-bms-canvas/80 font-medium"
-                        : ""
-                    }`}
-                  >
-                    {m.label}
-                  </Link>
-                </li>
-              ) : (
-                <li key={m.label}>
-                  <span className="block cursor-not-allowed px-3 py-2 text-bms-muted">
-                    {m.label}
-                  </span>
-                </li>
-              ),
-            )}
-          </ul>
+        <aside className="w-60 shrink-0 border-r border-gray-200 bg-white py-3 text-sm">
+          {moduleGroups.map((group) => (
+            <div key={group.title} className="mb-3">
+              <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-bms-muted">
+                {group.title}
+              </div>
+              <ul className="space-y-0.5">
+                {group.items.map((m) => (
+                  <li key={m.path}>
+                    <Link
+                      to={m.path}
+                      className={`block w-full border-l-2 px-3 py-1.5 hover:bg-bms-canvas ${
+                        location.pathname === m.path
+                          ? "border-bms-green bg-bms-canvas/80 font-semibold text-bms-ink"
+                          : "border-transparent text-bms-muted"
+                      }`}
+                    >
+                      {m.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">
-          <section className="flex min-h-14 shrink-0 items-center border-b border-gray-200 bg-white px-4 py-2 text-xs text-bms-muted">
+          <section className="flex min-h-14 shrink-0 items-center border-b border-gray-200 bg-white px-4 py-2 text-xs text-bms-muted shadow-sm">
             {kpiRibbon ?? (
               <>
                 <span className="rounded bg-gray-100 px-2 py-1 font-mono text-bms-ink">
@@ -120,7 +136,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
               </>
             )}
           </section>
-          <div className="flex-1 overflow-auto p-4">{children}</div>
+          <div className="flex-1 overflow-auto bg-bms-canvas p-4">{children}</div>
         </main>
       </div>
 

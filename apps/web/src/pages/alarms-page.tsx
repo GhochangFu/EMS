@@ -1,10 +1,14 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { io, type Socket } from "socket.io-client";
 
 import { ackAlarm, fetchAlarmsPage } from "../api/alarms";
+import { AlarmSummaryCard } from "../components/alarm-summary-card";
 import { AppShell } from "../layouts/app-shell";
+import { PageHeader } from "../components/page-header";
+import { SectionCard } from "../components/section-card";
+import { StatusPill } from "../components/status-pill";
 import type { AuthUser } from "../stores/auth-store";
 import type { AlarmListItem, AlarmSocketEvent } from "@bms/shared";
 
@@ -20,17 +24,60 @@ function socketBase(): string {
   );
 }
 
-function severityStyle(sev: string): string {
-  switch (sev) {
-    case "critical":
-      return "bg-red-100 text-red-800 border-red-200";
-    case "warning":
-      return "bg-amber-100 text-amber-900 border-amber-200";
-    case "info":
-      return "bg-sky-100 text-sky-900 border-sky-200";
-    default:
-      return "bg-gray-100 text-gray-800 border-gray-200";
+type AlarmSubsystem = "UPS" | "Battery" | "HVAC" | "IT" | "Security";
+
+const alarmSubsystems: AlarmSubsystem[] = ["UPS", "Battery", "HVAC", "IT", "Security"];
+
+function alarmSubsystem(alarm: AlarmListItem): AlarmSubsystem {
+  const haystack = `${alarm.assetCode} ${alarm.assetName} ${alarm.message}`.toLowerCase();
+  if (haystack.includes("batt")) {
+    return "Battery";
   }
+  if (haystack.includes("ups")) {
+    return "UPS";
+  }
+  if (haystack.includes("hvac") || haystack.includes("crac") || haystack.includes("cool")) {
+    return "HVAC";
+  }
+  if (
+    haystack.includes("rack") ||
+    haystack.includes("pdu") ||
+    haystack.includes("server") ||
+    haystack.includes("network") ||
+    haystack.includes("videowall")
+  ) {
+    return "IT";
+  }
+  return "Security";
+}
+
+function severityTone(severity: string): "critical" | "warning" | "info" {
+  if (severity === "critical") {
+    return "critical";
+  }
+  if (severity === "warning" || severity === "major") {
+    return "warning";
+  }
+  return "info";
+}
+
+function matchesAlarmSearch(alarm: AlarmListItem, query: string): boolean {
+  if (!query) {
+    return true;
+  }
+  const state = alarm.acknowledgedAt ? "acknowledged" : "open active unack";
+  const searchable = [
+    alarm.severity,
+    alarm.assetCode,
+    alarm.assetName,
+    alarm.siteName,
+    alarm.message,
+    state,
+    alarmSubsystem(alarm),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return searchable.includes(query);
 }
 
 export function AlarmsPage({ user }: AlarmsPageProps) {
@@ -39,6 +86,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   const [ackTarget, setAckTarget] = useState<AlarmListItem | null>(null);
   const [reason, setReason] = useState("");
   const [ackError, setAckError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const listQ = useInfiniteQuery({
     queryKey: ["alarms", "list"],
@@ -76,6 +124,28 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   });
 
   const rows = listQ.data?.pages.flatMap((p) => p.items) ?? [];
+  const searchQuery = search.trim().toLowerCase();
+  const filteredRows = useMemo(
+    () => rows.filter((alarm) => matchesAlarmSearch(alarm, searchQuery)),
+    [rows, searchQuery],
+  );
+  const summary = useMemo(() => {
+    const critical = rows.filter((alarm) => alarm.severity === "critical").length;
+    const major = rows.filter(
+      (alarm) => alarm.severity === "warning" || alarm.severity === "major",
+    ).length;
+    const minor = rows.filter(
+      (alarm) => !["critical", "warning", "major"].includes(alarm.severity),
+    ).length;
+    const active = rows.filter((alarm) => !alarm.acknowledgedAt).length;
+    const acknowledged = rows.filter((alarm) => alarm.acknowledgedAt).length;
+    const bySubsystem = alarmSubsystems.map((subsystem) => ({
+      subsystem,
+      count: rows.filter((alarm) => alarmSubsystem(alarm) === subsystem).length,
+    }));
+    return { critical, major, minor, active, acknowledged, bySubsystem };
+  }, [rows]);
+  const distributionTotal = Math.max(rows.length, 1);
 
   function submitAck(e: FormEvent): void {
     e.preventDefault();
@@ -107,22 +177,71 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
       }
     >
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
-        <header className="border-b border-gray-200 pb-4">
-          <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
-            Active alarms
-          </h1>
-          <p className="mt-1 text-sm text-bms-muted">
-            Threshold rules run on telemetry in the API. Acknowledgements are
-            audited.
-          </p>
-        </header>
+        <PageHeader
+          eyebrow="R.alm"
+          title="Alarm Centre"
+          subtitle="Threshold rules run on telemetry in the API · acknowledgements are audited"
+        />
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <AlarmSummaryCard label="Critical" value={summary.critical} tone="critical" emptyLabel="all clear" />
+          <AlarmSummaryCard label="Major" value={summary.major} tone="warning" />
+          <AlarmSummaryCard label="Minor" value={summary.minor} tone="info" />
+          <AlarmSummaryCard label="Active (Unack)" value={summary.active} tone="ok" />
+          <AlarmSummaryCard label="Acknowledged" value={summary.acknowledged} tone="ok" />
+        </div>
+
+        <SectionCard
+          title="Distribution by Subsystem"
+          subtitle="Derived from current alarm asset and message context"
+        >
+          <div className="space-y-3">
+            {summary.bySubsystem.map((item) => {
+              const pct = Math.min(100, (item.count / distributionTotal) * 100);
+              return (
+                <div
+                  key={item.subsystem}
+                  className="grid grid-cols-[96px_minmax(0,1fr)_72px] items-center gap-4 text-sm sm:grid-cols-[120px_minmax(0,1fr)_84px]"
+                >
+                  <div className="truncate font-semibold text-bms-ink">{item.subsystem}</div>
+                  <div className="min-w-0">
+                    <div className="h-2 rounded-full bg-gray-100">
+                    <div
+                      className="h-2 rounded-full bg-bms-green"
+                      style={{ width: `${pct}%` }}
+                    />
+                    </div>
+                  </div>
+                  <div className="whitespace-nowrap text-right font-mono font-semibold text-bms-ink">
+                    {item.count} / {rows.length}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </SectionCard>
 
         {listQ.isLoading ? (
           <p className="text-sm text-bms-muted">Loading alarms…</p>
         ) : listQ.isError ? (
           <p className="text-sm text-red-600">Could not load alarms (auth?).</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+          <SectionCard
+            title="Alarm Grid"
+            subtitle={`${filteredRows.length} of ${rows.length} loaded alarms shown`}
+            actions={
+              <label className="flex min-w-[260px] items-center gap-2 text-xs text-bms-muted">
+                Search
+                <input
+                  className="w-full rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-bms-ink"
+                  placeholder="Asset, site, severity, subsystem..."
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </label>
+            }
+            bodyClassName="overflow-x-auto p-0"
+          >
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b border-gray-100 bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
                 <tr>
@@ -146,8 +265,17 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                       will raise rows within a few seconds.
                     </td>
                   </tr>
+                ) : filteredRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={7}
+                      className="px-3 py-8 text-center text-bms-muted"
+                    >
+                      No alarms match the current search.
+                    </td>
+                  </tr>
                 ) : (
-                  rows.map((a) => (
+                  filteredRows.map((a) => (
                     <tr
                       key={a.id}
                       className={
@@ -160,11 +288,10 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                         {new Date(a.raisedAt).toLocaleString()}
                       </td>
                       <td className="px-3 py-2">
-                        <span
-                          className={`inline-block rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${severityStyle(a.severity)}`}
-                        >
-                          {a.severity}
-                        </span>
+                        <StatusPill
+                          label={a.severity}
+                          tone={severityTone(a.severity)}
+                        />
                       </td>
                       <td className="px-3 py-2">
                         <div className="font-medium">{a.assetCode}</div>
@@ -208,7 +335,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                 )}
               </tbody>
             </table>
-          </div>
+          </SectionCard>
         )}
 
         {listQ.hasNextPage ? (

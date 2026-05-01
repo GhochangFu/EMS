@@ -7,6 +7,9 @@ import {
   useSchematicTelemetry,
 } from "../components/live-svg/schematic-telemetry-context";
 import { SLD_TRACKED_ASSET_CODES } from "../components/live-svg/sld-bindings";
+import { PageHeader } from "../components/page-header";
+import { SectionCard } from "../components/section-card";
+import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -145,25 +148,15 @@ function SldContent({
 }) {
   return (
     <div className="relative mx-auto max-w-[1200px] pb-8">
-      <header className="mb-4 flex flex-col gap-2 border-b border-gray-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
-            Electrical Single-Line Diagram · DC1
-          </h1>
-          <p className="mt-1 text-sm text-bms-muted">
-            11 kV grid · 2 × 2 MVA · UPS + DG backup · live (mockup{" "}
-            <span className="font-mono text-xs">R.sld</span>)
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-900">
-            Live
-          </span>
-        </div>
-      </header>
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-[#F7F8FA] p-4">
+      <PageHeader
+        eyebrow="R.sld"
+        title="Electrical Single-Line Diagram · DC1"
+        subtitle="11 kV grid · 2 x 2 MVA · UPS + DG backup · live telemetry"
+        actions={<StatusPill label="Live" />}
+      />
+      <SectionCard className="mt-4" bodyClassName="overflow-x-auto bg-[#F7F8FA] p-4">
         <ElectricalSldDiagram onSelectAsset={onSelect} />
-      </div>
+      </SectionCard>
       <SldDetailDrawer assetId={selectedId} onClose={() => onSelect(undefined)} />
     </div>
   );

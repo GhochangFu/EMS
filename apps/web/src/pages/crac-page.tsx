@@ -8,6 +8,9 @@ import {
   useSchematicAssetMeta,
   useSchematicTelemetry,
 } from "../components/live-svg/schematic-telemetry-context";
+import { PageHeader } from "../components/page-header";
+import { SectionCard } from "../components/section-card";
+import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -167,24 +170,16 @@ function CracContent({
   onSelect: (id: string | undefined) => void;
 }) {
   return (
-    <div className="relative mx-auto max-w-[1200px] pb-8">
-      <header className="mb-4 flex flex-col gap-2 border-b border-gray-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
-            CRAC · Precision cooling schematic
-          </h1>
-          <p className="mt-1 text-sm text-bms-muted">
-            DH101 hall · four CRAC units · chilled loop (mockup{" "}
-            <span className="font-mono text-xs">R.crac</span>)
-          </p>
-        </div>
-        <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-900">
-          Live
-        </span>
-      </header>
-      <div className="overflow-x-auto rounded-lg border border-gray-200 p-4">
+    <div className="relative mx-auto max-w-[1200px] space-y-4 pb-8">
+      <PageHeader
+        eyebrow="R.crac"
+        title="CRAC · Precision cooling schematic"
+        subtitle="DH101 hall · four CRAC units · chilled-water loop"
+        actions={<StatusPill label="Live" />}
+      />
+      <SectionCard bodyClassName="overflow-x-auto p-4">
         <CracSchematic onSelectAsset={onSelect} />
-      </div>
+      </SectionCard>
       <CracDetailDrawer assetId={selectedId} onClose={() => onSelect(undefined)} />
     </div>
   );

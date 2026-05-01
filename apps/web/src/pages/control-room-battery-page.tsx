@@ -13,6 +13,8 @@ import {
   SchematicTelemetryProvider,
   useSchematicTelemetryByCode,
 } from "../components/live-svg/schematic-telemetry-context";
+import { DisabledCommandButton } from "../components/disabled-command-button";
+import { PageHeader } from "../components/page-header";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -231,24 +233,17 @@ function ControlRoomBatteryContent() {
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
-      <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
-            Battery Bank · 2 strings, 32 cells each
-          </h1>
-          <p className="mt-1 text-sm text-bms-muted">
-            String voltage · individual cell V · charge / discharge · health · temperature · rule-driven status
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="cursor-not-allowed rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-muted opacity-60" disabled>
-            Equalize Charge · disabled
-          </button>
-          <button className="cursor-not-allowed rounded bg-gray-300 px-3 py-1.5 text-xs font-semibold text-white opacity-70" disabled>
-            Capacity Test · disabled
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow="R.crBat"
+        title="Battery Bank · 2 strings, 32 cells each"
+        subtitle="String voltage · cell grid · charge / discharge · health · rule-driven status"
+        actions={
+          <>
+            <DisabledCommandButton>Equalize Charge · disabled</DisabledCommandButton>
+            <DisabledCommandButton>Capacity Test · disabled</DisabledCommandButton>
+          </>
+        }
+      />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <KpiTile label="String 1 V" status="ready" value={n(strings[0].slice.batteryV, 1)} unit="V" hint="32 cells · 12V VRLA" tone={statusTone(strings[0].state.status)} />

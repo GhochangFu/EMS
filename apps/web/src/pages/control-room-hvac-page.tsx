@@ -13,6 +13,8 @@ import {
   SchematicTelemetryProvider,
   useSchematicTelemetryByCode,
 } from "../components/live-svg/schematic-telemetry-context";
+import { DisabledCommandButton } from "../components/disabled-command-button";
+import { PageHeader } from "../components/page-header";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -194,24 +196,17 @@ function ControlRoomHvacContent() {
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
-      <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
-            HVAC System · 2 x 4 TR Precision AC
-          </h1>
-          <p className="mt-1 text-sm text-bms-muted">
-            Lead/Lag operation · auto changeover · airflow indication · rule-driven status
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="cursor-not-allowed rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-muted opacity-60" disabled>
-            Force Changeover · disabled
-          </button>
-          <button className="cursor-not-allowed rounded bg-gray-300 px-3 py-1.5 text-xs font-semibold text-white opacity-70" disabled>
-            Set Schedule · disabled
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow="R.crHvac"
+        title="HVAC System · 2 x 4 TR Precision AC"
+        subtitle="Lead/Lag operation · auto changeover · airflow indication · rule-driven status"
+        actions={
+          <>
+            <DisabledCommandButton>Force Changeover · disabled</DisabledCommandButton>
+            <DisabledCommandButton>Set Schedule · disabled</DisabledCommandButton>
+          </>
+        }
+      />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <KpiTile label="Overall Status" status="ready" value={statusLabel(overall.status)} tone={statusTone(overall.status)} />

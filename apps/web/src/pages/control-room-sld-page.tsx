@@ -12,6 +12,8 @@ import {
   SchematicTelemetryProvider,
   useSchematicTelemetryByCode,
 } from "../components/live-svg/schematic-telemetry-context";
+import { PageHeader } from "../components/page-header";
+import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -136,19 +138,12 @@ function ControlRoomSldContent() {
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
-      <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
-            Electrical Power · Single Line Diagram
-          </h1>
-          <p className="mt-1 text-sm text-bms-muted">
-            Incoming feeder → Main panel → UPS input → UPS output → Load distribution
-          </p>
-        </div>
-        <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-900">
-          Live
-        </span>
-      </header>
+      <PageHeader
+        eyebrow="R.crSld"
+        title="Electrical Power · Single Line Diagram"
+        subtitle="Incoming feeder to main panel to UPS input/output to load distribution"
+        actions={<StatusPill label="Live" />}
+      />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <Meter label="Voltage R" value={n(q1.voltage, 1)} unit="V" />

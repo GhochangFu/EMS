@@ -4,6 +4,8 @@ import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 import { KpiTile } from "../components/kpi-tile";
 import { LoadTrendChart } from "../components/load-trend-chart";
+import { PageHeader } from "../components/page-header";
+import { SectionCard } from "../components/section-card";
 
 type DashboardPageProps = {
   user: AuthUser;
@@ -67,18 +69,11 @@ export function DashboardPage({ user }: DashboardPageProps) {
       }
     >
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
-        <header className="flex flex-col gap-2 border-b border-gray-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
-              Executive Summary · ESKOM SMOC Operating Dashboard
-            </h1>
-            <p className="mt-1 text-sm text-bms-muted">
-              Live operational overview — prototype Sprint 3 (mockup{" "}
-              <span className="font-mono text-xs">R.dash</span> KPI row + energy
-              trend).
-            </p>
-          </div>
-        </header>
+        <PageHeader
+          eyebrow="R.dash"
+          title="Executive Summary · ESKOM SMOC Operating Dashboard"
+          subtitle="Live operational overview · KPI ribbon · telemetry trend"
+        />
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <KpiTile
@@ -125,25 +120,17 @@ export function DashboardPage({ user }: DashboardPageProps) {
           />
         </div>
 
-        <section className="rounded-lg border border-gray-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-            <div>
-              <h2 className="font-condensed text-sm font-bold text-bms-ink">
-                Campus load · last 60 minutes
-              </h2>
-              <p className="text-[11px] text-bms-muted">
-                1-minute buckets · total kW (all assets)
-              </p>
-            </div>
-          </div>
-          <div className="p-3">
+        <SectionCard
+          title="Campus load · last 60 minutes"
+          subtitle="1-minute buckets · total kW (all assets)"
+          bodyClassName="p-3"
+        >
             <LoadTrendChart
               points={chartPoints}
               status={trendStatus}
               stale={stale && trendStatus === "ready"}
             />
-          </div>
-        </section>
+        </SectionCard>
       </div>
     </AppShell>
   );

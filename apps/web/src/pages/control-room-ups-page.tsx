@@ -13,6 +13,8 @@ import {
   SchematicTelemetryProvider,
   useSchematicTelemetryByCode,
 } from "../components/live-svg/schematic-telemetry-context";
+import { DisabledCommandButton } from "../components/disabled-command-button";
+import { PageHeader } from "../components/page-header";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -235,24 +237,17 @@ function ControlRoomUpsContent() {
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
-      <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
-            UPS Monitoring · 2 x 30 kVA
-          </h1>
-          <p className="mt-1 text-sm text-bms-muted">
-            Per-unit and combined view · rectifier → battery → inverter → load · rule-driven status
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="cursor-not-allowed rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-muted opacity-60" disabled>
-            Manual Bypass · disabled
-          </button>
-          <button className="cursor-not-allowed rounded bg-gray-300 px-3 py-1.5 text-xs font-semibold text-white opacity-70" disabled>
-            Battery Test · disabled
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        eyebrow="R.crUps"
+        title="UPS Monitoring · 2 x 30 kVA"
+        subtitle="Per-unit and combined view · rectifier to battery to inverter to load · rule-driven status"
+        actions={
+          <>
+            <DisabledCommandButton>Manual Bypass · disabled</DisabledCommandButton>
+            <DisabledCommandButton>Battery Test · disabled</DisabledCommandButton>
+          </>
+        }
+      />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiTile label="Total Capacity" status="ready" value={String(totalCapacity)} unit="kVA" />

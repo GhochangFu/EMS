@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 5 Control Room extension complete; Sprint I ready.
+> **Active phase:** Part 2 / Phase 5 Sprint I complete; next sprint not promoted.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -17,8 +17,10 @@ beats the calendar.
 UI rule for all remaining module work: each module must map to the
 closest route / renderer in `ESKOM_SMOC.html` and match that UX as
 strictly as the active React architecture and available data allow.
-The promoted Control Room extension is complete. Next, run a dedicated
-UI/UX revisit pass across all completed pages.
+The promoted Control Room extension and the dedicated completed-page
+UI/UX revisit pass are complete. Future completed pages should continue
+using the aligned shell, page header, card, table, status, and disabled
+command patterns.
 
 ---
 
@@ -300,7 +302,7 @@ Process (`AGENTS.md` §10).
   coverage (95%).
 
 ### Phase 5 — Operations modules (~3 weeks)
-- **Status:** in progress — Control Room extension complete; Sprint I ready
+- **Status:** in progress — Sprint I completed-page UI/UX alignment complete
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
   reports. MinIO / object storage graduates only when report files need
   persisted storage.
@@ -531,20 +533,21 @@ Process (`AGENTS.md` §10).
   syntax verification passed.
 
 #### Phase 5 Sprint I — Completed-page UI/UX alignment
-- **Status:** ready next
+- **Status:** complete
 - **Goal:** revisit all completed pages and bring their UI/UX closer to
   `ESKOM_SMOC.html` after the Phase 5 operational workflows are complete.
 - **Deliverables**
-  - Compare every completed page against its closest mockup route /
+  - Compared every completed page against its closest mockup route /
     renderer (`R.dash`, `R.alm`, maps, `R.sld`, `R.crac`, `R.en`, `R.mt`,
     `R.rl`, `R.rp`).
-  - Align navigation labels, sidebar grouping, page headers, action bars,
+  - Aligned navigation labels, sidebar grouping, page headers, action bars,
     cards, tables, status pills, and spacing.
-  - Preserve existing API contracts and working data flows unless a small
-    UI-only adapter is enough.
-  - Update `docs/demo-script.md` after visual changes.
-- **Exit criteria:** completed pages read as one coherent implementation
-  of the original mockup without destabilising Phase 5 functionality.
+  - Preserved existing API contracts and working data flows.
+  - Updated `docs/demo-script.md` after visual changes.
+- **Exit criteria:** complete — completed pages read as one coherent
+  implementation of the original mockup without destabilising Phase 5
+  functionality. Shared, web, DB, API, CR smoke, and simulator syntax
+  verification passed.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending

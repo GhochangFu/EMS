@@ -3,6 +3,8 @@ import { useEffect } from "react";
 import { io, type Socket } from "socket.io-client";
 
 import { fetchMapSites } from "../api/map";
+import { PageHeader } from "../components/page-header";
+import { SectionCard } from "../components/section-card";
 import { WorldMap } from "../components/world-map";
 import { AppShell } from "../layouts/app-shell";
 import { socketBaseUrl } from "../lib/socket-url";
@@ -50,16 +52,11 @@ export function MapPage({ user }: MapPageProps) {
       }
     >
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
-        <header className="border-b border-gray-200 pb-4">
-          <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
-            Eskom stations &amp; SMOC campuses
-          </h1>
-          <p className="mt-1 text-sm text-bms-muted">
-            Prototype Sprint 5 — markers from Postgres (`ESKOM_STATIONS` shape).
-            SMOC diamonds use live alarm + comm health; stopping the simulator
-            drives campuses toward <span className="font-mono">offline</span>.
-          </p>
-        </header>
+        <PageHeader
+          eyebrow="Sites"
+          title="Eskom stations & SMOC campuses"
+          subtitle="Markers from Postgres · SMOC diamonds use live alarm and comm health"
+        />
 
         {q.isLoading ? (
           <p className="text-sm text-bms-muted">Loading map data…</p>
@@ -71,7 +68,9 @@ export function MapPage({ user }: MapPageProps) {
             <code className="rounded bg-gray-100 px-1 text-xs">pnpm db:seed</code>.
           </p>
         ) : (
-          <WorldMap sites={q.data} />
+          <SectionCard bodyClassName="p-0">
+            <WorldMap sites={q.data} />
+          </SectionCard>
         )}
       </div>
     </AppShell>

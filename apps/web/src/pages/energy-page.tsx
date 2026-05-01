@@ -9,6 +9,8 @@ import {
 import { EnergySourceStackChart } from "../components/energy-source-stack-chart";
 import { EnergyTopBarChart } from "../components/energy-top-bar-chart";
 import { KpiTile } from "../components/kpi-tile";
+import { PageHeader } from "../components/page-header";
+import { SectionCard } from "../components/section-card";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -76,17 +78,12 @@ export function EnergyPage({ user }: EnergyPageProps) {
       }
     >
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
-        <header className="flex flex-col gap-3 border-b border-gray-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
-              Energy Centre
-            </h1>
-            <p className="mt-1 text-sm text-bms-muted">
-              kWh from electrical telemetry · source mix (PV vs grid + nominal DG) · top
-              loads (mockup <span className="font-mono text-xs">R.en</span>)
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+        <PageHeader
+          eyebrow="R.en"
+          title="Energy Centre"
+          subtitle="kWh from electrical telemetry · source mix · top loads"
+          actions={
+            <div className="flex items-center gap-2">
             <label htmlFor="energy-window" className="text-xs text-bms-muted">
               Window
             </label>
@@ -106,8 +103,9 @@ export function EnergyPage({ user }: EnergyPageProps) {
                 </option>
               ))}
             </select>
-          </div>
-        </header>
+            </div>
+          }
+        />
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <KpiTile
@@ -145,36 +143,25 @@ export function EnergyPage({ user }: EnergyPageProps) {
           />
         </div>
 
-        <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <h2 className="font-condensed text-sm font-bold text-bms-ink">
-            Source mix · grid / solar / nominal DG
-          </h2>
-          <p className="mt-1 text-xs text-bms-muted">
-            Solar from assets with code PV*; DG slice is a small nominal share of remaining
-            load for narrative (no separate DG meter in seed).
-          </p>
-          <div className="mt-3">
+        <SectionCard
+          title="Source mix · grid / solar / nominal DG"
+          subtitle="Solar from assets with code PV*; DG remains a narrative slice until metered"
+        >
             <EnergySourceStackChart
               points={mixQ.data?.points ?? []}
               status={mixStatus}
             />
-          </div>
-        </section>
+        </SectionCard>
 
-        <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <h2 className="font-condensed text-sm font-bold text-bms-ink">
-            Top consuming assets
-          </h2>
-          <p className="mt-1 text-xs text-bms-muted">
-            Ranked by average kW; bar length ≈ avg kW × window hours (rough kWh).
-          </p>
-          <div className="mt-3">
+        <SectionCard
+          title="Top consuming assets"
+          subtitle="Ranked by average kW; bar length approximates energy over the selected window"
+        >
             <EnergyTopBarChart
               consumers={topQ.data?.consumers ?? []}
               status={topStatus}
             />
-          </div>
-        </section>
+        </SectionCard>
       </div>
     </AppShell>
   );
