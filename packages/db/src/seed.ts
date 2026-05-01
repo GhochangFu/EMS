@@ -166,13 +166,13 @@ async function main(): Promise<void> {
         code: "CR-HVAC-1",
         name: "Control Room HVAC 1",
         siteName: controlRoomSiteName,
-        domain: "electrical",
+        domain: "hvac",
       },
       {
         code: "CR-HVAC-2",
         name: "Control Room HVAC 2",
         siteName: controlRoomSiteName,
-        domain: "electrical",
+        domain: "hvac",
       },
       {
         code: "CR-LIGHT-AUX",
@@ -215,6 +215,90 @@ async function main(): Promise<void> {
         name: "Videowall Server Rack PDU B",
         siteName: controlRoomSiteName,
         domain: "it",
+      },
+      {
+        code: "CR-ENV-OP-CONSOLE",
+        name: "Control Room Operator Console Environment",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-ENV-VIDEOWALL",
+        name: "Control Room Videowall Environment",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-ENV-RACK-A",
+        name: "Control Room Rack Bay A Environment",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-ENV-RACK-B",
+        name: "Control Room Rack Bay B Environment",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-ENV-BATTERY-ROOM",
+        name: "Control Room Battery Room Environment",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-ENV-UPS-ROOM",
+        name: "Control Room UPS Room Environment",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-LEAK-01",
+        name: "AHU-1 Drain Pan Leak Sensor",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-LEAK-02",
+        name: "AHU-2 Drain Pan Leak Sensor",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-LEAK-03",
+        name: "Raised Floor NW Leak Sensor",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-LEAK-04",
+        name: "Battery Room Floor Leak Sensor",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-SMOKE-01",
+        name: "Operator Zone Smoke Detector",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-SMOKE-02",
+        name: "Videowall Bay Smoke Detector",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-SMOKE-03",
+        name: "Rack Bay Smoke Detector",
+        siteName: controlRoomSiteName,
+        domain: "environment",
+      },
+      {
+        code: "CR-SMOKE-04",
+        name: "Battery Room Smoke Detector",
+        siteName: controlRoomSiteName,
+        domain: "environment",
       },
     ] as const;
 
@@ -601,6 +685,264 @@ async function main(): Promise<void> {
       await db.insert(automationRules).values({
         code: ruleCode,
         ...ruleValues,
+      });
+    }
+
+    const crBatteryRules = [
+      {
+        assetCode: "CR-BATT-1",
+        code: "CR_BATT_1_TEMP_WARNING",
+        name: "CR Battery String 1 temperature warning",
+        description:
+          "IF CR Battery String 1 temperature is at or above 30 C THEN notify control room operations.",
+        pointKey: "battery_temp_c",
+        operator: "gte",
+        thresholdValue: 30,
+        unit: "C",
+      },
+      {
+        assetCode: "CR-BATT-2",
+        code: "CR_BATT_2_TEMP_WARNING",
+        name: "CR Battery String 2 temperature warning",
+        description:
+          "IF CR Battery String 2 temperature is at or above 30 C THEN notify control room operations.",
+        pointKey: "battery_temp_c",
+        operator: "gte",
+        thresholdValue: 30,
+        unit: "C",
+      },
+      {
+        assetCode: "CR-BATT-1",
+        code: "CR_BATT_1_BACKUP_LOW",
+        name: "CR Battery String 1 backup low",
+        description:
+          "IF CR Battery String 1 backup runtime is below 20 minutes THEN notify control room operations.",
+        pointKey: "backup_min",
+        operator: "lt",
+        thresholdValue: 20,
+        unit: "min",
+      },
+      {
+        assetCode: "CR-BATT-2",
+        code: "CR_BATT_2_BACKUP_LOW",
+        name: "CR Battery String 2 backup low",
+        description:
+          "IF CR Battery String 2 backup runtime is below 20 minutes THEN notify control room operations.",
+        pointKey: "backup_min",
+        operator: "lt",
+        thresholdValue: 20,
+        unit: "min",
+      },
+    ] as const;
+
+    for (const batteryRule of crBatteryRules) {
+      const batteryAsset = assetRows.find((row) => row.code === batteryRule.assetCode);
+      if (!batteryAsset) {
+        continue;
+      }
+      const existingBatteryRules = await db
+        .select({ id: automationRules.id, code: automationRules.code })
+        .from(automationRules)
+        .orderBy(automationRules.createdAt);
+      const existingBatteryRule = existingBatteryRules.find(
+        (rule) => rule.code.trim().toUpperCase() === batteryRule.code,
+      );
+      if (existingBatteryRule) {
+        await db
+          .update(automationRules)
+          .set({ code: batteryRule.code })
+          .where(eq(automationRules.id, existingBatteryRule.id));
+        continue;
+      }
+      await db.insert(automationRules).values({
+        code: batteryRule.code,
+        name: batteryRule.name,
+        description: batteryRule.description,
+        category: "operations",
+        ruleType: "threshold",
+        assetId: batteryAsset.id,
+        pointKey: batteryRule.pointKey,
+        operator: batteryRule.operator,
+        thresholdValue: batteryRule.thresholdValue,
+        severity: "warning",
+        condition: { window: "latest", unit: batteryRule.unit },
+        action: { type: "notify", target: "Control room operations" },
+      });
+    }
+
+    const crHvacRules = [
+      {
+        assetCode: "CR-HVAC-1",
+        code: "CR_HVAC_1_RETURN_TEMP_WARNING",
+        name: "CR HVAC 1 return air warning",
+        description:
+          "IF CR HVAC 1 return air temperature is at or above 26 C THEN notify control room operations.",
+        pointKey: "return_air_temp_c",
+        operator: "gte",
+        thresholdValue: 26,
+        severity: "warning",
+        unit: "C",
+      },
+      {
+        assetCode: "CR-HVAC-2",
+        code: "CR_HVAC_2_RETURN_TEMP_WARNING",
+        name: "CR HVAC 2 return air warning",
+        description:
+          "IF CR HVAC 2 return air temperature is at or above 26 C THEN notify control room operations.",
+        pointKey: "return_air_temp_c",
+        operator: "gte",
+        thresholdValue: 26,
+        severity: "warning",
+        unit: "C",
+      },
+      {
+        assetCode: "CR-HVAC-1",
+        code: "CR_HVAC_1_COMPRESSOR_FAULT",
+        name: "CR HVAC 1 compressor fault",
+        description:
+          "IF CR HVAC 1 compressor health is faulted THEN raise a critical control room HVAC alarm.",
+        pointKey: "compressor_ok",
+        operator: "eq",
+        thresholdValue: 0,
+        severity: "critical",
+        unit: "state",
+      },
+      {
+        assetCode: "CR-HVAC-2",
+        code: "CR_HVAC_2_COMPRESSOR_FAULT",
+        name: "CR HVAC 2 compressor fault",
+        description:
+          "IF CR HVAC 2 compressor health is faulted THEN raise a critical control room HVAC alarm.",
+        pointKey: "compressor_ok",
+        operator: "eq",
+        thresholdValue: 0,
+        severity: "critical",
+        unit: "state",
+      },
+    ] as const;
+
+    for (const hvacRule of crHvacRules) {
+      const hvacAsset = assetRows.find((row) => row.code === hvacRule.assetCode);
+      if (!hvacAsset) {
+        continue;
+      }
+      const existingHvacRules = await db
+        .select({ id: automationRules.id, code: automationRules.code })
+        .from(automationRules)
+        .orderBy(automationRules.createdAt);
+      const existingHvacRule = existingHvacRules.find(
+        (rule) => rule.code.trim().toUpperCase() === hvacRule.code,
+      );
+      if (existingHvacRule) {
+        await db
+          .update(automationRules)
+          .set({ code: hvacRule.code })
+          .where(eq(automationRules.id, existingHvacRule.id));
+        continue;
+      }
+      await db.insert(automationRules).values({
+        code: hvacRule.code,
+        name: hvacRule.name,
+        description: hvacRule.description,
+        category: "operations",
+        ruleType: "threshold",
+        assetId: hvacAsset.id,
+        pointKey: hvacRule.pointKey,
+        operator: hvacRule.operator,
+        thresholdValue: hvacRule.thresholdValue,
+        severity: hvacRule.severity,
+        condition: { window: "latest", unit: hvacRule.unit },
+        action: { type: "notify", target: "Control room operations" },
+      });
+    }
+
+    const crEnvironmentRules = [
+      ...[
+        ["CR-ENV-OP-CONSOLE", "Operator Console", 27],
+        ["CR-ENV-VIDEOWALL", "Videowall Bay", 27],
+        ["CR-ENV-RACK-A", "Rack Bay A", 28],
+        ["CR-ENV-RACK-B", "Rack Bay B", 28],
+        ["CR-ENV-BATTERY-ROOM", "Battery Room", 30],
+        ["CR-ENV-UPS-ROOM", "UPS Room", 30],
+      ].map(([assetCode, zoneName, threshold]) => ({
+        assetCode: String(assetCode),
+        code: `${String(assetCode).replaceAll("-", "_")}_TEMP_WARNING`,
+        name: `${zoneName} temperature warning`,
+        description: `IF ${zoneName} temperature is at or above ${threshold} C THEN notify control room operations.`,
+        pointKey: "temperature_c",
+        operator: "gte",
+        thresholdValue: Number(threshold),
+        severity: "warning",
+        unit: "C",
+      })),
+      ...[
+        ["CR-LEAK-01", "AHU-1 drain pan"],
+        ["CR-LEAK-02", "AHU-2 drain pan"],
+        ["CR-LEAK-03", "Raised floor NW"],
+        ["CR-LEAK-04", "Battery room floor"],
+      ].map(([assetCode, location]) => ({
+        assetCode: String(assetCode),
+        code: `${String(assetCode).replaceAll("-", "_")}_WET_ALARM`,
+        name: `${location} leak alarm`,
+        description: `IF ${location} leak sensor is wet THEN raise a critical environment alarm.`,
+        pointKey: "leak_state",
+        operator: "eq",
+        thresholdValue: 1,
+        severity: "critical",
+        unit: "state",
+      })),
+      ...[
+        ["CR-SMOKE-01", "Operator zone"],
+        ["CR-SMOKE-02", "Videowall bay"],
+        ["CR-SMOKE-03", "Rack bay"],
+        ["CR-SMOKE-04", "Battery room"],
+      ].map(([assetCode, location]) => ({
+        assetCode: String(assetCode),
+        code: `${String(assetCode).replaceAll("-", "_")}_SMOKE_ALARM`,
+        name: `${location} smoke alarm`,
+        description: `IF ${location} smoke detector is in alarm THEN raise a critical environment alarm.`,
+        pointKey: "smoke_state",
+        operator: "eq",
+        thresholdValue: 1,
+        severity: "critical",
+        unit: "state",
+      })),
+    ] as const;
+
+    for (const environmentRule of crEnvironmentRules) {
+      const environmentAsset = assetRows.find(
+        (row) => row.code === environmentRule.assetCode,
+      );
+      if (!environmentAsset) {
+        continue;
+      }
+      const existingEnvironmentRules = await db
+        .select({ id: automationRules.id, code: automationRules.code })
+        .from(automationRules)
+        .orderBy(automationRules.createdAt);
+      const existingEnvironmentRule = existingEnvironmentRules.find(
+        (rule) => rule.code.trim().toUpperCase() === environmentRule.code,
+      );
+      if (existingEnvironmentRule) {
+        await db
+          .update(automationRules)
+          .set({ code: environmentRule.code })
+          .where(eq(automationRules.id, existingEnvironmentRule.id));
+        continue;
+      }
+      await db.insert(automationRules).values({
+        code: environmentRule.code,
+        name: environmentRule.name,
+        description: environmentRule.description,
+        category: "operations",
+        ruleType: "threshold",
+        assetId: environmentAsset.id,
+        pointKey: environmentRule.pointKey,
+        operator: environmentRule.operator,
+        thresholdValue: environmentRule.thresholdValue,
+        severity: environmentRule.severity,
+        condition: { window: "latest", unit: environmentRule.unit },
+        action: { type: "notify", target: "Control room operations" },
       });
     }
 

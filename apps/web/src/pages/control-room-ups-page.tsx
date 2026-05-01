@@ -1,0 +1,547 @@
+import { useState, type ReactNode } from "react";
+import type { AutomationRuleOperator, RuleListItem } from "@bms/shared";
+import { useQuery } from "@tanstack/react-query";
+
+import { fetchRules } from "../api/rules";
+import { KpiTile } from "../components/kpi-tile";
+import {
+  CR_POINT_KEYS,
+  CR_TRACKED_ASSET_CODES,
+} from "../components/live-svg/control-room-bindings";
+import {
+  type SchematicTelemetrySlice,
+  SchematicTelemetryProvider,
+  useSchematicTelemetryByCode,
+} from "../components/live-svg/schematic-telemetry-context";
+import { AppShell } from "../layouts/app-shell";
+import type { AuthUser } from "../stores/auth-store";
+
+type ControlRoomUpsPageProps = {
+  user: AuthUser;
+};
+
+type UpsTab = "CR-UPS-1" | "CR-UPS-2" | "combined";
+type UpsStatus = "normal" | "warning" | "critical" | "offline";
+
+type RuleState = {
+  status: UpsStatus;
+  matchedRule: RuleListItem | null;
+};
+
+const UPS_UNITS = [
+  { code: "CR-UPS-1", label: "UPS-1", batteryCode: "CR-BATT-1", capacityKva: 30 },
+  { code: "CR-UPS-2", label: "UPS-2", batteryCode: "CR-BATT-2", capacityKva: 30 },
+] as const;
+
+function n(value: number | null, digits = 1): string {
+  return value == null || Number.isNaN(value) ? "-" : value.toFixed(digits);
+}
+
+function useCr(code: string) {
+  return useSchematicTelemetryByCode(code).slice;
+}
+
+function compareValue(
+  observed: number,
+  operator: AutomationRuleOperator,
+  threshold: number,
+): boolean {
+  switch (operator) {
+    case "gt":
+      return observed > threshold;
+    case "gte":
+      return observed >= threshold;
+    case "lt":
+      return observed < threshold;
+    case "lte":
+      return observed <= threshold;
+    case "eq":
+      return observed === threshold;
+  }
+}
+
+function pointValue(slice: SchematicTelemetrySlice, pointKey: string): number | null {
+  switch (pointKey) {
+    case "load_pct":
+      return slice.loadPct;
+    case "output_voltage_v":
+      return slice.outputVoltageV;
+    case "output_freq_hz":
+      return slice.outputFreqHz;
+    case "battery_v":
+      return slice.batteryV;
+    case "battery_temp_c":
+      return slice.batteryTempC;
+    case "backup_min":
+      return slice.backupMin;
+    case "health_pct":
+      return slice.healthPct;
+    case "kw":
+      return slice.kw;
+    case "current_a":
+      return slice.current;
+    default:
+      return null;
+  }
+}
+
+function severityStatus(severity: string | null): UpsStatus {
+  return severity === "critical" ? "critical" : "warning";
+}
+
+function deriveRuleState(
+  assetCode: string,
+  slice: SchematicTelemetrySlice,
+  rules: RuleListItem[],
+): RuleState {
+  if (slice.breaker === 0 || slice.healthPct === 0) {
+    return { status: "offline", matchedRule: null };
+  }
+
+  const matchedRule = rules.find((rule) => {
+    if (
+      !rule.enabled ||
+      rule.ruleType !== "threshold" ||
+      rule.assetCode !== assetCode ||
+      !rule.pointKey ||
+      !rule.operator ||
+      rule.thresholdValue === null
+    ) {
+      return false;
+    }
+    const observed = pointValue(slice, rule.pointKey);
+    return observed !== null && compareValue(observed, rule.operator, rule.thresholdValue);
+  });
+
+  return matchedRule
+    ? { status: severityStatus(matchedRule.severity), matchedRule }
+    : { status: "normal", matchedRule: null };
+}
+
+function mergeStatus(states: RuleState[]): RuleState {
+  return (
+    states.find((state) => state.status === "critical") ??
+    states.find((state) => state.status === "warning") ??
+    states.find((state) => state.status === "offline") ??
+    { status: "normal", matchedRule: null }
+  );
+}
+
+function statusLabel(status: UpsStatus): string {
+  switch (status) {
+    case "critical":
+      return "CRITICAL";
+    case "warning":
+      return "WARN";
+    case "offline":
+      return "OFFLINE";
+    case "normal":
+      return "NORMAL";
+  }
+}
+
+function statusPillClass(status: UpsStatus): string {
+  switch (status) {
+    case "critical":
+      return "border-red-200 bg-red-100 text-red-800";
+    case "warning":
+      return "border-amber-200 bg-amber-100 text-amber-900";
+    case "offline":
+      return "border-gray-200 bg-gray-100 text-gray-700";
+    case "normal":
+      return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+  }
+}
+
+function statusTone(status: UpsStatus): "default" | "warning" | "critical" {
+  if (status === "critical") {
+    return "critical";
+  }
+  if (status === "warning" || status === "offline") {
+    return "warning";
+  }
+  return "default";
+}
+
+function stroke(status: UpsStatus): string {
+  if (status === "critical") {
+    return "#dc2626";
+  }
+  if (status === "warning") {
+    return "#f59e0b";
+  }
+  if (status === "offline") {
+    return "#94a3b8";
+  }
+  return "#039855";
+}
+
+function boxClass(status: UpsStatus): string {
+  if (status === "critical") {
+    return "fill-red-50 stroke-red-600";
+  }
+  if (status === "warning") {
+    return "fill-amber-50 stroke-amber-500";
+  }
+  if (status === "offline") {
+    return "fill-gray-100 stroke-gray-400";
+  }
+  return "fill-white stroke-bms-green";
+}
+
+function modeFor(slice: SchematicTelemetrySlice, status: UpsStatus): string {
+  if (status === "offline") {
+    return "offline";
+  }
+  if ((slice.backupMin ?? 0) < 15) {
+    return "battery";
+  }
+  return "online";
+}
+
+function capacityKw(loadPct: number | null, capacityKva: number): number | null {
+  return loadPct == null ? null : (loadPct / 100) * capacityKva * 0.9;
+}
+
+function ControlRoomUpsContent() {
+  const [tab, setTab] = useState<UpsTab>("CR-UPS-1");
+  const rulesQuery = useQuery({
+    queryKey: ["rules", "cr-ups"],
+    queryFn: fetchRules,
+    refetchInterval: 15_000,
+  });
+  const rules = rulesQuery.data?.items ?? [];
+  const ups1 = useCr("CR-UPS-1");
+  const ups2 = useCr("CR-UPS-2");
+  const batt1 = useCr("CR-BATT-1");
+  const batt2 = useCr("CR-BATT-2");
+  const units = [
+    { ...UPS_UNITS[0], slice: ups1, battery: batt1, state: deriveRuleState("CR-UPS-1", ups1, rules) },
+    { ...UPS_UNITS[1], slice: ups2, battery: batt2, state: deriveRuleState("CR-UPS-2", ups2, rules) },
+  ];
+  const selected = units.find((unit) => unit.code === tab) ?? units[0];
+  const totalCapacity = units.reduce((sum, unit) => sum + unit.capacityKva, 0);
+  const totalKw = units.reduce(
+    (sum, unit) => sum + (capacityKw(unit.slice.loadPct, unit.capacityKva) ?? 0),
+    0,
+  );
+  const avgLoad =
+    units.reduce((sum, unit) => sum + (unit.slice.loadPct ?? 0), 0) / units.length;
+  const backups = units
+    .map((unit) => unit.slice.backupMin)
+    .filter((value): value is number => value !== null);
+  const worstBackup = backups.length > 0 ? Math.min(...backups) : null;
+  const overall = mergeStatus(units.map((unit) => unit.state));
+
+  return (
+    <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
+      <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
+            UPS Monitoring · 2 x 30 kVA
+          </h1>
+          <p className="mt-1 text-sm text-bms-muted">
+            Per-unit and combined view · rectifier → battery → inverter → load · rule-driven status
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="cursor-not-allowed rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-muted opacity-60" disabled>
+            Manual Bypass · disabled
+          </button>
+          <button className="cursor-not-allowed rounded bg-gray-300 px-3 py-1.5 text-xs font-semibold text-white opacity-70" disabled>
+            Battery Test · disabled
+          </button>
+        </div>
+      </header>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiTile label="Total Capacity" status="ready" value={String(totalCapacity)} unit="kVA" />
+        <KpiTile label="Total Load" status="ready" value={n(totalKw, 2)} unit="kW" />
+        <KpiTile label="Average Load" status="ready" value={n(avgLoad, 0)} unit="%" />
+        <KpiTile label="Worst Backup" status="ready" value={n(worstBackup, 0)} unit="min" tone={statusTone(overall.status)} />
+      </div>
+
+      <div className="flex flex-wrap gap-2 rounded border border-gray-200 bg-white p-3">
+        {units.map((unit) => (
+          <button
+            key={unit.code}
+            className={`rounded border px-3 py-2 text-sm font-semibold ${
+              tab === unit.code
+                ? "border-bms-green bg-bms-green text-white"
+                : "border-gray-200 bg-gray-50 text-bms-muted"
+            }`}
+            onClick={() => setTab(unit.code)}
+          >
+            {unit.label} · {unit.capacityKva} kVA
+            <span className={`ml-2 rounded-full border px-2 py-0.5 text-[10px] ${statusPillClass(unit.state.status)}`}>
+              {statusLabel(unit.state.status)}
+            </span>
+          </button>
+        ))}
+        <button
+          className={`rounded border px-3 py-2 text-sm font-semibold ${
+            tab === "combined"
+              ? "border-bms-green bg-bms-green text-white"
+              : "border-gray-200 bg-gray-50 text-bms-muted"
+          }`}
+          onClick={() => setTab("combined")}
+        >
+          Combined Summary
+        </button>
+      </div>
+
+      {tab === "combined" ? (
+        <CombinedSummary units={units} />
+      ) : (
+        <UnitDetail unit={selected} />
+      )}
+    </div>
+  );
+}
+
+function CombinedSummary({
+  units,
+}: {
+  units: Array<{
+    code: "CR-UPS-1" | "CR-UPS-2";
+    label: "UPS-1" | "UPS-2";
+    capacityKva: 30;
+    slice: SchematicTelemetrySlice;
+    battery: SchematicTelemetrySlice;
+    state: RuleState;
+  }>;
+}) {
+  return (
+    <section className="rounded border border-gray-200 bg-white">
+      <div className="border-b border-gray-200 px-4 py-3">
+        <h2 className="font-condensed text-lg font-bold text-bms-ink">
+          All UPS Units
+        </h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50 text-xs uppercase tracking-wide text-bms-muted">
+            <tr>
+              <th className="px-4 py-2 text-left">UPS</th>
+              <th className="px-4 py-2 text-left">Mode</th>
+              <th className="px-4 py-2 text-left">Load</th>
+              <th className="px-4 py-2 text-left">Output V/Hz</th>
+              <th className="px-4 py-2 text-left">Battery V</th>
+              <th className="px-4 py-2 text-left">Backup</th>
+              <th className="px-4 py-2 text-left">Health</th>
+              <th className="px-4 py-2 text-left">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-200">
+            {units.map((unit) => (
+              <tr key={unit.code}>
+                <td className="px-4 py-3 font-semibold text-bms-ink">{unit.label}</td>
+                <td className="px-4 py-3 uppercase">{modeFor(unit.slice, unit.state.status)}</td>
+                <td className="px-4 py-3">{n(unit.slice.loadPct, 0)}%</td>
+                <td className="px-4 py-3">{n(unit.slice.outputVoltageV, 1)} / {n(unit.slice.outputFreqHz, 2)}</td>
+                <td className="px-4 py-3">{n(unit.slice.batteryV ?? unit.battery.batteryV, 1)} V</td>
+                <td className="px-4 py-3">{n(unit.slice.backupMin, 0)} min</td>
+                <td className="px-4 py-3">{n(unit.slice.healthPct, 0)}%</td>
+                <td className="px-4 py-3">
+                  <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
+                    {statusLabel(unit.state.status)}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function UnitDetail({
+  unit,
+}: {
+  unit: {
+    code: "CR-UPS-1" | "CR-UPS-2";
+    label: "UPS-1" | "UPS-2";
+    capacityKva: 30;
+    slice: SchematicTelemetrySlice;
+    battery: SchematicTelemetrySlice;
+    state: RuleState;
+  };
+}) {
+  const mode = modeFor(unit.slice, unit.state.status);
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiTile label="Mode" status="ready" value={mode.toUpperCase()} tone={statusTone(unit.state.status)} />
+        <KpiTile label="Load" status="ready" value={n(unit.slice.loadPct, 0)} unit="%" hint={`${n(capacityKw(unit.slice.loadPct, unit.capacityKva), 2)} kW`} />
+        <KpiTile label="Backup Time" status="ready" value={n(unit.slice.backupMin, 0)} unit="min" />
+        <KpiTile label="Health" status="ready" value={n(unit.slice.healthPct, 0)} unit="%" tone={statusTone(unit.state.status)} />
+      </div>
+
+      <section className="rounded border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-4 py-3">
+          <h2 className="font-condensed text-lg font-bold text-bms-ink">
+            {unit.label} · Block Diagram
+          </h2>
+          <p className="text-xs text-bms-muted">
+            Rectifier → battery → inverter → critical load
+          </p>
+        </div>
+        <div className="bg-gray-50 p-4">
+          <UpsBlockDiagram slice={unit.slice} battery={unit.battery} status={unit.state.status} />
+        </div>
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <DetailCard title="Input / Output">
+          <Row label="Output voltage" value={`${n(unit.slice.outputVoltageV, 1)} V`} />
+          <Row label="Output frequency" value={`${n(unit.slice.outputFreqHz, 2)} Hz`} />
+          <Row label="Output current" value={`${n(unit.slice.current, 1)} A`} />
+          <Row label="Power factor" value={`${n(unit.slice.pf, 2)} lag`} />
+          <Row label="Real power" value={`${n(unit.slice.kw, 2)} kW`} />
+        </DetailCard>
+        <DetailCard title="Battery">
+          <Row label="Battery voltage" value={`${n(unit.slice.batteryV ?? unit.battery.batteryV, 1)} V`} />
+          <Row label="Battery current" value={`${n(unit.battery.current, 1)} A`} />
+          <Row label="Backup time" value={`${n(unit.slice.backupMin, 0)} min @ ${n(unit.slice.loadPct, 0)}% load`} />
+          <Row label="Battery temp" value={`${n(unit.slice.batteryTempC ?? unit.battery.batteryTempC, 1)} C`} />
+          <Row label="String count" value="32 cells · 12V VRLA" />
+        </DetailCard>
+      </div>
+
+      <section className="rounded border border-gray-200 bg-white p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-condensed text-lg font-bold text-bms-ink">
+              Recent Trend
+            </h2>
+            <p className="text-xs text-bms-muted">Live load snapshot · simulator window</p>
+          </div>
+          {unit.state.matchedRule ? (
+            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
+              {unit.state.matchedRule.name}
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-4 h-28 rounded bg-gradient-to-r from-bms-green/10 via-bms-green/40 to-amber-300/50" />
+        <p className="mt-2 text-center font-mono text-[10px] text-bms-muted">
+          Load trend placeholder uses live current value until historical charting is promoted.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+function UpsBlockDiagram({
+  slice,
+  battery,
+  status,
+}: {
+  slice: SchematicTelemetrySlice;
+  battery: SchematicTelemetrySlice;
+  status: UpsStatus;
+}) {
+  const line = stroke(status);
+  const battV = slice.batteryV ?? battery.batteryV;
+  const battTemp = slice.batteryTempC ?? battery.batteryTempC;
+  return (
+    <svg className="h-auto w-full" viewBox="0 0 900 240">
+      <defs>
+        <marker id="upsArrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <path d="M0,0 L6,3 L0,6 Z" fill={line} />
+        </marker>
+      </defs>
+      <Block x={14} y={80} title="AC INPUT" sub={`${n(slice.outputVoltageV, 1)} V`} status={status} />
+      <Flow x1={134} y1={110} x2={178} y2={110} color={line} />
+      <Block x={178} y={80} title="RECTIFIER" sub="AC -> DC" status={status} />
+      <Flow x1={298} y1={110} x2={342} y2={110} color={line} />
+      <Block x={342} y={80} title="DC BUS" sub={`${n(battV, 0)} V`} status={status} />
+      <line x1="402" y1="138" x2="402" y2="170" stroke={line} strokeWidth={2} strokeDasharray="4 3" />
+      <Block x={342} y={170} title="BATTERY" sub={`${n(battV, 1)} V · ${n(battTemp, 1)} C`} status={status} />
+      <Flow x1={462} y1={110} x2={506} y2={110} color={line} />
+      <Block x={506} y={80} title="INVERTER" sub="DC -> AC" status={status} />
+      <Flow x1={626} y1={110} x2={670} y2={110} color={line} />
+      <Block x={670} y={80} w={100} title="STATIC SW" sub="NORMAL" status={status} />
+      <Flow x1={770} y1={110} x2={810} y2={110} color={line} />
+      <Block x={810} y={80} w={80} title="LOAD" sub={`${n(slice.loadPct, 0)}%`} status={status} />
+      <text x="450" y="40" textAnchor="middle" className="fill-gray-400 font-mono text-[10px]">BYPASS LINE (auto)</text>
+      <line x1="74" y1="60" x2="850" y2="60" stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="5 5" />
+    </svg>
+  );
+}
+
+function Block({
+  x,
+  y,
+  w = 120,
+  title,
+  sub,
+  status,
+}: {
+  x: number;
+  y: number;
+  w?: number;
+  title: string;
+  sub: string;
+  status: UpsStatus;
+}) {
+  return (
+    <g>
+      <rect x={x} y={y} width={w} height={58} rx={6} className={boxClass(status)} />
+      <text x={x + w / 2} y={y + 24} textAnchor="middle" className="fill-bms-ink font-condensed text-[13px] font-bold">{title}</text>
+      <text x={x + w / 2} y={y + 42} textAnchor="middle" className="fill-bms-muted font-mono text-[10px]">{sub}</text>
+    </g>
+  );
+}
+
+function Flow({
+  x1,
+  y1,
+  x2,
+  y2,
+  color,
+}: {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+}) {
+  return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={3} markerEnd="url(#upsArrow)" />;
+}
+
+function DetailCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded border border-gray-200 bg-white">
+      <div className="border-b border-gray-200 px-4 py-3">
+        <h2 className="font-condensed text-lg font-bold text-bms-ink">{title}</h2>
+      </div>
+      <div className="space-y-2 p-4 text-sm">{children}</div>
+    </section>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-bms-muted">{label}</span>
+      <span className="font-mono font-semibold text-bms-ink">{value}</span>
+    </div>
+  );
+}
+
+export function ControlRoomUpsPage({ user }: ControlRoomUpsPageProps) {
+  return (
+    <AppShell
+      user={user}
+      kpiRibbon={<span className="text-bms-ink">IBMS Control Room · UPS Monitoring</span>}
+    >
+      <SchematicTelemetryProvider
+        assetCodes={CR_TRACKED_ASSET_CODES}
+        pointKeys={CR_POINT_KEYS}
+      >
+        <ControlRoomUpsContent />
+      </SchematicTelemetryProvider>
+    </AppShell>
+  );
+}

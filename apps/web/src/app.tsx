@@ -14,6 +14,10 @@ import { ReportsPage } from "./pages/reports-page";
 import { ControlRoomOverviewPage } from "./pages/control-room-overview-page";
 import { ControlRoomSldPage } from "./pages/control-room-sld-page";
 import { ControlRoomItPage } from "./pages/control-room-it-page";
+import { ControlRoomUpsPage } from "./pages/control-room-ups-page";
+import { ControlRoomBatteryPage } from "./pages/control-room-battery-page";
+import { ControlRoomHvacPage } from "./pages/control-room-hvac-page";
+import { ControlRoomEnvPage } from "./pages/control-room-env-page";
 import { AuthCallbackPage } from "./pages/auth-callback-page";
 import { LoginPage } from "./pages/login-page";
 import { useAuthStore } from "./stores/auth-store";
@@ -180,6 +184,46 @@ export function App() {
         element={
           accessToken && user ? (
             <ControlRoomItPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/cr-ups"
+        element={
+          accessToken && user ? (
+            <ControlRoomUpsPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/cr-battery"
+        element={
+          accessToken && user ? (
+            <ControlRoomBatteryPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/cr-hvac"
+        element={
+          accessToken && user ? (
+            <ControlRoomHvacPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/cr-env"
+        element={
+          accessToken && user ? (
+            <ControlRoomEnvPage user={user} />
           ) : (
             <Navigate to="/login" replace />
           )

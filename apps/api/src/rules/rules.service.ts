@@ -31,6 +31,7 @@ import type {
 } from "@bms/shared";
 import {
   CONTROL_ROOM_ELECTRICAL_POINT_KEYS,
+  CONTROL_ROOM_ENVIRONMENT_POINT_KEYS,
   CONTROL_ROOM_IT_POINT_KEYS,
   CONTROL_ROOM_UPS_POINT_KEYS,
   ELECTRICAL_POINT_KEYS,
@@ -821,6 +822,9 @@ export class RulesService {
     }
     if (code.startsWith("CR-UPS") || code.startsWith("CR-BATT")) {
       return [...CONTROL_ROOM_UPS_POINT_KEYS];
+    }
+    if (domain === "environment" || code.startsWith("CR-ENV") || code.startsWith("CR-LEAK") || code.startsWith("CR-SMOKE")) {
+      return [...CONTROL_ROOM_ENVIRONMENT_POINT_KEYS];
     }
     if (domain === "hvac") {
       return [...HVAC_POINT_KEYS];

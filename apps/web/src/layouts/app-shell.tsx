@@ -23,6 +23,10 @@ const modules = [
   { label: "CR · Main Dashboard", path: "/cr-overview" },
   { label: "CR · Electrical SLD", path: "/cr-sld" },
   { label: "CR · IT & Rack Load", path: "/cr-it" },
+  { label: "CR · UPS Monitoring", path: "/cr-ups" },
+  { label: "CR · Battery Bank", path: "/cr-battery" },
+  { label: "CR · HVAC System", path: "/cr-hvac" },
+  { label: "CR · Environment", path: "/cr-env" },
   { label: "Maintenance", path: "/work-orders" },
   { label: "Maintenance Schedules", path: "/maintenance-schedules" },
 ] as const;

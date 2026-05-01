@@ -1,6 +1,6 @@
 /**
  * Telemetry simulator — writes electrical points for `electrical` assets and
- * HVAC points for `hvac` assets into `telemetry.point_values`, then
+ * HVAC/environment points for their domains into `telemetry.point_values`, then
  * `pg_notify('bms_telemetry', …)` for the API WebSocket fan-out.
  */
 import { config } from "dotenv";
@@ -13,6 +13,7 @@ import promClient from "prom-client";
 const require = createRequire(import.meta.url);
 const {
   CONTROL_ROOM_ELECTRICAL_POINT_KEYS,
+  CONTROL_ROOM_ENVIRONMENT_POINT_KEYS,
   CONTROL_ROOM_IT_POINT_KEYS,
   CONTROL_ROOM_UPS_POINT_KEYS,
   ELECTRICAL_POINT_KEYS,
@@ -80,6 +81,9 @@ const hvacState = new Map();
 
 /** @type {Map<string, { rackKw: number, rackTempC: number, utilPct: number, outletsUsed: number, pduAStatus: number, pduBStatus: number }>} */
 const itState = new Map();
+
+/** @type {Map<string, { tempC: number, humidityPct: number, leakState: number, smokeState: number }>} */
+const environmentState = new Map();
 
 function rndWalk(prev, delta, min, max) {
   const x = prev + (Math.random() * 2 - 1) * delta;
@@ -164,6 +168,52 @@ function ensureItState(assetId, code) {
     itState.set(assetId, s);
   }
   return s;
+}
+
+function envProfile(code) {
+  const profiles = {
+    "CR-ENV-OP-CONSOLE": { tempC: 23.2, humidityPct: 45 },
+    "CR-ENV-VIDEOWALL": { tempC: 23.5, humidityPct: 46 },
+    "CR-ENV-RACK-A": { tempC: 24.8, humidityPct: 44 },
+    "CR-ENV-RACK-B": { tempC: 25.2, humidityPct: 43 },
+    "CR-ENV-BATTERY-ROOM": { tempC: 26.4, humidityPct: 50 },
+    "CR-ENV-UPS-ROOM": { tempC: 27.1, humidityPct: 48 },
+  };
+  return profiles[code] ?? { tempC: 24, humidityPct: 45 };
+}
+
+function ensureEnvironmentState(assetId, code) {
+  let s = environmentState.get(assetId);
+  if (!s) {
+    const profile = envProfile(code);
+    s = {
+      tempC: profile.tempC,
+      humidityPct: profile.humidityPct,
+      leakState: 0,
+      smokeState: 0,
+    };
+    environmentState.set(assetId, s);
+  }
+  return s;
+}
+
+function stepEnvironment(assetId, code) {
+  const s = ensureEnvironmentState(assetId, code);
+  const t = new Date();
+  if (code.startsWith("CR-LEAK")) {
+    s.leakState = Math.random() < 0.0005 ? 1 : s.leakState === 1 && Math.random() < 0.08 ? 0 : s.leakState;
+    return [{ assetId, pointKey: "leak_state", value: s.leakState, unit: null, time: t }];
+  }
+  if (code.startsWith("CR-SMOKE")) {
+    s.smokeState = Math.random() < 0.0004 ? 1 : s.smokeState === 1 && Math.random() < 0.1 ? 0 : s.smokeState;
+    return [{ assetId, pointKey: "smoke_state", value: s.smokeState, unit: null, time: t }];
+  }
+  s.tempC = rndWalk(s.tempC, 0.08, 18, 31);
+  s.humidityPct = rndWalk(s.humidityPct, 0.4, 30, 70);
+  return [
+    { assetId, pointKey: "temperature_c", value: s.tempC, unit: "°C", time: t },
+    { assetId, pointKey: "humidity_pct", value: s.humidityPct, unit: "%", time: t },
+  ];
 }
 
 function stepElectrical(assetId, code = "") {
@@ -304,7 +354,9 @@ async function tick(rows) {
           ? stepIt(row.id, row.code)
           : row.domain === "hvac"
             ? stepHvac(row.id)
-            : stepElectrical(row.id, row.code);
+            : row.domain === "environment"
+              ? stepEnvironment(row.id, row.code)
+              : stepElectrical(row.id, row.code);
       for (const r of batch) {
         outRows.push([r.time, r.assetId, r.pointKey, r.value, r.unit]);
         readings.push({
@@ -373,6 +425,7 @@ async function main() {
       `  control-room electrical: ${CONTROL_ROOM_ELECTRICAL_POINT_KEYS.join(", ")}\n` +
       `  control-room ups: ${CONTROL_ROOM_UPS_POINT_KEYS.join(", ")}\n` +
       `  control-room it: ${CONTROL_ROOM_IT_POINT_KEYS.join(", ")}\n` +
+      `  control-room environment: ${CONTROL_ROOM_ENVIRONMENT_POINT_KEYS.join(", ")}\n` +
       `  hvac: ${HVAC_POINT_KEYS.join(", ")}\n`,
   );
 

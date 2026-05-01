@@ -1,6 +1,6 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint H Complete)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Control Room Extension Complete)
 
-> **Status:** ACTIVE — Phase 5 Sprint H complete; Sprint I planned.
+> **Status:** ACTIVE — Phase 5 Control Room extension complete; Sprint I ready.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -26,7 +26,9 @@ storage is skipped for now and can be revisited later. Phase 5 Sprint G
 added the first 2D IBMS Control Room foundation screens: CR Main Dashboard,
 CR Electrical SLD, and CR IT & Rack Load. Phase 5 Sprint H added a guided
 IF/THEN visual rule builder for the existing simple
-threshold/time-window rule model.
+threshold/time-window rule model. The Phase 5 Control Room extension added
+the previously deferred UPS Monitoring, Battery Bank, HVAC System,
+Environment, and CR Dashboard integration screens before Sprint I.
 
 ---
 
@@ -53,11 +55,15 @@ The current planning direction is:
 9. Treat Phase 5 Sprint H guided visual rule builder as complete without
    two-way commanding, free-form node graphs, schedulers, or real-ingestion
    rules.
-10. Plan Phase 5 Sprint I as the completed-page UI/UX alignment pass.
-11. Defer MinIO/object storage until persisted report files are actually
+10. Treat the Phase 5 Control Room extension as complete for CR UPS
+   Monitoring, Battery Bank, HVAC System, Environment, and CR Dashboard
+   integration.
+11. Proceed next with Phase 5 Sprint I as the completed-page UI/UX
+   alignment pass.
+12. Defer MinIO/object storage until persisted report files are actually
    needed.
-12. Plan Phase 6 as Three.js Control Room only.
-13. Keep AI Copilot / chatbot out of scope.
+13. Plan Phase 6 as Three.js Control Room only.
+14. Keep AI Copilot / chatbot out of scope.
 
 The completed prototype screens are:
 
@@ -92,7 +98,7 @@ entry **D-0001**.
 | Telemetry DB | TimescaleDB extension on the same Postgres |
 | Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
-| Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, and completed guided rule builder |
+| Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, and DB |
 | CI/CD        | GitHub Actions for install, build/typecheck, and migration validation |
 | Cache / pub-sub | Redis 7 for Socket.IO adapter fan-out |
@@ -233,11 +239,15 @@ rule-engine UI is complete for simple threshold/time-window rules,
 enable/disable controls, manual evaluation, and execution history. Phase 5
 Sprint E Energy report preview and CSV export are complete. Phase 5 Sprint
 G 2D Control Room foundation is complete for CR Main Dashboard, CR
-Electrical SLD, and CR IT & Rack Load only. Phase 5 Sprint H guided visual
-rule builder is complete for simple threshold/time-window rule creation,
-draft preview, publish, archive, duplicate, enable/disable, preview, and
-audit history. Report PDF/XLSX output, persisted report storage, the
-remaining CR modules, Phase 6 3D, two-way commands, real-ingestion rules,
+Electrical SLD, and CR IT & Rack Load. Phase 5 Sprint H guided visual rule
+builder is complete for simple threshold/time-window rule creation, draft
+preview, publish, archive, duplicate, enable/disable, preview, and audit
+history. The Phase 5 Control Room extension is complete for CR UPS
+Monitoring, Battery Bank, HVAC System, Environment, and Dashboard
+integration only. Report PDF/XLSX output, persisted report storage, CR
+Security, CR Alarm Management, CR Trends, Phase 6 3D, two-way commands,
+setpoint changes, manual bypass, battery tests, equalize charge, HVAC
+force-changeover, sensor calibration/test execution, real-ingestion rules,
 scheduler/job queues, and complex node graph builders remain out of scope
 until their specific sprint is promoted. AI Copilot / chatbot remains
 deferred. When any other item above is needed, follow §10 (Promotion
@@ -245,32 +255,37 @@ Process).
 
 ---
 
-## 7. Definition of Done (Phase 5 Sprint H)
+## 7. Definition of Done (Phase 5 Control Room Extension)
 
-Phase 5 Sprint H is done:
+The Phase 5 Control Room extension is done:
 
 1. Native WSL development and the Phase 1 compose path remain unchanged.
-2. Operators can open a guided Rule Builder flow from the Rule Engine
-   screen mapped to `ESKOM_SMOC.html` Rule Engine (`R.rl`).
-3. The builder supports threshold and time-window rules using the existing
-   `bms.automation_rules` model.
-4. Operators can select a current asset and compatible telemetry point
-   from API-backed data.
-5. Server-side validation rejects unsupported asset/point/operator/action
-   combinations, unsafe payloads, and invalid threshold/time-window ranges.
-6. Operators can save drafts, preview/test a draft against latest telemetry
-   without enabling it, publish it, duplicate it, archive it, and toggle
-   enabled/disabled state.
-7. Create, edit, publish, archive, enable, disable, duplicate, and preview
-   actions write lightweight audit rows.
-8. UI states clearly show draft, enabled, disabled, archived, invalid, and
-   never-evaluated rules.
-9. The UI copy separates operator-created rules from simulator alarm
-   thresholds and future real-source rules.
-10. Two-way commands, setpoint changes, breaker actions, approval workflow,
-    real-ingestion rules, scheduler/job queue dependencies, and complex
-    drag-and-drop node graphs remain out of scope.
-11. Typecheck/build, API smoke, and browser smoke pass.
+2. Operators can open `/cr-ups`, `/cr-battery`, `/cr-hvac`, and `/cr-env`
+   from the app shell and CR Dashboard drilldowns.
+3. CR UPS Monitoring matches `ESKOM_SMOC.html` `R.crUps`: UPS-1, UPS-2,
+   combined summary, live KPIs, dynamic block diagram, and rule-driven
+   status.
+4. CR Battery Bank matches `ESKOM_SMOC.html` `R.crBat`: two battery
+   strings, cell grid, string KPIs, temperature summary, alerts, and
+   rule-driven status.
+5. CR HVAC System matches `ESKOM_SMOC.html` `R.crHvac`: two precision AC
+   units, lead/lag status, animated airflow diagram, run-hour balance, and
+   rule-driven status.
+6. CR Environment matches `ESKOM_SMOC.html` `R.crEnv`: zone
+   temperature/humidity, floorplan sensor markers, water leak table, smoke
+   table, and rule-driven status where current data exists.
+7. Seed/demo data and simulator telemetry cover the promoted UPS, battery,
+   HVAC, environment, leak, and smoke assets without real protocol
+   adapters.
+8. CR Dashboard reflects UPS, battery, HVAC, and environment status in KPI
+   tiles, summaries, drilldowns, and active warning rollups.
+9. Manual Bypass, Battery Test, Equalize Charge, Capacity Test, Force
+   Changeover, Set Schedule, Test Sensors, and Calibrate controls remain
+   visible only as disabled/non-commanding UI affordances.
+10. CR Security, CR Alarm Management, CR Trends, Phase 6 3D, real
+    ingestion, two-way commands, and approval workflows remain out of scope.
+11. Typecheck/build, seed/simulator telemetry checks, API smoke, and
+    browser smoke pass.
 
 ---
 

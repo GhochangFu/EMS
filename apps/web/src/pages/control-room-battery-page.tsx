@@ -1,0 +1,415 @@
+import type { ReactNode } from "react";
+import type { AutomationRuleOperator, RuleListItem } from "@bms/shared";
+import { useQuery } from "@tanstack/react-query";
+
+import { fetchRules } from "../api/rules";
+import { KpiTile } from "../components/kpi-tile";
+import {
+  CR_POINT_KEYS,
+  CR_TRACKED_ASSET_CODES,
+} from "../components/live-svg/control-room-bindings";
+import {
+  type SchematicTelemetrySlice,
+  SchematicTelemetryProvider,
+  useSchematicTelemetryByCode,
+} from "../components/live-svg/schematic-telemetry-context";
+import { AppShell } from "../layouts/app-shell";
+import type { AuthUser } from "../stores/auth-store";
+
+type ControlRoomBatteryPageProps = {
+  user: AuthUser;
+};
+
+type BatteryStatus = "normal" | "warning" | "critical" | "offline";
+
+type RuleState = {
+  status: BatteryStatus;
+  matchedRule: RuleListItem | null;
+};
+
+type CellReading = {
+  index: number;
+  voltage: number;
+  temperature: number;
+};
+
+const STRINGS = [
+  { code: "CR-BATT-1", upsCode: "CR-UPS-1", title: "String 1 · BAT-1 (UPS-1)", seed: 7 },
+  { code: "CR-BATT-2", upsCode: "CR-UPS-2", title: "String 2 · BAT-2 (UPS-2)", seed: 13 },
+] as const;
+
+function n(value: number | null, digits = 1): string {
+  return value == null || Number.isNaN(value) ? "-" : value.toFixed(digits);
+}
+
+function useCr(code: string) {
+  return useSchematicTelemetryByCode(code).slice;
+}
+
+function compareValue(
+  observed: number,
+  operator: AutomationRuleOperator,
+  threshold: number,
+): boolean {
+  switch (operator) {
+    case "gt":
+      return observed > threshold;
+    case "gte":
+      return observed >= threshold;
+    case "lt":
+      return observed < threshold;
+    case "lte":
+      return observed <= threshold;
+    case "eq":
+      return observed === threshold;
+  }
+}
+
+function pointValue(slice: SchematicTelemetrySlice, pointKey: string): number | null {
+  switch (pointKey) {
+    case "battery_v":
+      return slice.batteryV;
+    case "battery_temp_c":
+      return slice.batteryTempC;
+    case "backup_min":
+      return slice.backupMin;
+    case "health_pct":
+      return slice.healthPct;
+    case "current_a":
+      return slice.current;
+    case "load_pct":
+      return slice.loadPct;
+    default:
+      return null;
+  }
+}
+
+function severityStatus(severity: string | null): BatteryStatus {
+  return severity === "critical" ? "critical" : "warning";
+}
+
+function deriveRuleState(
+  assetCode: string,
+  slice: SchematicTelemetrySlice,
+  rules: RuleListItem[],
+): RuleState {
+  if (slice.breaker === 0 || slice.healthPct === 0) {
+    return { status: "offline", matchedRule: null };
+  }
+
+  const matchedRule = rules.find((rule) => {
+    if (
+      !rule.enabled ||
+      rule.ruleType !== "threshold" ||
+      rule.assetCode !== assetCode ||
+      !rule.pointKey ||
+      !rule.operator ||
+      rule.thresholdValue === null
+    ) {
+      return false;
+    }
+    const observed = pointValue(slice, rule.pointKey);
+    return observed !== null && compareValue(observed, rule.operator, rule.thresholdValue);
+  });
+
+  if (matchedRule) {
+    return { status: severityStatus(matchedRule.severity), matchedRule };
+  }
+  return { status: "normal", matchedRule: null };
+}
+
+function mergeStatus(states: RuleState[]): RuleState {
+  return (
+    states.find((state) => state.status === "critical") ??
+    states.find((state) => state.status === "warning") ??
+    states.find((state) => state.status === "offline") ??
+    { status: "normal", matchedRule: null }
+  );
+}
+
+function statusLabel(status: BatteryStatus): string {
+  switch (status) {
+    case "critical":
+      return "CRITICAL";
+    case "warning":
+      return "WARN";
+    case "offline":
+      return "OFFLINE";
+    case "normal":
+      return "NORMAL";
+  }
+}
+
+function statusPillClass(status: BatteryStatus): string {
+  switch (status) {
+    case "critical":
+      return "border-red-200 bg-red-100 text-red-800";
+    case "warning":
+      return "border-amber-200 bg-amber-100 text-amber-900";
+    case "offline":
+      return "border-gray-200 bg-gray-100 text-gray-700";
+    case "normal":
+      return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+  }
+}
+
+function statusTone(status: BatteryStatus): "default" | "warning" | "critical" {
+  if (status === "critical") {
+    return "critical";
+  }
+  if (status === "warning" || status === "offline") {
+    return "warning";
+  }
+  return "default";
+}
+
+function generateCells(
+  stringVoltage: number | null,
+  stringTemp: number | null,
+  seed: number,
+): CellReading[] {
+  const baseVoltage = (stringVoltage ?? 384) / 32;
+  const baseTemp = stringTemp ?? 26;
+  let state = seed;
+  return Array.from({ length: 32 }, (_, index) => {
+    state = (state * 9301 + 49297) % 233280;
+    const ratio = state / 233280;
+    const voltage = baseVoltage + (ratio - 0.5) * 0.34;
+    const temperature = baseTemp + (ratio - 0.5) * 3.5;
+    return {
+      index: index + 1,
+      voltage,
+      temperature,
+    };
+  });
+}
+
+function cellClass(status: BatteryStatus): string {
+  if (status === "critical") {
+    return "border-red-300 bg-red-100 text-red-800";
+  }
+  if (status === "warning") {
+    return "border-amber-300 bg-amber-100 text-amber-900";
+  }
+  if (status === "offline") {
+    return "border-gray-300 bg-gray-100 text-gray-600";
+  }
+  return "border-bms-green/20 bg-bms-green/10 text-bms-green";
+}
+
+function ControlRoomBatteryContent() {
+  const rulesQuery = useQuery({
+    queryKey: ["rules", "cr-battery"],
+    queryFn: fetchRules,
+    refetchInterval: 15_000,
+  });
+  const rules = rulesQuery.data?.items ?? [];
+  const batt1 = useCr("CR-BATT-1");
+  const batt2 = useCr("CR-BATT-2");
+  const ups1 = useCr("CR-UPS-1");
+  const ups2 = useCr("CR-UPS-2");
+  const strings = [
+    {
+      ...STRINGS[0],
+      slice: batt1,
+      ups: ups1,
+      cells: generateCells(batt1.batteryV, batt1.batteryTempC, STRINGS[0].seed),
+      state: deriveRuleState(STRINGS[0].code, batt1, rules),
+    },
+    {
+      ...STRINGS[1],
+      slice: batt2,
+      ups: ups2,
+      cells: generateCells(batt2.batteryV, batt2.batteryTempC, STRINGS[1].seed),
+      state: deriveRuleState(STRINGS[1].code, batt2, rules),
+    },
+  ];
+  const overall = mergeStatus(strings.map((string) => string.state));
+  const avgHealth =
+    strings.reduce((sum, string) => sum + (string.slice.healthPct ?? 0), 0) / strings.length;
+  const ruleAlertCount = strings.filter((string) => string.state.matchedRule).length;
+
+  return (
+    <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
+      <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-condensed text-xl font-bold text-bms-ink sm:text-2xl">
+            Battery Bank · 2 strings, 32 cells each
+          </h1>
+          <p className="mt-1 text-sm text-bms-muted">
+            String voltage · individual cell V · charge / discharge · health · temperature · rule-driven status
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="cursor-not-allowed rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-muted opacity-60" disabled>
+            Equalize Charge · disabled
+          </button>
+          <button className="cursor-not-allowed rounded bg-gray-300 px-3 py-1.5 text-xs font-semibold text-white opacity-70" disabled>
+            Capacity Test · disabled
+          </button>
+        </div>
+      </header>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <KpiTile label="String 1 V" status="ready" value={n(strings[0].slice.batteryV, 1)} unit="V" hint="32 cells · 12V VRLA" tone={statusTone(strings[0].state.status)} />
+        <KpiTile label="String 2 V" status="ready" value={n(strings[1].slice.batteryV, 1)} unit="V" hint="32 cells · 12V VRLA" tone={statusTone(strings[1].state.status)} />
+        <KpiTile label="Charge Current" status="ready" value={n(strings[0].slice.current, 1)} unit="A" hint="float charge" />
+        <KpiTile label="Health Index" status="ready" value={n(avgHealth, 0)} unit="%" tone={statusTone(overall.status)} />
+        <KpiTile label="Rule Alerts" status="ready" value={String(ruleAlertCount)} hint="editable in Rule Engine" tone={statusTone(overall.status)} />
+      </div>
+
+      {strings.map((string) => (
+        <BatteryStringCard key={string.code} string={string} />
+      ))}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <DetailCard title="Per-Bank Temperature">
+          {strings.flatMap((string, index) => [
+            <Row
+              key={`${string.code}-a`}
+              label={`Bank ${index + 1}A (cells 1-16, ${string.code})`}
+              value={`${n(bankTemp(string.cells.slice(0, 16)), 1)} C`}
+            />,
+            <Row
+              key={`${string.code}-b`}
+              label={`Bank ${index + 1}B (cells 17-32, ${string.code})`}
+              value={`${n(bankTemp(string.cells.slice(16)), 1)} C`}
+            />,
+          ])}
+        </DetailCard>
+        <DetailCard title="Battery Alerts">
+          {batteryAlerts(strings).map((alert) => (
+            <div key={alert.label} className="flex items-start gap-2 text-sm">
+              <span className={`mt-1 h-2 w-2 rounded-full ${alert.status === "normal" ? "bg-bms-green" : alert.status === "critical" ? "bg-red-600" : "bg-amber-500"}`} />
+              <span className="flex-1 text-bms-ink">{alert.label}</span>
+              <span className="text-xs text-bms-muted">{alert.when}</span>
+            </div>
+          ))}
+        </DetailCard>
+      </div>
+    </div>
+  );
+}
+
+function BatteryStringCard({
+  string,
+}: {
+  string: {
+    code: "CR-BATT-1" | "CR-BATT-2";
+    upsCode: "CR-UPS-1" | "CR-UPS-2";
+    title: string;
+    seed: number;
+    slice: SchematicTelemetrySlice;
+    ups: SchematicTelemetrySlice;
+    cells: CellReading[];
+    state: RuleState;
+  };
+}) {
+  const avgCellV =
+    string.cells.reduce((sum, cell) => sum + cell.voltage, 0) / string.cells.length;
+  const avgTemp =
+    string.cells.reduce((sum, cell) => sum + cell.temperature, 0) / string.cells.length;
+  return (
+    <section className="rounded border border-gray-200 bg-white">
+      <div className="flex flex-col gap-2 border-b border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-condensed text-lg font-bold text-bms-ink">{string.title}</h2>
+          <p className="text-xs text-bms-muted">
+            {n(string.slice.batteryV, 1)} V · avg cell {avgCellV.toFixed(2)} V · avg temp {avgTemp.toFixed(1)} C · backup {n(string.ups.backupMin, 0)} min
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {string.state.matchedRule ? (
+            <span className="rounded-full border border-amber-200 bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+              {string.state.matchedRule.name}
+            </span>
+          ) : null}
+          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(string.state.status)}`}>
+            {statusLabel(string.state.status)}
+          </span>
+        </div>
+      </div>
+      <div className="grid grid-cols-4 gap-2 p-4 sm:grid-cols-8 lg:grid-cols-16">
+        {string.cells.map((cell) => (
+          <div
+            key={cell.index}
+            className={`rounded border p-1 text-center ${cellClass(string.state.status)}`}
+            title={`Cell #${cell.index} · ${cell.voltage.toFixed(2)} V · ${cell.temperature.toFixed(1)} C`}
+          >
+            <div className="font-mono text-[10px]">#{cell.index}</div>
+            <div className="font-mono text-[10px] font-semibold">{cell.voltage.toFixed(2)}V</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function bankTemp(cells: CellReading[]): number {
+  return cells.reduce((sum, cell) => sum + cell.temperature, 0) / cells.length;
+}
+
+function batteryAlerts(
+  strings: Array<{
+    code: "CR-BATT-1" | "CR-BATT-2";
+    state: RuleState;
+  }>,
+): Array<{ label: string; status: BatteryStatus; when: string }> {
+  const alerts = strings
+    .filter((string) => string.state.matchedRule)
+    .map((string) => ({
+      label: `${string.code}: ${string.state.matchedRule?.name ?? "Rule matched"}`,
+      status: string.state.status,
+      when: "live rule",
+    }));
+  return alerts.length > 0
+    ? alerts
+    : [
+        {
+          label: "No battery Rule Engine threshold is currently matched",
+          status: "normal",
+          when: "live",
+        },
+        {
+          label: "Adjust temperature and backup thresholds from the Rule Engine page",
+          status: "normal",
+          when: "editable",
+        },
+      ];
+}
+
+function DetailCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded border border-gray-200 bg-white">
+      <div className="border-b border-gray-200 px-4 py-3">
+        <h2 className="font-condensed text-lg font-bold text-bms-ink">{title}</h2>
+      </div>
+      <div className="space-y-2 p-4">{children}</div>
+    </section>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3 text-sm">
+      <span className="text-bms-muted">{label}</span>
+      <span className="font-mono font-semibold text-bms-ink">{value}</span>
+    </div>
+  );
+}
+
+export function ControlRoomBatteryPage({ user }: ControlRoomBatteryPageProps) {
+  return (
+    <AppShell
+      user={user}
+      kpiRibbon={<span className="text-bms-ink">IBMS Control Room · Battery Bank</span>}
+    >
+      <SchematicTelemetryProvider
+        assetCodes={CR_TRACKED_ASSET_CODES}
+        pointKeys={CR_POINT_KEYS}
+      >
+        <ControlRoomBatteryContent />
+      </SchematicTelemetryProvider>
+    </AppShell>
+  );
+}

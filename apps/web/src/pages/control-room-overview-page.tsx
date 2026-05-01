@@ -75,6 +75,28 @@ function pointValue(slice: SchematicTelemetrySlice, pointKey: string): number | 
       return slice.loadPct;
     case "health_pct":
       return slice.healthPct;
+    case "battery_temp_c":
+      return slice.batteryTempC;
+    case "backup_min":
+      return slice.backupMin;
+    case "supply_air_temp_c":
+      return slice.supplyAirTempC;
+    case "return_air_temp_c":
+      return slice.returnAirTempC;
+    case "fan_speed_pct":
+      return slice.fanSpeedPct;
+    case "compressor_ok":
+      return slice.compressorOk;
+    case "cooling_kw":
+      return slice.coolingKw;
+    case "temperature_c":
+      return slice.temperatureC;
+    case "humidity_pct":
+      return slice.humidityPct;
+    case "leak_state":
+      return slice.leakState;
+    case "smoke_state":
+      return slice.smokeState;
     default:
       return null;
   }
@@ -165,6 +187,24 @@ function ControlRoomOverviewContent() {
   const rules = rulesQuery.data?.items ?? [];
   const ups1 = useCr("CR-UPS-1");
   const ups2 = useCr("CR-UPS-2");
+  const batt1 = useCr("CR-BATT-1");
+  const batt2 = useCr("CR-BATT-2");
+  const hvac1 = useCr("CR-HVAC-1");
+  const hvac2 = useCr("CR-HVAC-2");
+  const envConsole = useCr("CR-ENV-OP-CONSOLE");
+  const envVideowall = useCr("CR-ENV-VIDEOWALL");
+  const envRackA = useCr("CR-ENV-RACK-A");
+  const envRackB = useCr("CR-ENV-RACK-B");
+  const envBattery = useCr("CR-ENV-BATTERY-ROOM");
+  const envUps = useCr("CR-ENV-UPS-ROOM");
+  const leak1 = useCr("CR-LEAK-01");
+  const leak2 = useCr("CR-LEAK-02");
+  const leak3 = useCr("CR-LEAK-03");
+  const leak4 = useCr("CR-LEAK-04");
+  const smoke1 = useCr("CR-SMOKE-01");
+  const smoke2 = useCr("CR-SMOKE-02");
+  const smoke3 = useCr("CR-SMOKE-03");
+  const smoke4 = useCr("CR-SMOKE-04");
   const netRack = useCr("CR-NET-RACK");
   const vwRack = useCr("CR-VW-SRV-RACK");
   const main = useCr("CR-Q1");
@@ -207,11 +247,50 @@ function ControlRoomOverviewContent() {
     { code: "CR-VW-RACK-PDU-A", state: deriveRuleState("CR-VW-RACK-PDU-A", vwPduA, rules) },
     { code: "CR-VW-RACK-PDU-B", state: deriveRuleState("CR-VW-RACK-PDU-B", vwPduB, rules) },
   ];
-  const activeRuleStates = [...breakerStates, ...pduStates].filter(
+  const upsStates = [
+    { code: "CR-UPS-1", state: deriveRuleState("CR-UPS-1", ups1, rules) },
+    { code: "CR-UPS-2", state: deriveRuleState("CR-UPS-2", ups2, rules) },
+  ];
+  const batteryStates = [
+    { code: "CR-BATT-1", state: deriveRuleState("CR-BATT-1", batt1, rules) },
+    { code: "CR-BATT-2", state: deriveRuleState("CR-BATT-2", batt2, rules) },
+  ];
+  const hvacStates = [
+    { code: "CR-HVAC-1", state: deriveRuleState("CR-HVAC-1", hvac1, rules) },
+    { code: "CR-HVAC-2", state: deriveRuleState("CR-HVAC-2", hvac2, rules) },
+  ];
+  const environmentStates = [
+    { code: "CR-ENV-OP-CONSOLE", state: deriveRuleState("CR-ENV-OP-CONSOLE", envConsole, rules) },
+    { code: "CR-ENV-VIDEOWALL", state: deriveRuleState("CR-ENV-VIDEOWALL", envVideowall, rules) },
+    { code: "CR-ENV-RACK-A", state: deriveRuleState("CR-ENV-RACK-A", envRackA, rules) },
+    { code: "CR-ENV-RACK-B", state: deriveRuleState("CR-ENV-RACK-B", envRackB, rules) },
+    { code: "CR-ENV-BATTERY-ROOM", state: deriveRuleState("CR-ENV-BATTERY-ROOM", envBattery, rules) },
+    { code: "CR-ENV-UPS-ROOM", state: deriveRuleState("CR-ENV-UPS-ROOM", envUps, rules) },
+    { code: "CR-LEAK-01", state: deriveRuleState("CR-LEAK-01", leak1, rules) },
+    { code: "CR-LEAK-02", state: deriveRuleState("CR-LEAK-02", leak2, rules) },
+    { code: "CR-LEAK-03", state: deriveRuleState("CR-LEAK-03", leak3, rules) },
+    { code: "CR-LEAK-04", state: deriveRuleState("CR-LEAK-04", leak4, rules) },
+    { code: "CR-SMOKE-01", state: deriveRuleState("CR-SMOKE-01", smoke1, rules) },
+    { code: "CR-SMOKE-02", state: deriveRuleState("CR-SMOKE-02", smoke2, rules) },
+    { code: "CR-SMOKE-03", state: deriveRuleState("CR-SMOKE-03", smoke3, rules) },
+    { code: "CR-SMOKE-04", state: deriveRuleState("CR-SMOKE-04", smoke4, rules) },
+  ];
+  const activeRuleStates = [
+    ...breakerStates,
+    ...pduStates,
+    ...upsStates,
+    ...batteryStates,
+    ...hvacStates,
+    ...environmentStates,
+  ].filter(
     (item) => item.state.matchedRule,
   );
   const electricalStatus = mergeStatus(breakerStates.map((item) => item.state));
   const itStatus = mergeStatus(pduStates.map((item) => item.state));
+  const upsStatus = mergeStatus(upsStates.map((item) => item.state));
+  const batteryStatus = mergeStatus(batteryStates.map((item) => item.state));
+  const hvacStatus = mergeStatus(hvacStates.map((item) => item.state));
+  const environmentStatus = mergeStatus(environmentStates.map((item) => item.state));
   const totalLoad = (main.kw ?? 0) + (netRack.rackKw ?? 0) + (vwRack.rackKw ?? 0);
   const backupValues = [ups1.backupMin, ups2.backupMin].filter(
     (value): value is number => value !== null,
@@ -219,6 +298,20 @@ function ControlRoomOverviewContent() {
   const worstBackup =
     backupValues.length > 0 ? Math.min(...backupValues) : null;
   const rackLoad = (netRack.rackKw ?? 0) + (vwRack.rackKw ?? 0);
+  const batteryHealth =
+    ((batt1.healthPct ?? 0) + (batt2.healthPct ?? 0)) /
+    ([batt1.healthPct, batt2.healthPct].filter((value) => value !== null).length || 1);
+  const avgReturnAir =
+    ((hvac1.returnAirTempC ?? 0) + (hvac2.returnAirTempC ?? 0)) /
+    ([hvac1.returnAirTempC, hvac2.returnAirTempC].filter((value) => value !== null).length || 1);
+  const avgRoomTemp =
+    [envConsole, envVideowall, envRackA, envRackB, envBattery, envUps].reduce(
+      (sum, slice) => sum + (slice.temperatureC ?? 0),
+      0,
+    ) /
+    ([envConsole, envVideowall, envRackA, envRackB, envBattery, envUps].filter(
+      (slice) => slice.temperatureC !== null,
+    ).length || 1);
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
       <header className="flex flex-col gap-3 border-b border-gray-200 bg-white px-4 py-3 sm:flex-row sm:items-end sm:justify-between">
@@ -227,7 +320,7 @@ function ControlRoomOverviewContent() {
             SMOC Control Room · Main Dashboard
           </h1>
           <p className="mt-1 text-sm text-bms-muted">
-            Operator Console Overview · CR Electrical SLD · IT & Rack Load
+            Operator Console Overview · CR Electrical SLD · UPS · Battery · HVAC · Environment
           </p>
         </div>
         <div className="rounded border border-bms-green/20 bg-bms-green/10 px-3 py-2 text-xs font-semibold text-bms-green">
@@ -236,12 +329,12 @@ function ControlRoomOverviewContent() {
       </header>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <KpiTile label="Rule Warnings" status="ready" value={String(activeRuleStates.length)} tone={activeRuleStates.length > 0 ? "warning" : "default"} hint="enabled rules currently matched" />
+        <KpiTile label="Rule Warnings" status="ready" value={String(activeRuleStates.length)} tone={activeRuleStates.length > 0 ? "warning" : "default"} hint="enabled CR rules currently matched" />
         <KpiTile label="Total CR Load" status="ready" value={n(totalLoad)} unit="kW" hint="main bus + IT racks" />
         <KpiTile label="SLD Status" status="ready" value={statusLabel(electricalStatus.status)} tone={statusTone(electricalStatus.status)} hint={electricalStatus.matchedRule?.name ?? "electrical feeders"} />
         <KpiTile label="Rack Load" status="ready" value={n(rackLoad)} unit="kW" tone={statusTone(itStatus.status)} hint={itStatus.matchedRule?.name ?? "network + videowall racks"} />
-        <KpiTile label="UPS Backup" status="ready" value={n(worstBackup, 0)} unit="min" hint="worst-case reported backup" />
-        <KpiTile label="Power Factor" status="ready" value={n(main.pf, 2)} hint="main MCCB live value" />
+        <KpiTile label="UPS Backup" status="ready" value={n(worstBackup, 0)} unit="min" tone={statusTone(upsStatus.status)} hint={upsStatus.matchedRule?.name ?? "worst-case reported backup"} />
+        <KpiTile label="Environment" status="ready" value={statusLabel(environmentStatus.status)} tone={statusTone(environmentStatus.status)} hint={environmentStatus.matchedRule?.name ?? `${n(avgRoomTemp, 1)} C avg room`} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
@@ -266,15 +359,30 @@ function ControlRoomOverviewContent() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-4">
-        <EquipmentTile title="UPS-1 · 30 kVA" code="CR-UPS-1" />
-        <EquipmentTile title="UPS-2 · 30 kVA" code="CR-UPS-2" />
-        <EquipmentTile title="HVAC-1 · 4 TR" code="CR-HVAC-1" />
-        <EquipmentTile title="HVAC-2 · 4 TR" code="CR-HVAC-2" standby />
+        <ModuleSummaryCard title="UPS Monitoring" to="/cr-ups" status={upsStatus} primary={`${n(worstBackup, 0)} min`} secondary={`${n(ups1.loadPct, 0)}% / ${n(ups2.loadPct, 0)}% load`} />
+        <ModuleSummaryCard title="Battery Bank" to="/cr-battery" status={batteryStatus} primary={`${n(batteryHealth, 0)}% health`} secondary={`${n(batt1.batteryTempC, 1)} C / ${n(batt2.batteryTempC, 1)} C`} />
+        <ModuleSummaryCard title="HVAC System" to="/cr-hvac" status={hvacStatus} primary={`${n(avgReturnAir, 1)} C return`} secondary={`${n(hvac1.coolingKw, 1)} + ${n(hvac2.coolingKw, 1)} kW cooling`} />
+        <ModuleSummaryCard title="Environment" to="/cr-env" status={environmentStatus} primary={`${n(avgRoomTemp, 1)} C avg`} secondary={`${environmentStates.filter((item) => item.state.matchedRule).length} active env rules`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <ItRackLoadSummary rules={rules} />
+        <CriticalSystemsSummary
+          upsStatus={upsStatus}
+          batteryStatus={batteryStatus}
+          hvacStatus={hvacStatus}
+          environmentStatus={environmentStatus}
+        />
         <EnergySnapshot main={main} totalLoad={totalLoad} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <EnvironmentSnapshot
+          avgTemp={avgRoomTemp}
+          envStatus={environmentStatus}
+          wetCount={environmentStates.filter((item) => item.code.startsWith("CR-LEAK") && item.state.status === "critical").length}
+          smokeCount={environmentStates.filter((item) => item.code.startsWith("CR-SMOKE") && item.state.status === "critical").length}
+        />
         <QuickDrilldown />
       </div>
     </div>
@@ -375,20 +483,109 @@ function SldMiniBranch({
   );
 }
 
-function EquipmentTile({ title, code, standby = false }: { title: string; code: string; standby?: boolean }) {
-  const s = useCr(code);
+function ModuleSummaryCard({
+  title,
+  to,
+  status,
+  primary,
+  secondary,
+}: {
+  title: string;
+  to: string;
+  status: RuleState;
+  primary: string;
+  secondary: string;
+}) {
   return (
     <div className="rounded border border-gray-200 bg-white p-4">
-      <h3 className="font-semibold text-bms-ink">{title}</h3>
-      <p className="mt-1 text-xs uppercase tracking-wide text-bms-muted">
-        {standby || s.breaker === 0 ? "Standby / open" : "Online"}
-      </p>
-      <div className="mt-3 space-y-2 text-sm">
-        <Row label="Load" value={`${n(s.loadPct ?? s.kw, s.loadPct == null ? 2 : 0)}${s.loadPct == null ? " kW" : "%"}`} />
-        <Row label="Output" value={`${n(s.outputVoltageV ?? s.voltage, 1)} V · ${n(s.outputFreqHz ?? s.frequencyHz, 2)} Hz`} />
-        <Row label="Backup" value={`${n(s.backupMin, 0)} min`} />
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-bms-ink">{title}</h3>
+          <p className="mt-1 text-xs text-bms-muted">{secondary}</p>
+        </div>
+        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusPillClass(status.status)}`}>
+          {statusLabel(status.status)}
+        </span>
       </div>
+      <div className="mt-3 font-condensed text-2xl font-bold text-bms-ink">{primary}</div>
+      {status.matchedRule ? (
+        <p className="mt-2 text-xs font-medium text-amber-900">{status.matchedRule.name}</p>
+      ) : null}
+      <Link className="mt-3 inline-flex rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white" to={to}>
+        Detail
+      </Link>
     </div>
+  );
+}
+
+function CriticalSystemsSummary({
+  upsStatus,
+  batteryStatus,
+  hvacStatus,
+  environmentStatus,
+}: {
+  upsStatus: RuleState;
+  batteryStatus: RuleState;
+  hvacStatus: RuleState;
+  environmentStatus: RuleState;
+}) {
+  return (
+    <section className="rounded border border-gray-200 bg-white p-4">
+      <h2 className="font-condensed text-lg font-bold text-bms-ink">
+        Critical Systems Summary
+      </h2>
+      <div className="mt-3 space-y-2 text-sm">
+        <StatusRow label="UPS" status={upsStatus} />
+        <StatusRow label="Battery" status={batteryStatus} />
+        <StatusRow label="HVAC" status={hvacStatus} />
+        <StatusRow label="Environment" status={environmentStatus} />
+      </div>
+    </section>
+  );
+}
+
+function StatusRow({ label, status }: { label: string; status: RuleState }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-bms-muted">{label}</span>
+      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(status.status)}`}>
+        {statusLabel(status.status)}
+      </span>
+    </div>
+  );
+}
+
+function EnvironmentSnapshot({
+  avgTemp,
+  envStatus,
+  wetCount,
+  smokeCount,
+}: {
+  avgTemp: number | null;
+  envStatus: RuleState;
+  wetCount: number;
+  smokeCount: number;
+}) {
+  return (
+    <section className="rounded border border-gray-200 bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-condensed text-lg font-bold text-bms-ink">
+          Environment Snapshot
+        </h2>
+        <Link className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white" to="/cr-env">
+          Detail
+        </Link>
+      </div>
+      <div className="mt-3 space-y-2 text-sm">
+        <Row label="Avg room temp" value={`${n(avgTemp, 1)} C`} />
+        <Row label="Leak sensors" value={`${wetCount} wet`} />
+        <Row label="Smoke sensors" value={`${smokeCount} alerts`} />
+        <Row label="Overall" value={statusLabel(envStatus.status)} />
+      </div>
+      {envStatus.matchedRule ? (
+        <p className="mt-2 text-xs font-medium text-amber-900">{envStatus.matchedRule.name}</p>
+      ) : null}
+    </section>
   );
 }
 
@@ -408,7 +605,7 @@ function ActiveRulesPanel({
             Active Rule Warnings
           </h2>
           <p className="text-xs text-bms-muted">
-            CR SLD feeders and IT rack power rules only
+            SLD, IT, UPS, Battery, HVAC, and Environment rules
           </p>
         </div>
         <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${active.length > 0 ? "border-amber-200 bg-amber-100 text-amber-900" : "border-bms-green/20 bg-bms-green/10 text-bms-green"}`}>
@@ -547,7 +744,19 @@ function QuickDrilldown() {
         <Link className="rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15" to="/cr-it">
           IT & Racks
         </Link>
-        {["UPS Monitoring", "Battery Bank", "HVAC System", "Environment", "Security", "Trends"].map((label) => (
+        <Link className="rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15" to="/cr-ups">
+          UPS Monitoring
+        </Link>
+        <Link className="rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15" to="/cr-battery">
+          Battery Bank
+        </Link>
+        <Link className="rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15" to="/cr-hvac">
+          HVAC System
+        </Link>
+        <Link className="rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15" to="/cr-env">
+          Environment
+        </Link>
+        {["Security", "Trends"].map((label) => (
           <span key={label} className="cursor-not-allowed rounded border border-gray-200 p-3 text-bms-muted">
             {label} · deferred
           </span>

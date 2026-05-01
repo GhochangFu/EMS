@@ -1,6 +1,6 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 5 Sprint H complete; Sprint I planned.
+> **Active phase:** Part 2 / Phase 5 Control Room extension complete; Sprint I ready.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -17,8 +17,8 @@ beats the calendar.
 UI rule for all remaining module work: each module must map to the
 closest route / renderer in `ESKOM_SMOC.html` and match that UX as
 strictly as the active React architecture and available data allow.
-Complete Phase 5 functionality first; then run a dedicated UI/UX revisit
-pass across all completed pages.
+The promoted Control Room extension is complete. Next, run a dedicated
+UI/UX revisit pass across all completed pages.
 
 ---
 
@@ -300,7 +300,7 @@ Process (`AGENTS.md` §10).
   coverage (95%).
 
 ### Phase 5 — Operations modules (~3 weeks)
-- **Status:** in progress — Sprint H complete; Sprint I planned
+- **Status:** in progress — Control Room extension complete; Sprint I ready
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
   reports. MinIO / object storage graduates only when report files need
   persisted storage.
@@ -485,8 +485,53 @@ Process (`AGENTS.md` §10).
   audit history. Compose migration/seed, API/browser smoke, audit checks,
   duplicate-code cleanup, and build/lint verification passed.
 
+#### Phase 5 Control Room Extension — Remaining 2D CR modules
+- **Status:** complete
+- **Goal:** promote selected Sprint G non-goals before Sprint I so the 2D
+  Control Room covers UPS Monitoring, Battery Bank, HVAC System,
+  Environment, and their effect on the CR Main Dashboard.
+- **UX source:** `ESKOM_SMOC.html` Control Room routes `R.crUps`,
+  `R.crBat`, `R.crHvac`, `R.crEnv`, and `R.crOv`.
+- **Completed sub-sprints**
+  - **G.1 — CR UPS Monitoring:** added `/cr-ups` with UPS-1, UPS-2, combined
+    summary, live UPS KPIs, dynamic UPS block diagram, rule-driven status,
+    and disabled/non-commanding Manual Bypass and Battery Test controls.
+  - **G.2 — CR Battery Bank:** added `/cr-battery` with two battery strings,
+    cell-level simulated telemetry, dynamic cell grid, per-bank
+    temperature, battery alerts, rule-driven status, and disabled/non-
+    commanding Equalize Charge and Capacity Test controls.
+  - **G.3 — CR HVAC System:** added `/cr-hvac` with two precision AC units,
+    lead/standby status, animated airflow/indoor-unit diagrams, setpoint,
+    return/supply air, compressor/fan, run-hour balance, rule-driven
+    status, and disabled/non-commanding Force Changeover and Set Schedule
+    controls.
+  - **G.4 — CR Environment:** added `/cr-env` with zone temperature/humidity,
+    sensor floorplan markers, water leak and smoke sensor tables,
+    rule-driven status where data exists, and disabled/non-commanding Test
+    Sensors and Calibrate controls.
+  - **G.5 — CR Dashboard Integration:** activated CR Dashboard drilldowns
+    for UPS, Battery, HVAC, and Environment; added dynamic summary cards
+    and included those modules in active warning rollups.
+- **Data and simulator notes**
+  - Keep feeder breakers such as `CR-Q10` and `CR-Q11` electrical.
+  - Promote `CR-HVAC-1` and `CR-HVAC-2` to proper HVAC assets or add
+    explicit CR HVAC point generation without losing breaker telemetry.
+  - Add seeded environment/leak/smoke assets and simulator point keys only
+    for local/pilot diagnostics; no real protocol adapters.
+- **Non-goals**
+  - No two-way commands, setpoint changes, manual bypass execution, battery
+    test execution, equalize charge execution, HVAC force-changeover
+    execution, sensor test/calibration execution, or approval workflow.
+  - No CR Security, CR Alarm Management, CR Trends, Three.js 3D, or real
+    ingestion/protocol adapters in this extension.
+- **Exit criteria:** complete — operators can open all four promoted CR
+  pages, see live simulated values and rule-driven statuses, drill into
+  them from the CR Dashboard, and verify the existing CR SLD/IT pages
+  remain stable. Shared, web, DB, API, CR smoke, lints, and simulator
+  syntax verification passed.
+
 #### Phase 5 Sprint I — Completed-page UI/UX alignment
-- **Status:** planned next
+- **Status:** ready next
 - **Goal:** revisit all completed pages and bring their UI/UX closer to
   `ESKOM_SMOC.html` after the Phase 5 operational workflows are complete.
 - **Deliverables**

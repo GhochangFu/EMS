@@ -53,6 +53,12 @@ export type SchematicTelemetrySlice = {
   /** 1 = OK, 0 = trip (HVAC). */
   compressorOk: number | null;
   coolingKw: number | null;
+  temperatureC: number | null;
+  humidityPct: number | null;
+  /** 0 = dry, 1 = wet. */
+  leakState: number | null;
+  /** 0 = normal, 1 = alarm. */
+  smokeState: number | null;
   lastSeenMs: number | null;
 };
 
@@ -101,6 +107,10 @@ function emptySlice(): SchematicTelemetrySlice {
     chwReturnTempC: null,
     compressorOk: null,
     coolingKw: null,
+    temperatureC: null,
+    humidityPct: null,
+    leakState: null,
+    smokeState: null,
     lastSeenMs: null,
   };
 }
@@ -172,6 +182,14 @@ function applyReading(
       return { ...next, compressorOk: r.value };
     case "cooling_kw":
       return { ...next, coolingKw: r.value };
+    case "temperature_c":
+      return { ...next, temperatureC: r.value };
+    case "humidity_pct":
+      return { ...next, humidityPct: r.value };
+    case "leak_state":
+      return { ...next, leakState: r.value };
+    case "smoke_state":
+      return { ...next, smokeState: r.value };
     default:
       return next;
   }

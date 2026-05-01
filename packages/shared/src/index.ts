@@ -78,6 +78,17 @@ export const CONTROL_ROOM_IT_POINT_KEYS = [
 
 export type ControlRoomItPointKey = (typeof CONTROL_ROOM_IT_POINT_KEYS)[number];
 
+/** Control Room environment points used by the 2D IBMS screens. */
+export const CONTROL_ROOM_ENVIRONMENT_POINT_KEYS = [
+  "temperature_c",
+  "humidity_pct",
+  "leak_state",
+  "smoke_state",
+] as const;
+
+export type ControlRoomEnvironmentPointKey =
+  (typeof CONTROL_ROOM_ENVIRONMENT_POINT_KEYS)[number];
+
 /** Control Room electrical points beyond the generic SLD set. */
 export const CONTROL_ROOM_ELECTRICAL_POINT_KEYS = [
   ...ELECTRICAL_POINT_KEYS,
