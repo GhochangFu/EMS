@@ -19,12 +19,15 @@ export class ReportsService {
   constructor(@Inject(POOL_TOKEN) private readonly pool: Pool) {}
 
   /** Builds the Sprint E Energy Consumption report preview. */
-  async energyPreview(query: EnergyReportQuery): Promise<EnergyReportPreview> {
+  async energyPreview(
+    query: EnergyReportQuery,
+    assetIds?: string[] | null,
+  ): Promise<EnergyReportPreview> {
     const range = this.parseRange(query);
     const tariff = this.energyTariffZar();
-    const summary = await this.energySummary(range, tariff);
-    const sourceTotals = await this.energySourceTotals(range);
-    const topConsumers = await this.energyTopConsumers(range, 10);
+    const summary = await this.energySummary(range, tariff, assetIds);
+    const sourceTotals = await this.energySourceTotals(range, assetIds);
+    const topConsumers = await this.energyTopConsumers(range, 10, assetIds);
 
     return {
       template: energyTemplate,
@@ -46,8 +49,11 @@ export class ReportsService {
   }
 
   /** Exports the Sprint E Energy Consumption preview as CSV text. */
-  async energyCsv(query: EnergyReportQuery): Promise<string> {
-    const preview = await this.energyPreview(query);
+  async energyCsv(
+    query: EnergyReportQuery,
+    assetIds?: string[] | null,
+  ): Promise<string> {
+    const preview = await this.energyPreview(query, assetIds);
     const lines: string[][] = [
       ["Report", preview.template.title],
       ["Start date", preview.range.startDate],
@@ -104,7 +110,19 @@ export class ReportsService {
   private async energySummary(
     range: { start: Date; end: Date },
     tariff: number,
+    assetIds?: string[] | null,
   ): Promise<EnergyReportPreview["summary"]> {
+    if (assetIds && assetIds.length === 0) {
+      return {
+        window: "custom",
+        totalKwh: 0,
+        peakKw: 0,
+        pueEstimate: 1,
+        indicativeCostZar: 0,
+        tariffZarPerKwh: tariff,
+        asOf: new Date().toISOString(),
+      };
+    }
     const r = await this.pool.query<{
       total_kwh: string;
       peak_kw: string;
@@ -114,7 +132,10 @@ export class ReportsService {
       WITH per AS (
         SELECT date_trunc('hour', time) AS bucket, asset_id, avg(value) AS kw
         FROM telemetry.point_values
-        WHERE point_key = 'kw' AND time >= $1 AND time <= $2
+        WHERE point_key = 'kw'
+          AND time >= $1
+          AND time <= $2
+          AND ($3::uuid[] IS NULL OR asset_id = ANY($3::uuid[]))
         GROUP BY 1, 2
       ),
       agg AS (
@@ -126,7 +147,7 @@ export class ReportsService {
         COALESCE(AVG(total_kw), 0)::float8 AS avg_kw
       FROM agg
       `,
-      [range.start, range.end],
+      [range.start, range.end, assetIds ?? null],
     );
     const row = r.rows[0];
     const totalKwh = row ? Number(row.total_kwh) : 0;
@@ -146,7 +167,10 @@ export class ReportsService {
   private async energySourceTotals(range: {
     start: Date;
     end: Date;
-  }): Promise<EnergyReportPreview["sourceTotals"]> {
+  }, assetIds?: string[] | null): Promise<EnergyReportPreview["sourceTotals"]> {
+    if (assetIds && assetIds.length === 0) {
+      return { solarKwh: 0, dgKwh: 0, gridKwh: 0 };
+    }
     const r = await this.pool.query<{
       total_kw: string;
       solar_kw: string;
@@ -155,11 +179,15 @@ export class ReportsService {
       WITH per AS (
         SELECT date_trunc('hour', v.time) AS bucket, v.asset_id, avg(v.value) AS kw
         FROM telemetry.point_values v
-        WHERE v.point_key = 'kw' AND v.time >= $1 AND v.time <= $2
+        WHERE v.point_key = 'kw'
+          AND v.time >= $1
+          AND v.time <= $2
+          AND ($3::uuid[] IS NULL OR v.asset_id = ANY($3::uuid[]))
         GROUP BY 1, 2
       ),
       solar_ids AS (
-        SELECT id FROM bms.assets WHERE code ILIKE 'PV%'
+        SELECT id FROM bms.assets
+        WHERE code ILIKE 'PV%' AND ($3::uuid[] IS NULL OR id = ANY($3::uuid[]))
       )
       SELECT
         COALESCE(SUM(p.kw), 0)::float8 AS total_kw,
@@ -167,7 +195,7 @@ export class ReportsService {
       FROM per p
       LEFT JOIN solar_ids s ON s.id = p.asset_id
       `,
-      [range.start, range.end],
+      [range.start, range.end, assetIds ?? null],
     );
     const row = r.rows[0];
     const totalKwh = row ? Number(row.total_kw) : 0;
@@ -184,7 +212,11 @@ export class ReportsService {
   private async energyTopConsumers(
     range: { start: Date; end: Date; durationHours: number },
     limit: number,
+    assetIds?: string[] | null,
   ): Promise<EnergyReportPreview["topConsumers"]> {
+    if (assetIds && assetIds.length === 0) {
+      return [];
+    }
     const r = await this.pool.query<{
       id: string;
       code: string;
@@ -201,12 +233,15 @@ export class ReportsService {
         avg(v.value)::float8 AS avg_kw
       FROM telemetry.point_values v
       INNER JOIN bms.assets a ON a.id = v.asset_id
-      WHERE v.point_key = 'kw' AND v.time >= $1 AND v.time <= $2
+      WHERE v.point_key = 'kw'
+        AND v.time >= $1
+        AND v.time <= $2
+        AND ($4::uuid[] IS NULL OR a.id = ANY($4::uuid[]))
       GROUP BY a.id, a.code, a.name, a.site_name
       ORDER BY avg_kw DESC
       LIMIT $3
       `,
-      [range.start, range.end, Math.min(25, Math.max(1, limit))],
+      [range.start, range.end, Math.min(25, Math.max(1, limit)), assetIds ?? null],
     );
     return r.rows.map((row) => {
       const avgKw = Number(row.avg_kw);

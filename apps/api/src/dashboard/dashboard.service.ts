@@ -4,6 +4,7 @@ import {
   Injectable,
 } from "@nestjs/common";
 import type { Pool } from "pg";
+import type { LocationDashboardDto, LocationKpiSummary } from "@bms/shared";
 
 import { POOL_TOKEN } from "../database/database.tokens";
 
@@ -11,11 +12,143 @@ import { POOL_TOKEN } from "../database/database.tokens";
 export class DashboardService {
   constructor(@Inject(POOL_TOKEN) private readonly pool: Pool) {}
 
+  /** Returns location KPI cards for the current access scope. */
+  async locationKpis(opts?: {
+    locationIds?: string[] | null;
+    assetIds?: string[] | null;
+    partial?: boolean;
+  }): Promise<{ items: LocationKpiSummary[] }> {
+    const rows = await this.pool.query<{
+      id: string;
+      name: string;
+      type: "smoc_campus" | "rsmoc" | "csmoc";
+      province: string | null;
+      asset_count: string;
+      fresh_asset_count: string;
+      total_kw: string;
+      open_alarms: string;
+      critical_alarms: string;
+    }>(
+      `
+      WITH latest AS (
+        SELECT DISTINCT ON (asset_id) asset_id, time AS kw_time, value AS kw
+        FROM telemetry.point_values
+        WHERE point_key = 'kw'
+        ORDER BY asset_id, time DESC
+      )
+      SELECT
+        l.id,
+        l.name,
+        l.type,
+        l.province,
+        COUNT(DISTINCT a.id)::int AS asset_count,
+        COUNT(DISTINCT a.id) FILTER (
+          WHERE latest.kw_time > now() - interval '25 seconds'
+        )::int AS fresh_asset_count,
+        COALESCE(SUM(latest.kw), 0)::float8 AS total_kw,
+        COUNT(DISTINCT al.id) FILTER (WHERE al.acknowledged_at IS NULL)::int AS open_alarms,
+        COUNT(DISTINCT al.id) FILTER (
+          WHERE al.acknowledged_at IS NULL AND al.severity = 'critical'
+        )::int AS critical_alarms
+      FROM bms.locations l
+      LEFT JOIN bms.assets a
+        ON a.location_id = l.id
+       AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
+      LEFT JOIN latest ON latest.asset_id = a.id
+      LEFT JOIN bms.alarms al ON al.asset_id = a.id
+      WHERE l.active = true
+        AND ($1::uuid[] IS NULL OR l.id = ANY($1::uuid[]))
+      GROUP BY l.id, l.name, l.type, l.province
+      ORDER BY l.name
+      `,
+      [opts?.locationIds ?? null, opts?.assetIds ?? null],
+    );
+    return {
+      items: rows.rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        province: row.province,
+        assetCount: Number(row.asset_count),
+        freshAssetCount: Number(row.fresh_asset_count),
+        totalKw: this.round(Number(row.total_kw)),
+        openAlarms: Number(row.open_alarms),
+        criticalAlarms: Number(row.critical_alarms),
+        scopeLabel: opts?.partial ? "partial" : "full",
+      })),
+    };
+  }
+
+  /** Returns the scoped detail payload for one location dashboard. */
+  async locationDashboard(
+    locationId: string,
+    opts?: {
+      locationIds?: string[] | null;
+      assetIds?: string[] | null;
+      partial?: boolean;
+    },
+  ): Promise<LocationDashboardDto | null> {
+    if (opts?.locationIds && !opts.locationIds.includes(locationId)) {
+      return null;
+    }
+    const summary = await this.locationKpis({ ...opts, locationIds: [locationId] });
+    const card = summary.items[0];
+    if (!card) {
+      return null;
+    }
+    const topAssets = await this.pool.query<{
+      id: string;
+      code: string;
+      name: string;
+      domain: string;
+      kw: string | null;
+    }>(
+      `
+      WITH latest AS (
+        SELECT DISTINCT ON (asset_id) asset_id, value AS kw
+        FROM telemetry.point_values
+        WHERE point_key = 'kw'
+        ORDER BY asset_id, time DESC
+      )
+      SELECT a.id, a.code, a.name, a.domain, latest.kw::float8 AS kw
+      FROM bms.assets a
+      LEFT JOIN latest ON latest.asset_id = a.id
+      WHERE a.location_id = $1
+        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
+      ORDER BY latest.kw DESC NULLS LAST, a.code
+      LIMIT 8
+      `,
+      [locationId, opts?.assetIds ?? null],
+    );
+    const workOrders = await this.pool.query<{ count: string }>(
+      `
+      SELECT COUNT(*)::int AS count
+      FROM bms.work_orders wo
+      INNER JOIN bms.assets a ON a.id = wo.asset_id
+      WHERE a.location_id = $1
+        AND wo.status <> 'closed'
+        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
+      `,
+      [locationId, opts?.assetIds ?? null],
+    );
+    return {
+      ...card,
+      topAssets: topAssets.rows.map((row) => ({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        domain: row.domain,
+        kw: row.kw === null ? null : this.round(Number(row.kw)),
+      })),
+      workOrdersOpen: Number(workOrders.rows[0]?.count ?? 0),
+    };
+  }
+
   /**
    * KPI row for the Executive Dashboard: sums latest kW per asset, live site count,
    * and open alarms from `bms.alarms`.
    */
-  async kpis(): Promise<{
+  async kpis(assetIds?: string[] | null): Promise<{
     totalKw: number;
     sitesOnline: number;
     sitesTotal: number;
@@ -24,6 +157,17 @@ export class DashboardService {
     pueEstimate: number;
     asOf: string;
   }> {
+    if (assetIds && assetIds.length === 0) {
+      return {
+        totalKw: 0,
+        sitesOnline: 0,
+        sitesTotal: 0,
+        alarmsOpen: 0,
+        alarmsCritical: 0,
+        pueEstimate: 1,
+        asOf: new Date().toISOString(),
+      };
+    }
     const r = await this.pool.query<{
       total_kw: string;
       sites_online: string;
@@ -34,11 +178,12 @@ export class DashboardService {
       WITH kw_latest AS (
         SELECT DISTINCT ON (asset_id) asset_id, time AS kw_time, value AS kw
         FROM telemetry.point_values
-        WHERE point_key = 'kw'
+        WHERE point_key = 'kw' AND ($1::uuid[] IS NULL OR asset_id = ANY($1::uuid[]))
         ORDER BY asset_id, time DESC
       ),
       asset_sites AS (
         SELECT id, site_name FROM bms.assets
+        WHERE ($1::uuid[] IS NULL OR id = ANY($1::uuid[]))
       )
       SELECT
         (SELECT COALESCE(SUM(kw), 0) FROM kw_latest)::float8 AS total_kw,
@@ -46,9 +191,11 @@ export class DashboardService {
           JOIN asset_sites s ON s.id = k.asset_id
           WHERE k.kw_time > now() - interval '20 seconds') AS sites_online,
         (SELECT COUNT(DISTINCT site_name)::int FROM asset_sites) AS sites_total,
-        (SELECT COUNT(*)::int FROM bms.alarms WHERE acknowledged_at IS NULL) AS alarms_open,
-        (SELECT COUNT(*)::int FROM bms.alarms WHERE acknowledged_at IS NULL AND severity = 'critical') AS alarms_critical
-    `);
+        (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE acknowledged_at IS NULL) AS alarms_open,
+        (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE acknowledged_at IS NULL AND severity = 'critical') AS alarms_critical
+    `,
+      [assetIds ?? null],
+    );
     const row = r.rows[0];
     if (!row) {
       return {
@@ -76,16 +223,21 @@ export class DashboardService {
   /**
    * Per-minute total kW (sum of per-asset averages) for the trend chart.
    */
-  async loadTrend(windowRaw?: string): Promise<{
+  async loadTrend(windowRaw?: string, assetIds?: string[] | null): Promise<{
     points: { t: string; totalKw: number }[];
   }> {
     const intervalText = this.parseWindowInterval(windowRaw ?? "60m");
+    if (assetIds && assetIds.length === 0) {
+      return { points: [] };
+    }
     const r = await this.pool.query<{ bucket: Date; total_kw: string }>(
       `
       WITH per AS (
         SELECT date_trunc('minute', time) AS bucket, asset_id, avg(value) AS kw
         FROM telemetry.point_values
-        WHERE point_key = 'kw' AND time > now() - $1::interval
+        WHERE point_key = 'kw'
+          AND time > now() - $1::interval
+          AND ($2::uuid[] IS NULL OR asset_id = ANY($2::uuid[]))
         GROUP BY 1, 2
       ),
       agg AS (
@@ -93,7 +245,7 @@ export class DashboardService {
       )
       SELECT bucket, total_kw FROM agg ORDER BY bucket ASC
       `,
-      [intervalText],
+      [intervalText, assetIds ?? null],
     );
     return {
       points: r.rows.map((x) => ({
@@ -109,6 +261,10 @@ export class DashboardService {
     }
     const raw = 1.22 + Math.min(0.45, totalKw / 12_000);
     return Math.round(raw * 100) / 100;
+  }
+
+  private round(value: number): number {
+    return Math.round(value * 100) / 100;
   }
 
   /**
@@ -156,7 +312,7 @@ export class DashboardService {
     return Number.isFinite(t) && t > 0 ? t : 2.15;
   }
 
-  async energySummary(windowRaw?: string): Promise<{
+  async energySummary(windowRaw?: string, assetIds?: string[] | null): Promise<{
     window: string;
     totalKwh: number;
     peakKw: number;
@@ -167,6 +323,17 @@ export class DashboardService {
   }> {
     const { intervalSql, useHourlyBuckets, windowLabel } =
       this.parseEnergyWindow(windowRaw);
+    if (assetIds && assetIds.length === 0) {
+      return {
+        window: windowLabel,
+        totalKwh: 0,
+        peakKw: 0,
+        pueEstimate: 1,
+        indicativeCostZar: 0,
+        tariffZarPerKwh: this.energyTariffZar(),
+        asOf: new Date().toISOString(),
+      };
+    }
     const trunc = useHourlyBuckets ? "hour" : "minute";
     const kwhFactor = useHourlyBuckets ? 1 : 1 / 60;
 
@@ -179,7 +346,9 @@ export class DashboardService {
       WITH per AS (
         SELECT date_trunc('${trunc}', time) AS bucket, asset_id, avg(value) AS kw
         FROM telemetry.point_values
-        WHERE point_key = 'kw' AND time > now() - $1::interval
+        WHERE point_key = 'kw'
+          AND time > now() - $1::interval
+          AND ($3::uuid[] IS NULL OR asset_id = ANY($3::uuid[]))
         GROUP BY 1, 2
       ),
       agg AS (
@@ -191,7 +360,7 @@ export class DashboardService {
         COALESCE(AVG(total_kw), 0) AS avg_kw
       FROM agg
       `,
-      [intervalSql, kwhFactor],
+      [intervalSql, kwhFactor, assetIds ?? null],
     );
 
     const row = r.rows[0];
@@ -211,10 +380,13 @@ export class DashboardService {
     };
   }
 
-  async energySourceMix(windowRaw?: string): Promise<{
+  async energySourceMix(windowRaw?: string, assetIds?: string[] | null): Promise<{
     points: { t: string; gridKw: number; solarKw: number; dgKw: number }[];
   }> {
     const { intervalSql, useHourlyBuckets } = this.parseEnergyWindow(windowRaw);
+    if (assetIds && assetIds.length === 0) {
+      return { points: [] };
+    }
     const trunc = useHourlyBuckets ? "hour" : "minute";
 
     const r = await this.pool.query<{
@@ -226,11 +398,14 @@ export class DashboardService {
       WITH per AS (
         SELECT date_trunc('${trunc}', time) AS bucket, asset_id, avg(value) AS kw
         FROM telemetry.point_values
-        WHERE point_key = 'kw' AND time > now() - $1::interval
+        WHERE point_key = 'kw'
+          AND time > now() - $1::interval
+          AND ($2::uuid[] IS NULL OR asset_id = ANY($2::uuid[]))
         GROUP BY 1, 2
       ),
       solar_ids AS (
-        SELECT id FROM bms.assets WHERE code ILIKE 'PV%'
+        SELECT id FROM bms.assets
+        WHERE code ILIKE 'PV%' AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[]))
       ),
       tot AS (
         SELECT bucket, SUM(kw)::float8 AS total_kw FROM per GROUP BY bucket
@@ -249,7 +424,7 @@ export class DashboardService {
       LEFT JOIN sol s ON s.bucket = t.bucket
       ORDER BY t.bucket ASC
       `,
-      [intervalSql],
+      [intervalSql, assetIds ?? null],
     );
 
     const points = r.rows.map((x) => {
@@ -272,6 +447,7 @@ export class DashboardService {
   async energyTopConsumers(
     windowRaw?: string,
     limit = 10,
+    assetIds?: string[] | null,
   ): Promise<{
     consumers: {
       assetId: string;
@@ -284,6 +460,9 @@ export class DashboardService {
   }> {
     const { intervalSql, durationHours } = this.parseEnergyWindow(windowRaw);
     const lim = Math.min(25, Math.max(1, limit));
+    if (assetIds && assetIds.length === 0) {
+      return { consumers: [] };
+    }
 
     const r = await this.pool.query<{
       id: string;
@@ -301,12 +480,14 @@ export class DashboardService {
         avg(v.value)::float8 AS avg_kw
       FROM telemetry.point_values v
       INNER JOIN bms.assets a ON a.id = v.asset_id
-      WHERE v.point_key = 'kw' AND v.time > now() - $1::interval
+      WHERE v.point_key = 'kw'
+        AND v.time > now() - $1::interval
+        AND ($3::uuid[] IS NULL OR a.id = ANY($3::uuid[]))
       GROUP BY a.id, a.code, a.name, a.site_name
       ORDER BY avg_kw DESC
       LIMIT $2
       `,
-      [intervalSql, lim],
+      [intervalSql, lim, assetIds ?? null],
     );
 
     return {

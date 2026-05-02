@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { asc, desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 
 import { alarms, assets, auditLog, users, workOrders } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -82,7 +82,10 @@ export class WorkOrdersService {
     return actorRow?.id ?? null;
   }
 
-  private async getById(id: string): Promise<WorkOrderListItem> {
+  private async getById(
+    id: string,
+    assetIds?: string[] | null,
+  ): Promise<WorkOrderListItem> {
     const [row] = await this.db
       .select({
         id: workOrders.id,
@@ -106,7 +109,12 @@ export class WorkOrdersService {
       })
       .from(workOrders)
       .innerJoin(assets, eq(workOrders.assetId, assets.id))
-      .where(eq(workOrders.id, id))
+      .where(
+        and(
+          eq(workOrders.id, id),
+          ...(assetIds ? [inArray(workOrders.assetId, assetIds)] : []),
+        ),
+      )
       .limit(1);
     if (!row) {
       throw new NotFoundException("Work order not found");
@@ -115,9 +123,15 @@ export class WorkOrdersService {
   }
 
   /** Lists recent work orders for the Sprint A API. */
-  async list(opts: { limit: number }): Promise<{ items: WorkOrderListItem[] }> {
+  async list(opts: {
+    limit: number;
+    assetIds?: string[] | null;
+  }): Promise<{ items: WorkOrderListItem[] }> {
     const limit = Math.min(100, Math.max(1, opts.limit));
-    const rows = await this.db
+    if (opts.assetIds && opts.assetIds.length === 0) {
+      return { items: [] };
+    }
+    const base = this.db
       .select({
         id: workOrders.id,
         assetId: workOrders.assetId,
@@ -139,14 +153,25 @@ export class WorkOrdersService {
         siteName: assets.siteName,
       })
       .from(workOrders)
-      .innerJoin(assets, eq(workOrders.assetId, assets.id))
+      .innerJoin(assets, eq(workOrders.assetId, assets.id));
+    const rows = await (opts.assetIds
+      ? base
+          .where(inArray(workOrders.assetId, opts.assetIds))
+          .orderBy(
+            asc(workOrders.status),
+            asc(workOrders.sortOrder),
+            desc(workOrders.createdAt),
+            desc(workOrders.id),
+          )
+          .limit(limit)
+      : base
       .orderBy(
         asc(workOrders.status),
         asc(workOrders.sortOrder),
         desc(workOrders.createdAt),
         desc(workOrders.id),
       )
-      .limit(limit);
+          .limit(limit));
     return { items: rows.map((row) => this.mapRow(row)) };
   }
 
@@ -154,7 +179,11 @@ export class WorkOrdersService {
   async create(
     dto: CreateWorkOrderBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<WorkOrderListItem> {
+    if (assetIds && !assetIds.includes(dto.assetId)) {
+      throw new NotFoundException("Asset not found or outside your access scope");
+    }
     const [asset] = await this.db
       .select({ id: assets.id })
       .from(assets)
@@ -213,7 +242,7 @@ export class WorkOrdersService {
       },
     });
 
-    return this.getById(created.id);
+    return this.getById(created.id, assetIds);
   }
 
   /** Updates a work order status and records the state change in audit log. */
@@ -221,8 +250,9 @@ export class WorkOrdersService {
     id: string,
     dto: UpdateWorkOrderStatusBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<WorkOrderListItem> {
-    const current = await this.getById(id);
+    const current = await this.getById(id, assetIds);
     if (terminalStatuses.has(current.status)) {
       throw new BadRequestException("Closed work orders cannot be updated");
     }
@@ -258,7 +288,7 @@ export class WorkOrdersService {
       });
     });
 
-    return this.getById(id);
+    return this.getById(id, assetIds);
   }
 
   /** Closes a work order and records the closure reason. */
@@ -266,11 +296,13 @@ export class WorkOrdersService {
     id: string,
     actor: Pick<JwtPayload, "sub" | "email">,
     dto: CloseWorkOrderBody,
+    assetIds?: string[] | null,
   ): Promise<WorkOrderListItem> {
     return this.updateStatus(
       id,
       { status: "closed", reason: dto.reason, sortOrder: dto.sortOrder },
       actor,
+      assetIds,
     );
   }
 
@@ -278,7 +310,11 @@ export class WorkOrdersService {
   async reorder(
     dto: ReorderWorkOrdersBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<{ items: WorkOrderListItem[] }> {
+    if (assetIds && assetIds.length === 0) {
+      throw new NotFoundException("One or more work orders were not found");
+    }
     const ids = dto.items.map((item) => item.id);
     const uniqueIds = new Set(ids);
     if (uniqueIds.size !== ids.length) {
@@ -288,7 +324,12 @@ export class WorkOrdersService {
     const currentRows = await this.db
       .select({ id: workOrders.id, status: workOrders.status })
       .from(workOrders)
-      .where(inArray(workOrders.id, ids));
+      .where(
+        and(
+          inArray(workOrders.id, ids),
+          ...(assetIds ? [inArray(workOrders.assetId, assetIds)] : []),
+        ),
+      );
     if (currentRows.length !== ids.length) {
       throw new NotFoundException("One or more work orders were not found");
     }
@@ -356,7 +397,7 @@ export class WorkOrdersService {
       });
     });
 
-    const items = await Promise.all(ids.map((id) => this.getById(id)));
+    const items = await Promise.all(ids.map((id) => this.getById(id, assetIds)));
     return { items };
   }
 }

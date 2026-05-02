@@ -1,5 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
+import { fetchAssets } from "../api/assets";
 import { ElectricalSldDiagram } from "../components/live-svg/electrical-sld";
 import {
   SchematicTelemetryProvider,
@@ -11,6 +13,7 @@ import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
+import { hasCompleteSchematicAssets } from "../lib/schematic-access";
 import type { AuthUser } from "../stores/auth-store";
 
 type SldPageProps = {
@@ -162,8 +165,35 @@ function SldContent({
   );
 }
 
+function SldUnavailable({ loading }: { loading: boolean }) {
+  return (
+    <div className="relative mx-auto max-w-[1200px] pb-8">
+      <PageHeader
+        eyebrow="R.sld"
+        title="Electrical Single-Line Diagram · DC1"
+        subtitle="11 kV grid · 2 x 2 MVA · UPS + DG backup · live telemetry"
+        actions={<StatusPill label={loading ? "Checking" : "Unavailable"} tone="offline" />}
+      />
+      <SectionCard className="mt-4" bodyClassName="p-4">
+        <div className="rounded border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          {loading
+            ? "Checking schematic access for your assigned assets..."
+            : "This Electrical SLD is not configured for your assigned location or asset group."}
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
 export function SldPage({ user }: SldPageProps) {
   const [selectedId, setSelectedId] = useState<string | undefined>();
+  const assetsQuery = useQuery({
+    queryKey: ["assets"],
+    queryFn: fetchAssets,
+  });
+  const canViewSld =
+    assetsQuery.isSuccess &&
+    hasCompleteSchematicAssets(assetsQuery.data, SLD_TRACKED_ASSET_CODES);
 
   return (
     <AppShell
@@ -177,9 +207,13 @@ export function SldPage({ user }: SldPageProps) {
         </div>
       }
     >
-      <SchematicTelemetryProvider assetCodes={SLD_TRACKED_ASSET_CODES}>
-        <SldContent selectedId={selectedId} onSelect={setSelectedId} />
-      </SchematicTelemetryProvider>
+      {canViewSld ? (
+        <SchematicTelemetryProvider assetCodes={SLD_TRACKED_ASSET_CODES}>
+          <SldContent selectedId={selectedId} onSelect={setSelectedId} />
+        </SchematicTelemetryProvider>
+      ) : (
+        <SldUnavailable loading={assetsQuery.isLoading} />
+      )}
     </AppShell>
   );
 }

@@ -1,8 +1,10 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useEffect } from "react";
 
+import { fetchCurrentUser } from "./api/login";
 import { AlarmsPage } from "./pages/alarms-page";
 import { DashboardPage } from "./pages/dashboard-page";
+import { LocationDashboardPage } from "./pages/location-dashboard-page";
 import { MapPage } from "./pages/map-page";
 import { CracPage } from "./pages/crac-page";
 import { EnergyPage } from "./pages/energy-page";
@@ -47,13 +49,36 @@ function isJwtExpired(token: string): boolean {
 export function App() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const user = useAuthStore((s) => s.user);
+  const scope = useAuthStore((s) => s.scope);
   const clearSession = useAuthStore((s) => s.clearSession);
+  const setSession = useAuthStore((s) => s.setSession);
 
   useEffect(() => {
     if (accessToken && isJwtExpired(accessToken)) {
       clearSession();
     }
   }, [accessToken, clearSession]);
+
+  useEffect(() => {
+    if (!accessToken || scope) {
+      return;
+    }
+    let cancelled = false;
+    fetchCurrentUser(accessToken)
+      .then((current) => {
+        if (!cancelled) {
+          setSession(accessToken, current.user, current.scope);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          clearSession();
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, clearSession, scope, setSession]);
 
   return (
     <Routes>
@@ -64,6 +89,16 @@ export function App() {
         element={
           accessToken && user ? (
             <DashboardPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/locations/:locationId/dashboard"
+        element={
+          accessToken && user ? (
+            <LocationDashboardPage user={user} />
           ) : (
             <Navigate to="/login" replace />
           )

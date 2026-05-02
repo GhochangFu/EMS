@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
 import { fetchTelemetryRecent } from "../api/telemetry";
+import { useAuthStore } from "../stores/auth-store";
 import { encodePointRef, type TelemetryReading } from "@bms/shared";
 
 function socketUrl(): string {
@@ -19,6 +20,7 @@ function socketUrl(): string {
  */
 export function useTelemetryLive(pointRefEncoded: string | null) {
   const qc = useQueryClient();
+  const accessToken = useAuthStore((state) => state.accessToken);
   const [live, setLive] = useState<TelemetryReading | null>(null);
   const lastLogged = useRef<number | null>(null);
 
@@ -35,6 +37,7 @@ export function useTelemetryLive(pointRefEncoded: string | null) {
 
     const socket: Socket = io(`${socketUrl()}/ws/telemetry`, {
       transports: ["websocket"],
+      auth: { token: accessToken },
     });
 
     socket.on("telemetry", (payload: { readings?: TelemetryReading[] }) => {
@@ -65,7 +68,7 @@ export function useTelemetryLive(pointRefEncoded: string | null) {
     return () => {
       socket.disconnect();
     };
-  }, [pointRefEncoded, qc]);
+  }, [accessToken, pointRefEncoded, qc]);
 
   return {
     ...query,

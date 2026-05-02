@@ -1,6 +1,7 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Sprint I Complete)
+# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Location and Access Paused)
 
-> **Status:** ACTIVE — Phase 5 Sprint I complete; next sprint not promoted.
+> **Status:** ACTIVE — Phase 5 Sprint I complete; Location and Access is
+> paused as **will revisit later**; next sprint not promoted.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
 
@@ -31,7 +32,12 @@ the previously deferred UPS Monitoring, Battery Bank, HVAC System,
 Environment, and CR Dashboard integration screens before Sprint I.
 Phase 5 Sprint I aligned completed pages to the `ESKOM_SMOC.html` shell,
 headers, cards, status pills, disabled command affordances, and demo flow
-without changing backend contracts.
+without changing backend contracts. The later Location and Access work
+introduced canonical locations, scoped users, location dashboards,
+asset-group UI guards, focused simulator settings, telemetry dashboard
+indexing, and shell/sidebar refinements, but it is paused as **will revisit
+later** rather than complete pending clean migration/seed, Keycloak, test,
+and role-walkthrough hardening.
 
 ---
 
@@ -62,10 +68,16 @@ The current planning direction is:
    Monitoring, Battery Bank, HVAC System, Environment, and CR Dashboard
    integration.
 11. Treat Phase 5 Sprint I completed-page UI/UX alignment as complete.
-12. Defer MinIO/object storage until persisted report files are actually
+12. Treat Location and Access as paused / will revisit later: keep the
+   implemented migrations, scoped API/WebSocket reads, scoped UI guards,
+   location dashboard work, simulator focus settings, telemetry index, and
+   collapsible shell, but do not call the sprint complete until a clean
+   migration/seed run, Keycloak realm verification, automated access tests,
+   and page-wise role walkthrough are done.
+13. Defer MinIO/object storage until persisted report files are actually
    needed.
-13. Plan Phase 6 as Three.js Control Room only.
-14. Keep AI Copilot / chatbot out of scope.
+14. Plan Phase 6 as Three.js Control Room only.
+15. Keep AI Copilot / chatbot out of scope.
 
 The completed prototype screens are:
 
@@ -204,7 +216,9 @@ React components in `apps/web/src/components/`.
 Phase 5 Sprint I completed the dedicated UI/UX revisit pass. Future
 completed pages should continue using the shared shell, page header,
 card, status pill, and disabled command affordance language introduced in
-that sprint.
+that sprint. The current shell also includes a collapsible left module
+sidebar; keep scoped visibility and active-state behaviour consistent with
+`AppShell` when adding new navigation items.
 
 ---
 
@@ -248,7 +262,12 @@ preview, publish, archive, duplicate, enable/disable, preview, and audit
 history. The Phase 5 Control Room extension is complete for CR UPS
 Monitoring, Battery Bank, HVAC System, Environment, and Dashboard
 integration only. Phase 5 Sprint I UI/UX alignment is complete for all
-completed pages and did not add backend contracts. Report PDF/XLSX output,
+completed pages and did not add backend contracts. Location and Access is
+paused as will revisit later: canonical locations, scoped users, scoped
+REST/WebSocket reads, live-location dashboard markers, schematic guards,
+Control Room asset-group UI gating, simulator focus settings, and the
+telemetry dashboard index may remain, but the sprint is not complete until
+the hardening checklist in `docs/roadmap.md` is finished. Report PDF/XLSX output,
 persisted report storage, CR
 Security, CR Alarm Management, CR Trends, Phase 6 3D, two-way commands,
 setpoint changes, manual bypass, battery tests, equalize charge, HVAC
@@ -309,6 +328,9 @@ real source access exists. Phase 5 Sprint A used the existing API and
 database stack only; Sprint B added the Maintenance Kanban UI and
 `sort_order` persistence for drag/drop. Sprint C added the Maintenance
 Schedule Centre, schedule metadata, history, and work-order conversion.
+Location and Access work is present but paused as will revisit later; use
+`docs/roadmap.md` as the source for its revisit checklist before adding new
+scope-sensitive features.
 
 ---
 

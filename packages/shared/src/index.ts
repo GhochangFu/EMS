@@ -1,5 +1,10 @@
 /** Prototype role slugs stored in `bms.users.role`. */
-export type UserRole = "admin" | "operator" | "viewer";
+export type UserRole =
+  | "admin"
+  | "location_admin"
+  | "asset_group_admin"
+  | "operator"
+  | "viewer";
 
 /** JWT payload claims issued by `apps/api` (prototype). */
 export type JwtPayload = {
@@ -20,6 +25,60 @@ export type LoginResponse = {
     displayName: string;
     role: UserRole;
   };
+};
+
+export type AccessScopeKind = "global" | "location" | "asset_group" | "none";
+
+export type AccessLocation = {
+  id: string;
+  code: string;
+  slug: string;
+  name: string;
+  type: "smoc_campus" | "rsmoc" | "csmoc";
+  province: string | null;
+};
+
+export type AccessAssetGroup = {
+  id: string;
+  locationId: string;
+  code: string;
+  name: string;
+};
+
+export type AccessibleScope = {
+  kind: AccessScopeKind;
+  locations: AccessLocation[];
+  assetGroups: AccessAssetGroup[];
+  assetIds: string[];
+};
+
+export type CurrentUserResponse = {
+  user: LoginResponse["user"];
+  scope: AccessibleScope;
+};
+
+export type LocationKpiSummary = {
+  id: string;
+  name: string;
+  type: "smoc_campus" | "rsmoc" | "csmoc";
+  province: string | null;
+  assetCount: number;
+  freshAssetCount: number;
+  totalKw: number;
+  openAlarms: number;
+  criticalAlarms: number;
+  scopeLabel: "full" | "partial";
+};
+
+export type LocationDashboardDto = LocationKpiSummary & {
+  topAssets: Array<{
+    id: string;
+    code: string;
+    name: string;
+    domain: string;
+    kw: number | null;
+  }>;
+  workOrdersOpen: number;
 };
 
 /** Separator between asset UUID and point key in `pointRef` URLs. */
@@ -407,9 +466,10 @@ export type MapSiteLive = {
 
 export type MapSiteDto = {
   id: string;
+  canonicalLocationId: string | null;
   slug: string;
   name: string;
-  kind: "eskom_station" | "smoc_campus";
+  kind: "eskom_station" | "smoc_campus" | "rsmoc" | "csmoc";
   siteName: string | null;
   latitude: number;
   longitude: number;

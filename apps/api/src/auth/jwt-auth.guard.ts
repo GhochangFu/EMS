@@ -95,6 +95,12 @@ function roleFromClaims(claims: KeycloakClaims): UserRole {
   if (roles.includes("admin")) {
     return "admin";
   }
+  if (roles.includes("location_admin")) {
+    return "location_admin";
+  }
+  if (roles.includes("asset_group_admin")) {
+    return "asset_group_admin";
+  }
   if (roles.includes("operator")) {
     return "operator";
   }
@@ -113,11 +119,15 @@ export class JwtAuthGuard implements CanActivate {
     }
     const token = header.slice(7);
 
-    req.user =
-      authMode() === "oidc"
-        ? await this.verifyOidcToken(token)
-        : this.verifyLocalToken(token);
+    req.user = await this.verifyToken(token);
     return true;
+  }
+
+  /** Verifies either a local JWT or OIDC token using the active auth mode. */
+  async verifyToken(token: string): Promise<JwtPayload> {
+    return authMode() === "oidc"
+      ? await this.verifyOidcToken(token)
+      : this.verifyLocalToken(token);
   }
 
   private verifyLocalToken(token: string): JwtPayload {

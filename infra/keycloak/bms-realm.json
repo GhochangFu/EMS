@@ -12,6 +12,14 @@
         "description": "Prototype administrator role"
       },
       {
+        "name": "location_admin",
+        "description": "Location-scoped administrator role"
+      },
+      {
+        "name": "asset_group_admin",
+        "description": "Asset-group-scoped administrator role"
+      },
+      {
         "name": "operator",
         "description": "Prototype operator role"
       },
@@ -32,12 +40,17 @@
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,
       "redirectUris": [
-        "http://localhost:5173/auth/callback"
+        "http://localhost:5173/auth/callback",
+        "http://localhost:5173/login",
+        "https://bms.demosites.co.in/auth/callback",
+        "https://bms.demosites.co.in/login"
       ],
       "webOrigins": [
-        "http://localhost:5173"
+        "http://localhost:5173",
+        "https://bms.demosites.co.in"
       ],
       "attributes": {
+        "post.logout.redirect.uris": "http://localhost:5173/login##https://bms.demosites.co.in/login",
         "pkce.code.challenge.method": "S256"
       }
     }
@@ -51,6 +64,38 @@
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["admin"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "wc-admin@bms.local",
+      "email": "wc-admin@bms.local",
+      "firstName": "Western Cape",
+      "lastName": "Location Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["location_admin"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "wc-hvac-admin@bms.local",
+      "email": "wc-hvac-admin@bms.local",
+      "firstName": "Western Cape",
+      "lastName": "HVAC Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["asset_group_admin"],
       "credentials": [
         {
           "type": "password",

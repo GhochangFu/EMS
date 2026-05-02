@@ -17,7 +17,8 @@ import {
 import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
-import type { AuthUser } from "../stores/auth-store";
+import { canAccessControlRoomArea } from "../lib/control-room-access";
+import { useAuthStore, type AuthUser } from "../stores/auth-store";
 
 type ControlRoomOverviewPageProps = {
   user: AuthUser;
@@ -181,6 +182,12 @@ function statusLabel(status: CrStatus): string {
 }
 
 function ControlRoomOverviewContent() {
+  const scope = useAuthStore((state) => state.scope);
+  const canElectrical = canAccessControlRoomArea(scope, "electrical");
+  const canIt = canAccessControlRoomArea(scope, "it");
+  const canUpsBattery = canAccessControlRoomArea(scope, "upsBattery");
+  const canHvac = canAccessControlRoomArea(scope, "hvac");
+  const canEnvironment = canAccessControlRoomArea(scope, "environment");
   const rulesQuery = useQuery({
     queryKey: ["rules"],
     queryFn: fetchRules,
@@ -278,12 +285,11 @@ function ControlRoomOverviewContent() {
     { code: "CR-SMOKE-04", state: deriveRuleState("CR-SMOKE-04", smoke4, rules) },
   ];
   const activeRuleStates = [
-    ...breakerStates,
-    ...pduStates,
-    ...upsStates,
-    ...batteryStates,
-    ...hvacStates,
-    ...environmentStates,
+    ...(canElectrical ? breakerStates : []),
+    ...(canIt ? pduStates : []),
+    ...(canUpsBattery ? [...upsStates, ...batteryStates] : []),
+    ...(canHvac ? hvacStates : []),
+    ...(canEnvironment ? environmentStates : []),
   ].filter(
     (item) => item.state.matchedRule,
   );
@@ -324,12 +330,12 @@ function ControlRoomOverviewContent() {
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <KpiTile label="Rule Warnings" status="ready" value={String(activeRuleStates.length)} tone={activeRuleStates.length > 0 ? "warning" : "default"} hint="enabled CR rules currently matched" />
-        <KpiTile label="Total CR Load" status="ready" value={n(totalLoad)} unit="kW" hint="main bus + IT racks" />
-        <KpiTile label="SLD Status" status="ready" value={statusLabel(electricalStatus.status)} tone={statusTone(electricalStatus.status)} hint={electricalStatus.matchedRule?.name ?? "electrical feeders"} />
-        <KpiTile label="Rack Load" status="ready" value={n(rackLoad)} unit="kW" tone={statusTone(itStatus.status)} hint={itStatus.matchedRule?.name ?? "network + videowall racks"} />
-        <KpiTile label="UPS Backup" status="ready" value={n(worstBackup, 0)} unit="min" tone={statusTone(upsStatus.status)} hint={upsStatus.matchedRule?.name ?? "worst-case reported backup"} />
-        <KpiTile label="Environment" status="ready" value={statusLabel(environmentStatus.status)} tone={statusTone(environmentStatus.status)} hint={environmentStatus.matchedRule?.name ?? `${n(avgRoomTemp, 1)} C avg room`} />
+        <KpiTile label="Rule Warnings" status="ready" value={String(activeRuleStates.length)} tone={activeRuleStates.length > 0 ? "warning" : "default"} hint="enabled rules inside your CR scope" />
+        <KpiTile label="Total CR Load" status={canElectrical || canIt ? "ready" : "empty"} value={canElectrical || canIt ? n(totalLoad) : null} unit="kW" hint={canElectrical || canIt ? "main bus + IT racks" : "outside your asset-group scope"} />
+        <KpiTile label="SLD Status" status={canElectrical ? "ready" : "empty"} value={canElectrical ? statusLabel(electricalStatus.status) : null} tone={statusTone(electricalStatus.status)} hint={canElectrical ? electricalStatus.matchedRule?.name ?? "electrical feeders" : "outside your asset-group scope"} />
+        <KpiTile label="Rack Load" status={canIt ? "ready" : "empty"} value={canIt ? n(rackLoad) : null} unit="kW" tone={statusTone(itStatus.status)} hint={canIt ? itStatus.matchedRule?.name ?? "network + videowall racks" : "outside your asset-group scope"} />
+        <KpiTile label="UPS Backup" status={canUpsBattery ? "ready" : "empty"} value={canUpsBattery ? n(worstBackup, 0) : null} unit="min" tone={statusTone(upsStatus.status)} hint={canUpsBattery ? upsStatus.matchedRule?.name ?? "worst-case reported backup" : "outside your asset-group scope"} />
+        <KpiTile label="Environment" status={canEnvironment ? "ready" : "empty"} value={canEnvironment ? statusLabel(environmentStatus.status) : null} tone={statusTone(environmentStatus.status)} hint={canEnvironment ? environmentStatus.matchedRule?.name ?? `${n(avgRoomTemp, 1)} C avg room` : "outside your asset-group scope"} />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
@@ -343,42 +349,50 @@ function ControlRoomOverviewContent() {
                 Utility → Main Panel → 2x30 kVA UPS → critical loads
               </p>
             </div>
-            <Link className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white" to="/cr-sld">
-              Open Full SLD
-            </Link>
+            <ScopedActionLink enabled={canElectrical} to="/cr-sld" label="Open Full SLD" />
           </div>
-          <MiniSld rules={rules} />
+          {canElectrical ? <MiniSld rules={rules} /> : <ScopedUnavailable label="Electrical SLD" />}
         </section>
 
         <ActiveRulesPanel states={activeRuleStates} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-4">
-        <ModuleSummaryCard title="UPS Monitoring" to="/cr-ups" status={upsStatus} primary={`${n(worstBackup, 0)} min`} secondary={`${n(ups1.loadPct, 0)}% / ${n(ups2.loadPct, 0)}% load`} />
-        <ModuleSummaryCard title="Battery Bank" to="/cr-battery" status={batteryStatus} primary={`${n(batteryHealth, 0)}% health`} secondary={`${n(batt1.batteryTempC, 1)} C / ${n(batt2.batteryTempC, 1)} C`} />
-        <ModuleSummaryCard title="HVAC System" to="/cr-hvac" status={hvacStatus} primary={`${n(avgReturnAir, 1)} C return`} secondary={`${n(hvac1.coolingKw, 1)} + ${n(hvac2.coolingKw, 1)} kW cooling`} />
-        <ModuleSummaryCard title="Environment" to="/cr-env" status={environmentStatus} primary={`${n(avgRoomTemp, 1)} C avg`} secondary={`${environmentStates.filter((item) => item.state.matchedRule).length} active env rules`} />
+        <ModuleSummaryCard enabled={canUpsBattery} title="UPS Monitoring" to="/cr-ups" status={upsStatus} primary={`${n(worstBackup, 0)} min`} secondary={`${n(ups1.loadPct, 0)}% / ${n(ups2.loadPct, 0)}% load`} />
+        <ModuleSummaryCard enabled={canUpsBattery} title="Battery Bank" to="/cr-battery" status={batteryStatus} primary={`${n(batteryHealth, 0)}% health`} secondary={`${n(batt1.batteryTempC, 1)} C / ${n(batt2.batteryTempC, 1)} C`} />
+        <ModuleSummaryCard enabled={canHvac} title="HVAC System" to="/cr-hvac" status={hvacStatus} primary={`${n(avgReturnAir, 1)} C return`} secondary={`${n(hvac1.coolingKw, 1)} + ${n(hvac2.coolingKw, 1)} kW cooling`} />
+        <ModuleSummaryCard enabled={canEnvironment} title="Environment" to="/cr-env" status={environmentStatus} primary={`${n(avgRoomTemp, 1)} C avg`} secondary={`${environmentStates.filter((item) => item.state.matchedRule).length} active env rules`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <ItRackLoadSummary rules={rules} />
+        <ItRackLoadSummary enabled={canIt} rules={rules} />
         <CriticalSystemsSummary
+          access={{ upsBattery: canUpsBattery, hvac: canHvac, environment: canEnvironment }}
           upsStatus={upsStatus}
           batteryStatus={batteryStatus}
           hvacStatus={hvacStatus}
           environmentStatus={environmentStatus}
         />
-        <EnergySnapshot main={main} totalLoad={totalLoad} />
+        <EnergySnapshot enabled={canElectrical || canIt} main={main} totalLoad={totalLoad} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <EnvironmentSnapshot
+          enabled={canEnvironment}
           avgTemp={avgRoomTemp}
           envStatus={environmentStatus}
           wetCount={environmentStates.filter((item) => item.code.startsWith("CR-LEAK") && item.state.status === "critical").length}
           smokeCount={environmentStates.filter((item) => item.code.startsWith("CR-SMOKE") && item.state.status === "critical").length}
         />
-        <QuickDrilldown />
+        <QuickDrilldown
+          access={{
+            electrical: canElectrical,
+            it: canIt,
+            upsBattery: canUpsBattery,
+            hvac: canHvac,
+            environment: canEnvironment,
+          }}
+        />
       </div>
     </div>
   );
@@ -479,12 +493,14 @@ function SldMiniBranch({
 }
 
 function ModuleSummaryCard({
+  enabled,
   title,
   to,
   status,
   primary,
   secondary,
 }: {
+  enabled: boolean;
   title: string;
   to: string;
   status: RuleState;
@@ -492,33 +508,37 @@ function ModuleSummaryCard({
   secondary: string;
 }) {
   return (
-    <div className="rounded border border-gray-200 bg-white p-4">
+    <div className={`rounded border border-gray-200 bg-white p-4 ${enabled ? "" : "opacity-70"}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold text-bms-ink">{title}</h3>
-          <p className="mt-1 text-xs text-bms-muted">{secondary}</p>
+          <p className="mt-1 text-xs text-bms-muted">
+            {enabled ? secondary : "Outside your asset-group scope"}
+          </p>
         </div>
-        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusPillClass(status.status)}`}>
-          {statusLabel(status.status)}
+        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${enabled ? statusPillClass(status.status) : "border-gray-200 bg-gray-100 text-gray-600"}`}>
+          {enabled ? statusLabel(status.status) : "LOCKED"}
         </span>
       </div>
-      <div className="mt-3 font-condensed text-2xl font-bold text-bms-ink">{primary}</div>
-      {status.matchedRule ? (
+      <div className="mt-3 font-condensed text-2xl font-bold text-bms-ink">
+        {enabled ? primary : "—"}
+      </div>
+      {enabled && status.matchedRule ? (
         <p className="mt-2 text-xs font-medium text-amber-900">{status.matchedRule.name}</p>
       ) : null}
-      <Link className="mt-3 inline-flex rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white" to={to}>
-        Detail
-      </Link>
+      <ScopedActionLink enabled={enabled} to={to} label="Detail" className="mt-3" />
     </div>
   );
 }
 
 function CriticalSystemsSummary({
+  access,
   upsStatus,
   batteryStatus,
   hvacStatus,
   environmentStatus,
 }: {
+  access: { upsBattery: boolean; hvac: boolean; environment: boolean };
   upsStatus: RuleState;
   batteryStatus: RuleState;
   hvacStatus: RuleState;
@@ -530,32 +550,42 @@ function CriticalSystemsSummary({
         Critical Systems Summary
       </h2>
       <div className="mt-3 space-y-2 text-sm">
-        <StatusRow label="UPS" status={upsStatus} />
-        <StatusRow label="Battery" status={batteryStatus} />
-        <StatusRow label="HVAC" status={hvacStatus} />
-        <StatusRow label="Environment" status={environmentStatus} />
+        <StatusRow enabled={access.upsBattery} label="UPS" status={upsStatus} />
+        <StatusRow enabled={access.upsBattery} label="Battery" status={batteryStatus} />
+        <StatusRow enabled={access.hvac} label="HVAC" status={hvacStatus} />
+        <StatusRow enabled={access.environment} label="Environment" status={environmentStatus} />
       </div>
     </section>
   );
 }
 
-function StatusRow({ label, status }: { label: string; status: RuleState }) {
+function StatusRow({
+  enabled,
+  label,
+  status,
+}: {
+  enabled: boolean;
+  label: string;
+  status: RuleState;
+}) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-bms-muted">{label}</span>
-      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(status.status)}`}>
-        {statusLabel(status.status)}
+      <span className={enabled ? "text-bms-muted" : "text-gray-400"}>{label}</span>
+      <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${enabled ? statusPillClass(status.status) : "border-gray-200 bg-gray-100 text-gray-600"}`}>
+        {enabled ? statusLabel(status.status) : "LOCKED"}
       </span>
     </div>
   );
 }
 
 function EnvironmentSnapshot({
+  enabled,
   avgTemp,
   envStatus,
   wetCount,
   smokeCount,
 }: {
+  enabled: boolean;
   avgTemp: number | null;
   envStatus: RuleState;
   wetCount: number;
@@ -567,17 +597,17 @@ function EnvironmentSnapshot({
         <h2 className="font-condensed text-lg font-bold text-bms-ink">
           Environment Snapshot
         </h2>
-        <Link className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white" to="/cr-env">
-          Detail
-        </Link>
+        <ScopedActionLink enabled={enabled} to="/cr-env" label="Detail" />
       </div>
       <div className="mt-3 space-y-2 text-sm">
-        <Row label="Avg room temp" value={`${n(avgTemp, 1)} C`} />
-        <Row label="Leak sensors" value={`${wetCount} wet`} />
-        <Row label="Smoke sensors" value={`${smokeCount} alerts`} />
-        <Row label="Overall" value={statusLabel(envStatus.status)} />
+        <Row label="Avg room temp" value={enabled ? `${n(avgTemp, 1)} C` : "—"} />
+        <Row label="Leak sensors" value={enabled ? `${wetCount} wet` : "—"} />
+        <Row label="Smoke sensors" value={enabled ? `${smokeCount} alerts` : "—"} />
+        <Row label="Overall" value={enabled ? statusLabel(envStatus.status) : "Locked"} />
       </div>
-      {envStatus.matchedRule ? (
+      {!enabled ? (
+        <p className="mt-2 text-xs text-bms-muted">Outside your asset-group scope.</p>
+      ) : envStatus.matchedRule ? (
         <p className="mt-2 text-xs font-medium text-amber-900">{envStatus.matchedRule.name}</p>
       ) : null}
     </section>
@@ -625,7 +655,13 @@ function ActiveRulesPanel({
   );
 }
 
-function ItRackLoadSummary({ rules }: { rules: RuleListItem[] }) {
+function ItRackLoadSummary({
+  enabled,
+  rules,
+}: {
+  enabled: boolean;
+  rules: RuleListItem[];
+}) {
   const net = useCr("CR-NET-RACK");
   const vw = useCr("CR-VW-SRV-RACK");
   const netA = useCr("CR-NET-RACK-PDU-A");
@@ -646,14 +682,16 @@ function ItRackLoadSummary({ rules }: { rules: RuleListItem[] }) {
         <h2 className="font-condensed text-lg font-bold text-bms-ink">
           IT Rack Load
         </h2>
-        <Link className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white" to="/cr-it">
-          Detail
-        </Link>
+        <ScopedActionLink enabled={enabled} to="/cr-it" label="Detail" />
       </div>
-      <div className="mt-4 space-y-4">
-        <RackLoadRow title="Network Rack" load={net.rackKw} rated={3} outlets={net.outletsUsed} source="UPS-1" status={netState} />
-        <RackLoadRow title="Videowall Server Rack" load={vw.rackKw} rated={2} outlets={vw.outletsUsed} source="UPS-2" status={vwState} />
-      </div>
+      {enabled ? (
+        <div className="mt-4 space-y-4">
+          <RackLoadRow title="Network Rack" load={net.rackKw} rated={3} outlets={net.outletsUsed} source="UPS-1" status={netState} />
+          <RackLoadRow title="Videowall Server Rack" load={vw.rackKw} rated={2} outlets={vw.outletsUsed} source="UPS-2" status={vwState} />
+        </div>
+      ) : (
+        <ScopedUnavailable label="IT Rack Load" />
+      )}
     </section>
   );
 }
@@ -699,9 +737,11 @@ function RackLoadRow({
 }
 
 function EnergySnapshot({
+  enabled,
   main,
   totalLoad,
 }: {
+  enabled: boolean;
   main: SchematicTelemetrySlice;
   totalLoad: number;
 }) {
@@ -712,45 +752,43 @@ function EnergySnapshot({
         Energy Snapshot
       </h2>
       <div className="mt-3 space-y-2 text-sm">
-        <Row label="Real Power" value={`${n(totalLoad, 2)} kW`} />
-        <Row label="Apparent" value={`${n(kva, 2)} kVA`} />
-        <Row label="Power Factor" value={`${n(main.pf, 2)} lag`} />
-        <Row label="kWh Today" value={`${n(main.kwhToday, 1)} kWh`} />
-        <Row label="Frequency" value={`${n(main.frequencyHz, 2)} Hz`} />
+        <Row label="Real Power" value={enabled ? `${n(totalLoad, 2)} kW` : "—"} />
+        <Row label="Apparent" value={enabled ? `${n(kva, 2)} kVA` : "—"} />
+        <Row label="Power Factor" value={enabled ? `${n(main.pf, 2)} lag` : "—"} />
+        <Row label="kWh Today" value={enabled ? `${n(main.kwhToday, 1)} kWh` : "—"} />
+        <Row label="Frequency" value={enabled ? `${n(main.frequencyHz, 2)} Hz` : "—"} />
       </div>
-      <div className="mt-3 h-10 rounded bg-gradient-to-r from-bms-green/20 via-bms-green to-amber-400" />
+      <div className={`mt-3 h-10 rounded ${enabled ? "bg-gradient-to-r from-bms-green/20 via-bms-green to-amber-400" : "bg-gray-100"}`} />
       <p className="mt-1 text-center font-mono text-[10px] text-bms-muted">
-        Live CR load · current simulator window
+        {enabled ? "Live CR load · current simulator window" : "Outside your asset-group scope"}
       </p>
     </section>
   );
 }
 
-function QuickDrilldown() {
+function QuickDrilldown({
+  access,
+}: {
+  access: {
+    electrical: boolean;
+    it: boolean;
+    upsBattery: boolean;
+    hvac: boolean;
+    environment: boolean;
+  };
+}) {
   return (
     <section className="rounded border border-gray-200 bg-white p-4">
       <h2 className="font-condensed text-lg font-bold text-bms-ink">
         Quick Drilldown
       </h2>
       <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-        <Link className="rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15" to="/cr-sld">
-          Electrical SLD
-        </Link>
-        <Link className="rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15" to="/cr-it">
-          IT & Racks
-        </Link>
-        <Link className="rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15" to="/cr-ups">
-          UPS Monitoring
-        </Link>
-        <Link className="rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15" to="/cr-battery">
-          Battery Bank
-        </Link>
-        <Link className="rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15" to="/cr-hvac">
-          HVAC System
-        </Link>
-        <Link className="rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15" to="/cr-env">
-          Environment
-        </Link>
+        <DrilldownItem enabled={access.electrical} to="/cr-sld" label="Electrical SLD" />
+        <DrilldownItem enabled={access.it} to="/cr-it" label="IT & Racks" />
+        <DrilldownItem enabled={access.upsBattery} to="/cr-ups" label="UPS Monitoring" />
+        <DrilldownItem enabled={access.upsBattery} to="/cr-battery" label="Battery Bank" />
+        <DrilldownItem enabled={access.hvac} to="/cr-hvac" label="HVAC System" />
+        <DrilldownItem enabled={access.environment} to="/cr-env" label="Environment" />
         {["Security", "Trends"].map((label) => (
           <span key={label} className="cursor-not-allowed rounded border border-gray-200 p-3 text-bms-muted">
             {label} · deferred
@@ -758,6 +796,64 @@ function QuickDrilldown() {
         ))}
       </div>
     </section>
+  );
+}
+
+function ScopedActionLink({
+  enabled,
+  to,
+  label,
+  className = "",
+}: {
+  enabled: boolean;
+  to: string;
+  label: string;
+  className?: string;
+}) {
+  const classes = `${className} inline-flex rounded px-3 py-1.5 text-xs font-semibold ${
+    enabled
+      ? "bg-bms-green text-white"
+      : "cursor-not-allowed bg-gray-100 text-gray-500"
+  }`;
+  return enabled ? (
+    <Link className={classes} to={to}>
+      {label}
+    </Link>
+  ) : (
+    <span className={classes} title="Outside your asset-group scope">
+      {label}
+    </span>
+  );
+}
+
+function DrilldownItem({
+  enabled,
+  to,
+  label,
+}: {
+  enabled: boolean;
+  to: string;
+  label: string;
+}) {
+  const classes = enabled
+    ? "rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15"
+    : "cursor-not-allowed rounded border border-gray-200 bg-gray-50 p-3 font-semibold text-gray-400";
+  return enabled ? (
+    <Link className={classes} to={to}>
+      {label}
+    </Link>
+  ) : (
+    <span className={classes} title="Outside your asset-group scope">
+      {label}
+    </span>
+  );
+}
+
+function ScopedUnavailable({ label }: { label: string }) {
+  return (
+    <div className="mt-4 rounded border border-gray-200 bg-gray-50 p-4 text-sm text-bms-muted">
+      {label} is outside your assigned asset-group scope.
+    </div>
   );
 }
 

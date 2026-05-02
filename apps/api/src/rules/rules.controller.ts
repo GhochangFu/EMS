@@ -15,6 +15,7 @@ import { ZodError, z } from "zod";
 
 import type { JwtPayload } from "@bms/shared";
 
+import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import {
@@ -32,23 +33,31 @@ const idParamSchema = z.string().uuid();
 @Controller("rules")
 @UseGuards(JwtAuthGuard)
 export class RulesController {
-  constructor(private readonly rules: RulesService) {}
+  constructor(
+    private readonly rules: RulesService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   @Get()
-  listRules() {
-    return this.rules.listRules();
+  async listRules(@CurrentUser() user: JwtPayload) {
+    return this.rules.listRules(await this.accessControl.readableAssetIds(user));
   }
 
   @Get("catalog")
-  listBuilderCatalog() {
-    return this.rules.getBuilderCatalog();
+  async listBuilderCatalog(@CurrentUser() user: JwtPayload) {
+    return this.rules.getBuilderCatalog(
+      await this.accessControl.readableAssetIds(user),
+    );
   }
 
   @Get("executions")
-  async listExecutions(@Query() query: unknown) {
+  async listExecutions(@CurrentUser() user: JwtPayload, @Query() query: unknown) {
     try {
       const dto = listRuleExecutionsQuerySchema.parse(query);
-      return await this.rules.listExecutions(dto);
+      return await this.rules.listExecutions(
+        dto,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -59,8 +68,11 @@ export class RulesController {
 
   @Post("evaluate")
   @HttpCode(HttpStatus.OK)
-  evaluateEnabledRules(@CurrentUser() user: JwtPayload) {
-    return this.rules.evaluateEnabledRules(user);
+  async evaluateEnabledRules(@CurrentUser() user: JwtPayload) {
+    return this.rules.evaluateEnabledRules(
+      user,
+      await this.accessControl.readableAssetIds(user),
+    );
   }
 
   @Post("preview")
@@ -68,7 +80,11 @@ export class RulesController {
   async previewRule(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
     try {
       const dto = rulePreviewBodySchema.parse(body);
-      return await this.rules.previewRule(dto, user);
+      return await this.rules.previewRule(
+        dto,
+        user,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -81,7 +97,11 @@ export class RulesController {
   async createDraft(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
     try {
       const dto = ruleDraftBodySchema.parse(body);
-      return await this.rules.createDraft(dto, user);
+      return await this.rules.createDraft(
+        dto,
+        user,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -99,7 +119,12 @@ export class RulesController {
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleUpdateBodySchema.parse(body);
-      return await this.rules.updateRule(ruleId, dto, user);
+      return await this.rules.updateRule(
+        ruleId,
+        dto,
+        user,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -117,7 +142,12 @@ export class RulesController {
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleLifecycleBodySchema.parse(body);
-      return await this.rules.publishRule(ruleId, dto, user);
+      return await this.rules.publishRule(
+        ruleId,
+        dto,
+        user,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -135,7 +165,12 @@ export class RulesController {
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleLifecycleBodySchema.parse(body);
-      return await this.rules.duplicateRule(ruleId, dto, user);
+      return await this.rules.duplicateRule(
+        ruleId,
+        dto,
+        user,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -153,7 +188,12 @@ export class RulesController {
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleLifecycleBodySchema.parse(body);
-      return await this.rules.archiveRule(ruleId, dto, user);
+      return await this.rules.archiveRule(
+        ruleId,
+        dto,
+        user,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -171,7 +211,12 @@ export class RulesController {
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleToggleBodySchema.parse(body);
-      return await this.rules.setEnabled(ruleId, dto, user);
+      return await this.rules.setEnabled(
+        ruleId,
+        dto,
+        user,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

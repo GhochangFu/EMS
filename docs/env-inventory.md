@@ -52,8 +52,9 @@ re-login during demos.
 | Variable | Required | Default / compose value | Purpose |
 |----------|----------|-------------------------|---------|
 | `DATABASE_URL` | Yes | `postgres://bms_app:bms_app_dev@postgres:5432/bms` | Postgres/TimescaleDB connection string. |
-| `SIM_RATE_HZ` | No | `1` | Simulator write frequency. |
+| `SIM_RATE_HZ` | No | `0.2` in compose | Simulator write frequency. |
 | `SIM_ASSET_COUNT` | No | `all` in Compose | Maximum seeded assets loaded by the simulator; use `all` for full coverage or a number to cap rows ordered by asset code. |
+| `SIM_SITE_NAMES` | No | `RSMOC Western Cape,SMOC Pretoria North,RSMOC KwaZulu-Natal` in compose | Optional comma-separated seeded site names to limit simulator telemetry to selected demo locations. |
 | `SIM_METRICS_PORT` | No | `9101` | Prometheus metrics HTTP port exposed by the simulator. |
 
 ## Observability Containers

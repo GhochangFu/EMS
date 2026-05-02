@@ -36,6 +36,10 @@ const assetLimit =
   assetCountRaw === "all"
     ? null
     : Math.min(96, Math.max(1, Number(assetCountRaw)));
+const siteNames = String(process.env.SIM_SITE_NAMES ?? "")
+  .split(",")
+  .map((site) => site.trim())
+  .filter(Boolean);
 const metricsPort = Number(process.env.SIM_METRICS_PORT ?? "9101");
 
 const NOTIFY_CHANNEL = "bms_telemetry";
@@ -332,13 +336,21 @@ function stepHvac(assetId) {
 }
 
 async function loadAssets() {
-  const res =
-    assetLimit === null
-      ? await pool.query(`select id, code, domain from bms.assets order by code asc`)
-      : await pool.query(
-          `select id, code, domain from bms.assets order by code asc limit $1`,
-          [assetLimit],
-        );
+  const filters = [];
+  const params = [];
+  if (siteNames.length > 0) {
+    params.push(siteNames);
+    filters.push(`site_name = any($${params.length}::text[])`);
+  }
+  const where = filters.length > 0 ? `where ${filters.join(" and ")}` : "";
+  const limit = assetLimit === null ? "" : `limit $${params.length + 1}`;
+  if (assetLimit !== null) {
+    params.push(assetLimit);
+  }
+  const res = await pool.query(
+    `select id, code, domain, site_name from bms.assets ${where} order by code asc ${limit}`,
+    params,
+  );
   return res.rows;
 }
 
@@ -421,6 +433,7 @@ async function main() {
   const elecN = assetRows.length - hvacN - itN;
   process.stdout.write(
     `[sim] ${assetRows.length} assets (${elecN} electrical, ${hvacN} hvac, ${itN} it) @ ${rateHz} Hz\n` +
+      (siteNames.length > 0 ? `  sites: ${siteNames.join(", ")}\n` : "") +
       `  electrical: ${ELECTRICAL_POINT_KEYS.join(", ")}\n` +
       `  control-room electrical: ${CONTROL_ROOM_ELECTRICAL_POINT_KEYS.join(", ")}\n` +
       `  control-room ups: ${CONTROL_ROOM_UPS_POINT_KEYS.join(", ")}\n` +

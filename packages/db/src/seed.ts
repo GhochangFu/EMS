@@ -1,6 +1,6 @@
 import { config as loadEnv } from "dotenv";
 import bcrypt from "bcrypt";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { resolve } from "node:path";
 import pg from "pg";
 
@@ -8,12 +8,16 @@ import { mapLocationRowsForInsert } from "./map-locations-seed";
 import { createDb } from "./client";
 import {
   alarms,
+  assetGroups,
   automationRules,
   assets,
+  locations,
   maintenanceSchedules,
   maintenanceTaskTemplates,
   mapLocations,
   users,
+  userAssetGroupAccess,
+  userLocationAccess,
   workOrderTasks,
   workOrders,
 } from "./schema/bms-schema";
@@ -23,6 +27,78 @@ const pkgRoot = process.cwd();
 loadEnv({ path: resolve(pkgRoot, "../../apps/api/.env") });
 loadEnv({ path: resolve(pkgRoot, ".env") });
 
+const locationCodeByProvince = new Map([
+  ["Eastern Cape", "EC"],
+  ["Free State", "FS"],
+  ["Gauteng", "GP"],
+  ["KwaZulu-Natal", "KZN"],
+  ["Limpopo", "LP"],
+  ["Mpumalanga", "MP"],
+  ["North West", "NW"],
+  ["Northern Cape", "NC"],
+  ["Western Cape", "WC"],
+]);
+
+function locationCode(slug: string, province: string | null): string {
+  if (province) {
+    const code = locationCodeByProvince.get(province);
+    if (code) {
+      return code;
+    }
+  }
+  return slug
+    .split("-")
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("")
+    .slice(0, 8);
+}
+
+function demoAssetsForRsmoc(siteName: string, province: string) {
+  const prefix = locationCodeByProvince.get(province);
+  if (!prefix || province === "Western Cape") {
+    return [];
+  }
+  const readableName = province;
+  return [
+    {
+      code: `${prefix}-CR-UTILITY`,
+      name: `${readableName} Control Room Utility Incomer`,
+      siteName,
+      domain: "electrical",
+    },
+    {
+      code: `${prefix}-CR-UPS-1`,
+      name: `${readableName} Control Room UPS 1`,
+      siteName,
+      domain: "electrical",
+    },
+    {
+      code: `${prefix}-CR-BATT-1`,
+      name: `${readableName} Control Room Battery String 1`,
+      siteName,
+      domain: "electrical",
+    },
+    {
+      code: `${prefix}-CR-HVAC-1`,
+      name: `${readableName} Control Room HVAC 1`,
+      siteName,
+      domain: "hvac",
+    },
+    {
+      code: `${prefix}-CR-NET-RACK`,
+      name: `${readableName} Control Room Network Rack`,
+      siteName,
+      domain: "it",
+    },
+    {
+      code: `${prefix}-CR-ENV-ROOM`,
+      name: `${readableName} Control Room Environment`,
+      siteName,
+      domain: "environment",
+    },
+  ] as const;
+}
+
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -31,7 +107,13 @@ async function main(): Promise<void> {
 
   const pool = new pg.Pool({ connectionString: databaseUrl });
   const db = createDb(pool);
-  const controlRoomSiteName = "SMOC Cape Town";
+  const controlRoomSiteName = "RSMOC Western Cape";
+  const mapLocationRows = mapLocationRowsForInsert();
+  const rsmocDemoAssets = mapLocationRows.flatMap((row) =>
+    row.kind === "rsmoc" && row.siteName && row.province
+      ? demoAssetsForRsmoc(row.siteName, row.province)
+      : [],
+  );
 
   try {
     const adminEmail = "admin@bms.local";
@@ -105,7 +187,7 @@ async function main(): Promise<void> {
       {
         code: "PV-INV-01",
         name: "PV Inverter 01",
-        siteName: "SMOC Cape Town",
+        siteName: "SMOC Pretoria North",
         domain: "electrical",
       },
       {
@@ -300,6 +382,7 @@ async function main(): Promise<void> {
         siteName: controlRoomSiteName,
         domain: "environment",
       },
+      ...rsmocDemoAssets,
     ] as const;
 
     const assetRows: { id: string; code: string }[] = [];
@@ -946,7 +1029,42 @@ async function main(): Promise<void> {
       });
     }
 
-    for (const row of mapLocationRowsForInsert()) {
+    const westernCapeLocation = mapLocationRows.find(
+      (row) => row.slug === "rsmoc-western-cape",
+    );
+    if (westernCapeLocation) {
+      const existingWesternCape = await db
+        .select({ id: mapLocations.id })
+        .from(mapLocations)
+        .where(eq(mapLocations.slug, westernCapeLocation.slug))
+        .limit(1);
+      const legacyCapeTown = await db
+        .select({ id: mapLocations.id })
+        .from(mapLocations)
+        .where(eq(mapLocations.slug, "smoc-cape-town"))
+        .limit(1);
+      if (!existingWesternCape[0] && legacyCapeTown[0]) {
+        await db
+          .update(mapLocations)
+          .set({
+            slug: westernCapeLocation.slug,
+            name: westernCapeLocation.name,
+            kind: westernCapeLocation.kind,
+            siteName: westernCapeLocation.siteName,
+            latitude: westernCapeLocation.latitude,
+            longitude: westernCapeLocation.longitude,
+            capacityMw: westernCapeLocation.capacityMw,
+            stationType: westernCapeLocation.stationType,
+            stationCategory: westernCapeLocation.stationCategory,
+            province: westernCapeLocation.province,
+            stationOperatingStatus: westernCapeLocation.stationOperatingStatus,
+            meta: westernCapeLocation.meta,
+          })
+          .where(eq(mapLocations.id, legacyCapeTown[0].id));
+      }
+    }
+
+    for (const row of mapLocationRows) {
       const exists = await db
         .select({ id: mapLocations.id })
         .from(mapLocations)
@@ -969,6 +1087,218 @@ async function main(): Promise<void> {
         stationOperatingStatus: row.stationOperatingStatus,
         meta: row.meta,
       });
+    }
+
+    for (const row of mapLocationRows.filter((item) =>
+      ["smoc_campus", "rsmoc", "csmoc"].includes(item.kind),
+    )) {
+      const capital =
+        typeof row.meta === "object" &&
+        row.meta !== null &&
+        "capital" in row.meta &&
+        typeof row.meta.capital === "string"
+          ? row.meta.capital
+          : null;
+      const code = `${row.kind.replace("_campus", "").toUpperCase()}-${locationCode(
+        row.slug,
+        row.province,
+      )}`;
+      const existingLocation = await db
+        .select({ id: locations.id })
+        .from(locations)
+        .where(eq(locations.slug, row.slug))
+        .limit(1);
+      const values = {
+        code,
+        slug: row.slug,
+        name: row.name,
+        type: row.kind,
+        province: row.province,
+        capital,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        active: true,
+        meta: row.meta,
+        updatedAt: new Date(),
+      };
+      if (existingLocation[0]) {
+        await db
+          .update(locations)
+          .set(values)
+          .where(eq(locations.id, existingLocation[0].id));
+      } else {
+        await db.insert(locations).values(values);
+      }
+    }
+
+    await pool.query(`
+      UPDATE bms.assets AS a
+      SET location_id = l.id
+      FROM bms.locations AS l
+      WHERE a.site_name = l.name
+        AND (a.location_id IS NULL OR a.location_id <> l.id)
+    `);
+
+    const assetScopeRows = await pool.query<{
+      asset_id: string;
+      code: string;
+      domain: string;
+      location_id: string;
+    }>(`
+      SELECT id AS asset_id, code, domain, location_id
+      FROM bms.assets
+      WHERE location_id IS NOT NULL
+      ORDER BY site_name, code
+    `);
+
+    for (const row of assetScopeRows.rows) {
+      const groupCode =
+        row.domain === "hvac"
+          ? "hvac"
+          : row.domain === "it"
+            ? "it-rack"
+            : row.domain === "environment"
+              ? "environment"
+              : row.code.includes("UPS") || row.code.includes("BATT")
+                ? "ups-battery"
+                : "electrical";
+      const groupName =
+        groupCode === "it-rack"
+          ? "IT & Rack Load"
+          : groupCode === "ups-battery"
+            ? "UPS & Battery"
+            : groupCode[0]!.toUpperCase() + groupCode.slice(1);
+      const group = await pool.query<{ id: string }>(
+        `
+        INSERT INTO bms.asset_groups (location_id, code, name, description)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (location_id, code) DO UPDATE
+        SET name = EXCLUDED.name,
+            description = EXCLUDED.description
+        RETURNING id
+        `,
+        [
+          row.location_id,
+          groupCode,
+          groupName,
+          "Seeded operational asset group for scoped access demos.",
+        ],
+      );
+      const groupId = group.rows[0]?.id;
+      if (!groupId) {
+        continue;
+      }
+      await pool.query(
+        `
+        INSERT INTO bms.asset_group_members (asset_group_id, asset_id)
+        VALUES ($1, $2)
+        ON CONFLICT (asset_group_id, asset_id) DO NOTHING
+        `,
+        [groupId, row.asset_id],
+      );
+    }
+
+    const scopedUsers = [
+      {
+        email: "wc-admin@bms.local",
+        password: "admin123",
+        displayName: "Western Cape Location Admin",
+        role: "location_admin",
+      },
+      {
+        email: "wc-hvac-admin@bms.local",
+        password: "admin123",
+        displayName: "Western Cape HVAC Admin",
+        role: "asset_group_admin",
+      },
+    ] as const;
+    const scopedUserIds = new Map<string, string>();
+    for (const scopedUser of scopedUsers) {
+      const existingScopedUser = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, scopedUser.email))
+        .limit(1);
+      if (existingScopedUser[0]) {
+        await db
+          .update(users)
+          .set({
+            displayName: scopedUser.displayName,
+            role: scopedUser.role,
+          })
+          .where(eq(users.id, existingScopedUser[0].id));
+        scopedUserIds.set(scopedUser.email, existingScopedUser[0].id);
+        continue;
+      }
+      const [createdScopedUser] = await db
+        .insert(users)
+        .values({
+          email: scopedUser.email,
+          passwordHash: await bcrypt.hash(scopedUser.password, 10),
+          displayName: scopedUser.displayName,
+          role: scopedUser.role,
+        })
+        .returning({ id: users.id });
+      if (createdScopedUser) {
+        scopedUserIds.set(scopedUser.email, createdScopedUser.id);
+      }
+    }
+
+    const [westernCape] = await db
+      .select({ id: locations.id })
+      .from(locations)
+      .where(eq(locations.slug, "rsmoc-western-cape"))
+      .limit(1);
+    const wcAdminId = scopedUserIds.get("wc-admin@bms.local");
+    if (westernCape && wcAdminId) {
+      const existingAccess = await db
+        .select({ id: userLocationAccess.id })
+        .from(userLocationAccess)
+        .where(
+          and(
+            eq(userLocationAccess.userId, wcAdminId),
+            eq(userLocationAccess.locationId, westernCape.id),
+          ),
+        )
+        .limit(1);
+      if (!existingAccess[0]) {
+        await db.insert(userLocationAccess).values({
+          userId: wcAdminId,
+          locationId: westernCape.id,
+        });
+      }
+    }
+
+    const wcHvacAdminId = scopedUserIds.get("wc-hvac-admin@bms.local");
+    if (westernCape && wcHvacAdminId) {
+      const [hvacGroup] = await db
+        .select({ id: assetGroups.id })
+        .from(assetGroups)
+        .where(
+          and(
+            eq(assetGroups.code, "hvac"),
+            eq(assetGroups.locationId, westernCape.id),
+          ),
+        )
+        .limit(1);
+      if (hvacGroup) {
+        const existingGroupAccess = await db
+          .select({ id: userAssetGroupAccess.id })
+          .from(userAssetGroupAccess)
+          .where(
+            and(
+              eq(userAssetGroupAccess.userId, wcHvacAdminId),
+              eq(userAssetGroupAccess.assetGroupId, hvacGroup.id),
+            ),
+          )
+          .limit(1);
+        if (!existingGroupAccess[0]) {
+          await db.insert(userAssetGroupAccess).values({
+            userId: wcHvacAdminId,
+            assetGroupId: hvacGroup.id,
+          });
+        }
+      }
     }
   } finally {
     await pool.end();

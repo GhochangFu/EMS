@@ -226,7 +226,7 @@ SIM_METRICS_PORT=9101
 pnpm install
 
 pnpm db:migrate    # Drizzle migrations + Timescale hypertable creation
-pnpm db:seed       # admin user, sample assets, baseline alarms, map markers
+pnpm db:seed       # demo users, assets, locations, scopes, alarms, map markers
 
 # Three terminals (or use a tmux/zellij split)
 pnpm --filter api dev    # NestJS on :4000
@@ -234,8 +234,9 @@ pnpm --filter web dev    # Vite on :5173
 pnpm --filter sim start  # telemetry simulator
 ```
 
-Open `http://localhost:5173` in your Windows browser. Login as
-`admin@bms.local` / `admin123` (seeded). With **api**, **web**, and
+Open `http://localhost:5173` in your Windows browser. Seeded local users:
+`admin@bms.local`, `wc-admin@bms.local`, and `wc-hvac-admin@bms.local`
+all use password `admin123`. With **api**, **web**, and
 **sim** running, the Executive Summary shows live KPI tiles (total kW,
 sites online, open alarms, estimated PUE), an area trend of total kW,
 and a **Live / Stale** ribbon (stale after ~10 s without telemetry). Stop
@@ -246,8 +247,9 @@ telemetry creates rows within seconds; the table updates over
 `/ws/alarms` without refresh. Acknowledgements require a reason and are
 written to `bms.audit_log`.
 
-Open **Map** (`/map`) for Eskom and SMOC markers on a dark basemap.
-Markers reflect open alarms and telemetry freshness for SMOC sites;
+Open **Map** (`/map`) for Eskom, SMOC, RSMOC, and CSMOC markers on a dark
+basemap. Markers reflect open alarms and telemetry freshness for
+operational locations;
 stopping the simulator should move those sites toward offline or
 degraded within the refetch window.
 

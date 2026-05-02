@@ -7,7 +7,9 @@ reloads, simulator restarts, or visible errors.
 **Prerequisites:** `pnpm db:migrate && pnpm db:seed`; copy `.env` files
 per [`local-setup.md`](./local-setup.md). Three terminals: `api` (:4000),
 `web` (:5173), `sim` (live inserts + NOTIFY). Browser: logged in as
-`admin@bms.local` / `admin123`.
+`admin@bms.local` / `admin123`. Scoped access demo users are
+`wc-admin@bms.local` / `admin123` (Western Cape, all assets) and
+`wc-hvac-admin@bms.local` / `admin123` (Western Cape HVAC asset group).
 
 ---
 
@@ -17,7 +19,10 @@ per [`local-setup.md`](./local-setup.md). Three terminals: `api` (:4000),
 2. Stay on **Overview** (Executive Dashboard). Call out: live KPIs,
    load trend, PUE band — all from the same `kw` aggregates the Energy
    Centre will reuse.
-3. Mention the aligned shell: dark top bar, green route nav, grouped module
+3. Click a location KPI card to open `/locations/:locationId/dashboard`;
+   scoped users land directly on their assigned location when they have
+   only one location.
+4. Mention the aligned shell: dark top bar, green route nav, grouped module
    sidebar, KPI ribbon, and dark status bar.
 
 ## 2–4 min — Alarm Centre
@@ -28,7 +33,8 @@ per [`local-setup.md`](./local-setup.md). Three terminals: `api` (:4000),
 ## 4–6 min — World Map
 
 1. Top nav **Sites** or sidebar **Map**.
-2. Pan/zoom; click a marker → popover with KPIs and link to dashboard.
+2. Pan/zoom; click a marker → popover with KPIs and link to its location
+   dashboard where a canonical `locationId` exists.
 3. Note live colour from alarms / freshness (sim keeps data warm).
 
 ## 6–9 min — Electrical SLD
@@ -68,6 +74,15 @@ per [`local-setup.md`](./local-setup.md). Three terminals: `api` (:4000),
    UPS, Battery, HVAC, and Environment. Each promoted CR page uses the same
    shell/header pattern, rule-driven status colours, and disabled command
    buttons for controls that are intentionally out of scope.
+
+## Optional extension — Scoped Access
+
+1. Sign out and log in as `wc-admin@bms.local` / `admin123`. Confirm the
+   shell shows location access, the landing page is the Western Cape
+   dashboard, and lists/maps/charts are scoped to assigned assets.
+2. Sign out and log in as `wc-hvac-admin@bms.local` / `admin123`. Confirm
+   the limited-scope banner appears, HVAC-backed pages remain available,
+   and non-HVAC Control Room links are hidden or return scoped empty states.
 
 ## Close
 

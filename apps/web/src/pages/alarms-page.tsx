@@ -9,7 +9,7 @@ import { AppShell } from "../layouts/app-shell";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 import { StatusPill } from "../components/status-pill";
-import type { AuthUser } from "../stores/auth-store";
+import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import type { AlarmListItem, AlarmSocketEvent } from "@bms/shared";
 
 type AlarmsPageProps = {
@@ -87,6 +87,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   const [reason, setReason] = useState("");
   const [ackError, setAckError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const accessToken = useAuthStore((state) => state.accessToken);
 
   const listQ = useInfiniteQuery({
     queryKey: ["alarms", "list"],
@@ -98,6 +99,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   useEffect(() => {
     const socket: Socket = io(`${socketBase()}/ws/alarms`, {
       transports: ["websocket"],
+      auth: { token: accessToken },
     });
     socket.on("alarm", (evt: AlarmSocketEvent) => {
       void evt;
@@ -107,7 +109,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
     return () => {
       socket.disconnect();
     };
-  }, [qc]);
+  }, [accessToken, qc]);
 
   const ackM = useMutation({
     mutationFn: ({ id, r }: { id: string; r: string }) => ackAlarm(id, r),

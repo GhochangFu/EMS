@@ -1,8 +1,15 @@
-import type { ReactNode } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
+import { fetchAssets } from "../api/assets";
+import { isOidcEnabled, startOidcLogout } from "../api/oidc";
+import { CRAC_TRACKED_CODES } from "../components/live-svg/crac-bindings";
+import { SLD_TRACKED_ASSET_CODES } from "../components/live-svg/sld-bindings";
+import { canAccessControlRoomPath } from "../lib/control-room-access";
 import { roleLabel } from "../lib/role-label";
-import type { AuthUser } from "../stores/auth-store";
+import { hasCompleteSchematicAssets } from "../lib/schematic-access";
+import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { StatusBarClock } from "../components/status-bar-clock";
 
 const topNav = [
@@ -51,6 +58,16 @@ const moduleGroups = [
   },
 ] as const;
 
+function shortLabel(label: string): string {
+  return label
+    .replace(/^CR · /, "")
+    .split(/\s+|·|&/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
 type AppShellProps = {
   user: AuthUser;
   children: ReactNode;
@@ -60,6 +77,77 @@ type AppShellProps = {
 
 export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.localStorage.getItem("bms-sidebar-collapsed") === "true";
+  });
+  const scope = useAuthStore((state) => state.scope);
+  const oidcIdToken = useAuthStore((state) => state.oidcIdToken);
+  const clearSession = useAuthStore((state) => state.clearSession);
+  const assetsQuery = useQuery({
+    queryKey: ["assets"],
+    queryFn: fetchAssets,
+  });
+  const groupCodes = new Set(scope?.assetGroups.map((group) => group.code) ?? []);
+  const sldAvailable =
+    !assetsQuery.isSuccess ||
+    hasCompleteSchematicAssets(assetsQuery.data, SLD_TRACKED_ASSET_CODES);
+  const cracAvailable =
+    !assetsQuery.isSuccess ||
+    hasCompleteSchematicAssets(assetsQuery.data, CRAC_TRACKED_CODES);
+  const locationScopeLabel =
+    scope?.kind === "global"
+      ? "Global access"
+      : scope?.kind === "location"
+        ? scope.locations.map((item) => item.name).join(", ") || "Location access"
+        : scope?.kind === "asset_group"
+          ? `${scope.locations.map((item) => item.name).join(", ")} · ${scope.assetGroups
+              .map((item) => item.name)
+              .join(", ")}`
+          : "No assigned scope";
+
+  function isVisible(path: string): boolean {
+    if (path === "/sld") {
+      return scope?.kind === "asset_group"
+        ? groupCodes.has("electrical") && sldAvailable
+        : sldAvailable;
+    }
+    if (path === "/crac") {
+      return scope?.kind === "asset_group"
+        ? groupCodes.has("hvac") && cracAvailable
+        : cracAvailable;
+    }
+    if (scope?.kind !== "asset_group") {
+      return true;
+    }
+    if (path.startsWith("/cr-")) {
+      return canAccessControlRoomPath(scope, path);
+    }
+    return true;
+  }
+
+  function handleLogout(): void {
+    const logoutIdToken = oidcIdToken;
+    clearSession();
+    queryClient.clear();
+    if (isOidcEnabled()) {
+      startOidcLogout(logoutIdToken);
+      return;
+    }
+    void navigate("/login", { replace: true });
+  }
+
+  function toggleSidebar(): void {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem("bms-sidebar-collapsed", String(next));
+      return next;
+    });
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-bms-canvas text-bms-ink">
@@ -72,9 +160,20 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
             Eskom Smart Metering Operating Centre
           </span>
         </div>
-        <div className="text-right">
-          <div className="font-medium">{user.displayName}</div>
-          <div className="text-xs text-white/60">{roleLabel(user.role)}</div>
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <div className="font-medium">{user.displayName}</div>
+            <div className="text-xs text-white/60">
+              {roleLabel(user.role)} · {locationScopeLabel}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="rounded border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/85 transition hover:border-white/40 hover:bg-white/10 hover:text-white"
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
         </div>
       </header>
 
@@ -99,24 +198,49 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
       </nav>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="w-60 shrink-0 border-r border-gray-200 bg-white py-3 text-sm">
+        <aside
+          className={`shrink-0 border-r border-gray-200 bg-white py-3 text-sm transition-[width] duration-200 ${
+            sidebarCollapsed ? "w-16" : "w-60"
+          }`}
+        >
+          <div className={`mb-3 flex items-center px-3 ${sidebarCollapsed ? "justify-center" : "justify-between"}`}>
+            {sidebarCollapsed ? null : (
+              <span className="font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-bms-muted">
+                Modules
+              </span>
+            )}
+            <button
+              type="button"
+              className="rounded border border-gray-200 bg-white px-2 py-1 font-mono text-xs font-semibold text-bms-muted transition hover:border-bms-green hover:bg-bms-canvas hover:text-bms-ink"
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={toggleSidebar}
+            >
+              {sidebarCollapsed ? "»" : "«"}
+            </button>
+          </div>
           {moduleGroups.map((group) => (
             <div key={group.title} className="mb-3">
-              <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-bms-muted">
-                {group.title}
-              </div>
+              {sidebarCollapsed ? (
+                <div className="mx-3 mb-1 border-t border-gray-100" title={group.title} />
+              ) : (
+                <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-bms-muted">
+                  {group.title}
+                </div>
+              )}
               <ul className="space-y-0.5">
-                {group.items.map((m) => (
+                {group.items.filter((m) => isVisible(m.path)).map((m) => (
                   <li key={m.path}>
                     <Link
                       to={m.path}
-                      className={`block w-full border-l-2 px-3 py-1.5 hover:bg-bms-canvas ${
+                      title={m.label}
+                      className={`block w-full border-l-2 hover:bg-bms-canvas ${
                         location.pathname === m.path
                           ? "border-bms-green bg-bms-canvas/80 font-semibold text-bms-ink"
                           : "border-transparent text-bms-muted"
-                      }`}
+                      } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
                     >
-                      {m.label}
+                      {sidebarCollapsed ? shortLabel(m.label) : m.label}
                     </Link>
                   </li>
                 ))}
@@ -127,14 +251,21 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
 
         <main className="flex min-w-0 flex-1 flex-col">
           <section className="flex min-h-14 shrink-0 items-center border-b border-gray-200 bg-white px-4 py-2 text-xs text-bms-muted shadow-sm">
-            {kpiRibbon ?? (
-              <>
+            <div className="flex w-full flex-wrap items-center gap-3">
+              {kpiRibbon ?? (
+                <>
                 <span className="rounded bg-gray-100 px-2 py-1 font-mono text-bms-ink">
                   KPI ribbon
                 </span>
                 <span className="ml-3">Sign in to view the Executive Summary.</span>
-              </>
-            )}
+                </>
+              )}
+              {scope?.kind === "asset_group" ? (
+                <span className="rounded border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-800">
+                  Limited asset-group access
+                </span>
+              ) : null}
+            </div>
           </section>
           <div className="flex-1 overflow-auto bg-bms-canvas p-4">{children}</div>
         </main>

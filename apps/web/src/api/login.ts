@@ -1,4 +1,4 @@
-import type { LoginResponse } from "@bms/shared";
+import type { CurrentUserResponse, LoginResponse } from "@bms/shared";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -19,4 +19,17 @@ export async function loginRequest(
     throw new Error(text || `Login failed (${res.status})`);
   }
   return res.json() as Promise<LoginResponse>;
+}
+
+/** GET /api/v1/auth/me — hydrates DB-backed role and location scope. */
+export async function fetchCurrentUser(
+  accessToken: string,
+): Promise<CurrentUserResponse> {
+  const res = await fetch(`${base}/api/v1/auth/me`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Current user failed (${res.status})`);
+  }
+  return res.json() as Promise<CurrentUserResponse>;
 }

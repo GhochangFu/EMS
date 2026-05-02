@@ -17,6 +17,7 @@ import { io, type Socket } from "socket.io-client";
 import { fetchTelemetryRecent } from "../../api/telemetry";
 import { fetchAssets } from "../../api/assets";
 import { socketBaseUrl } from "../../lib/socket-url";
+import { useAuthStore } from "../../stores/auth-store";
 import type { LiveSvgStatus } from "./types";
 
 const FRESH_MS = 25_000;
@@ -268,6 +269,7 @@ export function SchematicTelemetryProvider({
   const [byAssetId, setByAssetId] = useState<Record<string, SchematicTelemetrySlice>>(
     {},
   );
+  const accessToken = useAuthStore((state) => state.accessToken);
 
   /** Hydrate latest values from REST when asset list is ready. */
   useEffect(() => {
@@ -333,12 +335,13 @@ export function SchematicTelemetryProvider({
     }
     const socket: Socket = io(`${socketBaseUrl()}/ws/telemetry`, {
       transports: ["websocket"],
+      auth: { token: accessToken },
     });
     socket.on("telemetry", onSocketPayload);
     return () => {
       socket.disconnect();
     };
-  }, [trackedIds.join("|"), onSocketPayload]);
+  }, [accessToken, trackedIds.join("|"), onSocketPayload]);
 
   const totalKw = useMemo(() => {
     let sumCool = 0;

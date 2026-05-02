@@ -1,5 +1,6 @@
 import {
   doublePrecision,
+  index,
   pgSchema,
   primaryKey,
   timestamp,
@@ -20,5 +21,10 @@ export const pointValues = telemetrySchema.table(
   },
   (t) => ({
     pk: primaryKey({ columns: [t.time, t.assetId, t.pointKey] }),
+    pointAssetTimeIdx: index("point_values_point_asset_time_idx").on(
+      t.pointKey,
+      t.assetId,
+      t.time.desc(),
+    ),
   }),
 );

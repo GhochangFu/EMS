@@ -133,8 +133,9 @@ services:
       dockerfile: apps/sim/Dockerfile
     environment:
       DATABASE_URL: postgres://bms_app:bms_app_dev@postgres:5432/bms
-      SIM_RATE_HZ: 1
+      SIM_RATE_HZ: 0.2
       SIM_ASSET_COUNT: all
+      SIM_SITE_NAMES: RSMOC Western Cape,SMOC Pretoria North,RSMOC KwaZulu-Natal
       SIM_METRICS_PORT: 9101
     ports:
       - "9101:9101"

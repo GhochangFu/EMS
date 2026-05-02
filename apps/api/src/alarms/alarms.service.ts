@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
 
 import { alarms, assets, auditLog, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -67,9 +67,14 @@ export class AlarmsService {
   async list(opts: {
     cursor?: string;
     limit: number;
+    assetIds?: string[] | null;
   }): Promise<{ items: AlarmListItem[]; nextCursor: string | null }> {
     const limit = Math.min(100, Math.max(1, opts.limit));
     const cursor = opts.cursor;
+    if (opts.assetIds && opts.assetIds.length === 0) {
+      return { items: [], nextCursor: null };
+    }
+    const filters = opts.assetIds ? [inArray(alarms.assetId, opts.assetIds)] : [];
 
     const base = this.db
       .select({
@@ -89,17 +94,31 @@ export class AlarmsService {
       .innerJoin(assets, eq(alarms.assetId, assets.id));
 
     const c = cursor ? decodeCursor(cursor) : null;
+    const cursorFilter = c
+      ? or(
+          lt(alarms.raisedAt, c.raisedAt),
+          and(eq(alarms.raisedAt, c.raisedAt), lt(alarms.id, c.id)),
+        )
+      : undefined;
+    const whereFilter =
+      cursorFilter && filters.length > 0
+        ? and(...filters, cursorFilter)
+        : cursorFilter
+          ? cursorFilter
+          : filters.length > 0
+            ? and(...filters)
+            : undefined;
     const rows = await (c
       ? base
-          .where(
-            or(
-              lt(alarms.raisedAt, c.raisedAt),
-              and(eq(alarms.raisedAt, c.raisedAt), lt(alarms.id, c.id)),
-            ),
-          )
+          .where(whereFilter)
           .orderBy(desc(alarms.raisedAt), desc(alarms.id))
           .limit(limit + 1)
-      : base.orderBy(desc(alarms.raisedAt), desc(alarms.id)).limit(limit + 1));
+      : whereFilter
+        ? base
+            .where(whereFilter)
+            .orderBy(desc(alarms.raisedAt), desc(alarms.id))
+            .limit(limit + 1)
+        : base.orderBy(desc(alarms.raisedAt), desc(alarms.id)).limit(limit + 1));
 
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
@@ -122,7 +141,11 @@ export class AlarmsService {
     alarmId: string,
     actor: Pick<JwtPayload, "sub" | "email">,
     reason: string,
+    assetIds?: string[] | null,
   ): Promise<AlarmListItem> {
+    if (assetIds && assetIds.length === 0) {
+      throw new NotFoundException("Alarm not found or outside your access scope");
+    }
     const [actorRow] = await this.db
       .select({ id: users.id })
       .from(users)
@@ -137,7 +160,13 @@ export class AlarmsService {
           acknowledgedAt: new Date(),
           acknowledgedBy: dbActorId,
         })
-        .where(and(eq(alarms.id, alarmId), isNull(alarms.acknowledgedAt)))
+        .where(
+          and(
+            eq(alarms.id, alarmId),
+            isNull(alarms.acknowledgedAt),
+            ...(assetIds ? [inArray(alarms.assetId, assetIds)] : []),
+          ),
+        )
         .returning({ id: alarms.id });
 
       if (updated.length === 0) {

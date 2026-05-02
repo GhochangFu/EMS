@@ -29,12 +29,17 @@ Use your real host name if you have one. For the current demo information:
 |------|---------------|
 | DNS name | `bms.demosites.co.in` |
 | Public IP | `20.244.16.33` |
-| Web URL | `http://bms.demosites.co.in:5173` |
-| API URL | `http://bms.demosites.co.in:4000` |
-| WebSocket URL | `ws://bms.demosites.co.in:4000` |
-| Keycloak URL | `http://bms.demosites.co.in:8080` |
-| OIDC issuer | `http://bms.demosites.co.in:8080/realms/bms` |
-| Redirect URL | `http://bms.demosites.co.in:5173/auth/callback` |
+| Public site URL | `https://bms.demosites.co.in` |
+| Public web URL | `https://bms.demosites.co.in` |
+| Internal web container | `http://localhost:5173` |
+| Internal API container | `http://localhost:4000` |
+| Internal Keycloak container | `http://localhost:8080` |
+| Public API URL | `https://bms.demosites.co.in` if the reverse proxy routes `/api` and `/socket.io` to the API |
+| Public WebSocket URL | `wss://bms.demosites.co.in` if the reverse proxy routes `/socket.io` to the API |
+| Public Keycloak URL | `https://bms.demosites.co.in` if the reverse proxy routes `/realms`, `/resources`, and Keycloak auth paths to Keycloak |
+| OIDC issuer | `https://bms.demosites.co.in/realms/bms` |
+| Redirect URL | `https://bms.demosites.co.in/auth/callback` |
+| Post-logout redirect URL | `https://bms.demosites.co.in/login` |
 
 If DNS is not ready, use the IP version temporarily:
 
@@ -44,15 +49,23 @@ http://20.244.16.33:4000
 http://20.244.16.33:8080
 ```
 
-Important rule: use one browser-facing origin consistently. If operators
-open `http://bms.demosites.co.in:5173`, then compose build args, API
-`OIDC_ISSUER`, and Keycloak redirect settings must also use
-`bms.demosites.co.in`.
+Important rule: use one browser-facing origin consistently. The current
+demo site is deployed at:
 
-This manual uses HTTP with explicit ports because the current compose file
-does not include a reverse proxy or TLS certificate. For a public pilot,
-HTTPS should be added later with nginx, Caddy, IIS reverse proxy, or Azure
-Application Gateway.
+```text
+https://bms.demosites.co.in
+```
+
+For that HTTPS URL, the web build args, API `OIDC_ISSUER`, Keycloak
+redirect URIs, Keycloak web origins, and Keycloak post-logout redirect
+must all use `https://bms.demosites.co.in` unless the deployment is still
+intentionally using explicit public ports.
+
+The committed `docker-compose.yml` still exposes the containers on local
+host ports (`5173`, `4000`, `8080`) and does not include the TLS reverse
+proxy itself. The HTTPS certificate and routing must therefore be supplied
+by the VM/IIS/nginx/Caddy/Azure Application Gateway layer in front of the
+containers, or by a separate reverse-proxy compose service added later.
 
 ---
 
@@ -82,7 +95,7 @@ Before touching Docker, confirm these items.
 
 ## 2. Open Required Network Ports
 
-The current compose file publishes these ports:
+The current compose file publishes these host ports:
 
 | Port | Purpose | Public access needed? |
 |------|---------|-----------------------|
@@ -96,17 +109,33 @@ The current compose file publishes these ports:
 | `9090` | Prometheus | Optional/admin only |
 | `3100` | Loki | Optional/admin only |
 
+For the deployed public URL `https://bms.demosites.co.in`, public users
+should normally need only:
+
+| Port | Purpose |
+|------|---------|
+| `443` | HTTPS public entry point |
+| `80` | Optional HTTP-to-HTTPS redirect / certificate challenge |
+
+Keep `5173`, `4000`, and `8080` restricted to the VM or private admin
+network when a reverse proxy is handling public HTTPS. Open those ports
+publicly only for temporary direct-port troubleshooting.
+
 ### 2.1 Windows Firewall
 
 Open PowerShell as Administrator and run:
 
 ```powershell
+New-NetFirewallRule -DisplayName "BMS HTTPS 443" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
+New-NetFirewallRule -DisplayName "BMS HTTP 80" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow
 New-NetFirewallRule -DisplayName "BMS Web 5173" -Direction Inbound -Protocol TCP -LocalPort 5173 -Action Allow
 New-NetFirewallRule -DisplayName "BMS API 4000" -Direction Inbound -Protocol TCP -LocalPort 4000 -Action Allow
 New-NetFirewallRule -DisplayName "BMS Keycloak 8080" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
 ```
 
-Do not open `5432` or `6379` to the internet.
+If HTTPS reverse proxy is already working, prefer to remove or restrict
+the public rules for `5173`, `4000`, and `8080`. Do not open `5432` or
+`6379` to the internet.
 
 ### 2.2 Azure NSG Rules
 
@@ -115,12 +144,14 @@ rules in the VM Network Security Group:
 
 | Priority | Source | Destination port | Protocol | Action | Name |
 |----------|--------|------------------|----------|--------|------|
-| 1000 | Your IP or Internet | `5173` | TCP | Allow | `Allow-BMS-Web-5173` |
-| 1010 | Your IP or Internet | `4000` | TCP | Allow | `Allow-BMS-API-4000` |
-| 1020 | Your IP or Internet | `8080` | TCP | Allow | `Allow-BMS-Keycloak-8080` |
+| 1000 | Internet | `443` | TCP | Allow | `Allow-BMS-HTTPS-443` |
+| 1010 | Internet | `80` | TCP | Allow | `Allow-BMS-HTTP-80` |
+| 1100 | Your admin IP only | `5173` | TCP | Allow | `Allow-BMS-Web-5173-Admin` |
+| 1110 | Your admin IP only | `4000` | TCP | Allow | `Allow-BMS-API-4000-Admin` |
+| 1120 | Your admin IP only | `8080` | TCP | Allow | `Allow-BMS-Keycloak-8080-Admin` |
 
-For a safer pilot, set Source to your office/public IP range instead of
-`Internet`.
+For a safer pilot, expose only `443` to users and set the direct container
+ports (`5173`, `4000`, `8080`) to your office/public admin IP range.
 
 ---
 
@@ -189,13 +220,14 @@ If that command cannot find the file, you are in the wrong folder.
 
 ## 5. Choose Your Public URL
 
-For this example, choose the DNS URL:
+For the current demo deployment, choose the HTTPS DNS URL:
 
 ```text
-http://bms.demosites.co.in:5173
+https://bms.demosites.co.in
 ```
 
-Use the IP URL only if DNS does not work yet:
+Use the IP/direct-port URL only if DNS or the HTTPS reverse proxy does not
+work yet:
 
 ```text
 http://20.244.16.33:5173
@@ -210,8 +242,9 @@ IP issuer, API calls will fail with `401`.
 ## 6. Update `docker-compose.yml`
 
 The committed compose file defaults to `localhost`. That works only when
-the browser runs on the same machine. For remote users, change it to the
-public DNS name.
+the browser runs on the same machine. For the current public deployment,
+use the HTTPS browser-facing DNS name if the reverse proxy routes API,
+Socket.IO, and Keycloak traffic from the same host.
 
 Open `docker-compose.yml` in Notepad, VS Code, or another editor:
 
@@ -229,10 +262,10 @@ Before:
 OIDC_ISSUER: http://localhost:8080/realms/bms
 ```
 
-After:
+After for the current HTTPS deployment:
 
 ```yaml
-OIDC_ISSUER: http://bms.demosites.co.in:8080/realms/bms
+OIDC_ISSUER: https://bms.demosites.co.in/realms/bms
 ```
 
 Keep `OIDC_JWKS_URI` unchanged:
@@ -241,27 +274,30 @@ Keep `OIDC_JWKS_URI` unchanged:
 OIDC_JWKS_URI: http://keycloak:8080/realms/bms/protocol/openid-connect/certs
 ```
 
-Why: `OIDC_ISSUER` must match what the browser receives in the token.
-`OIDC_JWKS_URI` is container-to-container and should keep using the
-Docker service name `keycloak`.
+Why: `OIDC_ISSUER` must match what the browser receives in the token. If
+operators log in through `https://bms.demosites.co.in`, the token issuer
+must be `https://bms.demosites.co.in/realms/bms`. `OIDC_JWKS_URI` is
+container-to-container and should keep using the Docker service name
+`keycloak`.
 
 ### 6.2 Web Build Arguments
 
 Find the `web` service and update the `build.args`.
 
-Use DNS:
+Use the current HTTPS deployment values:
 
 ```yaml
 args:
-  VITE_API_URL: http://bms.demosites.co.in:4000
-  VITE_WS_URL: ws://bms.demosites.co.in:4000
+  VITE_API_URL: https://bms.demosites.co.in
+  VITE_WS_URL: wss://bms.demosites.co.in
   VITE_AUTH_MODE: oidc
-  VITE_OIDC_ISSUER: http://bms.demosites.co.in:8080/realms/bms
+  VITE_OIDC_ISSUER: https://bms.demosites.co.in/realms/bms
   VITE_OIDC_CLIENT_ID: bms-web
-  VITE_OIDC_REDIRECT_URI: http://bms.demosites.co.in:5173/auth/callback
+  VITE_OIDC_REDIRECT_URI: https://bms.demosites.co.in/auth/callback
 ```
 
-If DNS is not ready, use IP:
+If DNS or HTTPS reverse proxy is not ready, use the direct public ports
+temporarily:
 
 ```yaml
 args:
@@ -276,7 +312,22 @@ args:
 These values are baked into the web image during build. If you change
 them later, rebuild the web image.
 
-### 6.3 Optional But Recommended: Change Default Passwords
+### 6.3 Simulator Scope
+
+The compose file has been updated so the simulator writes fewer telemetry
+rows for the current demo:
+
+```yaml
+SIM_RATE_HZ: 0.2
+SIM_ASSET_COUNT: all
+SIM_SITE_NAMES: RSMOC Western Cape,SMOC Pretoria North,RSMOC KwaZulu-Natal
+```
+
+Keep these values on the server unless you intentionally want the simulator
+to cover more locations again. `SIM_SITE_NAMES` must match seeded
+`site_name` values exactly.
+
+### 6.4 Optional But Recommended: Change Default Passwords
 
 For a lab you can keep defaults temporarily. For anything public, change
 these before first boot:
@@ -295,17 +346,22 @@ will fail to connect.
 
 ---
 
-## 7. Update Keycloak Redirect URLs
+## 7. Update Keycloak Redirect And Logout URLs
 
-The realm file currently allows only localhost:
+The committed realm keeps localhost for native/local testing. For the
+public HTTPS deployment it must also allow the deployed domain:
 
 ```json
 "redirectUris": [
-  "http://localhost:5173/auth/callback"
+  "http://localhost:5173/auth/callback",
+  "http://localhost:5173/login"
 ],
 "webOrigins": [
   "http://localhost:5173"
-]
+],
+"attributes": {
+  "post.logout.redirect.uris": "http://localhost:5173/login"
+}
 ```
 
 Edit:
@@ -314,9 +370,29 @@ Edit:
 notepad infra\keycloak\bms-realm.json
 ```
 
-Under the `bms-web` client, update these arrays.
+Under the `bms-web` client, update these arrays and attributes.
 
-Recommended for the DNS example:
+Recommended for the current HTTPS deployment:
+
+```json
+"redirectUris": [
+  "http://localhost:5173/auth/callback",
+  "http://localhost:5173/login",
+  "https://bms.demosites.co.in/auth/callback",
+  "https://bms.demosites.co.in/login"
+],
+"webOrigins": [
+  "http://localhost:5173",
+  "https://bms.demosites.co.in"
+],
+"attributes": {
+  "post.logout.redirect.uris": "http://localhost:5173/login##https://bms.demosites.co.in/login",
+  "pkce.code.challenge.method": "S256"
+}
+```
+
+If you are still testing direct public ports instead of HTTPS, use the
+direct-port values temporarily:
 
 ```json
 "redirectUris": [
@@ -334,11 +410,23 @@ Recommended for the DNS example:
 You may keep the IP entries during setup. Once DNS is stable and users
 only use the DNS name, prefer the DNS URL as the standard.
 
-Important: Keycloak imports this realm at container startup. Because the
-current compose file does not mount a persistent Keycloak data volume,
-recreating the Keycloak container imports the edited file again. If you
-later add a Keycloak volume, existing realms may need to be changed from
-the Keycloak Admin Console instead.
+The realm now also includes scoped demo users and roles used by the
+Location and Access work:
+
+| Role | Username | Password |
+|------|----------|----------|
+| Global admin | `admin@bms.local` | `admin123` |
+| Western Cape location admin | `wc-admin@bms.local` | `admin123` |
+| Western Cape HVAC asset-group admin | `wc-hvac-admin@bms.local` | `admin123` |
+| Operator | `operator@bms.local` | `operator123` |
+| Viewer | `viewer@bms.local` | `viewer123` |
+
+Important: Keycloak imports this realm only when creating a fresh realm.
+If the server already has a running Keycloak realm, editing
+`infra/keycloak/bms-realm.json` and pulling Git may not update the live
+client automatically. In that case, update the `bms-web` client in the
+Keycloak Admin Console or recreate the Keycloak container/realm only when
+you are comfortable losing Keycloak-local state.
 
 ---
 
@@ -385,13 +473,13 @@ depends on migration completion.
 
 Open a browser on your laptop, not only inside the VM.
 
-Go to:
+Go to the deployed HTTPS site:
 
 ```text
-http://bms.demosites.co.in:5173
+https://bms.demosites.co.in
 ```
 
-Or if DNS is not working:
+Or if DNS/HTTPS is not working and you are testing direct ports:
 
 ```text
 http://20.244.16.33:5173
@@ -400,19 +488,21 @@ http://20.244.16.33:5173
 Expected login flow:
 
 1. The web app opens.
-2. It redirects to Keycloak on port `8080`.
+2. It redirects to Keycloak through the public HTTPS domain.
 3. Sign in with one seeded demo user:
 
    | Role | Username | Password |
    |------|----------|----------|
    | Admin | `admin@bms.local` | `admin123` |
+   | Western Cape location admin | `wc-admin@bms.local` | `admin123` |
+   | Western Cape HVAC asset-group admin | `wc-hvac-admin@bms.local` | `admin123` |
    | Operator | `operator@bms.local` | `operator123` |
    | Viewer | `viewer@bms.local` | `viewer123` |
 
 4. Keycloak redirects back to:
 
    ```text
-   http://bms.demosites.co.in:5173/auth/callback
+   https://bms.demosites.co.in/auth/callback
    ```
 
 5. The app opens the dashboard.
@@ -425,22 +515,22 @@ For a real pilot, change or remove these demo passwords.
 
 After login, check these pages:
 
-1. Dashboard: `http://bms.demosites.co.in:5173/`
-2. Alarm Centre: `http://bms.demosites.co.in:5173/alarms`
-3. Sites Map: `http://bms.demosites.co.in:5173/map`
-4. Electrical SLD: `http://bms.demosites.co.in:5173/sld`
-5. CRAC: `http://bms.demosites.co.in:5173/crac`
-6. Energy: `http://bms.demosites.co.in:5173/energy`
-7. Work Orders: `http://bms.demosites.co.in:5173/work-orders`
-8. Schedule Centre: `http://bms.demosites.co.in:5173/maintenance-schedules`
-9. Rule Engine: `http://bms.demosites.co.in:5173/rules`
-10. Reports: `http://bms.demosites.co.in:5173/reports`
-11. Control Room Dashboard: `http://bms.demosites.co.in:5173/cr-overview`
+1. Dashboard: `https://bms.demosites.co.in/`
+2. Alarm Centre: `https://bms.demosites.co.in/alarms`
+3. Sites Map: `https://bms.demosites.co.in/map`
+4. Electrical SLD: `https://bms.demosites.co.in/sld`
+5. CRAC: `https://bms.demosites.co.in/crac`
+6. Energy: `https://bms.demosites.co.in/energy`
+7. Work Orders: `https://bms.demosites.co.in/work-orders`
+8. Schedule Centre: `https://bms.demosites.co.in/maintenance-schedules`
+9. Rule Engine: `https://bms.demosites.co.in/rules`
+10. Reports: `https://bms.demosites.co.in/reports`
+11. Control Room Dashboard: `https://bms.demosites.co.in/cr-overview`
 
 Also test API health:
 
 ```text
-http://bms.demosites.co.in:4000/health
+https://bms.demosites.co.in/health
 ```
 
 If the simulator is running, dashboard values and Control Room values
@@ -499,13 +589,140 @@ git pull
 docker compose --profile pilot up -d --build
 ```
 
+### After Git Push From This Machine: Update The Server Step By Step
+
+Use this section after changes are committed and pushed from the development
+machine, and you need to update the Windows VM that serves
+`https://bms.demosites.co.in`.
+
+1. Log in to the Windows VM.
+2. Open PowerShell in the repo folder:
+
+   ```powershell
+   cd C:\dev\bms
+   ```
+
+3. Confirm the current branch and local changes:
+
+   ```powershell
+   git status
+   git branch --show-current
+   ```
+
+   If `git status` shows local edits on the server, do not overwrite them
+   blindly. Save them or decide whether they are server-only overrides.
+
+4. Pull the latest pushed code:
+
+   ```powershell
+   git fetch origin
+   git pull
+   ```
+
+5. Re-check the production URL parameters before rebuilding:
+
+   ```powershell
+   Select-String -Path docker-compose.yml -Pattern "OIDC_ISSUER|VITE_API_URL|VITE_WS_URL|VITE_OIDC_ISSUER|VITE_OIDC_REDIRECT_URI|SIM_RATE_HZ|SIM_SITE_NAMES"
+   Select-String -Path infra\keycloak\bms-realm.json -Pattern "bms.demosites.co.in|post.logout.redirect.uris|location_admin|asset_group_admin"
+   ```
+
+6. Ensure the server build uses the HTTPS public values:
+
+   ```yaml
+   OIDC_ISSUER: https://bms.demosites.co.in/realms/bms
+   VITE_API_URL: https://bms.demosites.co.in
+   VITE_WS_URL: wss://bms.demosites.co.in
+   VITE_OIDC_ISSUER: https://bms.demosites.co.in/realms/bms
+   VITE_OIDC_REDIRECT_URI: https://bms.demosites.co.in/auth/callback
+   ```
+
+   The committed compose file may still be localhost-friendly. For the VM,
+   keep these production values either in the server's edited
+   `docker-compose.yml` or in a server-only `docker-compose.override.yml`.
+   Do not mix `http://localhost`, direct public ports, and HTTPS in the
+   same OIDC flow.
+
+   Example server-only override:
+
+   ```yaml
+   services:
+     api:
+       environment:
+         OIDC_ISSUER: https://bms.demosites.co.in/realms/bms
+     web:
+       build:
+         args:
+           VITE_API_URL: https://bms.demosites.co.in
+           VITE_WS_URL: wss://bms.demosites.co.in
+           VITE_AUTH_MODE: oidc
+           VITE_OIDC_ISSUER: https://bms.demosites.co.in/realms/bms
+           VITE_OIDC_CLIENT_ID: bms-web
+           VITE_OIDC_REDIRECT_URI: https://bms.demosites.co.in/auth/callback
+   ```
+
+7. Rebuild and restart the application stack:
+
+   ```powershell
+   docker compose --profile pilot up -d --build
+   ```
+
+8. Check migration/seed, API, web, Keycloak, and simulator logs:
+
+   ```powershell
+   docker compose ps
+   docker compose logs --tail=120 migrate
+   docker compose logs --tail=120 api
+   docker compose logs --tail=80 web
+   docker compose logs --tail=120 keycloak
+   docker compose logs --tail=80 sim
+   ```
+
+9. If the web image was rebuilt but other images did not need changes, you
+   can restart only web on later URL-only changes:
+
+   ```powershell
+   docker compose build web --no-cache
+   docker compose --profile pilot up -d --no-deps web
+   ```
+
+10. If Keycloak already had an existing `bms` realm, verify the live
+    `bms-web` client in the Keycloak Admin Console. Confirm:
+
+    ```text
+    Valid redirect URIs include https://bms.demosites.co.in/auth/callback
+    Valid redirect URIs include https://bms.demosites.co.in/login
+    Web origins include https://bms.demosites.co.in
+    Post logout redirect URIs include https://bms.demosites.co.in/login
+    Realm roles include location_admin and asset_group_admin
+    Users include wc-admin@bms.local and wc-hvac-admin@bms.local
+    ```
+
+11. Smoke-test from a browser outside the VM:
+
+    ```text
+    https://bms.demosites.co.in
+    https://bms.demosites.co.in/health
+    ```
+
+12. Log in with:
+
+    ```text
+    admin@bms.local / admin123
+    wc-admin@bms.local / admin123
+    wc-hvac-admin@bms.local / admin123
+    ```
+
+    Check that global admin sees all completed modules, Western Cape
+    location admin sees scoped data, and Western Cape HVAC admin sees only
+    HVAC-relevant Control Room actions active.
+
 ### Rebuild Only Web After URL Changes
 
 Use this if you changed `VITE_*` build args:
 
 ```powershell
 docker compose build web --no-cache
-docker compose --profile pilot up -d web
+docker compose --profile pilot up -d --no-deps web
 ```
 
 ---
@@ -569,42 +786,46 @@ still run; troubleshoot observability separately.
 
 ## 15. HTTPS And Port 80/443
 
-The current compose deployment exposes:
-
-```text
-http://bms.demosites.co.in:5173
-```
-
-If you want users to open:
+The current public demo URL is:
 
 ```text
 https://bms.demosites.co.in
 ```
 
-you need a reverse proxy and TLS certificate. Common choices:
+The compose file itself still exposes container ports only. HTTPS requires
+a reverse proxy and TLS certificate in front of those containers. Common
+choices:
 
 - Caddy
 - nginx
 - IIS reverse proxy
 - Azure Application Gateway
 
-The reverse proxy should route:
+The reverse proxy should route at least:
 
 | Public path or host | Internal target |
 |---------------------|-----------------|
-| Web | `http://localhost:5173` |
-| API/WebSocket | `http://localhost:4000` |
-| Keycloak | `http://localhost:8080` |
+| `/` and frontend routes | `http://localhost:5173` |
+| `/api/*` | `http://localhost:4000/api/*` |
+| `/health` | `http://localhost:4000/health` |
+| `/metrics` if exposed internally | `http://localhost:4000/metrics` |
+| `/socket.io/*` | `http://localhost:4000/socket.io/*` with WebSocket upgrade |
+| `/realms/*` | `http://localhost:8080/realms/*` |
+| `/resources/*` | `http://localhost:8080/resources/*` |
+| other Keycloak auth/admin paths used by login | `http://localhost:8080` |
 
-After adding HTTPS, update all of these to `https://` or `wss://`:
+After HTTPS is active, verify all of these use `https://` or `wss://`
+browser-facing values:
 
-- `VITE_API_URL`
-- `VITE_WS_URL`
-- `VITE_OIDC_ISSUER`
-- `VITE_OIDC_REDIRECT_URI`
-- API `OIDC_ISSUER`
-- Keycloak `redirectUris`
-- Keycloak `webOrigins`
+- `VITE_API_URL=https://bms.demosites.co.in`
+- `VITE_WS_URL=wss://bms.demosites.co.in`
+- `VITE_OIDC_ISSUER=https://bms.demosites.co.in/realms/bms`
+- `VITE_OIDC_REDIRECT_URI=https://bms.demosites.co.in/auth/callback`
+- API `OIDC_ISSUER=https://bms.demosites.co.in/realms/bms`
+- Keycloak `redirectUris` include `https://bms.demosites.co.in/auth/callback`
+- Keycloak `redirectUris` include `https://bms.demosites.co.in/login`
+- Keycloak `webOrigins` include `https://bms.demosites.co.in`
+- Keycloak `post.logout.redirect.uris` includes `https://bms.demosites.co.in/login`
 
 Do not mix HTTP and HTTPS in OIDC settings.
 
@@ -620,7 +841,8 @@ Check:
 
 - `docker-compose.yml` web build args
 - `docker-compose.yml` API `OIDC_ISSUER`
-- `infra/keycloak/bms-realm.json` redirect URIs and web origins
+- `infra/keycloak/bms-realm.json` redirect URIs, web origins, and
+  post-logout redirect URIs
 
 Then rebuild:
 
@@ -641,10 +863,10 @@ api.environment.OIDC_ISSUER
 Keycloak browser URL used during login
 ```
 
-For DNS example:
+For the current HTTPS deployment:
 
 ```text
-http://bms.demosites.co.in:8080/realms/bms
+https://bms.demosites.co.in/realms/bms
 ```
 
 ### Web loads but data does not update
@@ -660,7 +882,7 @@ docker compose logs -f sim
 Confirm browser can reach:
 
 ```text
-http://bms.demosites.co.in:4000/health
+https://bms.demosites.co.in/health
 ```
 
 ### Port does not open from outside
@@ -677,7 +899,7 @@ The web app is a static Vite build. Rebuild web:
 
 ```powershell
 docker compose build web --no-cache
-docker compose --profile pilot up -d web
+docker compose --profile pilot up -d --no-deps web
 ```
 
 ### Docker build is very slow
@@ -698,13 +920,16 @@ Increase Docker Desktop memory to 8 GB if possible.
 - [ ] Docker Desktop is using Linux containers
 - [ ] Repo cloned to `C:\dev\bms`
 - [ ] DNS `bms.demosites.co.in` points to `20.244.16.33`
-- [ ] Windows Firewall allows `5173`, `4000`, and `8080`
-- [ ] Azure NSG allows `5173`, `4000`, and `8080` if this is an Azure VM
-- [ ] `docker-compose.yml` API `OIDC_ISSUER` uses the public DNS URL
-- [ ] `docker-compose.yml` web `VITE_*` args use the public DNS URL
-- [ ] Keycloak realm allows the public redirect URI and web origin
+- [ ] Windows Firewall allows `443` and, if needed, `80`
+- [ ] Azure NSG allows `443` and, if needed, `80` if this is an Azure VM
+- [ ] Direct container ports `5173`, `4000`, and `8080` are private or admin-restricted
+- [ ] Reverse proxy routes web, API, Socket.IO, and Keycloak paths correctly
+- [ ] `docker-compose.yml` API `OIDC_ISSUER` uses `https://bms.demosites.co.in/realms/bms`
+- [ ] `docker-compose.yml` web `VITE_*` args use the HTTPS public URL
+- [ ] Keycloak realm allows the public redirect URI, login URI, web origin, and post-logout redirect URI
+- [ ] Simulator is limited to the selected demo sites with `SIM_RATE_HZ=0.2`
 - [ ] `docker compose --profile pilot up --build` completes
-- [ ] Browser opens `http://bms.demosites.co.in:5173`
+- [ ] Browser opens `https://bms.demosites.co.in`
 - [ ] Login succeeds with a seeded user
 - [ ] Dashboard and Control Room values update while the simulator runs
 - [ ] Default demo passwords are changed before wider pilot use

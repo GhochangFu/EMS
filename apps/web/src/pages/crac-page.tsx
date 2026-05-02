@@ -1,6 +1,8 @@
 import { HVAC_POINT_KEYS } from "@bms/shared";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
+import { fetchAssets } from "../api/assets";
 import { CracSchematic } from "../components/live-svg/crac-schematic";
 import { CRAC_TRACKED_CODES } from "../components/live-svg/crac-bindings";
 import {
@@ -12,6 +14,7 @@ import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
+import { hasCompleteSchematicAssets } from "../lib/schematic-access";
 import type { AuthUser } from "../stores/auth-store";
 
 type CracPageProps = {
@@ -185,8 +188,35 @@ function CracContent({
   );
 }
 
+function CracUnavailable({ loading }: { loading: boolean }) {
+  return (
+    <div className="relative mx-auto max-w-[1200px] space-y-4 pb-8">
+      <PageHeader
+        eyebrow="R.crac"
+        title="CRAC · Precision cooling schematic"
+        subtitle="DH101 hall · four CRAC units · chilled-water loop"
+        actions={<StatusPill label={loading ? "Checking" : "Unavailable"} tone="offline" />}
+      />
+      <SectionCard bodyClassName="p-4">
+        <div className="rounded border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          {loading
+            ? "Checking schematic access for your assigned assets..."
+            : "This HVAC/CRAC schematic is not configured for your assigned location or asset group."}
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
 export function CracPage({ user }: CracPageProps) {
   const [selectedId, setSelectedId] = useState<string | undefined>();
+  const assetsQuery = useQuery({
+    queryKey: ["assets"],
+    queryFn: fetchAssets,
+  });
+  const canViewCrac =
+    assetsQuery.isSuccess &&
+    hasCompleteSchematicAssets(assetsQuery.data, CRAC_TRACKED_CODES);
 
   return (
     <AppShell
@@ -200,12 +230,16 @@ export function CracPage({ user }: CracPageProps) {
         </div>
       }
     >
-      <SchematicTelemetryProvider
-        assetCodes={CRAC_TRACKED_CODES}
-        pointKeys={[...HVAC_POINT_KEYS]}
-      >
-        <CracContent selectedId={selectedId} onSelect={setSelectedId} />
-      </SchematicTelemetryProvider>
+      {canViewCrac ? (
+        <SchematicTelemetryProvider
+          assetCodes={CRAC_TRACKED_CODES}
+          pointKeys={[...HVAC_POINT_KEYS]}
+        >
+          <CracContent selectedId={selectedId} onSelect={setSelectedId} />
+        </SchematicTelemetryProvider>
+      ) : (
+        <CracUnavailable loading={assetsQuery.isLoading} />
+      )}
     </AppShell>
   );
 }

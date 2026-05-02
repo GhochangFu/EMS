@@ -4,16 +4,25 @@ import {
   Controller,
   HttpCode,
   HttpStatus,
+  Get,
   Post,
+  UseGuards,
 } from "@nestjs/common";
 import { ZodError } from "zod";
+import type { JwtPayload } from "@bms/shared";
 
+import { AccessControlService } from "./access-control.service";
 import { AuthService } from "./auth.service";
+import { CurrentUser } from "./current-user.decorator";
+import { JwtAuthGuard } from "./jwt-auth.guard";
 import { loginBodySchema } from "./login.schema";
 
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   @Post("login")
   @HttpCode(HttpStatus.OK)
@@ -27,5 +36,11 @@ export class AuthController {
       }
       throw err;
     }
+  }
+
+  @Get("me")
+  @UseGuards(JwtAuthGuard)
+  me(@CurrentUser() user: JwtPayload) {
+    return this.accessControl.currentUser(user);
   }
 }

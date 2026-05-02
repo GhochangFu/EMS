@@ -184,12 +184,19 @@ export class MaintenanceService {
   /** Lists upcoming and overdue maintenance schedules for the Schedule Centre. */
   async list(
     query: ListMaintenanceQuery,
+    assetIds?: string[] | null,
   ): Promise<{ items: MaintenanceScheduleItem[] }> {
+    if (assetIds && assetIds.length === 0) {
+      return { items: [] };
+    }
     const horizon = new Date(Date.now() + query.horizonDays * 24 * 60 * 60 * 1000);
     const filters = [
       eq(maintenanceSchedules.active, true),
       eq(maintenanceTaskTemplates.active, true),
     ];
+    if (assetIds) {
+      filters.push(inArray(maintenanceTaskTemplates.assetId, assetIds));
+    }
     if (query.assetId) {
       filters.push(eq(maintenanceTaskTemplates.assetId, query.assetId));
     }
@@ -251,7 +258,11 @@ export class MaintenanceService {
   async createSchedule(
     dto: CreateMaintenanceScheduleBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<MaintenanceScheduleItem> {
+    if (assetIds && !assetIds.includes(dto.assetId)) {
+      throw new NotFoundException("Asset not found or outside your access scope");
+    }
     const [asset] = await this.db
       .select({ id: assets.id })
       .from(assets)
@@ -318,10 +329,13 @@ export class MaintenanceService {
       return [schedule];
     });
 
-    return this.getScheduleItem(created.id);
+    return this.getScheduleItem(created.id, assetIds);
   }
 
-  private async getScheduleItem(id: string): Promise<MaintenanceScheduleItem> {
+  private async getScheduleItem(
+    id: string,
+    assetIds?: string[] | null,
+  ): Promise<MaintenanceScheduleItem> {
     const [row] = await this.db
       .select({
         id: maintenanceSchedules.id,
@@ -351,7 +365,12 @@ export class MaintenanceService {
         eq(maintenanceSchedules.templateId, maintenanceTaskTemplates.id),
       )
       .innerJoin(assets, eq(maintenanceTaskTemplates.assetId, assets.id))
-      .where(eq(maintenanceSchedules.id, id))
+      .where(
+        and(
+          eq(maintenanceSchedules.id, id),
+          ...(assetIds ? [inArray(maintenanceTaskTemplates.assetId, assetIds)] : []),
+        ),
+      )
       .limit(1);
     if (!row) {
       throw new NotFoundException("Maintenance schedule not found");
@@ -365,8 +384,9 @@ export class MaintenanceService {
     id: string,
     dto: UpdateMaintenanceScheduleBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<MaintenanceScheduleItem> {
-    const existing = await this.getScheduleItem(id);
+    const existing = await this.getScheduleItem(id, assetIds);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
     await this.db.transaction(async (tx) => {
@@ -398,7 +418,7 @@ export class MaintenanceService {
         },
       });
     });
-    return this.getScheduleItem(id);
+    return this.getScheduleItem(id, assetIds);
   }
 
   /** Converts a maintenance schedule occurrence into an audited work order. */
@@ -406,7 +426,11 @@ export class MaintenanceService {
     scheduleId: string,
     dto: ConvertMaintenanceBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<{ workOrder: WorkOrderListItem }> {
+    if (assetIds && assetIds.length === 0) {
+      throw new NotFoundException("Maintenance schedule not found");
+    }
     const [schedule] = await this.db
       .select({
         id: maintenanceSchedules.id,
@@ -428,6 +452,7 @@ export class MaintenanceService {
           eq(maintenanceSchedules.id, scheduleId),
           eq(maintenanceSchedules.active, true),
           eq(maintenanceTaskTemplates.active, true),
+          ...(assetIds ? [inArray(maintenanceTaskTemplates.assetId, assetIds)] : []),
         ),
       )
       .limit(1);
@@ -502,11 +527,14 @@ export class MaintenanceService {
       return [workOrder];
     });
 
-    const workOrder = await this.getWorkOrder(created.id);
+    const workOrder = await this.getWorkOrder(created.id, assetIds);
     return { workOrder };
   }
 
-  private async getWorkOrder(id: string): Promise<WorkOrderListItem> {
+  private async getWorkOrder(
+    id: string,
+    assetIds?: string[] | null,
+  ): Promise<WorkOrderListItem> {
     const [row] = await this.db
       .select({
         id: workOrders.id,
@@ -530,7 +558,12 @@ export class MaintenanceService {
       })
       .from(workOrders)
       .innerJoin(assets, eq(workOrders.assetId, assets.id))
-      .where(eq(workOrders.id, id))
+      .where(
+        and(
+          eq(workOrders.id, id),
+          ...(assetIds ? [inArray(workOrders.assetId, assetIds)] : []),
+        ),
+      )
       .limit(1);
     if (!row) {
       throw new NotFoundException("Work order not found");

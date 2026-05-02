@@ -15,6 +15,7 @@ import { ZodError, z } from "zod";
 
 import type { JwtPayload } from "@bms/shared";
 
+import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import {
@@ -30,13 +31,19 @@ const idParamSchema = z.string().uuid();
 @Controller("maintenance")
 @UseGuards(JwtAuthGuard)
 export class MaintenanceController {
-  constructor(private readonly maintenance: MaintenanceService) {}
+  constructor(
+    private readonly maintenance: MaintenanceService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   @Get("schedules")
-  async listSchedules(@Query() query: unknown) {
+  async listSchedules(@CurrentUser() user: JwtPayload, @Query() query: unknown) {
     try {
       const dto = listMaintenanceQuerySchema.parse(query);
-      return await this.maintenance.list(dto);
+      return await this.maintenance.list(
+        dto,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -49,7 +56,11 @@ export class MaintenanceController {
   async createSchedule(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
     try {
       const dto = createMaintenanceScheduleBodySchema.parse(body);
-      return await this.maintenance.createSchedule(dto, user);
+      return await this.maintenance.createSchedule(
+        dto,
+        user,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -68,7 +79,12 @@ export class MaintenanceController {
     try {
       const scheduleId = idParamSchema.parse(id);
       const dto = convertMaintenanceBodySchema.parse(body);
-      return await this.maintenance.convertToWorkOrder(scheduleId, dto, user);
+      return await this.maintenance.convertToWorkOrder(
+        scheduleId,
+        dto,
+        user,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -86,7 +102,12 @@ export class MaintenanceController {
     try {
       const scheduleId = idParamSchema.parse(id);
       const dto = updateMaintenanceScheduleBodySchema.parse(body);
-      return await this.maintenance.updateSchedule(scheduleId, dto, user);
+      return await this.maintenance.updateSchedule(
+        scheduleId,
+        dto,
+        user,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

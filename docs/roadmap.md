@@ -1,6 +1,7 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 5 Sprint I complete; next sprint not promoted.
+> **Active phase:** Part 2 / Phase 5 Location and Access is paused as
+> **will revisit later**; next sprint is not promoted.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -302,7 +303,7 @@ Process (`AGENTS.md` §10).
   coverage (95%).
 
 ### Phase 5 — Operations modules (~3 weeks)
-- **Status:** in progress — Sprint I completed-page UI/UX alignment complete
+- **Status:** Sprint I complete; Location and Access paused as will revisit later
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
   reports. MinIO / object storage graduates only when report files need
   persisted storage.
@@ -548,6 +549,62 @@ Process (`AGENTS.md` §10).
   implementation of the original mockup without destabilising Phase 5
   functionality. Shared, web, DB, API, CR smoke, and simulator syntax
   verification passed.
+
+#### Phase 5 Sprint J/K/L/M/N — Location and Access
+- **Status:** will revisit later — partially implemented, not closed as complete
+- **Goal:** add canonical operational locations, DB-backed access scopes,
+  location dashboard drill-down, and scoped UX before the next feature sprint.
+- **Implemented before pause**
+  - `bms.locations`, `assets.location_id`, asset groups, group membership,
+    user-location grants, and user-asset-group grants.
+  - Idempotent seed/backfill from `map_locations`, preserving `site_name`
+    compatibility while moving APIs toward stable `locationId`.
+  - Minimal demo assets cloned into empty RSMOC locations with unique
+    location-prefixed codes; CSMOC Gauteng remains map-only for now.
+  - Demo local users: global admin, Western Cape all-asset location admin,
+    and Western Cape HVAC asset-group admin.
+  - DB-backed `GET /api/v1/auth/me`, scoped asset/map/dashboard/telemetry,
+    report, alarm, work-order, maintenance, and rule APIs.
+  - Authenticated, per-socket telemetry and alarm WebSocket filtering.
+  - Main Dashboard location KPI cards and
+    `/locations/:locationId/dashboard` drill-down with denied/empty states.
+  - App shell scope badge, limited-scope banner, scoped landing behavior,
+    and sidebar hiding for asset-group-only module gaps.
+  - OIDC logout redirect repair for the local/pilot Keycloak client and
+    app logout flow.
+  - Simulator throttling/focus for demo performance:
+    `SIM_RATE_HZ=0.2`, `SIM_ASSET_COUNT=all`, and
+    `SIM_SITE_NAMES=RSMOC Western Cape,SMOC Pretoria North,RSMOC KwaZulu-Natal`.
+  - Telemetry maintenance/performance cleanup: `telemetry.point_values`
+    cleared during diagnostics and an index added for dashboard latest-kW
+    lookups.
+  - `PV-INV-01` moved from RSMOC Western Cape to SMOC Pretoria North so
+    the fixed Electrical SLD binding no longer grants a partial WC match.
+  - Fixed schematic access guards so Pretoria-only SLD/CRAC pages require
+    the complete bound asset set.
+  - Control Room overview cards, quick drilldowns, and statuses made
+    asset-group aware so WC HVAC users see only HVAC as active.
+  - Main Dashboard location cards now mark locations with live telemetry,
+    and the left module sidebar is collapsible while preserving mockup
+    grouping/active-state language.
+- **Pause reason:** the broad scope now mixes data modelling, role/security
+  semantics, seeded demo inventory, simulator performance, and page-wise
+  UX. It should be revisited as a dedicated hardening sprint with a full
+  role walkthrough instead of being marked complete.
+- **Revisit checklist**
+  - Run a fresh DB migration/seed from empty native and compose databases.
+  - Re-run Keycloak realm import/update checks for `admin`, `wc-admin`, and
+    `wc-hvac-admin`.
+  - Complete page-by-page role walkthrough for global, location, and
+    asset-group admins, including direct URL access.
+  - Decide whether RSMOC demo assets should become real reusable location
+    schematics or remain dashboard/list-only demo assets.
+  - Add focused automated tests for access-control helpers, route/page
+    visibility, and scoped WebSocket filtering.
+- **Validation before pause:** latest focused checks passed for
+  `pnpm --filter web build`, `pnpm --filter @bms/db build`, relevant
+  lints, and Docker `web` rebuild/restart. Full clean migration/seed and
+  all-role walkthrough remain pending for the revisit.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending

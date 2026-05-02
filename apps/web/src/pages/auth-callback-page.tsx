@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { completeOidcLogin } from "../api/oidc";
+import { fetchCurrentUser } from "../api/login";
+import { landingRouteForScope } from "../lib/landing-route";
 import { useAuthStore } from "../stores/auth-store";
 
 export function AuthCallbackPage() {
@@ -16,8 +18,14 @@ export function AuthCallbackPage() {
       try {
         const session = await completeOidcLogin(window.location.search);
         if (!cancelled) {
-          setSession(session.accessToken, session.user);
-          void navigate("/", { replace: true });
+          const current = await fetchCurrentUser(session.accessToken);
+          setSession(
+            session.accessToken,
+            current.user,
+            current.scope,
+            session.idToken,
+          );
+          void navigate(landingRouteForScope(current.scope), { replace: true });
         }
       } catch (err) {
         if (!cancelled) {

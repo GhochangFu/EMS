@@ -7,6 +7,7 @@ const stateKey = "bms-oidc-state";
 
 type TokenResponse = {
   access_token: string;
+  id_token?: string;
   expires_in?: number;
 };
 
@@ -22,6 +23,7 @@ type KeycloakClaims = {
 
 export type OidcSession = {
   accessToken: string;
+  idToken: string | null;
   expiresIn: string;
   user: AuthUser;
 };
@@ -39,6 +41,10 @@ function redirectUri(): string {
     import.meta.env.VITE_OIDC_REDIRECT_URI ??
     `${window.location.origin}/auth/callback`
   );
+}
+
+function postLogoutRedirectUri(): string {
+  return `${window.location.origin}/login`;
 }
 
 function randomBase64Url(byteLength: number): string {
@@ -82,6 +88,12 @@ function roleFromClaims(claims: KeycloakClaims): UserRole {
   if (roles.includes("admin")) {
     return "admin";
   }
+  if (roles.includes("location_admin")) {
+    return "location_admin";
+  }
+  if (roles.includes("asset_group_admin")) {
+    return "asset_group_admin";
+  }
   if (roles.includes("operator")) {
     return "operator";
   }
@@ -114,6 +126,7 @@ export async function startOidcLogin(): Promise<void> {
   url.searchParams.set("state", state);
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
+  url.searchParams.set("prompt", "login");
 
   window.location.assign(url.toString());
 }
@@ -164,6 +177,7 @@ export async function completeOidcLogin(search: string): Promise<OidcSession> {
   const email = claims.email ?? claims.preferred_username ?? id;
   return {
     accessToken: token.access_token,
+    idToken: token.id_token ?? null,
     expiresIn: `${token.expires_in ?? 0}s`,
     user: {
       id,
@@ -172,4 +186,19 @@ export async function completeOidcLogin(search: string): Promise<OidcSession> {
       role: roleFromClaims(claims),
     },
   };
+}
+
+/** Clears the Keycloak browser SSO session and returns to the local login page. */
+export function startOidcLogout(idToken: string | null): void {
+  if (!isOidcEnabled()) {
+    window.location.assign("/login");
+    return;
+  }
+  const url = new URL(`${oidcIssuer()}/protocol/openid-connect/logout`);
+  url.searchParams.set("client_id", clientId());
+  url.searchParams.set("post_logout_redirect_uri", postLogoutRedirectUri());
+  if (idToken) {
+    url.searchParams.set("id_token_hint", idToken);
+  }
+  window.location.assign(url.toString());
 }

@@ -48,6 +48,11 @@ export class AuthService {
     }
 
     const role = user.role as UserRole;
+    await this.db
+      .update(users)
+      .set({ lastLoginAt: new Date() })
+      .where(eq(users.id, user.id));
+
     const payload: JwtPayload = {
       sub: user.id,
       email: user.email,

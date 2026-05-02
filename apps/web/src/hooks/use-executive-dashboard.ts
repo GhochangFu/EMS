@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
 import { fetchDashboardKpis, fetchLoadTrend } from "../api/dashboard";
+import { useAuthStore } from "../stores/auth-store";
 import type { LoadTrendPoint, TelemetryReading } from "@bms/shared";
 
 function socketUrl(): string {
@@ -18,6 +19,7 @@ function socketUrl(): string {
  */
 export function useExecutiveDashboard() {
   const mountedAt = useRef(Date.now());
+  const accessToken = useAuthStore((state) => state.accessToken);
   const [lastTickAt, setLastTickAt] = useState<number | null>(null);
   const [liveTotalKw, setLiveTotalKw] = useState<number | null>(null);
   const [liveTrendAdds, setLiveTrendAdds] = useState<LoadTrendPoint[]>([]);
@@ -42,6 +44,7 @@ export function useExecutiveDashboard() {
   useEffect(() => {
     const socket: Socket = io(`${socketUrl()}/ws/telemetry`, {
       transports: ["websocket"],
+      auth: { token: accessToken },
     });
     socket.on("telemetry", (payload: { readings?: TelemetryReading[] }) => {
       const readings = payload.readings ?? [];
@@ -60,7 +63,7 @@ export function useExecutiveDashboard() {
     return () => {
       socket.disconnect();
     };
-  }, []);
+  }, [accessToken]);
 
   const stale =
     (lastTickAt === null &&

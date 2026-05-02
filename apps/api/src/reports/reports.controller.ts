@@ -7,7 +7,10 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ZodError } from "zod";
+import type { JwtPayload } from "@bms/shared";
 
+import { AccessControlService } from "../auth/access-control.service";
+import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { energyReportQuerySchema } from "./reports.schema";
 import { ReportsService } from "./reports.service";
@@ -15,13 +18,19 @@ import { ReportsService } from "./reports.service";
 @Controller("reports")
 @UseGuards(JwtAuthGuard)
 export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
+  constructor(
+    private readonly reports: ReportsService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   @Get("energy/preview")
-  async energyPreview(@Query() query: unknown) {
+  async energyPreview(@CurrentUser() user: JwtPayload, @Query() query: unknown) {
     try {
       const dto = energyReportQuerySchema.parse(query);
-      return await this.reports.energyPreview(dto);
+      return await this.reports.energyPreview(
+        dto,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -36,10 +45,16 @@ export class ReportsController {
     "Content-Disposition",
     'attachment; filename="energy-consumption-report.csv"',
   )
-  async energyCsv(@Query() query: unknown): Promise<string> {
+  async energyCsv(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: unknown,
+  ): Promise<string> {
     try {
       const dto = energyReportQuerySchema.parse(query);
-      return await this.reports.energyCsv(dto);
+      return await this.reports.energyCsv(
+        dto,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

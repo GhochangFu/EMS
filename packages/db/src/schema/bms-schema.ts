@@ -18,7 +18,29 @@ export const users = bmsSchema.table("users", {
   passwordHash: varchar("password_hash", { length: 255 }).notNull(),
   displayName: varchar("display_name", { length: 255 }).notNull(),
   role: varchar("role", { length: 64 }).notNull(),
+  oidcSubject: varchar("oidc_subject", { length: 255 }),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const locations = bmsSchema.table("locations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: varchar("code", { length: 64 }).notNull().unique(),
+  slug: varchar("slug", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  type: varchar("type", { length: 32 }).notNull(),
+  province: varchar("province", { length: 64 }),
+  capital: varchar("capital", { length: 128 }),
+  latitude: doublePrecision("latitude").notNull(),
+  longitude: doublePrecision("longitude").notNull(),
+  active: boolean("active").notNull().default(true),
+  meta: jsonb("meta"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });
@@ -28,7 +50,61 @@ export const assets = bmsSchema.table("assets", {
   code: varchar("code", { length: 64 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   siteName: varchar("site_name", { length: 255 }).notNull(),
+  locationId: uuid("location_id").references(() => locations.id),
   domain: varchar("domain", { length: 64 }).notNull().default("electrical"),
+  meta: jsonb("meta"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const assetGroups = bmsSchema.table("asset_groups", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  locationId: uuid("location_id")
+    .notNull()
+    .references(() => locations.id),
+  code: varchar("code", { length: 64 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const assetGroupMembers = bmsSchema.table("asset_group_members", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  assetGroupId: uuid("asset_group_id")
+    .notNull()
+    .references(() => assetGroups.id),
+  assetId: uuid("asset_id")
+    .notNull()
+    .references(() => assets.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const userLocationAccess = bmsSchema.table("user_location_access", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id),
+  locationId: uuid("location_id")
+    .notNull()
+    .references(() => locations.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const userAssetGroupAccess = bmsSchema.table("user_asset_group_access", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id),
+  assetGroupId: uuid("asset_group_id")
+    .notNull()
+    .references(() => assetGroups.id),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

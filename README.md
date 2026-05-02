@@ -4,8 +4,9 @@ A real-time Building Management System for Eskom's Smart Metering
 Operating Centres. The seven-screen prototype is complete; the project
 has completed **Part 2 / Phase 1 pilot-ready hardening**. Phase 2 real
 ingestion Sprint 0 selected Path B because no real device/source
-information is available yet. Phase 5 Sprint A work order foundation is
-complete;
+information is available yet. Phase 5 Sprint A through Sprint I are
+complete, and the Location and Access implementation is paused as
+**will revisit later** rather than marked complete;
 protocol adapters, brokers, and AI Copilot remain out of scope until
 explicitly promoted.
 
@@ -44,8 +45,11 @@ pnpm --filter web dev    # Vite on :5173
 pnpm --filter sim start  # telemetry simulator (Sprint 2: live data)
 ```
 
-Open `http://localhost:5173`. Sign in as `admin@bms.local` / `admin123`
-(seeded).
+Open `http://localhost:5173`. Seeded local demo users:
+
+- Global admin: `admin@bms.local` / `admin123`
+- Western Cape all-asset location admin: `wc-admin@bms.local` / `admin123`
+- Western Cape HVAC asset-group admin: `wc-hvac-admin@bms.local` / `admin123`
 
 ## Quick start: Docker Compose
 
@@ -126,10 +130,16 @@ Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 
 ## Status
 
-Prototype screen set is complete. Phase 1 Sprint B Redis-backed realtime
-fan-out is complete. Phase 1 Sprint C Keycloak / OIDC authentication is
-complete. Phase 1 Sprint D observability baseline is complete. Phase 2
-Sprint 0 real-ingestion readiness selected Path B for now. Phase 5 Sprint
-A work order foundation is complete; Sprint B work order UI is ready next,
-followed later by Phase 6 Three.js visuals without AI; see
-[`docs/roadmap.md`](./docs/roadmap.md) for the full phase breakdown.
+Prototype screen set is complete. Phase 1 hardening and Phase 5 Sprint I
+UI alignment are complete. Location and Access has a partial
+implementation, but it is intentionally paused as **will revisit later**:
+canonical locations, RSMOC demo assets, DB-backed user scopes, scoped
+realtime/API reads, location dashboard drill-down, live-location markers,
+schematic access guards, Control Room asset-group UI gating, focused
+simulator settings, telemetry dashboard indexing, and the collapsible shell
+sidebar have been added. It still needs a clean migration/seed pass,
+Keycloak realm verification, automated access-control coverage, and a
+page-by-page role walkthrough before it can be called complete. Phase 2
+real ingestion remains paused; Phase 6 Three.js visuals remain later and
+AI Copilot remains deferred. See [`docs/roadmap.md`](./docs/roadmap.md)
+for the full phase breakdown.

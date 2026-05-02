@@ -16,16 +16,21 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import type { JwtPayload } from "@bms/shared";
 
+import { AccessControlService } from "../auth/access-control.service";
 import { alarmAckBodySchema } from "./ack.schema";
 import { AlarmsService } from "./alarms.service";
 
 @Controller("alarms")
 @UseGuards(JwtAuthGuard)
 export class AlarmsController {
-  constructor(private readonly alarms: AlarmsService) {}
+  constructor(
+    private readonly alarms: AlarmsService,
+    private readonly accessControl: AccessControlService,
+  ) {}
 
   @Get()
-  list(
+  async list(
+    @CurrentUser() user: JwtPayload,
     @Query("cursor") cursor?: string,
     @Query("limit") limitRaw?: string,
   ) {
@@ -33,7 +38,11 @@ export class AlarmsController {
     if (Number.isNaN(limit)) {
       throw new BadRequestException("Invalid limit");
     }
-    return this.alarms.list({ cursor, limit });
+    return this.alarms.list({
+      cursor,
+      limit,
+      assetIds: await this.accessControl.readableAssetIds(user),
+    });
   }
 
   @Post(":id/ack")
@@ -45,7 +54,12 @@ export class AlarmsController {
   ) {
     try {
       const dto = alarmAckBodySchema.parse(body);
-      return this.alarms.acknowledge(id, user, dto.reason);
+      return this.alarms.acknowledge(
+        id,
+        user,
+        dto.reason,
+        await this.accessControl.readableAssetIds(user),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

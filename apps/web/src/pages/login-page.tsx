@@ -2,8 +2,9 @@ import { useMutation } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { loginRequest } from "../api/login";
+import { fetchCurrentUser, loginRequest } from "../api/login";
 import { isOidcEnabled, startOidcLogin } from "../api/oidc";
+import { landingRouteForScope } from "../lib/landing-route";
 import { useAuthStore } from "../stores/auth-store";
 
 export function LoginPage() {
@@ -16,9 +17,10 @@ export function LoginPage() {
 
   const mutation = useMutation({
     mutationFn: () => loginRequest(email, password),
-    onSuccess: (data) => {
-      setSession(data.accessToken, data.user);
-      void navigate("/", { replace: true });
+    onSuccess: async (data) => {
+      const current = await fetchCurrentUser(data.accessToken);
+      setSession(data.accessToken, current.user, current.scope);
+      void navigate(landingRouteForScope(current.scope), { replace: true });
     },
     onError: (err: Error) => {
       setFormError(err.message);

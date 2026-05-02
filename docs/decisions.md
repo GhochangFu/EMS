@@ -178,6 +178,36 @@ self-hosted or licensed tiles in production if required.
 
 ---
 
+## D-0014 — Location and access: canonical `bms.locations` plus DB-backed scopes
+
+Date: 2026-05-02
+Status: accepted
+
+**Context.** RSMOC/CSMOC locations were first introduced as map markers,
+while assets still used string-only `site_name`. The next build needs
+stable location drill-down, asset-group demos, local/OIDC role alignment,
+and API/WebSocket filtering without waiting for real asset inventories.
+
+**Decision.**
+
+1. Add canonical `bms.locations` and keep `bms.assets.site_name` for
+   compatibility while backfilling nullable `assets.location_id`.
+2. Add `bms.asset_groups`, membership rows, user-location grants, and
+   user-asset-group grants as the app-owned authorization source.
+3. Seed minimal demo assets into empty RSMOC locations with globally
+   unique location-prefixed codes; leave `CSMOC Gauteng` map-only for now.
+4. Resolve login scope through `GET /api/v1/auth/me`; local JWT and OIDC
+   tokens both map back to app DB users/scopes.
+5. Filter REST APIs and Socket.IO telemetry/alarm events by resolved asset
+   IDs before presenting location dashboard and scoped UX features.
+
+**Consequences.** Screens can move from fragile site-name matching to
+stable `locationId` over time. Demo assets remain explicitly synthetic and
+must be replaceable by real inventory later. WebSocket clients now require
+auth tokens, so frontend sockets must pass the stored bearer token.
+
+---
+
 ## D-0007 — Electrical SLD: `SchematicTelemetryProvider` + hand-laid SVG
 
 Date: 2026-04-27

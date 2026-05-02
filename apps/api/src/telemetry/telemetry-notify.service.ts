@@ -27,15 +27,20 @@ export class TelemetryNotifyService implements OnModuleInit, OnModuleDestroy {
       await this.client.connect();
       await this.client.query("LISTEN bms_telemetry");
       this.client.on("notification", (msg) => {
+        let payload: { readings?: unknown };
         try {
-          const payload = JSON.parse(msg.payload ?? "{}") as {
-            readings?: unknown;
-          };
-          if (Array.isArray(payload.readings)) {
-            this.hub.emitReadings(payload.readings as TelemetryReading[]);
-          }
+          payload = JSON.parse(msg.payload ?? "{}") as { readings?: unknown };
         } catch {
           this.logger.warn("Failed to parse bms_telemetry payload");
+          return;
+        }
+        if (!Array.isArray(payload.readings)) {
+          return;
+        }
+        try {
+          this.hub.emitReadings(payload.readings as TelemetryReading[]);
+        } catch (err) {
+          this.logger.warn({ err }, "Failed to broadcast bms_telemetry payload");
         }
       });
       this.logger.log("Listening on bms_telemetry");

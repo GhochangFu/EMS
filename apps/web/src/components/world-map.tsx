@@ -26,6 +26,27 @@ function markerColor(site: MapSiteDto): string {
   }
 }
 
+function isOperationalLocation(site: MapSiteDto): boolean {
+  return (
+    site.kind === "smoc_campus" ||
+    site.kind === "rsmoc" ||
+    site.kind === "csmoc"
+  );
+}
+
+function locationKindLabel(site: MapSiteDto): string {
+  switch (site.kind) {
+    case "smoc_campus":
+      return "SMOC campus";
+    case "rsmoc":
+      return "RSMOC";
+    case "csmoc":
+      return "CSMOC";
+    case "eskom_station":
+      return "Eskom station";
+  }
+}
+
 type WorldMapProps = {
   sites: MapSiteDto[];
 };
@@ -43,7 +64,7 @@ export function WorldMap({ sites }: WorldMapProps) {
         <CircleMarker
           key={s.id}
           center={[s.latitude, s.longitude]}
-          radius={s.kind === "smoc_campus" ? 12 : 7}
+          radius={isOperationalLocation(s) ? 12 : 7}
           pathOptions={{
             color: "#1D2430",
             weight: 2,
@@ -55,7 +76,7 @@ export function WorldMap({ sites }: WorldMapProps) {
             <div className="min-w-[210px] text-bms-ink">
               <div className="font-condensed text-sm font-bold">{s.name}</div>
               <div className="text-[10px] uppercase tracking-wide text-bms-muted">
-                {s.kind === "smoc_campus" ? "SMOC campus" : "Eskom station"} ·{" "}
+                {locationKindLabel(s)} ·{" "}
                 <span className="font-mono">{s.live.status}</span>
               </div>
               {s.kind === "eskom_station" ? (
@@ -97,7 +118,14 @@ export function WorldMap({ sites }: WorldMapProps) {
                 <Link className="text-xs font-semibold text-bms-green hover:underline" to="/alarms">
                   Alarm Centre →
                 </Link>
-                <Link className="text-xs font-semibold text-bms-green hover:underline" to="/">
+                <Link
+                  className="text-xs font-semibold text-bms-green hover:underline"
+                  to={
+                    s.canonicalLocationId
+                      ? `/locations/${s.canonicalLocationId}/dashboard`
+                      : "/"
+                  }
+                >
                   Dashboard →
                 </Link>
               </div>

@@ -51,12 +51,79 @@ export const smocCampusesSeed = [
     lat: -25.75,
     lng: 28.19,
   },
+] as const;
+
+/** RSMOC / CSMOC locations supplied for the location-access planning sprint. */
+export const operationalLocationsSeed = [
   {
-    slug: "smoc-cape-town",
-    name: "SMOC Cape Town",
-    siteName: "SMOC Cape Town",
-    lat: -33.925,
-    lng: 18.424,
+    type: "RSMOC",
+    province: "Eastern Cape",
+    capital: "Bhisho",
+    lat: -32.8476,
+    lng: 27.4422,
+  },
+  {
+    type: "RSMOC",
+    province: "Free State",
+    capital: "Bloemfontein",
+    lat: -29.0852,
+    lng: 26.1596,
+  },
+  {
+    type: "RSMOC",
+    province: "Gauteng",
+    capital: "Johannesburg",
+    lat: -26.2041,
+    lng: 28.0473,
+  },
+  {
+    type: "RSMOC",
+    province: "KwaZulu-Natal",
+    capital: "Pietermaritzburg",
+    lat: -29.6006,
+    lng: 30.3794,
+  },
+  {
+    type: "RSMOC",
+    province: "Limpopo",
+    capital: "Polokwane",
+    lat: -23.9045,
+    lng: 29.4689,
+  },
+  {
+    type: "RSMOC",
+    province: "Mpumalanga",
+    capital: "Mbombela",
+    lat: -25.4658,
+    lng: 30.9853,
+  },
+  {
+    type: "RSMOC",
+    province: "North West",
+    capital: "Mahikeng",
+    lat: -25.8652,
+    lng: 25.6442,
+  },
+  {
+    type: "RSMOC",
+    province: "Northern Cape",
+    capital: "Kimberley",
+    lat: -28.7282,
+    lng: 24.7499,
+  },
+  {
+    type: "RSMOC",
+    province: "Western Cape",
+    capital: "Cape Town",
+    lat: -33.9249,
+    lng: 18.4241,
+  },
+  {
+    type: "CSMOC",
+    province: "Gauteng",
+    capital: "Johannesburg",
+    lat: -26.2041,
+    lng: 28.0473,
   },
 ] as const;
 
@@ -91,5 +158,28 @@ export function mapLocationRowsForInsert() {
     meta: { source: "seed" },
   }));
 
-  return [...stations, ...campuses];
+  const operationalLocations = operationalLocationsSeed.map((c) => {
+    const type = c.type.toLowerCase();
+    const name = `${c.type} ${c.province}`;
+    return {
+      slug: `${type}-${slugify(c.province)}`,
+      name,
+      kind: type as "rsmoc" | "csmoc",
+      siteName: name,
+      latitude: c.lat,
+      longitude: c.lng,
+      capacityMw: null as number | null,
+      stationType: null as string | null,
+      stationCategory: c.type,
+      province: c.province,
+      stationOperatingStatus: null as string | null,
+      meta: {
+        source: "attached-location-dataset",
+        type: c.type,
+        capital: c.capital,
+      },
+    };
+  });
+
+  return [...stations, ...campuses, ...operationalLocations];
 }

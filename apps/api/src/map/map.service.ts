@@ -7,6 +7,7 @@ import { POOL_TOKEN } from "../database/database.tokens";
 
 type LocRow = {
   id: string;
+  canonical_location_id: string | null;
   slug: string;
   name: string;
   kind: string;
@@ -20,19 +21,39 @@ type LocRow = {
   station_operating_status: string | null;
 };
 
+function isOperationalLocation(kind: string): boolean {
+  return kind === "smoc_campus" || kind === "rsmoc" || kind === "csmoc";
+}
+
 @Injectable()
 export class MapService {
   constructor(@Inject(POOL_TOKEN) private readonly pool: Pool) {}
 
-  /** All map locations with per-site live health derived from alarms + telemetry freshness. */
-  async sitesLive(): Promise<MapSiteDto[]> {
+  /** All visible map locations with per-site live health derived from alarms + telemetry freshness. */
+  async sitesLive(opts?: {
+    allowedSiteNames?: string[] | null;
+    assetIds?: string[] | null;
+  }): Promise<MapSiteDto[]> {
     const locs = await this.pool.query<LocRow>(
-      `SELECT id, slug, name, kind, site_name, latitude, longitude, capacity_mw,
-              station_type, station_category, province, station_operating_status
-       FROM bms.map_locations
-       ORDER BY kind DESC, name ASC`,
+      `SELECT ml.id,
+              l.id AS canonical_location_id,
+              ml.slug,
+              ml.name,
+              ml.kind,
+              ml.site_name,
+              ml.latitude,
+              ml.longitude,
+              ml.capacity_mw,
+              ml.station_type,
+              ml.station_category,
+              ml.province,
+              ml.station_operating_status
+       FROM bms.map_locations ml
+       LEFT JOIN bms.locations l ON l.slug = ml.slug
+       ORDER BY ml.kind DESC, ml.name ASC`,
     );
 
+    const assetIds = opts?.assetIds ?? null;
     const alarmRows = await this.pool.query<{
       site_name: string;
       open_alarms: string;
@@ -43,7 +64,9 @@ export class MapService {
               COUNT(*) FILTER (WHERE al.acknowledged_at IS NULL AND al.severity = 'critical')::int AS critical_alarms
        FROM bms.alarms al
        INNER JOIN bms.assets a ON a.id = al.asset_id
+       WHERE ($1::uuid[] IS NULL OR a.id = ANY($1::uuid[]))
        GROUP BY a.site_name`,
+      [assetIds],
     );
     const alarmMap = new Map(
       alarmRows.rows.map((r) => [
@@ -71,7 +94,9 @@ export class MapService {
               COUNT(l.asset_id) FILTER (WHERE l.kw_time > now() - interval '25 seconds')::int AS fresh_count
        FROM bms.assets a
        LEFT JOIN latest l ON l.asset_id = a.id
+       WHERE ($1::uuid[] IS NULL OR a.id = ANY($1::uuid[]))
        GROUP BY a.site_name`,
+      [assetIds],
     );
     const commMap = new Map(
       commRows.rows.map((r) => [
@@ -83,9 +108,18 @@ export class MapService {
       ]),
     );
 
-    return locs.rows.map((loc) => {
+    const allowedSiteNames = opts?.allowedSiteNames;
+    const visibleLocs =
+      allowedSiteNames === null || allowedSiteNames === undefined
+        ? locs.rows
+        : locs.rows.filter(
+            (loc) => loc.site_name && allowedSiteNames.includes(loc.site_name),
+          );
+
+    return visibleLocs.map((loc) => {
       const base = {
         id: loc.id,
+        canonicalLocationId: loc.canonical_location_id,
         slug: loc.slug,
         name: loc.name,
         kind: loc.kind as MapSiteDto["kind"],
@@ -99,7 +133,7 @@ export class MapService {
         stationOperatingStatus: loc.station_operating_status,
       };
 
-      if (loc.kind === "smoc_campus" && loc.site_name) {
+      if (isOperationalLocation(loc.kind) && loc.site_name) {
         const a = alarmMap.get(loc.site_name) ?? { open: 0, critical: 0 };
         const c = commMap.get(loc.site_name) ?? { total: 0, fresh: 0 };
         const live = this.campusLive(a, c);
@@ -117,7 +151,9 @@ export class MapService {
   ): MapSiteLive {
     const ratio = c.total === 0 ? 1 : c.fresh / c.total;
     let status: MapSiteLive["status"] = "healthy";
-    if (a.critical > 0) {
+    if (c.total === 0) {
+      status = "unknown";
+    } else if (a.critical > 0) {
       status = "critical";
     } else if (a.open > 0) {
       status = "warning";

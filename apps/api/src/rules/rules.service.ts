@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 
 import {
   assets,
@@ -106,14 +106,19 @@ export class RulesService {
   constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
 
   /** Lists Sprint D automation rules with optional asset context. */
-  async listRules(): Promise<{ items: RuleListItem[] }> {
-    const rows = await this.ruleRows();
+  async listRules(assetIds?: string[] | null): Promise<{ items: RuleListItem[] }> {
+    const rows = this.filterRuleRows(await this.ruleRows(), assetIds);
     return { items: rows.map((row) => this.mapRuleRow(row)) };
   }
 
   /** Lists assets and supported telemetry points for the guided rule builder. */
-  async getBuilderCatalog(): Promise<{ assets: RuleBuilderCatalogAsset[] }> {
-    const rows = await this.db
+  async getBuilderCatalog(
+    assetIds?: string[] | null,
+  ): Promise<{ assets: RuleBuilderCatalogAsset[] }> {
+    if (assetIds && assetIds.length === 0) {
+      return { assets: [] };
+    }
+    const base = this.db
       .select({
         id: assets.id,
         code: assets.code,
@@ -121,8 +126,12 @@ export class RulesService {
         siteName: assets.siteName,
         domain: assets.domain,
       })
-      .from(assets)
-      .orderBy(asc(assets.siteName), asc(assets.code));
+      .from(assets);
+    const rows = await (assetIds
+      ? base
+          .where(inArray(assets.id, assetIds))
+          .orderBy(asc(assets.siteName), asc(assets.code))
+      : base.orderBy(asc(assets.siteName), asc(assets.code)));
 
     return {
       assets: rows.map((row) => ({
@@ -136,7 +145,9 @@ export class RulesService {
   async createDraft(
     dto: RuleDraftBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<RuleListItem> {
+    this.assertAssetInScope(dto.assetId ?? null, assetIds);
     const values = await this.validateRuleDraft(dto);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
@@ -186,12 +197,15 @@ export class RulesService {
     id: string,
     dto: RuleUpdateBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<RuleListItem> {
     const current = await this.getRuleRow(id);
+    this.assertAssetInScope(current.assetId, assetIds);
     if (current.lifecycleStatus === "archived") {
       throw new BadRequestException("Archived rules cannot be edited");
     }
     const merged = this.mergeRuleDraft(current, dto);
+    this.assertAssetInScope(merged.assetId ?? null, assetIds);
     const values = await this.validateRuleDraft(merged, id);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
@@ -224,7 +238,9 @@ export class RulesService {
   async previewRule(
     dto: RulePreviewBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<RulePreviewResult> {
+    this.assertAssetInScope(dto.assetId ?? null, assetIds);
     const values = await this.validateRuleDraft(dto, dto.id);
     const actorId = await this.resolveActorId(actor);
     const result = await this.evaluateRule({
@@ -279,8 +295,10 @@ export class RulesService {
     id: string,
     dto: RuleLifecycleBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<RuleListItem> {
     const current = await this.getRuleRow(id);
+    this.assertAssetInScope(current.assetId, assetIds);
     if (current.lifecycleStatus === "archived") {
       throw new BadRequestException("Archived rules cannot be published");
     }
@@ -299,8 +317,10 @@ export class RulesService {
     id: string,
     dto: RuleLifecycleBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<RuleListItem> {
-    await this.getRuleRow(id);
+    const current = await this.getRuleRow(id);
+    this.assertAssetInScope(current.assetId, assetIds);
     await this.writeLifecycleUpdate(id, "rule_archive", dto, actor, {
       lifecycleStatus: "archived",
       enabled: false,
@@ -314,8 +334,10 @@ export class RulesService {
     id: string,
     dto: RuleLifecycleBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<RuleListItem> {
     const current = await this.getRuleRow(id);
+    this.assertAssetInScope(current.assetId, assetIds);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
     const code = await this.nextRuleCode(`${current.code}-COPY`);
@@ -375,8 +397,12 @@ export class RulesService {
   /** Lists recent rule execution traces. */
   async listExecutions(
     query: ListRuleExecutionsQuery,
+    assetIds?: string[] | null,
   ): Promise<{ items: RuleExecutionItem[] }> {
-    const rows = await this.db
+    if (assetIds && assetIds.length === 0) {
+      return { items: [] };
+    }
+    const base = this.db
       .select({
         id: ruleExecutions.id,
         ruleId: ruleExecutions.ruleId,
@@ -390,9 +416,13 @@ export class RulesService {
         trace: ruleExecutions.trace,
       })
       .from(ruleExecutions)
-      .innerJoin(automationRules, eq(ruleExecutions.ruleId, automationRules.id))
-      .orderBy(desc(ruleExecutions.evaluatedAt))
-      .limit(query.limit);
+      .innerJoin(automationRules, eq(ruleExecutions.ruleId, automationRules.id));
+    const rows = await (assetIds
+      ? base
+          .where(inArray(automationRules.assetId, assetIds))
+          .orderBy(desc(ruleExecutions.evaluatedAt))
+          .limit(query.limit)
+      : base.orderBy(desc(ruleExecutions.evaluatedAt)).limit(query.limit));
 
     return {
       items: rows.map((row) => ({
@@ -415,8 +445,10 @@ export class RulesService {
     id: string,
     dto: RuleToggleBody,
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<RuleListItem> {
     const current = await this.getRuleRow(id);
+    this.assertAssetInScope(current.assetId, assetIds);
     if (current.lifecycleStatus !== "published") {
       throw new BadRequestException("Only published rules can be enabled or disabled");
     }
@@ -451,8 +483,9 @@ export class RulesService {
   /** Evaluates all enabled Sprint D rules and records execution traces. */
   async evaluateEnabledRules(
     actor: Pick<JwtPayload, "sub" | "email">,
+    assetIds?: string[] | null,
   ): Promise<{ items: RuleExecutionItem[] }> {
-    const rows = (await this.ruleRows()).filter(
+    const rows = this.filterRuleRows(await this.ruleRows(), assetIds).filter(
       (row) => row.enabled && row.lifecycleStatus === "published",
     );
     const items: RuleExecutionItem[] = [];
@@ -500,6 +533,22 @@ export class RulesService {
     }
 
     return { items };
+  }
+
+  private filterRuleRows(rows: RuleRow[], assetIds?: string[] | null): RuleRow[] {
+    if (assetIds === null || assetIds === undefined) {
+      return rows;
+    }
+    return rows.filter((row) => row.assetId !== null && assetIds.includes(row.assetId));
+  }
+
+  private assertAssetInScope(assetId: string | null, assetIds?: string[] | null): void {
+    if (assetIds === null || assetIds === undefined) {
+      return;
+    }
+    if (!assetId || !assetIds.includes(assetId)) {
+      throw new NotFoundException("Rule asset is outside your access scope");
+    }
   }
 
   private async ruleRows(): Promise<RuleRow[]> {

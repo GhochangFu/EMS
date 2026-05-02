@@ -8,7 +8,7 @@ import { SectionCard } from "../components/section-card";
 import { WorldMap } from "../components/world-map";
 import { AppShell } from "../layouts/app-shell";
 import { socketBaseUrl } from "../lib/socket-url";
-import type { AuthUser } from "../stores/auth-store";
+import { useAuthStore, type AuthUser } from "../stores/auth-store";
 
 type MapPageProps = {
   user: AuthUser;
@@ -16,6 +16,7 @@ type MapPageProps = {
 
 export function MapPage({ user }: MapPageProps) {
   const qc = useQueryClient();
+  const accessToken = useAuthStore((state) => state.accessToken);
   const q = useQuery({
     queryKey: ["map", "sites"],
     queryFn: fetchMapSites,
@@ -25,8 +26,14 @@ export function MapPage({ user }: MapPageProps) {
   useEffect(() => {
     const base = socketBaseUrl();
     const sockets: Socket[] = [
-      io(`${base}/ws/telemetry`, { transports: ["websocket"] }),
-      io(`${base}/ws/alarms`, { transports: ["websocket"] }),
+      io(`${base}/ws/telemetry`, {
+        transports: ["websocket"],
+        auth: { token: accessToken },
+      }),
+      io(`${base}/ws/alarms`, {
+        transports: ["websocket"],
+        auth: { token: accessToken },
+      }),
     ];
     const bump = (): void => {
       void qc.invalidateQueries({ queryKey: ["map", "sites"] });
@@ -40,22 +47,22 @@ export function MapPage({ user }: MapPageProps) {
         s.disconnect();
       }
     };
-  }, [qc]);
+  }, [accessToken, qc]);
 
   return (
     <AppShell
       user={user}
       kpiRibbon={
         <span className="text-bms-ink">
-          World map · CARTO dark basemap · live SMOC status (telemetry + alarms)
+          World map · CARTO dark basemap · live operational location status
         </span>
       }
     >
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <PageHeader
           eyebrow="Sites"
-          title="Eskom stations & SMOC campuses"
-          subtitle="Markers from Postgres · SMOC diamonds use live alarm and comm health"
+          title="Eskom stations & SMOC locations"
+          subtitle="Markers from Postgres · operational locations use live alarm and comm health"
         />
 
         {q.isLoading ? (
