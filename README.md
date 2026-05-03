@@ -5,8 +5,8 @@ Operating Centres. The seven-screen prototype is complete; the project
 has completed **Part 2 / Phase 1 pilot-ready hardening**. Phase 2 real
 ingestion Sprint 0 selected Path B because no real device/source
 information is available yet. Phase 5 Sprint A through Sprint I are
-complete, and the Location and Access implementation is paused as
-**will revisit later** rather than marked complete;
+complete, and **Phase 5 Sprint J/K/L/M/N — Location and Access** is open
+for focused hardening and demo inventory cleanup;
 protocol adapters, brokers, and AI Copilot remain out of scope until
 explicitly promoted.
 
@@ -131,13 +131,16 @@ Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
 ## Status
 
 Prototype screen set is complete. Phase 1 hardening and Phase 5 Sprint I
-UI alignment are complete. Location and Access has a partial
-implementation, but it is intentionally paused as **will revisit later**:
+UI alignment are complete. Phase 5 Sprint J/K/L/M/N — Location and Access
+is open:
 canonical locations, RSMOC demo assets, DB-backed user scopes, scoped
 realtime/API reads, location dashboard drill-down, live-location markers,
 schematic access guards, Control Room asset-group UI gating, focused
 simulator settings, telemetry dashboard indexing, and the collapsible shell
-sidebar have been added. It still needs a clean migration/seed pass,
+sidebar have been added. This hardening pass moves live Pretoria demo
+assets under `CSMOC Gauteng`, keeps Pretoria North inventory-only dummy
+assets without telemetry, and hides the prototype `/sld` and `/crac` menu
+entries temporarily. It still needs a clean migration/seed pass,
 Keycloak realm verification, automated access-control coverage, and a
 page-by-page role walkthrough before it can be called complete. Phase 2
 real ingestion remains paused; Phase 6 Three.js visuals remain later and

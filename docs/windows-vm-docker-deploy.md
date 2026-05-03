@@ -320,12 +320,13 @@ rows for the current demo:
 ```yaml
 SIM_RATE_HZ: 0.2
 SIM_ASSET_COUNT: all
-SIM_SITE_NAMES: RSMOC Western Cape,SMOC Pretoria North,RSMOC KwaZulu-Natal
+SIM_SITE_NAMES: RSMOC Western Cape,CSMOC Gauteng,RSMOC KwaZulu-Natal
 ```
 
 Keep these values on the server unless you intentionally want the simulator
 to cover more locations again. `SIM_SITE_NAMES` must match seeded
-`site_name` values exactly.
+`site_name` values exactly. Assets marked with `meta.telemetryEnabled=false`
+remain inventory-only and do not emit simulator telemetry.
 
 ### 6.4 Optional But Recommended: Change Default Passwords
 

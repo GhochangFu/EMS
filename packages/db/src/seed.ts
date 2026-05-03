@@ -145,50 +145,92 @@ async function main(): Promise<void> {
       {
         code: "TX-L1-MV",
         name: "Main TX L1",
-        siteName: "SMOC Pretoria North",
+        siteName: "CSMOC Gauteng",
         domain: "electrical",
       },
       {
         code: "SWG-MDB1",
         name: "Main Distribution Board 1",
-        siteName: "SMOC Pretoria North",
+        siteName: "CSMOC Gauteng",
         domain: "electrical",
       },
       {
         code: "UPS-A",
         name: "UPS String A",
-        siteName: "SMOC Pretoria North",
+        siteName: "CSMOC Gauteng",
         domain: "electrical",
       },
       {
         code: "CH-CRAC-101",
         name: "CRAC 101",
-        siteName: "SMOC Pretoria North",
+        siteName: "CSMOC Gauteng",
         domain: "hvac",
       },
       {
         code: "CH-CRAC-102",
         name: "CRAC 102",
-        siteName: "SMOC Pretoria North",
+        siteName: "CSMOC Gauteng",
         domain: "hvac",
       },
       {
         code: "CH-CRAC-103",
         name: "CRAC 103",
-        siteName: "SMOC Pretoria North",
+        siteName: "CSMOC Gauteng",
         domain: "hvac",
       },
       {
         code: "CH-CRAC-104",
         name: "CRAC 104",
-        siteName: "SMOC Pretoria North",
+        siteName: "CSMOC Gauteng",
         domain: "hvac",
       },
       {
         code: "PV-INV-01",
         name: "PV Inverter 01",
+        siteName: "CSMOC Gauteng",
+        domain: "electrical",
+      },
+      {
+        code: "PTA-DMY-MDB-01",
+        name: "Pretoria North Demo MDB 01",
         siteName: "SMOC Pretoria North",
         domain: "electrical",
+        meta: { telemetryEnabled: false, demoOnly: true },
+      },
+      {
+        code: "PTA-DMY-UPS-01",
+        name: "Pretoria North Demo UPS 01",
+        siteName: "SMOC Pretoria North",
+        domain: "electrical",
+        meta: { telemetryEnabled: false, demoOnly: true },
+      },
+      {
+        code: "PTA-DMY-CRAC-01",
+        name: "Pretoria North Demo CRAC 01",
+        siteName: "SMOC Pretoria North",
+        domain: "hvac",
+        meta: { telemetryEnabled: false, demoOnly: true },
+      },
+      {
+        code: "PTA-DMY-CRAC-02",
+        name: "Pretoria North Demo CRAC 02",
+        siteName: "SMOC Pretoria North",
+        domain: "hvac",
+        meta: { telemetryEnabled: false, demoOnly: true },
+      },
+      {
+        code: "PTA-DMY-RACK-01",
+        name: "Pretoria North Demo Network Rack 01",
+        siteName: "SMOC Pretoria North",
+        domain: "it",
+        meta: { telemetryEnabled: false, demoOnly: true },
+      },
+      {
+        code: "PTA-DMY-ENV-01",
+        name: "Pretoria North Demo Environment Sensor 01",
+        siteName: "SMOC Pretoria North",
+        domain: "environment",
+        meta: { telemetryEnabled: false, demoOnly: true },
       },
       {
         code: "CR-UTILITY-11KV",
@@ -399,6 +441,7 @@ async function main(): Promise<void> {
             name: a.name,
             siteName: a.siteName,
             domain: a.domain,
+            meta: "meta" in a ? a.meta : null,
           })
           .where(eq(assets.id, row[0].id));
         assetRows.push({ id: row[0].id, code: a.code });
@@ -411,6 +454,7 @@ async function main(): Promise<void> {
           name: a.name,
           siteName: a.siteName,
           domain: a.domain,
+          meta: "meta" in a ? a.meta : null,
         })
         .returning({ id: assets.id, code: assets.code });
       if (ins[0]) {
@@ -1137,6 +1181,16 @@ async function main(): Promise<void> {
       FROM bms.locations AS l
       WHERE a.site_name = l.name
         AND (a.location_id IS NULL OR a.location_id <> l.id)
+    `);
+
+    await pool.query(`
+      DELETE FROM bms.asset_group_members AS agm
+      USING bms.asset_groups AS ag,
+            bms.assets AS a
+      WHERE agm.asset_group_id = ag.id
+        AND agm.asset_id = a.id
+        AND a.location_id IS NOT NULL
+        AND ag.location_id <> a.location_id
     `);
 
     const assetScopeRows = await pool.query<{

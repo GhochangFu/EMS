@@ -336,7 +336,7 @@ function stepHvac(assetId) {
 }
 
 async function loadAssets() {
-  const filters = [];
+  const filters = [`coalesce(meta->>'telemetryEnabled', 'true') <> 'false'`];
   const params = [];
   if (siteNames.length > 0) {
     params.push(siteNames);

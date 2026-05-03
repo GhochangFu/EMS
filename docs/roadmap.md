@@ -1,7 +1,7 @@
 # Roadmap — Eskom SMOC BMS
 
-> **Active phase:** Part 2 / Phase 5 Location and Access is paused as
-> **will revisit later**; next sprint is not promoted.
+> **Active phase:** Part 2 / Phase 5 Sprint J/K/L/M/N — Location and
+> Access hardening is open.
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:
@@ -303,7 +303,7 @@ Process (`AGENTS.md` §10).
   coverage (95%).
 
 ### Phase 5 — Operations modules (~3 weeks)
-- **Status:** Sprint I complete; Location and Access paused as will revisit later
+- **Status:** Sprint J/K/L/M/N Location and Access hardening open
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
   reports. MinIO / object storage graduates only when report files need
   persisted storage.
@@ -551,16 +551,27 @@ Process (`AGENTS.md` §10).
   verification passed.
 
 #### Phase 5 Sprint J/K/L/M/N — Location and Access
-- **Status:** will revisit later — partially implemented, not closed as complete
+- **Status:** active — reopened for focused hardening and demo inventory cleanup
 - **Goal:** add canonical operational locations, DB-backed access scopes,
   location dashboard drill-down, and scoped UX before the next feature sprint.
-- **Implemented before pause**
+- **Current sprint changes**
+  - Bottom status bar aligned with `ESKOM_SMOC.html` powered-by copy:
+    "Powered By: Euphoria Infotech India Limited".
+  - Existing SMOC Pretoria North schematic/demo assets and their asset-group
+    memberships moved under `CSMOC Gauteng`.
+  - `CSMOC Gauteng` added to the focused simulator scope so those moved
+    assets continue to emit live telemetry.
+  - Six inventory-only dummy assets added under `SMOC Pretoria North` with
+    `meta.telemetryEnabled=false`; the simulator excludes these from telemetry.
+  - `/sld` Electrical SLD and `/crac` HVAC-CRAC are temporarily hidden from
+    the left module menu while direct routes remain available for validation.
+- **Implemented before this hardening pass**
   - `bms.locations`, `assets.location_id`, asset groups, group membership,
     user-location grants, and user-asset-group grants.
   - Idempotent seed/backfill from `map_locations`, preserving `site_name`
     compatibility while moving APIs toward stable `locationId`.
   - Minimal demo assets cloned into empty RSMOC locations with unique
-    location-prefixed codes; CSMOC Gauteng remains map-only for now.
+    location-prefixed codes.
   - Demo local users: global admin, Western Cape all-asset location admin,
     and Western Cape HVAC asset-group admin.
   - DB-backed `GET /api/v1/auth/me`, scoped asset/map/dashboard/telemetry,
@@ -574,12 +585,12 @@ Process (`AGENTS.md` §10).
     app logout flow.
   - Simulator throttling/focus for demo performance:
     `SIM_RATE_HZ=0.2`, `SIM_ASSET_COUNT=all`, and
-    `SIM_SITE_NAMES=RSMOC Western Cape,SMOC Pretoria North,RSMOC KwaZulu-Natal`.
+    `SIM_SITE_NAMES=RSMOC Western Cape,CSMOC Gauteng,RSMOC KwaZulu-Natal`.
   - Telemetry maintenance/performance cleanup: `telemetry.point_values`
     cleared during diagnostics and an index added for dashboard latest-kW
     lookups.
-  - `PV-INV-01` moved from RSMOC Western Cape to SMOC Pretoria North so
-    the fixed Electrical SLD binding no longer grants a partial WC match.
+  - `PV-INV-01` moved from RSMOC Western Cape, then grouped with the
+    live schematic/demo assets now under `CSMOC Gauteng`.
   - Fixed schematic access guards so Pretoria-only SLD/CRAC pages require
     the complete bound asset set.
   - Control Room overview cards, quick drilldowns, and statuses made
@@ -587,11 +598,7 @@ Process (`AGENTS.md` §10).
   - Main Dashboard location cards now mark locations with live telemetry,
     and the left module sidebar is collapsible while preserving mockup
     grouping/active-state language.
-- **Pause reason:** the broad scope now mixes data modelling, role/security
-  semantics, seeded demo inventory, simulator performance, and page-wise
-  UX. It should be revisited as a dedicated hardening sprint with a full
-  role walkthrough instead of being marked complete.
-- **Revisit checklist**
+- **Hardening checklist**
   - Run a fresh DB migration/seed from empty native and compose databases.
   - Re-run Keycloak realm import/update checks for `admin`, `wc-admin`, and
     `wc-hvac-admin`.
@@ -601,7 +608,7 @@ Process (`AGENTS.md` §10).
     schematics or remain dashboard/list-only demo assets.
   - Add focused automated tests for access-control helpers, route/page
     visibility, and scoped WebSocket filtering.
-- **Validation before pause:** latest focused checks passed for
+- **Previous focused validation:** latest focused checks passed for
   `pnpm --filter web build`, `pnpm --filter @bms/db build`, relevant
   lints, and Docker `web` rebuild/restart. Full clean migration/seed and
   all-role walkthrough remain pending for the revisit.

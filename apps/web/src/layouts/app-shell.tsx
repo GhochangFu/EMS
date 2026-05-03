@@ -1,14 +1,10 @@
 import { useState, type ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
-import { fetchAssets } from "../api/assets";
 import { isOidcEnabled, startOidcLogout } from "../api/oidc";
-import { CRAC_TRACKED_CODES } from "../components/live-svg/crac-bindings";
-import { SLD_TRACKED_ASSET_CODES } from "../components/live-svg/sld-bindings";
 import { canAccessControlRoomPath } from "../lib/control-room-access";
 import { roleLabel } from "../lib/role-label";
-import { hasCompleteSchematicAssets } from "../lib/schematic-access";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { StatusBarClock } from "../components/status-bar-clock";
 
@@ -58,6 +54,8 @@ const moduleGroups = [
   },
 ] as const;
 
+const temporarilyHiddenModulePaths = new Set(["/sld", "/crac"]);
+
 function shortLabel(label: string): string {
   return label
     .replace(/^CR · /, "")
@@ -88,17 +86,6 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
   const scope = useAuthStore((state) => state.scope);
   const oidcIdToken = useAuthStore((state) => state.oidcIdToken);
   const clearSession = useAuthStore((state) => state.clearSession);
-  const assetsQuery = useQuery({
-    queryKey: ["assets"],
-    queryFn: fetchAssets,
-  });
-  const groupCodes = new Set(scope?.assetGroups.map((group) => group.code) ?? []);
-  const sldAvailable =
-    !assetsQuery.isSuccess ||
-    hasCompleteSchematicAssets(assetsQuery.data, SLD_TRACKED_ASSET_CODES);
-  const cracAvailable =
-    !assetsQuery.isSuccess ||
-    hasCompleteSchematicAssets(assetsQuery.data, CRAC_TRACKED_CODES);
   const locationScopeLabel =
     scope?.kind === "global"
       ? "Global access"
@@ -111,15 +98,8 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
           : "No assigned scope";
 
   function isVisible(path: string): boolean {
-    if (path === "/sld") {
-      return scope?.kind === "asset_group"
-        ? groupCodes.has("electrical") && sldAvailable
-        : sldAvailable;
-    }
-    if (path === "/crac") {
-      return scope?.kind === "asset_group"
-        ? groupCodes.has("hvac") && cracAvailable
-        : cracAvailable;
+    if (temporarilyHiddenModulePaths.has(path)) {
+      return false;
     }
     if (scope?.kind !== "asset_group") {
       return true;
@@ -276,7 +256,12 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
           <span>Prototype · telemetry-driven</span>
           <StatusBarClock />
         </span>
-        <span className="font-mono">v0.1</span>
+        <span className="flex items-center gap-2">
+          <span className="font-mono">v0.1</span>
+          <span className="text-bms-green">
+            Powered By: <b className="text-white">Euphoria Infotech India Limited</b>
+          </span>
+        </span>
       </footer>
     </div>
   );
