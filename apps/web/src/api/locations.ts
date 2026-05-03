@@ -16,9 +16,19 @@ export async function fetchLocationKpis(): Promise<{ items: LocationKpiSummary[]
 /** GET /api/v1/dashboard/locations/:locationId */
 export async function fetchLocationDashboard(
   locationId: string,
+  opts?: { page?: number; pageSize?: number },
 ): Promise<LocationDashboardDto> {
+  const params = new URLSearchParams();
+  if (opts?.page) {
+    params.set("page", String(opts.page));
+  }
+  if (opts?.pageSize) {
+    params.set("pageSize", String(opts.pageSize));
+  }
+  const queryString = params.toString();
+  const qs = queryString ? `?${queryString}` : "";
   const res = await fetch(
-    `${base}/api/v1/dashboard/locations/${locationId}`,
+    `${base}/api/v1/dashboard/locations/${locationId}${qs}`,
     withAuth(),
   );
   if (!res.ok) {

@@ -71,6 +71,36 @@ export type LocationKpiSummary = {
 };
 
 export type LocationDashboardDto = LocationKpiSummary & {
+  assets: {
+    items: Array<{
+      id: string;
+      code: string;
+      name: string;
+      domain: string;
+      latestKw: number | null;
+      latestTelemetryAt: string | null;
+      freshness: "live" | "stale" | "none";
+      telemetry: Array<{
+        pointKey: string;
+        value: number;
+        unit: string | null;
+        time: string;
+      }>;
+      openAlarmCount: number;
+      criticalAlarmCount: number;
+      warningAlarmCount: number;
+      latestAlarm: {
+        severity: string;
+        message: string;
+        raisedAt: string;
+      } | null;
+      openWorkOrderCount: number;
+    }>;
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
   topAssets: Array<{
     id: string;
     code: string;

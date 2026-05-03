@@ -8,6 +8,9 @@ import type { LocationDashboardDto, LocationKpiSummary } from "@bms/shared";
 
 import { POOL_TOKEN } from "../database/database.tokens";
 
+type LocationDashboardAssetRow = LocationDashboardDto["assets"]["items"][number];
+type LocationDashboardTelemetrySample = LocationDashboardAssetRow["telemetry"][number];
+
 @Injectable()
 export class DashboardService {
   constructor(@Inject(POOL_TOKEN) private readonly pool: Pool) {}
@@ -86,6 +89,8 @@ export class DashboardService {
       locationIds?: string[] | null;
       assetIds?: string[] | null;
       partial?: boolean;
+      page?: number;
+      pageSize?: number;
     },
   ): Promise<LocationDashboardDto | null> {
     if (opts?.locationIds && !opts.locationIds.includes(locationId)) {
@@ -96,29 +101,134 @@ export class DashboardService {
     if (!card) {
       return null;
     }
-    const topAssets = await this.pool.query<{
+    const page = opts?.page ?? 1;
+    const pageSize = opts?.pageSize ?? 25;
+    const offset = (page - 1) * pageSize;
+    const assetsPage = await this.pool.query<{
       id: string;
       code: string;
       name: string;
       domain: string;
-      kw: string | null;
+      latest_kw: string | null;
+      latest_telemetry_at: Date | string | null;
+      latest_telemetry: unknown;
+      open_alarm_count: string;
+      critical_alarm_count: string;
+      warning_alarm_count: string;
+      latest_alarm_severity: string | null;
+      latest_alarm_message: string | null;
+      latest_alarm_raised_at: Date | string | null;
+      open_work_order_count: string;
     }>(
       `
-      WITH latest AS (
-        SELECT DISTINCT ON (asset_id) asset_id, value AS kw
-        FROM telemetry.point_values
-        WHERE point_key = 'kw'
-        ORDER BY asset_id, time DESC
+      WITH scoped_assets AS (
+        SELECT a.id, a.code, a.name, a.domain
+        FROM bms.assets a
+        WHERE a.location_id = $1
+          AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
+        ORDER BY a.code
+        LIMIT $3 OFFSET $4
+      ),
+      latest_points AS (
+        SELECT DISTINCT ON (pv.asset_id, pv.point_key)
+          pv.asset_id,
+          pv.point_key,
+          pv.value,
+          pv.unit,
+          pv.time
+        FROM telemetry.point_values pv
+        INNER JOIN scoped_assets sa ON sa.id = pv.asset_id
+        ORDER BY pv.asset_id, pv.point_key, pv.time DESC
+      ),
+      telemetry AS (
+        SELECT
+          asset_id,
+          MAX(time) AS latest_telemetry_at,
+          MAX(value) FILTER (WHERE point_key = 'kw') AS latest_kw,
+          COALESCE(
+            jsonb_agg(
+              jsonb_build_object(
+                'pointKey', point_key,
+                'value', value,
+                'unit', unit,
+                'time', time
+              )
+              ORDER BY
+                CASE point_key
+                  WHEN 'kw' THEN 1
+                  WHEN 'voltage_l1_v' THEN 2
+                  WHEN 'current_a' THEN 3
+                  WHEN 'pf' THEN 4
+                  WHEN 'supply_air_temp_c' THEN 5
+                  WHEN 'return_air_temp_c' THEN 6
+                  WHEN 'fan_speed_pct' THEN 7
+                  WHEN 'cooling_kw' THEN 8
+                  WHEN 'rack_kw' THEN 9
+                  WHEN 'rack_temp_c' THEN 10
+                  WHEN 'temperature_c' THEN 11
+                  WHEN 'humidity_pct' THEN 12
+                  ELSE 99
+                END,
+                point_key
+            ),
+            '[]'::jsonb
+          ) AS latest_telemetry
+        FROM latest_points
+        GROUP BY asset_id
+      ),
+      alarm_rollup AS (
+        SELECT
+          al.asset_id,
+          COUNT(*) FILTER (WHERE al.acknowledged_at IS NULL)::int AS open_alarm_count,
+          COUNT(*) FILTER (
+            WHERE al.acknowledged_at IS NULL AND al.severity = 'critical'
+          )::int AS critical_alarm_count,
+          COUNT(*) FILTER (
+            WHERE al.acknowledged_at IS NULL AND al.severity IN ('warning', 'major')
+          )::int AS warning_alarm_count,
+          (ARRAY_AGG(al.severity ORDER BY al.raised_at DESC) FILTER (
+            WHERE al.acknowledged_at IS NULL
+          ))[1] AS latest_alarm_severity,
+          (ARRAY_AGG(al.message ORDER BY al.raised_at DESC) FILTER (
+            WHERE al.acknowledged_at IS NULL
+          ))[1] AS latest_alarm_message,
+          (ARRAY_AGG(al.raised_at ORDER BY al.raised_at DESC) FILTER (
+            WHERE al.acknowledged_at IS NULL
+          ))[1] AS latest_alarm_raised_at
+        FROM bms.alarms al
+        INNER JOIN scoped_assets sa ON sa.id = al.asset_id
+        GROUP BY al.asset_id
+      ),
+      work_order_rollup AS (
+        SELECT
+          wo.asset_id,
+          COUNT(*) FILTER (WHERE wo.status <> 'closed')::int AS open_work_order_count
+        FROM bms.work_orders wo
+        INNER JOIN scoped_assets sa ON sa.id = wo.asset_id
+        GROUP BY wo.asset_id
       )
-      SELECT a.id, a.code, a.name, a.domain, latest.kw::float8 AS kw
-      FROM bms.assets a
-      LEFT JOIN latest ON latest.asset_id = a.id
-      WHERE a.location_id = $1
-        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
-      ORDER BY latest.kw DESC NULLS LAST, a.code
-      LIMIT 8
+      SELECT
+        sa.id,
+        sa.code,
+        sa.name,
+        sa.domain,
+        telemetry.latest_kw::float8 AS latest_kw,
+        telemetry.latest_telemetry_at,
+        COALESCE(telemetry.latest_telemetry, '[]'::jsonb) AS latest_telemetry,
+        COALESCE(alarm_rollup.open_alarm_count, 0)::int AS open_alarm_count,
+        COALESCE(alarm_rollup.critical_alarm_count, 0)::int AS critical_alarm_count,
+        COALESCE(alarm_rollup.warning_alarm_count, 0)::int AS warning_alarm_count,
+        alarm_rollup.latest_alarm_severity,
+        alarm_rollup.latest_alarm_message,
+        alarm_rollup.latest_alarm_raised_at,
+        COALESCE(work_order_rollup.open_work_order_count, 0)::int AS open_work_order_count
+      FROM scoped_assets sa
+      LEFT JOIN telemetry ON telemetry.asset_id = sa.id
+      LEFT JOIN alarm_rollup ON alarm_rollup.asset_id = sa.id
+      LEFT JOIN work_order_rollup ON work_order_rollup.asset_id = sa.id
+      ORDER BY sa.code
       `,
-      [locationId, opts?.assetIds ?? null],
+      [locationId, opts?.assetIds ?? null, pageSize, offset],
     );
     const workOrders = await this.pool.query<{ count: string }>(
       `
@@ -131,14 +241,52 @@ export class DashboardService {
       `,
       [locationId, opts?.assetIds ?? null],
     );
-    return {
-      ...card,
-      topAssets: topAssets.rows.map((row) => ({
+    const assetItems = assetsPage.rows.map((row): LocationDashboardAssetRow => {
+      const latestTelemetryAt = this.toIsoString(row.latest_telemetry_at);
+      const latestAlarmRaisedAt = this.toIsoString(row.latest_alarm_raised_at);
+      return {
         id: row.id,
         code: row.code,
         name: row.name,
         domain: row.domain,
-        kw: row.kw === null ? null : this.round(Number(row.kw)),
+        latestKw:
+          row.latest_kw === null ? null : this.round(Number(row.latest_kw)),
+        latestTelemetryAt,
+        freshness: this.telemetryFreshness(latestTelemetryAt),
+        telemetry: this.parseTelemetrySamples(row.latest_telemetry),
+        openAlarmCount: Number(row.open_alarm_count),
+        criticalAlarmCount: Number(row.critical_alarm_count),
+        warningAlarmCount: Number(row.warning_alarm_count),
+        latestAlarm:
+          row.latest_alarm_severity &&
+          row.latest_alarm_message &&
+          latestAlarmRaisedAt
+            ? {
+                severity: row.latest_alarm_severity,
+                message: row.latest_alarm_message,
+                raisedAt: latestAlarmRaisedAt,
+              }
+            : null,
+        openWorkOrderCount: Number(row.open_work_order_count),
+      };
+    });
+    const totalPages =
+      card.assetCount === 0 ? 0 : Math.ceil(card.assetCount / pageSize);
+    return {
+      ...card,
+      assets: {
+        items: assetItems,
+        page,
+        pageSize,
+        total: card.assetCount,
+        totalPages,
+      },
+      topAssets: assetItems.slice(0, 8).map((row) => ({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        domain: row.domain,
+        kw: row.latestKw,
       })),
       workOrdersOpen: Number(workOrders.rows[0]?.count ?? 0),
     };
@@ -265,6 +413,59 @@ export class DashboardService {
 
   private round(value: number): number {
     return Math.round(value * 100) / 100;
+  }
+
+  private toIsoString(value: Date | string | null): string | null {
+    if (!value) {
+      return null;
+    }
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+    return date.toISOString();
+  }
+
+  private telemetryFreshness(
+    latestTelemetryAt: string | null,
+  ): "live" | "stale" | "none" {
+    if (!latestTelemetryAt) {
+      return "none";
+    }
+    const ageMs = Date.now() - new Date(latestTelemetryAt).getTime();
+    return ageMs <= 25_000 ? "live" : "stale";
+  }
+
+  private parseTelemetrySamples(raw: unknown): LocationDashboardTelemetrySample[] {
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    const samples: LocationDashboardTelemetrySample[] = [];
+    for (const item of raw) {
+      if (typeof item !== "object" || item === null) {
+        continue;
+      }
+      const record = item as Record<string, unknown>;
+      const pointKey = record.pointKey;
+      const value = record.value;
+      const unit = record.unit;
+      const time = record.time;
+      if (
+        typeof pointKey !== "string" ||
+        typeof value !== "number" ||
+        (unit !== null && typeof unit !== "string") ||
+        typeof time !== "string"
+      ) {
+        continue;
+      }
+      samples.push({
+        pointKey,
+        value: this.round(value),
+        unit,
+        time,
+      });
+    }
+    return samples;
   }
 
   /**

@@ -565,6 +565,13 @@ Process (`AGENTS.md` §10).
     `meta.telemetryEnabled=false`; the simulator excludes these from telemetry.
   - `/sld` Electrical SLD and `/crac` HVAC-CRAC are temporarily hidden from
     the left module menu while direct routes remain available for validation.
+- **Next planned modification**
+  - Replace the Location Dashboard "Top assets" table with a more informative
+    paginated all-assets telemetry and risk panel that combines per-asset
+    telemetry, freshness/staleness, alarm severity, warning state, and
+    work-order context. Every scoped asset for the selected location must be
+    reachable in the table; assets without telemetry should still appear as
+    inventory rows marked "No telemetry".
 - **Implemented before this hardening pass**
   - `bms.locations`, `assets.location_id`, asset groups, group membership,
     user-location grants, and user-asset-group grants.

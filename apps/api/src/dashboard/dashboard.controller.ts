@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   NotFoundException,
@@ -7,10 +8,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { JwtPayload } from "@bms/shared";
+import { ZodError } from "zod";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { locationDashboardQuerySchema } from "./dashboard.schema";
 import { DashboardService } from "./dashboard.service";
 
 @Controller("dashboard")
@@ -44,7 +47,9 @@ export class DashboardController {
   async locationDashboard(
     @CurrentUser() user: JwtPayload,
     @Param("locationId") locationId: string,
+    @Query() query: unknown,
   ) {
+    const parsedQuery = this.parseLocationDashboardQuery(query);
     const currentUser = await this.accessControl.currentUser(user);
     const payload = await this.dashboard.locationDashboard(locationId, {
       locationIds:
@@ -54,6 +59,8 @@ export class DashboardController {
       assetIds:
         currentUser.scope.kind === "global" ? null : currentUser.scope.assetIds,
       partial: currentUser.scope.kind === "asset_group",
+      page: parsedQuery.page,
+      pageSize: parsedQuery.pageSize,
     });
     if (!payload) {
       throw new NotFoundException("Location not found or outside your access scope");
@@ -88,5 +95,16 @@ export class DashboardController {
     return this.accessControl
       .readableAssetIds(user)
       .then((assetIds) => this.dashboard.energyTopConsumers(window, lim, assetIds));
+  }
+
+  private parseLocationDashboardQuery(query: unknown) {
+    try {
+      return locationDashboardQuerySchema.parse(query);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
   }
 }
