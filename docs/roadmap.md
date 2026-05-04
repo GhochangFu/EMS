@@ -561,10 +561,15 @@ Process (`AGENTS.md` §10).
     memberships moved under `CSMOC Gauteng`.
   - `CSMOC Gauteng` added to the focused simulator scope so those moved
     assets continue to emit live telemetry.
-  - Six inventory-only dummy assets added under `SMOC Pretoria North` with
-    `meta.telemetryEnabled=false`; the simulator excludes these from telemetry.
+  - `SMOC Pretoria North` and its remaining inventory-only dummy assets were
+    removed from seeded data and existing databases; the location no longer
+    appears on the Main Dashboard or Sites Map after migration.
   - `/sld` Electrical SLD and `/crac` HVAC-CRAC are temporarily hidden from
     the left module menu while direct routes remain available for validation.
+  - Product branding introduced as `InfraPulse` across the login flow, app
+    shell, and Executive Dashboard copy; the login screen now follows the
+    `ESKOM_SMOC.html` split hero/sign-in card direction and includes
+    "Powered By: Euphoria Infotech India Limited".
 - **Next planned modification**
   - Replace the Location Dashboard "Top assets" table with a more informative
     paginated all-assets telemetry and risk panel that combines per-asset

@@ -134,10 +134,10 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
       <header className="flex h-12 shrink-0 items-center justify-between bg-bms-header px-4 text-sm text-white">
         <div className="flex items-center gap-3">
           <span className="font-condensed text-lg font-bold tracking-tight text-bms-green">
-            SMOC BMS
+            InfraPulse
           </span>
           <span className="hidden text-white/70 sm:inline">
-            Eskom Smart Metering Operating Centre
+            Eskom SMOC Operations Platform
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -253,7 +253,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
 
       <footer className="flex h-8 shrink-0 items-center justify-between bg-bms-header px-4 text-xs text-white/70">
         <span className="flex items-center gap-2">
-          <span>Prototype · telemetry-driven</span>
+          <span>InfraPulse · telemetry-driven</span>
           <StatusBarClock />
         </span>
         <span className="flex items-center gap-2">

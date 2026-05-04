@@ -43,15 +43,15 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
-export const smocCampusesSeed = [
-  {
-    slug: "smoc-pretoria-north",
-    name: "SMOC Pretoria North",
-    siteName: "SMOC Pretoria North",
-    lat: -25.75,
-    lng: 28.19,
-  },
-] as const;
+type SmocCampusSeed = {
+  slug: string;
+  name: string;
+  siteName: string;
+  lat: number;
+  lng: number;
+};
+
+export const smocCampusesSeed: readonly SmocCampusSeed[] = [];
 
 /** RSMOC / CSMOC locations supplied for the location-access planning sprint. */
 export const operationalLocationsSeed = [

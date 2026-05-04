@@ -69,7 +69,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
             {stale ? "Stale" : "Live"}
           </span>
           <span className="text-bms-ink">
-            Executive Summary · Eskom SMOC Operating Dashboard
+            Executive Summary · InfraPulse Operating Dashboard
           </span>
           <span className="hidden text-bms-muted sm:inline">
             · Total load & alarms from telemetry + DB
@@ -80,7 +80,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <PageHeader
           eyebrow="R.dash"
-          title="Executive Summary · ESKOM SMOC Operating Dashboard"
+          title="Executive Summary · InfraPulse Operating Dashboard"
           subtitle="Live operational overview · KPI ribbon · telemetry trend"
         />
 

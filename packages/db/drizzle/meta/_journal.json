@@ -99,6 +99,13 @@
       "when": 1778284800000,
       "tag": "0013_csmoc_gauteng_pretoria_asset_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1778371200000,
+      "tag": "0014_remove_smoc_pretoria_north",
+      "breakpoints": true
     }
   ]
 }
