@@ -7,6 +7,7 @@ import { canAccessControlRoomPath } from "../lib/control-room-access";
 import { roleLabel } from "../lib/role-label";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { StatusBarClock } from "../components/status-bar-clock";
+import trinetraLogoUrl from "../assets/trinetra-logo.jpeg";
 
 const topNav = [
   { label: "Overview", to: "/" },
@@ -133,11 +134,16 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
     <div className="flex min-h-screen flex-col bg-bms-canvas text-bms-ink">
       <header className="flex h-12 shrink-0 items-center justify-between bg-bms-header px-4 text-sm text-white">
         <div className="flex items-center gap-3">
+          <img
+            src={trinetraLogoUrl}
+            alt="TRINETRA"
+            className="h-7 rounded bg-white px-2 py-1"
+          />
           <span className="font-condensed text-lg font-bold tracking-tight text-bms-green">
-            InfraPulse
+            TRINETRA
           </span>
           <span className="hidden text-white/70 sm:inline">
-            Eskom SMOC Operations Platform
+            Intelligent Building Management System
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -253,7 +259,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
 
       <footer className="flex h-8 shrink-0 items-center justify-between bg-bms-header px-4 text-xs text-white/70">
         <span className="flex items-center gap-2">
-          <span>InfraPulse · telemetry-driven</span>
+          <span>TRINETRA · telemetry-driven</span>
           <StatusBarClock />
         </span>
         <span className="flex items-center gap-2">

@@ -566,9 +566,10 @@ Process (`AGENTS.md` §10).
     appears on the Main Dashboard or Sites Map after migration.
   - `/sld` Electrical SLD and `/crac` HVAC-CRAC are temporarily hidden from
     the left module menu while direct routes remain available for validation.
-  - Product branding introduced as `InfraPulse` across the login flow, app
-    shell, and Executive Dashboard copy; the login screen now follows the
-    `ESKOM_SMOC.html` split hero/sign-in card direction and includes
+  - Final product branding set to `TRINETRA` across the login flow, app
+    shell, browser title, and Executive Dashboard copy; the login screen now
+    follows the `TRINETRA.html` split hero/sign-in card direction, uses the
+    supplied `Trin.jpeg` logo, and includes
     "Powered By: Euphoria Infotech India Limited".
 - **Next planned modification**
   - Replace the Location Dashboard "Top assets" table with a more informative

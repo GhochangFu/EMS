@@ -6,6 +6,7 @@ import { fetchCurrentUser, loginRequest } from "../api/login";
 import { isOidcEnabled, startOidcLogin } from "../api/oidc";
 import { landingRouteForScope } from "../lib/landing-route";
 import { useAuthStore } from "../stores/auth-store";
+import trinetraLogoUrl from "../assets/trinetra-logo.jpeg";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -49,24 +50,27 @@ export function LoginPage() {
           <div className="absolute right-8 top-8 h-36 w-36 rounded-full border border-bms-green/30 bg-bms-green/10 blur-sm" />
           <div className="absolute bottom-12 left-10 h-24 w-24 rounded-full border border-white/10 bg-white/5" />
           <div className="relative">
-            <div className="inline-flex items-center gap-2 rounded-full border border-bms-green/30 bg-bms-green/10 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] text-bms-green">
-              InfraPulse
+            <div className="flex justify-center">
+              <img
+                src={trinetraLogoUrl}
+                alt="TRINETRA"
+                className="w-full max-w-[560px] rounded-lg bg-white px-5 py-3 shadow-xl"
+              />
             </div>
             <h1 className="mt-8 max-w-xl font-condensed text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-              Smart infrastructure command for Eskom SMOC operations.
+              Intelligent <span className="text-bms-green">Building Management</span> · Smart insight, always on.
             </h1>
             <p className="mt-4 max-w-lg text-sm leading-6 text-white/72">
-              Real-time telemetry, location-aware access, alarms, work orders,
-              energy insight, and control-room visibility in one operational
-              console.
+              Unified IBMS for power, HVAC, IT, security, metering, alarms, and
+              work orders in one operator console for Eskom SMOC operations.
             </p>
           </div>
 
           <div className="relative mt-10 grid gap-3 sm:grid-cols-3">
             {[
+              ["10", "Sites"],
               ["Live", "Telemetry"],
-              ["Scoped", "Location access"],
-              ["24/7", "Operations view"],
+              ["99.98%", "Uptime"],
             ].map(([value, label]) => (
               <div
                 key={label}
@@ -91,15 +95,20 @@ export function LoginPage() {
                   Secure access
                 </div>
                 <h2 className="mt-2 font-condensed text-3xl font-bold text-bms-ink">
-                  Sign in to InfraPulse
+                  Sign in to TRINETRA
                 </h2>
                 <p className="mt-1 text-sm text-bms-muted">
-                  Enterprise console for Eskom SMOC location operations.
+                  Enterprise SSO and local pilot access for the Intelligent Building Management System.
                 </p>
               </div>
-              <span className="rounded-full border border-bms-green/20 bg-bms-green/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-bms-green">
-                Pilot
-              </span>
+              <div className="flex flex-col items-end gap-2">
+                <span className="rounded bg-[#003366] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
+                  Euphoria Delivery
+                </span>
+                <span className="font-mono text-[10px] uppercase tracking-wide text-bms-muted">
+                  Confidential
+                </span>
+              </div>
             </div>
         {oidcEnabled ? (
           <div className="mt-6 space-y-4">
@@ -115,9 +124,6 @@ export function LoginPage() {
             >
               Sign in securely with Keycloak
             </button>
-            <p className="text-xs text-bms-muted">
-              Use `admin@bms.local` / `admin123` in the local Keycloak realm.
-            </p>
           </div>
         ) : (
           <form className="mt-6 space-y-4" onSubmit={onSubmit}>
@@ -162,7 +168,7 @@ export function LoginPage() {
                 Access profile
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-                {["Global Admin", "Location Admin", "Asset Group"].map((role) => (
+                {["TRINETRA Admin", "IBMS Operator", "Energy Manager"].map((role) => (
                   <span
                     key={role}
                     className="rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-center font-semibold text-bms-muted"
@@ -187,7 +193,7 @@ export function LoginPage() {
           </form>
         )}
             <div className="mt-6 border-t border-gray-100 pt-4 text-center text-[11px] leading-5 text-bms-muted">
-              InfraPulse v0.1<br />
+              TRINETRA v0.1<br />
               Powered By:{" "}
               <b className="text-bms-ink">Euphoria Infotech India Limited</b>
             </div>
