@@ -16,7 +16,7 @@ import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
-import { canWriteOrganizations } from "../../lib/admin-access";
+import { canWriteOrganizations, canAccessOnboarding } from "../../lib/admin-access";
 import type { AuthUser } from "../../stores/auth-store";
 
 type OrganizationsAdminPageProps = {
@@ -28,6 +28,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canWrite = canWriteOrganizations(user.role);
+  const canOnboard = canAccessOnboarding(user.role);
   const [activeFilter, setActiveFilter] = useState<MasterDataActiveFilter>("all");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -162,6 +163,17 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                       </td>
                       <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
                         <div className="flex gap-2">
+                          {canOnboard && item.active ? (
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-bms-green"
+                              onClick={() =>
+                                navigate(`/admin/organizations/${item.id}/onboarding`)
+                              }
+                            >
+                              Onboard with AI
+                            </button>
+                          ) : null}
                           {canWrite ? (
                             <>
                               <button

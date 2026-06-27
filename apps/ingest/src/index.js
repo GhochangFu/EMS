@@ -8,6 +8,8 @@ import { resolve } from "node:path";
 import mqtt from "mqtt";
 import pg from "pg";
 
+import { resolveMqttConnection } from "./rtu-config.js";
+
 const pkgRoot = process.cwd();
 config({ path: resolve(pkgRoot, "../../apps/api/.env") });
 config({ path: resolve(pkgRoot, ".env") });
@@ -21,9 +23,6 @@ const mqttHost = process.env.MQTT_HOST ?? "phe.thinkiot.co.in";
 const mqttPort = Number(process.env.MQTT_PORT ?? "8883");
 const mqttUser = process.env.MQTT_USERNAME;
 const mqttPassword = process.env.MQTT_PASSWORD;
-if (!mqttUser || !mqttPassword) {
-  throw new Error("MQTT_USERNAME and MQTT_PASSWORD are required");
-}
 
 const metricsPort = Number(process.env.INGEST_METRICS_PORT ?? "9102");
 const NOTIFY_CHANNEL = "bms_telemetry";
@@ -59,6 +58,9 @@ function chunkReadings(readings) {
   return chunks;
 }
 
+/** @type {{ host: string, port: number, username?: string, password?: string } | null} */
+let activeMqttConnection = null;
+
 async function loadMapping() {
   const res = await pool.query(`
     SELECT
@@ -67,20 +69,32 @@ async function loadMapping() {
       a.id AS asset_id,
       ap.point_key,
       ap.source_data_key,
-      ap.unit
+      ap.unit,
+      c.config AS connection_config,
+      c.credentials_ciphertext,
+      c.credentials_iv
     FROM bms.rtus r
     INNER JOIN bms.assets a ON a.rtu_id = r.id
     INNER JOIN bms.asset_points ap ON ap.asset_id = a.id AND ap.active = true
+    LEFT JOIN bms.rtu_connection_configs c ON c.rtu_id = r.id
     WHERE r.ingest_enabled = true
       AND r.source_type = 'mqtt'
-      AND COALESCE(a.meta->>'telemetrySource', '') = 'mqtt'
+      AND COALESCE(a.meta->>'telemetrySource', 'mqtt') = 'mqtt'
   `);
 
   mappingByRtu.clear();
   topicByRtu.clear();
+  activeMqttConnection = null;
 
   for (const row of res.rows) {
     const rtuCode = String(row.rtu_code);
+    if (!activeMqttConnection && row.connection_config) {
+      activeMqttConnection = resolveMqttConnection({
+        config: row.connection_config,
+        credentials_ciphertext: row.credentials_ciphertext,
+        credentials_iv: row.credentials_iv,
+      });
+    }
     if (!mappingByRtu.has(rtuCode)) {
       mappingByRtu.set(rtuCode, []);
     }
@@ -175,10 +189,17 @@ async function main() {
     throw new Error("No ingest_enabled RTUs found; run db:seed after migration");
   }
 
-  const url = `mqtts://${mqttHost}:${mqttPort}`;
+  const conn =
+    activeMqttConnection ??
+    resolveMqttConnection(null);
+  if (!conn.username || !conn.password) {
+    throw new Error("MQTT credentials required (per-RTU config or MQTT_USERNAME/MQTT_PASSWORD env)");
+  }
+
+  const url = `mqtts://${conn.host}:${conn.port}`;
   const client = mqtt.connect(url, {
-    username: mqttUser,
-    password: mqttPassword,
+    username: conn.username,
+    password: conn.password,
     reconnectPeriod: Number(process.env.MQTT_RECONNECT_MS ?? "5000"),
     rejectUnauthorized: process.env.MQTT_TLS_REJECT_UNAUTHORIZED !== "false",
   });
@@ -201,6 +222,10 @@ async function main() {
       res.end(`ingest ok topics=${topics.length} rtus=${mappingByRtu.size}\n`);
     })
     .listen(metricsPort);
+
+  setInterval(() => {
+    loadMapping().catch(() => {});
+  }, Number(process.env.INGEST_RELOAD_MS ?? "60000"));
 }
 
 main().catch((err) => {

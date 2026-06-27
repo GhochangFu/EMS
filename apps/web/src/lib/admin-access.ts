@@ -37,6 +37,11 @@ export function defaultAdminRoute(role: UserRole): string {
   return "/admin/organizations";
 }
 
+/** Whether the role may use AI onboarding wizard. */
+export function canAccessOnboarding(role: UserRole): boolean {
+  return canCreateLocations(role);
+}
+
 /** Master data horizontal tab definitions. */
 export const masterDataTabs = [
   { label: "Organizations", path: "/admin/organizations" },

@@ -1,5 +1,6 @@
 import {
   boolean,
+  customType,
   doublePrecision,
   integer,
   jsonb,
@@ -9,6 +10,12 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 export const bmsSchema = pgSchema("bms");
 
@@ -180,6 +187,47 @@ export const pointKeys = bmsSchema.table("point_keys", {
   description: text("description"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** AI onboarding wizard draft session. */
+export const onboardingSessions = bmsSchema.table("onboarding_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  status: varchar("status", { length: 32 }).notNull().default("draft"),
+  currentPhase: varchar("current_phase", { length: 32 }).notNull().default("location"),
+  draft: jsonb("draft").notNull().default({}),
+  messages: jsonb("messages").notNull().default([]),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  committedAt: timestamp("committed_at", { withTimezone: true }),
+  result: jsonb("result"),
+});
+
+/** Per-RTU protocol connection config and encrypted credentials. */
+export const rtuConnectionConfigs = bmsSchema.table("rtu_connection_configs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  rtuId: uuid("rtu_id")
+    .notNull()
+    .unique()
+    .references(() => rtus.id, { onDelete: "cascade" }),
+  protocol: varchar("protocol", { length: 32 }).notNull(),
+  config: jsonb("config").notNull().default({}),
+  credentialsCiphertext: bytea("credentials_ciphertext"),
+  credentialsIv: bytea("credentials_iv"),
+  keyVersion: integer("key_version").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });

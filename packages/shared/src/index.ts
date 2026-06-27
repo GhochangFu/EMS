@@ -667,3 +667,144 @@ export type AdminAssetSummaryDto = {
   organizationId: string | null;
   organizationCode: string | null;
 };
+
+/** Onboarding wizard phase tracked by the AI bot. */
+export type OnboardingPhase =
+  | "location"
+  | "rtu"
+  | "point_keys"
+  | "assets"
+  | "mappings"
+  | "review";
+
+export type OnboardingProtocol =
+  | "mqtt"
+  | "simulator"
+  | "catalog"
+  | "modbus_tcp"
+  | "bacnet"
+  | "opc_ua"
+  | "snmp"
+  | "rest_poller";
+
+export type OnboardingSessionStatus = "draft" | "committed" | "abandoned";
+
+export type OnboardingChatMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  createdAt: string;
+};
+
+export type OnboardingFieldError = {
+  path: string;
+  message: string;
+};
+
+export type OnboardingAutoOpenReason =
+  | "review"
+  | "validation_errors"
+  | "ready_to_commit";
+
+export type OnboardingDraftLocation = {
+  code: string;
+  slug: string;
+  name: string;
+  type: "smoc_campus" | "rsmoc" | "csmoc";
+  latitude: number;
+  longitude: number;
+  province?: string;
+  capital?: string;
+  meta?: Record<string, unknown>;
+};
+
+export type OnboardingDraftRtu = {
+  code: string;
+  displayName: string;
+  protocol: OnboardingProtocol;
+  config: Record<string, unknown>;
+  credentialsSet?: boolean;
+  domain?: string;
+  externalRtuId?: number;
+  rtuCode?: string;
+  stationCode?: string;
+  stationName?: string;
+  ingestEnabled?: boolean;
+  meta?: Record<string, unknown>;
+};
+
+export type OnboardingDraftPointKey = {
+  code: string;
+  name: string;
+  domain?: string;
+  unit?: string;
+  description?: string;
+};
+
+export type OnboardingDraftAsset = {
+  rtuIndex: number;
+  code: string;
+  name: string;
+  siteName: string;
+  domain: string;
+  meta?: Record<string, unknown>;
+};
+
+export type OnboardingDraftAssetPoint = {
+  assetIndex: number;
+  pointKey: string;
+  sourceDataKey: string;
+  sensorCode?: string;
+  unit?: string;
+};
+
+export type OnboardingDraft = {
+  location?: OnboardingDraftLocation;
+  rtus?: OnboardingDraftRtu[];
+  pointKeys?: OnboardingDraftPointKey[];
+  assets?: OnboardingDraftAsset[];
+  assetPoints?: OnboardingDraftAssetPoint[];
+};
+
+export type OnboardingSessionDto = {
+  id: string;
+  organizationId: string;
+  organizationCode: string;
+  organizationName: string;
+  status: OnboardingSessionStatus;
+  currentPhase: OnboardingPhase;
+  draft: OnboardingDraft;
+  messages: OnboardingChatMessage[];
+  createdAt: string;
+  updatedAt: string;
+  committedAt: string | null;
+  result: Record<string, unknown> | null;
+};
+
+export type OnboardingChatResponseDto = {
+  assistantMessage: string;
+  session: OnboardingSessionDto;
+  suggestedReplies?: string[];
+  validationErrors?: OnboardingFieldError[];
+  readyToCommit?: boolean;
+  autoOpenPreview?: boolean;
+  autoOpenReason?: OnboardingAutoOpenReason;
+};
+
+export type OnboardingValidateResponseDto = {
+  valid: boolean;
+  errors: OnboardingFieldError[];
+  preview: OnboardingDraft;
+  readyToCommit: boolean;
+  autoOpenPreview: boolean;
+  autoOpenReason?: OnboardingAutoOpenReason;
+};
+
+export type OnboardingCommitResponseDto = {
+  sessionId: string;
+  locationId: string;
+  rtuIds: string[];
+  assetIds: string[];
+  pointKeyIds: string[];
+  assetPointIds: string[];
+};

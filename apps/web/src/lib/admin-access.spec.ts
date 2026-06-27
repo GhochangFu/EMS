@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 
 import {
+  canAccessOnboarding,
   canCreateLocations,
   canWriteOrganizations,
   canWritePointKeys,
@@ -32,7 +33,8 @@ export function runAdminAccessTests(): void {
   assert(!canWritePointKeys("location_admin"), "location admin cannot write point keys");
   assert(defaultAdminRoute("admin") === "/admin/organizations", "admin default route");
   assert(defaultAdminRoute("organization_admin") === "/admin/organizations", "org admin default route");
-  assert(defaultAdminRoute("location_admin") === "/admin/organizations", "location admin default route");
+  assert(canAccessOnboarding("organization_admin"), "org admin can onboard");
+  assert(!canAccessOnboarding("location_admin"), "location admin cannot onboard");
 }
 
 const isMain =

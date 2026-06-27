@@ -78,7 +78,7 @@ The current planning direction is:
 13. Defer MinIO/object storage until persisted report files are actually
    needed.
 14. Plan Phase 6 as Three.js Control Room only.
-15. Keep AI Copilot / chatbot out of scope.
+15. Keep AI Copilot / chatbot out of scope for general site navigation. **Scoped AI onboarding wizard** (admin ingestion only, ADR 0011) is in scope on branch `feature/ai-onboarding-wizard`.
 
 The completed prototype screens are:
 
