@@ -1,0 +1,219 @@
+Module,Zoho Feature,Zoho Doc Reference,Exists in BMS,Partial,Missing,Quality Score (0-10),Priority,Complexity,Estimated Effort (pw),Phase,Notes
+Platform Architecture,Multi-tenant MSP client portals,Portals & Client Management,,Yes,,3,High,High,8-12,4,Location scoping only; no MSP rebranding
+Platform Architecture,Cloud-native microservices,Platform Overview,,Yes,,4,Medium,High,16+,4,Monolith API + sidecar ingest/sim
+Platform Architecture,Event-driven architecture (Kafka/hub),Platform Overview,,Yes,,5,Medium,Medium,6-8,2,pg_notify + Redis WS only
+Platform Architecture,Plugin / adapter architecture,Edge Computing,,,Yes,0,Critical,High,10-14,2,No IngestAdapter interface
+Platform Architecture,Redis pub/sub fan-out,Platform Overview,Yes,,,7,—,Low,0,—,Socket.IO Redis adapter implemented
+Platform Architecture,Docker Compose deployment,Deployment,Yes,,,6,—,Low,0,—,Multi-profile compose
+Platform Architecture,Kubernetes / HA,Deployment,,,Yes,0,High,High,12-16,3,Not in repo
+Platform Architecture,Message queue (Rabbit/Kafka),Platform Overview,,,Yes,0,Medium,Medium,6-8,2,Deferred
+Platform Architecture,CQRS,Platform Overview,,,Yes,0,Low,High,8+,4,Not applicable at current scale
+Platform Architecture,Caching layer,Platform Overview,,,Yes,0,Medium,Medium,4-6,2,No Redis cache beyond WS
+Platform Architecture,High availability,Deployment,,,Yes,0,High,High,12-16,3,Single Postgres instance
+Device Management,Device registration API,KB - Devices,,,Yes,0,Critical,Medium,4-6,1,Seed-only via phe-pilot-seed.ts
+Device Management,Provisioning / activation,KB - Devices,,,Yes,0,Critical,Medium,4-6,1,No runtime workflow
+Device Management,Bulk import,KB - Devices,,Yes,,2,High,Medium,3-4,1,PHE catalog JSON import only
+Device Management,Device grouping,KB - Devices,,Yes,,4,Medium,Low,2-3,2,Asset groups exist; not device groups
+Device Management,Device templates,KB - Devices / Models,,Yes,,3,Critical,High,8-10,4,Static phe-catalog.json
+Device Management,Metadata / labels,KB - Devices,,Yes,,4,Medium,Low,2-3,2,JSONB meta on assets
+Device Management,Lifecycle states,KB - Devices,,,Yes,0,High,Medium,3-4,1,No commissioned/active/fault states
+Device Management,Health monitoring,KB - Devices,,Yes,,4,High,Medium,3-4,1,Freshness heuristics on dashboards
+Device Management,Last seen / heartbeat,KB - Devices,,Yes,,4,High,Medium,3-4,1,Not persisted on assets/rtus
+Device Management,Connection status live/disconnected,KB - Devices,,Yes,,3,High,Medium,3,1,No per-device connection field
+Device Management,Ownership,KB - Devices,,Yes,,3,Medium,Low,2,2,Org via location only
+Device Management,Device cloning,KB - Devices,,,Yes,0,Low,Low,2,4,Not implemented
+Device Management,Provisioning APIs,Developer API,,,Yes,0,Critical,Medium,4-6,1,No POST /devices
+Device Management,X.509 certificates,Security / Devices,,,Yes,0,Medium,High,6-8,3,Not implemented
+Device Management,Device gallery / product catalog,KB - Devices,,Yes,,3,Medium,Medium,4-6,2,PHE catalog snapshot only
+Gateway Management,Gateway registration API,KB - Gateway Management,,Yes,,3,Critical,Medium,4-5,1,bms.rtus schema only
+Gateway Management,Edge computing / Edge Agent,KB - Edge Computing,,,Yes,0,High,High,12-16,2,Zoho Edge Agent equivalent missing
+Gateway Management,Offline sync / buffering,KB - Edge Computing,,,Yes,0,High,High,8-10,2,No edge buffer
+Gateway Management,Retries / diagnostics,KB - Gateway Management,,,Yes,0,Medium,Medium,4-6,2,Ingest drops bad JSON silently
+Gateway Management,Gateway firmware OTA,KB - Devices / OTA,,,Yes,0,Medium,High,10+,4,Not implemented
+Gateway Management,Gateway health monitoring,KB - Gateway Management,,Yes,,3,High,Medium,3-4,1,Shown in location dashboard only
+Gateway Management,LoRaWAN LNS integration,KB - Data Streams,,,Yes,0,Low,High,8+,4,Deferred per AGENTS.md
+Gateway Management,Per-gateway MQTT topic binding,KB - Data Streams / MQTT,Yes,,,6,—,Low,0,—,bms.rtus.mqtt_topic + ingest app
+Gateway Management,Modbus RTU over TCP (edge),KB - Edge Computing,,,Yes,0,Critical,High,10-14,2,Edge agent not implemented
+Communication Protocols,MQTT TLS,KB - MQTT,Yes,,,6,—,Low,0,—,apps/ingest pilot only
+Communication Protocols,MQTT SSL broker management,KB - MQTT,,Yes,,5,Medium,Medium,4,2,Direct ThinkIoT connection
+Communication Protocols,HTTP REST,Developer API,Yes,,,7,—,Low,0,—,NestJS /api/v1
+Communication Protocols,HTTPS,Developer API,Yes,,,7,—,Low,0,—,TLS at deploy layer
+Communication Protocols,WebSocket,Platform Overview,Yes,,,7,—,Low,0,—,Socket.IO telemetry + alarms
+Communication Protocols,CoAP,Features page,,,Yes,0,Low,High,8+,4,Not implemented
+Communication Protocols,Modbus RTU,Edge Computing / IIoT,,,Yes,0,Critical,High,10-14,2,Out of scope AGENTS.md
+Communication Protocols,Modbus TCP,Edge Computing / IIoT,,,Yes,0,Critical,High,10-14,2,Out of scope AGENTS.md
+Communication Protocols,OPC-UA,Edge Computing,,,Yes,0,High,High,10-14,2,Not implemented
+Communication Protocols,BACnet,Features / Smart Buildings,,,Yes,0,High,High,10-14,2,Not implemented
+Communication Protocols,LoRaWAN,KB - Data Streams,,,Yes,0,Low,High,8-12,4,Not implemented
+Communication Protocols,BLE / ZigBee,Features page,,,Yes,0,Low,High,8+,4,Not implemented
+Communication Protocols,CAN / RS232 / RS485,IIoT solution page,,,Yes,0,Low,High,8+,4,Not implemented
+Communication Protocols,Postgres NOTIFY (internal),—,Yes,,,6,—,Low,0,—,Internal fan-out pattern
+Device Models,Template + instance propagation,KB - Models,,Yes,,2,Critical,High,10-12,4,Hardcoded point maps
+Device Models,Model inheritance / clone,KB - Models,,,Yes,0,Medium,Medium,4,4,Not implemented
+Device Models,Reusable datapoint definitions,KB - Models,,Yes,,4,High,High,8-10,2,bms.asset_points partial
+Device Models,Command templates,KB - Models,,,Yes,0,Critical,Medium,6-8,2,Not implemented
+Device Models,Alarm rule templates,KB - Alarms,,,Yes,0,High,Medium,4-6,1,Hardcoded AlarmThresholdService
+Device Models,Events,KB - Models,,,Yes,0,Medium,Medium,4,3,Telemetry only
+Device Models,Validation rules,KB - Models,,Yes,,3,Medium,Medium,3-4,2,Minimal ingest validation
+Device Models,Message formatter / handler,KB - Custom Functions,,Yes,,3,High,Medium,4-6,2,Fixed JSON parse in ingest
+Device Models,Computed / KPI datapoints,KB - Models,,,Yes,0,Medium,High,6-8,3,PUE estimate in dashboard only
+Asset Management,Asset CRUD API,KB - Assets,,Yes,,2,Critical,Medium,4-6,1,GET /assets read-only
+Asset Management,Parent-child hierarchy (5 levels),KB - Assets,,Yes,,4,Medium,Medium,4-6,3,Org→Location→RTU→Asset only
+Asset Management,Asset groups,KB - Assets,Yes,,,7,—,Low,0,—,bms.asset_groups implemented
+Asset Management,Tags / metadata,KB - Assets,,Yes,,5,Medium,Low,2,2,JSONB meta field
+Asset Management,Asset health score,KB - Assets,,Yes,,4,Medium,Medium,3-4,2,Derived from telemetry freshness
+Asset Management,Asset history / audit,KB - Assets,,Yes,,3,Medium,Medium,3-4,3,Work order history partial
+Asset Management,Manage/unmanage (disable processing),KB - Assets,,,Yes,0,Medium,Low,2,2,ingest_enabled on RTU only
+Location Management,Site/building/floor/room tree,KB - Locations,,Yes,,5,Medium,Medium,6-8,3,Flat locations; no floor/room
+Location Management,Geolocation,KB - Locations,Yes,,,7,—,Low,0,—,lat/long on bms.locations
+Location Management,Maps (Leaflet),KB - Dashboards / Maps,Yes,,,7,—,Low,0,—,World map + location markers
+Location Management,Geo hierarchy operators,KB - Locations,,Yes,,4,Medium,Medium,3,4,Location scoping partial
+Location Management,Geofencing + enter/exit alarms,KB - Locations,,,Yes,0,Low,High,8-10,4,Not implemented
+Location Management,Location history playback,KB - Locations,,,Yes,0,Low,Medium,6,4,Not implemented
+Location Management,Location CRUD API,KB - Locations,,Yes,,3,High,Medium,3-4,1,Read-only dashboard APIs
+Location Management,Org → Location hierarchy,KB - Locations,Yes,,,7,—,Low,0,—,ADR 0008 implemented
+Telemetry,Ingestion pipeline,KB - Data Streams,Yes,,,7,—,Medium,0,—,Sim + MQTT ingest
+Telemetry,Validation / transformation,KB - Data Streams,,Yes,,3,High,Medium,4-6,2,Minimal parse; silent drop
+Telemetry,Raw message storage,KB - Data Streams,,,Yes,0,Medium,Medium,3-4,2,Zoho stores 1-2 months raw
+Telemetry,Historical data query,Developer API,Yes,,,6,—,Low,0,—,GET telemetry/points/recent
+Telemetry,Compression,TimescaleDB,,,Yes,0,Medium,Low,1-2,2,Not configured
+Telemetry,Retention policies,Administration,,,Yes,0,High,Medium,2-3,1,Unbounded disk growth risk
+Telemetry,Archival / cold storage,Administration,,,Yes,0,Low,High,8+,4,Not implemented
+Time Series DB,Timescale hypertable,—,Yes,,,7,—,Low,0,—,telemetry.point_values
+Time Series DB,Partitioning (1-day chunks),—,Yes,,,7,—,Low,0,—,chunk_time_interval = 1 day
+Time Series DB,Dashboard indexes,—,Yes,,,6,—,Low,0,—,0011_telemetry_dashboard_indexes.sql
+Time Series DB,Continuous aggregates,AGENTS.production.md,,,Yes,0,High,Medium,4-6,2,Documented not migrated
+Time Series DB,Rollups / aggregation API,Developer API,,Yes,,5,High,Medium,3-4,2,Dashboard inline SQL only
+Time Series DB,Retention enforcement,Administration,,,Yes,0,High,Medium,2-3,1,Missing
+Dashboards,Drag-drop builder,KB - Dashboards,,,Yes,0,Medium,High,12-16,4,Fixed React routes
+Dashboards,20+ widget types,KB - Dashboards,,Yes,,5,Medium,High,10+,4,ECharts + KPI cards subset
+Dashboards,KPI cards / ribbons,KB - Dashboards,Yes,,,7,—,Low,0,—,Executive + location dashboards
+Dashboards,Charts (line/bar/pie),KB - Dashboards,Yes,,,7,—,Low,0,—,ECharts
+Dashboards,Gauges / dials,KB - Dashboards,,Yes,,5,Medium,Medium,3-4,3,Partial in control room
+Dashboards,Maps,KB - Dashboards,Yes,,,7,—,Low,0,—,Leaflet world map
+Dashboards,Tables / cards,KB - Dashboards,Yes,,,7,—,Low,0,—,Location accordion + KPI cards
+Dashboards,Live widgets (WebSocket),KB - Dashboards,Yes,,,7,—,Low,0,—,Real-time telemetry WS
+Dashboards,Custom user dashboards,KB - Dashboards,,,Yes,0,Medium,High,8-10,4,Not implemented
+Dashboards,Role-based dashboards,KB - Dashboards,,Yes,,5,Medium,Medium,4-6,3,Asset-group gating partial
+Dashboards,Public URL sharing,KB - Dashboards,,,Yes,0,Low,Medium,3-4,4,Not implemented
+Dashboards,Control-room SVG schematics,—,Yes,,,8,—,Medium,0,—,BMS strength vs Zoho
+Dashboards,Threshold lines / time comparison,KB - Dashboards,,Yes,,4,Medium,Medium,3-4,3,Basic chart config only
+Reports,Self-service report builder,KB - Reports,,,Yes,0,Medium,High,10+,4,Not implemented
+Reports,Scheduled reports,KB - Reports,,,Yes,0,High,Medium,4-6,3,Not implemented
+Reports,CSV export,KB - Reports,Yes,,,6,—,Low,0,—,Energy CSV only
+Reports,PDF export,KB - Reports,,,Yes,0,Medium,Medium,4-6,3,Deferred Sprint F
+Reports,Excel export,KB - Reports,,,Yes,0,Medium,Medium,4-6,3,Not implemented
+Reports,Matrix / aggregation reports,KB - Reports,,Yes,,4,Medium,Medium,4-6,3,Energy preview partial
+Reports,Datapoint aggregation API,Developer API,,Yes,,5,High,Medium,3-4,2,Dashboard SQL not exposed as API
+Reports,Report history / storage,KB - Reports,,,Yes,0,Low,Medium,4-6,4,Sprint F skipped
+Alarm Engine,Configurable alarm rules UI,KB - Alarms,,Yes,,4,Critical,Medium,4-6,1,Split from hardcoded service
+Alarm Engine,Model-level alarm templates,KB - Alarms,,,Yes,0,High,Medium,4,2,Not implemented
+Alarm Engine,Threshold + hysteresis,KB - Alarms,,Yes,,4,High,Low,2-3,1,Threshold only
+Alarm Engine,Acknowledgement,KB - Alarms,Yes,,,7,—,Low,0,—,POST /alarms/:id/ack
+Alarm Engine,Escalation,KB - Alarms,,,Yes,0,High,Medium,4-6,3,Not implemented
+Alarm Engine,Alarm history,KB - Alarms,Yes,,,6,—,Low,0,—,Keyset paginated list
+Alarm Engine,Alarm suppression,KB - Alarms,,,Yes,0,High,Medium,3-4,3,Not implemented
+Alarm Engine,Maintenance mode,KB - Alarms,,,Yes,0,High,Medium,3-4,3,Not implemented
+Alarm Engine,Auto-clear on normal,KB - Alarms,,,Yes,0,High,Medium,2-3,1,Open alarms persist
+Alarm Engine,Priorities / severities,KB - Alarms,Yes,,,6,—,Low,0,—,critical/warning/info
+Alarm Engine,Geofence / KPI alarms,KB - Alarms,,,Yes,0,Low,High,6-8,4,Not implemented
+Alarm Engine,Real-time WS broadcast,KB - Alarms,Yes,,,7,—,Low,0,—,/ws/alarms
+Alarm Engine,Alarm → work order link,KB - Alarms,Yes,,,7,—,Low,0,—,work_orders.alarm_id
+Rule Engine,IF/THEN threshold rules,KB - Rules Engine,Yes,,,6,—,Medium,0,—,automation_rules table
+Rule Engine,Time-window rules,KB - Rules Engine,Yes,,,6,—,Medium,0,—,ruleType time_window
+Rule Engine,Visual rule builder,KB - Rules Engine,Yes,,,7,—,Medium,0,—,rule-builder-panel.tsx
+Rule Engine,Rule lifecycle draft/publish,KB - Rules Engine,Yes,,,7,—,Medium,0,—,Full CRUD + lifecycle
+Rule Engine,Action execution notify/command,KB - Workflows,,Yes,,2,Critical,Medium,6-8,1,Stored not executed
+Rule Engine,Scheduled/cron evaluation,KB - Schedules,,,Yes,0,High,Medium,4-6,2,Manual evaluate only
+Rule Engine,Event-triggered on telemetry,KB - Rules Engine,,Yes,,3,High,Medium,4,2,AlarmThreshold separate path
+Rule Engine,Workflow chains,KB - Workflows,,,Yes,0,Medium,High,8-10,3,Not implemented
+Rule Engine,Deluge / custom functions,KB - Custom Functions,,,Yes,0,Medium,High,8+,4,Not implemented
+Rule Engine,Expressions,KB - Rules Engine,,Yes,,4,Medium,Medium,4,3,Simple operators only
+Automation,Work orders module,KB - Work Orders,Yes,,,7,—,Medium,0,—,Kanban UI + API
+Automation,Maintenance schedules,KB - Schedules,Yes,,,7,—,Medium,0,—,Schedule Centre
+Automation,Workflow engine,KB - Workflows,,,Yes,0,Medium,High,8-10,3,Not implemented
+Automation,Scripting,KB - Custom Functions,,,Yes,0,Medium,High,8+,4,Not implemented
+Automation,Scheduled jobs,KB - Schedules,,,Yes,0,High,Medium,4-6,2,Not implemented
+Automation,Command execution,KB - Commands,,,Yes,0,Critical,High,8-10,2,Explicitly deferred
+Notifications,Email,KB - Email,,,Yes,0,Critical,Medium,3-4,1,Not implemented
+Notifications,SMS,KB - Notifications,,,Yes,0,Medium,Medium,4-6,3,Not implemented
+Notifications,WhatsApp,KB - Notifications,,,Yes,0,Low,Medium,4,4,Not implemented
+Notifications,Push notifications,KB - Push Notifications,,,Yes,0,Medium,High,6-8,4,Not implemented
+Notifications,Microsoft Teams,KB - Integrations,,,Yes,0,Low,Medium,2-3,4,Not implemented
+Notifications,Slack,KB - Integrations,,,Yes,0,Low,Medium,2-3,4,Not implemented
+Notifications,Telegram,KB - Integrations,,,Yes,0,Low,Medium,2-3,4,Not implemented
+Notifications,Webhooks,KB - Webhooks,,,Yes,0,High,Medium,3-4,1,Not implemented
+Notifications,Escalation profiles,KB - Notification profiles,,,Yes,0,High,Medium,4-6,3,Not implemented
+Notifications,In-app WebSocket only,—,,Yes,,4,—,Low,0,—,Alarms WS only
+Remote Commands,Command queue,KB - Commands,,,Yes,0,Critical,High,8-10,2,Not implemented
+Remote Commands,Acknowledgement,KB - Commands,,,Yes,0,Critical,High,4-6,2,Not implemented
+Remote Commands,Retry / timeout,KB - Commands,,,Yes,0,Critical,Medium,3-4,2,Not implemented
+Remote Commands,Command scheduling,KB - Commands,,,Yes,0,Medium,Medium,3-4,3,Not implemented
+Remote Commands,MQTT downlink,KB - MQTT,,,Yes,0,Critical,Medium,4-6,2,Not implemented
+Remote Commands,Disabled UI stubs,—,,Yes,,2,—,Low,0,—,DisabledCommandButton
+Firmware Management,OTA updates,KB - Devices / OTA,,,Yes,0,Medium,High,10+,4,Not implemented
+Firmware Management,Versioning,KB - OTA,,,Yes,0,Medium,High,4-6,4,Not implemented
+Firmware Management,Staged rollout,KB - OTA,,,Yes,0,Medium,High,6-8,4,Not implemented
+Firmware Management,Rollback,KB - OTA,,,Yes,0,Medium,High,4-6,4,Not implemented
+Security,RBAC,KB - Users & Roles,Yes,,,6,—,Medium,0,—,Role + location/asset-group scope
+Security,MFA,KB - Authentication,,,Yes,0,High,Medium,3-4,3,Keycloak capable not enabled
+Security,OAuth 2.0,Developer API,,Yes,,6,—,Medium,0,—,Keycloak OIDC
+Security,JWT local dev,—,Yes,,,5,—,Low,0,—,POST /auth/login fallback
+Security,API keys,Developer API,,,Yes,0,High,Medium,4-6,3,Not implemented
+Security,Device X.509 certificates,KB - Security,,,Yes,0,Medium,High,6-8,3,Not implemented
+Security,SSL/TLS encryption,KB - Security,Yes,,,7,—,Low,0,—,MQTT TLS + HTTPS deploy
+Security,Audit logs write,KB - Audit,Yes,,,5,—,Low,0,—,bms.audit_log
+Security,Audit logs read API,KB - Audit,,,Yes,0,High,Low,2-3,3,Not implemented
+Security,Password policies,KB - Security,,Yes,,4,Medium,Low,2,3,Keycloak realm only
+Security,Field-level encryption,KB - Security,,,Yes,0,Low,Medium,4,4,Not implemented
+Security,Row-level security,KB - Security,,,Yes,0,Medium,High,6-8,3,App-level scoping only
+Security,SOC2/ISO compliance story,KB - Security,,,Yes,0,Low,—,—,4,Marketing only on Zoho side
+User Management,User CRUD API,KB - Users & Roles,,,Yes,0,High,Medium,4-6,3,Seed + Keycloak only
+User Management,Roles and permissions,KB - Users & Roles,Yes,,,6,—,Medium,0,—,5 roles in Keycloak realm
+User Management,Organizations / tenants,KB - Portals,,Yes,,4,Medium,Medium,6-8,3,Orgs catalog not RBAC boundary
+User Management,Data slicing location rules,KB - Data Slicing,Yes,,,6,—,Medium,0,—,user_location_access
+User Management,Data slicing module rules,KB - Data Slicing,,Yes,,4,Medium,Medium,3-4,3,Asset groups partial
+User Management,User groups,KB - Users & Roles,,,Yes,0,Medium,Low,2-3,3,Not implemented
+User Management,Client portal MSP model,KB - Portals,,,Yes,0,Low,High,12+,4,Not implemented
+Integrations,REST API,Developer API,Yes,,,6,—,Medium,0,—,/api/v1 endpoints
+Integrations,GraphQL,Developer API,,,Yes,0,Low,Medium,6-8,4,Not implemented
+Integrations,Webhooks outbound,KB - Webhooks,,,Yes,0,High,Medium,3-4,1,Not implemented
+Integrations,CRM integration,KB - CRM Integration,,,Yes,0,Low,High,8+,4,Not implemented
+Integrations,ERP / SCADA / SAP,KB - Integrations,,,Yes,0,Low,High,8+,4,Not implemented
+Integrations,Azure / AWS / Google cloud,KB - Integrations,,,Yes,0,Low,High,8+,4,Azure SQL catalog export only
+Integrations,Power BI / Grafana,KB - Integrations,,Yes,,4,Medium,Medium,4,3,External Grafana observability profile
+Integrations,OpenAPI / Swagger,Developer API,,,Yes,0,High,Low,2-3,1,Not implemented
+Integrations,Rate limiting,Developer API,,,Yes,0,Medium,Low,2,2,Not implemented
+AI Features,Anomaly detection,KB - AI Features,,,Yes,0,Medium,High,10+,4,Not implemented
+AI Features,Predictive maintenance,KB - AI Features,,,Yes,0,Medium,High,10+,4,Not implemented
+AI Features,Forecasting,KB - Analytics,,,Yes,0,Low,High,8+,4,Not implemented
+AI Features,AI insights / recommendations,KB - AI Features,,,Yes,0,Low,High,8+,4,Not implemented
+AI Features,LLM integration,—,,,Yes,0,Low,High,8+,4,Explicitly deferred AGENTS.md
+Mobile Features,Android app,KB - Mobile,,,Yes,0,Medium,High,16+,4,Not implemented
+Mobile Features,iOS app,KB - Mobile,,,Yes,0,Medium,High,16+,4,Not implemented
+Mobile Features,Offline mode,KB - Mobile,,,Yes,0,Low,High,8+,4,Not implemented
+Mobile Features,Push notifications mobile,KB - Mobile,,,Yes,0,Medium,High,6-8,4,Not implemented
+Mobile Features,Maps on mobile,KB - Mobile,,,Yes,0,Low,Medium,4-6,4,Not implemented
+Analytics,Trends / KPIs,KB - Analytics,Yes,,,6,—,Medium,0,—,Executive + energy dashboards
+Analytics,OEE monitoring,IIoT solution,,,Yes,0,Low,Medium,4-6,4,Not implemented
+Analytics,Energy analytics,Energy Management,Yes,,,6,—,Medium,0,—,Energy Centre + CSV reports
+Analytics,Utilization,KB - Analytics,,Yes,,4,Medium,Medium,4,3,Partial via load trend
+Analytics,Predictive analytics,KB - AI Features,,,Yes,0,Medium,High,10+,4,Not implemented
+Analytics,Data Explorer debug UI,KB - Data Explorer,,,Yes,0,Medium,Medium,4-6,3,Not implemented
+Administration,Configuration management,KB - Administration,,Yes,,5,Medium,Medium,4,2,Env + compose only
+Administration,Backups / restore,KB - Administration,,,Yes,0,High,Medium,3-4,3,Not automated
+Administration,Audit read/export,KB - Audit,,,Yes,0,High,Low,2-3,3,Write-only today
+Administration,Logs / diagnostics,KB - Monitoring,,Yes,,5,Medium,Medium,3,2,Pino + optional Loki
+Administration,Monitoring Prometheus,KB - Monitoring,,Yes,,5,—,Medium,0,—,Optional observability profile
+Administration,Billing / licensing,KB - Billing,N/A,,N/A,—,—,—,—,Self-hosted; N/A vs Zoho SaaS
+Developer Experience,SDKs C/Python/Node,Developer Features,,,Yes,0,Medium,High,8+,4,Not implemented
+Developer Experience,REST API docs,Developer API,,Yes,,5,High,Low,2-3,1,No Swagger
+Developer Experience,Postman collection,Developer API,,,Yes,0,Low,Low,1-2,3,Not published
+Developer Experience,API versioning,Developer API,Yes,,,6,—,Low,0,—,/api/v1 prefix
+Developer Experience,Testing examples,Developer Features,,Yes,,4,Medium,Medium,3,2,Some spec files exist
+DevOps,Docker,Deployment,Yes,,,6,—,Low,0,—,Multi-profile compose
+DevOps,Kubernetes,Deployment,,,Yes,0,High,High,12-16,3,Not in repo
+DevOps,CI/CD GitHub Actions,—,Yes,,,6,—,Low,0,—,.github/workflows/ci.yml
+DevOps,Observability stack,KB - Monitoring,,Yes,,5,—,Medium,0,—,Prometheus Grafana Loki optional
+DevOps,Health checks,—,Yes,,,6,—,Low,0,—,GET /health + metrics
+DevOps,OpenTelemetry tracing,—,Yes,,,5,—,Medium,0,—,Bootstrap in api main.ts

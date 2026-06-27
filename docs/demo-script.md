@@ -8,7 +8,8 @@ reloads, simulator restarts, or visible errors.
 per [`local-setup.md`](./local-setup.md). Three terminals: `api` (:4000),
 `web` (:5173), `sim` (live inserts + NOTIFY). Browser: logged in as
 `admin@bms.local` / `admin123`. Scoped access demo users are
-`wc-admin@bms.local` / `admin123` (Western Cape, all assets) and
+`wc-admin@bms.local` / `admin123` (Western Cape location admin),
+`phe-admin@bms.local` / `admin123` (PHEWB organization admin), and
 `wc-hvac-admin@bms.local` / `admin123` (Western Cape HVAC asset group).
 
 ---
@@ -19,11 +20,39 @@ per [`local-setup.md`](./local-setup.md). Three terminals: `api` (:4000),
 2. Stay on **Overview** (Executive Dashboard). Call out: live KPIs,
    load trend, PUE band — all from the same `kw` aggregates the Energy
    Centre will reuse.
-3. Click a location KPI card to open `/locations/:locationId/dashboard`;
+3. In **Location performance**, use the organization filter (**All**,
+   **ESKOM**, **PHEWB** — only orgs visible in your scope appear). With
+   **All** selected, locations group in accordion sections per org
+   (default expanded) with section totals; pick a single org for a flat
+   grid of that org's cards only.
+4. Click a location KPI card to open `/locations/:locationId/dashboard`;
    scoped users land directly on their assigned location when they have
    only one location.
-4. Mention the aligned shell: dark top bar, green route nav, grouped module
+5. PHEWB stations appear as location cards with org badge `PHEWB` and RTU
+   counts; open **Bhutnirghat** (`phe-bhutnirghat`) to see two RTUs (I and II)
+   with live MQTT on RTU I only when ingest is running.
+6. Sign in as `wc-admin@bms.local` or `phe-admin@bms.local` to show scoped
+   org filters (ESKOM-only or PHEWB-only) without empty tabs for other orgs.
+7. Mention the aligned shell: dark top bar, green route nav, grouped module
    sidebar, KPI ribbon, and dark status bar.
+
+## Optional — Master Data Administration
+
+1. Top nav **Settings** or sidebar **Administration** (master-data roles:
+   global admin, organization admin, location admin).
+2. As **admin**: open **Organizations** → click **ESKOM** or **PHEWB** to drill
+   into locations, then location → RTU → asset → point mappings.
+3. Use horizontal tabs or sidebar shortcuts; hierarchy dropdowns on each level
+   jump to the matching nested URL.
+4. Open **Point Keys** → manage org-scoped catalog entries (admin: any org;
+   organization admin: assigned org only).
+5. Open **Asset Points** → map `sourceDataKey` to catalog `pointKey` via
+   dropdown (API rejects unknown keys).
+6. Sign in as **phe-admin@bms.local** / `admin123`: confirm PHEWB org,
+   locations, RTUs, assets, point keys, and mappings are editable; ESKOM rows
+   are out of scope.
+7. Sign in as **wc-admin@bms.local**: confirm scoped org(s) and Western Cape
+   locations only; **Point Keys** tab hidden; mappings use read-only catalog.
 
 ## 2–4 min — Alarm Centre
 

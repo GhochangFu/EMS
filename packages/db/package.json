@@ -15,9 +15,11 @@
     "build": "tsc -p tsconfig.build.json",
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "verify:hierarchy": "tsx src/verify-hierarchy-cli.ts"
   },
   "dependencies": {
+    "@bms/shared": "workspace:*",
     "@opentelemetry/api": "^1.9.1",
     "bcrypt": "^5.1.1",
     "dotenv": "^16.4.7",

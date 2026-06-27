@@ -95,6 +95,9 @@ function roleFromClaims(claims: KeycloakClaims): UserRole {
   if (roles.includes("admin")) {
     return "admin";
   }
+  if (roles.includes("organization_admin")) {
+    return "organization_admin";
+  }
   if (roles.includes("location_admin")) {
     return "location_admin";
   }

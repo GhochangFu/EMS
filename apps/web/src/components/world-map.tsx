@@ -76,7 +76,7 @@ export function WorldMap({ sites }: WorldMapProps) {
             <div className="min-w-[210px] text-bms-ink">
               <div className="font-condensed text-sm font-bold">{s.name}</div>
               <div className="text-[10px] uppercase tracking-wide text-bms-muted">
-                {locationKindLabel(s)} ·{" "}
+                {s.organization?.code ?? locationKindLabel(s)} ·{" "}
                 <span className="font-mono">{s.live.status}</span>
               </div>
               {s.kind === "eskom_station" ? (

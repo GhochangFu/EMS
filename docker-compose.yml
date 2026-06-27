@@ -19,7 +19,7 @@ services:
       retries: 10
 
   redis:
-    profiles: ["core", "pilot", "realtime-smoke"]
+    profiles: ["core", "pilot", "phe", "realtime-smoke"]
     image: redis:7-alpine
     ports:
       - "6379:6379"
@@ -30,7 +30,7 @@ services:
       retries: 10
 
   keycloak:
-    profiles: ["core", "identity", "pilot"]
+    profiles: ["core", "identity", "pilot", "phe"]
     image: quay.io/keycloak/keycloak:24.0
     command: ["start-dev", "--import-realm"]
     environment:
@@ -44,7 +44,7 @@ services:
       - ./infra/keycloak:/opt/keycloak/data/import:ro
 
   migrate:
-    profiles: ["core", "migrate", "sim", "pilot", "realtime-smoke"]
+    profiles: ["core", "migrate", "sim", "pilot", "phe", "realtime-smoke"]
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -57,7 +57,7 @@ services:
         condition: service_healthy
 
   api:
-    profiles: ["core", "pilot"]
+    profiles: ["core", "pilot", "phe"]
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -139,6 +139,29 @@ services:
       SIM_METRICS_PORT: 9101
     ports:
       - "9101:9101"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  ingest:
+    profiles: ["ingest", "pilot", "phe"]
+    build:
+      context: .
+      dockerfile: apps/ingest/Dockerfile
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://bms_app:bms_app_dev@postgres:5432/bms
+      MQTT_HOST: phe.thinkiot.co.in
+      MQTT_PORT: 8883
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_RECONNECT_MS: 5000
+      INGEST_METRICS_PORT: 9102
+    ports:
+      - "9102:9102"
     depends_on:
       postgres:
         condition: service_healthy

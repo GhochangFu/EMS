@@ -5,6 +5,18 @@ import { resolve } from "node:path";
 import pg from "pg";
 
 import { mapLocationRowsForInsert } from "./map-locations-seed";
+import {
+  assignEskomAssetRtus,
+  ensureEskomDomainRtus,
+  ensureOrganizations,
+  enforceHierarchyNotNull,
+  getOrganizationId,
+  cleanupLegacyPheRtuLocations,
+  resolveEskomSimRtuId,
+} from "./hierarchy-seed";
+import { seedPointKeyCatalog } from "./point-keys-seed";
+import { pheMapLocationRowsForInsert } from "./phe-map-seed";
+import { seedPheCatalog } from "./phe-pilot-seed";
 import { createDb } from "./client";
 import {
   alarms,
@@ -18,6 +30,7 @@ import {
   users,
   userAssetGroupAccess,
   userLocationAccess,
+  userOrganizationAccess,
   workOrderTasks,
   workOrders,
 } from "./schema/bms-schema";
@@ -108,7 +121,10 @@ async function main(): Promise<void> {
   const pool = new pg.Pool({ connectionString: databaseUrl });
   const db = createDb(pool);
   const controlRoomSiteName = "RSMOC Western Cape";
-  const mapLocationRows = mapLocationRowsForInsert();
+  const mapLocationRows = [
+    ...mapLocationRowsForInsert(),
+    ...pheMapLocationRowsForInsert(),
+  ];
   const rsmocDemoAssets = mapLocationRows.flatMap((row) =>
     row.kind === "rsmoc" && row.siteName && row.province
       ? demoAssetsForRsmoc(row.siteName, row.province)
@@ -140,6 +156,87 @@ async function main(): Promise<void> {
         throw new Error("Failed to insert admin user");
       }
     }
+
+    await ensureOrganizations(pool);
+    const eskomOrgId = await getOrganizationId(pool, "ESKOM");
+
+    for (const row of mapLocationRows) {
+      const exists = await db
+        .select({ id: mapLocations.id })
+        .from(mapLocations)
+        .where(eq(mapLocations.slug, row.slug))
+        .limit(1);
+      if (exists[0]) {
+        continue;
+      }
+      await db.insert(mapLocations).values({
+        slug: row.slug,
+        name: row.name,
+        kind: row.kind,
+        siteName: row.siteName,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        capacityMw: row.capacityMw,
+        stationType: row.stationType,
+        stationCategory: row.stationCategory,
+        province: row.province,
+        stationOperatingStatus: row.stationOperatingStatus,
+        meta: row.meta,
+      });
+    }
+
+    for (const row of mapLocationRows.filter((item) =>
+      ["smoc_campus", "rsmoc", "csmoc"].includes(item.kind),
+    )) {
+      const isPhe =
+        typeof row.meta === "object" &&
+        row.meta !== null &&
+        "organizationCode" in row.meta &&
+        row.meta.organizationCode === "PHEWB";
+      if (isPhe) {
+        continue;
+      }
+      const capital =
+        typeof row.meta === "object" &&
+        row.meta !== null &&
+        "capital" in row.meta &&
+        typeof row.meta.capital === "string"
+          ? row.meta.capital
+          : null;
+      const code = `${row.kind.replace("_campus", "").toUpperCase()}-${locationCode(
+        row.slug,
+        row.province,
+      )}`;
+      const existingLocation = await db
+        .select({ id: locations.id })
+        .from(locations)
+        .where(eq(locations.slug, row.slug))
+        .limit(1);
+      const values = {
+        organizationId: eskomOrgId,
+        code,
+        slug: row.slug,
+        name: row.name,
+        type: row.kind,
+        province: row.province,
+        capital,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        active: true,
+        meta: row.meta,
+        updatedAt: new Date(),
+      };
+      if (existingLocation[0]) {
+        await db
+          .update(locations)
+          .set(values)
+          .where(eq(locations.id, existingLocation[0].id));
+      } else {
+        await db.insert(locations).values(values);
+      }
+    }
+
+    await ensureEskomDomainRtus(db, pool);
 
     const sampleAssets = [
       {
@@ -387,6 +484,7 @@ async function main(): Promise<void> {
 
     const assetRows: { id: string; code: string }[] = [];
     for (const a of sampleAssets) {
+      const rtuId = await resolveEskomSimRtuId(pool, a.siteName, a.domain);
       const row = await db
         .select({ id: assets.id })
         .from(assets)
@@ -399,7 +497,8 @@ async function main(): Promise<void> {
             name: a.name,
             siteName: a.siteName,
             domain: a.domain,
-            meta: "meta" in a ? a.meta : null,
+            rtuId,
+            meta: "meta" in a ? a.meta : { telemetrySource: "simulator" },
           })
           .where(eq(assets.id, row[0].id));
         assetRows.push({ id: row[0].id, code: a.code });
@@ -412,7 +511,8 @@ async function main(): Promise<void> {
           name: a.name,
           siteName: a.siteName,
           domain: a.domain,
-          meta: "meta" in a ? a.meta : null,
+          rtuId,
+          meta: "meta" in a ? a.meta : { telemetrySource: "simulator" },
         })
         .returning({ id: assets.id, code: assets.code });
       if (ins[0]) {
@@ -1066,73 +1166,6 @@ async function main(): Promise<void> {
       }
     }
 
-    for (const row of mapLocationRows) {
-      const exists = await db
-        .select({ id: mapLocations.id })
-        .from(mapLocations)
-        .where(eq(mapLocations.slug, row.slug))
-        .limit(1);
-      if (exists[0]) {
-        continue;
-      }
-      await db.insert(mapLocations).values({
-        slug: row.slug,
-        name: row.name,
-        kind: row.kind,
-        siteName: row.siteName,
-        latitude: row.latitude,
-        longitude: row.longitude,
-        capacityMw: row.capacityMw,
-        stationType: row.stationType,
-        stationCategory: row.stationCategory,
-        province: row.province,
-        stationOperatingStatus: row.stationOperatingStatus,
-        meta: row.meta,
-      });
-    }
-
-    for (const row of mapLocationRows.filter((item) =>
-      ["smoc_campus", "rsmoc", "csmoc"].includes(item.kind),
-    )) {
-      const capital =
-        typeof row.meta === "object" &&
-        row.meta !== null &&
-        "capital" in row.meta &&
-        typeof row.meta.capital === "string"
-          ? row.meta.capital
-          : null;
-      const code = `${row.kind.replace("_campus", "").toUpperCase()}-${locationCode(
-        row.slug,
-        row.province,
-      )}`;
-      const existingLocation = await db
-        .select({ id: locations.id })
-        .from(locations)
-        .where(eq(locations.slug, row.slug))
-        .limit(1);
-      const values = {
-        code,
-        slug: row.slug,
-        name: row.name,
-        type: row.kind,
-        province: row.province,
-        capital,
-        latitude: row.latitude,
-        longitude: row.longitude,
-        active: true,
-        meta: row.meta,
-        updatedAt: new Date(),
-      };
-      if (existingLocation[0]) {
-        await db
-          .update(locations)
-          .set(values)
-          .where(eq(locations.id, existingLocation[0].id));
-      } else {
-        await db.insert(locations).values(values);
-      }
-    }
-
     await pool.query(`
       UPDATE bms.assets AS a
       SET location_id = l.id
@@ -1140,6 +1173,8 @@ async function main(): Promise<void> {
       WHERE a.site_name = l.name
         AND (a.location_id IS NULL OR a.location_id <> l.id)
     `);
+
+    await assignEskomAssetRtus(pool);
 
     await pool.query(`
       DELETE FROM bms.asset_group_members AS agm
@@ -1312,6 +1347,61 @@ async function main(): Promise<void> {
         }
       }
     }
+
+    await seedPheCatalog(db, pool);
+    await cleanupLegacyPheRtuLocations(pool);
+    await seedPointKeyCatalog(pool);
+
+    const phewbOrgId = await getOrganizationId(pool, "PHEWB");
+    const pheAdminEmail = "phe-admin@bms.local";
+    const existingPheAdmin = await db
+      .select({ id: users.id, role: users.role })
+      .from(users)
+      .where(eq(users.email, pheAdminEmail))
+      .limit(1);
+    let pheAdminId = existingPheAdmin[0]?.id;
+    if (!pheAdminId) {
+      const [createdPheAdmin] = await db
+        .insert(users)
+        .values({
+          email: pheAdminEmail,
+          passwordHash: await bcrypt.hash("admin123", 10),
+          displayName: "PHE Organization Admin",
+          role: "organization_admin",
+        })
+        .returning({ id: users.id });
+      pheAdminId = createdPheAdmin?.id;
+    } else {
+      await db
+        .update(users)
+        .set({
+          displayName: "PHE Organization Admin",
+          role: "organization_admin",
+        })
+        .where(eq(users.id, pheAdminId));
+    }
+    if (pheAdminId) {
+      const existingOrgAccess = await db
+        .select({ id: userOrganizationAccess.id })
+        .from(userOrganizationAccess)
+        .where(
+          and(
+            eq(userOrganizationAccess.userId, pheAdminId),
+            eq(userOrganizationAccess.organizationId, phewbOrgId),
+          ),
+        )
+        .limit(1);
+      if (!existingOrgAccess[0]) {
+        await db.insert(userOrganizationAccess).values({
+          userId: pheAdminId,
+          organizationId: phewbOrgId,
+        });
+      }
+    }
+
+    await enforceHierarchyNotNull(pool);
+    const { verifyHierarchySeed } = await import("./verify-hierarchy-seed");
+    await verifyHierarchySeed(pool);
   } finally {
     await pool.end();
   }

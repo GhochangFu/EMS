@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { isOidcEnabled, startOidcLogout } from "../api/oidc";
+import { isGlobalAdmin, isMasterDataAdmin, canWritePointKeys } from "../lib/admin-access";
 import { canAccessControlRoomPath } from "../lib/control-room-access";
 import { roleLabel } from "../lib/role-label";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
@@ -54,6 +55,19 @@ const moduleGroups = [
     ],
   },
 ] as const;
+
+const adminModuleGroup = {
+  title: "Administration",
+  items: [
+    { label: "Master Data Hub", path: "/admin", globalOnly: false },
+    { label: "Organizations", path: "/admin/organizations", globalOnly: false },
+    { label: "Locations", path: "/admin/locations", globalOnly: false },
+    { label: "RTUs", path: "/admin/rtus", globalOnly: false },
+    { label: "Assets", path: "/admin/assets", globalOnly: false },
+    { label: "Asset Points", path: "/admin/asset-points", globalOnly: false },
+    { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
+  ],
+} as const;
 
 const temporarilyHiddenModulePaths = new Set(["/sld", "/crac"]);
 
@@ -175,12 +189,23 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
             {item.label}
           </Link>
         ))}
-        <span
-          className="ml-1 cursor-not-allowed rounded px-3 py-1.5 text-white/50"
-          title="Out of scope for prototype"
-        >
-          Settings
-        </span>
+        {isMasterDataAdmin(user.role) ? (
+          <Link
+            to="/admin"
+            className={`rounded px-3 py-1.5 hover:bg-white/10 ${
+              location.pathname.startsWith("/admin") ? "bg-white/15" : ""
+            }`}
+          >
+            Settings
+          </Link>
+        ) : (
+          <span
+            className="ml-1 cursor-not-allowed rounded px-3 py-1.5 text-white/50"
+            title="Administration requires admin or location_admin role"
+          >
+            Settings
+          </span>
+        )}
       </nav>
 
       <div className="flex min-h-0 flex-1">
@@ -233,6 +258,45 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
               </ul>
             </div>
           ))}
+          {isMasterDataAdmin(user.role) ? (
+            <div className="mb-3">
+              {sidebarCollapsed ? (
+                <div className="mx-3 mb-1 border-t border-gray-100" title={adminModuleGroup.title} />
+              ) : (
+                <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-bms-muted">
+                  {adminModuleGroup.title}
+                </div>
+              )}
+              <ul className="space-y-0.5">
+                {adminModuleGroup.items
+                  .filter((item) => {
+                    if ("catalogOnly" in item && item.catalogOnly) {
+                      return canWritePointKeys(user.role);
+                    }
+                    if ("globalOnly" in item && item.globalOnly) {
+                      return isGlobalAdmin(user.role);
+                    }
+                    return true;
+                  })
+                  .map((item) => (
+                    <li key={item.path}>
+                      <Link
+                        to={item.path}
+                        title={item.label}
+                        className={`block w-full border-l-2 hover:bg-bms-canvas ${
+                          location.pathname === item.path ||
+                          (item.path !== "/admin" && location.pathname.startsWith(`${item.path}`))
+                            ? "border-bms-green bg-bms-canvas/80 font-semibold text-bms-ink"
+                            : "border-transparent text-bms-muted"
+                        } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
+                      >
+                        {sidebarCollapsed ? shortLabel(item.label) : item.label}
+                      </Link>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ) : null}
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">

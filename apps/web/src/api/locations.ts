@@ -16,7 +16,7 @@ export async function fetchLocationKpis(): Promise<{ items: LocationKpiSummary[]
 /** GET /api/v1/dashboard/locations/:locationId */
 export async function fetchLocationDashboard(
   locationId: string,
-  opts?: { page?: number; pageSize?: number },
+  opts?: { page?: number; pageSize?: number; rtuId?: string },
 ): Promise<LocationDashboardDto> {
   const params = new URLSearchParams();
   if (opts?.page) {
@@ -24,6 +24,9 @@ export async function fetchLocationDashboard(
   }
   if (opts?.pageSize) {
     params.set("pageSize", String(opts.pageSize));
+  }
+  if (opts?.rtuId) {
+    params.set("rtuId", opts.rtuId);
   }
   const queryString = params.toString();
   const qs = queryString ? `?${queryString}` : "";

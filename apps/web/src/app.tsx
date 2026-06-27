@@ -20,6 +20,14 @@ import { ControlRoomUpsPage } from "./pages/control-room-ups-page";
 import { ControlRoomBatteryPage } from "./pages/control-room-battery-page";
 import { ControlRoomHvacPage } from "./pages/control-room-hvac-page";
 import { ControlRoomEnvPage } from "./pages/control-room-env-page";
+import { AdminRoute } from "./components/admin-route";
+import { AdminHubPage } from "./pages/admin/admin-hub-page";
+import { AssetPointsAdminPage } from "./pages/admin/asset-points-page";
+import { AssetsAdminPage } from "./pages/admin/assets-page";
+import { LocationsAdminPage } from "./pages/admin/locations-page";
+import { OrganizationsAdminPage } from "./pages/admin/organizations-page";
+import { PointKeysAdminPage } from "./pages/admin/point-keys-page";
+import { RtusAdminPage } from "./pages/admin/rtus-page";
 import { AuthCallbackPage } from "./pages/auth-callback-page";
 import { LoginPage } from "./pages/login-page";
 import { useAuthStore } from "./stores/auth-store";
@@ -249,6 +257,138 @@ export function App() {
         element={
           accessToken && user ? (
             <ControlRoomHvacPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <AdminHubPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/organizations"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <OrganizationsAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/organizations/:orgId/locations"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <LocationsAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/locations"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <LocationsAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/locations/:locationId/rtus"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <RtusAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/locations/:locationId/rtus/:rtuId/assets"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <AssetsAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/rtus"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <RtusAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/assets"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <AssetsAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/assets/:assetId/points"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <AssetPointsAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/asset-points"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <AssetPointsAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/point-keys"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <PointKeysAdminPage user={user} />
+            </AdminRoute>
           ) : (
             <Navigate to="/login" replace />
           )

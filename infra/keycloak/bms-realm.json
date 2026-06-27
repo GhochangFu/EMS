@@ -16,6 +16,10 @@
         "description": "Location-scoped administrator role"
       },
       {
+        "name": "organization_admin",
+        "description": "Organization-scoped administrator role"
+      },
+      {
         "name": "asset_group_admin",
         "description": "Asset-group-scoped administrator role"
       },
@@ -96,6 +100,22 @@
       "enabled": true,
       "emailVerified": true,
       "realmRoles": ["asset_group_admin"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "phe-admin@bms.local",
+      "email": "phe-admin@bms.local",
+      "firstName": "PHE",
+      "lastName": "Organization Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "realmRoles": ["organization_admin"],
       "credentials": [
         {
           "type": "password",

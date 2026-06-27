@@ -1,0 +1,30 @@
+{
+  "exportedAt": "2026-06-26T10:16:15.222Z",
+  "source": {
+    "server": "eskooldb.database.windows.net",
+    "database": "TeleCash_Wallet_1"
+  },
+  "files": {
+    "phe-rtu-device-sensor-mapping.csv": {
+      "rows": 144
+    },
+    "phe-bms-point-mapping-suggestions.csv": {
+      "rows": 144
+    },
+    "phewb-rtu-device-sensor-mapping.csv": {
+      "rows": 99
+    },
+    "phewb-bms-point-mapping-suggestions.csv": {
+      "rows": 99
+    },
+    "phe-daily-snap-latest.csv": {
+      "rows": 5
+    }
+  },
+  "distinct": {
+    "rtuCount": 7,
+    "deviceCount": 27,
+    "phewbRtuCount": 5,
+    "phewbDeviceCount": 18
+  }
+}

@@ -5,6 +5,8 @@ export function roleLabel(role: UserRole): string {
   switch (role) {
     case "admin":
       return "Administrator";
+    case "organization_admin":
+      return "Organization Administrator";
     case "location_admin":
       return "Location Administrator";
     case "asset_group_admin":

@@ -12,6 +12,9 @@ type LocRow = {
   name: string;
   kind: string;
   site_name: string | null;
+  org_id: string | null;
+  org_code: string | null;
+  org_name: string | null;
   latitude: string;
   longitude: string;
   capacity_mw: string | null;
@@ -41,6 +44,9 @@ export class MapService {
               ml.name,
               ml.kind,
               ml.site_name,
+              o.id AS org_id,
+              o.code AS org_code,
+              o.name AS org_name,
               ml.latitude,
               ml.longitude,
               ml.capacity_mw,
@@ -50,27 +56,29 @@ export class MapService {
               ml.station_operating_status
        FROM bms.map_locations ml
        LEFT JOIN bms.locations l ON l.slug = ml.slug
+       LEFT JOIN bms.organizations o ON o.id = l.organization_id
        ORDER BY ml.kind DESC, ml.name ASC`,
     );
 
     const assetIds = opts?.assetIds ?? null;
     const alarmRows = await this.pool.query<{
-      site_name: string;
+      location_id: string;
       open_alarms: string;
       critical_alarms: string;
     }>(
-      `SELECT a.site_name,
+      `SELECT a.location_id,
               COUNT(*) FILTER (WHERE al.acknowledged_at IS NULL)::int AS open_alarms,
               COUNT(*) FILTER (WHERE al.acknowledged_at IS NULL AND al.severity = 'critical')::int AS critical_alarms
        FROM bms.alarms al
        INNER JOIN bms.assets a ON a.id = al.asset_id
-       WHERE ($1::uuid[] IS NULL OR a.id = ANY($1::uuid[]))
-       GROUP BY a.site_name`,
+       WHERE a.location_id IS NOT NULL
+         AND ($1::uuid[] IS NULL OR a.id = ANY($1::uuid[]))
+       GROUP BY a.location_id`,
       [assetIds],
     );
     const alarmMap = new Map(
       alarmRows.rows.map((r) => [
-        r.site_name,
+        r.location_id,
         {
           open: Number(r.open_alarms),
           critical: Number(r.critical_alarms),
@@ -79,7 +87,7 @@ export class MapService {
     );
 
     const commRows = await this.pool.query<{
-      site_name: string;
+      location_id: string;
       asset_count: string;
       fresh_count: string;
     }>(
@@ -89,18 +97,19 @@ export class MapService {
          WHERE point_key = 'kw'
          ORDER BY asset_id, time DESC
        )
-       SELECT a.site_name,
+       SELECT a.location_id,
               COUNT(a.id)::int AS asset_count,
               COUNT(l.asset_id) FILTER (WHERE l.kw_time > now() - interval '25 seconds')::int AS fresh_count
        FROM bms.assets a
        LEFT JOIN latest l ON l.asset_id = a.id
-       WHERE ($1::uuid[] IS NULL OR a.id = ANY($1::uuid[]))
-       GROUP BY a.site_name`,
+       WHERE a.location_id IS NOT NULL
+         AND ($1::uuid[] IS NULL OR a.id = ANY($1::uuid[]))
+       GROUP BY a.location_id`,
       [assetIds],
     );
     const commMap = new Map(
       commRows.rows.map((r) => [
-        r.site_name,
+        r.location_id,
         {
           total: Number(r.asset_count),
           fresh: Number(r.fresh_count),
@@ -117,6 +126,10 @@ export class MapService {
           );
 
     return visibleLocs.map((loc) => {
+      const organization =
+        loc.org_id && loc.org_code && loc.org_name
+          ? { id: loc.org_id, code: loc.org_code, name: loc.org_name }
+          : null;
       const base = {
         id: loc.id,
         canonicalLocationId: loc.canonical_location_id,
@@ -124,6 +137,7 @@ export class MapService {
         name: loc.name,
         kind: loc.kind as MapSiteDto["kind"],
         siteName: loc.site_name,
+        organization,
         latitude: Number(loc.latitude),
         longitude: Number(loc.longitude),
         capacityMw: loc.capacity_mw ? Number(loc.capacity_mw) : null,
@@ -133,9 +147,9 @@ export class MapService {
         stationOperatingStatus: loc.station_operating_status,
       };
 
-      if (isOperationalLocation(loc.kind) && loc.site_name) {
-        const a = alarmMap.get(loc.site_name) ?? { open: 0, critical: 0 };
-        const c = commMap.get(loc.site_name) ?? { total: 0, fresh: 0 };
+      if (isOperationalLocation(loc.kind) && loc.canonical_location_id) {
+        const a = alarmMap.get(loc.canonical_location_id) ?? { open: 0, critical: 0 };
+        const c = commMap.get(loc.canonical_location_id) ?? { total: 0, fresh: 0 };
         const live = this.campusLive(a, c);
         return { ...base, live };
       }

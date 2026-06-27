@@ -61,6 +61,7 @@ export class DashboardController {
       partial: currentUser.scope.kind === "asset_group",
       page: parsedQuery.page,
       pageSize: parsedQuery.pageSize,
+      rtuId: parsedQuery.rtuId,
     });
     if (!payload) {
       throw new NotFoundException("Location not found or outside your access scope");

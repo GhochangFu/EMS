@@ -12,6 +12,17 @@ import {
 
 export const bmsSchema = pgSchema("bms");
 
+export const organizations = bmsSchema.table("organizations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: varchar("code", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 255 }).notNull(),
+  active: boolean("active").notNull().default(true),
+  meta: jsonb("meta"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const users = bmsSchema.table("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: varchar("email", { length: 255 }).notNull().unique(),
@@ -27,7 +38,10 @@ export const users = bmsSchema.table("users", {
 
 export const locations = bmsSchema.table("locations", {
   id: uuid("id").primaryKey().defaultRandom(),
-  code: varchar("code", { length: 64 }).notNull().unique(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  code: varchar("code", { length: 64 }).notNull(),
   slug: varchar("slug", { length: 64 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   type: varchar("type", { length: 32 }).notNull(),
@@ -45,13 +59,40 @@ export const locations = bmsSchema.table("locations", {
     .defaultNow(),
 });
 
+/** RTU / gateway under a location (PHE EdgeRTU or Eskom domain simulator). */
+export const rtus = bmsSchema.table("rtus", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  locationId: uuid("location_id")
+    .notNull()
+    .references(() => locations.id),
+  code: varchar("code", { length: 64 }).notNull(),
+  displayName: varchar("display_name", { length: 255 }).notNull(),
+  sourceType: varchar("source_type", { length: 32 }).notNull().default("catalog"),
+  domain: varchar("domain", { length: 64 }),
+  externalRtuId: integer("external_rtu_id"),
+  rtuCode: varchar("rtu_code", { length: 64 }),
+  mqttTopic: varchar("mqtt_topic", { length: 255 }),
+  stationCode: varchar("station_code", { length: 64 }),
+  stationName: varchar("station_name", { length: 255 }),
+  ingestEnabled: boolean("ingest_enabled").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+  meta: jsonb("meta"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const assets = bmsSchema.table("assets", {
   id: uuid("id").primaryKey().defaultRandom(),
   code: varchar("code", { length: 64 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   siteName: varchar("site_name", { length: 255 }).notNull(),
   locationId: uuid("location_id").references(() => locations.id),
+  rtuId: uuid("rtu_id")
+    .notNull()
+    .references(() => rtus.id),
   domain: varchar("domain", { length: 64 }).notNull().default("electrical"),
+  active: boolean("active").notNull().default(true),
   meta: jsonb("meta"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -84,6 +125,22 @@ export const assetGroupMembers = bmsSchema.table("asset_group_members", {
     .defaultNow(),
 });
 
+/** Registered telemetry points per asset (source DataKey → BMS point_key). */
+export const assetPoints = bmsSchema.table("asset_points", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  assetId: uuid("asset_id")
+    .notNull()
+    .references(() => assets.id),
+  pointKey: varchar("point_key", { length: 128 }).notNull(),
+  sourceDataKey: varchar("source_data_key", { length: 128 }).notNull(),
+  sensorCode: varchar("sensor_code", { length: 64 }),
+  unit: varchar("unit", { length: 32 }),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const userLocationAccess = bmsSchema.table("user_location_access", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id")
@@ -92,6 +149,36 @@ export const userLocationAccess = bmsSchema.table("user_location_access", {
   locationId: uuid("location_id")
     .notNull()
     .references(() => locations.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const userOrganizationAccess = bmsSchema.table("user_organization_access", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/** Org-scoped telemetry point key catalog for asset mapping. */
+export const pointKeys = bmsSchema.table("point_keys", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  code: varchar("code", { length: 128 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  domain: varchar("domain", { length: 64 }),
+  unit: varchar("unit", { length: 32 }),
+  description: text("description"),
+  active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

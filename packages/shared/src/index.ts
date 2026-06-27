@@ -1,6 +1,7 @@
 /** Prototype role slugs stored in `bms.users.role`. */
 export type UserRole =
   | "admin"
+  | "organization_admin"
   | "location_admin"
   | "asset_group_admin"
   | "operator"
@@ -57,11 +58,30 @@ export type CurrentUserResponse = {
   scope: AccessibleScope;
 };
 
+export type OrganizationRef = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+export type RtuSummary = {
+  id: string;
+  code: string;
+  displayName: string;
+  sourceType: "mqtt" | "simulator" | "catalog";
+  domain: string | null;
+  ingestEnabled: boolean;
+  assetCount: number;
+  freshAssetCount: number;
+};
+
 export type LocationKpiSummary = {
   id: string;
   name: string;
   type: "smoc_campus" | "rsmoc" | "csmoc";
   province: string | null;
+  organization: OrganizationRef;
+  rtuCount: number;
   assetCount: number;
   freshAssetCount: number;
   totalKw: number;
@@ -71,12 +91,15 @@ export type LocationKpiSummary = {
 };
 
 export type LocationDashboardDto = LocationKpiSummary & {
+  rtus: RtuSummary[];
   assets: {
     items: Array<{
       id: string;
       code: string;
       name: string;
       domain: string;
+      rtuId: string;
+      rtuDisplayName: string;
       latestKw: number | null;
       latestTelemetryAt: string | null;
       freshness: "live" | "stale" | "none";
@@ -501,6 +524,7 @@ export type MapSiteDto = {
   name: string;
   kind: "eskom_station" | "smoc_campus" | "rsmoc" | "csmoc";
   siteName: string | null;
+  organization: OrganizationRef | null;
   latitude: number;
   longitude: number;
   capacityMw: number | null;
@@ -509,4 +533,137 @@ export type MapSiteDto = {
   province: string | null;
   stationOperatingStatus: string | null;
   live: MapSiteLive;
+};
+
+/** Active filter for master-data list endpoints. */
+export type MasterDataActiveFilter = "true" | "false" | "all";
+
+export type AdminOrganizationDto = {
+  id: string;
+  code: string;
+  name: string;
+  active: boolean;
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+export type AdminLocationDto = {
+  id: string;
+  organizationId: string;
+  organizationCode: string;
+  organizationName: string;
+  code: string;
+  slug: string;
+  name: string;
+  type: "smoc_campus" | "rsmoc" | "csmoc";
+  province: string | null;
+  capital: string | null;
+  latitude: number;
+  longitude: number;
+  active: boolean;
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminRtuDto = {
+  id: string;
+  locationId: string;
+  locationName: string;
+  organizationCode: string;
+  code: string;
+  displayName: string;
+  sourceType: "mqtt" | "simulator" | "catalog";
+  domain: string | null;
+  externalRtuId: number | null;
+  rtuCode: string | null;
+  mqttTopic: string | null;
+  stationCode: string | null;
+  stationName: string | null;
+  ingestEnabled: boolean;
+  active: boolean;
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+export type AdminAssetDto = {
+  id: string;
+  code: string;
+  name: string;
+  siteName: string;
+  locationId: string | null;
+  locationName: string | null;
+  organizationCode: string | null;
+  rtuId: string;
+  rtuDisplayName: string;
+  domain: string;
+  active: boolean;
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+export type AdminAssetPointDto = {
+  id: string;
+  assetId: string;
+  assetCode: string;
+  assetName: string;
+  locationId: string | null;
+  locationName: string | null;
+  pointKey: string;
+  sourceDataKey: string;
+  sensorCode: string | null;
+  unit: string | null;
+  active: boolean;
+  createdAt: string;
+};
+
+export type AdminPointKeyDto = {
+  id: string;
+  organizationId: string;
+  organizationCode: string;
+  organizationName: string;
+  code: string;
+  name: string;
+  domain: string | null;
+  unit: string | null;
+  description: string | null;
+  active: boolean;
+  createdAt: string;
+};
+
+export type AdminOrganizationSummaryDto = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+export type AdminLocationSummaryDto = {
+  id: string;
+  code: string;
+  name: string;
+  organizationId: string;
+  organizationCode: string;
+  organizationName: string;
+};
+
+export type AdminRtuSummaryDto = {
+  id: string;
+  code: string;
+  displayName: string;
+  locationId: string;
+  locationName: string;
+  organizationId: string;
+  organizationCode: string;
+};
+
+export type AdminAssetSummaryDto = {
+  id: string;
+  code: string;
+  name: string;
+  locationId: string | null;
+  locationName: string | null;
+  rtuId: string;
+  rtuDisplayName: string;
+  organizationId: string | null;
+  organizationCode: string | null;
 };

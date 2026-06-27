@@ -26,6 +26,10 @@ export class DashboardService {
       name: string;
       type: "smoc_campus" | "rsmoc" | "csmoc";
       province: string | null;
+      org_id: string;
+      org_code: string;
+      org_name: string;
+      rtu_count: string;
       asset_count: string;
       fresh_asset_count: string;
       total_kw: string;
@@ -44,6 +48,10 @@ export class DashboardService {
         l.name,
         l.type,
         l.province,
+        o.id AS org_id,
+        o.code AS org_code,
+        o.name AS org_name,
+        COUNT(DISTINCT r.id)::int AS rtu_count,
         COUNT(DISTINCT a.id)::int AS asset_count,
         COUNT(DISTINCT a.id) FILTER (
           WHERE latest.kw_time > now() - interval '25 seconds'
@@ -54,6 +62,8 @@ export class DashboardService {
           WHERE al.acknowledged_at IS NULL AND al.severity = 'critical'
         )::int AS critical_alarms
       FROM bms.locations l
+      INNER JOIN bms.organizations o ON o.id = l.organization_id
+      LEFT JOIN bms.rtus r ON r.location_id = l.id
       LEFT JOIN bms.assets a
         ON a.location_id = l.id
        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
@@ -61,7 +71,7 @@ export class DashboardService {
       LEFT JOIN bms.alarms al ON al.asset_id = a.id
       WHERE l.active = true
         AND ($1::uuid[] IS NULL OR l.id = ANY($1::uuid[]))
-      GROUP BY l.id, l.name, l.type, l.province
+      GROUP BY l.id, l.name, l.type, l.province, o.id, o.code, o.name
       ORDER BY l.name
       `,
       [opts?.locationIds ?? null, opts?.assetIds ?? null],
@@ -72,6 +82,12 @@ export class DashboardService {
         name: row.name,
         type: row.type,
         province: row.province,
+        organization: {
+          id: row.org_id,
+          code: row.org_code,
+          name: row.org_name,
+        },
+        rtuCount: Number(row.rtu_count),
         assetCount: Number(row.asset_count),
         freshAssetCount: Number(row.fresh_asset_count),
         totalKw: this.round(Number(row.total_kw)),
@@ -91,6 +107,7 @@ export class DashboardService {
       partial?: boolean;
       page?: number;
       pageSize?: number;
+      rtuId?: string;
     },
   ): Promise<LocationDashboardDto | null> {
     if (opts?.locationIds && !opts.locationIds.includes(locationId)) {
@@ -104,11 +121,54 @@ export class DashboardService {
     const page = opts?.page ?? 1;
     const pageSize = opts?.pageSize ?? 25;
     const offset = (page - 1) * pageSize;
+
+    const rtuRows = await this.pool.query<{
+      id: string;
+      code: string;
+      display_name: string;
+      source_type: "mqtt" | "simulator" | "catalog";
+      domain: string | null;
+      ingest_enabled: boolean;
+      asset_count: string;
+      fresh_asset_count: string;
+    }>(
+      `
+      WITH latest AS (
+        SELECT DISTINCT ON (asset_id) asset_id, time AS kw_time
+        FROM telemetry.point_values
+        WHERE point_key = 'kw'
+        ORDER BY asset_id, time DESC
+      )
+      SELECT
+        r.id,
+        r.code,
+        r.display_name,
+        r.source_type,
+        r.domain,
+        r.ingest_enabled,
+        COUNT(DISTINCT a.id)::int AS asset_count,
+        COUNT(DISTINCT a.id) FILTER (
+          WHERE latest.kw_time > now() - interval '25 seconds'
+        )::int AS fresh_asset_count
+      FROM bms.rtus r
+      LEFT JOIN bms.assets a
+        ON a.rtu_id = r.id
+       AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
+      LEFT JOIN latest ON latest.asset_id = a.id
+      WHERE r.location_id = $1
+      GROUP BY r.id, r.code, r.display_name, r.source_type, r.domain, r.ingest_enabled
+      ORDER BY r.display_name
+      `,
+      [locationId, opts?.assetIds ?? null],
+    );
+
     const assetsPage = await this.pool.query<{
       id: string;
       code: string;
       name: string;
       domain: string;
+      rtu_id: string;
+      rtu_display_name: string;
       latest_kw: string | null;
       latest_telemetry_at: Date | string | null;
       latest_telemetry: unknown;
@@ -122,11 +182,13 @@ export class DashboardService {
     }>(
       `
       WITH scoped_assets AS (
-        SELECT a.id, a.code, a.name, a.domain
+        SELECT a.id, a.code, a.name, a.domain, a.rtu_id, r.display_name AS rtu_display_name
         FROM bms.assets a
+        INNER JOIN bms.rtus r ON r.id = a.rtu_id
         WHERE a.location_id = $1
           AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
-        ORDER BY a.code
+          AND ($5::uuid IS NULL OR a.rtu_id = $5::uuid)
+        ORDER BY r.display_name, a.code
         LIMIT $3 OFFSET $4
       ),
       latest_points AS (
@@ -212,6 +274,8 @@ export class DashboardService {
         sa.code,
         sa.name,
         sa.domain,
+        sa.rtu_id,
+        sa.rtu_display_name,
         telemetry.latest_kw::float8 AS latest_kw,
         telemetry.latest_telemetry_at,
         COALESCE(telemetry.latest_telemetry, '[]'::jsonb) AS latest_telemetry,
@@ -226,9 +290,9 @@ export class DashboardService {
       LEFT JOIN telemetry ON telemetry.asset_id = sa.id
       LEFT JOIN alarm_rollup ON alarm_rollup.asset_id = sa.id
       LEFT JOIN work_order_rollup ON work_order_rollup.asset_id = sa.id
-      ORDER BY sa.code
+      ORDER BY sa.rtu_display_name, sa.code
       `,
-      [locationId, opts?.assetIds ?? null, pageSize, offset],
+      [locationId, opts?.assetIds ?? null, pageSize, offset, opts?.rtuId ?? null],
     );
     const workOrders = await this.pool.query<{ count: string }>(
       `
@@ -249,6 +313,8 @@ export class DashboardService {
         code: row.code,
         name: row.name,
         domain: row.domain,
+        rtuId: row.rtu_id,
+        rtuDisplayName: row.rtu_display_name,
         latestKw:
           row.latest_kw === null ? null : this.round(Number(row.latest_kw)),
         latestTelemetryAt,
@@ -274,6 +340,16 @@ export class DashboardService {
       card.assetCount === 0 ? 0 : Math.ceil(card.assetCount / pageSize);
     return {
       ...card,
+      rtus: rtuRows.rows.map((row) => ({
+        id: row.id,
+        code: row.code,
+        displayName: row.display_name,
+        sourceType: row.source_type,
+        domain: row.domain,
+        ingestEnabled: row.ingest_enabled,
+        assetCount: Number(row.asset_count),
+        freshAssetCount: Number(row.fresh_asset_count),
+      })),
       assets: {
         items: assetItems,
         page,
