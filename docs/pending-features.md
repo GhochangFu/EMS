@@ -113,6 +113,38 @@ parity and north-star completeness when they conflict.* North-star hardening
 | 3D control room (Three.js) | ❌ | north star §2 (AGENTS.md §6 defers) | ✓ main | P3 | — |
 | Mobile PWA / responsive ops app | ❌ | Zoho, north star §12 | ~ doc | P2 | 16+ |
 
+### 3d. Guided Onboarding Agent  *(client onboarding — user explicitly requested)*
+
+A true **agentic onboarding assistant** (not just a chatbot) that walks a user
+through onboarding by asking simple questions and **actually creating** the
+records for them: **locations, asset templates, assets, parameters (point
+keys), asset tags, and their mappings** — including protocol-based device
+setup.
+
+**What exists today (baseline):** `onboarding-chat.service.ts` is a phased
+**draft-builder** chatbot (location → rtu → point_keys → assets → mappings →
+review). Its LLM path (`handleOpenAiTurn`) is a **single-shot JSON producer**;
+its no-key fallback (`handleRuleBasedTurn`) is scripted. It accumulates a draft
+blob and a **separate commit** step writes everything at once. It has **no
+asset-template concept** and does not perform incremental create actions.
+
+**Delta to build (this feature):**
+
+| Feature | Status | Source | Prov. | P | Effort |
+|---------|--------|--------|-------|---|--------|
+| Tool-calling agent loop (function/tool calls that invoke real create APIs, not a single-shot JSON draft) | ⚠ | client onboarding | ✓ main | P0 | 5–7 |
+| Agent onboards **asset templates** (create + instantiate) conversationally | ❌ | client onboarding, client 5 | ✓ main | P0 | 4–5 *(needs §2 templates)* |
+| Agent onboards **parameters (point keys) + asset tags** and **maps** source keys ↔ tags via Q&A | ⚠ | client onboarding, client 6 | ✓ main | P0 | 3–4 |
+| Agent drives **protocol-based** device onboarding (discover/prompt per adapter: Modbus/BACnet/OPC-UA/MQTT) | ⚠ | client onboarding, client 1 | ✓ main | P1 | 3–4 *(needs §1 adapters)* |
+| Interactive, question-driven UX with per-step confirm + rollback (beyond current all-at-once commit) | ⚠ | client onboarding | ✓ main | P1 | 3–4 |
+| Agent grounding on org catalog/templates/protocols (retrieval context, not hardcoded scripts) | ⚠ | client onboarding | ✓ main | P1 | 2–3 |
+| Deterministic rule-based fallback parity when no LLM key is set | ⚠ | client onboarding | ✓ main | P2 | 2–3 |
+
+> **Depends on:** §2 asset templates (blocks template onboarding) and §1
+> adapter framework (blocks protocol discovery). Sequence this **after**
+> templates land, reusing the existing draft/commit + credential-encryption
+> plumbing rather than replacing it.
+
 ---
 
 ## 4. Non-Functional / Production Hardening  *(north star — currently invisible gaps)*
@@ -186,6 +218,10 @@ Listed so no one re-opens a settled decision as a "gap."
 
 ## 6. Suggested Sequencing (client-priority, dependency-aware)
 
+> **Full dependency hierarchy, parallel tracks, waves, and critical path:**
+> see [pending-features-sequencing.md](./pending-features-sequencing.md). The
+> list below is the narrative summary; that doc is the authoritative ordering.
+
 Ordering follows the assessment's phases but folds in the north-star hardening
 that the client roadmap omitted. **P0 client features lead; hardening rides
 alongside, not ahead.**
@@ -196,8 +232,11 @@ alongside, not ahead.**
    a real test runner** (§4b — do this early; everything after depends on it).
 2. **Industrial connect (P0/P1):** adapter framework → Modbus → BACnet → OPC-UA
    → DCS connector → device health/last-seen → expand MQTT to all RTUs.
-3. **Calc & dashboards (P0):** calc DSL + engine + config UI → dashboard schema
-   + builder → template default dashboards → template calc-tags.
+3. **Calc, dashboards & guided onboarding (P0):** calc DSL + engine + config UI
+   → dashboard schema + builder → template default dashboards → template
+   calc-tags → **guided onboarding agent** (§3d — builds on templates + adapter
+   framework; upgrades the existing draft-builder chatbot into a tool-calling
+   agent that creates locations, templates, assets, parameters, and mappings).
 4. **Governance & scale (P1/P2):** audit read API → RLS → command path + safety
    gate + dual approval → HA deploy → hash-chained audit → SLOs → contracts/ui
    packages → integration/E2E/load tests to coverage gates.
