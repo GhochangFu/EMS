@@ -1,9 +1,17 @@
-# AGENTS.md — Eskom SMOC BMS (Part 2 / Phase 5 Location and Access Open)
+# AGENTS.md — TRINETRA BMS (formerly Eskom SMOC) (Part 2 / Phase 5 Location and Access + Onboarding & PHE Ingest)
 
 > **Status:** ACTIVE — Phase 5 Sprint J/K/L/M/N Location and Access
-> hardening is open.
+> hardening is open. In addition, the hierarchical master-data admin, the
+> scoped AI onboarding wizard, and the PHE MQTT real-ingestion pilot are
+> merged to `main` (ADR 0007–0012) and are now in scope. General site-wide
+> AI copilot, EMQX, and multi-protocol adapters remain deferred.
+> **Product brand:** TRINETRA (earlier: Eskom SMOC / InfraPulse). Powered by
+> Euphoria Infotech India Limited.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
+> **Recent scope changes:** see `docs/adr/0007`–`0012` and `git log`; those
+> ADRs promoted work that post-dates parts of §3 and §6 below, so where this
+> file's status/scope conflicts with a newer ADR, the ADR is authoritative.
 
 This file is the rulebook humans and AI agents must follow **right now**.
 The seven-screen prototype is complete. Phase 1 Sprint A added
@@ -39,6 +47,18 @@ indexing, and shell/sidebar refinements. Phase 5 Sprint J/K/L/M/N is now
 open for focused Location and Access hardening, demo inventory cleanup,
 clean migration/seed verification, Keycloak checks, automated access tests,
 and role-walkthrough hardening.
+
+Beyond the Location and Access sprint, three feature streams have since been
+merged to `main` and are in scope. The **hierarchical master-data admin**
+(ADR 0008–0010) introduced the `Organization → Location → RTU → Asset → Point
+Key` catalog with scoped `admin`, `organization_admin`, and `location_admin`
+roles and CRUD screens under `/admin/*`. The **scoped AI onboarding wizard**
+(ADR 0011) adds an admin-only conversational ingestion flow backed by OpenAI
+chat completions with a deterministic rule-based fallback. The **PHE MQTT
+real-ingestion pilot** (ADR 0007, 0012) added `apps/ingest`, a single-RTU MQTT
+TLS subscriber for West Bengal PHE pump houses, plus AES-256-GCM encrypted RTU
+connection credentials. These promotions are partial and scoped: general
+site-wide AI copilot, EMQX, and non-MQTT protocol adapters remain out of scope.
 
 ---
 
@@ -78,7 +98,17 @@ The current planning direction is:
 13. Defer MinIO/object storage until persisted report files are actually
    needed.
 14. Plan Phase 6 as Three.js Control Room only.
-15. Keep AI Copilot / chatbot out of scope for general site navigation. **Scoped AI onboarding wizard** (admin ingestion only, ADR 0011) is in scope on branch `feature/ai-onboarding-wizard`.
+15. Keep general AI Copilot / chatbot out of scope for site navigation. The
+   **scoped AI onboarding wizard** (admin ingestion only, ADR 0011) is merged
+   to `main` and in scope.
+16. Treat the **hierarchical master-data admin** (ADR 0008–0010) as in scope:
+   Organization → Location → RTU → Asset → Point Key CRUD under `/admin/*`
+   with `admin`, `organization_admin`, and `location_admin` roles. Org-level
+   read RBAC and hard deletes remain out of scope (deactivate/reactivate only).
+17. Treat the **PHE MQTT real-ingestion pilot** (ADR 0007, 0012) as in scope
+   for the single pilot RTU only via `apps/ingest`. EMQX and non-MQTT protocol
+   adapters remain deferred; the simulator stays the source for all other
+   assets.
 
 The completed prototype screens are:
 
@@ -113,6 +143,10 @@ entry **D-0001**.
 | Telemetry DB | TimescaleDB extension on the same Postgres |
 | Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
+| Real ingestion | `apps/ingest` MQTT TLS subscriber for the PHE pilot; writes `telemetry.point_values` and `pg_notify('bms_telemetry', …)` like the simulator (ADR 0007). One pilot RTU only; no EMQX |
+| Master data  | Organization → Location → RTU → Asset → Point-key catalog + `/admin/*` CRUD with `admin`/`organization_admin`/`location_admin` roles (ADR 0008–0010) |
+| AI onboarding | Scoped admin ingestion wizard using OpenAI chat completions with structured JSON, and a deterministic rule-based fallback when `OPENAI_API_KEY` is unset (ADR 0011) |
+| Secrets      | AES-256-GCM encrypted RTU connection credentials via `CREDENTIAL_ENCRYPTION_KEY`; never returned decrypted by the API (ADR 0012) |
 | Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, and DB |
 | CI/CD        | GitHub Actions for install, build/typecheck, and migration validation |
@@ -139,12 +173,13 @@ bms/
 │   ├── keycloak/              ← Phase 1 Sprint C realm export
 │   └── observability/         ← Phase 1 Sprint D Prometheus/Grafana/Loki config
 ├── apps/
-│   ├── web/                   ← React SPA
-│   ├── api/                   ← NestJS REST + WebSocket
-│   └── sim/                   ← telemetry simulator (Node script)
+│   ├── web/                   ← React SPA (incl. /admin master-data + onboarding wizard)
+│   ├── api/                   ← NestJS REST + WebSocket (incl. src/admin, src/security)
+│   ├── sim/                   ← telemetry simulator (Node script)
+│   └── ingest/                ← PHE MQTT TLS subscriber (ADR 0007), one pilot RTU
 ├── packages/
 │   ├── shared/                ← cross-cutting TS types & constants
-│   └── db/                    ← Drizzle schema, migrations, seeds
+│   └── db/                    ← Drizzle schema, migrations, seeds (incl. phe-catalog.json)
 └── docs/
     ├── adr/                   ← Phase 1+ architecture decisions
     ├── AGENTS.production.md   ← future-state rulebook (reference)
@@ -227,17 +262,20 @@ sidebar; keep scoped visibility and active-state behaviour consistent with
 
 These are intentionally deferred. Do not implement them yet:
 
-- Multi-tenancy, row-level security
+- Multi-tenancy, row-level security (org-level read RBAC still deferred)
 - MFA / SSO / AD federation
-- Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT)
-- EMQX broker
+- Real protocol adapters for BACnet, Modbus, SNMP, OPC-UA (the **MQTT PHE
+  ingest pilot is promoted for one RTU** via ADR 0007; all other protocols
+  remain out of scope)
+- EMQX broker (PHE pilot connects directly over MQTT TLS; no broker)
 - MinIO / object storage
 - Two-way commanding with approval workflows
 - Audit hash-chaining (we keep a simple audit table only)
 - Energy reports (PDF / XLSX)
 - Complex drag-and-drop node graph rule builders
 - Three.js Control Room 3D
-- AI Copilot
+- General site-wide AI Copilot / chatbot (the **scoped admin onboarding
+  wizard is promoted** via ADR 0011; general copilot remains out of scope)
 - NERSA / ISO compliance reports
 - Kubernetes production manifests
 
@@ -274,9 +312,11 @@ Security, CR Alarm Management, CR Trends, Phase 6 3D, two-way commands,
 setpoint changes, manual bypass, battery tests, equalize charge, HVAC
 force-changeover, sensor calibration/test execution, real-ingestion rules,
 scheduler/job queues, and complex node graph builders remain out of scope
-until their specific sprint is promoted. AI Copilot / chatbot remains
-deferred. When any other item above is needed, follow §10 (Promotion
-Process).
+until their specific sprint is promoted. General site-wide AI Copilot /
+chatbot remains deferred, but the scoped admin onboarding wizard (ADR 0011),
+the hierarchical master-data admin (ADR 0008–0010), and the single-RTU PHE
+MQTT ingest pilot (ADR 0007, 0012) are promoted and in scope. When any other
+item above is needed, follow §10 (Promotion Process).
 
 ---
 
@@ -379,11 +419,16 @@ agents are never asked to enforce rules that do not yet apply.
 
 ## 11. Glossary (short)
 
-- **SMOC** — Smart Metering Operating Centre.
+- **SMOC** — Smart Metering Operating Centre (RSMOC / CSMOC: regional /
+  central variants used in seeded location names).
 - **BMS** — Building Management System.
 - **SLD** — Single-Line (electrical) Diagram.
 - **CRAC** — Computer Room Air Conditioner.
 - **PUE** — Power Usage Effectiveness.
+- **RTU** — Remote Terminal Unit; ingestion source under a location
+  (`bms.rtus`). PHE RTUs are physical; Eskom RTUs are synthetic per-domain.
+- **PHE / PHEWB** — West Bengal Public Health Engineering; the real MQTT
+  ingest pilot source (pump houses via ThinkIoT).
 
 Full glossary lives in `docs/AGENTS.production.md`.
 
