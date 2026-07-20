@@ -161,8 +161,13 @@ export class OnboardingValidateService {
     if (!d.rtus || d.rtus.length === 0 || !d.rtus.every((r) => r.protocol && r.code)) {
       return "rtu";
     }
+    if (d.rtus.some((rtu) => this.rtuNeedsMqttSetup(rtu))) {
+      return "rtu";
+    }
     if (!d.pointKeys || d.pointKeys.length === 0) {
-      return "point_keys";
+      if (!d.onboardingMeta?.useExistingPointKeys) {
+        return "point_keys";
+      }
     }
     if (!d.assets || d.assets.length === 0) {
       return "assets";
@@ -171,5 +176,16 @@ export class OnboardingValidateService {
       return "mappings";
     }
     return "review";
+  }
+
+  private rtuNeedsMqttSetup(rtu: NonNullable<OnboardingDraft["rtus"]>[number]): boolean {
+    if (rtu.protocol !== "mqtt" || !rtu.ingestEnabled) {
+      return false;
+    }
+    if (!rtu.credentialsSet) {
+      return true;
+    }
+    const topic = String(rtu.config?.topic ?? rtu.config?.mqttTopic ?? "").trim();
+    return !topic || topic === "-";
   }
 }

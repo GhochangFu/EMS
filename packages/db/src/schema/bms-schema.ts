@@ -212,6 +212,16 @@ export const onboardingSessions = bmsSchema.table("onboarding_sessions", {
   result: jsonb("result"),
 });
 
+/** Canonical protocol definitions for onboarding and RTU connection config. */
+export const protocolCatalog = bmsSchema.table("protocol_catalog", {
+  code: varchar("code", { length: 32 }).primaryKey(),
+  label: varchar("label", { length: 128 }).notNull(),
+  description: text("description"),
+  ingestWired: boolean("ingest_wired").notNull().default(false),
+  exampleConfig: jsonb("example_config").notNull().default({}),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
 /** Per-RTU protocol connection config and encrypted credentials. */
 export const rtuConnectionConfigs = bmsSchema.table("rtu_connection_configs", {
   id: uuid("id").primaryKey().defaultRandom(),

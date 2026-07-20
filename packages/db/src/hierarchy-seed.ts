@@ -121,15 +121,19 @@ export async function assignEskomAssetRtus(pool: pg.Pool): Promise<void> {
   }>(`
     SELECT a.id, a.site_name, a.domain, a.location_id
     FROM bms.assets a
-    LEFT JOIN bms.organizations o ON o.id = (
-      SELECT l.organization_id FROM bms.locations l WHERE l.id = a.location_id
-    )
-    WHERE a.code NOT LIKE 'PHE-%'
-      AND (a.rtu_id IS NULL OR a.rtu_id IS NOT NULL)
+    INNER JOIN bms.locations l ON l.id = a.location_id
+    INNER JOIN bms.organizations o ON o.id = l.organization_id
+    WHERE o.code = 'ESKOM'
+      AND a.code NOT LIKE 'PHE-%'
   `);
 
   for (const row of rows.rows) {
-    const rtuId = await resolveEskomSimRtuId(pool, row.site_name, row.domain);
+    const rtuId = await resolveEskomSimRtuId(pool, row.site_name, row.domain).catch(
+      () => null,
+    );
+    if (!rtuId) {
+      continue;
+    }
     await pool.query(
       `
       UPDATE bms.assets

@@ -5,7 +5,9 @@ import type {
   OnboardingValidateResponseDto,
 } from "@bms/shared";
 
-import { adminFetch } from "./client";
+import { adminFetch, getAdminAuthHeaders } from "./client";
+
+const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
 /** Starts a new onboarding session for an organization. */
 export async function createOnboardingSession(
@@ -35,6 +37,42 @@ export async function sendOnboardingChat(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message }),
   });
+}
+
+/** Downloads the Excel onboarding template. */
+export async function downloadOnboardingTemplate(): Promise<void> {
+  const headers = await getAdminAuthHeaders();
+  const res = await fetch(`${base}/api/v1/admin/onboarding/template.xlsx`, { headers });
+  if (!res.ok) {
+    throw new Error(`Template download failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "bms-onboarding-template.xlsx";
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+/** Uploads a filled Excel workbook into the session draft. */
+export async function uploadOnboardingExcel(
+  sessionId: string,
+  file: File,
+): Promise<OnboardingChatResponseDto> {
+  const headers = await getAdminAuthHeaders();
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${base}/api/v1/admin/onboarding/sessions/${sessionId}/upload`, {
+    method: "POST",
+    headers,
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Upload failed (${res.status})`);
+  }
+  return res.json() as Promise<OnboardingChatResponseDto>;
 }
 
 /** Patches draft from inline editor. */

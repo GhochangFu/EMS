@@ -22,3 +22,9 @@ export async function adminFetch<T>(
 export function activeQuery(active: MasterDataActiveFilter): string {
   return `active=${active}`;
 }
+
+/** Returns auth headers for non-JSON admin requests (file upload/download). */
+export function getAdminAuthHeaders(): Headers {
+  const init = withAuth();
+  return new Headers(init.headers);
+}

@@ -1,20 +1,27 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { FormEvent } from "react";
+import type { FormEvent, KeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type {
   OnboardingAutoOpenReason,
   OnboardingChatMessage,
+  OnboardingFieldError,
   OnboardingSessionDto,
 } from "@bms/shared";
 
 import {
   commitOnboardingSession,
   createOnboardingSession,
+  downloadOnboardingTemplate,
   sendOnboardingChat,
+  uploadOnboardingExcel,
   validateOnboardingSession,
 } from "../../api/admin/onboarding";
 import { AppShell } from "../../layouts/app-shell";
+import {
+  formatOnboardingDraftSummary,
+  formatOnboardingValidationErrors,
+} from "../../lib/onboarding-draft-summary";
 import { shouldAutoOpenPreview } from "../../lib/onboarding-preview-auto-open";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -43,13 +50,17 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
     null,
   );
   const [chatError, setChatError] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<OnboardingFieldError[]>([]);
+  const [uploadBusy, setUploadBusy] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const startedRef = useRef(false);
 
   const startMutation = useMutation({
     mutationFn: () => createOnboardingSession(orgId!),
     onSuccess: (data) => {
       setSession(data.session);
+      setValidationErrors(data.validationErrors ?? []);
       applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
     },
     onError: (err: Error) => setChatError(err.message),
@@ -68,8 +79,13 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
     onSuccess: (data) => {
       setSession(data.session);
       queryClient.setQueryData(["onboarding", data.session.id], data.session);
+      setValidationErrors(data.validationErrors ?? []);
       applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
-      setChatError(null);
+      setChatError(
+        data.validationErrors?.length
+          ? `Validation found ${data.validationErrors.length} issue(s) — fix them in chat before commit.`
+          : null,
+      );
     },
     onError: (err: Error) => setChatError(err.message),
   });
@@ -77,7 +93,13 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   const validateMutation = useMutation({
     mutationFn: () => validateOnboardingSession(session!.id),
     onSuccess: (data) => {
+      setValidationErrors(data.errors);
       applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
+      setChatError(
+        data.errors.length
+          ? `Validation found ${data.errors.length} issue(s) — fix them in chat before commit.`
+          : null,
+      );
     },
   });
 
@@ -108,8 +130,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
     threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight });
   }, [session?.messages.length, chatMutation.isPending]);
 
-  const onSubmit = (e: FormEvent) => {
-    e.preventDefault();
+  const sendMessage = () => {
     const msg = input.trim();
     if (!msg || !session) {
       return;
@@ -121,6 +142,18 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
     }
     chatMutation.mutate(msg);
     setInput("");
+  };
+
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    sendMessage();
+  };
+
+  const onInputKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
   };
 
   const closePreview = () => {
@@ -150,6 +183,48 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
           </span>
           <button
             type="button"
+            onClick={() => void downloadOnboardingTemplate()}
+            className="rounded border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
+          >
+            Excel template
+          </button>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!session || uploadBusy}
+            className="rounded border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50"
+          >
+            Upload Excel
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file || !session) {
+                return;
+              }
+              setUploadBusy(true);
+              uploadOnboardingExcel(session.id, file)
+                .then((data) => {
+                  setSession(data.session);
+                  applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
+                  setValidationErrors(data.validationErrors ?? []);
+                  setChatError(
+                    data.validationErrors?.length
+                      ? `Validation found ${data.validationErrors.length} issue(s) — fix them in chat before commit.`
+                      : null,
+                  );
+                })
+                .catch((err: Error) => setChatError(err.message))
+                .finally(() => setUploadBusy(false));
+            }}
+          />
+          <button
+            type="button"
             onClick={() => (previewOpen ? closePreview() : setPreviewOpen(true))}
             className="ml-auto rounded border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
           >
@@ -166,10 +241,19 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
               {messages.map((m) => (
                 <div
                   key={m.id}
-                  className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
+                  className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}
                 >
+                  <span
+                    className={`mb-0.5 px-1 text-[10px] font-semibold uppercase tracking-wide ${
+                      m.role === "user" ? "text-bms-green" : "text-bms-muted"
+                    }`}
+                  >
+                    {m.role === "user"
+                      ? (user.displayName ?? user.email)
+                      : "Onboarding assistant"}
+                  </span>
                   <div
-                    className={`max-w-[85%] rounded px-3 py-2 text-sm ${
+                    className={`max-w-[85%] whitespace-pre-wrap rounded px-3 py-2 text-sm ${
                       m.role === "user"
                         ? "bg-bms-green text-white"
                         : "border border-gray-200 bg-white text-bms-ink"
@@ -190,17 +274,19 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
             </div>
 
             <form onSubmit={onSubmit} className="border-t border-gray-200 p-4">
-              <div className="flex gap-2">
-                <input
+              <div className="flex items-end gap-2">
+                <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Type a message…"
-                  className="flex-1 rounded border border-gray-200 px-3 py-2 text-sm"
+                  onKeyDown={onInputKeyDown}
+                  placeholder="Type a message… (Shift+Enter for new line)"
+                  rows={10}
+                  className="h-52 max-h-72 min-h-[8rem] flex-1 resize-y rounded border border-gray-200 px-3 py-2 text-sm"
                   disabled={!session || chatMutation.isPending || startMutation.isPending}
                 />
                 <button
                   type="submit"
-                  className="rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  className="shrink-0 rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                   disabled={!session || chatMutation.isPending || startMutation.isPending}
                 >
                   Send
@@ -225,10 +311,35 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                     ×
                   </button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-3 text-xs">
-                  <pre className="whitespace-pre-wrap break-words font-mono text-[11px]">
-                    {JSON.stringify(session?.draft ?? {}, null, 2)}
-                  </pre>
+                <div className="flex-1 space-y-3 overflow-y-auto p-3 text-xs">
+                  <div>
+                    <div className="mb-1 font-semibold uppercase tracking-wide text-bms-muted">
+                      Summary
+                    </div>
+                    <pre className="whitespace-pre-wrap break-words font-mono text-[11px]">
+                      {formatOnboardingDraftSummary(session?.draft ?? {})}
+                    </pre>
+                  </div>
+                  <div>
+                    <div className="mb-1 font-semibold uppercase tracking-wide text-bms-muted">
+                      Validation
+                    </div>
+                    <pre
+                      className={`whitespace-pre-wrap break-words font-mono text-[11px] ${
+                        validationErrors.length > 0 ? "text-red-700" : "text-bms-muted"
+                      }`}
+                    >
+                      {formatOnboardingValidationErrors(validationErrors)}
+                    </pre>
+                  </div>
+                  <div>
+                    <div className="mb-1 font-semibold uppercase tracking-wide text-bms-muted">
+                      Output JSON
+                    </div>
+                    <pre className="whitespace-pre-wrap break-words font-mono text-[11px]">
+                      {JSON.stringify(session?.draft ?? {}, null, 2)}
+                    </pre>
+                  </div>
                 </div>
                 <div className="flex gap-2 border-t border-gray-200 p-3">
                   <button

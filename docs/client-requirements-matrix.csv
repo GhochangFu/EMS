@@ -1,0 +1,66 @@
+Client Req ID,Client Requirement,Sub-Feature,As-Is Status,Exists,Partial,Missing,As-Is Coverage %,Quality (0-10),Client Priority,Gap Effort Min (pw),Gap Effort Max (pw),Delivery Phase,Evidence / Notes,Zoho Matrix Reference
+1,Data connect SCADA PLC DCS IoT to cloud,MQTT IoT live ingest,Implemented,Yes,,,100,6,P0,3,4,A,apps/ingest PHE pilot ADR 0007,Communication Protocols - MQTT TLS
+1,Data connect SCADA PLC DCS IoT to cloud,Internal telemetry simulator,Implemented,Yes,,,100,7,P0,0,0,—,apps/sim,Communication Protocols - internal
+1,Data connect SCADA PLC DCS IoT to cloud,Protocol catalog SCADA PLC types,Partial,,Yes,,40,3,P0,0,0,A,bms.protocol_catalog migration 0020,Gateway Management - protocol catalog
+1,Data connect SCADA PLC DCS IoT to cloud,Modbus TCP adapter runtime,,,Yes,Missing,0,0,P0,10,14,B,ingest_wired=false onboarding config only,Communication Protocols - Modbus TCP
+1,Data connect SCADA PLC DCS IoT to cloud,BACnet/IP adapter runtime,,,Yes,Missing,0,0,P0,10,14,B,Config stored not wired,Communication Protocols - BACnet
+1,Data connect SCADA PLC DCS IoT to cloud,OPC-UA adapter runtime,,,Yes,Missing,0,0,P0,10,14,B,Config stored not wired,Communication Protocols - OPC-UA
+1,Data connect SCADA PLC DCS IoT to cloud,DCS integration,,,,Yes,0,0,P0,8,12,B,Protocol TBD with client,—
+1,Data connect SCADA PLC DCS IoT to cloud,SNMP / REST poller adapters,,,Yes,Missing,0,0,P1,6,8,B,Catalog entries only,Integrations
+1,Data connect SCADA PLC DCS IoT to cloud,Cloud API + live WebSocket render,Partial,,Yes,,60,6,P0,4,6,A,NestJS + Socket.IO + React,Dashboards - live widgets
+1,Data connect SCADA PLC DCS IoT to cloud,Encrypted RTU credentials,Implemented,Yes,,,100,7,P1,0,0,—,ADR 0012 rtu_connection_configs,Security - device auth
+1,Data connect SCADA PLC DCS IoT to cloud,HA / multi-instance cloud deploy,,,Yes,Missing,20,3,P1,8,12,B,Docker Compose only; Redis WS fan-out works,Platform Architecture - K8s HA
+1,Data connect SCADA PLC DCS IoT to cloud,Ingest adapter plugin framework,,,,Yes,0,0,P0,4,5,B,No IngestAdapter interface,Platform Architecture - plugin architecture
+2,Time-series images relational storage,Time-series TimescaleDB,Implemented,Yes,,,100,7,P0,2,3,A,telemetry.point_values hypertable,Time Series DB
+2,Time-series images relational storage,Relational PostgreSQL master data,Implemented,Yes,,,100,7,P0,0,0,—,bms schema org location rtu asset,ADR 0010
+2,Time-series images relational storage,Image / binary object storage,,,,Yes,0,0,P1,8,12,D,No MinIO/S3; deferred AGENTS.md,—
+2,Time-series images relational storage,Retention policies,,,,Yes,0,0,P0,2,3,A,Unbounded disk growth risk,Time Series DB - retention
+2,Time-series images relational storage,Continuous aggregates 1m/1h,,,,Yes,0,0,P0,4,5,A,Documented in AGENTS.production not migrated,Time Series DB - rollups
+2,Time-series images relational storage,Compression policies,,,,Yes,0,0,P2,1,2,A,Not configured,Telemetry - compression
+3,Time-series ingestion modes,Streaming real-time ingest,Implemented,Yes,,,100,7,P0,0,0,—,MQTT + sim + pg_notify + WS,Telemetry - ingestion
+3,Time-series ingestion modes,Manual operator feed,,,,Yes,0,0,P0,2,3,A,No POST point value API,—
+3,Time-series ingestion modes,CSV telemetry bulk upload,,,,Yes,0,0,P0,3,4,A,CSV export exists for energy reports only,Reports - CSV export
+3,Time-series ingestion modes,Excel telemetry bulk upload,,,,Yes,0,0,P0,3,4,A,Excel is onboarding master data ADR 0013,Device Management - bulk import
+3,Time-series ingestion modes,Historical query API,Implemented,Yes,,,100,6,P1,0,0,—,GET /telemetry/points/:ref/recent,Telemetry - historical
+4,Tags channels on assets,Tag per asset mapping,Implemented,Yes,,,100,7,P1,0,0,—,bms.asset_points,Device Models - datapoints
+4,Tags channels on assets,System tag catalog org-scoped,Implemented,Yes,,,100,7,P1,0,0,—,bms.point_keys ADR 0010,Device Models - datapoint definitions
+4,Tags channels on assets,Tag values time-series storage,Implemented,Yes,,,100,7,P0,0,0,—,telemetry.point_values,Telemetry
+4,Tags channels on assets,Tag kind input output calculation,,,,Yes,0,0,P0,2,3,A,No point_kind column,Device Models - direct vs computed
+4,Tags channels on assets,Equipment type taxonomy heat exchanger,Partial,,Yes,,30,4,P1,2,3,A,assets.domain only not equipment template,Asset Management
+4,Tags channels on assets,Live tag WebSocket stream,Implemented,Yes,,,100,7,P0,0,0,—,/ws/telemetry,Communication Protocols - WebSocket
+5,Asset templates with tag definitions,Asset template entity,,,,Yes,0,0,P0,4,5,A,No asset_templates table,Device Models - templates
+5,Asset templates with tag definitions,Instantiate asset from template,,,,Yes,0,0,P0,3,4,A,Manual admin CRUD only,Device Models - model once deploy many
+5,Asset templates with tag definitions,Template input tag definitions,,,,Yes,0,0,P0,2,3,A,Point keys separate from template,Device Models - datapoint templates
+5,Asset templates with tag definitions,Template output tag definitions,,,,Yes,0,0,P0,2,3,A,Same,Device Models - command templates
+5,Asset templates with tag definitions,Template calculation tag definitions,,,,Yes,0,0,P0,3,4,A,No calc on template,Device Models - computed datapoints
+5,Asset templates with tag definitions,Template propagation to instances,,,,Yes,0,0,P1,2,3,A,Zoho model-once pattern,Device Models - inheritance
+6,Tag mapping customer to system,source_data_key to point_key mapping,Implemented,Yes,,,100,7,P1,0,0,—,bms.asset_points,Device Models - parsing keys
+6,Tag mapping customer to system,Admin mapping UI,Implemented,Yes,,,100,7,P1,0,0,—,/admin/assets/:id/points,ADR 0010 drill-down
+6,Tag mapping customer to system,Onboarding mapping workflow,Implemented,Yes,,,100,7,P1,0,0,—,Onboarding phases mappings ADR 0011,Getting Started
+6,Tag mapping customer to system,AI-assisted mapping suggestions,Partial,,Yes,,40,5,P2,3,4,A,Onboarding chat bot,AI Features
+6,Tag mapping customer to system,Catalog validation on mapping,Implemented,Yes,,,100,8,P1,0,0,—,API rejects unknown point_key,ADR 0010
+6,Tag mapping customer to system,Bulk mapping editor,,,,Yes,0,0,P1,2,3,A,One-at-a-time admin,—
+6,Tag mapping customer to system,Excel mapping sheet import,,,Yes,Missing,20,4,P1,2,3,A,Excel covers location RTU asset only ADR 0013,Device Management - bulk import
+6,Tag mapping customer to system,Auto-map from sample payload,,,,Yes,0,0,P2,3,4,A,Message formatter not implemented,Device Models - message handler
+7,Calculations derived analytics ML vision,Simple derived C equals A plus B,,,,Yes,0,0,P0,4,5,C,No formula engine,Device Models - computed datapoints
+7,Calculations derived analytics ML vision,User-configurable formula DSL,,,,Yes,0,0,P0,4,5,C,Hardcoded PUE in dashboard SQL,—
+7,Calculations derived analytics ML vision,Scheduled KPI calculations,,,,Yes,0,0,P1,3,4,C,No cron calc evaluator,Device Models - scheduled KPI
+7,Calculations derived analytics ML vision,Stream-time calc on ingest,,,,Yes,0,0,P0,3,4,C,No calc worker,Edge Computing - edge data flow
+7,Calculations derived analytics ML vision,ML multivariate time-series analytics,,,,Yes,0,0,P2,20,30,D,Deferred AGENTS.md,AI Features - anomaly detection
+7,Calculations derived analytics ML vision,Vision / image analytics,,,,Yes,0,0,P3,16,24,D,No image pipeline,AI Features
+7,Calculations derived analytics ML vision,Rule engine as threshold substitute,Partial,,Yes,,15,3,P2,0,0,—,Evaluate-only not calc,Rule Engine
+8,Configurable dashboards,Charts ECharts,Implemented,Yes,,,100,7,P0,0,0,—,Executive energy location pages,Dashboards - charts
+8,Configurable dashboards,KPI cards and ribbons,Implemented,Yes,,,100,7,P0,0,0,—,KPI ribbon location cards,Dashboards - KPI
+8,Configurable dashboards,Maps Leaflet,Implemented,Yes,,,100,7,P1,0,0,—,World map,Dashboards - maps
+8,Configurable dashboards,Tables and status views,Implemented,Yes,,,100,7,P1,0,0,—,Alarms work orders,Dashboards - tables
+8,Configurable dashboards,Control-room SVG schematics,Implemented,Yes,,,100,8,P1,0,0,—,BMS differentiator vs Zoho,Dashboards - image layout
+8,Configurable dashboards,User drag-drop dashboard builder,,,,Yes,0,0,P0,8,10,C,Fixed React routes,Dashboards - drag-drop builder
+8,Configurable dashboards,Dashboard definition persistence,,,,Yes,0,0,P0,2,3,C,No dashboard JSON schema,Dashboards - custom dashboards
+8,Configurable dashboards,Widget palette 5+ types for builder,Partial,,Yes,,20,3,P0,4,6,C,Charts exist not composable,Dashboards - 20+ widgets
+8,Configurable dashboards,Per-template default dashboard,,,,Yes,0,0,P1,3,4,C,Depends on asset templates,Dashboards - overview dashboard template
+8,Configurable dashboards,Role-based saved views,Partial,,Yes,,30,5,P2,3,4,C,Asset-group guards only,Dashboards - role based
+9,Calculation setup and configuration,Calc definition admin UI,,,,Yes,0,0,P0,4,5,C,No calc editor,—
+9,Calculation setup and configuration,Link calcs to template tags,,,,Yes,0,0,P0,3,4,C,Depends on req 5,Device Models
+9,Calculation setup and configuration,Calc execution scheduler,,,,Yes,0,0,P1,3,4,C,No job queue,Automation - scheduled jobs
+9,Calculation setup and configuration,Calc versioning and audit,,,,Yes,0,0,P2,2,3,C,audit_log exists not for calcs,Security - audit logs
+9,Calculation setup and configuration,Test/preview calc before publish,,,,Yes,0,0,P1,2,3,C,Rule preview exists not calcs,Rule Engine - preview

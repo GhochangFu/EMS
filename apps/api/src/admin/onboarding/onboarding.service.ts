@@ -22,6 +22,8 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { DRIZZLE } from "../../database/database.tokens";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import { OnboardingCommitService } from "./onboarding-commit.service";
+import { OnboardingCatalogService } from "./onboarding-catalog.service";
+import { OnboardingExcelService } from "./onboarding-excel.service";
 import { redactDraftForClient } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -35,6 +37,8 @@ export class OnboardingService {
     private readonly chatService: OnboardingChatService,
     private readonly validateService: OnboardingValidateService,
     private readonly commitService: OnboardingCommitService,
+    private readonly excelService: OnboardingExcelService,
+    private readonly catalogService: OnboardingCatalogService,
   ) {}
 
   /** Creates a new onboarding session for an organization. */
@@ -111,6 +115,7 @@ export class OnboardingService {
       draft,
       phase,
       org?.name ?? "Organization",
+      session.organizationId,
     );
 
     const mergedDraft = this.chatService.mergeDraft(
@@ -212,6 +217,84 @@ export class OnboardingService {
   /** Commits session via commit service. */
   commit(jwt: JwtPayload, sessionId: string) {
     return this.commitService.commit(jwt, sessionId);
+  }
+
+  /** Returns an Excel template buffer for bulk onboarding. */
+  buildTemplate(_jwt: JwtPayload, _organizationId: string): Buffer {
+    return this.excelService.buildTemplateBuffer("Berhampur");
+  }
+
+  /** Parses an Excel upload and merges rows into the session draft. */
+  async uploadExcel(
+    jwt: JwtPayload,
+    sessionId: string,
+    buffer: Buffer,
+  ): Promise<OnboardingChatResponseDto> {
+    const session = await this.loadSession(jwt, sessionId);
+    if (session.status !== "draft") {
+      throw new ForbiddenException("Session is not editable");
+    }
+
+    const draft = session.draft as OnboardingDraft;
+    const parsed = this.excelService.parseUpload(buffer);
+    const orgPointKeys = await this.catalogService.listPointKeys(session.organizationId);
+    const useExistingPointKeys = orgPointKeys.length > 0;
+    const patch = this.excelService.toDraftPatch(parsed, draft, { useExistingPointKeys });
+    const mergedDraft = this.chatService.mergeDraft(
+      session.draft,
+      patch,
+      parsed.rtuCredentials.length > 0 ? parsed.rtuCredentials : undefined,
+    ) as OnboardingDraft;
+    const phase = this.validateService.inferPhase(mergedDraft);
+
+    const followUp = this.chatService.excelImportFollowUp(
+      mergedDraft,
+      {
+        locationName: parsed.location.name,
+        rtuCount: parsed.rtus.length,
+        assetCount: parsed.assets.length,
+      },
+      orgPointKeys.map((key) => key.code),
+      parsed.displayNameFixes,
+    );
+    const assistantText = followUp.assistantMessage;
+
+    const userMsg = this.chatService.createMessage("user", "[Uploaded Excel workbook]");
+    const assistantMsg = this.chatService.createMessage("assistant", assistantText);
+    const messages = [
+      ...(session.messages as OnboardingChatMessage[]),
+      userMsg,
+      assistantMsg,
+    ];
+
+    const [updated] = await this.db
+      .update(onboardingSessions)
+      .set({
+        draft: mergedDraft,
+        currentPhase: phase,
+        messages,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(onboardingSessions.id, sessionId))
+      .returning();
+
+    const [orgFull] = await this.db
+      .select({ code: organizations.code, name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, session.organizationId))
+      .limit(1);
+
+    const validation = this.validateService.validate(mergedDraft);
+
+    return {
+      assistantMessage: assistantText,
+      session: this.mapSession(updated, orgFull?.code ?? "", orgFull?.name ?? ""),
+      suggestedReplies: followUp.suggestedReplies,
+      validationErrors: validation.errors,
+      readyToCommit: validation.readyToCommit,
+      autoOpenPreview: true,
+      autoOpenReason: validation.errors.length > 0 ? "validation_errors" : "review",
+    };
   }
 
   private async loadSession(jwt: JwtPayload, sessionId: string) {

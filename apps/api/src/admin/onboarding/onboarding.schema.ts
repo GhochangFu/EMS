@@ -72,12 +72,19 @@ export const draftAssetPointSchema = z.object({
   unit: z.string().max(32).optional(),
 });
 
+export const onboardingDraftMetaSchema = z.object({
+  rtuTargetCount: z.number().int().positive().optional(),
+  importedFromExcel: z.boolean().optional(),
+  useExistingPointKeys: z.boolean().optional(),
+});
+
 export const onboardingDraftSchema = z.object({
   location: draftLocationSchema.optional(),
   rtus: z.array(draftRtuSchema).optional(),
   pointKeys: z.array(draftPointKeySchema).optional(),
   assets: z.array(draftAssetSchema).optional(),
   assetPoints: z.array(draftAssetPointSchema).optional(),
+  onboardingMeta: onboardingDraftMetaSchema.optional(),
 });
 
 export const createSessionBodySchema = z.object({

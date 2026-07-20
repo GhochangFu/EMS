@@ -4,7 +4,7 @@
 **Benchmark:** [Zoho IoT Platform](https://www.zoho.com/iot/) · [Zoho IoT Knowledge Base](https://help.zoho.com/portal/en/kb/iot) · [REST API Overview](https://www.zoho.com/iot/developer/docs/apis/v1/rest-api-overview.html)  
 **Subject:** Eskom SMOC BMS (`portal.BMS/BMS`) — verified from codebase implementation.
 
-**Companion file:** [zoho-iot-feature-matrix.csv](./zoho-iot-feature-matrix.csv)
+**Companion file:** [zoho-iot-feature-matrix.csv](./zoho-iot-feature-matrix.csv) · [platform-assessment-consolidated.md](./platform-assessment-consolidated.md)
 
 ---
 

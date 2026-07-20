@@ -758,12 +758,20 @@ export type OnboardingDraftAssetPoint = {
   unit?: string;
 };
 
+export type OnboardingDraftMeta = {
+  rtuTargetCount?: number;
+  importedFromExcel?: boolean;
+  /** Point keys step satisfied using org catalog (no new keys in draft). */
+  useExistingPointKeys?: boolean;
+};
+
 export type OnboardingDraft = {
   location?: OnboardingDraftLocation;
   rtus?: OnboardingDraftRtu[];
   pointKeys?: OnboardingDraftPointKey[];
   assets?: OnboardingDraftAsset[];
   assetPoints?: OnboardingDraftAssetPoint[];
+  onboardingMeta?: OnboardingDraftMeta;
 };
 
 export type OnboardingSessionDto = {

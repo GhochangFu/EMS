@@ -10,11 +10,13 @@ import type {
 } from "@bms/shared";
 
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
+import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import {
   attachEncryptedCredentials,
   redactDraftForLlm,
 } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
+import { OnboardingProtocolService } from "./onboarding-protocol.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 export type ChatTurnResult = {
@@ -35,15 +37,110 @@ export class OnboardingChatService {
   constructor(
     private readonly validateService: OnboardingValidateService,
     private readonly crypto: CredentialCryptoService,
+    private readonly protocolService: OnboardingProtocolService,
+    private readonly catalogService: OnboardingCatalogService,
   ) {}
 
   /** Produces opening assistant message for a new session. */
   openingMessage(orgName: string): ChatTurnResult {
     return {
-      assistantMessage: `Welcome! I'll help you onboard a new location under **${orgName}**. What is the location name?`,
+      assistantMessage: `Welcome! I'll help you onboard a new location under **${orgName}**.\n\nWhat is the location name? (Example: **Berhampur**)\n\nYou can also **download the Excel template** or **upload a filled workbook** anytime for location + RTUs + assets.`,
       draftPatch: {},
       currentPhase: "location",
       suggestedReplies: ["View draft"],
+    };
+  }
+
+  /** Builds assistant follow-up after an Excel workbook import. */
+  excelImportFollowUp(
+    draft: OnboardingDraft,
+    imported: { locationName: string; rtuCount: number; assetCount: number },
+    orgPointKeyCodes: string[],
+    displayNameFixes: string[] = [],
+  ): { assistantMessage: string; suggestedReplies: string[] } {
+    const summaryParts = [`location **${imported.locationName}**`];
+    if (imported.rtuCount > 0) {
+      summaryParts.push(`**${imported.rtuCount}** RTU(s)`);
+    }
+    if (imported.assetCount > 0) {
+      summaryParts.push(`**${imported.assetCount}** asset(s)`);
+    }
+    const lines = [`Imported Excel data: ${summaryParts.join(", ")}.`];
+
+    if (displayNameFixes.length > 0) {
+      lines.push(
+        `\n**Adjusted RTU display names:**\n${displayNameFixes.map((line) => `- ${line}`).join("\n")}`,
+      );
+    }
+
+    const mqttIncomplete = (draft.rtus ?? []).filter(
+      (rtu) =>
+        rtu.protocol === "mqtt" &&
+        rtu.ingestEnabled &&
+        (!rtu.credentialsSet ||
+          !String(rtu.config.topic ?? "").trim() ||
+          String(rtu.config.topic).trim() === "-"),
+    );
+
+    if (mqttIncomplete.length > 0) {
+      lines.push(
+        `\n**MQTT setup still required** for ${mqttIncomplete.length} RTU(s). ` +
+          "Add **username** and **password** columns in Excel and re-upload, or paste credentials in chat:",
+      );
+      lines.push(`\n${this.mqttSetupTemplate(draft)}`);
+      lines.push("\nFill in the template and send it back, then say **confirm rtu**.");
+      return {
+        assistantMessage: lines.join("\n"),
+        suggestedReplies: ["confirm rtu", "View draft"],
+      };
+    }
+
+    if (!draft.onboardingMeta?.useExistingPointKeys && (draft.pointKeys?.length ?? 0) === 0) {
+      if (orgPointKeyCodes.length > 0) {
+        const preview =
+          orgPointKeyCodes.length > 8
+            ? `${orgPointKeyCodes.slice(0, 8).map((code) => `\`${code}\``).join(", ")}, …`
+            : orgPointKeyCodes.map((code) => `\`${code}\``).join(", ");
+        lines.push(
+          `\nYour organization already has point keys (${preview}). ` +
+            "Say **use existing keys** or **confirm point keys** to continue.",
+        );
+        return {
+          assistantMessage: lines.join("\n"),
+          suggestedReplies: ["use existing keys", "confirm point keys", "View draft"],
+        };
+      }
+      lines.push("\nAdd point keys (e.g. **kw**), then say **confirm point keys**.");
+      return {
+        assistantMessage: lines.join("\n"),
+        suggestedReplies: ["kw", "confirm point keys", "View draft"],
+      };
+    }
+
+    if (!draft.assets || draft.assets.length === 0) {
+      lines.push("\nAdd assets per RTU in chat, then say **confirm assets**.");
+      return {
+        assistantMessage: lines.join("\n"),
+        suggestedReplies: ["confirm assets", "View draft"],
+      };
+    }
+
+    if (!draft.assetPoints || draft.assetPoints.length === 0) {
+      lines.push(
+        `\n${this.formatAssetsByRtuSummary(draft)}\n\n` +
+          "Say **auto map** to map each asset to **kw**, or provide mappings like `source s01 -> point kw`. " +
+          "Then **confirm mappings**.",
+      );
+      return {
+        assistantMessage: lines.join("\n"),
+        suggestedReplies: ["auto map", "confirm mappings", "View draft"],
+      };
+    }
+
+    lines.push("\nDraft looks ready. Open the preview and click **Commit**.");
+    return {
+      assistantMessage: lines.join("\n"),
+      suggestedReplies: ["View draft", "Commit"],
     };
   }
 
@@ -53,7 +150,28 @@ export class OnboardingChatService {
     draft: OnboardingDraft,
     phase: OnboardingPhase,
     orgName: string,
+    organizationId?: string,
   ): Promise<ChatTurnResult> {
+    const lower = message.toLowerCase().trim();
+    if (
+      organizationId &&
+      /protocol|modbus|bacnet|mqtt|opc|snmp|rest|simulator/.test(lower) &&
+      /what|which|available|list|show|support/.test(lower)
+    ) {
+      const context = await this.protocolService.getContextForOrganization(organizationId);
+      const exampleRtu = draft.location?.name
+        ? `${draft.location.name.toUpperCase().replace(/[^A-Z0-9]+/g, "-")}-RTU-1`
+        : "LOCATION-RTU-1";
+      return this.finalizeTurn(
+        `Here are the protocols available in BMS:\n\n${this.protocolService.formatForAssistant(context, exampleRtu)}`,
+        {},
+        phase,
+        ["MQTT", "Modbus TCP", "View draft"],
+        message,
+        draft,
+      );
+    }
+
     const apiKey = process.env.OPENAI_API_KEY;
     if (apiKey) {
       try {
@@ -62,7 +180,7 @@ export class OnboardingChatService {
         // fall through to rule-based
       }
     }
-    return this.handleRuleBasedTurn(message, draft, phase, orgName);
+    return await this.handleRuleBasedTurn(message, draft, phase, orgName, organizationId);
   }
 
   private async handleOpenAiTurn(
@@ -110,14 +228,33 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     );
   }
 
-  private handleRuleBasedTurn(
+  private async handleRuleBasedTurn(
     message: string,
     draft: OnboardingDraft,
     phase: OnboardingPhase,
     orgName: string,
-  ): ChatTurnResult {
+    organizationId?: string,
+  ): Promise<ChatTurnResult> {
     const lower = message.toLowerCase().trim();
     const patch: OnboardingDraftInput = {};
+
+    if (/use existing keys|confirm point keys/.test(lower) && organizationId) {
+      const orgKeys = await this.catalogService.listPointKeys(organizationId);
+      if (orgKeys.length > 0) {
+        patch.onboardingMeta = {
+          ...(draft.onboardingMeta ?? {}),
+          useExistingPointKeys: true,
+        };
+        return this.finalizeTurn(
+          `Using existing organization point keys:\n\n${this.catalogService.formatPointKeysForChat(orgKeys)}\n\nSay **confirm assets** or add assets per RTU.`,
+          patch,
+          "assets",
+          ["confirm assets", "View draft"],
+          message,
+          { ...draft, ...patch },
+        );
+      }
+    }
 
     if (/^(yes|create|commit|confirm)/.test(lower)) {
       return this.finalizeTurn(
@@ -335,7 +472,9 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
   mergeDraft(
     current: unknown,
     patch: OnboardingDraftInput,
-    credentialsToEncrypt?: { rtuIndex: number; credentials: Record<string, unknown> },
+    credentialsToEncrypt?:
+      | { rtuIndex: number; credentials: Record<string, unknown> }
+      | { rtuIndex: number; credentials: Record<string, unknown> }[],
   ): unknown {
     const base =
       typeof current === "object" && current !== null
@@ -349,19 +488,70 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
       pointKeys: patch.pointKeys ?? base.pointKeys,
       assets: patch.assets ?? base.assets,
       assetPoints: patch.assetPoints ?? base.assetPoints,
+      onboardingMeta: patch.onboardingMeta
+        ? { ...base.onboardingMeta, ...patch.onboardingMeta }
+        : base.onboardingMeta,
     };
 
-    let stored: unknown = merged;
-    if (credentialsToEncrypt && CredentialCryptoService.isConfigured()) {
-      const enc = this.crypto.encrypt(credentialsToEncrypt.credentials);
-      stored = attachEncryptedCredentials(
-        stored as OnboardingDraft & { _secrets?: Record<string, { c: string; iv: string }> },
-        credentialsToEncrypt.rtuIndex,
-        enc.ciphertext,
-        enc.iv,
-      );
+    let stored: OnboardingDraft & { _secrets?: Record<string, { c: string; iv: string }> } =
+      merged as OnboardingDraft & { _secrets?: Record<string, { c: string; iv: string }> };
+
+    const credList = credentialsToEncrypt
+      ? Array.isArray(credentialsToEncrypt)
+        ? credentialsToEncrypt
+        : [credentialsToEncrypt]
+      : [];
+
+    for (const cred of credList) {
+      if (CredentialCryptoService.isConfigured()) {
+        const enc = this.crypto.encrypt(cred.credentials);
+        stored = attachEncryptedCredentials(stored, cred.rtuIndex, enc.ciphertext, enc.iv);
+      } else if (Array.isArray(stored.rtus) && stored.rtus[cred.rtuIndex]) {
+        stored.rtus[cred.rtuIndex] = { ...stored.rtus[cred.rtuIndex], credentialsSet: true };
+      }
     }
+
     return stored;
+  }
+
+  private mqttSetupTemplate(draft: OnboardingDraft): string {
+    const mqttRtus = (draft.rtus ?? []).filter(
+      (rtu) => rtu.protocol === "mqtt" && rtu.ingestEnabled,
+    );
+    if (mqttRtus.length === 0) {
+      return "";
+    }
+    const blocks = mqttRtus.map((rtu) => {
+      const existingTopic = String(rtu.config.topic ?? rtu.config.mqttTopic ?? "").trim();
+      const topic =
+        existingTopic && existingTopic !== "-" ? existingTopic : "your/topic/here";
+      return [
+        `RTU: ${rtu.displayName}`,
+        `topic: ${topic}`,
+        `username: pheadmin`,
+        `password: your-password`,
+      ].join("\n");
+    });
+    return (
+      "**Copy from START to END, edit the values, and paste your reply here.**\n" +
+      "────────── START COPY ──────────\n" +
+      `${blocks.join("\n---\n")}\n` +
+      "────────── END COPY ──────────"
+    );
+  }
+
+  private formatAssetsByRtuSummary(draft: OnboardingDraft): string {
+    const rtus = draft.rtus ?? [];
+    const assets = draft.assets ?? [];
+    const lines = rtus.map((rtu, index) => {
+      const rtuAssets = assets.filter((asset) => asset.rtuIndex === index);
+      const assetList =
+        rtuAssets.length > 0
+          ? rtuAssets.map((asset) => asset.name).join(", ")
+          : "(no assets yet)";
+      return `- **${rtu.displayName}**: ${assetList}`;
+    });
+    return `**Assets by RTU:**\n${lines.join("\n")}`;
   }
 
   /** Creates a chat message row. */
