@@ -166,12 +166,25 @@ they are called out explicitly.
 | Item | Status | Prov. | P | Effort |
 |------|--------|-------|---|--------|
 | Real test runner — repo has **only `tsx` specs**, no Vitest/Jest | ❌ | ✓ main | P0 | 4–6 |
+| **Wire the test run into CI** — add a `test` step/job to `.github/workflows/ci.yml` (today it only runs `typecheck` + `db:migrate`; the existing `pnpm test:onboarding` suite is **never executed on PRs**) | ❌ | ✓ main | P0 | (with runner) |
 | Integration tests w/ testcontainers (Postgres + Timescale + Redis) | ❌ | ✓ main | P1 | 6–8 |
 | Contract tests (API ↔ web via `packages/contracts` Zod) | ❌ | ✓ main | P1 | (with contracts) |
 | E2E (Playwright) for critical `ESKOM_SMOC.html` paths | ❌ | ✓ main | P1 | 4–6 |
 | Load tests (k6): 5,000 meters @ 1 Hz, 1,000 concurrent users | ❌ | ✓ main | P2 | 3–4 |
 | Coverage gates (80% line / 95% for command·alarm·audit·RBAC) | ❌ | ✓ main | P1 | (CI wiring) |
 | Automated access-control integration tests | ❌ | ✓ main | P0 | 3 |
+
+> **F4.4 scope note — CI integration is part of the runner story.** The runner
+> is only a real gate once CI *runs* it. Existing CI
+> ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) is **build +
+> migration-validation only** — one `build-and-migrate` job doing `pnpm
+> typecheck` and `pnpm db:migrate` against a Timescale service container, with
+> **no test, lint, or coverage step**. F4.4 must: (1) stand up the runner
+> (Vitest/Jest), (2) migrate the current `tsx` specs onto it, and (3) **add a
+> `test` step to `ci.yml` so PRs fail on a red test** — the precondition that
+> lets subagent output be trusted without line-by-line review
+> ([build-operating-model.md](./build-operating-model.md) §4–5). Coverage gates
+> (row above) layer on afterwards.
 
 ### 4c. Security & Governance (north star §9)
 

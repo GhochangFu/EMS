@@ -110,6 +110,11 @@ Order within Phase 0:
 1. **`F4.4` real test runner — FIRST, always.** Once tests + coverage gates
    exist, they are what lets the human **trust subagent output without reading
    every diff.** This single item is the precondition for safe delegation.
+   **Scope includes CI wiring:** stand up the runner, migrate the existing `tsx`
+   specs onto it, **and add a `test` step to `.github/workflows/ci.yml`** (today
+   it runs only `typecheck` + `db:migrate` — the `test:onboarding` suite never
+   runs on PRs). A runner that CI does not execute is not a gate. See
+   `pending-features.md` §4b F4.4 scope note.
 2. **`F1.1` adapter framework**, **`F2.1` templates**, **`F2.3` calc DSL**,
    **`F3.8` notifications** — the interfaces the later waves hang off.
 3. Quick security wins alongside: **`F4.11`** operator RBAC, **`F4.12`** JWT
