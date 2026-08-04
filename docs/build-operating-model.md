@@ -6,9 +6,9 @@ team is **one human (decisions + review) + Claude (execution) + subagents
 (bounded parallel work)**. It answers "who does what, in what order, and when do
 we fan out."
 **Companion docs:**
-[pending-features.md](./pending-features.md) (the *what*) ·
-[pending-features-sequencing.md](./pending-features-sequencing.md) (the
-dependency order) · this doc (the *how*).
+[BACKLOG.md](./BACKLOG.md) (the *what* and the dependency order — the single
+managed backlog) · this doc (the *how*). Earlier split analyses are frozen
+under [archive/](./archive/).
 
 > Scope is still ADR-gated. Nothing here overrides AGENTS.md §10 — promoting an
 > item into active work requires an ADR first; new deps are §9.4-gated.
@@ -114,7 +114,7 @@ Order within Phase 0:
    specs onto it, **and add a `test` step to `.github/workflows/ci.yml`** (today
    it runs only `typecheck` + `db:migrate` — the `test:onboarding` suite never
    runs on PRs). A runner that CI does not execute is not a gate. See
-   `pending-features.md` §4b F4.4 scope note.
+   the F4.4 row in `BACKLOG.md`.
 2. **`F1.1` adapter framework**, **`F2.1` templates**, **`F2.3` calc DSL**,
    **`F3.8` notifications** — the interfaces the later waves hang off.
 3. Quick security wins alongside: **`F4.11`** operator RBAC, **`F4.12`** JWT

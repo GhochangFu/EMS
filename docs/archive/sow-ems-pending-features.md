@@ -1,3 +1,7 @@
+> **ARCHIVED (2026-08-04).** This analysis is frozen. The live, managed
+> backlog — statuses, sequencing, and dependency map — is
+> [docs/BACKLOG.md](../BACKLOG.md). Do not update this file.
+
 # SOW Delta — Enterprise EMS / AI Monitoring & Optimisation Foundry (Ion Exchange)
 
 **Generated:** 2026-08-04
@@ -8,7 +12,7 @@ the already-tracked backlog ([pending-features.md](./pending-features.md)), and
 extract the **additional** features the SOW introduces — with their own
 sequencing and dependency map that plugs into
 [pending-features-sequencing.md](./pending-features-sequencing.md).
-**Execution model:** unchanged — [build-operating-model.md](./build-operating-model.md).
+**Execution model:** unchanged — [build-operating-model.md](../build-operating-model.md).
 
 > **ID convention:** new SOW-only features get `E<area>.<n>` ids ("E" for EMS).
 > `F<x>.<n>` ids refer to the existing backlog in `pending-features.md`.

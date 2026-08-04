@@ -1,3 +1,7 @@
+> **ARCHIVED (2026-08-04).** This analysis is frozen. The live, managed
+> backlog — statuses, sequencing, and dependency map — is
+> [docs/BACKLOG.md](../BACKLOG.md). Do not update this file.
+
 # TRINETRA BMS — Pending-Feature Sequencing & Dependency Map
 
 **Generated:** 2026-07-20
@@ -7,7 +11,7 @@ downstream work, and what can run **in parallel** across independent teams.
 **Companion:** every feature ID below (`F<section>.<n>`) maps to a row in
 [pending-features.md](./pending-features.md). For *how* we execute this order
 with a one-person team + agents, see
-[build-operating-model.md](./build-operating-model.md).
+[build-operating-model.md](../build-operating-model.md).
 
 > **2026-08-04:** the Ion Exchange EMS SOW adds an `E<x>.<n>` feature layer that
 > hangs off this plan's enablers (`F2.1`, `F1.1`, `F2.4`, `F4.1`) — its delta

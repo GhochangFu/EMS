@@ -1,3 +1,7 @@
+> **ARCHIVED (2026-08-04).** This analysis is frozen. The live, managed
+> backlog — statuses, sequencing, and dependency map — is
+> [docs/BACKLOG.md](../BACKLOG.md). Do not update this file.
+
 # TRINETRA BMS — Pending Feature List (Northstar Delta)
 
 **Generated:** 2026-07-20
@@ -5,10 +9,10 @@
 comparing the assessment documents against the production **north star**
 (`docs/AGENTS.production.md`).
 **Companion inputs:**
-[platform-assessment-consolidated.md](./platform-assessment-consolidated.md) ·
-[client-requirements-as-is-report.md](./client-requirements-as-is-report.md) ·
-[zoho-iot-gap-analysis.md](./zoho-iot-gap-analysis.md) ·
-north star [AGENTS.production.md](./AGENTS.production.md)
+[platform-assessment-consolidated.md](../platform-assessment-consolidated.md) ·
+[client-requirements-as-is-report.md](../client-requirements-as-is-report.md) ·
+[zoho-iot-gap-analysis.md](../zoho-iot-gap-analysis.md) ·
+north star [AGENTS.production.md](../AGENTS.production.md)
 
 > **2026-08-04 update:** the Ion Exchange **Enterprise EMS SOW** adds a further
 > layer of scope (AI/ML, water domain, maintenance depth, sustainability,
@@ -182,14 +186,14 @@ they are called out explicitly.
 
 > **F4.4 scope note — CI integration is part of the runner story.** The runner
 > is only a real gate once CI *runs* it. Existing CI
-> ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) is **build +
+> ([.github/workflows/ci.yml](../../.github/workflows/ci.yml)) is **build +
 > migration-validation only** — one `build-and-migrate` job doing `pnpm
 > typecheck` and `pnpm db:migrate` against a Timescale service container, with
 > **no test, lint, or coverage step**. F4.4 must: (1) stand up the runner
 > (Vitest/Jest), (2) migrate the current `tsx` specs onto it, and (3) **add a
 > `test` step to `ci.yml` so PRs fail on a red test** — the precondition that
 > lets subagent output be trusted without line-by-line review
-> ([build-operating-model.md](./build-operating-model.md) §4–5). Coverage gates
+> ([build-operating-model.md](../build-operating-model.md) §4–5). Coverage gates
 > (row above) layer on afterwards.
 
 ### 4c. Security & Governance (north star §9)
