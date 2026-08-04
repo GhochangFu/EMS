@@ -125,7 +125,7 @@ still safe in parallel.
 
 | Slot | Run in parallel | Tracks | Notes |
 |------|-----------------|--------|-------|
-| **1** | **F4.4** ⭐ · F4.11 · E8.1 | F | **Start here.** F4.4 (test runner + CI) gates everything — it is what makes delegating to agents safe. F4.11 (operator RBAC) and E8.1 (encryption at rest) are independent quick wins. *F4.12 touches the same auth area as F4.11 — same owner, sequential.* |
+| ~~**1**~~ | ~~**F4.4** ⭐~~ ✅ · F4.11 · E8.1 | F | **F4.4 done** (ADR 0014, PR #1) — Vitest + coverage gate + `db:seed` now run on every PR, so delegating to agents is safe from here. F4.11 (operator RBAC) and E8.1 (encryption at rest) remain as independent quick wins. *F4.12 touches the same auth area as F4.11 — same owner, sequential.* |
 | **2** | **F1.1** ⭐ · **F2.1** ⭐ · **F3.8** ⭐ | A · B · D | The three big enablers, fully independent. F2.1 is on the critical path — protect it. |
 | **3** | **F2.3** ⭐ · **F4.1** ⭐ · **F3.3** ⭐ | B · F · C | Second enabler batch. F2.3 continues track B (same owner as F2.1). |
 | **4** | F1.2 · F2.2 · F3.6 | A · B · D | First dependents unlock: Modbus (needs F1.1), template instantiation (needs F2.1), alarm-engine unification (independent). |
@@ -269,7 +269,7 @@ and enriched alarms.
 
 | ID | Feature | P | Effort | Wave | Depends | Status |
 |----|---------|---|--------|------|---------|--------|
-| **F4.4** | Real test runner (Vitest/Jest) **+ CI wiring** — add `test` step to `.github/workflows/ci.yml` (today: typecheck+migrate only; `test:onboarding` never runs on PRs) ⭐ **FIRST** | P0 | 4–6 | 0 | — | 🔵 |
+| **F4.4** | Real test runner (Vitest) **+ CI wiring** — `test:coverage`, `typecheck:tests` and `db:seed` now run on every PR (ADR 0014, PR #1) ⭐ **FIRST** | P0 | 4–6 | 0 | — | ✅ |
 | F4.11 | Fix operator/viewer RBAC — default read scope (zero assets today) | P0 | 2 | 0 | — | ⬜ |
 | F4.12 | Disable local-JWT fallback when `OIDC_ISSUER` set | P0 | 1 | 0 | — | ⬜ |
 | F4.1 | Continuous aggregates (`point_values_1m/_5m/_1h/_1d`) ⭐ | P0 | 4–5 | 0 | — | ⬜ |

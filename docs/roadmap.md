@@ -629,6 +629,33 @@ Process (`AGENTS.md` §10).
   lints, and Docker `web` rebuild/restart. Full clean migration/seed and
   all-role walkthrough remain pending for the revisit.
 
+### Test & CI foundation (F4.4) — active
+- **Status:** done (ADR 0014, PR #1)
+- **Goal:** a test gate that actually runs, so work can be delegated without
+  reading every diff (`docs/build-operating-model.md` §4). Wave 0 of
+  `docs/BACKLOG.md`; the first item of the parallel run plan.
+- **Delivered**
+  - **Vitest** as the runner (the choice `docs/AGENTS.production.md` §10 already
+    named), one project per app — `api`, `web`, `ingest`, plus a repo-wide
+    `repo` project. `apps/web` inherits its own Vite resolution.
+  - Assertions stay in `*.spec.ts`; thin `*.test.ts` wrappers call them. The
+    migration was assertion-neutral by construction: 45 deletions, 0 additions
+    against the spec files, all of it CLI bootstrap.
+  - `tests/repo-invariants.test.ts` fails if any `.spec` file lacks a `.test`
+    wrapper — Vitest excludes `*.spec.*` from coverage, so neither the runner
+    nor the coverage gate would otherwise notice an orphan.
+  - CI now runs `typecheck:tests`, **`db:seed`**, and `test:coverage`. Tests run
+    last so a failing unit test cannot abort the job before `db:seed`.
+  - Coverage thresholds set to the measured baseline (statements 3.60 /
+    branches 1.86 / functions 3.37 / lines 3.72) and ratcheted upward as
+    features land. §10's 80%/70% targets are **not** yet adopted.
+- **Notable:** the CI `db:seed` step is the first end-to-end verification of the
+  repaired drizzle journal (`0018`/`0021`/`0022`) on a genuinely fresh database.
+  It passed.
+- **Unblocks:** F4.5, F4.7, F4.8, F4.10 (Wave 1) and F3.21 (Wave 2).
+- **Owed:** a `chore(agents):` commit adding a testing section to `AGENTS.md`
+  and correcting its §2 CI/CD row (AGENTS.md §10 promotion, §9.10 separation).
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
