@@ -60,10 +60,22 @@ and keys) are encrypted before they reach the database.
 - **Storage:** `bms.rtu_connection_configs.credentials_ciphertext` /
   `.credentials_iv` (`bytea`), plus a `key_version` column.
 - **Implementation:** `apps/api/src/security/credential-crypto.service.ts`.
-- **Read path:** decrypted only in the ingest runtime and during onboarding
-  commit. The REST API **never** returns decrypted secrets; clients receive a
-  `credentialsSet: true` flag and masked placeholders
-  (`apps/api/src/admin/onboarding/onboarding-redaction.ts`).
+- **Read path:** decryption happens in exactly one place — the ingest runtime
+  (`apps/ingest/src/rtu-config.js`). There are **zero** `.decrypt(` call sites
+  in `apps/api/src`; onboarding commit moves ciphertext and IV across tables
+  without decrypting them.
+- **Client exposure — read this before concluding secrets are contained.** The
+  REST API never *decrypts* a stored secret, but that is not the same as never
+  returning one. `redactDraftForClient` deletes the `_secrets` blob and coerces
+  the `credentialsSet` boolean — it **masks nothing**, and unlike
+  `redactDraftForLlm` it does not run `scrubSecrets`
+  (`apps/api/src/admin/onboarding/onboarding-redaction.ts:19`). More
+  importantly, `GET /admin/onboarding/sessions/:id` returns `messages`
+  **verbatim** (`onboarding.service.ts:339`), and the wizard actively asks the
+  admin to paste credentials into that transcript. So a credential typed into
+  onboarding chat **is** served back in cleartext to any holder of a valid JWT
+  — the controller carries `@UseGuards(JwtAuthGuard)` and no role or org check
+  (`onboarding.controller.ts:33`). See §5.1.
 
 Generate a key:
 
@@ -75,10 +87,19 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
 While an onboarding session is still a draft, credentials the admin has
 supplied are held under `onboarding_sessions.draft._secrets` as
-`{ c: <base64 ciphertext>, iv: <base64 iv> }` using the same key and algorithm,
-and are stripped from every client and LLM payload. On commit they move to
-`rtu_connection_configs`. **See §5.1 for the transcript caveat — the draft is
-encrypted, the chat log is not.**
+`{ c: <base64 ciphertext>, iv: <base64 iv> }` using the same key and algorithm.
+On commit they move to `rtu_connection_configs`.
+
+**The `_secrets` blob** — and only that blob — is stripped from client and LLM
+payloads. The raw chat turn is not. `handleOpenAiTurn` scrubs the *draft* it
+puts in the system prompt but forwards the user's message unmodified as
+`{ role: "user", content: message }` (`onboarding-chat.service.ts:209`) — the
+very string the wizard just asked to contain a password. That is an open gap
+against ADR 0011 decision 4 ("Strip credentials from LLM context"). It is
+dormant in the compose stack, where `OPENAI_API_KEY` is never passed to the
+`api` service so `handleOpenAiTurn` is unreachable, and live in native dev and
+any deployment that sets the key. **See §5.1 — the draft is encrypted, the chat
+log is not.**
 
 ### 2.3 Passwords are hashed, not encrypted
 
@@ -110,23 +131,58 @@ Requirements:
 | Never log it | AGENTS.md §9.6 |
 | Use a distinct key per environment | Prevents a pilot leak from decrypting production data |
 
-**Compose wiring.** Both the API (which encrypts) and the ingest worker (which
-decrypts) need the key. `docker-compose.yml` interpolates it from the gitignored
-compose `.env`:
+**Compose wiring — development only.** Both the API (which encrypts) and the
+ingest worker (which decrypts) need the key. `docker-compose.yml` interpolates
+it from the gitignored compose `.env`:
 
 ```yaml
 CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
 ```
 
-An empty value means *not configured*: the API declines to store credentials
-rather than storing them in the clear. Failing closed is intentional.
+**Do not copy this to a pilot or production host.** It reads the key from a
+plaintext file sitting beside `docker-compose.yml` on the same disk as the
+Postgres volume — which is neither a secret store nor off-volume, and is the
+exact anti-pattern this section opens by warning about. It is acceptable on a
+developer machine and nowhere else. For the pilot VM, mount it instead:
+
+```yaml
+secrets:
+  credential_encryption_key:
+    file: /run/secrets/credential_encryption_key   # outside the project tree
+services:
+  api:
+    secrets: [credential_encryption_key]
+```
+
+...or inject from the platform secret store (ECS/K8s secret, KMS, Vault). The
+§9 checklist line "that key comes from a secret store, not from the data
+volume" is checking for *this*, not for the snippet above.
+
+**Failing closed on storage — but silently, and it fails *open* on
+authentication.** An empty value means *not configured*, and no plaintext is
+ever written. That much is intentional and verified. The rest of the behaviour
+is not obvious and matters more:
+
+1. The credential is discarded, yet the draft is still marked
+   `credentialsSet: true` (`onboarding-chat.service.ts:509-511`), so the admin
+   UI reports credentials as set for that RTU.
+2. Commit writes `credentials_ciphertext: null` / `credentials_iv: null`
+   (`onboarding-commit.service.ts:166-176`).
+3. Ingest then falls through to the **global** `MQTT_USERNAME` /
+   `MQTT_PASSWORD` (`apps/ingest/src/rtu-config.js:51-52`) and still reports
+   `source: "db"`.
+
+Net effect if a pilot is deployed without the key: nothing fails, nothing logs,
+every onboarded RTU quietly authenticates with one shared broker account, and
+per-RTU credential revocation silently does nothing. **Set the key before
+onboarding any RTU.** Surfacing the unconfigured state is tracked as `E8.4`.
 
 **Key rotation is not implemented.** The `key_version` column exists and
 `CredentialCryptoService` hard-codes version `1`; there is no re-encryption
-path. ADR 0012 records this as deferred, and **no backlog id currently owns
-it** — a rotation procedure has to be written before a compromised key can be
-retired without manually re-entering every RTU credential. Treat this as an
-open risk, not a solved problem.
+path. ADR 0012 records this as deferred; it is tracked as **`E8.4`** — a
+rotation procedure has to be written before a compromised key can be retired
+without manually re-entering every RTU credential. Treat this as an open risk,
+not a solved problem.
 
 ---
 
@@ -226,6 +282,28 @@ that password persisted **in the clear** in a JSONB column, even though the
 same credential is correctly encrypted in `draft._secrets` and in
 `rtu_connection_configs`.
 
+**At-rest storage is only the first of three vectors.** The same unredacted
+transcript also travels:
+
+1. **Back out through the API.** `GET /admin/onboarding/sessions/:id` returns
+   `messages` verbatim (`onboarding.service.ts:339`). The controller carries
+   `@UseGuards(JwtAuthGuard)` and no role or organization check
+   (`onboarding.controller.ts:33`), so **any authenticated user** can read a
+   password another admin pasted into a wizard session. Encrypting the column
+   at rest would not close this.
+2. **Out to OpenAI.** `handleOpenAiTurn` redacts the draft but forwards the raw
+   user turn as `{ role: "user", content: message }`
+   (`onboarding-chat.service.ts:209`) — a third-party egress of the credential,
+   and an open gap against ADR 0011 decision 4. Dormant under compose
+   (`OPENAI_API_KEY` is not passed to the `api` service); live in native dev
+   and anywhere the key is set.
+3. **Back in via the model's own reply.** The system prompt instructs the model
+   *"Never include password or secret values in assistantMessage"*
+   (`onboarding-chat.service.ts:201`), but nothing enforces it —
+   `finalizeTurn` applies no sanitisation before the assistant message is
+   persisted. A model that echoes the password writes it to the transcript a
+   second time.
+
 Mitigations available to an operator **today**:
 
 - Prefer the Excel upload path for credentials over pasting them into chat.
@@ -233,9 +311,12 @@ Mitigations available to an operator **today**:
   purge committed sessions' `messages` on a schedule.
 - Rotate any credential that has been pasted into a wizard chat.
 
-The durable fix — redacting secret-shaped content from the persisted transcript
-— is application-code work that **no backlog id currently owns**. It should be
-raised as one.
+The durable fix — redacting secret-shaped content from the persisted
+transcript, scoping the session read endpoint, and scrubbing the user turn
+before it reaches the LLM — is application-code work tracked as **`E8.3`**.
+Note that all three vectors must be closed together: redacting only the stored
+column still leaks through vector 2, and scoping only the endpoint still leaks
+through vector 1's stored copy on any future read path.
 
 ### 5.2 The audit log is unencrypted and unconstrained
 
@@ -314,16 +395,26 @@ root file.
 
 This repository previously shipped exactly that gap: `.dockerignore` excluded
 the root `.env` but **not** `apps/api/.env` — the file `README.md` instructs
-every developer to create, holding `JWT_SECRET` and `DATABASE_URL`. Because
-`apps/api/Dockerfile` runs `COPY apps/api apps/api`, any local build baked
-those values into a permanent image layer, where deleting the file later does
-not remove them.
+every developer to create. Because `apps/api/Dockerfile` runs
+`COPY apps/api apps/api`, any local build baked its values into a permanent
+image layer, where deleting the file later does not remove them.
 
-Confirmed empirically with a throwaway build listing the context, before and
-after the fix:
+**What was at risk is worse than `JWT_SECRET` alone.**
+`docs/onboarding-manual-ui-tests.md:3` instructs developers to put
+`OPENAI_API_KEY` **and `CREDENTIAL_ENCRYPTION_KEY`** in that same
+`apps/api/.env`, alongside `DATABASE_URL`. A pre-fix image could therefore
+carry the AES key into every registry and node that holds the ciphertext it
+protects — violating §3's "**never** bake it into an image layer" and
+invalidating §2 entirely for anyone who did.
+
+Behaviour demonstrated with a throwaway build listing the context. **The
+`before` case was reproduced with a synthetic `apps/api/.env` — no such file
+exists in this checkout** (verified: `apps/api`, `apps/web`, `apps/ingest`,
+`apps/sim` each contain only `.env.example`), so no image built from this
+repository leaked anything:
 
 ```
-before:  /ctx/apps/api/.env          <-- developer secrets in the image
+before:  /ctx/apps/api/.env          <-- would carry developer secrets
          /ctx/apps/api/.env.example
 after:   /ctx/apps/api/.env.example  <-- placeholders only
 ```
@@ -333,17 +424,24 @@ patterns, with `!**/.env.example` re-includes after them.
 `tests/repo-invariants.test.ts` asserts those patterns are present and
 correctly ordered, so CI fails if they are ever dropped.
 
-The exclusion does not change what gets built. Both image builds are
-configuration-driven, not `.env`-driven: `apps/web/Dockerfile` declares every
-`VITE_*` variable the SPA reads as an `ARG` and exports it to `ENV` before
-`vite build` (and Vite prioritises real environment variables over `.env` file
-values), while `apps/api/Dockerfile` reads configuration at runtime. Confirmed
-by building the web image with the fixed `.dockerignore` and checking that the
-emitted bundle still carries the injected build-arg values.
+The exclusion does not change what gets built, and this follows from the build
+definitions rather than from a one-off observation: `apps/web/Dockerfile:6-17`
+declares every `VITE_*` variable the SPA reads as an `ARG` and exports it to
+`ENV` before `vite build`, compose passes them as build args
+(`docker-compose.yml:121-127`), and Vite's `loadEnv` gives real environment
+variables priority over `.env` file values. `apps/api/Dockerfile` reads its
+configuration at runtime. So excluding `apps/*/.env` cannot alter either
+emitted artefact.
 
-**If you built an API or web image before this fix, treat `JWT_SECRET` and any
-other value in your local `apps/*/.env` as exposed:** rotate them and delete
-the affected local images.
+**If you ever created an `apps/*/.env` and built an image before this fix,
+treat every value in it as exposed** — `JWT_SECRET`, `DATABASE_URL`,
+`OPENAI_API_KEY` and `CREDENTIAL_ENCRYPTION_KEY`. Rotate them and delete the
+affected local images. If `CREDENTIAL_ENCRYPTION_KEY` was among them, rotating
+it is not enough on its own: there is no re-encryption path (§3), so **every
+stored RTU credential must be re-entered by hand.**
+
+This does not apply to a clean checkout of this repository, which has never
+contained an `apps/*/.env`.
 
 ---
 

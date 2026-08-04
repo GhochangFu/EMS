@@ -30,8 +30,8 @@ provide.
 | `ENERGY_TARIFF_ZAR_PER_KWH` | No | `2.15` | Indicative Energy Centre cost calculation. |
 | `REDIS_URL` | No | `redis://redis:6379` in compose | Enables Socket.IO Redis fan-out. Native WSL may omit it for in-process fallback. |
 | `CREDENTIAL_ENCRYPTION_KEY` | **Secret** — RTU credentials only | unset (interpolated from compose `.env`) | **32-byte base64** AES-256-GCM key for RTU connection credentials (ADR 0012). Empty means not configured and the API declines to store credentials rather than storing plaintext. Must match the `ingest` service's key. See [`security/encryption-at-rest.md`](./security/encryption-at-rest.md) §3. |
-| `OPENAI_API_KEY` | **Secret** — onboarding wizard only | unset | Enables the LLM path of the AI onboarding wizard (ADR 0011). When unset the wizard uses its deterministic rule-based fallback. |
-| `OPENAI_MODEL` | No | `gpt-4o-mini` in `.env.example` | Chat completion model for the onboarding wizard. |
+| `OPENAI_API_KEY` | **Secret** — onboarding wizard only | unset — **not wired into compose** | Enables the LLM path of the AI onboarding wizard (ADR 0011). `docker-compose.yml` passes neither this nor `OPENAI_MODEL` to the `api` service, so **every compose run uses the deterministic rule-based fallback** regardless of what the root `.env` holds; the key only takes effect in native dev. Note the LLM path currently forwards the raw user turn unredacted (`onboarding-chat.service.ts:209`) — see `E8.3`. |
+| `OPENAI_MODEL` | No | `gpt-4o-mini` — **not wired into compose** | Chat completion model for the onboarding wizard. See the note on `OPENAI_API_KEY`. |
 
 ## Web
 
@@ -75,15 +75,15 @@ gitignored root `.env` via `env_file`.
 | Variable | Required | Default / compose value | Purpose |
 |----------|----------|-------------------------|---------|
 | `DATABASE_URL` | Yes | `postgres://bms_app:bms_app_dev@postgres:5432/bms` | Postgres/TimescaleDB connection string. |
-| `MQTT_HOST` | Yes | `phe.thinkiot.co.in` in compose | Pilot MQTT broker hostname. |
-| `MQTT_PORT` | Yes | `8883` in compose | MQTT TLS port. |
+| `MQTT_HOST` | Yes | `phe.thinkiot.co.in` in compose | Pilot MQTT broker hostname. **Also read by the API** — `onboarding-chat.service.ts:444` uses it as the default host when the wizard creates an MQTT RTU. |
+| `MQTT_PORT` | Yes | `8883` in compose | MQTT TLS port. **Also read by the API** (`onboarding-chat.service.ts:445`). |
 | `MQTT_USERNAME` | **Secret** | unset (from `.env`) | Broker username. Never commit. |
 | `MQTT_PASSWORD` | **Secret** | unset (from `.env`) | Broker password. Never commit. |
 | `MQTT_RECONNECT_MS` | No | `5000` | Reconnect backoff period. |
 | `MQTT_TLS_REJECT_UNAUTHORIZED` | No | unset (verification **on**) | Set to `false` to skip broker certificate verification. Local debugging only — must stay unset in any real deployment. |
 | `CREDENTIAL_ENCRYPTION_KEY` | **Secret** | unset (from `.env`) | Same AES-256-GCM key as the API; used to decrypt stored per-RTU credentials (ADR 0012). |
 | `INGEST_METRICS_PORT` | No | `9102` | Prometheus metrics HTTP port. |
-| `INGEST_RELOAD_MS` | No | — | RTU configuration reload interval. |
+| `INGEST_RELOAD_MS` | No | `60000` | RTU configuration reload interval (`apps/ingest/src/index.js:228`). |
 
 ## Observability Containers
 

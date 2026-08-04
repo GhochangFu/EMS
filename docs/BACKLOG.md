@@ -42,7 +42,7 @@ plus the assessment docs and `AGENTS.production.md` referenced therein.
 
 ```
 WAVE 0  enablers+quick wins: F4.4⭐ F1.1⭐ F2.1⭐ F2.3⭐ F3.8⭐ F4.1/4.2⭐ F4.20⭐ F3.3⭐
-        F4.11 F4.12 F3.6 F1.8 F1.9 F4.24 E8.1 E8.2 + ADRs(E1.1, E7.1, positioning)
+        F4.11 F4.12 F3.6 F1.8 F1.9 F4.24 E8.1 E8.2 E8.3 E8.4 + ADRs(E1.1, E7.1, positioning)
 WAVE 1  F1.2 F1.3 F1.4 F1.5 F1.6 F1.7 F1.10  F2.2 F2.4  F3.7 F3.10 F3.1 F3.4 F3.11
         F4.5 F4.7 F4.8 F4.10 F4.14 F4.23  E1.7 E3.1 E5.4
 WAVE 2  F2.5 F2.6 F2.7 F2.8  F3.2 F3.16 F3.20(P1↑)  F3.21⭐  F4.6 F4.15
@@ -276,8 +276,10 @@ and enriched alarms.
 | F4.2 | Retention policy (`compress_after 7d`, `drop_after 2y`) | P0 | incl. | 0 | F4.1 | ⬜ |
 | F4.20 | OpenAPI / Swagger for all `/api/v1` routes ⭐ | P0 | 2–3 | 0 | — | ⬜ |
 | F4.24 | Infra: `apps/worker` (BullMQ), EMQX, Traefik, MinIO in stack | P2 | infra | 0 | — | ⬜ |
-| E8.1 | Encryption at rest — **software scope done; disk/volume encryption is a host responsibility, not code.** Delivered: [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md) (what is/isn't encrypted + deployer requirements), `.dockerignore` fix stopping nested `.env` secrets from being baked into images (+ CI invariant), `CREDENTIAL_ENCRYPTION_KEY` wired into the compose `api` service. **NOT delivered:** DB-volume encryption (deployer/platform — LUKS/BitLocker/KMS), object storage → F3.3, backup encryption → E8.2, key rotation + onboarding-transcript redaction → unowned | P1 | 2–3 | 0 | — | 🟡 |
+| E8.1 | Encryption at rest — **software scope done; disk/volume encryption is a host responsibility, not code.** Delivered: [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md) (what is/isn't encrypted + deployer requirements), `.dockerignore` fix stopping nested `.env` secrets from being baked into images (+ CI invariant), `CREDENTIAL_ENCRYPTION_KEY` wired into the compose `api` service. **NOT delivered:** DB-volume encryption (deployer/platform — LUKS/BitLocker/KMS), object storage → F3.3, backup encryption → E8.2, onboarding credential exposure → E8.3, key rotation + unconfigured-key visibility → E8.4. **Volume encryption is deliberately unowned by any backlog id** — it is a deployer/platform action (LUKS/BitLocker/KMS), not code; see §8 of the security doc. | P1 | 2–3 | 0 | — | 🟡 |
 | E8.2 | Automated backup & recovery (scheduled, tested restores) | P1 | 3–4 | 0 | — | ⬜ |
+| E8.3 | Onboarding credential exposure — **three vectors, must close together.** (1) `onboarding_sessions.messages` stores the raw chat turn, and the wizard prompts admins to paste MQTT credentials into it (`onboarding-chat.service.ts:88,313,531`); (2) `GET /admin/onboarding/sessions/:id` returns `messages` verbatim (`onboarding.service.ts:339`) behind `JwtAuthGuard` with no role/org check, so **any authenticated user** can read another admin's pasted password; (3) `handleOpenAiTurn` forwards the raw user turn to OpenAI unredacted (`onboarding-chat.service.ts:209`), an open gap against ADR 0011 decision 4. Raised by the E8.1 security review. | P1 | 2–3 | 0 | — | ⬜ |
+| E8.4 | `CREDENTIAL_ENCRYPTION_KEY` rotation + unconfigured-key visibility. No re-encryption path exists (`key_version` hard-coded to 1), so a compromised key cannot be retired without re-entering every RTU credential. Separately, an unset key fails closed on *storage* but **open on authentication** — the draft still reports `credentialsSet: true` and ingest silently falls back to the global `MQTT_USERNAME`/`MQTT_PASSWORD` while reporting `source: "db"`. Deferred by ADR 0012; raised by the E8.1 security review. | P1 | 2–3 | 0 | — | ⬜ |
 | F4.5 | Integration tests w/ testcontainers (PG + Timescale + Redis) | P1 | 6–8 | 1 | F4.4 | ⬜ |
 | F4.7 | E2E (Playwright) for critical UX paths | P1 | 4–6 | 1 | F4.4 | ⬜ |
 | F4.8 | Load tests (k6): 5,000 meters @ 1 Hz, 1,000 users | P2 | 3–4 | 1 | F4.4 | ⬜ |

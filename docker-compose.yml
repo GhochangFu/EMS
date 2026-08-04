@@ -77,6 +77,14 @@ services:
       # from the gitignored compose `.env`; empty means "not configured", and
       # the API then refuses to store credentials rather than storing plaintext.
       # The `ingest` service reads the same key via its `env_file`.
+      #
+      # Leaving it empty fails closed on STORAGE but open on AUTHENTICATION:
+      # the draft still reports credentialsSet=true and ingest falls back to the
+      # global MQTT_USERNAME/MQTT_PASSWORD, so every RTU shares one broker
+      # account with no warning. Set it before onboarding any RTU (E8.4).
+      # This file-based wiring is DEV ONLY — a pilot host must inject the key
+      # from a secret store, not from a plaintext file on the data volume.
+      # See docs/security/encryption-at-rest.md §3.
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
     ports:
       - "4000:4000"

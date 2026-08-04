@@ -12,16 +12,34 @@ coverage
 *.tsbuildinfo
 # Secrets: exclude env files at EVERY depth, not only the context root.
 # A bare `.env` pattern matches the root file only — `apps/api/.env`, which
-# README tells developers to create and which holds JWT_SECRET / DATABASE_URL,
-# was still entering the build context and being baked into the API image by
-# `COPY apps/api apps/api`. The `**/` variants are what actually exclude it,
-# mirroring the `**/node_modules` and `**/dist` entries above.
+# README tells developers to create and which holds JWT_SECRET, DATABASE_URL,
+# OPENAI_API_KEY and CREDENTIAL_ENCRYPTION_KEY — was still entering the build
+# context and being baked into the API image by `COPY apps/api apps/api`.
+# The `**/` variants are what actually exclude it, mirroring the
+# `**/node_modules` and `**/dist` entries above.
 # Guarded by tests/repo-invariants.test.ts. See docs/security/encryption-at-rest.md.
 .env
 .env.*
 **/.env
 **/.env.*
+# `*.env` (e.g. apps/api/pilot.env) is gitignored (.gitignore:23) but was NOT
+# dockerignored — so git would never surface it in review while Docker baked it
+# into a layer. Same hole as above through a filename the patterns above miss.
+*.env
+**/*.env
+# Key and certificate material. Nothing in the tree ships these yet, but §2.1 of
+# the encryption doc anticipates per-adapter certs, and neither .gitignore nor
+# .dockerignore covered them — better present before the first one appears.
+**/*.pem
+**/*.key
+**/*.crt
+**/*.p12
+# An .npmrc under an app directory is copied by the same COPY and may hold a
+# registry auth token.
+**/.npmrc
 # Committed *.example files hold placeholders only and are safe to ship.
+# These negations MUST stay last: Docker is last-match-wins, so a pattern added
+# below them could silently re-admit a real secret.
 !.env.example
 !.env.*.example
 !**/.env.example

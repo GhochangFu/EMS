@@ -67,31 +67,84 @@ describe("repo invariants", () => {
     // holds JWT_SECRET and DATABASE_URL — was reaching the image through
     // `COPY apps/api apps/api` until the `**/` variants were added. Verified
     // empirically with a busybox build; see docs/security/encryption-at-rest.md.
-    const required = ["**/.env", "**/.env.*"];
+    const required = ["**/.env", "**/.env.*", "**/*.env", "**/.npmrc"];
     const missing = required.filter((p) => !patterns.includes(p));
     expect(
       missing,
-      `.dockerignore is missing depth-recursive env exclusions: ${missing.join(", ")}. ` +
+      `.dockerignore is missing depth-recursive secret exclusions: ${missing.join(", ")}. ` +
         "Without these, a developer's real .env under apps/* is baked into the image layer.",
     ).toEqual([]);
 
-    // The committed *.example files carry placeholders only and nothing reads
-    // them at build time, so excluding them would be pointless churn against
-    // files that are already public in git. Re-include at every depth, after
-    // the excludes.
-    const reincluded = ["!**/.env.example", "!**/.env.*.example"];
-    const notReincluded = reincluded.filter((p) => !patterns.includes(p));
-    expect(
-      notReincluded,
-      `.dockerignore must re-include committed env examples: ${notReincluded.join(", ")}`,
-    ).toEqual([]);
+    // Presence checks alone are NOT enough. Docker is last-match-wins, so
+    // appending `!**/.env` (or `!**`) leaves every required pattern present and
+    // correctly ordered while silently re-admitting the file — a green gate
+    // asserting a hole is closed while it is open. So evaluate real paths
+    // through the actual pattern list instead of trusting `includes()`.
+    const toRegExp = (pattern: string): RegExp => {
+      let re = "";
+      let i = 0;
+      while (i < pattern.length) {
+        if (pattern[i] === "*" && pattern[i + 1] === "*") {
+          if (pattern[i + 2] === "/") {
+            re += "(?:[^/]+/)*"; // `**/` — zero or more directories
+            i += 3;
+          } else {
+            re += ".*";
+            i += 2;
+          }
+        } else if (pattern[i] === "*") {
+          re += "[^/]*"; // `*` does not cross a separator
+          i += 1;
+        } else if (pattern[i] === "?") {
+          re += "[^/]";
+          i += 1;
+        } else {
+          re += pattern[i].replace(/[.+^${}()|[\]\\]/g, "\\$&");
+          i += 1;
+        }
+      }
+      return new RegExp(`^${re}$`);
+    };
 
-    // Negations only take effect after the exclusion they undo.
-    for (const negation of reincluded) {
-      expect(
-        patterns.indexOf(negation),
-        `${negation} must appear after the exclusion patterns it re-includes`,
-      ).toBeGreaterThan(patterns.indexOf("**/.env.*"));
+    const isExcluded = (path: string): boolean => {
+      let excluded = false;
+      for (const pattern of patterns) {
+        const negated = pattern.startsWith("!");
+        if (toRegExp(negated ? pattern.slice(1) : pattern).test(path)) {
+          excluded = !negated; // last match wins, exactly like Docker
+        }
+      }
+      return excluded;
+    };
+
+    // Secret-bearing paths that must never reach a layer.
+    for (const secret of [
+      ".env",
+      "apps/api/.env",
+      "apps/api/.env.local",
+      "apps/ingest/.env.production",
+      "apps/api/pilot.env",
+      "apps/ingest/phe.env",
+      "apps/api/certs/client.pem",
+      "apps/api/certs/client.key",
+      "apps/ingest/ca.crt",
+      "apps/api/.npmrc",
+    ]) {
+      expect(isExcluded(secret), `${secret} must be excluded from the build context`).toBe(true);
+    }
+
+    // Committed placeholders carry no secrets and are already public in git, so
+    // excluding them would be pointless churn. Source must obviously still ship —
+    // an over-broad exclusion breaks the build rather than leaking, but it is the
+    // other way this file can be wrong.
+    for (const shipped of [
+      ".env.example",
+      "apps/api/.env.example",
+      "apps/api/.env.production.example",
+      "apps/api/src/main.ts",
+      "package.json",
+    ]) {
+      expect(isExcluded(shipped), `${shipped} must remain in the build context`).toBe(false);
     }
   });
 });
