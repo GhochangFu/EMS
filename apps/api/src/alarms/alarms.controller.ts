@@ -52,6 +52,7 @@ export class AlarmsController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
+    await this.accessControl.assertOperationsWriteRole(user, "operational");
     try {
       const dto = alarmAckBodySchema.parse(body);
       return this.alarms.acknowledge(

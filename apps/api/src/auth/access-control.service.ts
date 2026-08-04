@@ -20,6 +20,17 @@ import type {
 } from "@bms/shared";
 
 import { DRIZZLE } from "../database/database.tokens";
+import {
+  noAccessScope,
+  type ReadScopeSource,
+  isMasterDataRole,
+  readScopeSourcesForRole,
+} from "./access-scope";
+import {
+  canPerformOperationsWrite,
+  operationsWriteDenialReason,
+  type OperationsWriteClass,
+} from "./operations-write";
 
 type DbUser = {
   id: string;
@@ -65,14 +76,38 @@ export class AccessControlService {
 
   /** Ensures the user may access master-data admin endpoints. */
   assertMasterDataRole(role: UserRole): void {
-    if (
-      role !== "admin" &&
-      role !== "organization_admin" &&
-      role !== "location_admin"
-    ) {
+    if (!isMasterDataRole(role)) {
       throw new ForbiddenException(
         "Master data administration requires admin, organization_admin, or location_admin role",
       );
+    }
+  }
+
+  /**
+   * Ensures the user may perform this class of operations write (ADR 0017).
+   *
+   * Call this BEFORE the asset-scope check in every mutating handler, so a
+   * role rejection never depends on scope resolution and can never be confused
+   * with "no readable assets". Before this gate existed, an empty read scope
+   * was the only thing stopping `operator` and `viewer` from writing — read
+   * scope doing authorization work it was never designed to do.
+   *
+   * The gate is additive: callers must pass this AND the existing scope check.
+   */
+  async assertOperationsWriteRole(
+    jwt: JwtPayload,
+    writeClass: OperationsWriteClass,
+  ): Promise<void> {
+    // Resolve the role from bms.users, NOT from the JWT claim. Every other
+    // authorization decision in this service (assertMasterDataRole via
+    // requireMasterDataUser, readableAssetIds) reads the DB role, and the two
+    // sources drift: a token outlives a demotion by up to JWT_TTL (8h), and in
+    // OIDC mode roleFromClaims falls back to "viewer" when realm roles are
+    // missing. Reading a different authority here would make the gate
+    // fail-open on demotion and fail-closed on a claimless admin token.
+    const user = await this.resolveDbUser(jwt);
+    if (!canPerformOperationsWrite(user.role, writeClass)) {
+      throw new ForbiddenException(operationsWriteDenialReason(writeClass));
     }
   }
 
@@ -210,8 +245,28 @@ export class AccessControlService {
     };
   }
 
+  /**
+   * Resolves the read scope for a user by walking the grant sources their role
+   * allows, in precedence order. The first source that yields any location or
+   * asset wins; if none does, the last source's (empty) scope is returned so
+   * read-only roles without grants fail closed on `kind: "none"`.
+   */
   private async scopeForUser(user: DbUser): Promise<AccessibleScope> {
-    if (user.role === "admin") {
+    let scope: AccessibleScope = noAccessScope();
+    for (const source of readScopeSourcesForRole(user.role)) {
+      scope = await this.scopeFromSource(user, source);
+      if (scope.assetIds.length > 0 || scope.locations.length > 0) {
+        break;
+      }
+    }
+    return scope;
+  }
+
+  private async scopeFromSource(
+    user: DbUser,
+    source: ReadScopeSource,
+  ): Promise<AccessibleScope> {
+    if (source === "global") {
       const [locationRows, assetRows] = await Promise.all([
         this.db
           .select({
@@ -238,7 +293,7 @@ export class AccessControlService {
       };
     }
 
-    if (user.role === "organization_admin") {
+    if (source === "organization") {
       const orgIds = await this.db
         .select({ organizationId: userOrganizationAccess.organizationId })
         .from(userOrganizationAccess)
@@ -283,7 +338,7 @@ export class AccessControlService {
       };
     }
 
-    if (user.role === "location_admin") {
+    if (source === "location") {
       const locationRows = await this.db
         .select({
           id: locations.id,
@@ -321,7 +376,7 @@ export class AccessControlService {
       };
     }
 
-    if (user.role === "asset_group_admin") {
+    if (source === "asset_group") {
       const groupRows = await this.db
         .select({
           id: assetGroups.id,
@@ -379,6 +434,6 @@ export class AccessControlService {
       };
     }
 
-    return { kind: "none", locations: [], assetGroups: [], assetIds: [] };
+    return noAccessScope();
   }
 }

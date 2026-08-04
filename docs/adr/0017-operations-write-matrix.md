@@ -9,7 +9,7 @@ Blocks `F4.11`. Fixes a hole that exists **independently** of `F4.11`.
 
 ## Context
 
-Seventeen mutating endpoints across four controllers carry
+Sixteen mutating endpoints across four controllers carry
 `@UseGuards(JwtAuthGuard)` and nothing else — authentication with **no
 authorization**. They authorize purely on `readableAssetIds` being non-empty:
 
@@ -63,7 +63,7 @@ without handing it the rule engine.
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
 | `POST rules/` · `PATCH rules/:id` · `publish` · `duplicate` · `archive` · `PATCH :id/enabled` | config | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 | `POST rules/evaluate` | config | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| `POST rules/preview` | read | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `POST rules/preview` | config | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 | `POST alarms/:id/ack` | ops | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `POST work-orders/` · `PATCH reorder` · `PATCH :id/status` · `POST :id/close` | ops | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `POST maintenance/schedules` · `PATCH schedules/:id` | config | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
@@ -80,16 +80,30 @@ Three deliberate calls:
   across the caller's whole scope. A conservative default is correct for a
   security gate: widening it to `operator` later is a one-line change, and
   the reverse is a regression someone has to notice.
-- **`rules/preview` stays ungated** — verified non-persisting; it returns
-  evaluation results without writing. It stays available to `viewer` so a
-  read-only user can understand why a rule would fire.
+- **`rules/preview` is gated as `configuration`.** An earlier draft of this ADR
+  exempted it as read-only, on the claim that it was "verified non-persisting".
+  **That claim was wrong** — `rules.service.ts:274` inserts a `rule_preview`
+  row into `bms.audit_log` on every successful call. Two independent reviews
+  caught it. Preview is also a rule-*authoring* aid, so it takes the same class
+  as the rest of rule authoring rather than a class of its own. Consequence:
+  `viewer` and `operator` cannot preview. That is the correct trade — an
+  endpoint that writes must be gated, and the lowest-privilege role must not be
+  able to drive unbounded audit-table growth with caller-chosen payload
+  strings.
 
 ### 3. Enforcement
 
-A single `assertOperationsWriteRole(role, class)` on `AccessControlService`,
+A single `assertOperationsWriteRole(jwt, class)` on `AccessControlService`,
 called at the top of each mutating handler **before** the scope check, so a
 role rejection never depends on scope resolution and cannot be confused with
 "no readable assets".
+
+It resolves the role from **`bms.users`, not from the JWT claim**, matching
+every other authorization decision in the service. The two sources drift: a
+token outlives a demotion by up to `JWT_TTL` (8h), and in OIDC mode
+`roleFromClaims` falls back to `viewer` when realm roles are missing. Reading
+the claim would make the gate fail *open* on demotion and fail *closed* on a
+claimless admin token.
 
 Scope checks stay exactly as they are. This gate is **additive**: a caller must
 now pass *both* the role gate and the existing asset-scope check. Nothing that
@@ -115,7 +129,7 @@ and can ship whole. The committed `operator123` account stops being a latent
 write vector. A future reader can answer "who may close a work order?" from one
 table instead of by tracing scope propagation through four services.
 
-**Negative.** Seventeen call sites gain a line. Two role checks now exist
+**Negative.** Sixteen call sites gain a line. Two role checks now exist
 (master data via `assertMasterDataRole`, operations via
 `assertOperationsWriteRole`) and must not drift — mitigated by keeping both on
 `AccessControlService` and testing the matrix as data.
@@ -138,8 +152,17 @@ runtime-unverified — a gap inherited from `F4.11`, not created here.
 - A test asserting `viewer` is rejected for every write class.
 - A test asserting the four admin roles are accepted for every class — the
   no-regression guard.
-- Red-then-green evidence required per AGENTS.md §4.6: each test must fail
-  against the ungated controllers before the gate lands.
+- Red-then-green evidence per AGENTS.md §4.6, at the level this design admits:
+  the matrix tests run against a deliberately permissive stub (reproducing the
+  ungated behaviour) and must fail, then pass against the real matrix. They
+  cannot "fail against the ungated controllers" — they exercise a pure
+  function that did not previously exist. End-to-end proof through the
+  controllers is `F4.10`'s job.
+- A repository invariant (`tests/repo-invariants.test.ts`) asserts every
+  `@Post`/`@Patch`/`@Put`/`@Delete` handler in the four controllers contains an
+  `assertOperationsWriteRole` call, so the *next* mutating endpoint cannot ship
+  ungated. Verified by removing a gate and confirming the suite names the exact
+  file and line.
 
 ## Owed follow-up
 

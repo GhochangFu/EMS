@@ -63,3 +63,4 @@ TODO.local.md
 
 # --- Drizzle local artifacts -----------------------------------------------
 drizzle/.snapshot.json.bak
+.claude/worktrees/
