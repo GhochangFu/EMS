@@ -18,6 +18,10 @@
           {
             "type": "command",
             "command": "node .claude/hooks/check-style-hygiene.mjs"
+          },
+          {
+            "type": "command",
+            "command": "node .claude/hooks/check-drizzle-journal.mjs"
           }
         ]
       }
