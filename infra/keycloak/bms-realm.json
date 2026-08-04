@@ -1,7 +1,7 @@
 {
   "realm": "bms",
   "enabled": true,
-  "displayName": "Eskom SMOC BMS",
+  "displayName": "TRINETRA",
   "accessTokenLifespan": 28800,
   "ssoSessionIdleTimeout": 28800,
   "ssoSessionMaxLifespan": 28800,
