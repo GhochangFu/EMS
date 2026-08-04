@@ -153,7 +153,8 @@ entry **D-0001**.
 | Secrets      | AES-256-GCM encrypted RTU connection credentials via `CREDENTIAL_ENCRYPTION_KEY`; never returned decrypted by the API (ADR 0012) |
 | Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, and DB |
-| CI/CD        | GitHub Actions for install, build/typecheck, and migration validation |
+| CI/CD        | GitHub Actions: install, build/typecheck, `typecheck:tests`, migration validation, **`db:seed` against a fresh schema**, and `test:coverage` (ADR 0014) |
+| Testing      | Vitest, one project per app + a repo-wide `repo` project; coverage gate on a ratcheting baseline (ADR 0014). See §4.6 |
 | Cache / pub-sub | Redis 7 for Socket.IO adapter fan-out |
 | Local dev    | WSL2 Ubuntu 22.04; native Postgres remains supported, Docker Compose is optional |
 
@@ -230,6 +231,23 @@ Do not add top-level folders without updating this section.
 - Max **1000 lines per file** in the current phase.
 - No `console.log` in committed code; use the shared logger (Pino).
 - No emoji in code or commits unless explicitly requested.
+
+### 4.6 Testing (ADR 0014)
+- **Runner: Vitest.** `pnpm test` runs everything; `pnpm test:coverage` is what
+  CI enforces. Never add a second runner without an ADR (§9.4).
+- **Assertions live in `*.spec.ts`; `*.test.ts` is the wrapper that runs them.**
+  A `.spec` without its sibling `.test` is dead code — `tests/repo-invariants.test.ts`
+  fails the build if you add one. Do not delete the spec to make it pass.
+- New behaviour ships with its test in the same PR. Bug fixes ship with the
+  test that would have caught the bug.
+- **Coverage is a ratchet, not a target.** Thresholds in `vitest.config.ts` sit
+  just below the current measurement; raise them as coverage rises. Never lower
+  a threshold to make a build pass, and never use `thresholds.autoUpdate` —
+  that converts the gate into a rubber stamp. `docs/AGENTS.production.md` §10's
+  80% lines / 70% branches remain the destination, not the current rule.
+- A check that CI does not execute is not a gate. When you add a test suite,
+  script, or invariant, wire it into `.github/workflows/ci.yml` in the same
+  change — this repo has shipped orphaned specs and orphaned migrations before.
 
 ---
 
