@@ -125,7 +125,7 @@ still safe in parallel.
 
 | Slot | Run in parallel | Tracks | Notes |
 |------|-----------------|--------|-------|
-| ~~**1**~~ | ~~**F4.4** ⭐~~ ✅ · F4.11 · ~~E8.1~~ ✅ | F | **F4.4 done** (ADR 0014, PR #1) — Vitest + coverage gate + `db:seed` now run on every PR, so delegating to agents is safe from here. **E8.1 done** — software scope only; volume/disk encryption stays a deployer responsibility, see [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md). F4.11 (operator RBAC) remains as an independent quick win. *F4.12 touches the same auth area as F4.11 — same owner, sequential.* |
+| ~~**1**~~ | ~~**F4.4** ⭐~~ ✅ · F4.11 🔵 · E8.1 🟡 | F | **F4.4 done** (ADR 0014, PR #1) — Vitest + coverage gate + `db:seed` now run on every PR, so delegating to agents is safe from here. **E8.1 partial** (🟡) — software scope only; the row's volume/object-storage/backup surface is deliberately *not* built, see [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md). **F4.11 blocked** (🔵) — its read-scope fix silently grants `operator` write access to rules/alarms/work-orders/maintenance, because those controllers have no role gate; a write gate lands first. *F4.12 is clean and merges independently.* |
 | **2** | **F1.1** ⭐ · **F2.1** ⭐ · **F3.8** ⭐ | A · B · D | The three big enablers, fully independent. F2.1 is on the critical path — protect it. |
 | **3** | **F2.3** ⭐ · **F4.1** ⭐ · **F3.3** ⭐ | B · F · C | Second enabler batch. F2.3 continues track B (same owner as F2.1). |
 | **4** | F1.2 · F2.2 · F3.6 | A · B · D | First dependents unlock: Modbus (needs F1.1), template instantiation (needs F2.1), alarm-engine unification (independent). |
@@ -276,7 +276,7 @@ and enriched alarms.
 | F4.2 | Retention policy (`compress_after 7d`, `drop_after 2y`) | P0 | incl. | 0 | F4.1 | ⬜ |
 | F4.20 | OpenAPI / Swagger for all `/api/v1` routes ⭐ | P0 | 2–3 | 0 | — | ⬜ |
 | F4.24 | Infra: `apps/worker` (BullMQ), EMQX, Traefik, MinIO in stack | P2 | infra | 0 | — | ⬜ |
-| E8.1 | Encryption at rest — **software scope done; disk/volume encryption is a host responsibility, not code.** Delivered: [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md) (what is/isn't encrypted + deployer requirements), `.dockerignore` fix stopping nested `.env` secrets from being baked into images (+ CI invariant), `CREDENTIAL_ENCRYPTION_KEY` wired into the compose `api` service. **NOT delivered:** DB-volume encryption (deployer/platform — LUKS/BitLocker/KMS), object storage → F3.3, backup encryption → E8.2, key rotation + onboarding-transcript redaction → unowned | P1 | 2–3 | 0 | — | ✅ |
+| E8.1 | Encryption at rest — **software scope done; disk/volume encryption is a host responsibility, not code.** Delivered: [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md) (what is/isn't encrypted + deployer requirements), `.dockerignore` fix stopping nested `.env` secrets from being baked into images (+ CI invariant), `CREDENTIAL_ENCRYPTION_KEY` wired into the compose `api` service. **NOT delivered:** DB-volume encryption (deployer/platform — LUKS/BitLocker/KMS), object storage → F3.3, backup encryption → E8.2, key rotation + onboarding-transcript redaction → unowned | P1 | 2–3 | 0 | — | 🟡 |
 | E8.2 | Automated backup & recovery (scheduled, tested restores) | P1 | 3–4 | 0 | — | ⬜ |
 | F4.5 | Integration tests w/ testcontainers (PG + Timescale + Redis) | P1 | 6–8 | 1 | F4.4 | ⬜ |
 | F4.7 | E2E (Playwright) for critical UX paths | P1 | 4–6 | 1 | F4.4 | ⬜ |
