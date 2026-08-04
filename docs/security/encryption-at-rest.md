@@ -333,6 +333,14 @@ patterns, with `!**/.env.example` re-includes after them.
 `tests/repo-invariants.test.ts` asserts those patterns are present and
 correctly ordered, so CI fails if they are ever dropped.
 
+The exclusion does not change what gets built. Both image builds are
+configuration-driven, not `.env`-driven: `apps/web/Dockerfile` declares every
+`VITE_*` variable the SPA reads as an `ARG` and exports it to `ENV` before
+`vite build` (and Vite prioritises real environment variables over `.env` file
+values), while `apps/api/Dockerfile` reads configuration at runtime. Confirmed
+by building the web image with the fixed `.dockerignore` and checking that the
+emitted bundle still carries the injected build-arg values.
+
 **If you built an API or web image before this fix, treat `JWT_SECRET` and any
 other value in your local `apps/*/.env` as exposed:** rotate them and delete
 the affected local images.

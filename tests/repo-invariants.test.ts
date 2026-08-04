@@ -75,8 +75,10 @@ describe("repo invariants", () => {
         "Without these, a developer's real .env under apps/* is baked into the image layer.",
     ).toEqual([]);
 
-    // The committed *.example files carry placeholders only, and the Dockerfiles
-    // expect them present. Re-include them at every depth too, after the excludes.
+    // The committed *.example files carry placeholders only and nothing reads
+    // them at build time, so excluding them would be pointless churn against
+    // files that are already public in git. Re-include at every depth, after
+    // the excludes.
     const reincluded = ["!**/.env.example", "!**/.env.*.example"];
     const notReincluded = reincluded.filter((p) => !patterns.includes(p));
     expect(
