@@ -1,15 +1,19 @@
-# AGENTS.md — TRINETRA BMS (formerly Eskom SMOC) (Part 2 / Phase 5 Location and Access + Onboarding & PHE Ingest)
+# AGENTS.md — TRINETRA Enterprise EMS (Ion Exchange line) (Part 2 / Phase 5 Location and Access + Onboarding & PHE Ingest)
 
 > **Status:** ACTIVE — Phase 5 Sprint J/K/L/M/N Location and Access
 > hardening is open. In addition, the hierarchical master-data admin, the
 > scoped AI onboarding wizard, and the PHE MQTT real-ingestion pilot are
 > merged to `main` (ADR 0007–0012) and are now in scope. General site-wide
 > AI copilot, EMQX, and multi-protocol adapters remain deferred.
-> **Product brand:** TRINETRA (earlier: Eskom SMOC / InfraPulse). Powered by
-> Euphoria Infotech India Limited.
+> **Product brand:** TRINETRA. Powered by Euphoria Infotech India Limited.
+> **Product line:** Enterprise EMS for Ion Exchange (India) Ltd. per
+> **ADR 0013** — forked from the Eskom SMOC engagement (earlier branding:
+> Eskom SMOC / InfraPulse). Eskom-era internal identifiers, seed demo data,
+> and the `ESKOM_SMOC.html` mockups are intentionally retained; the pending
+> SOW-driven scope is tracked in `docs/BACKLOG.md`.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
-> **Recent scope changes:** see `docs/adr/0007`–`0012` and `git log`; those
+> **Recent scope changes:** see `docs/adr/0007`–`0013` and `git log`; those
 > ADRs promoted work that post-dates parts of §3 and §6 below, so where this
 > file's status/scope conflicts with a newer ADR, the ADR is authoritative.
 
