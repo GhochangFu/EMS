@@ -41,8 +41,9 @@ plus the assessment docs and `AGENTS.production.md` referenced therein.
 ## 1. Wave plan at a glance
 
 ```
-WAVE 0  enablers+quick wins: F4.4⭐ F1.1⭐ F2.1⭐ F2.3⭐ F3.8⭐ F4.1/4.2⭐ F4.20⭐ F3.3⭐
-        F4.11 F4.12 F3.6 F1.8 F1.9 F4.24 E8.1 E8.2 E8.3 E8.4 + ADRs(E1.1, E7.1, positioning)
+WAVE 0  enablers+quick wins: [F4.4⭐ ✅] F1.1⭐ F2.1⭐ F2.3⭐ F3.8⭐ F4.1/4.2⭐ F4.20⭐ F3.3⭐
+        [F4.11 ✅] [F4.12 ✅] F3.6 F1.8 F1.9 F4.24 E8.1🟡 E8.2 E8.3 E8.4
+        + ADRs(E1.1, E7.1, positioning)
 WAVE 1  F1.2 F1.3 F1.4 F1.5 F1.6 F1.7 F1.10  F2.2 F2.4  F3.7 F3.10 F3.1 F3.4 F3.11
         F4.5 F4.7 F4.8 F4.10 F4.14 F4.23  E1.7 E3.1 E5.4
 WAVE 2  F2.5 F2.6 F2.7 F2.8  F3.2 F3.16 F3.20(P1↑)  F3.21⭐  F4.6 F4.15
@@ -125,7 +126,7 @@ still safe in parallel.
 
 | Slot | Run in parallel | Tracks | Notes |
 |------|-----------------|--------|-------|
-| ~~**1**~~ | ~~**F4.4** ⭐~~ ✅ · ~~F4.11~~ ✅ · E8.1 🟡 | F | **F4.4 done** (ADR 0014, PR #1) — Vitest + coverage gate + `db:seed` now run on every PR, so delegating to agents is safe from here. **E8.1 partial** (🟡) — software scope only; the row's volume/object-storage/backup surface is deliberately *not* built, see [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md). **F4.11 + F4.12 done** ✅ — F4.11 shipped for operator *and* viewer once ADR 0017’s write matrix gated the 16 mutating endpoints in rules/alarms/work-orders/maintenance, which previously carried `JwtAuthGuard` and no role check. |
+| ~~**1**~~ **CLOSED** | ~~**F4.4** ⭐~~ ✅ · ~~F4.11~~ ✅ · ~~F4.12~~ ✅ · E8.1 🟡 | F | **F4.4** (ADR 0014, PR #1) — Vitest + coverage gate + `db:seed` run on every PR, so delegating to agents is safe from here. **F4.11 + F4.12** (ADR 0017, PR #2) — F4.11 shipped for operator *and* viewer once the write matrix gated the 16 mutating endpoints in rules/alarms/work-orders/maintenance, which carried `JwtAuthGuard` and no role check. **E8.1 partial** (🟡) — software scope only; the row's volume/object-storage/backup surface is deliberately *not* built, see [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md). Its review raised **E8.3** and **E8.4** as new scope. |
 | **2** | **F1.1** ⭐ · **F2.1** ⭐ · **F3.8** ⭐ | A · B · D | The three big enablers, fully independent. F2.1 is on the critical path — protect it. |
 | **3** | **F2.3** ⭐ · **F4.1** ⭐ · **F3.3** ⭐ | B · F · C | Second enabler batch. F2.3 continues track B (same owner as F2.1). |
 | **4** | F1.2 · F2.2 · F3.6 | A · B · D | First dependents unlock: Modbus (needs F1.1), template instantiation (needs F2.1), alarm-engine unification (independent). |
@@ -141,6 +142,27 @@ still safe in parallel.
 Completing slot 12 reaches the **Foundry demo**: a water plant onboarded from a
 rich template by the agent, with health scores, pre-threshold anomaly alerts,
 and enriched alarms.
+
+### Newly unblocked after slot 1 (2026-08-04)
+
+Re-derived from the `Depends` column after `F4.4`, `F4.11` and `F4.12` went
+`✅` — not read off the slot table, which assumes nothing is done yet.
+
+| Item | P | Track | Why it matters now |
+|------|---|-------|--------------------|
+| **F4.10** | **P0** | F | **Take this before the other three.** ADR 0017 names it explicitly as where end-to-end proof of the write matrix belongs: the matrix is currently verified by unit tests over a pure function, so `scopeFromSource`'s query branches are still runtime-unverified. It is the only P0 in this set. |
+| F4.5 | P1 | F | Integration tests w/ testcontainers — the harness F4.10 would build on. Consider pairing them. |
+| F4.7 | P1 | F | Playwright E2E for critical UX paths. |
+| F4.8 | P2 | F | k6 load tests. |
+
+`F4.6` (contract tests) is **still blocked** — it needs `F4.23` as well as
+`F4.4`. `F3.21` lists "create APIs, F4.4"; the `F4.4` half is now satisfied but
+the create APIs are not, so it stays blocked and slot 10 is unchanged.
+
+Slot 2 (`F1.1` ⭐ · `F2.1` ⭐ · `F3.8` ⭐) remains the recommended next batch —
+these are the enablers that unblock the most downstream work. `F2.1` holds the
+migration lock (one migration-bearing job at a time; the drizzle journal is a
+single shared file). `F3.8` needs a dependency ADR before build.
 
 **How to use this**
 
@@ -283,7 +305,7 @@ and enriched alarms.
 | F4.5 | Integration tests w/ testcontainers (PG + Timescale + Redis) | P1 | 6–8 | 1 | F4.4 | ⬜ |
 | F4.7 | E2E (Playwright) for critical UX paths | P1 | 4–6 | 1 | F4.4 | ⬜ |
 | F4.8 | Load tests (k6): 5,000 meters @ 1 Hz, 1,000 users | P2 | 3–4 | 1 | F4.4 | ⬜ |
-| F4.10 | Automated access-control integration tests | P0 | 3 | 1 | F4.4 | ⬜ |
+| F4.10 | Automated access-control integration tests. **Unblocked — highest-priority pending item.** ADR 0017 names it as where end-to-end proof of the operations write matrix belongs: the matrix is proven by unit tests over a pure function, so `scopeFromSource`'s query branches remain runtime-unverified | P0 | 3 | 1 | F4.4 ✅ | ⬜ |
 | F4.14 | Audit read API + export | P1 | 2–3 | 1 | — | ⬜ |
 | F4.23 | `packages/contracts` (Zod), `packages/ui`, `telemetry-sdk` | P2 | 6–8 | 1 | F4.20 | ⬜ |
 | F4.6 | Contract tests (API ↔ web via contracts pkg) | P1 | incl. | 2 | F4.4, F4.23 | ⬜ |
@@ -431,8 +453,20 @@ flowchart LR
 | Multi-tenancy re-open | E7.1, informs F4.16 | SOW §11 vs. superseded decision — one platform, tenant model? |
 | ML stack | all E1.x | Runtime (Python svc / Node / external), registry, serving path. |
 | ~~Product positioning~~ | — | **Resolved by ADR 0013 (2026-08-04):** this repo forked to the TRINETRA Enterprise EMS line for Ion Exchange (India) Ltd.; display-layer rebrand only, Eskom-era internals retained. Eskom line continues from the external backup, if at all. |
-| Test runner + libs | F4.4 (first cycle) | Vitest vs Jest; §9.4 dep gate. |
+| ~~Test runner + libs~~ | ~~F4.4~~ | **Resolved by ADR 0014 (2026-08-04):** Vitest + `@vitest/coverage-v8`, projects-per-app, coverage as a ratchet. |
+| **Encryption-at-rest boundary** ⚠ | E8.1 (already merged) | **Open — human decision.** E8.1 landed with no ADR while every sibling in its wave got one, yet it made two architectural calls: *volume encryption is permanently outside this repo's scope* (deployer/platform action) and *fail closed on an unset key*. Options: write a retro `0018-encryption-at-rest-boundary.md`, or record an explicit documented exemption in the E8.1 row. Raised by the E8.1 compliance review. |
 | Per-feature ADRs | each promotion | Standard AGENTS.md §10 flow (Modbus/BACnet libs, `bullmq`, `nodemailer`, `minio`, …). |
+
+**Owed `chore(agents):` promotions** (AGENTS.md §9.10 — these must land as
+*separate* commits, never as a side effect of a feature commit):
+
+| Owed | Source | What to add |
+|------|--------|-------------|
+| ADR 0015 | F2.1 | Asset templates into AGENTS.md §2/§3. |
+| ADR 0016 | F1.1 | §2 stack row (adapter framework, `zod`), §6 wording, roadmap. |
+| ADR 0017 | F4.11 | The operations write matrix into AGENTS.md §4, beside the existing master-data role rules, so both role gates are documented in one place. |
+| §4.6 carve-out | ADR 0014 | Record that repo-level invariants in `tests/` hold assertions inline; the `.spec`/`.test` split applies to `apps/` and `packages/`. Batch with adding `docs/security/`, `BACKLOG.md`, `build-operating-model.md`, `archive/` and `scripts/` to the stale §3 tree. |
+| Roadmap mirror | Wave 0 batch | `docs/roadmap.md` has only F4.4. F4.11, F4.12, E8.1 and ADR 0017 are unmirrored — do them as one Wave 0 update, not per-item retros. |
 
 ## 6. Instrumentation / hardware note (SOW §8)
 
