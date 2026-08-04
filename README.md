@@ -26,6 +26,7 @@ broader AI layer remain out of scope until explicitly promoted.
 | [`docs/local-setup.md`](./docs/local-setup.md) | Exact WSL2 + Postgres + Timescale + Node setup steps. |
 | [`docs/windows-vm-docker-deploy.md`](./docs/windows-vm-docker-deploy.md) | Windows VM + Docker Desktop pilot deploy (compose only; no host Postgres). |
 | [`docs/env-inventory.md`](./docs/env-inventory.md) | Environment variables for native and compose-based development. |
+| [`docs/security/encryption-at-rest.md`](./docs/security/encryption-at-rest.md) | **Read before deploying.** What is and is not encrypted at rest, and the host/platform encryption a deployer must configure. |
 | [`docs/observability-runbook.md`](./docs/observability-runbook.md) | Sprint D Prometheus/Grafana/Loki health-check steps. |
 | [`docs/phase-2-ingestion-readiness.md`](./docs/phase-2-ingestion-readiness.md) | Phase 2 Sprint 0 source inventory, mapping, and Path A / Path B decision workbook. |
 | [`docs/decisions.md`](./docs/decisions.md) | ADR-lite log of non-obvious choices made during the prototype. |

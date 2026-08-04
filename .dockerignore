@@ -10,7 +10,19 @@ coverage
 .vite
 *.log
 *.tsbuildinfo
+# Secrets: exclude env files at EVERY depth, not only the context root.
+# A bare `.env` pattern matches the root file only — `apps/api/.env`, which
+# README tells developers to create and which holds JWT_SECRET / DATABASE_URL,
+# was still entering the build context and being baked into the API image by
+# `COPY apps/api apps/api`. The `**/` variants are what actually exclude it,
+# mirroring the `**/node_modules` and `**/dist` entries above.
+# Guarded by tests/repo-invariants.test.ts. See docs/security/encryption-at-rest.md.
 .env
 .env.*
+**/.env
+**/.env.*
+# Committed *.example files hold placeholders only and are safe to ship.
 !.env.example
 !.env.*.example
+!**/.env.example
+!**/.env.*.example

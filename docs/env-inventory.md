@@ -4,6 +4,13 @@ Phase 1 keeps the prototype variables and adds compose defaults for
 reproducible development. Real secrets still belong in uncommitted `.env`
 files or deployment secret stores.
 
+Variables marked **Secret** below must come from a secret store in any
+non-local deployment, must never be committed, and must never be baked into an
+image layer. See
+[`security/encryption-at-rest.md`](./security/encryption-at-rest.md) for key
+handling, image-layer rules, and the host-level configuration a deployer must
+provide.
+
 ## API
 
 | Variable | Required | Default / compose value | Purpose |
@@ -22,6 +29,9 @@ files or deployment secret stores.
 | `LOG_LEVEL` | No | `info` | Pino log level. |
 | `ENERGY_TARIFF_ZAR_PER_KWH` | No | `2.15` | Indicative Energy Centre cost calculation. |
 | `REDIS_URL` | No | `redis://redis:6379` in compose | Enables Socket.IO Redis fan-out. Native WSL may omit it for in-process fallback. |
+| `CREDENTIAL_ENCRYPTION_KEY` | **Secret** — RTU credentials only | unset (interpolated from compose `.env`) | **32-byte base64** AES-256-GCM key for RTU connection credentials (ADR 0012). Empty means not configured and the API declines to store credentials rather than storing plaintext. Must match the `ingest` service's key. See [`security/encryption-at-rest.md`](./security/encryption-at-rest.md) §3. |
+| `OPENAI_API_KEY` | **Secret** — onboarding wizard only | unset | Enables the LLM path of the AI onboarding wizard (ADR 0011). When unset the wizard uses its deterministic rule-based fallback. |
+| `OPENAI_MODEL` | No | `gpt-4o-mini` in `.env.example` | Chat completion model for the onboarding wizard. |
 
 ## Web
 
@@ -56,6 +66,24 @@ re-login during demos.
 | `SIM_ASSET_COUNT` | No | `all` in Compose | Maximum seeded assets loaded by the simulator; use `all` for full coverage or a number to cap rows ordered by asset code. |
 | `SIM_SITE_NAMES` | No | `RSMOC Western Cape,CSMOC Gauteng,RSMOC KwaZulu-Natal` in compose | Optional comma-separated seeded site names to limit simulator telemetry to selected demo locations. Assets with `meta.telemetryEnabled=false` are excluded even when their site is listed. |
 | `SIM_METRICS_PORT` | No | `9101` | Prometheus metrics HTTP port exposed by the simulator. |
+
+## Ingest (`apps/ingest`, PHE MQTT pilot)
+
+Runs only with the `ingest` / `phe` / `pilot` compose profiles. Reads the
+gitignored root `.env` via `env_file`.
+
+| Variable | Required | Default / compose value | Purpose |
+|----------|----------|-------------------------|---------|
+| `DATABASE_URL` | Yes | `postgres://bms_app:bms_app_dev@postgres:5432/bms` | Postgres/TimescaleDB connection string. |
+| `MQTT_HOST` | Yes | `phe.thinkiot.co.in` in compose | Pilot MQTT broker hostname. |
+| `MQTT_PORT` | Yes | `8883` in compose | MQTT TLS port. |
+| `MQTT_USERNAME` | **Secret** | unset (from `.env`) | Broker username. Never commit. |
+| `MQTT_PASSWORD` | **Secret** | unset (from `.env`) | Broker password. Never commit. |
+| `MQTT_RECONNECT_MS` | No | `5000` | Reconnect backoff period. |
+| `MQTT_TLS_REJECT_UNAUTHORIZED` | No | unset (verification **on**) | Set to `false` to skip broker certificate verification. Local debugging only — must stay unset in any real deployment. |
+| `CREDENTIAL_ENCRYPTION_KEY` | **Secret** | unset (from `.env`) | Same AES-256-GCM key as the API; used to decrypt stored per-RTU credentials (ADR 0012). |
+| `INGEST_METRICS_PORT` | No | `9102` | Prometheus metrics HTTP port. |
+| `INGEST_RELOAD_MS` | No | — | RTU configuration reload interval. |
 
 ## Observability Containers
 
