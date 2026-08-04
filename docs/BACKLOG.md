@@ -113,6 +113,53 @@ allocations see the archived
 
 ---
 
+## 1b. Parallel run plan (ready-to-dispatch slots)
+
+Pre-computed concurrency slots, derived from the `Depends` column. **Each slot
+is 2–4 jobs that can run at the same time** — hand them to separate agents or
+separate people. Slots are sequential: start slot *N+1* when slot *N* is `✅`.
+
+Legend: ⭐ = enabler (serial, hands-on — never a cold subagent) ·
+🔒 = needs an ADR before build · ‖ = same track but **separate files**, so
+still safe in parallel.
+
+| Slot | Run in parallel | Tracks | Notes |
+|------|-----------------|--------|-------|
+| **1** | **F4.4** ⭐ · F4.11 · E8.1 | F | **Start here.** F4.4 (test runner + CI) gates everything — it is what makes delegating to agents safe. F4.11 (operator RBAC) and E8.1 (encryption at rest) are independent quick wins. *F4.12 touches the same auth area as F4.11 — same owner, sequential.* |
+| **2** | **F1.1** ⭐ · **F2.1** ⭐ · **F3.8** ⭐ | A · B · D | The three big enablers, fully independent. F2.1 is on the critical path — protect it. |
+| **3** | **F2.3** ⭐ · **F4.1** ⭐ · **F3.3** ⭐ | B · F · C | Second enabler batch. F2.3 continues track B (same owner as F2.1). |
+| **4** | F1.2 · F2.2 · F3.6 | A · B · D | First dependents unlock: Modbus (needs F1.1), template instantiation (needs F2.1), alarm-engine unification (independent). |
+| **5** | F1.3 · **E1.7** · F3.7 | A · B · D | E1.7 (template content model) is **P0 critical path** — the Ion Exchange overlay surface. F3.7 needs F3.8. |
+| **6** | F1.4 ‖ F1.5 ‖ F1.6 | A ‖ | **Flagship fan-out.** OPC-UA, SNMP/REST and DCS all implement the *same* frozen `F1.1` interface in their *own* files — the cleanest 3-agent parallel batch in the whole plan. |
+| **7** | F2.4 · F3.1 · F4.20 | B · C · F | Calc engine (needs F2.3), dashboard builder, OpenAPI. |
+| **8** | **E5.1** · F1.7 · F4.10 | B · A · F | E5.1 water-treatment domain pack — **P0 flagship**, Ion Exchange's core business (needs F2.1 + E1.7). |
+| **9** | **E1.1** ⭐🔒 · F2.5 · E2.1 | ML · B · D | E1.1 (ML foundation) is the only new infrastructure the SOW adds — **ADR on the ML stack first**. |
+| **10** | **F3.21** ⭐ · F2.7 · E1.3 · F3.2 | E · B · ML · C | Onboarding agent loop begins (needs create APIs + F4.4). **F2.7 (tag-mapping editor) must land here** — F3.23 in the next slot depends on it. |
+| **11** | F3.22 ‖ F3.23 ‖ F3.24 | E ‖ | Second fan-out: agent template / param-mapping / protocol onboarding — separate capabilities, separate files, all gated on F3.21. |
+| **12** | E1.2 · E4.1 · E3.1 | ML · C · M | Anomaly detection, sustainability metrics engine, work-order depth. |
+
+Completing slot 12 reaches the **Foundry demo**: a water plant onboarded from a
+rich template by the agent, with health scores, pre-threshold anomaly alerts,
+and enriched alarms.
+
+**How to use this**
+
+- Dispatching 2–3 jobs from one slot is the intended unit of work. With one
+  human + agents, the practical limit is **review bandwidth**, not slot width —
+  see [build-operating-model.md](./build-operating-model.md) §5.
+- ⭐ items in the same slot are independent of each other, so *different people*
+  can take them concurrently — but each should be built hands-on, not handed to
+  a cold subagent.
+- Give each parallel job its own git worktree/branch (operating model §3).
+- **This plan assumes slots complete in order and nothing is `✅` yet.** Once
+  statuses change, re-derive rather than trusting the table: the rule is
+  *"every `Depends` entry is `✅`"*. `/backlog-cycle next` recomputes it live.
+- P2/P3 long-tail items (`F3.9`, `F3.17`–`F3.19`, `F4.18`, `F4.19`, `E6.x`,
+  `E7.4`, `E1.5`, `E1.6`, `E4.3`, `E5.3`) are unscheduled here — most have no
+  blockers and can backfill any spare capacity.
+
+---
+
 ## 2. The backlog
 
 ### Track A — Ingestion & Devices
