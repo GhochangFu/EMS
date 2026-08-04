@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "node .claude/hooks/check-dependency-adr.mjs"
+          },
+          {
+            "type": "command",
+            "command": "node .claude/hooks/check-applied-migration-edit.mjs"
           }
         ]
       }
