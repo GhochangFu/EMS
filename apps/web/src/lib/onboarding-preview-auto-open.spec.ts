@@ -1,5 +1,3 @@
-import { pathToFileURL } from "node:url";
-
 import { shouldAutoOpenPreview } from "./onboarding-preview-auto-open";
 
 function assert(condition: boolean, message: string): void {
@@ -33,12 +31,4 @@ export function runOnboardingPreviewAutoOpenTests(): void {
     }),
     "new reason opens after dismiss",
   );
-}
-
-const isMain =
-  import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
-
-if (isMain) {
-  runOnboardingPreviewAutoOpenTests();
-  process.stdout.write("onboarding-preview-auto-open tests: ok\n");
 }

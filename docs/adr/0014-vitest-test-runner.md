@@ -1,6 +1,6 @@
 # ADR 0014: Adopt Vitest as the test runner (F4.4)
 
-- **Status:** Proposed — awaiting human approval (§9.4 dependency gate)
+- **Status:** Accepted (2026-08-04)
 - **Date:** 2026-08-04
 - **Backlog item:** `F4.4` (Wave 0, P0, ⭐ enabler)
 - **Supersedes/amends:** partially promotes `docs/AGENTS.production.md` §10
@@ -101,6 +101,20 @@ Instead: enable coverage **reporting** now, set the initial threshold to the
 measured baseline, and ratchet it upward as each feature lands with its tests.
 The §10 targets stay the destination and are promoted into `AGENTS.md` when the
 numbers are genuinely met — not before.
+
+Baseline measured at implementation time (v8 provider, untested files included
+so the denominator is the real source tree):
+
+| Metric | Measured | Threshold set |
+| --- | --- | --- |
+| Statements | 3.63% (109/2999) | 3.5% |
+| Branches | 1.90% (41/2152) | 1.8% |
+| Functions | 3.37% (19/563) | 3.2% |
+| Lines | 3.75% (108/2879) | 3.5% |
+
+Each threshold sits just under its measurement, so a regression trips the gate
+while ordinary churn does not. These numbers are deliberately unflattering —
+that is the point of recording them.
 
 ## Consequences
 
