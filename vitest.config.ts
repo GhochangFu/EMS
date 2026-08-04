@@ -12,7 +12,18 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
-    projects: ["apps/api", "apps/web", "apps/ingest"],
+    projects: [
+      "apps/api",
+      "apps/web",
+      "apps/ingest",
+      {
+        test: {
+          name: "repo",
+          environment: "node",
+          include: ["tests/**/*.test.ts"],
+        },
+      },
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text-summary", "html", "lcov"],
@@ -26,15 +37,20 @@ export default defineConfig({
         "apps/web/src/lib/**/*.ts",
         "apps/ingest/src/**/*.js",
       ],
+      // Vitest excludes `*.spec.*` and `*.test.*` from coverage by default and
+      // that cannot be overridden by listing them here — verified empirically:
+      // no spec file appears in lcov.info either way. So coverage CANNOT detect
+      // a `.spec.ts` that no wrapper runs. `tests/repo-invariants.test.ts` is
+      // what actually catches that; do not rely on this gate for it.
       exclude: ["**/*.spec.ts", "**/*.test.ts", "**/*.test.js", "**/*.d.ts"],
-      // Measured on 2026-08-04 at f2beba9: statements 3.63 · branches 1.90 ·
-      // functions 3.37 · lines 3.75. Set just below each so a regression trips
-      // the gate while normal churn does not.
+      // Measured 2026-08-04: statements 3.60 · branches 1.86 · functions 3.37 ·
+      // lines 3.72. Set just below each so a regression trips the gate while
+      // normal churn does not.
       thresholds: {
         statements: 3.5,
         branches: 1.8,
         functions: 3.2,
-        lines: 3.5,
+        lines: 3.6,
       },
     },
   },

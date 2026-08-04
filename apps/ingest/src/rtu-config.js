@@ -96,8 +96,3 @@ export function runRtuConfigTests() {
   delete process.env.MQTT_USERNAME;
   delete process.env.MQTT_PASSWORD;
 }
-
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}`) {
-  runRtuConfigTests();
-  process.stdout.write("rtu-config tests: ok\n");
-}

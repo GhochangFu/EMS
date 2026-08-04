@@ -1,12 +1,15 @@
-# ADR 0014: Adopt Vitest as the test runner (F4.4)
+# ADR 0014 — Adopt Vitest as the test runner
 
-- **Status:** Accepted (2026-08-04)
-- **Date:** 2026-08-04
-- **Backlog item:** `F4.4` (Wave 0, P0, ⭐ enabler)
-- **Supersedes/amends:** partially promotes `docs/AGENTS.production.md` §10
-  (Testing Standards) into `AGENTS.md` per §10 promotion process
+## Status
 
----
+Accepted (2026-08-04). Backlog item `F4.4` (Wave 0, P0, ⭐ enabler).
+
+**The §10 promotion is deliberately deferred, not done.** This ADR adopts a
+runner; it does **not** copy `docs/AGENTS.production.md` §10 (Testing Standards)
+into `AGENTS.md`, and `AGENTS.md` still has no testing section. Per AGENTS.md
+§9.10 that edit may not ride along in a feature PR. It is owed as a separate
+`chore(agents):` commit — see Consequences. This follows the precedent set by
+ADR 0013.
 
 ## Context
 
@@ -89,6 +92,19 @@ reviewable:
 4. Convert the `runXTests()` bodies to idiomatic `describe`/`it` **later**, per
    file, as those files are touched by feature work — not in this cycle.
 
+`test:onboarding` is a **filename substring filter**, not an enumeration: any
+future file whose path contains `onboarding`, `credential-crypto`,
+`admin-access` or `rtu-config` joins that subset silently. That is acceptable
+for a convenience alias; `pnpm test` remains the complete run.
+
+## Dependencies
+
+Root `devDependencies` only — nothing reaches a production build
+(`apps/api/tsconfig.build.json` excludes `**/*.test.ts` and `vitest.config.ts`):
+
+- `vitest` `^4.1.10`
+- `@vitest/coverage-v8` `^4.1.10`
+
 ### Coverage gate
 
 `AGENTS.production.md` §10 specifies 80% lines / 70% branches, and 95% for
@@ -102,19 +118,37 @@ measured baseline, and ratchet it upward as each feature lands with its tests.
 The §10 targets stay the destination and are promoted into `AGENTS.md` when the
 numbers are genuinely met — not before.
 
-Baseline measured at implementation time (v8 provider, untested files included
-so the denominator is the real source tree):
+Baseline measured at implementation time. Untested files are counted, so the
+denominator is not a flattering subset — but it is **not** the whole repository
+either. Scope is `apps/api/src`, `apps/web/src/lib` and `apps/ingest/src`;
+`packages/shared`, `packages/db`, `apps/sim` and everything in `apps/web/src`
+outside `lib/` (i.e. all React components) are **out** of the denominator. Read
+these numbers as "of the code we currently claim to test", not "of the product".
 
 | Metric | Measured | Threshold set |
 | --- | --- | --- |
-| Statements | 3.63% (109/2999) | 3.5% |
-| Branches | 1.90% (41/2152) | 1.8% |
+| Statements | 3.60% (108/2996) | 3.5% |
+| Branches | 1.86% (40/2150) | 1.8% |
 | Functions | 3.37% (19/563) | 3.2% |
-| Lines | 3.75% (108/2879) | 3.5% |
+| Lines | 3.72% (107/2876) | 3.6% |
 
 Each threshold sits just under its measurement, so a regression trips the gate
 while ordinary churn does not. These numbers are deliberately unflattering —
 that is the point of recording them.
+
+### Coverage cannot detect an unwrapped spec — a structural test does
+
+Vitest excludes `*.spec.*` and `*.test.*` from coverage by default, and listing
+them under `coverage.exclude` does not change that (verified: no spec file
+appears in `lcov.info` either way). So a `.spec.ts` added without its `.test.ts`
+wrapper would be invisible to the runner *and* to the coverage gate — exactly
+gap 1 of the Context above, rebuilt by the fix for it.
+
+`tests/repo-invariants.test.ts` closes this: it walks `apps/` and `packages/`
+and fails if any `.spec` file lacks a sibling `.test` wrapper. It is the direct
+counterpart of `.claude/hooks/check-drizzle-journal.mjs`, which asserts every
+migration `.sql` has a journal entry. Verified by deleting a wrapper and
+confirming the suite goes red.
 
 ## Consequences
 
@@ -123,9 +157,25 @@ trustworthy enough to delegate, which is the whole point of doing `F4.4` first;
 coverage becomes visible rather than assumed; no second runner migration when
 the integration tier arrives.
 
-**Negative.** One new devDependency and two config files. Two harnesses coexist
-during the phased conversion — mitigated by keeping the `runXTests()` exports
-as the single source of assertions, so nothing is duplicated.
+**Negative.** Two new devDependencies and four config files. Two harnesses
+coexist during the phased conversion — mitigated by keeping the `runXTests()`
+exports as the single source of assertions, so nothing is duplicated.
+
+**Owed follow-up (blocking nothing, but do not lose it).** A separate
+`chore(agents):` commit must, per AGENTS.md §10:
+
+1. Add a testing section to `AGENTS.md` describing what is *actually* adopted —
+   Vitest, `.spec`-holds-assertions / `.test`-wraps convention, and a
+   baseline-ratchet coverage gate — **not** §10's 80%/70%, which remain
+   aspirational.
+2. Update the §2 stack table, which still says CI does "install, build/typecheck,
+   and migration validation" and omits `typecheck:tests`, `db:seed` and
+   `test:coverage`.
+3. Mark the phase active in `docs/roadmap.md`.
+
+§10 step 5 asks for that PR to land *before* the feature code. That ordering is
+inverted here, knowingly: the rules should describe a runner that demonstrably
+works, and its coverage numbers cannot be written down until it has run.
 
 **Neutral.** CI wall-clock grows by the test and seed steps; both are small
 next to the existing build.
