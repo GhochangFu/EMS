@@ -9,9 +9,11 @@
     "db:migrate": "pnpm --filter @bms/db migrate",
     "db:seed": "pnpm --filter @bms/db seed",
     "db:generate": "pnpm --filter @bms/db generate",
+    "typecheck:tests": "pnpm --filter api exec tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "_comment:test:onboarding": "Filename filter, not an enumeration — any future file matching these substrings joins this subset.",
     "test:onboarding": "vitest run onboarding credential-crypto admin-access rtu-config"
   },
   "devDependencies": {

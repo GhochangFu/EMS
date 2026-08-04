@@ -130,6 +130,26 @@ as the single source of assertions, so nothing is duplicated.
 **Neutral.** CI wall-clock grows by the test and seed steps; both are small
 next to the existing build.
 
+### Two ordering constraints that are load-bearing
+
+- **Tests run last in CI, after `db:seed`.** Vitest fails fast, so running it
+  earlier lets one broken unit test abort the job before the seed step — the
+  step that exists specifically to catch an incomplete migration journal. The
+  cheap-checks-first instinct is wrong here.
+- **CI runs `test:coverage`, not `test`.** Thresholds are only evaluated when
+  the coverage provider runs; plain `test` would go green while coverage
+  regressed.
+
+### Typechecking the wrappers
+
+`nest build` uses `tsconfig.build.json`, which excludes `**/*.test.ts`, so the
+API wrappers would be compiled by nothing and checked by nothing — the same
+"artefact exists, nothing runs it" shape this cycle exists to eliminate.
+`vitest --typecheck` does not close it (it only covers `*.test-d.ts` and is
+flagged experimental), so a `typecheck:tests` script runs `tsc --noEmit` over
+the full API project instead. `apps/web` already covers its own via
+`tsc --noEmit`.
+
 ## Verification
 
 The deliverable is a CI gate, so a green local run is not sufficient evidence.
