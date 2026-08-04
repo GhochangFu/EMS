@@ -10,6 +10,12 @@ comparing the assessment documents against the production **north star**
 [zoho-iot-gap-analysis.md](./zoho-iot-gap-analysis.md) ·
 north star [AGENTS.production.md](./AGENTS.production.md)
 
+> **2026-08-04 update:** the Ion Exchange **Enterprise EMS SOW** adds a further
+> layer of scope (AI/ML, water domain, maintenance depth, sustainability,
+> multi-tenant/edge deployment) on top of this list. Those additional features
+> live in [sow-ems-pending-features.md](./sow-ems-pending-features.md) with
+> `E<x>.<n>` ids and their own sequencing/dependency map.
+
 ---
 
 ## How this list was built (read first)
@@ -223,7 +229,7 @@ Listed so no one re-opens a settled decision as a "gap."
 |-----------------|---------------|---------|
 | §5 hierarchy `Tenant→Site→Building→Floor→Zone` | **ADR 0008** | Implemented as `Organization→Location→RTU→Asset→Point`. Different by design, not missing. |
 | §5 `bms.gateways`/`gateway_devices` | ADR 0008 | Realised as `bms.rtus` with `ingest_enabled` / `mqtt_topic`. |
-| Multi-tenant MSP / white-label portals | AGENTS.md §6 (deferred) | Location + asset-group scoping is the chosen model for the pilot; full multi-tenancy is out of scope until promoted. |
+| Multi-tenant MSP / white-label portals | AGENTS.md §6 (deferred) | Location + asset-group scoping is the chosen model for the pilot; full multi-tenancy is out of scope until promoted. **⚠ 2026-08-04: the Ion Exchange EMS SOW §11 re-opens this** — see [sow-ems-pending-features.md](./sow-ems-pending-features.md) E7.1; needs an ADR before it counts as pending. |
 | Two-way commanding (as *default* posture) | AGENTS.md §6 | Deferred; listed in §3b as a **future** north-star target, not current scope. Browser realtime stays read-only. |
 | §2 `BullMQ`, `EMQX`, `MinIO`, `Three.js`, `shadcn/ui` | AGENTS.md §6 | Genuine future targets (in §3–4 above) but explicitly out of scope on `main` today. |
 

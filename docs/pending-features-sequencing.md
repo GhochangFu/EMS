@@ -9,6 +9,12 @@ downstream work, and what can run **in parallel** across independent teams.
 with a one-person team + agents, see
 [build-operating-model.md](./build-operating-model.md).
 
+> **2026-08-04:** the Ion Exchange EMS SOW adds an `E<x>.<n>` feature layer that
+> hangs off this plan's enablers (`F2.1`, `F1.1`, `F2.4`, `F4.1`) — its delta
+> list, wave interleaving, and dependency map are in
+> [sow-ems-pending-features.md](./sow-ems-pending-features.md). Wave 0 here is
+> unchanged; the SOW makes its enablers *more* critical.
+
 > This document answers one question: *given finite people, in what order and
 > with how many parallel tracks do we build the pending features?* It does
 > **not** re-argue scope — that lives in `pending-features.md`, and promotion
