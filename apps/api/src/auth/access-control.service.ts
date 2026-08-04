@@ -94,8 +94,19 @@ export class AccessControlService {
    *
    * The gate is additive: callers must pass this AND the existing scope check.
    */
-  assertOperationsWriteRole(role: UserRole, writeClass: OperationsWriteClass): void {
-    if (!canPerformOperationsWrite(role, writeClass)) {
+  async assertOperationsWriteRole(
+    jwt: JwtPayload,
+    writeClass: OperationsWriteClass,
+  ): Promise<void> {
+    // Resolve the role from bms.users, NOT from the JWT claim. Every other
+    // authorization decision in this service (assertMasterDataRole via
+    // requireMasterDataUser, readableAssetIds) reads the DB role, and the two
+    // sources drift: a token outlives a demotion by up to JWT_TTL (8h), and in
+    // OIDC mode roleFromClaims falls back to "viewer" when realm roles are
+    // missing. Reading a different authority here would make the gate
+    // fail-open on demotion and fail-closed on a claimless admin token.
+    const user = await this.resolveDbUser(jwt);
+    if (!canPerformOperationsWrite(user.role, writeClass)) {
       throw new ForbiddenException(operationsWriteDenialReason(writeClass));
     }
   }

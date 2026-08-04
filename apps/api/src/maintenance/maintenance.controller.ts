@@ -54,7 +54,7 @@ export class MaintenanceController {
 
   @Post("schedules")
   async createSchedule(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
-    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
     try {
       const dto = createMaintenanceScheduleBodySchema.parse(body);
       return await this.maintenance.createSchedule(
@@ -77,7 +77,7 @@ export class MaintenanceController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
-    this.accessControl.assertOperationsWriteRole(user.role, "operational");
+    await this.accessControl.assertOperationsWriteRole(user, "operational");
     try {
       const scheduleId = idParamSchema.parse(id);
       const dto = convertMaintenanceBodySchema.parse(body);
@@ -101,7 +101,7 @@ export class MaintenanceController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
-    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
     try {
       const scheduleId = idParamSchema.parse(id);
       const dto = updateMaintenanceScheduleBodySchema.parse(body);

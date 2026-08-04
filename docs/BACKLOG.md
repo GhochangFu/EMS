@@ -125,7 +125,7 @@ still safe in parallel.
 
 | Slot | Run in parallel | Tracks | Notes |
 |------|-----------------|--------|-------|
-| ~~**1**~~ | ~~**F4.4** ⭐~~ ✅ · F4.11 🔵 · E8.1 🟡 | F | **F4.4 done** (ADR 0014, PR #1) — Vitest + coverage gate + `db:seed` now run on every PR, so delegating to agents is safe from here. **E8.1 partial** (🟡) — software scope only; the row's volume/object-storage/backup surface is deliberately *not* built, see [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md). **F4.11 blocked** (🔵) — its read-scope fix silently grants `operator` write access to rules/alarms/work-orders/maintenance, because those controllers have no role gate; a write gate lands first. *F4.12 is clean and merges independently.* |
+| ~~**1**~~ | ~~**F4.4** ⭐~~ ✅ · ~~F4.11~~ ✅ · E8.1 🟡 | F | **F4.4 done** (ADR 0014, PR #1) — Vitest + coverage gate + `db:seed` now run on every PR, so delegating to agents is safe from here. **E8.1 partial** (🟡) — software scope only; the row's volume/object-storage/backup surface is deliberately *not* built, see [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md). **F4.11 + F4.12 done** ✅ — F4.11 shipped for operator *and* viewer once ADR 0017’s write matrix gated the 16 mutating endpoints in rules/alarms/work-orders/maintenance, which previously carried `JwtAuthGuard` and no role check. |
 | **2** | **F1.1** ⭐ · **F2.1** ⭐ · **F3.8** ⭐ | A · B · D | The three big enablers, fully independent. F2.1 is on the critical path — protect it. |
 | **3** | **F2.3** ⭐ · **F4.1** ⭐ · **F3.3** ⭐ | B · F · C | Second enabler batch. F2.3 continues track B (same owner as F2.1). |
 | **4** | F1.2 · F2.2 · F3.6 | A · B · D | First dependents unlock: Modbus (needs F1.1), template instantiation (needs F2.1), alarm-engine unification (independent). |
@@ -270,8 +270,8 @@ and enriched alarms.
 | ID | Feature | P | Effort | Wave | Depends | Status |
 |----|---------|---|--------|------|---------|--------|
 | **F4.4** | Real test runner (Vitest) **+ CI wiring** — `test:coverage`, `typecheck:tests` and `db:seed` now run on every PR (ADR 0014, PR #1) ⭐ **FIRST** | P0 | 4–6 | 0 | — | ✅ |
-| F4.11 | Fix operator/viewer RBAC — default read scope (zero assets today) | P0 | 2 | 0 | — | ⬜ |
-| F4.12 | Disable local-JWT fallback when `OIDC_ISSUER` set | P0 | 1 | 0 | — | ⬜ |
+| F4.11 | Fix operator/viewer RBAC — default read scope. Done for **both** roles; gated by the ADR 0017 operations write matrix so a read scope no longer implies write access | P0 | 2 | 0 | — | ✅ |
+| F4.12 | Disable local-JWT fallback when `OIDC_ISSUER` set | P0 | 1 | 0 | — | ✅ |
 | F4.1 | Continuous aggregates (`point_values_1m/_5m/_1h/_1d`) ⭐ | P0 | 4–5 | 0 | — | ⬜ |
 | F4.2 | Retention policy (`compress_after 7d`, `drop_after 2y`) | P0 | incl. | 0 | F4.1 | ⬜ |
 | F4.20 | OpenAPI / Swagger for all `/api/v1` routes ⭐ | P0 | 2–3 | 0 | — | ⬜ |

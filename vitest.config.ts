@@ -43,19 +43,12 @@ export default defineConfig({
       // a `.spec.ts` that no wrapper runs. `tests/repo-invariants.test.ts` is
       // what actually catches that; do not rely on this gate for it.
       exclude: ["**/*.spec.ts", "**/*.test.ts", "**/*.test.js", "**/*.d.ts"],
-      // Measured 2026-08-04 with F4.12 (+ E8.1's invariant) but WITHOUT F4.11:
-      // statements 4.13 · branches 2.23 · functions 4.07 · lines 4.23
-      // (baseline was 3.60 · 1.86 · 3.37 · 3.72).
-      //
-      // The F4.12 commit originally set 4.3/2.6/4.4/4.4, measured on a tree that
-      // also carried F4.11's access-scope specs. F4.11 is held back pending an
-      // operations write gate, so those numbers were unreachable here and the
-      // gate failed. Ratchet again when F4.11 lands.
+      // Measured 2026-08-04 with ADR 0017's write gate and F4.11 landed:
+      // statements 4.47 · branches 2.72 · functions 4.72 · lines 4.59.
+      // (F4.4 baseline was 3.60 · 1.86 · 3.37 · 3.72.)
       //
       // Set just below each so a regression trips the gate while normal churn
       // does not. Ratchet up, never down (§4.6).
-      // Re-measured with ADR 0017's write gate + F4.11 landed: statements 4.47 ·
-      // branches 2.72 · functions 4.72 · lines 4.59.
       thresholds: {
         statements: 4.4,
         branches: 2.6,

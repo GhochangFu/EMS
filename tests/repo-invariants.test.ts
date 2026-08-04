@@ -147,4 +147,42 @@ describe("repo invariants", () => {
       expect(isExcluded(shipped), `${shipped} must remain in the build context`).toBe(false);
     }
   });
+
+  it("every mutating operations handler carries the ADR 0017 write gate", () => {
+    // The four operations controllers authorize on asset scope, not on role.
+    // Before ADR 0017 that meant any authenticated user with a non-empty read
+    // scope could write. The matrix spec proves the gate's *decisions* are
+    // right; this proves the gate is actually *applied*. Without it the next
+    // @Post added here ships ungated and nothing notices — the same
+    // "artefact exists, nothing enforces it" shape as an unwrapped spec.
+    const controllers = [
+      "apps/api/src/rules/rules.controller.ts",
+      "apps/api/src/alarms/alarms.controller.ts",
+      "apps/api/src/work-orders/work-orders.controller.ts",
+      "apps/api/src/maintenance/maintenance.controller.ts",
+    ];
+    const routed = /^\s*@(Post|Patch|Put|Delete)\(/;
+    const anyRoute = /^\s*@(Post|Patch|Put|Delete|Get)\(/;
+
+    const ungated: string[] = [];
+    for (const rel of controllers) {
+      const lines = readFileSync(join(repoRoot, rel), "utf8").split(/\r?\n/);
+      lines.forEach((line, i) => {
+        if (!routed.test(line)) return;
+        // Handler body runs from this decorator to the next routed member.
+        let end = i + 1;
+        while (end < lines.length && !anyRoute.test(lines[end])) end += 1;
+        const body = lines.slice(i, end).join("\n");
+        if (!body.includes("assertOperationsWriteRole")) {
+          ungated.push(rel + ":" + (i + 1) + " " + line.trim());
+        }
+      });
+    }
+
+    expect(
+      ungated,
+      "mutating handlers missing assertOperationsWriteRole (ADR 0017): " +
+        ungated.join(" | "),
+    ).toEqual([]);
+  });
 });

@@ -50,7 +50,7 @@ export class WorkOrdersController {
 
   @Post()
   async create(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
-    this.accessControl.assertOperationsWriteRole(user.role, "operational");
+    await this.accessControl.assertOperationsWriteRole(user, "operational");
     try {
       const dto = createWorkOrderBodySchema.parse(body);
       return await this.workOrders.create(
@@ -68,7 +68,7 @@ export class WorkOrdersController {
 
   @Patch("reorder")
   async reorder(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
-    this.accessControl.assertOperationsWriteRole(user.role, "operational");
+    await this.accessControl.assertOperationsWriteRole(user, "operational");
     try {
       const dto = reorderWorkOrdersBodySchema.parse(body);
       return await this.workOrders.reorder(
@@ -90,7 +90,7 @@ export class WorkOrdersController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
-    this.accessControl.assertOperationsWriteRole(user.role, "operational");
+    await this.accessControl.assertOperationsWriteRole(user, "operational");
     try {
       const workOrderId = idParamSchema.parse(id);
       const dto = updateWorkOrderStatusBodySchema.parse(body);
@@ -115,7 +115,7 @@ export class WorkOrdersController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
-    this.accessControl.assertOperationsWriteRole(user.role, "operational");
+    await this.accessControl.assertOperationsWriteRole(user, "operational");
     try {
       const workOrderId = idParamSchema.parse(id);
       const dto = closeWorkOrderBodySchema.parse(body);

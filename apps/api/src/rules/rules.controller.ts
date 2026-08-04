@@ -69,7 +69,7 @@ export class RulesController {
   @Post("evaluate")
   @HttpCode(HttpStatus.OK)
   async evaluateEnabledRules(@CurrentUser() user: JwtPayload) {
-    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
     return this.rules.evaluateEnabledRules(
       user,
       await this.accessControl.readableAssetIds(user),
@@ -79,6 +79,10 @@ export class RulesController {
   @Post("preview")
   @HttpCode(HttpStatus.OK)
   async previewRule(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    // Preview writes: rules.service.ts inserts a `rule_preview` audit row on
+    // every call. It is also a rule-authoring aid, so it carries the same
+    // class as the rest of rule authoring rather than being exempt.
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
     try {
       const dto = rulePreviewBodySchema.parse(body);
       return await this.rules.previewRule(
@@ -96,7 +100,7 @@ export class RulesController {
 
   @Post()
   async createDraft(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
-    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
     try {
       const dto = ruleDraftBodySchema.parse(body);
       return await this.rules.createDraft(
@@ -118,7 +122,7 @@ export class RulesController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
-    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleUpdateBodySchema.parse(body);
@@ -142,7 +146,7 @@ export class RulesController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
-    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleLifecycleBodySchema.parse(body);
@@ -166,7 +170,7 @@ export class RulesController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
-    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleLifecycleBodySchema.parse(body);
@@ -190,7 +194,7 @@ export class RulesController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
-    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleLifecycleBodySchema.parse(body);
@@ -214,7 +218,7 @@ export class RulesController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
-    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleToggleBodySchema.parse(body);

@@ -81,10 +81,29 @@ export function runOperationsWriteTests(): void {
     "operator must not author rules or trigger rule evaluation",
   );
 
-  // Completeness: every role in the union is decided. Guards against a role
-  // being added to UserRole and defaulting to allowed.
+  // Completeness: every role in the union is decided. The compile-time guard is
+  // the `Record<UserRole, …>` type on WRITE_MATRIX — this only checks that the
+  // spec's own copy stayed in step with it.
   assert(
     ALL_ROLES.length === 6,
     `matrix must decide every UserRole; found ${ALL_ROLES.length}`,
   );
+
+  // Fail closed on anything outside the union. `resolveDbUser` casts
+  // `row.role as UserRole`, so a bms.users row holding a stale or hand-edited
+  // slug reaches this function untyped. It must be denied, not defaulted.
+  for (const bogus of [
+    "future_role",
+    "",
+    "__proto__",
+    "constructor",
+    "toString",
+  ] as unknown as UserRole[]) {
+    for (const writeClass of ALL_CLASSES) {
+      assert(
+        !canPerformOperationsWrite(bogus, writeClass),
+        `unknown role ${JSON.stringify(bogus)} must be denied ${writeClass} writes`,
+      );
+    }
+  }
 }
