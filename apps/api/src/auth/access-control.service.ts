@@ -21,6 +21,12 @@ import type {
 
 import { DRIZZLE } from "../database/database.tokens";
 import {
+  noAccessScope,
+  type ReadScopeSource,
+  isMasterDataRole,
+  readScopeSourcesForRole,
+} from "./access-scope";
+import {
   canPerformOperationsWrite,
   operationsWriteDenialReason,
   type OperationsWriteClass,
@@ -70,11 +76,7 @@ export class AccessControlService {
 
   /** Ensures the user may access master-data admin endpoints. */
   assertMasterDataRole(role: UserRole): void {
-    if (
-      role !== "admin" &&
-      role !== "organization_admin" &&
-      role !== "location_admin"
-    ) {
+    if (!isMasterDataRole(role)) {
       throw new ForbiddenException(
         "Master data administration requires admin, organization_admin, or location_admin role",
       );
@@ -232,8 +234,28 @@ export class AccessControlService {
     };
   }
 
+  /**
+   * Resolves the read scope for a user by walking the grant sources their role
+   * allows, in precedence order. The first source that yields any location or
+   * asset wins; if none does, the last source's (empty) scope is returned so
+   * read-only roles without grants fail closed on `kind: "none"`.
+   */
   private async scopeForUser(user: DbUser): Promise<AccessibleScope> {
-    if (user.role === "admin") {
+    let scope: AccessibleScope = noAccessScope();
+    for (const source of readScopeSourcesForRole(user.role)) {
+      scope = await this.scopeFromSource(user, source);
+      if (scope.assetIds.length > 0 || scope.locations.length > 0) {
+        break;
+      }
+    }
+    return scope;
+  }
+
+  private async scopeFromSource(
+    user: DbUser,
+    source: ReadScopeSource,
+  ): Promise<AccessibleScope> {
+    if (source === "global") {
       const [locationRows, assetRows] = await Promise.all([
         this.db
           .select({
@@ -260,7 +282,7 @@ export class AccessControlService {
       };
     }
 
-    if (user.role === "organization_admin") {
+    if (source === "organization") {
       const orgIds = await this.db
         .select({ organizationId: userOrganizationAccess.organizationId })
         .from(userOrganizationAccess)
@@ -305,7 +327,7 @@ export class AccessControlService {
       };
     }
 
-    if (user.role === "location_admin") {
+    if (source === "location") {
       const locationRows = await this.db
         .select({
           id: locations.id,
@@ -343,7 +365,7 @@ export class AccessControlService {
       };
     }
 
-    if (user.role === "asset_group_admin") {
+    if (source === "asset_group") {
       const groupRows = await this.db
         .select({
           id: assetGroups.id,
@@ -401,6 +423,6 @@ export class AccessControlService {
       };
     }
 
-    return { kind: "none", locations: [], assetGroups: [], assetIds: [] };
+    return noAccessScope();
   }
 }
