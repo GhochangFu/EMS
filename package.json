@@ -9,7 +9,9 @@
     "db:migrate": "pnpm --filter @bms/db migrate",
     "db:seed": "pnpm --filter @bms/db seed",
     "db:generate": "pnpm --filter @bms/db generate",
-    "test:onboarding": "pnpm exec tsx apps/api/src/admin/onboarding/onboarding.schema.spec.ts && pnpm exec tsx apps/api/src/security/credential-crypto.spec.ts && pnpm exec tsx apps/api/src/admin/onboarding/onboarding-redaction.spec.ts && pnpm exec tsx apps/web/src/lib/onboarding-preview-auto-open.spec.ts && pnpm exec tsx apps/web/src/lib/admin-access.spec.ts && node apps/ingest/src/rtu-config.js"
+    "test": "pnpm run test:onboarding && pnpm run test:schema",
+    "test:onboarding": "pnpm exec tsx apps/api/src/admin/onboarding/onboarding.schema.spec.ts && pnpm exec tsx apps/api/src/security/credential-crypto.spec.ts && pnpm exec tsx apps/api/src/admin/onboarding/onboarding-redaction.spec.ts && pnpm exec tsx apps/web/src/lib/onboarding-preview-auto-open.spec.ts && pnpm exec tsx apps/web/src/lib/admin-access.spec.ts && node apps/ingest/src/rtu-config.js",
+    "test:schema": "pnpm exec tsx apps/api/src/admin/admin.schema.spec.ts && pnpm exec tsx apps/api/src/dashboard/dashboard.schema.spec.ts"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

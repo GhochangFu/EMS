@@ -269,7 +269,7 @@ and enriched alarms.
 
 | ID | Feature | P | Effort | Wave | Depends | Status |
 |----|---------|---|--------|------|---------|--------|
-| **F4.4** | Real test runner (Vitest/Jest) **+ CI wiring** — add `test` step to `.github/workflows/ci.yml` (today: typecheck+migrate only; `test:onboarding` never runs on PRs) ⭐ **FIRST** | P0 | 4–6 | 0 | — | ⬜ |
+| **F4.4** | Real test runner (Vitest/Jest) **+ CI wiring** — add `test` step to `.github/workflows/ci.yml` (today: typecheck+migrate only; `test:onboarding` never runs on PRs) ⭐ **FIRST** | P0 | 4–6 | 0 | — | 🔵 |
 | F4.11 | Fix operator/viewer RBAC — default read scope (zero assets today) | P0 | 2 | 0 | — | ⬜ |
 | F4.12 | Disable local-JWT fallback when `OIDC_ISSUER` set | P0 | 1 | 0 | — | ⬜ |
 | F4.1 | Continuous aggregates (`point_values_1m/_5m/_1h/_1d`) ⭐ | P0 | 4–5 | 0 | — | ⬜ |

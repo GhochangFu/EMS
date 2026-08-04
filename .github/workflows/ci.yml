@@ -50,6 +50,9 @@ jobs:
       - name: Build and typecheck
         run: pnpm typecheck
 
+      - name: Run tests
+        run: pnpm test
+
       - name: Initialise database schemas
         run: |
           docker exec "${{ job.services.postgres.id }}" \
@@ -58,3 +61,10 @@ jobs:
 
       - name: Validate migrations
         run: pnpm db:migrate
+
+      # Seeding is the only check that proves the migration journal is complete:
+      # drizzle silently skips any .sql file missing from meta/_journal.json, so
+      # db:migrate passes while the schema is short a table. That is exactly how
+      # 0018/0021/0022 shipped to main without creating bms.point_keys.
+      - name: Validate seed against a fresh schema
+        run: pnpm db:seed
