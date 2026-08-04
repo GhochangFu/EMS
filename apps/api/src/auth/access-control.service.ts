@@ -20,6 +20,11 @@ import type {
 } from "@bms/shared";
 
 import { DRIZZLE } from "../database/database.tokens";
+import {
+  canPerformOperationsWrite,
+  operationsWriteDenialReason,
+  type OperationsWriteClass,
+} from "./operations-write";
 
 type DbUser = {
   id: string;
@@ -73,6 +78,23 @@ export class AccessControlService {
       throw new ForbiddenException(
         "Master data administration requires admin, organization_admin, or location_admin role",
       );
+    }
+  }
+
+  /**
+   * Ensures the user may perform this class of operations write (ADR 0017).
+   *
+   * Call this BEFORE the asset-scope check in every mutating handler, so a
+   * role rejection never depends on scope resolution and can never be confused
+   * with "no readable assets". Before this gate existed, an empty read scope
+   * was the only thing stopping `operator` and `viewer` from writing — read
+   * scope doing authorization work it was never designed to do.
+   *
+   * The gate is additive: callers must pass this AND the existing scope check.
+   */
+  assertOperationsWriteRole(role: UserRole, writeClass: OperationsWriteClass): void {
+    if (!canPerformOperationsWrite(role, writeClass)) {
+      throw new ForbiddenException(operationsWriteDenialReason(writeClass));
     }
   }
 

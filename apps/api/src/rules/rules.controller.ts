@@ -69,6 +69,7 @@ export class RulesController {
   @Post("evaluate")
   @HttpCode(HttpStatus.OK)
   async evaluateEnabledRules(@CurrentUser() user: JwtPayload) {
+    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
     return this.rules.evaluateEnabledRules(
       user,
       await this.accessControl.readableAssetIds(user),
@@ -95,6 +96,7 @@ export class RulesController {
 
   @Post()
   async createDraft(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
     try {
       const dto = ruleDraftBodySchema.parse(body);
       return await this.rules.createDraft(
@@ -116,6 +118,7 @@ export class RulesController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
+    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleUpdateBodySchema.parse(body);
@@ -139,6 +142,7 @@ export class RulesController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
+    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleLifecycleBodySchema.parse(body);
@@ -162,6 +166,7 @@ export class RulesController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
+    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleLifecycleBodySchema.parse(body);
@@ -185,6 +190,7 @@ export class RulesController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
+    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleLifecycleBodySchema.parse(body);
@@ -208,6 +214,7 @@ export class RulesController {
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
   ) {
+    this.accessControl.assertOperationsWriteRole(user.role, "configuration");
     try {
       const ruleId = idParamSchema.parse(id);
       const dto = ruleToggleBodySchema.parse(body);
