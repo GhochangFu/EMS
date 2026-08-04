@@ -63,6 +63,56 @@ with health scores, pre-threshold anomaly alerts, and enriched alarms.*
 
 ---
 
+## 1a. What can run in parallel
+
+Read parallelism off the tables above using **two axes**:
+
+- **Wave = the time axis.** Items sharing a Wave are parallel-safe *unless*
+  `Depends` says otherwise. `Depends` always wins over the wave grouping.
+- **Track = the ownership axis.** Each track (A, B, C, D, E, M, ML, F) is a
+  swim-lane one person or agent can own end-to-end. Tracks progress
+  concurrently; the only hard hand-offs are the cross-track arrows in §3.
+
+**An item is eligible to start when every entry in its `Depends` cell is `✅`
+— nothing else.** Wave order is guidance for sequencing; `Depends` is the
+constraint.
+
+**Worked example.** Once `F1.1` (adapter framework) is `✅`, Wave 1 offers
+`F1.2` Modbus · `F1.3` BACnet · `F1.4` OPC-UA · `F1.5` SNMP/REST · `F1.6` DCS —
+same wave, same single dependency, separate files. That is a clean 5-way
+fan-out. By contrast `F2.2` and `F2.4` are both Wave 1 but sit on *different*
+chains (`F2.1` vs `F2.3`), so they parallelise with each other too.
+
+**Which tracks are independently ownable:**
+
+| Track | Owns | Starts after |
+|-------|------|--------------|
+| **A** Ingestion & Devices | adapters, device health, MQTT expansion | `F1.1` |
+| **B** Data Model & Calc ⚠ *critical path* | templates, calc DSL/engine, domain packs | `F2.1`, `F2.3` |
+| **C** Dashboards & Storage | dashboard builder, object storage, sustainability views | `F3.3` |
+| **D** Alarms & Command | alarm unify, notifications, enrichment, command path | `F3.8`, `F3.6` |
+| **E** Onboarding Agent | agent loop + template/param/protocol onboarding | *consumes A + B* |
+| **M** Maintenance & Mobile | work-order depth, mobile execution | *(work-orders exist)* |
+| **ML** AI & Intelligence | anomaly, health, forecasting, advisories | `E1.1` (ADR first) |
+| **F** Platform Foundation | tests, security, API, scale, deploy | — (runs from day 1) |
+
+**Never parallelise:**
+
+- **⭐ enablers** — build serially and hands-on; they define the interfaces
+  everything else depends on.
+- **Items on the same chain** — if B lists A in `Depends`, A must be `✅` first.
+- **Work touching the same files** — two agents editing one file will conflict.
+
+**Staffing.** With a one-person team plus agents you do not get calendar
+parallelism — you get *agent* parallelism, and the binding constraint becomes
+human review bandwidth. The fan-out rules (when to spawn subagents, worktree
+isolation, what must stay serial) live in
+[build-operating-model.md](./build-operating-model.md) §3. For multi-person
+allocations see the archived
+[sequencing doc](./archive/pending-features-sequencing.md) §5.
+
+---
+
 ## 2. The backlog
 
 ### Track A — Ingestion & Devices
