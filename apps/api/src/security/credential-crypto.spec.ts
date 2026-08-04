@@ -21,8 +21,3 @@ export function runCredentialCryptoTests(): void {
   delete process.env.CREDENTIAL_ENCRYPTION_KEY;
   assert(!CredentialCryptoService.isConfigured(), "isConfigured false when unset");
 }
-
-if (require.main === module) {
-  runCredentialCryptoTests();
-  process.stdout.write("credential-crypto tests: ok\n");
-}

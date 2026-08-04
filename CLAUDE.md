@@ -76,7 +76,10 @@ pnpm --filter sim start            # telemetry simulator
 
 pnpm build                         # builds shared → db → api → web
 pnpm typecheck                     # alias of build
-pnpm test:onboarding               # onboarding/credential/ingest test suite
+pnpm test                          # Vitest, all projects (api · web · ingest)
+pnpm test:watch                    # Vitest in watch mode
+pnpm test:coverage                 # + coverage thresholds — what CI enforces
+pnpm test:onboarding               # onboarding/credential/ingest subset
 ```
 
 Docker Compose profiles (`core`, `sim`, `pilot`, `observability`, etc.) are

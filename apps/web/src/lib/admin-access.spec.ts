@@ -1,5 +1,3 @@
-import { pathToFileURL } from "node:url";
-
 import {
   canAccessOnboarding,
   canCreateLocations,
@@ -35,12 +33,4 @@ export function runAdminAccessTests(): void {
   assert(defaultAdminRoute("organization_admin") === "/admin/organizations", "org admin default route");
   assert(canAccessOnboarding("organization_admin"), "org admin can onboard");
   assert(!canAccessOnboarding("location_admin"), "location admin cannot onboard");
-}
-
-const isMain =
-  import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
-
-if (isMain) {
-  runAdminAccessTests();
-  process.stdout.write("admin-access tests: ok\n");
 }

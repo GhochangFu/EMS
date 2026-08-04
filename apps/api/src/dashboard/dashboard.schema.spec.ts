@@ -21,8 +21,3 @@ export function runDashboardSchemaTests(): void {
   assert(defaults.page === 1, "default page is 1");
   assert(defaults.rtuId === undefined, "rtuId is optional");
 }
-
-if (require.main === module) {
-  runDashboardSchemaTests();
-  process.stdout.write("dashboard.schema tests: ok\n");
-}

@@ -35,8 +35,3 @@ export function runOnboardingSchemaTests(): void {
   const bad = onboardingDraftSchema.safeParse({ location: { code: "bad slug!" } });
   assert(!bad.success, "invalid location rejected");
 }
-
-if (require.main === module) {
-  runOnboardingSchemaTests();
-  process.stdout.write("onboarding.schema tests: ok\n");
-}

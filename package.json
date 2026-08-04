@@ -9,10 +9,16 @@
     "db:migrate": "pnpm --filter @bms/db migrate",
     "db:seed": "pnpm --filter @bms/db seed",
     "db:generate": "pnpm --filter @bms/db generate",
-    "test:onboarding": "pnpm exec tsx apps/api/src/admin/onboarding/onboarding.schema.spec.ts && pnpm exec tsx apps/api/src/security/credential-crypto.spec.ts && pnpm exec tsx apps/api/src/admin/onboarding/onboarding-redaction.spec.ts && pnpm exec tsx apps/web/src/lib/onboarding-preview-auto-open.spec.ts && pnpm exec tsx apps/web/src/lib/admin-access.spec.ts && node apps/ingest/src/rtu-config.js"
+    "typecheck:tests": "pnpm --filter api exec tsc -p tsconfig.json --noEmit && tsc --noEmit --module esnext --moduleResolution bundler --target es2022 --skipLibCheck vitest.config.ts apps/api/vitest.config.ts apps/web/vitest.config.ts apps/ingest/vitest.config.ts tests/repo-invariants.test.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:onboarding": "vitest run onboarding credential-crypto admin-access rtu-config"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.10",
     "tsx": "^4.19.2",
-    "typescript": "~5.7.3"
+    "typescript": "~5.7.3",
+    "vitest": "^4.1.10"
   }
 }

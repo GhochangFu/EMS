@@ -35,8 +35,3 @@ export function runAdminSchemaTests(): void {
   });
   assert(catalogKey.code === "kw", "point key catalog code parsed");
 }
-
-if (require.main === module) {
-  runAdminSchemaTests();
-  process.stdout.write("admin.schema tests: ok\n");
-}

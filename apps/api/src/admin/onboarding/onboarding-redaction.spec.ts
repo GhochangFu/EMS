@@ -18,8 +18,3 @@ export function runOnboardingRedactionTests(): void {
   const llm = JSON.stringify(redactDraftForLlm({ password: "secret", name: "x" }));
   assert(!llm.includes("secret"), "llm redacts password key");
 }
-
-if (require.main === module) {
-  runOnboardingRedactionTests();
-  process.stdout.write("onboarding-redaction tests: ok\n");
-}
