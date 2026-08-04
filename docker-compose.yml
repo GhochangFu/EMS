@@ -73,6 +73,11 @@ services:
       OIDC_ISSUER: http://localhost:8080/realms/bms
       OIDC_JWKS_URI: http://keycloak:8080/realms/bms/protocol/openid-connect/certs
       OTEL_SERVICE_NAME: bms-api
+      # AES-256-GCM key for RTU connection credentials (ADR 0012). Interpolated
+      # from the gitignored compose `.env`; empty means "not configured", and
+      # the API then refuses to store credentials rather than storing plaintext.
+      # The `ingest` service reads the same key via its `env_file`.
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
     ports:
       - "4000:4000"
     depends_on:
