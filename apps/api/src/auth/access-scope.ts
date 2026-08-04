@@ -38,13 +38,18 @@ export function noAccessScope(): AccessibleScope {
  * inferred, only granted, and there is no organization column on `bms.users`
  * from which a non-cross-organization default could be derived.
  *
- * `viewer` deliberately stays at `none` for now. The operations mutation
- * endpoints (alarm acknowledge, rule create/publish/enable, work orders,
- * maintenance) carry no role gate at all — they authorize purely on the read
- * scope this function feeds, rejecting only when it is empty. Widening
- * `viewer` here would therefore also hand it write access, so it waits on a
- * write gate for those endpoints (F4.11 follow-up). Do not flip this line
- * without adding one.
+ * `viewer` now reads from the same grant sources. It was previously held at
+ * `none` because the operations mutation endpoints (alarm acknowledge, rule
+ * create/publish/enable, work orders, maintenance) carried no role gate at all
+ * — they authorized purely on the read scope this function feeds, so widening
+ * `viewer` here would also have handed it write access.
+ *
+ * ADR 0017 added that gate (`AccessControlService.assertOperationsWriteRole`,
+ * applied to all 15 mutating handlers), which decouples reading from writing.
+ * Read scope is no longer load-bearing for authorization, so `viewer` can read
+ * what it is granted while writing nothing.
+ *
+ * If you ever remove the write gate, this line must go back to `["none"]`.
  */
 export function readScopeSourcesForRole(role: UserRole): ReadScopeSource[] {
   switch (role) {
@@ -59,7 +64,7 @@ export function readScopeSourcesForRole(role: UserRole): ReadScopeSource[] {
     case "operator":
       return ["organization", "location", "asset_group", "none"];
     case "viewer":
-      return ["none"];
+      return ["organization", "location", "asset_group", "none"];
     default:
       return ["none"];
   }

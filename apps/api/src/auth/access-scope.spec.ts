@@ -41,15 +41,20 @@ export function runAccessScopeTests(): void {
     "operator must never receive global (cross-organization) read scope",
   );
 
-  // --- viewer is held back on purpose, and this asserts it stays that way. ---
-  // Every operations mutation endpoint (alarm ack, rule publish, work orders,
-  // maintenance) authorizes solely on the read scope produced here and rejects
-  // only when it is empty. Granting viewer a read scope would therefore grant
-  // it those writes too. Flipping this assertion is only correct once those
-  // endpoints carry their own write gate.
+  // --- viewer reads what it is granted, and writes nothing. ---
+  // viewer was previously pinned to "none" because every operations mutation
+  // endpoint authorized solely on the read scope produced here, so a read scope
+  // would have granted writes too. ADR 0017's write gate decoupled them, so
+  // viewer now resolves from the same grant sources as operator.
+  //
+  // The read half is asserted here; the write half is asserted in
+  // operations-write.spec.ts, which requires viewer to be denied BOTH write
+  // classes. Those two assertions together are what make this safe — do not
+  // relax either without the other.
   assert(
-    readScopeSourcesForRole("viewer").join() === "none",
-    "viewer stays fail-closed until operations writes are role-gated",
+    readScopeSourcesForRole("viewer").join() ===
+      "organization,location,asset_group,none",
+    "viewer reads from its explicit grants once writes are gated (ADR 0017)",
   );
 
   // --- Read-only stays read-only. ---

@@ -54,11 +54,13 @@ export default defineConfig({
       //
       // Set just below each so a regression trips the gate while normal churn
       // does not. Ratchet up, never down (§4.6).
+      // Re-measured with ADR 0017's write gate + F4.11 landed: statements 4.47 ·
+      // branches 2.72 · functions 4.72 · lines 4.59.
       thresholds: {
-        statements: 4.0,
-        branches: 2.1,
-        functions: 4.0,
-        lines: 4.1,
+        statements: 4.4,
+        branches: 2.6,
+        functions: 4.6,
+        lines: 4.5,
       },
     },
   },
