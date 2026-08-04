@@ -9,6 +9,8 @@ import { createPublicKey } from "node:crypto";
 
 import type { JwtPayload, UserRole } from "@bms/shared";
 
+import { type AuthMode, resolveAuthMode } from "./auth-mode";
+
 type RequestWithUser = {
   headers: { authorization?: string };
   user?: JwtPayload;
@@ -46,10 +48,8 @@ function decodeJwtSegment<T>(segment: string): T {
   return JSON.parse(decoded) as T;
 }
 
-function authMode(): "local" | "oidc" {
-  return process.env.AUTH_MODE === "oidc" || process.env.OIDC_ISSUER
-    ? "oidc"
-    : "local";
+function authMode(): AuthMode {
+  return resolveAuthMode(process.env);
 }
 
 async function fetchJwks(): Promise<RsaJwk[]> {

@@ -8,6 +8,7 @@ import { users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { DRIZZLE } from "../database/database.tokens";
+import { isLocalLoginEnabled } from "./auth-mode";
 import type { LoginBody } from "./login.schema";
 
 @Injectable()
@@ -19,10 +20,16 @@ export class AuthService {
 
   /**
    * Validates credentials against `bms.users` and returns a signed JWT.
+   *
+   * Refused outright whenever the API is configured for OIDC (F4.12) — the
+   * check runs before any credential lookup so a disabled endpoint cannot be
+   * used as an account or password oracle.
    */
   async login(body: LoginBody): Promise<LoginResponse> {
-    if (process.env.AUTH_MODE === "oidc") {
-      throw new UnauthorizedException("Local login is disabled in OIDC mode");
+    if (!isLocalLoginEnabled(process.env)) {
+      throw new UnauthorizedException(
+        "Local password login is disabled because this API is configured for OIDC. Sign in through the identity provider.",
+      );
     }
 
     const row = await this.db

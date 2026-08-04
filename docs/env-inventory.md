@@ -18,8 +18,8 @@ provide.
 | `DATABASE_URL` | Yes | `postgres://bms_app:bms_app_dev@postgres:5432/bms` | Postgres/TimescaleDB connection string. |
 | `JWT_SECRET` | Local auth only | `change-me-in-compose` | Local JWT signing secret for native WSL fallback and non-OIDC smoke checks. |
 | `JWT_TTL` | Local auth only | `8h` | Local JWT lifetime. |
-| `AUTH_MODE` | No | `oidc` in compose, `local` in native `.env.example` | Selects local JWT auth or Keycloak/OIDC bearer-token validation. |
-| `OIDC_ISSUER` | OIDC only | `http://localhost:8080/realms/bms` | Expected issuer claim for Keycloak tokens. |
+| `AUTH_MODE` | No | `oidc` in compose, `local` in native `.env.example` | Selects local JWT auth or Keycloak/OIDC bearer-token validation. `AUTH_MODE=local` does **not** override a configured `OIDC_ISSUER`. |
+| `OIDC_ISSUER` | OIDC only | `http://localhost:8080/realms/bms` | Expected issuer claim for Keycloak tokens. Setting it is on its own enough to select OIDC: `POST /api/v1/auth/login` (local password login) is then refused with 401 regardless of `AUTH_MODE` (F4.12). |
 | `OIDC_JWKS_URI` | OIDC only | `http://keycloak:8080/realms/bms/protocol/openid-connect/certs` | API-internal URL used to fetch the Keycloak signing keys. |
 | `OIDC_AUDIENCE` | No | unset | Optional audience check for access tokens. |
 | `OTEL_SERVICE_NAME` | No | `bms-api` in compose | Service name attached to OpenTelemetry spans and Prometheus default labels. |
