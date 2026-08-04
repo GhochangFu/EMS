@@ -1,14 +1,18 @@
-# Eskom SMOC BMS
+# TRINETRA — Enterprise EMS for Ion Exchange (India) Ltd.
 
-A real-time Building Management System for Eskom's Smart Metering
-Operating Centres. The seven-screen prototype is complete; the project
-has completed **Part 2 / Phase 1 pilot-ready hardening**. Phase 2 real
-ingestion Sprint 0 selected Path B because no real device/source
-information is available yet. Phase 5 Sprint A through Sprint I are
-complete, and **Phase 5 Sprint J/K/L/M/N — Location and Access** is open
-for focused hardening and demo inventory cleanup;
-protocol adapters, brokers, and AI Copilot remain out of scope until
-explicitly promoted.
+A real-time enterprise monitoring platform (BMS/EMS) for electrical, HVAC,
+UPS/battery, water and environmental telemetry. Product brand **TRINETRA**,
+powered by Euphoria Infotech India Limited. This repository is the **Ion
+Exchange (India) Ltd. Enterprise EMS product line** (ADR 0013); it was forked
+from the Eskom SMOC engagement, whose demo data and UX reference mockups it
+still carries.
+
+Prototype and pilot-hardening history: the seven-screen prototype is complete;
+**Part 2 / Phase 1 pilot-ready hardening** is done; Phase 5 Sprint A–I are
+complete and **Sprint J/K/L/M/N — Location and Access** is open. Pending scope
+(including the Ion Exchange SOW delta) is tracked in
+[`docs/BACKLOG.md`](./docs/BACKLOG.md); protocol adapters, brokers, and the
+broader AI layer remain out of scope until explicitly promoted.
 
 ## Repository tour
 
@@ -18,6 +22,7 @@ explicitly promoted.
 | [`ESKOM_SMOC.html`](./ESKOM_SMOC.html) | UX reference mockup. Single-file SPA prototype. Treat as read-only. |
 | [`docs/AGENTS.production.md`](./docs/AGENTS.production.md) | North-star rulebook for the production target. Reference, not enforcement. |
 | [`docs/roadmap.md`](./docs/roadmap.md) | Prototype week-by-week plan + numbered post-prototype phases. |
+| [`docs/BACKLOG.md`](./docs/BACKLOG.md) | **Live pending-feature backlog** (F/E ids, waves, dependencies, status). |
 | [`docs/local-setup.md`](./docs/local-setup.md) | Exact WSL2 + Postgres + Timescale + Node setup steps. |
 | [`docs/windows-vm-docker-deploy.md`](./docs/windows-vm-docker-deploy.md) | Windows VM + Docker Desktop pilot deploy (compose only; no host Postgres). |
 | [`docs/env-inventory.md`](./docs/env-inventory.md) | Environment variables for native and compose-based development. |

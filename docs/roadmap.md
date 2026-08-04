@@ -1,7 +1,10 @@
-# Roadmap — Eskom SMOC BMS
+# Roadmap — TRINETRA BMS (Ion Exchange Enterprise EMS line)
 
+> **Product line:** TRINETRA for Ion Exchange (India) Ltd. per ADR 0013;
+> phases below predate the fork and keep their original Eskom-era names.
 > **Active phase:** Part 2 / Phase 5 Sprint J/K/L/M/N — Location and
 > Access hardening is open.
+> **Pending scope:** [`BACKLOG.md`](./BACKLOG.md) (single managed backlog).
 > **Source of truth for rules:** `AGENTS.md` (active), `docs/AGENTS.production.md` (target).
 
 This roadmap has two parts:

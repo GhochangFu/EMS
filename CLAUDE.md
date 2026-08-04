@@ -36,11 +36,15 @@ trusting AGENTS.md's status/§6.
 
 ## What this project is
 
-A real-time Building Management System (BMS) for monitoring electrical, HVAC,
-UPS/battery, and environmental telemetry across sites. Current product brand is
-**TRINETRA** (earlier branding: Eskom SMOC / InfraPulse — the README title is
-still "Eskom SMOC BMS"; treat **TRINETRA** as the current name). Powered-by:
-Euphoria Infotech India Limited.
+A real-time enterprise monitoring platform (BMS/EMS) for electrical, HVAC,
+UPS/battery, water and environmental telemetry across sites. Product brand
+**TRINETRA**, powered by Euphoria Infotech India Limited. Per **ADR 0013** this
+repository is the **Enterprise EMS product line for Ion Exchange (India)
+Ltd.**, forked from the Eskom SMOC engagement (earlier branding: Eskom SMOC /
+InfraPulse). Internal identifiers (`smoc_campus`, org code `ESKOM`, seed demo
+data, `ESKOM_SMOC.html` mockups) intentionally keep their Eskom-era names —
+display-layer branding only was changed. The live pending-feature backlog is
+`docs/BACKLOG.md`.
 
 Core pipeline: `simulated device / real MQTT RTU → Postgres + TimescaleDB →
 NestJS API → WebSocket (Socket.IO) → React UI → user`.

@@ -61,8 +61,9 @@ export function LoginPage() {
               Intelligent <span className="text-bms-green">Building Management</span> · Smart insight, always on.
             </h1>
             <p className="mt-4 max-w-lg text-sm leading-6 text-white/72">
-              Unified IBMS for power, HVAC, IT, security, metering, alarms, and
-              work orders in one operator console for Eskom SMOC operations.
+              Unified enterprise EMS for power, HVAC, water, utilities, alarms,
+              and work orders in one operator console for Ion Exchange (India)
+              Ltd. operations.
             </p>
           </div>
 

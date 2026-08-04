@@ -43,7 +43,7 @@ function locationKindLabel(site: MapSiteDto): string {
     case "csmoc":
       return "CSMOC";
     case "eskom_station":
-      return "Eskom station";
+      return "Station";
   }
 }
 

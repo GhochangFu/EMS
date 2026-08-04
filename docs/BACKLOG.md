@@ -331,7 +331,7 @@ flowchart LR
 |------------|--------|----------|
 | Multi-tenancy re-open | E7.1, informs F4.16 | SOW §11 vs. superseded decision — one platform, tenant model? |
 | ML stack | all E1.x | Runtime (Python svc / Node / external), registry, serving path. |
-| Product positioning | E5.x branding, E7.1 | TRINETRA (Eskom) vs Enterprise EMS (Ion Exchange): one platform + domain packs + white-label, or fork? |
+| ~~Product positioning~~ | — | **Resolved by ADR 0013 (2026-08-04):** this repo forked to the TRINETRA Enterprise EMS line for Ion Exchange (India) Ltd.; display-layer rebrand only, Eskom-era internals retained. Eskom line continues from the external backup, if at all. |
 | Test runner + libs | F4.4 (first cycle) | Vitest vs Jest; §9.4 dep gate. |
 | Per-feature ADRs | each promotion | Standard AGENTS.md §10 flow (Modbus/BACnet libs, `bullmq`, `nodemailer`, `minio`, …). |
 

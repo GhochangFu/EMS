@@ -194,7 +194,7 @@ export class OnboardingChatService {
     const client = new OpenAI({ apiKey });
     const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
 
-    const system = `You are an Eskom BMS onboarding assistant for organization ${orgName}.
+    const system = `You are a TRINETRA BMS onboarding assistant for organization ${orgName}.
 Current phase: ${phase}. Return JSON with keys: assistantMessage, draftPatch (partial), currentPhase, suggestedReplies (optional string array).
 Phases: location, rtu, point_keys, assets, mappings, review.
 Protocols: mqtt, modbus_tcp, bacnet, opc_ua, snmp, rest_poller, simulator, catalog.
