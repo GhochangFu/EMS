@@ -1,4 +1,3 @@
-import { createHostLogger } from "./logger.js";
 import { renderHealth, type HealthSnapshot } from "./health-server.js";
 import type { SupervisorHealth } from "./supervisor.js";
 
@@ -38,8 +37,8 @@ function snapshot(overrides: Partial<HealthSnapshot> = {}): HealthSnapshot {
   };
 }
 
-/** The plain-text health body (ADR 0016 §Dependencies) and the host logger. */
-export function runHealthAndLoggerTests(): void {
+/** The plain-text health body (ADR 0016 §Dependencies). */
+export function runHealthRenderTests(): void {
   // ---- the summary line ----------------------------------------------------
 
   {
@@ -154,50 +153,4 @@ export function runHealthAndLoggerTests(): void {
     assert(body.includes("uptime=0s"), "uptime is clamped at zero");
   }
 
-  // ---- the logger emits one JSON line per event ---------------------------
-
-  {
-    const lines: string[] = [];
-    const logger = createHostLogger({ component_test: true }, (line) => lines.push(line));
-    logger.info("started", { endpoints: 2 });
-    assert(lines.length === 1, "one event is one line");
-    assert(lines[0].endsWith("\n"), "JSON lines are newline-terminated");
-    const parsed = JSON.parse(lines[0]) as Record<string, unknown>;
-    assert(parsed.level === "info", "the level is recorded");
-    assert(parsed.message === "started", "the message is recorded");
-    assert(parsed.endpoints === 2, "structured fields are merged in");
-    assert(parsed.component === "ingest-host", "the component is stamped");
-    assert(typeof parsed.time === "string", "the timestamp is present");
-  }
-
-  {
-    const lines: string[] = [];
-    const logger = createHostLogger({}, (line) => lines.push(line));
-    const child = logger.child({ endpointKey: "phe:8883", protocol: "mqtt" });
-    child.warn("restarting", { attempt: 2 });
-    const parsed = JSON.parse(lines[0]) as Record<string, unknown>;
-    // This is the binding ADR 0016 §1 describes: "the host binds to
-    // { rtuCode, protocol }", so every adapter line is attributable.
-    assert(parsed.endpointKey === "phe:8883", "child fields appear on every line");
-    assert(parsed.protocol === "mqtt", "child fields appear on every line");
-    assert(parsed.attempt === 2, "per-call fields are merged over child fields");
-    assert(parsed.level === "warn", "the child preserves levels");
-
-    logger.info("parent");
-    const parentLine = JSON.parse(lines[1]) as Record<string, unknown>;
-    assert(parentLine.endpointKey === undefined, "a child must not mutate its parent");
-  }
-
-  {
-    // A circular field must never be the thing that takes down ingest.
-    const lines: string[] = [];
-    const logger = createHostLogger({}, (line) => lines.push(line));
-    const circular: Record<string, unknown> = {};
-    circular.self = circular;
-    logger.error("bad fields", { circular });
-    assert(lines.length === 1, "a non-serialisable field still produces a line");
-    const parsed = JSON.parse(lines[0]) as Record<string, unknown>;
-    assert(parsed.message === "bad fields", "the message survives");
-    assert(typeof parsed.note === "string", "the omission is stated rather than silent");
-  }
 }

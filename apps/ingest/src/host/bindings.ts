@@ -155,6 +155,24 @@ export type PlanOptions = {
   readonly mqttConnectionDefaults?: Readonly<Record<string, unknown>>;
 };
 
+/**
+ * The identity of one supervised endpoint: `(protocol, endpointKey)`.
+ *
+ * Exported because `main.ts` keys its supervisor and point-index maps by the
+ * same thing, and two independent format strings that must agree is a bug
+ * waiting to be written. It very nearly was: this was originally a template
+ * literal here and a differently-separated one there.
+ *
+ * The separator is `\u0000`, written as an escape rather than as a literal
+ * byte — a literal NUL makes the source file binary to git, so the diff stops
+ * being reviewable. NUL is the right value because it cannot occur in a
+ * protocol name or an endpoint key, so `a:b` + `c` and `a` + `b:c` cannot
+ * collide the way a `:` or a space would let them.
+ */
+export function endpointGroupKey(protocol: IngestProtocol, endpointKey: string): string {
+  return `${protocol}\u0000${endpointKey}`;
+}
+
 function isIngestProtocol(value: string): value is IngestProtocol {
   return (INGEST_PROTOCOLS as readonly string[]).includes(value);
 }
@@ -304,15 +322,54 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       // credential precedence is what the live pilot runs on today. ADR 0016
       // Resolved decision 5: no RTU currently has a `rtu_connection_configs`
       // row, so this is the *only* working credential path right now.
-      const resolved = options.resolveMqttConnection(
-        head.connection_config === null && head.credentials_ciphertext === null
-          ? null
-          : {
-              config: head.connection_config,
-              credentials_ciphertext: head.credentials_ciphertext,
-              credentials_iv: head.credentials_iv,
-            },
-      );
+      // **Refuse a stored request to disable TLS verification.**
+      //
+      // `connection` is untrusted JSONB spread over the environment defaults, so
+      // without this a `{"rejectUnauthorized": false}` row would reach
+      // `mqtt.connect()` with certificate validation off — and the same JSONB
+      // also supplies `host`. Whoever can write that row could therefore point
+      // the endpoint at a broker of their choosing *and* stop the host checking
+      // its certificate, at which point the decrypted broker credentials are
+      // handed straight to it. `rtu_connection_configs.config` is writable
+      // through the ADR 0011 onboarding commit by an `organization_admin`, not
+      // only by a platform operator.
+      //
+      // This is new surface: `index.js:204` reads `rejectUnauthorized` from the
+      // environment alone, and ADR 0016 Amendment 1 justifies the schema field
+      // solely as carrying *that* behaviour. So the environment stays the only
+      // way to lower it, and a row that asks is refused rather than ignored —
+      // failing closed and visibly, because a silently-dropped security setting
+      // teaches the next reader that the row works.
+      if (Object.prototype.hasOwnProperty.call(connection, "rejectUnauthorized")) {
+        skipped.push({ rtuId, rtuCode: deviceKey, reason: "tls-downgrade-refused" });
+        continue;
+      }
+
+      let resolved: ReturnType<MqttConnectionResolver>;
+      try {
+        resolved = options.resolveMqttConnection(
+          head.connection_config === null && head.credentials_ciphertext === null
+            ? null
+            : {
+                config: head.connection_config,
+                credentials_ciphertext: head.credentials_ciphertext,
+                credentials_iv: head.credentials_iv,
+              },
+        );
+      } catch {
+        // `resolveMqttConnection` decrypts, so it throws on a wrong-length IV, a
+        // bad GCM tag, a truncated ciphertext or a rotated encryption key. This
+        // guard was missing while the non-MQTT branch below had one — and
+        // `planEndpoints` is called unguarded from `main.ts`, so the throw
+        // reached `main().catch` and exited the process. One bad credential blob
+        // on one RTU would have stopped *every* endpoint and put the container
+        // in a restart loop, against §3 ("It never throws") and §5's blast-radius
+        // criterion. The error is not attached: crypto messages can carry key
+        // material or ciphertext framing (AGENTS.md §9.6).
+        skipped.push({ rtuId, rtuCode: deviceKey, reason: "credential-decrypt-failed" });
+        continue;
+      }
+
       connectionSlice = {
         ...options.mqttConnectionDefaults,
         ...connection,
@@ -391,7 +448,7 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
     // ---- grouping ---------------------------------------------------------
 
     const endpointKey = factory.endpointKey(configParsed.data, rtuId);
-    const groupKey = `${protocol} ${endpointKey}`;
+    const groupKey = endpointGroupKey(protocol, endpointKey);
     let group = endpoints.get(groupKey);
     if (group === undefined) {
       group = {

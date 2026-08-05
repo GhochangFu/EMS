@@ -40,10 +40,39 @@ export const mqttConfigSchema = z.object({
 
 export type MqttConfig = z.infer<typeof mqttConfigSchema>;
 
+/**
+ * Largest payload this adapter will parse, in bytes.
+ *
+ * ADR 0016 §5 rule 6: an adapter must not "block the event loop: … no unbounded
+ * synchronous parse of an arbitrarily large payload". `JSON.parse` is
+ * synchronous, and the host now multiplexes **every** endpoint into one process
+ * — so a multi-megabyte message from anyone able to publish on a subscribed
+ * topic would stall not just this connection but every other supervisor's drain
+ * loop and connect timer, well past the one-endpoint blast radius §5 sets as
+ * the acceptance criterion. `index.js` had the same parse but hosted exactly
+ * one connection.
+ *
+ * 256 KiB is far above any real ThinkIoT frame (a few hundred bytes) and far
+ * below anything that takes measurable time to parse.
+ */
+export const MAX_PAYLOAD_BYTES = 256 * 1024;
+
 /** Per-device config. `topic` comes from the `bms.rtus.mqtt_topic` shim until it is backfilled (§3). */
 export const mqttDeviceSchema = z.object({
-  /** The ThinkIoT topic this RTU publishes on, e.g. `Airsprint-1051/Data/<devid>`. */
-  topic: z.string().min(1),
+  /**
+   * The ThinkIoT topic this RTU publishes on, e.g. `Airsprint-1051/Data/<devid>`.
+   *
+   * Wildcards are rejected. This is one *device's* topic, so `#` or `+` is
+   * always a mistake — and `topic: "#"` would subscribe to the entire broker,
+   * firehosing the bounded sample queue until its drop-oldest policy started
+   * discarding genuine PHE readings.
+   */
+  topic: z
+    .string()
+    .min(1)
+    .refine((topic) => !topic.includes("#") && !topic.includes("+"), {
+      message: "a device topic must name one device, not a wildcard subscription",
+    }),
 });
 
 export type MqttDevice = z.infer<typeof mqttDeviceSchema>;
@@ -170,6 +199,16 @@ export function createMqttAdapter(
     if (emit === null || closed) {
       return;
     }
+    if (payload.length > MAX_PAYLOAD_BYTES) {
+      // Checked before `toString`, so an oversized frame is never materialised
+      // as a string either (§5 rule 6). Size only — never the content.
+      context?.logger.warn("mqtt payload rejected: too large", {
+        bytes: payload.length,
+        limit: MAX_PAYLOAD_BYTES,
+      });
+      return;
+    }
+
     let parsed: ReturnType<typeof parsePayload>;
     try {
       parsed = parsePayload(payload.toString("utf8"));

@@ -484,6 +484,124 @@ export function runBindingsTests(): void {
     );
   }
 
+  // ---- a stored TLS downgrade is refused, not honoured --------------------
+
+  {
+    // `connection` is untrusted JSONB spread over the env defaults, and
+    // `rtu_connection_configs.config` is writable through the ADR 0011
+    // onboarding commit by an `organization_admin`. Honouring
+    // `{"rejectUnauthorized": false}` would let whoever writes that row also set
+    // `host`, point the endpoint at a broker of their choosing with certificate
+    // checking off, and be handed the decrypted broker credentials.
+    //
+    // `index.js:204` reads this from the environment alone. The environment
+    // stays the only way to lower it.
+    const { endpoints, skipped } = planEndpoints(
+      [row({ connection_config: { rejectUnauthorized: false } })],
+      makeOptions({ mqttConnectionDefaults: { rejectUnauthorized: true } }),
+    );
+    assert(
+      endpoints.length === 0,
+      "an RTU whose stored config disables TLS verification must not be served",
+    );
+    assert(
+      skipped.some((s) => s.reason === "tls-downgrade-refused"),
+      `the refusal must be visible, not silent: ${JSON.stringify(skipped)}`,
+    );
+  }
+
+  {
+    // Even asking for it *on* is refused — the field simply is not
+    // database-controllable, and accepting the "safe" value would teach the
+    // next reader that the key works.
+    const { skipped } = planEndpoints(
+      [row({ connection_config: { rejectUnauthorized: true } })],
+      makeOptions(),
+    );
+    assert(
+      skipped.some((s) => s.reason === "tls-downgrade-refused"),
+      "rejectUnauthorized is not a database-settable field in either direction",
+    );
+  }
+
+  {
+    // The environment path still works, and reaches the adapter's config.
+    const { endpoints } = planEndpoints(
+      [row()],
+      makeOptions({ mqttConnectionDefaults: { rejectUnauthorized: false } }),
+    );
+    const config = endpoints[0].config as { rejectUnauthorized: boolean };
+    assert(
+      config.rejectUnauthorized === false,
+      "MQTT_TLS_REJECT_UNAUTHORIZED=false must still reach the adapter — it is the " +
+        "documented escape hatch and index.js honours it",
+    );
+  }
+
+  {
+    // And the default is on.
+    const { endpoints } = planEndpoints([row()], makeOptions({ mqttConnectionDefaults: { rejectUnauthorized: true } }));
+    const config = endpoints[0].config as { rejectUnauthorized: boolean };
+    assert(config.rejectUnauthorized === true, "TLS verification defaults on");
+  }
+
+  // ---- a throwing MQTT credential resolver takes down one RTU, not the host
+
+  {
+    // `resolveMqttConnection` decrypts, so it throws on a wrong-length IV, a bad
+    // GCM tag or a rotated key. `planEndpoints` is called unguarded from
+    // `main.ts`, so an unguarded throw here reached `main().catch` and exited
+    // the process — one bad credential blob stopping *every* endpoint, against
+    // §3 ("It never throws") and §5's blast-radius criterion.
+    let threw = false;
+    let result: ReturnType<typeof planEndpoints> | null = null;
+    try {
+      result = planEndpoints(
+        [
+          row({ rtu_id: "bad-rtu", rtu_code: "BAD" }),
+          row({ rtu_id: "good-rtu", rtu_code: "GOOD" }),
+        ],
+        makeOptions({
+          resolveMqttConnection: (configRow) => {
+            if (configRow === null) {
+              throw new Error("Unsupported state or unable to authenticate data");
+            }
+            return { ...ENV_CONNECTION, username: "u", password: "p" };
+          },
+        }),
+      );
+    } catch {
+      threw = true;
+    }
+    assert(!threw, "planEndpoints must never throw — it is called unguarded from main.ts");
+    assert(
+      (result?.skipped ?? []).every((s) => s.reason === "credential-decrypt-failed"),
+      "a decrypt failure is reported per RTU",
+    );
+    assert(
+      !JSON.stringify(result?.skipped ?? []).includes("authenticate"),
+      "the crypto error message must not be propagated",
+    );
+  }
+
+  // ---- wildcard topics are rejected ---------------------------------------
+
+  {
+    // `topic: "#"` subscribes to the entire broker, firehosing the bounded
+    // sample queue until drop-oldest starts discarding genuine PHE readings.
+    for (const topic of ["#", "+", "Airsprint-1051/Data/#", "Airsprint-1051/+/1051"]) {
+      const { endpoints, skipped } = planEndpoints([row({ mqtt_topic: topic })], makeOptions());
+      assert(endpoints.length === 0, `a wildcard topic "${topic}" must not be served`);
+      assert(
+        skipped.some((s) => s.reason === "invalid-device-config"),
+        `a wildcard topic "${topic}" must be reported`,
+      );
+    }
+    // A normal topic still works.
+    const { endpoints } = planEndpoints([row()], makeOptions());
+    assert(endpoints.length === 1, "an ordinary device topic is unaffected");
+  }
+
   // ---- the point index -----------------------------------------------------
 
   {

@@ -730,7 +730,9 @@ Two packaging details that will bite if missed:
 ## Dependencies
 
 Per AGENTS.md:160, every new dependency needs an ADR. This ADR covers exactly
-two, both "already-approved library, new consumer":
+two, both "already-approved library, new consumer" — **plus `@types/pg`, added
+later by Amendment 2 when the host was built. The full approved list is
+these two and that one.**
 
 - **`zod` `^3.24.1`** in `apps/ingest` `dependencies`. Present in the repo
   (`apps/api`) but not in this package, so it is a new dependency here.
@@ -850,7 +852,10 @@ querying the database rather than by opinion.
 
 ### Approved dependencies (AGENTS.md:160 / §9.4)
 
-Both approved at acceptance, both "already-approved library, new consumer":
+Two approved at acceptance, both "already-approved library, new consumer".
+**A third, `@types/pg`, was approved later by Amendment 2** — see the end of
+this ADR; it is not listed here because this subsection records what was
+decided *at acceptance*.
 
 - **`zod` `^3.24.1`** in `apps/ingest` dependencies — each adapter owns a Zod
   schema for its own JSONB config; `rtu_connection_configs.config` is untrusted

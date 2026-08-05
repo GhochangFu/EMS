@@ -167,6 +167,12 @@ function withTimeout<T>(
   });
 }
 
+/**
+ * Builds the supervisor for one endpoint. Nothing runs until `start()`.
+ *
+ * `scheduler` and `random` are injected so the §5 timings and the backoff
+ * spread are assertable without waiting out a 60-second cap.
+ */
 export function createSupervisor(deps: SupervisorDeps): Supervisor {
   const timings: SupervisorTimings = { ...DEFAULT_TIMINGS, ...deps.timings };
   const scheduler = deps.scheduler ?? realScheduler;

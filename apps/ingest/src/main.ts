@@ -5,9 +5,9 @@ import pg from "pg";
 
 import { lookupAdapter } from "./adapter/registry.js";
 import {
+  endpointGroupKey,
   loadBindingRows,
   planEndpoints,
-  type EndpointPlan,
   type PlanOptions,
   type SkippedBinding,
 } from "./host/bindings.js";
@@ -42,11 +42,6 @@ import {
  * double-delivering every reading to the dashboards.
  */
 
-/** `${protocol} ${endpointKey}` — the same grouping key `planEndpoints` uses. */
-function groupKeyOf(plan: EndpointPlan): string {
-  return `${plan.protocol} ${plan.endpointKey}`;
-}
-
 async function main(): Promise<void> {
   const pkgRoot = process.cwd();
   loadDotenv({ path: resolve(pkgRoot, "../../apps/api/.env") });
@@ -54,7 +49,18 @@ async function main(): Promise<void> {
 
   const hostConfig = readHostConfig(process.env);
   const logger = createHostLogger();
-  const pool = new pg.Pool({ connectionString: hostConfig.databaseUrl });
+  const pool = new pg.Pool({
+    connectionString: hostConfig.databaseUrl,
+    // `withTimeout` around `writeSamples` rejects the *wait*, but it cannot
+    // cancel the query — the abandoned write keeps its client checked out until
+    // it settles, and the drain loop immediately starts the next batch. Under a
+    // sustained database stall that accumulates one live-but-abandoned write per
+    // timeout per endpoint, and with pg's default `max: 10` and no acquisition
+    // timeout the pool empties and `pool.connect()` waits forever — turning a
+    // slow database into a permanently wedged host. This bounds the acquisition
+    // so the failure surfaces as counted `writeFailures` instead.
+    connectionTimeoutMillis: 10_000,
+  });
 
   // A pooled connection closed by the server's idle timeout arrives here. It is
   // routine, so the process does not exit on it: doing so would restart ingest
@@ -108,7 +114,7 @@ async function main(): Promise<void> {
     if (factory === undefined) {
       continue;
     }
-    const key = groupKeyOf(plan);
+    const key = endpointGroupKey(plan.protocol, plan.endpointKey);
     pointIndexes.set(key, plan.pointIndex);
     // Exactly one binding is the case in which `SourceSample.deviceKey` may be
     // omitted; with several, an omitted key is ambiguous and the normaliser
@@ -171,7 +177,7 @@ async function main(): Promise<void> {
         skipped = next.skipped;
         const seen = new Set<string>();
         for (const plan of next.endpoints) {
-          const key = groupKeyOf(plan);
+          const key = endpointGroupKey(plan.protocol, plan.endpointKey);
           seen.add(key);
           if (pointIndexes.has(key)) {
             pointIndexes.set(key, plan.pointIndex);

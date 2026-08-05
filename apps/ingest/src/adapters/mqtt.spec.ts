@@ -4,6 +4,8 @@ import type {
 } from "../adapter/adapter-contract.spec.js";
 import {
   createMqttAdapter,
+  MAX_PAYLOAD_BYTES,
+  mqttDeviceSchema,
   parsePayload,
   samplesFromPayload,
   type MqttClientHandle,
@@ -192,6 +194,71 @@ export async function runMqttAdapterTests(): Promise<void> {
     );
     assert(samples.length === 1, "only mapped source keys are emitted");
     assert(samples[0].deviceKey === "RTU-1", "every sample carries its device key");
+  }
+
+  // ---- an oversized payload is never parsed -------------------------------
+
+  {
+    const broker = makeFakeBroker();
+    const adapter = createMqttAdapter(broker.transport);
+    const controller = new AbortController();
+    const warnings: { message: string; fields?: Record<string, unknown> }[] = [];
+    const connecting = adapter.connect({
+      protocol: "mqtt",
+      endpointKey: "e",
+      config: { host: "h", port: 8883, rejectUnauthorized: true },
+      credentials: {},
+      bindings: [
+        { rtuId: "1", rtuCode: "R", deviceKey: "R", device: { topic: "t" }, sourceKeys: ["flow"] },
+      ],
+      logger: {
+        info: () => undefined,
+        warn: (message, fields) => warnings.push({ message, ...(fields === undefined ? {} : { fields }) }),
+        error: () => undefined,
+      },
+      signal: controller.signal,
+    });
+    broker.fireConnect();
+    await connecting;
+
+    const received: unknown[] = [];
+    await adapter.subscribe((samples) => received.push(...samples));
+
+    // ADR 0016 §5 rule 6 — "no unbounded synchronous parse of an arbitrarily
+    // large payload". `JSON.parse` is synchronous and the host multiplexes every
+    // endpoint into one process, so a multi-megabyte frame would stall every
+    // other supervisor's drain loop too.
+    const huge = `{"dev_id":"R","values":{"flow":1},"pad":"${"x".repeat(MAX_PAYLOAD_BYTES)}"}`;
+    broker.fireMessage("t", huge);
+    assert(received.length === 0, "an oversized payload must not produce samples");
+    assert(warnings.length === 1, "an oversized payload must be reported, not silently dropped");
+    assert(
+      typeof warnings[0].fields?.bytes === "number",
+      "the size is logged so the limit can be tuned from evidence",
+    );
+    assert(
+      !JSON.stringify(warnings[0]).includes("xxxxxxxx"),
+      "the payload content must never be logged (AGENTS.md §9.6)",
+    );
+
+    // A normal frame still flows.
+    broker.fireMessage("t", JSON.stringify({ dev_id: "R", values: { flow: 9 } }));
+    assert(received.length === 1, "an ordinary payload is unaffected");
+  }
+
+  // ---- wildcard device topics are rejected by the schema ------------------
+
+  {
+    for (const topic of ["#", "+", "a/b/#", "a/+/c"]) {
+      assert(
+        !mqttDeviceSchema.safeParse({ topic }).success,
+        `"${topic}" is a wildcard subscription, not one device's topic`,
+      );
+    }
+    assert(
+      mqttDeviceSchema.safeParse({ topic: "Airsprint-1051/Data/1051" }).success,
+      "an ordinary topic still parses",
+    );
   }
 
   // ---- the host owns reconnect --------------------------------------------

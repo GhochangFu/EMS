@@ -24,6 +24,10 @@ const defaultWriter: LogWriter = (line) => {
   process.stdout.write(line);
 };
 
+/**
+ * Builds a JSON-line logger. `base` fields appear on every line it emits;
+ * `write` is injected so tests capture output instead of the process stream.
+ */
 export function createHostLogger(
   base: Record<string, unknown> = {},
   write: LogWriter = defaultWriter,

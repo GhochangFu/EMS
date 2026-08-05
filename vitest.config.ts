@@ -49,7 +49,7 @@ export default defineConfig({
       exclude: ["**/*.spec.ts", "**/*.test.ts", "**/*.test.js", "**/*.d.ts"],
       // Measured 2026-08-05 with all three integration suites in the tree and
       // the F1.1 ingest host landed:
-      // statements 26.23 · branches 18.74 · functions 26.85 · lines 26.35.
+      // statements 26.47 · branches 18.92 · functions 27.08 · lines 26.60.
       // (Before the host: 17.18 · 11.37 · 20.66 · 17.11. Before E1.7: 14.22 ·
       // 9.35 · 18.29 · 14.07. Before F2.2: 10.96 · 6.76 · 14.65 · 10.96. F4.10
       // alone was 7.12 · 4.53 · 9.44 · 7.14; F2.1 alone 8.70 · 5.14 · 10.74 ·
@@ -74,10 +74,10 @@ export default defineConfig({
       // the reason and the command to fix it. Do NOT lower these to make a
       // database-less run pass.
       thresholds: {
-        statements: 26.2,
-        branches: 18.7,
-        functions: 26.8,
-        lines: 26.3,
+        statements: 26.4,
+        branches: 18.9,
+        functions: 27.0,
+        lines: 26.5,
       },
     },
   },

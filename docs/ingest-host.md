@@ -118,3 +118,18 @@ cd apps/ingest && DATABASE_URL="$DATABASE_URL" INGEST_NOTIFY=off pnpm start:host
 - **`bms.rtus.mqtt_topic` is still a column.** The host shims it into the device
   slice for MQTT only, and a written `config.device.topic` wins. Backfilling it
   and retiring the column is owed follow-up.
+- **Telemetry authenticity rests entirely on broker ACLs.** A message is
+  attributed to an RTU by matching the payload's own `dev_id` against
+  `rtus.rtu_code`, so any principal able to publish on a subscribed topic can
+  attribute fabricated readings to another RTU's assets. This is unchanged from
+  `index.js`, which routes the same way — but endpoint grouping by `host:port`
+  means one broker connection now serves the *union* of RTUs on it, so the
+  spoofable set widens as soon as `F1.7` adds RTUs. **`F1.7` should carry
+  per-RTU broker credentials and topic-scoped ACLs in its scope**; it is not
+  fixable inside the adapter, which cannot tell a genuine `dev_id` from a
+  claimed one.
+
+`rejectUnauthorized` is deliberately **not** settable from
+`rtu_connection_configs.config` — an RTU whose stored config carries the key is
+refused with `tls-downgrade-refused` rather than served. The environment
+variable is the only way to lower TLS verification, matching `index.js`.
