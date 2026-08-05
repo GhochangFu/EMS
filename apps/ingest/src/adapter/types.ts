@@ -1,3 +1,5 @@
+import type { ZodType } from "zod";
+
 import type {
   AdapterHealth,
   AdapterMode,
@@ -7,108 +9,116 @@ import type {
 } from "@bms/shared/ingest";
 
 /**
- * The adapter interface (ADR 0016, backlog `F1.1`).
+ * The adapter interface (ADR 0016 §1, backlog `F1.1`).
  *
- * Deliberately **not** in `@bms/shared`: nothing outside `apps/ingest`
- * implements or calls these, and exporting them would widen the shared surface
- * for no consumer (ADR 0016 §8). The data contracts an adapter *emits* —
- * `SourceSample`, `AdapterHealth`, `IngestProtocol` — do live in
- * `@bms/shared/ingest`, because `F3.24`'s onboarding agent and the `/admin/*`
- * RTU screens consume them.
+ * **Transcribed from the ADR rather than paraphrased.** This file is the thing
+ * `F1.2`–`F1.6` build against in parallel; if it drifts from the ADR, five
+ * agents implement five different contracts and the enabler has failed at the
+ * one job it exists to do.
  *
- * **The one clause that makes six adapters safe to build in parallel:** an
+ * Deliberately not in `@bms/shared`: nothing outside `apps/ingest` implements
+ * or invokes these, and exporting them would widen the shared surface for no
+ * consumer (ADR 0016 §8). The data contracts an adapter *emits* live in
+ * `@bms/shared/ingest`, because `F3.24` and the `/admin/*` RTU screens consume
+ * them.
+ *
+ * **The clause that makes six adapters safe to build in parallel:** an
  * adapter's total output is `SourceSample[]`. It never opens a Postgres
- * connection, never resolves an asset or a point key, never writes to
- * `telemetry.*`, and never owns a timer or a process handler. The host owns all
- * of it. See ADR 0016 §2 and §5 for the full prohibition list — it is a
- * contract term, not a guideline.
+ * connection, never resolves an asset or point key, never owns a timer or a
+ * process handler, and never reads `process.env`. The host owns all of it —
+ * ADR 0016 §2 and §5, which are contract terms and not guidelines.
  */
 
-/** Structured logging, the only channel an adapter may log through. */
+/** Minimal logger the host binds to `{ rtuCode, protocol }`. Adapters must use only this. */
 export type AdapterLogger = {
-  readonly debug: (message: string, fields?: Record<string, unknown>) => void;
-  readonly info: (message: string, fields?: Record<string, unknown>) => void;
-  readonly warn: (message: string, fields?: Record<string, unknown>) => void;
-  readonly error: (message: string, fields?: Record<string, unknown>) => void;
+  info(message: string, fields?: Record<string, unknown>): void;
+  warn(message: string, fields?: Record<string, unknown>): void;
+  error(message: string, fields?: Record<string, unknown>): void;
 };
 
-/**
- * One RTU served by an adapter instance.
- *
- * `deviceKey` is `rtus.rtu_code` — the identifier the device names itself by,
- * and already what the PHE payload's `dev_id` is matched against. No new
- * column, no new concept (ADR 0016 §3).
- *
- * `device` is the per-device slice of `rtu_connection_configs.config`, already
- * validated against the adapter's own `deviceSchema` by the host.
- */
-export type RtuBinding = {
+/** One device served by an adapter instance. */
+export type RtuBinding<TDevice> = {
   readonly rtuId: string;
+  readonly rtuCode: string;
+  /** How the device identifies itself on the wire; matches `SourceSample.deviceKey`. */
   readonly deviceKey: string;
-  readonly device: Record<string, unknown>;
+  /** Validated per-device config (MQTT topic, Modbus unit id, OPC-UA node prefix). */
+  readonly device: TDevice;
+  /** `source_data_key`s this RTU is mapped for; adapters may use it to scope a read set. */
+  readonly sourceKeys: readonly string[];
 };
 
-/**
- * Everything an adapter is given. **The only input it may read** — an adapter
- * never touches `process.env`, for credentials or for anything else (ADR 0016
- * §4). New adapters get no environment fallback at all.
- */
-export type AdapterContext = {
-  /** Connection-level config, already validated against the adapter's `configSchema`. */
-  readonly config: Record<string, unknown>;
-  /**
-   * Decrypted credentials, or `undefined` when the endpoint needs none.
-   *
-   * Already plaintext: the host decrypts through the existing, unmodified
-   * `decryptCredentials()` so an adapter never sees ciphertext, an IV, a key
-   * version, or `CREDENTIAL_ENCRYPTION_KEY`. **Must not** appear in
-   * `health().detail`, in any `logger` call, or in a thrown message
-   * (AGENTS.md §9.6).
-   */
-  readonly credentials?: Record<string, unknown>;
-  /** Every RTU on this endpoint. Serve them all, not just the first. */
-  readonly bindings: readonly RtuBinding[];
+/** Everything an adapter is given. It must not reach outside this object for state. */
+export type AdapterContext<TConfig, TDevice> = {
+  readonly protocol: IngestProtocol;
+  /** Identity of the endpoint this instance serves — the host's grouping key. */
+  readonly endpointKey: string;
+  /** Validated connection-level config. Non-secret by definition. */
+  readonly config: TConfig;
+  /** Plaintext endpoint secrets, decrypted by the host. Never log, never echo, never persist. */
+  readonly credentials: Readonly<Record<string, string>>;
+  /** Devices on this endpoint. Exactly one for connection-per-device protocols. */
+  readonly bindings: readonly RtuBinding<TDevice>[];
   readonly logger: AdapterLogger;
-  /** Aborted on shutdown and on supervisor restart. Honour it in every await that can hang. */
+  /** Aborted on shutdown or supervisor restart. Long operations must honour it. */
   readonly signal: AbortSignal;
 };
 
-/** Hand samples to the host. Never call before `subscribe()` resolves, or after `disconnect()`. */
-export type EmitSamples = (samples: readonly SourceSample[]) => void;
-
-/**
- * A live adapter instance, bound to one endpoint.
- *
- * Implement `subscribe` (push) **or** `defaultPollIntervalMs` + `poll` (poll),
- * never both halves — `mode` says which. The host schedules the next poll only
- * after the previous one settles, so an adapter never needs to guard against
- * overlap and must never schedule itself.
- */
-export type IngestAdapter = {
-  readonly mode: AdapterMode;
-  connect(): Promise<void>;
+/** Lifecycle every adapter shares, regardless of mode. */
+type IngestAdapterBase<TConfig, TDevice> = {
+  /** Establishes the transport. Must reject rather than throw synchronously. */
+  connect(context: AdapterContext<TConfig, TDevice>): Promise<void>;
+  /** Releases the transport. Must be idempotent and must not reject. */
   disconnect(): Promise<void>;
-  /** Must not throw synchronously, and must not derive `detail` from credentials. */
+  /** Synchronous, cheap, never throws — callable before connect and after disconnect. */
   health(): AdapterHealth;
-  /** Push adapters only. */
-  subscribe?(emit: EmitSamples): Promise<void>;
-  /** Poll adapters only. The host may override the interval per deployment. */
-  readonly defaultPollIntervalMs?: number;
-  /** Poll adapters only. Resolves with everything read this tick. */
-  poll?(): Promise<readonly SourceSample[]>;
-  /** Optional; only for protocols that can genuinely browse. */
+  /** Optional point discovery for F3.24 onboarding. Omit when the protocol cannot browse. */
   discover?(): Promise<readonly DiscoveredPoint[]>;
 };
 
+export type PushIngestAdapter<TConfig, TDevice> = IngestAdapterBase<TConfig, TDevice> & {
+  readonly mode: "push";
+  /** Attaches the sink. Resolves once the subscription is established. */
+  subscribe(emit: (samples: readonly SourceSample[]) => void): Promise<void>;
+};
+
+export type PollIngestAdapter<TConfig, TDevice> = IngestAdapterBase<TConfig, TDevice> & {
+  readonly mode: "poll";
+  /** Cadence floor. The host may widen it under backoff; it never shortens it. */
+  readonly defaultPollIntervalMs: number;
+  /** One complete read cycle across every binding. The host guarantees no overlap. */
+  poll(): Promise<readonly SourceSample[]>;
+};
+
 /**
- * How the host constructs an adapter, and what it can know without
- * constructing one.
+ * A discriminated union, not a flat type with optional halves.
  *
- * `supportsDiscovery` is a property of the *factory* precisely so `F3.24` can
- * filter the protocol list without opening a connection to find out.
+ * ADR 0016's Options B3 rejects the flat shape explicitly: the discriminant is
+ * a literal `mode` field so the host narrows at compile time and **a fan-out
+ * agent cannot half-implement both halves**. A flat `{ mode, subscribe?, poll? }`
+ * would let `{ mode: "push" }` with no `subscribe` compile, which is precisely
+ * the class of error the toolchain in this PR exists to catch.
  */
-export type IngestAdapterFactory = {
+export type IngestAdapter<TConfig = unknown, TDevice = unknown> =
+  | PushIngestAdapter<TConfig, TDevice>
+  | PollIngestAdapter<TConfig, TDevice>;
+
+/** What an adapter module default-exports; the host builds one instance per endpoint. */
+export type IngestAdapterFactory<TConfig = unknown, TDevice = unknown> = {
   readonly protocol: IngestProtocol;
+  readonly mode: AdapterMode;
+  /** Zod schema for the connection-level slice of `config` JSONB. Validated before `connect`. */
+  readonly configSchema: ZodType<TConfig>;
+  /** Zod schema for the per-device slice. Validated per binding before `connect`. */
+  readonly deviceSchema: ZodType<TDevice>;
+  /**
+   * Grouping key. Return the connection identity (`host:port`) when one
+   * connection serves many devices; return `rtuId` when each device needs its
+   * own connection. This single function replaces a `scope` flag — the flag
+   * would only ever be derivable from it.
+   */
+  endpointKey(config: TConfig, rtuId: string): string;
+  /** Lets F3.24 filter for browsable protocols without constructing an instance. */
   readonly supportsDiscovery?: boolean;
-  create(context: AdapterContext): IngestAdapter;
+  create(): IngestAdapter<TConfig, TDevice>;
 };

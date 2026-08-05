@@ -656,6 +656,16 @@ export type TemplatePointKind = "measured" | "derived";
  */
 export type * from "./asset-template-content";
 
+/**
+ * Ingest data contracts (ADR 0016 §8). Re-exported here, not only under the
+ * `./ingest` subpath, because `apps/api` compiles with `moduleResolution:
+ * "node"` (node10), which ignores the `exports` map entirely — and the
+ * `/admin/*` RTU screens are one of the two consumers §8 cites. The type-only
+ * import back from `./index` inside `ingest.ts` is erased at emit, so there is
+ * no runtime cycle.
+ */
+export * from "./ingest";
+
 export type AdminTemplatePointDto = {
   id: string;
   templateId: string;

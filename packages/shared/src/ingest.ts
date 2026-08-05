@@ -109,6 +109,6 @@ export type DiscoveredPoint = {
   readonly sourceKey: string;
   readonly label?: string;
   readonly unit?: string;
-  /** Where the protocol exposes one — an OPC-UA node id, an SNMP OID. */
-  readonly address?: string;
+  /** A live reading, so `F3.24` can show an operator the value while they map the point. */
+  readonly sampleValue?: number;
 };
