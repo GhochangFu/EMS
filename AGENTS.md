@@ -7,8 +7,9 @@
 > onboarding wizard, and the PHE MQTT real-ingestion pilot (ADR 0007–0012);
 > the Vitest gate (ADR 0014), asset templates and instantiation
 > (ADR 0015), the ingest adapter framework interface (ADR 0016), the
-> operations write matrix (ADR 0017), and the asset source-axis separation
-> (ADR 0018). General site-wide AI copilot, EMQX, and the individual
+> operations write matrix (ADR 0017), the asset source-axis separation
+> (ADR 0018), and the template content model (ADR 0019). General
+> site-wide AI copilot, EMQX, and the individual
 > protocol adapters remain deferred — the framework is promoted, each
 > protocol still needs its own ADR (§9.4).
 > **Product brand:** TRINETRA. Powered by Euphoria Infotech India Limited.
@@ -158,6 +159,7 @@ entry **D-0001**.
 | Real ingestion | `apps/ingest` MQTT TLS subscriber for the PHE pilot; writes `telemetry.point_values` and `pg_notify('bms_telemetry', …)` like the simulator (ADR 0007). One pilot RTU only; no EMQX |
 | Master data  | Organization → Location → RTU → Asset → Point-key catalog + `/admin/*` CRUD with `admin`/`organization_admin`/`location_admin` roles (ADR 0008–0010). **ADR 0018** separates the axes: an asset must have a `location_id` (`NOT NULL`) and need not have an `rtu_id` (nullable); telemetry provenance binds at `asset_points.source_kind` (`measured`/`manual`/`computed`/`unmapped`), not at the asset |
 | Asset templates | `bms.asset_templates` + `bms.template_points`, where a row **is** a version and `assets.template_id` pins it (ADR 0015). Published versions are immutable; editing one creates the next draft. `POST /admin/asset-templates/:id/instantiate` builds assets from a published version — target is `rtuId` **xor** `locationId`. A `template_points.kind = 'derived'` point is still re-validated against the active catalog, but never becomes an `asset_points` row — it has no honest `source_data_key` until the calc engine (`F2.6`) owns it |
+| Template content | `asset_templates.content` carries the `E1.7` overlay under **ADR 0019**, tiered by whether a consumer exists on `main`. **Bound** (`alarms`, `maintenance`) import their enums from `rules.schema.ts` / `maintenance.schema.ts` — never restate them. **`alarms.philosophy` is the exception inside that row: Anchored, not Bound.** `E2.1` owns its vocabulary and is unbuilt, so its four fields may still be renamed or restructured, and its other three — affected assets, energy/water/production impact, ETR — are properties of a *live alarm instance* and must not be added to a template. **Anchored** (`kpis`, `dashboards`) check point-key references while leaving bodies opaque: `expression` sits behind `dialect: "unvalidated"` until `F2.3`, and a dashboard view carries *ordered point keys only* until `F3.1`. **Reserved** (`health`, `optimisation`) are **rejected**, each naming its blocking item. Every referenced point key must be one the template declares — checked on create, update and publish, because `content` and `points` are patched independently and a points patch can orphan content the request never mentioned. `POST :id/draft` is deliberately **exempt**: it byte-copies stored content, and validating it would strand a pre-ADR template behind its own immutable published version. Nothing converts this into a running rule or a maintenance row; it is the authoring surface only |
 | Ingest adapters | `IngestAdapter` interface frozen by **ADR 0016**: the host owns *supervision and cadence* (poll loop, overlap guard, backoff, jitter, bounded queue, process lifetime); adapters own the protocol connection and parse, implementing `connect` / `disconnect` / `health`. The interface is promoted; **no protocol implementation is in scope** — Modbus, BACnet, OPC-UA, SNMP and DCS each need their own ADR under §9.4 for their protocol library |
 | AI onboarding | Scoped admin ingestion wizard using OpenAI chat completions with structured JSON, and a deterministic rule-based fallback when `OPENAI_API_KEY` is unset (ADR 0011) |
 | Secrets      | AES-256-GCM encrypted RTU connection credentials via `CREDENTIAL_ENCRYPTION_KEY`; never returned decrypted by the API (ADR 0012) |
@@ -200,7 +202,8 @@ bms/
 │   ├── web/                   ← React SPA (incl. /admin master-data + onboarding wizard)
 │   ├── api/                   ← NestJS REST + WebSocket (incl. src/admin, src/security)
 │   │                            src/admin/asset-templates/ holds ADR 0015's
-│   │                            lifecycle + instantiation services
+│   │                            lifecycle + instantiation services, and
+│   │                            ADR 0019's content contract
 │   ├── sim/                   ← telemetry simulator (Node script)
 │   └── ingest/                ← PHE MQTT TLS subscriber (ADR 0007), one pilot RTU
 ├── packages/
@@ -363,6 +366,30 @@ These are intentionally deferred. Do not implement them yet:
   interface is promoted** (ADR 0016) — but the interface is all that is in
   scope. Each protocol implementation stays deferred until its own ADR settles
   the protocol library (licence, maintenance, transitive footprint) under §9.4
+- Template content sections whose consumer does not exist yet. **ADR 0019
+  promoted the content model, and it is deliberately partial** — a section is
+  contracted only as far as something on `main` can consume it. **Five** things
+  stay closed, one per unbuilt consumer, and each reopens when that item lands:
+  - `health` — **rejected** by the validator, not accepted untyped. Needs `E1.1`
+  - `optimisation` — likewise **rejected**. Needs `E1.6`
+  - `kpis.expression` — an opaque string behind `dialect: "unvalidated"`. Needs
+    `F2.3` to freeze formula syntax
+  - `dashboards` — **ordered point keys only**; no widget types, no layout, no
+    sizes. Needs `F3.1` to define the widget vocabulary
+  - `alarms.philosophy` — four free-text fields, and `E2.1` owns the vocabulary.
+    Do not add its remaining fields (affected assets,
+    energy/water/production impact, ETR): those describe a *live alarm
+    instance*, not an asset class, so a template cannot carry them
+
+  Do not widen any of the five to make a domain pack easier to author. That is
+  exactly how `E5.1` ends up encoding a shape `F3.1` or `E2.1` contradicts a
+  year later, with packs already in the field
+- Deploying template content into running objects. ADR 0019 is an **authoring**
+  surface. A template alarm does not become a `bms.automation_rules` row (that
+  needs `ruleType`/`condition`/`action`, which a template does not carry) and a
+  maintenance plan does not become a `bms.maintenance_task_templates` row (its
+  `asset_id` is `NOT NULL`). Those wirings are `E2.x`/`F3.x` and `E3.x` work
+  respectively, each needing its own ADR
 - EMQX broker (PHE pilot connects directly over MQTT TLS; no broker)
 - MinIO / object storage
 - Two-way commanding with approval workflows
@@ -419,8 +446,9 @@ MQTT ingest pilot (ADR 0007, 0012) are promoted and in scope.
 the Vitest runner and ratcheting coverage gate (ADR 0014, §4.6); asset
 templates, versioning and instantiation (ADR 0015, §4.7); the `IngestAdapter`
 interface **only** (ADR 0016); the operations write matrix (ADR 0017, §4.7);
-and the asset source-axis separation making `assets.rtu_id` nullable while
-`location_id` is `NOT NULL` (ADR 0018). Application-layer encryption at rest
+the asset source-axis separation making `assets.rtu_id` nullable while
+`location_id` is `NOT NULL` (ADR 0018); and the template content model
+(ADR 0019, §2). Application-layer encryption at rest
 is in scope (ADR 0012); **full-disk / volume / KMS encryption is a deployer
 action and not implementable in this repo**. Object-storage bucket encryption
 (`F3.3`, ADR required) and automated encrypted backups (`E8.2`) remain **live
