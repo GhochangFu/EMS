@@ -175,6 +175,16 @@ export async function enforceHierarchyNotNull(pool: pg.Pool): Promise<void> {
   await pool.query(`
     ALTER TABLE bms.locations ALTER COLUMN organization_id SET NOT NULL
   `);
+  // Assert the gateway column is nullable, rather than merely not asserting the
+  // opposite. Removing the old `SET NOT NULL` stops this seed re-applying it,
+  // but does not undo a constraint an earlier build already applied — and
+  // drizzle will not re-run migration 0023 to repair it, because it is recorded
+  // as applied. Any database that ran an older seed after migrating is stuck
+  // otherwise. Found by creating a gateway-less asset through the UI against a
+  // stack whose `migrate` service image predated this change.
+  await pool.query(`
+    ALTER TABLE bms.assets ALTER COLUMN rtu_id DROP NOT NULL
+  `);
 }
 
 /** Removes legacy PHE locations that used one RTU per location slug. */

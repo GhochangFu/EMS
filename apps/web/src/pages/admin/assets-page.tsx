@@ -111,7 +111,9 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payload = { ...form };
+      // ADR 0018: an empty select means "no gateway", not an empty uuid. The
+      // API validates rtuId as `uuid().nullish()`, so "" is a 400.
+      const payload = { ...form, rtuId: form.rtuId || null };
       if (editing) {
         return updateAdminAsset(editing.id, payload);
       }
@@ -307,10 +309,12 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                 <select
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
                   value={form.rtuId}
-                  required
                   onChange={(event) => setForm({ ...form, rtuId: event.target.value })}
                 >
-                  <option value="">Select RTU</option>
+                  {/* ADR 0018: optional. An asset read off a dial or imported
+                      from a workbook has no gateway, and `required` here made
+                      that unrepresentable through the UI. */}
+                  <option value="">No gateway — readings entered or imported</option>
                   {(formRtusQ.data?.items ?? []).map((rtu) => (
                     <option key={rtu.id} value={rtu.id}>
                       {rtu.displayName}

@@ -28,7 +28,8 @@ export async function createAdminAsset(input: {
   name: string;
   siteName: string;
   locationId: string;
-  rtuId: string;
+  // ADR 0018: optional — null means the asset has no gateway.
+  rtuId?: string | null;
   domain: string;
 }): Promise<AdminAssetDto> {
   return adminFetch("/admin/assets", {
@@ -45,7 +46,8 @@ export async function updateAdminAsset(
     name: string;
     siteName: string;
     locationId: string;
-    rtuId: string;
+    // ADR 0018: optional — null means the asset has no gateway.
+  rtuId?: string | null;
     domain: string;
   }>,
 ): Promise<AdminAssetDto> {
