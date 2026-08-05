@@ -171,6 +171,41 @@ the thing they require: an asset with no gateway. That is the failure mode this
 board cannot express, because `Depends` tracks *features*, not *constraints*.
 Worth remembering when reading any other "eligible" row.
 
+### Slot 2 opened: F2.1 and F4.10 landed (2026-08-05, PRs #5 and #4)
+
+`F2.1` ⭐ is done, so the critical path is open. Newly unblocked, re-derived from
+the `Depends` column rather than read off the slot table:
+
+| Item | P | Track | Why it matters now |
+|------|---|-------|--------------------|
+| **E1.7** | **P0** | B | Template content model — the Ion Exchange overlay surface. `F2.1` shipped `asset_templates.content jsonb` as its reserved home, `{}` and contracted by a Zod schema E1.7 tightens. It is the last thing between here and `E5.1`, the water-treatment domain pack that is the client's core business. |
+| **F2.2** | **P0** | B | Instantiate assets from a template. `F2.1` deliberately shipped `assets.template_id` so F2.2 adds **no DDL at all** — it does not take the migration lock. |
+| F2.7 | P1 | B | Tag-mapping bulk editor; `template_points.source_data_key_pattern` is its seed column. |
+
+`E5.1`/`E5.2`/`E5.3` and `F3.2` list `F2.1` **and** something still pending
+(`E1.7`, `F3.1`), so they stay blocked. `F3.21` lists "create APIs, F4.4" — the
+`F4.4` half was already satisfied and the create-APIs half means the
+*onboarding* create APIs, not the template ones, so it is unchanged. `F4.9`
+needs `F4.5`–`F4.10` and only `F4.10` is done.
+
+**The F4.10 note worth carrying forward.** Two of its assertions shipped in a
+state where they *could not fail*, and only measurement found it: a fresh
+database had 147 assets and **zero** with a null `rtu_id`, so the ADR 0018
+visibility check never executed one iteration; and 16 locations with **zero**
+inactive, so `WHERE active = true` was indistinguishable from no filter in all
+four scope branches. The fix was a fixture, not an assertion —
+`packages/db/src/access-fixtures-seed.ts` now seeds a decommissioned location
+and a hand-read meter. Both mutations that should break those checks now do;
+one of them passed before. Worth remembering when reading any test that asserts
+an *absence*: it is only as strong as the fixture's ability to produce the thing
+that should be absent.
+
+`F4.10` also pinned a property that is **not obviously right** and belongs to a
+future ADR: an unprovisioned `admin` token resolves to a global scope, so
+deleting a `bms.users` row does not revoke a token — it restores whatever role
+the token claims until `JWT_TTL`. Pre-existing, not client-forgeable, and now
+visible instead of latent.
+
 Still out of scope and belonging to the companion ADR: location depth
 (`locations.parent_id`), asset composition (`parent_asset_id`), and the
 Eskom-era `locations.type` union. That ADR is unblocked on its design question
@@ -229,7 +264,7 @@ single shared file). `F3.8` needs a dependency ADR before build.
 
 | ID | Feature | P | Effort | Wave | Depends | Status |
 |----|---------|---|--------|------|---------|--------|
-| **F2.1** | Asset template schema (`asset_templates` + `template_points`) ⭐ | P0 | 10–12 | 0 | — | ⬜ |
+| **F2.1** | Asset template schema (`asset_templates` + `template_points`) ⭐ — ADR 0015, PR #5. A row *is* a version; `assets.template_id` pins it, published versions are immutable, editing one creates the next draft. `template_points.kind` (`measured\|derived`) already carves out what `F2.2` must not instantiate | P0 | 10–12 | 0 | — | ✅ |
 | **F2.3** | Calculation formula DSL + definition schema ⭐ | P0 | 8–10 | 0 | — | ⬜ |
 | F2.2 | Instantiate assets from template (model-once-deploy-many) | P0 | 4–5 | 1 | F2.1 | ⬜ |
 | F2.4 | Calc execution engine (streaming + scheduled) | P0 | incl. | 1 | F2.3 | ⬜ |
@@ -323,7 +358,7 @@ single shared file). `F3.8` needs a dependency ADR before build.
 | F4.5 | Integration tests w/ testcontainers (PG + Timescale + Redis) | P1 | 6–8 | 1 | F4.4 | ⬜ |
 | F4.7 | E2E (Playwright) for critical UX paths | P1 | 4–6 | 1 | F4.4 | ⬜ |
 | F4.8 | Load tests (k6): 5,000 meters @ 1 Hz, 1,000 users | P2 | 3–4 | 1 | F4.4 | ⬜ |
-| F4.10 | Automated access-control integration tests. **Unblocked — highest-priority pending item.** ADR 0017 names it as where end-to-end proof of the operations write matrix belongs: the matrix is proven by unit tests over a pure function, so `scopeFromSource`'s query branches remain runtime-unverified | P0 | 3 | 1 | F4.4 ✅ | ⬜ |
+| F4.10 | Automated access-control integration tests — PR #4. All four `scopeFromSource` query branches against a real seeded database, each with its negative half, plus the DB-role-beats-JWT-claim rule ADR 0017 rests on. Also seeds the two states the rest of the seed never produced (a gateway-less asset, an inactive location), without which two assertions could not fail — see the note below | P0 | 3 | 1 | F4.4 ✅ | ✅ |
 | F4.14 | Audit read API + export | P1 | 2–3 | 1 | — | ⬜ |
 | F4.23 | `packages/contracts` (Zod), `packages/ui`, `telemetry-sdk` | P2 | 6–8 | 1 | F4.20 | ⬜ |
 | F4.6 | Contract tests (API ↔ web via contracts pkg) | P1 | incl. | 2 | F4.4, F4.23 | ⬜ |
