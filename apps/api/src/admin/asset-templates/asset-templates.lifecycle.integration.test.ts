@@ -10,10 +10,15 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import {
   assertArchiveRules,
+  assertContentPatchResolvesAgainstStoredPoints,
+  assertContentRefsCheckedOnCreate,
+  assertContentRoundTrips,
   assertCreateStartsAtVersionOne,
   assertEmptyDraftCannotPublish,
+  assertLegacyContentBlocksPublishButNotForking,
   assertLocationAdminCannotAuthor,
   assertOnlyOneDraftPerCode,
+  assertOrphanedRefsAreCaughtAtPublish,
   assertPointKeyCatalogIsEnforced,
   assertPublishFreezes,
   assertVersionBumpCopiesPoints,
@@ -141,5 +146,35 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
 
   it("excludes location admins from authoring (ADR 0015 §7)", async () => {
     await assertLocationAdminCannotAuthor(svc, fx);
+  });
+
+  // `E1.7` / ADR 0019. Same fixtures and same cleanup as the lifecycle above,
+  // rather than a fourth copy of this file's DATABASE_URL gate.
+  describe("E1.7 — template content model", () => {
+    let contentDraft: AdminAssetTemplateDto;
+
+    it("round-trips content through jsonb with its ordering intact", async () => {
+      contentDraft = await assertContentRoundTrips(svc, fx);
+      expect(contentDraft.content).toHaveProperty("contentVersion", 1);
+    });
+
+    it("rejects content naming a catalogued point the template does not declare", async () => {
+      await assertContentRefsCheckedOnCreate(svc, fx);
+    });
+
+    it("resolves a content-only patch against the stored point set", async () => {
+      await assertContentPatchResolvesAgainstStoredPoints(svc, fx, contentDraft.id);
+    });
+
+    it("lets a points patch orphan content, then refuses to publish it", async () => {
+      await assertOrphanedRefsAreCaughtAtPublish(svc, fx, contentDraft.id);
+    });
+
+    it("blocks publish on pre-ADR content but still permits the draft fork", async () => {
+      if (!pool) {
+        throw new Error("pool is required for the legacy-content case");
+      }
+      await assertLegacyContentBlocksPublishButNotForking(svc, pool, fx);
+    });
   });
 });

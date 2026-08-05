@@ -231,10 +231,14 @@ export const assetTemplates = bmsSchema.table("asset_templates", {
   // draft | published | archived — mirrors automation_rules.lifecycle_status.
   // A two-state `active` boolean cannot express "drafted, not yet publishable".
   status: varchar("status", { length: 32 }).notNull().default("draft"),
-  // Reserved E1.7 overlay surface: KPIs, alarm philosophies, default
-  // dashboards, health/maintenance hooks. `{}` in F2.1; its shape is contracted
-  // by a Zod schema in @bms/shared that E1.7 tightens, not modelled relationally
-  // before E1.7 and F3.1 have specified it.
+  // The E1.7 overlay (ADR 0019): KPIs, alarms with their philosophy, class-level
+  // maintenance plans, and dashboard point ordering. Contracted by
+  // `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts` — NOT
+  // by @bms/shared, which ADR 0015 named but which is types-only (a Zod schema
+  // there is a runtime dependency, AGENTS.md §9.4); the DTO types live there and
+  // ADR 0019 §8 ratifies the split. Rows written before that contract may hold
+  // arbitrary JSON: they still read, and are rejected on the next write or
+  // publish rather than by a migration.
   content: jsonb("content").notNull().default({}),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),

@@ -2,6 +2,10 @@ import type pg from "pg";
 
 import type { AdminAssetTemplateDto, JwtPayload } from "@bms/shared";
 
+import {
+  templateContentSchema,
+  type TemplateContentParsed,
+} from "./asset-templates-content.schema";
 import type { AssetTemplatesAdminService } from "./asset-templates.service";
 
 /**
@@ -55,9 +59,15 @@ async function expectRejection(
   );
 }
 
-/** Deletes only this suite's rows. `template_points` cascade on the FK. */
+/**
+ * Deletes only this suite's rows. `template_points` cascade on the FK.
+ *
+ * Prefix match, not equality: several cases author under `${TEST_CODE}-…` and a
+ * run that crashes between creating one and deleting it would otherwise leave a
+ * row that fails the *next* run's one-draft-per-code index.
+ */
 export async function cleanup(pool: pg.Pool): Promise<void> {
-  await pool.query(`DELETE FROM bms.asset_templates WHERE code = $1`, [TEST_CODE]);
+  await pool.query(`DELETE FROM bms.asset_templates WHERE code LIKE $1`, [`${TEST_CODE}%`]);
 }
 
 /** Resolves an organization with at least two active point keys. */
@@ -308,6 +318,271 @@ export async function assertLocationAdminCannotAuthor(
       svc.list(fx.locationAdminJwt, "00000000-0000-4000-8000-0000000000aa"),
     /outside your access scope/i,
     "listing templates for an organization the caller has no grant on",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// `E1.7` / ADR 0019 — the content model, where it needs a database
+//
+// The contract itself is proven by `asset-templates-content.schema.spec.ts`.
+// What is left here is everything that depends on *stored* state: resolving a
+// content patch against points the request did not send, the orphan window
+// between two independent patches, and rows written before the contract
+// existed. None of it is expressible as a pure function.
+// ---------------------------------------------------------------------------
+
+const CONTENT_CODE = `${TEST_CODE}-CONTENT`;
+
+/** Content referencing exactly the point keys named, as the parsed shape the
+ * service receives after Zod. */
+function contentReferencing(...pointKeys: string[]): TemplateContentParsed {
+  return templateContentSchema.parse({
+    alarms: pointKeys.map((pointKey, index) => ({
+      code: `ALARM_${index}`,
+      pointKey,
+      operator: "gt",
+      thresholdValue: 10,
+      severity: "warning",
+      message: `${pointKey} above limit`,
+    })),
+    dashboards: { overview: { featured: pointKeys } },
+  });
+}
+
+/** Content round-trips through `jsonb` with its structure intact. */
+export async function assertContentRoundTrips(
+  svc: AssetTemplatesAdminService,
+  fx: Fixtures,
+): Promise<AdminAssetTemplateDto> {
+  const created = await svc.create(fx.adminJwt, {
+    organizationId: fx.organizationId,
+    code: CONTENT_CODE,
+    name: "Content fixture",
+    assetType: "test_rig",
+    domain: "water",
+    content: contentReferencing(fx.pointKeys[0], fx.pointKeys[1]),
+    points: [
+      { pointKey: fx.pointKeys[0], kind: "measured", required: true, sortOrder: 0 },
+      { pointKey: fx.pointKeys[1], kind: "measured", required: true, sortOrder: 1 },
+    ],
+  });
+
+  const content = created.content as TemplateContentParsed;
+  assert(content.contentVersion === 1, "contentVersion must be persisted, not just defaulted");
+  assert(content.alarms?.length === 2, `expected 2 alarms to survive jsonb, got ${content.alarms?.length}`);
+  assert(
+    content.dashboards?.overview?.featured[0] === fx.pointKeys[0],
+    "featured ordering must survive the jsonb round trip — the order IS the information",
+  );
+  return created;
+}
+
+/** A create whose content names a key the template does not declare is rejected,
+ * and the key is named. */
+export async function assertContentRefsCheckedOnCreate(
+  svc: AssetTemplatesAdminService,
+  fx: Fixtures,
+): Promise<void> {
+  await expectRejection(
+    () =>
+      svc.create(fx.adminJwt, {
+        organizationId: fx.organizationId,
+        code: `${TEST_CODE}-ORPHANCREATE`,
+        name: "Orphan on create",
+        assetType: "test_rig",
+        domain: "water",
+        // The second key is in the org's *catalog* — `loadFixtures` guarantees
+        // it is active — but this template does not declare it. That is the
+        // distinction ADR 0019 §6 makes, and a catalog-scoped check would pass.
+        content: contentReferencing(fx.pointKeys[0], fx.pointKeys[1]),
+        points: [{ pointKey: fx.pointKeys[0], kind: "measured", required: true, sortOrder: 0 }],
+      }),
+    new RegExp(fx.pointKeys[1]),
+    "content referencing a catalogued point the template does not declare",
+  );
+}
+
+/**
+ * A `PATCH` carrying content but no points resolves against the **stored**
+ * points. This is the ordinary authoring case — edit the overlay, leave the tag
+ * list alone — and it is the one a request-scoped check would get wrong.
+ */
+export async function assertContentPatchResolvesAgainstStoredPoints(
+  svc: AssetTemplatesAdminService,
+  fx: Fixtures,
+  draftId: string,
+): Promise<void> {
+  const patched = await svc.update(fx.adminJwt, draftId, {
+    content: contentReferencing(fx.pointKeys[1]),
+  });
+  const content = patched.content as TemplateContentParsed;
+  assert(content.alarms?.length === 1, "the content patch must replace, not merge");
+
+  await expectRejection(
+    () =>
+      svc.update(fx.adminJwt, draftId, {
+        content: templateContentSchema.parse({
+          kpis: [
+            {
+              code: "GHOST",
+              name: "Ghost KPI",
+              pointKeys: ["not_declared_by_this_template"],
+              expression: "x",
+              dialect: "unvalidated",
+            },
+          ],
+        }),
+      }),
+    /not_declared_by_this_template/,
+    "a content patch naming an undeclared key",
+  );
+}
+
+/**
+ * The reason publish re-checks: `content` and `points` are patched
+ * independently, so replacing the point set orphans content the request never
+ * mentioned. The orphaning write **succeeds** — it validates only what it
+ * carries — and publish is what refuses.
+ *
+ * If this test ever passes because the `update` call throws, the check has been
+ * moved to the wrong place and the assertion below will say so.
+ */
+export async function assertOrphanedRefsAreCaughtAtPublish(
+  svc: AssetTemplatesAdminService,
+  fx: Fixtures,
+  draftId: string,
+): Promise<void> {
+  // Stored content references pointKeys[1]. Drop that point, mention nothing
+  // about content.
+  const orphaned = await svc.update(fx.adminJwt, draftId, {
+    points: [{ pointKey: fx.pointKeys[0], kind: "measured", required: true, sortOrder: 0 }],
+  });
+  assert(
+    orphaned.points.length === 1,
+    "the points patch must be accepted — a write validates what it carries",
+  );
+
+  await expectRejection(
+    () => svc.publish(fx.adminJwt, draftId),
+    new RegExp(fx.pointKeys[1]),
+    "publishing a template whose content was orphaned by an earlier points patch",
+  );
+
+  // And the way out is to fix the content, not to fight the check.
+  await svc.update(fx.adminJwt, draftId, { content: contentReferencing(fx.pointKeys[0]) });
+  const published = await svc.publish(fx.adminJwt, draftId);
+  assert(published.status === "published", "a repaired template must publish");
+}
+
+/**
+ * A row written before ADR 0019 holds arbitrary JSON — `F2.1` shipped this
+ * column behind `z.record(z.unknown())`. Written directly through the pool
+ * because the API can no longer produce one, which is the point.
+ *
+ * Such a row still reads. It cannot be published, because publishing puts it
+ * behind an immutable version. But forking it must still work, or the template
+ * is stranded: its published version is immutable and forking is the only route
+ * to an editable copy.
+ */
+export async function assertLegacyContentBlocksPublishButNotForking(
+  svc: AssetTemplatesAdminService,
+  pool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const legacy = { arbitrary: "shape", health: { model: "written in 2026-08" } };
+
+  const draft = await svc.create(fx.adminJwt, {
+    organizationId: fx.organizationId,
+    code: `${TEST_CODE}-LEGACY`,
+    name: "Legacy content",
+    assetType: "test_rig",
+    domain: "water",
+    points: [{ pointKey: fx.pointKeys[0], kind: "measured", required: true, sortOrder: 0 }],
+  });
+  await pool.query(`UPDATE bms.asset_templates SET content = $2::jsonb WHERE id = $1`, [
+    draft.id,
+    JSON.stringify(legacy),
+  ]);
+
+  // Reads keep working — nothing consumes `content`, so a legacy row is not a
+  // broken row.
+  const read = await svc.getById(fx.adminJwt, draft.id);
+  assert(
+    (read.content as Record<string, unknown>).arbitrary === "shape",
+    "a legacy content row must still read back unchanged",
+  );
+
+  await expectRejection(
+    () => svc.publish(fx.adminJwt, draft.id),
+    /PATCH `?content`? into conformance/i,
+    "publishing a row whose stored content predates the contract",
+  );
+
+  // The rejection must describe *structure*, not echo stored values back out.
+  // Pre-ADR content is arbitrary JSON written by whoever.
+  //
+  // The bad value goes in an **enum** field deliberately. Zod's
+  // `invalid_enum_value` message is the one that echoes what it received
+  // ("Invalid enum value. Expected 'info' | … , received 'x'"); `invalid_literal`
+  // names only the *expected* value, so asserting against that field would pass
+  // no matter how the error is built and prove nothing.
+  const secretish = "s3://internal-bucket/rotate-me";
+  await pool.query(`UPDATE bms.asset_templates SET content = $2::jsonb WHERE id = $1`, [
+    draft.id,
+    JSON.stringify({
+      alarms: [
+        {
+          code: "A",
+          pointKey: fx.pointKeys[0],
+          operator: "gt",
+          thresholdValue: 1,
+          severity: secretish,
+          message: "m",
+        },
+      ],
+    }),
+  ]);
+  let leaked: string | null = null;
+  try {
+    await svc.publish(fx.adminJwt, draft.id);
+  } catch (err) {
+    leaked = err instanceof Error ? err.message : String(err);
+  }
+  assert(leaked !== null, "invalid stored content must still block publish");
+  assert(
+    (leaked ?? "").includes("alarms.0.severity"),
+    `the error must name the offending path, got: ${leaked}`,
+  );
+  assert(
+    !(leaked ?? "").includes(secretish),
+    `the error must not echo the stored value back to the caller, got: ${leaked}`,
+  );
+  await pool.query(`UPDATE bms.asset_templates SET content = $2::jsonb WHERE id = $1`, [
+    draft.id,
+    JSON.stringify(legacy),
+  ]);
+
+  // Repairing it through the API is the documented way forward.
+  await svc.update(fx.adminJwt, draft.id, { content: contentReferencing(fx.pointKeys[0]) });
+  const published = await svc.publish(fx.adminJwt, draft.id);
+  assert(published.status === "published", "a repaired legacy row must publish");
+
+  // Now the fork case: put legacy content on the *published* row, exactly as a
+  // deployment that upgraded after publishing would have it, and confirm the
+  // fork copies it byte for byte instead of refusing.
+  await pool.query(`UPDATE bms.asset_templates SET content = $2::jsonb WHERE id = $1`, [
+    published.id,
+    JSON.stringify(legacy),
+  ]);
+  const forked = await svc.createDraftFrom(fx.adminJwt, published.id);
+  assert(
+    (forked.content as Record<string, unknown>).arbitrary === "shape",
+    "the draft fork must copy stored content verbatim — re-validating it would strand the template",
+  );
+  await expectRejection(
+    () => svc.publish(fx.adminJwt, forked.id),
+    /PATCH `?content`? into conformance/i,
+    "publishing the fork before its content is repaired",
   );
 }
 

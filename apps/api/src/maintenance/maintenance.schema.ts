@@ -17,6 +17,10 @@ export const maintenanceCategorySchema = z.enum([
   "safety_critical",
 ]);
 
+/** Extracted and exported for the same reason as the category enum — ADR 0019
+ * §4 binds a template's `content.maintenance` to this vocabulary. */
+export const maintenancePrioritySchema = z.enum(["low", "medium", "high", "critical"]);
+
 export const maintenanceGenerationModeSchema = z.enum([
   "manual",
   "calendar",
@@ -48,7 +52,7 @@ export const createMaintenanceScheduleBodySchema = z.object({
   complianceRef: z.string().max(128).optional(),
   triggerSummary: z.string().max(2000).optional(),
   safetyCritical: z.boolean().default(false),
-  priority: z.enum(["low", "medium", "high", "critical"]).default("medium"),
+  priority: maintenancePrioritySchema.default("medium"),
   estimatedMinutes: z.number().int().min(5).max(1_440).default(60),
   intervalDays: z.number().int().min(1).max(730),
   firstDueAt: z.string().datetime({ offset: true }),

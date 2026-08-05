@@ -94,19 +94,51 @@ export function runAssetTemplateSchemaTests(): void {
     );
   }
 
-  // ---- content is the E1.7 overlay surface ---------------------------------
+  // ---- content: the E1.7 overlay, as tightened by ADR 0019 -----------------
+  //
+  // This block asserted the opposite until E1.7 landed — that `content`
+  // round-tripped *arbitrary* object shapes. It did, deliberately, while the
+  // shape was unspecified. The contract itself is proven by
+  // `asset-templates-content.schema.spec.ts`; what matters here is only that the
+  // create/update bodies route `content` through it rather than past it.
 
   const withContent = createAssetTemplateBodySchema.parse({
     ...validTemplate,
-    content: { kpis: [{ code: "SEC", unit: "kWh/m3" }] },
+    content: {
+      kpis: [
+        {
+          code: "SEC",
+          name: "Specific energy",
+          unit: "kWh/m3",
+          pointKeys: ["RO_FEED_PRESSURE"],
+          expression: "power / permeate_flow",
+          dialect: "unvalidated",
+        },
+      ],
+    },
   });
   assert(
     JSON.stringify(withContent.content).includes("kWh/m3"),
-    "content must round-trip arbitrary object shapes until E1.7 tightens it",
+    "valid content must survive the create-body parse",
+  );
+  assert(
+    withContent.content?.contentVersion === 1,
+    "the create body must apply the envelope default, not pass content through untouched",
+  );
+  assert(
+    !createAssetTemplateBodySchema.safeParse({
+      ...validTemplate,
+      content: { kpis: [{ code: "SEC", unit: "kWh/m3" }] },
+    }).success,
+    "the pre-E1.7 loose shape must now be rejected — otherwise `content` bypasses the contract",
+  );
+  assert(
+    !updateAssetTemplateBodySchema.safeParse({ content: { health: {} } }).success,
+    "the update body must reject reserved sections too, not only the create body",
   );
   assert(
     !createAssetTemplateBodySchema.safeParse({ ...validTemplate, content: [] }).success,
-    "content must be an object — an array would break E1.7's keyed overlay",
+    "content must be an object — an array would break the keyed overlay",
   );
 
   // ---- required fields -----------------------------------------------------
