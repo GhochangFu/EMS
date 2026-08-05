@@ -191,6 +191,33 @@ export class AccessControlService {
     return false;
   }
 
+  /**
+   * Whether the user may author asset templates for the given organization
+   * (ADR 0015 §7).
+   *
+   * Templates are org-scoped master data, so this delegates to the same rule as
+   * `canManagePointKey` — `location_admin` is excluded, because authoring a
+   * template is an organization-wide act. It is a separate method rather than a
+   * reuse of `canManagePointKey` so that a later divergence in template policy
+   * cannot silently change point-key policy.
+   *
+   * Note the deliberate asymmetry with *instantiation*, which requires this
+   * check on the template's org AND `canManageLocation` on the target: a
+   * location admin may deploy a published org template into their own location
+   * without being able to author one. That is model-once-deploy-many.
+   */
+  async canManageTemplate(jwt: JwtPayload, organizationId: string): Promise<boolean> {
+    const user = await this.resolveDbUser(jwt);
+    this.assertMasterDataRole(user.role);
+    if (user.role === "admin") {
+      return true;
+    }
+    if (user.role === "organization_admin") {
+      return this.canManageOrganization(jwt, organizationId);
+    }
+    return false;
+  }
+
   /** Whether the user may manage the given asset (via its location). */
   async canManageAsset(jwt: JwtPayload, assetId: string): Promise<boolean> {
     const user = await this.resolveDbUser(jwt);
