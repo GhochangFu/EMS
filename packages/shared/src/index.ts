@@ -692,6 +692,39 @@ export type AdminAssetTemplateSummaryDto = Omit<AdminAssetTemplateDto, "points">
   pointCount: number;
 };
 
+/**
+ * One asset built by `F2.2` instantiation (ADR 0015 §6).
+ *
+ * `skippedPoints` names the optional measured points that produced no
+ * `asset_points` row because their `sourceDataKeyPattern` did not resolve.
+ * Required points abort the batch instead, so anything listed here was
+ * explicitly declared optional — surfaced because "12 points in, 10 rows out"
+ * is otherwise indistinguishable from a bug.
+ */
+export type InstantiatedAssetDto = {
+  id: string;
+  code: string;
+  name: string;
+  locationId: string;
+  rtuId: string | null;
+  pointCount: number;
+  skippedPoints: string[];
+};
+
+/** The result of one instantiate call — the whole batch or nothing. */
+export type AssetInstantiationResultDto = {
+  templateId: string;
+  templateCode: string;
+  templateVersion: number;
+  locationId: string;
+  rtuId: string | null;
+  /** `measured` when instantiated through an RTU, `unmapped` through a location. */
+  sourceKind: "measured" | "unmapped";
+  assets: InstantiatedAssetDto[];
+  assetCount: number;
+  pointCount: number;
+};
+
 export type AdminOrganizationSummaryDto = {
   id: string;
   code: string;

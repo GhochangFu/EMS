@@ -79,6 +79,72 @@ export const updateAssetTemplateBodySchema = z.object({
   points: templatePointsBodySchema.optional(),
 });
 
+/**
+ * One asset to build from the template (`F2.2`, ADR 0015 §6).
+ *
+ * `siteName` is optional and falls back to the target location's name. The
+ * column is `NOT NULL`, but making the caller repeat one string forty times is
+ * a transcription error waiting to happen (Amendment 1C).
+ *
+ * `sourceDataKeyVars` fills the `{token}`s in each point's
+ * `sourceDataKeyPattern` — `CH{unit}_CHW_SUPPLY_T` + `{ unit: "01" }` →
+ * `CH01_CHW_SUPPLY_T`. `{asset_code}` is always available and is *not* taken
+ * from here; see `INSTANTIATE_RESERVED_VAR` in the service.
+ */
+const instantiateAssetBodySchema = z.object({
+  code: z.string().min(1).max(64),
+  name: z.string().min(1).max(255),
+  siteName: z.string().min(1).max(255).optional(),
+  sourceDataKeyVars: z.record(z.string().max(128)).optional(),
+});
+
+/**
+ * The instantiation payload (ADR 0015 §6, as amended 2026-08-05).
+ *
+ * The target is `rtuId` **or** `locationId`, never both and never neither.
+ * ADR 0018 made `assets.rtu_id` nullable and `location_id` `NOT NULL`, so an
+ * RTU-only payload — what §6 originally specified — could not express a
+ * gateway-less asset at all. Both supplied is rejected rather than resolved by
+ * precedence: the two disagree the moment an RTU moves between locations, and
+ * silently preferring one would put assets somewhere the caller did not ask for.
+ *
+ * Duplicate codes within the batch are caught here, not by
+ * `assets_code_unique`. `bms.assets.code` is *globally* unique, so a batch
+ * carrying the same code twice fails on the second insert and rolls back all
+ * forty — with a constraint name instead of the code that collided.
+ */
+export const instantiateAssetsBodySchema = z
+  .object({
+    rtuId: z.string().uuid().optional(),
+    locationId: z.string().uuid().optional(),
+    assets: z.array(instantiateAssetBodySchema).min(1).max(200),
+  })
+  .superRefine((body, ctx) => {
+    if (Boolean(body.rtuId) === Boolean(body.locationId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["rtuId"],
+        message: body.rtuId
+          ? "Supply rtuId or locationId, not both — an RTU already determines its location"
+          : "Supply exactly one of rtuId (wired assets) or locationId (gateway-less assets)",
+      });
+    }
+
+    const seen = new Set<string>();
+    body.assets.forEach((asset, index) => {
+      if (seen.has(asset.code)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["assets", index, "code"],
+          message: `Duplicate asset code "${asset.code}" in this batch; asset codes are globally unique`,
+        });
+      }
+      seen.add(asset.code);
+    });
+  });
+
 export type CreateAssetTemplateBody = z.infer<typeof createAssetTemplateBodySchema>;
 export type UpdateAssetTemplateBody = z.infer<typeof updateAssetTemplateBodySchema>;
 export type TemplatePointBody = z.infer<typeof templatePointBodySchema>;
+export type InstantiateAssetsBody = z.infer<typeof instantiateAssetsBodySchema>;
+export type InstantiateAssetBody = z.infer<typeof instantiateAssetBodySchema>;
