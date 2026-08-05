@@ -27,8 +27,12 @@ pnpm --filter ingest build
 
 ## Environment
 
-`process.env` is read in exactly one place, `src/host/config.ts`. Adapters
-never read it at all (ADR 0016 §4).
+Adapters never read `process.env` at all (ADR 0016 §4). The **host** reads it in
+`src/host/config.ts` — and in one other place, which the table below makes
+explicit: the pilot-era `MQTT_*` credential fallback inside the unmodified
+`src/rtu-config.js`, reached through `resolveMqttConnection`. That fallback is
+currently the only working credential path, and Resolved decision 5 keeps it
+past cutover: no RTU has an `rtu_connection_configs` row to read instead.
 
 | Variable | Default | Notes |
 | --- | --- | --- |
