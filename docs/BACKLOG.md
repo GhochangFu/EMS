@@ -41,11 +41,11 @@ plus the assessment docs and `AGENTS.production.md` referenced therein.
 ## 1. Wave plan at a glance
 
 ```
-WAVE 0  enablers+quick wins: [F4.4⭐ ✅] F1.1⭐ F2.1⭐ F2.3⭐ F3.8⭐ F4.1/4.2⭐ F4.20⭐ F3.3⭐
+WAVE 0  enablers+quick wins: [F4.4⭐ ✅] [F2.1⭐ ✅] F1.1⭐ F2.3⭐ F3.8⭐ F4.1/4.2⭐ F4.20⭐ F3.3⭐
         [F4.11 ✅] [F4.12 ✅] F3.6 F1.8 F1.9 F4.24 E8.1🟡 E8.2 E8.3 E8.4
         + ADRs(E1.1, E7.1, positioning)
 WAVE 1  F1.2 F1.3 F1.4 F1.5 F1.6 F1.7 F1.10  F2.2 F2.4  F3.7 F3.10 F3.1 F3.4 F3.11
-        F4.5 F4.7 F4.8 F4.10 F4.14 F4.23  E1.7 E3.1 E5.4
+        F4.5 F4.7 F4.8 [F4.10 ✅] F4.14 F4.23  E1.7 E3.1 E5.4
 WAVE 2  F2.5 F2.6 F2.7 F2.8  F3.2 F3.16 F3.20(P1↑)  F3.21⭐  F4.6 F4.15
         E5.1 E5.2 E2.1 E1.1⭐
 WAVE 3  F3.22 F3.23 F3.24 F3.25 F3.26 F3.27  F3.12 F3.5
@@ -127,7 +127,7 @@ still safe in parallel.
 | Slot | Run in parallel | Tracks | Notes |
 |------|-----------------|--------|-------|
 | ~~**1**~~ **CLOSED** | ~~**F4.4** ⭐~~ ✅ · ~~F4.11~~ ✅ · ~~F4.12~~ ✅ · E8.1 🟡 | F | **F4.4** (ADR 0014, PR #1) — Vitest + coverage gate + `db:seed` run on every PR, so delegating to agents is safe from here. **F4.11 + F4.12** (ADR 0017, PR #2) — F4.11 shipped for operator *and* viewer once the write matrix gated the 16 mutating endpoints in rules/alarms/work-orders/maintenance, which carried `JwtAuthGuard` and no role check. **E8.1 partial** (🟡) — software scope only; the row's volume/object-storage/backup surface is deliberately *not* built, see [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md). Its review raised **E8.3** and **E8.4** as new scope. |
-| **2** | **F1.1** ⭐ · **F2.1** ⭐ · **F3.8** ⭐ | A · B · D | The three big enablers, fully independent. F2.1 is on the critical path — protect it. |
+| **2** *(part)* | ~~**F2.1** ⭐~~ ✅ · ~~F4.10~~ ✅ · **F1.1** ⭐ · **F3.8** ⭐ | B · F · A · D | **F2.1** (ADR 0015, PR #5) released the migration lock and opened the critical path — `E1.7`, `F2.2` and `F2.7` unblock. **F4.10** (PR #4) was pulled forward from wave 1: it was the only P0 in the unblocked set, and ADR 0017 names it as where the write matrix gets its end-to-end proof. `F1.1` and `F3.8` remain; `F3.8` still needs a §9.4 dependency ADR. |
 | **3** | **F2.3** ⭐ · **F4.1** ⭐ · **F3.3** ⭐ | B · F · C | Second enabler batch. F2.3 continues track B (same owner as F2.1). |
 | **4** | F1.2 · F2.2 · F3.6 | A · B · D | First dependents unlock: Modbus (needs F1.1), template instantiation (needs F2.1), alarm-engine unification (independent). |
 | **5** | F1.3 · **E1.7** · F3.7 | A · B · D | E1.7 (template content model) is **P0 critical path** — the Ion Exchange overlay surface. F3.7 needs F3.8. |
@@ -387,9 +387,9 @@ single shared file). `F3.8` needs a dependency ADR before build.
 ```mermaid
 flowchart LR
     subgraph W0["Wave 0 · Enablers"]
-        F44["F4.4 Test runner+CI ⭐"]
+        F44["F4.4 Test runner+CI ⭐ ✅"]
         F11["F1.1 Adapter fw ⭐"]
-        F21["F2.1 Templates ⭐"]
+        F21["F2.1 Templates ⭐ ✅"]
         F23["F2.3 Calc DSL ⭐"]
         F38["F3.8 Notifications ⭐"]
         F41["F4.1 Aggregates ⭐"]
