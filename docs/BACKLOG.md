@@ -159,6 +159,24 @@ Re-derived from the `Depends` column after `F4.4`, `F4.11` and `F4.12` went
 `F4.4`. `F3.21` lists "create APIs, F4.4"; the `F4.4` half is now satisfied but
 the create APIs are not, so it stays blocked and slot 10 is unchanged.
 
+### ADR 0018 landed (2026-08-05, PR #3)
+
+The telemetry-source axis is now separate from the spatial axis:
+`assets.location_id` is `NOT NULL`, `assets.rtu_id` is nullable, and provenance
+lives on `asset_points` (`rtu_id` + `source_kind`).
+
+**`F1.8` and `F1.9` become genuinely buildable.** Both were listed with no
+`Depends`, so the table already called them eligible — but the schema forbade
+the thing they require: an asset with no gateway. That is the failure mode this
+board cannot express, because `Depends` tracks *features*, not *constraints*.
+Worth remembering when reading any other "eligible" row.
+
+Still out of scope and belonging to the companion ADR: location depth
+(`locations.parent_id`), asset composition (`parent_asset_id`), and the
+Eskom-era `locations.type` union. That ADR is unblocked on its design question
+— a grant on a parent location **does** imply its descendants, recorded in ADR
+0018 — but has not been written.
+
 Slot 2 (`F1.1` ⭐ · `F2.1` ⭐ · `F3.8` ⭐) remains the recommended next batch —
 these are the enablers that unblock the most downstream work. `F2.1` holds the
 migration lock (one migration-bearing job at a time; the drizzle journal is a
@@ -189,8 +207,8 @@ single shared file). `F3.8` needs a dependency ADR before build.
 | ID | Feature | P | Effort | Wave | Depends | Status |
 |----|---------|---|--------|------|---------|--------|
 | **F1.1** | Ingest adapter framework (`IngestAdapter`, pluggable) ⭐ | P0 | 4–5 | 0 | — | ⬜ |
-| F1.8 | Manual time-series entry API + UI | P0 | 2–3 | 0 | — | ⬜ |
-| F1.9 | Telemetry history bulk import (CSV/Excel) | P0 | 3–4 | 0 | — | ⬜ |
+| F1.8 | Manual time-series entry API + UI. **Genuinely buildable as of ADR 0018** — `assets.rtu_id` was `NOT NULL`, so an asset with no gateway could not exist and a hand-entered reading had nowhere to live. Points now carry `source_kind = 'manual'` | P0 | 2–3 | 0 | — | ⬜ |
+| F1.9 | Telemetry history bulk import (CSV/Excel). **Genuinely buildable as of ADR 0018** — same constraint; imported points may also land as `'unmapped'` before their gateway is wired | P0 | 3–4 | 0 | — | ⬜ |
 | F1.2 | Modbus TCP/RTU adapter | P0 | 10–12 | 1 | F1.1 | ⬜ |
 | F1.3 | BACnet/IP read adapter | P0 | 10–12 | 1 | F1.1 | ⬜ |
 | F1.4 | OPC-UA subscription adapter | P1 | 10–14 | 1 | F1.1 | ⬜ |
