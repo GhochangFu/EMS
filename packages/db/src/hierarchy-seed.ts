@@ -146,13 +146,22 @@ export async function assignEskomAssetRtus(pool: pg.Pool): Promise<void> {
   }
 }
 
-/** Sets NOT NULL on hierarchy FK columns after seed backfill. */
+/**
+ * Sets NOT NULL on hierarchy FK columns after seed backfill.
+ *
+ * ADR 0018 inverted the asset polarities: `location_id` is now mandatory and
+ * `rtu_id` is not. This function used to run
+ * `ALTER TABLE bms.assets ALTER COLUMN rtu_id SET NOT NULL`, which would have
+ * silently re-applied the old constraint on every `db:seed` and undone
+ * migration 0023 — including in CI, which runs `db:migrate` then `db:seed`.
+ * A migration is not the last word on schema here; this is. Do not re-add it.
+ */
 export async function enforceHierarchyNotNull(pool: pg.Pool): Promise<void> {
-  const orphans = await pool.query<{ n: string }>(`
-    SELECT COUNT(*)::text AS n FROM bms.assets WHERE rtu_id IS NULL
+  const assetOrphans = await pool.query<{ n: string }>(`
+    SELECT COUNT(*)::text AS n FROM bms.assets WHERE location_id IS NULL
   `);
-  if (Number(orphans.rows[0]?.n ?? "0") > 0) {
-    throw new Error("Cannot enforce NOT NULL: assets without rtu_id remain");
+  if (Number(assetOrphans.rows[0]?.n ?? "0") > 0) {
+    throw new Error("Cannot enforce NOT NULL: assets without location_id remain");
   }
   const locOrphans = await pool.query<{ n: string }>(`
     SELECT COUNT(*)::text AS n FROM bms.locations WHERE organization_id IS NULL
@@ -161,7 +170,7 @@ export async function enforceHierarchyNotNull(pool: pg.Pool): Promise<void> {
     throw new Error("Cannot enforce NOT NULL: locations without organization_id remain");
   }
   await pool.query(`
-    ALTER TABLE bms.assets ALTER COLUMN rtu_id SET NOT NULL
+    ALTER TABLE bms.assets ALTER COLUMN location_id SET NOT NULL
   `);
   await pool.query(`
     ALTER TABLE bms.locations ALTER COLUMN organization_id SET NOT NULL

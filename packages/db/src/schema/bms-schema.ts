@@ -94,10 +94,16 @@ export const assets = bmsSchema.table("assets", {
   code: varchar("code", { length: 64 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   siteName: varchar("site_name", { length: 255 }).notNull(),
-  locationId: uuid("location_id").references(() => locations.id),
-  rtuId: uuid("rtu_id")
+  // ADR 0018: an asset must be somewhere, and need not be wired. `location_id`
+  // is the column every scoped authorization check filters on, so a nullable
+  // one made an asset silently invisible to location-scoped users. `rtu_id` is
+  // a communications reference, not a containment edge — telemetry provenance
+  // lives on `asset_points` so one asset can mix measured, manual and computed
+  // points. Do not restore NOT NULL here without reading ADR 0018.
+  locationId: uuid("location_id")
     .notNull()
-    .references(() => rtus.id),
+    .references(() => locations.id),
+  rtuId: uuid("rtu_id").references(() => rtus.id),
   domain: varchar("domain", { length: 64 }).notNull().default("electrical"),
   active: boolean("active").notNull().default(true),
   meta: jsonb("meta"),
@@ -140,6 +146,12 @@ export const assetPoints = bmsSchema.table("asset_points", {
     .references(() => assets.id),
   pointKey: varchar("point_key", { length: 128 }).notNull(),
   sourceDataKey: varchar("source_data_key", { length: 128 }).notNull(),
+  // ADR 0018: telemetry provenance binds at the point, not the asset. A null
+  // `rtuId` is ambiguous on its own — `sourceKind` says whether the point is
+  // unmapped, hand-entered or derived. Enforced by asset_points_source_ref_check:
+  // `measured` requires an rtuId; `manual`/`computed` require none.
+  rtuId: uuid("rtu_id").references(() => rtus.id),
+  sourceKind: varchar("source_kind", { length: 16 }).notNull().default("measured"),
   sensorCode: varchar("sensor_code", { length: 64 }),
   unit: varchar("unit", { length: 32 }),
   active: boolean("active").notNull().default(true),

@@ -591,11 +591,13 @@ export type AdminAssetDto = {
   code: string;
   name: string;
   siteName: string;
-  locationId: string | null;
+  // ADR 0018: location is mandatory, gateway is optional. An asset with no
+  // gateway is a first-class asset whose points are hand-entered or computed.
+  locationId: string;
   locationName: string | null;
   organizationCode: string | null;
-  rtuId: string;
-  rtuDisplayName: string;
+  rtuId: string | null;
+  rtuDisplayName: string | null;
   domain: string;
   active: boolean;
   meta: Record<string, unknown> | null;
@@ -660,10 +662,10 @@ export type AdminAssetSummaryDto = {
   id: string;
   code: string;
   name: string;
-  locationId: string | null;
+  locationId: string;
   locationName: string | null;
-  rtuId: string;
-  rtuDisplayName: string;
+  rtuId: string | null;
+  rtuDisplayName: string | null;
   organizationId: string | null;
   organizationCode: string | null;
 };

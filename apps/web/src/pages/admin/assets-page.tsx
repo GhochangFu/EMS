@@ -219,7 +219,9 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                           name: item.name,
                           siteName: item.siteName,
                           locationId: item.locationId ?? "",
-                          rtuId: item.rtuId,
+                          // ADR 0018: gateway is optional — an empty select
+                          // means "no gateway", not "not yet loaded".
+                          rtuId: item.rtuId ?? "",
                           domain: item.domain,
                         });
                         setModalOpen(true);
