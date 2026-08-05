@@ -283,15 +283,24 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
         const pointKey = bmsPointKeyForSensor(sensor.SensorCode, sensor.DataKey);
         await pool.query(
           `
+          -- ADR 0018: provenance binds at the point. These are measured points
+          -- fed by the asset's gateway, so rtu_id is taken from the asset —
+          -- asset_points_source_ref_check rejects a 'measured' row without one.
           INSERT INTO bms.asset_points (
-            asset_id, point_key, source_data_key, sensor_code, unit, active
+            asset_id, point_key, source_data_key, sensor_code, unit, active,
+            rtu_id, source_kind
           )
-          VALUES ($1, $2, $3, $4, $5, true)
+          VALUES (
+            $1, $2, $3, $4, $5, true,
+            (SELECT rtu_id FROM bms.assets WHERE id = $1), 'measured'
+          )
           ON CONFLICT (asset_id, point_key) DO UPDATE SET
             source_data_key = EXCLUDED.source_data_key,
             sensor_code = EXCLUDED.sensor_code,
             unit = EXCLUDED.unit,
-            active = true
+            active = true,
+            rtu_id = EXCLUDED.rtu_id,
+            source_kind = EXCLUDED.source_kind
           `,
           [assetId, pointKey, sensor.DataKey, sensor.SensorCode, unitLabel(sensor.UnitCode)],
         );

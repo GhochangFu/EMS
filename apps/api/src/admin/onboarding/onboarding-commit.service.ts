@@ -180,6 +180,9 @@ export class OnboardingCommitService {
       }
 
       const assetIds: string[] = [];
+      // ADR 0018: points carry their own provenance, so remember which gateway
+      // feeds each asset as we create it. Parallel to `assetIds` by index.
+      const assetRtuIds: string[] = [];
       for (const assetDraft of draft.assets ?? []) {
         const rtuId = rtuIds[assetDraft.rtuIndex];
         if (!rtuId) {
@@ -199,6 +202,7 @@ export class OnboardingCommitService {
           })
           .returning();
         assetIds.push(assetRow.id);
+        assetRtuIds.push(rtuId);
       }
 
       const assetPointIds: string[] = [];
@@ -207,6 +211,10 @@ export class OnboardingCommitService {
         if (!assetId) {
           throw new BadRequestException("Invalid assetPoint assetIndex");
         }
+        // ADR 0018: the wizard always wires an asset to an RTU, so these are
+        // measured points fed by that gateway. asset_points_source_ref_check
+        // rejects 'measured' without a source reference.
+        const sourceRtuId = assetRtuIds[ap.assetIndex] ?? null;
         const [apRow] = await tx
           .insert(assetPoints)
           .values({
@@ -216,6 +224,8 @@ export class OnboardingCommitService {
             sensorCode: ap.sensorCode ?? null,
             unit: ap.unit ?? null,
             active: true,
+            rtuId: sourceRtuId,
+            sourceKind: sourceRtuId ? "measured" : "unmapped",
           })
           .returning();
         assetPointIds.push(apRow.id);

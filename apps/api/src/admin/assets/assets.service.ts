@@ -64,7 +64,7 @@ export class AssetsAdminService {
       .from(assets)
       .leftJoin(locations, eq(assets.locationId, locations.id))
       .leftJoin(organizations, eq(locations.organizationId, organizations.id))
-      .innerJoin(rtus, eq(assets.rtuId, rtus.id))
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(asc(assets.code));
 
@@ -88,7 +88,7 @@ export class AssetsAdminService {
       .from(assets)
       .leftJoin(locations, eq(assets.locationId, locations.id))
       .leftJoin(organizations, eq(locations.organizationId, organizations.id))
-      .innerJoin(rtus, eq(assets.rtuId, rtus.id))
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
       .where(eq(assets.id, id))
       .limit(1);
     if (!row) {
@@ -122,7 +122,7 @@ export class AssetsAdminService {
         name: body.name,
         siteName: body.siteName,
         locationId: body.locationId,
-        rtuId: body.rtuId,
+        rtuId: body.rtuId ?? null,
         domain: body.domain,
         meta: body.meta ?? null,
         active: true,
@@ -154,9 +154,22 @@ export class AssetsAdminService {
     }
 
     const nextLocationId = body.locationId ?? existing.locationId;
-    const nextRtuId = body.rtuId ?? existing.rtuId;
-    if (!nextLocationId) {
-      throw new BadRequestException("Asset must have a location");
+    // `undefined` means "leave alone"; an explicit `null` unwires the asset
+    // (ADR 0018), which `??` alone could not express.
+    const nextRtuId = body.rtuId === undefined ? existing.rtuId : body.rtuId;
+
+    // Authorize the DESTINATION, not just the asset's current home.
+    // `canManageAsset` above resolves through the asset's *existing* location,
+    // so without this a location_admin could relocate an asset they own into a
+    // location they do not, handing it to that location's users.
+    //
+    // Before ADR 0018 this was accidentally covered: rtu_id was NOT NULL, so
+    // `assertRtuLocation` always ran and required the RTU to live in the
+    // destination — and RTU ids are scope-filtered. Making rtu_id nullable
+    // removed that side effect, so the check has to be explicit. `create()`
+    // has always done this (see above); `update()` was the outlier.
+    if (body.locationId && !(await this.accessControl.canManageLocation(jwt, nextLocationId))) {
+      throw new ForbiddenException("Location is outside your access scope");
     }
     await this.assertRtuLocation(nextRtuId, nextLocationId);
 
@@ -219,7 +232,19 @@ export class AssetsAdminService {
     return this.fetchRow(id);
   }
 
-  private async assertRtuLocation(rtuId: string, locationId: string): Promise<void> {
+  /**
+   * Asserts an asset's gateway lives in the same location as the asset.
+   *
+   * ADR 0018 made the gateway optional, so a null id is not an error — it means
+   * the asset's points are hand-entered or computed. There is nothing to check.
+   */
+  private async assertRtuLocation(
+    rtuId: string | null | undefined,
+    locationId: string,
+  ): Promise<void> {
+    if (!rtuId) {
+      return;
+    }
     const [rtu] = await this.db
       .select({ locationId: rtus.locationId })
       .from(rtus)
@@ -244,7 +269,7 @@ export class AssetsAdminService {
       .from(assets)
       .leftJoin(locations, eq(assets.locationId, locations.id))
       .leftJoin(organizations, eq(locations.organizationId, organizations.id))
-      .innerJoin(rtus, eq(assets.rtuId, rtus.id))
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
       .where(eq(assets.id, id))
       .limit(1);
     if (!row) {
@@ -257,7 +282,7 @@ export class AssetsAdminService {
     asset: typeof assets.$inferSelect;
     locationName: string | null;
     organizationCode: string | null;
-    rtuDisplayName: string;
+    rtuDisplayName: string | null;
   }): AdminAssetDto {
     const asset = row.asset;
     return {

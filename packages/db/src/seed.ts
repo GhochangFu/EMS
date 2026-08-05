@@ -485,6 +485,19 @@ async function main(): Promise<void> {
     const assetRows: { id: string; code: string }[] = [];
     for (const a of sampleAssets) {
       const rtuId = await resolveEskomSimRtuId(pool, a.siteName, a.domain);
+      // ADR 0018: assets.location_id is NOT NULL from migration 0023 onward, so
+      // it must be supplied at insert time. This seed used to leave it null and
+      // rely on hierarchy-seed backfilling it before the constraint was applied
+      // at the very end — an ordering that only worked because the constraint
+      // did not exist yet. On a fresh database it now fails on the first row.
+      const rtuLoc = await pool.query<{ location_id: string }>(
+        `SELECT location_id FROM bms.rtus WHERE id = $1`,
+        [rtuId],
+      );
+      const locationId = rtuLoc.rows[0]?.location_id;
+      if (!locationId) {
+        throw new Error(`RTU ${rtuId} has no location; cannot seed asset ${a.code}`);
+      }
       const row = await db
         .select({ id: assets.id })
         .from(assets)
@@ -497,6 +510,7 @@ async function main(): Promise<void> {
             name: a.name,
             siteName: a.siteName,
             domain: a.domain,
+            locationId,
             rtuId,
             meta: "meta" in a ? a.meta : { telemetrySource: "simulator" },
           })
@@ -511,6 +525,7 @@ async function main(): Promise<void> {
           name: a.name,
           siteName: a.siteName,
           domain: a.domain,
+          locationId,
           rtuId,
           meta: "meta" in a ? a.meta : { telemetrySource: "simulator" },
         })
@@ -1400,7 +1415,7 @@ async function main(): Promise<void> {
     }
 
     await enforceHierarchyNotNull(pool);
-    const { verifyHierarchySeed } = await import("./verify-hierarchy-seed");
+    const { verifyHierarchySeed } = await import("./verify-hierarchy-seed.js");
     await verifyHierarchySeed(pool);
   } finally {
     await pool.end();

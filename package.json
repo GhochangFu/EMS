@@ -9,7 +9,7 @@
     "db:migrate": "pnpm --filter @bms/db migrate",
     "db:seed": "pnpm --filter @bms/db seed",
     "db:generate": "pnpm --filter @bms/db generate",
-    "typecheck:tests": "pnpm --filter api exec tsc -p tsconfig.json --noEmit && tsc --noEmit --module esnext --moduleResolution bundler --target es2022 --skipLibCheck vitest.config.ts apps/api/vitest.config.ts apps/web/vitest.config.ts apps/ingest/vitest.config.ts tests/repo-invariants.test.ts",
+    "typecheck:tests": "pnpm --filter api exec tsc -p tsconfig.json --noEmit && tsc -p packages/db/tsconfig.json --noEmit && tsc --noEmit --module esnext --moduleResolution bundler --target es2022 --skipLibCheck vitest.config.ts apps/api/vitest.config.ts apps/web/vitest.config.ts apps/ingest/vitest.config.ts tests/repo-invariants.test.ts tests/adr-0018-source-axis.test.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

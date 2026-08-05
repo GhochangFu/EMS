@@ -55,7 +55,9 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
       setSelection({
         organizationId: assetSummaryQ.data.organizationId ?? undefined,
         locationId: assetSummaryQ.data.locationId ?? undefined,
-        rtuId: assetSummaryQ.data.rtuId,
+        // ADR 0018: an asset need not have a gateway. `undefined` leaves the
+        // RTU filter unset rather than selecting a non-existent one.
+        rtuId: assetSummaryQ.data.rtuId ?? undefined,
         assetId,
       });
       setForm((current) => ({ ...current, assetId }));

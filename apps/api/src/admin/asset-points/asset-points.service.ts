@@ -85,6 +85,17 @@ export class AssetPointsAdminService {
 
     const catalog = await this.resolveCatalogPointKey(body.assetId, body.pointKey);
 
+    // ADR 0018: provenance binds at the point. Inherit the asset's gateway —
+    // a point mapped through this endpoint is fed by whatever feeds its asset.
+    // With no gateway the honest record is `unmapped`, not `manual`: nobody
+    // claimed this point is hand-entered, only that no source is known yet.
+    const [ownerAsset] = await this.db
+      .select({ rtuId: assets.rtuId })
+      .from(assets)
+      .where(eq(assets.id, body.assetId))
+      .limit(1);
+    const sourceRtuId = ownerAsset?.rtuId ?? null;
+
     const [created] = await this.db
       .insert(assetPoints)
       .values({
@@ -94,6 +105,8 @@ export class AssetPointsAdminService {
         sensorCode: body.sensorCode ?? null,
         unit: body.unit ?? catalog.unit,
         active: true,
+        rtuId: sourceRtuId,
+        sourceKind: sourceRtuId ? "measured" : "unmapped",
       })
       .returning();
 

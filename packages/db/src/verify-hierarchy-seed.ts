@@ -28,7 +28,11 @@ export async function verifyHierarchySeed(pool: pg.Pool): Promise<void> {
       (SELECT COUNT(*)::text FROM bms.asset_points ap
         INNER JOIN bms.assets a ON a.id = ap.asset_id
         WHERE a.code LIKE 'PHE-%') AS phe_points,
-      (SELECT COUNT(*)::text FROM bms.assets WHERE rtu_id IS NULL) AS orphan_assets,
+      -- ADR 0018: a null rtu_id is legal — an asset need not be wired. The
+      -- axis that must never be null is the spatial one, because every scoped
+      -- authorization check filters on it. Asserting the old invariant here
+      -- would turn db:seed red on the first gateway-less asset from F1.8/F1.9.
+      (SELECT COUNT(*)::text FROM bms.assets WHERE location_id IS NULL) AS orphan_assets,
       (SELECT COUNT(*)::text FROM bms.assets a
         INNER JOIN bms.rtus r ON r.id = a.rtu_id
         WHERE a.location_id IS DISTINCT FROM r.location_id) AS loc_mismatch
@@ -59,7 +63,7 @@ export async function verifyHierarchySeed(pool: pg.Pool): Promise<void> {
     errors.push(`PHE asset_points: expected 264, got ${row.phe_points}`);
   }
   if (Number(row.orphan_assets) !== 0) {
-    errors.push(`assets without rtu_id: ${row.orphan_assets}`);
+    errors.push(`assets without location_id: ${row.orphan_assets}`);
   }
   if (Number(row.loc_mismatch) !== 0) {
     errors.push(`asset/RTU location mismatch: ${row.loc_mismatch}`);

@@ -98,8 +98,11 @@ export type LocationDashboardDto = LocationKpiSummary & {
       code: string;
       name: string;
       domain: string;
-      rtuId: string;
-      rtuDisplayName: string;
+      // ADR 0018: null for a gateway-less asset. The dashboard LEFT JOINs rtus
+      // so such an asset still appears with its alarms; declaring these
+      // non-null would be a contract the query cannot honour.
+      rtuId: string | null;
+      rtuDisplayName: string | null;
       latestKw: number | null;
       latestTelemetryAt: string | null;
       freshness: "live" | "stale" | "none";
@@ -591,11 +594,13 @@ export type AdminAssetDto = {
   code: string;
   name: string;
   siteName: string;
-  locationId: string | null;
+  // ADR 0018: location is mandatory, gateway is optional. An asset with no
+  // gateway is a first-class asset whose points are hand-entered or computed.
+  locationId: string;
   locationName: string | null;
   organizationCode: string | null;
-  rtuId: string;
-  rtuDisplayName: string;
+  rtuId: string | null;
+  rtuDisplayName: string | null;
   domain: string;
   active: boolean;
   meta: Record<string, unknown> | null;
@@ -660,10 +665,10 @@ export type AdminAssetSummaryDto = {
   id: string;
   code: string;
   name: string;
-  locationId: string | null;
+  locationId: string;
   locationName: string | null;
-  rtuId: string;
-  rtuDisplayName: string;
+  rtuId: string | null;
+  rtuDisplayName: string | null;
   organizationId: string | null;
   organizationCode: string | null;
 };
