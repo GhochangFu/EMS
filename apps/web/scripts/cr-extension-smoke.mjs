@@ -119,7 +119,10 @@ const checks = [
     ],
   },
   {
-    file: "../../packages/db/src/seed.ts",
+    // `seed.ts` was split into sibling `*-seed.ts` modules to stay under the
+    // AGENTS.md §4.5 line cap; the rule needles moved to one file and the asset
+    // needles to another, so the check follows them rather than the old path.
+    file: "../../packages/db/src/automation-rules-seed.ts",
     expected: [
       "CR_BATT_1_TEMP_WARNING",
       "CR_BATT_2_TEMP_WARNING",
@@ -145,6 +148,14 @@ const checks = [
       'operator: "gte"',
       'operator: "lt"',
       'operator: "eq"',
+    ],
+  },
+  {
+    file: "../../packages/db/src/eskom-assets-seed.ts",
+    expected: [
+      "CR-ENV-OP-CONSOLE",
+      "CR-LEAK-01",
+      "CR-SMOKE-01",
       'domain: "hvac"',
       'domain: "environment"',
     ],
