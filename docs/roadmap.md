@@ -714,8 +714,39 @@ Process (`AGENTS.md` §10).
   reviewed. F2.1 defined the predicate and never exercised it; F2.2 was the
   first code to call it, and that is when the contradiction surfaced.
 - **Unblocks:** nothing immediately — `F2.6` also needs `F2.4` and `F3.22` also
-  needs `F3.21`. The critical path's next move is **E1.7**.
+  needs `F3.21`. The critical path's next move was **E1.7**, below.
 - **Mirrored into:** AGENTS.md §2 Asset templates row, §3, §4.7, §6.
+
+### Template content model (E1.7) — done
+- **Status:** done (ADR 0019, PR #9). No DDL, no new dependency.
+- **Delivered:** `asset_templates.content` tightened from `z.record(z.unknown())`
+  into a contract **tiered by whether a consumer exists**:
+  - *Bound* — `alarms` and `maintenance` import their enums from
+    `rules.schema.ts` and `maintenance.schema.ts` rather than restating them, so
+    a template cannot author an alarm the rule engine cannot run.
+  - *Anchored* — `kpis` carry an opaque `expression` behind a
+    `dialect: "unvalidated"` discriminator (`F2.3` owns formula syntax);
+    `dashboards` carry ordered point keys and nothing else (`F3.1` owns the
+    widget vocabulary).
+  - *Reserved* — `health` and `optimisation` are **rejected**, each naming its
+    own blocking item (`E1.1`, `E1.6`).
+  Reference validation runs on create, update and publish; publish also
+  re-parses stored content, because `content` and `points` are patched
+  independently and a points patch can orphan content the request never
+  mentioned.
+- **Deliberately not delivered:** nothing converts a template alarm into a
+  `bms.automation_rules` row (that needs `ruleType`/`condition`/`action`), and
+  nothing materialises a maintenance plan into `bms.maintenance_task_templates`
+  (its `asset_id` is `NOT NULL`). This is the authoring surface; deploying it is
+  `E2.x`/`E3.x` work with its own ADR.
+- **Notable:** `E1.7`'s backlog row promises six things, and five of the six
+  consumers did not exist on `main`. The item is really five reopenings gated on
+  five different future items — `F2.3`, `F3.1`, `E1.1`, `E1.6`, `E2.1` — not one
+  feature. Checking consumer state before designing changed the shape entirely.
+- **Unblocks:** **`E5.1`** (water-treatment domain pack — P0 flagship, Ion
+  Exchange's core business), plus `E5.2` and `E5.3`. `E2.2` and `E1.3` stay
+  blocked on `E2.1` and `E1.1` respectively.
+- **Owed:** the AGENTS.md §2 promotion, in its own `chore(agents):` PR (§9.10).
 
 ### Ingest adapter framework (F1.1) — interface accepted, not built
 - **Status:** ADR 0016 accepted; **implementation not started**
