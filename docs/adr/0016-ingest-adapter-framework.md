@@ -929,3 +929,32 @@ signature back stops the build rather than silently re-breaking the fan-out.
 
 §7's author checklist is unchanged: adapters still export a Zod `configSchema`
 and `deviceSchema`, and may now use defaults in them.
+
+## Amendment 2 — `@types/pg` in `apps/ingest` (2026-08-05)
+
+The Dependencies section above states "This ADR covers exactly two". Building
+the host (§6 commit 2) needs a third, and it is recorded here rather than
+slipped into a manifest.
+
+- **`@types/pg` `^8.11.10`** in `apps/ingest` **devDependencies**.
+
+Same category as the other two: **already-approved library, new consumer.** It
+is already a devDependency of `apps/api` and of `packages/db` at this exact
+version. `pg` itself has been a runtime dependency of `apps/ingest` since
+ADR 0007 — only the type declarations are new, and they are erased at emit, so
+this adds no runtime code and no transitive runtime footprint.
+
+Why it cannot be left to the root: `apps/ingest/Dockerfile` runs
+`pnpm install --filter ingest...`, which does not install root devDependencies,
+and then `pnpm --filter ingest build`. Without the declaration in this
+package's own manifest the image build fails on `new pg.Pool(…)` under
+`strict` — the same reason `typescript` had to be declared explicitly rather
+than inherited.
+
+The alternative considered was hand-writing a structural type for the slice of
+`pg` the host uses. `bindings.ts` and `normaliser.ts` already do exactly that
+for their *arguments* (`BindingQueryable`, `QueryableClient`), which is what
+keeps them database-free in tests — but `main.ts` has to **construct** a real
+`pg.Pool`, and a hand-written ambient declaration for a third-party
+constructor is a silent-drift generator: it keeps compiling after the library
+changes shape. The published types are the honest option.
