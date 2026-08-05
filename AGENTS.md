@@ -552,9 +552,10 @@ Step 5 still holds for `AGENTS.production.md`-sourced promotions, where no
 ADR gate precedes the feature. **The gate that must never be skipped is the
 ADR itself, not the bookkeeping in this file.**
 
-Sweeps are batched: one `chore(agents):` PR may discharge several owed
-promotions, since §9.10's requirement is separation from *feature* commits,
-not one PR per item.
+**One owed promotion per `chore(agents):` PR.** Batching several into one
+sweep makes the diff harder to review precisely when it is the rulebook being
+changed, and §9.10's wording does not clearly permit it. If a batch is ever
+warranted, ask first — it is not the default and not an agent's call.
 
 ---
 

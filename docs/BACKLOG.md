@@ -541,9 +541,14 @@ flowchart LR
 | Per-feature ADRs | each promotion | Standard AGENTS.md §10 flow (Modbus/BACnet libs, `bullmq`, `nodemailer`, `minio`, …). |
 
 **Owed `chore(agents):` promotions** — ✅ **cleared 2026-08-05** in one
-`chore(agents):` PR, which is what AGENTS.md §9.10 actually requires ("update
-this file only via a PR prefixed `chore(agents): ...`"); the constraint is
-separation from *feature* commits, not one PR per item.
+`chore(agents):` PR (#8).
+
+That batching was a **one-off, allowed by explicit human decision** to discharge
+a backlog that had accumulated across five ADRs. It is **not** the rule going
+forward: AGENTS.md §10.1 now says one owed promotion per `chore(agents):` PR,
+and batching needs to be asked for. An agent had read §9.10's "a PR prefixed
+`chore(agents): ...`" permissively and then written that reading into the
+rulebook — convenient, and not clearly what §9.10 says.
 
 | Owed | Source | Landed as |
 |------|--------|-----------|
@@ -566,7 +571,9 @@ rulebook edit riding in the feature PR, so it can only land after. Review
 found step 5 has **never** been followed: `379fac6` landed after `70b6bf7`,
 `492bd1a` after `f954958`. New **§10.1** describes what actually happens, so
 the next sweep does not deviate silently again. The ADR gate itself is
-unchanged and still precedes the feature.
+unchanged and still precedes the feature. §10.1 covers ADR-sourced origin and
+the inverted step 5 only — a third clause permitting batched sweeps was
+proposed and **rejected**; §10.1 requires one promotion per PR instead.
 
 **Still owed, and deliberately not bundled here:** the retro ADR for E8.1's
 encryption boundary and the ADR 0016 cutover owner for
