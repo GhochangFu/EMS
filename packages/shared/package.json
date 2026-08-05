@@ -9,6 +9,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.js"
+    },
+    "./ingest": {
+      "types": "./dist/ingest.d.ts",
+      "import": "./dist/ingest.js",
+      "require": "./dist/ingest.js"
     }
   },
   "scripts": {

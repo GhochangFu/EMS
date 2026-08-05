@@ -36,6 +36,10 @@ export default defineConfig({
         "apps/api/src/**/*.ts",
         "apps/web/src/lib/**/*.ts",
         "apps/ingest/src/**/*.js",
+        // `F1.1` is migrating `apps/ingest` to TypeScript (ADR 0016 §6). Added
+        // now, while the TS surface is small, so the host lands *inside* the
+        // coverage denominator rather than invisible to it.
+        "apps/ingest/src/**/*.ts",
       ],
       // Vitest excludes `*.spec.*` and `*.test.*` from coverage by default and
       // that cannot be overridden by listing them here — verified empirically:

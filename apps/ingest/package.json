@@ -4,11 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
+    "@bms/shared": "workspace:*",
     "dotenv": "^16.4.7",
     "mqtt": "^5.10.4",
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.3"
   }
 }

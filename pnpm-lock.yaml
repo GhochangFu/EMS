@@ -135,6 +135,9 @@ importers:
 
   apps/ingest:
     dependencies:
+      '@bms/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1
@@ -144,6 +147,13 @@ importers:
       pg:
         specifier: ^8.13.1
         version: 8.20.0
+      zod:
+        specifier: ^3.24.1
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ~5.7.3
+        version: 5.7.3
 
   apps/sim:
     dependencies:
