@@ -880,3 +880,52 @@ Both must be widened to `.ts` in the PR that introduces the TypeScript layer.
 Shipping the layer without them recreates precisely the orphaned-artefact class
 this repository has now hit three times (migrations 0018/0021/0022, two
 unwrapped specs, and `protocol_catalog`).
+
+## Amendment 1 — `configSchema` / `deviceSchema` input type (2026-08-05)
+
+Found while building the host (§6 commit 2), by the first adapter written
+against the frozen interface.
+
+§1 declares:
+
+```ts
+readonly configSchema: ZodType<TConfig>;
+readonly deviceSchema: ZodType<TDevice>;
+```
+
+`ZodType` takes three parameters — `ZodType<Output, Def, Input>` — and `Input`
+**defaults to `Output`**. So `ZodType<TConfig>` means "a schema whose input type
+equals its output type", which excludes every schema built with `.default()`,
+`.transform()`, or an optional-with-fallback: those deliberately accept an input
+in which the defaulted fields are absent.
+
+This is not a corner case. The MQTT adapter in this same ADR needs
+
+```ts
+rejectUnauthorized: z.boolean().default(true)
+```
+
+to carry `index.js`'s `MQTT_TLS_REJECT_UNAUTHORIZED !== "false"` behaviour, and
+it failed to compile against the signature above. Every one of `F1.2`–`F1.6`
+would have hit the same wall on its first schema, five times over, against an
+interface whose entire purpose is to be built against in parallel.
+
+**Amended to:**
+
+```ts
+readonly configSchema: ZodType<TConfig, ZodTypeDef, unknown>;
+readonly deviceSchema: ZodType<TDevice, ZodTypeDef, unknown>;
+```
+
+`unknown` is also the honest input type: the host parses
+`bms.rtu_connection_configs.config`, which is untrusted JSONB, and the parse is
+exactly where that becomes a `TConfig`.
+
+This is a **widening** — every schema that satisfied the original signature
+still satisfies this one — so no existing code changes and nothing already
+written against §1 is invalidated. `apps/ingest/src/adapter/types.spec.ts`
+carries fixtures using `.default()` and `.transform()`, so tightening the
+signature back stops the build rather than silently re-breaking the fan-out.
+
+§7's author checklist is unchanged: adapters still export a Zod `configSchema`
+and `deviceSchema`, and may now use defaults in them.
