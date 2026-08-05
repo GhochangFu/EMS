@@ -84,8 +84,13 @@ function shortLabel(label: string): string {
 type AppShellProps = {
   user: AuthUser;
   children: ReactNode;
-  /** When set, replaces the default KPI ribbon placeholder (Sprint 3 dashboard). */
-  kpiRibbon?: ReactNode;
+  /**
+   * Breadcrumb/KPI strip above the page body, matching the mockups' ribbon row
+   * (`TRINETRA.html` `shell(...)` second argument). Required: every screen the
+   * shell renders is post-authentication, so there is no state in which the
+   * strip has nothing to say.
+   */
+  kpiRibbon: ReactNode;
 };
 
 export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
@@ -302,14 +307,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
         <main className="flex min-w-0 flex-1 flex-col">
           <section className="flex min-h-14 shrink-0 items-center border-b border-gray-200 bg-white px-4 py-2 text-xs text-bms-muted shadow-sm">
             <div className="flex w-full flex-wrap items-center gap-3">
-              {kpiRibbon ?? (
-                <>
-                <span className="rounded bg-gray-100 px-2 py-1 font-mono text-bms-ink">
-                  KPI ribbon
-                </span>
-                <span className="ml-3">Sign in to view the Executive Summary.</span>
-                </>
-              )}
+              {kpiRibbon}
               {scope?.kind === "asset_group" ? (
                 <span className="rounded border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-800">
                   Limited asset-group access
