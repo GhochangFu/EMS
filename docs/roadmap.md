@@ -746,7 +746,9 @@ Process (`AGENTS.md` §10).
 - **Unblocks:** **`E5.1`** (water-treatment domain pack — P0 flagship, Ion
   Exchange's core business), plus `E5.2` and `E5.3`. `E2.2` and `E1.3` stay
   blocked on `E2.1` and `E1.1` respectively.
-- **Owed:** the AGENTS.md §2 promotion, in its own `chore(agents):` PR (§9.10).
+- **Owed:** ~~the AGENTS.md §2 promotion, in its own `chore(agents):` PR
+  (§9.10)~~ ✅ **cleared** — §2 gained a *Template content* row, and §6 gained
+  the two deferral bullets covering what ADR 0019 deliberately left closed.
 
 ### Ingest adapter framework (F1.1) — interface accepted, not built
 - **Status:** ADR 0016 accepted; **implementation not started**

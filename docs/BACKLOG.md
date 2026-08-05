@@ -617,6 +617,13 @@ encryption boundary and the ADR 0016 cutover owner for
 already made. They belong in `docs/adr/`, gated by the human, not in a
 `chore(agents):` sweep.
 
+**Promotions since, one per PR (§10.1).** The table above closed the accumulated
+batch; everything from here lands alone.
+
+| Owed | Source | Landed as |
+|------|--------|-----------|
+| ~~ADR 0019~~ ✅ | E1.7 | **First promotion under the one-per-PR rule.** §2 gained a **Template content** row; the status line, §3 and §6's "also promoted" paragraph name ADR 0019. §6 also gained **two deferral bullets** — the *five* things ADR 0019 leaves closed (`health` → `E1.1`, `optimisation` → `E1.6`, opaque `kpis.expression` → `F2.3`, ordering-only `dashboards` → `F3.1`, and `alarms.philosophy` → `E2.1`), and the fact that nothing deploys template content into a running rule or maintenance row. A promotion that records only what *opened* leaves an agent free to widen what it closed — review caught this draft doing exactly that, omitting `alarms.philosophy` even though ADR 0019 §3 explicitly instructs the rulebook to state it. |
+
 ## 6. Instrumentation / hardware note (SOW §8)
 
 Sensor, gateway and edge **hardware supply** (meters, transmitters, analysers,
