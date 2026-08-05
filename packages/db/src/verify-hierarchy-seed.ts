@@ -47,8 +47,10 @@ export async function verifyHierarchySeed(pool: pg.Pool): Promise<void> {
   if (Number(row.orgs) !== 2) {
     errors.push(`organizations: expected 2, got ${row.orgs}`);
   }
-  if (Number(row.eskom_locs) !== 10) {
-    errors.push(`ESKOM locations: expected 10, got ${row.eskom_locs}`);
+  // 11 = 10 operational + the deliberately inactive ESK-DECOMM-01 that F4.10
+  // needs in order to tell `WHERE active = true` apart from no predicate.
+  if (Number(row.eskom_locs) !== 11) {
+    errors.push(`ESKOM locations: expected 11, got ${row.eskom_locs}`);
   }
   if (Number(row.phe_locs) !== 6) {
     errors.push(`PHEWB locations: expected 6, got ${row.phe_locs}`);

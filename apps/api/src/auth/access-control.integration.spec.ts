@@ -1,3 +1,4 @@
+import { ForbiddenException } from "@nestjs/common";
 import type pg from "pg";
 
 import type { JwtPayload, UserRole } from "@bms/shared";
@@ -38,9 +39,11 @@ export const SEEDED = {
  * row, so `resolveDbUser` is forced down its email branch — the branch every
  * real OIDC token takes, since Keycloak's `sub` is not a `bms.users.id`.
  */
+export const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000000";
+
 export function jwtFor(email: string, role: UserRole): JwtPayload {
   return {
-    sub: "00000000-0000-4000-8000-000000000000",
+    sub: SYNTHETIC_SUB,
     email,
     name: `integration:${email}`,
     role,
@@ -48,6 +51,27 @@ export function jwtFor(email: string, role: UserRole): JwtPayload {
 }
 
 const ids = (rows: { id: string }[]): Set<string> => new Set(rows.map((r) => r.id));
+
+/**
+ * Asserts a call is refused *for the right reason*.
+ *
+ * A bare `catch {}` would score a dropped connection, a TypeError, or a
+ * ReferenceError as "correctly denied" — the same green-because-it-found-nothing
+ * shape this file exists to rule out. Only `ForbiddenException` counts.
+ */
+async function expectForbidden(run: () => Promise<unknown>, what: string): Promise<void> {
+  try {
+    await run();
+  } catch (err) {
+    if (err instanceof ForbiddenException) {
+      return;
+    }
+    throw new Error(
+      `${what}: expected ForbiddenException, got ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`,
+    );
+  }
+  throw new Error(`${what}: expected a denial, but the call succeeded`);
+}
 
 /**
  * Fails when the database is reachable but not seeded.
@@ -79,14 +103,56 @@ export async function assertFixturesPresent(pool: pg.Pool): Promise<void> {
     );
   }
 
-  const { rows: counts } = await pool.query<{ assets: string; groups: string }>(
+  const { rows: counts } = await pool.query<{
+    assets: string;
+    groups: string;
+    gatewayless: string;
+    inactive_locations: string;
+    sub_collision: string;
+  }>(
     `SELECT (SELECT COUNT(*)::text FROM bms.assets) AS assets,
-            (SELECT COUNT(*)::text FROM bms.asset_group_members) AS groups`,
+            (SELECT COUNT(*)::text FROM bms.asset_group_members) AS groups,
+            (SELECT COUNT(*)::text FROM bms.assets WHERE rtu_id IS NULL) AS gatewayless,
+            (SELECT COUNT(*)::text FROM bms.locations WHERE active = false) AS inactive_locations,
+            (SELECT COUNT(*)::text FROM bms.users WHERE id = $1) AS sub_collision`,
+    [SYNTHETIC_SUB],
   );
-  if (Number(counts[0]?.assets ?? 0) === 0 || Number(counts[0]?.groups ?? 0) === 0) {
+  const row2 = counts[0];
+  const shortfalls: string[] = [];
+  if (Number(row2?.assets ?? 0) === 0) shortfalls.push("bms.assets is empty");
+  if (Number(row2?.groups ?? 0) === 0) shortfalls.push("bms.asset_group_members is empty");
+
+  // These two states are what make the tripwires below mean anything, and the
+  // rest of the seed produces neither: `assignEskomAssetRtus` wires every ESKOM
+  // asset and the PHE seed wires every PHE one, and every operational location
+  // is active. `seedAccessControlFixtures` adds one of each. Measured before it
+  // existed: 147 assets / 0 gateway-less, 16 locations / 0 inactive — so the
+  // "gateway-less assets stay visible" loop never executed a single iteration
+  // and `WHERE active = true` was indistinguishable from no predicate.
+  if (Number(row2?.gatewayless ?? 0) === 0) {
+    shortfalls.push(
+      "no asset has a null rtu_id, so the ADR 0018 visibility tripwire cannot execute",
+    );
+  }
+  if (Number(row2?.inactive_locations ?? 0) === 0) {
+    shortfalls.push(
+      "no location is inactive, so `WHERE active = true` cannot be told apart from no filter",
+    );
+  }
+
+  // `jwtFor` asserts in prose that SYNTHETIC_SUB matches no user row, and every
+  // negative control in this file depends on it. Prove it rather than trust it:
+  // a collision would silently resolve the wrong user everywhere at once.
+  if (Number(row2?.sub_collision ?? 0) !== 0) {
+    shortfalls.push(
+      `a bms.users row carries ${SYNTHETIC_SUB}, the id this suite assumes matches nobody`,
+    );
+  }
+
+  if (shortfalls.length > 0) {
     throw new Error(
-      "F4.10 fixtures missing — bms.assets or bms.asset_group_members is empty, " +
-        "so scope containment cannot be distinguished from scope emptiness.",
+      `F4.10 fixtures missing — run 'pnpm db:seed'. Without these, assertions below ` +
+        `pass vacuously:\n- ${shortfalls.join("\n- ")}`,
     );
   }
 }
@@ -134,8 +200,20 @@ export async function assertGlobalAdminScope(
     }
   }
 
-  // `null` is the unrestricted sentinel; a materialised list would silently
-  // become a ceiling the moment a new location is created.
+  // An inactive location must be absent by identity, not just by count. Counts
+  // alone cannot tell "filtered correctly" from "filtered something else".
+  const inactive = await pool.query<{ id: string; code: string }>(
+    `SELECT id, code FROM bms.locations WHERE active = false`,
+  );
+  const visibleLocations = new Set(scope.locations.map((location) => location.id));
+  for (const row of inactive.rows) {
+    if (visibleLocations.has(row.id)) {
+      throw new Error(
+        `inactive location ${row.code} is in the global admin's scope — ` +
+          "a scope query dropped its `active = true` filter",
+      );
+    }
+  }
   if ((await svc.readableAssetIds(jwtFor(SEEDED.globalAdmin, "admin"))) !== null) {
     throw new Error("global admin readableAssetIds must be null (unrestricted), not a list");
   }
@@ -293,6 +371,12 @@ export async function assertAssetGroupScope(
     [SEEDED.assetGroupAdmin],
   );
   const expected = ids(members.rows);
+  if (expected.size === 0) {
+    throw new Error(
+      "the granted asset group has no members — every comparison below would be " +
+        "0 === 0 and this branch would pass while proving nothing",
+    );
+  }
   const actual = new Set(scope.assetIds);
   for (const id of actual) {
     if (!expected.has(id)) {
@@ -330,7 +414,13 @@ export async function assertAssetGroupScope(
 }
 
 /**
- * The keystone of ADR 0017: authority is `bms.users.role`, never the claim.
+ * The keystone of ADR 0017: for a user that exists in `bms.users`, the role on
+ * that row is the authority and the token claim is ignored.
+ *
+ * The qualifier is load-bearing. `resolveDbUser` deliberately falls back to the
+ * claim when no row matches, and `assertUngrantedRolesFailClosed` below depends
+ * on exactly that fallback. Both halves are real; only the first is a security
+ * boundary.
  *
  * A token outlives a demotion by up to `JWT_TTL`, and in OIDC mode
  * `roleFromClaims` falls back to `viewer` when realm roles are missing. Reading
@@ -379,6 +469,46 @@ export async function assertDbRoleBeatsJwtClaim(svc: AccessControlService): Prom
 }
 
 /**
+ * Pins what happens when the token names a user this database has never heard
+ * of — **today's behaviour, which is not obviously the right one.**
+ *
+ * `resolveDbUser` falls back to the claim when neither `sub` nor `email`
+ * matches. That fallback is load-bearing: it is what lets the operator/viewer
+ * fail-closed checks above run without seeding those roles, and what lets a
+ * freshly federated OIDC principal reach the app before a local row exists.
+ *
+ * But it also means an `admin` claim for an unprovisioned email resolves to
+ * unrestricted access, so deleting a `bms.users` row does not revoke a token —
+ * it *restores* whatever role the token claims, until `JWT_TTL` expires
+ * (default 8h). Not client-forgeable: the guard verifies RS256, issuer and
+ * audience, and local mode signs the DB role. Still, "deprovision by deleting
+ * the row" is the obvious admin action and it does the opposite of what it
+ * looks like.
+ *
+ * This asserts the current behaviour rather than the desired one, deliberately.
+ * Changing it is a security decision with an ADR attached, not a drive-by edit,
+ * and until then the property should at least be *visible* instead of latent.
+ * When it changes, this test fails and points at the decision.
+ */
+export async function assertUnprovisionedTokenBehaviour(
+  svc: AccessControlService,
+): Promise<void> {
+  const ghost = jwtFor("deprovisioned-admin@integration.invalid", "admin");
+  const { user, scope } = await svc.currentUser(ghost);
+
+  if (user.role !== "admin" || scope.kind !== "global") {
+    throw new Error(
+      "an unprovisioned admin token no longer resolves to a global scope. If that " +
+        "was intentional, this is the test to update — and the change needs an ADR, " +
+        "because the operator/viewer fail-closed checks rely on the same fallback.",
+    );
+  }
+  if ((await svc.readableAssetIds(ghost)) !== null) {
+    throw new Error("unprovisioned admin readableAssetIds changed shape; see above");
+  }
+}
+
+/**
  * `operator`/`viewer` walk four sources and must land on `none` with no grants.
  *
  * `access-scope.spec.ts` proves the *list* is four long. Only a database proves
@@ -412,23 +542,17 @@ export async function assertUngrantedRolesFailClosed(
   // ADR 0017's gate, resolved through the same path the controllers use.
   const viewer = jwtFor("no-grants-viewer@integration.invalid", "viewer");
   for (const writeClass of ["configuration", "operational"] as const) {
-    let denied = false;
-    try {
-      await svc.assertOperationsWriteRole(viewer, writeClass);
-    } catch {
-      denied = true;
-    }
-    if (!denied) throw new Error(`viewer was allowed an ${writeClass} write (ADR 0017)`);
+    await expectForbidden(
+      () => svc.assertOperationsWriteRole(viewer, writeClass),
+      `viewer performing an ${writeClass} write (ADR 0017)`,
+    );
   }
 
   const operator = jwtFor("no-grants-operator@integration.invalid", "operator");
-  let configDenied = false;
-  try {
-    await svc.assertOperationsWriteRole(operator, "configuration");
-  } catch {
-    configDenied = true;
-  }
-  if (!configDenied) throw new Error("operator was allowed a configuration write (ADR 0017)");
+  await expectForbidden(
+    () => svc.assertOperationsWriteRole(operator, "configuration"),
+    "operator performing a configuration write (ADR 0017)",
+  );
   // …but keeps today's work.
   await svc.assertOperationsWriteRole(operator, "operational");
 }
@@ -461,6 +585,12 @@ export async function assertLocationManagementIsFlat(
     [SEEDED.locationAdmin],
   );
   const expected = ids(granted.rows);
+  if (expected.size === 0) {
+    throw new Error(
+      "location admin has no grants — the size comparison below would be 0 === 0 " +
+        "and this tripwire would pass while proving nothing",
+    );
+  }
   const writable = await svc.writableLocationIds(jwt);
   if (writable === null) {
     throw new Error("location admin writableLocationIds must be a list, not unrestricted");

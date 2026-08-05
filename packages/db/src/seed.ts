@@ -14,6 +14,7 @@ import {
   cleanupLegacyPheRtuLocations,
   resolveEskomSimRtuId,
 } from "./hierarchy-seed";
+import { seedAccessControlFixtures } from "./access-fixtures-seed";
 import { seedPointKeyCatalog } from "./point-keys-seed";
 import { pheMapLocationRowsForInsert } from "./phe-map-seed";
 import { seedPheCatalog } from "./phe-pilot-seed";
@@ -1414,6 +1415,7 @@ async function main(): Promise<void> {
       }
     }
 
+    await seedAccessControlFixtures(pool);
     await enforceHierarchyNotNull(pool);
     const { verifyHierarchySeed } = await import("./verify-hierarchy-seed.js");
     await verifyHierarchySeed(pool);

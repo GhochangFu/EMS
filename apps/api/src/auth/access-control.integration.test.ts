@@ -1,6 +1,6 @@
 import pg from "pg";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { createDb } from "@bms/db";
 
@@ -15,6 +15,7 @@ import {
   assertLocationScope,
   assertOrganizationScope,
   assertUngrantedRolesFailClosed,
+  assertUnprovisionedTokenBehaviour,
 } from "./access-control.integration.spec";
 
 /**
@@ -41,9 +42,10 @@ import {
  * itself moved into `beforeAll`, where a throw fails every test rather than
  * skipping them.
  *
- * Run it locally against your own stack (compose remaps Postgres to 5433):
+ * Run it locally against your own stack (docker-compose.override.yml may remap
+ * the port; 5432 is the committed default):
  *
- *   DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5433/bms pnpm test
+ *   DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms pnpm test
  *
  * `AccessControlService` is constructed with `new`, not through a Nest testing
  * module — its only dependency is the drizzle handle. That keeps `F4.10` free
@@ -73,7 +75,7 @@ if (!connectionString) {
   process.stderr.write(
     "\n[F4.10] Skipping access-control integration tests: DATABASE_URL is not set.\n" +
       "        Coverage thresholds assume these ran — expect the gate to fail.\n" +
-      "        DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5433/bms pnpm test:coverage\n\n",
+      "        DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms pnpm test:coverage\n\n",
   );
 }
 
@@ -115,40 +117,44 @@ describe.skipIf(!connectionString)("F4.10 — access control against a real data
   // Ordered deliberately: every containment assertion that follows is vacuous
   // on an unseeded schema, so this runs first and fails with instructions.
   it("has the seeded fixtures every other assertion depends on", async () => {
-    await expect(assertFixturesPresent(pool as pg.Pool)).resolves.toBeUndefined();
+    await assertFixturesPresent(pool as pg.Pool);
   });
 
   describe("scopeFromSource — one test per query branch", () => {
     it("global: sees every active location and asset, including gateway-less ones", async () => {
-      await expect(assertGlobalAdminScope(svc, pool as pg.Pool)).resolves.toBeUndefined();
+      await assertGlobalAdminScope(svc, pool as pg.Pool);
     });
 
     it("organization: sees its own org and leaks nothing from another", async () => {
-      await expect(assertOrganizationScope(svc, pool as pg.Pool)).resolves.toBeUndefined();
+      await assertOrganizationScope(svc, pool as pg.Pool);
     });
 
     it("location: sees exactly its grants, and canReadAsset agrees with the list", async () => {
-      await expect(assertLocationScope(svc, pool as pg.Pool)).resolves.toBeUndefined();
+      await assertLocationScope(svc, pool as pg.Pool);
     });
 
     it("asset_group: strictly narrower than the group's own location", async () => {
-      await expect(assertAssetGroupScope(svc, pool as pg.Pool)).resolves.toBeUndefined();
+      await assertAssetGroupScope(svc, pool as pg.Pool);
     });
   });
 
   it("resolves the role from the database, never from the JWT claim (ADR 0017)", async () => {
-    await expect(assertDbRoleBeatsJwtClaim(svc)).resolves.toBeUndefined();
+    await assertDbRoleBeatsJwtClaim(svc);
+  });
+
+  it("pins what an unprovisioned token gets — deleting a user row does not revoke it", async () => {
+    await assertUnprovisionedTokenBehaviour(svc);
   });
 
   it("walks all four sources and fails closed for an ungranted operator/viewer", async () => {
-    await expect(assertUngrantedRolesFailClosed(svc)).resolves.toBeUndefined();
+    await assertUngrantedRolesFailClosed(svc);
   });
 
   it("keeps location management flat — the companion depth ADR's tripwire", async () => {
-    await expect(assertLocationManagementIsFlat(svc, pool as pg.Pool)).resolves.toBeUndefined();
+    await assertLocationManagementIsFlat(svc, pool as pg.Pool);
   });
 
   it("resolves asset management through location_id (ADR 0018)", async () => {
-    await expect(assertAssetManagementFollowsLocation(svc, pool as pg.Pool)).resolves.toBeUndefined();
+    await assertAssetManagementFollowsLocation(svc, pool as pg.Pool);
   });
 });
