@@ -540,16 +540,28 @@ flowchart LR
 | **Encryption-at-rest boundary** ⚠ | E8.1 (already merged) | **Open — human decision.** E8.1 landed with no ADR while every sibling in its wave got one, yet it made two architectural calls: *volume encryption is permanently outside this repo's scope* (deployer/platform action) and *fail closed on an unset key*. Options: write a retro `0018-encryption-at-rest-boundary.md`, or record an explicit documented exemption in the E8.1 row. Raised by the E8.1 compliance review. |
 | Per-feature ADRs | each promotion | Standard AGENTS.md §10 flow (Modbus/BACnet libs, `bullmq`, `nodemailer`, `minio`, …). |
 
-**Owed `chore(agents):` promotions** (AGENTS.md §9.10 — these must land as
-*separate* commits, never as a side effect of a feature commit):
+**Owed `chore(agents):` promotions** — ✅ **cleared 2026-08-05** in one
+`chore(agents):` PR, which is what AGENTS.md §9.10 actually requires ("update
+this file only via a PR prefixed `chore(agents): ...`"); the constraint is
+separation from *feature* commits, not one PR per item.
 
-| Owed | Source | What to add |
-|------|--------|-------------|
-| ADR 0015 | F2.1, F2.2 | Asset templates into AGENTS.md §2/§3, now including the instantiate endpoint and `apps/api/src/admin/asset-templates/`. |
-| ADR 0016 | F1.1 | §2 stack row (adapter framework, `zod`), §6 wording, roadmap. |
-| ADR 0017 | F4.11 | The operations write matrix into AGENTS.md §4, beside the existing master-data role rules, so both role gates are documented in one place. |
-| §4.6 carve-out | ADR 0014 | Record that repo-level invariants in `tests/` hold assertions inline; the `.spec`/`.test` split applies to `apps/` and `packages/`. Batch with adding `docs/security/`, `BACKLOG.md`, `build-operating-model.md`, `archive/` and `scripts/` to the stale §3 tree. |
-| Roadmap mirror | Wave 0–1 batch | `docs/roadmap.md` has only F4.4. F4.11, F4.12, E8.1, ADR 0017, and now F2.1, F4.10 and F2.2 are unmirrored — do them as one update, not per-item retros. |
+| Owed | Source | Landed as |
+|------|--------|-----------|
+| ~~ADR 0015~~ ✅ | F2.1, F2.2 | AGENTS.md §2 Asset templates row, §3 (`src/admin/asset-templates/`), §4.7, §6. |
+| ~~ADR 0016~~ ✅ | F1.1 | §2 Ingest adapters row and §6, both stating the **interface only** is promoted — F1.1 is not built and each protocol still needs its own §9.4 ADR. The `zod`/`typescript` manifest entries land with F1.1, not here. |
+| ~~ADR 0017~~ ✅ | F4.11 | New AGENTS.md **§4.7**, holding both role gates — master-data scope predicates and the operations write matrix — in one place. |
+| ~~§4.6 carve-out~~ ✅ | ADR 0014 | §4.6 records the `tests/` inline-assertion carve-out and the asymmetric `DATABASE_URL` gate. §3 gained `tests/`, `.claude/`, `vitest.config.ts`, `TRINETRA.html`, `CLAUDE.md`, `docs/security/`, `docs/archive/`, `docs/scripts/`, `BACKLOG.md` and `build-operating-model.md`. |
+| ~~Roadmap mirror~~ ✅ | Wave 0–1 batch | Six new `docs/roadmap.md` sections (F4.11/F4.12, E8.1, F4.10, F2.1/F2.2, F1.1, ADR 0018) plus a note that the phase crosswalk is not the current board. |
+| ~~Status line~~ ✅ | drift | Was "Phase 5 Sprint J/K/L/M/N"; now names the SOW backlog delivery and every merged ADR. |
+
+Note corrected while doing it: the §3 entry owed as `scripts/` is actually
+**`docs/scripts/`** — there is no top-level `scripts/`.
+
+**Still owed, and deliberately not bundled here:** the retro ADR for E8.1's
+encryption boundary and the ADR 0016 cutover owner for
+`apps/ingest/src/index.js` are **decisions**, not documentation of decisions
+already made. They belong in `docs/adr/`, gated by the human, not in a
+`chore(agents):` sweep.
 
 ## 6. Instrumentation / hardware note (SOW §8)
 
