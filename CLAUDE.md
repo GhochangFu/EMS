@@ -22,10 +22,11 @@ process). However, its **status line and §6 "Out of Scope" list lag behind
 Scope changes in this repo are made through ADRs per AGENTS.md §10, so a newer
 ADR that amends AGENTS.md wins on the "is this in scope" question.
 
-**The specific drift this section used to list was cleared on 2026-08-05** —
-AGENTS.md's status line, §2, §3, §4.6, the new §4.7 and §6 were brought up to
-date with ADR 0014–0018 in a `chore(agents):` PR. Do not assume the examples
-that were here still apply; they have been fixed.
+**The §3/§6 examples this section used to list were cleared on 2026-08-05** —
+AGENTS.md's status line, §2, §3, §4.6, §8, the new §4.7, §6 and §10.1 were
+brought up to date with ADR 0014–0018 in a `chore(agents):` PR. Those specific
+examples no longer apply. This does **not** mean the file is now drift-free —
+only that the known instances were fixed.
 
 The *structural* reason for drift remains, so the precedence rule stands:
 AGENTS.md may only be edited through a `chore(agents):` PR (§9.10) and scope

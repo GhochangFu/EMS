@@ -157,8 +157,8 @@ entry **D-0001**.
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
 | Real ingestion | `apps/ingest` MQTT TLS subscriber for the PHE pilot; writes `telemetry.point_values` and `pg_notify('bms_telemetry', …)` like the simulator (ADR 0007). One pilot RTU only; no EMQX |
 | Master data  | Organization → Location → RTU → Asset → Point-key catalog + `/admin/*` CRUD with `admin`/`organization_admin`/`location_admin` roles (ADR 0008–0010). **ADR 0018** separates the axes: an asset must have a `location_id` (`NOT NULL`) and need not have an `rtu_id` (nullable); telemetry provenance binds at `asset_points.source_kind` (`measured`/`manual`/`computed`/`unmapped`), not at the asset |
-| Asset templates | `bms.asset_templates` + `bms.template_points`, where a row **is** a version and `assets.template_id` pins it (ADR 0015). Published versions are immutable; editing one creates the next draft. `POST /admin/asset-templates/:id/instantiate` builds assets from a published version — target is `rtuId` **xor** `locationId`, and `template_points.kind = 'derived'` is never instantiated |
-| Ingest adapters | `IngestAdapter` interface frozen by **ADR 0016** (host owns connection lifecycle, adapters own protocol). The interface is promoted; **no protocol implementation is in scope** — Modbus, BACnet, OPC-UA, SNMP and DCS each need their own ADR under §9.4 for their protocol library |
+| Asset templates | `bms.asset_templates` + `bms.template_points`, where a row **is** a version and `assets.template_id` pins it (ADR 0015). Published versions are immutable; editing one creates the next draft. `POST /admin/asset-templates/:id/instantiate` builds assets from a published version — target is `rtuId` **xor** `locationId`. A `template_points.kind = 'derived'` point is still re-validated against the active catalog, but never becomes an `asset_points` row — it has no honest `source_data_key` until the calc engine (`F2.6`) owns it |
+| Ingest adapters | `IngestAdapter` interface frozen by **ADR 0016**: the host owns *supervision and cadence* (poll loop, overlap guard, backoff, jitter, bounded queue, process lifetime); adapters own the protocol connection and parse, implementing `connect` / `disconnect` / `health`. The interface is promoted; **no protocol implementation is in scope** — Modbus, BACnet, OPC-UA, SNMP and DCS each need their own ADR under §9.4 for their protocol library |
 | AI onboarding | Scoped admin ingestion wizard using OpenAI chat completions with structured JSON, and a deterministic rule-based fallback when `OPENAI_API_KEY` is unset (ADR 0011) |
 | Secrets      | AES-256-GCM encrypted RTU connection credentials via `CREDENTIAL_ENCRYPTION_KEY`; never returned decrypted by the API (ADR 0012) |
 | Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension. Every mutating endpoint across these four domains is gated by the **operations write matrix** (ADR 0017) — see §4.7 |
@@ -188,9 +188,11 @@ bms/
 ├── .github/
 │   └── workflows/             ← GitHub Actions CI
 ├── .claude/
+│   ├── agents/                ← review subagents (security, migration, compliance)
 │   ├── hooks/                 ← guards, incl. the drizzle journal check
 │   └── skills/                ← repo workflows (new-adr, backlog-cycle, verify)
 ├── tests/                     ← repo-wide invariants; see the §4.6 carve-out
+├── exports/                   ← PHE MQTT reference + point-mapping CSVs (ADR 0007/0011)
 ├── infra/
 │   ├── keycloak/              ← Phase 1 Sprint C realm export
 │   └── observability/         ← Phase 1 Sprint D Prometheus/Grafana/Loki config
@@ -299,12 +301,14 @@ who must see nothing. Never treat the two as equivalent.
 **Operations write matrix** (ADR 0017) — mutating endpoints across rules,
 alarms, work orders and maintenance carry
 `assertOperationsWriteRole(jwt, class)` at the top of the handler, **before**
-the scope check, so a role rejection never depends on scope resolution:
+the scope check, so a role rejection never depends on scope resolution. The
+class literals are exactly `OperationsWriteClass` in
+`apps/api/src/auth/operations-write.ts`:
 
 | Class | What it means | `operator` | `viewer` |
 |---|---|:-:|:-:|
 | `configuration` | changes what the system *will* do, indefinitely — rule authoring, schedule definition, `rules/evaluate`, `rules/preview` | ❌ | ❌ |
-| `operations` | records what *did* happen — alarm ack, work-order lifecycle, converting a due schedule | ✅ | ❌ |
+| `operational` | records what *did* happen — alarm ack, work-order lifecycle, converting a due schedule | ✅ | ❌ |
 
 The four admin roles keep exactly what they had; this gate regressed nobody.
 `rules/preview` is `configuration` despite looking read-only — it inserts a
@@ -379,9 +383,10 @@ not available. Redis must not be used for unrelated caching or job queues
 until a later promotion. Keycloak is limited to local/pilot OIDC
 authentication; MFA, SSO federation, and advanced identity governance
 remain out of scope. Observability is limited to optional local/pilot
-diagnostics. Real protocol adapters and brokers remain out of scope until
-a later Phase 2 implementation sprint selects and promotes a specific
-source/protocol. Work-order UI is complete for Phase 5 Sprint B. Phase 5
+diagnostics. Protocol *brokers* remain out of scope; protocol *adapters* are
+governed by the bullet above (ADR 0016 interface promoted, each implementation
+still ADR-gated) — that bullet supersedes this sentence. Work-order UI is
+complete for Phase 5 Sprint B. Phase 5
 Sprint C Maintenance Schedule Centre is complete. Phase 5 Sprint D basic
 rule-engine UI is complete for simple threshold/time-window rules,
 enable/disable controls, manual evaluation, and execution history. Phase 5
@@ -415,9 +420,13 @@ the Vitest runner and ratcheting coverage gate (ADR 0014, §4.6); asset
 templates, versioning and instantiation (ADR 0015, §4.7); the `IngestAdapter`
 interface **only** (ADR 0016); the operations write matrix (ADR 0017, §4.7);
 and the asset source-axis separation making `assets.rtu_id` nullable while
-`location_id` is `NOT NULL` (ADR 0018). Encryption at rest is **software-scope
-only** — volume, object-storage and backup encryption are permanently a
-deployer/platform concern, not this repo's (`docs/security/encryption-at-rest.md`).
+`location_id` is `NOT NULL` (ADR 0018). Application-layer encryption at rest
+is in scope (ADR 0012); **full-disk / volume / KMS encryption is a deployer
+action and not implementable in this repo**. Object-storage bucket encryption
+(`F3.3`, ADR required) and automated encrypted backups (`E8.2`) remain **live
+backlog scope** — they are deferred, not cancelled. The boundary itself is
+still an open human decision; see `docs/security/encryption-at-rest.md` and
+`docs/BACKLOG.md` §5.
 
 When any other item above is needed, follow §10 (Promotion Process).
 
@@ -467,8 +476,10 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
 
 No protocol broker yet. Just Postgres, Redis for realtime fan-out,
 Keycloak for local/pilot OIDC, optional observability services, Node, and
-Docker Compose for reproducible development. Phase 2 remains paused until
-real source access exists. Phase 5 Sprint A used the existing API and
+Docker Compose for reproducible development. Phase 2 is **no longer paused**:
+the single-RTU PHE MQTT pilot ships in `apps/ingest` (ADR 0007, 0012) and
+ADR 0016 froze the adapter interface. What remains gated is each *protocol
+implementation*, per §2 and §6 — not Phase 2 as a whole. Phase 5 Sprint A used the existing API and
 database stack only; Sprint B added the Maintenance Kanban UI and
 `sort_order` persistence for drag/drop. Sprint C added the Maintenance
 Schedule Centre, schedule metadata, history, and work-order conversion.
@@ -517,6 +528,33 @@ ingestion"):
 
 This keeps the active rules in lockstep with the codebase and ensures AI
 agents are never asked to enforce rules that do not yet apply.
+
+### 10.1 ADR-sourced promotion (how this actually works now)
+
+The five steps above describe promotion from `docs/AGENTS.production.md`.
+Most scope now moves a different way — an **ADR** in `docs/adr/` decides it,
+and the ADR lands with the feature that motivated it. Two consequences, both
+recorded here because the practice had diverged from the written process
+silently:
+
+- **A promotion may originate from an ADR** rather than from
+  `docs/AGENTS.production.md`. Step 2 is then "summarise the ADR's decision
+  here and link it", not a copy. The ADR remains the authoritative record;
+  this file is the index.
+- **Step 5 is inverted for ADR-sourced promotion, by construction.** The ADR
+  is written and accepted *before* the feature (that is the §9.4/§10 gate),
+  but the `chore(agents):` edit to this file cannot ride along in the feature
+  PR — §9.10 forbids it. So the rulebook edit necessarily lands *after* the
+  feature. It is discharged by a catch-up `chore(agents):` sweep, and what
+  is owed is tracked in `docs/BACKLOG.md` §5 until it lands.
+
+Step 5 still holds for `AGENTS.production.md`-sourced promotions, where no
+ADR gate precedes the feature. **The gate that must never be skipped is the
+ADR itself, not the bookkeeping in this file.**
+
+Sweeps are batched: one `chore(agents):` PR may discharge several owed
+promotions, since §9.10's requirement is separation from *feature* commits,
+not one PR per item.
 
 ---
 

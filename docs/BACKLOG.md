@@ -537,7 +537,7 @@ flowchart LR
 | ML stack | all E1.x | Runtime (Python svc / Node / external), registry, serving path. |
 | ~~Product positioning~~ | — | **Resolved by ADR 0013 (2026-08-04):** this repo forked to the TRINETRA Enterprise EMS line for Ion Exchange (India) Ltd.; display-layer rebrand only, Eskom-era internals retained. Eskom line continues from the external backup, if at all. |
 | ~~Test runner + libs~~ | ~~F4.4~~ | **Resolved by ADR 0014 (2026-08-04):** Vitest + `@vitest/coverage-v8`, projects-per-app, coverage as a ratchet. |
-| **Encryption-at-rest boundary** ⚠ | E8.1 (already merged) | **Open — human decision.** E8.1 landed with no ADR while every sibling in its wave got one, yet it made two architectural calls: *volume encryption is permanently outside this repo's scope* (deployer/platform action) and *fail closed on an unset key*. Options: write a retro `0018-encryption-at-rest-boundary.md`, or record an explicit documented exemption in the E8.1 row. Raised by the E8.1 compliance review. |
+| **Encryption-at-rest boundary** ⚠ | E8.1 (already merged) | **Open — human decision.** E8.1 landed with no ADR while every sibling in its wave got one, yet it made two architectural calls: *volume encryption is permanently outside this repo's scope* (deployer/platform action) and *fail closed on an unset key*. Options: write a retro `0019-encryption-at-rest-boundary.md` (`0018` is now the source-axis ADR; `0019` is the next free number), or record an explicit documented exemption in the E8.1 row. Raised by the E8.1 compliance review. **Scope note:** the deferred item is *volume/full-disk/KMS* encryption only — object-storage bucket encryption is `F3.3` and encrypted backups are `E8.2`, both live backlog scope. A promotion sweep briefly widened this to all three; corrected before merge. |
 | Per-feature ADRs | each promotion | Standard AGENTS.md §10 flow (Modbus/BACnet libs, `bullmq`, `nodemailer`, `minio`, …). |
 
 **Owed `chore(agents):` promotions** — ✅ **cleared 2026-08-05** in one
@@ -554,8 +554,19 @@ separation from *feature* commits, not one PR per item.
 | ~~Roadmap mirror~~ ✅ | Wave 0–1 batch | Six new `docs/roadmap.md` sections (F4.11/F4.12, E8.1, F4.10, F2.1/F2.2, F1.1, ADR 0018) plus a note that the phase crosswalk is not the current board. |
 | ~~Status line~~ ✅ | drift | Was "Phase 5 Sprint J/K/L/M/N"; now names the SOW backlog delivery and every merged ADR. |
 
-Note corrected while doing it: the §3 entry owed as `scripts/` is actually
-**`docs/scripts/`** — there is no top-level `scripts/`.
+Two corrections made while doing it: the §3 entry owed as `scripts/` is
+actually **`docs/scripts/`** (there is no top-level `scripts/`), and `exports/`
+was missing from the tree entirely.
+
+**§10 was amended, and that is the part worth a second look.** The sweep
+discharged §10 while breaking two of its five steps: step 2 (copy from
+`docs/AGENTS.production.md`) does not apply to ADR-sourced promotion, and
+step 5 (land before the feature) is *impossible* for it — §9.10 forbids the
+rulebook edit riding in the feature PR, so it can only land after. Review
+found step 5 has **never** been followed: `379fac6` landed after `70b6bf7`,
+`492bd1a` after `f954958`. New **§10.1** describes what actually happens, so
+the next sweep does not deviate silently again. The ADR gate itself is
+unchanged and still precedes the feature.
 
 **Still owed, and deliberately not bundled here:** the retro ADR for E8.1's
 encryption boundary and the ADR 0016 cutover owner for

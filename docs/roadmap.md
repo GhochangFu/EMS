@@ -675,12 +675,15 @@ Process (`AGENTS.md` §10).
 - **Status:** software scope done; the rest is permanently out of repo scope
 - **Delivered:** AES-256-GCM for RTU connection credentials (ADR 0012),
   fail-closed on an unset `CREDENTIAL_ENCRYPTION_KEY`.
-- **Deliberately not built:** volume, object-storage and backup encryption are
-  a deployer/platform action, not this repo's — see
+- **Deliberately not built:** full-disk / volume / KMS encryption is a deployer
+  action and not implementable in this repo. **Object-storage bucket encryption
+  (`F3.3`, ADR required) and automated encrypted backups (`E8.2`) are deferred
+  to their own backlog items, not cancelled** — see the ownership table in
   `docs/security/encryption-at-rest.md`. Its review raised **E8.3** and **E8.4**
   as new backlog scope.
 - **Owed:** a retro ADR recording the boundary, or an explicit documented
-  exemption. Tracked in `docs/BACKLOG.md` §5 as an open human decision.
+  exemption. Tracked in `docs/BACKLOG.md` §5 as an open human decision — so the
+  "permanent" half of this boundary is **not** settled yet.
 
 ### Access-control integration tests (F4.10) — done
 - **Status:** done (PR #4)
