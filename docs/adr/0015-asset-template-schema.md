@@ -275,6 +275,11 @@ DDL at all**. Fewer migration-bearing jobs is the point (see Migration safety).
 
 ### 6. Instantiation walk-through (`F2.2`) — chiller template, 12 points, 40 assets
 
+> ⚠️ **The payload below is superseded by [Amendment 1A](#a-the-instantiation-target-is-rtuid-or-locationid-exclusively).**
+> `rtuId` is no longer the only target: it is `rtuId` **xor** `locationId`.
+> Everything else in this section — the seven steps, both failure modes — still
+> holds. Kept as written because `F2.1` was built against it.
+
 Given `CHILLER-CENTRIF` v3, `published`, org `IONEX`, 12 `template_points`
 (10 `measured`, 2 `derived`), and a target location `Plant-A` with RTU
 `PLANTA-HVAC-01`:
@@ -333,7 +338,7 @@ reaches them with the predicates it already has:
 |---|---|
 | List / read | `writableOrganizationIds(jwt)` → `inArray(assetTemplates.organizationId, ids)`; `null` = global admin, unrestricted. Identical to `PointKeysAdminService.list`. |
 | Create / edit / publish / archive | new `canManageTemplate(jwt, organizationId)`, delegating to the same rule as `canManagePointKey`: `admin` → true, `organization_admin` → `canManageOrganization`, `location_admin` → **false**. Publish shares the edit permission — see Open question 4. |
-| Instantiate | **both** `canManageTemplate` on the template's org (read) **and** `canManageLocation(jwt, targetLocationId)` (write). |
+| Instantiate | ⚠️ **Superseded by [Amendment 1B](#b-7s-instantiate-predicate-is-wrong-and-denies-the-role-it-describes).** As written — `canManageTemplate` **and** `canManageLocation` — this is unsatisfiable for `location_admin`, the role the paragraph below exists to allow. The implemented rule is `canManageOrganization` on the template's org (read) **and** `canManageLocation(jwt, targetLocationId)` (write). |
 
 The instantiate split is the important one: a `location_admin` may deploy a
 published org template into their own location — that is the whole point of

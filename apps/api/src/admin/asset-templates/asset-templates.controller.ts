@@ -24,6 +24,7 @@ import {
   instantiateAssetsBodySchema,
   updateAssetTemplateBodySchema,
 } from "./asset-templates.schema";
+import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 
 const statusQuerySchema = z.enum(["draft", "published", "archived"]);
@@ -31,7 +32,10 @@ const statusQuerySchema = z.enum(["draft", "published", "archived"]);
 @Controller("admin/asset-templates")
 @UseGuards(JwtAuthGuard)
 export class AssetTemplatesAdminController {
-  constructor(private readonly service: AssetTemplatesAdminService) {}
+  constructor(
+    private readonly service: AssetTemplatesAdminService,
+    private readonly instantiation: AssetTemplateInstantiationService,
+  ) {}
 
   @Get()
   async list(
@@ -109,7 +113,7 @@ export class AssetTemplatesAdminController {
     @CurrentUser() user: JwtPayload,
   ) {
     try {
-      return await this.service.instantiate(
+      return await this.instantiation.instantiate(
         user,
         idParamSchema.parse(id),
         instantiateAssetsBodySchema.parse(body),

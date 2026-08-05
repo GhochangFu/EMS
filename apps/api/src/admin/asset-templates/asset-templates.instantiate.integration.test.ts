@@ -7,6 +7,8 @@ import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
+import { instantiateAssetsBodySchema } from "./asset-templates.schema";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import {
   assertCollidingCodeRollsBackBatch,
@@ -15,13 +17,16 @@ import {
   assertLocationAdminDeploysButCannotAuthor,
   assertLocationPathProducesUnmappedPoints,
   assertOnlyPublishedTemplatesInstantiate,
+  assertCollisionDisclosureIsScoped,
   assertOptionalPointIsSkippedAndReported,
+  assertPrototypeTokensDoNotResolve,
   assertRequiredPointAbortsWholeBatch,
   assertRtuPathProducesMeasuredPoints,
   cleanup,
   loadFixtures,
   publishFixtureTemplate,
   type Fixtures,
+  type Services,
 } from "./asset-templates.instantiate.integration.spec";
 
 /**
@@ -61,7 +66,7 @@ if (!connectionString) {
 
 describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () => {
   let pool: pg.Pool | undefined;
-  let svc: AssetTemplatesAdminService;
+  let svc: Services;
   let fx: Fixtures;
   let template: AdminAssetTemplateDto;
 
@@ -88,11 +93,16 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
     pool = created;
 
     const db = createDb(created);
-    svc = new AssetTemplatesAdminService(
-      db,
-      new AccessControlService(db),
-      new MasterDataAuditService(db),
-    );
+    const access = new AccessControlService(db);
+    const audit = new MasterDataAuditService(db);
+    const instantiation = new AssetTemplateInstantiationService(db, access, audit);
+    svc = {
+      templates: new AssetTemplatesAdminService(db, access, audit),
+      // Parse through the real schema so these cases exercise the controller's
+      // path, transform included — not a hand-built post-transform shape.
+      instantiate: (jwt, templateId, body) =>
+        instantiation.instantiate(jwt, templateId, instantiateAssetsBodySchema.parse(body)),
+    };
     fx = await loadFixtures(created);
     // Before as well as after: a crashed previous run must not fail this one.
     await cleanup(created);
@@ -140,5 +150,13 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
 
   it("lets a location admin deploy but not author (ADR 0015 Amendment 1B)", async () => {
     await assertLocationAdminDeploysButCannotAuthor(svc, fx, pool as pg.Pool, template.id);
+  });
+
+  it("counts but does not name a colliding code outside the caller's scope", async () => {
+    await assertCollisionDisclosureIsScoped(svc, fx, pool as pg.Pool, template.id);
+  });
+
+  it("treats a prototype-inherited pattern token as unresolved", async () => {
+    await assertPrototypeTokensDoNotResolve(svc, fx, pool as pg.Pool);
   });
 });

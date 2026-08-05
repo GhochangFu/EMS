@@ -46,7 +46,7 @@ export default defineConfig({
       // Measured 2026-08-05 with all three integration suites in the tree —
       // F4.10's access-control scope tests, F2.1's asset-template lifecycle and
       // F2.2's instantiation suite:
-      // statements 13.52 · branches 8.87 · functions 17.65 · lines 13.37.
+      // statements 14.22 · branches 9.35 · functions 18.29 · lines 14.07.
       // (Before F2.2: 10.96 · 6.76 · 14.65 · 10.96. F4.10 alone was 7.12 · 4.53
       // · 9.44 · 7.14; F2.1 alone 8.70 · 5.14 · 10.74 · 8.76; F4.11 4.47 · 2.72
       // · 4.72 · 4.59; F4.4 baseline 3.60 · 1.86 · 3.37 · 3.72.)
@@ -62,10 +62,10 @@ export default defineConfig({
       // the reason and the command to fix it. Do NOT lower these to make a
       // database-less run pass.
       thresholds: {
-        statements: 13.4,
-        branches: 8.7,
-        functions: 17.5,
-        lines: 13.2,
+        statements: 14.1,
+        branches: 9.2,
+        functions: 18.1,
+        lines: 13.9,
       },
     },
   },

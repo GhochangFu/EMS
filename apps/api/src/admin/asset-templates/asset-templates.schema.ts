@@ -141,6 +141,30 @@ export const instantiateAssetsBodySchema = z
       }
       seen.add(asset.code);
     });
+  })
+  /**
+   * Narrows the exclusive pair into a discriminated target.
+   *
+   * Without this the inferred type is `{ rtuId?: string; locationId?: string }`
+   * — the exclusivity lives only in the refinement above, so the service would
+   * need a `body.locationId as string` assertion to query with. That assertion
+   * would keep compiling if the refinement were ever loosened, and silently
+   * produce `eq(locations.id, undefined)`. Transforming here means the service
+   * receives a shape where the wrong access does not typecheck.
+   *
+   * Refinements run before transforms, so by this point exactly one is set;
+   * the throw states that invariant rather than trusting it silently.
+   */
+  .transform((body) => {
+    const target = body.rtuId
+      ? ({ kind: "rtu", rtuId: body.rtuId } as const)
+      : body.locationId
+        ? ({ kind: "location", locationId: body.locationId } as const)
+        : null;
+    if (!target) {
+      throw new Error("unreachable: the exclusive-target refinement guarantees one is set");
+    }
+    return { target, assets: body.assets };
   });
 
 export type CreateAssetTemplateBody = z.infer<typeof createAssetTemplateBodySchema>;
@@ -148,3 +172,4 @@ export type UpdateAssetTemplateBody = z.infer<typeof updateAssetTemplateBodySche
 export type TemplatePointBody = z.infer<typeof templatePointBodySchema>;
 export type InstantiateAssetsBody = z.infer<typeof instantiateAssetsBodySchema>;
 export type InstantiateAssetBody = z.infer<typeof instantiateAssetBodySchema>;
+export type InstantiationTargetInput = InstantiateAssetsBody["target"];

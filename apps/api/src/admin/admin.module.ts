@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { AssetPointsAdminController } from "./asset-points/asset-points.controller";
 import { AssetPointsAdminService } from "./asset-points/asset-points.service";
+import { AssetTemplateInstantiationService } from "./asset-templates/asset-templates-instantiate.service";
 import { AssetTemplatesAdminController } from "./asset-templates/asset-templates.controller";
 import { AssetTemplatesAdminService } from "./asset-templates/asset-templates.service";
 import { AssetsAdminController } from "./assets/assets.controller";
@@ -53,6 +54,7 @@ import { RtusAdminService } from "./rtus/rtus.service";
     AssetPointsAdminService,
     PointKeysAdminService,
     AssetTemplatesAdminService,
+    AssetTemplateInstantiationService,
   ],
 })
 export class AdminModule {}
