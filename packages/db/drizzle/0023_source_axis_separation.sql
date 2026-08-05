@@ -14,39 +14,63 @@
 ALTER TABLE bms.asset_points
   ADD COLUMN IF NOT EXISTS rtu_id uuid REFERENCES bms.rtus(id);
 
+-- Default 'unmapped', not 'measured'. A writer that supplies neither column
+-- then produces a VALID row describing exactly what it knows — no source — and
+-- gets a truthful record instead of a check violation. Defaulting to 'measured'
+-- made every existing INSERT that omitted rtu_id a runtime 500.
 ALTER TABLE bms.asset_points
-  ADD COLUMN IF NOT EXISTS source_kind varchar(16) NOT NULL DEFAULT 'measured';
+  ADD COLUMN IF NOT EXISTS source_kind varchar(16) NOT NULL DEFAULT 'unmapped';
 
--- 2. Backfill point-level provenance from the asset's current gateway. Every
---    asset still has one at this point (rtu_id is NOT NULL until step 5), so
---    this leaves no 'measured' row without a source and step 3 cannot fail.
+-- 2. Backfill point-level provenance from the asset's current gateway.
+--
+--    Do NOT assume every asset has one. No migration has ever set
+--    assets.rtu_id NOT NULL — only hierarchy-seed.ts did, at seed time — so a
+--    migrate-only deployment can legitimately hold assets with a null gateway.
+--    Copying that null while leaving source_kind at its 'measured' default
+--    would abort step 3's CHECK and fail the whole migration. Classify by what
+--    the data actually says instead: no gateway means the point is not
+--    gateway-measured.
 UPDATE bms.asset_points ap
-SET rtu_id = a.rtu_id
+SET rtu_id = a.rtu_id,
+    source_kind = CASE WHEN a.rtu_id IS NULL THEN 'unmapped' ELSE 'measured' END
 FROM bms.assets a
 WHERE ap.asset_id = a.id
-  AND ap.rtu_id IS NULL;
+  AND ap.rtu_id IS NULL
+  -- Only touch rows that have not been classified yet. Without this, a re-run
+  -- after F1.9 lands would stamp a source onto hand-entered points and the
+  -- ref check would reject the UPDATE. Drizzle never re-runs a file, but this
+  -- one advertises itself as idempotent, so it must actually be.
+  AND ap.source_kind = 'unmapped';
 
 -- 3. A nullable rtu_id alone cannot distinguish "not yet mapped" from "entered
 --    by hand" from "derived". source_kind makes the null unambiguous, the way
 --    Haystack requires exactly one pointFunction marker on every point.
+-- `conname` is unique per relation, not globally, so an unqualified lookup
+-- would skip the ADD CONSTRAINT if any other table anywhere carried the same
+-- name — leaving asset_points unconstrained while the migration reported
+-- success. Qualify by conrelid.
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'asset_points_source_kind_check'
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'asset_points_source_kind_check'
+      AND conrelid = 'bms.asset_points'::regclass
   ) THEN
     ALTER TABLE bms.asset_points
       ADD CONSTRAINT asset_points_source_kind_check
-      CHECK (source_kind IN ('measured', 'manual', 'computed'));
+      CHECK (source_kind IN ('measured', 'manual', 'computed', 'unmapped'));
   END IF;
 
   IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'asset_points_source_ref_check'
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'asset_points_source_ref_check'
+      AND conrelid = 'bms.asset_points'::regclass
   ) THEN
     ALTER TABLE bms.asset_points
       ADD CONSTRAINT asset_points_source_ref_check
       CHECK (
         (source_kind = 'measured' AND rtu_id IS NOT NULL)
-        OR (source_kind IN ('manual', 'computed') AND rtu_id IS NULL)
+        OR (source_kind IN ('manual', 'computed', 'unmapped') AND rtu_id IS NULL)
       );
   END IF;
 END $$;

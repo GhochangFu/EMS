@@ -167,8 +167,9 @@ export class DashboardService {
       code: string;
       name: string;
       domain: string;
-      rtu_id: string;
-      rtu_display_name: string;
+      // ADR 0018: LEFT JOIN — null for a gateway-less asset.
+      rtu_id: string | null;
+      rtu_display_name: string | null;
       latest_kw: string | null;
       latest_telemetry_at: Date | string | null;
       latest_telemetry: unknown;
@@ -184,11 +185,15 @@ export class DashboardService {
       WITH scoped_assets AS (
         SELECT a.id, a.code, a.name, a.domain, a.rtu_id, r.display_name AS rtu_display_name
         FROM bms.assets a
-        INNER JOIN bms.rtus r ON r.id = a.rtu_id
+        -- ADR 0018: LEFT JOIN. An inner join drops gateway-less assets, so an
+        -- asset with a critical alarm would vanish from its own location
+        -- dashboard while its work orders were still counted below — the same
+        -- silent-invisibility defect this ADR exists to remove.
+        LEFT JOIN bms.rtus r ON r.id = a.rtu_id
         WHERE a.location_id = $1
           AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
           AND ($5::uuid IS NULL OR a.rtu_id = $5::uuid)
-        ORDER BY r.display_name, a.code
+        ORDER BY r.display_name NULLS LAST, a.code
         LIMIT $3 OFFSET $4
       ),
       latest_points AS (
@@ -290,7 +295,7 @@ export class DashboardService {
       LEFT JOIN telemetry ON telemetry.asset_id = sa.id
       LEFT JOIN alarm_rollup ON alarm_rollup.asset_id = sa.id
       LEFT JOIN work_order_rollup ON work_order_rollup.asset_id = sa.id
-      ORDER BY sa.rtu_display_name, sa.code
+      ORDER BY sa.rtu_display_name NULLS LAST, sa.code
       `,
       [locationId, opts?.assetIds ?? null, pageSize, offset, opts?.rtuId ?? null],
     );

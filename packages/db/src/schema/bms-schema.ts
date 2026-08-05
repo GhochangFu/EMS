@@ -151,7 +151,7 @@ export const assetPoints = bmsSchema.table("asset_points", {
   // unmapped, hand-entered or derived. Enforced by asset_points_source_ref_check:
   // `measured` requires an rtuId; `manual`/`computed` require none.
   rtuId: uuid("rtu_id").references(() => rtus.id),
-  sourceKind: varchar("source_kind", { length: 16 }).notNull().default("measured"),
+  sourceKind: varchar("source_kind", { length: 16 }).notNull().default("unmapped"),
   sensorCode: varchar("sensor_code", { length: 64 }),
   unit: varchar("unit", { length: 32 }),
   active: boolean("active").notNull().default(true),

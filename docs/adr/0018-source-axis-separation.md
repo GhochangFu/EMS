@@ -85,17 +85,40 @@ mix sources.
    in practice. One asset can legitimately carry a Modbus point, a manual
    monthly reading, and a computed point.
 
-4. **Add `bms.asset_points.source_kind`** — `measured | manual | computed`,
-   `NOT NULL DEFAULT 'measured'`. A nullable `rtu_id` alone is ambiguous: it
-   cannot distinguish "not yet mapped" from "entered by hand" from "derived".
-   Haystack requires exactly one function marker for precisely this reason.
-   Enforced by a CHECK constraint: `measured` requires `rtu_id`; `manual` and
-   `computed` require it to be null.
+4. **Add `bms.asset_points.source_kind`** —
+   `measured | manual | computed | unmapped`, `NOT NULL DEFAULT 'unmapped'`.
+   A nullable `rtu_id` alone is ambiguous: it cannot distinguish "not yet
+   mapped" from "entered by hand" from "derived". Haystack requires exactly one
+   function marker for precisely this reason. Enforced by a CHECK constraint:
+   `measured` requires `rtu_id`; the other three require it to be null.
 
-5. **The seed stops fabricating synthetic RTUs.** `hierarchy-seed.ts` no longer
-   creates `{"synthetic":true}` rows, and the `"Cannot enforce NOT NULL"` guard
-   is removed. Existing synthetic rows are **not** deleted by this migration —
-   assets still reference them. Retiring them is follow-up work.
+   **`unmapped` and the default were added after review.** The first draft
+   offered only three kinds and defaulted to `measured`, which was wrong twice
+   over. It made "not yet mapped" — the state the column was introduced to
+   express — the one state unrepresentable, forcing two independent call sites
+   to record a gateway-less point as `manual`: a provenance claim nobody made.
+   And defaulting to `measured` turned every existing INSERT that omitted
+   `rtu_id` into a runtime constraint violation. Defaulting to `unmapped` means
+   a writer that supplies neither column produces a valid row describing
+   exactly what it knows. This also matters for `F1.9`, where measured points
+   are legitimately imported before their gateway is wired.
+
+5. **The seed stops re-applying the old constraint.** `hierarchy-seed.ts` ran
+   `ALTER TABLE bms.assets ALTER COLUMN rtu_id SET NOT NULL` on every
+   `db:seed`, so a migration alone would have been silently undone on the next
+   seed — including in CI, which runs `db:migrate` then `db:seed`. That guard
+   now enforces `location_id` instead. `verify-hierarchy-seed.ts` asserted the
+   same dead invariant and is re-pointed too.
+
+   **The seed still fabricates `{"synthetic":true}` RTU rows, and this ADR no
+   longer asks it to stop.** An earlier draft did. That was wrong: the simulator
+   demo navigates assets through `/admin/locations/:id/rtus/:rtuId/assets`, and
+   `resolveEskomSimRtuId` structurally depends on those rows, so removing them
+   would leave Eskom's 147 demo assets unreachable by that route on a fresh
+   database while existing databases kept them — fresh and existing installs
+   disagreeing. The schema no longer *requires* those rows, which is the
+   substantive change; whether the demo keeps using them is a separate
+   product call, not a schema one. Retiring them stays follow-up work.
 
 6. **Scope limit.** This ADR changes the source axis only. Location depth
    (`locations.parent_id`), asset composition (`parent_asset_id`), and the
@@ -131,9 +154,19 @@ recorded now rather than re-litigated later. It must ship with the companion
 ADR's migration, not before, and must be explicitly tested: it silently widens
 access, which is the failure mode that will not announce itself.
 
-**Risk accepted.** `source_kind` is enforced by a CHECK constraint, not by
-application code that does not yet exist. `F1.8`/`F1.9` will be its first
-writers; until they land, only `measured` rows are produced.
+**Risk accepted.** `source_kind` is enforced by a CHECK constraint rather than
+by Zod at the controller boundary. Adding a schema-level enum is owed when
+`F1.8`/`F1.9` expose the field to callers.
+
+An earlier draft of this section claimed `F1.8`/`F1.9` would be the *first*
+writers of `asset_points`. **That was false, and the review caught it.** Two
+writers already exist — `asset-points.service.ts` (`POST /admin/asset-points`)
+and `onboarding-commit.service.ts` (the ADR 0011 wizard commit) — and both
+omitted the new columns, so against the original `DEFAULT 'measured'` both
+would have returned 500 on every call. Neither is covered by a test, and the
+seed supplies the columns explicitly, so **CI would have stayed green while two
+endpoints were dead.** Both now set provenance; the default change in decision
+4 removes the failure mode at its root rather than only at these two sites.
 
 ## Verification
 
@@ -141,10 +174,15 @@ writers; until they land, only `measured` rows are produced.
   rejected with `location_id IS NULL` — the two polarities, both directions.
 - A test asserting the `source_kind` CHECK rejects `measured` without an
   `rtu_id` and `manual`/`computed` with one.
-- A seed run producing **zero** rows matching `meta->>'synthetic' = 'true'`,
-  which is the measurable form of decision 5.
-- `pnpm db:migrate && pnpm db:seed` against a fresh schema in CI, which already
-  runs on every PR (ADR 0014).
+- A test asserting `hierarchy-seed.ts` never re-applies
+  `assets.rtu_id SET NOT NULL`, and that `verify-hierarchy-seed.ts` no longer
+  asserts the deleted invariant — the two places a migration can be silently
+  undone at seed time. Verified by re-injecting the statement and confirming
+  the suite fails.
+- `pnpm db:migrate && pnpm db:seed` against a **genuinely fresh** database, not
+  an incrementally migrated one. The two differ: on an existing database the
+  seed takes its `ON CONFLICT` update path and never exercises the insert that
+  the new `location_id` constraint rejects.
 
 ## Owed follow-up
 

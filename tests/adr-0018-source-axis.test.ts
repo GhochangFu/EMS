@@ -55,7 +55,7 @@ describe("ADR 0018 — source axis separation", () => {
   it("makes a null source unambiguous via source_kind", () => {
     const migration = read("packages/db/drizzle/0023_source_axis_separation.sql");
 
-    for (const kind of ["measured", "manual", "computed"]) {
+    for (const kind of ["measured", "manual", "computed", "unmapped"]) {
       expect(migration, `must define the '${kind}' source kind`).toContain(`'${kind}'`);
     }
     expect(
@@ -64,8 +64,25 @@ describe("ADR 0018 — source axis separation", () => {
     ).toMatch(/source_kind = 'measured' AND rtu_id IS NOT NULL/);
     expect(
       migration,
-      "hand-entered and computed points must carry no source reference",
-    ).toMatch(/source_kind IN \('manual', 'computed'\) AND rtu_id IS NULL/);
+      "sourceless kinds must carry no source reference",
+    ).toMatch(/source_kind IN \('manual', 'computed', 'unmapped'\) AND rtu_id IS NULL/);
+
+    // The default decides whether an existing writer that sets neither column
+    // produces a valid row or a 500. Defaulting to 'measured' made every such
+    // INSERT violate the ref check — two live endpoints, invisible to CI
+    // because the seed sets the columns explicitly.
+    expect(
+      migration,
+      "source_kind must default to 'unmapped'; defaulting to 'measured' breaks every writer that omits rtu_id",
+    ).toMatch(/source_kind varchar\(16\) NOT NULL DEFAULT 'unmapped'/);
+
+    // Constraint names are unique per relation, not per cluster.
+    const guards = migration.match(/FROM pg_constraint/g) ?? [];
+    const qualified = migration.match(/conrelid = 'bms\.asset_points'::regclass/g) ?? [];
+    expect(
+      qualified.length,
+      "every pg_constraint existence guard must be qualified by conrelid, or a same-named constraint elsewhere makes ADD CONSTRAINT a silent no-op",
+    ).toBe(guards.length);
   });
 
   it("keeps the drizzle schema in step with the migration", () => {
@@ -118,6 +135,34 @@ describe("ADR 0018 — source axis separation", () => {
       seed,
       "the seed guard must check the column that is now mandatory, not the old one",
     ).toContain("assets without location_id remain");
+
+    // Second contradiction, found by review after the first was fixed: the seed
+    // verifier ran its own `assets WHERE rtu_id IS NULL` assertion and threw.
+    // It passes today only because the seed happens to wire every asset — the
+    // first gateway-less asset from F1.8/F1.9 would turn db:seed red in CI.
+    const verifier = read("packages/db/src/verify-hierarchy-seed.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*(\/\/|--).*$/gm, "");
+    expect(
+      verifier,
+      "verify-hierarchy-seed must not assert assets.rtu_id IS NULL = 0 — ADR 0018 makes a null gateway legal",
+    ).not.toMatch(/bms\.assets WHERE rtu_id IS NULL/);
+  });
+
+  it("keeps every asset_points writer supplying provenance", () => {
+    // The CHECK is only as good as the writers. These two omitted both columns
+    // and would have 500'd on every call; neither has a test, and the seed sets
+    // the columns explicitly, so CI stayed green while the endpoints were dead.
+    for (const rel of [
+      "apps/api/src/admin/asset-points/asset-points.service.ts",
+      "apps/api/src/admin/onboarding/onboarding-commit.service.ts",
+    ]) {
+      const src = read(rel);
+      expect(src, `${rel} must set sourceKind when inserting asset points`).toMatch(
+        /sourceKind:/,
+      );
+      expect(src, `${rel} must set rtuId when inserting asset points`).toMatch(/rtuId:/);
+    }
   });
 
   it("does not silently drop gateway-less assets from admin queries", () => {

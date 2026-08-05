@@ -1415,7 +1415,7 @@ async function main(): Promise<void> {
     }
 
     await enforceHierarchyNotNull(pool);
-    const { verifyHierarchySeed } = await import("./verify-hierarchy-seed");
+    const { verifyHierarchySeed } = await import("./verify-hierarchy-seed.js");
     await verifyHierarchySeed(pool);
   } finally {
     await pool.end();

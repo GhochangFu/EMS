@@ -98,8 +98,11 @@ export type LocationDashboardDto = LocationKpiSummary & {
       code: string;
       name: string;
       domain: string;
-      rtuId: string;
-      rtuDisplayName: string;
+      // ADR 0018: null for a gateway-less asset. The dashboard LEFT JOINs rtus
+      // so such an asset still appears with its alarms; declaring these
+      // non-null would be a contract the query cannot honour.
+      rtuId: string | null;
+      rtuDisplayName: string | null;
       latestKw: number | null;
       latestTelemetryAt: string | null;
       freshness: "live" | "stale" | "none";
