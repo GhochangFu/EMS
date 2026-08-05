@@ -22,6 +22,11 @@ import type {
 import { AccessControlService } from "../../auth/access-control.service";
 import { DRIZZLE } from "../../database/database.tokens";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import {
+  findUnresolvedContentRefs,
+  templateContentSchema,
+  type TemplateContentParsed,
+} from "./asset-templates-content.schema";
 import type {
   CreateAssetTemplateBody,
   TemplatePointBody,
@@ -119,6 +124,9 @@ export class AssetTemplatesAdminService {
   ): Promise<AdminAssetTemplateDto> {
     await this.assertCanAuthor(jwt, body.organizationId);
     await this.assertPointKeysActive(body.organizationId, body.points);
+    if (body.content) {
+      this.assertContentRefsResolve(body.content, body.points);
+    }
     const createdBy = await this.resolveCreatedBy(jwt);
 
     const created = await this.db.transaction(async (tx) => {
@@ -182,6 +190,13 @@ export class AssetTemplatesAdminService {
     if (body.points) {
       await this.assertPointKeysActive(template.organizationId, body.points);
     }
+    if (body.content) {
+      // The effective point set: what this request carries when it carries
+      // points, and what is already stored when it does not. A `PATCH` that
+      // sends content alone is the common authoring case and must resolve
+      // against the points the template actually has.
+      this.assertContentRefsResolve(body.content, body.points ?? (await this.loadPoints(id)));
+    }
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -207,7 +222,16 @@ export class AssetTemplatesAdminService {
       action: "master.asset_template.update",
       entityType: "asset_template",
       entityId: id,
-      payload: { ...body, points: body.points?.length },
+      // `content` is summarised, not spread: it is bounded at 256 KiB and an
+      // audit row per edit carrying a full copy grows `bms.audit_log` by the
+      // size of the template on every keystroke-level save. The *fact* of a
+      // content change is what an audit trail needs; the content itself is on
+      // the version row, which is immutable once published.
+      payload: {
+        ...body,
+        content: body.content ? { changed: true, sections: Object.keys(body.content) } : undefined,
+        points: body.points?.length,
+      },
     });
     return this.getById(jwt, id);
   }
@@ -219,22 +243,27 @@ export class AssetTemplatesAdminService {
    * ADR 0010 §5 requires an *active* catalog row, and a key can be deactivated
    * between authoring and publishing. Failing at publish is recoverable;
    * failing later, mid-instantiation across 40 assets, is not.
+   *
+   * `content` is re-checked for the same reason plus one of its own (ADR 0019
+   * §6): `content` and `points` are patched *independently*, so a `PATCH` that
+   * replaces the point set and says nothing about content silently orphans
+   * every content reference to a removed key. Nothing at that write notices,
+   * because a write only validates what it carries. This is where the whole
+   * object is re-proved consistent.
    */
   async publish(jwt: JwtPayload, id: string): Promise<AdminAssetTemplateDto> {
     const { template } = await this.fetchRow(id);
     await this.assertCanAuthor(jwt, template.organizationId);
     this.assertDraft(template, "published");
 
-    const points = await this.db
-      .select()
-      .from(templatePoints)
-      .where(eq(templatePoints.templateId, id));
+    const points = await this.loadPoints(id);
     if (points.length === 0) {
       throw new BadRequestException(
         "A template with no points would instantiate assets with no telemetry mapping",
       );
     }
     await this.assertPointKeysActive(template.organizationId, points);
+    this.assertContentRefsResolve(this.parseStoredContent(template), points);
 
     const now = new Date();
     await this.db
@@ -442,6 +471,80 @@ export class AssetTemplatesAdminService {
     if (missing.length > 0) {
       throw new BadRequestException(
         `Not in this organization's active point-key catalog: ${missing.join(", ")}`,
+      );
+    }
+  }
+
+  /** A template's stored point set, ordered as `replacePoints` wrote it. */
+  private async loadPoints(templateId: string): Promise<PointRow[]> {
+    return this.db
+      .select()
+      .from(templatePoints)
+      .where(eq(templatePoints.templateId, templateId))
+      .orderBy(asc(templatePoints.sortOrder));
+  }
+
+  /**
+   * Re-parses a stored `content` value under the current contract.
+   *
+   * `F2.1` shipped this column behind `z.record(z.unknown())`, so a row written
+   * before ADR 0019 may hold JSON the tightened envelope rejects. Such a row
+   * keeps reading and keeps instantiating — nothing consumes `content` — but it
+   * cannot be *published*, because publishing puts it behind an immutable
+   * version, which is the one state with no cheap way out. The error says how
+   * to move forward rather than only what is wrong.
+   */
+  private parseStoredContent(template: TemplateRow): TemplateContentParsed {
+    const parsed = templateContentSchema.safeParse(template.content ?? {});
+    if (!parsed.success) {
+      // Report *structure*, never values. Stored content on a pre-ADR row is
+      // arbitrary JSON, and zod's own message text echoes the received value
+      // back for `invalid_enum_value` ("… received 'x'"). Paths, unexpected key
+      // names and issue codes say everything an author needs to fix it. Our own
+      // `custom` messages are kept because we wrote them and they interpolate
+      // only a key name and a byte count — and because they are the only place
+      // a reserved section explains which item it is waiting for.
+      const detail = parsed.error.issues
+        .map((issue) => {
+          const at = issue.path.join(".") || "content";
+          if (issue.code === "custom") {
+            return `${at}: ${issue.message}`;
+          }
+          if (issue.code === "unrecognized_keys") {
+            return `${at}: unrecognized key(s) ${issue.keys.join(", ")}`;
+          }
+          return `${at}: ${issue.code}`;
+        })
+        .join("; ");
+      throw new BadRequestException(
+        "This template's stored content does not match the current content contract, " +
+          `so it cannot be published. PATCH \`content\` into conformance first. ${detail}`,
+      );
+    }
+    return parsed.data;
+  }
+
+  /**
+   * Every point key `content` names must be one the template declares
+   * (ADR 0019 §6) — not merely one in the org's catalog. A KPI referencing a
+   * catalogued point the template does not carry produces an asset with no such
+   * point on it, which is broken on every instance rather than on one.
+   *
+   * Names every unresolved key, for the same reason `assertPointKeysActive`
+   * does: bisecting a forty-point template by hand is not a debugging strategy.
+   */
+  private assertContentRefsResolve(
+    content: TemplateContentParsed,
+    points: { pointKey: string }[],
+  ): void {
+    const missing = findUnresolvedContentRefs(
+      content,
+      points.map((point) => point.pointKey),
+    );
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        "Template content references point keys this template does not declare: " +
+          `${missing.join(", ")}. Add them to \`points\`, or remove the references.`,
       );
     }
   }

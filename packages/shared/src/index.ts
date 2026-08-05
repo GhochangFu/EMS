@@ -378,6 +378,7 @@ export type MaintenanceGenerationMode =
 export type AutomationRuleType = "threshold" | "time_window";
 export type AutomationRuleCategory = "comfort" | "energy" | "safety" | "operations";
 export type AutomationRuleOperator = "gt" | "gte" | "lt" | "lte" | "eq";
+export type AutomationRuleSeverity = "info" | "warning" | "critical";
 export type AutomationRuleLifecycleStatus = "draft" | "published" | "archived";
 export type RuleExecutionStatus = "matched" | "not_matched" | "skipped" | "error";
 
@@ -648,6 +649,13 @@ export type AssetTemplateStatus = "draft" | "published" | "archived";
  */
 export type TemplatePointKind = "measured" | "derived";
 
+/**
+ * The `asset_templates.content` overlay model (ADR 0019, backlog `E1.7`) —
+ * `TemplateContent` and its sections. Split into its own module because this
+ * file is at the AGENTS.md §4.5 1000-line cap.
+ */
+export type * from "./asset-template-content";
+
 export type AdminTemplatePointDto = {
   id: string;
   templateId: string;
@@ -678,7 +686,14 @@ export type AdminAssetTemplateDto = {
   domain: string;
   description: string | null;
   status: AssetTemplateStatus;
-  /** Reserved E1.7 overlay surface; `{}` until E1.7 tightens its contract. */
+  /**
+   * The `E1.7` overlay. Typed as a bare record rather than `TemplateContent`
+   * on purpose: `F2.1` shipped this column behind `z.record(z.unknown())`, so a
+   * deployment may hold rows written before ADR 0019 tightened it. Those rows
+   * still read and still instantiate — nothing consumes `content` — and are
+   * rejected only when someone next writes or publishes them. A DTO claiming
+   * `TemplateContent` would be lying about them.
+   */
   content: Record<string, unknown>;
   publishedAt: string | null;
   archivedAt: string | null;

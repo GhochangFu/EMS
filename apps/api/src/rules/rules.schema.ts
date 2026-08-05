@@ -1,8 +1,15 @@
 import { z } from "zod";
 
-const categorySchema = z.enum(["comfort", "energy", "safety", "operations"]);
+/**
+ * The three enums below are exported because ADR 0019 §3 binds a template's
+ * `content.alarms` to this vocabulary rather than restating it — a copied enum
+ * is a copy that drifts, and a template that authors `neq` or `major` would be
+ * authoring alarms this engine cannot run. Everything else here stays private.
+ */
+export const categorySchema = z.enum(["comfort", "energy", "safety", "operations"]);
 const ruleTypeSchema = z.enum(["threshold", "time_window"]);
-const operatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
+export const operatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
+export const severitySchema = z.enum(["info", "warning", "critical"]);
 const actionTypeSchema = z.enum(["notify", "review", "trace_only"]);
 const daySchema = z.string().regex(/^(sun|mon|tue|wed|thu|fri|sat)$/);
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -41,7 +48,7 @@ export const ruleDraftBodySchema = z.object({
   pointKey: z.string().trim().min(1).max(128).nullable().optional(),
   operator: operatorSchema.nullable().optional(),
   thresholdValue: z.coerce.number().finite().nullable().optional(),
-  severity: z.enum(["info", "warning", "critical"]).nullable().optional(),
+  severity: severitySchema.nullable().optional(),
   condition: z.union([latestConditionSchema, timeWindowConditionSchema]),
   action: actionSchema,
 });

@@ -45,7 +45,7 @@ WAVE 0  enablers+quick wins: [F4.4⭐ ✅] [F2.1⭐ ✅] F1.1⭐ F2.3⭐ F3.8⭐
         [F4.11 ✅] [F4.12 ✅] F3.6 F1.8 F1.9 F4.24 E8.1🟡 E8.2 E8.3 E8.4
         + ADRs(E1.1, E7.1, positioning)
 WAVE 1  F1.2 F1.3 F1.4 F1.5 F1.6 F1.7 F1.10  [F2.2 ✅] F2.4  F3.7 F3.10 F3.1 F3.4 F3.11
-        F4.5 F4.7 F4.8 [F4.10 ✅] F4.14 F4.23  E1.7 E3.1 E5.4
+        F4.5 F4.7 F4.8 [F4.10 ✅] F4.14 F4.23  [E1.7 ✅] E3.1 E5.4
 WAVE 2  F2.5 F2.6 F2.7 F2.8  F3.2 F3.16 F3.20(P1↑)  F3.21⭐  F4.6 F4.15
         E5.1 E5.2 E2.1 E1.1⭐
 WAVE 3  F3.22 F3.23 F3.24 F3.25 F3.26 F3.27  F3.12 F3.5
@@ -57,7 +57,8 @@ WAVE 5  F3.9 F3.17 F3.18 F3.19 F4.3 F4.18 F4.19 F4.22 F4.26 F1.11
 ```
 
 **Critical path (protect Track B):**
-`F2.1 → E1.7 → E5.1` and `F2.1 → F2.2 → F3.22` and
+`F2.1 ✅ → E1.7 ✅ → E5.1` ← **`E5.1` is now the head of this chain and both of
+its dependencies are met.** And `F2.1 ✅ → F2.2 ✅ → F3.22` and
 `F4.1 + F1.x → E1.1 → E1.3/E1.2`, converging on the Foundry demo: *a
 water-treatment plant onboarded from a rich template by the onboarding agent,
 with health scores, pre-threshold anomaly alerts, and enriched alarms.*
@@ -130,7 +131,7 @@ still safe in parallel.
 | **2** *(part)* | ~~**F2.1** ⭐~~ ✅ · ~~F4.10~~ ✅ · **F1.1** ⭐ · **F3.8** ⭐ | B · F · A · D | **F2.1** (ADR 0015, PR #5) released the migration lock and opened the critical path — `E1.7`, `F2.2` and `F2.7` unblock. **F4.10** (PR #4) was pulled forward from wave 1: it was the only P0 in the unblocked set, and ADR 0017 names it as where the write matrix gets its end-to-end proof. `F1.1` and `F3.8` remain; `F3.8` still needs a §9.4 dependency ADR. |
 | **3** | **F2.3** ⭐ · **F4.1** ⭐ · **F3.3** ⭐ | B · F · C | Second enabler batch. F2.3 continues track B (same owner as F2.1). |
 | **4** *(part)* | F1.2 · ~~F2.2~~ ✅ · F3.6 | A · B · D | First dependents unlock: Modbus (needs F1.1), template instantiation (needs F2.1), alarm-engine unification (independent). **F2.2** (ADR 0015 Amendment 1, PR #7) was pulled forward from this slot the moment `F2.1` landed — it is P0, needs no DDL, and a template nobody can instantiate is a schema rather than a feature. `F1.2` still waits on `F1.1`. |
-| **5** | F1.3 · **E1.7** · F3.7 | A · B · D | E1.7 (template content model) is **P0 critical path** — the Ion Exchange overlay surface. F3.7 needs F3.8. |
+| **5** *(part)* | F1.3 · ~~**E1.7**~~ ✅ · F3.7 | A · B · D | **E1.7** (ADR 0019, PR #9) was pulled forward the moment `F2.1` landed — P0 critical path, no DDL, and it is the last thing between `main` and `E5.1`. It unblocks all three domain packs. F3.7 still needs F3.8. |
 | **6** | F1.4 ‖ F1.5 ‖ F1.6 | A ‖ | **Flagship fan-out.** OPC-UA, SNMP/REST and DCS all implement the *same* frozen `F1.1` interface in their *own* files — the cleanest 3-agent parallel batch in the whole plan. |
 | **7** | F2.4 · F3.1 · F4.20 | B · C · F | Calc engine (needs F2.3), dashboard builder, OpenAPI. |
 | **8** | **E5.1** · F1.7 · F4.10 | B · A · F | E5.1 water-treatment domain pack — **P0 flagship**, Ion Exchange's core business (needs F2.1 + E1.7). |
@@ -178,7 +179,7 @@ the `Depends` column rather than read off the slot table:
 
 | Item | P | Track | Why it matters now |
 |------|---|-------|--------------------|
-| **E1.7** | **P0** | B | Template content model — the Ion Exchange overlay surface. `F2.1` shipped `asset_templates.content jsonb` as its reserved home, `{}` and contracted by a Zod schema E1.7 tightens. It is the last thing between here and `E5.1`, the water-treatment domain pack that is the client's core business. |
+| ~~**E1.7**~~ ✅ | **P0** | B | Template content model — the Ion Exchange overlay surface. `F2.1` shipped `asset_templates.content jsonb` as its reserved home, `{}` and contracted by a Zod schema E1.7 tightens. It was the last thing between here and `E5.1`. **Done 2026-08-05, ADR 0019, PR #9.** |
 | ~~**F2.2**~~ ✅ | **P0** | B | Instantiate assets from a template. `F2.1` deliberately shipped `assets.template_id` so F2.2 adds **no DDL at all** — it does not take the migration lock. **Done 2026-08-05, PR #7.** |
 | F2.7 | P1 | B | Tag-mapping bulk editor; `template_points.source_data_key_pattern` is its seed column. |
 
@@ -201,6 +202,41 @@ is most likely to get wrong by assuming. Both of `F2.2`'s dependents list a
   `F3.21` ⭐, the onboarding agent loop, which is Wave 2.
 
 So the critical path's next move is still **`E1.7`**, unchanged by this item.
+
+### E1.7 landed and opened the flagship (2026-08-05, PR #9)
+
+`E1.7` ⭐-adjacent but not starred; built serially and hands-on anyway, because
+it is the last dependency of the client's core business. Newly unblocked,
+re-derived from the `Depends` column rather than read off the slot table:
+
+| Item | P | Wave | Why it matters now |
+|------|---|------|--------------------|
+| **E5.1** | **P0** | 2 | **Water-treatment domain pack** — STP/ETP/RO/UF/softeners/DM/cooling water/dosing/potable. Ion Exchange's core business and the Foundry demo's subject. Both of its dependencies (`F2.1`, `E1.7`) are now ✅. This is the flagship. |
+| E5.2 | P1 | 2 | Mechanical/utility pack (pumps, compressors, chillers, AHUs, boilers). Same two dependencies, both met. |
+| E5.3 | P2 | 5 | Facility/smart-building pack. Unblocked, but its wave is far out. |
+
+**Still blocked, and worth recording so the next cascade check does not
+re-derive it:** `E2.2` (alarm philosophy KB) needs `E1.7` **and** `E2.1`, which
+is ⬜ and itself waits on `F3.6`. `E1.3` (asset health score) needs `E1.7` **and**
+`E1.1` ⭐, the ML foundation, which is ADR-gated on a stack choice. Both are two
+items away, not one.
+
+**The lesson worth carrying forward.** `E1.7`'s backlog row promises six things.
+Checked against `main` rather than against the row, **five of the six consumers
+did not exist** — `F2.3`, `F3.1`, `E1.1`, `E1.6` and `E2.1` each own a vocabulary
+the content model would otherwise have been inventing on their behalf. The row
+was written as if the overlay were one feature; it is really five reopenings
+gated on five different items.
+
+That is not a defect in the row — a backlog cannot track which of its own future
+items owns which vocabulary. It is a reason to check *consumer state* before
+building anything described as "extend X to carry Y". The check is cheap (`grep`
+the `Depends` column and look at `apps/api/src/`) and it changed this item's
+design completely: from one guessed schema to a contract tiered by what is
+actually buildable, with the unbuildable parts **rejected** rather than accepted
+untyped. A reserved key that is silently accepted is worse than one that errors —
+it lets `E5.1` author a shape `F3.1` will contradict a year later, with packs
+already in the field.
 
 **The ADR-contradiction note worth carrying forward.** ADR 0015 §7 specified an
 instantiate predicate — `canManageTemplate` **and** `canManageLocation` — that
@@ -298,7 +334,7 @@ single shared file). `F3.8` needs a dependency ADR before build.
 | **F2.3** | Calculation formula DSL + definition schema ⭐ | P0 | 8–10 | 0 | — | ⬜ |
 | **F2.2** | Instantiate assets from template (model-once-deploy-many) — ADR 0015 §6/§7 **as amended**, PR #7. `POST /admin/asset-templates/:id/instantiate`, no DDL. Target is `rtuId` **xor** `locationId`: through an RTU the points are `measured`, through a location alone `unmapped` (ADR 0018's source axis). Derived points are never instantiated. All-or-nothing — every fallible check runs before the transaction opens | P0 | 4–5 | 1 | F2.1 | ✅ |
 | F2.4 | Calc execution engine (streaming + scheduled) | P0 | incl. | 1 | F2.3 | ⬜ |
-| **E1.7** | Template content model extension: KPIs, alarm philosophies, default dashboards, health/maintenance/optimisation hooks (Ion Exchange overlay surface) | P0 | 3–4 | 1 | F2.1 | ⬜ |
+| **E1.7** | Template content model extension: KPIs, alarm philosophies, class-level maintenance plans, dashboard point ordering (Ion Exchange overlay surface). **ADR 0019, PR #9.** Tiered by whether a consumer exists — `health` (E1.1) and `optimisation` (E1.6) are *rejected*, not accepted untyped; `dashboards` carries ordering only until `F3.1`. Each reopens as its consumer lands. | P0 | 3–4 | 1 | F2.1 | ✅ |
 | F2.5 | Calculation configuration UI | P0 | 4–5 | 2 | F2.4 | ⬜ |
 | F2.6 | Template calc-tags wired into calc engine | P0 | 3–4 | 2 | F2.2, F2.4 | ⬜ |
 | F2.7 | Tag-mapping bulk editor + Excel mapping sheet | P1 | 4–5 | 2 | F2.1 | ⬜ |
@@ -439,7 +475,7 @@ flowchart LR
     subgraph TB["Templates & Calc (critical path)"]
         F22["F2.2 Instantiate ✅"]
         F24["F2.4 Calc engine"]
-        E17["E1.7 Template content model"]
+        E17["E1.7 Template content model ✅"]
         F27["F2.7 Tag-mapping"]
         F26["F2.6 Template calc-tags"]
         E51["E5.1 Water domain pack"]
@@ -537,7 +573,7 @@ flowchart LR
 | ML stack | all E1.x | Runtime (Python svc / Node / external), registry, serving path. |
 | ~~Product positioning~~ | — | **Resolved by ADR 0013 (2026-08-04):** this repo forked to the TRINETRA Enterprise EMS line for Ion Exchange (India) Ltd.; display-layer rebrand only, Eskom-era internals retained. Eskom line continues from the external backup, if at all. |
 | ~~Test runner + libs~~ | ~~F4.4~~ | **Resolved by ADR 0014 (2026-08-04):** Vitest + `@vitest/coverage-v8`, projects-per-app, coverage as a ratchet. |
-| **Encryption-at-rest boundary** ⚠ | E8.1 (already merged) | **Open — human decision.** E8.1 landed with no ADR while every sibling in its wave got one, yet it made two architectural calls: *volume encryption is permanently outside this repo's scope* (deployer/platform action) and *fail closed on an unset key*. Options: write a retro `0019-encryption-at-rest-boundary.md` (`0018` is now the source-axis ADR; `0019` is the next free number), or record an explicit documented exemption in the E8.1 row. Raised by the E8.1 compliance review. **Scope note:** the deferred item is *volume/full-disk/KMS* encryption only — object-storage bucket encryption is `F3.3` and encrypted backups are `E8.2`, both live backlog scope. A promotion sweep briefly widened this to all three; corrected before merge. |
+| **Encryption-at-rest boundary** ⚠ | E8.1 (already merged) | **Open — human decision.** E8.1 landed with no ADR while every sibling in its wave got one, yet it made two architectural calls: *volume encryption is permanently outside this repo's scope* (deployer/platform action) and *fail closed on an unset key*. Options: write a retro `0020-encryption-at-rest-boundary.md` (`0018` is the source-axis ADR and **`0019` was taken by the E1.7 content model on 2026-08-05**; `0020` is the next free number — check `docs/adr/` again before writing, this reservation has now gone stale twice), or record an explicit documented exemption in the E8.1 row. Raised by the E8.1 compliance review. **Scope note:** the deferred item is *volume/full-disk/KMS* encryption only — object-storage bucket encryption is `F3.3` and encrypted backups are `E8.2`, both live backlog scope. A promotion sweep briefly widened this to all three; corrected before merge. |
 | Per-feature ADRs | each promotion | Standard AGENTS.md §10 flow (Modbus/BACnet libs, `bullmq`, `nodemailer`, `minio`, …). |
 
 **Owed `chore(agents):` promotions** — ✅ **cleared 2026-08-05** in one

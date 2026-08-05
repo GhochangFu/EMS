@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { templateContentSchema } from "./asset-templates-content.schema";
+
 /**
  * Zod contracts for the asset-template admin surface (ADR 0015, backlog F2.1).
  *
@@ -8,12 +10,13 @@ import { z } from "zod";
  * package with `typescript` as its sole devDependency, so moving a Zod schema
  * there would add a *runtime* dependency to it — which is exactly the manifest
  * change AGENTS.md §9.4 gates. The DTO types are in `@bms/shared`; the
- * validator that produces them is here, where zod already lives. `E1.7` tightens
- * `templateContentSchema` in place.
+ * validator that produces them is here, where zod already lives. ADR 0019 §8
+ * ratifies that deviation.
+ *
+ * `E1.7` tightened `templateContentSchema` from `z.record(z.unknown())` into the
+ * tiered contract in `./asset-templates-content.schema`, which is a file of its
+ * own only because this one would otherwise carry two unrelated contracts.
  */
-
-/** Reserved E1.7 overlay surface: KPIs, alarm philosophies, dashboards, hooks. */
-export const templateContentSchema = z.record(z.unknown());
 
 const pointKeyCode = z.string().min(1).max(128);
 
