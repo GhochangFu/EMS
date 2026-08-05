@@ -14,6 +14,26 @@ than deleted — a gate decision is worth more as a record than as an absence.
 No DDL. No new npm dependency. The change is a Zod contract, its validator, and
 a reference check that rides alongside the one already there.
 
+**Amended 2026-08-05** during implementation review — see
+[Amendment 1](#amendment-1--hardening-found-in-review-2026-08-05) at the end.
+Input hardening only; the tiering, the sections and the reference rule below are
+unchanged. §7's byte-cap rationale is corrected there.
+
+> **Numbering note — `0019` has three claimants.** It is the next free number in
+> `docs/adr/` on `main`, but two other documents already reserve it:
+>
+> 1. `docs/BACKLOG.md` §5 reserves it **on `main`** for the retro
+>    `0019-encryption-at-rest-boundary.md` (`E8.1`), an open human decision.
+> 2. An unmerged, unpushed draft on the local branch
+>    `claude/interesting-rhodes-33a8a3` (`0019-unprovisioned-principal-privilege-clamp.md`,
+>    commit `041c190`).
+>
+> **Resolved at the gate (2026-08-05):** this ADR takes `0019`;
+> `docs/BACKLOG.md` §5's reservation for the `E8.1` retro moves to `0020`. The
+> branch draft renumbers whenever it is resumed. A stale number in §5 is what
+> produced this collision, so the §5 correction ships with this change rather
+> than being left for the next reader to trip over.
+
 ## Context
 
 `E1.7` is the last item between `main` and `E5.1`, the water-treatment domain
@@ -440,3 +460,84 @@ still carries the pre-`F2.1` comment *"contracted by a Zod schema in `@bms/share
 that `E1.7` tightens."* §8 ratifies the opposite. Fix it in the feature PR — it
 is a code comment about code, not a rulebook edit.
 
+---
+
+## Amendment 1 — hardening found in review (2026-08-05)
+
+Recorded as an amendment rather than edited into the decision text above,
+following ADR 0015's precedent. An Accepted ADR that is quietly rewritten to
+match the code inverts the gate it exists to be.
+
+Nothing here changes the tiering, the sections, or the reference rule. All of it
+is input handling, and all of it came out of the security and compliance reviews
+run against the implementation.
+
+### A. Depth cap — `MAX_CONTENT_DEPTH = 12`
+
+`JSON.parse` is iterative in V8. `JSON.stringify` is **not**. So JSON nested a
+few thousand levels deep parses cleanly and then overflows the stack inside §7's
+byte check — throwing a `RangeError`, which is not a `ZodError`, which the
+controller's `instanceof ZodError` guard rethrows into a **500**. Reproduced at
+5,000 levels in a **10 KB** body: well under the framework's own limit, from any
+authenticated caller, on `POST /admin/asset-templates` — a route whose
+authorization check lives in the service and therefore has not run yet.
+
+Depth is now checked first, by an iterative walk, and nothing recursive touches
+the value until it passes. Real content nests about five deep
+(`kpis` → entry → `pointKeys` → string); twelve is room to spare.
+
+The general lesson is worth more than the fix: **a validator that can throw is
+not a validator.** Every guard in §7 was written as a size bound, and the one
+that mattered was a shape bound.
+
+### B. Unsafe key names rejected — `__proto__`, `constructor`, `prototype`
+
+There is no prototype pollution here — verified — because `zod` skips
+`__proto__` when merging parsed pairs. But that is a transitive implementation
+detail under a `^3.24.1` caret range, and relying on it silently produced a real
+defect: a `dashboards` view named `__proto__` **validated**, contributed no
+point keys to the reference check, and then vanished on the `jsonb` write. The
+author got a 200 for a dashboard that no longer existed. `constructor` survived
+instead, waiting for the first consumer that iterates view names.
+
+Rejected explicitly now, on the **key** schema of both records. That placement is
+load-bearing and was got wrong once: `zod` validates key schemas against the
+input's own keys but strips `__proto__` before building its output, so a
+refinement reading the output never sees it.
+
+### C. §7's byte-cap rationale was wrong about what binds
+
+§7 justified 256 KiB as *"a jsonb column with no ceiling is a request body with
+no ceiling."* Over HTTP that is not what happens: `main.ts` sets no body-parser
+options, so `@nestjs/platform-express` applies `bodyParser.json()` defaults and a
+body over **100 KB** is rejected with 413 before any of this schema runs.
+
+The cap is therefore a backstop over HTTP, and binding only in
+`parseStoredContent` — a row written under `F2.1`'s permissive contract has never
+passed through any size check at all. Kept at 256 KiB for exactly that reason.
+The framework default is deliberately not pinned in `main.ts` here; doing so
+would change every route on the API and belongs to its own change.
+
+### D. Errors report structure, never values
+
+`parseStoredContent` joined `zod`'s own issue messages into the exception. For
+`invalid_enum_value` that text echoes the **received value** back to the caller,
+and stored content on a pre-ADR row is arbitrary JSON. It now reports paths,
+unexpected key names and issue codes; our own `custom` messages are kept, because
+we wrote them, they interpolate only a key name and a byte count, and they are
+the only place a reserved section explains which item it is waiting for.
+
+Not a scope crossing — every caller who can publish can already `GET` the whole
+`content` object — but the narrow version costs nothing and survives a future
+relaxation of `canManageTemplate`.
+
+### E. The audit payload summarises content instead of copying it
+
+`update`'s audit row spread the whole body, so a 256 KiB content edit wrote 256
+KiB into `bms.audit_log` on every save. It now records which sections changed.
+The content itself lives on the version row, which is immutable once published.
+
+### F. One §7 row was missing, not new
+
+The limits table omitted **20 point references per KPI**, which §5 already
+specified as `pointKeys: string[](1..20)`. Documenting, not deciding.
