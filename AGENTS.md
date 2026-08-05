@@ -1,10 +1,16 @@
 # AGENTS.md — TRINETRA Enterprise EMS (Ion Exchange line) (Part 2 / Phase 5 Location and Access + Onboarding & PHE Ingest)
 
-> **Status:** ACTIVE — Phase 5 Sprint J/K/L/M/N Location and Access
-> hardening is open. In addition, the hierarchical master-data admin, the
-> scoped AI onboarding wizard, and the PHE MQTT real-ingestion pilot are
-> merged to `main` (ADR 0007–0012) and are now in scope. General site-wide
-> AI copilot, EMQX, and multi-protocol adapters remain deferred.
+> **Status:** ACTIVE — **SOW-driven backlog delivery** (`docs/BACKLOG.md`,
+> Wave 0/1), running on the loop in `docs/build-operating-model.md`. Phase 5
+> Sprint J/K/L/M/N Location and Access hardening remains open alongside it.
+> Merged and in scope: the hierarchical master-data admin, the scoped AI
+> onboarding wizard, and the PHE MQTT real-ingestion pilot (ADR 0007–0012);
+> the Vitest gate (ADR 0014), asset templates and instantiation
+> (ADR 0015), the ingest adapter framework interface (ADR 0016), the
+> operations write matrix (ADR 0017), and the asset source-axis separation
+> (ADR 0018). General site-wide AI copilot, EMQX, and the individual
+> protocol adapters remain deferred — the framework is promoted, each
+> protocol still needs its own ADR (§9.4).
 > **Product brand:** TRINETRA. Powered by Euphoria Infotech India Limited.
 > **Product line:** Enterprise EMS for Ion Exchange (India) Ltd. per
 > **ADR 0013** — forked from the Eskom SMOC engagement (earlier branding:
@@ -13,9 +19,11 @@
 > SOW-driven scope is tracked in `docs/BACKLOG.md`.
 > **North star:** see `docs/AGENTS.production.md` for the full production
 > rules we will promote from as the system grows.
-> **Recent scope changes:** see `docs/adr/0007`–`0013` and `git log`; those
-> ADRs promoted work that post-dates parts of §3 and §6 below, so where this
-> file's status/scope conflicts with a newer ADR, the ADR is authoritative.
+> **Recent scope changes:** see `docs/adr/` and `git log`. ADRs are the live
+> record of what is in scope; where this file conflicts with a newer ADR, the
+> **ADR is authoritative** and this file is the thing to fix. Scope moves via
+> §10, and edits here move via a `chore(agents):` PR (§9.10) — which is why
+> this file lags and the ADRs do not.
 
 This file is the rulebook humans and AI agents must follow **right now**.
 The seven-screen prototype is complete. Phase 1 Sprint A added
@@ -148,10 +156,12 @@ entry **D-0001**.
 | Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
 | Real ingestion | `apps/ingest` MQTT TLS subscriber for the PHE pilot; writes `telemetry.point_values` and `pg_notify('bms_telemetry', …)` like the simulator (ADR 0007). One pilot RTU only; no EMQX |
-| Master data  | Organization → Location → RTU → Asset → Point-key catalog + `/admin/*` CRUD with `admin`/`organization_admin`/`location_admin` roles (ADR 0008–0010) |
+| Master data  | Organization → Location → RTU → Asset → Point-key catalog + `/admin/*` CRUD with `admin`/`organization_admin`/`location_admin` roles (ADR 0008–0010). **ADR 0018** separates the axes: an asset must have a `location_id` (`NOT NULL`) and need not have an `rtu_id` (nullable); telemetry provenance binds at `asset_points.source_kind` (`measured`/`manual`/`computed`/`unmapped`), not at the asset |
+| Asset templates | `bms.asset_templates` + `bms.template_points`, where a row **is** a version and `assets.template_id` pins it (ADR 0015). Published versions are immutable; editing one creates the next draft. `POST /admin/asset-templates/:id/instantiate` builds assets from a published version — target is `rtuId` **xor** `locationId`. A `template_points.kind = 'derived'` point is still re-validated against the active catalog, but never becomes an `asset_points` row — it has no honest `source_data_key` until the calc engine (`F2.6`) owns it |
+| Ingest adapters | `IngestAdapter` interface frozen by **ADR 0016**: the host owns *supervision and cadence* (poll loop, overlap guard, backoff, jitter, bounded queue, process lifetime); adapters own the protocol connection and parse, implementing `connect` / `disconnect` / `health`. The interface is promoted; **no protocol implementation is in scope** — Modbus, BACnet, OPC-UA, SNMP and DCS each need their own ADR under §9.4 for their protocol library |
 | AI onboarding | Scoped admin ingestion wizard using OpenAI chat completions with structured JSON, and a deterministic rule-based fallback when `OPENAI_API_KEY` is unset (ADR 0011) |
 | Secrets      | AES-256-GCM encrypted RTU connection credentials via `CREDENTIAL_ENCRYPTION_KEY`; never returned decrypted by the API (ADR 0012) |
-| Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension |
+| Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension. Every mutating endpoint across these four domains is gated by the **operations write matrix** (ADR 0017) — see §4.7 |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, and DB |
 | CI/CD        | GitHub Actions: install, build/typecheck, `typecheck:tests`, migration validation, **`db:seed` against a fresh schema**, and `test:coverage` (ADR 0014) |
 | Testing      | Vitest, one project per app + a repo-wide `repo` project; coverage gate on a ratcheting baseline (ADR 0014). See §4.6 |
@@ -167,27 +177,43 @@ No new dependencies may be added without an ADR in `docs/adr/`.
 ```
 bms/
 ├── AGENTS.md                  ← this file (active)
+├── CLAUDE.md                  ← pointer to this file for AI agents
 ├── README.md
 ├── ESKOM_SMOC.html            ← UX reference (do not edit)
+├── TRINETRA.html              ← UX reference, current branding (do not edit)
 ├── package.json               ← pnpm workspace root
 ├── pnpm-workspace.yaml
+├── vitest.config.ts           ← root test config + coverage ratchet (ADR 0014)
 ├── docker-compose.yml         ← Phase 1 local/pilot compose entrypoint
 ├── .github/
 │   └── workflows/             ← GitHub Actions CI
+├── .claude/
+│   ├── agents/                ← review subagents (security, migration, compliance)
+│   ├── hooks/                 ← guards, incl. the drizzle journal check
+│   └── skills/                ← repo workflows (new-adr, backlog-cycle, verify)
+├── tests/                     ← repo-wide invariants; see the §4.6 carve-out
+├── exports/                   ← PHE MQTT reference + point-mapping CSVs (ADR 0007/0011)
 ├── infra/
 │   ├── keycloak/              ← Phase 1 Sprint C realm export
 │   └── observability/         ← Phase 1 Sprint D Prometheus/Grafana/Loki config
 ├── apps/
 │   ├── web/                   ← React SPA (incl. /admin master-data + onboarding wizard)
 │   ├── api/                   ← NestJS REST + WebSocket (incl. src/admin, src/security)
+│   │                            src/admin/asset-templates/ holds ADR 0015's
+│   │                            lifecycle + instantiation services
 │   ├── sim/                   ← telemetry simulator (Node script)
 │   └── ingest/                ← PHE MQTT TLS subscriber (ADR 0007), one pilot RTU
 ├── packages/
 │   ├── shared/                ← cross-cutting TS types & constants
 │   └── db/                    ← Drizzle schema, migrations, seeds (incl. phe-catalog.json)
 └── docs/
-    ├── adr/                   ← Phase 1+ architecture decisions
+    ├── adr/                   ← Phase 1+ architecture decisions (the live scope record)
+    ├── archive/               ← superseded planning docs, kept for provenance
+    ├── scripts/               ← docx/report build helpers (not app code)
+    ├── security/              ← encryption-at-rest boundary and security notes
     ├── AGENTS.production.md   ← future-state rulebook (reference)
+    ├── BACKLOG.md             ← the single managed pending-feature backlog
+    ├── build-operating-model.md ← how we build: the per-feature loop and gates
     ├── decisions.md           ← lightweight ADR log for prototype
     ├── env-inventory.md       ← committed environment variable inventory
     ├── observability-runbook.md ← Sprint D local/pilot health checks
@@ -238,6 +264,16 @@ Do not add top-level folders without updating this section.
 - **Assertions live in `*.spec.ts`; `*.test.ts` is the wrapper that runs them.**
   A `.spec` without its sibling `.test` is dead code — `tests/repo-invariants.test.ts`
   fails the build if you add one. Do not delete the spec to make it pass.
+- **Carve-out: the split applies to `apps/**` and `packages/**` only.** Files in
+  the top-level `tests/` directory are repo-wide invariants and hold their
+  assertions **inline**, with no `.spec` sibling. Giving `repo-invariants.test.ts`
+  a `.spec` partner would mean the file enforcing the convention is the one file
+  that cannot follow it. Do not "fix" these into the split.
+- **Integration suites gate on `DATABASE_URL`, and the gate is asymmetric.** An
+  unset `DATABASE_URL` skips locally but **throws under `CI`** — a green CI run
+  that silently skipped the database tests asserts nothing. A *set* one is a
+  claim that a database exists, so a failed connection fails everywhere rather
+  than skipping. Coverage thresholds assume these suites ran.
 - New behaviour ships with its test in the same PR. Bug fixes ship with the
   test that would have caught the bug.
 - **Coverage is a ratchet, not a target.** Thresholds in `vitest.config.ts` sit
@@ -248,6 +284,42 @@ Do not add top-level folders without updating this section.
 - A check that CI does not execute is not a gate. When you add a test suite,
   script, or invariant, wire it into `.github/workflows/ci.yml` in the same
   change — this repo has shipped orphaned specs and orphaned migrations before.
+
+### 4.7 Authorization (ADR 0009/0010 master data · ADR 0017 operations)
+
+Two role gates exist and they are **not** interchangeable. Both resolve the
+role from **`bms.users`, never from the JWT claim** — a token outlives a
+demotion by up to `JWT_TTL`, and in OIDC mode `roleFromClaims` falls back to
+`viewer` when realm roles are missing, so reading the claim fails *open* on
+demotion and *closed* on a claimless admin token.
+
+**Master data** (`/admin/*`) — scope predicates on `AccessControlService`:
+`writableOrganizationIds` / `writableLocationIds` return `null` for the
+unrestricted global admin, and an **empty array is a real user with no grants**
+who must see nothing. Never treat the two as equivalent.
+
+**Operations write matrix** (ADR 0017) — mutating endpoints across rules,
+alarms, work orders and maintenance carry
+`assertOperationsWriteRole(jwt, class)` at the top of the handler, **before**
+the scope check, so a role rejection never depends on scope resolution. The
+class literals are exactly `OperationsWriteClass` in
+`apps/api/src/auth/operations-write.ts`:
+
+| Class | What it means | `operator` | `viewer` |
+|---|---|:-:|:-:|
+| `configuration` | changes what the system *will* do, indefinitely — rule authoring, schedule definition, `rules/evaluate`, `rules/preview` | ❌ | ❌ |
+| `operational` | records what *did* happen — alarm ack, work-order lifecycle, converting a due schedule | ✅ | ❌ |
+
+The four admin roles keep exactly what they had; this gate regressed nobody.
+`rules/preview` is `configuration` despite looking read-only — it inserts a
+`rule_preview` row into `bms.audit_log` on every call. **The gate is additive:
+callers must pass this AND the existing scope check.**
+
+Instantiating an asset template is the one place the two systems meet: it needs
+template *readability* plus `canManageLocation` on the target, so a location
+admin may deploy a published org template without being able to author one
+(ADR 0015 §7 as amended). Do not require `canManageTemplate` there — it means
+"may author" and is false for exactly that role.
 
 ---
 
@@ -286,9 +358,11 @@ These are intentionally deferred. Do not implement them yet:
 
 - Multi-tenancy, row-level security (org-level read RBAC still deferred)
 - MFA / SSO / AD federation
-- Real protocol adapters for BACnet, Modbus, SNMP, OPC-UA (the **MQTT PHE
-  ingest pilot is promoted for one RTU** via ADR 0007; all other protocols
-  remain out of scope)
+- Real protocol adapters for BACnet, Modbus, SNMP, OPC-UA, DCS. The **MQTT PHE
+  ingest pilot is promoted for one RTU** (ADR 0007), and the **`IngestAdapter`
+  interface is promoted** (ADR 0016) — but the interface is all that is in
+  scope. Each protocol implementation stays deferred until its own ADR settles
+  the protocol library (licence, maintenance, transitive footprint) under §9.4
 - EMQX broker (PHE pilot connects directly over MQTT TLS; no broker)
 - MinIO / object storage
 - Two-way commanding with approval workflows
@@ -309,9 +383,10 @@ not available. Redis must not be used for unrelated caching or job queues
 until a later promotion. Keycloak is limited to local/pilot OIDC
 authentication; MFA, SSO federation, and advanced identity governance
 remain out of scope. Observability is limited to optional local/pilot
-diagnostics. Real protocol adapters and brokers remain out of scope until
-a later Phase 2 implementation sprint selects and promotes a specific
-source/protocol. Work-order UI is complete for Phase 5 Sprint B. Phase 5
+diagnostics. Protocol *brokers* remain out of scope; protocol *adapters* are
+governed by the bullet above (ADR 0016 interface promoted, each implementation
+still ADR-gated) — that bullet supersedes this sentence. Work-order UI is
+complete for Phase 5 Sprint B. Phase 5
 Sprint C Maintenance Schedule Centre is complete. Phase 5 Sprint D basic
 rule-engine UI is complete for simple threshold/time-window rules,
 enable/disable controls, manual evaluation, and execution history. Phase 5
@@ -337,8 +412,23 @@ scheduler/job queues, and complex node graph builders remain out of scope
 until their specific sprint is promoted. General site-wide AI Copilot /
 chatbot remains deferred, but the scoped admin onboarding wizard (ADR 0011),
 the hierarchical master-data admin (ADR 0008–0010), and the single-RTU PHE
-MQTT ingest pilot (ADR 0007, 0012) are promoted and in scope. When any other
-item above is needed, follow §10 (Promotion Process).
+MQTT ingest pilot (ADR 0007, 0012) are promoted and in scope.
+
+**Also promoted since, and in scope now** — the SOW-driven backlog
+(`docs/BACKLOG.md`) delivered against `docs/build-operating-model.md`:
+the Vitest runner and ratcheting coverage gate (ADR 0014, §4.6); asset
+templates, versioning and instantiation (ADR 0015, §4.7); the `IngestAdapter`
+interface **only** (ADR 0016); the operations write matrix (ADR 0017, §4.7);
+and the asset source-axis separation making `assets.rtu_id` nullable while
+`location_id` is `NOT NULL` (ADR 0018). Application-layer encryption at rest
+is in scope (ADR 0012); **full-disk / volume / KMS encryption is a deployer
+action and not implementable in this repo**. Object-storage bucket encryption
+(`F3.3`, ADR required) and automated encrypted backups (`E8.2`) remain **live
+backlog scope** — they are deferred, not cancelled. The boundary itself is
+still an open human decision; see `docs/security/encryption-at-rest.md` and
+`docs/BACKLOG.md` §5.
+
+When any other item above is needed, follow §10 (Promotion Process).
 
 ---
 
@@ -386,8 +476,10 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
 
 No protocol broker yet. Just Postgres, Redis for realtime fan-out,
 Keycloak for local/pilot OIDC, optional observability services, Node, and
-Docker Compose for reproducible development. Phase 2 remains paused until
-real source access exists. Phase 5 Sprint A used the existing API and
+Docker Compose for reproducible development. Phase 2 is **no longer paused**:
+the single-RTU PHE MQTT pilot ships in `apps/ingest` (ADR 0007, 0012) and
+ADR 0016 froze the adapter interface. What remains gated is each *protocol
+implementation*, per §2 and §6 — not Phase 2 as a whole. Phase 5 Sprint A used the existing API and
 database stack only; Sprint B added the Maintenance Kanban UI and
 `sort_order` persistence for drag/drop. Sprint C added the Maintenance
 Schedule Centre, schedule metadata, history, and work-order conversion.
@@ -436,6 +528,34 @@ ingestion"):
 
 This keeps the active rules in lockstep with the codebase and ensures AI
 agents are never asked to enforce rules that do not yet apply.
+
+### 10.1 ADR-sourced promotion (how this actually works now)
+
+The five steps above describe promotion from `docs/AGENTS.production.md`.
+Most scope now moves a different way — an **ADR** in `docs/adr/` decides it,
+and the ADR lands with the feature that motivated it. Two consequences, both
+recorded here because the practice had diverged from the written process
+silently:
+
+- **A promotion may originate from an ADR** rather than from
+  `docs/AGENTS.production.md`. Step 2 is then "summarise the ADR's decision
+  here and link it", not a copy. The ADR remains the authoritative record;
+  this file is the index.
+- **Step 5 is inverted for ADR-sourced promotion, by construction.** The ADR
+  is written and accepted *before* the feature (that is the §9.4/§10 gate),
+  but the `chore(agents):` edit to this file cannot ride along in the feature
+  PR — §9.10 forbids it. So the rulebook edit necessarily lands *after* the
+  feature. It is discharged by a catch-up `chore(agents):` sweep, and what
+  is owed is tracked in `docs/BACKLOG.md` §5 until it lands.
+
+Step 5 still holds for `AGENTS.production.md`-sourced promotions, where no
+ADR gate precedes the feature. **The gate that must never be skipped is the
+ADR itself, not the bookkeeping in this file.**
+
+**One owed promotion per `chore(agents):` PR.** Batching several into one
+sweep makes the diff harder to review precisely when it is the rulebook being
+changed, and §9.10's wording does not clearly permit it. If a batch is ever
+warranted, ask first — it is not the default and not an agent's call.
 
 ---
 

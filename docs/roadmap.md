@@ -653,8 +653,92 @@ Process (`AGENTS.md` §10).
   repaired drizzle journal (`0018`/`0021`/`0022`) on a genuinely fresh database.
   It passed.
 - **Unblocks:** F4.5, F4.7, F4.8, F4.10 (Wave 1) and F3.21 (Wave 2).
-- **Owed:** a `chore(agents):` commit adding a testing section to `AGENTS.md`
-  and correcting its §2 CI/CD row (AGENTS.md §10 promotion, §9.10 separation).
+- **Owed:** ~~a `chore(agents):` commit adding a testing section to `AGENTS.md`
+  and correcting its §2 CI/CD row~~ — **done**, AGENTS.md §4.6.
+
+### Access control hardening (F4.11, F4.12) — done
+- **Status:** done (ADR 0017, PR #2)
+- **Delivered:** the operations write matrix. Sixteen mutating endpoints across
+  rules, alarms, work orders and maintenance carried `JwtAuthGuard` and **no
+  role check** — any authenticated user, `viewer` included, could author rules
+  and close work orders. `assertOperationsWriteRole(jwt, class)` now gates them
+  before the scope check, resolving the role from `bms.users` rather than the
+  JWT claim.
+- **Notable:** `rules/preview` was exempted in an earlier draft as
+  "verified non-persisting". That was wrong — it inserts a `rule_preview` row
+  into `bms.audit_log` on every call. Two independent reviews caught it. A
+  `viewer` could otherwise have driven unbounded audit growth with
+  caller-chosen strings.
+- **Mirrored into:** AGENTS.md §2 Operations row and §4.7.
+
+### Encryption at rest (E8.1) — partial by design
+- **Status:** software scope done; the rest is permanently out of repo scope
+- **Delivered:** AES-256-GCM for RTU connection credentials (ADR 0012),
+  fail-closed on an unset `CREDENTIAL_ENCRYPTION_KEY`.
+- **Deliberately not built:** full-disk / volume / KMS encryption is a deployer
+  action and not implementable in this repo. **Object-storage bucket encryption
+  (`F3.3`, ADR required) and automated encrypted backups (`E8.2`) are deferred
+  to their own backlog items, not cancelled** — see the ownership table in
+  `docs/security/encryption-at-rest.md`. Its review raised **E8.3** and **E8.4**
+  as new backlog scope.
+- **Owed:** a retro ADR recording the boundary, or an explicit documented
+  exemption. Tracked in `docs/BACKLOG.md` §5 as an open human decision — so the
+  "permanent" half of this boundary is **not** settled yet.
+
+### Access-control integration tests (F4.10) — done
+- **Status:** done (PR #4)
+- **Delivered:** all four `scopeFromSource` branches and the ADR 0017 write
+  matrix, asserted against a **real** database with every expectation computed
+  by independent SQL rather than read back from the service.
+- **Notable:** two assertions shipped in a state where they *could not fail*,
+  and only measurement found it — a fresh database had 147 assets and **zero**
+  gateway-less, plus 16 locations and **zero** inactive, so two filters were
+  indistinguishable from no filter. Fixed at the fixture
+  (`packages/db/src/access-fixtures-seed.ts`), not the assertion.
+
+### Asset templates (F2.1, F2.2) — done
+- **Status:** done (ADR 0015 + Amendment 1, PRs #5 and #7)
+- **Delivered:** `bms.asset_templates` + `bms.template_points`, where a row
+  **is** a version and `assets.template_id` pins it. Published versions are
+  immutable; editing one creates the next draft. Instantiation
+  (`POST /admin/asset-templates/:id/instantiate`) builds assets from a
+  published version and needed **no DDL** — F2.1 shipped `assets.template_id`
+  ahead of it so F2.2 would not take the migration lock.
+- **Amended during F2.2, both recorded in ADR 0015 Amendment 1:** the payload
+  target became `rtuId` **xor** `locationId`, because ADR 0018 had since made
+  `assets.rtu_id` nullable and the original RTU-only shape could not express a
+  gateway-less asset; and §7's instantiate predicate was replaced, because
+  `canManageTemplate AND canManageLocation` is **unsatisfiable** for
+  `location_admin` — the one role §7's own prose exists to allow.
+- **Notable:** a permissions rule with no caller is not verified by being
+  reviewed. F2.1 defined the predicate and never exercised it; F2.2 was the
+  first code to call it, and that is when the contradiction surfaced.
+- **Unblocks:** nothing immediately — `F2.6` also needs `F2.4` and `F3.22` also
+  needs `F3.21`. The critical path's next move is **E1.7**.
+- **Mirrored into:** AGENTS.md §2 Asset templates row, §3, §4.7, §6.
+
+### Ingest adapter framework (F1.1) — interface accepted, not built
+- **Status:** ADR 0016 accepted; **implementation not started**
+- **Scope promoted:** the `IngestAdapter` interface only. Individual protocol
+  adapters (F1.2 Modbus, F1.3 BACnet, F1.4 OPC-UA, F1.5 SNMP/REST, F1.6 DCS)
+  each still need their own ADR for their protocol library under AGENTS.md §9.4.
+- **Owed:** an owner for cutting `apps/ingest/src/index.js` over to the host.
+  Until someone deletes it the two-entrypoint window stays open, which is the
+  realistic failure mode of a strangler migration.
+
+### Asset source-axis separation (ADR 0018) — done
+- **Status:** done
+- **Delivered:** `assets.location_id` is `NOT NULL` and `assets.rtu_id` is
+  nullable; telemetry provenance moved to `asset_points.source_kind`
+  (`measured` / `manual` / `computed` / `unmapped`), enforced by
+  `asset_points_source_ref_check`. An asset must be *somewhere* and need not be
+  *wired*, and one asset can now mix measured, hand-entered and computed points.
+- **Unblocks:** F1.8, F1.9.
+- **Owed:** the companion ADR on location *depth* (`locations.parent_id`,
+  `parent_asset_id`, and retiring the Eskom-era `locations.type` union). The
+  design question is answered — subtree inheritance is in — and F4.10 carries an
+  armed tripwire (`assertLocationManagementIsFlat`) that goes red the moment
+  inheritance widens `writableLocationIds`.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
@@ -713,7 +797,7 @@ Process (`AGENTS.md` §10).
 |---------|--------------|
 | Multi-tenancy, RLS | Phase 3 |
 | Keycloak / OIDC / MFA / SSO | Phase 1 |
-| Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT) | Phase 2 |
+| Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT) | Phase 2 — MQTT promoted for one RTU (ADR 0007); `IngestAdapter` **interface** promoted (ADR 0016); each protocol implementation still needs its own ADR |
 | EMQX broker | Phase 2 |
 | Redis cache and pub/sub | Phase 1 |
 | MinIO / object storage | Phase 5 Sprint F only if persisted report storage is needed |
@@ -729,3 +813,9 @@ Process (`AGENTS.md` §10).
 When a phase opens, the corresponding row(s) above flip to "in
 progress" and the matching items move out of `AGENTS.md` §6 into the
 active rules.
+
+**This crosswalk is phase-shaped; current delivery is not.** Wave 0/1 work runs
+off `docs/BACKLOG.md` against the loop in `docs/build-operating-model.md`, and
+lands via ADRs that cut across these phase rows. When the two disagree, the
+ADRs and `docs/BACKLOG.md` are authoritative — this table describes the
+original plan, not the current board.

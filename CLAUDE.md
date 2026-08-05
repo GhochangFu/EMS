@@ -22,17 +22,21 @@ process). However, its **status line and §6 "Out of Scope" list lag behind
 Scope changes in this repo are made through ADRs per AGENTS.md §10, so a newer
 ADR that amends AGENTS.md wins on the "is this in scope" question.
 
-Concretely, as of the latest commits on `main`:
+**The §3/§6 examples this section used to list were cleared on 2026-08-05** —
+AGENTS.md's status line, §2, §3, §4.6, §8, the new §4.7, §6 and §10.1 were
+brought up to date with ADR 0014–0018 in a `chore(agents):` PR. Those specific
+examples no longer apply. This does **not** mean the file is now drift-free —
+only that the known instances were fixed.
 
-- The **AI onboarding wizard** and **PHE MQTT real ingestion** are merged and
-  in scope (ADR 0007–0012), even though AGENTS.md §6 still lists "Real
-  protocol adapters (MQTT)" and "AI Copilot" as out of scope, and its status
-  line stops at "Phase 5 Sprint J/K/L/M/N Location and Access."
-- `apps/ingest` exists (MQTT TLS subscriber) but is not in AGENTS.md §3's
-  repository layout.
+The *structural* reason for drift remains, so the precedence rule stands:
+AGENTS.md may only be edited through a `chore(agents):` PR (§9.10) and scope
+only moves through §10, while ADRs land with the feature that motivated them.
+AGENTS.md therefore lags by construction, and will drift again between
+promotion sweeps.
 
 When in doubt about current scope, check `docs/adr/` and `git log` before
-trusting AGENTS.md's status/§6.
+trusting AGENTS.md's status/§6 — and if you find a conflict, the fix is to
+raise it, not to work around it silently.
 
 ## What this project is
 

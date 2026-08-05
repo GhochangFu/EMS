@@ -537,19 +537,49 @@ flowchart LR
 | ML stack | all E1.x | Runtime (Python svc / Node / external), registry, serving path. |
 | ~~Product positioning~~ | — | **Resolved by ADR 0013 (2026-08-04):** this repo forked to the TRINETRA Enterprise EMS line for Ion Exchange (India) Ltd.; display-layer rebrand only, Eskom-era internals retained. Eskom line continues from the external backup, if at all. |
 | ~~Test runner + libs~~ | ~~F4.4~~ | **Resolved by ADR 0014 (2026-08-04):** Vitest + `@vitest/coverage-v8`, projects-per-app, coverage as a ratchet. |
-| **Encryption-at-rest boundary** ⚠ | E8.1 (already merged) | **Open — human decision.** E8.1 landed with no ADR while every sibling in its wave got one, yet it made two architectural calls: *volume encryption is permanently outside this repo's scope* (deployer/platform action) and *fail closed on an unset key*. Options: write a retro `0018-encryption-at-rest-boundary.md`, or record an explicit documented exemption in the E8.1 row. Raised by the E8.1 compliance review. |
+| **Encryption-at-rest boundary** ⚠ | E8.1 (already merged) | **Open — human decision.** E8.1 landed with no ADR while every sibling in its wave got one, yet it made two architectural calls: *volume encryption is permanently outside this repo's scope* (deployer/platform action) and *fail closed on an unset key*. Options: write a retro `0019-encryption-at-rest-boundary.md` (`0018` is now the source-axis ADR; `0019` is the next free number), or record an explicit documented exemption in the E8.1 row. Raised by the E8.1 compliance review. **Scope note:** the deferred item is *volume/full-disk/KMS* encryption only — object-storage bucket encryption is `F3.3` and encrypted backups are `E8.2`, both live backlog scope. A promotion sweep briefly widened this to all three; corrected before merge. |
 | Per-feature ADRs | each promotion | Standard AGENTS.md §10 flow (Modbus/BACnet libs, `bullmq`, `nodemailer`, `minio`, …). |
 
-**Owed `chore(agents):` promotions** (AGENTS.md §9.10 — these must land as
-*separate* commits, never as a side effect of a feature commit):
+**Owed `chore(agents):` promotions** — ✅ **cleared 2026-08-05** in one
+`chore(agents):` PR (#8).
 
-| Owed | Source | What to add |
-|------|--------|-------------|
-| ADR 0015 | F2.1, F2.2 | Asset templates into AGENTS.md §2/§3, now including the instantiate endpoint and `apps/api/src/admin/asset-templates/`. |
-| ADR 0016 | F1.1 | §2 stack row (adapter framework, `zod`), §6 wording, roadmap. |
-| ADR 0017 | F4.11 | The operations write matrix into AGENTS.md §4, beside the existing master-data role rules, so both role gates are documented in one place. |
-| §4.6 carve-out | ADR 0014 | Record that repo-level invariants in `tests/` hold assertions inline; the `.spec`/`.test` split applies to `apps/` and `packages/`. Batch with adding `docs/security/`, `BACKLOG.md`, `build-operating-model.md`, `archive/` and `scripts/` to the stale §3 tree. |
-| Roadmap mirror | Wave 0–1 batch | `docs/roadmap.md` has only F4.4. F4.11, F4.12, E8.1, ADR 0017, and now F2.1, F4.10 and F2.2 are unmirrored — do them as one update, not per-item retros. |
+That batching was a **one-off, allowed by explicit human decision** to discharge
+a backlog that had accumulated across five ADRs. It is **not** the rule going
+forward: AGENTS.md §10.1 now says one owed promotion per `chore(agents):` PR,
+and batching needs to be asked for. An agent had read §9.10's "a PR prefixed
+`chore(agents): ...`" permissively and then written that reading into the
+rulebook — convenient, and not clearly what §9.10 says.
+
+| Owed | Source | Landed as |
+|------|--------|-----------|
+| ~~ADR 0015~~ ✅ | F2.1, F2.2 | AGENTS.md §2 Asset templates row, §3 (`src/admin/asset-templates/`), §4.7, §6. |
+| ~~ADR 0016~~ ✅ | F1.1 | §2 Ingest adapters row and §6, both stating the **interface only** is promoted — F1.1 is not built and each protocol still needs its own §9.4 ADR. The `zod`/`typescript` manifest entries land with F1.1, not here. |
+| ~~ADR 0017~~ ✅ | F4.11 | New AGENTS.md **§4.7**, holding both role gates — master-data scope predicates and the operations write matrix — in one place. |
+| ~~§4.6 carve-out~~ ✅ | ADR 0014 | §4.6 records the `tests/` inline-assertion carve-out and the asymmetric `DATABASE_URL` gate. §3 gained `tests/`, `.claude/`, `vitest.config.ts`, `TRINETRA.html`, `CLAUDE.md`, `docs/security/`, `docs/archive/`, `docs/scripts/`, `BACKLOG.md` and `build-operating-model.md`. |
+| ~~Roadmap mirror~~ ✅ | Wave 0–1 batch | Six new `docs/roadmap.md` sections (F4.11/F4.12, E8.1, F4.10, F2.1/F2.2, F1.1, ADR 0018) plus a note that the phase crosswalk is not the current board. |
+| ~~Status line~~ ✅ | drift | Was "Phase 5 Sprint J/K/L/M/N"; now names the SOW backlog delivery and every merged ADR. |
+
+Two corrections made while doing it: the §3 entry owed as `scripts/` is
+actually **`docs/scripts/`** (there is no top-level `scripts/`), and `exports/`
+was missing from the tree entirely.
+
+**§10 was amended, and that is the part worth a second look.** The sweep
+discharged §10 while breaking two of its five steps: step 2 (copy from
+`docs/AGENTS.production.md`) does not apply to ADR-sourced promotion, and
+step 5 (land before the feature) is *impossible* for it — §9.10 forbids the
+rulebook edit riding in the feature PR, so it can only land after. Review
+found step 5 has **never** been followed: `379fac6` landed after `70b6bf7`,
+`492bd1a` after `f954958`. New **§10.1** describes what actually happens, so
+the next sweep does not deviate silently again. The ADR gate itself is
+unchanged and still precedes the feature. §10.1 covers ADR-sourced origin and
+the inverted step 5 only — a third clause permitting batched sweeps was
+proposed and **rejected**; §10.1 requires one promotion per PR instead.
+
+**Still owed, and deliberately not bundled here:** the retro ADR for E8.1's
+encryption boundary and the ADR 0016 cutover owner for
+`apps/ingest/src/index.js` are **decisions**, not documentation of decisions
+already made. They belong in `docs/adr/`, gated by the human, not in a
+`chore(agents):` sweep.
 
 ## 6. Instrumentation / hardware note (SOW §8)
 
