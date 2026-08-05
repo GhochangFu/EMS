@@ -79,11 +79,13 @@ gitignored root `.env` via `env_file`.
 | `MQTT_PORT` | Yes | `8883` in compose | MQTT TLS port. **Also read by the API** (`onboarding-chat.service.ts:445`). |
 | `MQTT_USERNAME` | **Secret** | unset (from `.env`) | Broker username. Never commit. |
 | `MQTT_PASSWORD` | **Secret** | unset (from `.env`) | Broker password. Never commit. |
-| `MQTT_RECONNECT_MS` | No | `5000` | Reconnect backoff period. |
+| `MQTT_RECONNECT_MS` | No | `5000` | Reconnect backoff period. **Legacy `src/index.js` only** — the ADR 0016 host owns reconnect itself (exponential, base 1 s, cap 60 s, ±20% jitter) and switches the MQTT library's own reconnect off, so this has no effect on `pnpm start:host`. |
 | `MQTT_TLS_REJECT_UNAUTHORIZED` | No | unset (verification **on**) | Set to `false` to skip broker certificate verification. Local debugging only — must stay unset in any real deployment. |
 | `CREDENTIAL_ENCRYPTION_KEY` | **Secret** | unset (from `.env`) | Same AES-256-GCM key as the API; used to decrypt stored per-RTU credentials (ADR 0012). |
-| `INGEST_METRICS_PORT` | No | `9102` | Prometheus metrics HTTP port. |
-| `INGEST_RELOAD_MS` | No | `60000` | RTU configuration reload interval (`apps/ingest/src/index.js:228`). |
+| `INGEST_METRICS_PORT` | No | `9102` | Health/metrics HTTP port for the **legacy** `src/index.js`. |
+| `INGEST_RELOAD_MS` | No | `60000` | RTU configuration reload interval. Read by both entry points. |
+| `INGEST_HOST_HEALTH_PORT` | No | `9103` | Health port for the ADR 0016 host (`pnpm start:host`). Deliberately separate from `INGEST_METRICS_PORT`: ADR 0016 §6 commit 3 runs both processes at once, so they cannot share a port. |
+| `INGEST_NOTIFY` | No | `off` | `on` \| `off` only; any other value is refused at startup. Whether the ADR 0016 host emits `pg_notify('bms_telemetry', …)`. **Defaults off** — during the parallel-run window the legacy process is still notifying, and two notifying processes deliver every reading to the live dashboards twice. Deleted at ADR 0016 §6 commit 4. See [`docs/ingest-host.md`](./ingest-host.md). |
 
 ## Observability Containers
 

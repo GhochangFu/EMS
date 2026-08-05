@@ -97,6 +97,51 @@ const factoryWithoutSchemas: IngestAdapterFactory = {
   create: () => push,
 };
 
+// ---- a schema with defaults must satisfy the factory ----------------------
+
+/**
+ * ADR 0016 Amendment 1, asserted rather than trusted.
+ *
+ * `ZodType<T>` expands to `ZodType<T, ZodTypeDef, T>`, so a schema whose *input*
+ * differs from its *output* — anything using `.default()`, `.transform()`, or a
+ * fallback — does not satisfy it. The ADR's own worked MQTT example
+ * (`rejectUnauthorized: z.boolean().default(true)`) is such a schema, so the
+ * first real adapter written against the original signature failed to compile.
+ *
+ * Five fan-out agents will reach for `.default()` on day one. This fixture is
+ * what stops the widening being reverted by someone tidying the signature back
+ * to `ZodType<TConfig>`: revert it and this stops compiling.
+ */
+const configWithDefaults = z.object({
+  host: z.string(),
+  port: z.number(),
+  rejectUnauthorized: z.boolean().default(true),
+  timeoutMs: z.number().optional().default(30_000),
+});
+
+const factoryWithDefaultedSchema: IngestAdapterFactory<z.infer<typeof configWithDefaults>, unknown> =
+  {
+    protocol: "modbus_tcp",
+    mode: "poll",
+    configSchema: configWithDefaults,
+    deviceSchema: z.unknown(),
+    endpointKey: (config) => `${config.host}:${config.port}`,
+    create: () => poll,
+  };
+
+/**
+ * A `.transform()` schema too — `F1.5`'s REST poller is the likely first user,
+ * mapping a JSON pointer string to a parsed accessor.
+ */
+const factoryWithTransformedSchema: IngestAdapterFactory<{ base: URL }, unknown> = {
+  protocol: "rest_poller",
+  mode: "poll",
+  configSchema: z.object({ base: z.string().url() }).transform((raw) => ({ base: new URL(raw.base) })),
+  deviceSchema: z.unknown(),
+  endpointKey: (config) => config.base.origin,
+  create: () => poll,
+};
+
 /** Referenced so `noUnusedLocals` does not delete the assertions above. */
 export const typeLevelFixtures = {
   adapters,
@@ -105,4 +150,6 @@ export const typeLevelFixtures = {
   pollWithoutPoll,
   factoryWithoutEndpointKey,
   factoryWithoutSchemas,
+  factoryWithDefaultedSchema,
+  factoryWithTransformedSchema,
 };

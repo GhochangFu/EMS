@@ -1,4 +1,4 @@
-import type { ZodType } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 
 import type {
   AdapterHealth,
@@ -107,10 +107,21 @@ export type IngestAdapter<TConfig = unknown, TDevice = unknown> =
 export type IngestAdapterFactory<TConfig = unknown, TDevice = unknown> = {
   readonly protocol: IngestProtocol;
   readonly mode: AdapterMode;
-  /** Zod schema for the connection-level slice of `config` JSONB. Validated before `connect`. */
-  readonly configSchema: ZodType<TConfig>;
+  /**
+   * Zod schema for the connection-level slice of `config` JSONB. Validated
+   * before `connect`.
+   *
+   * **The third parameter is `unknown`, not the default (ADR 0016 Amendment
+   * 1).** `ZodType<T>` expands to `ZodType<T, ZodTypeDef, T>` — input type
+   * equal to output type — which any schema using `.default()`, `.optional()`
+   * with a fallback, or `.transform()` fails to satisfy, because its input
+   * makes those fields optional. The ADR's own worked example
+   * (`rejectUnauthorized: z.boolean().default(true)`) is such a schema. The
+   * host parses untrusted JSONB, so `unknown` is also the honest input type.
+   */
+  readonly configSchema: ZodType<TConfig, ZodTypeDef, unknown>;
   /** Zod schema for the per-device slice. Validated per binding before `connect`. */
-  readonly deviceSchema: ZodType<TDevice>;
+  readonly deviceSchema: ZodType<TDevice, ZodTypeDef, unknown>;
   /**
    * Grouping key. Return the connection identity (`host:port`) when one
    * connection serves many devices; return `rtuId` when each device needs its

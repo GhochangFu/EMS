@@ -730,7 +730,9 @@ Two packaging details that will bite if missed:
 ## Dependencies
 
 Per AGENTS.md:160, every new dependency needs an ADR. This ADR covers exactly
-two, both "already-approved library, new consumer":
+two, both "already-approved library, new consumer" — **plus `@types/pg`, added
+later by Amendment 2 when the host was built. The full approved list is
+these two and that one.**
 
 - **`zod` `^3.24.1`** in `apps/ingest` `dependencies`. Present in the repo
   (`apps/api`) but not in this package, so it is a new dependency here.
@@ -850,7 +852,10 @@ querying the database rather than by opinion.
 
 ### Approved dependencies (AGENTS.md:160 / §9.4)
 
-Both approved at acceptance, both "already-approved library, new consumer":
+Two approved at acceptance, both "already-approved library, new consumer".
+**A third, `@types/pg`, was approved later by Amendment 2** — see the end of
+this ADR; it is not listed here because this subsection records what was
+decided *at acceptance*.
 
 - **`zod` `^3.24.1`** in `apps/ingest` dependencies — each adapter owns a Zod
   schema for its own JSONB config; `rtu_connection_configs.config` is untrusted
@@ -880,3 +885,81 @@ Both must be widened to `.ts` in the PR that introduces the TypeScript layer.
 Shipping the layer without them recreates precisely the orphaned-artefact class
 this repository has now hit three times (migrations 0018/0021/0022, two
 unwrapped specs, and `protocol_catalog`).
+
+## Amendment 1 — `configSchema` / `deviceSchema` input type (2026-08-05)
+
+Found while building the host (§6 commit 2), by the first adapter written
+against the frozen interface.
+
+§1 declares:
+
+```ts
+readonly configSchema: ZodType<TConfig>;
+readonly deviceSchema: ZodType<TDevice>;
+```
+
+`ZodType` takes three parameters — `ZodType<Output, Def, Input>` — and `Input`
+**defaults to `Output`**. So `ZodType<TConfig>` means "a schema whose input type
+equals its output type", which excludes every schema built with `.default()`,
+`.transform()`, or an optional-with-fallback: those deliberately accept an input
+in which the defaulted fields are absent.
+
+This is not a corner case. The MQTT adapter in this same ADR needs
+
+```ts
+rejectUnauthorized: z.boolean().default(true)
+```
+
+to carry `index.js`'s `MQTT_TLS_REJECT_UNAUTHORIZED !== "false"` behaviour, and
+it failed to compile against the signature above. Every one of `F1.2`–`F1.6`
+would have hit the same wall on its first schema, five times over, against an
+interface whose entire purpose is to be built against in parallel.
+
+**Amended to:**
+
+```ts
+readonly configSchema: ZodType<TConfig, ZodTypeDef, unknown>;
+readonly deviceSchema: ZodType<TDevice, ZodTypeDef, unknown>;
+```
+
+`unknown` is also the honest input type: the host parses
+`bms.rtu_connection_configs.config`, which is untrusted JSONB, and the parse is
+exactly where that becomes a `TConfig`.
+
+This is a **widening** — every schema that satisfied the original signature
+still satisfies this one — so no existing code changes and nothing already
+written against §1 is invalidated. `apps/ingest/src/adapter/types.spec.ts`
+carries fixtures using `.default()` and `.transform()`, so tightening the
+signature back stops the build rather than silently re-breaking the fan-out.
+
+§7's author checklist is unchanged: adapters still export a Zod `configSchema`
+and `deviceSchema`, and may now use defaults in them.
+
+## Amendment 2 — `@types/pg` in `apps/ingest` (2026-08-05)
+
+The Dependencies section above states "This ADR covers exactly two". Building
+the host (§6 commit 2) needs a third, and it is recorded here rather than
+slipped into a manifest.
+
+- **`@types/pg` `^8.11.10`** in `apps/ingest` **devDependencies**.
+
+Same category as the other two: **already-approved library, new consumer.** It
+is already a devDependency of `apps/api` and of `packages/db` at this exact
+version. `pg` itself has been a runtime dependency of `apps/ingest` since
+ADR 0007 — only the type declarations are new, and they are erased at emit, so
+this adds no runtime code and no transitive runtime footprint.
+
+Why it cannot be left to the root: `apps/ingest/Dockerfile` runs
+`pnpm install --filter ingest...`, which does not install root devDependencies,
+and then `pnpm --filter ingest build`. Without the declaration in this
+package's own manifest the image build fails on `new pg.Pool(…)` under
+`strict` — the same reason `typescript` had to be declared explicitly rather
+than inherited.
+
+The alternative considered was hand-writing a structural type for the slice of
+`pg` the host uses. `bindings.ts` and `normaliser.ts` already do exactly that
+for their *arguments* (`BindingQueryable`, `QueryableClient`), which is what
+keeps them database-free in tests — but `main.ts` has to **construct** a real
+`pg.Pool`, and a hand-written ambient declaration for a third-party
+constructor is a silent-drift generator: it keeps compiling after the library
+changes shape. The published types are the honest option.
