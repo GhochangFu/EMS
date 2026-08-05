@@ -105,6 +105,10 @@ export const assets = bmsSchema.table("assets", {
     .references(() => locations.id),
   rtuId: uuid("rtu_id").references(() => rtus.id),
   domain: varchar("domain", { length: 64 }).notNull().default("electrical"),
+  // ADR 0015: pins the exact template *version* this asset was built from,
+  // because a row in `asset_templates` IS a version. Null means hand-created,
+  // which every seeded asset is. Publishing a newer version never touches it.
+  templateId: uuid("template_id").references(() => assetTemplates.id),
   active: boolean("active").notNull().default(true),
   meta: jsonb("meta"),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -198,6 +202,79 @@ export const pointKeys = bmsSchema.table("point_keys", {
   unit: varchar("unit", { length: 32 }),
   description: text("description"),
   active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * Asset templates (ADR 0015) — one row per template *version*.
+ *
+ * Identity is `(organizationId, code, version)`, and `assets.templateId` points
+ * at this row, so the pin and the version can never disagree. Published rows
+ * are immutable except `status -> archived`: editing one creates a new draft at
+ * `max(version) + 1`. That is not ceremony — instantiated `asset_points` are
+ * physical wiring that `apps/ingest` and the rule engine read, so a template
+ * edit must never reach assets already built from it.
+ */
+export const assetTemplates = bmsSchema.table("asset_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  code: varchar("code", { length: 64 }).notNull(),
+  version: integer("version").notNull().default(1),
+  name: varchar("name", { length: 255 }).notNull(),
+  assetType: varchar("asset_type", { length: 64 }).notNull(),
+  domain: varchar("domain", { length: 64 }).notNull(),
+  description: text("description"),
+  // draft | published | archived — mirrors automation_rules.lifecycle_status.
+  // A two-state `active` boolean cannot express "drafted, not yet publishable".
+  status: varchar("status", { length: 32 }).notNull().default("draft"),
+  // Reserved E1.7 overlay surface: KPIs, alarm philosophies, default
+  // dashboards, health/maintenance hooks. `{}` in F2.1; its shape is contracted
+  // by a Zod schema in @bms/shared that E1.7 tightens, not modelled relationally
+  // before E1.7 and F3.1 have specified it.
+  content: jsonb("content").notNull().default({}),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * Points a template declares (ADR 0015).
+ *
+ * `pointKey` is a code resolved against the org's `point_keys` catalog, exactly
+ * like `assetPoints.pointKey` — deliberately not a FK. A composite FK would
+ * need a denormalized `organization_id` here, creating a second source of truth
+ * that can drift, and domain packs (E5.1) must round-trip through JSON, which
+ * code references survive and uuids do not.
+ */
+export const templatePoints = bmsSchema.table("template_points", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  templateId: uuid("template_id")
+    .notNull()
+    .references(() => assetTemplates.id, { onDelete: "cascade" }),
+  pointKey: varchar("point_key", { length: 128 }).notNull(),
+  label: varchar("label", { length: 255 }),
+  // An *override*, not a copy. Null means "use the catalog unit", which is
+  // already what resolveCatalogPointKey returns as the fallback.
+  unit: varchar("unit", { length: 32 }),
+  // measured | derived. Load-bearing for F2.2: a derived point is computed by
+  // the calc engine (F2.6), so instantiation must not emit an asset_points row
+  // for it — asset_points.source_data_key is NOT NULL and there is no honest
+  // source key for a computed tag.
+  kind: varchar("kind", { length: 32 }).notNull().default("measured"),
+  sourceDataKeyPattern: varchar("source_data_key_pattern", { length: 128 }),
+  required: boolean("required").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  meta: jsonb("meta").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

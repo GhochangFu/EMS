@@ -636,6 +636,62 @@ export type AdminPointKeyDto = {
   createdAt: string;
 };
 
+/** Lifecycle of an asset template version (ADR 0015). */
+export type AssetTemplateStatus = "draft" | "published" | "archived";
+
+/**
+ * Whether instantiation emits an `asset_points` row for this point.
+ *
+ * `derived` points are computed by the calc engine (F2.6) and deliberately
+ * produce no mapping row — `asset_points.source_data_key` is NOT NULL and there
+ * is no honest source key for a computed tag.
+ */
+export type TemplatePointKind = "measured" | "derived";
+
+export type AdminTemplatePointDto = {
+  id: string;
+  templateId: string;
+  pointKey: string;
+  label: string | null;
+  /** Override; `null` means "use the point-key catalog's unit". */
+  unit: string | null;
+  kind: TemplatePointKind;
+  sourceDataKeyPattern: string | null;
+  required: boolean;
+  sortOrder: number;
+  createdAt: string;
+};
+
+/**
+ * One template *version* (ADR 0015) — a row is a version, so
+ * `assets.templateId` pins it exactly and the two can never disagree.
+ */
+export type AdminAssetTemplateDto = {
+  id: string;
+  organizationId: string;
+  organizationCode: string;
+  organizationName: string;
+  code: string;
+  version: number;
+  name: string;
+  assetType: string;
+  domain: string;
+  description: string | null;
+  status: AssetTemplateStatus;
+  /** Reserved E1.7 overlay surface; `{}` until E1.7 tightens its contract. */
+  content: Record<string, unknown>;
+  publishedAt: string | null;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  points: AdminTemplatePointDto[];
+};
+
+/** List rows omit `points` — the editor fetches them per template. */
+export type AdminAssetTemplateSummaryDto = Omit<AdminAssetTemplateDto, "points"> & {
+  pointCount: number;
+};
+
 export type AdminOrganizationSummaryDto = {
   id: string;
   code: string;
