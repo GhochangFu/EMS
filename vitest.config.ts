@@ -43,17 +43,26 @@ export default defineConfig({
       // a `.spec.ts` that no wrapper runs. `tests/repo-invariants.test.ts` is
       // what actually catches that; do not rely on this gate for it.
       exclude: ["**/*.spec.ts", "**/*.test.ts", "**/*.test.js", "**/*.d.ts"],
-      // Measured 2026-08-04 with ADR 0017's write gate and F4.11 landed:
-      // statements 4.47 · branches 2.72 · functions 4.72 · lines 4.59.
-      // (F4.4 baseline was 3.60 · 1.86 · 3.37 · 3.72.)
+      // Measured 2026-08-05 with F4.10's access-control integration tests:
+      // statements 7.12 · branches 4.53 · functions 9.44 · lines 7.14.
+      // (F4.11 was 4.47 · 2.72 · 4.72 · 4.59; F4.4 baseline 3.60 · 1.86 · 3.37 · 3.72.)
       //
       // Set just below each so a regression trips the gate while normal churn
       // does not. Ratchet up, never down (§4.6).
+      //
+      // These numbers assume `F4.10` ran, which requires a reachable
+      // `DATABASE_URL` — without one it skips and coverage falls to roughly
+      // 4.59 · 2.74 · 4.89 · 4.68, tripping the gate. That is intended: the
+      // gate should measure a complete run, not a partial one. CI always has
+      // the database (`db:migrate` → `db:seed` → `test:coverage`), so this only
+      // affects a local `pnpm test:coverage` with no stack up — and the skipped
+      // suite prints the reason and the command to fix it. Do NOT lower these
+      // to make a database-less run pass.
       thresholds: {
-        statements: 4.4,
-        branches: 2.6,
-        functions: 4.6,
-        lines: 4.5,
+        statements: 7.0,
+        branches: 4.4,
+        functions: 9.3,
+        lines: 7.0,
       },
     },
   },
