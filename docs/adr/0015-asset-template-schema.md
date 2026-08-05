@@ -4,6 +4,11 @@
 
 Accepted (2026-08-04). Backlog item `F2.1` (Wave 0, P0, ⭐ enabler).
 
+**Amended 2026-08-05** while building `F2.2` — see
+[Amendment 1](#amendment-1--the-instantiation-contract-2026-08-05) at the end.
+Two clauses of §6/§7 were unbuildable as written. §1–§5 (the schema, which
+shipped in `F2.1`) are unchanged.
+
 All four open questions raised during drafting are resolved — see
 **Resolved decisions** at the end. No open questions remain; this ADR is
 buildable as written.
@@ -270,6 +275,11 @@ DDL at all**. Fewer migration-bearing jobs is the point (see Migration safety).
 
 ### 6. Instantiation walk-through (`F2.2`) — chiller template, 12 points, 40 assets
 
+> ⚠️ **The payload below is superseded by [Amendment 1A](#a-the-instantiation-target-is-rtuid-or-locationid-exclusively).**
+> `rtuId` is no longer the only target: it is `rtuId` **xor** `locationId`.
+> Everything else in this section — the seven steps, both failure modes — still
+> holds. Kept as written because `F2.1` was built against it.
+
 Given `CHILLER-CENTRIF` v3, `published`, org `IONEX`, 12 `template_points`
 (10 `measured`, 2 `derived`), and a target location `Plant-A` with RTU
 `PLANTA-HVAC-01`:
@@ -328,7 +338,7 @@ reaches them with the predicates it already has:
 |---|---|
 | List / read | `writableOrganizationIds(jwt)` → `inArray(assetTemplates.organizationId, ids)`; `null` = global admin, unrestricted. Identical to `PointKeysAdminService.list`. |
 | Create / edit / publish / archive | new `canManageTemplate(jwt, organizationId)`, delegating to the same rule as `canManagePointKey`: `admin` → true, `organization_admin` → `canManageOrganization`, `location_admin` → **false**. Publish shares the edit permission — see Open question 4. |
-| Instantiate | **both** `canManageTemplate` on the template's org (read) **and** `canManageLocation(jwt, targetLocationId)` (write). |
+| Instantiate | ⚠️ **Superseded by [Amendment 1B](#b-7s-instantiate-predicate-is-wrong-and-denies-the-role-it-describes).** As written — `canManageTemplate` **and** `canManageLocation` — this is unsatisfiable for `location_admin`, the role the paragraph below exists to allow. The implemented rule is `canManageOrganization` on the template's org (read) **and** `canManageLocation(jwt, targetLocationId)` (write). |
 
 The instantiate split is the important one: a `location_admin` may deploy a
 published org template into their own location — that is the whole point of
@@ -478,3 +488,107 @@ answer and the cheap escape hatch if it turns out wrong.
   that `F2.3` contradicts is not.
 - **GIN index on `content`.** Add when a query needs it — a one-statement
   additive migration.
+
+---
+
+## Amendment 1 — the instantiation contract (2026-08-05)
+
+Building `F2.2` surfaced two clauses that cannot be implemented as written. Both
+are in the parts of this ADR that describe *instantiation* (§6 and §7); neither
+touches the schema, so nothing shipped in `F2.1` changes and there is no
+migration. `F2.2` still adds **no DDL**.
+
+### A. The instantiation target is `rtuId` **or** `locationId`, exclusively
+
+§6's payload takes an `rtuId` and derives `location_id` from that RTU. That was
+written on 2026-08-04, before **ADR 0018** made `bms.assets.rtu_id` nullable and
+`location_id` `NOT NULL`, moving telemetry provenance onto `asset_points`.
+
+So §6 now contradicts the schema it writes into. A gateway-less asset is legal —
+`F1.8`/`F1.9` exist to create them, and ADR 0018's whole point is that an asset
+must be *somewhere* and need not be *wired* — but an RTU-only payload gives no
+way to instantiate one. Templates would be usable for exactly the subset of
+assets that happen to have a gateway, which is not what model-once-deploy-many
+promises a multi-site client.
+
+**Decision.** The payload accepts exactly one of `rtuId` or `locationId`.
+Supplying both, or neither, is a `400` — never a silent precedence rule, because
+the two would disagree the moment an RTU is moved between locations.
+
+| Target | `assets.location_id` | `assets.rtu_id` | `asset_points.rtu_id` | `asset_points.source_kind` |
+|---|---|---|---|---|
+| `rtuId` | the RTU's location | the RTU | the RTU | `measured` |
+| `locationId` | as given | `NULL` | `NULL` | `unmapped` |
+
+`unmapped` rather than `manual` is deliberate and follows the precedent
+`AssetPointsAdminService.create` already set under ADR 0018: nobody has claimed
+these points are hand-entered, only that no source is known yet. `manual` is a
+positive assertion an operator makes later. The `asset_points_source_ref_check`
+constraint permits both rows exactly as written; neither path needs new DDL.
+
+*Escape hatch:* if a caller ever needs to instantiate into a location and wire a
+gateway in the same call, that is an additive optional field, not a reshape.
+
+### B. §7's instantiate predicate is wrong and denies the role it describes
+
+§7's table requires **both** `canManageTemplate(jwt, template.organization_id)`
+**and** `canManageLocation(jwt, targetLocationId)`. But `canManageTemplate`
+returns `false` for `location_admin` by §7's own design — authoring is an
+organization-wide act. The conjunction is therefore **always false** for a
+location admin, contradicting the sentence immediately below the table:
+
+> a `location_admin` may deploy a published org template into their own
+> location — that is the whole point of model-once-deploy-many for a
+> multi-site client
+
+As written, that is unimplementable. The prose states the intent; the table
+picked the wrong predicate for the read half.
+
+**Decision.** Instantiation requires:
+
+1. **Template readability** — `canManageOrganization(jwt, template.organization_id)`,
+   the same predicate `list` and `getById` already use. For a location admin,
+   `writableOrganizationIds` derives the org from their location grants, so this
+   is true for their own org and false for anyone else's.
+2. **Target write** — `canManageLocation(jwt, targetLocationId)`, unchanged.
+
+`canManageTemplate` keeps its meaning exactly: *may author*. It stays required
+for create/edit/publish/archive and is **not** consulted by instantiate. The
+asymmetry §7 wanted is preserved — a location admin deploys but cannot author —
+it is just expressed with a predicate that can actually be satisfied.
+
+This is a **narrowing correction, not a widening one**: no role gains access
+that §7's prose did not already grant it. A location admin still cannot reach a
+template outside their own organization, because `canManageOrganization` is
+false there.
+
+### C. Consequential detail settled while building
+
+- **Batched catalog re-validation.** §3 requires re-validating every point key
+  against the org's *active* catalog at instantiation, "through the same path
+  `resolveCatalogPointKey` already uses". Applied literally to 40 assets × 12
+  points that is 480 identical single-row queries. `F2.2` issues **one** query
+  with the same three predicates (`organization_id`, `code`, `active = true`)
+  and the same fallback (`template_points.unit ?? point_keys.unit`). Same rule,
+  same failure, one round trip.
+- **`siteName` is optional**, defaulting to the resolved location's name.
+  `bms.assets.site_name` is `NOT NULL`, and requiring 40 repetitions of one
+  string is a transcription error waiting to happen.
+- **Unresolved `source_data_key`.** §6 step 6 says abort when a *required*
+  measured point yields no key. The complement was unstated: a **non-required**
+  measured point with no pattern, or with an unsubstituted `{token}`, is
+  **skipped** — no row. `source_data_key` is `NOT NULL`, so the only
+  alternatives are a placeholder (§6 forbids it) or failing the batch on an
+  explicitly optional point.
+- **`meta` stays `NULL`.** Provenance is `template_id`, which pins the exact
+  version. Instantiated gateway-less assets deliberately do **not** get
+  `meta.sourceKind = 'manual'` — that marker is what
+  `assignEskomAssetRtus` reads to skip re-wiring a seed fixture, and overloading
+  it here would couple instantiation to seed behaviour.
+
+### Owed follow-up
+
+Unchanged from the main Consequences, plus: the `canManageTemplate` JSDoc in
+`apps/api/src/auth/access-control.service.ts` restated §7's contradictory rule
+verbatim and is corrected in the same PR as this amendment — it is a comment on
+behaviour, not a rulebook edit, so §9.10 does not apply to it.

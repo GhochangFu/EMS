@@ -201,10 +201,16 @@ export class AccessControlService {
    * reuse of `canManagePointKey` so that a later divergence in template policy
    * cannot silently change point-key policy.
    *
-   * Note the deliberate asymmetry with *instantiation*, which requires this
-   * check on the template's org AND `canManageLocation` on the target: a
-   * location admin may deploy a published org template into their own location
-   * without being able to author one. That is model-once-deploy-many.
+   * This method is **not** consulted by instantiation, and must not be — it
+   * means "may author", which is false for `location_admin` by the design
+   * above. ADR 0015 §7's table originally required it there *and*
+   * `canManageLocation`, a conjunction no location admin can ever satisfy,
+   * which denied the one role the same section exists to allow. Instantiation
+   * instead requires template *readability* (`canManageOrganization`, the
+   * predicate `list`/`getById` already use) plus `canManageLocation` on the
+   * target — see ADR 0015 Amendment 1B. A location admin deploys a published
+   * org template into their own location without being able to author one:
+   * that is model-once-deploy-many.
    */
   async canManageTemplate(jwt: JwtPayload, organizationId: string): Promise<boolean> {
     const user = await this.resolveDbUser(jwt);

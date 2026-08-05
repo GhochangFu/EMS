@@ -21,8 +21,10 @@ import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema } from "../admin.schema";
 import {
   createAssetTemplateBodySchema,
+  instantiateAssetsBodySchema,
   updateAssetTemplateBodySchema,
 } from "./asset-templates.schema";
+import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 
 const statusQuerySchema = z.enum(["draft", "published", "archived"]);
@@ -30,7 +32,10 @@ const statusQuerySchema = z.enum(["draft", "published", "archived"]);
 @Controller("admin/asset-templates")
 @UseGuards(JwtAuthGuard)
 export class AssetTemplatesAdminController {
-  constructor(private readonly service: AssetTemplatesAdminService) {}
+  constructor(
+    private readonly service: AssetTemplatesAdminService,
+    private readonly instantiation: AssetTemplateInstantiationService,
+  ) {}
 
   @Get()
   async list(
@@ -92,6 +97,33 @@ export class AssetTemplatesAdminController {
   @HttpCode(HttpStatus.OK)
   async archive(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
     return this.service.archive(user, idParamSchema.parse(id));
+  }
+
+  /**
+   * `F2.2` — builds assets from this published version (model-once-deploy-many).
+   *
+   * `201` rather than `200`: this creates rows, unlike the other `@Post`s here,
+   * which are state transitions on an existing template.
+   */
+  @Post(":id/instantiate")
+  @HttpCode(HttpStatus.CREATED)
+  async instantiate(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      return await this.instantiation.instantiate(
+        user,
+        idParamSchema.parse(id),
+        instantiateAssetsBodySchema.parse(body),
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
   }
 
   /** "Edit this published version" — creates the next draft from it. */

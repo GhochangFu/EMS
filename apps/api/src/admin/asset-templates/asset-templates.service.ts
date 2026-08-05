@@ -28,6 +28,13 @@ import type {
   UpdateAssetTemplateBody,
 } from "./asset-templates.schema";
 
+/**
+ * The template **version lifecycle** (ADR 0015 §5). Instantiation — building
+ * assets from a published version — lives in
+ * `AssetTemplateInstantiationService`; it is the only operation in this module
+ * that writes outside `asset_templates`/`template_points`.
+ */
+
 type TemplateRow = typeof assetTemplates.$inferSelect;
 type PointRow = typeof templatePoints.$inferSelect;
 
