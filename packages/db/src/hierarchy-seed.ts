@@ -125,6 +125,11 @@ export async function assignEskomAssetRtus(pool: pg.Pool): Promise<void> {
     INNER JOIN bms.organizations o ON o.id = l.organization_id
     WHERE o.code = 'ESKOM'
       AND a.code NOT LIKE 'PHE-%'
+      -- ADR 0018 made a gateway-less asset legal, and F4.10 seeds one to prove
+      -- the scope queries do not join through bms.rtus. Without this exemption
+      -- the second db:seed would wire it and the fixture would silently stop
+      -- being a fixture. Any hand-read asset is exempt, not just that one.
+      AND COALESCE(a.meta->>'sourceKind', '') <> 'manual'
   `);
 
   for (const row of rows.rows) {
