@@ -56,6 +56,23 @@ jobs:
       - name: Typecheck test files
         run: pnpm typecheck:tests
 
+      # No workflow built any image until now, so `apps/ingest/Dockerfile` was
+      # broken on main from 2043bfa (PR #12) and nothing said so — the compose
+      # `ingest` service sits behind the `ingest`/`pilot`/`phe` profiles, so it
+      # is only built when someone brings the PHE pilot up by hand. §4.6 wants
+      # the gate that would have caught the bug, and only a real image build
+      # catches this class: the break came from adding a COPY line, which no
+      # lint or repo-invariant over the Dockerfile text would have flagged.
+      #
+      # Ingest only, deliberately. It is the one image that installs before
+      # COPYing sources (api COPYs first; web and sim already pass
+      # `--ignore-scripts`), so it is the one exposed to root `postinstall`
+      # running against a workspace that is not there yet. The other three
+      # images remain ungated here — widening this to a matrix is a CI-time
+      # trade-off, not part of this fix.
+      - name: Build the ingest image
+        run: docker build -f apps/ingest/Dockerfile .
+
       - name: Initialise database schemas
         run: |
           docker exec "${{ job.services.postgres.id }}" \
