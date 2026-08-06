@@ -628,13 +628,23 @@ sentences predate the PHE pilot and now read against `main`, which ships an
 - §9.7 (`AGENTS.md:542-543`) — "it must not implement adapters or brokers until
   real access exists." Real access exists; the brokers half is still true.
 
-They belong to their own `chore(agents):` sweep under §10.1's one-per-PR rule,
-not folded into an unrelated one. Recorded here so they are not lost again.
+They belong to their own `chore(agents):` sweep, not folded into an unrelated
+one. **The §10.1 one-per-PR rule was the reason first given and it does not
+actually bind** — §10.1 governs promotions, and these are corrections; the
+2026-08-06 cutover sweep batched five of them in one PR on exactly that
+reasoning. The real reason is subject matter: an adapters-and-brokers correction
+inside a cutover diff is harder to review, not easier. The live risk is that
+§9.7 is what a scope reviewer reads, and it still says "it must not implement
+adapters or brokers until real access exists" — false since ADR 0007, and more
+visibly so now that the pilot is running. `README.md:153`'s "Phase 2 real
+ingestion remains paused" belonged to this family and was corrected in the
+cutover sweep, since it is not §9.10-gated.
 
-**Still owed — falsified 2026-08-06 by the ADR 0016 §6 commit 3 cutover.** Four
-places, not one. The distinction the sweep must keep throughout: **`pnpm start`
-did not change and still runs `index.js`; the *deployment* changed.** Every
-sentence below is false only where it conflates the two.
+**~~Still owed~~ ✅ Swept — falsified 2026-08-06 by the ADR 0016 §6 commit 3
+cutover, corrected the same day.** Four places, not one, plus a fifth found
+while sweeping (below). The distinction the sweep had to keep throughout:
+**`pnpm start` did not change and still runs `index.js`; the *deployment*
+changed.** Every sentence below was false only where it conflated the two.
 
 - **§2 *Real ingestion* (`AGENTS.md:159`)** — "`pnpm start` still runs the frozen
   legacy `src/index.js` (**what compose runs, and what the pilot runs**)". The
@@ -660,10 +670,31 @@ sentence below is false only where it conflates the two.
   sentence should record that it was satisfied rather than be deleted. Commit 4's
   half stands unchanged.
 
+- **§2 *Ingest adapters*, the credential caveat (`AGENTS.md:163`)** — found
+  while sweeping, not recorded in advance. It said the `MQTT_*` fallback
+  "*appears* to be the only working credential path", that Resolved decision 5
+  "*expects* it to survive cutover", and that the emptiness of
+  `rtu_connection_configs` "was run against the local seeded database … confirm
+  before acting on it". The cutover discharged all three: the pilot has run on
+  that path since 2026-08-06, and the database the caveat wanted confirming
+  against *is* the pilot's.
+
 Not fixed in the cutover PR: §9.10 puts AGENTS.md edits in their own
-`chore(agents):` change and §10.1 allows one promotion per PR. Note this is a
-**correction of now-false statements**, not a promotion — the scope moved when
-ADR 0016 was accepted, not today.
+`chore(agents):` change. Note this was a **correction of now-false statements**,
+not a promotion — the scope moved when ADR 0016 was accepted, not on the day the
+cutover ran. That is why §6's commit 3 bullet records the gate as *satisfied*
+rather than deleting it, and why nothing was added to §6's "also promoted"
+paragraph or the status line: nothing became in scope.
+
+`docs/roadmap.md`'s F1.1 section and `README.md`'s "Phase 2 real ingestion
+remains paused" were falsified by the same event and swept in the same change —
+neither is §9.10-gated, and §10 step 4 already treats the roadmap as promotion
+bookkeeping.
+
+**Still owed and human-gated: ADR 0016 Amendment 3**, recording that Resolved
+decision 5's caveat is discharged. §10.1 makes the ADR the authoritative record
+and AGENTS.md only the index, so the index currently runs ahead of it. Amending
+an ADR is a human call.
 
 **Promotions since, one per PR (§10.1).** The table above closed the accumulated
 batch; everything from here lands alone.
