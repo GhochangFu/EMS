@@ -631,10 +631,11 @@ sentences predate the PHE pilot and now read against `main`, which ships an
 They belong to their own `chore(agents):` sweep under §10.1's one-per-PR rule,
 not folded into an unrelated one. Recorded here so they are not lost again.
 
-**Still owed — falsified 2026-08-06 by the ADR 0016 §6 commit 3 cutover.** Four
-places, not one. The distinction the sweep must keep throughout: **`pnpm start`
-did not change and still runs `index.js`; the *deployment* changed.** Every
-sentence below is false only where it conflates the two.
+**~~Still owed~~ ✅ Swept — falsified 2026-08-06 by the ADR 0016 §6 commit 3
+cutover, corrected the same day.** Four places, not one, plus a fifth found
+while sweeping (below). The distinction the sweep had to keep throughout:
+**`pnpm start` did not change and still runs `index.js`; the *deployment*
+changed.** Every sentence below was false only where it conflated the two.
 
 - **§2 *Real ingestion* (`AGENTS.md:159`)** — "`pnpm start` still runs the frozen
   legacy `src/index.js` (**what compose runs, and what the pilot runs**)". The
@@ -660,10 +661,21 @@ sentence below is false only where it conflates the two.
   sentence should record that it was satisfied rather than be deleted. Commit 4's
   half stands unchanged.
 
+- **§2 *Ingest adapters*, the credential caveat (`AGENTS.md:163`)** — found
+  while sweeping, not recorded in advance. It said the `MQTT_*` fallback
+  "*appears* to be the only working credential path", that Resolved decision 5
+  "*expects* it to survive cutover", and that the emptiness of
+  `rtu_connection_configs` "was run against the local seeded database … confirm
+  before acting on it". The cutover discharged all three: the pilot has run on
+  that path since 2026-08-06, and the database the caveat wanted confirming
+  against *is* the pilot's.
+
 Not fixed in the cutover PR: §9.10 puts AGENTS.md edits in their own
-`chore(agents):` change and §10.1 allows one promotion per PR. Note this is a
-**correction of now-false statements**, not a promotion — the scope moved when
-ADR 0016 was accepted, not today.
+`chore(agents):` change. Note this was a **correction of now-false statements**,
+not a promotion — the scope moved when ADR 0016 was accepted, not on the day the
+cutover ran. That is why §6's commit 3 bullet records the gate as *satisfied*
+rather than deleting it, and why nothing was added to §8's "also promoted"
+paragraph or the status line: nothing became in scope.
 
 **Promotions since, one per PR (§10.1).** The table above closed the accumulated
 batch; everything from here lands alone.
