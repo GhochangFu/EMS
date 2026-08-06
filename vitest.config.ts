@@ -47,14 +47,19 @@ export default defineConfig({
       // a `.spec.ts` that no wrapper runs. `tests/repo-invariants.test.ts` is
       // what actually catches that; do not rely on this gate for it.
       exclude: ["**/*.spec.ts", "**/*.test.ts", "**/*.test.js", "**/*.d.ts"],
-      // Measured 2026-08-05 with all three integration suites in the tree and
-      // the F1.1 ingest host landed:
-      // statements 26.47 · branches 18.92 · functions 27.08 · lines 26.60.
-      // (Before the host: 17.18 · 11.37 · 20.66 · 17.11. Before E1.7: 14.22 ·
-      // 9.35 · 18.29 · 14.07. Before F2.2: 10.96 · 6.76 · 14.65 · 10.96. F4.10
-      // alone was 7.12 · 4.53 · 9.44 · 7.14; F2.1 alone 8.70 · 5.14 · 10.74 ·
-      // 8.76; F4.11 4.47 · 2.72 · 4.72 · 4.59; F4.4 baseline 3.60 · 1.86 ·
-      // 3.37 · 3.72.)
+      // Measured 2026-08-06 with all three integration suites in the tree, the
+      // F1.1 ingest host landed, and the rules module split under §4.5:
+      // statements 27.87 · branches 22.77 · functions 28.83 · lines 28.05.
+      // (Before the rules split: 26.47 · 18.92 · 27.08 · 26.60. Before the
+      // host: 17.18 · 11.37 · 20.66 · 17.11. Before E1.7: 14.22 · 9.35 · 18.29
+      // · 14.07. Before F2.2: 10.96 · 6.76 · 14.65 · 10.96. F4.10 alone was
+      // 7.12 · 4.53 · 9.44 · 7.14; F2.1 alone 8.70 · 5.14 · 10.74 · 8.76;
+      // F4.11 4.47 · 2.72 · 4.72 · 4.59; F4.4 baseline 3.60 · 1.86 · 3.37 ·
+      // 3.72.)
+      //
+      // The branches jump is disproportionate because the rules split gave the
+      // engine's decision logic its first tests — `compare`, `parseTime` and
+      // the time-window comparison are almost entirely branch.
       //
       // The +9 point jump is the ingest host: `apps/ingest/src/**/*.ts` was
       // added to the denominator by the F1.1 contracts PR while the numerator
@@ -74,10 +79,10 @@ export default defineConfig({
       // the reason and the command to fix it. Do NOT lower these to make a
       // database-less run pass.
       thresholds: {
-        statements: 26.4,
-        branches: 18.9,
-        functions: 27.0,
-        lines: 26.5,
+        statements: 27.8,
+        branches: 22.7,
+        functions: 28.8,
+        lines: 28.0,
       },
     },
   },
