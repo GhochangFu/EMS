@@ -150,6 +150,8 @@ assets without telemetry, and hides the prototype `/sld` and `/crac` menu
 entries temporarily. It still needs a clean migration/seed pass,
 Keycloak realm verification, automated access-control coverage, and a
 page-by-page role walkthrough before it can be called complete. Phase 2
-real ingestion remains paused; Phase 6 Three.js visuals remain later and
+real ingestion is **live for the single PHE MQTT pilot RTU** (ADR 0007) and
+paused for everything else — no EMQX, and every other protocol still needs its
+own ADR; Phase 6 Three.js visuals remain later and
 AI Copilot remains deferred. See [`docs/roadmap.md`](./docs/roadmap.md)
 for the full phase breakdown.

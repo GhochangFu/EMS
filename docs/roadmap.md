@@ -750,9 +750,9 @@ Process (`AGENTS.md` §10).
   (§9.10)~~ ✅ **cleared** — §2 gained a *Template content* row, and §6 gained
   the two deferral bullets covering what ADR 0019 deliberately left closed.
 
-### Ingest adapter framework (F1.1) — host built, cutover pending
-- **Status:** ADR 0016 §6 **commit 2 landed** (PR #13). `F1.1` stays `⬜` in
-  `docs/BACKLOG.md` — commits 3 and 4 have not.
+### Ingest adapter framework (F1.1) — cut over, commit 4 pending
+- **Status:** ADR 0016 §6 **commits 2 and 3 landed** (PR #13, then PR #19 on
+  2026-08-06). `F1.1` stays `⬜` in `docs/BACKLOG.md` — commit 4 has not.
 - **Delivered:** `apps/ingest/src/host/` — supervisor (one per endpoint, owning
   every timer), exponential backoff with jitter, bounded drop-oldest sample
   queue, ADR 0018-axis binding plan, normaliser, the NOTIFY chunker that the
@@ -762,28 +762,50 @@ Process (`AGENTS.md` §10).
   the legacy 9102 so both can run at once) — plus `src/adapters/mqtt.ts`,
   `src/adapter/registry.ts`, and a shared adapter conformance suite. `src/main.ts`
   is wiring only. `src/index.js` is **frozen, not one line edited**, and
-  `pnpm start` and compose still run it. Operator notes: `docs/ingest-host.md`.
+  `pnpm start` still runs it — but **compose and the pilot run the host** since
+  the commit 3 cutover. Operator notes: `docs/ingest-host.md`.
 - **Scope promoted:** the interface, the host, and MQTT — which ADR 0007 had
   already promoted and this only ports onto the interface. Individual protocol
   adapters (F1.2 Modbus, F1.3 BACnet, F1.4 OPC-UA, F1.5 SNMP/REST, F1.6 DCS)
   each still need their own ADR under AGENTS.md §10 — unconditionally, not only
   where a protocol library has to be settled under §9.4.
-- **Owed — commit 3:** the parallel run against the **real PHE deployment**.
-  Not reproducible locally; no pilot runs on a dev machine. Its pre-check was
-  run: a read-only differential showed the legacy `assets.rtu_id` query and the
-  host's `asset_points.rtu_id` query resolving an identical 22-point set, which
-  is expected — migration `0023_source_axis_separation.sql` backfilled the point
-  axis from the asset axis, so the two agree by construction. *Two caveats. It
-  was an uncommitted scratchpad query, so there is no artifact in the tree —
-  re-derive it from `host/bindings.ts`'s query and `index.js:66-82` if you want
-  to re-run it. And, as for Resolved decision 5, it was the local seeded
-  database: it says the parallel run will compare like with like, and nothing
-  about the pilot's data.*
-- **Owed — commit 4:** an owner for cutting `apps/ingest/src/index.js` over to
-  the host and deleting the `INGEST_NOTIFY` flag with it. Until someone deletes
-  it the two-entrypoint window stays open, which is the realistic failure mode
-  of a strangler migration. **ADR 0016 Resolved decision 4 records that this has
-  no named owner.**
+- **~~Owed~~ ✅ commit 3 — done 2026-08-06, and the premise it was owed on was
+  wrong.** This section said the parallel run was "not reproducible locally; no
+  pilot runs on a dev machine". There was no separate deployment: the PHE pilot
+  had **never been brought up anywhere**. Once the broker credentials were
+  supplied it came up on this compose stack, the parallel run went ahead against
+  the live Bhutnirghat I feed, and the cutover followed the same day. Full
+  evidence in `docs/ingest-host.md`; in summary — an empty point-set differential
+  in both directions between legacy-only and host-only windows, no duplication in
+  the parallel window, `kwh_total` continuous across the handover, and
+  `INGEST_NOTIFY` suppression verified against a positive control.
+
+  *Two caveats on that evidence.* The window boundaries were derived from the
+  measured device-clock skew rather than per-row process attribution, and the
+  parallel window is **one message wide** — the uniformity across all three
+  windows makes the conclusion robust, but that single row is the only direct
+  evidence of concurrent non-corruption.
+
+  The pre-check this section recorded — a read-only differential showing the
+  legacy `assets.rtu_id` query and the host's `asset_points.rtu_id` query
+  resolving an identical 22-point set — was re-run against the real feed and
+  held. Its own caveat, that it proved only "like with like" and nothing about
+  the pilot's data, was **dissolved rather than answered**: the local seeded
+  database *is* the pilot's. Same for Resolved decision 5. Treat the 22 as
+  historical — the catalog is 21 since migration `0025` dropped
+  `device_timestamp`.
+- **Owed — commit 4:** an owner for deleting `apps/ingest/src/index.js`, pointing
+  `"start"` at `dist/main.js`, removing the compose `command:` override and
+  deleting the `INGEST_NOTIFY` flag with it. Until someone does, the
+  two-entrypoint window stays open — the realistic failure mode of a strangler
+  migration, and **more likely now, not less**: the cutover removed the
+  operational pressure that would have forced the issue. It also stopped being
+  tidying-up. `INGEST_NOTIFY` defaults off, which was the safe direction while
+  two processes ran and is the dangerous one now that the host serves alone:
+  compose's `INGEST_NOTIFY: "on"` is the only thing keeping realtime alive, and
+  losing that line means rows keep landing while every dashboard goes silently
+  dead. Commit 4 removes that failure mode. **ADR 0016 Resolved decision 4
+  records that this has no named owner.**
 - **Known limits carried forward:** reload refreshes point *mappings* only (a
   new RTU or a changed endpoint needs a restart); RTUs sharing an endpoint share
   credentials until `F1.7`; a batch lost to a failed write is gone until `F1.10`
