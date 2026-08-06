@@ -43,25 +43,35 @@ past cutover: no RTU has an `rtu_connection_configs` row to read instead.
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | — | Required. |
-| `INGEST_NOTIFY` | `off` | `on` \| `off` only. **See below.** Any other value is refused at startup rather than guessed at. |
-| `INGEST_HOST_HEALTH_PORT` | `9103` | Deliberately *not* `INGEST_METRICS_PORT` — `src/index.js` holds `9102`, and the parallel run needs both. |
+| `INGEST_NOTIFY` | `off` | `on` \| `off` only. **Compose sets `on`, and since the cutover that is required, not optional — see below.** Any other value is refused at startup rather than guessed at. |
+| `INGEST_HOST_HEALTH_PORT` | `9103` | The default is deliberately *not* `INGEST_METRICS_PORT` — `src/index.js` holds `9102`, and a parallel run needs both. **Compose sets it to `9102`** so the published port means the same thing whichever process runs; run a side-by-side comparison outside compose, on the default. |
 | `INGEST_RELOAD_MS` | `60000` | How often point mappings are refreshed. Matches `index.js`. |
 | `MQTT_HOST` / `MQTT_PORT` / `MQTT_USERNAME` / `MQTT_PASSWORD` | pilot-era | MQTT **only**, resolved by the host through the unmodified `src/rtu-config.js`. No new adapter gets an environment fallback. |
 | `MQTT_TLS_REJECT_UNAUTHORIZED` | on | Only the exact string `false` disables TLS verification, matching `index.js`. |
 | `CREDENTIAL_ENCRYPTION_KEY` | — | ADR 0012. Without it, encrypted per-RTU credentials are simply not read. |
 
-### `INGEST_NOTIFY` defaults to **off**
+### `INGEST_NOTIFY` defaults to **off** — and since the cutover that default is the *dangerous* direction
 
-Both processes write the same rows through
-`ON CONFLICT (time, asset_id, point_key) DO UPDATE`, so concurrent *writes* are
-idempotent. Concurrent `pg_notify` is not: `telemetry-notify.service.ts` holds
-a `LISTEN bms_telemetry` and fans every payload to Socket.IO, so two notifying
-processes deliver **every PHE reading to the live dashboards twice**.
+The default exists for the parallel window. While two processes ran, both wrote
+the same rows through `ON CONFLICT (time, asset_id, point_key) DO UPDATE`, so
+concurrent *writes* were idempotent. Concurrent `pg_notify` is not:
+`telemetry-notify.service.ts` holds a `LISTEN bms_telemetry` and fans every
+payload to Socket.IO, so two notifying processes deliver **every PHE reading to
+the live dashboards twice**. Off by default meant a stray `pnpm start:host`
+could not double the dashboards.
 
-The host therefore writes and counts but stays silent until told otherwise.
-A stray `pnpm start:host` cannot double the dashboards.
+**That safety argument inverted at the cutover.** The host is now the only
+ingest process, so nothing can double anything, and the flag is what stands
+between the pilot and silent realtime death: unset it, typo it, or lose the
+`environment:` entry from the compose service while `command:` stays, and rows
+keep landing while every dashboard goes dead. There is no error and no alarm —
+the only signal is `notify=off` in the health body. `INGEST_NOTIFY: "on"` in
+`docker-compose.yml` is now **required configuration, not a preference**.
 
-ADR 0016 §6 **deletes this flag in commit 4**. It must not survive as a
+Quote it. Unquoted `on` is YAML boolean `true`, and `readHostConfig` refuses it.
+
+ADR 0016 §6 **deletes this flag in commit 4**, which is now the change that
+removes the failure mode rather than merely tidying up. It must not survive as a
 permanent way to run ingest with realtime silently off.
 
 ## Health endpoint
@@ -91,9 +101,17 @@ adapter conformance suite asserts it with a seeded sentinel.
 The point of the exercise is to prove the host writes what the legacy process
 writes, before anything is cut over.
 
-1. Leave the legacy `ingest` compose service running as it is.
+**This procedure ran on 2026-08-06 and step 4 was taken** — it is kept as the
+recipe for re-running the comparison, not as pending work. Since the compose
+`ingest` service now runs the host, step 1 is no longer "leave it as it is": you
+must put the *legacy* process back first, by removing the `command:` override
+(or overriding it to `["pnpm", "start"]`) and recreating the container. That
+recreate costs one message, the same as the cutover did.
+
+1. Get the legacy process running as the compose `ingest` service — see above.
 2. Build, then start the host **against the same database**, with notify off
-   and its own health port:
+   and its own health port (leave `INGEST_HOST_HEALTH_PORT` unset so it takes
+   the 9103 default; compose pins the deployed process to 9102):
 
 ```bash
 pnpm --filter ingest build
@@ -112,8 +130,11 @@ cd apps/ingest && DATABASE_URL="$DATABASE_URL" INGEST_NOTIFY=off pnpm start:host
    difference is a finding.
 4. Only then set `INGEST_NOTIFY=on` **and** flip the compose `ingest` service to
    `command: ["pnpm", "start:host"]` in the same step, stopping the legacy
-   process. Reverting is deleting one compose line — no image rebuild, no code
-   edit.
+   process. The image must already contain `dist/main.js` — an image built
+   before the `pnpm build` step was added to `apps/ingest/Dockerfile` gives a
+   crash loop, not a fallback, so rebuild before recreating. Reverting is
+   deleting one compose line — no image rebuild and no code edit, though it
+   still costs the one-message recreate gap.
 
 ### Result of the 2026-08-06 run
 
@@ -156,9 +177,19 @@ service was rebuilt and recreated onto `pnpm start:host` with `INGEST_NOTIFY:
 - **Realtime survived**: 2 `bms_telemetry` notifications in a 140 s window,
   matching the device's one-per-minute cadence.
 - **Health moved to the host's endpoint on the same published port** — 9102
-  serves `ingest-host ok … notify=on` rather than the legacy one-liner, because
-  `INGEST_HOST_HEALTH_PORT` is set alongside `INGEST_METRICS_PORT`. Anything
-  scraping 9102 keeps working but must expect the host's two-line format.
+  serves the host's body rather than the legacy one-liner, because
+  `INGEST_HOST_HEALTH_PORT` is set alongside `INGEST_METRICS_PORT`. Status code
+  and content-type are unchanged (200, `text/plain`), so a liveness probe keeps
+  working — but the **body changed shape**: the prefix goes from `ingest ok …`
+  to `ingest-host ok` / `ingest-host degraded`, and the body is one line plus
+  one per endpoint and per skipped binding, not a fixed count. A check matching
+  on the old substring breaks. Nothing in `infra/observability/` scrapes this
+  port today.
+- **`INGEST_NOTIFY: "on"` is now required configuration.** With one ingest
+  process there is nothing to double, so the flag no longer protects anything —
+  it is the only thing keeping realtime alive. Losing it fails silently: rows
+  keep landing, dashboards go dead, and the sole signal is `notify=off` in the
+  health body. See the `INGEST_NOTIFY` section above.
 - **One message was lost to the container restart**, the minute between the
   legacy process's last write and the host's first. Recreating the container is
   not a hot swap; a cutover run during a maintenance window would cost the same

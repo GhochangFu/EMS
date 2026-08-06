@@ -16,17 +16,23 @@ export type HostConfig = {
    * Whether the host emits `pg_notify('bms_telemetry', …)`.
    *
    * **Off unless `INGEST_NOTIFY` is exactly `on`.** During the §6 parallel-run
-   * window the legacy `index.js` is still notifying and
+   * window the legacy `index.js` was still notifying and
    * `telemetry-notify.service.ts` fans every payload to Socket.IO, so two
-   * notifying processes deliver every PHE reading to live dashboards twice.
-   * Writes are idempotent under `ON CONFLICT DO UPDATE`; notifications are not.
+   * notifying processes would deliver every PHE reading to live dashboards
+   * twice. Writes are idempotent under `ON CONFLICT DO UPDATE`; notifications
+   * are not. Defaulting *on* would have meant a stray `pnpm start:host` doubled
+   * every reading on the operator's screen.
    *
-   * Defaulting *on* would mean a stray `pnpm start:host` doubles every reading
-   * on the operator's screen, which is why the default is the safe direction
-   * and the flag has to be set deliberately to turn realtime on.
+   * **That reasoning expired at the §6 commit 3 cutover on 2026-08-06.** The
+   * host is now the only ingest process, so nothing can double, and the default
+   * has become the *dangerous* direction: it is the compose service's
+   * `INGEST_NOTIFY: "on"` alone that keeps realtime alive. Lose that line and
+   * rows keep landing while every dashboard goes dead — no error, no alarm,
+   * only `notify=off` in the health body. Do not read the default as safe.
    *
-   * ADR 0016 §6 deletes this flag in commit 4 — it must not survive as a
-   * permanent way to run ingest with realtime silently off.
+   * ADR 0016 §6 deletes this flag in commit 4, which is now the change that
+   * removes that failure mode rather than merely tidying up. It must not
+   * survive as a permanent way to run ingest with realtime silently off.
    */
   readonly notifyEnabled: boolean;
   /**
@@ -36,6 +42,11 @@ export type HostConfig = {
    * (default 9102), and §6 commit 3 requires both processes running at once —
    * sharing the variable would make the new host fail to bind, or worse, race
    * the legacy one for the port.
+   *
+   * The compose service nonetheless sets this to 9102 post-cutover, so its one
+   * published port means the same thing whichever process runs. That is safe
+   * because a container runs one process; run a side-by-side comparison outside
+   * compose, on this default.
    */
   readonly healthPort: number;
   /** How often the point-lookup tables are refreshed. `index.js` uses 60 s. */

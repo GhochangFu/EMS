@@ -84,8 +84,8 @@ gitignored root `.env` via `env_file`.
 | `CREDENTIAL_ENCRYPTION_KEY` | **Secret** | unset (from `.env`) | Same AES-256-GCM key as the API; used to decrypt stored per-RTU credentials (ADR 0012). |
 | `INGEST_METRICS_PORT` | No | `9102` | Health/metrics HTTP port for the **legacy** `src/index.js`. |
 | `INGEST_RELOAD_MS` | No | `60000` | RTU configuration reload interval. Read by both entry points. |
-| `INGEST_HOST_HEALTH_PORT` | No | `9103` | Health port for the ADR 0016 host (`pnpm start:host`). Deliberately separate from `INGEST_METRICS_PORT`: ADR 0016 §6 commit 3 runs both processes at once, so they cannot share a port. |
-| `INGEST_NOTIFY` | No | `off` | `on` \| `off` only; any other value is refused at startup. Whether the ADR 0016 host emits `pg_notify('bms_telemetry', …)`. **Defaults off** — during the parallel-run window the legacy process is still notifying, and two notifying processes deliver every reading to the live dashboards twice. Deleted at ADR 0016 §6 commit 4. See [`docs/ingest-host.md`](./ingest-host.md). |
+| `INGEST_HOST_HEALTH_PORT` | No | `9103` | Health port for the ADR 0016 host (`pnpm start:host`), which is what the pilot runs since the 2026-08-06 cutover. The default is deliberately separate from `INGEST_METRICS_PORT` so a §6 commit 3 parallel run can hold both ports at once. **`docker-compose.yml` sets it to `9102`**, so the one published port serves whichever process the service runs. |
+| `INGEST_NOTIFY` | No | `off` | `on` \| `off` only; any other value is refused at startup. Whether the ADR 0016 host emits `pg_notify('bms_telemetry', …)`. The default is off because during the parallel-run window the legacy process was also notifying, and two notifying processes deliver every reading to the live dashboards twice. **Since the cutover that default is the dangerous direction and `docker-compose.yml` must keep `INGEST_NOTIFY: "on"`** — without it rows land but every dashboard goes silently dead. Quote it: unquoted `on` is YAML `true` and is refused. Deleted at ADR 0016 §6 commit 4. See [`docs/ingest-host.md`](./ingest-host.md). |
 
 ## Observability Containers
 

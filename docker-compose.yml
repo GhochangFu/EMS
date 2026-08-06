@@ -179,10 +179,16 @@ services:
       # the two host variables entirely.
       INGEST_METRICS_PORT: 9102
       INGEST_HOST_HEALTH_PORT: 9102
-      # The host defaults to notify off, which is right for the ADR 0016 §6
-      # commit 3 parallel run and wrong for serving the pilot: with it off the
-      # rows land but no dashboard updates. It ran off during the parallel
-      # window and is on now that the host owns ingest alone.
+      # REQUIRED, not a preference. The host defaults to notify off, which was
+      # right for the ADR 0016 §6 commit 3 parallel run — two notifying
+      # processes would have delivered every reading to the dashboards twice.
+      # With the host serving alone there is nothing to double, so the default
+      # is now the *dangerous* direction: drop this line and rows keep landing
+      # while every dashboard goes dead, with no error and no alarm. The only
+      # signal is `notify=off` in the health body. Commit 4 deletes the flag.
+      #
+      # Quoted deliberately — unquoted `on` is YAML boolean true, which
+      # `readHostConfig` refuses at startup.
       INGEST_NOTIFY: "on"
     # ADR 0016 §6 commit 3, step 4 — the cutover, taken 2026-08-06 after the
     # parallel run recorded an identical point set (see `docs/ingest-host.md`).
