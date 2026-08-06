@@ -17,7 +17,7 @@ export function MasterDataLayout({ user, children }: MasterDataLayoutProps) {
   const tabs = visibleMasterDataTabs(user.role);
 
   return (
-    <AppShell user={user}>
+    <AppShell user={user} kpiRibbon={<span className="text-bms-ink">Administration · Master Data</span>}>
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <nav className="flex flex-wrap gap-1 border-b border-gray-200 pb-2">
           {tabs.map((tab) => {

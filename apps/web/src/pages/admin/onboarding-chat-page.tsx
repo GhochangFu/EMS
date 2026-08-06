@@ -166,7 +166,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   const messages: OnboardingChatMessage[] = session?.messages ?? [];
 
   return (
-    <AppShell user={user}>
+    <AppShell user={user} kpiRibbon={<span className="text-bms-ink">Administration · AI Onboarding</span>}>
       <div className="flex h-[calc(100vh-7rem)] flex-col">
         <header className="flex flex-wrap items-center gap-3 border-b border-gray-200 px-4 py-2">
           <Link
