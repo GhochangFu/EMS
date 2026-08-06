@@ -156,8 +156,20 @@ The first is a **fix**, not a preference. The pilot RTU publishes `rssi` at the
 top level, so `network_strength` — mapped in the PHE seed and documented in
 `exports/PHE-MQTT-REFERENCE.md` — silently never arrived under `index.js`. It
 was found on 2026-08-06 when the pilot was brought up for the first time: 20 of
-the RTU's 22 mapped points landed. The host on a post-2026-08-06 build writes 21
-samples per message where `index.js` writes 20.
+the RTU's 22 catalogued points landed. The host on a post-2026-08-06 build
+writes 21 samples per message where `index.js` writes 20 — and the RTU now
+catalogues 21, so that is **every** mapped point, not 21 of 22. The 22nd was
+`device_timestamp`; see below.
+
+**The catalog diverges from the vendor export, on purpose.**
+`packages/db/src/phe-catalog.json` is the TeleCash snapshot and still lists a
+`TS` sensor per solar-edge controller — 12 rows, `DataKey = 'ts'`, mapped to
+`device_timestamp`. That is the envelope's own timestamp, which the host
+consumes as the sample time and can never deliver as a reading, so cataloguing
+it as `source_kind = 'measured'` asserts a provenance false by construction.
+`phe-pilot-seed.ts` skips those rows and migration `0025` deletes any an earlier
+seed created; `verify-hierarchy-seed.ts` expects 252 PHE points, not 264. A
+future vendor re-export that still carries `TS` will not resurrect them.
 
 **This is the standing argument for completing the cutover.** Every day the
 compose service runs `pnpm start`, the pilot loses `network_strength`.

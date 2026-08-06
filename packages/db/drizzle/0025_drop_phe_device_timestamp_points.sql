@@ -1,0 +1,36 @@
+-- Drop the catalogued `device_timestamp` points, which can never be measured.
+--
+-- `TS` in the PHE vendor catalog is the MQTT envelope's own timestamp. The
+-- ingest adapter consumes it as the sample time (`ENVELOPE_KEYS` in
+-- `apps/ingest/src/adapters/mqtt.ts`) and never as a reading, so a row
+-- catalogued with `source_kind = 'measured'` asserts a provenance that is false
+-- by construction: it can never arrive, and if it somehow did, its value would
+-- be its own row's `time` in epoch milliseconds. A mapped point that silently
+-- never arrives is the defect this migration's sibling change exists to fix —
+-- `network_strength` spent its whole life demonstrating it.
+--
+-- `phe-pilot-seed.ts` stops *writing* these rows and deletes them as it walks
+-- the catalog, which converges every database that runs `pnpm db:seed`. This
+-- migration exists because that is not every database:
+--
+--   1. The seed's delete only fires while iterating a catalog row whose
+--      `SensorCode` is `TS`. `phe-catalog.json` is a vendor export, and a future
+--      re-export may reasonably drop those rows — the whole finding is that TS
+--      is not a sensor. The catch-up would then evaporate silently. This
+--      statement is anchored in time and independent of the catalog's contents.
+--   2. `pnpm db:migrate` without `db:seed` is a deliberate choice on a pilot
+--      database, where the seed also rewrites demo data. Such a database would
+--      otherwise keep a `measured` point that `BINDING_QUERY` binds and that
+--      `ENVELOPE_KEYS` guarantees can never be served.
+--
+-- Safe and idempotent. Verified against the live pilot database before writing:
+-- nothing references `bms.asset_points` by foreign key, no view or rule depends
+-- on it, and `device_timestamp` appears in no `automation_rules` point key,
+-- condition, action or trace, no `template_points`, no `asset_templates`
+-- content, no `onboarding_sessions` draft or result, no `assets`/`rtus` meta,
+-- and no `telemetry.point_values` row. Deleting it dangles nothing.
+--
+-- Deliberately unscoped to PHE. `device_timestamp` is not a point key any other
+-- catalog issues, and a row bearing it elsewhere would be the same mistake.
+
+DELETE FROM bms.asset_points WHERE point_key = 'device_timestamp';
