@@ -631,6 +631,40 @@ sentences predate the PHE pilot and now read against `main`, which ships an
 They belong to their own `chore(agents):` sweep under §10.1's one-per-PR rule,
 not folded into an unrelated one. Recorded here so they are not lost again.
 
+**Still owed — falsified 2026-08-06 by the ADR 0016 §6 commit 3 cutover.** Four
+places, not one. The distinction the sweep must keep throughout: **`pnpm start`
+did not change and still runs `index.js`; the *deployment* changed.** Every
+sentence below is false only where it conflates the two.
+
+- **§2 *Real ingestion* (`AGENTS.md:159`)** — "`pnpm start` still runs the frozen
+  legacy `src/index.js` (**what compose runs, and what the pilot runs**)". The
+  parenthetical is now false on both halves: compose carries
+  `command: ["pnpm", "start:host"]` and the pilot runs the host. The clause
+  before it is still true. The same row's "the host defaults
+  `INGEST_NOTIFY=off`" remains true of the default but no longer describes the
+  deployment, which sets it `on`.
+- **§3 tree (`AGENTS.md:210-211`)** — the comment spans two lines: "frozen
+  legacy, what `pnpm start`" / "**and compose run**". Drop `and compose run`;
+  keep `what pnpm start`.
+- **§2 *Ingest adapters* (`AGENTS.md:163`)** — "**Still owed: §6 commit 3**
+  (parallel-run verification against the real PHE deployment — not reproducible
+  locally) **and commit 4**". Step 4 *was* commit 3's last step, so commit 3 is
+  now fully discharged. Commit 4 and its missing owner are the only part still
+  owed — and "not reproducible locally" was itself wrong, which is how the run
+  happened at all.
+- **§6 (`AGENTS.md:383-388`)** — "**ADR 0016 §6 commits 3 and 4 are not promoted
+  by the above and stay human-gated** … Do not do either unprompted." This is
+  the one that matters most: an agent reading §6 will still see commit 3 as
+  unpromoted and undone. It was done, on 2026-08-06, on the repo owner's
+  explicit instruction — which is exactly the gate that sentence defines, so the
+  sentence should record that it was satisfied rather than be deleted. Commit 4's
+  half stands unchanged.
+
+Not fixed in the cutover PR: §9.10 puts AGENTS.md edits in their own
+`chore(agents):` change and §10.1 allows one promotion per PR. Note this is a
+**correction of now-false statements**, not a promotion — the scope moved when
+ADR 0016 was accepted, not today.
+
 **Promotions since, one per PR (§10.1).** The table above closed the accumulated
 batch; everything from here lands alone.
 

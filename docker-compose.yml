@@ -172,7 +172,34 @@ services:
       MQTT_USERNAME: ${MQTT_USERNAME:-}
       MQTT_PASSWORD: ${MQTT_PASSWORD:-}
       MQTT_RECONNECT_MS: 5000
+      # `INGEST_METRICS_PORT` is the legacy entry point's health port,
+      # `INGEST_HOST_HEALTH_PORT` the host's. Both are set to 9102 so the
+      # published port means the same thing whichever process runs, and so
+      # reverting the cutover stays a one-line edit — the legacy process ignores
+      # the two host variables entirely.
       INGEST_METRICS_PORT: 9102
+      INGEST_HOST_HEALTH_PORT: 9102
+      # REQUIRED, not a preference. The host defaults to notify off, which was
+      # right for the ADR 0016 §6 commit 3 parallel run — two notifying
+      # processes would have delivered every reading to the dashboards twice.
+      # With the host serving alone there is nothing to double, so the default
+      # is now the *dangerous* direction: drop this line and rows keep landing
+      # while every dashboard goes dead, with no error and no alarm. The only
+      # signal is `notify=off` in the health body. Commit 4 deletes the flag.
+      #
+      # Quoted deliberately — unquoted `on` is YAML boolean true, which
+      # `readHostConfig` refuses at startup.
+      INGEST_NOTIFY: "on"
+    # ADR 0016 §6 commit 3, step 4 — the cutover, taken 2026-08-06 after the
+    # parallel run recorded an identical point set (see `docs/ingest-host.md`).
+    # `pnpm start` still runs the frozen legacy `src/index.js`, so **reverting
+    # is deleting this one line** — no image rebuild, no code edit. Commit 4
+    # deletes `src/index.js` and this override with it; until an owner is named
+    # for that, the legacy path stays one line away.
+    #
+    # This is also what makes the pilot see `network_strength`: the legacy
+    # parser cannot read a reading published beside the `values` block.
+    command: ["pnpm", "start:host"]
     ports:
       - "9102:9102"
     depends_on:

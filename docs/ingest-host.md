@@ -9,15 +9,21 @@ Operator notes for `apps/ingest`'s second entry point, added by `F1.1`
 
 | | Command | What it is |
 | --- | --- | --- |
-| Legacy | `pnpm start` → `node src/index.js` | The live PHE MQTT pilot (ADR 0007). **Frozen** — not one line edited by `F1.1`. |
-| Host | `pnpm start:host` → `node dist/main.js` | The pluggable adapter host. Serves MQTT today; `F1.2`–`F1.6` add protocols. |
+| Legacy | `pnpm start` → `node src/index.js` | The original PHE MQTT pilot (ADR 0007). **Frozen** — not one line edited by `F1.1`. No longer serves the pilot. |
+| Host | `pnpm start:host` → `node dist/main.js` | The pluggable adapter host, and **what the pilot runs** since 2026-08-06. Serves MQTT today; `F1.2`–`F1.6` add protocols. |
 
 This is the strangler migration in ADR 0016 §6, and the two coexist
-deliberately. The legacy process stays the one `pnpm start` runs, and the
-compose `ingest` service still runs it, until the cutover (§6 commit 4) —
-which **needs a named owner** (ADR 0016 Resolved decision 4). Until someone
-owns deleting `src/index.js`, the two-entry-point window stays open, and that
-duplication becoming permanent is the realistic failure mode of a strangler.
+deliberately. **§6 commit 3 step 4 was taken on 2026-08-06**: the compose
+`ingest` service carries `command: ["pnpm", "start:host"]` and `INGEST_NOTIFY:
+"on"`. `pnpm start` is still the legacy process and still unedited, so reverting
+the cutover is deleting that one compose line — no image rebuild, no code edit.
+
+What remains is **§6 commit 4**: deleting `src/index.js`, pointing `"start"` at
+`dist/main.js`, removing the compose override and retiring `INGEST_NOTIFY`. It
+**needs a named owner** (ADR 0016 Resolved decision 4). Until someone owns it
+the two-entry-point window stays open, and that duplication becoming permanent
+is the realistic failure mode of a strangler — now more so, because the operational
+pressure that would have forced the issue is gone.
 
 The host must be built before it can run — it is TypeScript:
 
@@ -37,25 +43,35 @@ past cutover: no RTU has an `rtu_connection_configs` row to read instead.
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | — | Required. |
-| `INGEST_NOTIFY` | `off` | `on` \| `off` only. **See below.** Any other value is refused at startup rather than guessed at. |
-| `INGEST_HOST_HEALTH_PORT` | `9103` | Deliberately *not* `INGEST_METRICS_PORT` — `src/index.js` holds `9102`, and the parallel run needs both. |
+| `INGEST_NOTIFY` | `off` | `on` \| `off` only. **Compose sets `on`, and since the cutover that is required, not optional — see below.** Any other value is refused at startup rather than guessed at. |
+| `INGEST_HOST_HEALTH_PORT` | `9103` | The default is deliberately *not* `INGEST_METRICS_PORT` — `src/index.js` holds `9102`, and a parallel run needs both. **Compose sets it to `9102`** so the published port means the same thing whichever process runs; run a side-by-side comparison outside compose, on the default. |
 | `INGEST_RELOAD_MS` | `60000` | How often point mappings are refreshed. Matches `index.js`. |
 | `MQTT_HOST` / `MQTT_PORT` / `MQTT_USERNAME` / `MQTT_PASSWORD` | pilot-era | MQTT **only**, resolved by the host through the unmodified `src/rtu-config.js`. No new adapter gets an environment fallback. |
 | `MQTT_TLS_REJECT_UNAUTHORIZED` | on | Only the exact string `false` disables TLS verification, matching `index.js`. |
 | `CREDENTIAL_ENCRYPTION_KEY` | — | ADR 0012. Without it, encrypted per-RTU credentials are simply not read. |
 
-### `INGEST_NOTIFY` defaults to **off**
+### `INGEST_NOTIFY` defaults to **off** — and since the cutover that default is the *dangerous* direction
 
-Both processes write the same rows through
-`ON CONFLICT (time, asset_id, point_key) DO UPDATE`, so concurrent *writes* are
-idempotent. Concurrent `pg_notify` is not: `telemetry-notify.service.ts` holds
-a `LISTEN bms_telemetry` and fans every payload to Socket.IO, so two notifying
-processes deliver **every PHE reading to the live dashboards twice**.
+The default exists for the parallel window. While two processes ran, both wrote
+the same rows through `ON CONFLICT (time, asset_id, point_key) DO UPDATE`, so
+concurrent *writes* were idempotent. Concurrent `pg_notify` is not:
+`telemetry-notify.service.ts` holds a `LISTEN bms_telemetry` and fans every
+payload to Socket.IO, so two notifying processes deliver **every PHE reading to
+the live dashboards twice**. Off by default meant a stray `pnpm start:host`
+could not double the dashboards.
 
-The host therefore writes and counts but stays silent until told otherwise.
-A stray `pnpm start:host` cannot double the dashboards.
+**That safety argument inverted at the cutover.** The host is now the only
+ingest process, so nothing can double anything, and the flag is what stands
+between the pilot and silent realtime death: unset it, typo it, or lose the
+`environment:` entry from the compose service while `command:` stays, and rows
+keep landing while every dashboard goes dead. There is no error and no alarm —
+the only signal is `notify=off` in the health body. `INGEST_NOTIFY: "on"` in
+`docker-compose.yml` is now **required configuration, not a preference**.
 
-ADR 0016 §6 **deletes this flag in commit 4**. It must not survive as a
+Quote it. Unquoted `on` is YAML boolean `true`, and `readHostConfig` refuses it.
+
+ADR 0016 §6 **deletes this flag in commit 4**, which is now the change that
+removes the failure mode rather than merely tidying up. It must not survive as a
 permanent way to run ingest with realtime silently off.
 
 ## Health endpoint
@@ -85,9 +101,17 @@ adapter conformance suite asserts it with a seeded sentinel.
 The point of the exercise is to prove the host writes what the legacy process
 writes, before anything is cut over.
 
-1. Leave the legacy `ingest` compose service running as it is.
+**This procedure ran on 2026-08-06 and step 4 was taken** — it is kept as the
+recipe for re-running the comparison, not as pending work. Since the compose
+`ingest` service now runs the host, step 1 is no longer "leave it as it is": you
+must put the *legacy* process back first, by removing the `command:` override
+(or overriding it to `["pnpm", "start"]`) and recreating the container. That
+recreate costs one message, the same as the cutover did.
+
+1. Get the legacy process running as the compose `ingest` service — see above.
 2. Build, then start the host **against the same database**, with notify off
-   and its own health port:
+   and its own health port (leave `INGEST_HOST_HEALTH_PORT` unset so it takes
+   the 9103 default; compose pins the deployed process to 9102):
 
 ```bash
 pnpm --filter ingest build
@@ -106,16 +130,19 @@ cd apps/ingest && DATABASE_URL="$DATABASE_URL" INGEST_NOTIFY=off pnpm start:host
    difference is a finding.
 4. Only then set `INGEST_NOTIFY=on` **and** flip the compose `ingest` service to
    `command: ["pnpm", "start:host"]` in the same step, stopping the legacy
-   process. Reverting is deleting one compose line — no image rebuild, no code
-   edit.
+   process. The image must already contain `dist/main.js` — an image built
+   before the `pnpm build` step was added to `apps/ingest/Dockerfile` gives a
+   crash loop, not a fallback, so rebuild before recreating. Reverting is
+   deleting one compose line — no image rebuild and no code edit, though it
+   still costs the one-message recreate gap.
 
 ### Result of the 2026-08-06 run
 
 Run against the live Bhutnirghat I feed the day the pilot was first brought up,
 on the build immediately before the `network_strength` fix — so it is a
 like-for-like comparison. The RTU publishes once a minute, which makes the
-windows clean. **Step 4 was not taken**; the compose service still runs the
-legacy process.
+windows clean. **Step 4 was taken later the same day**, on the fixed build;
+see *Result of the cutover* below.
 
 | Window | Messages | Rows | Points/msg |
 |---|---|---|---|
@@ -138,6 +165,35 @@ measured device-clock skew rather than from per-row process attribution, and
 the parallel window is **one message wide**. The uniformity across all three
 windows makes the conclusion robust, but that single row is the only direct
 evidence of concurrent non-corruption.
+
+### Result of the cutover
+
+Taken the same day, once `network_strength` was fixed and merged. The compose
+service was rebuilt and recreated onto `pnpm start:host` with `INGEST_NOTIFY:
+"on"`.
+
+- **Points per message went 20 → 21** at exactly the changeover minute, and
+  `network_strength` began arriving. That is now every catalogued point.
+- **Realtime survived**: 2 `bms_telemetry` notifications in a 140 s window,
+  matching the device's one-per-minute cadence.
+- **Health moved to the host's endpoint on the same published port** — 9102
+  serves the host's body rather than the legacy one-liner, because
+  `INGEST_HOST_HEALTH_PORT` is set alongside `INGEST_METRICS_PORT`. Status code
+  and content-type are unchanged (200, `text/plain`), so a liveness probe keeps
+  working — but the **body changed shape**: the prefix goes from `ingest ok …`
+  to `ingest-host ok` / `ingest-host degraded`, and the body is one line plus
+  one per endpoint and per skipped binding, not a fixed count. A check matching
+  on the old substring breaks. Nothing in `infra/observability/` scrapes this
+  port today.
+- **`INGEST_NOTIFY: "on"` is now required configuration.** With one ingest
+  process there is nothing to double, so the flag no longer protects anything —
+  it is the only thing keeping realtime alive. Losing it fails silently: rows
+  keep landing, dashboards go dead, and the sole signal is `notify=off` in the
+  health body. See the `INGEST_NOTIFY` section above.
+- **One message was lost to the container restart**, the minute between the
+  legacy process's last write and the host's first. Recreating the container is
+  not a hot swap; a cutover run during a maintenance window would cost the same
+  minute. The gap is a genuine hole in the series, not a display artefact.
 
 ## Deliberate divergences from `index.js`
 
@@ -171,8 +227,9 @@ it as `source_kind = 'measured'` asserts a provenance false by construction.
 seed created; `verify-hierarchy-seed.ts` expects 252 PHE points, not 264. A
 future vendor re-export that still carries `TS` will not resurrect them.
 
-**This is the standing argument for completing the cutover.** Every day the
-compose service runs `pnpm start`, the pilot loses `network_strength`.
+This was the standing argument for completing the cutover, and it is why the
+cutover was taken on 2026-08-06 rather than left pending. A pilot running
+`pnpm start` loses `network_strength` every minute.
 
 ## Known limits in this build
 
