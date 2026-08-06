@@ -631,6 +631,24 @@ sentences predate the PHE pilot and now read against `main`, which ships an
 They belong to their own `chore(agents):` sweep under §10.1's one-per-PR rule,
 not folded into an unrelated one. Recorded here so they are not lost again.
 
+**Still owed — falsified 2026-08-06 by the ADR 0016 §6 commit 3 cutover.**
+§2's *Real ingestion* row (`AGENTS.md:159`) says `pnpm start` runs the legacy
+`src/index.js`, "**what compose runs, and what the pilot runs**". Both halves of
+that parenthetical are now false: the compose `ingest` service carries
+`command: ["pnpm", "start:host"]` and the pilot runs the adapter host. The same
+row's "**The host defaults `INGEST_NOTIFY=off`**" is still true of the default
+but misleading as a description of the deployment, which sets it `on`.
+
+`AGENTS.md:210`'s tree comment — "frozen legacy, what `pnpm start` runs" — is
+**still accurate** and should be left alone; `pnpm start` really does still run
+`index.js`. That is the distinction the sweep has to keep: the script did not
+change, the *deployment* did.
+
+Not fixed in the cutover PR, because §9.10 puts AGENTS.md edits in their own
+`chore(agents):` change and §10.1 allows one promotion per PR. Note that this is
+a **correction of a now-false statement**, not a promotion — the scope moved
+when ADR 0016 was accepted, not today.
+
 **Promotions since, one per PR (§10.1).** The table above closed the accumulated
 batch; everything from here lands alone.
 
