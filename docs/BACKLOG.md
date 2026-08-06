@@ -617,12 +617,27 @@ encryption boundary and the ADR 0016 cutover owner for
 already made. They belong in `docs/adr/`, gated by the human, not in a
 `chore(agents):` sweep.
 
+**Still owed — falsified by ADR 0007, not by any later PR.** Two AGENTS.md
+sentences predate the PHE pilot and now read against `main`, which ships an
+`apps/ingest/src/adapters/` directory:
+
+- The **unnumbered intro paragraph above §1** (`AGENTS.md:36`, not §2) — "Real
+  protocol adapters and brokers remain out of scope until a future Phase 2
+  implementation sprint promotes one confirmed source/protocol." One was
+  promoted: MQTT, by ADR 0007.
+- §9.7 (`AGENTS.md:542-543`) — "it must not implement adapters or brokers until
+  real access exists." Real access exists; the brokers half is still true.
+
+They belong to their own `chore(agents):` sweep under §10.1's one-per-PR rule,
+not folded into an unrelated one. Recorded here so they are not lost again.
+
 **Promotions since, one per PR (§10.1).** The table above closed the accumulated
 batch; everything from here lands alone.
 
 | Owed | Source | Landed as |
 |------|--------|-----------|
 | ~~ADR 0019~~ ✅ | E1.7 | **First promotion under the one-per-PR rule.** §2 gained a **Template content** row; the status line, §3 and §6's "also promoted" paragraph name ADR 0019. §6 also gained **two deferral bullets** — the *five* things ADR 0019 leaves closed (`health` → `E1.1`, `optimisation` → `E1.6`, opaque `kpis.expression` → `F2.3`, ordering-only `dashboards` → `F3.1`, and `alarms.philosophy` → `E2.1`), and the fact that nothing deploys template content into a running rule or maintenance row. A promotion that records only what *opened* leaves an agent free to widen what it closed — review caught this draft doing exactly that, omitting `alarms.philosophy` even though ADR 0019 §3 explicitly instructs the rulebook to state it. |
+| ~~ADR 0016 §6 commit 2~~ ✅ | F1.1 (PR #13) | The **first promotion of a partly-delivered ADR**, which is why it names the boundary rather than the feature. §2's *Ingest adapters* row and §6's adapter bullet had both said the interface was **all** that was in scope; the host, `src/adapters/mqtt.ts` and `src/adapter/registry.ts` are now on `main`, so both say so — and both state that MQTT is **not new scope** (ADR 0007 promoted it; this ports it onto the interface) and that a further adapter is still a §9.4 ADR, because "add a file and a registry key" is mechanical ease, not permission. §2's *Real ingestion* row gains the two entry points and `INGEST_NOTIFY=off`. **`F1.1` stays `⬜`**: commit 3 (parallel run against the real PHE deployment) and commit 4 (cutover) have not landed, and promoting the rulebook wording is not closing the item. **Also carried, on the record rather than inferred from the diff:** `docs/ingest-host.md` shipped in PR #13 with the same false "`process.env` is read in exactly one place" sentence as §2, and is corrected in the same breath — a runbook correction, not a second promotion. |
 
 ## 6. Instrumentation / hardware note (SOW §8)
 

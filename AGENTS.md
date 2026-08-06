@@ -6,12 +6,12 @@
 > Merged and in scope: the hierarchical master-data admin, the scoped AI
 > onboarding wizard, and the PHE MQTT real-ingestion pilot (ADR 0007–0012);
 > the Vitest gate (ADR 0014), asset templates and instantiation
-> (ADR 0015), the ingest adapter framework interface (ADR 0016), the
+> (ADR 0015), the ingest adapter framework **and its host** (ADR 0016), the
 > operations write matrix (ADR 0017), the asset source-axis separation
 > (ADR 0018), and the template content model (ADR 0019). General
-> site-wide AI copilot, EMQX, and the individual
-> protocol adapters remain deferred — the framework is promoted, each
-> protocol still needs its own ADR (§9.4).
+> site-wide AI copilot, EMQX, and the **non-MQTT**
+> protocol adapters remain deferred — the framework, the host and the MQTT
+> adapter are promoted; each further protocol still needs its own ADR (§9.4).
 > **Product brand:** TRINETRA. Powered by Euphoria Infotech India Limited.
 > **Product line:** Enterprise EMS for Ion Exchange (India) Ltd. per
 > **ADR 0013** — forked from the Eskom SMOC engagement (earlier branding:
@@ -156,11 +156,11 @@ entry **D-0001**.
 | Telemetry DB | TimescaleDB extension on the same Postgres |
 | Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
-| Real ingestion | `apps/ingest` MQTT TLS subscriber for the PHE pilot; writes `telemetry.point_values` and `pg_notify('bms_telemetry', …)` like the simulator (ADR 0007). One pilot RTU only; no EMQX |
+| Real ingestion | `apps/ingest` MQTT TLS subscriber for the PHE pilot; writes `telemetry.point_values` and `pg_notify('bms_telemetry', …)` like the simulator (ADR 0007). One pilot RTU only; no EMQX. **Two entry points during the ADR 0016 §6 strangler migration**: `pnpm start` still runs the frozen legacy `src/index.js` (what compose runs, and what the pilot runs), `pnpm start:host` runs the adapter host. The host defaults `INGEST_NOTIFY=off` so it can run *beside* the legacy process without delivering every reading to the dashboards twice. See [`docs/ingest-host.md`](./docs/ingest-host.md) |
 | Master data  | Organization → Location → RTU → Asset → Point-key catalog + `/admin/*` CRUD with `admin`/`organization_admin`/`location_admin` roles (ADR 0008–0010). **ADR 0018** separates the axes: an asset must have a `location_id` (`NOT NULL`) and need not have an `rtu_id` (nullable); telemetry provenance binds at `asset_points.source_kind` (`measured`/`manual`/`computed`/`unmapped`), not at the asset |
 | Asset templates | `bms.asset_templates` + `bms.template_points`, where a row **is** a version and `assets.template_id` pins it (ADR 0015). Published versions are immutable; editing one creates the next draft. `POST /admin/asset-templates/:id/instantiate` builds assets from a published version — target is `rtuId` **xor** `locationId`. A `template_points.kind = 'derived'` point is still re-validated against the active catalog, but never becomes an `asset_points` row — it has no honest `source_data_key` until the calc engine (`F2.6`) owns it |
 | Template content | `asset_templates.content` carries the `E1.7` overlay under **ADR 0019**, tiered by whether a consumer exists on `main`. **Bound** (`alarms`, `maintenance`) import their enums from `rules.schema.ts` / `maintenance.schema.ts` — never restate them. **`alarms.philosophy` is the exception inside that row: Anchored, not Bound.** `E2.1` owns its vocabulary and is unbuilt, so its four fields may still be renamed or restructured, and its other three — affected assets, energy/water/production impact, ETR — are properties of a *live alarm instance* and must not be added to a template. **Anchored** (`kpis`, `dashboards`) check point-key references while leaving bodies opaque: `expression` sits behind `dialect: "unvalidated"` until `F2.3`, and a dashboard view carries *ordered point keys only* until `F3.1`. **Reserved** (`health`, `optimisation`) are **rejected**, each naming its blocking item. Every referenced point key must be one the template declares — checked on create, update and publish, because `content` and `points` are patched independently and a points patch can orphan content the request never mentioned. `POST :id/draft` is deliberately **exempt**: it byte-copies stored content, and validating it would strand a pre-ADR template behind its own immutable published version. Nothing converts this into a running rule or a maintenance row; it is the authoring surface only |
-| Ingest adapters | `IngestAdapter` interface frozen by **ADR 0016**: the host owns *supervision and cadence* (poll loop, overlap guard, backoff, jitter, bounded queue, process lifetime); adapters own the protocol connection and parse, implementing `connect` / `disconnect` / `health`. The interface is promoted; **no protocol implementation is in scope** — Modbus, BACnet, OPC-UA, SNMP and DCS each need their own ADR under §9.4 for their protocol library |
+| Ingest adapters | `IngestAdapter` interface frozen by **ADR 0016**: the host owns *supervision and cadence* (poll loop, overlap guard, backoff, jitter, bounded queue, process lifetime); adapters own the protocol connection and parse, implementing `connect` / `disconnect` / `health`. **The host is now built** (§6 commit 2): `apps/ingest/src/host/` supplies the supervisor, backoff, bounded queue, binding plan, normaliser and health endpoint, `src/main.ts` is wiring only, and `src/adapters/mqtt.ts` ports the pilot's MQTT connection onto the interface behind `src/adapter/registry.ts`. **MQTT is the only implementation, and it is not new scope** — ADR 0007 promoted it, this moves it onto the frozen interface. Modbus, BACnet, OPC-UA, SNMP, REST polling and DCS each still need **their own ADR** under §10 — unconditionally, not only where a protocol library has to be settled under §9.4; see §6. Adapters never read `process.env` (ADR 0016 §4); the host reads it in `host/config.ts`, **plus** the pilot-era `MQTT_*` and `CREDENTIAL_ENCRYPTION_KEY` reads in the unmodified `rtu-config.js`. That `MQTT_USERNAME`/`MQTT_PASSWORD` fallback appears to be the *only* working credential path, and on that basis ADR 0016 Resolved decision 5 expects it to **survive cutover**: no RTU has an `rtu_connection_configs` row, so there is no encrypted row to read instead, and writing one is prerequisite work for anyone who wants the ADR 0012 path. **That query was run against the local seeded database and the decision flags it as needing confirmation against the production pilot — confirm before acting on it.** Amendment 1 widens the schema fields to `ZodType<T, ZodTypeDef, unknown>` so `.default()`/`.transform()` schemas compile; Amendment 2 adds `@types/pg`. **Still owed: §6 commit 3** (parallel-run verification against the real PHE deployment — not reproducible locally) **and commit 4**, which deletes `src/index.js` and the `INGEST_NOTIFY` flag and **has no named owner** (ADR 0016 Resolved decision 4) |
 | AI onboarding | Scoped admin ingestion wizard using OpenAI chat completions with structured JSON, and a deterministic rule-based fallback when `OPENAI_API_KEY` is unset (ADR 0011) |
 | Secrets      | AES-256-GCM encrypted RTU connection credentials via `CREDENTIAL_ENCRYPTION_KEY`; never returned decrypted by the API (ADR 0012) |
 | Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension. Every mutating endpoint across these four domains is gated by the **operations write matrix** (ADR 0017) — see §4.7 |
@@ -205,7 +205,11 @@ bms/
 │   │                            lifecycle + instantiation services, and
 │   │                            ADR 0019's content contract
 │   ├── sim/                   ← telemetry simulator (Node script)
-│   └── ingest/                ← PHE MQTT TLS subscriber (ADR 0007), one pilot RTU
+│   └── ingest/                ← PHE MQTT TLS subscriber (ADR 0007), one pilot RTU.
+│                                Two entry points during the ADR 0016 strangler:
+│                                src/index.js (frozen legacy, what `pnpm start`
+│                                and compose run) and src/host/ + src/adapters/
+│                                + src/main.ts → dist/main.js (`pnpm start:host`)
 ├── packages/
 │   ├── shared/                ← cross-cutting TS types & constants
 │   └── db/                    ← Drizzle schema, migrations, seeds (incl. phe-catalog.json)
@@ -361,11 +365,27 @@ These are intentionally deferred. Do not implement them yet:
 
 - Multi-tenancy, row-level security (org-level read RBAC still deferred)
 - MFA / SSO / AD federation
-- Real protocol adapters for BACnet, Modbus, SNMP, OPC-UA, DCS. The **MQTT PHE
-  ingest pilot is promoted for one RTU** (ADR 0007), and the **`IngestAdapter`
-  interface is promoted** (ADR 0016) — but the interface is all that is in
-  scope. Each protocol implementation stays deferred until its own ADR settles
-  the protocol library (licence, maintenance, transitive footprint) under §9.4
+- Real protocol adapters for BACnet, Modbus, SNMP, OPC-UA, REST polling, DCS.
+  The **MQTT PHE ingest pilot is promoted for one RTU** (ADR 0007), and **ADR
+  0016 is promoted as far as §6 commit 2**: the `IngestAdapter` interface, the
+  host that supervises it, and the MQTT adapter ported onto it are all on
+  `main`. **That is the whole of what is in scope.** Each *further* protocol
+  implementation stays deferred until it has **its own ADR**, which settles the
+  protocol library where one is needed (licence, maintenance, transitive
+  footprint) under §9.4. A protocol that happens to need no library — a REST
+  poller on Node 20's global `fetch`, say — is **not** thereby ungated: the ADR
+  is required unconditionally **under §10**, which is what moves scope, with
+  §9.4 additionally applying wherever a dependency is involved. The dependency
+  question is only one of the things the ADR answers. Nor is a new adapter cheap: it is an
+  `apps/ingest/src/adapters/` file, a `registry.ts` key, an `INGEST_PROTOCOLS`
+  entry where one is missing, a spec/test pair passing `runAdapterContractTests`
+  (ADR 0016 §7) — **and that ADR**. Mechanical ease is not permission
+- **ADR 0016 §6 commits 3 and 4 are not promoted by the above and stay
+  human-gated.** Commit 3 is the parallel run against the **live PHE pilot**;
+  running the host against a production deployment is not made in-scope by the
+  ADR having been accepted. Commit 4 deletes `src/index.js` and the
+  `INGEST_NOTIFY` flag and **has no named owner** (ADR 0016 Resolved decision 4),
+  which is a human decision by construction. Do not do either unprompted
 - Template content sections whose consumer does not exist yet. **ADR 0019
   promoted the content model, and it is deliberately partial** — a section is
   contracted only as far as something on `main` can consume it. **Five** things
@@ -411,8 +431,9 @@ until a later promotion. Keycloak is limited to local/pilot OIDC
 authentication; MFA, SSO federation, and advanced identity governance
 remain out of scope. Observability is limited to optional local/pilot
 diagnostics. Protocol *brokers* remain out of scope; protocol *adapters* are
-governed by the bullet above (ADR 0016 interface promoted, each implementation
-still ADR-gated) — that bullet supersedes this sentence. Work-order UI is
+governed by the bullet above (ADR 0016 interface, host and MQTT adapter
+promoted; each further implementation still ADR-gated) — that bullet supersedes
+this sentence. Work-order UI is
 complete for Phase 5 Sprint B. Phase 5
 Sprint C Maintenance Schedule Centre is complete. Phase 5 Sprint D basic
 rule-engine UI is complete for simple threshold/time-window rules,
@@ -445,7 +466,8 @@ MQTT ingest pilot (ADR 0007, 0012) are promoted and in scope.
 (`docs/BACKLOG.md`) delivered against `docs/build-operating-model.md`:
 the Vitest runner and ratcheting coverage gate (ADR 0014, §4.6); asset
 templates, versioning and instantiation (ADR 0015, §4.7); the `IngestAdapter`
-interface **only** (ADR 0016); the operations write matrix (ADR 0017, §4.7);
+interface, **its host, and the MQTT adapter** (ADR 0016 §6 commit 2 — no
+further protocol); the operations write matrix (ADR 0017, §4.7);
 the asset source-axis separation making `assets.rtu_id` nullable while
 `location_id` is `NOT NULL` (ADR 0018); and the template content model
 (ADR 0019, §2). Application-layer encryption at rest
@@ -505,9 +527,10 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
 No protocol broker yet. Just Postgres, Redis for realtime fan-out,
 Keycloak for local/pilot OIDC, optional observability services, Node, and
 Docker Compose for reproducible development. Phase 2 is **no longer paused**:
-the single-RTU PHE MQTT pilot ships in `apps/ingest` (ADR 0007, 0012) and
-ADR 0016 froze the adapter interface. What remains gated is each *protocol
-implementation*, per §2 and §6 — not Phase 2 as a whole. Phase 5 Sprint A used the existing API and
+the single-RTU PHE MQTT pilot ships in `apps/ingest` (ADR 0007, 0012), and
+ADR 0016 froze the adapter interface and — as of §6 commit 2 — shipped the host
+that runs it with MQTT ported onto it. What remains gated is each *further
+protocol implementation*, per §2 and §6 — not Phase 2 as a whole. Phase 5 Sprint A used the existing API and
 database stack only; Sprint B added the Maintenance Kanban UI and
 `sort_order` persistence for drag/drop. Sprint C added the Maintenance
 Schedule Centre, schedule metadata, history, and work-order conversion.

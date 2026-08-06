@@ -750,14 +750,49 @@ Process (`AGENTS.md` §10).
   (§9.10)~~ ✅ **cleared** — §2 gained a *Template content* row, and §6 gained
   the two deferral bullets covering what ADR 0019 deliberately left closed.
 
-### Ingest adapter framework (F1.1) — interface accepted, not built
-- **Status:** ADR 0016 accepted; **implementation not started**
-- **Scope promoted:** the `IngestAdapter` interface only. Individual protocol
+### Ingest adapter framework (F1.1) — host built, cutover pending
+- **Status:** ADR 0016 §6 **commit 2 landed** (PR #13). `F1.1` stays `⬜` in
+  `docs/BACKLOG.md` — commits 3 and 4 have not.
+- **Delivered:** `apps/ingest/src/host/` — supervisor (one per endpoint, owning
+  every timer), exponential backoff with jitter, bounded drop-oldest sample
+  queue, ADR 0018-axis binding plan, normaliser, the NOTIFY chunker that the
+  two surviving copies (`apps/ingest/src/index.js`, `apps/sim/src/index.js`)
+  collapse into at commit 4 / `F1.11`,
+  plain-text health endpoint on `INGEST_HOST_HEALTH_PORT` (9103, separate from
+  the legacy 9102 so both can run at once) — plus `src/adapters/mqtt.ts`,
+  `src/adapter/registry.ts`, and a shared adapter conformance suite. `src/main.ts`
+  is wiring only. `src/index.js` is **frozen, not one line edited**, and
+  `pnpm start` and compose still run it. Operator notes: `docs/ingest-host.md`.
+- **Scope promoted:** the interface, the host, and MQTT — which ADR 0007 had
+  already promoted and this only ports onto the interface. Individual protocol
   adapters (F1.2 Modbus, F1.3 BACnet, F1.4 OPC-UA, F1.5 SNMP/REST, F1.6 DCS)
-  each still need their own ADR for their protocol library under AGENTS.md §9.4.
-- **Owed:** an owner for cutting `apps/ingest/src/index.js` over to the host.
-  Until someone deletes it the two-entrypoint window stays open, which is the
-  realistic failure mode of a strangler migration.
+  each still need their own ADR under AGENTS.md §10 — unconditionally, not only
+  where a protocol library has to be settled under §9.4.
+- **Owed — commit 3:** the parallel run against the **real PHE deployment**.
+  Not reproducible locally; no pilot runs on a dev machine. Its pre-check was
+  run: a read-only differential showed the legacy `assets.rtu_id` query and the
+  host's `asset_points.rtu_id` query resolving an identical 22-point set, which
+  is expected — migration `0023_source_axis_separation.sql` backfilled the point
+  axis from the asset axis, so the two agree by construction. *Two caveats. It
+  was an uncommitted scratchpad query, so there is no artifact in the tree —
+  re-derive it from `host/bindings.ts`'s query and `index.js:66-82` if you want
+  to re-run it. And, as for Resolved decision 5, it was the local seeded
+  database: it says the parallel run will compare like with like, and nothing
+  about the pilot's data.*
+- **Owed — commit 4:** an owner for cutting `apps/ingest/src/index.js` over to
+  the host and deleting the `INGEST_NOTIFY` flag with it. Until someone deletes
+  it the two-entrypoint window stays open, which is the realistic failure mode
+  of a strangler migration. **ADR 0016 Resolved decision 4 records that this has
+  no named owner.**
+- **Known limits carried forward:** reload refreshes point *mappings* only (a
+  new RTU or a changed endpoint needs a restart); RTUs sharing an endpoint share
+  credentials until `F1.7`; a batch lost to a failed write is gone until `F1.10`
+  adds disk buffering; telemetry authenticity rests entirely on broker ACLs,
+  which `F1.7` should carry in its scope.
+- ~~**Owed:** the AGENTS.md promotion (ADR 0016 Resolved decision 8)~~ ✅
+  **cleared** — the §2 *Ingest adapters* and *Real ingestion* rows, the §3 tree,
+  §6 and the §8 "also promoted" paragraph now describe the host, and §6 gained a
+  second bullet holding commits 3 and 4 human-gated.
 
 ### Asset source-axis separation (ADR 0018) — done
 - **Status:** done
@@ -830,7 +865,7 @@ Process (`AGENTS.md` §10).
 |---------|--------------|
 | Multi-tenancy, RLS | Phase 3 |
 | Keycloak / OIDC / MFA / SSO | Phase 1 |
-| Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT) | Phase 2 — MQTT promoted for one RTU (ADR 0007); `IngestAdapter` **interface** promoted (ADR 0016); each protocol implementation still needs its own ADR |
+| Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT) | Phase 2 — MQTT promoted for one RTU (ADR 0007); the `IngestAdapter` **interface, its host and the MQTT adapter** are promoted (ADR 0016 §6 commit 2); each *further* protocol implementation still needs its own ADR |
 | EMQX broker | Phase 2 |
 | Redis cache and pub/sub | Phase 1 |
 | MinIO / object storage | Phase 5 Sprint F only if persisted report storage is needed |
