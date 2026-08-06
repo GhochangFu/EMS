@@ -109,9 +109,16 @@ const realTransport: MqttTransport = {
  * The ThinkIoT envelope: routing and timing, not readings.
  *
  * `dev_id` selects the device and `ts` becomes the sample time, so neither is
- * telemetry. Excluding `ts` is what keeps `device_timestamp` — which the PHE
- * seed maps — from becoming a point whose value is, by construction, its own
- * row's `time` expressed as epoch milliseconds. `values` is the container.
+ * telemetry. Excluding `ts` is what keeps `device_timestamp` from becoming a
+ * point whose value is, by construction, its own row's `time` expressed as
+ * epoch milliseconds; `packages/db/src/phe-pilot-seed.ts` stopped cataloguing
+ * that point in the same change. `values` is the container.
+ *
+ * **These three names are ThinkIoT's envelope, not MQTT's.** MQTT has no
+ * payload schema, so a different vendor may publish a genuine reading called
+ * `ts`. `F1.7` points this adapter at non-PHE devices and is where this needs
+ * to become per-connection configuration rather than a module constant —
+ * otherwise it is this same bug, forward-dated.
  */
 const ENVELOPE_KEYS: ReadonlySet<string> = new Set(["dev_id", "ts", "values"]);
 
@@ -143,11 +150,17 @@ function readingFields(body: Record<string, unknown>): Record<string, unknown> {
  * that publishes a key in both places means the inner one.
  *
  * This is a **deliberate divergence from `index.js`**, which stays frozen under
- * ADR 0016 §6 while it runs the pilot. It is not a regression of the §6 commit
- * 3 comparison: that ran on 2026-08-06 against this feed and recorded an
- * identical point set, and this changes the host only for keys the legacy path
- * could never have read. Re-running the comparison after this lands should show
- * exactly one difference, `network_strength`.
+ * ADR 0016 §6 while it runs the pilot, and is recorded in
+ * `docs/ingest-host.md`. It is not a regression of the §6 commit 3 comparison:
+ * that ran on 2026-08-06 against this feed and recorded an identical point set,
+ * and where a `values` block is present — as it always is on this feed — this
+ * changes the host only for keys the legacy path could never have read.
+ * Re-running the comparison after this lands should show exactly one
+ * difference, `network_strength`.
+ *
+ * On a **flat** payload the divergence is the other way: legacy fell back to
+ * the whole body, so `dev_id` and `ts` were mappable keys there and are no
+ * longer. That is the correction, not a casualty of it.
  *
  * **2. `at` is not fabricated.** Legacy defaults a missing `ts` to
  * `Date.now()`. Under the new contract `at` is set **only** where the protocol

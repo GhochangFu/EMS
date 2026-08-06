@@ -190,8 +190,10 @@ export async function runMqttAdapterTests(): Promise<void> {
   {
     // Envelope, not telemetry. Both coerce to finite numbers, so without the
     // exclusion they would land as readings the moment anything mapped them —
-    // and `device_timestamp` (which the PHE seed *does* map to `ts`) would be a
-    // point whose value is its own row's `time` in epoch milliseconds.
+    // and `device_timestamp` would be a point whose value is its own row's
+    // `time` in epoch milliseconds. The PHE seed mapped exactly that until
+    // 2026-08-06; this assertion is why it no longer needs to be a rule the
+    // catalog carries.
     const parsed = parsePayload(
       JSON.stringify({ dev_id: "861736076104923", ts: 1_782_472_726_000, values: { flow: 1 } }),
     );

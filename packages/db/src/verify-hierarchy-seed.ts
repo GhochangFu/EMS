@@ -61,8 +61,13 @@ export async function verifyHierarchySeed(pool: pg.Pool): Promise<void> {
   if (Number(row.phe_assets) !== 48) {
     errors.push(`PHE assets: expected 48, got ${row.phe_assets}`);
   }
-  if (Number(row.phe_points) !== 264) {
-    errors.push(`PHE asset_points: expected 264, got ${row.phe_points}`);
+  // 252, not 264: the catalog's 12 `TS` sensors are the MQTT envelope's own
+  // timestamp, which the ingest adapter consumes as the sample time and can
+  // never deliver as a reading. `phe-pilot-seed.ts` stopped cataloguing them on
+  // 2026-08-06 rather than keep 12 rows claiming a provenance that is false by
+  // construction. One per PHE device that carries the sensor.
+  if (Number(row.phe_points) !== 252) {
+    errors.push(`PHE asset_points: expected 252, got ${row.phe_points}`);
   }
   if (Number(row.orphan_assets) !== 0) {
     errors.push(`assets without location_id: ${row.orphan_assets}`);
