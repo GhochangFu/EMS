@@ -55,6 +55,44 @@ describe("repo invariants", () => {
     expect(orphans, `spec files that no .test wrapper runs:\n${orphans.join("\n")}`).toEqual([]);
   });
 
+  it("no source file exceeds the AGENTS.md §4.5 1000-line cap", () => {
+    // §4.5 has capped files at 1000 lines since Phase 1, and nothing enforced
+    // it: `rules.service.ts` sat at 1029 until someone happened to count. A
+    // rule with no gate is a preference. This is the gate.
+    //
+    // Deliberately no allowlist. An exemption is how the cap dies quietly —
+    // the entry outlives the reason, and the next oversized file cites it as
+    // precedent. If a file genuinely needs to be bigger, that is an AGENTS.md
+    // change under §9.10, not a line in this array.
+    //
+    // Two limits worth stating rather than leaving to be rediscovered:
+    //  - Source files only. Generated data such as
+    //    `packages/db/src/phe-catalog.json` (6346 lines) is not code and the
+    //    cap is not about it.
+    //  - `sourceFiles()` walks `apps` and `packages`, a root list chosen for
+    //    the §4.6 orphan-spec check. §4.5's cap is unqualified, so top-level
+    //    `tests/`, `docs/scripts/` and `.claude/hooks/` are exempt here by
+    //    inheritance rather than by decision. Nothing in them is close to the
+    //    cap today; widening the roots is a separate change.
+    const LIMIT = 1000;
+
+    const oversized = sourceFiles()
+      .filter((f) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(f))
+      .map((f) => ({
+        path: relative(repoRoot, f).replace(/\\/g, "/"),
+        // Trailing-newline-insensitive: a file of exactly LIMIT content lines
+        // must not fail merely because it ends with a newline, as it should.
+        lines: readFileSync(f, "utf8").replace(/\r?\n$/, "").split(/\r?\n/).length,
+      }))
+      .filter((entry) => entry.lines > LIMIT)
+      .map((entry) => `${entry.path} (${entry.lines} lines)`);
+
+    expect(
+      oversized,
+      `files over the ${LIMIT}-line cap in AGENTS.md §4.5:\n${oversized.join("\n")}`,
+    ).toEqual([]);
+  });
+
   it(".dockerignore excludes env files at every depth, not just the context root", () => {
     const patterns = readFileSync(join(repoRoot, ".dockerignore"), "utf8")
       .split(/\r?\n/)

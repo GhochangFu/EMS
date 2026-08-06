@@ -16,12 +16,7 @@ import {
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
-  AutomationRuleAction,
-  AutomationRuleCategory,
-  AutomationRuleCondition,
   AutomationRuleLifecycleStatus,
-  AutomationRuleOperator,
-  AutomationRuleType,
   RuleBuilderCatalogAsset,
   JwtPayload,
   RuleExecutionItem,
@@ -29,16 +24,18 @@ import type {
   RuleListItem,
   RulePreviewResult,
 } from "@bms/shared";
-import {
-  CONTROL_ROOM_ELECTRICAL_POINT_KEYS,
-  CONTROL_ROOM_ENVIRONMENT_POINT_KEYS,
-  CONTROL_ROOM_IT_POINT_KEYS,
-  CONTROL_ROOM_UPS_POINT_KEYS,
-  ELECTRICAL_POINT_KEYS,
-  HVAC_POINT_KEYS,
-} from "@bms/shared";
 
 import { DRIZZLE } from "../database/database.tokens";
+// The three modules extracted for AGENTS.md §4.5 (1000-line cap). Each holds
+// pure logic — no database, no clock — which is why it sits outside the service
+// and carries its own spec instead of needing one here.
+import {
+  evaluateThresholdRule,
+  evaluateTimeWindowRule,
+  unsupportedRuleType,
+} from "./rule-evaluation";
+import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
+import { pointKeysForAsset } from "./rule-points";
 import type {
   ListRuleExecutionsQuery,
   RuleDraftBody,
@@ -47,59 +44,7 @@ import type {
   RuleToggleBody,
   RuleUpdateBody,
 } from "./rules.schema";
-
-type RuleRow = {
-  id: string;
-  code: string;
-  name: string;
-  description: string | null;
-  category: string;
-  ruleType: string;
-  source: string;
-  enabled: boolean;
-  assetId: string | null;
-  assetCode: string | null;
-  assetName: string | null;
-  siteName: string | null;
-  pointKey: string | null;
-  operator: string | null;
-  thresholdValue: number | null;
-  severity: string | null;
-  condition: unknown;
-  action: unknown;
-  lastEvaluatedAt: Date | null;
-  lifecycleStatus: string;
-  publishedAt: Date | null;
-  archivedAt: Date | null;
-  duplicatedFromRuleId: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-type EvaluationResult = {
-  status: RuleExecutionStatus;
-  matched: boolean;
-  observedValue: number | null;
-  message: string;
-  trace: Record<string, unknown>;
-};
-
-type RuleDraftValues = {
-  code?: string;
-  name: string;
-  description: string | null;
-  category: AutomationRuleCategory;
-  ruleType: AutomationRuleType;
-  assetId: string | null;
-  pointKey: string | null;
-  operator: AutomationRuleOperator | null;
-  thresholdValue: number | null;
-  severity: string | null;
-  condition: AutomationRuleCondition;
-  action: AutomationRuleAction;
-};
-
-const daySlugs = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+import type { EvaluationResult, RuleDraftValues, RuleRow } from "./rules.types";
 
 @Injectable()
 export class RulesService {
@@ -108,7 +53,7 @@ export class RulesService {
   /** Lists Sprint D automation rules with optional asset context. */
   async listRules(assetIds?: string[] | null): Promise<{ items: RuleListItem[] }> {
     const rows = this.filterRuleRows(await this.ruleRows(), assetIds);
-    return { items: rows.map((row) => this.mapRuleRow(row)) };
+    return { items: rows.map((row) => mapRuleRow(row)) };
   }
 
   /** Lists assets and supported telemetry points for the guided rule builder. */
@@ -136,7 +81,7 @@ export class RulesService {
     return {
       assets: rows.map((row) => ({
         ...row,
-        pointKeys: this.pointKeysForAsset(row.domain, row.code),
+        pointKeys: pointKeysForAsset(row.domain, row.code),
       })),
     };
   }
@@ -189,7 +134,7 @@ export class RulesService {
       return [row];
     });
 
-    return this.mapRuleRow(await this.getRuleRow(created.id));
+    return mapRuleRow(await this.getRuleRow(created.id));
   }
 
   /** Updates a draft or published operator-created rule after validation. */
@@ -204,7 +149,7 @@ export class RulesService {
     if (current.lifecycleStatus === "archived") {
       throw new BadRequestException("Archived rules cannot be edited");
     }
-    const merged = this.mergeRuleDraft(current, dto);
+    const merged = mergeRuleDraft(current, dto);
     this.assertAssetInScope(merged.assetId ?? null, assetIds);
     const values = await this.validateRuleDraft(merged, id);
     const actorId = await this.resolveActorId(actor);
@@ -231,7 +176,7 @@ export class RulesService {
       });
     });
 
-    return this.mapRuleRow(await this.getRuleRow(id));
+    return mapRuleRow(await this.getRuleRow(id));
   }
 
   /** Evaluates a draft payload against current data without enabling it. */
@@ -302,14 +247,14 @@ export class RulesService {
     if (current.lifecycleStatus === "archived") {
       throw new BadRequestException("Archived rules cannot be published");
     }
-    await this.validateRuleDraft(this.ruleBodyFromRow(current), id);
+    await this.validateRuleDraft(ruleBodyFromRow(current), id);
     await this.writeLifecycleUpdate(id, "rule_publish", dto, actor, {
       lifecycleStatus: "published",
       enabled: true,
       publishedAt: new Date(),
       archivedAt: null,
     });
-    return this.mapRuleRow(await this.getRuleRow(id));
+    return mapRuleRow(await this.getRuleRow(id));
   }
 
   /** Archives a rule and removes it from active evaluation. */
@@ -326,7 +271,7 @@ export class RulesService {
       enabled: false,
       archivedAt: new Date(),
     });
-    return this.mapRuleRow(await this.getRuleRow(id));
+    return mapRuleRow(await this.getRuleRow(id));
   }
 
   /** Copies an existing rule into a disabled draft for operator editing. */
@@ -391,7 +336,7 @@ export class RulesService {
       return [row];
     });
 
-    return this.mapRuleRow(await this.getRuleRow(created.id));
+    return mapRuleRow(await this.getRuleRow(created.id));
   }
 
   /** Lists recent rule execution traces. */
@@ -435,7 +380,7 @@ export class RulesService {
         matched: row.matched,
         observedValue: row.observedValue,
         message: row.message,
-        trace: this.asTrace(row.trace),
+        trace: asTrace(row.trace),
       })),
     };
   }
@@ -477,7 +422,7 @@ export class RulesService {
       });
     });
 
-    return this.mapRuleRow(await this.getRuleRow(id));
+    return mapRuleRow(await this.getRuleRow(id));
   }
 
   /** Evaluates all enabled Sprint D rules and records execution traces. */
@@ -593,92 +538,21 @@ export class RulesService {
     return row;
   }
 
-  private mapRuleRow(row: RuleRow): RuleListItem {
-    return {
-      id: row.id,
-      code: row.code,
-      name: row.name,
-      description: row.description,
-      category: row.category as AutomationRuleCategory,
-      ruleType: row.ruleType as AutomationRuleType,
-      source: row.source as "operator_rule" | "simulator_threshold",
-      enabled: row.enabled,
-      assetId: row.assetId,
-      assetCode: row.assetCode,
-      assetName: row.assetName,
-      siteName: row.siteName,
-      pointKey: row.pointKey,
-      operator: row.operator as AutomationRuleOperator | null,
-      thresholdValue: row.thresholdValue,
-      severity: row.severity,
-      lifecycleStatus: row.lifecycleStatus as AutomationRuleLifecycleStatus,
-      condition: this.asCondition(row.condition),
-      action: this.asAction(row.action),
-      lastEvaluatedAt: row.lastEvaluatedAt?.toISOString() ?? null,
-      publishedAt: row.publishedAt?.toISOString() ?? null,
-      archivedAt: row.archivedAt?.toISOString() ?? null,
-      duplicatedFromRuleId: row.duplicatedFromRuleId,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-    };
-  }
-
+  /**
+   * Routes a rule to its evaluator. The service supplies the two things the
+   * evaluators cannot have — the telemetry loader and the clock — and owns
+   * nothing else about the decision.
+   */
   private async evaluateRule(row: RuleRow): Promise<EvaluationResult> {
     if (row.ruleType === "threshold") {
-      return this.evaluateThresholdRule(row);
+      return evaluateThresholdRule(row, (assetId, pointKey) =>
+        this.latestPointValue(assetId, pointKey),
+      );
     }
     if (row.ruleType === "time_window") {
-      return this.evaluateTimeWindowRule(row);
+      return evaluateTimeWindowRule(row, new Date());
     }
-    return {
-      status: "error",
-      matched: false,
-      observedValue: null,
-      message: `Unsupported rule type ${row.ruleType}`,
-      trace: { ruleType: row.ruleType },
-    };
-  }
-
-  private async evaluateThresholdRule(row: RuleRow): Promise<EvaluationResult> {
-    if (!row.assetId || !row.pointKey || !row.operator || row.thresholdValue === null) {
-      return {
-        status: "error",
-        matched: false,
-        observedValue: null,
-        message: "Threshold rule is missing asset, point, operator, or value",
-        trace: { ruleType: row.ruleType },
-      };
-    }
-
-    const sample = await this.latestPointValue(row.assetId, row.pointKey);
-    if (!sample) {
-      return {
-        status: "skipped",
-        matched: false,
-        observedValue: null,
-        message: "No telemetry sample available for this rule",
-        trace: { assetId: row.assetId, pointKey: row.pointKey },
-      };
-    }
-
-    const operator = row.operator as AutomationRuleOperator;
-    const matched = this.compare(sample.value, operator, row.thresholdValue);
-    return {
-      status: matched ? "matched" : "not_matched",
-      matched,
-      observedValue: sample.value,
-      message: matched
-        ? `${row.name} matched at ${sample.value}`
-        : `${row.name} did not match at ${sample.value}`,
-      trace: {
-        assetId: row.assetId,
-        pointKey: row.pointKey,
-        operator,
-        thresholdValue: row.thresholdValue,
-        sampleTime: sample.time.toISOString(),
-        unit: sample.unit,
-      },
-    };
+    return unsupportedRuleType(row);
   }
 
   private async latestPointValue(
@@ -696,82 +570,6 @@ export class RulesService {
       .orderBy(desc(pointValues.time))
       .limit(1);
     return sample ?? null;
-  }
-
-  private evaluateTimeWindowRule(row: RuleRow): EvaluationResult {
-    const condition = this.asCondition(row.condition);
-    if (!("days" in condition)) {
-      return {
-        status: "error",
-        matched: false,
-        observedValue: null,
-        message: "Time-window rule has invalid condition",
-        trace: { condition },
-      };
-    }
-
-    const now = new Date();
-    const day = daySlugs[now.getDay()] ?? "sun";
-    const minuteOfDay = now.getHours() * 60 + now.getMinutes();
-    const start = this.parseTime(condition.startTime);
-    const end = this.parseTime(condition.endTime);
-    const dayMatches = condition.days.includes(day);
-    const timeMatches =
-      start <= end
-        ? minuteOfDay >= start && minuteOfDay <= end
-        : minuteOfDay >= start || minuteOfDay <= end;
-    const matched = dayMatches && timeMatches;
-
-    return {
-      status: matched ? "matched" : "not_matched",
-      matched,
-      observedValue: null,
-      message: matched
-        ? `${row.name} matched the configured time window`
-        : `${row.name} is outside the configured time window`,
-      trace: {
-        day,
-        minuteOfDay,
-        startTime: condition.startTime,
-        endTime: condition.endTime,
-      },
-    };
-  }
-
-  private compare(
-    value: number,
-    operator: AutomationRuleOperator,
-    threshold: number,
-  ): boolean {
-    switch (operator) {
-      case "gt":
-        return value > threshold;
-      case "gte":
-        return value >= threshold;
-      case "lt":
-        return value < threshold;
-      case "lte":
-        return value <= threshold;
-      case "eq":
-        return value === threshold;
-    }
-  }
-
-  private parseTime(value: string): number {
-    const [h, m] = value.split(":").map(Number);
-    if (
-      h === undefined ||
-      m === undefined ||
-      Number.isNaN(h) ||
-      Number.isNaN(m) ||
-      h < 0 ||
-      h > 23 ||
-      m < 0 ||
-      m > 59
-    ) {
-      throw new BadRequestException(`Invalid rule time ${value}`);
-    }
-    return h * 60 + m;
   }
 
   private async validateRuleDraft(
@@ -860,62 +658,9 @@ export class RulesService {
     if (!asset) {
       throw new BadRequestException("Selected asset does not exist");
     }
-    if (!this.pointKeysForAsset(asset.domain, asset.code).includes(pointKey)) {
+    if (!pointKeysForAsset(asset.domain, asset.code).includes(pointKey)) {
       throw new BadRequestException("Selected telemetry point is not compatible with asset");
     }
-  }
-
-  private pointKeysForAsset(domain: string, code: string): string[] {
-    if (code.startsWith("CR-RACK") || code.startsWith("CR-PDU")) {
-      return [...CONTROL_ROOM_IT_POINT_KEYS];
-    }
-    if (code.startsWith("CR-UPS") || code.startsWith("CR-BATT")) {
-      return [...CONTROL_ROOM_UPS_POINT_KEYS];
-    }
-    if (domain === "environment" || code.startsWith("CR-ENV") || code.startsWith("CR-LEAK") || code.startsWith("CR-SMOKE")) {
-      return [...CONTROL_ROOM_ENVIRONMENT_POINT_KEYS];
-    }
-    if (domain === "hvac") {
-      return [...HVAC_POINT_KEYS];
-    }
-    if (code.startsWith("CR-")) {
-      return [...CONTROL_ROOM_ELECTRICAL_POINT_KEYS];
-    }
-    return [...ELECTRICAL_POINT_KEYS];
-  }
-
-  private mergeRuleDraft(row: RuleRow, dto: RuleUpdateBody): RuleDraftBody {
-    const current = this.ruleBodyFromRow(row);
-    return {
-      ...current,
-      ...dto,
-      description: dto.description === undefined ? current.description : dto.description,
-      assetId: dto.assetId === undefined ? current.assetId : dto.assetId,
-      pointKey: dto.pointKey === undefined ? current.pointKey : dto.pointKey,
-      operator: dto.operator === undefined ? current.operator : dto.operator,
-      thresholdValue:
-        dto.thresholdValue === undefined ? current.thresholdValue : dto.thresholdValue,
-      severity: dto.severity === undefined ? current.severity : dto.severity,
-      condition: dto.condition === undefined ? current.condition : dto.condition,
-      action: dto.action === undefined ? current.action : dto.action,
-    };
-  }
-
-  private ruleBodyFromRow(row: RuleRow): RuleDraftBody {
-    return {
-      code: row.code,
-      name: row.name,
-      description: row.description,
-      category: row.category as AutomationRuleCategory,
-      ruleType: row.ruleType as AutomationRuleType,
-      assetId: row.assetId,
-      pointKey: row.pointKey,
-      operator: row.operator as AutomationRuleOperator | null,
-      thresholdValue: row.thresholdValue,
-      severity: row.severity as "info" | "warning" | "critical" | null,
-      condition: this.asCondition(row.condition),
-      action: this.asAction(row.action),
-    };
   }
 
   private async writeLifecycleUpdate(
@@ -984,46 +729,5 @@ export class RulesService {
       .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
       .limit(1);
     return actorRow?.id ?? null;
-  }
-
-  private asCondition(value: unknown): AutomationRuleCondition {
-    if (this.isRecord(value) && value.window === "latest") {
-      return {
-        window: "latest",
-        unit: typeof value.unit === "string" ? value.unit : undefined,
-      };
-    }
-    if (
-      this.isRecord(value) &&
-      Array.isArray(value.days) &&
-      typeof value.startTime === "string" &&
-      typeof value.endTime === "string"
-    ) {
-      return {
-        days: value.days.filter((item): item is string => typeof item === "string"),
-        startTime: value.startTime,
-        endTime: value.endTime,
-      };
-    }
-    return { window: "latest" };
-  }
-
-  private asAction(value: unknown): AutomationRuleAction {
-    if (
-      this.isRecord(value) &&
-      (value.type === "notify" || value.type === "review" || value.type === "trace_only") &&
-      typeof value.target === "string"
-    ) {
-      return { type: value.type, target: value.target };
-    }
-    return { type: "trace_only", target: "Operations" };
-  }
-
-  private asTrace(value: unknown): Record<string, unknown> | null {
-    return this.isRecord(value) ? value : null;
-  }
-
-  private isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 }
