@@ -280,6 +280,29 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       }
 
       for (const sensor of deviceRows) {
+        // `TS` is the envelope's own timestamp, which the ingest adapter
+        // consumes as the sample time (`ENVELOPE_KEYS` in
+        // `apps/ingest/src/adapters/mqtt.ts`). Cataloguing it as a measured
+        // point would assert a provenance that is false by construction: the
+        // row could never arrive, and if it somehow did its value would be its
+        // own `time` in epoch milliseconds. A mapped point that silently never
+        // arrives is the defect this seed's `NS`/`network_strength` row spent
+        // its life demonstrating — do not add a second one.
+        if (sensor.SensorCode === "TS") {
+          // Databases seeded before this skip carry the row already, and a seed
+          // that only stops *writing* the mistake never converges. It has no
+          // telemetry to lose — that is the whole point.
+          //
+          // Migration `0025` does the same delete unconditionally, and is the
+          // durable half: this one only fires while a catalog row with
+          // `SensorCode = 'TS'` still exists to iterate, and `phe-catalog.json`
+          // is a vendor export that may reasonably stop carrying one.
+          await pool.query(
+            `DELETE FROM bms.asset_points WHERE asset_id = $1 AND point_key = $2`,
+            [assetId, bmsPointKeyForSensor(sensor.SensorCode, sensor.DataKey)],
+          );
+          continue;
+        }
         const pointKey = bmsPointKeyForSensor(sensor.SensorCode, sensor.DataKey);
         await pool.query(
           `

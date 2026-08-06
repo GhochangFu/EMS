@@ -162,6 +162,61 @@ export async function runMqttAdapterTests(): Promise<void> {
     assert(parsed.values.flow === 5, "a null `values` falls back to the body");
   }
 
+  {
+    // The real Bhutnirghat I envelope, transcribed from
+    // `exports/PHE-MQTT-REFERENCE.md`: `rssi` sits *beside* `values`, not in it.
+    // index.js takes `body.values` instead of the body whenever it is an
+    // object, so `rssi` was unreachable and `network_strength` silently never
+    // arrived — confirmed against the live feed on 2026-08-06, 20 of 22 mapped
+    // points landing. This is the assertion that fix exists for.
+    const parsed = parsePayload(
+      JSON.stringify({
+        dev_id: "861736076104923",
+        ts: "1782472726000",
+        rssi: "29",
+        values: { di1: "1", batt_volt: "100.00", s09_r01: "10.81" },
+      }),
+    );
+    assert(parsed.values.rssi === "29", "a reading published beside `values` is reachable");
+    assert(parsed.values.s09_r01 === "10.81", "nested readings still arrive");
+    const samples = samplesFromPayload(parsed, ["rssi", "s09_r01"]);
+    assert(samples.length === 2, "both layers reach samplesFromPayload");
+    assert(
+      samples.find((s) => s.sourceKey === "rssi")?.value === 29,
+      "`rssi` becomes a sample, which is the whole point of the merge",
+    );
+  }
+
+  {
+    // Envelope, not telemetry. Both coerce to finite numbers, so without the
+    // exclusion they would land as readings the moment anything mapped them —
+    // and `device_timestamp` would be a point whose value is its own row's
+    // `time` in epoch milliseconds. The PHE seed mapped exactly that until
+    // 2026-08-06; this assertion is why it no longer needs to be a rule the
+    // catalog carries.
+    const parsed = parsePayload(
+      JSON.stringify({ dev_id: "861736076104923", ts: 1_782_472_726_000, values: { flow: 1 } }),
+    );
+    assert(parsed.values.ts === undefined, "`ts` is the sample time, never a reading");
+    assert(parsed.values.dev_id === undefined, "`dev_id` routes the sample, never a reading");
+    assert(
+      samplesFromPayload(parsed, ["ts", "dev_id"]).length === 0,
+      "no envelope field can be mapped into telemetry",
+    );
+    // The exclusion must not cost the timestamp itself.
+    assert(parsed.at?.getTime() === 1_782_472_726_000, "`ts` still sets `at`");
+  }
+
+  {
+    // Collision: the nested block is the more specific source and wins. Stated
+    // as a test because the merge order is otherwise invisible, and reversing
+    // it would silently prefer a stale outer copy.
+    const parsed = parsePayload(
+      JSON.stringify({ dev_id: "RTU-1", flow: 99, values: { flow: 1 } }),
+    );
+    assert(parsed.values.flow === 1, "the nested `values` block wins a key collision");
+  }
+
   // ---- value guards, verbatim from index.js -------------------------------
 
   {

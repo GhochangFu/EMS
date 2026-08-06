@@ -100,10 +100,79 @@ cd apps/ingest && DATABASE_URL="$DATABASE_URL" INGEST_NOTIFY=off pnpm start:host
 3. Over the window, compare row counts, timestamps and per-RTU sample rates in
    `telemetry.point_values`. Both processes upsert the same primary key, so
    agreement means the host resolved the same points from the same payloads.
+   **Expect exactly one difference: `network_strength`.** See *Deliberate
+   divergences* below — a run that shows agreement on that point means the host
+   is on a build older than 2026-08-06, and a run that shows any *other*
+   difference is a finding.
 4. Only then set `INGEST_NOTIFY=on` **and** flip the compose `ingest` service to
    `command: ["pnpm", "start:host"]` in the same step, stopping the legacy
    process. Reverting is deleting one compose line — no image rebuild, no code
    edit.
+
+### Result of the 2026-08-06 run
+
+Run against the live Bhutnirghat I feed the day the pilot was first brought up,
+on the build immediately before the `network_strength` fix — so it is a
+like-for-like comparison. The RTU publishes once a minute, which makes the
+windows clean. **Step 4 was not taken**; the compose service still runs the
+legacy process.
+
+| Window | Messages | Rows | Points/msg |
+|---|---|---|---|
+| legacy alone | 5 | 100 | 20 |
+| both in parallel | 1 | 20 | 20 |
+| host alone | 2 | 40 | 20 |
+
+- **Point-set differential empty in both directions** — `EXCEPT` on
+  `(asset, point_key, unit)` between the legacy-only and host-only windows.
+- **Concurrent writes do not duplicate.** The parallel minute holds 20 rows,
+  not 40; the `ON CONFLICT` upsert holds.
+- **`kwh_total` continuous across the handover** (47955 → 47956, monotonic).
+- **`INGEST_NOTIFY` verified as behaviour, not configuration.** Positive control
+  with legacy running: 2 payloads in 95 s. Host with `off`: **zero
+  notifications while writing 60 samples.** Same host with `on`: 3 payloads,
+  shape identical to legacy's `{"readings":[{time,assetId,pointKey,value,unit}…]}`.
+
+Two caveats worth carrying: the window boundaries were derived from the
+measured device-clock skew rather than from per-row process attribution, and
+the parallel window is **one message wide**. The uniformity across all three
+windows makes the conclusion robust, but that single row is the only direct
+evidence of concurrent non-corruption.
+
+## Deliberate divergences from `index.js`
+
+`index.js` is frozen under ADR 0016 §6 while it runs the pilot, so a defect
+found in the shared parse logic can only be fixed on the host side. Two
+behaviours therefore differ **on purpose**. Both are in
+`apps/ingest/src/adapters/mqtt.ts`; neither is a porting error.
+
+| Divergence | Host | `index.js` |
+|---|---|---|
+| Readings published beside the `values` block | Merged in, nested wins a collision | Unreachable — `body.values` replaces the body |
+| `dev_id` / `ts` as mappable readings | Never; envelope only | Readable, but only on a payload with no `values` block |
+| A missing `ts` | Leaves `at` unset; the host substitutes receive time | Fabricates `Date.now()` |
+
+The first is a **fix**, not a preference. The pilot RTU publishes `rssi` at the
+top level, so `network_strength` — mapped in the PHE seed and documented in
+`exports/PHE-MQTT-REFERENCE.md` — silently never arrived under `index.js`. It
+was found on 2026-08-06 when the pilot was brought up for the first time: 20 of
+the RTU's 22 catalogued points landed. The host on a post-2026-08-06 build
+writes 21 samples per message where `index.js` writes 20 — and the RTU now
+catalogues 21, so that is **every** mapped point, not 21 of 22. The 22nd was
+`device_timestamp`; see below.
+
+**The catalog diverges from the vendor export, on purpose.**
+`packages/db/src/phe-catalog.json` is the TeleCash snapshot and still lists a
+`TS` sensor per solar-edge controller — 12 rows, `DataKey = 'ts'`, mapped to
+`device_timestamp`. That is the envelope's own timestamp, which the host
+consumes as the sample time and can never deliver as a reading, so cataloguing
+it as `source_kind = 'measured'` asserts a provenance false by construction.
+`phe-pilot-seed.ts` skips those rows and migration `0025` deletes any an earlier
+seed created; `verify-hierarchy-seed.ts` expects 252 PHE points, not 264. A
+future vendor re-export that still carries `TS` will not resurrect them.
+
+**This is the standing argument for completing the cutover.** Every day the
+compose service runs `pnpm start`, the pilot loses `network_strength`.
 
 ## Known limits in this build
 
@@ -113,6 +182,16 @@ cd apps/ingest && DATABASE_URL="$DATABASE_URL" INGEST_NOTIFY=off pnpm start:host
   `new endpoint requires a restart to serve` when it sees one. Reconciling the
   endpoint set is a second state machine on top of the supervisor's, and half
   of one is worse than none.
+- **A device's clock is trusted without check.** Where the payload carries a
+  timestamp it becomes the row's `time`, so telemetry inherits whatever the
+  device believes. Measured on the pilot RTU on 2026-08-06: **~34 minutes
+  ahead** of the server (Postgres and both containers agreeing). Not a timezone
+  error — IST would be +5:30 — and unchanged from `index.js`, which uses `ts`
+  the same way. It means live PHE rows land in the *future* relative to
+  `now()`, which affects any dashboard window query and any rule evaluated on a
+  recency bound. Nothing here detects or corrects it; deciding between trusting
+  the device, stamping on receipt, or recording both is product work, not a
+  host fix.
 - **RTUs sharing an endpoint share credentials.** The first non-empty set wins.
   This narrows the `activeMqttConnection` singleton in `index.js` but does not
   cure it; `F1.7` owns the per-RTU credential story (ADR 0016 §Consequences).

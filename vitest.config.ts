@@ -48,9 +48,11 @@ export default defineConfig({
       // what actually catches that; do not rely on this gate for it.
       exclude: ["**/*.spec.ts", "**/*.test.ts", "**/*.test.js", "**/*.d.ts"],
       // Measured 2026-08-06 with all three integration suites in the tree, the
-      // F1.1 ingest host landed, and the rules module split under §4.5:
-      // statements 27.87 · branches 22.77 · functions 28.83 · lines 28.05.
-      // (Before the rules split: 26.47 · 18.92 · 27.08 · 26.60. Before the
+      // F1.1 ingest host landed, the rules module split under §4.5, and the
+      // MQTT top-level source-key fix:
+      // statements 27.99 · branches 22.88 · functions 28.92 · lines 28.17.
+      // (Before the MQTT fix: 27.87 · 22.77 · 28.83 · 28.05. Before the rules
+      // split: 26.47 · 18.92 · 27.08 · 26.60. Before the
       // host: 17.18 · 11.37 · 20.66 · 17.11. Before E1.7: 14.22 · 9.35 · 18.29
       // · 14.07. Before F2.2: 10.96 · 6.76 · 14.65 · 10.96. F4.10 alone was
       // 7.12 · 4.53 · 9.44 · 7.14; F2.1 alone 8.70 · 5.14 · 10.74 · 8.76;
@@ -79,10 +81,10 @@ export default defineConfig({
       // the reason and the command to fix it. Do NOT lower these to make a
       // database-less run pass.
       thresholds: {
-        statements: 27.8,
-        branches: 22.7,
-        functions: 28.8,
-        lines: 28.0,
+        statements: 27.9,
+        branches: 22.8,
+        functions: 28.9,
+        lines: 28.1,
       },
     },
   },
