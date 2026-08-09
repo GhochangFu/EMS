@@ -8,7 +8,8 @@
 > the Vitest gate (ADR 0014), asset templates and instantiation
 > (ADR 0015), the ingest adapter framework **and its host** (ADR 0016), the
 > operations write matrix (ADR 0017), the asset source-axis separation
-> (ADR 0018), and the template content model (ADR 0019). General
+> (ADR 0018), the template content model (ADR 0019), and the audit read API
+> (ADR 0021). General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
@@ -164,6 +165,7 @@ entry **D-0001**.
 | AI onboarding | Scoped admin ingestion wizard using OpenAI chat completions with structured JSON, and a deterministic rule-based fallback when `OPENAI_API_KEY` is unset (ADR 0011) |
 | Secrets      | AES-256-GCM encrypted RTU connection credentials via `CREDENTIAL_ENCRYPTION_KEY`; never returned decrypted by the API (ADR 0012) |
 | Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension. Every mutating endpoint across these four domains is gated by the **operations write matrix** (ADR 0017) — see §4.7 |
+| Audit read   | `bms.audit_log` becomes readable under **ADR 0021** (`F4.14`): `GET /api/v1/admin/audit` and `/audit/export` (CSV + XLSX), in `apps/api/src/admin/audit/`. **Global admin only** — the table has no tenancy column, so §4.7's scope predicates cannot be applied to it at all; scoped reads for `organization_admin` and below are **deferred to their own ADR**, not silently omitted. Purely additive: no DDL, no trigger, no new package (`xlsx` was already an api dependency). `payload` is returned **verbatim**, which makes every `payload: body` call site a security surface — see §4.7. Export requires a `from`/`to` window of ≤366 days and is capped at 50,000 rows, **refusing rather than truncating**; the cap was measured, not assumed, and is a *row* bound with **no byte bound** — that gap is recorded in ADR 0021, not fixed. Append-only storage and hash-chaining are `F4.15` and stay out of scope (§6) |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, **ingest** and DB |
 | CI/CD        | GitHub Actions: install, build/typecheck, `typecheck:tests`, **the `apps/ingest` image build**, migration validation, **`db:seed` against a fresh schema**, and `test:coverage` (ADR 0014). The image build is there because no workflow built one, so `apps/ingest/Dockerfile` sat broken on `main` while CI stayed green — it is the only ingest image gated, being the only one that installs before COPYing sources |
 | Testing      | Vitest, one project per app + a repo-wide `repo` project; coverage gate on a ratcheting baseline (ADR 0014). See §4.6 |
@@ -330,6 +332,37 @@ admin may deploy a published org template without being able to author one
 (ADR 0015 §7 as amended). Do not require `canManageTemplate` there — it means
 "may author" and is false for exactly that role.
 
+**Audit read** (ADR 0021, `F4.14`) — a **third** gate, reusing neither of the
+two above. `bms.audit_log` has no tenancy column, so the master-data scope
+predicates cannot apply to it. `AuditAdminService.requireGlobalAdmin` runs two
+checks in order: a matching **`bms.users` row must exist**, and only then must
+`writableOrganizationIds` be `null`.
+
+**The first check is not redundant — Amendment 1 exists because it was
+missing.** `resolveDbUser` deliberately falls back to the JWT claim when no row
+matches, so in OIDC mode (what compose and the pilot run) an *unprovisioned*
+Keycloak principal holding realm role `admin` resolves to `role: "admin"` and a
+`null`, unrestricted scope. Every other `/admin/*` endpoint constrains that with
+a second scope check; on audit read the `null` **is** the whole control. Without
+the provisioning check the endpoint served the entire log — every organisation,
+every verbatim `payload`, every actor email — to anyone the IdP called an admin,
+and deleting a user's row would have **escalated** them rather than revoked
+them. Reproduced against a real database before the fix. **The fallback itself
+is unchanged**: pre-existing, affecting all of `/admin/*`, and recorded against
+`F4.10` in `docs/BACKLOG.md` as owing its own ADR. If you add an endpoint whose
+only control is an unrestricted scope, it has this problem too.
+
+**Standing obligation (ADR 0021 decision 6).** `audit_log.payload` stores the
+verbatim request body at **twelve** call sites — assets, asset-points,
+locations, organizations, point-keys and RTUs, create and update each — and the
+read API returns it verbatim. None of those Zod schemas admitted a credential,
+password, secret or token field when checked on 2026-08-09. **Adding a
+secret-bearing field to any audited request body, or to a schema behind one,
+creates an audit-read exposure**, so re-run that check whenever one changes.
+The obligation is on the call sites, not on one writer: there are 15
+`insert(auditLog)` sites in total and 14 do not go through
+`MasterDataAuditService`.
+
 ---
 
 ## 5. Visual Reference
@@ -424,7 +457,11 @@ These are intentionally deferred. Do not implement them yet:
 - EMQX broker (PHE pilot connects directly over MQTT TLS; no broker)
 - MinIO / object storage
 - Two-way commanding with approval workflows
-- Audit hash-chaining (we keep a simple audit table only)
+- Audit **hash-chaining and append-only storage** (`F4.15`). `bms.audit_log` is
+  now *readable* under ADR 0021, but it is not tamper-evident: nothing prevents
+  an in-place update or delete. Whether audit **reads** are themselves audited
+  is deliberately left open by ADR 0021 for `F4.15`/`F4.19` — do not settle it
+  as a side effect of other work
 - Energy reports (PDF / XLSX)
 - Complex drag-and-drop node graph rule builders
 - Three.js Control Room 3D
@@ -462,8 +499,9 @@ Location and Access hardening is open: canonical locations, scoped users,
 scoped REST/WebSocket reads, live-location dashboard markers, schematic
 guards, Control Room asset-group UI gating, simulator focus settings, and
 the telemetry dashboard index may remain, but the sprint is not complete
-until the hardening checklist in `docs/roadmap.md` is finished. Report PDF/XLSX output,
-persisted report storage, CR
+until the hardening checklist in `docs/roadmap.md` is finished. Report PDF/XLSX
+output (the *reports* domain — audit-log CSV/XLSX export is a different surface
+and **is** in scope under ADR 0021), persisted report storage, CR
 Security, CR Alarm Management, CR Trends, Phase 6 3D, two-way commands,
 setpoint changes, manual bypass, battery tests, equalize charge, HVAC
 force-changeover, sensor calibration/test execution, real-ingestion rules,

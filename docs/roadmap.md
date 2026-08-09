@@ -830,6 +830,33 @@ Process (`AGENTS.md` §10).
   armed tripwire (`assertLocationManagementIsFlat`) that goes red the moment
   inheritance widens `writableLocationIds`.
 
+### Audit read API and export (F4.14) — done
+- **Status:** done (ADR 0021, commit `73a9fd2`). No DDL, no migration lock, no
+  new dependency — `xlsx` was already an api dependency. Landed directly on
+  `main`, so unlike F2.1/F2.2/E1.7 there is no PR number to cite.
+- **Delivered:** `GET /api/v1/admin/audit` and `/audit/export` (CSV + XLSX) in
+  `apps/api/src/admin/audit/`. `bms.audit_log` had been written since ADR 0009
+  and never been readable. Global admin only, offset-paginated with a
+  `(created_at, id)` tie-break so pages are stable, export bounded by a required
+  ≤366-day window and a 50,000-row cap that **refuses rather than truncates**.
+- **Unblocks:** F4.15 (append-only audit + nightly hash-chaining) — the only
+  item listing F4.14, and F4.14 was its only dependency.
+- **Notable:** the security review found a **privilege-escalation path**, and it
+  was reproduced against a real database before being fixed.
+  `AccessControlService` falls back to the JWT claim when no `bms.users` row
+  matches, so in OIDC mode an unprovisioned principal claiming `admin` resolved
+  to an unrestricted scope and read the whole log; deleting a user's row would
+  have *escalated* rather than revoked them. Every other `/admin/*` route
+  survives this because a second scope check constrains it — audit read had no
+  second check. ADR 0021 Amendment 1 adds a provisioning check. **The fallback
+  itself is untouched** and still owes the ADR that F4.10 called for.
+- **Owed:** a byte bound on the export. The 50,000-row cap was measured
+  (42.6 MB / 2.47 s / 502 MB RSS) against a realistic payload, but `meta` is
+  unbounded JSON, so rows can be far larger than the ones measured. Recorded in
+  ADR 0021 rather than fixed, because narrowing an accepted cap is a gated
+  change. Also open by design: whether audit *reads* are themselves audited,
+  left to F4.15/F4.19.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
