@@ -58,7 +58,9 @@ WAVE 5  F3.9 F3.17 F3.18 F3.19 F4.3 F4.18 F4.19 F4.22 F4.26 F1.11
 
 **Critical path (protect Track B):**
 `F2.1 ✅ → E1.7 ✅ → E5.1` ← **`E5.1` is now the head of this chain and both of
-its dependencies are met.** And `F2.1 ✅ → F2.2 ✅ → F3.22` and
+its dependencies are met — but it is *not* startable: it is blocked on an
+unanswered client question set, which no `Depends` cell can express. See the
+`E5.1` row in §2 Track B before dispatching it.** And `F2.1 ✅ → F2.2 ✅ → F3.22` and
 `F4.1 + F1.x → E1.1 → E1.3/E1.2`, converging on the Foundry demo: *a
 water-treatment plant onboarded from a rich template by the onboarding agent,
 with health scores, pre-threshold anomaly alerts, and enriched alarms.*
@@ -134,7 +136,7 @@ still safe in parallel.
 | **5** *(part)* | F1.3 · ~~**E1.7**~~ ✅ · F3.7 | A · B · D | **E1.7** (ADR 0019, PR #9) was pulled forward the moment `F2.1` landed — P0 critical path, no DDL, and it is the last thing between `main` and `E5.1`. It unblocks all three domain packs. F3.7 still needs F3.8. |
 | **6** | F1.4 ‖ F1.5 ‖ F1.6 | A ‖ | **Flagship fan-out.** OPC-UA, SNMP/REST and DCS all implement the *same* frozen `F1.1` interface in their *own* files — the cleanest 3-agent parallel batch in the whole plan. |
 | **7** | F2.4 · F3.1 · F4.20 | B · C · F | Calc engine (needs F2.3), dashboard builder, OpenAPI. |
-| **8** | **E5.1** · F1.7 · F4.10 | B · A · F | E5.1 water-treatment domain pack — **P0 flagship**, Ion Exchange's core business (needs F2.1 + E1.7). |
+| **8** | **E5.1** 🔒 · F1.7 · F4.10 | B · A · F | E5.1 water-treatment domain pack — **P0 flagship**, Ion Exchange's core business (needs F2.1 + E1.7, both ✅). **🔒 Blocked on an unanswered client question set, not on a dependency — see the `E5.1` row in §2 Track B.** |
 | **9** | **E1.1** ⭐🔒 · F2.5 · E2.1 | ML · B · D | E1.1 (ML foundation) is the only new infrastructure the SOW adds — **ADR on the ML stack first**. |
 | **10** | **F3.21** ⭐ · F2.7 · E1.3 · F3.2 | E · B · ML · C | Onboarding agent loop begins (needs create APIs + F4.4). **F2.7 (tag-mapping editor) must land here** — F3.23 in the next slot depends on it. |
 | **11** | F3.22 ‖ F3.23 ‖ F3.24 | E ‖ | Second fan-out: agent template / param-mapping / protocol onboarding — separate capabilities, separate files, all gated on F3.21. |
@@ -211,7 +213,7 @@ re-derived from the `Depends` column rather than read off the slot table:
 
 | Item | P | Wave | Why it matters now |
 |------|---|------|--------------------|
-| **E5.1** | **P0** | 2 | **Water-treatment domain pack** — STP/ETP/RO/UF/softeners/DM/cooling water/dosing/potable. Ion Exchange's core business and the Foundry demo's subject. Both of its dependencies (`F2.1`, `E1.7`) are now ✅. This is the flagship. |
+| **E5.1** | **P0** | 2 | **Water-treatment domain pack** — STP/ETP/RO/UF/softeners/DM/cooling water/dosing/potable. Ion Exchange's core business and the Foundry demo's subject. Both of its dependencies (`F2.1`, `E1.7`) are now ✅. This is the flagship. **Later note (2026-08-09): unblocking it on the board did not make it startable — it waits on an unanswered client question set. See the `E5.1` row in §2 Track B.** |
 | E5.2 | P1 | 2 | Mechanical/utility pack (pumps, compressors, chillers, AHUs, boilers). Same two dependencies, both met. |
 | E5.3 | P2 | 5 | Facility/smart-building pack. Unblocked, but its wave is far out. |
 
@@ -339,7 +341,7 @@ single shared file). `F3.8` needs a dependency ADR before build.
 | F2.6 | Template calc-tags wired into calc engine | P0 | 3–4 | 2 | F2.2, F2.4 | ⬜ |
 | F2.7 | Tag-mapping bulk editor + Excel mapping sheet | P1 | 4–5 | 2 | F2.1 | ⬜ |
 | F2.8 | Replace hardcoded PUE SQL with user-defined derived tags | P1 | incl. | 2 | F2.4 | ⬜ |
-| **E5.1** | Water-treatment domain pack: catalogs + templates for STP/ETP/RO/UF/softeners/DM/cooling water/dosing/potable | P0 | 6–8 | 2 | F2.1, E1.7 | ⬜ |
+| **E5.1** | Water-treatment domain pack: catalogs + templates for STP/ETP/RO/UF/softeners/DM/cooling water/dosing/potable. **⚠ Blocked on a client answer, which `Depends` cannot express** — both dependencies are `✅` since 2026-08-05, so every re-derivation calls this eligible. A five-question mail to Ion Exchange is unanswered as of 2026-08-09 — verbatim text and what each answer decides in [`docs/e5.1-client-questions.md`](./e5.1-client-questions.md): (1) are RO / cooling water / STP / softener the right four to start with, (2) **the tag list from one real plant** — P&ID, I/O schedule or SCADA/PLC export, redacted is fine; the priority ask, (3) are alarm setpoints per-site or standardised, (4) discharge route for effluent/sewage, since CPCB Schedule VI limits differ by route (BOD 30 mg/L inland vs 350 mg/L to sewer), (5) Ion Exchange's internal product names. Its ADR is unwritten and would be **0021** — `0020` is reserved for the E8.1 retro (ADR 0019 §"Numbering, also settled"); §5 below still says `0020` and is stale. **Q3 may reopen ADR 0019:** `alarms[].thresholdValue` is a *required* `number`, so "setpoints are per-site" cannot be authored without placeholder values — that is an Amendment 1, human-gated | P0 | 6–8 | 2 | F2.1, E1.7 | ⬜ |
 | E5.2 | Mechanical/utility domain pack: pumps, compressors, motors, chillers, cooling towers, AHUs, boilers | P1 | 4–6 | 2 | F2.1, E1.7 | ⬜ |
 | E5.3 | Facility/smart-building domain pack: lighting, fire, access, occupancy, parking, IAQ, BAS | P2 | 6–8 | 5 | F2.1, E1.7 | ⬜ |
 
