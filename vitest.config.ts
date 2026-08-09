@@ -47,8 +47,16 @@ export default defineConfig({
       // a `.spec.ts` that no wrapper runs. `tests/repo-invariants.test.ts` is
       // what actually catches that; do not rely on this gate for it.
       exclude: ["**/*.spec.ts", "**/*.test.ts", "**/*.test.js", "**/*.d.ts"],
-      // Measured 2026-08-06 with all three integration suites in the tree, the
-      // F1.1 ingest host landed, the rules module split under §4.5, and the
+      // Measured 2026-08-09 with F4.14's audit read API (ADR 0021), its fourth
+      // integration suite, and the review-driven additions (controller suite,
+      // the Amendment 1 provisioning check):
+      // statements 29.94 · branches 24.42 · functions 31.06 · lines 30.07.
+      // (Before the security/compliance review fixes: 29.33 · 24.25 · 30.69 ·
+      // 29.48.)
+      //
+      // Previously measured 2026-08-06 with all three integration suites in the
+      // tree, the F1.1 ingest host landed, the rules module split under §4.5,
+      // and the
       // MQTT top-level source-key fix:
       // statements 27.99 · branches 22.88 · functions 28.92 · lines 28.17.
       // (Before the MQTT fix: 27.87 · 22.77 · 28.83 · 28.05. Before the rules
@@ -81,10 +89,10 @@ export default defineConfig({
       // the reason and the command to fix it. Do NOT lower these to make a
       // database-less run pass.
       thresholds: {
-        statements: 27.9,
-        branches: 22.8,
-        functions: 28.9,
-        lines: 28.1,
+        statements: 29.8,
+        branches: 24.3,
+        functions: 30.9,
+        lines: 29.9,
       },
     },
   },

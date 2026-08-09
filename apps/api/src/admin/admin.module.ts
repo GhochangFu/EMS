@@ -8,6 +8,8 @@ import { AssetTemplatesAdminController } from "./asset-templates/asset-templates
 import { AssetTemplatesAdminService } from "./asset-templates/asset-templates.service";
 import { AssetsAdminController } from "./assets/assets.controller";
 import { AssetsAdminService } from "./assets/assets.service";
+import { AuditAdminController } from "./audit/audit.controller";
+import { AuditAdminService } from "./audit/audit.service";
 import { LocationsAdminController } from "./locations/locations.controller";
 import { LocationsAdminService } from "./locations/locations.service";
 import { PointKeysAdminController } from "./point-keys/point-keys.controller";
@@ -35,6 +37,7 @@ import { RtusAdminService } from "./rtus/rtus.service";
     AssetPointsAdminController,
     PointKeysAdminController,
     AssetTemplatesAdminController,
+    AuditAdminController,
     OnboardingController,
   ],
   providers: [
@@ -55,6 +58,7 @@ import { RtusAdminService } from "./rtus/rtus.service";
     PointKeysAdminService,
     AssetTemplatesAdminService,
     AssetTemplateInstantiationService,
+    AuditAdminService,
   ],
 })
 export class AdminModule {}

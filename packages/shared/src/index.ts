@@ -637,6 +637,35 @@ export type AdminPointKeyDto = {
   createdAt: string;
 };
 
+/**
+ * One `bms.audit_log` row as returned by the read API (ADR 0021, `F4.14`).
+ *
+ * `actorId`/`actorEmail` are nullable: the writer resolves the actor by id or
+ * email and stores `null` when neither matches, which is preserved rather than
+ * rendered as a fabricated identity. `payload` is the verbatim request body of
+ * the audited mutation — see ADR 0021 decision 6 before adding a field to any
+ * audited request schema.
+ */
+export type AuditLogEntryDto = {
+  id: string;
+  createdAt: string;
+  actorId: string | null;
+  actorEmail: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  reason: string | null;
+  payload: unknown;
+};
+
+/** Offset-paginated audit list. `F4.22` adds a cursor without removing these. */
+export type AuditLogListResponse = {
+  items: AuditLogEntryDto[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 /** Lifecycle of an asset template version (ADR 0015). */
 export type AssetTemplateStatus = "draft" | "published" | "archived";
 
