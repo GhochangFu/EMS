@@ -3,6 +3,8 @@ import {
   avgExpr,
   bucketHours,
   bucketSeconds,
+  levelForRange,
+  retentionDays,
   type AggregateLevel,
 } from "./point-aggregates";
 
@@ -101,6 +103,163 @@ export function assertBucketWidthsAreConsistent(): void {
       `bucketHours and bucketSeconds disagree for ${level}`,
     );
   }
+}
+
+const NOW = new Date("2026-08-10T12:00:00.000Z");
+const daysBefore = (days: number): Date =>
+  new Date(NOW.getTime() - days * 86_400_000);
+
+/**
+ * ADR 0025 decision 1. The guard's whole job: never return a level whose data
+ * retention has already dropped.
+ *
+ * `_1m` and `_5m` drop at 735 days (migration `0028`), so a range starting before
+ * that must escalate to `_1h`, which has no horizon. Reading `_1m` there returns
+ * **0 rows silently** and no refresh rebuilds it (ADR 0024 facts 13/14) — the
+ * failure this function exists to make impossible.
+ */
+export function assertRetentionGuardEscalatesPastTheHorizon(): void {
+  const fresh = levelForRange({
+    start: daysBefore(1),
+    granularity: "1m",
+    now: NOW,
+  });
+  assert(
+    fresh.level === "1m" && !fresh.coarsened,
+    `a 1-day-old range must read _1m unchanged; got ${fresh.level} (coarsened=${fresh.coarsened})`,
+  );
+
+  const expired = levelForRange({
+    start: daysBefore(1200),
+    granularity: "1m",
+    now: NOW,
+  });
+  assert(
+    expired.level === "1h",
+    `a 1200-day-old range must escalate to _1h, not read dropped data; got ${expired.level}. ` +
+      "_1m and _5m both drop at 735 days, so escalating 1m -> 5m would not help.",
+  );
+  assert(
+    expired.coarsened && expired.requested === "1m",
+    "an escalation must be visible to the caller: coarsened=true and requested preserved",
+  );
+}
+
+/**
+ * The boundary itself. 735 days is the horizon, so exactly-735 is still retained
+ * and 736 is not — an off-by-one here silently reads dropped data on one day's
+ * worth of range and is invisible in any other assertion.
+ */
+export function assertRetentionBoundaryIsInclusive(): void {
+  const onTheLine = levelForRange({
+    start: daysBefore(735),
+    granularity: "1m",
+    now: NOW,
+  });
+  assert(
+    onTheLine.level === "1m",
+    `exactly 735 days is still retained; got ${onTheLine.level}`,
+  );
+  const overTheLine = levelForRange({
+    start: daysBefore(736),
+    granularity: "1m",
+    now: NOW,
+  });
+  assert(
+    overTheLine.level === "1h",
+    `736 days is past the horizon and must escalate; got ${overTheLine.level}`,
+  );
+}
+
+/**
+ * **Duration is not the axis retention uses** — a short range far in the past must
+ * still escalate.
+ *
+ * This is the consequence of `end` playing no part. `reports.service.ts` sets `end`
+ * to `endDate T23:59:59.999Z` — routinely in the future — and ADR 0025 fact 6
+ * measured the MQTT ingest writing 33 minutes past `now()`, so a guard that took
+ * the range width from `end` would coarsen reports dated today. That `end` is
+ * absent from the signature is asserted statically in
+ * `tests/adr-0025-level-selector.test.ts`; what is asserted here is the behaviour a
+ * duration-keyed selector would get wrong.
+ */
+export function assertLevelIgnoresTheRangeEnd(): void {
+  // An earlier version of this opened by calling `levelForRange` twice with
+  // IDENTICAL arguments and asserting the two results matched — a tautology
+  // dressed as a test, and it claimed to be comparing "wildly different range
+  // widths". It could not have been: the signature has no `end`, which is the real
+  // guarantee, and `tests/adr-0025-level-selector.test.ts` asserts that shape
+  // directly. Removed rather than repaired, because there is nothing here to
+  // repair — the type system already holds it.
+  //
+  // What remains is the case that actually matters. A range reaching back past the
+  // horizon must escalate even when it is *short* — the trap a duration-keyed
+  // selector falls into, and the case that falsifies the premise ADR 0024 used to
+  // withdraw its own decision 8.
+  const shortButAncient = levelForRange({
+    start: daysBefore(1100),
+    granularity: "1m",
+    now: NOW,
+  });
+  assert(
+    shortButAncient.level === "1h",
+    "a SHORT range far in the past must still escalate — duration is not the axis retention " +
+      `uses; got ${shortButAncient.level}`,
+  );
+}
+
+/** Granularity is respected when retention permits: no read silently coarsens. */
+export function assertGranularityIsHonouredWhenRetained(): void {
+  for (const granularity of LEVELS) {
+    const choice = levelForRange({
+      start: daysBefore(1),
+      granularity,
+      now: NOW,
+    });
+    assert(
+      choice.level === granularity && !choice.coarsened,
+      `a recent range at granularity ${granularity} must read ${granularity}; got ${choice.level}`,
+    );
+  }
+}
+
+/**
+ * `_1h` and `_1d` must have no horizon. ADR 0023 decision 7 makes them the only
+ * record once raw is dropped, and the escalation loop terminates only because of
+ * it — give `_1h` a horizon and `levelForRange` starts throwing.
+ */
+export function assertCoarseLevelsHaveNoHorizon(): void {
+  assert(
+    retentionDays("1h") === null,
+    "_1h must never be dropped (ADR 0023 decision 7) — it is the only record past raw's 730 days",
+  );
+  assert(
+    retentionDays("1d") === null,
+    "_1d must never be dropped (ADR 0023 decision 7)",
+  );
+  assert(
+    retentionDays("1m") === 735 && retentionDays("5m") === 735,
+    "_1m and _5m must match migration 0028's drop_after of 735 days",
+  );
+}
+
+/** An unknown granularity must throw, not fall through to some default level. */
+export function assertUnknownGranularityThrows(): void {
+  let threw = false;
+  try {
+    levelForRange({
+      start: daysBefore(1),
+      granularity: "7m" as AggregateLevel,
+      now: NOW,
+    });
+  } catch {
+    threw = true;
+  }
+  assert(
+    threw,
+    "an unknown granularity must throw — silently defaulting to a level decides which " +
+      "relation is read, and the numbers would still look plausible",
+  );
 }
 
 /**

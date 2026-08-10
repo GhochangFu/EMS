@@ -17,6 +17,10 @@ import {
   materialiseAndSnapshot,
   type RetentionFixtures,
 } from "./aggregate-retention.integration.spec";
+import {
+  openIntegrationPool,
+  requireIntegrationDb,
+} from "../testing/integration-db-gate";
 
 /**
  * `F4.2` — Vitest entry point for ADR 0024 compression and retention. Assertions
@@ -40,52 +44,22 @@ import {
  * broke.
  */
 
-const isCi = process.env.CI === "true" || process.env.CI === "1";
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString && isCi) {
-  throw new Error(
-    "F4.2 retention tests have no DATABASE_URL in CI. Refusing to skip — that raw retention " +
-      "leaves the aggregates intact, and that an unbounded refresh destroys them, are " +
-      "TimescaleDB behaviours. A green run without them asserts nothing, and CI cannot catch " +
-      "the regression any other way: db:seed inserts zero telemetry rows, so " +
-      "pnpm db:refresh-aggregates is a no-op there whether or not it is still bounded.",
-  );
-}
-
-if (!connectionString) {
-  process.stderr.write(
-    "\n[F4.2] Skipping compression/retention tests: DATABASE_URL is not set.\n" +
-      "        Coverage thresholds assume these ran — expect the gate to fail.\n" +
-      "        DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms pnpm test:coverage\n" +
-      "        (5432 is the committed compose port; docker-compose.override.yml may remap it)\n\n",
-  );
-}
+const connectionString = requireIntegrationDb({
+  item: "F4.2",
+  label: "compression/retention tests",
+  because:
+    "that raw retention leaves the aggregates intact, and that an unbounded refresh " +
+    "destroys them, are TimescaleDB behaviours. A green run without them asserts nothing, " +
+    "and CI cannot catch the regression any other way: db:seed inserts zero telemetry rows, " +
+    "so pnpm db:refresh-aggregates is a no-op there whether or not it is still bounded.",
+});
 
 describe.skipIf(!connectionString)("F4.2 — telemetry compression and retention", () => {
   let pool: pg.Pool | undefined;
   let fx: RetentionFixtures;
 
   beforeAll(async () => {
-    const created = new pg.Pool({
-      connectionString,
-      max: 4,
-      connectionTimeoutMillis: 5_000,
-    });
-    try {
-      await created.query("SELECT 1");
-    } catch (err) {
-      await created.end().catch(() => undefined);
-      const detail =
-        err instanceof Error
-          ? [err.message, (err as NodeJS.ErrnoException).code].filter(Boolean).join(" ") ||
-            err.name
-          : String(err);
-      throw new Error(
-        `F4.2 could not reach DATABASE_URL: ${detail}. Setting DATABASE_URL is a claim ` +
-          "that a database exists, so this fails rather than skipping.",
-      );
-    }
+    const created = await openIntegrationPool(connectionString as string, "F4.2");
     pool = created;
     await cleanupProbes(created);
     await createProbes(created);

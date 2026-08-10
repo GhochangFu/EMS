@@ -28,6 +28,10 @@ import {
   type Fixtures,
   type Services,
 } from "./asset-templates.instantiate.integration.spec";
+import {
+  openIntegrationPool,
+  requireIntegrationDb,
+} from "../../testing/integration-db-gate";
 
 /**
  * `F2.2` — Vitest entry point for template instantiation. Assertions live in
@@ -43,26 +47,15 @@ import {
  * a failure in case five.
  */
 
-const isCi = process.env.CI === "true" || process.env.CI === "1";
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString && isCi) {
-  throw new Error(
-    "F2.2 instantiation tests have no DATABASE_URL in CI. Refusing to skip — the rollback " +
-      "guarantees, the asset_points_source_ref_check agreement between rtu_id and source_kind, " +
-      "and the ADR 0015 Amendment 1B access split are all database behaviours. A green run " +
-      "without them asserts nothing about the one outcome this feature must never produce.",
-  );
-}
-
-if (!connectionString) {
-  process.stderr.write(
-    "\n[F2.2] Skipping template instantiation tests: DATABASE_URL is not set.\n" +
-      "        Coverage thresholds assume these ran — expect the gate to fail.\n" +
-      "        DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms pnpm test:coverage\n" +
-      "        (5432 is the committed compose port; docker-compose.override.yml may remap it)\n\n",
-  );
-}
+const connectionString = requireIntegrationDb({
+  item: "F2.2",
+  label: "template instantiation tests",
+  because:
+    "the rollback guarantees, the asset_points_source_ref_check agreement between rtu_id " +
+    "and source_kind, and the ADR 0015 Amendment 1B access split are all database " +
+    "behaviours. A green run without them asserts nothing about the one outcome this " +
+    "feature must never produce.",
+});
 
 describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () => {
   let pool: pg.Pool | undefined;
@@ -71,25 +64,7 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
   let template: AdminAssetTemplateDto;
 
   beforeAll(async () => {
-    const created = new pg.Pool({
-      connectionString,
-      max: 4,
-      connectionTimeoutMillis: 5_000,
-    });
-    try {
-      await created.query("SELECT 1");
-    } catch (err) {
-      await created.end().catch(() => undefined);
-      const detail =
-        err instanceof Error
-          ? [err.message, (err as NodeJS.ErrnoException).code].filter(Boolean).join(" ") ||
-            err.name
-          : String(err);
-      throw new Error(
-        `F2.2 could not reach DATABASE_URL: ${detail}. Setting DATABASE_URL is a claim ` +
-          "that a database exists, so this fails rather than skipping.",
-      );
-    }
+    const created = await openIntegrationPool(connectionString as string, "F2.2");
     pool = created;
 
     const db = createDb(created);

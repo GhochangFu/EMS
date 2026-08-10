@@ -1,4 +1,25 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "dist", "**/*spec.ts", "**/*.test.ts", "vitest.config.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*spec.ts",
+    "**/*.test.ts",
+    "vitest.config.ts",
+    // `F4.28` / ADR 0025 decision 8. `src/testing/` holds test-only helpers that are
+    // neither `*spec.ts` nor `*.test.ts`, so the two patterns above did not catch
+    // them and `integration-db-gate.js` was being emitted into the runtime bundle.
+    //
+    // This keeps it out **while nothing imports it, and that is all it does.** An
+    // earlier version of this comment claimed the exclusion also made a runtime
+    // import a build failure. It does not: `tsc` pulls an excluded-but-imported
+    // file back into the program and emits it, and TS6307 only fires under
+    // `composite: true`, which this project does not set. Reproduced — adding the
+    // import to `health.controller.ts` left `pnpm --filter api build` at exit 0
+    // with `dist/testing/` emitted.
+    //
+    // The rule is enforced by `tests/repo-invariants.test.ts` ("no runtime file
+    // imports a test-only helper from src/testing"), which CI does run.
+    "src/testing/**"
+  ]
 }

@@ -17,6 +17,10 @@ import {
   assertUngrantedRolesFailClosed,
   assertUnprovisionedTokenBehaviour,
 } from "./access-control.integration.spec";
+import {
+  openIntegrationPool,
+  requireIntegrationDb,
+} from "../testing/integration-db-gate";
 
 /**
  * `F4.10` — Vitest entry point. Assertions live in the sibling `.spec`
@@ -53,59 +57,20 @@ import {
  * its own ADR before a single test could run.
  */
 
-const isCi = process.env.CI === "true" || process.env.CI === "1";
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString && isCi) {
-  throw new Error(
-    "F4.10 access-control integration tests have no DATABASE_URL in CI. " +
-      "Refusing to skip — a green run here would assert that scope isolation holds " +
-      "while nothing checked it. Fix the pipeline, do not relax this guard.",
-  );
-}
-
-if (!connectionString) {
-  // The coverage thresholds in vitest.config.ts are measured with this suite
-  // running. Skipping it drops coverage by ~2.5 points, so `pnpm test:coverage`
-  // will fail the gate with a number that says nothing about why. Say why here.
-  //
-  // `process.stderr.write`, not `console.warn`: Vitest intercepts `console` and
-  // discards module-scope output from a skipped file, so the warning that
-  // explains the coverage failure would itself be invisible.
-  process.stderr.write(
-    "\n[F4.10] Skipping access-control integration tests: DATABASE_URL is not set.\n" +
-      "        Coverage thresholds assume these ran — expect the gate to fail.\n" +
-      "        DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms pnpm test:coverage\n\n",
-  );
-}
+const connectionString = requireIntegrationDb({
+  item: "F4.10",
+  label: "access-control integration tests",
+  because:
+    "a green run here would assert that scope isolation holds while nothing checked it. Fix " +
+    "the pipeline, do not relax this guard.",
+});
 
 describe.skipIf(!connectionString)("F4.10 — access control against a real database", () => {
   let pool: pg.Pool | undefined;
   let svc: AccessControlService;
 
   beforeAll(async () => {
-    const created = new pg.Pool({
-      connectionString,
-      max: 4,
-      connectionTimeoutMillis: 5_000,
-    });
-    try {
-      await created.query("SELECT 1");
-    } catch (err) {
-      await created.end().catch(() => undefined);
-      // pg surfaces connection refusals as an empty `message` with the detail in
-      // `code`/`errno`, so reporting `message` alone yields "could not reach: ."
-      const detail =
-        err instanceof Error
-          ? [err.message, (err as NodeJS.ErrnoException).code].filter(Boolean).join(" ") ||
-            err.name
-          : String(err);
-      throw new Error(
-        `F4.10 could not reach DATABASE_URL: ${detail}. ` +
-          "Setting DATABASE_URL is a claim that a database exists, so this fails rather " +
-          "than skipping. Unset it to skip deliberately.",
-      );
-    }
+    const created = await openIntegrationPool(connectionString as string, "F4.10");
     pool = created;
     svc = new AccessControlService(createDb(created));
   });

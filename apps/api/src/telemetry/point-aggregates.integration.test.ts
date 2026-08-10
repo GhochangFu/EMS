@@ -4,6 +4,10 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { DashboardService } from "../dashboard/dashboard.service";
 import {
+  openIntegrationPool,
+  requireIntegrationDb,
+} from "../testing/integration-db-gate";
+import {
   assertBucketsExist,
   assertCoarseRollupFromFinerLevel,
   assertEnergySummaryMatchesRaw,
@@ -26,14 +30,9 @@ import {
  * Assertions live in the sibling `.spec` (ADR 0014); this file owns the database
  * lifecycle.
  *
- * Skip/fail semantics match `F4.10`, `F2.1`, `F2.2` and `F4.14`: an unset
- * `DATABASE_URL` skips locally and throws under `CI`, while a *set* one is a
- * claim that a database exists, so a failed connection fails everywhere. This is
- * the **fifth** copy of the gate. `F2.1`'s file put the threshold for extracting
- * it at the third suite and `F4.14` recorded it as overdue rather than newly due;
- * it is more overdue now. Still left in place rather than refactoring four other
- * suites inside the change that introduces this feature — see the `F4.1` row in
- * `docs/BACKLOG.md`.
+ * Skip/fail semantics come from `requireIntegrationDb` — extracted by `F4.28`
+ * (ADR 0025 decision 8) after this file was the fifth verbatim copy of the gate
+ * and recorded the extraction as overdue.
  *
  * **This suite leaves the production aggregates' watermarks alone**, which the
  * first version did not. It created and refreshed against
@@ -44,50 +43,21 @@ import {
  * the real four, and they are read-only.
  */
 
-const isCi = process.env.CI === "true" || process.env.CI === "1";
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString && isCi) {
-  throw new Error(
-    "F4.1 aggregate tests have no DATABASE_URL in CI. Refusing to skip — continuous aggregates, " +
-      "the real-time branch, the sum/count composition and the refresh-policy offsets are all " +
-      "TimescaleDB behaviours, so a green run without them asserts nothing.",
-  );
-}
-
-if (!connectionString) {
-  process.stderr.write(
-    "\n[F4.1] Skipping continuous-aggregate tests: DATABASE_URL is not set.\n" +
-      "        Coverage thresholds assume these ran — expect the gate to fail.\n" +
-      "        DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms pnpm test:coverage\n" +
-      "        (5432 is the committed compose port; docker-compose.override.yml may remap it)\n\n",
-  );
-}
+const connectionString = requireIntegrationDb({
+  item: "F4.1",
+  label: "continuous-aggregate tests",
+  because:
+    "continuous aggregates, the real-time branch, the sum/count composition and the " +
+    "refresh-policy offsets are all TimescaleDB behaviours, so a green run without them " +
+    "asserts nothing.",
+});
 
 describe.skipIf(!connectionString)("F4.1 — telemetry continuous aggregates", () => {
   let pool: pg.Pool | undefined;
   let fx: Fixtures;
 
   beforeAll(async () => {
-    const created = new pg.Pool({
-      connectionString,
-      max: 4,
-      connectionTimeoutMillis: 5_000,
-    });
-    try {
-      await created.query("SELECT 1");
-    } catch (err) {
-      await created.end().catch(() => undefined);
-      const detail =
-        err instanceof Error
-          ? [err.message, (err as NodeJS.ErrnoException).code].filter(Boolean).join(" ") ||
-            err.name
-          : String(err);
-      throw new Error(
-        `F4.1 could not reach DATABASE_URL: ${detail}. Setting DATABASE_URL is a claim ` +
-          "that a database exists, so this fails rather than skipping.",
-      );
-    }
+    const created = await openIntegrationPool(connectionString as string, "F4.1");
     pool = created;
     await cleanup(created);
     await createProbeAggregates(created);

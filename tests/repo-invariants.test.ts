@@ -55,6 +55,117 @@ describe("repo invariants", () => {
     expect(orphans, `spec files that no .test wrapper runs:\n${orphans.join("\n")}`).toEqual([]);
   });
 
+  it("no rollup read reverts to bucketing raw telemetry", () => {
+    // ADR 0025 (`F4.28`) moved six rollup reads onto the continuous aggregates.
+    //
+    // **This exists because no behavioural test can catch a revert**, and ADR 0025
+    // decision 5 originally claimed otherwise. The parity suite compares each
+    // converted site against the raw query it replaced — so if a site goes *back* to
+    // that raw query, the comparison is the query against itself and passes. Mutation
+    // testing showed the suite does catch a wrong aggregate *level* (`_1m` → `_5m`
+    // fails on bucket count), but reading raw at minute granularity returns exactly
+    // what `_1m` returns, so that direction is invisible. Nor do the two
+    // discriminating sites rescue it: their "the naive form differs from raw"
+    // assertion is a property of the fixture and holds under a revert too.
+    //
+    // Found by the `F4.28` compliance review. AGENTS.md §4.4 already says to read
+    // rollups through the helper; this is what enforces it.
+    //
+    // Two markers, and between them every one of the six sites is covered: a revert
+    // reintroduces a time bucket over raw, or an `avg` over raw's `value` column, or
+    // both. Legitimate raw reads in these files — latest-value `DISTINCT ON`,
+    // `MAX(value) FILTER`, `SUM(latest.kw)` — use neither, and `AVG(total_kw)` over
+    // an already-aggregated CTE is untouched because it does not name `value`.
+    const rollupFiles = [
+      "apps/api/src/dashboard/dashboard.service.ts",
+      "apps/api/src/reports/reports.service.ts",
+    ];
+    // Comments discuss both markers on purpose, so strip them before matching.
+    const stripComments = (src: string): string =>
+      src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+
+    for (const rel of rollupFiles) {
+      const sql = stripComments(readFileSync(join(repoRoot, rel), "utf8"));
+      expect(
+        sql,
+        `${rel} buckets raw telemetry with date_trunc. Rollups read the ADR 0023 aggregates ` +
+          "via point-aggregates.ts — the level's own bucket column IS the granularity, so no " +
+          "date_trunc is needed. The parity suite cannot catch this: it compares against the " +
+          "raw query, so a revert compares that query with itself and passes.",
+      ).not.toMatch(/date_trunc/i);
+      expect(
+        sql,
+        `${rel} averages raw telemetry's value column. Use avgExpr() — ` +
+          "sum(sum_value)/sum(sample_count) — which is the only form that composes; an average " +
+          "of averages was wrong in 151 of 169 buckets on real data (ADR 0023 fact 4).",
+      ).not.toMatch(/\bavg\s*\(\s*[A-Za-z_][A-Za-z0-9_]*\.?value\s*\)/i);
+    }
+  });
+
+  it("every tests/*.test.ts file is typechecked by typecheck:tests", () => {
+    // No tsconfig covers the top-level `tests/` directory, so these files are
+    // typechecked only by the explicit file list at the end of the `typecheck:tests`
+    // script. Vitest runs them through esbuild, which strips types without checking
+    // them — so a file missing from that list still *runs*, and a type error in it
+    // fails nothing anywhere.
+    //
+    // Found by the `F4.28` security review: `adr-0024-retention-bounds.test.ts` had
+    // been missing since `F4.2`, and `adr-0025-level-selector.test.ts` was about to
+    // repeat it. Adding both fixed the instances; this fixes the class, because the
+    // next `tests/` file will otherwise be forgotten the same way.
+    const script = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const typecheckTests = script.scripts?.["typecheck:tests"] ?? "";
+    expect(typecheckTests, "package.json has no typecheck:tests script").not.toBe("");
+
+    const missing = readdirSync(join(repoRoot, "tests"))
+      .filter((name) => /\.test\.tsx?$/.test(name))
+      .filter((name) => !typecheckTests.includes(`tests/${name}`));
+
+    expect(
+      missing,
+      `tests/ files absent from the typecheck:tests file list:\n${missing.join("\n")}\n\n` +
+        "Append them to the final `tsc --noEmit ...` invocation in package.json. Without that " +
+        "they run but are never typechecked, so a type error in them fails nothing.",
+    ).toEqual([]);
+  });
+
+  it("no runtime file imports a test-only helper from src/testing", () => {
+    // ADR 0025 decision 8 (`F4.28`) put the extracted `DATABASE_URL` gate in
+    // `apps/api/src/testing/`, and `apps/api/tsconfig.build.json` excludes that
+    // folder so it stays out of the runtime bundle.
+    //
+    // **The exclusion does not enforce anything on its own, and this file exists
+    // because the commit that added it claimed otherwise.** `tsc` pulls an
+    // excluded-but-imported file back into the program and emits it; TS6307 only
+    // fires under `composite: true`, and `apps/api/tsconfig.json` is not composite.
+    // Reproduced against this repo: adding `import { integrationDbVerdict } from
+    // "../testing/integration-db-gate"` to `health.controller.ts` left
+    // `pnpm --filter api build` exiting **0** and emitting `dist/testing/`. So the
+    // claim needed either `composite: true` — which changes declaration and
+    // build-info emit for the whole API — or a check that actually runs. This is
+    // the check.
+    //
+    // Why it matters: that helper reads `process.env.DATABASE_URL`, writes to
+    // stderr, and can `throw` at module scope. None of that belongs on a path the
+    // API imports at boot.
+    const offenders = sourceFiles()
+      .filter((f) => /\.(ts|tsx)$/.test(f))
+      .filter((f) => !/\.(spec|test)\.(ts|tsx)$/.test(f))
+      .filter((f) => !/[/\\]testing[/\\]/.test(f))
+      .filter((f) => /from\s+["'][^"']*\/testing\/[^"']*["']/.test(readFileSync(f, "utf8")))
+      .map((f) => relative(repoRoot, f).replace(/\\/g, "/"));
+
+    expect(
+      offenders,
+      "runtime files importing from a testing/ directory:\n" +
+        `${offenders.join("\n")}\n\n` +
+        "Test-only helpers must not be reachable from the runtime bundle. Move the shared code " +
+        "to a real module, or make the importer a .spec/.test file.",
+    ).toEqual([]);
+  });
+
   it("no source file exceeds the AGENTS.md §4.5 1000-line cap", () => {
     // §4.5 has capped files at 1000 lines since Phase 1, and nothing enforced
     // it: `rules.service.ts` sat at 1029 until someone happened to count. A
