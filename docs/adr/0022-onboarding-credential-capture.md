@@ -386,7 +386,12 @@ surfaces all exist.
   *unprovisioned* principal claiming `organization_admin` still resolves through
   the claim, exactly as ADR 0021 Amendment 1 found for audit read.
 
-## Amendment 4 (2026-08-10) — M2, M3 and M4 are closed; the control gets its tests
+## Amendment 4 (2026-08-10) — M2 closed, M3 narrowed, M4 partially closed; the control gets its tests
+
+> **Heading corrected by Amendment 5.** This section first read "M2, M3 and M4
+> are closed". A fifth review found M4 still delivered one broker's credential
+> to another RTU and M3 still leaked every compound key name. The claims below
+> are struck where they were wrong rather than rewritten.
 
 The first compliance review of this change found **no blocking issues** — scope
 (§6), dependencies (§9.4), the `chore(agents):` isolation (§9.10), §4.1–4.7 and
@@ -408,7 +413,8 @@ grounds that each needed its own decision; the decisions are:
   reorder made index `i` decrypt one broker's password into a **different
   broker's** `rtu_connection_configs` row. `mergeDraft` now reconciles the store
   on every merge — orphaned and renamed entries are **dropped**, and a code
-  claimed by two RTUs drops rather than guesses. Losing a credential costs a
+  claimed by two RTUs drops rather than guesses ~~— **false as written; true of
+  `reconcileSecrets` alone, see Amendment 5**~~. Losing a credential costs a
   retype; misdelivering one does not. `credentialsSet` is derived from the store
   instead of trusted from input, since `draftRtuSchema` lets any caller assert
   it — but only when encryption is configured, so the unconfigured path E8.4
@@ -446,6 +452,89 @@ discarded `keyVersion`, both of which belong with **E8.4**.
 neither do `chat`, `patchDraft` or `uploadExcel`; only `commit` audits. That is
 consistent with the module rather than a §9.8 bypass, but it does mean there is
 no "who set credentials for which RTU" trail. Worth a decision alongside F4.15.
+
+## Amendment 5 (2026-08-10) — the contested-code rule is enforced where it is needed
+
+A fifth review found Amendment 4's M4 fix incomplete in the now-familiar shape:
+**the invariant was enforced at the one place it was tested and at neither of
+the two places it was needed.**
+
+**H1 — whitespace-aliased codes delivered one broker's credential to another
+RTU.** `rtuCodeAt` keyed on `code.trim()`, so two RTUs whose codes differ only by
+trimmable whitespace aliased to a single `_secrets` key. `reconcileSecrets` was
+the only caller that checked for a contested code, and `mergeDraft` runs it
+**before** `attachEncryptedCredentials`; neither `attachEncryptedCredentials` nor
+`readEncryptedCredentials` re-checked, and `onboarding-commit.service.ts` reads
+positionally with no merge in between. Reproduced end to end through the real
+`mergeDraft` and real AES-256-GCM: commit wrote the *same* ciphertext into both
+`rtu_connection_configs` rows, so the ingest runtime offered the real broker
+password to a second, attacker-chosen `config.host` — with `credentialsSet`
+still `undefined` on that RTU, so the drawer showed no credential while commit
+shipped one. E8.4's false-success, inverted into a silent one.
+
+Three details that make this reachable rather than theoretical: `draftRtuSchema.
+code` had no regex and no trim; JS `.trim()` removes NBSP, which renders as an
+ordinary space in the preview drawer; and `bms.rtus`' `UNIQUE (location_id,
+code)` does **not** catch it, because Postgres `varchar` comparison is not
+blank-padded (`'PHE-01' = 'PHE-01 '` is false). A uniqueness check on raw strings
+would not have closed this either.
+
+**Fixed at the single point all three callers share:** `rtuCodeAt` now returns
+`null` unless **exactly one** RTU claims the trimmed code. That makes the
+endpoint answer 400, `attachEncryptedCredentials` throw, and
+`readEncryptedCredentials` return `null` at commit — fail-closed everywhere,
+rather than correct in the one function with a test. `draftRtuSchema.code` also
+gained `.trim()`, so the alias cannot be created through the API at all.
+
+**Why it shipped: the tests asserted the invariant only where it held.** The
+contested-code case used *exact* duplicates and called `reconcileSecrets` in
+isolation, and the endpoint test stubbed `mergeDraft`, so the `reconcile → attach`
+composition — the exact site of the defect — was exercised by neither. The spec
+now tests `rtuSecretKey`, `attachEncryptedCredentials` and
+`readEncryptedCredentials` directly under contest.
+
+**M3 was narrowed, not closed.** Amendment 4 matched the normalised key
+**exactly**, so every compound name still leaked to both the client and the
+model: `mqttPassword`, `mqtt_username`, `snmpCommunity`, `authPassword`,
+`privPassword`, `keystorePassword`, `caCert`, `caKey`, `sasToken`,
+`sharedAccessKey`, `credential`. Matching is now a normalised **substring**
+against a fragment list. That is safe here in a way it was not for the chat
+detector — this runs over structured key names from a known schema, not free
+English — and it was checked against every field of all five draft schemas.
+`credentialsSet` contains `credential` and is excluded by name: it is the status
+flag the drawer renders, so redacting it would break the UI while protecting
+nothing. A bare `key` fragment was **rejected** for the same reason: it would
+swallow `pointKey` and `sourceDataKey`, which are core wizard vocabulary. `caKey`
+and friends are enumerated instead.
+
+**Corrected, not rewritten:** Amendment 4's heading claimed all three items were
+closed, and its M4 paragraph claimed a property the system did not have. Both
+are struck above.
+
+**Also fixed:** the `docs/BACKLOG.md` E8.3 row stated coverage thresholds that
+the same commit did not set (it named 31.1/26.1/32.0/31.2 while `vitest.config.
+ts` set 31.9/26.9/32.9/32.1) — an internal contradiction inside the very item
+whose point was that a document asserted a measurement the tree lacked.
+
+**Verified true by the fifth review, recorded so they are not re-checked:** the
+zero-`_secrets` count across all 7 sessions; the ADR 0021 decision-6 finding that
+onboarding's audit writes carry ids and metadata but never a request body; M2's
+closure (all four free-form records in the draft schema are now scrubbed for
+clients); that removing the second gate call in `setCredentials` is safe; and
+ADR 0012's unique-IV-per-encryption property.
+
+**Bounded, and not claimed otherwise:** keying by `code` binds a credential to a
+**name**, not an endpoint. An actor who can patch the draft can change
+`config.host` under an unchanged code and redirect the credential at commit.
+Index keying had the same property, and M4's fix never claimed to solve it — but
+it bounds what "cannot hand this password to a different broker" can mean.
+Closing it needs the credential bound to the resolved endpoint, which is its own
+decision and belongs with **E8.4**.
+
+**Five rounds.** Every round has found the previous round's fix defective or its
+description overclaimed. The pattern has been consistent enough to name: fixes
+land at the point that is easiest to test rather than the point that is
+load-bearing, and the document then describes the intent rather than the code.
 
 ## Promotion follow-ups (AGENTS.md §10, owed separately)
 

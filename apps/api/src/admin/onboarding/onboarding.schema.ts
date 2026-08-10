@@ -33,7 +33,12 @@ export const draftLocationSchema = z.object({
 });
 
 export const draftRtuSchema = z.object({
-  code: z.string().min(2).max(64),
+  // Trimmed at the boundary so two RTUs cannot differ by invisible whitespace
+  // alone. `_secrets` is keyed by this code (ADR 0022 Amendment 5), and JS
+  // `.trim()` eats NBSP — which renders as an ordinary space in the wizard, so
+  // the near-duplicate is undetectable by eye. `rtuCodeAt` refuses a contested
+  // code independently; this stops the alias being created in the first place.
+  code: z.string().trim().min(2).max(64),
   displayName: z.string().min(2).max(255),
   protocol: onboardingProtocolSchema,
   config: z.record(z.unknown()).default({}),

@@ -129,7 +129,8 @@ export class OnboardingService {
     // than fall back to the index, which is the defect this replaced.
     if (rtuSecretKey(draft, body.rtuIndex) === null) {
       throw new BadRequestException(
-        `RTU at index ${body.rtuIndex} has no code; set its code before storing credentials`,
+        `RTU at index ${body.rtuIndex} has no code, or another RTU in this draft claims the same ` +
+          "code. Give each RTU a distinct code before storing credentials.",
       );
     }
 

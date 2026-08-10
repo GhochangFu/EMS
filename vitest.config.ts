@@ -47,10 +47,10 @@ export default defineConfig({
       // a `.spec.ts` that no wrapper runs. `tests/repo-invariants.test.ts` is
       // what actually catches that; do not rely on this gate for it.
       exclude: ["**/*.spec.ts", "**/*.test.ts", "**/*.test.js", "**/*.d.ts"],
-      // Measured 2026-08-10 at E8.3 HEAD with ADR 0022 Amendment 4 — the M2/M3/M4
-      // fixes plus `onboarding-credentials.spec.ts`, which is the first cover
-      // the endpoint, its gate and its fail-closed branch have had:
-      // statements 32.08 · branches 27.07 · functions 33.04 · lines 32.24.
+      // Measured 2026-08-10 at E8.3 HEAD with ADR 0022 Amendment 5 — the
+      // contested-code fix, substring key matching, and the endpoint/gate/
+      // fail-closed cover that `onboarding-credentials.spec.ts` added:
+      // statements 32.32 · branches 27.23 · functions 33.37 · lines 32.46.
       //
       // Set against HEAD, not an intermediate commit. The compliance review
       // caught the previous entry asserting a figure the tree no longer had,
@@ -103,10 +103,10 @@ export default defineConfig({
       // the reason and the command to fix it. Do NOT lower these to make a
       // database-less run pass.
       thresholds: {
-        statements: 31.9,
-        branches: 26.9,
-        functions: 32.9,
-        lines: 32.1,
+        statements: 32.2,
+        branches: 27.1,
+        functions: 33.2,
+        lines: 32.3,
       },
     },
   },

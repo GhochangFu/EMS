@@ -22,40 +22,67 @@ import type { OnboardingDraft } from "@bms/shared";
  */
 
 /**
- * Key names whose values are secrets. Compared **normalised** — lowercased with
- * separators removed — so `Password`, `pwd`, `API_KEY` and `client-secret` are
- * all caught by one entry each.
+ * Fragments that mark a value as a secret, matched as a **normalised substring**
+ * — lowercased with separators dropped. Amendment 4 required an exact
+ * normalised match, which the fifth review showed still leaked every compound
+ * name: `mqttPassword`, `mqtt_username`, `snmpCommunity`, `authPassword`,
+ * `privPassword`, `keystorePassword`, `caCert`, `sasToken`, `sharedAccessKey`.
+ * `rtus[].config` is free-form and `redactDraftForLlm` composes the client
+ * redactor, so those reached the model as well as the client.
+ *
+ * Substring matching is safe **here** in a way it was not for the chat
+ * detector: this runs over structured key names from a known schema, not free
+ * English. Checked against every field in `draftLocationSchema`,
+ * `draftRtuSchema`, `draftAssetSchema`, `draftPointKeySchema` and
+ * `draftAssetPointSchema` — none contains one of these as a normalised
+ * substring except `credentialsSet`, which is a status flag the UI needs and is
+ * excluded by name below.
  */
-const SECRET_KEYS = new Set(
-  [
-    "password",
-    "passwd",
-    "pwd",
-    "passphrase",
-    "username",
-    "login",
-    "apiKey",
-    "apiSecret",
-    "accessToken",
-    "refreshToken",
-    "token",
-    "secret",
-    "clientSecret",
-    "clientCert",
-    "clientCertificate",
-    "clientKey",
-    "community",
-    "communityString",
-    "authKey",
-    "privKey",
-    "privateKey",
-    "credentials",
-  ].map(normaliseKey),
-);
+const SECRET_FRAGMENTS = [
+  "password",
+  "passwd",
+  "pwd",
+  "passphrase",
+  "secret",
+  "token",
+  "credential",
+  "apikey",
+  "authkey",
+  "privkey",
+  "privatekey",
+  "sharedaccesskey",
+  "accesskey",
+  // A CA key is a private key. Enumerated rather than matching a bare "key",
+  // which would swallow `pointKey`, `sourceDataKey` and `assetPoints[].pointKey`
+  // — point keys are core wizard vocabulary, and the chat detector's history is
+  // that over-matching destroys the product's own data.
+  "cakey",
+  "signingkey",
+  "encryptionkey",
+  "community",
+  "cert",
+  "username",
+  "login",
+].map(normaliseKey);
+
+/**
+ * Keys that contain a fragment but carry no secret. `credentialsSet` is a
+ * boolean the drawer renders as the "Set" badge — redacting it would break the
+ * UI while protecting nothing.
+ */
+const NON_SECRET_KEYS = new Set(["credentialsSet", "credentialsset"].map(normaliseKey));
 
 /** Lowercase and drop separators, so one entry covers every spelling. */
 function normaliseKey(key: string): string {
   return key.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function isSecretKey(key: string): boolean {
+  const normalised = normaliseKey(key);
+  if (NON_SECRET_KEYS.has(normalised)) {
+    return false;
+  }
+  return SECRET_FRAGMENTS.some((fragment) => normalised.includes(fragment));
 }
 
 type EncryptedBlob = { c: string; iv: string };
@@ -68,6 +95,16 @@ type DraftWithSecrets = OnboardingDraft & {
  * Identity used to key `_secrets`. `code` is required by `draftRtuSchema` and is
  * what `onboarding-commit.service.ts` writes to `bms.rtus`, so it is the same
  * identity the credential ultimately belongs to.
+ *
+ * **Returns `null` unless exactly one RTU claims the code.** Amendment 4 put
+ * that check in `reconcileSecrets` alone, which the fifth review showed is the
+ * one place it is not needed: `mergeDraft` reconciles *before* attaching, and
+ * commit reads positionally with no merge in between. Two codes differing only
+ * by trimmable whitespace — `draftRtuSchema.code` has no regex, and JS `.trim()`
+ * eats NBSP, invisible in the preview drawer — aliased to one key, so a second,
+ * attacker-chosen RTU was handed the first one's real broker password at commit
+ * with `credentialsSet` still showing unset. Enforcing it here makes every
+ * caller fail closed: 400 from the endpoint, a throw on attach, `null` on read.
  */
 function rtuCodeAt(draft: unknown, rtuIndex: number): string | null {
   if (typeof draft !== "object" || draft === null) {
@@ -77,8 +114,20 @@ function rtuCodeAt(draft: unknown, rtuIndex: number): string | null {
   if (!Array.isArray(rtus)) {
     return null;
   }
-  const code = rtus[rtuIndex]?.code;
-  return typeof code === "string" && code.trim().length > 0 ? code.trim() : null;
+  const code = normaliseCode(rtus[rtuIndex]?.code);
+  if (code === null) {
+    return null;
+  }
+  const claimants = rtus.filter((rtu) => normaliseCode(rtu?.code) === code).length;
+  return claimants === 1 ? code : null;
+}
+
+function normaliseCode(code: unknown): string | null {
+  if (typeof code !== "string") {
+    return null;
+  }
+  const trimmed = code.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 /**
@@ -142,7 +191,7 @@ function scrubSecrets(value: unknown): unknown {
   if (typeof value === "object" && value !== null) {
     const out: Record<string, unknown> = {};
     for (const [key, val] of Object.entries(value)) {
-      if (SECRET_KEYS.has(normaliseKey(key))) {
+      if (isSecretKey(key)) {
         out[key] = "[REDACTED]";
       } else {
         out[key] = scrubSecrets(val);
@@ -165,7 +214,8 @@ export function attachEncryptedCredentials(
   if (key === null) {
     // Fail closed: storing under a positional key is what M4 was.
     throw new Error(
-      `Cannot store credentials for RTU ${rtuIndex}: the draft RTU has no code to key them by`,
+      `Cannot store credentials for RTU ${rtuIndex}: the draft RTU has no code to key them by, ` +
+        "or another RTU claims the same code",
     );
   }
   next._secrets = next._secrets ?? {};
@@ -233,7 +283,7 @@ export function reconcileSecrets(
 
   const seen = new Map<string, number>();
   for (const rtu of next.rtus) {
-    const code = typeof rtu?.code === "string" ? rtu.code.trim() : "";
+    const code = normaliseCode(rtu?.code) ?? "";
     if (code.length > 0) {
       seen.set(code, (seen.get(code) ?? 0) + 1);
     }
@@ -253,7 +303,7 @@ export function reconcileSecrets(
 
   if (options.deriveCredentialsSet) {
     next.rtus = next.rtus.map((rtu) => {
-      const code = typeof rtu?.code === "string" ? rtu.code.trim() : "";
+      const code = normaliseCode(rtu?.code) ?? "";
       const held = code.length > 0 && kept[code] !== undefined;
       return held === Boolean(rtu.credentialsSet) ? rtu : { ...rtu, credentialsSet: held };
     });

@@ -52,6 +52,22 @@ export function runOnboardingRedactionTests(): void {
     "Username",
     "token",
     "secret",
+    // Compound names, found by the fifth review. Amendment 4 matched the
+    // normalised key EXACTLY, so every one of these still reached the client
+    // and — because `redactDraftForLlm` composes the client redactor — the
+    // model. `mqtt*` and `snmp*` are the spellings this product's own adapters
+    // and the SNMP domain actually use.
+    "mqttPassword",
+    "mqtt_username",
+    "snmpCommunity",
+    "authPassword",
+    "privPassword",
+    "keystorePassword",
+    "caCert",
+    "caKey",
+    "sasToken",
+    "sharedAccessKey",
+    "credential",
   ]) {
     const config = { [key]: "hunter2", host: "broker.example.com" };
     const asClient = JSON.stringify(redactDraftForClient({ rtus: [{ code: "R1", config }] }));
@@ -76,6 +92,29 @@ export function runOnboardingRedactionTests(): void {
     assert(!metaClient.includes(leaked), `client must redact meta secret ${leaked}`);
   }
   assert(metaClient.includes("Site"), "scrubbing meta leaves the rest of the entry intact");
+
+  // Substring matching must not destroy the fields the UI needs. `credentialsSet`
+  // contains "credential" and is a status flag, not a secret — the drawer renders
+  // it as the "Set" badge.
+  const keptFields = redactDraftForClient({
+    location: { code: "SITE", name: "Site", province: "Odisha" },
+    rtus: [
+      {
+        code: "R1",
+        displayName: "RTU 1",
+        protocol: "mqtt",
+        credentialsSet: true,
+        config: { host: "broker", port: 8883, tls: true, topic: "a/b" },
+      },
+    ],
+    pointKeys: [{ code: "kw", name: "Active power", unit: "kW" }],
+  });
+  assert(keptFields.rtus?.[0]?.credentialsSet === true, "credentialsSet survives the scrub");
+  assert(
+    JSON.stringify(keptFields).includes("broker") &&
+      JSON.stringify(keptFields).includes("Active power"),
+    "ordinary draft fields are untouched",
+  );
   assert(
     JSON.stringify(redactDraftForClient({ rtus: [{ code: "R1", config: {} }] })).length > 0,
     "an absent meta is not an error",
@@ -138,6 +177,40 @@ export function runOnboardingRedactionTests(): void {
     { deriveCredentialsSet: true },
   );
   assert(contested._secrets === undefined, "a contested code drops the secret rather than guess");
+
+  // Codes that differ only by trimmable whitespace alias to ONE key. Found by
+  // the fifth review: `reconcileSecrets` was the only place that checked for a
+  // contested code, and it runs BEFORE `attachEncryptedCredentials` in
+  // `mergeDraft` — while commit reads positionally with no merge in between. So
+  // the invariant held where it was tested and nowhere it was needed, and RTU 1
+  // (`config.host` attacker-chosen) received RTU 0's real broker password.
+  // `draftRtuSchema.code` has no regex and no trim, and JS `.trim()` eats NBSP,
+  // which is invisible in the preview drawer.
+  const aliased = {
+    rtus: [
+      { code: "PHE-01", config: {} },
+      { code: "PHE-01 ", config: {} },
+      { code: "PHE-01 ", config: {} },
+    ],
+  };
+  assert(rtuSecretKey(aliased, 0) === null, "a contested code has no key, even for its first claimant");
+  let aliasThrew = false;
+  try {
+    attachEncryptedCredentials(structuredClone(aliased), 0, CT, IV);
+  } catch {
+    aliasThrew = true;
+  }
+  assert(aliasThrew, "credentials cannot be attached under a contested code");
+  const preAliased = {
+    ...structuredClone(aliased),
+    _secrets: { "PHE-01": { c: CT.toString("base64"), iv: IV.toString("base64") } },
+  };
+  for (const index of [0, 1, 2]) {
+    assert(
+      readEncryptedCredentials(preAliased, index) === null,
+      `RTU ${index} must not read a credential stored under a contested code`,
+    );
+  }
 
   // Renaming is the same case as deleting: unrecoverable, and that is correct.
   const renamed = reconcileSecrets(
