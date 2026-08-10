@@ -40,17 +40,59 @@ raw rows:
 | `reports.service.ts:233` | none (bare `avg`) |
 | `map.service.ts`, `telemetry.service.ts`, `rules.service.ts` | raw reads |
 
-That is affordable today and will not be. Measured on the pilot database
-(TimescaleDB **2.29.1** / PostgreSQL 16.14, 621,043 rows, 49 point keys, 78
-assets, five days):
+That is affordable today and will not be.
 
-- `energySummary`' hourly rollup: **144.7 ms cold / 32.7 ms warm**.
-- The same result from a 1-minute continuous aggregate: **11.8 ms cold /
-  5.4 ms warm** — 12× and 6×.
+### Read timings, and what each one actually measures
+
+**Every figure below names its query shape, dataset and cache state, because two
+of them do not compare to each other and an unlabelled pair in this section
+already caused one misreading.** The ratios are real; they are not a single
+headline number.
+
+**Measurement A — 2026-08-10, before the compose pin recreated the container.**
+Pilot database, TimescaleDB 2.29.1 / PostgreSQL 16.14, **621,043** rows, 49 point
+keys, 78 assets, ~5 days. Query: an **hourly rollup over the whole dataset**
+(169 buckets), where the aggregate side reads `_1m` and folds it **up** to hourly.
+First run vs second run in one session:
+
+| Path | First run | Second run |
+|------|-----------|------------|
+| raw `date_trunc('hour', …)` | **144.7 ms** | **32.7 ms** |
+| folded up from `_1m` | **11.8 ms** | **5.4 ms** |
+
+**Measurement B — 2026-08-10, after `docker compose up -d --build api`**, which
+also recreated `bms-postgres-1` (the image tag changed), so `shared_buffers`
+started cold. **623,752** rows. Query: the **shipped `energySummary` paths**,
+which read the level whose bucket matches the display bucket **directly** rather
+than folding a finer level up. Two runs each, after a discarded warm-up:
+
+| Window → level | raw | aggregate |
+|----------------|-----|-----------|
+| 24 h → `_1m` (1020 buckets) | 34.4 / 42.2 ms | 22.6 / **15.5 ms** |
+| 7 d → `_1h` (26 buckets) | **92.2 ms** | **20.1 ms** |
+
+Both returned identical bucket counts, so this is a like-for-like on result, not
+on query shape with A.
+
+**A and B are not the same measurement.** A folds `_1m` up to hourly; B reads
+`_1h` directly. A ran on a warm instance; B on a freshly recreated one. Treating
+A's 12×/6× as "the" speed-up and then re-measuring B invites the conclusion that
+this ADR overclaimed — it did not, it under-labelled. **The defensible statement
+is 2–6× on this dataset depending on window and cache state, widening with
+volume**, because the raw side scales with row count and the aggregate side does
+not.
+
+**The real-time branch is cheap, measured rather than assumed.** A 24 h window
+including the un-materialized tail was **15.6 ms**; the same span ending an hour
+before `now()`, entirely materialized, was **12.9 ms**, against **39.1 ms** for
+raw over that settled span. So decision 4's live branch costs ~2.7 ms at a
+2-minute watermark lag — it is not where the time goes, and it should not be
+traded away for speed.
 
 `F4.8` targets 5,000 meters at 1 Hz. That is ~432 M raw rows/day against
-~7.2 M at one-minute granularity. The read cost above scales with the raw row
-count; the aggregate cost does not.
+~7.2 M at one-minute granularity. The raw read cost scales with that row count;
+the aggregate cost does not, which is the argument that survives whichever
+measurement above you take.
 
 `F4.1` is chosen now because it is Wave 0, P0, has no dependencies, and is the
 one ⭐ enabler on the board whose absence is *already* priced into every
