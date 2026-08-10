@@ -11,8 +11,10 @@ closed by measuring rather than by deciding, and both closed *against* the
 draft's own recommendation: facts 13–15 replaced the proposed `_1m`/`_5m` ladder
 (decisions 3 and 4) and withdrew the proposed level selector (decision 8). The
 gate settled the one that measurement could not — `drop_after = 2 years`,
-confirmed, which under decision 4 now sets the horizon for raw, `_1m` and `_5m`
-together.
+confirmed. Under decision 4 it governs raw at **730 days** and the two fine
+aggregate levels at **735**: the five-day margin is required rather than
+cosmetic, because equal horizons still let the two independent policy schedules
+produce the forbidden state briefly.
 
 **One question is routed outward rather than answered here:** whether any Ion
 Exchange compliance obligation needs sample-level effluent data beyond two
@@ -147,11 +149,26 @@ consequence of the index elimination in fact 1, on the path
 **10. Every aggregate level can be compressed and can carry its own retention
 policy.** `add_retention_policy('telemetry.…_1m', …)` returns a job id.
 `ALTER MATERIALIZED VIEW … SET (timescaledb.compress = true)` works with
-`materialized_only = false` left intact, defaulting `compress_orderby` to
-`bucket,asset_id,point_key`. A compressed `_1m` over real data: heap 7464 kB →
-160 kB (46.7×), **total 12 MB → 2072 kB (5.84×)** — far worse than raw's 29×
-because an aggregate **keeps** its indexes where a raw chunk loses them. Reads
-stayed exact after compression (13.329768 kW both sides).
+`materialized_only = false` left intact.
+
+**Two measurements, and the settings decide which applies** — labelled because
+the first was taken on defaults and the migration does not ship defaults, which
+is exactly the unlabelled-figure error ADR 0023 had to correct once already:
+
+| `_1m` over real pilot data | heap | total |
+|---|---|---|
+| **defaults** (`compress_orderby = bucket,asset_id,point_key`, no segmentby) | 7464 kB → 160 kB (46.7×) | 12 MB → 2072 kB (**5.84×**) |
+| **as shipped** (`segmentby = asset_id, point_key`, `orderby = bucket DESC`) | 7592 kB → 288 kB (26.4×) | 12 MB → 1640 kB (**7.51×**) |
+
+**The shipped settings compress the heap roughly half as well and the total
+better**, which is not a contradiction: `segmentby` splits the data into more,
+smaller per-series batches — less runway for the column encoders — while
+shrinking the index that dominates the total. `7.51×` is the figure decision 4's
+storage numbers derive from, because it is the configuration that ships.
+
+Either way an aggregate compresses far worse than raw's 29×, because it **keeps**
+its indexes where a raw chunk loses them. Reads stayed exact after compression
+under both settings (13.326461 kW aggregate and raw, on the shipped ones).
 
 **11. Nothing can read `_1m` older than 47 hours, and nothing reads `_5m` at
 all.** This is what the retention ladder actually turns on, so it was
@@ -213,8 +230,11 @@ The partial drop is what a policy actually does, and it is fact 13.
 1. **Migration `0028_compression_retention.sql`** (journal idx 28), forward-only
    and additive, carrying all the policy DDL. Transaction-safe per fact 2.
 
-   **No `compress_chunk` call in the migration.** Compressing the three
-   existing old chunks is left to each policy's first scheduled run.
+   **No `compress_chunk` call in the migration.** Compressing whatever old chunks
+   exist is left to each policy's first scheduled run — the count is not fixed,
+   it depends on when the migration is applied and what history is present
+   (on the dev database it was two compressed and a third dropped by retention;
+   Amendment 1 fact 19).
    `compress_chunk` inside a transaction is **untested** — fact 2 covers the
    `ALTER` and the two policy functions, not that — and this ADR states it as
    untested rather than implying it is safe.
@@ -240,14 +260,25 @@ The partial drop is what a policy actually does, and it is fact 13.
    therefore create a window — 90 days to 2 years — in which raw holds the data,
    the aggregate silently returns nothing, and no shipped tool can repair it.
 
-4. **`_1m` and `_5m`: compress after 7 days, `drop_after = 2 years` — the same
-   horizon as raw.** This is decision 3 applied. It bounds both levels (~350 MB
-   and ~74 MB compressed steady-state at pilot volume, against ~175 MB/year and
-   ~37 MB/year growing without limit), and because the horizons move together
-   there is **no state in which raw holds a period that its own fine aggregates
-   do not** — the irreparable window in decision 3 never opens. The
-   irreversibility is then exactly raw's, which decision 2 already accepts,
-   rather than a second and worse one.
+4. **`_1m` and `_5m`: compress after 7 days, `drop_after = 735 days` — raw's 730
+   plus a five-day margin.** This is decision 3 applied, and the margin is the
+   part that matters.
+
+   **Not the same 730 as raw, and not "the same horizon" loosely.** Equal
+   horizons would still produce the forbidden state — raw holding a period its
+   aggregate does not — because the two policies run on **independent schedules**
+   and either may fire first. The window would be hours rather than years, but
+   facts 13 and 14 make even a transient occurrence unreadable *and*
+   unrepairable. Strictly greater is the invariant; 735 is the smallest round
+   margin that satisfies it, and the surviving direction (aggregate briefly
+   outlives raw) is the safe one — it is what `_1h` and `_1d` do permanently.
+
+   The five days are scheduling margin, not a meaningful retention figure.
+   Both test layers enforce the *inequality*, not the constant.
+
+   It bounds both levels at roughly **272 MB and 57 MB** compressed
+   steady-state at pilot volume (from fact 10's shipped-settings 7.51×), against
+   ~1.0 GB/year and ~213 MB/year growing without limit uncompressed.
 
 5. **`_1h` and `_1d`: no retention policy, and not compressed.** ADR 0023
    decision 7 forbids dropping them and this ADR does not overturn it. They are
@@ -259,9 +290,26 @@ The partial drop is what a policy actually does, and it is fact 13.
 6. **`packages/db/src/refresh-aggregates.ts` gains a lower bound, and that is in
    scope here.** Not a follow-up. Fact 7 makes its current `NULL → now()`
    destructive from the first time `drop_after` runs, and shipping retention
-   without this ships a documented tool that deletes the archive. It refreshes
-   from `now() - <horizon>` — the level's own retention horizon, or raw's,
-   whichever is shorter — and refuses to go earlier.
+   without this ships a documented tool that deletes the archive.
+
+   **The bound is `min(range_start)` over raw's chunks — derived, not
+   configured.** An earlier draft of this decision said "`now() - <horizon>`, the
+   level's own retention horizon or raw's, whichever is shorter, and refuses to go
+   earlier". That is a **second copy of the retention interval**, free to drift
+   from the policy that actually governs it, and the shipped code argues against it
+   in a comment. Raw's own chunk list cannot drift from raw, so the invariant is
+   expressed once: *never refresh earlier than the oldest range raw can still
+   account for.*
+
+   It is the chunk boundary rather than `min(time)` deliberately — a chunk is the
+   unit retention drops, so `range_start` is the earliest instant raw could still
+   hold data for, and `min(time)` would sit later inside a live chunk and permit
+   deleting aggregate rows for buckets raw may yet receive late arrivals into.
+
+   There is also no "refuses to go earlier" branch, because with a derived bound
+   there is no caller-supplied range to refuse: the script takes no window
+   argument. On a database with no raw chunks at all it returns early rather than
+   refreshing — a fresh install, where every aggregate is legitimately empty.
 
 7. **A probe-based test pair proves fact 6 and fact 7, because CI cannot.**
    `db:seed` inserts **zero** telemetry rows, so the `db:refresh-aggregates`
@@ -277,11 +325,17 @@ The partial drop is what a policy actually does, and it is fact 13.
    An earlier draft made it decision 8, because facts 13 and 14 describe a real
    silent-failure class: a level whose data has been dropped returns *empty*, not
    an error. Decision 4 closes it at the source instead. With every fine level
-   held for two years against a maximum read reach of 47 hours (`_1m`) and 31
-   days (`_1h`, via the report path), the horizon exceeds the deepest reachable
-   window by more than an order of magnitude, and no widening of
-   `parseEnergyWindow`'s 168-hour cap that anyone would plausibly make gets near
-   it.
+   held for two years against a maximum `_1m` read reach of **47 hours**, the
+   horizon exceeds the deepest reachable window by more than two orders of
+   magnitude, and no widening of `parseEnergyWindow`'s 168-hour cap that anyone
+   would plausibly make gets near it.
+
+   The report path is not a counterexample even though its `start` is unbounded
+   (fact 11): its 31 days is a cap on window *duration*, not on how far back the
+   window may sit, so it can reach arbitrarily old data — and that is precisely
+   why it buckets by hour and lands on `_1h`, which carries **no retention
+   policy at all** under decision 5. The unbounded reach is safe because the
+   level it reaches has no horizon, not because the reach is small.
 
    So a guard here would be a test for a gap the horizon already closed, plus
    dead code with one contrived caller. `point-aggregates.ts` still owes the
@@ -333,7 +387,8 @@ present in the pinned `2.29.1-pg16` image — no new licence surface.
 
 ## Consequences
 
-- **Raw storage becomes bounded** where it was not: ~12.8 GB/year uncompressed
+- **Raw storage becomes bounded** where it was not: ~11.8 GB/year uncompressed
+  (ADR 0023's figure, kept rather than re-derived so the two ADRs agree)
   → roughly 440 MB/year compressed (fact 1's total ratio), capped at two years.
 - **A read regression on one path, accepted**: single-sample reads against
   compressed chunks cost ~2.5× more (fact 9). The affected sites read recent
@@ -409,19 +464,59 @@ effect" rather than "this query is wrong". The suite now asserts the catalog
 shape itself first, so a future rename surfaces as its own failure instead of
 making every other assertion vacuous.
 
-**19. Retention and compression both fired on their first run, and did exactly
-what fact 12 predicted.** Retention dropped the stale empty `2020-01-01` chunk
-immediately — it is older than 730 days — and left all seven future-dated chunks
-in place, because `drop_after` only ever collects chunks older than its cutoff.
-Compression compressed the two chunks past 7 days (`2026-06-01`, `2026-07-01`)
-and left the four recent ones alone.
+**19. ~~Retention and compression both fired on their first run.~~ CORRECTED —
+one of the six new policies failed on its first run, and this fact asserted
+otherwise.** See Amendment 2. What is accurate: on **raw**, retention dropped the
+stale empty `2020-01-01` chunk immediately (older than 730 days) and left all
+seven future-dated chunks in place, because `drop_after` only ever collects chunks
+older than its cutoff; and compression compressed the two chunks past 7 days
+(`2026-06-01`, `2026-07-01`), leaving the four recent ones alone. That much is
+fact 12 confirmed. The claim about the *aggregate* policies was wrong.
+
+**20. Decision 6's mechanism was reversed after drafting, and this ADR carried the
+old text.** Caught by the 2026-08-10 compliance review, not by me. The draft
+specified the bound as `now() - <horizon>`; what shipped derives it from raw's
+chunk list, the shipped code argues against the draft's form in a comment, and
+`tests/adr-0024-retention-bounds.test.ts` asserts the draft's form must *not*
+appear. Decision 6 is now rewritten to the shipped mechanism.
+
+Worth naming as its own fact rather than a silent edit: this ADR already recorded
+two reversals of its own recommendations (facts 13–15, decision 8) and was
+carrying a **third, unrecorded** one. An ADR that documents its corrections
+selectively is the failure this repo keeps recording, and it is more likely
+precisely in a document that has already corrected itself twice and reads as
+scrupulous.
+
+**21. `F4.2` removed CI's only execution of `refresh_continuous_aggregate`, and
+the pipeline could not notice.** Also from the compliance review.
+
+`db:seed` inserts zero telemetry rows, so a CI database has **no raw chunks** —
+and decision 6's derived bound returns early in exactly that case. Before this
+branch the CI step issued four no-op refreshes; after it, none. The shipped SQL
+string was executed by nothing, so a bad cast or a typo in it would ship green,
+and the step's stated justification — "an unexercised script rots" — had quietly
+stopped applying to the statement that matters.
+
+Fixed by inserting **one** row before the step. Not to make anything non-vacuous
+— the suites own their fixtures — but so the statements execute at all. The
+general lesson is the one ADR 0023 decision 5 already had to retract a version of:
+a CI step that runs is not the same as a CI step that exercises anything.
 
 ### The defect this uncovered in `F4.1`'s suite
 
-`main` was **red on `point-aggregates.integration.test.ts`** before this branch
-existed — measured at `9b86a0f`: `energySummary("24h").totalKwh` 134.66 against a
-raw query's 133.83. The failure message blames the `bucket`-versus-`time`
-predicate of ADR 0023 Amendment 1, and that is not the cause.
+`point-aggregates.integration.test.ts` was **failing on `main`** before this
+branch existed — measured at `9b86a0f`: `energySummary("24h").totalKwh` 134.66
+against a raw query's 133.83. The failure message blames the
+`bucket`-versus-`time` predicate of ADR 0023 Amendment 1, and that is not the
+cause.
+
+**On a database with accumulated history.** This does *not* contradict the `F4.1`
+row's "CI green on the merge commit": a CI database is created fresh each run, so
+the orphans described below have never existed there and the suite passes. The
+defect only manifests where the suite has run before — a developer's stack, or
+the pilot. That is worth stating precisely, because "red on `main`" and "CI green
+on `main`" are both true of the same commit and the apparent contradiction is
+what would otherwise get re-litigated later.
 
 `assertEnergySummaryMatchesRaw` inserts a `point_key = 'kw'` fixture, **refreshes
 the production `_1m`/`_5m`/`_1h` over it** so the comparison is not vacuous, and
@@ -448,12 +543,149 @@ the three levels it materialised, finest first, and reports to stderr rather tha
 throwing — rethrowing from a `finally` would replace a real assertion failure
 with a cleanup error, and swallowing silently would leave the orphans.
 
+## Amendment 2 — the review round, 2026-08-10
+
+Two reviews (`migration-reviewer`, `agents-compliance-reviewer`) found **one
+data-loss path in shipped code**, **three false claims in this ADR**, and a
+latent trap in the migration. All are corrected above and here. The pattern worth
+naming: every one of them is in the *reasoning around* a measurement rather than
+in a measurement itself, and this ADR's care with the measurements is probably
+what made the surrounding prose feel already-checked.
+
+**22. The bound was applied to the wrong relation for three of the four levels —
+a real path to losing the permanent archive.**
+
+Decision 6 bounds each refresh at "the oldest range raw can still account for",
+and the first implementation computed **one** floor from `telemetry.point_values`
+and applied it to all four levels. That is correct only for `_1m`. The ADR 0023
+chain is hierarchical: `_5m` reads `_1m`, `_1h` reads `_5m`, `_1d` reads `_1h`.
+
+The failure it permits is the one the bound exists to prevent. TimescaleDB policy
+jobs fail and lag **individually** (fact 23 is a live instance), so raw's
+retention can run while `_1m`'s does not. Raw's floor then sits *older* than
+`_1m`'s data, refreshing `_5m` from raw's floor recomputes it over a range `_1m`
+no longer covers, and fact 7 deletes those rows — then `_1h` from an emptied
+`_5m`, then `_1d`. The last two are the forever-archive of ADR 0023 decision 7,
+and fact 14 says nothing rebuilds them. The same cascade opens with no job failure
+at all if anyone raises raw's `drop_after` — which this ADR advertises as "two
+statements, no migration" — without raising the aggregates'.
+
+Fixed: each level is bounded by **its own source's** oldest surviving chunk.
+Aggregate sources resolve through `materialization_hypertable_name`, because a
+continuous aggregate's *chunks* are catalogued under the materialization
+hypertable while its *policies* are catalogued under the view name (fact 18) —
+two different answers to "what is this relation called", and using the wrong one
+returns NULL, which this bound would read as "the source is empty".
+
+**It had not bitten yet, and only by luck of arithmetic.** Raw uses 1-day chunks
+and the four materialization hypertables use **10-day** chunks (measured), so with
+730/735-day retention the aggregates' effective floor sits ~14 days older than
+raw's — a margin that masks the bug in steady state. The real dev database
+already shows the divergence the bug needs (raw's oldest chunk `2026-06-01`
+against `_1m`'s `2026-08-05`), and the only reason nothing was lost is that raw
+holds **zero rows** before `2026-08-05` — those June and July chunks are empty
+leftovers from deleted test fixtures.
+
+**Why no test caught it, which matters more than the bug.** The probe ladder was
+raw → `_1m` — exactly the one level where the shipped bound was correct. A
+single-level probe cannot express a cascade. The suite now builds
+`f42_probe_5m` over `f42_probe_1m` and `assertPerLevelFloorProtectsTheCascade`
+drops the fine level's old chunk while raw still holds the range, then asserts
+both halves: the source's own floor preserves `_5m`, and **raw's floor destroys
+it**. The static guard also now requires each level to declare its own source.
+
+**23. Fact 19 was false: the `_5m` compression policy failed on its first run,
+and the cause is a stack misconfiguration this ADR's own Consequences predicted.**
+
+```
+job_id 1016 | policy_compression | _materialized_hypertable_19 (_5m)
+  last_run_status = Failed, last_successful_finish = -infinity, total_failures = 1
+  XX000: failed to start job Job 1016 ("Columnstore Policy [1016]")
+```
+
+Four sibling jobs succeeded in the same instant (`10:25:57`). The image ships
+`timescaledb.max_background_workers = 16` while PostgreSQL's own
+`max_worker_processes` stays at its default **8**, so the worker budget cannot
+supply the workers TimescaleDB is configured to start — and migration `0028` took
+the policy count from 6 to **12**, which is what made a latent shortfall bite.
+
+`CALL run_job(1016)` succeeds with no error, so the policy body was never the
+problem; it was worker starvation. Nothing was actually lost either way — the
+aggregates' 10-day chunks are not yet old enough for a 7-day threshold, so both
+job 1016's failure and job 1014's "Success" compressed exactly nothing.
+
+Fixed in `docker-compose.yml` with `-c max_worker_processes=24`, verified applied
+(`SHOW max_worker_processes` → 24, 626,923 rows intact across the restart). 24
+rather than 16 because that setting is also shared with parallel query and
+logical replication. **What this does not prove:** that concurrent scheduled runs
+never starve again — that needs a scheduled window, not a forced run. The
+verification that matters operationally remains per-job `job_stats`, which is
+precisely what the Consequences section said and what I then failed to do before
+asserting fact 19.
+
+**24. Refreshing across a compressed aggregate chunk works, including when it
+must write.** The migration claimed this "does not need to be measured at these
+margins". That reasoning covered the *scheduled* policies (`start_offset` 3 h and
+12 h against a 7-day threshold) and **not** `pnpm db:refresh-aggregates`, which
+spans the whole retained range and will cross compressed aggregate chunks from
+about 2026-08-22 on this database — i.e. the operator's documented recovery tool
+was about to start taking an untested path.
+
+Measured on a probe with the shipped compression settings: a refresh across a
+compressed aggregate chunk returns no error, leaves the data exact (2,881 rows,
+sum 339,958.000 before and after) and leaves the chunk **compressed**. Forcing a
+write — a new raw row inside the compressed range — updated the aggregate
+correctly (`sum_value` 100 → 5100, `sample_count` 1 → 2) with the chunk still
+compressed. Neither feared outcome occurs: no error, and no wholesale
+decompression.
+
+**25. `SET LOCAL lock_timeout` was justified backwards, and the guard encoded the
+error.** The comment said `SET LOCAL` "cannot leak into the session that Drizzle's
+migrator reuses for later files". Drizzle wraps **the whole run** in one
+transaction — `session.transaction()` opens outside the migration loop — so
+`SET LOCAL` reaches every migration applied after this one in the same run.
+`0028` is last today, so nothing is broken; the first migration added after it
+would have silently inherited a 5-second `lock_timeout` on fresh-database runs
+(CI, a new dev machine) but not on incremental applies to the pilot — an
+environment-dependent trap. The file now resets it before ending, the guard
+asserts the reset, and both comments state the real reason.
+
+Same transaction scope corrects **fact 16**: the ACCESS EXCLUSIVE lock is held
+until the transaction *commits*, so 10.7 ms is the blocking window only when
+`0028` is applied alone. Shipped alongside later migrations, it is held for the
+whole run.
+
+**26. The Consequences bullet on compressed reads had the right conclusion and
+the wrong reason.** It said the affected sites "read recent data, which is never
+compressed at a 7-day threshold". Four production reads have **no time predicate
+at all** — `dashboard.service.ts:46`, `:142`, `:413` and `map.service.ts:94` do
+`DISTINCT ON (asset_id) … ORDER BY asset_id, time DESC` — so they fan out across
+every chunk, compressed ones included.
+
+The conclusion survives for a better reason, verified with `EXPLAIN (ANALYZE,
+BUFFERS)`: each compressed chunk costs **1 buffer** through a `ColumnarScan` over
+an auto-built index on `(asset_id, point_key, …)`, against **84–171 buffers** for
+each uncompressed chunk. Compression makes those reads *cheaper*. The 2.3 → 5.9 ms
+single-point figure in fact 9 stands for its own query shape and should not be
+generalised to this one.
+
 ## Promotion follow-ups (AGENTS.md §10)
 
 Owed in a **separate `chore(agents):` change** (§9.10), not bundled with the
 feature, and per §10.1 for **this ADR alone**:
 
 - AGENTS.md status line gains ADR 0024.
+
+- **`AGENTS.md` §2, both rows — and this was missing from the list until the
+  2026-08-10 compliance review added it.** `:159` (*Telemetry aggregates*)
+  describes the four levels without a word about compression or retention, and §2
+  is where an agent learns what the aggregates *are*; `:160` (*Migrations*) names
+  the hypertable and its aggregates but not their policies. This is the **same
+  omission class** the ADR 0023 review caught, already recorded at
+  `docs/BACKLOG.md:602` — "the ADR's own follow-up list is incomplete… do not copy
+  it verbatim". Twice in two consecutive ADRs is a pattern in how I write these
+  lists, not bad luck: I route new rules to the section I was last editing (§4.4
+  here) and forget the section that introduces the subject.
 - **`AGENTS.md:265` (§4.4)** gains the per-level ladder beside
   `chunk_time_interval = 1 day`, and the decision 6 bound on refresh range.
 
@@ -483,5 +715,14 @@ feature, and per §10.1 for **this ADR alone**:
 - `docs/roadmap.md` gains an `F4.2` section; `docs/BACKLOG.md` flips the row and
   the §1 / §1b / §3 Mermaid / §5 markers.
 - `docs/client-requirements-as-is-report.md:191` ("Retention, compression,
-  aggregates" listed as the gap) and `:386`/`docs/platform-assessment-consolidated.md`
-  row A6 close out.
+  aggregates" listed as the gap) and `:386` (row **A6**) close out.
+
+- `docs/platform-assessment-consolidated.md` — **three lines, and "row A6" is not
+  one of them.** `A6` is the label used in the *client-requirements* doc above; the
+  assessment doc has no such row, so a sweep following the earlier draft of this
+  list would have found nothing and moved on. The real targets are `:291` and
+  `:450` (both "Timescale retention + aggregates" as outstanding effort) and —
+  the one that matters most — **`:431`, the risk register**: "Disk growth (no TS
+  retention) | Production outage | Retention policy in Phase A". That risk is
+  retired by this ADR, and a stale *risk* line is worse than a stale effort
+  estimate.
