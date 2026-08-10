@@ -2,16 +2,23 @@
 
 ## Status
 
-**Proposed (2026-08-10).** Backlog item `F4.2` (Wave 0, P0, effort "incl."),
-unblocked the same day by `F4.1` / ADR 0023. Awaiting the repo owner at the
+**Accepted (2026-08-10).** Backlog item `F4.2` (Wave 0, P0, effort "incl."),
+unblocked the same day by `F4.1` / ADR 0023. Accepted by the repo owner at the
 AGENTS.md §10 gate.
 
-**One point is open at the gate** — see [Open at the gate](#open-at-the-gate).
-The draft opened three; two were closed by measuring rather than by deciding,
-and both closed *against* the draft's own recommendation. Facts 13–15 replaced
-the proposed `_1m`/`_5m` ladder (decisions 3 and 4) and withdrew the proposed
-level selector (decision 8). The remaining question — `drop_after = 2 years` —
-is a compliance question, not an engineering one.
+**The draft opened three questions and the gate closed one.** The other two were
+closed by measuring rather than by deciding, and both closed *against* the
+draft's own recommendation: facts 13–15 replaced the proposed `_1m`/`_5m` ladder
+(decisions 3 and 4) and withdrew the proposed level selector (decision 8). The
+gate settled the one that measurement could not — `drop_after = 2 years`,
+confirmed, which under decision 4 now sets the horizon for raw, `_1m` and `_5m`
+together.
+
+**One question is routed outward rather than answered here:** whether any Ion
+Exchange compliance obligation needs sample-level effluent data beyond two
+years. It belongs in the client email already owed for `E5.1`, and the two-year
+fuse means nothing is at risk before it is answered — see
+[Open at the gate](#open-at-the-gate).
 
 `0020` stays reserved for the E8.1 encryption-at-rest retro. `0021` went to
 `F4.14`, `0022` to `E8.3` and `0023` to `F4.1`, so this ADR takes **`0024`**.
@@ -349,11 +356,97 @@ present in the pinned `2.29.1-pg16` image — no new licence surface.
   chunks and the 2020-01-01 chunk (fact 12) are not cleaned up here — they are a
   symptom of the unclamped ingest `sample.at`, which ADR 0023 already routed to
   `F1.7`. Retention will never collect the future ones.
-- **`compress_chunk` in a transaction stays unmeasured** (decision 1), as does
-  the lock level `ALTER TABLE … SET (timescaledb.compress)` takes on a live
-  `point_values` — the same class of unrehearsed lock ADR 0023 recorded for
-  `CREATE MATERIALIZED VIEW … WITH NO DATA`. Rehearse against `pg_locks` before
-  a pilot run.
+- **`compress_chunk` in a transaction stays unmeasured** (decision 1). The lock
+  level of `ALTER TABLE … SET (timescaledb.compress)` was the other item in this
+  bullet and is now measured — Amendment 1 fact 16, ACCESS EXCLUSIVE, 10.7 ms,
+  bounded by `SET LOCAL lock_timeout` in the migration.
+- **The compression path is only ever exercised on a database with history.** CI
+  builds a fresh database every run, so no chunk reaches 7 days and no policy ever
+  compresses anything there — a green pipeline says nothing about compressed-chunk
+  behaviour. Amendment 1 fact 17 is a case in point: it was found by running the
+  suite against a dev database where compression had already fired.
+
+## Amendment 1 — measured while building, 2026-08-10
+
+Four more facts, and one defect in another suite that this work uncovered. All
+after the gate, none changing a decision — but three of them contradicted
+something this ADR or its migration had assumed.
+
+**16. `ALTER TABLE … SET (timescaledb.compress …)` takes an ACCESS EXCLUSIVE lock
+on `telemetry.point_values`.** ADR 0023 recorded its own DDL's lock level as
+unmeasured and asked for a `pg_locks` rehearsal before a pilot run; this is that
+rehearsal, taken against the live dev stack with both the simulator and the MQTT
+ingest writing. The strongest lock there is — it blocks reads as well as writes.
+
+The work itself is catalog-only and took **10.7 ms**, so duration is not the
+hazard; **acquisition** is, because the `ALTER` waits behind every in-flight
+reader and blocks everyone arriving behind it. Migration `0028` therefore opens
+with `SET LOCAL lock_timeout = '5s'`: if the lock cannot be had, the migration
+fails and rolls back whole and is re-run at a quieter moment. A retryable failure
+beats an unbounded stall on the hot telemetry path.
+
+**17. `DELETE` from a compressed chunk works, and the chunk stays compressed.**
+Fact 4 only covered writes (`INSERT` and the ingest's `ON CONFLICT … DO UPDATE`).
+Deletes were never checked, and they turned out to be on the critical path: the
+first compression run compressed the `2026-06-01` chunk, which is where the
+`F4.1` suite's own fixture lives, and that suite's `cleanup()` deletes by
+`point_key`. The whole suite passed against the compressed chunk and the chunk
+was still compressed afterwards.
+
+**CI could never have found this.** Its database is created fresh each run, so no
+chunk is ever old enough for a 7-day compression policy to touch — the
+compression path is only ever exercised on a database with history.
+
+**18. The catalog lists continuous-aggregate policies under the *view* name, not
+the materialization hypertable.** `timescaledb_information.jobs` reports
+`telemetry.point_values_1m`, not `_timescaledb_internal._materialized_hypertable_18`
+— for refresh, compression and retention policies alike. The first version of
+`aggregate-retention.integration.spec.ts` resolved the materialization name and
+looked policies up under that, which matched nothing. It would have failed
+*safely* here (every lookup returned `undefined`, which the assertions treat as
+"no policy") but the failure would have read as "migration 0028 did not take
+effect" rather than "this query is wrong". The suite now asserts the catalog
+shape itself first, so a future rename surfaces as its own failure instead of
+making every other assertion vacuous.
+
+**19. Retention and compression both fired on their first run, and did exactly
+what fact 12 predicted.** Retention dropped the stale empty `2020-01-01` chunk
+immediately — it is older than 730 days — and left all seven future-dated chunks
+in place, because `drop_after` only ever collects chunks older than its cutoff.
+Compression compressed the two chunks past 7 days (`2026-06-01`, `2026-07-01`)
+and left the four recent ones alone.
+
+### The defect this uncovered in `F4.1`'s suite
+
+`main` was **red on `point-aggregates.integration.test.ts`** before this branch
+existed — measured at `9b86a0f`: `energySummary("24h").totalKwh` 134.66 against a
+raw query's 133.83. The failure message blames the `bucket`-versus-`time`
+predicate of ADR 0023 Amendment 1, and that is not the cause.
+
+`assertEnergySummaryMatchesRaw` inserts a `point_key = 'kw'` fixture, **refreshes
+the production `_1m`/`_5m`/`_1h` over it** so the comparison is not vacuous, and
+then deletes it from raw in a `finally` — with no follow-up refresh. That is a
+direct violation of the standing obligation ADR 0023 wrote into `0027`'s header
+and into `AGENTS.md` §4.4, by the suite that introduced it.
+
+Two orphaned buckets were found on the dev database: value exactly `50.0`,
+`sample_count` 1 — the fixture's minute 0, where the per-minute count is a single
+sample of `50 + 0 + 0`. One bucket at 50 kW over a `1/60` factor is **0.833
+kWh**, the gap exactly.
+
+It was self-poisoning rather than merely untidy, and **partly self-cleaning**,
+which is why it took this long to surface: each run's own refresh over
+`[base - 1h, now()]` recomputes those buckets against a raw table that is now
+empty there and deletes them — fact 7 doing the right thing by accident. Only
+orphans falling outside the *next* run's window survive, so failure depends on
+the gap between runs. That is the intermittency profile that gets re-run rather
+than diagnosed.
+
+Fixed here in its own commit, following the `F4.1` precedent for a pre-existing
+red on `main` (`typecheck:tests`, commit `a302d13`): the `finally` now refreshes
+the three levels it materialised, finest first, and reports to stderr rather than
+throwing — rethrowing from a `finally` would replace a real assertion failure
+with a cleanup error, and swallowing silently would leave the orphans.
 
 ## Promotion follow-ups (AGENTS.md §10)
 
