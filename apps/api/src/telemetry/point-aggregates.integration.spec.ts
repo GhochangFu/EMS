@@ -756,5 +756,57 @@ export async function assertEnergySummaryMatchesRaw(
        WHERE point_key = 'kw' AND asset_id = $1::uuid AND time >= $2::timestamptz`,
       [assetId, new Date(base).toISOString()],
     );
+
+    // ADR 0023's STANDING OBLIGATION, which this function was violating — and it
+    // is the one place in the repo that most had to honour it, because it is the
+    // only suite that deliberately materialises `point_key = 'kw'` rows into the
+    // PRODUCTION aggregates before deleting them.
+    //
+    // Diagnosed 2026-08-10 while building `F4.2`: this suite was leaving orphaned
+    // aggregate rows behind on every run — buckets readable in
+    // `telemetry.point_values_1m` with no raw rows under them. Two were found on
+    // the dev database (value exactly 50.0, sample_count 1: the fixture's minute
+    // 0, where `[1,5,17,40][0]` is a single sample of `50 + 0 + 0`).
+    //
+    // It was self-poisoning rather than merely untidy. The orphans inflate the
+    // aggregate side of this very comparison, so a later run fails by exactly one
+    // bucket's contribution — 50 kW / 60 = 0.833 kWh — and blames the
+    // `bucket`-vs-`time` predicate the message names. That is how `main` came to
+    // be red on this test with no code change: measured on `main` at 9b86a0f,
+    // 134.66 against 133.83.
+    //
+    // Partly self-cleaning, which is why it took this long to surface: the next
+    // run's own refresh over `[base - 1h, now()]` recomputes those buckets from a
+    // raw table that is now empty there and deletes them (ADR 0024 fact 7, doing
+    // the right thing by accident). Only orphans that fall OUTSIDE the next run's
+    // window survive — so the failure depends on the gap between runs, which is
+    // exactly the kind of intermittency that gets rerun rather than diagnosed.
+    //
+    // Finest first, and the same three levels the fixture materialised. `_1d` is
+    // not in that list because nothing above refreshed it.
+    for (const view of [
+      "telemetry.point_values_1m",
+      "telemetry.point_values_5m",
+      "telemetry.point_values_1h",
+    ]) {
+      try {
+        await pool.query(
+          `CALL refresh_continuous_aggregate('${view}', $1::timestamptz, now())`,
+          [new Date(base - 3_600_000).toISOString()],
+        );
+      } catch (err: unknown) {
+        // Never rethrow from `finally` — it would replace a real assertion failure
+        // with a cleanup error and hide what actually broke. But do not swallow it
+        // silently either: a cleanup that failed leaves the orphans this block
+        // exists to prevent, and the next run fails somewhere else entirely.
+        // A concurrent scheduled policy (55P03) is the expected transient cause.
+        process.stderr.write(
+          `\n[F4.1] WARNING: could not refresh ${view} after deleting the energySummary ` +
+            `fixture: ${err instanceof Error ? err.message : String(err)}\n` +
+            "        Orphaned aggregate rows may remain. Repair with:\n" +
+            `        pnpm db:refresh-aggregates\n\n`,
+        );
+      }
+    }
   }
 }

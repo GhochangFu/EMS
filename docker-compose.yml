@@ -17,6 +17,26 @@ services:
       POSTGRES_DB: bms
       POSTGRES_USER: bms_app
       POSTGRES_PASSWORD: bms_app_dev
+    # ADR 0024 (F4.2). The image ships timescaledb.max_background_workers = 16
+    # while PostgreSQL's own max_worker_processes stays at its default of 8, so the
+    # worker budget cannot supply the workers TimescaleDB is configured to start.
+    #
+    # Not theoretical. Migration 0028 took the policy count from 6 to 12, five
+    # fired together at 2026-08-10 10:25:57, and the `_5m` compression job returned
+    #   XX000: failed to start job Job 1016 ("Columnstore Policy [1016]")
+    # with last_successful_finish = -infinity while its four siblings succeeded in
+    # the same instant. It retries on its own schedule, so this is a delayed
+    # policy rather than a dead one — but it is exactly the silent per-job failure
+    # ADR 0024's Consequences section warns about, and it was found by a review
+    # checking job_stats rather than by anything failing loudly.
+    #
+    # 24 leaves headroom above the 16 TimescaleDB may ask for, since
+    # max_worker_processes is shared with parallel query and logical replication.
+    # Changing it requires a container restart — it is not reloadable.
+    command:
+      - postgres
+      - -c
+      - max_worker_processes=24
     ports:
       - "5432:5432"
     volumes:
