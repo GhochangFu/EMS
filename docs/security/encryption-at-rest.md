@@ -10,7 +10,7 @@
 Most of "encryption at rest" is **not** something this repository can
 implement. Application code can encrypt individual columns; it cannot encrypt
 the disk its database sits on. Postgres 16 community and the
-`timescale/timescaledb:latest-pg16` image we run have **no transparent data
+`timescale/timescaledb:2.29.1-pg16` image we run have **no transparent data
 encryption (TDE)** — that is an EDB/Cybertec/cloud-vendor feature, not an
 upstream one.
 

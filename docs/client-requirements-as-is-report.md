@@ -105,7 +105,7 @@ Verified from `AGENTS.md`, `package.json`, `docker-compose.yml`, and application
 
 | Service | Image / build | Profiles | Port |
 |---------|---------------|----------|------|
-| `postgres` | `timescale/timescaledb:latest-pg16` | always | 5432 |
+| `postgres` | `timescale/timescaledb:2.29.1-pg16` | always | 5432 |
 | `redis` | `redis:7-alpine` | core, pilot, phe, realtime-smoke | 6379 |
 | `keycloak` | `quay.io/keycloak/keycloak:24.0` | core, identity, pilot, phe | 8080 |
 | `migrate` | API Dockerfile | core, migrate, sim, pilot, phe | — |

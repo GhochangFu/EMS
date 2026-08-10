@@ -9,8 +9,8 @@
 > (ADR 0015), the ingest adapter framework **and its host** (ADR 0016), the
 > operations write matrix (ADR 0017), the asset source-axis separation
 > (ADR 0018), the template content model (ADR 0019), the audit read API
-> (ADR 0021), and onboarding credential capture off the chat transcript
-> (ADR 0022). General
+> (ADR 0021), onboarding credential capture off the chat transcript
+> (ADR 0022), and the telemetry continuous aggregates (**ADR 0023**). General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
@@ -156,7 +156,8 @@ entry **D-0001**.
 | Observability | Optional Prometheus, Grafana, Loki, Promtail, and OpenTelemetry baseline |
 | OLTP DB      | PostgreSQL 16 |
 | Telemetry DB | TimescaleDB extension on the same Postgres |
-| Migrations   | Drizzle ORM for tables; raw SQL for one Timescale hypertable |
+| Telemetry aggregates | Four hierarchical continuous aggregates over `telemetry.point_values` — `point_values_1m` ← raw, `_5m` ← `_1m`, `_1h` ← `_5m`, `_1d` ← `_1h` (**ADR 0023**, `F4.1`, migration `0027`). **There is no `avg_value` column at any level and there must never be one**: `avg` does not compose, and building an hourly figure as `avg(avg_value)` over minute buckets was wrong in **151 of 169** buckets on real pilot data because samples per minute range 1–60. Store `sum_value`/`sample_count`/`min_value`/`max_value`; divide at read time. A total-level test does **not** catch the error — summed over the window both forms agree. **`timescaledb.materialized_only = false` is set explicitly on all four**, which on 2.29.1 is the *opposite* of the default: leave it and every live view's right edge silently disappears. Real-time aggregation has been deprecated upstream since 2.13, which is why the compose image is **pinned**. Reads go through `apps/api/src/telemetry/point-aggregates.ts`, never inline SQL — one converted site so far (`DashboardService.energySummary`); the other six rollups are `F4.28` and still read raw. Backfill is `pnpm db:refresh-aggregates`, **not** a migration: `refresh_continuous_aggregate()` cannot run in a transaction and Drizzle's migrator wraps the run in one |
+| Migrations   | Drizzle ORM for tables; raw SQL for the Timescale hypertable **and its four continuous aggregates** (ADR 0016 predates them; ADR 0023 adds them). Drizzle cannot manage a continuous aggregate: it is `relkind = 'v'`, and declaring one with `.table()` makes `pnpm db:generate` emit `CREATE TABLE` for it. They are declared `.view().existing()` in `packages/db/src/schema/telemetry-schema.ts` so generate leaves them alone — verified by running it |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
 | Real ingestion | `apps/ingest` MQTT TLS subscriber for the PHE pilot; writes `telemetry.point_values` and `pg_notify('bms_telemetry', …)` like the simulator (ADR 0007). One pilot RTU only; no EMQX. **Two entry points during the ADR 0016 §6 strangler migration**: `pnpm start` still runs the frozen legacy `src/index.js`, `pnpm start:host` runs the adapter host — and since the §6 commit 3 **cutover on 2026-08-06 the host is what compose runs and what the pilot runs**. The `command:` override in `docker-compose.yml` is the whole of it, so reverting is deleting one line — though it costs the same one-message gap the cutover did, because the container is recreated either way, and a pilot back on `pnpm start` loses `network_strength` every minute. The host still *defaults* `INGEST_NOTIFY=off`, which was the safe direction while two processes ran; with the host serving alone that default is the dangerous one and compose's `INGEST_NOTIFY: "on"` is the only thing keeping realtime alive. See [`docs/ingest-host.md`](./docs/ingest-host.md) |
 | Master data  | Organization → Location → RTU → Asset → Point-key catalog + `/admin/*` CRUD with `admin`/`organization_admin`/`location_admin` roles (ADR 0008–0010). **ADR 0018** separates the axes: an asset must have a `location_id` (`NOT NULL`) and need not have an `rtu_id` (nullable); telemetry provenance binds at `asset_points.source_kind` (`measured`/`manual`/`computed`/`unmapped`), not at the asset |
@@ -168,7 +169,7 @@ entry **D-0001**.
 | Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension. Every mutating endpoint across these four domains is gated by the **operations write matrix** (ADR 0017) — see §4.7 |
 | Audit read   | `bms.audit_log` becomes readable under **ADR 0021** (`F4.14`): `GET /api/v1/admin/audit` and `/audit/export` (CSV + XLSX), in `apps/api/src/admin/audit/`. **Global admin only** — the table has no tenancy column, so §4.7's scope predicates cannot be applied to it at all; scoped reads for `organization_admin` and below are **deferred to their own ADR**, not silently omitted. Purely additive: no DDL, no trigger, no new package (`xlsx` was already an api dependency). `payload` is returned **verbatim**, which makes every `payload: body` call site a security surface — see §4.7. Export requires a `from`/`to` window of ≤366 days and is capped at 50,000 rows, **refusing rather than truncating**; the cap was measured, not assumed, and is a *row* bound with **no byte bound** — that gap is recorded in ADR 0021, not fixed. Append-only storage and hash-chaining are `F4.15` and stay out of scope (§6) |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, **ingest** and DB |
-| CI/CD        | GitHub Actions: install, build/typecheck, `typecheck:tests`, **the `apps/ingest` image build**, migration validation, **`db:seed` against a fresh schema**, and `test:coverage` (ADR 0014). The image build is there because no workflow built one, so `apps/ingest/Dockerfile` sat broken on `main` while CI stayed green — it is the only ingest image gated, being the only one that installs before COPYing sources |
+| CI/CD        | GitHub Actions: install, build/typecheck, `typecheck:tests`, **the `apps/ingest` image build**, migration validation, **`db:seed` against a fresh schema**, **`db:refresh-aggregates`** (ADR 0023 — a no-op on a fresh database, since `db:seed` writes zero telemetry rows; it runs so the backfill path cannot rot unexercised), and `test:coverage` (ADR 0014). The Postgres service image is **pinned** to the same tag as `docker-compose.yml`, because the aggregate suite asserts behaviour measured on TimescaleDB 2.29.1. The image build is there because no workflow built one, so `apps/ingest/Dockerfile` sat broken on `main` while CI stayed green — it is the only ingest image gated, being the only one that installs before COPYing sources |
 | Testing      | Vitest, one project per app + a repo-wide `repo` project; coverage gate on a ratcheting baseline (ADR 0014). See §4.6 |
 | Cache / pub-sub | Redis 7 for Socket.IO adapter fan-out |
 | Local dev    | WSL2 Ubuntu 22.04; native Postgres remains supported, Docker Compose is optional |
@@ -262,6 +263,16 @@ Do not add top-level folders without updating this section.
 - Parameterised queries only.
 - Migrations are forward-only. Never edit a merged migration.
 - Telemetry table is a Timescale hypertable; `chunk_time_interval = 1 day`.
+- **Read telemetry rollups through `apps/api/src/telemetry/point-aggregates.ts`,
+  not with your own `date_trunc`/`time_bucket` SQL** (ADR 0023). The mean is
+  `sum(sum_value) / sum(sample_count)` — **never** an average of averages, which
+  was wrong in 151 of 169 buckets on real data and which a total-level test does
+  not catch. Never add an `avg_value` column to an aggregate.
+- **A `DELETE` from `telemetry.point_values` does not remove the aggregate rows,
+  and no scheduled policy repairs it.** Follow any such delete with
+  `refresh_continuous_aggregate` over the deleted range for all four levels,
+  finest first. Migrations `0014` and `0021` are precedents that predate the
+  aggregates; the next one of that shape must do this.
 
 ### 4.5 Style hygiene
 - File names: `kebab-case` for files, `PascalCase` for React components.

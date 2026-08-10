@@ -902,6 +902,69 @@ Process (`AGENTS.md` §10).
   `authorization` header, the discarded `keyVersion`, and binding a credential to
   a resolved endpoint rather than to an RTU *name* all belong to **E8.4**.
 
+### Telemetry continuous aggregates (F4.1) — done
+
+- **Status:** done (ADR 0023, PR
+  [#21](https://github.com/GhochangFu/EMS/pull/21), merge commit `329ff31`).
+  Merged as a merge commit rather than a squash so the five commits stay
+  separable — the `typecheck:tests` fix, the feature, the compose pin and the
+  review round each carry their own justification.
+- **Delivered:** four hierarchical continuous aggregates over
+  `telemetry.point_values` — `point_values_1m` ← raw, `_5m` ← `_1m`, `_1h` ←
+  `_5m`, `_1d` ← `_1h` — with refresh policies, `pnpm db:refresh-aggregates`,
+  read-only Drizzle `.view().existing()` declarations, the shared read helper
+  `apps/api/src/telemetry/point-aggregates.ts`, and **one** converted read site
+  (`DashboardService.energySummary`).
+- **Three measurements each killed a decision**, which is why this ADR is worth
+  reading before touching the aggregates:
+  - **`avg` does not compose.** `avg(avg_value)` over minute buckets was wrong in
+    **151 of 169** hourly buckets because samples per minute range 1–60. There is
+    no `avg_value` column at any level; the mean is
+    `sum(sum_value) / sum(sample_count)` at read time. Summed over the window
+    both forms agree, so a total-level test does not catch it.
+  - **`materialized_only` defaults to `true` on 2.29.1** — the opposite of what a
+    real-time platform needs. A fresh aggregate returned 0 rows while raw data
+    existed. It is set `false` explicitly on all four.
+  - **`refresh_continuous_aggregate()` cannot run in a transaction** and
+    Drizzle's migrator wraps the run in one, so backfill is a script.
+- **The test that was written for the defect did not detect it.** Mutating
+  `avgExpr` to the naive form left the per-bucket equality suite green: at
+  1m→minute and 1h→hour each output bucket draws exactly one source row, where
+  both forms are algebraically identical. A second assertion folds `_1m` up to
+  hourly (60 rows per bucket) and fails by 2.97 kW under that mutation. Worth
+  remembering as a pattern — a per-bucket test can still be blind if the grouping
+  is 1:1.
+- **Read timings are labelled, because two of them do not compare.** An hourly
+  rollup over the whole 5-day dataset folding `_1m` up: 144.7 → 11.8 ms
+  first-run, 32.7 → 5.4 ms second-run. The shipped `energySummary` paths reading
+  a level directly, after a container recreate left caches cold: 24 h via `_1m`
+  34.4 → 15.5 ms, 7 d via `_1h` 92.2 → 20.1 ms. The defensible claim is
+  **2–6× on this dataset depending on window and cache state, widening with
+  volume**. An unlabelled pair here caused one misreading already.
+- **Three reviews ran** (security, migration, compliance). No confidentiality or
+  authorization finding. The migration review found the one blocking defect: the
+  window predicate moved from `time >` to `bucket >`, which is a **semantic
+  change** — the old form weighted the partial leading bucket as a full one.
+  Kept, bounded at one bucket's contribution, recorded as ADR 0023 Amendment 1.
+  The compliance review found the suite was permanently pushing the production
+  aggregates' watermarks into the future, and that the one converted read site
+  had no test executing it. Both fixed.
+- **Also fixed on the way:** `pnpm typecheck:tests` had been **red on `main`**
+  since E8.3 — seven fixtures missing required fields. E8.3 was verified with
+  `build` + `test:coverage`, neither of which runs that step. The merge commit is
+  the first green run on `main` since 2026-08-09.
+- **Unblocks:** `F4.2` (retention/compression) and `F4.28` (the six remaining
+  rollup reads). Both had `F4.1` as their only dependency.
+- **Constraint handed to `F4.2`, measured not argued:** `_1h` and `_1d` must
+  outlive raw. At 0.5% of raw's footprint they are the only long-term record once
+  `drop_after` runs, and `_1d` alone cannot answer "the peak hour in March two
+  years ago" — what ISO 50001 baselining (`F4.19`) needs. A raw `DELETE` also
+  does **not** remove the aggregate rows and no policy repairs it.
+- **Deliberately not done:** the unclamped ingest `sample.at` that parks
+  watermarks ahead of `now()` (belongs with `F1.7`), and the **unmeasured** lock
+  level `CREATE MATERIALIZED VIEW … WITH NO DATA` takes on `point_values` — the
+  ADR states that as unverified rather than implying otherwise.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
