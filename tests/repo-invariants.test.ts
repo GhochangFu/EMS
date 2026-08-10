@@ -334,4 +334,155 @@ describe("repo invariants", () => {
         ungated.join(" | "),
     ).toEqual([]);
   });
+
+  it("no CSV writer escapes cells for itself", () => {
+    // ADR 0026 (`F4.29`). This repo shipped two CSV exports with two escaping
+    // rules: the audit one neutralised spreadsheet formulas, the Energy
+    // Consumption one only quoted — so an asset code beginning `=` was delivered
+    // as a live formula. The fix was one shared module, and this is what stops a
+    // third copy appearing.
+    //
+    // It is a static check because no behavioural test can be: a new export with
+    // its own escaping passes its own tests perfectly. The precedent is the
+    // `DATABASE_URL` gate, which reached SIX copies before `F4.28` extracted it —
+    // nothing was watching for the copies, so they accumulated.
+    //
+    // **`exports/export-phe-from-json.mjs` is deliberately out of range.** It has
+    // the same quote-doubling line, but `sourceFiles()` walks `apps` and
+    // `packages` only. It is a dev-time script whose input is the client's own SQL
+    // Server dump and whose output is committed reference data, not a response to
+    // a request — there is no untrusted writer and no reader being served. If you
+    // ever widen `searchRoots`, exclude it by name rather than "fixing" it.
+    // **What each check below does and does not reach**, because both 2026-08-10
+    // reviews found the original comments overstated it:
+    //   - Check 1 (quote-doubling) is the one that would have caught the actual
+    //     `F4.29` defect — the old `csvCell` lived in `reports.service.ts` and
+    //     contained the marker. It is idiom-keyed, so it is the strongest for a
+    //     *modified* writer and blind to a differently-spelled one.
+    //   - Check 3 is scoped to `*.serialise.ts` and therefore would **not** have
+    //     caught `F4.29` at all. Its comment used to claim it caught new exports.
+    //   - Check 4 is the one keyed on the response contract rather than on any
+    //     escaping idiom, so it is what actually catches a *new* CSV endpoint. A
+    //     writer cannot avoid the `text/csv` string and still be a CSV download.
+    // None of them catches a new export that never quotes anything at all.
+    const shared = "apps/api/src/serialise/csv.ts";
+    const rel = (f: string): string => relative(repoRoot, f).replace(/\\/g, "/");
+    const all = new Map(
+      sourceFiles()
+        .filter((f) => /\.(ts|tsx)$/.test(f))
+        .map((f) => [rel(f), readFileSync(f, "utf8")] as const),
+    );
+    // Checks 1–4 are scoped to `apps/api/src`, which is the only place that CAN
+    // import the shared module. Running them repo-wide would trip a client-side
+    // CSV builder in `apps/web` with advice it cannot follow — "import
+    // apps/api/src/serialise/csv.ts" across an app boundary. Check 5 covers that
+    // case with a message that makes sense for it.
+    const body = new Map([...all].filter(([f]) => f.startsWith("apps/api/src/")));
+
+    // 1. CSV quote-doubling is the tell-tale of a hand-rolled cell escaper. Only
+    //    the shared module may contain it. Matched loosely enough to survive
+    //    `replaceAll`, quote-style and whitespace variants — an exact-substring
+    //    match was evadable by reformatting alone.
+    const doublesQuotes = /(replace|replaceAll)\(\s*(\/"\/g|['"]"['"])\s*,\s*['"]""['"]\s*\)/;
+    const escapers = [...body]
+      .filter(([, src]) => doublesQuotes.test(src))
+      .map(([f]) => f)
+      .filter((f) => f !== shared);
+    expect(
+      escapers,
+      `these files escape CSV cells themselves instead of importing ${shared} (ADR 0026 ` +
+        `decision 1): ${escapers.join(", ")}. Import csvTextCell/csvNumberCell — do not copy the ` +
+        "rule. A copy that omits the formula guard is exactly the defect F4.29 fixed.",
+    ).toEqual([]);
+
+    // 2. Nor may a second copy of the formula-leader list exist. Specs are exempt
+    //    and hold a literal copy on purpose: a test that imports the constant it
+    //    checks cannot detect the constant shrinking.
+    const leaderList = /\["=",\s*"\+",\s*"-",\s*"@"/;
+    const copies = [...body]
+      .filter(([, src]) => leaderList.test(src))
+      .map(([f]) => f)
+      .filter((f) => f !== shared && !/\.spec\.tsx?$/.test(f));
+    expect(
+      copies,
+      `these files carry their own copy of the formula-leader list: ${copies.join(", ")}. It lives ` +
+        `in ${shared}. Only a *.spec.ts may restate it literally, and only because a test that ` +
+        "imports the list cannot notice an entry being deleted from it.",
+    ).toEqual([]);
+
+    // 3. Any serialiser that deals in CSV must go through the shared module.
+    const detached = [...body]
+      .filter(([f, src]) => /\.serialise\.tsx?$/.test(f) && /csv/i.test(src))
+      .filter(([, src]) => !src.includes("serialise/csv"))
+      .map(([f]) => f);
+    expect(
+      detached,
+      `these serialisers mention CSV but do not import ${shared}: ${detached.join(", ")}. Every ` +
+        "CSV export in this app shares one escaping rule (ADR 0026); a serialiser that opts out " +
+        "is how the two exports diverged in the first place.",
+    ).toEqual([]);
+
+    // 4. Every file that *serves* a CSV download must reach the shared module —
+    //    directly or through the modules it imports. This is keyed on the response
+    //    contract, not on an escaping idiom, so a new endpoint cannot slip past it
+    //    by spelling its escaping differently. Two files declare `text/csv` today
+    //    (`reports.controller.ts`, `audit.service.ts`) and both reach it at two
+    //    hops, via their service and serialiser respectively.
+    const reaching = new Set([shared]);
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (const [f, src] of body) {
+        if (reaching.has(f)) continue;
+        const dir = f.slice(0, f.lastIndexOf("/"));
+        for (const [, spec] of src.matchAll(/from\s+"(\.[^"]+)"/g)) {
+          // Resolve the relative specifier against this file's directory.
+          const parts = `${dir}/${spec}`.split("/");
+          const stack: string[] = [];
+          for (const part of parts) {
+            if (part === "." || part === "") continue;
+            if (part === "..") stack.pop();
+            else stack.push(part);
+          }
+          if (reaching.has(`${stack.join("/")}.ts`)) {
+            reaching.add(f);
+            changed = true;
+            break;
+          }
+        }
+      }
+    }
+    const orphanWriters = [...body]
+      .filter(([f, src]) => src.includes("text/csv") && !/\.(spec|test)\.tsx?$/.test(f))
+      .map(([f]) => f)
+      .filter((f) => !reaching.has(f));
+    expect(
+      orphanWriters,
+      `these files serve a CSV download but no import path from them reaches ${shared}: ` +
+        `${orphanWriters.join(", ")}. A CSV response whose bytes were not built by ` +
+        "csvTextCell/csvNumberCell has its own escaping rule, which is the divergence ADR 0026 " +
+        "closed. If this trips on a legitimately non-tabular text/csv passthrough, exclude it by " +
+        "name with a reason — do not delete the check.",
+    ).toEqual([]);
+
+    // 5. Nothing OUTSIDE `apps/api/src` may build CSV. ADR 0026 covers one app,
+    //    and `apps/web` cannot import across the boundary — today it only fetches
+    //    the server's blob and saves it (`apps/web/src/api/reports.ts`). A
+    //    client-side CSV builder would need its own escaping module and its own
+    //    decision, so the useful thing this can do is refuse to let one appear
+    //    silently, with a message that does not send the author to an unreachable
+    //    import. `exports/export-phe-from-json.mjs` is outside `searchRoots`
+    //    entirely, for the reason given above.
+    const outside = [...all]
+      .filter(([f]) => !f.startsWith("apps/api/src/") && !/\.(spec|test)\.tsx?$/.test(f))
+      .filter(([, src]) => src.includes("text/csv") || doublesQuotes.test(src))
+      .map(([f]) => f);
+    expect(
+      outside,
+      `these files outside apps/api/src build or serve CSV: ${outside.join(", ")}. ${shared} is ` +
+        "an api-internal module and cannot be imported from another app, so this is not a " +
+        "'import the shared module' fix. A second CSV producer needs its own escaping module " +
+        "carrying the same formula guard, and its own ADR — one export diverging from the rule " +
+        "is exactly what ADR 0026 was written to undo.",
+    ).toEqual([]);
+  });
 });
