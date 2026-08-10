@@ -7,6 +7,7 @@ import {
   assertBoundedRefreshPreservesAggregate,
   assertCoarseLevelsAreNeverDropped,
   assertCompressionStartsAfterTheRefreshWindow,
+  assertPerLevelFloorProtectsTheCascade,
   assertPoliciesAreListedUnderViewNames,
   assertRefreshBoundIsDerivedFromRawChunks,
   assertRetentionOutlivesSource,
@@ -144,4 +145,13 @@ describe.skipIf(!connectionString)("F4.2 — telemetry compression and retention
   it("loses it to an unbounded refresh, which is why the bound exists", async () => {
     await assertUnboundedRefreshDestroysAggregate(pool as pg.Pool, fx);
   }, 60_000);
+
+  /**
+   * Rebuilds the fixture itself, so it must come after everything that consumes
+   * the original. Covers the cascade above `_1m` — the case the single-level probe
+   * structurally could not reach, and the one review caught rather than this file.
+   */
+  it("bounds each level by its own source, not by raw", async () => {
+    await assertPerLevelFloorProtectsTheCascade(pool as pg.Pool);
+  }, 120_000);
 });

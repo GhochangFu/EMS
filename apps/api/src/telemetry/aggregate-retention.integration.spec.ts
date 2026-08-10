@@ -31,6 +31,19 @@ import type pg from "pg";
 /** Throwaway hypertable — never `telemetry.point_values`. See the header. */
 const PROBE = "telemetry.f42_probe";
 const PROBE_1M = "telemetry.f42_probe_1m";
+/**
+ * A SECOND aggregate level, reading `f42_probe_1m` rather than raw.
+ *
+ * It exists for one assertion — `assertPerLevelFloorProtectsTheCascade` — and
+ * that assertion exists because a single-level probe **cannot** catch the defect
+ * it covers. The ADR 0023 chain is hierarchical: only `_1m` reads raw. A bound
+ * computed from raw and applied to every level is correct for `_1m` and wrong for
+ * the three above it, and with only `_1m` under test the wrongness is invisible.
+ * That is exactly what shipped in the first version of
+ * `packages/db/src/refresh-aggregates.ts`, and review caught it rather than this
+ * suite.
+ */
+const PROBE_5M = "telemetry.f42_probe_5m";
 
 /**
  * Two days far apart, so the probe gets two separate raw chunks and retention can
@@ -74,6 +87,7 @@ function fail(message: string): never {
 
 /** Drops the probe relations. Safe to call when they do not exist. */
 export async function cleanupProbes(pool: pg.Pool): Promise<void> {
+  await pool.query(`DROP MATERIALIZED VIEW IF EXISTS ${PROBE_5M} CASCADE`);
   await pool.query(`DROP MATERIALIZED VIEW IF EXISTS ${PROBE_1M} CASCADE`);
   await pool.query(`DROP TABLE IF EXISTS ${PROBE} CASCADE`);
 }
@@ -132,6 +146,19 @@ export async function createProbes(pool: pg.Pool): Promise<void> {
     FROM ${PROBE}
     GROUP BY 1, 2, 3
     WITH NO DATA`);
+
+  // Composes its source's columns, exactly as `0027` does above `_1m`: sum of
+  // sums and sum of counts, never count(*) — which here would count minute
+  // buckets instead of samples and divide by 5 rather than 60.
+  await pool.query(`
+    CREATE MATERIALIZED VIEW ${PROBE_5M}
+    WITH (timescaledb.continuous, timescaledb.materialized_only = false) AS
+    SELECT time_bucket(INTERVAL '5 minutes', bucket) AS bucket, asset_id, point_key,
+           sum(sum_value) AS sum_value, sum(sample_count) AS sample_count,
+           min(min_value) AS min_value, max(max_value) AS max_value, max(unit) AS unit
+    FROM ${PROBE_1M}
+    GROUP BY 1, 2, 3
+    WITH NO DATA`);
 }
 
 /**
@@ -143,7 +170,10 @@ export async function createProbes(pool: pg.Pool): Promise<void> {
  * derive it from, which is the entire point of ADR 0024 fact 14.
  */
 export async function materialiseAndSnapshot(pool: pg.Pool): Promise<RetentionFixtures> {
+  // Finest first: `_5m` reads `_1m`, so refreshing it before its source
+  // materialises nothing (ADR 0023, and the F4.1 suite found it by failing).
   await pool.query(`CALL refresh_continuous_aggregate('${PROBE_1M}', NULL, now())`);
+  await pool.query(`CALL refresh_continuous_aggregate('${PROBE_5M}', NULL, now())`);
   const oldDayRows = await oldDayAggregateRows(pool);
   if (oldDayRows.length === 0) {
     fail(
@@ -300,6 +330,117 @@ export async function assertUnboundedRefreshDestroysAggregate(
         "news about this suite: ADR 0024 fact 7 no longer holds, so re-measure it and revisit " +
         "the lower bound in packages/db/src/refresh-aggregates.ts, which exists only because " +
         "of it. Do not delete this assertion to make the run green.",
+    );
+  }
+}
+
+/**
+ * **The cascade, and the one assertion a single-level probe could not make.**
+ *
+ * `refresh-aggregates.ts` bounds each level by its OWN source's oldest surviving
+ * chunk. Its first version computed one floor from raw and used it for all four,
+ * which is right for `_1m` and wrong above it — and the failure that permits is
+ * the one the bound was added to prevent.
+ *
+ * The precondition is reachable in production: TimescaleDB policy jobs fail and
+ * lag **individually**, so raw's retention can run while `_1m`'s does not (one of
+ * the six new policies did fail on its first run — ADR 0024 Amendment 1 fact 19).
+ * Raw's floor then moves older than `_1m`'s data, and refreshing `_5m` from raw's
+ * floor recomputes it over a range `_1m` no longer covers — deleting `_5m`, then
+ * `_1h`, then `_1d` as the cascade walks up. The last two are the permanent
+ * archive under ADR 0023 decision 7, and fact 14 says no refresh rebuilds them.
+ *
+ * This simulates it directly: drop the fine level's old chunk while raw still
+ * holds the range, then show that raw's floor destroys `_5m` and the source's own
+ * floor does not.
+ *
+ * Destructive — declared after the other mechanism cases.
+ */
+export async function assertPerLevelFloorProtectsTheCascade(pool: pg.Pool): Promise<void> {
+  const floorOf = async (kind: "raw" | "agg", relation: string): Promise<Date | null> => {
+    const { rows } =
+      kind === "raw"
+        ? await pool.query<{ f: Date | null }>(
+            `SELECT min(range_start) AS f FROM timescaledb_information.chunks
+              WHERE hypertable_schema = 'telemetry' AND hypertable_name = $1`,
+            [relation],
+          )
+        : await pool.query<{ f: Date | null }>(
+            `SELECT min(c.range_start) AS f
+               FROM timescaledb_information.continuous_aggregates ca
+               JOIN timescaledb_information.chunks c
+                 ON c.hypertable_schema = ca.materialization_hypertable_schema
+                AND c.hypertable_name   = ca.materialization_hypertable_name
+              WHERE ca.view_schema = 'telemetry' AND ca.view_name = $1`,
+            [relation],
+          );
+    return rows[0]?.f ?? null;
+  };
+
+  const fiveMinRows = async (): Promise<number> => {
+    const { rows } = await pool.query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM ${PROBE_5M}
+        WHERE bucket >= $1::timestamptz AND bucket < $2::timestamptz`,
+      [OLD_DAY, CUTOFF],
+    );
+    return Number(rows[0]?.n ?? "0");
+  };
+
+  // Rebuild the fixture: earlier cases in this file dropped raw's old chunk.
+  await cleanupProbes(pool);
+  await createProbes(pool);
+  await pool.query(`CALL refresh_continuous_aggregate('${PROBE_1M}', NULL, now())`);
+  await pool.query(`CALL refresh_continuous_aggregate('${PROBE_5M}', NULL, now())`);
+
+  const baseline = await fiveMinRows();
+  if (baseline === 0) {
+    fail(`${PROBE_5M} has no rows for ${OLD_DAY}; the cascade check would be vacuous`);
+  }
+
+  // Simulate the fine level's retention having run while raw's has not.
+  await pool.query(`SELECT drop_chunks($1::regclass, older_than => $2::timestamptz)`, [
+    PROBE_1M,
+    CUTOFF,
+  ]);
+
+  const rawFloor = await floorOf("raw", "f42_probe");
+  const fineFloor = await floorOf("agg", "f42_probe_1m");
+  if (rawFloor === null || fineFloor === null) {
+    fail("could not read both floors, so the divergence this asserts on is unverified");
+  }
+  if (fineFloor.getTime() <= rawFloor.getTime()) {
+    fail(
+      `the fine level's floor (${fineFloor.toISOString()}) is not later than raw's ` +
+        `(${rawFloor.toISOString()}), so dropping its chunk did not create the divergence ` +
+        "this case depends on and it proves nothing",
+    );
+  }
+
+  // The correct bound: `_5m` refreshed from ITS source's floor leaves the older
+  // rows alone, because it never recomputes a range `_1m` cannot supply.
+  await pool.query(`CALL refresh_continuous_aggregate('${PROBE_5M}', $1::timestamptz, now())`, [
+    fineFloor,
+  ]);
+  const afterCorrect = await fiveMinRows();
+  if (afterCorrect !== baseline) {
+    fail(
+      `refreshing ${PROBE_5M} from its own source's floor changed its older rows: ` +
+        `${baseline} became ${afterCorrect}. The per-level bound must be non-destructive.`,
+    );
+  }
+
+  // The defective bound: raw's floor reaches into a range `_1m` no longer covers.
+  await pool.query(`CALL refresh_continuous_aggregate('${PROBE_5M}', $1::timestamptz, now())`, [
+    rawFloor,
+  ]);
+  const afterRawFloor = await fiveMinRows();
+  if (afterRawFloor !== 0) {
+    fail(
+      `refreshing ${PROBE_5M} from RAW's floor left ${afterRawFloor} of ${baseline} rows. ` +
+        "That is good news about TimescaleDB and bad news about this suite: the cascade " +
+        "described in refresh-aggregates.ts's LEVELS comment no longer holds, so re-measure " +
+        "it and revisit whether the per-level floor is still required. Do not delete this " +
+        "assertion to make the run green.",
     );
   }
 }

@@ -58,13 +58,34 @@ describe("ADR 0024 — compression and retention bounds", () => {
       "the refresh must take a lower bound parameter",
     ).toMatch(/refresh_continuous_aggregate\('\$\{view\}',\s*\$1::timestamptz\s*,\s*now\(\)\)/);
 
-    // The bound must be DERIVED from raw's chunk list, not a second copy of the
-    // retention interval that can drift from the policy governing it.
+    // The bound must be DERIVED from the source's chunk list, not a second copy of
+    // the retention interval that can drift from the policy governing it.
     expect(
       script,
       "the bound must come from timescaledb_information.chunks, not a hardcoded interval",
     ).toMatch(/min\(range_start\)/);
-    expect(script).toMatch(/hypertable_name\s*=\s*'point_values'/);
+
+    // PER LEVEL, not once from raw. Only `_1m` reads raw; `_5m` reads `_1m`, `_1h`
+    // reads `_5m`, `_1d` reads `_1h`. The first version of this script took raw's
+    // floor for all four, which is correct for `_1m` and destroys the `_1h`/`_1d`
+    // archive above it whenever raw's retention runs ahead of `_1m`'s. Behaviour is
+    // covered by assertPerLevelFloorProtectsTheCascade; this guards the shape.
+    expect(
+      script,
+      "each level must declare its own source — only _1m reads raw",
+    ).toMatch(/aggregate:\s*"point_values_1m"/);
+    expect(script).toMatch(/aggregate:\s*"point_values_5m"/);
+    expect(script).toMatch(/aggregate:\s*"point_values_1h"/);
+
+    // The aggregate branch must resolve chunks through the MATERIALIZATION
+    // hypertable — a continuous aggregate's chunks are catalogued there, while its
+    // policies are catalogued under the view name (Amendment 1 fact 18). Querying
+    // chunks by view name silently returns nothing, which this bound would read as
+    // "the source is empty".
+    expect(
+      script,
+      "aggregate sources must join continuous_aggregates to reach their materialization hypertable",
+    ).toMatch(/materialization_hypertable_name/);
   });
 
   it("retains each fine aggregate strictly longer than raw", () => {
@@ -130,11 +151,20 @@ describe("ADR 0024 — compression and retention bounds", () => {
       "0028 must bound its lock wait — an unbounded ACCESS EXCLUSIVE wait stalls live ingest",
     ).toMatch(/SET LOCAL lock_timeout/);
 
-    // SET LOCAL, not SET: drizzle's migrator reuses one session for every file.
+    // SET LOCAL, not SET, so nothing escapes the transaction.
+    expect(migration, "use SET LOCAL, not SET").not.toMatch(/^\s*SET lock_timeout/m);
+
+    // And it must be RESET before the file ends. Drizzle wraps the WHOLE RUN in one
+    // transaction — `session.transaction()` opens outside the migration loop — so
+    // `SET LOCAL` reaches every migration applied after this one in the same run.
+    // Without the reset, the next migration anyone adds silently inherits a 5 s
+    // lock_timeout on fresh-database runs but not on incremental applies to the
+    // pilot. An earlier version of this file asserted SET LOCAL for the opposite
+    // (and wrong) reason: that it could not reach later files.
     expect(
       migration,
-      "use SET LOCAL so the timeout reverts with the transaction instead of leaking into the " +
-        "migrator session and silently bounding later migrations",
-    ).not.toMatch(/^\s*SET lock_timeout/m);
+      "0028 must reset lock_timeout before it ends — drizzle's transaction spans the whole run, " +
+        "so the bound would otherwise leak into every later migration in that run",
+    ).toMatch(/SET LOCAL lock_timeout = DEFAULT/);
   });
 });
