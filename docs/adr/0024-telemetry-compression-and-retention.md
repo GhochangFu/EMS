@@ -183,6 +183,9 @@ enumerated rather than assumed:
 | `reports.service.ts:133`, `:180`, `:233` | hour / bare `avg` | **explicit `start`/`end`** | `_1h` |
 
 `parseEnergyWindow` caps at 168 hours and selects minute buckets only when the
+<!-- Amendment 3 fact 28: the cap is 720 hours, not 168 — `1-168h` OR `1-30d`. The
+     47-hour claim is still right, but because `useHourlyBuckets` routes everything
+     >= 48 h to `_1h`, not because windows are short. -->
 window is **< 48 h**; every dashboard window is trailing (`bucket > now() -
 $1::interval`). The three `reports.service.ts` sites do take a caller-supplied
 `start`/`end` with **no lower bound** on how far back `start` may reach — only a
@@ -321,6 +324,11 @@ The partial drop is what a policy actually does, and it is fact 13.
    decision 6.
 
 8. **No retention-aware level selector, and this is a deliberate non-decision.**
+
+   > **Superseded in its reasoning by Amendment 3 (fact 27).** The conclusion held
+   > for this ADR's tree, where level choice was hard-coded per site. `F4.28` /
+   > ADR 0025 built the selector, which makes the guard load-bearing; it lives in
+   > ADR 0025 decision 1. The "168-hour cap" cited below is also wrong — see fact 28.
 
    An earlier draft made it decision 8, because facts 13 and 14 describe a real
    silent-failure class: a level whose data has been dropped returns *empty*, not
@@ -726,3 +734,66 @@ feature, and per §10.1 for **this ADR alone**:
   retention) | Production outage | Retention policy in Phase A". That risk is
   retired by this ADR, and a stale *risk* line is worse than a stale effort
   estimate.
+
+## Amendment 3 — decision 8's rationale did not survive `F4.28`, 2026-08-10
+
+Two more facts, both corrections to this ADR rather than new measurements, and
+both surfaced by **`F4.28` / ADR 0025** — the item this ADR handed the level-selector
+debt to. Neither changes what migration `0028` shipped. The first invalidates a
+*reason* while leaving its *conclusion* standing; the second names the wrong
+mechanism as load-bearing, which is the more useful kind of error to fix.
+
+Consistent with Amendment 2's observation, and now true a third time: every defect
+here is in the reasoning *around* a measurement, not in a measurement.
+
+**27. The selector decision 8 declined now exists, so the argument for declining it
+no longer applies.**
+
+Decision 8 refused a retention-aware level selector on the grounds that a guard
+would be "a test for a gap the horizon already closed, plus dead code with one
+contrived caller". That was **true of the tree this ADR reviewed**, and for a
+reason it did not state: level choice was hard-coded at every call site, so there
+was no single place where a wrong level could be chosen.
+
+`F4.28` removes that property deliberately. ADR 0025 decision 1 builds
+`levelForRange`, because six sites cannot each carry their own inline ternary — and
+the obvious implementation is the duration-keyed one `energySummary` already had
+(`useHourlyBuckets ? "1h" : "1m"`). Route the report path through *that* and a
+24-hour range dated three years back selects `_1m`, which this ADR drops at 735
+days, and facts 13 and 14 say the result is **0 rows, silently, and not rebuildable
+by any refresh**. The guard this ADR called unnecessary becomes load-bearing the
+moment the selector it deferred is written.
+
+So decision 8's outcome stands for `0028` — no guard was needed in a tree without a
+selector — and its reasoning is superseded. The guard lives in ADR 0025 decision 1:
+a level is admissible only when `start >= now() - horizon(level)`, `end` plays no
+part, and the horizons are held equal to this migration's `add_retention_policy`
+intervals by a static test that **throws** rather than passing on any interval it
+cannot parse.
+
+**28. `parseEnergyWindow` does not cap at 168 hours — it caps at 720 — and the
+conclusion survives on a different mechanism than the one this ADR credited.**
+
+The figure appears four times here (fact 11's table twice, its prose, and decision
+8) and is wrong every time. `parseEnergyWindow` accepts **either** `1–168h` **or**
+`1–30d`; the day branch is the larger bound, so the deepest window a dashboard can
+request is **720 hours**, already 4.3× the number this ADR reasoned from.
+
+Decision 8's conclusion is unaffected, and it is worth being precise about why,
+because this ADR credited the wrong thing. Fact 11's "nothing can read `_1m` older
+than 47 hours" is **correct**, but not because windows are short — a 30-day window
+is perfectly legal. It holds because `useHourlyBuckets` is `n >= 48` for hours and
+**unconditionally true** for days, so every window at or beyond 48 hours is routed
+to `_1h`, which has no horizon. `_1m` is reachable only by windows under 48 hours.
+
+Which means fact 11's closing line — "the ladder is constrained by an **invisible
+coupling to a 168-hour cap** in a different file" — names the wrong coupling. The
+constraint is the **48-hour level switch**, not the window cap. The distinction
+matters for exactly the change someone would think safe: raising the 48-hour
+threshold widens `_1m`'s reach directly, while widening the window cap does not
+touch it at all. Anyone protecting this ladder should watch `useHourlyBuckets`.
+
+Both figures are left in place above rather than silently edited, with this
+amendment as the correction of record — the same treatment fact 19 got in
+Amendment 2, and for the same reason: a reader who finds the old number needs to
+find the correction beside it, not a clean document that was never wrong.
