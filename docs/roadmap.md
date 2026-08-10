@@ -857,6 +857,51 @@ Process (`AGENTS.md` §10).
   change. Also open by design: whether audit *reads* are themselves audited,
   left to F4.15/F4.19.
 
+### Onboarding credential capture (E8.3) — done
+- **Status:** done (ADR 0022, commits `9e32b1c`…`7fa6784`). Raised by the E8.1
+  security review. Landed directly on `main`, so like F4.14 there is no PR
+  number to cite.
+- **Delivered:** credentials leave the chat transcript entirely.
+  `POST /api/v1/admin/onboarding/sessions/:id/credentials` is the only way in;
+  a chat turn that appears to carry a credential is **refused** — not parsed,
+  not stored, not forwarded to the model. The old `extractCredentials` parser
+  and its plumbing were deleted so nothing can re-populate them. Migration
+  `0026` purges `onboarding_sessions.messages` on every existing row, keeping
+  the session rows because `audit_log` references them by id. The read gate was
+  raised to match the write gate and moved into `loadSession`, so it covers all
+  six onboarding entry points at once. `apps/web` gained the credentials
+  surface it never had — a password-typed field in the preview drawer, cleared
+  from component state on both success and failure.
+- **Why it was a redesign, not a patch:** the wizard *actively prompted* admins
+  to paste broker credentials into chat, `extractCredentials` parsed them out of
+  free text, and `scrubSecrets` was a key-name denylist that cannot touch free
+  text at all. Three vectors that had to close together.
+- **Proved, not assumed:** the purge was demonstrated against the pilot database
+  with a planted transcript inside a rolled-back transaction — `pnpm db:migrate`
+  alone proved nothing, because the table held zero sessions.
+- **Notable, and the most useful thing to carry forward: this took six review
+  rounds, and the first five each found that the previous round's fix was
+  defective or that the ADR asserted a property the code did not have.** The
+  pattern was consistent — fixes landed where they were easiest to test rather
+  than where they were load-bearing, and the document then described the intent
+  rather than the code. Rounds found, in order: a privilege gap and an
+  unredacted client path; a ReDoS introduced *by* the fix, plus a detector that
+  deleted the product's own remediation copy; that the ReDoS "fix" had moved the
+  quadratic rather than removed it, and the cost test guarding it measured
+  nothing; a credential-misdelivery path where a whitespace-aliased RTU code
+  shipped one broker's real password into another broker's connection config;
+  and finally two Mediums — a widening of the redaction predicate that silently
+  *narrowed* it on `clientKey`, and RTU codes able to name `Object.prototype`
+  members. Every one is recorded in ADR 0022's six amendments, including the
+  amendments' own corrections to each other.
+- **Owed:** M1 (`safeParse(...).data ?? {}` discards an entire partial patch, so
+  the OpenAI path can write nothing while reporting success — fails closed, on a
+  path compose never enables), a cap on transcript length, and coverage of the
+  `reconcile → attach → commit` composition through the real `mergeDraft`, which
+  is currently tested function-by-function only. Key rotation, pino's unredacted
+  `authorization` header, the discarded `keyVersion`, and binding a credential to
+  a resolved endpoint rather than to an RTU *name* all belong to **E8.4**.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.

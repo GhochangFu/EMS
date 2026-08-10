@@ -8,8 +8,9 @@
 > the Vitest gate (ADR 0014), asset templates and instantiation
 > (ADR 0015), the ingest adapter framework **and its host** (ADR 0016), the
 > operations write matrix (ADR 0017), the asset source-axis separation
-> (ADR 0018), the template content model (ADR 0019), and the audit read API
-> (ADR 0021). General
+> (ADR 0018), the template content model (ADR 0019), the audit read API
+> (ADR 0021), and onboarding credential capture off the chat transcript
+> (ADR 0022). General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
@@ -162,8 +163,8 @@ entry **D-0001**.
 | Asset templates | `bms.asset_templates` + `bms.template_points`, where a row **is** a version and `assets.template_id` pins it (ADR 0015). Published versions are immutable; editing one creates the next draft. `POST /admin/asset-templates/:id/instantiate` builds assets from a published version — target is `rtuId` **xor** `locationId`. A `template_points.kind = 'derived'` point is still re-validated against the active catalog, but never becomes an `asset_points` row — it has no honest `source_data_key` until the calc engine (`F2.6`) owns it |
 | Template content | `asset_templates.content` carries the `E1.7` overlay under **ADR 0019**, tiered by whether a consumer exists on `main`. **Bound** (`alarms`, `maintenance`) import their enums from `rules.schema.ts` / `maintenance.schema.ts` — never restate them. **`alarms.philosophy` is the exception inside that row: Anchored, not Bound.** `E2.1` owns its vocabulary and is unbuilt, so its four fields may still be renamed or restructured, and its other three — affected assets, energy/water/production impact, ETR — are properties of a *live alarm instance* and must not be added to a template. **Anchored** (`kpis`, `dashboards`) check point-key references while leaving bodies opaque: `expression` sits behind `dialect: "unvalidated"` until `F2.3`, and a dashboard view carries *ordered point keys only* until `F3.1`. **Reserved** (`health`, `optimisation`) are **rejected**, each naming its blocking item. Every referenced point key must be one the template declares — checked on create, update and publish, because `content` and `points` are patched independently and a points patch can orphan content the request never mentioned. `POST :id/draft` is deliberately **exempt**: it byte-copies stored content, and validating it would strand a pre-ADR template behind its own immutable published version. Nothing converts this into a running rule or a maintenance row; it is the authoring surface only |
 | Ingest adapters | `IngestAdapter` interface frozen by **ADR 0016**: the host owns *supervision and cadence* (poll loop, overlap guard, backoff, jitter, bounded queue, process lifetime); adapters own the protocol connection and parse, implementing `connect` / `disconnect` / `health`. **The host is now built** (§6 commit 2): `apps/ingest/src/host/` supplies the supervisor, backoff, bounded queue, binding plan, normaliser and health endpoint, `src/main.ts` is wiring only, and `src/adapters/mqtt.ts` ports the pilot's MQTT connection onto the interface behind `src/adapter/registry.ts` — a port that now **deliberately diverges** from `index.js` in three ways, listed in `docs/ingest-host.md`, because `index.js` is frozen and a defect found in the shared parse logic can only be fixed on the host side. **MQTT is the only implementation, and it is not new scope** — ADR 0007 promoted it, this moves it onto the frozen interface. Modbus, BACnet, OPC-UA, SNMP, REST polling and DCS each still need **their own ADR** under §10 — unconditionally, not only where a protocol library has to be settled under §9.4; see §6. Adapters never read `process.env` (ADR 0016 §4); the host reads it in `host/config.ts`, **plus** the pilot-era `MQTT_*` and `CREDENTIAL_ENCRYPTION_KEY` reads in the unmodified `rtu-config.js`. That `MQTT_USERNAME`/`MQTT_PASSWORD` fallback is the *only* working credential path, and ADR 0016 Resolved decision 5 expected it to **survive cutover**. **It did, and the expectation is no longer a prediction:** the pilot has run on that path since 2026-08-06, `bms.rtu_connection_configs` held no rows when the cutover ran, and the decision's own caveat — that the emptiness was measured on a local seeded database and needed confirming against the production pilot — is discharged by that database *being* the pilot's. Treat the emptiness as a **measurement with a date, not a standing fact**: the onboarding wizard writes that table, so re-query before relying on it. ADR 0016 itself still carries decision 5 unamended, and **the ADR is the authoritative record — this file is only the index** (§10.1); an Amendment 3 recording the discharge is owed and human-gated. Writing an `rtu_connection_configs` row is still prerequisite work for anyone who wants the ADR 0012 path. Amendment 1 widens the schema fields to `ZodType<T, ZodTypeDef, unknown>` so `.default()`/`.transform()` schemas compile; Amendment 2 adds `@types/pg`. **§6 commit 3 is discharged** — the parallel run and the cutover both ran against the live PHE feed on 2026-08-06, and the "not reproducible locally" this row used to claim was wrong. **Still owed: commit 4**, which deletes `src/index.js` and the `INGEST_NOTIFY` flag and **has no named owner** (ADR 0016 Resolved decision 4). It is no longer tidying up: post-cutover the flag's default is the dangerous direction, so commit 4 is what removes a live failure mode |
-| AI onboarding | Scoped admin ingestion wizard using OpenAI chat completions with structured JSON, and a deterministic rule-based fallback when `OPENAI_API_KEY` is unset (ADR 0011) |
-| Secrets      | AES-256-GCM encrypted RTU connection credentials via `CREDENTIAL_ENCRYPTION_KEY`; never returned decrypted by the API (ADR 0012) |
+| AI onboarding | Scoped admin ingestion wizard using OpenAI chat completions with structured JSON, and a deterministic rule-based fallback when `OPENAI_API_KEY` is unset (ADR 0011). **Credentials never transit the chat** (**ADR 0022**, `E8.3`): they arrive through `POST /api/v1/admin/onboarding/sessions/:id/credentials`, and a chat turn that appears to carry one is **refused — not parsed, not stored, not forwarded to the model**. The wizard used to *prompt* for them and parse them out of the turn, which left plaintext in `onboarding_sessions.messages`; migration `0026` purges that column on every existing row (session rows are kept — `audit_log` references them by id). The detector that spots a credential-bearing turn is a **nudge, not the control** — six review rounds found it simultaneously too narrow and too broad, and its documented misses are asserted as tests. The control is that credentials have a typed home. Do not "improve" that detector without reading ADR 0022's amendments first |
+| Secrets      | AES-256-GCM encrypted RTU connection credentials via `CREDENTIAL_ENCRYPTION_KEY`; never returned decrypted by the API (ADR 0012). Writers into that store: the master-data RTU admin, and the onboarding credentials endpoint above (**ADR 0022**), which **fails closed** with 503 when the key is unset rather than reporting a success that stored nothing. In an onboarding draft the blob is keyed by **RTU `code`, never by array position** — the draft's `rtus` array is replaced wholesale by any patch, so a positional key delivered one broker's password into a different broker's connection config. A code claimed by no RTU, or by more than one, drops rather than guesses |
 | Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension. Every mutating endpoint across these four domains is gated by the **operations write matrix** (ADR 0017) — see §4.7 |
 | Audit read   | `bms.audit_log` becomes readable under **ADR 0021** (`F4.14`): `GET /api/v1/admin/audit` and `/audit/export` (CSV + XLSX), in `apps/api/src/admin/audit/`. **Global admin only** — the table has no tenancy column, so §4.7's scope predicates cannot be applied to it at all; scoped reads for `organization_admin` and below are **deferred to their own ADR**, not silently omitted. Purely additive: no DDL, no trigger, no new package (`xlsx` was already an api dependency). `payload` is returned **verbatim**, which makes every `payload: body` call site a security surface — see §4.7. Export requires a `from`/`to` window of ≤366 days and is capped at 50,000 rows, **refusing rather than truncating**; the cap was measured, not assumed, and is a *row* bound with **no byte bound** — that gap is recorded in ADR 0021, not fixed. Append-only storage and hash-chaining are `F4.15` and stay out of scope (§6) |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, **ingest** and DB |
@@ -351,6 +352,21 @@ them. Reproduced against a real database before the fix. **The fallback itself
 is unchanged**: pre-existing, affecting all of `/admin/*`, and recorded against
 `F4.10` in `docs/BACKLOG.md` as owing its own ADR. If you add an endpoint whose
 only control is an unrestricted scope, it has this problem too.
+
+**Onboarding** (ADR 0022, `E8.3`) — a **fourth** gate. Every onboarding entry
+point requires role `admin` or `organization_admin` **plus**
+`canManageOrganization` on the session's organisation, and both checks live in
+**one place**: `OnboardingService.loadSession` → `assertOnboardingAccess`.
+
+Because it sits there rather than on individual handlers, it covers
+`getSession`, `chat`, `patchDraft`, `uploadExcel`, `validate` **and**
+`setCredentials` together. That placement is the fix, not an implementation
+detail: the read gate was once `canManageOrganization` alone while the write
+gate also required the role, so a `location_admin` could read a session they
+could never create — and `uploadExcel`, sitting on the weaker gate, let them
+write credentials by workbook. **Do not re-narrow this to `getSession`.** If you
+add an onboarding handler, route it through `loadSession`; a handler that reads
+the session any other way is outside the gate.
 
 **Standing obligation (ADR 0021 decision 6).** `audit_log.payload` stores the
 verbatim request body at **twelve** call sites — assets, asset-points,
@@ -599,7 +615,10 @@ new scope-sensitive features.
    architecture but prefer the mockup's user-facing layout and labels.
 4. Never add a dependency without an ADR in `docs/adr/`.
 5. Never invent file paths or library APIs.
-6. Never log secrets, tokens, or full PII payloads.
+6. Never log secrets, tokens, or full PII payloads. **This includes the
+   onboarding chat transcript** (`onboarding_sessions.messages`) — it is user
+   free text that once carried pasted broker passwords, and it is scrubbed on
+   the way out to the client as well as refused on the way in (ADR 0022).
 7. Do not introduce EMQX, MinIO, or any item from §6 without a Promotion
    PR (see §10). Redis is only approved for Socket.IO fan-out; Keycloak is
    only approved for local/pilot OIDC; observability is only approved for
