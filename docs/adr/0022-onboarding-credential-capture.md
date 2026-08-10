@@ -239,32 +239,75 @@ Amendment 2 called the 74 ms it replaced "an API-wide outage". The code it
 shipped was **110 ms on plain ASCII and 3,083 ms on one repeated character** —
 a 52× regression on the exact metric it claimed to have fixed.
 
-**Fixed** by bounding the capture to `(\S{1,256})` — no real secret is 256
-non-space characters long — and by slicing to `MAX_SCAN` *again after* NFKC. The
-trim is now named `VALUE_TRIM` and carries a comment saying it is quadratic and
-safe only because the capture is bounded, so the two cannot drift apart.
+**Fixed** by bounding the capture to `(\S{1,256})` and by slicing to `MAX_SCAN`
+*again after* NFKC. The trim is now named `VALUE_TRIM` and carries a comment
+saying it is quadratic and safe only because the capture is bounded, so the two
+cannot drift apart. Independently re-measured by the fourth review: worst case
+**3.22 ms** per 8,000-character turn across ~4,000 fuzzed and ~120 structured
+adversarial inputs, against 3,083 ms before.
 
-**Scope correction, so this is not overstated.** The ~15.7 s-per-read
-amplification Amendment 2 cites does **not** exist here. Any input expensive
-enough to trigger the quadratic strips to a value that is neither in
+**The fix has a cost, and this paragraph first said it did not.** "No real
+secret is 256 non-space characters long" was written here and is beside the
+point — the bound is on what the *capture* consumes, not on the secret. Two
+shapes the `(\S+)` version caught are now missed:
+
+- **≥256 non-space non-word characters of prefix padding** — `password:` + 256
+  `!` + `hunter2`. The capture takes only the padding, `VALUE_TRIM` empties it,
+  the loop `continue`s, and `matchAll` resumes past the secret with no term in
+  front of it. At 200 characters it still fires, so this is a bound, not a hole.
+- **NFKC-expanding padding** — ~1,400 `㌖` ahead of the credential pushes it past
+  the second slice. This one defeats **all three** shapes (term, URI and
+  bearer), which matters because `INVISIBLE` and `HOMOGLYPHS` exist in this file
+  for exactly that threat model.
+
+Both are asserted in the spec, alongside the just-under-the-limit cases that
+still fire. The trade is still right — the alternative is 3,083 ms per
+request — but it is a trade, and Amendment 3 originally implied it was free.
+
+**Scope, corrected twice.** The quadratic itself is not a read-path amplifier:
+any input expensive enough to trigger it strips to a value that is neither in
 `NON_VALUES` nor a bare term, so `looksLikeCredential` returns `true`, the turn
-is refused before any write, and `scrubMessages` never re-pays the cost. This
-was one stall per authenticated request, repeatable, behind
-`assertOnboardingAccess` — a tenant admin could stall the API for every other
-tenant. Blocking, but not a read-path amplifier.
+is refused before any write, and `scrubMessages` never re-pays it. The fourth
+review tried to falsify that and could not. It was one stall per authenticated
+request, repeatable, behind `assertOnboardingAccess` — a tenant admin could
+stall the API for every other tenant.
+
+But Amendment 3's flat claim that the read-path amplifier "does **not** exist
+here" was **too broad, and is withdrawn**. That argument covers `TERM_PATTERN`
+only. `URI_USERINFO` and `HTTP_AUTH` run *before* the term loop and are paid
+whatever the verdict, so a turn that returns `false` at ~2.95 ms is accepted,
+stored, and re-walked by `scrubMessages` on every read — measured 322 ms at 100
+stored turns, 6.85 s at 2,000, and there is **no message-count cap** on a
+session. Two things are true together: the mechanism is real, and it is ~50×
+below the 15.7 s Amendment 2 described at the same 100-turn yardstick, and it is
+**unchanged by this commit** (2.95 ms new vs 3.03 ms old). Residual, not
+introduced — but the paragraph asserted a property the code does not have, which
+is the failure this ADR exists to stop repeating. The transcript cap is not
+taken here; it is added to the open list below.
 
 **The test that was supposed to catch this measured nothing.** The assertion
 used `"a".repeat(200000)`: a uniform run of word characters never enters the
 trim's backtracking path, so it ran in 0 ms and passed throughout. It has been
-replaced with the two inputs above, asserted under 100 ms — both exceeded that
-on the old code. A cost assertion that does not exercise the quadratic is worse
-than none, for the same reason this ADR gives about redactors.
+replaced with the two inputs above.
+
+**And the replacement was half-wrong too.** Amendment 3 first asserted them
+under **100 ms** and claimed "both exceeded that on the old code". The fourth
+review measured the old ASCII case at **78–133 ms over 12 trials** — so that
+assertion missed the defect in **5 of 12 runs**, and would miss it more often on
+faster CI hardware. Only the NFKC half discriminated. The threshold is now
+**20 ms** (≥4× margin against the worst old-code figure, ≥50× against the
+current 0.0–0.4 ms) on `performance.now()`, since `Date.now()` has 1–16 ms
+granularity on Windows and is the wrong clock at this scale. A cost assertion
+that does not exercise the defect is worse than none — stated in this amendment,
+and then half-reproduced by it.
 
 **The documented-miss enumeration was materially incomplete.** Amendment 2 named
 four misses and asserted them as tests "so they cannot be mistaken for
-coverage" — the enumeration itself then understated the gap. Two causes, both
-wider than stated: only `\s*` may sit between a term and its separator, and `\b`
-fails after *any* word character rather than only a leading underscore. So the
+coverage" — the enumeration itself then understated the gap. **Three** causes
+(Amendment 3 first said two, and its own asserted example `password - hunter2`
+needed the third): only `\s*` may sit between a term and its separator; `\b`
+fails after *any* word character rather than only a leading underscore; and the
+separator set is `:`/`=`/`is` only, so `-`, `,` and `->` all miss. So the
 missed set includes **every quoted or structured paste** — `{"password":
 "hunter2"}`, a `.conf` line, XML, and the wizard's own `**password**:` markdown
 convention — and **every camelCase/snake_case config key** (`accessToken:`,
@@ -298,8 +341,27 @@ out of a broker configuration. All are now asserted as tests. The detector was
   requirement is unmet for onboarding drafts. Pre-existing, but
   `POST :id/credentials` is a new writer into it. Belongs with E8.4.
 
+- **No cap on transcript length** — `onboarding.service.ts` appends two messages
+  per turn without bound and `mapSession` walks all of them on every read, which
+  is what turns the linear `://` scheme scan into 6.85 s at 2,000 stored turns.
+  Pre-existing and untouched here; the natural home is a `messages` length cap
+  decided alongside M1–M4.
+
 None of these are fixed here. Only the ReDoS, the test, and this document's own
 false statements are.
+
+**Corrections made after the fourth review (2026-08-10).** This amendment as
+first written contained three wrong claims, corrected above rather than left as
+provenance: the 100 ms cost threshold did **not** reliably fail on the old code
+(5 of 12 trials passed); the read-path amplifier claim was too broad and is
+withdrawn for `URI_USERINFO`/`HTTP_AUTH`; and "no real secret is 256 non-space
+characters long" implied the bound was free when it costs two documented
+misses. "Every quantifier is bounded" was also still false and is now stated
+precisely. The fourth review confirmed the ReDoS fix itself is sound.
+
+**Four rounds, four times a fix to this predicate was defective or overclaimed.**
+That is no longer a run of bad luck; it is the evidence for decision 1. Anyone
+proposing to grow this detector should read this section first.
 
 ## Dependencies
 

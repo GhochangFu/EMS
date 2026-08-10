@@ -14,27 +14,37 @@ import type { OnboardingChatMessage } from "@bms/shared";
  *   optional-separator form matched the product's own copy — "Add its
  *   credentials with the Credentials field" — and on the default rule-based
  *   path that deleted the one message telling users where the field is.
- * - **Every quantifier on a hot path is bounded, and the scan is capped twice.**
- *   Amendment 2 claimed this and did not deliver it: the value capture stayed
- *   `(\S+)` and fed a quadratic trim, and the `MAX_SCAN` slice ran *before*
- *   NFKC, which expands. Amendment 3 measured 110 ms (ASCII) and 3,083 ms (one
+ * - **The two quantifiers that drive cost are bounded, and the scan is capped on
+ *   both sides of NFKC.** Named precisely, because Amendment 3 first wrote
+ *   "every quantifier is bounded" and that is still false — `\s*` here, `\s+` in
+ *   `HTTP_AUTH` and `[^\w/.@-]+` in `VALUE_TRIM` are unbounded and measured
+ *   harmless. The two that mattered are the value capture and the pre-NFKC
+ *   slice. Amendment 2 claimed to have bounded them and did not: the capture
+ *   stayed `(\S+)` and fed a quadratic trim, and the `MAX_SCAN` slice ran
+ *   *before* NFKC, which expands. Measured 110 ms (ASCII) and 3,083 ms (one
  *   expanding character, repeated) per turn from an input inside
  *   `chatBodySchema`'s own 8,000 cap — worse than the 74 ms it replaced. Node is
- *   single-threaded, so that is an API-wide stall per request.
+ *   single-threaded, so that was an API-wide stall per request.
  *
- * **Known misses, recorded rather than implied.** The list is wider than
- * Amendment 2 stated, because only `\s*` may sit between term and separator and
- * `\b` fails after any word character:
+ * **Known misses, recorded rather than implied.** Three causes: only `\s*` may
+ * sit between term and separator; `\b` fails after any word character; and the
+ * separator set is `:`/`=`/`is` only.
  *
  * - bare values ("hunter2") and separator-less keywords ("api key abc123");
  * - **any quoted or structured paste** — `{"password": "hunter2"}`, a `.conf`
  *   line, XML, and the wizard's own `**password**:` markdown convention;
  * - **camelCase and snake_case config keys** — `accessToken:`, `client_secret=`,
  *   `MQTT_PASSWORD=`, which is exactly the shape pasted out of a broker config;
- * - userinfo with no scheme ("user:pass@host").
+ * - other separators — `password - hunter2`, `password, hunter2`;
+ * - userinfo with no scheme ("user:pass@host");
+ * - **two costs of the fix above**, which the `(\S+)` version did catch: ≥256
+ *   non-space non-word characters of prefix padding (the capture takes only the
+ *   padding, the trim empties it, and the scan resumes past the secret), and
+ *   NFKC-expanding padding that pushes the credential past the second slice —
+ *   that one defeats all three shapes. Both are asserted in the spec.
  *
  * Closing these needs the detector to grow, which is what kept going wrong
- * across three review rounds. They are acceptable **only** because decision 1
+ * across four review rounds. They are acceptable **only** because decision 1
  * gives credentials a typed home and the wizard no longer asks for them here.
  */
 
@@ -148,7 +158,8 @@ export function looksLikeCredential(message: unknown): boolean {
   }
   const text = normalise(message);
 
-  // Cheap literal guard before either bounded shape regex runs.
+  // Cheap literal guard before URI_USERINFO — and only that one. HTTP_AUTH
+  // below runs unguarded on every call; it is bounded, so it is linear.
   if (text.includes("://") && URI_USERINFO.test(text)) {
     return true;
   }

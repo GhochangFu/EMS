@@ -114,6 +114,29 @@ export function runCredentialDetectTests(): void {
     "accessToken: abc123",
     "client_secret=abc123",
     "mqtt_password=hunter2",
+    // separator set is `:` / `=` / `is` only — a third cause, distinct from the
+    // two above, and the one that misses this row (Amendment 3 said "two").
+    "password - hunter2",
+    "password -> hunter2",
+    "password, hunter2",
+    // --- costs of Amendment 3's own fix, recorded rather than implied --------
+    // Both are NEW misses that the unbounded `(\S+)` version caught. The trade
+    // is worth taking — the alternative was 3,083 ms per request — but "the
+    // bound costs nothing" was wrong and is struck from the ADR.
+    //
+    // 1. `\S{1,256}` captures only the punctuation run, VALUE_TRIM strips it to
+    //    empty, `continue` fires, and matchAll resumes past the secret with no
+    //    term in front of it. >=256 non-space non-word characters of prefix
+    //    padding is a reliable bypass. (200 still fires — see below.)
+    `password: ${"!".repeat(256)}hunter2`,
+    `password: ${'"'.repeat(300)}hunter2`,
+    // 2. The second slice(0, MAX_SCAN) runs AFTER NFKC, so expansion padding
+    //    pushes the credential past the cap. This one defeats all three shapes,
+    //    which matters because INVISIBLE and HOMOGLYPHS exist in this file for
+    //    exactly this threat model.
+    `${"㌖".repeat(1400)} password: hunter2`,
+    `${"㌖".repeat(1400)} mqtts://u:p@h`,
+    `${"㌖".repeat(1400)} Bearer eyJhbGciOiJIUzI1`,
   ]) {
     assert(
       !looksLikeCredential(missed),
@@ -122,23 +145,44 @@ export function runCredentialDetectTests(): void {
   }
 
   // --- bounded cost ----------------------------------------------------------
-  // The previous assertion used "a".repeat(200000) and measured 0 ms: a uniform
+  // Amendment 2's assertion used "a".repeat(200000) and measured 0 ms: a uniform
   // run of word characters never enters the trim's backtracking path, so it
   // passed while the detector was quadratic. These two inputs DO enter it, and
-  // both sit inside chatBodySchema's own 8,000-char cap — measured 110 ms and
-  // 3,083 ms before the fix.
+  // both sit inside chatBodySchema's own 8,000-char cap.
   //
   // U+3316 expands 1 -> 6 under NFKC with no whitespace, which is how an input
   // "within the cap" produced a 47,412-character scan.
+  //
+  // The threshold is 20 ms, not 100. Amendment 3 first used 100 ms and claimed
+  // the old code exceeded it; the fourth review measured the old ASCII case at
+  // 78-133 ms over 12 trials, so that assertion missed the defect in 5 of 12
+  // runs and would miss it more often on faster CI hardware. At 20 ms the
+  // margin is >=4x against the WORST observed old-code figure rather than 1.0x,
+  // and >=50x against the current 0.0-0.4 ms. `performance.now()` because
+  // `Date.now()` has 1-16 ms granularity on Windows — the wrong clock for this.
   for (const [label, hostile] of [
     ["ascii punctuation run", `password: a${"!".repeat(7900)}a`],
     ["NFKC-expanding run", `password: a${"㌖".repeat(7900)}a`],
   ] as const) {
-    const started = Date.now();
+    const started = performance.now();
     looksLikeCredential(hostile);
-    const elapsed = Date.now() - started;
-    assert(elapsed < 100, `detection must stay cheap on ${label}, took ${elapsed}ms`);
+    const elapsed = performance.now() - started;
+    assert(
+      elapsed < 20,
+      `detection must stay cheap on ${label}, took ${elapsed.toFixed(1)}ms`,
+    );
   }
+
+  // The bypasses above are bounds, not holes: just under each limit still
+  // fires, so the detector has not quietly stopped working near the threshold.
+  assert(
+    looksLikeCredential(`password: ${"!".repeat(200)}hunter2`),
+    "a sub-256 punctuation prefix is still caught",
+  );
+  assert(
+    looksLikeCredential(`${"ﾃ".repeat(4001)} password: hunter2`),
+    "padding that NFKC maps 1:1 does not push the credential past the cap",
+  );
 
   // --- the escape hatch specifically ---------------------------------------
   // "skip credentials" names a credential but supplies no value. Requiring a
