@@ -11,8 +11,9 @@
 > (ADR 0018), the template content model (ADR 0019), the audit read API
 > (ADR 0021), onboarding credential capture off the chat transcript
 > (ADR 0022), the telemetry continuous aggregates (**ADR 0023**), their
-> compression and retention policies (**ADR 0024**) and the conversion of every
-> remaining rollup read onto them (**ADR 0025**). General
+> compression and retention policies (**ADR 0024**), the conversion of every
+> remaining rollup read onto them (**ADR 0025**) and one shared CSV escaping
+> rule for both exports (**ADR 0026**). General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
@@ -168,8 +169,9 @@ entry **D-0001**.
 | Ingest adapters | `IngestAdapter` interface frozen by **ADR 0016**: the host owns *supervision and cadence* (poll loop, overlap guard, backoff, jitter, bounded queue, process lifetime); adapters own the protocol connection and parse, implementing `connect` / `disconnect` / `health`. **The host is now built** (§6 commit 2): `apps/ingest/src/host/` supplies the supervisor, backoff, bounded queue, binding plan, normaliser and health endpoint, `src/main.ts` is wiring only, and `src/adapters/mqtt.ts` ports the pilot's MQTT connection onto the interface behind `src/adapter/registry.ts` — a port that now **deliberately diverges** from `index.js` in three ways, listed in `docs/ingest-host.md`, because `index.js` is frozen and a defect found in the shared parse logic can only be fixed on the host side. **MQTT is the only implementation, and it is not new scope** — ADR 0007 promoted it, this moves it onto the frozen interface. Modbus, BACnet, OPC-UA, SNMP, REST polling and DCS each still need **their own ADR** under §10 — unconditionally, not only where a protocol library has to be settled under §9.4; see §6. Adapters never read `process.env` (ADR 0016 §4); the host reads it in `host/config.ts`, **plus** the pilot-era `MQTT_*` and `CREDENTIAL_ENCRYPTION_KEY` reads in the unmodified `rtu-config.js`. That `MQTT_USERNAME`/`MQTT_PASSWORD` fallback is the *only* working credential path, and ADR 0016 Resolved decision 5 expected it to **survive cutover**. **It did, and the expectation is no longer a prediction:** the pilot has run on that path since 2026-08-06, `bms.rtu_connection_configs` held no rows when the cutover ran, and the decision's own caveat — that the emptiness was measured on a local seeded database and needed confirming against the production pilot — is discharged by that database *being* the pilot's. Treat the emptiness as a **measurement with a date, not a standing fact**: the onboarding wizard writes that table, so re-query before relying on it. ADR 0016 itself still carries decision 5 unamended, and **the ADR is the authoritative record — this file is only the index** (§10.1); an Amendment 3 recording the discharge is owed and human-gated. Writing an `rtu_connection_configs` row is still prerequisite work for anyone who wants the ADR 0012 path. Amendment 1 widens the schema fields to `ZodType<T, ZodTypeDef, unknown>` so `.default()`/`.transform()` schemas compile; Amendment 2 adds `@types/pg`. **§6 commit 3 is discharged** — the parallel run and the cutover both ran against the live PHE feed on 2026-08-06, and the "not reproducible locally" this row used to claim was wrong. **Still owed: commit 4**, which deletes `src/index.js` and the `INGEST_NOTIFY` flag and **has no named owner** (ADR 0016 Resolved decision 4). It is no longer tidying up: post-cutover the flag's default is the dangerous direction, so commit 4 is what removes a live failure mode |
 | AI onboarding | Scoped admin ingestion wizard using OpenAI chat completions with structured JSON, and a deterministic rule-based fallback when `OPENAI_API_KEY` is unset (ADR 0011). **Credentials never transit the chat** (**ADR 0022**, `E8.3`): they arrive through `POST /api/v1/admin/onboarding/sessions/:id/credentials`, and a chat turn that appears to carry one is **refused — not parsed, not stored, not forwarded to the model**. The wizard used to *prompt* for them and parse them out of the turn, which left plaintext in `onboarding_sessions.messages`; migration `0026` purges that column on every existing row (session rows are kept — `audit_log` references them by id). The detector that spots a credential-bearing turn is a **nudge, not the control** — six review rounds found it simultaneously too narrow and too broad, and its documented misses are asserted as tests. The control is that credentials have a typed home. Do not "improve" that detector without reading ADR 0022's amendments first |
 | Secrets      | AES-256-GCM encrypted RTU connection credentials via `CREDENTIAL_ENCRYPTION_KEY`; never returned decrypted by the API (ADR 0012). Writers into that store: the master-data RTU admin, and the onboarding credentials endpoint above (**ADR 0022**), which **fails closed** with 503 when the key is unset rather than reporting a success that stored nothing. In an onboarding draft the blob is keyed by **RTU `code`, never by array position** — the draft's `rtus` array is replaced wholesale by any patch, so a positional key delivered one broker's password into a different broker's connection config. A code claimed by no RTU, or by more than one, drops rather than guesses |
-| Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension. Every mutating endpoint across these four domains is gated by the **operations write matrix** (ADR 0017) — see §4.7 |
+| Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension. Every mutating endpoint across these four domains is gated by the **operations write matrix** (ADR 0017) — see §4.7. The Energy CSV export escapes through the shared serialiser, **not** its own rule — see the *CSV exports* row (ADR 0026) |
 | Audit read   | `bms.audit_log` becomes readable under **ADR 0021** (`F4.14`): `GET /api/v1/admin/audit` and `/audit/export` (CSV + XLSX), in `apps/api/src/admin/audit/`. **Global admin only** — the table has no tenancy column, so §4.7's scope predicates cannot be applied to it at all; scoped reads for `organization_admin` and below are **deferred to their own ADR**, not silently omitted. Purely additive: no DDL, no trigger, no new package (`xlsx` was already an api dependency). `payload` is returned **verbatim**, which makes every `payload: body` call site a security surface — see §4.7. Export requires a `from`/`to` window of ≤366 days and is capped at 50,000 rows, **refusing rather than truncating**; the cap was measured, not assumed, and is a *row* bound with **no byte bound** — that gap is recorded in ADR 0021, not fixed. Append-only storage and hash-chaining are `F4.15` and stay out of scope (§6) |
+| CSV exports  | **Both** CSV downloads escape through one module, `apps/api/src/serialise/csv.ts` (**ADR 0026**, `F4.29`): the audit export (ADR 0021) and the Energy Consumption report. Before it they disagreed — the audit one neutralised spreadsheet formula leaders and the reports one only quoted, so an asset `code` beginning `=` was delivered as a **live formula**. `csvTextCell` prefixes an apostrophe when a value starts with `=` `+` `-` `@` TAB or CR, **then** tests the quote trigger `/["\n\r,]/` — that order is load-bearing, since the guarded form of a CR-led value still contains a CR and must be quoted or the record splits. All six are formula-*initiating* characters, **not** "characters a spreadsheet strips as whitespace": `\r` must stay in the leader list *and* the trigger, and deleting it from either reopens a hole every test would still pass. **Numeric cells are exempt and take `csvNumberCell`**, because the guard neutralises cells whose Excel formula reading differs from their literal text and for a number it does not (`=-5` is `-5`) — guarding one would import the client's figures as text and break their arithmetic. The split is enforced by the two functions' **parameter types**, never by a regex that re-parses output, and escaped cells carry a branded `CsvField` so a raw string in a row is a **compile error**. The audit call site is still blanket because all nine of its columns are string-shaped: the two exports are **consistent, not identical**. `toSheetRows` (XLSX) is correctly unguarded — SheetJS writes `t="str"`, ECMA-376's *cached formula result* type, and the safety is the **absence of any `<f>` element**, not the cell type. Whether a leading U+0020/U+00A0/U+FEFF is stripped-then-evaluated is an **open question** (`F4.31`) inherited from ADR 0021, not settled here: do not add characters to the leader list on reasoning alone |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, **ingest** and DB |
 | CI/CD        | GitHub Actions: install, build/typecheck, `typecheck:tests`, **the `apps/ingest` image build**, migration validation, **`db:seed` against a fresh schema**, **`db:refresh-aggregates`** (ADR 0023 — a no-op on a fresh database, since `db:seed` writes zero telemetry rows; it runs so the backfill path cannot rot unexercised), and `test:coverage` (ADR 0014). The Postgres service image is **pinned** to the same tag as `docker-compose.yml`, because the aggregate suite asserts behaviour measured on TimescaleDB 2.29.1. The image build is there because no workflow built one, so `apps/ingest/Dockerfile` sat broken on `main` while CI stayed green — it is the only ingest image gated, being the only one that installs before COPYing sources |
 | Testing      | Vitest, one project per app + a repo-wide `repo` project; coverage gate on a ratcheting baseline (ADR 0014). See §4.6 |
@@ -217,6 +219,11 @@ bms/
 │   │                            tests/repo-invariants.test.ts (the tsconfig
 │   │                            exclusion alone does not stop one: tsc
 │   │                            re-admits an excluded-but-imported file)
+│   │                            src/serialise/ is the ONE CSV escaping rule
+│   │                            both exports share (ADR 0026) — a hand-rolled
+│   │                            escaper anywhere else under src/, or a CSV
+│   │                            producer outside apps/api/src, fails
+│   │                            tests/repo-invariants.test.ts
 │   ├── sim/                   ← telemetry simulator (Node script)
 │   └── ingest/                ← PHE MQTT TLS subscriber (ADR 0007), one pilot RTU.
 │                                Two entry points during the ADR 0016 strangler:
@@ -265,6 +272,20 @@ Do not add top-level folders without updating this section.
 - Module-per-domain: `auth`, `assets`, `alarms`, `telemetry`, `audit`.
 - Controllers thin → services do work → repositories touch the DB.
 - Validate every DTO with Zod. Never trust input.
+- **Every CSV response goes through `src/serialise/csv.ts`** (ADR 0026). Never
+  hand-roll cell escaping, even for "just two columns" — the repo had two exports
+  with two rules and one of them omitted the formula guard, which is how an asset
+  code beginning `=` reached a client's spreadsheet as a live formula. Text takes
+  `csvTextCell`, **numbers take `csvNumberCell` and are deliberately unguarded**:
+  Excel's formula reading of a numeric literal is the number itself, and prefixing
+  an apostrophe would import the client's figures as text. Do not decide the split
+  with a regex over the produced string — the two functions' parameter types decide
+  it, and a raw string in a row is a compile error because `CsvField` is branded.
+- **Build the rows where they can be tested without a `Pool`.** `energyCsv` had its
+  rows inline in the service and was therefore never executed by a test at all,
+  even after `F4.28` gave the rest of that file coverage. Serialisation lives in a
+  pure `*.serialise.ts` beside the service — `admin/audit/audit.serialise.ts` and
+  `reports/reports.serialise.ts` are the two models.
 
 ### 4.4 SQL (Postgres / TimescaleDB)
 - Schema-qualified (`bms.assets`, `telemetry.point_values`).
@@ -302,9 +323,17 @@ Do not add top-level folders without updating this section.
   against the raw query being replaced and a revert compares it with itself
   (measured — a fully reverted `loadTrend` left the suite green); and a dropped
   `bucketHours` factor is invisible while the factor is 1. `tests/` is where these
-  live, beside the ADR 0017 write-gate check. A parity test that is *invariant
-  under the change it guards* is the recurring trap here — `F4.1` shipped one, and
-  `F4.28` shipped two more before review caught them.
+  live, beside the ADR 0017 write-gate check. **ADR 0026 adds a third, and a
+  cheaper mechanism worth reaching for first:** a second copy of the CSV escaping
+  rule is caught statically, because a new export with its own escaping passes its
+  own tests perfectly — but the guarantee that an *unescaped* cell cannot enter a
+  row is a **branded type**, so it is a compile error rather than any kind of test.
+  When a type can carry the invariant, prefer it; a static test is the fallback,
+  not the goal.
+  A test that is *invariant under the change it guards* is the recurring trap here
+  — `F4.1` shipped one, `F4.28` shipped two more, and `F4.29` shipped a third, each
+  caught in review. Assume your new guard has this defect and **mutate the code to
+  prove it fails**; four of the five instances looked convincing until someone did.
 - **A `DELETE` from `telemetry.point_values` does not remove the aggregate rows,
   and no scheduled policy repairs it.** Follow any such delete with
   `refresh_continuous_aggregate` over the deleted range for all four levels,
