@@ -1,4 +1,17 @@
 {
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "dist", "**/*spec.ts", "**/*.test.ts", "vitest.config.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*spec.ts",
+    "**/*.test.ts",
+    "vitest.config.ts",
+    // `F4.28` / ADR 0025 decision 8. `src/testing/` holds test-only helpers that are
+    // neither `*spec.ts` nor `*.test.ts`, so the two patterns above did not catch
+    // them and `integration-db-gate.js` was being emitted into the runtime bundle.
+    // Excluding the folder keeps it out — and makes any runtime import of a test
+    // helper a **build failure**, which is the behaviour worth having: `pnpm build`
+    // runs in CI, so the rule is enforced rather than merely intended.
+    "src/testing/**"
+  ]
 }
