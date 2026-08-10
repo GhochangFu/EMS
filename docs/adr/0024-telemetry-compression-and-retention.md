@@ -6,9 +6,12 @@
 unblocked the same day by `F4.1` / ADR 0023. Awaiting the repo owner at the
 AGENTS.md §10 gate.
 
-**Three points are open at the gate** and each changes a decision rather than
-confirming it — they are listed under [Open at the gate](#open-at-the-gate)
-below, and decisions 3, 4 and 8 are written as recommendations pending them.
+**One point is open at the gate** — see [Open at the gate](#open-at-the-gate).
+The draft opened three; two were closed by measuring rather than by deciding,
+and both closed *against* the draft's own recommendation. Facts 13–15 replaced
+the proposed `_1m`/`_5m` ladder (decisions 3 and 4) and withdrew the proposed
+level selector (decision 8). The remaining question — `drop_after = 2 years` —
+is a compliance question, not an engineering one.
 
 `0020` stays reserved for the E8.1 encryption-at-rest retro. `0021` went to
 `F4.14`, `0022` to `E8.3` and `0023` to `F4.1`, so this ADR takes **`0024`**.
@@ -173,6 +176,31 @@ unclamped ingest `sample.at` that ADR 0023 recorded and deferred to `F1.7`.
 Retention drops only chunks *older* than its cutoff, so `drop_after` will
 collect the 2020 chunk and will **never** collect the seven future ones.
 
+**13. Dropping an aggregate's oldest chunks makes that range read as *empty*,
+with raw fully intact.** Retention drops only chunks older than its cutoff, so
+the watermark stays high (measured: unchanged at 2026-08-10 10:12) and the
+dropped range is *behind* it — served from stored rows only, which are now gone.
+Reading 2026-08-05 from `_1m` after dropping that one chunk returned **0 rows**
+while raw still held **146,424** rows for the same period. Not slow, not
+approximate: zero, silently.
+
+**14. And a refresh cannot rebuild it.** `refresh_continuous_aggregate` over
+exactly that range, with raw complete, reported *"already up-to-date"* and left
+**0** rows. The range is behind the watermark and the invalidation log is empty,
+so the shipped refresh call has nothing to act on. Repair means dropping and
+recreating the aggregate and re-materialising from scratch — not an operation
+any script here has. **Aggregate retention is therefore irreversible in
+practice, even while its source data still exists.**
+
+**15. The reason fact 13 had to be measured on a partial drop — and a
+conclusion I got wrong first.** Dropping *all* of an aggregate's chunks resets
+the watermark to `-infinity` (measured: 4714-11-24 BC), which puts the whole
+range *ahead* of it and hands reads to the real-time branch: **correct answers,
+at raw prices** — 644 ms for a one-day range. I measured that case first and
+concluded aggregate retention was benign and self-healing. It is not; the
+full-drop case is the misleading one, and no retention policy ever produces it.
+The partial drop is what a policy actually does, and it is fact 13.
+
 ## Decision
 
 1. **Migration `0028_compression_retention.sql`** (journal idx 28), forward-only
@@ -190,16 +218,29 @@ collect the 2020 chunk and will **never** collect the seven future ones.
    DESC'`. The segmentby choice is what makes fact 1's 62× possible: it groups
    each series so values are delta-encoded against their own neighbours.
 
-3. *(Recommendation — open question A.)* **`_1m`: compress after 7 days, drop
-   after 90 days.** Its reach is 47 hours (fact 11) and 90 days is ~46× that,
-   so widening the dashboard cap even to 30 days stays inside it. It bounds
-   `_1m` at roughly 43 MB compressed steady-state rather than ~175 MB/year
-   growing forever, and storing minute resolution that no code path can request
-   is not a saving worth keeping.
+3. **The governing rule, which facts 13–15 forced and which replaces an earlier
+   draft of decisions 3 and 4:**
 
-4. *(Recommendation — open question A.)* **`_5m`: compress after 30 days, drop
-   after 400 days.** Thirteen months so a year-on-year comparison at 5-minute
-   resolution is possible at all; ~40 MB steady state.
+   > **A level derivable from raw lives exactly as long as raw. A level that
+   > outlives raw is never dropped.**
+
+   An earlier draft of this ADR recommended `_1m` at 90 days and `_5m` at 400
+   days, reasoning that `_1m`'s read reach is 47 hours (fact 11) so a shorter
+   horizon was free, and that anything still backed by raw could be rebuilt.
+   **Both halves were wrong.** Fact 13: a dropped aggregate range reads as
+   **empty**, not as a slow fallback to raw. Fact 14: it **cannot be rebuilt**
+   by any refresh, with raw fully present. A horizon shorter than raw's would
+   therefore create a window — 90 days to 2 years — in which raw holds the data,
+   the aggregate silently returns nothing, and no shipped tool can repair it.
+
+4. **`_1m` and `_5m`: compress after 7 days, `drop_after = 2 years` — the same
+   horizon as raw.** This is decision 3 applied. It bounds both levels (~350 MB
+   and ~74 MB compressed steady-state at pilot volume, against ~175 MB/year and
+   ~37 MB/year growing without limit), and because the horizons move together
+   there is **no state in which raw holds a period that its own fine aggregates
+   do not** — the irreparable window in decision 3 never opens. The
+   irreversibility is then exactly raw's, which decision 2 already accepts,
+   rather than a second and worse one.
 
 5. **`_1h` and `_1d`: no retention policy, and not compressed.** ADR 0023
    decision 7 forbids dropping them and this ADR does not overturn it. They are
@@ -224,38 +265,58 @@ collect the 2020 chunk and will **never** collect the seven future ones.
    destroys it. The second assertion is the one that fails if someone reverts
    decision 6.
 
-8. *(Recommendation — open question B.)* **`point-aggregates.ts` gains the
-   retention-aware level selector its own module comment already claims.** That
-   comment says "level selection is a judgement… and it should be made once";
-   there is no such function today, and `energySummary` picks its level inline.
-   Retention creates a new silent-failure class — a level whose data has been
-   dropped returns *empty*, not an error — so the selector must never return a
-   level whose horizon does not cover the requested window. Small: a horizon map
-   and one function, with the coupling in fact 11 made explicit and testable
-   instead of left as a comment in a different file.
+8. **No retention-aware level selector, and this is a deliberate non-decision.**
+
+   An earlier draft made it decision 8, because facts 13 and 14 describe a real
+   silent-failure class: a level whose data has been dropped returns *empty*, not
+   an error. Decision 4 closes it at the source instead. With every fine level
+   held for two years against a maximum read reach of 47 hours (`_1m`) and 31
+   days (`_1h`, via the report path), the horizon exceeds the deepest reachable
+   window by more than an order of magnitude, and no widening of
+   `parseEnergyWindow`'s 168-hour cap that anyone would plausibly make gets near
+   it.
+
+   So a guard here would be a test for a gap the horizon already closed, plus
+   dead code with one contrived caller. `point-aggregates.ts` still owes the
+   level selector its own module comment claims ("level selection is a
+   judgement… it should be made once" — no such function exists, and
+   `energySummary` picks its level inline), but that debt is about **level
+   choice** and belongs to `F4.28`, which has six sites to route through it. It
+   is not a retention-safety mechanism and this ADR should not pretend it is.
 
 ## Open at the gate
 
-**A. The `_1m`/`_5m` ladder: drop them, or keep every level forever and only
-compress?** Decisions 3 and 4 recommend dropping. The alternative is defensible
-and the numbers are measured: compress-only leaves `_1m` at ~175 MB/year and
-`_5m` at ~37 MB/year growing without bound, and in exchange the ladder becomes
-trivial, decision 7's "must outlive raw" extends to all four levels, and the
-silent-empty-read class in decision 8 never exists. Against it: `_1m` beyond 47
-hours is unreadable by any current or planned site, so that is storage nothing
-can query.
+**Two of the three questions this ADR opened were closed by measurement rather
+than by judgement, and are recorded above rather than here.** The `_1m`/`_5m`
+ladder (was A) is settled by facts 13–15: a shorter horizon than raw's opens an
+irreparable window, so decision 4 ties them to raw. The level selector (was B)
+is settled by decision 8 as unnecessary — the horizon closes the gap it would
+have guarded.
 
-**B. Is decision 8 (the selector) `F4.2`'s or `F4.28`'s?** It is `F4.2` that
-creates the failure mode, which argues for here. But `F4.28` is what converts
-the six sites that would use it, which argues for there. Doing it here means a
-guard with one caller; doing it there means retention ships with the coupling
-still implicit.
+**One question is genuinely open, and it is not an engineering one.**
 
-**C. Confirm `drop_after = 2 years` on raw.** After two years the aggregates are
-the *only* record of that period (fact 6), and the one remaining way to lose it
-is a raw `DELETE` followed by a refresh (fact 7 — the same mechanism, reachable
-by hand). `docs/AGENTS.production.md:145` also allows a "per-tenant override",
-which nothing implements and which this ADR does not add.
+**Confirm `drop_after = 2 years`.** It now sets the horizon for raw *and* for
+`_1m`/`_5m` (decision 4), and it is **the only irreversible decision in this
+ADR** — after two years `_1h` and `_1d` are the sole record of that period
+(fact 6), at hourly resolution.
+
+Three things bound the risk, and one does not:
+
+- **Nothing can be dropped for ~2 years.** The oldest real row is 2026-08-05, so
+  the policy is inert until 2028 on any data that exists. Changing the number
+  later is `remove_retention_policy` + `add_retention_policy` — two statements,
+  no migration, no downtime.
+- Compression, which delivers essentially all of the disk saving (fact 1), is
+  independent of this and fully reversible.
+- What is *not* bounded: whether any Ion Exchange compliance obligation needs
+  **sample-level** effluent or discharge data beyond two years. `_1h` satisfies
+  ISO 50001 baselining and the `E4.x` analytics, but a regulator asking for
+  individual readings is a different question and a business one. **It belongs in
+  the client email already owed for `E5.1`** — not in this ADR, and not answered
+  by me.
+
+Given the two-year fuse, the recommendation is to take the number now and route
+the compliance question to the client rather than hold the item.
 
 ## Dependencies
 
@@ -270,6 +331,12 @@ present in the pinned `2.29.1-pg16` image — no new licence surface.
 - **A read regression on one path, accepted**: single-sample reads against
   compressed chunks cost ~2.5× more (fact 9). The affected sites read recent
   data, which is never compressed at a 7-day threshold.
+- **Aggregate retention is irreversible, and that is now a property of the
+  design rather than a hazard in it** (facts 13–14). Decision 4 makes the fine
+  levels expire with their source, so the only way to reach the state where raw
+  holds a period its aggregates do not is to run `drop_chunks` on a level by
+  hand. Worth stating plainly because the natural assumption — "raw is still
+  there, so I can rebuild it" — is false and fails quietly.
 - **Two more scheduled jobs per policied relation, and they fail silently.** The
   same operational surface ADR 0023 flagged: verification is
   `timescaledb_information.job_stats.last_run_status = 'Success'` after the
