@@ -965,6 +965,65 @@ Process (`AGENTS.md` §10).
   level `CREATE MATERIALIZED VIEW … WITH NO DATA` takes on `point_values` — the
   ADR states that as unverified rather than implying otherwise.
 
+### Telemetry compression and retention (F4.2) — done
+
+- **Status:** done (ADR 0024, PR
+  [#22](https://github.com/GhochangFu/EMS/pull/22), merge commit `1ef3189`).
+  A merge commit again, so the ten commits stay separable — the pre-existing
+  `main` failure, the migration, the tests, three review fixes and the ADR
+  amendments each carry their own justification.
+- **Delivered:** migration `0028` (journal idx 28). Raw `point_values`
+  compresses at 7 days and drops at **730**; `_1m`/`_5m` compress at 7 days and
+  drop at **735**; `_1h`/`_1d` are **never dropped and never compressed** — after
+  raw's 730 days they are the only record of a period, at hourly resolution
+  (ADR 0023 decision 7). Plus a lower bound on `pnpm db:refresh-aggregates`, an
+  8-test probe/catalog suite, and `tests/adr-0024-retention-bounds.test.ts`.
+- **Compression on real pilot data: 62.1x on heap, 29.1x on total.** Two numbers
+  because compressing a chunk replaces its btrees, and uncompressed indexes here
+  are 2.4x the heap — so most of the on-disk win is index elimination rather than
+  column encoding. A synthetic-value probe managed only 9.6x, so the ratio is a
+  property of real telemetry, not of the settings.
+- **The finding that shaped the item.** `drop_chunks` on raw leaves the aggregate
+  rows perfectly intact — 34,596 before, 34,596 after, bit-identical — which is
+  what makes retention viable at all. But a **refresh** over the dropped range
+  deletes them: 34,596 to 7,068. And `pnpm db:refresh-aggregates`, shipped by
+  `F4.1` and documented as the operator's recovery tool, refreshed the entire
+  history. The first time `drop_after` ran, the repair command would have
+  destroyed the archive.
+- **Two of this ADR's own recommendations were reversed by measurement**, both
+  before the gate, and the ADR records them rather than quietly rewriting:
+  - A dropped aggregate range reads as **empty**, not as a slow fallback to raw.
+    Retention drops only chunks *older* than the cutoff, so the watermark stays
+    high and the range sits behind it, served from stored rows that are gone.
+  - And it **cannot be rebuilt** — a refresh over exactly that range with raw
+    complete reports "already up-to-date" and leaves 0 rows. So the proposed
+    90-day `_1m` horizon would have opened a window in which raw held the data,
+    the aggregate returned nothing, and no shipped tool could repair it. The
+    fine levels now expire *with* their source instead.
+  - The retention-aware level selector proposed alongside them was withdrawn for
+    the opposite reason: tying the horizons together closes the failure class it
+    would have guarded, so it would have been a test for a closed gap.
+- **A single-level test could not have caught the worst bug.** Review found the
+  refresh bound applied *raw's* floor to all four levels — correct only for
+  `_1m`, since `_5m` reads `_1m`, `_1h` reads `_5m`, `_1d` reads `_1h`. Because
+  policy jobs lag individually, raw's floor can sit older than `_1m`'s data and
+  the cascade deletes `_1h`/`_1d`. The probe ladder was one level deep, which is
+  exactly the one level where the bound was right. It now runs two.
+- **What CI still cannot see.** Its database is fresh every run, so no chunk ever
+  reaches the 7-day threshold and **no compression policy compresses anything
+  there**. A green pipeline says nothing about compressed-chunk behaviour; that is
+  how "DELETE from a compressed chunk works" stayed unknown until compression had
+  fired on a database with history. Retention is equally inert in CI.
+- **Left to operations, not code:** per-job `job_stats` is the only real
+  verification that six new background policies work — one of them failed on its
+  first run here (worker starvation, fixed in compose), while an ADR fact had
+  already asserted they all succeeded.
+- **Owed:** whether any Ion Exchange compliance obligation needs *sample-level*
+  effluent data beyond two years. `_1h` covers ISO 50001 baselining and the
+  `E4.x` analytics; a regulator asking for individual readings is a different
+  question and a business one. It rides with the `E5.1` client email, and the
+  two-year fuse means nothing is at risk before it is answered.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.

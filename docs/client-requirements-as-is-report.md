@@ -188,13 +188,13 @@ EMQX broker, MinIO/object storage, Kubernetes manifests, multi-protocol edge age
 
 | Sub-requirement | As-Is Status | Evidence | Quality | Gap |
 |-----------------|--------------|----------|---------|-----|
-| Time-series DB | **Implemented** | TimescaleDB hypertable `telemetry.point_values` (1-day chunks) | 7/10 | Retention, compression, aggregates |
+| Time-series DB | **Implemented** | TimescaleDB hypertable `telemetry.point_values` (1-day chunks), four hierarchical continuous aggregates (ADR 0023), compression at 7 d and retention at 730 d/735 d (ADR 0024) | 9/10 | Per-tenant retention override; tiered/object-storage archive |
 | Relational data | **Implemented** | PostgreSQL `bms.*` — orgs, locations, RTUs, assets, mappings, rules, work orders | 7/10 | Asset templates table |
 | Image / binary storage | **Missing** | No MinIO/S3; no image tables or upload API | 0/10 | Object storage + metadata schema |
 | Raw message archive | **Missing** | Ingest drops unmapped payloads silently | 0/10 | Debug/archive table (optional) |
 
 **As-is score: 55%** (excluding images: 73%)  
-**Gap effort: 12–18 pw** (object storage 8–12, retention/aggregates 4–6)
+**Gap effort: 8–12 pw** (object storage 8–12; retention/aggregates **done** 2026-08-10, ADR 0023 + ADR 0024)
 
 ---
 
@@ -383,7 +383,7 @@ EMQX broker, MinIO/object storage, Kubernetes manifests, multi-protocol edge age
 | A3 | Telemetry manual entry API + admin UI | 2–3 | 3 |
 | A4 | Telemetry CSV bulk import (tag, timestamp, value) | 3–4 | 3 |
 | A5 | Tag mapping bulk editor + Excel mapping sheet | 4–5 | 6 |
-| A6 | Timescale retention + 1m/1h continuous aggregates | 4–5 | 2 |
+| ~~A6~~ ✅ | ~~Timescale retention + 1m/1h continuous aggregates~~ — **done 2026-08-10**: ADR 0023 (`F4.1`, four levels) and ADR 0024 (`F4.2`, compression + retention) | 4–5 | 2 |
 | A7 | Expand MQTT ingest to all enabled RTUs | 3–4 | 1 |
 | A8 | Device health / last-seen on assets | 3–4 | 1 |
 

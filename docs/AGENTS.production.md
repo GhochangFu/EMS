@@ -141,10 +141,22 @@ bms/
 - `NUMERIC(p, s)` for currency and unit prices.
 - All tables have `created_at`, `updated_at`, `created_by`, `updated_by`.
 - Telemetry tables are TimescaleDB hypertables with:
-  - `chunk_time_interval = 1 day`
-  - `compress_after = 7 days`
-  - `drop_after = 2 years` (per-tenant override allowed)
-  - Continuous aggregates for 1m, 5m, 1h, 1d rollups.
+  - `chunk_time_interval = 1 day` — **implemented** (ADR 0001)
+  - `compress_after = 7 days` — **implemented** on raw and on `_1m`/`_5m`
+    (ADR 0024, migration `0028`). `_1h`/`_1d` are deliberately **not** compressed.
+  - `drop_after = 2 years` — **implemented** as `730 days` on raw. `_1m`/`_5m` are
+    `735 days`: an aggregate must outlive its source *strictly*, or the two
+    independent policy schedules can leave raw holding a period its aggregate does
+    not, which reads as empty and cannot be repaired. `_1h`/`_1d` are **never
+    dropped** (ADR 0023 decision 7) — after raw's 730 days they are the only
+    record of the period, at hourly resolution.
+  - *Per-tenant retention override* — **still aspirational.** Nothing implements
+    it; it belongs with multi-tenancy (Phase 3), not with ADR 0024. This line read
+    as shipped for months before either policy existed, which is why the four
+    above now say which they are.
+  - Continuous aggregates for 1m, 5m, 1h, 1d rollups — **implemented**
+    (ADR 0023, migration `0027`), hierarchical rather than four scans of raw, with
+    no `avg_value` column at any level.
 - Parameterised queries only. No string concatenation.
 - Long-running deletes / updates batched at 5,000 rows max.
 - Migrations forward-only.

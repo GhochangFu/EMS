@@ -288,7 +288,7 @@ Zoho IoT is a low-code, multi-tenant IoT AEP. The BMS platform is a **domain-spe
 | Telemetry manual entry API + UI | 3 |
 | Telemetry CSV bulk import | 3 |
 | Tag mapping bulk editor + Excel mapping sheet | 6 |
-| Timescale retention + 1m/1h continuous aggregates | 2 |
+| ~~Timescale retention + 1m/1h continuous aggregates~~ ✅ **done 2026-08-10** (ADR 0023 + ADR 0024) | 2 |
 | Expand MQTT ingest to all enabled RTUs | 1 |
 | Device health / last-seen | 1, 4 |
 
@@ -428,7 +428,7 @@ erDiagram
 | ML/vision scope creep | +36–54 pw | Phase D optional; agree MVP scope |
 | Modbus/BACnet field variance | Adapter overrun | One pilot site per protocol |
 | Dashboard builder scope | 14–18 pw minimum | MVP: 5 widget types |
-| Disk growth (no TS retention) | Production outage | Retention policy in Phase A |
+| ~~Disk growth (no TS retention)~~ ✅ **retired 2026-08-10** | Production outage | Retention policy shipped: ADR 0024 / migration `0028` — raw compresses at 7 d (measured 29.1x on real data) and drops at 730 d, bounding ~11.8 GB/yr to ~440 MB/yr capped at two years |
 | Operator role zero-asset scope | Unusable demo accounts | Fix RBAC defaults in Phase A |
 
 ---
@@ -447,7 +447,7 @@ erDiagram
 | 8 | Calc configuration UI | 9 | P0 | 4–5 | C |
 | 9 | Dashboard builder (core widgets) | 8 | P0 | 14–18 | C |
 | 10 | Tag mapping bulk + Excel sheet | 6 | P1 | 4–5 | A |
-| 11 | Timescale retention + aggregates | 2 | P0 | 4–5 | A |
+| 11 | ~~Timescale retention + aggregates~~ ✅ **done 2026-08-10** (ADR 0023 + ADR 0024) | 2 | P0 | 4–5 | A |
 | 12 | Expand MQTT to all RTUs | 1 | P0 | 3–4 | A |
 | 13 | BACnet read adapter | 1 | P0 | 10–12 | B |
 | 14 | OPC-UA adapter | 1 | P1 | 10–14 | B |
