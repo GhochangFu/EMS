@@ -59,6 +59,47 @@ function report(line: string): void {
   console.error(line);
 }
 
+/** Postgres `object_in_use` — TimescaleDB raises it for a concurrent refresh. */
+const CONCURRENT_REFRESH = "55P03";
+const MAX_ATTEMPTS = 5;
+const RETRY_DELAY_MS = 3_000;
+
+/**
+ * Refreshes one level, retrying a concurrent-refresh conflict.
+ *
+ * Found by rehearsing this script on 2026-08-10 rather than by reasoning about
+ * it: the four scheduled policies run every 1/5/30/60 minutes, and a manual
+ * backfill that overlaps one fails outright with
+ *
+ *   55P03: could not refresh continuous aggregate "point_values_1h" due to a
+ *   concurrent refresh
+ *   detail: A concurrent refresh on window [...] is already in progress.
+ *
+ * The first version had no retry, so it exited non-zero and left `_1h` and `_1d`
+ * at `-infinity` while `_1m` and `_5m` were done — a half-materialised chain from
+ * a command that looks like it either works or doesn't. The conflict is transient
+ * by construction: policy runs are short and bounded by their own `start_offset`.
+ */
+async function refreshLevel(client: pg.Client, view: string): Promise<void> {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      // Open at the start, capped at `now()` — see the comment in `main`.
+      await client.query(`CALL refresh_continuous_aggregate('${view}', NULL, now())`);
+      return;
+    } catch (err: unknown) {
+      const code = (err as { code?: string } | null)?.code;
+      if (code !== CONCURRENT_REFRESH || attempt === MAX_ATTEMPTS) {
+        throw err;
+      }
+      report(
+        `[F4.1] ${view}: a scheduled policy is refreshing the same window; ` +
+          `retrying in ${RETRY_DELAY_MS / 1000}s (attempt ${attempt}/${MAX_ATTEMPTS})`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -71,13 +112,33 @@ async function main(): Promise<void> {
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
 
+  // A refresh cannot be wrapped in a transaction, so `statement_timeout` is the
+  // only bound available on it. Generous — a first backfill over years of pilot
+  // history is legitimately slow — but not unbounded, so a wedged refresh fails
+  // instead of holding a session open indefinitely. `lock_timeout` is separate and
+  // short: waiting on a lock is never the slow part of a refresh, so a long wait
+  // means contention worth failing on.
+  await client.query("SET statement_timeout = '30min'");
+  await client.query("SET lock_timeout = '30s'");
+
   try {
     for (const view of LEVELS) {
       const started = Date.now();
-      // `NULL, NULL` is a full refresh over all of time — correct for a
-      // backfill. The scheduled policies then maintain a bounded window
-      // (ADR 0023 decision 5).
-      await client.query(`CALL refresh_continuous_aggregate('${view}', NULL, NULL)`);
+      // Open at the start, but **capped at `now()`** — not `NULL, NULL`.
+      //
+      // A continuous aggregate's watermark only ever moves forward, and a full
+      // refresh follows the data rather than the clock. Measured 2026-08-10 on
+      // the pilot: 714 `point_values` rows carry `time > now()`, persistently ~34
+      // minutes ahead, because `apps/ingest/src/host/normaliser.ts` takes the
+      // device's `sample.at` with no future-horizon clamp. `NULL, NULL` therefore
+      // parked all four watermarks *ahead of the present*, and for that whole
+      // window the real-time branch — the entire point of decision 4 — covered
+      // nothing, leaving stored, understated buckets with no error anywhere.
+      //
+      // Capping at `now()` leaves the watermark at the present, where the live
+      // branch picks up everything after it, including the future-dated rows. The
+      // unclamped ingest timestamp is a separate defect and is not fixed here.
+      await refreshLevel(client, view);
       const { rows } = await client.query<{ n: string }>(
         `SELECT count(*)::text AS n FROM ${view}`,
       );

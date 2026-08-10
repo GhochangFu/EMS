@@ -2,15 +2,21 @@ import pg from "pg";
 
 import { afterAll, beforeAll, describe, it } from "vitest";
 
+import { DashboardService } from "../dashboard/dashboard.service";
 import {
   assertBucketsExist,
   assertCoarseRollupFromFinerLevel,
-  assertLevelMatchesRaw,
+  assertEnergySummaryMatchesRaw,
   assertNaiveFormWouldFail,
+  assertProbeMatchesRaw,
+  assertProductionShapeMatchesProbe,
   assertRealtimeEnabled,
   assertRefreshOffsetsAreSafe,
+  assertRefreshPoliciesHaveNotFailed,
   cleanup,
-  refreshWindow,
+  createProbeAggregates,
+  dropProbeAggregates,
+  refreshProbes,
   seedReadings,
   type Fixtures,
 } from "./point-aggregates.integration.spec";
@@ -24,19 +30,18 @@ import {
  * `DATABASE_URL` skips locally and throws under `CI`, while a *set* one is a
  * claim that a database exists, so a failed connection fails everywhere. This is
  * the **fifth** copy of the gate. `F2.1`'s file put the threshold for extracting
- * it at the third suite and `F4.14` recorded it as overdue rather than newly
- * due; it is more overdue now. Still left in place rather than refactoring four
- * other suites inside the change that introduces this feature — see the `F4.1`
- * row in `docs/BACKLOG.md`.
+ * it at the third suite and `F4.14` recorded it as overdue rather than newly due;
+ * it is more overdue now. Still left in place rather than refactoring four other
+ * suites inside the change that introduces this feature — see the `F4.1` row in
+ * `docs/BACKLOG.md`.
  *
- * **One side effect on a shared database, stated so it is not a surprise.** The
- * fixture sits past every watermark and the materialized-path case refreshes over
- * it, which advances all four watermarks past `now()`. Until each level's policy
- * next runs, its live branch covers nothing and reads come from stored rows —
- * recovery is one policy interval (1 min for `_1m`, 5 for `_5m`, 30 for `_1h`).
- * `_1d`'s current bucket does not self-correct, but that is inherent to its
- * `end_offset` of 2 days and is equally true after any full backfill; this suite
- * does not cause it. See ADR 0023, "`_1d` is only final for completed days".
+ * **This suite leaves the production aggregates' watermarks alone**, which the
+ * first version did not. It created and refreshed against
+ * `telemetry.point_values_1m/_5m/_1h/_1d` directly, and because a watermark only
+ * moves forward, every run pushed all four ~3 days into the future — permanently
+ * degrading any shared database it was pointed at. The equality work now runs on
+ * throwaway aggregates dropped in `afterAll`; only the catalog assertions touch
+ * the real four, and they are read-only.
  */
 
 const isCi = process.env.CI === "true" || process.env.CI === "1";
@@ -84,19 +89,19 @@ describe.skipIf(!connectionString)("F4.1 — telemetry continuous aggregates", (
       );
     }
     pool = created;
-    // No window on the first cleanup — the fixture window is derived from the
-    // watermarks and is not known until `seedReadings` resolves it.
     await cleanup(created);
+    await createProbeAggregates(created);
     fx = await seedReadings(created);
     await assertBucketsExist(created, fx);
-  }, 60_000);
+  }, 120_000);
 
   afterAll(async () => {
     if (pool) {
-      await cleanup(pool, fx && { start: fx.start, end: fx.end }).catch(() => undefined);
+      await dropProbeAggregates(pool).catch(() => undefined);
+      await cleanup(pool).catch(() => undefined);
       await pool.end();
     }
-  }, 60_000);
+  }, 120_000);
 
   it("has all four aggregates with the real-time branch enabled", async () => {
     await assertRealtimeEnabled(pool as pg.Pool);
@@ -106,13 +111,21 @@ describe.skipIf(!connectionString)("F4.1 — telemetry continuous aggregates", (
     await assertRefreshOffsetsAreSafe(pool as pg.Pool);
   });
 
+  it("has refresh policies that have not failed", async () => {
+    await assertRefreshPoliciesHaveNotFailed(pool as pg.Pool);
+  });
+
+  it("keeps the production aggregate shape identical to the probe's", async () => {
+    await assertProductionShapeMatchesProbe(pool as pg.Pool);
+  });
+
   it("the fixture would detect an average-of-averages implementation", async () => {
     await assertNaiveFormWouldFail(pool as pg.Pool, fx);
   });
 
   /**
    * The only assertion here that fails when `avgExpr` regresses to an average of
-   * averages — verified by mutation. The two `assertLevelMatchesRaw` cases group
+   * averages — verified by mutation. The two `assertProbeMatchesRaw` cases group
    * one source row per output bucket, where both forms agree.
    */
   it("folds many minute buckets into one hour without an avg-of-avg error", async () => {
@@ -122,15 +135,14 @@ describe.skipIf(!connectionString)("F4.1 — telemetry continuous aggregates", (
   /**
    * Ordering matters and is the point of splitting these two.
    *
-   * The fixture sits past every watermark (see `fixtureWindow`) and nothing has
-   * been refreshed over it, so this first pair reads entirely through the
-   * **real-time branch** — the path every read near the tail takes in
-   * production. ADR 0023 measured it exact (7.1e-14 against raw, three levels
-   * deep) and this is what holds it there.
+   * The probes were created moments ago and nothing has been refreshed over them,
+   * so this first pair reads entirely through the **real-time branch** — the path
+   * every read near the tail takes in production. ADR 0023 measured it exact
+   * (7.1e-14 against raw, three levels deep) and this is what holds it there.
    */
   it("matches raw per bucket at 1m and 1h with nothing materialized", async () => {
-    await assertLevelMatchesRaw(pool as pg.Pool, fx, "1m", "minute", "live 1m");
-    await assertLevelMatchesRaw(pool as pg.Pool, fx, "1h", "hour", "live 1h");
+    await assertProbeMatchesRaw(pool as pg.Pool, fx, "1m", "live 1m");
+    await assertProbeMatchesRaw(pool as pg.Pool, fx, "1h", "live 1h");
   }, 60_000);
 
   /**
@@ -139,8 +151,21 @@ describe.skipIf(!connectionString)("F4.1 — telemetry continuous aggregates", (
    * watermark — so passing the live case says nothing about this one.
    */
   it("matches raw per bucket at 1m and 1h once materialized", async () => {
-    await refreshWindow(pool as pg.Pool, { start: fx.start, end: fx.end });
-    await assertLevelMatchesRaw(pool as pg.Pool, fx, "1m", "minute", "materialized 1m");
-    await assertLevelMatchesRaw(pool as pg.Pool, fx, "1h", "hour", "materialized 1h");
+    await refreshProbes(pool as pg.Pool);
+    await assertProbeMatchesRaw(pool as pg.Pool, fx, "1m", "materialized 1m");
+    await assertProbeMatchesRaw(pool as pg.Pool, fx, "1h", "materialized 1h");
+  }, 120_000);
+
+  /**
+   * The converted read site, executed rather than reconstructed. Everything above
+   * proves the aggregates are correct; only this proves `energySummary` reads them
+   * correctly — the level/`kwhFactor` pairing and the `bucket`-vs-`time` predicate
+   * are invisible to every other assertion here.
+   */
+  it("energySummary matches the equivalent raw query on both branches", async () => {
+    const svc = new DashboardService(pool as pg.Pool);
+    await assertEnergySummaryMatchesRaw(pool as pg.Pool, (window, assetIds) =>
+      svc.energySummary(window, assetIds),
+    );
   }, 120_000);
 });

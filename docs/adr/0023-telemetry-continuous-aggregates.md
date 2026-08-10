@@ -33,7 +33,7 @@ raw rows:
 | Site | Bucket |
 |------|--------|
 | `dashboard.service.ts:465` | `minute` |
-| `dashboard.service.ts:629` (`energyKpis`) | `minute` or `hour` |
+| `dashboard.service.ts:629` (`energySummary`) | `minute` or `hour` |
 | `dashboard.service.ts:681` (`energySourceMix`) | `minute` or `hour` |
 | `dashboard.service.ts:762` | none (bare `avg`) |
 | `reports.service.ts:133`, `:180` | `hour` |
@@ -44,7 +44,7 @@ That is affordable today and will not be. Measured on the pilot database
 (TimescaleDB **2.29.1** / PostgreSQL 16.14, 621,043 rows, 49 point keys, 78
 assets, five days):
 
-- `energyKpis`' hourly rollup: **144.7 ms cold / 32.7 ms warm**.
+- `energySummary`' hourly rollup: **144.7 ms cold / 32.7 ms warm**.
 - The same result from a 1-minute continuous aggregate: **11.8 ms cold /
   5.4 ms warm** — 12× and 6×.
 
@@ -279,7 +279,7 @@ and `E1.1` (ML serving, which reads features "from aggregates").
 6. **Exactly one read site converts in `F4.1`, and it is verified by equality
    against the raw query it replaces.**
 
-   `DashboardService.energyKpis` (`apps/api/src/dashboard/dashboard.service.ts:622`)
+   `DashboardService.energySummary` (`apps/api/src/dashboard/dashboard.service.ts:622`)
    reads `point_values_1m` or `point_values_1h` per its existing
    minute/hour branch. It is chosen because it is the query benchmarked above
    and the one whose shape (`per` → `agg` → KPIs) recurs at five other sites,
@@ -307,7 +307,7 @@ and `E1.1` (ML serving, which reads features "from aggregates").
 
    **A mixed tree is provably consistent, which is what makes converting one
    site defensible rather than lazy.** Measured fact 7 puts the live branch at
-   7.1e-14 against raw, so a dashboard where `energyKpis` reads `_1h` while
+   7.1e-14 against raw, so a dashboard where `energySummary` reads `_1h` while
    `energySourceMix` still reads `date_trunc` over raw **cannot show two
    different numbers**. Correctness was the only thing that would have forced a
    big-bang conversion, and it does not.
@@ -409,6 +409,129 @@ already running (`2.29.1-pg16`); it adds no dependency and removes no feature.
   is not deferred to `F4.24`/`F4.27`.
 - **Deferred:** a unit constraint on `point_values` (decision 2) and
   aggregate-lag alerting (above, `F4.25`).
+
+## Amendment 1 (2026-08-10) — the window predicate is a semantic change, and "exact parity" overclaimed
+
+Raised by the migration review, which measured a divergence this ADR's own
+verification could not have found. **Corrected here rather than left as
+provenance, because the claim was the headline.**
+
+`energySummary` used `time > now() - $1::interval` on raw sample timestamps and
+then bucketed; it now uses `bucket > now() - $1::interval` on the aggregate's
+bucket **start**. Those are not the same window. The old form admitted the
+*partial* bucket containing the cutoff and — because `kwhFactor` is per whole
+bucket — weighted it as a full one. The new form excludes it.
+
+**The parity claim was true as measured and false as stated.** Re-measured
+2026-08-10 across the pairings the code actually uses, after repairing the
+watermarks (see below):
+
+| Window | Level | Buckets | Old kWh | New kWh | Δ |
+|--------|-------|---------|---------|---------|---|
+| 24 h | `_1m` | 982 = 982 | 649.7428 | 649.7428 | **0.0000%** |
+| 48 h | `_1h` | 17 = 17 | 815.7867 | 815.7867 | **0.0000%** |
+| 7 d | `_1h` | 25 = 25 | 2311.9262 | 2311.9262 | **0.0000%** |
+
+Exact on every real pairing — but **data-dependent, not structural**. Windows
+are whole hours or days while `now()` is not, so the cutoff always lands
+mid-bucket; the two forms agree only when that partial bucket happens to be
+empty, which is what the pilot's ~1-sample-per-minute cadence produces. The
+review's 18% figure came from a 6-hour window against `_1h`, a pairing
+`parseEnergyWindow` never produces (`useHourlyBuckets` is `n >= 48`), so it
+overstates the code path — but the mechanism it demonstrates is real.
+
+**Decision: keep `bucket >`, and state the semantics.** The result now contains
+only *whole* buckets, so the window is right-open at bucket granularity. The
+difference from the pre-`F4.1` form is bounded by one bucket's contribution —
+at most ~2% at the coarsest real pairing (48 h, 1 of 48 hourly buckets), ~0.6%
+at 7 d, ~0.07% at 24 h. Weighting a partial bucket as a full one over-counts
+energy, so this is the more defensible reading; and an aggregate **cannot**
+reproduce the old number in general, because the sub-bucket sample filtering it
+depended on is exactly what the aggregate discards by construction.
+
+`assertEnergySummaryMatchesRaw` pins both halves: exact equality against the
+*precisely equivalent* raw query (first bucket boundary after the cutoff), which
+catches a reverted `bucket`→`time` or a mismatched level/`kwhFactor` pair; and a
+**one-bucket ceiling** against the old form, so a larger movement fails rather
+than hiding behind the documented change.
+
+## Amendment 2 (2026-08-10) — four operational findings, three of them fixed
+
+All four came out of the review round and none was known when the decisions
+above were written.
+
+**1. Future-dated readings park the watermarks ahead of `now()`. Fixed in the
+backfill.** Measured: **714** `telemetry.point_values` rows carry `time >
+now()`, persistently ~34 minutes ahead — a constant offset, not clock skew
+(container clocks agree to 2 s). `apps/ingest/src/host/normaliser.ts` takes the
+device's `sample.at` with no future-horizon clamp. A `NULL, NULL` refresh
+follows the *data*, not the clock, so the documented backfill parked all four
+watermarks in the future, and for that whole span the real-time branch — the
+entire point of decision 4 — covered nothing, leaving stored, understated
+buckets with no error. `pnpm db:refresh-aggregates` now refreshes `NULL, now()`.
+**The unclamped ingest timestamp is a separate defect and is not fixed here**;
+it belongs with `F1.7`.
+
+**2. A manual backfill can collide with a scheduled policy. Fixed.** Found by
+rehearsing the script rather than reasoning about it: `55P03 — could not refresh
+continuous aggregate "point_values_1h" due to a concurrent refresh`. The first
+version had no retry, exited non-zero, and left `_1h`/`_1d` at `-infinity` while
+`_1m`/`_5m` were done — a half-materialised chain from a command that looks
+atomic. Now retried up to five times with a 3 s delay, and the session sets
+`statement_timeout = 30min` / `lock_timeout = 30s` so a wedged refresh fails
+instead of hanging.
+
+**3. Recovery from a future-parked watermark is manual DDL, and it is not
+optional knowledge.** A watermark only moves forward, and migration `0027` will
+not re-run because Drizzle has recorded its hash. Recovery is: drop
+`point_values_1d`, `_1h`, `_5m`, `_1m` (children first, `CASCADE`), re-apply
+`0027`'s SQL by hand, then `pnpm db:refresh-aggregates`. Executed on the dev
+database on 2026-08-10 to confirm it works; watermarks came back to `now()`.
+
+**4. Rollback is two-part, not one.** Reverting `0027` on the pilot means
+dropping the four views **and** reverting `apps/api` in the same window —
+`dashboard.service.ts` interpolates `telemetry.point_values_1h`/`_1m`, so
+dropping the views under a running API turns `energySummary` into a 500 on a
+missing relation. Add deleting `__drizzle_migrations` id 27 if it must be
+re-applied. "Additive DDL, forward-only" is true; "revertible by dropping four
+views" was not the whole story.
+
+Also verified in that round, and worth not re-deriving: the **fresh-database CI
+path had never executed anywhere** (these commits are local; the base commit's
+own run was red). Rehearsed on a scratch database — `db:migrate` → `db:seed` →
+`db:refresh-aggregates` — and all four levels report `0 rows` and exit `0`, so
+the nested-aggregate-over-empty-source case does not error. The **lock level**
+`CREATE MATERIALIZED VIEW … WITH NO DATA` takes on `point_values` is still
+**not** measured; treat this ADR's earlier "takes no lock beyond what it needs"
+as unverified and rehearse against `pg_locks` before the pilot run. One
+confirmed cost either way: from `0027` onward every `INSERT` into
+`point_values` also writes an invalidation entry — small, permanent write
+amplification on the ingest hot path.
+
+## A deletion from raw does not delete it from the aggregates
+
+Raised by the security review and **reproduced**: insert a row behind the
+watermark, refresh, `DELETE` it from `telemetry.point_values`, and the aggregate
+still returns it. No scheduled policy repairs it — the `start_offset` windows
+never reach that far back.
+
+This ADR's watermark section covers *arrivals*; the divergence is symmetric, and
+the deletion direction is the one that matters. This repo's established
+site-removal pattern **is** a raw delete —
+`packages/db/drizzle/0014_remove_smoc_pretoria_north.sql` and
+`0021_remove_onboarding_demo_locations.sql` both do it. Both predate the
+aggregates, so nothing is wrong on disk today. But the next migration of that
+shape, or any customer erasure request, leaves per-minute `sum`/`count`/`min`/
+`max` per `(asset_id, point_key)` readable in four views indefinitely — and
+decision 7 makes `_1h`/`_1d` the long-term record, which turns a lag into
+permanence.
+
+**Standing obligation, in the same class as ADR 0021 decision 6:** any deletion
+from `telemetry.point_values` must be followed by
+`refresh_continuous_aggregate('<level>', <range start>, <range end>)` for all
+four levels, finest first. It is stated in `0027_continuous_aggregates.sql` as
+well, because that is where the next author of such a migration will look, and
+it is an explicit constraint on `F4.2`.
 
 ## Two behaviours found while building, both recorded rather than fixed
 

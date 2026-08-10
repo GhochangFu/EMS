@@ -46,8 +46,18 @@ const BUCKET_SECONDS: Record<AggregateLevel, number> = {
  * is a lookup against a closed set rather than a string the caller supplies —
  * there is no path from user input to a relation name here.
  */
-export function aggregateRelation(level: AggregateLevel): string {
-  return RELATIONS[level];
+export function aggregateRelation(level: AggregateLevel): string | undefined {
+  // `Object.hasOwn`, not a bare index. The same prototype-key guard as
+  // `onboarding-redaction.ts`: a plain `RELATIONS[key]` returns inherited
+  // `Object.prototype` members, so a polluted prototype plus any caller passing a
+  // string (types erase at runtime) could steer the relation name that gets
+  // interpolated into SQL. No such caller exists today; this costs nothing and
+  // removes the class.
+  //
+  // The return type admits `undefined` because `point-aggregates.spec.ts` asserts
+  // that an unknown level yields it. A signature promising `string` while the spec
+  // depends on `undefined` is the drift AGENTS.md 4.1 is about.
+  return Object.hasOwn(RELATIONS, level) ? RELATIONS[level] : undefined;
 }
 
 /**
@@ -68,6 +78,13 @@ export function aggregateRelation(level: AggregateLevel): string {
  * @param alias table alias the columns are qualified with (`""` for none)
  */
 export function avgExpr(alias = ""): string {
+  // The alias is interpolated into SQL, and AGENTS.md 4.4's "parameterised
+  // queries only" cannot cover an identifier — so it is validated instead. No
+  // caller passes one today (every runtime call is bare), but decision 8 routes
+  // six more sites through here in `F4.28` and some will need aliases.
+  if (alias && !/^[a-z_][a-z0-9_]*$/i.test(alias)) {
+    throw new Error(`avgExpr: refusing to interpolate an unsafe alias: ${alias}`);
+  }
   const q = alias ? `${alias}.` : "";
   return `(sum(${q}sum_value) / sum(${q}sample_count))`;
 }
@@ -80,7 +97,7 @@ export function bucketSeconds(level: AggregateLevel): number {
 /**
  * Hours covered by one bucket — the factor that turns an average kW per bucket
  * into kWh. Replaces the hard-coded `1` / `1 / 60` pair that
- * `DashboardService.energyKpis` carried when it read raw, where the two branches
+ * `DashboardService.energySummary` carried when it read raw, where the two branches
  * had to agree with a `date_trunc` unit written elsewhere in the same query.
  */
 export function bucketHours(level: AggregateLevel): number {

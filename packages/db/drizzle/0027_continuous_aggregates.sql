@@ -30,6 +30,20 @@
 --    the live branch is exact — 7.1e-14 against raw, three levels deep, with
 --    nothing materialized at all.
 --
+-- STANDING OBLIGATION, in the class of ADR 0021 decision 6. Any DELETE from
+-- telemetry.point_values must be followed by
+--   CALL refresh_continuous_aggregate('telemetry.point_values_1m', <from>, <to>);
+-- and the same for _5m, _1h, _1d, finest first. Reproduced 2026-08-10: deleting a
+-- raw row behind the watermark leaves the aggregate row readable, and NO scheduled
+-- policy repairs it — the start_offset windows never reach that far back.
+--
+-- This is not hypothetical. 0014_remove_smoc_pretoria_north.sql and
+-- 0021_remove_onboarding_demo_locations.sql both DELETE FROM
+-- telemetry.point_values; both predate these aggregates. The next migration of
+-- that shape, or any erasure request, would otherwise leave per-minute
+-- sum/count/min/max per (asset_id, point_key) readable in four views forever —
+-- and ADR 0023 decision 7 makes _1h/_1d the long-term record.
+
 -- 3. end_offset(L) >= end_offset(source) + bucket_width(L). A level that
 --    materialises a bucket its source has not completed stores an UNDERSTATED
 --    figure, and the live branch cannot repair it — for an already-materialized

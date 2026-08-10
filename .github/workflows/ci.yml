@@ -13,7 +13,13 @@ jobs:
 
     services:
       postgres:
-        image: timescale/timescaledb:latest-pg16
+        # Pinned to match docker-compose.yml (ADR 0023 decision 4). CI is the
+        # substrate under `assertRealtimeEnabled` and `assertRefreshOffsetsAreSafe`,
+        # which assert behaviour measured on 2.29.1 — including that
+        # `materialized_only` defaults to true and that the real-time branch (which
+        # upstream deprecated in 2.13) still works. Leaving CI on `latest-pg16`
+        # while compose is pinned means the gate runs on an engine nobody chose.
+        image: timescale/timescaledb:2.29.1-pg16
         env:
           POSTGRES_DB: bms
           POSTGRES_USER: bms_app

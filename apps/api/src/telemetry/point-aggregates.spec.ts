@@ -20,10 +20,19 @@ function assert(condition: boolean, message: string): void {
 
 const LEVELS: AggregateLevel[] = ["1m", "5m", "1h", "1d"];
 
+/**
+ * Each level must resolve to its own schema-qualified relation. A collision would
+ * silently read the wrong granularity — the numbers would still look plausible.
+ */
 export function assertRelationsAreQualifiedAndDistinct(): void {
   const seen = new Set<string>();
   for (const level of LEVELS) {
     const rel = aggregateRelation(level);
+    // Explicit throw, not `assert` — a plain function is not a type guard, and
+    // the `Set` calls below need `rel` narrowed to `string`.
+    if (rel === undefined) {
+      throw new Error(`aggregateRelation("${level}") returned undefined`);
+    }
     assert(
       rel === `telemetry.point_values_${level}`,
       `aggregateRelation("${level}") returned "${rel}"`,
@@ -70,7 +79,7 @@ export function assertAvgExprIsWeighted(): void {
   );
 }
 
-/** The kWh factor `energyKpis` used to hard-code as `1` and `1 / 60`. */
+/** The kWh factor `energySummary` used to hard-code as `1` and `1 / 60`. */
 export function assertBucketWidthsAreConsistent(): void {
   assert(bucketSeconds("1m") === 60, "1m must be 60s");
   assert(bucketSeconds("5m") === 300, "5m must be 300s");

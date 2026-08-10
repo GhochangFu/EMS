@@ -4,6 +4,7 @@ import {
   index,
   pgSchema,
   primaryKey,
+  text,
   timestamp,
   uuid,
   varchar,
@@ -53,16 +54,26 @@ export const pointValues = telemetrySchema.table(
  * Divide at read time — `sum(sumValue) / sum(sampleCount)` — and do it through
  * `apps/api/src/telemetry/point-aggregates.ts`, which owns that expression.
  */
+/**
+ * Column types match what the engine actually reports, not what the raw table
+ * declares. Verified against `information_schema.columns` on 2026-08-10: `unit` is
+ * **`text`**, not `varchar(32)`, because `max()` over a `varchar(32)` yields
+ * `text`; and no view column carries `NOT NULL`, so none of these is `.notNull()`.
+ *
+ * `.existing()` means nothing will ever reconcile a mismatch here, so a wrong
+ * declaration would be a permanently wrong type with no error — which is exactly
+ * why it is worth getting right rather than copying the raw table's shape.
+ */
 const aggregateColumns = {
-  bucket: timestamp("bucket", { withTimezone: true }).notNull(),
-  assetId: uuid("asset_id").notNull(),
-  pointKey: varchar("point_key", { length: 128 }).notNull(),
-  sumValue: doublePrecision("sum_value").notNull(),
+  bucket: timestamp("bucket", { withTimezone: true }),
+  assetId: uuid("asset_id"),
+  pointKey: varchar("point_key", { length: 128 }),
+  sumValue: doublePrecision("sum_value"),
   /** `count(*)` is `bigint` in Postgres; read as a string unless cast. */
-  sampleCount: bigint("sample_count", { mode: "number" }).notNull(),
-  minValue: doublePrecision("min_value").notNull(),
-  maxValue: doublePrecision("max_value").notNull(),
-  unit: varchar("unit", { length: 32 }),
+  sampleCount: bigint("sample_count", { mode: "number" }),
+  minValue: doublePrecision("min_value"),
+  maxValue: doublePrecision("max_value"),
+  unit: text("unit"),
 } as const;
 
 export const pointValues1m = telemetrySchema
