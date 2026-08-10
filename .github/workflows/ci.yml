@@ -89,6 +89,18 @@ jobs:
       - name: Validate seed against a fresh schema
         run: pnpm db:seed
 
+      # ADR 0023 (F4.1). NOT here to make any test non-vacuous — db:seed inserts
+      # zero telemetry.point_values rows, so all four aggregates are legitimately
+      # empty on a fresh CI database and this is a no-op there. The aggregate
+      # suite inserts its own fixture.
+      #
+      # It runs because an unexercised script rots: apps/ingest/Dockerfile sat
+      # broken on main while this same pipeline stayed green. This is the only
+      # thing that proves the backfill path still works before an operator needs
+      # it on a database that does have history.
+      - name: Validate the aggregate backfill script
+        run: pnpm db:refresh-aggregates
+
       # Deliberately last. Vitest fails fast, so running it earlier would let a
       # single broken unit test abort the job before db:seed ever executes —
       # hiding the schema check that this pipeline exists to protect.

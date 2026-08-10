@@ -16,6 +16,7 @@
     "generate": "drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
     "seed": "tsx src/seed.ts",
+    "refresh-aggregates": "tsx src/refresh-aggregates.ts",
     "verify:hierarchy": "tsx src/verify-hierarchy-cli.ts"
   },
   "dependencies": {
