@@ -1,8 +1,10 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
 
@@ -19,11 +21,14 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { DRIZZLE } from "../../database/database.tokens";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingExcelService } from "./onboarding-excel.service";
+import { looksLikeCredential, scrubMessages } from "./onboarding-credential-detect";
+import type { SetCredentialsBody } from "./onboarding.schema";
 import { redactDraftForClient } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -81,6 +86,7 @@ export class OnboardingService {
 
   /** Returns one session with redacted draft. */
   async getSession(jwt: JwtPayload, sessionId: string): Promise<OnboardingSessionDto> {
+    // Decision 3's gate now lives in `loadSession` — see the note there.
     const session = await this.loadSession(jwt, sessionId);
     const [org] = await this.db
       .select({ code: organizations.code, name: organizations.name })
@@ -88,6 +94,63 @@ export class OnboardingService {
       .where(eq(organizations.id, session.organizationId))
       .limit(1);
     return this.mapSession(session, org?.code ?? "", org?.name ?? "");
+  }
+
+  /**
+   * Stores RTU credentials for a draft session (ADR 0022 decision 1).
+   *
+   * The reason this endpoint exists: credentials used to be typed into the chat
+   * and parsed out of the turn, which left plaintext in
+   * `onboarding_sessions.messages` and sent it to the LLM. Here the plaintext
+   * lives only in the request body, is encrypted through the ADR 0012 path, and
+   * is never echoed back — the response is the ordinary redacted session.
+   */
+  async setCredentials(
+    jwt: JwtPayload,
+    sessionId: string,
+    body: SetCredentialsBody,
+  ): Promise<OnboardingSessionDto> {
+    const session = await this.loadSession(jwt, sessionId);
+    await this.assertOnboardingAccess(jwt, session.organizationId);
+    if (session.status !== "draft") {
+      throw new ForbiddenException("Session is not editable");
+    }
+
+    const draft = session.draft as OnboardingDraft;
+    if (!Array.isArray(draft.rtus) || !draft.rtus[body.rtuIndex]) {
+      throw new BadRequestException(`No RTU at index ${body.rtuIndex} in this draft`);
+    }
+
+    // Fail closed. `mergeDraft`'s existing path sets `credentialsSet: true`
+    // without encrypting when the key is missing — the false-success half of
+    // `E8.4`. That behaviour is out of scope to change here, but this endpoint
+    // must not become a second instance of it: refuse rather than report a
+    // success that stored nothing.
+    if (!CredentialCryptoService.isConfigured()) {
+      throw new ServiceUnavailableException(
+        "CREDENTIAL_ENCRYPTION_KEY is not configured, so credentials cannot be stored encrypted. " +
+          "Refusing rather than reporting a success that stored nothing.",
+      );
+    }
+
+    const mergedDraft = this.chatService.mergeDraft(session.draft, {}, {
+      rtuIndex: body.rtuIndex,
+      credentials: body.credentials,
+    });
+
+    const [updated] = await this.db
+      .update(onboardingSessions)
+      .set({ draft: mergedDraft, updatedAt: sql`now()` })
+      .where(eq(onboardingSessions.id, sessionId))
+      .returning();
+
+    const [org] = await this.db
+      .select({ code: organizations.code, name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, session.organizationId))
+      .limit(1);
+
+    return this.mapSession(updated, org?.code ?? "", org?.name ?? "");
   }
 
   /** Processes a user chat message. */
@@ -99,6 +162,30 @@ export class OnboardingService {
     const session = await this.loadSession(jwt, sessionId);
     if (session.status !== "draft") {
       throw new ForbiddenException("Session is not editable");
+    }
+
+    // ADR 0022 decision 2. Checked before ANY side effect: the turn is not
+    // stored in `messages` and never reaches `handleOpenAiTurn`. Returning a
+    // normal chat response rather than a 400 keeps the wizard usable — the
+    // user is told where the credentials field is instead of hitting an error.
+    if (looksLikeCredential(message)) {
+      const [orgRefused] = await this.db
+        .select({ code: organizations.code, name: organizations.name })
+        .from(organizations)
+        .where(eq(organizations.id, session.organizationId))
+        .limit(1);
+      return {
+        assistantMessage:
+          "That message looks like it contains a credential, so I have not saved it. " +
+          "Credentials never go through this chat — use the **Credentials** field on the " +
+          "RTU step and they are encrypted before storage (ADR 0012).",
+        session: this.mapSession(session, orgRefused?.code ?? "", orgRefused?.name ?? ""),
+        suggestedReplies: ["View draft", "Add point key kw"],
+        validationErrors: [],
+        readyToCommit: false,
+        autoOpenPreview: false,
+        autoOpenReason: undefined,
+      };
     }
 
     const draft = session.draft as OnboardingDraft;
@@ -118,13 +205,16 @@ export class OnboardingService {
       session.organizationId,
     );
 
-    const mergedDraft = this.chatService.mergeDraft(
-      session.draft,
-      turn.draftPatch,
-      turn.credentialsToEncrypt,
-    );
+    const mergedDraft = this.chatService.mergeDraft(session.draft, turn.draftPatch);
 
-    const assistantMsg = this.chatService.createMessage("assistant", turn.assistantMessage);
+    // H2 from the 2026-08-10 review: only the *user* turn was inspected. On the
+    // OpenAI path `assistantMessage` is model output, so a model echoing back a
+    // secret it was handed was stored unchecked. Scrub rather than refuse — the
+    // turn is ours, not the user's, so there is nobody to ask to retype it.
+    const assistantText = looksLikeCredential(turn.assistantMessage)
+      ? "[REDACTED] — the assistant's reply looked like it contained a credential (ADR 0022)"
+      : turn.assistantMessage;
+    const assistantMsg = this.chatService.createMessage("assistant", assistantText);
     const messages = [
       ...(session.messages as OnboardingChatMessage[]),
       userMsg,
@@ -149,7 +239,7 @@ export class OnboardingService {
       .limit(1);
 
     return {
-      assistantMessage: turn.assistantMessage,
+      assistantMessage: assistantText,
       session: this.mapSession(updated, orgFull?.code ?? "", orgFull?.name ?? ""),
       suggestedReplies: turn.suggestedReplies,
       validationErrors: turn.validationErrors,
@@ -297,6 +387,15 @@ export class OnboardingService {
     };
   }
 
+  /**
+   * ADR 0022 Amendment 1 (2026-08-10 security review). The role check lives
+   * HERE, not on individual routes, because the first pass raised only
+   * `getSession` and left `chat`, `patchDraft`, `uploadExcel` and `validate` on
+   * the weaker org-scope check — inverting the ADR's own principle by making
+   * the writes weaker than the read they expose. `uploadExcel` is the sharp
+   * case: it writes credentials parsed from the workbook, so a `location_admin`
+   * refused by `POST :id/credentials` could still write credentials via Excel.
+   */
   private async loadSession(jwt: JwtPayload, sessionId: string) {
     await this.accessControl.requireMasterDataUser(jwt);
     const [session] = await this.db
@@ -307,9 +406,7 @@ export class OnboardingService {
     if (!session) {
       throw new NotFoundException("Onboarding session not found");
     }
-    if (!(await this.accessControl.canManageOrganization(jwt, session.organizationId))) {
-      throw new ForbiddenException("Organization is outside your access scope");
-    }
+    await this.assertOnboardingAccess(jwt, session.organizationId);
     return session;
   }
 
@@ -336,7 +433,9 @@ export class OnboardingService {
       status: row.status as OnboardingSessionDto["status"],
       currentPhase: row.currentPhase as OnboardingPhase,
       draft: redactDraftForClient(row.draft),
-      messages: (row.messages as OnboardingChatMessage[]) ?? [],
+      // ADR 0022 decision 4 — defence in depth. Decision 2 is what keeps
+      // secrets out of storage; this bounds the damage if it ever fails.
+      messages: scrubMessages(row.messages),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
       committedAt: row.committedAt?.toISOString() ?? null,

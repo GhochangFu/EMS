@@ -26,6 +26,7 @@ import {
   chatBodySchema,
   createSessionBodySchema,
   patchDraftBodySchema,
+  setCredentialsBodySchema,
 } from "./onboarding.schema";
 import { OnboardingService } from "./onboarding.service";
 
@@ -107,6 +108,31 @@ export class OnboardingController {
     try {
       const parsed = patchDraftBodySchema.parse(body);
       return this.service.patchDraft(user, idParamSchema.parse(id), parsed.draft);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * ADR 0022 decision 1 — the only way credentials enter onboarding. The body
+   * is plaintext, encrypted before storage, and never echoed back.
+   */
+  @Post("sessions/:id/credentials")
+  @HttpCode(HttpStatus.OK)
+  async setCredentials(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      return await this.service.setCredentials(
+        user,
+        idParamSchema.parse(id),
+        setCredentialsBodySchema.parse(body),
+      );
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

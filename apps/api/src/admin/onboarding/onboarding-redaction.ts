@@ -23,10 +23,15 @@ export function redactDraftForClient(draft: unknown): OnboardingDraft {
   const copy = structuredClone(draft) as DraftWithSecrets;
   delete copy._secrets;
   if (Array.isArray(copy.rtus)) {
-    copy.rtus = copy.rtus.map((rtu) => {
-      const { ...rest } = rtu;
-      return { ...rest, credentialsSet: Boolean(rtu.credentialsSet) };
-    });
+    copy.rtus = copy.rtus.map((rtu) => ({
+      ...rtu,
+      // M2 from the 2026-08-10 security review: this used to delete `_secrets`
+      // and nothing else, so the CLIENT response was less redacted than the LLM
+      // context — anything plaintext in `config` (which the model can write via
+      // `draftPatch`) was returned by `GET /sessions/:id` and by `validate`.
+      config: scrubSecrets(rtu.config) as typeof rtu.config,
+      credentialsSet: Boolean(rtu.credentialsSet),
+    }));
   }
   return copy;
 }

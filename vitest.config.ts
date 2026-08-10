@@ -47,6 +47,9 @@ export default defineConfig({
       // a `.spec.ts` that no wrapper runs. `tests/repo-invariants.test.ts` is
       // what actually catches that; do not rely on this gate for it.
       exclude: ["**/*.spec.ts", "**/*.test.ts", "**/*.test.js", "**/*.d.ts"],
+      // Measured 2026-08-09 with E8.3's onboarding credential capture (ADR 0022):
+      // statements 30.22 · branches 24.92 · functions 31.25 · lines 30.36.
+      //
       // Measured 2026-08-09 with F4.14's audit read API (ADR 0021), its fourth
       // integration suite, and the review-driven additions (controller suite,
       // the Amendment 1 provisioning check):
@@ -89,10 +92,10 @@ export default defineConfig({
       // the reason and the command to fix it. Do NOT lower these to make a
       // database-less run pass.
       thresholds: {
-        statements: 29.8,
-        branches: 24.3,
-        functions: 30.9,
-        lines: 29.9,
+        statements: 30.1,
+        branches: 24.8,
+        functions: 31.1,
+        lines: 30.2,
       },
     },
   },

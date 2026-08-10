@@ -176,6 +176,13 @@
       "when": 1779235200000,
       "tag": "0025_drop_phe_device_timestamp_points",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1779321600000,
+      "tag": "0026_purge_onboarding_chat_transcripts",
+      "breakpoints": true
     }
   ]
 }

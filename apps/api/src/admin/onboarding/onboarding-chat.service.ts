@@ -15,6 +15,7 @@ import {
   attachEncryptedCredentials,
   redactDraftForLlm,
 } from "./onboarding-redaction";
+import { onboardingDraftSchema } from "./onboarding.schema";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingProtocolService } from "./onboarding-protocol.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -28,7 +29,10 @@ export type ChatTurnResult = {
   readyToCommit?: boolean;
   autoOpenPreview?: boolean;
   autoOpenReason?: OnboardingAutoOpenReason;
-  credentialsToEncrypt?: { rtuIndex: number; credentials: Record<string, unknown> };
+  // No `credentialsToEncrypt` here by design (ADR 0022 decision 2): a chat turn
+  // can no longer yield a credential, so the field is removed rather than left
+  // permanently undefined where someone could re-populate it. `mergeDraft`
+  // still accepts credentials — `POST :id/credentials` is its only caller now.
 };
 
 /** Conversational onboarding bot with OpenAI or rule-based fallback. */
@@ -85,7 +89,12 @@ export class OnboardingChatService {
     if (mqttIncomplete.length > 0) {
       lines.push(
         `\n**MQTT setup still required** for ${mqttIncomplete.length} RTU(s). ` +
-          "Add **username** and **password** columns in Excel and re-upload, or paste credentials in chat:",
+          // ADR 0022 decision 2: this used to end "or paste credentials in
+          // chat" and was followed by a template containing username/password
+          // lines. Missed in the first pass and caught by the 2026-08-10
+          // security review — the prompt text is part of the fix, because an
+          // instruction to paste secrets re-opens the hole at the UI layer.
+          "Set each RTU's credentials with the **Credentials** field on the RTU step — never in this chat. The topic can be completed here:",
       );
       lines.push(`\n${this.mqttSetupTemplate(draft)}`);
       lines.push("\nFill in the template and send it back, then say **confirm rtu**.");
@@ -198,7 +207,7 @@ export class OnboardingChatService {
 Current phase: ${phase}. Return JSON with keys: assistantMessage, draftPatch (partial), currentPhase, suggestedReplies (optional string array).
 Phases: location, rtu, point_keys, assets, mappings, review.
 Protocols: mqtt, modbus_tcp, bacnet, opc_ua, snmp, rest_poller, simulator, catalog.
-Never include password or secret values in assistantMessage. If user gives credentials, set draftPatch only with credentialsSet true for the RTU.
+Never include password or secret values in assistantMessage. Credentials are NEVER collected through this chat — if the user offers one, tell them to use the Credentials field on the RTU step. Never set credential values in draftPatch.
 Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
 
     const completion = await client.chat.completions.create({
@@ -220,7 +229,12 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
 
     return this.finalizeTurn(
       parsed.assistantMessage ?? "Thanks, I've updated the draft.",
-      parsed.draftPatch ?? {},
+      // M2 from the 2026-08-10 review: this was cast straight from the model's
+      // JSON and merged with a spread that preserves unknown keys, so a
+      // `_secrets` key in the reply could overwrite the encrypted credential
+      // store, and `rtus[].config.password` could land as plaintext. Client
+      // input via `patchDraft` was already validated; model output was not.
+      onboardingDraftSchema.safeParse(parsed.draftPatch ?? {}).data ?? {},
       parsed.currentPhase ?? phase,
       parsed.suggestedReplies,
       message,
@@ -307,21 +321,20 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
         ingestEnabled: protocol === "mqtt",
       };
       patch.rtus = [...(draft.rtus ?? []), rtuPatch];
-      const creds = this.extractCredentials(message);
-      const result = this.finalizeTurn(
+      // ADR 0022 decision 2: this used to say "Share username and password"
+      // and `extractCredentials` parsed them straight out of the turn, which
+      // is what put plaintext secrets into `onboarding_sessions.messages`.
+      // Credentials now arrive only through `POST :id/credentials`.
+      return this.finalizeTurn(
         protocol === "mqtt"
-          ? "MQTT RTU added. Share username and password, or say **skip credentials** for now."
+          ? "MQTT RTU added. Add its credentials with the **Credentials** field on the RTU step — never in this chat — or carry on without them for now."
           : `Added ${protocol} RTU. Ingest adapter is not connected yet — config will be stored. Add point keys next?`,
         patch,
-        creds ? "rtu" : "point_keys",
+        "point_keys",
         ["Add point key kw", "View draft", "Add another RTU"],
         message,
         { ...draft, rtus: patch.rtus },
       );
-      if (creds) {
-        result.credentialsToEncrypt = { rtuIndex: (draft.rtus?.length ?? 0), credentials: creds };
-      }
-      return result;
     }
 
     if (phase === "point_keys" || !draft.pointKeys?.length) {
@@ -389,7 +402,7 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     draftPatch: OnboardingDraftInput,
     currentPhase: OnboardingPhase,
     suggestedReplies: string[] | undefined,
-    userMessage: string,
+    _userMessage: string,
     mergedDraft: OnboardingDraft,
   ): ChatTurnResult {
     const validation = this.validateService.validate(mergedDraft);
@@ -405,15 +418,9 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
       autoOpenReason = validation.readyToCommit ? "ready_to_commit" : "review";
     }
 
-    const creds = this.extractCredentials(userMessage);
-    let credentialsToEncrypt: ChatTurnResult["credentialsToEncrypt"];
-    if (creds && mergedDraft.rtus?.length) {
-      credentialsToEncrypt = {
-        rtuIndex: mergedDraft.rtus.length - 1,
-        credentials: creds,
-      };
-    }
-
+    // ADR 0022 decision 2 — no credential is ever lifted out of a chat turn.
+    // A turn that looks like it carries one is refused upstream in
+    // `OnboardingService.chat` before it reaches here or the LLM.
     return {
       assistantMessage,
       draftPatch,
@@ -423,7 +430,6 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
       readyToCommit: validation.readyToCommit,
       autoOpenPreview,
       autoOpenReason,
-      credentialsToEncrypt,
     };
   }
 
@@ -453,20 +459,6 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     return {};
   }
 
-  private extractCredentials(message: string): Record<string, unknown> | null {
-    if (/skip credential/i.test(message)) {
-      return null;
-    }
-    const userMatch = message.match(/user(?:name)?[:\s]+(\S+)/i);
-    const passMatch = message.match(/pass(?:word)?[:\s]+(\S+)/i);
-    if (userMatch || passMatch) {
-      return {
-        username: userMatch?.[1] ?? "",
-        password: passMatch?.[1] ?? "",
-      };
-    }
-    return null;
-  }
 
   /** Merges draft patch and optional encrypted credentials into stored draft. */
   mergeDraft(
@@ -528,8 +520,10 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
       return [
         `RTU: ${rtu.displayName}`,
         `topic: ${topic}`,
-        `username: pheadmin`,
-        `password: your-password`,
+        // No username/password lines (ADR 0022, decision 2). A copy-paste block
+        // that models credential entry teaches exactly the behaviour this ADR
+        // forbids — and the filled-in version would now be refused by the
+        // detector, stranding anyone who followed the instruction.
       ].join("\n");
     });
     return (

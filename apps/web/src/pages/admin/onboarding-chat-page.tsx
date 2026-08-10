@@ -14,6 +14,7 @@ import {
   createOnboardingSession,
   downloadOnboardingTemplate,
   sendOnboardingChat,
+  setOnboardingCredentials,
   uploadOnboardingExcel,
   validateOnboardingSession,
 } from "../../api/admin/onboarding";
@@ -52,6 +53,12 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
   const [chatError, setChatError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<OnboardingFieldError[]>([]);
   const [uploadBusy, setUploadBusy] = useState(false);
+  // ADR 0022: credentials are typed here, never into the chat. Held in local
+  // state only until the request resolves, then cleared — see `clearCredForm`.
+  const [credRtuIndex, setCredRtuIndex] = useState<number | null>(null);
+  const [credUsername, setCredUsername] = useState("");
+  const [credPassword, setCredPassword] = useState("");
+  const [credError, setCredError] = useState<string | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const startedRef = useRef(false);
@@ -74,13 +81,62 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per org
   }, [orgId]);
 
+  const clearCredForm = useCallback(() => {
+    setCredRtuIndex(null);
+    setCredUsername("");
+    setCredPassword("");
+  }, []);
+
+  const credentialsMutation = useMutation({
+    mutationFn: (vars: { rtuIndex: number; username: string; password: string }) =>
+      setOnboardingCredentials(session!.id, vars.rtuIndex, {
+        username: vars.username,
+        password: vars.password,
+      }),
+    onSuccess: (updated) => {
+      // The response is the ordinary redacted session — it never echoes what
+      // was sent. Clearing the form is what keeps the plaintext from lingering
+      // in component state after the request resolves.
+      setSession(updated);
+      setCredError(null);
+      clearCredForm();
+    },
+    onError: (err: Error) => {
+      // Clear on failure too. The 503 from an unconfigured
+      // CREDENTIAL_ENCRYPTION_KEY is the common case, and leaving the password
+      // in component state there contradicts the reasoning applied to the chat
+      // input below (second review, L4).
+      setCredError(err.message);
+      clearCredForm();
+    },
+  });
+
   const chatMutation = useMutation({
     mutationFn: (message: string) => sendOnboardingChat(session!.id, message),
     onSuccess: (data) => {
+      const grew = data.session.messages.length > (session?.messages.length ?? 0);
       setSession(data.session);
       queryClient.setQueryData(["onboarding", data.session.id], data.session);
       setValidationErrors(data.validationErrors ?? []);
       applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
+
+      // ADR 0022 decision 2 refuses a credential-bearing turn by storing
+      // nothing — so the transcript does not grow and the assistant's reply
+      // would render nowhere. Caught by end-to-end test on 2026-08-10: the
+      // message simply vanished and the user got silence, which reads as
+      // "sent" and invites a retry.
+      //
+      // The input is deliberately NOT restored. A first pass put the text back
+      // "so the non-secret part is not lost", which was wrong: for the shape
+      // that matters most here — `mqtt://user:pass@host` — the whole string is
+      // the secret, and leaving it on screen after telling the user it is a
+      // credential loses to shoulder-surfing, screenshots and session restore.
+      // Retyping the non-secret part is the cheaper mistake.
+      if (!grew) {
+        setChatError(data.assistantMessage);
+        return;
+      }
+
       setChatError(
         data.validationErrors?.length
           ? `Validation found ${data.validationErrors.length} issue(s) — fix them in chat before commit.`
@@ -319,6 +375,86 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                     <pre className="whitespace-pre-wrap break-words font-mono text-[11px]">
                       {formatOnboardingDraftSummary(session?.draft ?? {})}
                     </pre>
+                  </div>
+                  <div>
+                    <div className="mb-1 font-semibold uppercase tracking-wide text-bms-muted">
+                      Credentials
+                    </div>
+                    {(session?.draft?.rtus ?? []).length === 0 ? (
+                      <p className="text-[11px] text-bms-muted">
+                        Add an RTU first, then set its credentials here.
+                      </p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {(session?.draft?.rtus ?? []).map((rtu, index) => (
+                          <li key={rtu.code ?? index} className="rounded border border-gray-200 p-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-mono text-[11px]">{rtu.code ?? `RTU ${index + 1}`}</span>
+                              {rtu.credentialsSet ? (
+                                <span className="text-[11px] font-semibold text-bms-green">Set</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="text-[11px] underline"
+                                  onClick={() => {
+                                    setCredError(null);
+                                    setCredRtuIndex(index === credRtuIndex ? null : index);
+                                  }}
+                                >
+                                  {credRtuIndex === index ? "Cancel" : "Add credentials"}
+                                </button>
+                              )}
+                            </div>
+                            {credRtuIndex === index && (
+                              <form
+                                className="mt-2 space-y-1"
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  credentialsMutation.mutate({
+                                    rtuIndex: index,
+                                    username: credUsername,
+                                    password: credPassword,
+                                  });
+                                }}
+                              >
+                                <input
+                                  className="w-full rounded border border-gray-300 px-2 py-1 text-[11px]"
+                                  placeholder="Username"
+                                  autoComplete="off"
+                                  value={credUsername}
+                                  onChange={(event) => setCredUsername(event.target.value)}
+                                />
+                                <input
+                                  className="w-full rounded border border-gray-300 px-2 py-1 text-[11px]"
+                                  placeholder="Password"
+                                  type="password"
+                                  autoComplete="new-password"
+                                  value={credPassword}
+                                  onChange={(event) => setCredPassword(event.target.value)}
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={
+                                    credentialsMutation.isPending ||
+                                    (!credUsername && !credPassword)
+                                  }
+                                  className="w-full rounded bg-bms-green px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+                                >
+                                  {credentialsMutation.isPending ? "Encrypting…" : "Save encrypted"}
+                                </button>
+                              </form>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {credError && (
+                      <p className="mt-1 text-[11px] text-red-700">{credError}</p>
+                    )}
+                    <p className="mt-1 text-[11px] text-bms-muted">
+                      Credentials are encrypted before storage and never sent to the assistant.
+                      Do not type them into the chat — those messages are stored.
+                    </p>
                   </div>
                   <div>
                     <div className="mb-1 font-semibold uppercase tracking-wide text-bms-muted">

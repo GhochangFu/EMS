@@ -95,6 +95,24 @@ export const chatBodySchema = z.object({
   message: z.string().min(1).max(8000),
 });
 
+/**
+ * `POST :id/credentials` (ADR 0022 decision 1). Values are plaintext in the
+ * request body and encrypted before storage — they are never echoed back,
+ * never written to `messages`, and never sent to the LLM.
+ */
+export const setCredentialsBodySchema = z
+  .object({
+    rtuIndex: z.number().int().min(0),
+    credentials: z
+      .record(z.string().min(1).max(4096))
+      .refine((value) => Object.keys(value).length > 0, {
+        message: "At least one credential field is required",
+      }),
+  })
+  .strict();
+
+export type SetCredentialsBody = z.infer<typeof setCredentialsBodySchema>;
+
 export const patchDraftBodySchema = z.object({
   draft: onboardingDraftSchema,
 });

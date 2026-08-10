@@ -39,6 +39,25 @@ export async function sendOnboardingChat(
   });
 }
 
+/**
+ * Stores RTU credentials for a draft session (ADR 0022).
+ *
+ * The only path credentials may take. They are never typed into the chat: the
+ * server refuses a turn that looks like it carries one, because the transcript
+ * is persisted and previously reached the LLM.
+ */
+export async function setOnboardingCredentials(
+  sessionId: string,
+  rtuIndex: number,
+  credentials: Record<string, string>,
+): Promise<OnboardingSessionDto> {
+  return adminFetch(`/admin/onboarding/sessions/${sessionId}/credentials`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rtuIndex, credentials }),
+  });
+}
+
 /** Downloads the Excel onboarding template. */
 export async function downloadOnboardingTemplate(): Promise<void> {
   const headers = await getAdminAuthHeaders();
