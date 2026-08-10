@@ -11,6 +11,7 @@ import {
   levelForRange,
 } from "../telemetry/point-aggregates";
 import type { EnergyReportQuery } from "./reports.schema";
+import { energyCsvDocument } from "./reports.serialise";
 
 const energyTemplate: EnergyReportTemplate = {
   id: "energy_consumption",
@@ -54,40 +55,17 @@ export class ReportsService {
     };
   }
 
-  /** Exports the Sprint E Energy Consumption preview as CSV text. */
+  /**
+   * Exports the Sprint E Energy Consumption preview as CSV text.
+   *
+   * Row building and escaping live in `reports.serialise.ts` under ADR 0026 — they
+   * need no `Pool`, and while they were inline here they were never tested.
+   */
   async energyCsv(
     query: EnergyReportQuery,
     assetIds?: string[] | null,
   ): Promise<string> {
-    const preview = await this.energyPreview(query, assetIds);
-    const lines: string[][] = [
-      ["Report", preview.template.title],
-      ["Start date", preview.range.startDate],
-      ["End date", preview.range.endDate],
-      ["Generated at", preview.generatedAt],
-      [],
-      ["Metric", "Value", "Unit"],
-      ["Total energy", String(preview.summary.totalKwh), "kWh"],
-      ["Peak demand", String(preview.summary.peakKw), "kW"],
-      ["PUE estimate", String(preview.summary.pueEstimate), ""],
-      ["Indicative cost", String(preview.summary.indicativeCostZar), "ZAR"],
-      ["Tariff", String(preview.summary.tariffZarPerKwh), "ZAR/kWh"],
-      [],
-      ["Source", "Energy", "Unit"],
-      ["Grid", String(preview.sourceTotals.gridKwh), "kWh"],
-      ["Solar", String(preview.sourceTotals.solarKwh), "kWh"],
-      ["Nominal DG", String(preview.sourceTotals.dgKwh), "kWh"],
-      [],
-      ["Asset code", "Asset name", "Site", "Avg kW", "Estimated kWh"],
-      ...preview.topConsumers.map((consumer) => [
-        consumer.code,
-        consumer.name,
-        consumer.siteName,
-        String(consumer.avgKw),
-        String(consumer.estimatedKwh),
-      ]),
-    ];
-    return `${lines.map((row) => row.map((cell) => this.csvCell(cell)).join(",")).join("\n")}\n`;
+    return energyCsvDocument(await this.energyPreview(query, assetIds));
   }
 
   private parseRange(query: EnergyReportQuery): {
@@ -319,12 +297,5 @@ export class ReportsService {
 
   private round(value: number): number {
     return Math.round(value * 100) / 100;
-  }
-
-  private csvCell(value: string): string {
-    if (/["\n,]/.test(value)) {
-      return `"${value.replace(/"/g, '""')}"`;
-    }
-    return value;
   }
 }

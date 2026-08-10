@@ -1,10 +1,20 @@
 import type { AuditLogEntryDto } from "@bms/shared";
 
+import { csvDocument, csvTextCell } from "../../serialise/csv";
+
 /**
  * Export serialisation for the audit read API (ADR 0021).
  *
  * Pure functions with no Nest or database dependency, so the escaping rules —
  * the part most likely to be subtly wrong — are testable without a container.
+ *
+ * The escaping itself moved to `src/serialise/csv.ts` under ADR 0026, because the
+ * Energy Consumption export had no formula guard at all and a second copy was the
+ * wrong fix. **This call site keeps blanket semantics**: every one of the nine
+ * columns below is string-shaped — UUIDs, timestamps, action names, free text,
+ * JSON — so there is no numeric cell here to exempt, and the numeric carve-out
+ * that ADR 0026 gives the reports export does not apply. The two exports are
+ * consistent, not identical.
  */
 
 /**
@@ -27,14 +37,6 @@ export const AUDIT_EXPORT_COLUMNS = [
   "reason",
   "payload",
 ] as const;
-
-/**
- * Characters that make Excel/Sheets treat a CSV cell as a formula.
- *
- * TAB and CR are in OWASP's set alongside the obvious four: both are stripped
- * as leading whitespace on import, exposing whatever follows them.
- */
-const FORMULA_LEADERS = ["=", "+", "-", "@", "\t", "\r"];
 
 function cellValue(row: AuditRow, column: (typeof AUDIT_EXPORT_COLUMNS)[number]): string {
   switch (column) {
@@ -64,7 +66,7 @@ function cellValue(row: AuditRow, column: (typeof AUDIT_EXPORT_COLUMNS)[number])
 /**
  * Row shaping without escaping — for `xlsx`, which writes these as string cells.
  * A leading `=` in a string cell is stored as text, not a formula, so the guard
- * below is a CSV concern only: it is Excel's *import* parser that reinterprets.
+ * is a CSV concern only: it is Excel's *import* parser that reinterprets.
  */
 export function toSheetRows(rows: AuditRow[]): string[][] {
   return [
@@ -73,23 +75,10 @@ export function toSheetRows(rows: AuditRow[]): string[][] {
   ];
 }
 
-function escapeCell(value: string): string {
-  // `reason` and `payload` carry user-supplied text and these files get opened
-  // in a spreadsheet. Prefixing with an apostrophe makes the cell literal text.
-  const guarded = FORMULA_LEADERS.some((lead) => value.startsWith(lead)) ? `'${value}` : value;
-  if (/["\n\r,]/.test(guarded)) {
-    return `"${guarded.replace(/"/g, '""')}"`;
-  }
-  return guarded;
-}
-
 /** CSV with a header row, LF line endings, always terminated by a newline. */
 export function toCsv(rows: AuditRow[]): string {
-  const lines = [
-    AUDIT_EXPORT_COLUMNS.join(","),
-    ...rows.map((row) =>
-      AUDIT_EXPORT_COLUMNS.map((column) => escapeCell(cellValue(row, column))).join(","),
-    ),
-  ];
-  return `${lines.join("\n")}\n`;
+  return csvDocument([
+    AUDIT_EXPORT_COLUMNS.map((column) => csvTextCell(column)),
+    ...rows.map((row) => AUDIT_EXPORT_COLUMNS.map((column) => csvTextCell(cellValue(row, column)))),
+  ]);
 }

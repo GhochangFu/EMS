@@ -120,6 +120,18 @@ export default defineConfig({
       // (`db:migrate` → `db:seed` → `test:coverage`). The skipped suites print
       // the reason and the command to fix it. Do NOT lower these to make a
       // database-less run pass.
+      // Ratcheted by `F4.29` (ADR 0026) from 35.5/30.7/36.9/35.7. Measured
+      // 2026-08-10 against the live database, all seven integration suites running:
+      // 35.78 statements · 30.88 branches · 37.68 functions · 35.97 lines.
+      // (52 files / 151 tests.) The rise is the two new serialiser specs: ADR 0026
+      // fact 5 recorded that `energyCsv` had **never been executed by a test** —
+      // `F4.28` covered `reports.service.ts` through `energyPreview` only — so its
+      // row building moved to `reports.serialise.ts` where a `Pool` is not needed.
+      //
+      // Use `127.0.0.1`, not `localhost`, in a local `DATABASE_URL`: on this
+      // machine `localhost` resolves to IPv6 first and `access-control.integration`
+      // fails the whole run with a connection timeout. CI is unaffected.
+      //
       // Ratcheted by `F4.28` (ADR 0025 decision 9) from 33.2/28.5/34.3/33.3.
       // Measured 2026-08-10 against the live database with all seven integration
       // suites running: 35.60 statements · 30.81 branches · 37.04 functions ·
@@ -127,10 +139,10 @@ export default defineConfig({
       // tests at all** before this item (ADR 0025 fact 7) and is now exercised
       // through `energyPreview` rather than by reconstructing its queries.
       thresholds: {
-        statements: 35.5,
-        branches: 30.7,
-        functions: 36.9,
-        lines: 35.7,
+        statements: 35.7,
+        branches: 30.8,
+        functions: 37.6,
+        lines: 35.9,
       },
     },
   },

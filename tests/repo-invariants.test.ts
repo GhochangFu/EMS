@@ -334,4 +334,69 @@ describe("repo invariants", () => {
         ungated.join(" | "),
     ).toEqual([]);
   });
+
+  it("no CSV writer escapes cells for itself", () => {
+    // ADR 0026 (`F4.29`). This repo shipped two CSV exports with two escaping
+    // rules: the audit one neutralised spreadsheet formulas, the Energy
+    // Consumption one only quoted — so an asset code beginning `=` was delivered
+    // as a live formula. The fix was one shared module, and this is what stops a
+    // third copy appearing.
+    //
+    // It is a static check because no behavioural test can be: a new export with
+    // its own escaping passes its own tests perfectly. The precedent is the
+    // `DATABASE_URL` gate, which reached SIX copies before `F4.28` extracted it —
+    // nothing was watching for the copies, so they accumulated.
+    //
+    // **`exports/export-phe-from-json.mjs` is deliberately out of range.** It has
+    // the same quote-doubling line, but `sourceFiles()` walks `apps` and
+    // `packages` only. It is a dev-time script whose input is the client's own SQL
+    // Server dump and whose output is committed reference data, not a response to
+    // a request — there is no untrusted writer and no reader being served. If you
+    // ever widen `searchRoots`, exclude it by name rather than "fixing" it.
+    const shared = "apps/api/src/serialise/csv.ts";
+    const rel = (f: string): string => relative(repoRoot, f).replace(/\\/g, "/");
+    const files = sourceFiles().filter((f) => /\.(ts|tsx)$/.test(f));
+
+    // 1. CSV quote-doubling is the tell-tale of a hand-rolled cell escaper. Only
+    //    the shared module may contain it.
+    const escapers = files
+      .filter((f) => readFileSync(f, "utf8").includes(`replace(/"/g, '""')`))
+      .map(rel)
+      .filter((f) => f !== shared);
+    expect(
+      escapers,
+      `these files escape CSV cells themselves instead of importing ${shared} (ADR 0026 ` +
+        `decision 1): ${escapers.join(", ")}. Import csvTextCell/csvNumberCell — do not copy the ` +
+        "rule. A copy that omits the formula guard is exactly the defect F4.29 fixed.",
+    ).toEqual([]);
+
+    // 2. Nor may a second copy of the formula-leader list exist. Specs are exempt
+    //    and hold a literal copy on purpose: a test that imports the constant it
+    //    checks cannot detect the constant shrinking.
+    const leaderList = /\["=",\s*"\+",\s*"-",\s*"@"/;
+    const copies = files
+      .filter((f) => leaderList.test(readFileSync(f, "utf8")))
+      .map(rel)
+      .filter((f) => f !== shared && !/\.spec\.tsx?$/.test(f));
+    expect(
+      copies,
+      `these files carry their own copy of the formula-leader list: ${copies.join(", ")}. It lives ` +
+        `in ${shared}. Only a *.spec.ts may restate it literally, and only because a test that ` +
+        "imports the list cannot notice an entry being deleted from it.",
+    ).toEqual([]);
+
+    // 3. Any serialiser that deals in CSV must go through the shared module. This
+    //    is the one that catches a *new* export rather than a modified one.
+    const detached = files
+      .filter((f) => /\.serialise\.tsx?$/.test(f))
+      .filter((f) => /csv/i.test(readFileSync(f, "utf8")))
+      .filter((f) => !readFileSync(f, "utf8").includes("serialise/csv"))
+      .map(rel);
+    expect(
+      detached,
+      `these serialisers mention CSV but do not import ${shared}: ${detached.join(", ")}. Every ` +
+        "CSV export in this app shares one escaping rule (ADR 0026); a serialiser that opts out " +
+        "is how the two exports diverged in the first place.",
+    ).toEqual([]);
+  });
 });
