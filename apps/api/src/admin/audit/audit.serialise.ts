@@ -64,9 +64,16 @@ function cellValue(row: AuditRow, column: (typeof AUDIT_EXPORT_COLUMNS)[number])
 }
 
 /**
- * Row shaping without escaping — for `xlsx`, which writes these as string cells.
- * A leading `=` in a string cell is stored as text, not a formula, so the guard
- * is a CSV concern only: it is Excel's *import* parser that reinterprets.
+ * Row shaping without escaping — for `xlsx`, and deliberately unguarded.
+ *
+ * The reason is narrower than "it's a string cell", which is how this comment used
+ * to put it. Executed against the real `xlsx` package, `aoa_to_sheet(["=1+1"])`
+ * writes `<c r="A2" t="str"><v>=1+1</v></c>` — and `t="str"` is ECMA-376's *cached
+ * formula result* type, not the shared-string type. **The safety comes from the
+ * absence of any `<f>` element**: nothing in the file instructs Excel to evaluate
+ * anything. Guarding is therefore a CSV concern only, because it is Excel's *import*
+ * parser that reinterprets a leading `=`, not its renderer. Do not re-derive this
+ * from the cell type — the cell type does not say what you would expect.
  */
 export function toSheetRows(rows: AuditRow[]): string[][] {
   return [

@@ -120,6 +120,11 @@ export default defineConfig({
       // (`db:migrate` → `db:seed` → `test:coverage`). The skipped suites print
       // the reason and the command to fix it. Do NOT lower these to make a
       // database-less run pass.
+      //
+      // Locally, use `127.0.0.1` and not `localhost` in `DATABASE_URL`: where
+      // `localhost` resolves to IPv6 first, `access-control.integration` fails the
+      // whole run with a connection timeout rather than skipping — correctly, since
+      // a set `DATABASE_URL` is a claim that a database exists. CI is unaffected.
       // Ratcheted by `F4.29` (ADR 0026) from 35.5/30.7/36.9/35.7. Measured
       // 2026-08-10 against the live database, all seven integration suites running:
       // 35.78 statements · 30.88 branches · 37.68 functions · 35.97 lines.
@@ -127,10 +132,6 @@ export default defineConfig({
       // fact 5 recorded that `energyCsv` had **never been executed by a test** —
       // `F4.28` covered `reports.service.ts` through `energyPreview` only — so its
       // row building moved to `reports.serialise.ts` where a `Pool` is not needed.
-      //
-      // Use `127.0.0.1`, not `localhost`, in a local `DATABASE_URL`: on this
-      // machine `localhost` resolves to IPv6 first and `access-control.integration`
-      // fails the whole run with a connection timeout. CI is unaffected.
       //
       // Ratcheted by `F4.28` (ADR 0025 decision 9) from 33.2/28.5/34.3/33.3.
       // Measured 2026-08-10 against the live database with all seven integration

@@ -118,16 +118,40 @@ number)` already gives the guarantee by construction.
 **4. Escaped cells are a branded type.** `csvTextCell`/`csvNumberCell` return
 `CsvField` (a `string` branded with a `unique symbol`), and `csvDocument` accepts
 only `CsvField[][]`. A raw string in a row is a **compile error**, so the guard
-cannot be bypassed by forgetting it. This is deliberately a compile-time
+cannot be bypassed by *forgetting* it. This is deliberately a compile-time
 guarantee rather than a test: per ADR 0025 decision 5b this repo has shipped
 three tests that were invariant under the change they guarded, and a type error
 is the one check that cannot be.
 
+Scope of the claim, since the security review probed it: `csvDocument([["=1+1"]])`,
+a `string[][]`, a concatenation of two `CsvField`s, and `csvTextCell(x).slice(1)`
+are **all** compile errors — derived strings lose the brand. A single-token
+`"=1+1" as CsvField` **compiles**, and nothing flags it. The brand stops omission,
+not a deliberate cast, and decision 4 claims only the former.
+
 **5. `csvNumberCell` throws on a non-finite value.** Not an empty cell, not
-`"NaN"`. Every number reaching it is finite by construction — the SQL `COALESCE`s
-every aggregate and `energyTariffZar()` gates on `Number.isFinite(t) && t > 0` —
-so the throw is unreachable and functions as an assertion. A `NaN` in a client
-energy report is a data-integrity failure that must not be delivered quietly.
+`"NaN"`. This is a **real guard, not a dead assertion** — and the first draft of
+this decision said the opposite, that finiteness held "by construction" because
+the report's SQL `COALESCE`s every aggregate. **That is wrong, and both reviews
+caught it.** `COALESCE` handles `NULL`; `NaN` is a legal `double precision` value
+in Postgres, is neither `NULL` nor caught by `COALESCE`, propagates through
+`SUM`/`AVG`, and sorts above every value so `MAX` returns it too.
+
+The guarantee that actually holds lives in **another application**: the ingest
+rejects non-finite samples before they are written
+(`apps/ingest/src/host/normaliser.ts:129`, `adapters/mqtt.ts:222`). `apps/api`
+enforces nothing, and `telemetry.point_values.value` carries **no CHECK
+constraint** — verified, the table's only constraint is its primary key — so any
+direct writer can store `'NaN'::float8`. Measured **0** such rows on 2026-08-10.
+
+Throwing remains right: the old code delivered the text `"NaN"` into a client
+energy report, silently. But the failure mode is recorded rather than assumed
+harmless — it is a **persistent 500** for every range covering that bucket, it is
+**asymmetric** (`/reports/energy/preview` returns `"totalKwh": null` on the same
+data, because `JSON.stringify(NaN)` is `null`), and once the bucket is absorbed
+into a continuous aggregate, deleting the raw row does not repair it (AGENTS.md
+§4.4). A CHECK constraint on `value` would move the guarantee into the database
+where it belongs; that is a migration and stays out of scope.
 
 **6. The audit export keeps blanket semantics.** Extraction unifies the **leader
 set and the quote trigger, not the guard policy**: audit routes all nine columns
@@ -176,17 +200,80 @@ None. No package is added or upgraded, so §9.4 is not engaged.
   This ADR guards the *output*; it does not constrain the *input*. Restricting
   those columns is a master-data change touching ADR 0015's template
   instantiation and ADR 0011's onboarding commit, and stays out of scope.
-- **Only the reports and audit exports are covered.** `toSheetRows` (XLSX) is
-  correctly unguarded — a leading `=` in an `xlsx` *string cell* is stored as
-  text, since it is Excel's **import** parser that reinterprets, not its
-  renderer. That reasoning moves into the shared module so it is not rediscovered.
+- **Only the reports and audit exports are covered.** `toSheetRows` (XLSX) stays
+  unguarded, and the security review verified the claim by executing the real
+  `xlsx` package rather than accepting it — but it holds for a **narrower reason
+  than "it is a string cell"**, which is how the comment used to read.
+  `aoa_to_sheet(["=1+1"])` writes `<c r="A2" t="str"><v>=1+1</v></c>`, and `t="str"`
+  is ECMA-376's *cached formula result* type, not the shared-string type. The
+  safety is the **absence of any `<f>` element**: nothing instructs Excel to
+  evaluate. That corrected reasoning is in `audit.serialise.ts` so it is not
+  re-derived from a premise the file does not contain. The onboarding
+  `template.xlsx` was enumerated too — every cell is a literal or the controller's
+  empty-string argument, so no request or database data reaches it.
 - **Owed on merge, per §9.10 in its own `chore(agents):` PR:** the AGENTS.md
-  status line; a §3 tree entry for `apps/api/src/serialise/`; a §4 rule that
-  every CSV writer goes through the shared module and that numeric cells take the
-  exempt path; and a `docs/roadmap.md` `F4.29` section. §6 is expected to need
-  nothing — the CSV export is in scope, not out of it — and that absence should
-  be **verified and recorded**, as ADRs 0023, 0024 and 0025 each did, rather than
-  a line being added in order to soften it.
+  status line; **a §2 row** — the compliance review found this missing from the
+  first draft of this list, which is the **fifth** ADR running whose own follow-up
+  list was incomplete, so treat that as the norm and audit it rather than copying
+  it: `AGENTS.md:171` (*Operations*, which names "Energy CSV reports") and/or
+  `:172` (*Audit read*) should name `src/serialise/csv.ts`, the `CsvField` brand
+  and the text/number split; a §3 tree entry for `apps/api/src/serialise/`; a §4
+  rule that every CSV writer goes through the shared module and that numeric cells
+  take the exempt path; a `docs/roadmap.md` `F4.29` section; and the
+  `docs/BACKLOG.md` §5 owed row, which §10.1 requires and which this ADR's first
+  draft also omitted. §6 is expected to need nothing — the CSV export is in scope,
+  not out of it, and AGENTS.md:594 already distinguishes reports PDF/XLSX (out)
+  from audit CSV/XLSX (in) — and that absence should be **verified and recorded**,
+  as ADRs 0023, 0024 and 0025 each did, rather than a line being added in order to
+  soften it.
+- **Verified as needing nothing, recorded rather than assumed:** no existing
+  AGENTS.md sentence becomes false on merge. `:172`'s "in
+  `apps/api/src/admin/audit/`" still holds, and §4.4's "ADR 0025 has two" static
+  tests still holds because the new invariant is a third from a different ADR.
+  `:209`–`:219`'s `apps/api` subdirectory list becomes *incomplete*, not false —
+  which is what the §3 entry above is for. This is a different answer from ADRs
+  0022–0025 and is stated affirmatively.
+
+## Open question — leading whitespace, unresolved on purpose
+
+`FORMULA_LEADERS` is OWASP's six. A value led by **U+0020, U+00A0 or U+FEFF**
+passes `csvTextCell` completely unmodified and unquoted: no leader match, no quote
+trigger match. Whether any spreadsheet strips such a prefix and *then* evaluates
+what follows is an empirical question about three closed-source import parsers,
+and **neither the security review nor this ADR is willing to name a bypass it did
+not reproduce** — there is no Excel, LibreOffice or Sheets in this environment.
+The best available reading is that they do not, since a leading space is itself
+one of the commonly cited text-forcing prefixes, which is why OWASP's set stops
+where it does.
+
+Two things follow. First, **this is not a regression introduced by `F4.29`** —
+`F4.14`'s guard has shipped on the same assumption since `73a9fd2`, and this ADR
+inherits it rather than creating it. Second, the test is cheap and worth doing
+once: four cells in one file, opened in Excel 365, LibreOffice 7.x and Sheets. It
+is **not** done here, and characters must not be added to the leader list on
+reasoning alone — a comment in `csv.ts` says so at the list.
+
+Related, and the reason the mechanism matters: the original comment on that list
+said TAB and CR were "stripped as leading whitespace on import". They are not —
+all six are formula-*initiating* characters. The wrong mechanism made a dangerous
+edit look safe, namely deleting `\r` from the leader list on the grounds that the
+quote trigger already handles CR. That would reopen the hole while every test
+still passed, because the specs iterate their own copy of the list. Corrected in
+place.
+
+## Still divergent between the two exports
+
+The audit export sets `Cache-Control: no-store` (`audit.controller.ts:49`, "keep it
+out of browser disk cache and any intermediary"); the Energy CSV route sets only
+`Content-Type` and `Content-Disposition`. The energy export is scope-filtered per
+user via `readableAssetIds` and carries asset codes, names and site names, so a
+shared-cache hit across two differently-scoped users is the same failure `F4.14`
+closed with that header.
+
+**Not fixed here.** It is a caching concern, not a formula-injection one, and it
+predates this item — but it is worth naming in this ADR precisely because `F4.29`
+is the moment the two exports were deliberately brought into line, and this is the
+one place they still are not. Tracked as `F4.30`.
 
 ## Settled at the gate
 

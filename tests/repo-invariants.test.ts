@@ -353,15 +353,31 @@ describe("repo invariants", () => {
     // Server dump and whose output is committed reference data, not a response to
     // a request — there is no untrusted writer and no reader being served. If you
     // ever widen `searchRoots`, exclude it by name rather than "fixing" it.
+    // **What each check below does and does not reach**, because both 2026-08-10
+    // reviews found the original comments overstated it:
+    //   - Check 1 (quote-doubling) is the one that would have caught the actual
+    //     `F4.29` defect — the old `csvCell` lived in `reports.service.ts` and
+    //     contained the marker. It is idiom-keyed, so it is the strongest for a
+    //     *modified* writer and blind to a differently-spelled one.
+    //   - Check 3 is scoped to `*.serialise.ts` and therefore would **not** have
+    //     caught `F4.29` at all. Its comment used to claim it caught new exports.
+    //   - Check 4 is the one keyed on the response contract rather than on any
+    //     escaping idiom, so it is what actually catches a *new* CSV endpoint. A
+    //     writer cannot avoid the `text/csv` string and still be a CSV download.
+    // None of them catches a new export that never quotes anything at all.
     const shared = "apps/api/src/serialise/csv.ts";
     const rel = (f: string): string => relative(repoRoot, f).replace(/\\/g, "/");
     const files = sourceFiles().filter((f) => /\.(ts|tsx)$/.test(f));
+    const body = new Map(files.map((f) => [rel(f), readFileSync(f, "utf8")]));
 
     // 1. CSV quote-doubling is the tell-tale of a hand-rolled cell escaper. Only
-    //    the shared module may contain it.
-    const escapers = files
-      .filter((f) => readFileSync(f, "utf8").includes(`replace(/"/g, '""')`))
-      .map(rel)
+    //    the shared module may contain it. Matched loosely enough to survive
+    //    `replaceAll`, quote-style and whitespace variants — an exact-substring
+    //    match was evadable by reformatting alone.
+    const doublesQuotes = /(replace|replaceAll)\(\s*(\/"\/g|['"]"['"])\s*,\s*['"]""['"]\s*\)/;
+    const escapers = [...body]
+      .filter(([, src]) => doublesQuotes.test(src))
+      .map(([f]) => f)
       .filter((f) => f !== shared);
     expect(
       escapers,
@@ -385,18 +401,58 @@ describe("repo invariants", () => {
         "imports the list cannot notice an entry being deleted from it.",
     ).toEqual([]);
 
-    // 3. Any serialiser that deals in CSV must go through the shared module. This
-    //    is the one that catches a *new* export rather than a modified one.
-    const detached = files
-      .filter((f) => /\.serialise\.tsx?$/.test(f))
-      .filter((f) => /csv/i.test(readFileSync(f, "utf8")))
-      .filter((f) => !readFileSync(f, "utf8").includes("serialise/csv"))
-      .map(rel);
+    // 3. Any serialiser that deals in CSV must go through the shared module.
+    const detached = [...body]
+      .filter(([f, src]) => /\.serialise\.tsx?$/.test(f) && /csv/i.test(src))
+      .filter(([, src]) => !src.includes("serialise/csv"))
+      .map(([f]) => f);
     expect(
       detached,
       `these serialisers mention CSV but do not import ${shared}: ${detached.join(", ")}. Every ` +
         "CSV export in this app shares one escaping rule (ADR 0026); a serialiser that opts out " +
         "is how the two exports diverged in the first place.",
+    ).toEqual([]);
+
+    // 4. Every file that *serves* a CSV download must reach the shared module —
+    //    directly or through the modules it imports. This is keyed on the response
+    //    contract, not on an escaping idiom, so a new endpoint cannot slip past it
+    //    by spelling its escaping differently. Two files declare `text/csv` today
+    //    (`reports.controller.ts`, `audit.service.ts`) and both reach it at two
+    //    hops, via their service and serialiser respectively.
+    const reaching = new Set([shared]);
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (const [f, src] of body) {
+        if (reaching.has(f)) continue;
+        const dir = f.slice(0, f.lastIndexOf("/"));
+        for (const [, spec] of src.matchAll(/from\s+"(\.[^"]+)"/g)) {
+          // Resolve the relative specifier against this file's directory.
+          const parts = `${dir}/${spec}`.split("/");
+          const stack: string[] = [];
+          for (const part of parts) {
+            if (part === "." || part === "") continue;
+            if (part === "..") stack.pop();
+            else stack.push(part);
+          }
+          if (reaching.has(`${stack.join("/")}.ts`)) {
+            reaching.add(f);
+            changed = true;
+            break;
+          }
+        }
+      }
+    }
+    const orphanWriters = [...body]
+      .filter(([f, src]) => src.includes("text/csv") && !/\.(spec|test)\.tsx?$/.test(f))
+      .map(([f]) => f)
+      .filter((f) => !reaching.has(f));
+    expect(
+      orphanWriters,
+      `these files serve a CSV download but no import path from them reaches ${shared}: ` +
+        `${orphanWriters.join(", ")}. A CSV response whose bytes were not built by ` +
+        "csvTextCell/csvNumberCell has its own escaping rule, which is the divergence ADR 0026 " +
+        "closed. If this trips on a legitimately non-tabular text/csv passthrough, exclude it by " +
+        "name with a reason — do not delete the check.",
     ).toEqual([]);
   });
 });

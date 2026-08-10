@@ -129,11 +129,19 @@ export function runReportsSerialiseTests(): void {
     crLine.includes('"\'\rPlant B"'),
     "a CR-led site name must be quoted as well as guarded, or the row splits in two",
   );
-  assert(
-    energyCsvDocument(preview({ topConsumers: [consumer({ siteName: "\rPlant B" })] })).split("\n")
-      .length === UNCHANGED_OUTPUT.split("\n").length,
-    "a CR inside a cell must not add a physical line to the document",
-  );
+  // There WAS a second assertion here comparing `split("\n").length` against the
+  // benign document's, described as proving "a CR does not add a physical line".
+  // It was **invariant under the mutation it claimed to guard** — the compliance
+  // review caught it. Narrow the trigger back to `/["\n,]/` and the cell emits
+  // `'\rPlant B` bare, but a lone CR contains no LF, so the JS line count is
+  // identical and the assertion passes. It restated the implementation and read as
+  // stronger than it was. The `crLine` check above is what actually kills that
+  // mutation; this note stays because ADR 0025 decision 5b makes a vacuous test
+  // this repo's recurring defect, and deleting it silently would lose the third
+  // instance. Removed rather than repaired, as F4.28's tautology was.
+  //
+  // A CSV *parser* is what would split on the bare CR, and a real record-count
+  // assertion would need one here. The quoting check is the cheaper equivalent.
 
   // --- ordinary quoting still works -----------------------------------------
   assert(
