@@ -1075,10 +1075,67 @@ Process (`AGENTS.md` §10).
   a database where the aggregate and raw paths both give **695.37 / 414.66** over
   1310 buckets, and the reports range matching at **870.60 kWh / 383.57 kW /
   126.04 solar** over 23 buckets. `apps/web` was never touched.
-- **Still owed:** `F4.29` (a formula-injection guard on the reports CSV export,
-  which `F4.14` already gave the audit export — raised by this item's security
-  review and deliberately left out, since it changes a client deliverable's strings
-  rather than its numbers).
+- **Still owed:** nothing. `F4.29` — the formula-injection guard this item's
+  security review raised and deliberately left out — is **done** (see below).
+
+### One CSV escaping rule for both exports (F4.29) — done
+
+- **Status:** done (ADR 0026, PR
+  [#27](https://github.com/GhochangFu/EMS/pull/27), merge commit `ad979d1`).
+  Three commits: the fix, the review corrections, and the invariant scoping.
+- **The defect.** `reports.service.ts`' `csvCell` quoted but did not neutralise a
+  leading `=` `+` `-` `@` TAB or CR, so an asset `code`, `name` or `site_name`
+  starting with one was delivered as a **live formula** to whoever opened
+  `GET /reports/energy/export.csv` in Excel or Sheets. `F4.14` had already solved
+  this for the audit export, so the two exports disagreed on the same rule.
+  Neither write path into `bms.assets` restricts those characters — both validate
+  length only.
+- **Not a promotion.** The CSV export was already in scope (AGENTS.md status
+  line), and no dependency was added, so §10 was not engaged and §9.4 was not
+  either. ADR 0026 exists because the change alters a **client deliverable's
+  bytes** and because the numeric-exemption reasoning would otherwise be
+  re-litigated — the audit guard's own rationale was lost exactly that way, ADR
+  0021 never mentioning formula injection at all.
+- **Settled at the §10 gate on 2026-08-10:** one shared
+  `apps/api/src/serialise/csv.ts`, and **numeric cells exempt**. The guard exists
+  to neutralise cells whose Excel *formula* reading differs from their literal
+  text; for a numeric literal it does not (`=-5` is `-5`), so guarding the
+  report's numbers would import them as **text** and break the client's own
+  arithmetic. Justified structurally rather than from data — `kw` has no negative
+  rows but `kvar` has 750, so a sign-based argument would not have survived.
+- **A coupled defect fixed in the same change:** the reports quote trigger was
+  `/["\n,]/` where the audit one is `/["\n\r,]/`. Adding the apostrophe alone
+  would have emitted a CR-led value as `'\rfoo` *unquoted* and split the record.
+- **Latent, not live:** 0 of 148 assets and 0 of 17 locations carried a leader or
+  a quoting character, so today's export is byte-identical before and after. That
+  is what made the fix safe and also invisible to any test reading real data — so
+  the pre-fix `csvCell` was reimplemented verbatim from `068aeae` and its output
+  proved byte-identical (400 bytes) to the golden the new spec pins.
+- **Eight mutations verified to fail**, including all five repo-invariant checks.
+  Dropping the guard fails the *audit* spec too, which is what shows the
+  extraction is load-bearing for both call sites rather than a tidy-up.
+- **The branded `CsvField` was compile-tested** (`TS2322` on a raw string in a
+  row), not asserted — the claim class `F4.28` got wrong with its `tsconfig`
+  exclusion.
+- **Reviews found four of my own claims false**, each corrected in place rather
+  than quietly fixed: the finiteness justification cited `COALESCE`, which guards
+  `NULL` and not `NaN`; the leader-list comment named the wrong mechanism, which
+  would have made deleting `\r` look safe; the XLSX exemption rested on "it is a
+  string cell" when the real safety is the absence of any `<f>` element; and the
+  repo invariant's coverage story was inverted — the check advertised as catching
+  a new export would not have caught this very defect. **One assertion of mine was
+  invariant under the mutation it claimed to guard** and was removed rather than
+  repaired, the third instance of that trap in three items.
+- **Deployed:** API rebuilt and the running container *proved* to carry the
+  post-review code, then the compiled serialiser run inside it against a hostile
+  fixture — three untrusted cells neutralised, negatives bare, benign output
+  exactly 400 bytes. **No migration and no `apps/web` change**, so there was
+  nothing to deploy at the database or frontend tier; recorded that way rather
+  than as three green ticks.
+- **Still owed:** `F4.30` (`Cache-Control: no-store` on the energy route, the one
+  place the two exports still differ), `F4.31` (verify the guard against the three
+  real spreadsheet import parsers — inherited from `F4.14`, not introduced here),
+  `F4.32` (a CHECK constraint moving finiteness into the database).
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
