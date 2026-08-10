@@ -151,7 +151,13 @@ harmless — it is a **persistent 500** for every range covering that bucket, it
 data, because `JSON.stringify(NaN)` is `null`), and once the bucket is absorbed
 into a continuous aggregate, deleting the raw row does not repair it (AGENTS.md
 §4.4). A CHECK constraint on `value` would move the guarantee into the database
-where it belongs; that is a migration and stays out of scope.
+where it belongs; that is a migration on a populated hypertable and stays out of
+scope — **tracked as `F4.32`** rather than left in this paragraph.
+
+Both reviews endorsed throwing, and the failure mode above is why it is written
+down rather than assumed harmless. It is also a **one-line decision to reverse**
+if the owner would rather deliver a degraded cell than a 500: replace the `throw`
+with an empty cell. That is theirs to make, not something to relitigate in code.
 
 **6. The audit export keeps blanket semantics.** Extraction unifies the **leader
 set and the quote trigger, not the guard policy**: audit routes all nine columns
@@ -252,6 +258,11 @@ inherits it rather than creating it. Second, the test is cheap and worth doing
 once: four cells in one file, opened in Excel 365, LibreOffice 7.x and Sheets. It
 is **not** done here, and characters must not be added to the leader list on
 reasoning alone — a comment in `csv.ts` says so at the list.
+
+**Tracked as `F4.31`, not left here.** `F4.28`'s backlog row records that naming
+deferred work only inside an ADR is how ADR 0016 §6 commit 4 stayed unowned, and
+this is the item with the most exposure of anything this ADR defers: it bears on
+already-shipped code in *both* exports.
 
 Related, and the reason the mechanism matters: the original comment on that list
 said TAB and CR were "stripped as leading whitespace on import". They are not —
