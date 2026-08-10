@@ -404,7 +404,8 @@ been silent. `onboarding-credentials.{spec,test}.ts` now covers both, plus the
 decision-1 guarantee that no plaintext, ciphertext or `_secrets` is ever echoed
 back.
 
-**M2, M3 and M4 are fixed.** They were left open across three amendments on the
+~~**M2, M3 and M4 are fixed.**~~ **M2 is. M3 was only narrowed and M4 only
+partially closed — see Amendment 5.** They were left open across three amendments on the
 grounds that each needed its own decision; the decisions are:
 
 - **M4 — `_secrets` is keyed by RTU `code`, never by array position.** The
@@ -413,8 +414,10 @@ grounds that each needed its own decision; the decisions are:
   reorder made index `i` decrypt one broker's password into a **different
   broker's** `rtu_connection_configs` row. `mergeDraft` now reconciles the store
   on every merge — orphaned and renamed entries are **dropped**, and a code
-  claimed by two RTUs drops rather than guesses ~~— **false as written; true of
-  `reconcileSecrets` alone, see Amendment 5**~~. Losing a credential costs a
+  claimed by two RTUs ~~drops rather than guesses~~ — **that claim is false as
+  written: it was true of `reconcileSecrets` alone, and of neither
+  `attachEncryptedCredentials` nor the commit path. See Amendment 5.** Losing a
+  credential costs a
   retype; misdelivering one does not. `credentialsSet` is derived from the store
   instead of trusted from input, since `draftRtuSchema` lets any caller assert
   it — but only when encryption is configured, so the unconfigured path E8.4
@@ -535,6 +538,61 @@ decision and belongs with **E8.4**.
 description overclaimed. The pattern has been consistent enough to name: fixes
 land at the point that is easiest to test rather than the point that is
 load-bearing, and the document then describes the intent rather than the code.
+
+## Amendment 6 (2026-08-10) — the sixth review's two Mediums, and the streak ends
+
+The sixth review was the **first to find no High**. It confirmed by execution
+that Amendment 5's fix holds at all three call sites, that `reconcileSecrets`
+and `rtuCodeAt` cannot disagree, that the new regression test genuinely fails if
+the claimants check is removed, that **no Unicode form other than trimmable
+whitespace can alias two codes onto one key**, that substring matching destroys
+nothing legitimate across all five draft schemas and the Excel and ingest key
+sets, that the Postgres blank-padding claim is correct, and that the coverage
+figures are exact. Two Mediums remained.
+
+**M-A — widening the predicate silently narrowed it on one key.** Amendment 4
+listed `clientKey` as an exact entry; no fragment in Amendment 5's substring
+list is a substring of `clientkey`, so it was dropped. The result redacted
+`clientCert` — the **public** half of a mutual-TLS pair — and passed `clientKey`,
+the private half, to both the client and the LLM prompt. A strict regression
+against the previous commit, and the third time this predicate has been changed
+without the change being fully characterised. `clientkey`, `tlskey`, `sslkey`
+and `keypem` added, each asserted in the spec so the next widening cannot drop
+them silently.
+
+**M-B — an RTU code may name a member of `Object.prototype`.** `code` has no
+charset regex, so `toString`, `valueOf`, `constructor` and `__proto__` are all
+valid, and a plain `_secrets[code]` lookup returned the **inherited** member —
+truthy, with `c` undefined. Three consequences, all reproduced: `credentialsSet`
+derived `true` for an RTU that never had a credential (the false success
+decision 1 exists to refuse); `Buffer.from(undefined, "base64")` throwing at
+commit and aborting the entire transaction; and `_secrets["__proto__"] = blob`
+invoking the setter, so the ciphertext was discarded while the endpoint returned
+200. Reads now go through an own-property-and-shape guard, writes through
+`Object.defineProperty`. **A charset regex would not have fixed this** —
+`__proto__` matches `/^[A-Za-z0-9_-]+$/`. Confidentiality was never at risk here:
+nothing was misdelivered and no plaintext leaked.
+
+**Corrected: the strike-throughs in Amendment 4 were inverted.** The `~~ ~~` span
+wrapped the *correction* rather than the claim, so the false sentence rendered as
+live text and its retraction rendered as retracted — and Amendment 5 then
+asserted "both are struck above", which was false. Fixed, along with the
+un-struck "M2, M3 and M4 are fixed" line in Amendment 4's body.
+
+**Recorded, not fixed:** the `.trim()` on `draftRtuSchema.code` does **not** cover
+`uploadExcel`, which builds `rtus` without passing through that schema. What
+actually defends that path is `sectionRows` trimming every cell plus
+`rtuCodeAt`'s claimants check — both hold, so there is no leak, but the defence
+this ADR stated is not the operative one. Also: two workbook rows sharing an
+`rtu_code` and both carrying credentials surface as a 500 rather than the
+endpoint's 400-with-guidance. Fail-closed, cosmetic.
+
+**Still uncovered, and stated so it is not mistaken for coverage:** the
+`reconcile → attach → commit` composition through the **real** `mergeDraft` is
+tested by nothing. The three functions are tested directly under contest, which
+is what catches the H1 regression — but Amendment 5's commit message said
+"reproduced end to end through the real `mergeDraft`", and that was a throwaway
+reproduction, not landed coverage. A reader would take it as coverage. It is not.
 
 ## Promotion follow-ups (AGENTS.md §10, owed separately)
 

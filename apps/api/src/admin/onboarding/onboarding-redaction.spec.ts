@@ -68,6 +68,18 @@ export function runOnboardingRedactionTests(): void {
     "sasToken",
     "sharedAccessKey",
     "credential",
+    // Found by the sixth review: Amendment 4 listed `clientKey` as an exact
+    // entry, and no fragment in Amendment 5's substring list was a substring of
+    // it — so widening the predicate silently NARROWED it on this one key,
+    // leaving `clientCert` (public half of a mutual-TLS pair) redacted and
+    // `clientKey` (private half) in clear. Asserted here so it cannot be
+    // dropped again.
+    "clientKey",
+    "client_key",
+    "CLIENT-KEY",
+    "tlsKey",
+    "sslKey",
+    "keyPem",
   ]) {
     const config = { [key]: "hunter2", host: "broker.example.com" };
     const asClient = JSON.stringify(redactDraftForClient({ rtus: [{ code: "R1", config }] }));
@@ -209,6 +221,61 @@ export function runOnboardingRedactionTests(): void {
     assert(
       readEncryptedCredentials(preAliased, index) === null,
       `RTU ${index} must not read a credential stored under a contested code`,
+    );
+  }
+
+  // An RTU code may name a member of Object.prototype — `draftRtuSchema.code`
+  // has no charset regex, and a regex would not help anyway since `__proto__`
+  // matches /^[A-Za-z0-9_-]+$/. A plain `_secrets[code]` lookup returns the
+  // inherited member: truthy, with `c` undefined. Found by the sixth review.
+  const PROTO_CODES = ["toString", "valueOf", "constructor", "hasOwnProperty", "__proto__"];
+  for (const code of PROTO_CODES) {
+    // Stored map came back from JSONB, so it has Object.prototype.
+    const fromDb = JSON.parse(JSON.stringify({ rtus: [{ code, config: {} }], _secrets: {} }));
+
+    // 1. It must not read as a held credential — `Buffer.from(undefined)` threw
+    //    here, aborting the whole commit transaction.
+    assert(
+      readEncryptedCredentials(fromDb, 0) === null,
+      `${code} must not read a credential off the prototype`,
+    );
+
+    // 2. It must not derive `credentialsSet: true` for an RTU that has none —
+    //    the false success decision 1 exists to refuse.
+    const derived = reconcileSecrets(fromDb, { deriveCredentialsSet: true });
+    assert(
+      derived.rtus?.[0]?.credentialsSet !== true,
+      `${code} must not derive credentialsSet from a prototype member`,
+    );
+
+    // 3. Storing under it must round-trip. `_secrets["__proto__"] = blob`
+    //    invoked the setter, so Object.keys was [] and the ciphertext was
+    //    silently discarded while the endpoint returned 200.
+    const attached = attachEncryptedCredentials(
+      JSON.parse(JSON.stringify({ rtus: [{ code, config: {} }] })),
+      0,
+      CT,
+      IV,
+    );
+    assert(
+      Object.keys(attached._secrets ?? {}).includes(code),
+      `${code} must be stored as an own property`,
+    );
+    const roundTripped = JSON.parse(JSON.stringify(attached));
+    const read = readEncryptedCredentials(roundTripped, 0);
+    assert(
+      read?.ciphertext.equals(CT) === true,
+      `${code} must survive the JSONB round-trip and read back`,
+    );
+  }
+
+  // Malformed blobs are not trusted either — `entry.c` was read without a shape
+  // check, which is what turned a bad row into a 500 at commit.
+  for (const bad of [{ c: 1, iv: "aXY=" }, { iv: "aXY=" }, null, "nope"]) {
+    const draftWithBad = { rtus: [{ code: "R1", config: {} }], _secrets: { R1: bad } };
+    assert(
+      readEncryptedCredentials(draftWithBad, 0) === null,
+      `a malformed blob reads as absent, not as a crash: ${JSON.stringify(bad)}`,
     );
   }
 

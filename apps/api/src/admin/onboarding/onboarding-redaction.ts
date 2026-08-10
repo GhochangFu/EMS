@@ -52,11 +52,22 @@ const SECRET_FRAGMENTS = [
   "privatekey",
   "sharedaccesskey",
   "accesskey",
-  // A CA key is a private key. Enumerated rather than matching a bare "key",
-  // which would swallow `pointKey`, `sourceDataKey` and `assetPoints[].pointKey`
-  // — point keys are core wizard vocabulary, and the chat detector's history is
+  // Private-key spellings, enumerated rather than matching a bare "key", which
+  // would swallow `pointKey`, `sourceDataKey` and `assetPoints[].pointKey` —
+  // point keys are core wizard vocabulary, and the chat detector's history is
   // that over-matching destroys the product's own data.
+  //
+  // `clientkey` is here because Amendment 5 **dropped it**: Amendment 4 listed
+  // `clientKey` as an exact entry, and no fragment in the substring list was a
+  // substring of it, so widening the predicate silently narrowed it on exactly
+  // one key — leaving `clientCert` (the public half of a mutual-TLS pair)
+  // redacted and `clientKey` (the private half) in clear. Checked: none of
+  // these is a substring of `pointkey` or `sourcedatakey`.
+  "clientkey",
   "cakey",
+  "tlskey",
+  "sslkey",
+  "keypem",
   "signingkey",
   "encryptionkey",
   "community",
@@ -86,6 +97,50 @@ function isSecretKey(key: string): boolean {
 }
 
 type EncryptedBlob = { c: string; iv: string };
+
+/**
+ * Reads one blob from the `_secrets` map by **own** property only.
+ *
+ * `draftRtuSchema.code` has no charset regex, so `toString`, `valueOf`,
+ * `constructor` and `__proto__` are all valid RTU codes. A plain `secrets[code]`
+ * lookup returns the inherited prototype member for each of them — truthy, with
+ * `c` undefined. The sixth review found three consequences: `credentialsSet`
+ * derived `true` for an RTU that never had a credential (the false-success
+ * decision 1 exists to refuse), `Buffer.from(undefined, "base64")` throwing at
+ * commit and aborting the whole transaction, and `_secrets["__proto__"] = blob`
+ * invoking the setter so the ciphertext vanished while the endpoint returned
+ * 200. The `hasOwnProperty` guard plus the shape check closes all three.
+ *
+ * A charset regex on `code` would not have: `__proto__` matches
+ * `/^[A-Za-z0-9_-]+$/`.
+ */
+function ownBlob(secrets: unknown, key: string): EncryptedBlob | null {
+  if (typeof secrets !== "object" || secrets === null) {
+    return null;
+  }
+  if (!Object.prototype.hasOwnProperty.call(secrets, key)) {
+    return null;
+  }
+  const entry = (secrets as Record<string, unknown>)[key];
+  if (typeof entry !== "object" || entry === null) {
+    return null;
+  }
+  const { c, iv } = entry as { c?: unknown; iv?: unknown };
+  return typeof c === "string" && typeof iv === "string" ? { c, iv } : null;
+}
+
+/**
+ * Assigns without invoking a setter — `store.__proto__ = blob` would otherwise
+ * be swallowed by `Object.prototype`'s accessor rather than stored.
+ */
+function setBlob(store: Record<string, EncryptedBlob>, key: string, blob: EncryptedBlob): void {
+  Object.defineProperty(store, key, {
+    value: blob,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
 
 type DraftWithSecrets = OnboardingDraft & {
   _secrets?: Record<string, EncryptedBlob>;
@@ -218,11 +273,21 @@ export function attachEncryptedCredentials(
         "or another RTU claims the same code",
     );
   }
-  next._secrets = next._secrets ?? {};
-  next._secrets[key] = {
+  // Rebuild from own, well-shaped entries so a prototype-member key cannot be
+  // carried forward, then assign through `setBlob` so `__proto__` is stored
+  // rather than swallowed by the setter.
+  const store: Record<string, EncryptedBlob> = {};
+  for (const existing of Object.keys(next._secrets ?? {})) {
+    const blob = ownBlob(next._secrets, existing);
+    if (blob) {
+      setBlob(store, existing, blob);
+    }
+  }
+  setBlob(store, key, {
     c: ciphertext.toString("base64"),
     iv: iv.toString("base64"),
-  };
+  });
+  next._secrets = store;
   if (Array.isArray(next.rtus) && next.rtus[rtuIndex]) {
     next.rtus[rtuIndex] = { ...next.rtus[rtuIndex], credentialsSet: true };
   }
@@ -241,7 +306,7 @@ export function readEncryptedCredentials(
   if (key === null) {
     return null;
   }
-  const entry = (draft as DraftWithSecrets)._secrets?.[key];
+  const entry = ownBlob((draft as DraftWithSecrets)._secrets, key);
   if (!entry) {
     return null;
   }
@@ -290,9 +355,10 @@ export function reconcileSecrets(
   }
 
   const kept: Record<string, EncryptedBlob> = {};
-  for (const [code, blob] of Object.entries(next._secrets ?? {})) {
-    if (seen.get(code) === 1) {
-      kept[code] = blob;
+  for (const code of Object.keys(next._secrets ?? {})) {
+    const blob = ownBlob(next._secrets, code);
+    if (blob && seen.get(code) === 1) {
+      setBlob(kept, code, blob);
     }
   }
   if (Object.keys(kept).length > 0) {
@@ -304,7 +370,7 @@ export function reconcileSecrets(
   if (options.deriveCredentialsSet) {
     next.rtus = next.rtus.map((rtu) => {
       const code = normaliseCode(rtu?.code) ?? "";
-      const held = code.length > 0 && kept[code] !== undefined;
+      const held = code.length > 0 && ownBlob(kept, code) !== null;
       return held === Boolean(rtu.credentialsSet) ? rtu : { ...rtu, credentialsSet: held };
     });
   }
