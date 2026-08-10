@@ -10,8 +10,9 @@
 > operations write matrix (ADR 0017), the asset source-axis separation
 > (ADR 0018), the template content model (ADR 0019), the audit read API
 > (ADR 0021), onboarding credential capture off the chat transcript
-> (ADR 0022), the telemetry continuous aggregates (**ADR 0023**) and their
-> compression and retention policies (**ADR 0024**). General
+> (ADR 0022), the telemetry continuous aggregates (**ADR 0023**), their
+> compression and retention policies (**ADR 0024**) and the conversion of every
+> remaining rollup read onto them (**ADR 0025**). General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
@@ -157,7 +158,7 @@ entry **D-0001**.
 | Observability | Optional Prometheus, Grafana, Loki, Promtail, and OpenTelemetry baseline |
 | OLTP DB      | PostgreSQL 16 |
 | Telemetry DB | TimescaleDB extension on the same Postgres |
-| Telemetry aggregates | Four hierarchical continuous aggregates over `telemetry.point_values` — `point_values_1m` ← raw, `_5m` ← `_1m`, `_1h` ← `_5m`, `_1d` ← `_1h` (**ADR 0023**, `F4.1`, migration `0027`). **There is no `avg_value` column at any level and there must never be one**: `avg` does not compose, and building an hourly figure as `avg(avg_value)` over minute buckets was wrong in **151 of 169** buckets on real pilot data because samples per minute range 1–60. Store `sum_value`/`sample_count`/`min_value`/`max_value`; divide at read time. A total-level test does **not** catch the error — summed over the window both forms agree. **`timescaledb.materialized_only = false` is set explicitly on all four**, which on 2.29.1 is the *opposite* of the default: leave it and every live view's right edge silently disappears. Real-time aggregation has been deprecated upstream since 2.13, which is why the compose image is **pinned**. Reads go through `apps/api/src/telemetry/point-aggregates.ts`, never inline SQL — one converted site so far (`DashboardService.energySummary`); the other six rollups are `F4.28` and still read raw. Backfill is `pnpm db:refresh-aggregates`, **not** a migration: `refresh_continuous_aggregate()` cannot run in a transaction and Drizzle's migrator wraps the run in one. **Compression and retention (ADR 0024, `F4.2`, migration `0028`):** raw compresses at 7 d and drops at **730 d**; `_1m`/`_5m` compress at 7 d and drop at **735 d**; `_1h`/`_1d` are **never dropped and not compressed** — after raw's 730 days they are the only record, at hourly resolution. The 735-vs-730 gap is an invariant, not rounding: `retention(aggregate)` must be **strictly greater** than its source's, because dropping an aggregate's old chunks leaves the watermark high, so that range reads as **empty** while raw still holds the rows — and **no refresh rebuilds it**. `pnpm db:refresh-aggregates` is therefore lower-bounded at **each level's own source's** oldest surviving chunk, never at raw's for all four: only `_1m` reads raw, and using raw's floor for the levels above it deletes `_1h`/`_1d` whenever raw's retention runs ahead of `_1m`'s |
+| Telemetry aggregates | Four hierarchical continuous aggregates over `telemetry.point_values` — `point_values_1m` ← raw, `_5m` ← `_1m`, `_1h` ← `_5m`, `_1d` ← `_1h` (**ADR 0023**, `F4.1`, migration `0027`). **There is no `avg_value` column at any level and there must never be one**: `avg` does not compose, and building an hourly figure as `avg(avg_value)` over minute buckets was wrong in **151 of 169** buckets on real pilot data because samples per minute range 1–60. Store `sum_value`/`sample_count`/`min_value`/`max_value`; divide at read time. A total-level test does **not** catch the error — summed over the window both forms agree. **`timescaledb.materialized_only = false` is set explicitly on all four**, which on 2.29.1 is the *opposite* of the default: leave it and every live view's right edge silently disappears. Real-time aggregation has been deprecated upstream since 2.13, which is why the compose image is **pinned**. Reads go through `apps/api/src/telemetry/point-aggregates.ts`, never inline SQL — **all seven rollup reads are converted** (**ADR 0025**, `F4.28`): four in `dashboard.service.ts` (`loadTrend`, `energySummary`, `energySourceMix`, `energyTopConsumers`) and three in `reports.service.ts`. The raw reads in `map.service.ts`, `telemetry.service.ts` and `rules.service.ts` stay on raw **by decision** — they serve individual samples, which is what a hypertable is good at. **Level choice comes from `levelForRange`, never an inline ternary**, and it is keyed on how far *back* a range reaches, never on its duration: a duration-keyed selector sends a 24-hour range dated three years ago to `_1m`, which is dropped at 735 days and reads as **empty**. `end` plays no part — it is routinely in the future, both because `reports.service.ts` sets it to `endDate T23:59:59.999Z` and because the MQTT ingest writes ahead of `now()`. **Two guarantees here are static tests, not behavioural ones, and that is deliberate**: no behavioural test can catch a read reverting to `date_trunc` over raw, because every parity test compares against the raw query it replaced and a revert compares that query with itself (measured: a fully reverted `loadTrend` leaves the suite green); and no test can catch a missing `bucketHours` factor while every converted level makes it `1`. Both live in `tests/repo-invariants.test.ts` and `tests/adr-0025-level-selector.test.ts`. Backfill is `pnpm db:refresh-aggregates`, **not** a migration: `refresh_continuous_aggregate()` cannot run in a transaction and Drizzle's migrator wraps the run in one. **Compression and retention (ADR 0024, `F4.2`, migration `0028`):** raw compresses at 7 d and drops at **730 d**; `_1m`/`_5m` compress at 7 d and drop at **735 d**; `_1h`/`_1d` are **never dropped and not compressed** — after raw's 730 days they are the only record, at hourly resolution. The 735-vs-730 gap is an invariant, not rounding: `retention(aggregate)` must be **strictly greater** than its source's, because dropping an aggregate's old chunks leaves the watermark high, so that range reads as **empty** while raw still holds the rows — and **no refresh rebuilds it**. `pnpm db:refresh-aggregates` is therefore lower-bounded at **each level's own source's** oldest surviving chunk, never at raw's for all four: only `_1m` reads raw, and using raw's floor for the levels above it deletes `_1h`/`_1d` whenever raw's retention runs ahead of `_1m`'s |
 | Migrations   | Drizzle ORM for tables; raw SQL for the Timescale hypertable **and its four continuous aggregates** (ADR 0016 predates them; ADR 0023 adds them). Drizzle cannot manage a continuous aggregate: it is `relkind = 'v'`, and declaring one with `.table()` makes `pnpm db:generate` emit `CREATE TABLE` for it. They are declared `.view().existing()` in `packages/db/src/schema/telemetry-schema.ts` so generate leaves them alone — verified by running it. Their **compression and retention policies** are raw SQL too (`0028`, ADR 0024) and *can* live in a migration: the `ALTER … SET (timescaledb.compress …)` and both `add_*_policy()` functions are transaction-safe, verified by `BEGIN`/`ROLLBACK` leaving zero jobs. Use `add_compression_policy`, **not** `add_columnstore_policy` — the newer name is a *procedure* needing `CALL`, which is not what drizzle emits. `0028` also opens with `SET LOCAL lock_timeout` and **resets it before ending**: the compress `ALTER` takes an ACCESS EXCLUSIVE lock on `point_values`, and drizzle wraps **the whole run** in one transaction, so an unreset `SET LOCAL` reaches every later migration in that run |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
 | Real ingestion | `apps/ingest` MQTT TLS subscriber for the PHE pilot; writes `telemetry.point_values` and `pg_notify('bms_telemetry', …)` like the simulator (ADR 0007). One pilot RTU only; no EMQX. **Two entry points during the ADR 0016 §6 strangler migration**: `pnpm start` still runs the frozen legacy `src/index.js`, `pnpm start:host` runs the adapter host — and since the §6 commit 3 **cutover on 2026-08-06 the host is what compose runs and what the pilot runs**. The `command:` override in `docker-compose.yml` is the whole of it, so reverting is deleting one line — though it costs the same one-message gap the cutover did, because the container is recreated either way, and a pilot back on `pnpm start` loses `network_strength` every minute. The host still *defaults* `INGEST_NOTIFY=off`, which was the safe direction while two processes ran; with the host serving alone that default is the dangerous one and compose's `INGEST_NOTIFY: "on"` is the only thing keeping realtime alive. See [`docs/ingest-host.md`](./docs/ingest-host.md) |
@@ -208,7 +209,14 @@ bms/
 │   ├── api/                   ← NestJS REST + WebSocket (incl. src/admin, src/security)
 │   │                            src/admin/asset-templates/ holds ADR 0015's
 │   │                            lifecycle + instantiation services, and
-│   │                            ADR 0019's content contract
+│   │                            ADR 0019's content contract.
+│   │                            src/testing/ is test-only helpers (ADR 0025) —
+│   │                            the one src/ directory excluded from
+│   │                            tsconfig.build.json, so it is NOT runtime code.
+│   │                            A runtime import of it fails
+│   │                            tests/repo-invariants.test.ts (the tsconfig
+│   │                            exclusion alone does not stop one: tsc
+│   │                            re-admits an excluded-but-imported file)
 │   ├── sim/                   ← telemetry simulator (Node script)
 │   └── ingest/                ← PHE MQTT TLS subscriber (ADR 0007), one pilot RTU.
 │                                Two entry points during the ADR 0016 strangler:
@@ -275,6 +283,28 @@ Do not add top-level folders without updating this section.
   `sum(sum_value) / sum(sample_count)` — **never** an average of averages, which
   was wrong in 151 of 169 buckets on real data and which a total-level test does
   not catch. Never add an `avg_value` column to an aggregate.
+- **Pick the level with `levelForRange`, never an inline ternary, and never from
+  the window's duration alone** (ADR 0025). Retention is about how far *back* a
+  range reaches: a duration-keyed selector routes a 24-hour range dated three
+  years ago to `_1m`, which drops at 735 days and then reads as **empty**, not as
+  an error. The range's `end` is not an input — it is routinely in the *future*,
+  because `reports.service.ts` sets it to `endDate T23:59:59.999Z` and because the
+  ingest writes ahead of `now()`.
+- **Use `bucketHours()` for every kWh figure, including where the factor is 1, and
+  for *every* energy term in a query rather than just the total.** Two reports
+  queries treated `SUM(kw)` as kWh directly — right only because the buckets were
+  hours, and written down nowhere. No test can catch either mistake while the
+  level makes the factor `1`, so both are asserted statically in
+  `tests/adr-0025-level-selector.test.ts`.
+- **When a guarantee cannot be expressed as a behavioural test, write a static one
+  — and say which it is.** ADR 0025 has two: a rollup read reverting to
+  `date_trunc` over raw is invisible to every parity test, because those compare
+  against the raw query being replaced and a revert compares it with itself
+  (measured — a fully reverted `loadTrend` left the suite green); and a dropped
+  `bucketHours` factor is invisible while the factor is 1. `tests/` is where these
+  live, beside the ADR 0017 write-gate check. A parity test that is *invariant
+  under the change it guards* is the recurring trap here — `F4.1` shipped one, and
+  `F4.28` shipped two more before review caught them.
 - **A `DELETE` from `telemetry.point_values` does not remove the aggregate rows,
   and no scheduled policy repairs it.** Follow any such delete with
   `refresh_continuous_aggregate` over the deleted range for all four levels,
@@ -289,6 +319,18 @@ Do not add top-level folders without updating this section.
   Measured: 34,596 aggregate rows to 7,068. Nothing rebuilds them. So: raw still
   covers the range → refresh it; raw no longer does → the aggregate **is** the
   archive, leave it alone.
+- **And there is a third case, which ADR 0025 added: nothing was ever
+  materialised, so there is nothing to repair and a refresh would be the harmful
+  act.** `F4.28`'s suite dates its fixture **ahead of `now()`**, and no refresh
+  policy or script in this repo passes an upper bound later than `now()` — every
+  policy stops at `now() - end_offset`. So its rows never enter an aggregate, and
+  its `DELETE` cannot orphan anything. Refreshing over that range instead would
+  push a watermark into the future and degrade the database permanently, which is
+  the failure ADR 0023 warned about. **This exemption is only available if you
+  prove it**, not if you assume it: that suite asserts the fixture is visible only
+  through the live branch, asserts every policy's `end_offset` is strictly
+  positive, and asserts after the delete that all four views hold **zero** rows for
+  its assets. Without those three, follow the rule above.
 - **Never refresh a level over a range its own source cannot supply**, and note
   that only `_1m`'s source is raw — `_5m` reads `_1m`, `_1h` reads `_5m`, `_1d`
   reads `_1h`. `pnpm db:refresh-aggregates` derives a per-level floor for exactly

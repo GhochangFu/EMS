@@ -1024,6 +1024,62 @@ Process (`AGENTS.md` §10).
   question and a business one. It rides with the `E5.1` client email, and the
   two-year fuse means nothing is at risk before it is answered.
 
+### Rollup reads on the aggregates (F4.28) — done
+
+- **Status:** done (ADR 0025, PR
+  [#23](https://github.com/GhochangFu/EMS/pull/23), merge commit `beb5f2d`).
+  A merge commit again, so the seven commits stay separable — the `DATABASE_URL`
+  gate extraction, the runtime-build fix, the selector, the conversion and the
+  review round each stand on their own.
+- **What it closes:** ADR 0023 decision 6 converted exactly **one** read site to
+  establish the pattern and named the other six in a new backlog row so `F4.1 ✅`
+  could not be misread as "reads are on aggregates". All six are now converted, so
+  it can be. Four sites in `dashboard.service.ts` (`loadTrend`, `energySummary`,
+  `energySourceMix`, `energyTopConsumers`) and three in `reports.service.ts`, each
+  through `apps/api/src/telemetry/point-aggregates.ts`.
+- **The gate decision:** the three `reports.service.ts` sites read `_1h`, chosen by
+  the repo owner. That is the client-facing Energy Consumption CSV, and the options
+  fail in opposite directions — raw includes samples arriving more than 3 days late
+  but **returns zeros** for ranges past ADR 0024's 730-day horizon, while `_1h` is
+  never dropped and misses those late arrivals. Recorded in the ADR as chosen,
+  with what would reopen it (the `E5.1` compliance answer).
+- **It falsified a premise of ADR 0024**, which withdrew its own decision 8 (a
+  retention-aware selector) reasoning that reports "land on `_1h`, which carries no
+  retention policy at all". That holds only while level choice is hard-coded per
+  site. `levelForRange` therefore keys on how far *back* a range reaches, never on
+  its duration, and `end` plays no part — it is routinely in the future. **ADR 0024
+  Amendment 3** records the correction, along with a second one: `parseEnergyWindow`
+  caps at **720** hours, not the 168 that ADR reasoned from, and what actually keeps
+  `_1m` reads shallow is the 48-hour level switch rather than the window cap.
+- **What the tests do and do not prove, measured rather than assumed.** Four of the
+  six sites group by the read level's own bucket width, so exactly one source row
+  feeds each output group and `avgExpr` is algebraically identical to the naive
+  average-of-averages there — their parity tests prove predicate translation and
+  level choice, and nothing about the mean. Confirmed by mutation: replacing
+  `avgExpr` with the naive form kills **only** the two bare-`avg` sites. Those two
+  additionally assert their own fold is ≥ 2, because at `_1h` **8 of 37** real
+  assets have a fold of 1 and agree under both forms.
+- **Two guarantees no behavioural test can carry** are static invariants instead: a
+  read reverting to `date_trunc` over raw is invisible, because every parity test
+  compares against the raw query it replaced and a revert compares that query with
+  itself (measured — a fully reverted `loadTrend` left the suite green); and a
+  dropped `bucketHours` factor is invisible while the factor is 1. Both found in
+  review, both closed in `tests/`.
+- **Also landed here:** the `DATABASE_URL` integration gate, extracted from **six**
+  verbatim copies after `F2.1` set the threshold at three and `F4.14`, `F4.1` and
+  `F4.2` each deferred it.
+- **Deployed at merge time: database yes, API yes, frontend N/A.** Unlike `F4.2`,
+  this item changes `apps/api` runtime files, so the container genuinely needed the
+  rebuild — verified end to end under a real authenticated session: all four
+  converted endpoints 200, the Energy Centre rendering **695 kWh / 415 kW** against
+  a database where the aggregate and raw paths both give **695.37 / 414.66** over
+  1310 buckets, and the reports range matching at **870.60 kWh / 383.57 kW /
+  126.04 solar** over 23 buckets. `apps/web` was never touched.
+- **Still owed:** `F4.29` (a formula-injection guard on the reports CSV export,
+  which `F4.14` already gave the audit export — raised by this item's security
+  review and deliberately left out, since it changes a client deliverable's strings
+  rather than its numbers).
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
