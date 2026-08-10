@@ -160,9 +160,12 @@ used an unbounded `[a-z0-9+.-]*` and was quadratic: **74 ms per chat turn** at
 `chatBodySchema`'s own 8,000-character maximum, and **~15.7 s of blocked event
 loop per session read** for a 100-turn transcript, because `scrubMessages` walks
 every stored message on every `mapSession`. Node is single-threaded, so that was
-an API-wide outage, not an onboarding one. Fixed by bounding every quantifier,
+an API-wide outage, not an onboarding one. ~~Fixed by bounding every quantifier,
 adding a literal `://` pre-filter, and capping the scanned length at 8,000
-characters inside the detector rather than trusting the request schema.
+characters inside the detector rather than trusting the request schema.~~
+**Those two struck claims are false — see Amendment 3.** The `://` pre-filter is
+real and effective; the quantifier bound and the scan cap were not delivered,
+and the shipped code was 52× slower than the defect this paragraph describes.
 
 **The detector deleted its own remediation guidance.** With the separator
 optional, `looksLikeCredential` matched the product's own copy — *"Add its
@@ -181,7 +184,8 @@ most of the ReDoS surface and the false positives on ordinary English
 so they cannot be mistaken for coverage: a bare value (`hunter2`), a keyword
 with no separator (`api key abc123`), userinfo with no scheme
 (`pheadmin:hunter2@host`), and `MQTT_PASSWORD=x` where a leading underscore
-defeats the word boundary. **This is acceptable only because decision 1
+defeats the word boundary. *(This enumeration is itself incomplete — Amendment 3
+widens it.)* **This is acceptable only because decision 1
 exists** — the detector is a nudge; the control is that credentials have a
 typed home and the wizard no longer asks for them in chat. Three review rounds
 each found this predicate simultaneously too narrow and too broad, which is the
@@ -203,6 +207,99 @@ patch, leaving the OpenAI path writing nothing while reporting success (M1);
 and `_secrets` keyed by array index while `mergeDraft` replaces `rtus` wholesale,
 which `POST :id/credentials` makes newly load-bearing (M4). Each needs its own
 decision.
+
+## Amendment 3 (2026-08-10) — Amendment 2 did not fix the ReDoS, and said it did
+
+A third review, of Amendment 2, found that the denial of service was **moved,
+not removed**, and that the amendment's claim to have fixed it was false. This is
+the third consecutive round in which a fix to this predicate introduced or
+preserved a defect while the document asserted otherwise. That pattern is now
+the most important fact in this ADR, and it is why decision 1 — not this
+detector — is the control.
+
+**The quadratic moved from the URI regex to the value trim.**
+`[^\w/.@-]+$` backtracks over an entire run of non-word characters at every
+start index, so it is O(n²) in the length of the value handed to it. Two
+unbounded quantifiers fed it:
+
+1. `TERM_PATTERN` captured `(\S+)`, so a single value could span the whole scan.
+2. `normalise` applied `.slice(0, MAX_SCAN)` **before** `.normalize("NFKC")`, and
+   NFKC expands. `U+3316` (㌖) becomes six characters with no whitespace, so a
+   **7,912-character input — inside `chatBodySchema`'s own 8,000 cap** — was
+   normalised to 47,412 characters and the cap bounded nothing.
+
+Measured against the shipped module, per request:
+
+| input (all ≤ 8,000 chars) | Amendment 2 | Amendment 3 |
+| --- | --- | --- |
+| `password: a` + `!`×7900 + `a` | 110 ms | 0 ms |
+| `password: a` + `㌖`×7900 + `a` | 3,083 ms | 0 ms |
+
+Amendment 2 called the 74 ms it replaced "an API-wide outage". The code it
+shipped was **110 ms on plain ASCII and 3,083 ms on one repeated character** —
+a 52× regression on the exact metric it claimed to have fixed.
+
+**Fixed** by bounding the capture to `(\S{1,256})` — no real secret is 256
+non-space characters long — and by slicing to `MAX_SCAN` *again after* NFKC. The
+trim is now named `VALUE_TRIM` and carries a comment saying it is quadratic and
+safe only because the capture is bounded, so the two cannot drift apart.
+
+**Scope correction, so this is not overstated.** The ~15.7 s-per-read
+amplification Amendment 2 cites does **not** exist here. Any input expensive
+enough to trigger the quadratic strips to a value that is neither in
+`NON_VALUES` nor a bare term, so `looksLikeCredential` returns `true`, the turn
+is refused before any write, and `scrubMessages` never re-pays the cost. This
+was one stall per authenticated request, repeatable, behind
+`assertOnboardingAccess` — a tenant admin could stall the API for every other
+tenant. Blocking, but not a read-path amplifier.
+
+**The test that was supposed to catch this measured nothing.** The assertion
+used `"a".repeat(200000)`: a uniform run of word characters never enters the
+trim's backtracking path, so it ran in 0 ms and passed throughout. It has been
+replaced with the two inputs above, asserted under 100 ms — both exceeded that
+on the old code. A cost assertion that does not exercise the quadratic is worse
+than none, for the same reason this ADR gives about redactors.
+
+**The documented-miss enumeration was materially incomplete.** Amendment 2 named
+four misses and asserted them as tests "so they cannot be mistaken for
+coverage" — the enumeration itself then understated the gap. Two causes, both
+wider than stated: only `\s*` may sit between a term and its separator, and `\b`
+fails after *any* word character rather than only a leading underscore. So the
+missed set includes **every quoted or structured paste** — `{"password":
+"hunter2"}`, a `.conf` line, XML, and the wizard's own `**password**:` markdown
+convention — and **every camelCase/snake_case config key** (`accessToken:`,
+`client_secret=`, `mqtt_password=`), which is precisely the text a user pastes
+out of a broker configuration. All are now asserted as tests. The detector was
+**not** grown to cover them: doing so is what failed three times.
+
+**Two still-open items are re-ranked, and one was dropped from the list.**
+
+- **M4 (`_secrets` keyed by array index) is the sharpest, not the last.** It is
+  credential *misdelivery*, not a redaction miss: `PATCH :id/draft` accepts a
+  full `rtus` array and `mergeDraft` replaces it wholesale, while `_secrets` is
+  untouched, so deleting or reordering an entry makes
+  `readEncryptedCredentials(session.draft, i)` decrypt one RTU's password into
+  a **different broker's** `rtu_connection_configs` row.
+- **M3 (`scrubSecrets` exact-case key match) is an ADR 0011 decision 4 gap**, not
+  only a client-response issue: it is the only filter between `rtus[].config`
+  and the LLM prompt, and `Password`/`pwd`/`api_key`/`secret`/`token` all reach
+  both. The Excel path is not a vector (`onboarding-excel.service.ts` builds
+  `config` from a fixed key set); the inline draft editor and the model's own
+  `draftPatch` are.
+- **M1 (`safeParse(...).data ?? {}`) ranks below both** — it fails closed, so it
+  is a correctness and UX defect on a path compose never enables.
+- **pino was dropped from Amendment 2's list and is restored here**:
+  `app.module.ts` configures `LoggerModule` with no `redact` and the default
+  request serialiser, so the `authorization` header is logged for every request
+  including `POST :id/credentials` (§9.6). Request bodies are not logged, so the
+  credential payload itself is not. Belongs with E8.4.
+- **`keyVersion` is computed and discarded** — `credential-crypto.service.ts`
+  returns it; the draft store keeps only `{ c, iv }`, so ADR 0012's rotation
+  requirement is unmet for onboarding drafts. Pre-existing, but
+  `POST :id/credentials` is a new writer into it. Belongs with E8.4.
+
+None of these are fixed here. Only the ReDoS, the test, and this document's own
+false statements are.
 
 ## Dependencies
 

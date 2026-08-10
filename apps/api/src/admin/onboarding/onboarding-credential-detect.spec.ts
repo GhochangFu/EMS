@@ -92,12 +92,28 @@ export function runCredentialDetectTests(): void {
   // Recorded as tests so the trade is visible and cannot be mistaken for
   // coverage. Each needs the detector to GROW, which is what kept regressing.
   // They are acceptable because decision 1 gives credentials a real home.
+  // Amendment 3 widened this list: the third review found the real miss set is
+  // larger than Amendment 2 admitted. Only `\s*` may sit between a term and its
+  // separator, so every *quoted or structured* paste misses; and `\b` fails
+  // after any word character, not just the leading underscore the ADR named, so
+  // every camelCase/snake_case config key misses too.
   for (const missed of [
+    // stated in Amendment 2
     "hunter2",
     "api key abc123",
     "user admin pass hunter2",
     "pheadmin:hunter2@phe.thinkiot.co.in:8883",
     "MQTT_PASSWORD=hunter2",
+    // structured pastes — the likeliest accidental shapes, all missed
+    '{"password": "hunter2"}',
+    "**password**: hunter2",
+    "`password`: hunter2",
+    "<password>hunter2</password>",
+    "password - hunter2",
+    // config keys — `\b` does not fire after a word character
+    "accessToken: abc123",
+    "client_secret=abc123",
+    "mqtt_password=hunter2",
   ]) {
     assert(
       !looksLikeCredential(missed),
@@ -105,11 +121,24 @@ export function runCredentialDetectTests(): void {
     );
   }
 
-  // --- bounded cost (the ReDoS this replaced) --------------------------------
-  const started = Date.now();
-  looksLikeCredential(`${"a".repeat(200000)}`);
-  const elapsed = Date.now() - started;
-  assert(elapsed < 250, `detection must stay cheap on hostile input, took ${elapsed}ms`);
+  // --- bounded cost ----------------------------------------------------------
+  // The previous assertion used "a".repeat(200000) and measured 0 ms: a uniform
+  // run of word characters never enters the trim's backtracking path, so it
+  // passed while the detector was quadratic. These two inputs DO enter it, and
+  // both sit inside chatBodySchema's own 8,000-char cap — measured 110 ms and
+  // 3,083 ms before the fix.
+  //
+  // U+3316 expands 1 -> 6 under NFKC with no whitespace, which is how an input
+  // "within the cap" produced a 47,412-character scan.
+  for (const [label, hostile] of [
+    ["ascii punctuation run", `password: a${"!".repeat(7900)}a`],
+    ["NFKC-expanding run", `password: a${"㌖".repeat(7900)}a`],
+  ] as const) {
+    const started = Date.now();
+    looksLikeCredential(hostile);
+    const elapsed = Date.now() - started;
+    assert(elapsed < 100, `detection must stay cheap on ${label}, took ${elapsed}ms`);
+  }
 
   // --- the escape hatch specifically ---------------------------------------
   // "skip credentials" names a credential but supplies no value. Requiring a

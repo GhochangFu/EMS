@@ -14,16 +14,28 @@ import type { OnboardingChatMessage } from "@bms/shared";
  *   optional-separator form matched the product's own copy — "Add its
  *   credentials with the Credentials field" — and on the default rule-based
  *   path that deleted the one message telling users where the field is.
- * - **Quantifiers are bounded and there is a cheap pre-filter.** The earlier
- *   unbounded `[a-z0-9+.-]*` was quadratic: 74 ms per turn at `chatBodySchema`'s
- *   8,000-char maximum, and ~15.7 s per session read over a 100-turn transcript
- *   via `scrubMessages`. Node is single-threaded, so that was an API-wide DoS.
+ * - **Every quantifier on a hot path is bounded, and the scan is capped twice.**
+ *   Amendment 2 claimed this and did not deliver it: the value capture stayed
+ *   `(\S+)` and fed a quadratic trim, and the `MAX_SCAN` slice ran *before*
+ *   NFKC, which expands. Amendment 3 measured 110 ms (ASCII) and 3,083 ms (one
+ *   expanding character, repeated) per turn from an input inside
+ *   `chatBodySchema`'s own 8,000 cap — worse than the 74 ms it replaced. Node is
+ *   single-threaded, so that is an API-wide stall per request.
  *
- * **Known misses, recorded rather than implied:** a bare value ("hunter2"), a
- * keyword with no separator ("api key abc123"), userinfo with no scheme
- * ("user:pass@host"), and `MQTT_PASSWORD=x` where a leading underscore defeats
- * the word boundary. Closing these needs the detector to grow, which is what
- * kept going wrong. They are acceptable because decision 1 exists.
+ * **Known misses, recorded rather than implied.** The list is wider than
+ * Amendment 2 stated, because only `\s*` may sit between term and separator and
+ * `\b` fails after any word character:
+ *
+ * - bare values ("hunter2") and separator-less keywords ("api key abc123");
+ * - **any quoted or structured paste** — `{"password": "hunter2"}`, a `.conf`
+ *   line, XML, and the wizard's own `**password**:` markdown convention;
+ * - **camelCase and snake_case config keys** — `accessToken:`, `client_secret=`,
+ *   `MQTT_PASSWORD=`, which is exactly the shape pasted out of a broker config;
+ * - userinfo with no scheme ("user:pass@host").
+ *
+ * Closing these needs the detector to grow, which is what kept going wrong
+ * across three review rounds. They are acceptable **only** because decision 1
+ * gives credentials a typed home and the wizard no longer asks for them here.
  */
 
 /**
@@ -47,11 +59,27 @@ const SECRET_TERMS = [
   "client[-_ ]?(?:key|cert(?:ificate)?)",
 ].join("|");
 
-/** Separator is mandatory — that single rule is what buys the precision. */
+/**
+ * Separator is mandatory — that single rule is what buys the precision.
+ *
+ * The captured value is bounded at 256. An unbounded `(\S+)` fed the trim in
+ * `looksLikeCredential` a value as long as the whole scan, and that trim is
+ * quadratic (see `VALUE_TRIM`). No real secret is 256 non-space characters
+ * long, so the bound costs nothing and removes the amplifier.
+ */
 const TERM_PATTERN = new RegExp(
-  `\\b(?:${SECRET_TERMS})\\b\\s*(?::|=|\\bis\\b)\\s*(\\S+)`,
+  `\\b(?:${SECRET_TERMS})\\b\\s*(?::|=|\\bis\\b)\\s*(\\S{1,256})`,
   "gi",
 );
+
+/**
+ * Strips surrounding punctuation from a captured value.
+ *
+ * `[^\w/.@-]+$` backtracks over the whole run at every start index, so it is
+ * O(n²) in the value's length. That is safe **only** because `TERM_PATTERN`
+ * bounds the capture — the two must be changed together.
+ */
+const VALUE_TRIM = /^[^\w/.@-]+|[^\w/.@-]+$/g;
 
 /**
  * URI userinfo — `scheme://user:secret@host`. Every quantifier is bounded, and
@@ -91,10 +119,18 @@ const HOMOGLYPHS: Record<string, string> = {
  */
 const MAX_SCAN = 8_000;
 
+/**
+ * Slice, normalise, **then slice again**. NFKC expands: `U+3316` (㌖) becomes
+ * six characters with no whitespace, so 7,912 input characters — inside
+ * `chatBodySchema`'s own cap — normalised to 47,412 and the "cap" bounded
+ * nothing. The first slice bounds the work `normalize` itself does on an
+ * unbounded stored transcript; the second bounds what expansion produced.
+ */
 function normalise(value: string): string {
   return value
     .slice(0, MAX_SCAN)
     .normalize("NFKC")
+    .slice(0, MAX_SCAN)
     .replace(INVISIBLE, "")
     .replace(/[Ѐ-ԯͰ-Ͽ]/g, (ch) => HOMOGLYPHS[ch] ?? ch);
 }
@@ -123,7 +159,7 @@ export function looksLikeCredential(message: unknown): boolean {
   const termOnly = new RegExp(`^(?:${SECRET_TERMS})$`, "i");
   TERM_PATTERN.lastIndex = 0;
   for (const match of text.matchAll(TERM_PATTERN)) {
-    const value = (match[1] ?? "").replace(/^[^\w/.@-]+|[^\w/.@-]+$/g, "").toLowerCase();
+    const value = (match[1] ?? "").replace(VALUE_TRIM, "").toLowerCase();
     if (!value || NON_VALUES.has(value) || termOnly.test(value)) {
       continue;
     }
