@@ -653,9 +653,10 @@ export class DashboardService {
     //
     // ADR 0025 decision 2 (`F4.28`): the level now comes from `levelForRange`
     // rather than the inline ternary this line used to be. Same answer for every
-    // window this method can produce — `parseEnergyWindow` caps at 168 hours —
-    // but there is now exactly one implementation of level choice, and it is the
-    // one carrying the retention guard.
+    // window this method can produce — `parseEnergyWindow` caps at 168 hours OR 30
+    // days, so 720 hours is the real bound, still three orders of magnitude inside
+    // `_1m`'s 735-day horizon — but there is now exactly one implementation of level
+    // choice, and it is the one carrying the retention guard.
     const { level } = levelForRange({
       start: this.trailingStart(durationHours),
       granularity: useHourlyBuckets ? "1h" : "1m",
@@ -893,8 +894,11 @@ export class DashboardService {
    *
    * ADR 0025 decision 1: the retention guard is a function of `start` and `now`,
    * never of the range's end. Every dashboard window is trailing and capped at
-   * 168 hours, so no call here can escalate — the guard exists for the reads that
-   * come later, and this keeps every site expressing its range the same way.
+   * **720 hours** — `parseEnergyWindow` allows `1-168h` or `1-30d`, and 30 days is
+   * the larger of the two, so quoting 168 understates it — which is still far
+   * inside every horizon, so no call here can escalate. The guard exists for the
+   * reads that come later, and this keeps every site expressing its range the same
+   * way.
    */
   private trailingStart(durationHours: number): Date {
     return new Date(Date.now() - durationHours * 3_600_000);

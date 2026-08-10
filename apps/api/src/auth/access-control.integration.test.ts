@@ -70,7 +70,7 @@ describe.skipIf(!connectionString)("F4.10 — access control against a real data
   let svc: AccessControlService;
 
   beforeAll(async () => {
-        const created = await openIntegrationPool(connectionString as string, "F4.10");
+    const created = await openIntegrationPool(connectionString as string, "F4.10");
     pool = created;
     svc = new AccessControlService(createDb(created));
   });

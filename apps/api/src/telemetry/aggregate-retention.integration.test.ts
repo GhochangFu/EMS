@@ -59,7 +59,7 @@ describe.skipIf(!connectionString)("F4.2 — telemetry compression and retention
   let fx: RetentionFixtures;
 
   beforeAll(async () => {
-        const created = await openIntegrationPool(connectionString as string, "F4.2");
+    const created = await openIntegrationPool(connectionString as string, "F4.2");
     pool = created;
     await cleanupProbes(created);
     await createProbes(created);

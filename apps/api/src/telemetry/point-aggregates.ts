@@ -124,9 +124,18 @@ export interface LevelChoice {
   /**
    * `true` when the retention guard forced a coarser level than `requested`.
    *
-   * A caller that renders buckets is showing wider ones than it asked for, so
-   * this is surfaced rather than hidden. No read triggers it today — see the
-   * function comment — and that is the point: it is a guard, not a feature.
+   * **Diagnostic only — no caller reads this today, and that is accurate rather
+   * than an oversight.** All seven call sites destructure `{ level }`, because no
+   * read can currently trigger an escalation: every dashboard window is at most 30
+   * days and the reports path already asks for `_1h`, which has no horizon. An
+   * earlier version of this comment said the flag was "surfaced rather than
+   * hidden", which was aspirational — nothing surfaces it.
+   *
+   * It is here so that the first caller which *can* escalate has the fact
+   * available instead of having to re-derive it, and so that a debugger can see
+   * that a level was substituted. If a caller ever renders buckets over a range
+   * that could escalate, it should read this and tell the user the granularity
+   * changed — silently widening buckets on a chart is its own defect.
    */
   readonly coarsened: boolean;
 }
@@ -169,7 +178,9 @@ export interface LevelChoice {
  *
  * Escalation walks {@link LADDER} upward and terminates because `_1h` and `_1d`
  * have no horizon (ADR 0023 decision 7). **No read triggers it today**: every
- * dashboard window is at most 168 hours, and the reports path already wants
+ * dashboard window is at most **720 hours (30 days)** — `parseEnergyWindow` caps
+ * hour-suffixed windows at 168 but day-suffixed ones at 30, which is the larger
+ * bound and the one that matters here — and the reports path already wants
  * hourly buckets. It exists so that the first read which *could* — a report
  * offering finer granularity, or a future ADR giving `_1h` a horizon — fails
  * visibly instead of returning an empty chart.

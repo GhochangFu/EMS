@@ -50,7 +50,7 @@ describe.skipIf(!connectionString)("F4.14 — audit read API", () => {
   let fx: Fixtures;
 
   beforeAll(async () => {
-        const created = await openIntegrationPool(connectionString as string, "F4.14");
+    const created = await openIntegrationPool(connectionString as string, "F4.14");
     pool = created;
 
     const db = createDb(created);

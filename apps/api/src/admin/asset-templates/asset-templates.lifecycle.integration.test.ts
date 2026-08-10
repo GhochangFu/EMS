@@ -68,7 +68,7 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
   let v1: AdminAssetTemplateDto;
 
   beforeAll(async () => {
-        const created = await openIntegrationPool(connectionString as string, "F2.1");
+    const created = await openIntegrationPool(connectionString as string, "F2.1");
     pool = created;
 
     const db = createDb(created);

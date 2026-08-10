@@ -36,8 +36,8 @@ import type pg from "pg";
  *    influence the comparison. No alignment arithmetic, and no flakiness from a
  *    fixture that straddles a cutoff.
  *
- * {@link assertFixtureIsAheadOfEveryWatermark} proves premise 1 rather than
- * assuming it, and {@link assertSuiteLeftNoOrphans} proves the consequence — run
+ * {@link assertFixtureIsOnlyOnTheLiveBranch} proves premises 1 and 2 rather than
+ * assuming them, and {@link assertSuiteLeftNoOrphans} proves the consequence — run
  * last, it is the assertion `F4.1` did not have.
  *
  * ## Why the comparison is scoped to probe assets
@@ -54,7 +54,7 @@ import type pg from "pg";
  * (ADR 0025 fact 2). Sites that group by the read level's own bucket width draw
  * **exactly one** source row per output bucket, where `sum(sum)/sum(count)` and
  * the naive average-of-averages are algebraically identical — so their parity
- * tests prove predicate translation, relation name and parameter binding, and
+ * tests prove predicate translation, level choice and parameter binding, and
  * nothing whatever about the mean. `F4.1` proved that the hard way: its per-bucket
  * test passed with `avgExpr` mutated to the naive form.
  *
@@ -63,6 +63,23 @@ import type pg from "pg";
  * at the `_1h` site ADR 0025 fact 3 measured **8 of 37** real assets whose fold is
  * 1 and which therefore agree under both forms. An assertion landing on one of
  * those reads as coverage while proving nothing.
+ *
+ * ## What NOTHING here can detect, and where that is covered instead
+ *
+ * **A revert of any site to bucketing raw.** Every assertion below compares a
+ * converted site against the raw query it replaced, so if a site goes *back* to
+ * that query the comparison is the query against itself. Verified: with `loadTrend`
+ * fully reverted to `date_trunc('minute', time)` over `telemetry.point_values`,
+ * this suite reports **5 passed**. Mutation testing does show it catches a wrong
+ * aggregate *level* — `_1m` → `_5m` fails on bucket count — but raw at minute
+ * granularity returns exactly what `_1m` returns, so that direction is invisible.
+ * The two discriminating sites do not rescue it either: their "the naive form
+ * differs from raw" assertion is a property of the fixture and holds under a revert.
+ *
+ * Found by the `F4.28` compliance review, which also caught this file claiming
+ * otherwise. Covered by the static invariant "no rollup read reverts to bucketing
+ * raw telemetry" in `tests/repo-invariants.test.ts`, which is where this repo puts
+ * guarantees no behavioural test can carry.
  */
 
 /** Asset codes the fixture owns. `PV` prefix matters: it is how solar is detected. */
@@ -146,6 +163,48 @@ export async function cleanupProbes(pool: pg.Pool): Promise<void> {
 }
 
 /**
+ * Refuses to write fixtures into anything but a local database.
+ *
+ * This suite is the first integration suite here that inserts **master data** —
+ * two rows in `bms.assets` — rather than telemetry alone. Assets are not filtered
+ * by `active` on the dashboard read paths, so a mis-set `DATABASE_URL` would
+ * briefly publish `F428-PROBE-LOAD` and `PV-F428-PROBE` into live location
+ * dashboards and into the solar split of anyone's Energy Centre. `F4.1` already
+ * degraded a shared database once (`eb8a55b`), which is precedent enough to make
+ * the target explicit rather than implied.
+ *
+ * Localhost, or an explicit opt-in for anyone running against a remote throwaway.
+ * CI's `DATABASE_URL` is `localhost:5432`, so this costs the pipeline nothing.
+ *
+ * Deliberately **not** retrofitted onto the other suites in this change: they have
+ * the same property and it is not this item's diff to widen. Recorded in the
+ * `F4.28` backlog row instead.
+ */
+function assertSafeToWriteFixtures(): void {
+  if (process.env.F428_ALLOW_REMOTE_FIXTURES === "true") {
+    return;
+  }
+  const url = process.env.DATABASE_URL ?? "";
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    // An unparseable URL is not a licence to proceed.
+    host = "";
+  }
+  const local = ["localhost", "127.0.0.1", "::1", "[::1]", "postgres", "db"];
+  if (local.includes(host)) {
+    return;
+  }
+  throw new Error(
+    `F4.28 refuses to create fixtures against host "${host}". This suite inserts rows into ` +
+      "bms.assets, which are visible on live dashboards, plus future-dated telemetry. Point " +
+      "DATABASE_URL at a local or throwaway database, or set " +
+      "F428_ALLOW_REMOTE_FIXTURES=true if you are certain the target is disposable.",
+  );
+}
+
+/**
  * Creates two probe assets and a future-dated `kw` fixture across both.
  *
  * Two assets, and one of them is `PV`-prefixed, because `energySourceMix` and
@@ -154,6 +213,8 @@ export async function cleanupProbes(pool: pg.Pool): Promise<void> {
  * side — agreeing, and asserting nothing about the split.
  */
 export async function createProbes(pool: pg.Pool): Promise<Probes> {
+  assertSafeToWriteFixtures();
+
   const { rows: locations } = await pool.query<{ id: string }>(
     `SELECT id FROM bms.locations ORDER BY name LIMIT 1`,
   );
@@ -331,8 +392,8 @@ export async function assertLoadTrendMatchesRaw(
     assetIds: string[] | null,
   ) => Promise<{ points: { t: string; totalKw: number }[] }>,
 ): Promise<void> {
-  // 168h is the widest this endpoint allows, and it comfortably contains a fixture
-  // that starts 20 minutes from now.
+  // 168h is the widest this endpoint allows (`parseWindowInterval` caps at 1-168 in
+  // m or h), and it comfortably contains a fixture that starts LEAD_MINUTES ahead.
   const { points } = await loadTrend("168h", probes.assetIds);
 
   const { rows: expected } = await pool.query<{ bucket: Date; total_kw: string }>(

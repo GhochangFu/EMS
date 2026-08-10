@@ -50,8 +50,8 @@ is a guard rather than a convenience. Detail in decision 1.
 | # | Site | Bucket today | Window shape | Level |
 |---|---|---|---|---|
 | 1 | `dashboard.service.ts:471` `loadTrend` | minute | trailing, `1–168` **m or h** | `_1m` |
-| 2 | `dashboard.service.ts:701` `energySourceMix` | minute / hour | trailing, ≤168 h | `_1m` (<48 h) / `_1h` |
-| 3 | `dashboard.service.ts:782` `energyTopConsumers` | **none** (bare `avg`) | trailing, ≤168 h | `_1m` |
+| 2 | `dashboard.service.ts:701` `energySourceMix` | minute / hour | trailing, ≤**720 h** | `_1m` (<48 h) / `_1h` |
+| 3 | `dashboard.service.ts:782` `energyTopConsumers` | **none** (bare `avg`) | trailing, ≤**720 h** | `_1m` |
 | 4 | `reports.service.ts:133` `energySummary` | hour | explicit `start`/`end` | `_1h` |
 | 5 | `reports.service.ts:180` `energySourceTotals` | hour | explicit `start`/`end` | `_1h` |
 | 6 | `reports.service.ts:233` `energyTopConsumers` | **none** (bare `avg`) | explicit `start`/`end` | `_1h` |
@@ -221,8 +221,23 @@ gap.
 So the selector's signature takes the range, not just its width:
 
 ```ts
-levelForRange({ start, end }: { start: Date; end: Date }): AggregateLevel
+levelForRange({ start, granularity, now }): LevelChoice
 ```
+
+Two corrections to what this decision first specified, both found by the `F4.28`
+compliance review after the code was written, and recorded here rather than
+quietly reconciled:
+
+- It first wrote the signature as `({ start, end }) => AggregateLevel`. **`end` is
+  gone**, which is what this decision's own prose below demands, so the first draft
+  contradicted itself one paragraph later.
+- `granularity` was never mentioned and is **not optional**. Level choice is not a
+  function of the range alone: `loadTrend` plots minute buckets over windows up to
+  168 hours while `energySummary` switches to hours at 48, so deriving granularity
+  here would silently change what those charts plot. The caller states what it wants
+  to display; the guard decides what it is allowed to read.
+- The return is `LevelChoice`, not a bare level, so an escalation is visible to the
+  caller rather than silent.
 
 and its rule is: pick the finest level whose bucket width suits the range **and
 whose retention horizon covers `start`**; escalate to a coarser level when it
@@ -259,8 +274,13 @@ there is exactly one implementation.
 
 Subject to the gate question below, which is about sites 4–6 only.
 
-**3. `bucketHours()` is used at every converted site, including the ones pinned
-to `_1h`.** `reports.service.ts:133` and `:180` currently treat
+**3. `bucketHours()` is used at every converted site that reports ENERGY,
+including the ones pinned to `_1h`.** Four of the six report a mean or peak **kW**
+— `loadTrend`, `energySourceMix` and both `energyTopConsumers` — and correctly do
+not use it; an earlier draft of this decision said "every converted site", which
+invites a future agent to "fix" the four that rightly abstain.
+
+The two that do are `reports.service.ts:133` and `:180`, which currently treat
 `SUM(total_kw)` as kWh directly. That is correct **only** because the buckets are
 hours — an implicit factor of 1, nowhere written down. The dashboard's
 `energySummary` already passes `bucketHours(level)` explicitly. Pinning to `_1h`
@@ -278,7 +298,7 @@ own fold.** This is the part the backlog row does not say and fact 2 requires.
 
 | Sites | Fold | What the parity test proves | Mutate to prove it |
 |---|---|---|---|
-| 1, 2, 4, 5 | 1 | predicate translation, relation name, parameter binding, level choice | **the predicate** (`bucket >` / `>=`, the range bounds) |
+| 1, 2, 4, 5 | 1 | predicate translation, **level** choice, parameter binding, the kWh factor | the **level** (`_1m` → `_5m`) or the factor |
 | 3, 6 | many→one | all of the above **and** `avg` composition | **`avgExpr`** → naive form; must fail |
 
 At sites 3 and 6 the test additionally asserts that at least one compared group
@@ -287,6 +307,33 @@ have fold 1 and agree under both forms, so an assertion that lands on one of the
 is vacuous while reading as coverage. The four fold-1 sites get a comment saying
 in one line what their test does and does not prove, so a future reader does not
 count four green tests as `avg`-composition coverage.
+
+**5b. No behavioural test here can detect a revert to bucketing raw, so a static
+invariant carries that instead.**
+
+This is a correction to decision 5 as first written, found by the `F4.28`
+compliance review. That draft claimed the fold-1 parity tests prove the **relation
+name**. They cannot, and the reason is structural: every assertion in the suite
+compares a converted site against *the raw query it replaced*, so if a site reverts
+to that query, the comparison is the query against itself.
+
+Verified rather than reasoned. With `loadTrend` fully reverted to
+`date_trunc('minute', time)` over `telemetry.point_values`, the suite reports
+**5 passed**. Mutation testing does show the suite catches a wrong *aggregate
+level* — `_1m` → `_5m` fails on bucket count, 19 against 90 — but raw at minute
+granularity returns exactly what `_1m` returns, so that direction is invisible. The
+two discriminating sites do not rescue it: their "the naive form differs from raw"
+assertion is a property of the **fixture** and holds under a revert too.
+
+So `tests/repo-invariants.test.ts` gains *"no rollup read reverts to bucketing raw
+telemetry"*, asserting that neither service file contains `date_trunc` or an `avg`
+over raw's `value` column outside comments. Between those two markers every one of
+the six sites is covered, because a revert reintroduces at least one. Legitimate raw
+reads in those files — latest-value `DISTINCT ON`, `MAX(value) FILTER`,
+`SUM(latest.kw)` — use neither, and `AVG(total_kw)` over an already-aggregated CTE
+is untouched because it does not name `value`. This is the same idiom as the ADR 0017
+write-gate invariant: a guarantee no behavioural test can carry, so the repo asserts
+it structurally.
 
 **6. The trailing-window predicate keeps `energySummary`'s shape —
 `bucket > now() - $n::interval` — and the tolerance is documented rather than
@@ -308,9 +355,17 @@ about the magnitude of the naive-form error the same test exists to detect
 tolerance wide enough to hide the defect, which is the ADR 0023 failure repeated
 with a different mechanism. So sites 3 and 6 pin both range edges to bucket
 boundaries — trivially true for 4–6, which are day-aligned already (fact 5), and
-for site 3 done by flooring the trailing window's edge to the level's bucket
-width in the test fixture — and then compare with the float tolerance only
-(1e-9, against residuals of 1e-13).
+for site 3 done by dating the fixture entirely inside the window, far from either
+edge.
+
+**The tolerances are then set by rounding, not by float error, and an earlier draft
+of this paragraph claimed 1e-9.** It was never reachable: every converted method
+rounds its output to 2 dp, so the assertions compare against a rounded reference at
+`<= 0.005` on the two discriminating means, `<= 0.02` on totals reconstructed from
+three rounded components, and `1e-6` on the report summary. Discrimination does not
+depend on tolerance width at all — it is guaranteed by asserting the naive form
+differs from raw by more than `0.01`, which is a separate assertion the tolerance
+cannot swallow.
 
 Fact 6 matters here: with data 33 minutes ahead of `now()`, tests must derive
 expected bucket counts from the data, never from the window width.
@@ -446,6 +501,30 @@ alone per §10.1:**
 - **§4.4** — "read rollups through the helper" gains: level choice comes from
   the selector, never an inline ternary; a level is never chosen by window
   duration alone; and `bucketHours()` is used even where the factor is 1.
+- **§4.4 again, and this one is a gap this item creates.** The post-`DELETE`
+  refresh rule — added by ADR 0023's sweep and made *conditional* by ADR 0024's —
+  currently has two cases: refresh after deleting from raw, unless raw no longer
+  holds the range. `F4.28`'s suite is a **third**: raw holds the range, but nothing
+  was ever materialised over it, so there is nothing to repair and a refresh would
+  be the harmful act. That is safe here only because the suite **proves** it
+  (`assertFixtureIsOnlyOnTheLiveBranch` premise 2, and `assertSuiteLeftNoOrphans`
+  after the delete) rather than assuming it. Without the clause, §4.4 as written
+  literally requires a refresh this suite correctly omits, and the next agent reads
+  the omission as licence rather than as a proven exception. Raised by the `F4.28`
+  compliance review.
+- **§3** — the new `apps/api/src/testing/` directory. §3's literal rule is
+  top-level folders, but the practice is broader: ADR 0015's sweep added
+  `src/admin/asset-templates/` to the tree and ADR 0022's sweep explicitly recorded
+  "§3 needs nothing" after evaluating it. This directory has a stronger claim than
+  most — it is the only `src/` directory excluded from `tsconfig.build.json`, i.e.
+  the only one that is deliberately *not* runtime code.
+- **`docs/BACKLOG.md` §5** — the owed-sweep row. §10.1 says what is owed is tracked
+  there until it lands, and the precedent is unambiguous: ADR 0024's row was added
+  in the **feature** stream (`7aac5b5`), not in the sweep. `BACKLOG.md` is not
+  §9.10-gated, so it belongs in the feature branch. Added there.
+- **`docs/BACKLOG.md`'s `F4.1` row** contains "the other six rollup sites **stay on
+  raw**" in the present tense — the sentence ADR 0023 wrote specifically so `✅`
+  could not be misread. It reads as current after this merges.
 - **§4.6** — the extracted `DATABASE_URL` gate (decision 8) needs naming where
   the carve-out and the gate asymmetry are already described, or the next
   integration test copies a seventh gate from an older file.

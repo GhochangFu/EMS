@@ -30,14 +30,45 @@ describe("ADR 0025 — level selector horizons", () => {
   const selector = () => read("apps/api/src/telemetry/point-aggregates.ts");
   const migration = () => read("packages/db/drizzle/0028_compression_retention.sql");
 
-  /** `drop_after` for a relation in migration 0028, or null when it has no policy. */
+  /**
+   * `drop_after` for a relation in migration 0028, in days, or `null` when the
+   * relation genuinely has **no** retention policy.
+   *
+   * **The two cases must not be conflated, and an earlier version of this did.** It
+   * matched `INTERVAL '(\d+) days'` and returned `null` on no-match, so "this
+   * relation is never dropped" and "I could not parse its horizon" were the same
+   * answer. A future migration writing `drop_after => INTERVAL '2 years'` — or
+   * `'18 months'`, or even `'735 day'` — would then make **both** tests in this file
+   * pass, including the one below whose whole job is to prove `_1h` has no horizon.
+   * `RETENTION_DAYS["1h"]` would stay `null`, `levelForRange` would keep admitting
+   * `_1h` for ranges whose chunks are gone, and the client-facing CSV export would
+   * return 0 rows silently and unrebuildably (ADR 0024 facts 13/14). A guard that
+   * fails open on the exact edit it exists to catch is worse than no guard, because
+   * it is also reassuring.
+   *
+   * So: detect the policy first, then insist on a shape we can compare. Anything
+   * else **throws**.
+   */
   const migrationHorizonDays = (relation: string): number | null => {
-    const pattern = new RegExp(
-      String.raw`add_retention_policy\('telemetry\.${relation}',\s*` +
-        String.raw`drop_after\s*=>\s*INTERVAL '(\d+) days'`,
-    );
-    const match = pattern.exec(migration());
-    return match ? Number(match[1]) : null;
+    const policy = new RegExp(
+      String.raw`add_retention_policy\('telemetry\.${relation}'\s*,([^)]*)\)`,
+    ).exec(migration());
+    if (!policy) {
+      return null; // No policy at all — the only legitimate null.
+    }
+    const args = policy[1] as string;
+    const days = /drop_after\s*=>\s*INTERVAL\s*'(\d+)\s+days'/.exec(args);
+    if (!days) {
+      throw new Error(
+        `migration 0028 has a retention policy for telemetry.${relation} whose drop_after this ` +
+          `guard cannot read: ${args.trim()}. It must be written as INTERVAL 'N days' so it can ` +
+          "be compared against RETENTION_DAYS in point-aggregates.ts. Do not delete this check " +
+          "to make an unparseable interval pass — convert the interval, or teach this function " +
+          "the new unit. Silently returning null here would report the relation as never-dropped " +
+          "and let levelForRange read chunks that have already been dropped.",
+      );
+    }
+    return Number(days[1]);
   };
 
   /** The `RETENTION_DAYS` entry for a level, as written in the selector's source. */

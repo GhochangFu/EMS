@@ -172,27 +172,30 @@ export function assertRetentionBoundaryIsInclusive(): void {
 }
 
 /**
- * **`end` must play no part**, and this is the assertion that holds it there.
+ * **Duration is not the axis retention uses** — a short range far in the past must
+ * still escalate.
  *
- * `reports.service.ts` sets `end` to `endDate T23:59:59.999Z` — routinely in the
- * future — and ADR 0025 fact 6 measured the MQTT ingest writing 33 minutes past
- * `now()`. A guard that derived the range width from `end`, or compared a horizon
- * against it, would coarsen reports dated today. The selector's signature does not
- * even accept `end`, so this asserts the consequence: identical `start`, wildly
- * different range widths, same level.
+ * This is the consequence of `end` playing no part. `reports.service.ts` sets `end`
+ * to `endDate T23:59:59.999Z` — routinely in the future — and ADR 0025 fact 6
+ * measured the MQTT ingest writing 33 minutes past `now()`, so a guard that took
+ * the range width from `end` would coarsen reports dated today. That `end` is
+ * absent from the signature is asserted statically in
+ * `tests/adr-0025-level-selector.test.ts`; what is asserted here is the behaviour a
+ * duration-keyed selector would get wrong.
  */
 export function assertLevelIgnoresTheRangeEnd(): void {
-  const start = daysBefore(1);
-  const narrow = levelForRange({ start, granularity: "1m", now: NOW });
-  const wideAndFutureDated = levelForRange({ start, granularity: "1m", now: NOW });
-  assert(
-    narrow.level === wideAndFutureDated.level,
-    "the level must be a function of start and now only",
-  );
-
-  // A range that reaches back past the horizon must escalate even when it is
-  // *short* — the trap a duration-keyed selector falls into. ADR 0024's withdrawn
-  // decision 8 assumed no selector existed; this is the case that falsifies it.
+  // An earlier version of this opened by calling `levelForRange` twice with
+  // IDENTICAL arguments and asserting the two results matched — a tautology
+  // dressed as a test, and it claimed to be comparing "wildly different range
+  // widths". It could not have been: the signature has no `end`, which is the real
+  // guarantee, and `tests/adr-0025-level-selector.test.ts` asserts that shape
+  // directly. Removed rather than repaired, because there is nothing here to
+  // repair — the type system already holds it.
+  //
+  // What remains is the case that actually matters. A range reaching back past the
+  // horizon must escalate even when it is *short* — the trap a duration-keyed
+  // selector falls into, and the case that falsifies the premise ADR 0024 used to
+  // withdraw its own decision 8.
   const shortButAncient = levelForRange({
     start: daysBefore(1100),
     granularity: "1m",
