@@ -4,6 +4,12 @@ import type { Pool } from "pg";
 import type { EnergyReportPreview, EnergyReportTemplate } from "@bms/shared";
 
 import { POOL_TOKEN } from "../database/database.tokens";
+import {
+  aggregateRelation,
+  avgExpr,
+  bucketHours,
+  levelForRange,
+} from "../telemetry/point-aggregates";
 import type { EnergyReportQuery } from "./reports.schema";
 
 const energyTemplate: EnergyReportTemplate = {
@@ -123,6 +129,24 @@ export class ReportsService {
         asOf: new Date().toISOString(),
       };
     }
+    // ADR 0025 (`F4.28`) site 4 — reads `_1h`, decided at the §10 gate on
+    // 2026-08-10. This is the client-facing CSV export, so the choice was the
+    // owner's: raw includes samples arriving more than 3 days late but **returns
+    // zeros** for ranges past ADR 0024's 730-day horizon, while `_1h` is never
+    // dropped and misses those late arrivals. `_1h` won — the trade is recorded in
+    // ADR 0025 §"Settled at the gate" as chosen, not overlooked.
+    //
+    // **No partial edge bucket**, and that is structural rather than lucky:
+    // `parseRange` builds `T00:00:00.000Z`/`T23:59:59.999Z` from date-only strings,
+    // and a UTC day boundary is an hour boundary. Measured identical to the raw
+    // query at 2345.170321387197 kWh (ADR 0025 facts 1 and 5).
+    const { level } = levelForRange({ start: range.start, granularity: "1h" });
+    // Explicitly, even though it is 1. This query used to treat SUM(total_kw) as
+    // kWh directly — correct only because the buckets are hours, and written down
+    // nowhere. `levelForRange` exists to change levels, so the factor that was
+    // silently right must become visibly right (ADR 0025 decision 3).
+    const kwhFactor = bucketHours(level);
+
     const r = await this.pool.query<{
       total_kwh: string;
       peak_kw: string;
@@ -130,11 +154,11 @@ export class ReportsService {
     }>(
       `
       WITH per AS (
-        SELECT date_trunc('hour', time) AS bucket, asset_id, avg(value) AS kw
-        FROM telemetry.point_values
+        SELECT bucket, asset_id, ${avgExpr()} AS kw
+        FROM ${aggregateRelation(level)}
         WHERE point_key = 'kw'
-          AND time >= $1
-          AND time <= $2
+          AND bucket >= $1
+          AND bucket <= $2
           AND ($3::uuid[] IS NULL OR asset_id = ANY($3::uuid[]))
         GROUP BY 1, 2
       ),
@@ -142,12 +166,12 @@ export class ReportsService {
         SELECT bucket, SUM(kw)::float8 AS total_kw FROM per GROUP BY bucket
       )
       SELECT
-        COALESCE(SUM(total_kw), 0)::float8 AS total_kwh,
+        COALESCE(SUM(total_kw) * $4::float8, 0)::float8 AS total_kwh,
         COALESCE(MAX(total_kw), 0)::float8 AS peak_kw,
         COALESCE(AVG(total_kw), 0)::float8 AS avg_kw
       FROM agg
       `,
-      [range.start, range.end, assetIds ?? null],
+      [range.start, range.end, assetIds ?? null, kwhFactor],
     );
     const row = r.rows[0];
     const totalKwh = row ? Number(row.total_kwh) : 0;
@@ -171,17 +195,23 @@ export class ReportsService {
     if (assetIds && assetIds.length === 0) {
       return { solarKwh: 0, dgKwh: 0, gridKwh: 0 };
     }
+    // ADR 0025 (`F4.28`) site 5 — `_1h`, same reasoning and the same gate decision
+    // as site 4. Fold 1, so the per-bucket parity this is covered by proves the
+    // predicate translation and the `ILIKE 'PV%'` split, not the mean.
+    const { level } = levelForRange({ start: range.start, granularity: "1h" });
+    const kwhFactor = bucketHours(level);
+
     const r = await this.pool.query<{
       total_kw: string;
       solar_kw: string;
     }>(
       `
       WITH per AS (
-        SELECT date_trunc('hour', v.time) AS bucket, v.asset_id, avg(v.value) AS kw
-        FROM telemetry.point_values v
+        SELECT v.bucket, v.asset_id, ${avgExpr("v")} AS kw
+        FROM ${aggregateRelation(level)} v
         WHERE v.point_key = 'kw'
-          AND v.time >= $1
-          AND v.time <= $2
+          AND v.bucket >= $1
+          AND v.bucket <= $2
           AND ($3::uuid[] IS NULL OR v.asset_id = ANY($3::uuid[]))
         GROUP BY 1, 2
       ),
@@ -190,12 +220,12 @@ export class ReportsService {
         WHERE code ILIKE 'PV%' AND ($3::uuid[] IS NULL OR id = ANY($3::uuid[]))
       )
       SELECT
-        COALESCE(SUM(p.kw), 0)::float8 AS total_kw,
-        COALESCE(SUM(p.kw) FILTER (WHERE s.id IS NOT NULL), 0)::float8 AS solar_kw
+        COALESCE(SUM(p.kw) * $4::float8, 0)::float8 AS total_kw,
+        COALESCE(SUM(p.kw) FILTER (WHERE s.id IS NOT NULL) * $4::float8, 0)::float8 AS solar_kw
       FROM per p
       LEFT JOIN solar_ids s ON s.id = p.asset_id
       `,
-      [range.start, range.end, assetIds ?? null],
+      [range.start, range.end, assetIds ?? null, kwhFactor],
     );
     const row = r.rows[0];
     const totalKwh = row ? Number(row.total_kw) : 0;
@@ -217,6 +247,24 @@ export class ReportsService {
     if (assetIds && assetIds.length === 0) {
       return [];
     }
+    // ADR 0025 (`F4.28`) site 6 — `_1h`, and the site where `avgExpr` earns its
+    // existence on the reports path.
+    //
+    // **No display bucket**: every `_1h` row for an asset folds into one mean, so
+    // the naive average-of-averages form is detectably wrong here — measured wrong
+    // in 29 of 37 assets. And the error is far larger than at `_1m`: `sample_count`
+    // at `_1h` spans 7–629 against `_1m`'s 1–60, so the naive form is off by up to
+    // **11.19 kW** rather than 0.046 (ADR 0025 facts 3 and 4). The coarse level is
+    // the more dangerous one to get wrong, not the safer.
+    //
+    // `sum(sum_value) / sum(sample_count)` over the range is exactly
+    // `sum(value) / count(value)` over the same samples, so this is an algebraic
+    // identity with the query it replaces, not an approximation.
+    //
+    // No `bucketHours` here: this reports a mean kW, and `estimatedKwh` multiplies
+    // by `range.durationHours` exactly as before.
+    const { level } = levelForRange({ start: range.start, granularity: "1h" });
+
     const r = await this.pool.query<{
       id: string;
       code: string;
@@ -230,12 +278,12 @@ export class ReportsService {
         a.code,
         a.name,
         a.site_name,
-        avg(v.value)::float8 AS avg_kw
-      FROM telemetry.point_values v
+        ${avgExpr("v")}::float8 AS avg_kw
+      FROM ${aggregateRelation(level)} v
       INNER JOIN bms.assets a ON a.id = v.asset_id
       WHERE v.point_key = 'kw'
-        AND v.time >= $1
-        AND v.time <= $2
+        AND v.bucket >= $1
+        AND v.bucket <= $2
         AND ($4::uuid[] IS NULL OR a.id = ANY($4::uuid[]))
       GROUP BY a.id, a.code, a.name, a.site_name
       ORDER BY avg_kw DESC

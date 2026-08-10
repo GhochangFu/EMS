@@ -11,7 +11,7 @@ import {
   aggregateRelation,
   avgExpr,
   bucketHours,
-  type AggregateLevel,
+  levelForRange,
 } from "../telemetry/point-aggregates";
 
 type LocationDashboardAssetRow = LocationDashboardDto["assets"]["items"][number];
@@ -461,17 +461,31 @@ export class DashboardService {
   async loadTrend(windowRaw?: string, assetIds?: string[] | null): Promise<{
     points: { t: string; totalKw: number }[];
   }> {
-    const intervalText = this.parseWindowInterval(windowRaw ?? "60m");
+    const { intervalSql, durationHours } = this.parseWindowInterval(windowRaw ?? "60m");
     if (assetIds && assetIds.length === 0) {
       return { points: [] };
     }
+    // ADR 0025 (`F4.28`) site 1 — reads `_1m` rather than `date_trunc('minute')`
+    // over raw. Granularity is always `1m`: this chart plots minute buckets at
+    // every window width up to 168 hours, so the level must not be derived from
+    // the duration or a 7-day window would silently become an hourly chart.
+    //
+    // `${avgExpr()}`, not `avg(value)`. One `_1m` row feeds each output bucket
+    // here, so the naive form would agree — but the *next* reader to widen this
+    // to hourly buckets inherits a correct expression instead of a landmine.
+    // Measured at parity per bucket across 94 buckets, worst error 0 (ADR 0025
+    // fact 1).
+    const { level } = levelForRange({
+      start: this.trailingStart(durationHours),
+      granularity: "1m",
+    });
     const r = await this.pool.query<{ bucket: Date; total_kw: string }>(
       `
       WITH per AS (
-        SELECT date_trunc('minute', time) AS bucket, asset_id, avg(value) AS kw
-        FROM telemetry.point_values
+        SELECT bucket, asset_id, ${avgExpr()} AS kw
+        FROM ${aggregateRelation(level)}
         WHERE point_key = 'kw'
-          AND time > now() - $1::interval
+          AND bucket > now() - $1::interval
           AND ($2::uuid[] IS NULL OR asset_id = ANY($2::uuid[]))
         GROUP BY 1, 2
       ),
@@ -480,7 +494,7 @@ export class DashboardService {
       )
       SELECT bucket, total_kw FROM agg ORDER BY bucket ASC
       `,
-      [intervalText, assetIds ?? null],
+      [intervalSql, assetIds ?? null],
     );
     return {
       points: r.rows.map((x) => ({
@@ -609,7 +623,7 @@ export class DashboardService {
     tariffZarPerKwh: number;
     asOf: string;
   }> {
-    const { intervalSql, useHourlyBuckets, windowLabel } =
+    const { intervalSql, useHourlyBuckets, windowLabel, durationHours } =
       this.parseEnergyWindow(windowRaw);
     if (assetIds && assetIds.length === 0) {
       return {
@@ -636,7 +650,16 @@ export class DashboardService {
     // live aggregate over the un-materialized tail. That branch is exact
     // (7.1e-14 against raw, three levels deep) — the aggregate is not an
     // approximation of the raw query, it is the same number.
-    const level: AggregateLevel = useHourlyBuckets ? "1h" : "1m";
+    //
+    // ADR 0025 decision 2 (`F4.28`): the level now comes from `levelForRange`
+    // rather than the inline ternary this line used to be. Same answer for every
+    // window this method can produce — `parseEnergyWindow` caps at 168 hours —
+    // but there is now exactly one implementation of level choice, and it is the
+    // one carrying the retention guard.
+    const { level } = levelForRange({
+      start: this.trailingStart(durationHours),
+      granularity: useHourlyBuckets ? "1h" : "1m",
+    });
     const kwhFactor = bucketHours(level);
 
     const r = await this.pool.query<{
@@ -685,11 +708,22 @@ export class DashboardService {
   async energySourceMix(windowRaw?: string, assetIds?: string[] | null): Promise<{
     points: { t: string; gridKw: number; solarKw: number; dgKw: number }[];
   }> {
-    const { intervalSql, useHourlyBuckets } = this.parseEnergyWindow(windowRaw);
+    const { intervalSql, useHourlyBuckets, durationHours } =
+      this.parseEnergyWindow(windowRaw);
     if (assetIds && assetIds.length === 0) {
       return { points: [] };
     }
-    const trunc = useHourlyBuckets ? "hour" : "minute";
+    // ADR 0025 (`F4.28`) site 2 — the level's own bucket width *is* the display
+    // granularity, so `bucket` replaces `date_trunc('${trunc}', time)` and the
+    // `trunc` string is gone entirely. That also removes an interpolated
+    // identifier from the SQL, which §4.4 could never parameterise.
+    //
+    // Measured at parity per bucket over 29 hour buckets on both the total and
+    // the solar series, worst error 1.7e-13 (ADR 0025 fact 1).
+    const { level } = levelForRange({
+      start: this.trailingStart(durationHours),
+      granularity: useHourlyBuckets ? "1h" : "1m",
+    });
 
     const r = await this.pool.query<{
       bucket: Date;
@@ -698,10 +732,10 @@ export class DashboardService {
     }>(
       `
       WITH per AS (
-        SELECT date_trunc('${trunc}', time) AS bucket, asset_id, avg(value) AS kw
-        FROM telemetry.point_values
+        SELECT bucket, asset_id, ${avgExpr()} AS kw
+        FROM ${aggregateRelation(level)}
         WHERE point_key = 'kw'
-          AND time > now() - $1::interval
+          AND bucket > now() - $1::interval
           AND ($2::uuid[] IS NULL OR asset_id = ANY($2::uuid[]))
         GROUP BY 1, 2
       ),
@@ -766,6 +800,28 @@ export class DashboardService {
       return { consumers: [] };
     }
 
+    // ADR 0025 (`F4.28`) site 3 — and the one dashboard site where `avgExpr`
+    // earns its existence.
+    //
+    // There is **no display bucket** here: every source row for an asset folds
+    // into one mean, measured at up to **1172** `_1m` rows per asset over 24 h
+    // (ADR 0025 fact 2). So this is the shape where the naive average-of-averages
+    // form is detectably wrong — measured wrong in **29 of 29** assets, worst
+    // 0.0458 kW (fact 3) — unlike the fold-1 sites above, where both forms agree
+    // and a parity test proves nothing about the expression.
+    //
+    // `sum(sum_value) / sum(sample_count)` over the window is exactly
+    // `sum(value) / count(value)` over the same rows, so this is an algebraic
+    // identity with the raw query rather than a close approximation: measured 0
+    // mismatches across 29 assets, worst 1.4e-13.
+    //
+    // Granularity `1m` — the finest level, since nothing here displays buckets and
+    // a coarser level would only lose precision at the window edge.
+    const { level } = levelForRange({
+      start: this.trailingStart(durationHours),
+      granularity: "1m",
+    });
+
     const r = await this.pool.query<{
       id: string;
       code: string;
@@ -779,11 +835,11 @@ export class DashboardService {
         a.code,
         a.name,
         a.site_name,
-        avg(v.value)::float8 AS avg_kw
-      FROM telemetry.point_values v
+        ${avgExpr("v")}::float8 AS avg_kw
+      FROM ${aggregateRelation(level)} v
       INNER JOIN bms.assets a ON a.id = v.asset_id
       WHERE v.point_key = 'kw'
-        AND v.time > now() - $1::interval
+        AND v.bucket > now() - $1::interval
         AND ($3::uuid[] IS NULL OR a.id = ANY($3::uuid[]))
       GROUP BY a.id, a.code, a.name, a.site_name
       ORDER BY avg_kw DESC
@@ -808,7 +864,10 @@ export class DashboardService {
     };
   }
 
-  private parseWindowInterval(raw: string): string {
+  private parseWindowInterval(raw: string): {
+    intervalSql: string;
+    durationHours: number;
+  } {
     const w = raw.trim();
     const m = /^(\d+)(m|h)$/.exec(w);
     if (!m) {
@@ -821,6 +880,23 @@ export class DashboardService {
     if (n < 1 || n > 168) {
       throw new BadRequestException("Window out of range (1–168 m or h)");
     }
-    return u === "m" ? `${n} minutes` : `${n} hours`;
+    // `durationHours` is returned for `levelForRange`'s retention guard, which
+    // needs how far back the window reaches. It does not reach the SQL — the
+    // predicate still uses `intervalSql`, so the window boundary is unchanged.
+    return u === "m"
+      ? { intervalSql: `${n} minutes`, durationHours: n / 60 }
+      : { intervalSql: `${n} hours`, durationHours: n };
+  }
+
+  /**
+   * The `start` a trailing window reaches back to, for {@link levelForRange}.
+   *
+   * ADR 0025 decision 1: the retention guard is a function of `start` and `now`,
+   * never of the range's end. Every dashboard window is trailing and capped at
+   * 168 hours, so no call here can escalate — the guard exists for the reads that
+   * come later, and this keeps every site expressing its range the same way.
+   */
+  private trailingStart(durationHours: number): Date {
+    return new Date(Date.now() - durationHours * 3_600_000);
   }
 }

@@ -120,11 +120,17 @@ export default defineConfig({
       // (`db:migrate` → `db:seed` → `test:coverage`). The skipped suites print
       // the reason and the command to fix it. Do NOT lower these to make a
       // database-less run pass.
+      // Ratcheted by `F4.28` (ADR 0025 decision 9) from 33.2/28.5/34.3/33.3.
+      // Measured 2026-08-10 against the live database with all seven integration
+      // suites running: 35.60 statements · 30.81 branches · 37.04 functions ·
+      // 35.81 lines. Most of the rise is `reports.service.ts`, which had **no
+      // tests at all** before this item (ADR 0025 fact 7) and is now exercised
+      // through `energyPreview` rather than by reconstructing its queries.
       thresholds: {
-        statements: 33.2,
-        branches: 28.5,
-        functions: 34.3,
-        lines: 33.3,
+        statements: 35.5,
+        branches: 30.7,
+        functions: 36.9,
+        lines: 35.7,
       },
     },
   },
