@@ -2,7 +2,17 @@ name: bms
 
 services:
   postgres:
-    image: timescale/timescaledb:latest-pg16
+    # Pinned, not `latest-pg16` (ADR 0023 decision 4). This is the version the
+    # stack was already running when it was pinned, so it changes nothing
+    # operationally — it removes the ability for `docker compose pull` to swap the
+    # database engine under a running pilot.
+    #
+    # It matters more since ADR 0023: real-time aggregation keeps the newest
+    # bucket of every continuous aggregate visible, and it has been deprecated
+    # upstream since TimescaleDB 2.13. A version that removes it would take every
+    # live dashboard edge stale with no code change and no error. Read that ADR
+    # before moving this tag.
+    image: timescale/timescaledb:2.29.1-pg16
     environment:
       POSTGRES_DB: bms
       POSTGRES_USER: bms_app

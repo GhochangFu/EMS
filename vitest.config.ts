@@ -47,6 +47,23 @@ export default defineConfig({
       // a `.spec.ts` that no wrapper runs. `tests/repo-invariants.test.ts` is
       // what actually catches that; do not rely on this gate for it.
       exclude: ["**/*.spec.ts", "**/*.test.ts", "**/*.test.js", "**/*.d.ts"],
+      // Measured 2026-08-10 at F4.1 HEAD, after the three review rounds — the
+      // `point-aggregates` read helper, its pure spec, and the integration suite
+      // covering the real-time and materialized branches, the refresh-offset
+      // invariant, the coarse-rollup guard, the production-vs-probe shape check,
+      // and `DashboardService.energySummary` executed end to end:
+      // statements 33.29 · branches 28.62 · functions 34.47 · lines 33.44.
+      // (45 files / 109 tests, five integration suites running.)
+      //
+      // The +0.7 over the pre-review figure (32.59 · 27.64 · 33.86 · 32.74) is
+      // almost entirely `dashboard.service.ts`: the compliance review found the one
+      // converted read site had no test that executed it, so the suite now calls
+      // the real method instead of reconstructing its query.
+      //
+      // `packages/db/src/refresh-aggregates.ts` is NOT in the denominator:
+      // `include` covers `apps/*`, not `packages/db`. It is exercised by CI
+      // running `pnpm db:refresh-aggregates`, not by a test.
+      //
       // Measured 2026-08-10 at E8.3 HEAD with ADR 0022 Amendment 6 — the
       // contested-code fix, substring key matching, the prototype-key guards,
       // and the endpoint/gate/fail-closed cover in
@@ -104,10 +121,10 @@ export default defineConfig({
       // the reason and the command to fix it. Do NOT lower these to make a
       // database-less run pass.
       thresholds: {
-        statements: 32.3,
-        branches: 27.4,
-        functions: 33.4,
-        lines: 32.5,
+        statements: 33.2,
+        branches: 28.5,
+        functions: 34.3,
+        lines: 33.3,
       },
     },
   },
