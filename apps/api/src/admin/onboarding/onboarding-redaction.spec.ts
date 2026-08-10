@@ -1,3 +1,5 @@
+import type { OnboardingDraftRtu } from "@bms/shared";
+
 import {
   attachEncryptedCredentials,
   readEncryptedCredentials,
@@ -15,6 +17,30 @@ function assert(condition: boolean, message: string): void {
 
 const CT = Buffer.from("ciphertext-a");
 const IV = Buffer.from("iv-a-1234567");
+
+/**
+ * A complete `OnboardingDraftRtu`. `displayName` and `protocol` are required by
+ * the type and irrelevant to every assertion here, so they are filled once
+ * rather than repeated at each fixture.
+ *
+ * These fixtures previously omitted both. That compiled under `pnpm build`
+ * (which type-checks `src` via nest/tsc but not `*.spec.ts`) while
+ * `pnpm typecheck:tests` — a separate CI step covering the spec files — failed on
+ * `main` for seven of them. E8.3 was verified with `build` and `test:coverage`,
+ * neither of which runs that step, which is how it shipped red.
+ */
+function rtu(
+  code: string,
+  extra: Partial<OnboardingDraftRtu> = {},
+): OnboardingDraftRtu {
+  return {
+    code,
+    displayName: code,
+    protocol: "mqtt",
+    config: {},
+    ...extra,
+  };
+}
 
 /** Ensures secrets are stripped from client and LLM views. */
 export function runOnboardingRedactionTests(): void {
@@ -139,8 +165,8 @@ export function runOnboardingRedactionTests(): void {
   // broker's rtu_connection_configs row at commit.
   const twoRtus = {
     rtus: [
-      { code: "R1", config: {} },
-      { code: "R2", config: {} },
+      rtu("R1"),
+      rtu("R2"),
     ],
   };
   assert(rtuSecretKey(twoRtus, 0) === "R1", "the secret key is the RTU code");
@@ -168,7 +194,7 @@ export function runOnboardingRedactionTests(): void {
   // lets any caller send that flag, so it is derived from the store, not
   // trusted, or the UI would show a "Set" badge over nothing.
   const afterDelete = reconcileSecrets(
-    { ...structuredClone(withSecret), rtus: [{ code: "R1", config: {}, credentialsSet: true }] },
+    { ...structuredClone(withSecret), rtus: [rtu("R1", { credentialsSet: true })] },
     { deriveCredentialsSet: true },
   );
   assert(afterDelete._secrets === undefined, "an orphaned secret is dropped");
@@ -182,8 +208,8 @@ export function runOnboardingRedactionTests(): void {
     {
       ...structuredClone(withSecret),
       rtus: [
-        { code: "R2", config: {} },
-        { code: "R2", config: {} },
+        rtu("R2"),
+        rtu("R2"),
       ],
     },
     { deriveCredentialsSet: true },
@@ -200,9 +226,9 @@ export function runOnboardingRedactionTests(): void {
   // which is invisible in the preview drawer.
   const aliased = {
     rtus: [
-      { code: "PHE-01", config: {} },
-      { code: "PHE-01 ", config: {} },
-      { code: "PHE-01 ", config: {} },
+      rtu("PHE-01"),
+      rtu("PHE-01 "),
+      rtu("PHE-01 "), // NBSP, not a space — JS .trim() eats it and the drawer cannot show it
     ],
   };
   assert(rtuSecretKey(aliased, 0) === null, "a contested code has no key, even for its first claimant");
@@ -281,7 +307,7 @@ export function runOnboardingRedactionTests(): void {
 
   // Renaming is the same case as deleting: unrecoverable, and that is correct.
   const renamed = reconcileSecrets(
-    { ...structuredClone(withSecret), rtus: [{ code: "R2-renamed", config: {} }] },
+    { ...structuredClone(withSecret), rtus: [rtu("R2-renamed")] },
     { deriveCredentialsSet: true },
   );
   assert(renamed._secrets === undefined, "renaming an RTU drops its secret");
@@ -289,7 +315,7 @@ export function runOnboardingRedactionTests(): void {
   // With no key configured the flag is left alone — no secret can exist, and
   // rewriting it there would silently change the path E8.4 owns.
   const unconfigured = reconcileSecrets(
-    { rtus: [{ code: "R9", config: {}, credentialsSet: true }] },
+    { rtus: [rtu("R9", { credentialsSet: true })] },
     { deriveCredentialsSet: false },
   );
   assert(
