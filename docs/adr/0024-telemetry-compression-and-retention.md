@@ -294,11 +294,28 @@ Owed in a **separate `chore(agents):` change** (§9.10), not bundled with the
 feature, and per §10.1 for **this ADR alone**:
 
 - AGENTS.md status line gains ADR 0024.
-- **`AGENTS.md` §4.4** — the `docs/AGENTS.production.md:145` bullet list
-  (`compress_after`, `drop_after`, per-tenant override) is the canonical SQL
-  rule set an agent reads before writing telemetry SQL, and it currently states
-  the unimplemented as implemented. It gains the actual per-level ladder and the
-  decision 6 bound on refresh range.
+- **`AGENTS.md:265` (§4.4)** gains the per-level ladder beside
+  `chunk_time_interval = 1 day`, and the decision 6 bound on refresh range.
+
+- **`AGENTS.md:271`–`275` (§4.4) becomes unsafe as written and must be
+  qualified.** That rule was added yesterday by the ADR 0023 sweep and says,
+  unconditionally: *follow any `DELETE` from `telemetry.point_values` with
+  `refresh_continuous_aggregate` over the deleted range for all four levels.*
+  It is correct today because raw is complete. Once `drop_after` runs it is a
+  demolition instruction — over a range where raw has been dropped, that refresh
+  is exactly fact 7, and the aggregate rows it deletes are the only record of
+  that period. The qualifier is the distinction the rule currently lacks:
+  refresh only where raw still holds the range; where it does not, the aggregate
+  **is** the archive and must not be refreshed. This is the sharpest example of
+  why decision 6 is in scope — the same mechanism reaches the archive through
+  three doors (the script, a policy, and a documented rule in the rulebook), and
+  ADR 0023's sweep shut none of them because retention did not exist yet.
+
+- **`docs/AGENTS.production.md:145` (its own §4.5)** — a *different* file from
+  `AGENTS.md`, not §9.10-gated, and the place where `compress_after = 7 days` /
+  `drop_after = 2 years` / "per-tenant override allowed" have been asserted as
+  implemented. The first two become true here; the third does not, and should be
+  marked aspirational rather than left reading as shipped.
 - **§6** was searched during the ADR 0023 sweep and has **no** aggregates,
   retention, compression or scale line — so, as with ADR 0023, there is expected
   to be nothing to soften. Verify rather than assume, and record the absence
