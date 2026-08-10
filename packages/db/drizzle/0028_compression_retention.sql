@@ -16,11 +16,15 @@
 -- kept the old name as the alias, so this is a deprecation to watch — the same
 -- class as the real-time aggregation ADR 0023 decision 4 depends on.
 --
--- WHAT IS DELIBERATELY ABSENT: any compress_chunk() call. The three existing
--- chunks older than 7 days are left for each policy's first scheduled run.
--- Whether compress_chunk works inside a transaction is UNMEASURED — fact 2
--- covers the ALTER and the two policy functions, not that — and this file does
--- not assume it.
+-- WHAT IS DELIBERATELY ABSENT: any compress_chunk() call. Existing chunks older
+-- than 7 days are left for each policy's first scheduled run. Whether
+-- compress_chunk works inside a transaction is UNMEASURED — fact 2 covers the
+-- ALTER and the two policy functions, not that — and this file does not assume it.
+--
+-- On the dev database that first run compressed two chunks (2026-06-01,
+-- 2026-07-01) and retention dropped a third (an empty 2020-01-01 chunk, older
+-- than 730 days), so "the old chunks" is not a fixed count — it depends on when
+-- the migration is applied and what history is present.
 --
 -- ============================================================================
 -- THE ONE INVARIANT THIS FILE MUST KEEP, and it is not obvious:
@@ -82,12 +86,28 @@
 -- telemetry path.
 --
 -- So bound the wait rather than the change. If the lock cannot be had in 5 s this
--- migration fails and rolls back whole — Drizzle wraps the file in a transaction —
--- and is simply re-run at a quieter moment. A failed retryable migration is a far
--- better outcome than an unbounded stall on live ingest.
+-- migration fails and rolls back whole and is simply re-run at a quieter moment.
+-- A failed retryable migration is a far better outcome than an unbounded stall on
+-- live ingest.
 --
--- SET LOCAL, not SET: it reverts with the transaction and cannot leak into the
--- session that Drizzle's migrator reuses for later files.
+-- TWO THINGS ABOUT THE SCOPE OF THIS, both verified rather than assumed, because
+-- an earlier version of this comment had the first one backwards:
+--
+-- 1. Drizzle wraps THE WHOLE RUN in one transaction, not each file —
+--    drizzle-orm/pg-core/dialect.js opens `session.transaction()` outside the
+--    `for await (const migration of migrations)` loop. So `SET LOCAL` reaches
+--    every migration applied after this one in the same run. `RESET` at the end of
+--    this file is therefore not tidiness; without it the next migration anyone
+--    adds silently inherits a 5 s lock_timeout on fresh-database runs (CI, a new
+--    dev machine) but not on incremental applies to the pilot — an
+--    environment-dependent trap. It is still SET LOCAL rather than SET so nothing
+--    escapes the transaction itself.
+--
+-- 2. `lock_timeout` bounds ACQUISITION only. The ACCESS EXCLUSIVE lock below is
+--    held until the transaction COMMITS — that is, until the whole migration run
+--    finishes. The 10.7 ms figure is the ALTER's own work, and it is the true
+--    blocking window only when this file is applied alone. Applied together with
+--    later migrations, the lock is held for the duration of all of them.
 SET LOCAL lock_timeout = '5s';
 --> statement-breakpoint
 
@@ -168,6 +188,12 @@ SELECT add_compression_policy('telemetry.point_values_5m',
 SELECT add_retention_policy('telemetry.point_values_5m',
   drop_after => INTERVAL '735 days',
   if_not_exists => TRUE);
+--> statement-breakpoint
+
+-- Release the lock bound set at the top of this file. Drizzle's transaction spans
+-- the whole run, so without this every migration applied after this one in the
+-- same run inherits the 5 s timeout. See point 1 in the lock-bound block above.
+SET LOCAL lock_timeout = DEFAULT;
 
 -- ---------------------------------------------------------------------------
 -- point_values_1h and point_values_1d get NOTHING here, and that is a decision

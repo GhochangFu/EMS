@@ -95,15 +95,35 @@ jobs:
       - name: Validate seed against a fresh schema
         run: pnpm db:seed
 
-      # ADR 0023 (F4.1). NOT here to make any test non-vacuous — db:seed inserts
-      # zero telemetry.point_values rows, so all four aggregates are legitimately
-      # empty on a fresh CI database and this is a no-op there. The aggregate
-      # suite inserts its own fixture.
+      # ADR 0024 (F4.2). One row, so that the step below actually executes a
+      # refresh. db:seed inserts zero telemetry.point_values rows, and F4.2 gave
+      # refresh-aggregates.ts a lower bound derived from raw's oldest chunk —
+      # which means on a chunk-less database it now returns EARLY and issues no
+      # `CALL refresh_continuous_aggregate` at all. Before F4.2 the step ran four
+      # no-op refreshes; without this insert it would run none, and the shipped
+      # SQL string (a bad cast, a typo) would ship green.
+      #
+      # Caught by the 2026-08-10 compliance review, not by the pipeline — which is
+      # the point: a step whose statements never execute is not a gate. There is no
+      # foreign key on point_values.asset_id, so a synthetic uuid is enough.
+      - name: Seed one telemetry row so the backfill is not a no-op
+        run: |
+          docker exec "${{ job.services.postgres.id }}" \
+            psql -U bms_app -d bms \
+            -c "INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit) VALUES (now() - interval '2 minutes', '00000000-0000-0000-0000-0000000c1000', 'kw', 42.5, 'kW') ON CONFLICT DO NOTHING;"
+
+      # ADR 0023 (F4.1). NOT here to make any test non-vacuous — the aggregate
+      # suites insert their own fixtures, and the one row above exists only so the
+      # statements in this script are executed at all.
       #
       # It runs because an unexercised script rots: apps/ingest/Dockerfile sat
       # broken on main while this same pipeline stayed green. This is the only
       # thing that proves the backfill path still works before an operator needs
       # it on a database that does have history.
+      #
+      # What it still cannot prove (ADR 0024): compression. A CI database is
+      # created fresh every run, so no chunk ever reaches the 7-day threshold and
+      # no compression policy compresses anything here.
       - name: Validate the aggregate backfill script
         run: pnpm db:refresh-aggregates
 
