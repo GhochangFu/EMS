@@ -280,6 +280,16 @@ including the ones pinned to `_1h`.** Four of the six report a mean or peak **kW
 not use it; an earlier draft of this decision said "every converted site", which
 invites a future agent to "fix" the four that rightly abstain.
 
+**And where a query has more than one energy term, every one of them carries the
+factor.** `energySourceTotals` sums two — a total and a solar slice — from the same
+CTE. Scaling only the total would misstate the solar share the moment the level is
+not `_1h`, and **no behavioural test can see it**, because `bucketHours("1h")` is 1
+and multiplying by it is a no-op. Verified: dropping the factor from `solar_kw`
+alone leaves the integration suite reporting 5 passed. That is the same blind spot
+decision 5b describes — a test invariant under the change it guards — so it is
+closed the same way, by a static assertion in
+`tests/adr-0025-level-selector.test.ts`. Caught before merge rather than after.
+
 The two that do are `reports.service.ts:133` and `:180`, which currently treat
 `SUM(total_kw)` as kWh directly. That is correct **only** because the buckets are
 hours — an implicit factor of 1, nowhere written down. The dashboard's

@@ -142,6 +142,45 @@ describe("ADR 0025 — level selector horizons", () => {
     ).toMatch(/now\.getTime\(\)\s*-\s*days\s*\*\s*86_400_000/);
   });
 
+  it("applies the kWh factor to every energy term, not just the total", () => {
+    // ADR 0025 decision 3 introduced `bucketHours()` at the two reports sites that
+    // report ENERGY, on the stated grounds that "levelForRange exists to change
+    // levels". `energySourceTotals` sums **two** energy terms from the same CTE — a
+    // total and a solar slice — and both must carry the factor, or the solar share
+    // is wrong by the bucket width the moment the level is not `_1h`.
+    //
+    // **No behavioural test can catch this, and that was verified rather than
+    // assumed.** The level is pinned to `1h`, so `bucketHours` returns 1 and
+    // multiplying by it is a no-op: dropping `* $4` from `solar_kw` while keeping it
+    // on `total_kw` leaves the integration suite reporting 5 passed. The parity
+    // assertions compare solar directly and the total *reconstructed* from three
+    // components, and both are invariant under a uniform scale — so they cannot see
+    // an asymmetric one either.
+    //
+    // This is the second instance of the blind spot the F4.28 compliance review
+    // found in decision 5: a test that is invariant under the change it guards.
+    // Caught before merge this time, and closed the same way.
+    const src = read("apps/api/src/reports/reports.service.ts");
+    const query = /solar_ids AS \(([\s\S]*?)LEFT JOIN solar_ids/.exec(src);
+    expect(query, "energySourceTotals' query shape changed; update this guard").not.toBeNull();
+
+    const energyTerms = [...src.matchAll(/COALESCE\(SUM\(p\.kw\)[^)]*?\)?[^,]*?,\s*0\)/g)].map(
+      (m) => m[0],
+    );
+    expect(
+      energyTerms.length,
+      "expected two SUM(p.kw) energy terms in energySourceTotals (a total and a solar slice)",
+    ).toBe(2);
+    for (const term of energyTerms) {
+      expect(
+        term,
+        "every kWh term in energySourceTotals must be scaled by the bucket-hours parameter. " +
+          "Scaling only the total silently understates or overstates the solar share as soon as " +
+          "the level is not _1h — and no test can see it today, because bucketHours('1h') is 1.",
+      ).toMatch(/\*\s*\$4::float8/);
+    }
+  });
+
   it("keeps the escalation ladder ordered fine-to-coarse", () => {
     // Escalation walks this array upward, so a reordering would "escalate" from a
     // dropped level to another dropped level, or downward into a finer one.
