@@ -18,6 +18,7 @@ import {
   uploadOnboardingExcel,
   validateOnboardingSession,
 } from "../../api/admin/onboarding";
+import { StatusPill } from "../../components/status-pill";
 import { AppShell } from "../../layouts/app-shell";
 import {
   formatOnboardingDraftSummary,
@@ -391,7 +392,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-mono text-[11px]">{rtu.code ?? `RTU ${index + 1}`}</span>
                               {rtu.credentialsSet ? (
-                                <span className="text-[11px] font-semibold text-bms-green">Set</span>
+                                <StatusPill label="Set" />
                               ) : (
                                 <button
                                   type="button"
@@ -418,14 +419,14 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                                 }}
                               >
                                 <input
-                                  className="w-full rounded border border-gray-300 px-2 py-1 text-[11px]"
+                                  className="w-full rounded border border-gray-200 px-2 py-1 text-[11px]"
                                   placeholder="Username"
                                   autoComplete="off"
                                   value={credUsername}
                                   onChange={(event) => setCredUsername(event.target.value)}
                                 />
                                 <input
-                                  className="w-full rounded border border-gray-300 px-2 py-1 text-[11px]"
+                                  className="w-full rounded border border-gray-200 px-2 py-1 text-[11px]"
                                   placeholder="Password"
                                   type="password"
                                   autoComplete="new-password"
@@ -449,7 +450,13 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                       </ul>
                     )}
                     {credError && (
-                      <p className="mt-1 text-[11px] text-red-700">{credError}</p>
+                      // Same banner treatment as `chatError` above. This is
+                      // where the fail-closed 503 surfaces when
+                      // CREDENTIAL_ENCRYPTION_KEY is unset, so it is the last
+                      // message that should read as an aside.
+                      <p className="mt-1 rounded border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+                        {credError}
+                      </p>
                     )}
                     <p className="mt-1 text-[11px] text-bms-muted">
                       Credentials are encrypted before storage and never sent to the assistant.

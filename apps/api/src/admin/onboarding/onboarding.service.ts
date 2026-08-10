@@ -29,7 +29,7 @@ import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingExcelService } from "./onboarding-excel.service";
 import { looksLikeCredential, scrubMessages } from "./onboarding-credential-detect";
 import type { SetCredentialsBody } from "./onboarding.schema";
-import { redactDraftForClient } from "./onboarding-redaction";
+import { redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -110,8 +110,10 @@ export class OnboardingService {
     sessionId: string,
     body: SetCredentialsBody,
   ): Promise<OnboardingSessionDto> {
+    // `loadSession` applies decision 3's gate — the second call this used to
+    // make was a leftover from before Amendment 1 moved it there, and cost a
+    // redundant `requireMasterDataUser` round-trip on every write.
     const session = await this.loadSession(jwt, sessionId);
-    await this.assertOnboardingAccess(jwt, session.organizationId);
     if (session.status !== "draft") {
       throw new ForbiddenException("Session is not editable");
     }
@@ -119,6 +121,16 @@ export class OnboardingService {
     const draft = session.draft as OnboardingDraft;
     if (!Array.isArray(draft.rtus) || !draft.rtus[body.rtuIndex]) {
       throw new BadRequestException(`No RTU at index ${body.rtuIndex} in this draft`);
+    }
+
+    // M4: `_secrets` is keyed by RTU `code`, not by position, so a later
+    // reorder cannot hand this password to a different broker. An RTU with no
+    // usable code has no identity to bind the credential to — refuse rather
+    // than fall back to the index, which is the defect this replaced.
+    if (rtuSecretKey(draft, body.rtuIndex) === null) {
+      throw new BadRequestException(
+        `RTU at index ${body.rtuIndex} has no code; set its code before storing credentials`,
+      );
     }
 
     // Fail closed. `mergeDraft`'s existing path sets `credentialsSet: true`

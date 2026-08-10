@@ -47,6 +47,17 @@ export default defineConfig({
       // a `.spec.ts` that no wrapper runs. `tests/repo-invariants.test.ts` is
       // what actually catches that; do not rely on this gate for it.
       exclude: ["**/*.spec.ts", "**/*.test.ts", "**/*.test.js", "**/*.d.ts"],
+      // Measured 2026-08-10 at E8.3 HEAD with ADR 0022 Amendment 4 — the M2/M3/M4
+      // fixes plus `onboarding-credentials.spec.ts`, which is the first cover
+      // the endpoint, its gate and its fail-closed branch have had:
+      // statements 32.08 · branches 27.07 · functions 33.04 · lines 32.24.
+      //
+      // Set against HEAD, not an intermediate commit. The compliance review
+      // caught the previous entry asserting a figure the tree no longer had,
+      // which left roughly double the usual slack — in this repo specifically,
+      // a document asserting a measurement the code does not have is the exact
+      // failure ADR 0022's amendments exist to record.
+      //
       // Measured 2026-08-09 with E8.3's onboarding credential capture (ADR 0022):
       // statements 30.22 · branches 24.92 · functions 31.25 · lines 30.36.
       //
@@ -92,10 +103,10 @@ export default defineConfig({
       // the reason and the command to fix it. Do NOT lower these to make a
       // database-less run pass.
       thresholds: {
-        statements: 30.1,
-        branches: 24.8,
-        functions: 31.1,
-        lines: 30.2,
+        statements: 31.9,
+        branches: 26.9,
+        functions: 32.9,
+        lines: 32.1,
       },
     },
   },

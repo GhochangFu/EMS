@@ -13,6 +13,7 @@ import { CredentialCryptoService } from "../../security/credential-crypto.servic
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import {
   attachEncryptedCredentials,
+  reconcileSecrets,
   redactDraftForLlm,
 } from "./onboarding-redaction";
 import { onboardingDraftSchema } from "./onboarding.schema";
@@ -494,8 +495,15 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
         : [credentialsToEncrypt]
       : [];
 
+    // M4: `rtus` was just replaced wholesale from client or model input, so any
+    // `_secrets` entry may now be orphaned or contested. Reconcile BEFORE
+    // attaching, so a credential written in this same call is not judged
+    // against the pre-merge RTU list.
+    const configured = CredentialCryptoService.isConfigured();
+    stored = reconcileSecrets(stored, { deriveCredentialsSet: configured });
+
     for (const cred of credList) {
-      if (CredentialCryptoService.isConfigured()) {
+      if (configured) {
         const enc = this.crypto.encrypt(cred.credentials);
         stored = attachEncryptedCredentials(stored, cred.rtuIndex, enc.ciphertext, enc.iv);
       } else if (Array.isArray(stored.rtus) && stored.rtus[cred.rtuIndex]) {

@@ -386,11 +386,82 @@ surfaces all exist.
   *unprovisioned* principal claiming `organization_admin` still resolves through
   the claim, exactly as ADR 0021 Amendment 1 found for audit read.
 
+## Amendment 4 (2026-08-10) — M2, M3 and M4 are closed; the control gets its tests
+
+The first compliance review of this change found **no blocking issues** — scope
+(§6), dependencies (§9.4), the `chore(agents):` isolation (§9.10), §4.1–4.7 and
+the repo invariants are all clean. It found something else worth recording: the
+**nudge had a 227-line spec and the control had none.** `setCredentials`, its
+`.strict()` schema, its role gate and its fail-closed branch shipped untested,
+and **neither Amendment 1 security fix had a regression test**, so re-narrowing
+the gate to `getSession` or dropping `config` from the client scrub would have
+been silent. `onboarding-credentials.{spec,test}.ts` now covers both, plus the
+decision-1 guarantee that no plaintext, ciphertext or `_secrets` is ever echoed
+back.
+
+**M2, M3 and M4 are fixed.** They were left open across three amendments on the
+grounds that each needed its own decision; the decisions are:
+
+- **M4 — `_secrets` is keyed by RTU `code`, never by array position.** The
+  positional key was the sharpest item in the open list: `PATCH :id/draft`
+  accepts a full `rtus` array and `mergeDraft` replaces it wholesale, so a
+  reorder made index `i` decrypt one broker's password into a **different
+  broker's** `rtu_connection_configs` row. `mergeDraft` now reconciles the store
+  on every merge — orphaned and renamed entries are **dropped**, and a code
+  claimed by two RTUs drops rather than guesses. Losing a credential costs a
+  retype; misdelivering one does not. `credentialsSet` is derived from the store
+  instead of trusted from input, since `draftRtuSchema` lets any caller assert
+  it — but only when encryption is configured, so the unconfigured path E8.4
+  owns is not silently changed. `POST :id/credentials` refuses an RTU with no
+  code rather than falling back to the index.
+- **M3 — key matching is normalised.** `SECRET_KEYS.has(key)` was exact and
+  case-sensitive, so `Password`, `pwd`, `api_key` and `client_secret` all
+  survived. Because `redactDraftForLlm` composes `redactDraftForClient`, this
+  was the only filter between `rtus[].config` and the LLM prompt — an **ADR 0011
+  decision 4** gap, not the client-response cosmetic this ADR first called it.
+- **M2 — `meta` is scrubbed on the client path**, for locations, RTUs and
+  assets. `meta` is `z.record(z.unknown())` exactly like `config`, so scrubbing
+  only `config` for clients left the client **less** redacted than the model —
+  the inversion Amendment 1 claimed to have closed and Amendment 2 correctly
+  said persisted.
+
+**Measured, not assumed:** all 7 stored sessions hold **zero** `_secrets` and
+zero drafts with RTUs, so no legacy index-keyed data needed migrating and the
+new keying could be adopted without a compatibility fallback — a fallback would
+have preserved the very defect it was meant to smooth over.
+
+**ADR 0021 decision 6 fires here and passes.** `setCredentialsBodySchema` is a
+new secret-bearing request body, which that ADR makes a standing audit-read
+obligation. Onboarding's only audit writes are in `onboarding-commit.service.ts`
+(`payload: result`, ids only; and `payload: { orgCode, via }`); neither carries a
+request body, so there is no audit-read exposure. Recorded so the next reviewer
+does not repeat the check.
+
+**Still open, unchanged:** M1 (`safeParse(...).data ?? {}` discarding whole
+partial patches — fails closed, on a path compose never enables), the missing
+transcript-length cap, and pino's unredacted `authorization` header plus the
+discarded `keyVersion`, both of which belong with **E8.4**.
+
+**Observation, not a finding:** `setCredentials` writes no audit row — but
+neither do `chat`, `patchDraft` or `uploadExcel`; only `commit` audits. That is
+consistent with the module rather than a §9.8 bypass, but it does mean there is
+no "who set credentials for which RTU" trail. Worth a decision alongside F4.15.
+
 ## Promotion follow-ups (AGENTS.md §10, owed separately)
 
-- **AGENTS.md** — §2's onboarding row gains the credentials endpoint and the
-  "credentials never transit chat" rule; §4.7 gains the tightened `getSession`
-  gate; §9.6's secret-handling line should name the chat transcript explicitly.
+- **AGENTS.md** — the **status line** gains ADR 0022 (its "Merged and in scope"
+  list ends at ADR 0021; this list originally omitted the status line entirely);
+  §2's onboarding row gains the credentials endpoint and the "credentials never
+  transit chat; a credential-bearing turn is refused, not stored" rule; §2's
+  **Secrets** row names this endpoint as a writer into the ADR 0012 store;
+  **§4.7 gains a fourth gate** — *not* "the tightened `getSession` gate", which
+  is how this list first read and is stale: Amendment 1 moved the check into
+  `loadSession`, so it covers `getSession`, `chat`, `patchDraft`, `uploadExcel`,
+  `validate` **and** `setCredentials`, and it is role (`admin`/
+  `organization_admin`) **plus** `canManageOrganization` in one place. Copying
+  the old wording would invite someone to re-narrow the gate. §9.6's
+  secret-handling line should name the chat transcript explicitly. §3 needs
+  nothing — no new folder.
 - **`docs/roadmap.md`** — mirror `E8.3` per §10 step 4.
 - **`docs/BACKLOG.md`** — flip `E8.3` after tests pass, and **correct its row**:
   the "any authenticated user" claim is false and should not survive as
