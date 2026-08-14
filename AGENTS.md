@@ -155,7 +155,7 @@ entry **D-0001**.
 |--------------|------------|
 | Frontend     | React 18, TypeScript 5, Vite, Tailwind CSS, TanStack Query, Zustand, React Router, Leaflet, ECharts |
 | Backend API  | NestJS (Node 20 LTS, TypeScript) |
-| Realtime     | NestJS WebSocket gateway over Socket.IO with Redis adapter when `REDIS_URL` is set. The source is `LISTEN bms_telemetry` on a dedicated `pg` connection (`telemetry-notify.service.ts` → `telemetry-listener.ts`), fanned out through `TelemetryBroadcastHub`. **That listener supervises itself since `F4.34` (2026-08-14)** — error handler, reconnect with the ADR 0016 §5 backoff, and a re-`LISTEN` on every reconnect. Before it, the listener connected once with no `error` handler, and because `pg.Client` is an `EventEmitter` an unhandled `error` event **threw**: with no `uncaughtException` handler in `apps/api` and no `restart:` on the compose service, any dropped connection took the whole API down and left it down. Watch `bms_api_telemetry_listener_connected` on `/metrics` — 0 means realtime is dead while REST still serves. **`NOTIFY` has no replay**, so readings published during an outage never reach the live push; they are still in the hypertable, and clients recover history through `GET /telemetry/points/:pointRef/recent`. The payload is still cast rather than validated (`F4.36`) |
+| Realtime     | NestJS WebSocket gateway over Socket.IO with Redis adapter when `REDIS_URL` is set. The source is `LISTEN bms_telemetry` on a dedicated `pg` connection (`telemetry-notify.service.ts` → `telemetry-listener.ts`), fanned out through `TelemetryBroadcastHub`. **That listener supervises itself since `F4.34` (2026-08-14)** — error handler, reconnect with the ADR 0016 §5 backoff, and a re-`LISTEN` on every reconnect. Before it, the listener connected once with no `error` handler, and because `pg.Client` is an `EventEmitter` an unhandled `error` event **threw**: with no `uncaughtException` handler in `apps/api` and no `restart:` on the compose service, any dropped connection took the whole API down and left it down. Watch `bms_api_telemetry_listener_connected` on `/metrics` — 0 means realtime is dead while REST still serves. **`NOTIFY` has no replay**, so readings published during an outage never reach the live push; they are still in the hypertable, and clients recover history through `GET /telemetry/points/:pointRef/recent`. **The payload is validated since `F4.36` (2026-08-14)** — `telemetry-reading.schema.ts` checks every reading, drops the invalid ones individually and delivers the rest, because one `null` entry used to throw inside `AlarmThresholdService.collapseLatest` *before any rule ran* and silently suppress alarms for the whole batch. Watch `bms_api_telemetry_readings_dropped_total` beside the gauge: non-zero means something is publishing in a shape the contract does not allow, and `NOTIFY` needs **no table privilege**, so any role that can connect can write to that channel. It counts rejected *readings* — a broken envelope (non-JSON, `readings` not an array) is log-only. The payload is capped at 500 readings because validating is far dearer than the cast it replaced and the 8000-byte `NOTIFY` limit bounds bytes, not entries. Still open: a **future-dated** `time` passes validation and pins an asset non-stale in the UI (`F4.37`) |
 | Auth         | Keycloak/OIDC for pilot compose; local JWT fallback only for native WSL development |
 | Observability | Optional Prometheus, Grafana, Loki, Promtail, and OpenTelemetry baseline |
 | OLTP DB      | PostgreSQL 16 |
@@ -278,6 +278,22 @@ Do not add top-level folders without updating this section.
 - Module-per-domain: `auth`, `assets`, `alarms`, `telemetry`, `audit`.
 - Controllers thin → services do work → repositories touch the DB.
 - Validate every DTO with Zod. Never trust input.
+- **"Input" is not only HTTP, and that reading is what `F4.36` cost us.** The
+  rule above was applied to every controller body and to none of the inputs that
+  do not look like a DTO. The `bms_telemetry` `NOTIFY` payload was `JSON.parse`d
+  and cast straight to `TelemetryReading[]`, and it reaches browsers over
+  Socket.IO — so an unvalidated non-HTTP input had a shorter path to a client
+  than any endpoint. It also stopped alarm evaluation: one `null` reading threw
+  inside `AlarmThresholdService.collapseLatest`, which runs before any rule, and
+  the throw is caught as a *warning*, so a single bad entry silently suppressed
+  alarms for every good reading beside it. **The privilege boundary is the part
+  worth remembering** — `NOTIFY` requires no table privilege at all, so a role
+  with bare `CONNECT` and zero read access can publish to that channel. When
+  validating a non-HTTP input, two things follow that a DTO does not need: bound
+  the work (validation is dearer than a cast, and a size limit on the *payload*
+  may not bound the number of *items*), and log rejections by **field path
+  only** — a rejected payload is data of unknown provenance, so echoing it turns
+  a validation failure into a log-injection surface.
 - **Every CSV response goes through `src/serialise/csv.ts`** (ADR 0026). Never
   hand-roll cell escaping, even for "just two columns" — the repo had two exports
   with two rules and one of them omitted the formula guard, which is how an asset
