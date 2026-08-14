@@ -51,6 +51,19 @@ announced to anyone.
   gauge flaps** → something accepts the connection then drops it (pgbouncer at
   its pool limit, a replica in recovery). The listener escalates its backoff in
   this case rather than hammering, so the counter's *rate* is the diagnostic.
+- **`bms_api_telemetry_readings_dropped_total` climbing** → something is
+  publishing readings in a shape the contract does not allow (`F4.36`). This is
+  a *different* fault from the two above: the listener is healthy and connected,
+  and telemetry is arriving — it is just being refused. `NOTIFY` requires **no
+  table privilege**, so any role that can connect to the database can write to
+  that channel; a non-zero counter with no known producer change is worth
+  treating as an unknown writer rather than a bug. The API log names the failing
+  **field paths** (never values): `Dropped N invalid bms_telemetry reading(s);
+  fields: …`. A `<overflow>` field means the payload exceeded the 500-reading
+  cap, which no legitimate producer approaches — the widest real chunk is 63.
+  Note the counter counts **readings**, not payloads: a broken *envelope*
+  (non-JSON, or `readings` not an array) logs `Failed to parse bms_telemetry
+  payload` and increments nothing, so do not alert on this counter alone.
 - **Readings published while the gauge is 0 are gone from the live push.**
   `NOTIFY` has no replay. Nothing is lost from history — the rows are in the
   hypertable and the UI re-seeds from `GET /telemetry/points/:pointRef/recent` —

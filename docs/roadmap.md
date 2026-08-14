@@ -818,6 +818,19 @@ Process (`AGENTS.md` §10).
   left alone: it is a liveness probe, and restarting a process that is serving
   traffic correctly is not the right response to a lost subscription.
 
+  **`F4.36` closed the last unvalidated path into that fan-out on the same day**
+  (PR #36, merged `bb37187`). The payload was `JSON.parse`d and cast straight to
+  `TelemetryReading[]`, and the damage was not the one the row predicted: one
+  `null` reading threw inside `AlarmThresholdService.collapseLatest`, which runs
+  before any rule, and the throw is caught as a *warning* — so a single bad
+  entry silently suppressed alarm evaluation for every good reading beside it.
+  Invalid readings are now dropped individually and the rest of the batch is
+  delivered, precisely so one malformed reading cannot blind the alarm path.
+  Watch `bms_api_telemetry_readings_dropped_total`. Still open: a **future-dated**
+  timestamp passes validation and pins an asset non-stale in the UI (`F4.37`) —
+  the fix belongs in the web client, because the pilot legitimately writes ahead
+  of `now()` and a server-side reject would delete real telemetry.
+
   The ADR 0016 §5 backoff moved to `packages/shared/src/ingest.ts` in the same
   change, because that listener became its second consumer and the ADR states
   those numbers precisely so a second policy never gets invented. Note that
