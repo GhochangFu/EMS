@@ -24,8 +24,12 @@ Infer the mode from the request; ask only if genuinely ambiguous.
 
 ## Mode: next
 
-1. Read `docs/BACKLOG.md`. Parse the track tables: `ID · Feature · P · Effort ·
-   Wave · Depends · Status`.
+1. Read `docs/BACKLOG.md`. Parse the track tables: `ID · Status · Feature · P ·
+   Effort · Wave · Depends`. **Status is the second column, not the last** — it
+   moved there on 2026-08-14 because closed items carry their whole record in
+   *Feature* and Track F's longest row is ~19.6k characters, which put the
+   status off the edge of any rendered view. Read it by position from the left,
+   never by taking the last cell.
 2. Filter to `⬜ pending` items whose **every** `Depends` entry is `✅ done`.
    An item with an unmet dependency is not eligible — say so rather than
    recommending it.
