@@ -127,9 +127,10 @@ export default defineConfig({
       // a set `DATABASE_URL` is a claim that a database exists. CI is unaffected.
       // Ratcheted by `F4.36` from 37.7/31.8/39.2/38.0. Measured 2026-08-14 against
       // the live database, all 153 tests running and none skipped:
-      // 38.09 statements · 32.18 branches · 39.53 functions · 38.34 lines.
+      // 38.24 statements · 32.31 branches · 39.53 functions · 38.50 lines.
       // (53 files / 153 tests.) New coverage: `telemetry-reading.schema.ts`
-      // arrives tested, and the listener gained its drop path.
+      // arrives tested, and the listener gained its drop path. Re-measured after
+      // the review round added the payload cap and the Infinity case.
       //
       // Ratcheted by `F4.34` from 36.5/31.2/38.2/36.7. Measured 2026-08-14
       // against the live database, all 153 tests running and none skipped:
@@ -199,10 +200,10 @@ export default defineConfig({
       // tests at all** before this item (ADR 0025 fact 7) and is now exercised
       // through `energyPreview` rather than by reconstructing its queries.
       thresholds: {
-        statements: 38.0,
-        branches: 32.1,
+        statements: 38.2,
+        branches: 32.3,
         functions: 39.5,
-        lines: 38.3,
+        lines: 38.4,
       },
     },
   },

@@ -15,20 +15,33 @@ import type { TelemetryReading } from "@bms/shared";
  * publishing one malformed payload:
  *
  * 1. **Alarm evaluation stopped for the whole batch.**
- *    `AlarmThresholdService.evaluateReadings` begins with `collapseLatest`,
- *    which iterates every reading and dereferences `r.assetId`. A single `null`
- *    entry threw `TypeError` *before any rule ran*, and the throw is caught and
- *    logged as a warning — so one bad reading silently suppressed alarms for
- *    every good reading beside it. That is the failure that makes this a
- *    correctness fix rather than hardening.
+ *    `AlarmThresholdService.evaluateReadings` runs `collapseLatest` before any
+ *    rule, and it iterates every reading and dereferences `r.assetId`. A single
+ *    `null` entry threw `TypeError`, and the throw is caught and logged as a
+ *    warning — so one bad reading silently suppressed alarms for every good
+ *    reading beside it. That is the failure that makes this a correctness fix
+ *    rather than hardening. The reproduced shape was the narrow one: `{}` does
+ *    not throw there, it produces an `undefined:undefined` map key and a
+ *    garbage reading that flows *into* rule evaluation. Validation covers that
+ *    whole class, not only the shape that crashed.
  * 2. **Junk reached browsers.** `bms_api_telemetry_readings_broadcast_total`
  *    went 1 → 4 for a payload containing a bare string and a `null`.
- * 3. **A dead asset renders as healthy.** `applyReading` in the web client does
- *    `new Date(r.time).getTime()`, and `deriveStatus` computes
- *    `Date.now() - lastSeenMs > FRESH_MS`. With an unparsable `time` that is
- *    `NaN > 25000` → `false` → *not stale* → status `running`. A garbage
- *    timestamp makes an offline asset look fine, which is the wrong direction
- *    for a monitoring product.
+ * 3. **A dead asset renders as healthy — and this schema only closes half of
+ *    it.** `applyReading` in the web client does `new Date(r.time).getTime()`,
+ *    and `deriveStatus` computes `Date.now() - lastSeenMs > FRESH_MS`. With an
+ *    unparsable `time` that is `NaN > 25000` → `false` → *not stale* → status
+ *    `running`. The `Date.parse` rule below removes the `NaN` route. It does
+ *    **not** remove the arithmetic: a *future* `time` makes the difference
+ *    negative, which is also not `> FRESH_MS`, so the same asset renders
+ *    `running` by a different input — and it stays that way until a genuine
+ *    reading arrives, which for a dead asset is never. Raised by the `F4.36`
+ *    security review and left open deliberately as **`F4.37`**, because the
+ *    honest fix is to clamp at the sink (`Math.min(t, Date.now())` in the web
+ *    client) rather than reject here: `resolveSamples` trusts `sample.at` from
+ *    the adapter, so an RTU with a skewed clock emits future timestamps
+ *    legitimately — the unclamped `sample.at` already deferred to `F1.7`. A
+ *    server-side reject would delete real telemetry to fix a client-side
+ *    arithmetic bug.
  *
  * **Invalid readings are dropped; the rest of the batch is delivered.** The row
  * left this open ("drop the batch, or drop the bad readings"). Consequence 1
@@ -61,10 +74,19 @@ export const telemetryReadingSchema = z.object({
   assetId: z.string().min(1),
   pointKey: z.string().min(1),
   /**
-   * `.finite()` rejects `NaN` and `±Infinity`. `NaN` is a legal
-   * `double precision` value in Postgres and the column has no CHECK constraint
-   * (`F4.32`), so it can reach this channel from a direct writer. It survives
-   * `JSON.stringify` as `null`, which this then rejects as a non-number.
+   * `z.number()` already rejects `NaN`; **`.finite()` is here for `±Infinity`**,
+   * which it alone rejects. Both are reachable and by different routes, which is
+   * why the attribution matters:
+   *
+   * - `NaN` is a legal `double precision` value in Postgres and the column has
+   *   no CHECK constraint (`F4.32`), so a direct writer can store one. It
+   *   survives `JSON.stringify` as `null` and is rejected here as a non-number.
+   * - `±Infinity` cannot come from `JSON.stringify` — that also emits `null` —
+   *   but it *can* come from raw payload text: `JSON.parse('{"value":1e999}')`
+   *   yields `Infinity`. `NOTIFY` payloads are text, so this is a real input,
+   *   and the spec drives that case from a raw string rather than a serialised
+   *   object. The first version of the test used `JSON.stringify` and so proved
+   *   nothing about `.finite()` at all — the compliance review caught it.
    */
   value: z.number().finite(),
   /**
@@ -77,6 +99,27 @@ export const telemetryReadingSchema = z.object({
     .nullish()
     .transform((value) => value ?? null),
 });
+
+/**
+ * Most readings examined in one payload.
+ *
+ * **This bound is a denial-of-service control, not tidiness.** Validating per
+ * entry costs far more than the unchecked cast it replaced — the `F4.36`
+ * security review measured ~21–28 ms of event-loop block for an 8 KB payload of
+ * `{}` entries against ~1 ms for the widest legitimate chunk, reproduced here
+ * at **22.18 ms, falling to 3.08 ms with this cap**. Node is
+ * single-threaded, so that is an API-wide stall: REST, WebSocket and `/health`
+ * all wait. `NOTIFY` requires **no table privilege at all**, so a role with bare
+ * `CONNECT` and no read access could hold the API down at roughly 40
+ * notifications a second. Postgres caps a payload at 8000 bytes, but that
+ * bounds *bytes*, not *entries*, and `{}` is two of them.
+ *
+ * 500 is ~8× headroom over anything real: `MAX_NOTIFY_UTF8_BYTES` in
+ * `apps/ingest/src/host/chunk.ts` is 7000, and the widest legitimate chunk that
+ * fits is **63** readings. The overflow is counted through `dropped` rather
+ * than ignored, so truncation is visible on the metric instead of silent.
+ */
+export const MAX_READINGS_PER_PAYLOAD = 500;
 
 export type ReadingParseResult = {
   readonly readings: TelemetryReading[];
@@ -110,8 +153,33 @@ export function parseReadings(payload: unknown): ReadingParseResult | null {
   const readings: TelemetryReading[] = [];
   const failedFields = new Set<string>();
   let dropped = 0;
+  let examined = 0;
 
   for (const entry of candidate) {
+    if (examined >= MAX_READINGS_PER_PAYLOAD) {
+      // Count the remainder rather than silently ignoring it, so the metric
+      // still reflects everything refused.
+      dropped += candidate.length - examined;
+      failedFields.add("<overflow>");
+      break;
+    }
+    examined += 1;
+
+    // Cheap type guard before `safeParse`. A `ZodError` extends `Error` and
+    // captures a stack, so constructing one per junk entry is what makes a
+    // flood expensive; `{}` alone yields four issues. Measured here on an
+    // 8 KB payload of bare `0` entries: **5.21 ms → 0.02 ms**.
+    //
+    // This has **no behavioural signature** — `safeParse` refuses the same
+    // entries with the same `<entry>` label — so no test can detect its
+    // removal, and the mutation proving that was run rather than assumed. The
+    // cap below is the load-bearing control; this is an optimisation.
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      dropped += 1;
+      failedFields.add("<entry>");
+      continue;
+    }
+
     const result = telemetryReadingSchema.safeParse(entry);
     if (result.success) {
       readings.push(result.data);
@@ -119,9 +187,8 @@ export function parseReadings(payload: unknown): ReadingParseResult | null {
     }
     dropped += 1;
     for (const issue of result.error.issues) {
-      // `path` is empty when the entry itself is the wrong type (a bare string,
-      // `null`), which is exactly the shape that broke alarm evaluation — so it
-      // gets a name rather than an empty string.
+      // `path` is empty when the entry is an object that fails as a whole; the
+      // non-object case is named `<entry>` by the guard above.
       failedFields.add(issue.path.length > 0 ? issue.path.join(".") : "<entry>");
     }
   }

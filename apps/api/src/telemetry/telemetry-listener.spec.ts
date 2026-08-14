@@ -521,7 +521,7 @@ async function wiresMetricsToListenerState(): Promise<void> {
   deps.onReconnectAttempt?.();
   assert(reconnects.length === 1, "a reconnect attempt should increment the counter");
 
-  deps.onReadings([VALID_READING as TelemetryReading]);
+  deps.onReadings([VALID_READING]);
   assert(emitted.length === 1, "readings should reach the broadcast hub");
 
   assert(deps.onDropped !== undefined, "drops must be wired to the counter");
@@ -591,6 +591,25 @@ function dropsInvalidReadingsKeepsValidOnes(): void {
   const nanResult = parseNotification('{"readings":[{"time":"2026-08-14T15:00:00.000Z","assetId":"a","pointKey":"kw","value":null,"unit":null}]}');
   assert(nanResult?.dropped === 1, "a NaN-origin null value must be dropped");
 
+  // `±Infinity` is what `.finite()` alone rejects — `z.number()` accepts it.
+  // Driven from **raw JSON text**: `JSON.stringify(Infinity)` is `null`, so a
+  // serialised fixture would test the NaN path again and prove nothing about
+  // `.finite()`. `JSON.parse('{"value":1e999}')` really does yield `Infinity`,
+  // and NOTIFY payloads are text, so this is a reachable input. The first
+  // version of this case used `JSON.stringify` and the compliance review caught
+  // that deleting `.finite()` left the suite green.
+  const infinite = parseNotification(
+    '{"readings":[{"time":"2026-08-14T15:00:00.000Z","assetId":"a","pointKey":"kw","value":1e999,"unit":null}]}',
+  );
+  assert(
+    infinite?.dropped === 1 && infinite.readings.length === 0,
+    `an Infinity value must be dropped, got ${JSON.stringify(infinite)}`,
+  );
+  const negInfinite = parseNotification(
+    '{"readings":[{"time":"2026-08-14T15:00:00.000Z","assetId":"a","pointKey":"kw","value":-1e999,"unit":null}]}',
+  );
+  assert(negInfinite?.dropped === 1, "a -Infinity value must be dropped");
+
   // Tolerant where the type allows it: an absent unit is normalised, not dropped.
   const noUnit = parseNotification(
     JSON.stringify({ readings: [{ ...VALID_READING, unit: undefined }] }),
@@ -608,6 +627,54 @@ function dropsInvalidReadingsKeepsValidOnes(): void {
   assert(
     !Object.prototype.hasOwnProperty.call(extra!.readings[0]!, "injected"),
     "unknown keys must be stripped before broadcast",
+  );
+}
+
+/**
+ * `F4.36` — the payload is bounded, because validating is far dearer than the
+ * cast it replaced.
+ *
+ * The security review measured ~21–28 ms of event-loop block for an 8 KB
+ * payload of `{}` entries. `NOTIFY` needs no table privilege, so without a
+ * bound a `CONNECT`-only role could hold the whole API down. Both halves of the
+ * remediation are asserted: the entry cap, and that the overflow is *counted*
+ * rather than silently ignored.
+ */
+function boundsHostilePayloads(): void {
+  const flood = { readings: Array.from({ length: 3000 }, () => ({})) };
+  const parsed = parseNotification(JSON.stringify(flood));
+  assert(parsed !== null, "a flood should still parse as an envelope");
+  assert(parsed!.readings.length === 0, "no junk entry should survive");
+  assert(
+    parsed!.dropped === 3000,
+    `every entry must be counted as dropped, got ${parsed!.dropped}`,
+  );
+  assert(
+    parsed!.failedFields.includes("<overflow>"),
+    `truncation must be visible, got ${JSON.stringify(parsed!.failedFields)}`,
+  );
+
+  // A legitimate-width chunk is nowhere near the cap: `MAX_NOTIFY_UTF8_BYTES`
+  // is 7000, which fits 63 readings.
+  const legitimate = {
+    readings: Array.from({ length: 63 }, (_, i) => ({ ...VALID_READING, pointKey: `kw_${i}` })),
+  };
+  const ok = parseNotification(JSON.stringify(legitimate));
+  assert(
+    ok?.readings.length === 63 && ok.dropped === 0,
+    `the widest legitimate chunk must pass untouched, got ${JSON.stringify({
+      kept: ok?.readings.length,
+      dropped: ok?.dropped,
+    })}`,
+  );
+
+  // The cheap type pre-guard must not change *which* entries are refused.
+  const mixed = parseNotification(
+    JSON.stringify({ readings: ["str", null, 7, true, [], VALID_READING] }),
+  );
+  assert(
+    mixed?.readings.length === 1 && mixed.dropped === 5,
+    `non-object entries must all be refused, got ${JSON.stringify(mixed)}`,
   );
 }
 
@@ -641,6 +708,7 @@ async function reportsDropsWithoutEchoingThePayload(): Promise<void> {
 /** Entry point for the sibling `.test.ts` (ADR 0014). */
 export async function runTelemetryListenerTests(): Promise<void> {
   dropsInvalidReadingsKeepsValidOnes();
+  boundsHostilePayloads();
   await reportsDropsWithoutEchoingThePayload();
   await wiresMetricsToListenerState();
   await reconnectsAfterConnectionError();

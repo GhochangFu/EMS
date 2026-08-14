@@ -73,8 +73,16 @@ export class MetricsService {
    *
    * Non-zero means something is publishing to `bms_telemetry` in a shape the
    * contract does not allow. Any role that can connect to the database can
-   * write to that channel, so this is the only signal that a producer has
-   * drifted — or that one exists which should not.
+   * write to that channel, so this is the signal that a producer has drifted —
+   * or that one exists which should not.
+   *
+   * **It counts rejected *readings*, not rejected payloads.** A producer that
+   * breaks the envelope — non-JSON, or `readings` not an array — takes the
+   * early-return path in `telemetry-listener.ts`, which logs and increments
+   * nothing. Alerting on this counter alone will miss that, by design: the two
+   * have different units and folding them together would make neither
+   * meaningful. Envelope failures are log-only (`Failed to parse
+   * bms_telemetry payload`).
    */
   private readonly telemetryReadingsDropped = new Counter({
     name: "bms_api_telemetry_readings_dropped_total",
