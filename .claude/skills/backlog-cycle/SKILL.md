@@ -10,7 +10,7 @@ Drive one iteration of the build loop defined in
 against the single managed backlog,
 [`docs/BACKLOG.md`](../../../docs/BACKLOG.md).
 
-The human owns two gates: **step 2 (ADR/scope)** and **step 6 (merge
+The human owns two gates: **step 2 (ADR/scope)** and **step 7 (merge
 approval)**. Never flip a status or promote scope on your own authority.
 
 ## Modes
@@ -60,6 +60,16 @@ Infer the mode from the request; ask only if genuinely ambiguous.
 1. **Verify before claiming.** Run the `verify` skill (or `pnpm typecheck` plus
    the relevant tests) and show real output. Never flip a status to `✅` on
    assumption — evidence first.
+1b. **Then verify against the running Docker stack** — database, API, browser,
+   whichever the change touches (AGENTS.md §4.6). A green suite is not a
+   deployment. Record the result in the closure row and name the **N/A** layers
+   explicitly, so a reader can tell "not applicable" from "not checked".
+   - `docker compose build` restarts nothing; `up -d <service>` does. Prove the
+     new code is in the container before reading anything from it.
+   - Hard-reload the browser and confirm the served bundle hash changed — a
+     cached page looks exactly like a failed fix.
+   - Check both directions: the defect is gone, *and* the fix does not fire when
+     it should not.
 2. Run the review agents as applicable: `agents-compliance-reviewer`,
    `security-reviewer`, and `migration-reviewer` for anything under
    `packages/db`.

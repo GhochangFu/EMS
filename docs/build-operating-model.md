@@ -45,9 +45,35 @@ the superpowers skills, made concrete):
 | 3. **Plan** — written, reviewable | Claude | `superpowers:writing-plans` | 👀 skim |
 | 4. **Build via TDD** | Claude (+ subagents) | `superpowers:test-driven-development` | — |
 | 5. **Review** — 3 passes in parallel | Subagents | `agents-compliance-reviewer`, `security-reviewer`, code review | 👀 batched |
-| 6. **Approve & merge** | Human | — | ✅ **gate** |
+| 6. **Verify against the running Docker stack** | Claude | `docker compose`, psql, browser | — |
+| 7. **Approve & merge** | Human | — | ✅ **gate** |
 
-The human owns **steps 2 and 6** only. Everything else Claude carries.
+The human owns **steps 2 and 7** only. Everything else Claude carries.
+
+### Step 6 is not optional, and it is not the test suite again
+
+AGENTS.md §4.6 carries the rule; this is why it is a numbered step rather than a
+footnote. Verify the layers the change touches — database, API, browser — and
+say in the closure record which were **N/A**, so a reader can tell "not
+applicable" from "not checked".
+
+The suite tells you the code is right. It cannot tell you what is *deployed*, or
+what an operator sees. Every item that has run this step found something the
+suite could not — a container still serving pre-change compiled code (`F4.28`),
+a defect that was an API-wide outage rather than a dead dashboard (`F4.34`), a
+cast that was really suppressing alarms (`F4.36`), and a page rendering leak and
+smoke sensors as `DRY`/`NORMAL` after three hours of silence (`F4.38`).
+
+Two traps, both of which have already cost time here:
+
+- **`docker compose build` restarts nothing.** `up -d <service>` does. Confirm
+  the new code is actually in the container before reading anything from it.
+- **A cached browser bundle is indistinguishable from a failed fix.** Hard-reload
+  and check the served asset hash changed. In `F4.38` the first read after a
+  correct rebuild showed pre-fix output.
+
+And check **both directions**: that the defect is gone, and that the fix does not
+fire when it should not.
 
 ---
 
@@ -81,7 +107,7 @@ it or the human asks.**
 
 ### Isolation: branches & worktrees (how parallel agents avoid collisions)
 
-The base unit is always **one feature → one branch → merge at step 6** (the
+The base unit is always **one feature → one branch → merge at step 7** (the
 human's approval gate). Worktrees are the mechanism that makes the *parallel*
 case safe:
 
@@ -94,7 +120,7 @@ case safe:
   files" rule above — each agent has its own checkout and branch, so they cannot
   stomp on each other. Use `superpowers:using-git-worktrees` for the setup.
 - Each isolated agent produces its **own branch/diff**; the review agents (step
-  5) run against it; the human merges it back at **step 6** (see
+  5) run against it; the human merges it back at **step 7** (see
   `superpowers:finishing-a-development-branch`). Worktrees **auto-clean if left
   unchanged**.
 - **Do not** put dependent work in parallel worktrees. If B needs A's interface,
