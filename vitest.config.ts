@@ -127,8 +127,19 @@ export default defineConfig({
       // a set `DATABASE_URL` is a claim that a database exists. CI is unaffected.
       // Ratcheted by `F4.34` from 36.5/31.2/38.2/36.7. Measured 2026-08-14
       // against the live database, all 153 tests running and none skipped:
-      // 37.93 statements · 31.81 branches · 39.52 functions · 38.17 lines.
+      // 37.79 statements · 31.89 branches · 39.29 functions · 38.03 lines.
       // (53 files / 153 tests.)
+      //
+      // **An earlier run in the same item measured 37.93/31.81/39.52/38.17 —
+      // higher — and the difference is worth knowing about.** The compliance
+      // review showed the ADR 0016 §5 backoff had been copied rather than
+      // shared, so it moved to `packages/shared/src/ingest.ts`. `include` above
+      // covers `apps/*` only, so **moving covered code into `packages/shared`
+      // deletes it from the numerator and the gate stops seeing it**. Coverage
+      // fell ~0.15 for a change that removed a duplicate and added no untested
+      // line. Anyone extracting into `packages/*` should expect the same dip and
+      // not read it as a regression; whether `packages/shared` belongs in the
+      // denominator at all is a separate question and not settled here.
       //
       // Unlike the `F1.1` entry below, this rise **is** new coverage rather than
       // a denominator shrink: `telemetry-listener.ts` and `listener-backoff.ts`
@@ -182,10 +193,10 @@ export default defineConfig({
       // tests at all** before this item (ADR 0025 fact 7) and is now exercised
       // through `energyPreview` rather than by reconstructing its queries.
       thresholds: {
-        statements: 37.9,
+        statements: 37.7,
         branches: 31.8,
-        functions: 39.5,
-        lines: 38.1,
+        functions: 39.2,
+        lines: 38.0,
       },
     },
   },

@@ -1,13 +1,17 @@
+import { getEventListeners } from "node:events";
+
 import type { TelemetryReading } from "@bms/shared";
 
 import {
   createTelemetryListener,
+  DEFAULT_STABLE_MS,
   parseNotification,
   type ListenerClient,
   type ListenerNotification,
   type ListenerState,
 } from "./telemetry-listener";
-import { DEFAULT_LISTENER_BACKOFF, listenerBackoffMs } from "./listener-backoff";
+import { backoffDelayMs, DEFAULT_BACKOFF } from "@bms/shared";
+
 import { buildListenerDeps } from "./telemetry-notify.service";
 
 function assert(condition: boolean, message: string): void {
@@ -109,7 +113,11 @@ type Harness = {
 
 function makeHarness(
   fakes: Fake[],
-  options: { onReadings?: () => void } = {},
+  options: {
+    onReadings?: () => void;
+    clock?: { value: number };
+    captureSignal?: (signal: AbortSignal) => void;
+  } = {},
 ): Harness {
   const delays: number[] = [];
   const states: ListenerState[] = [];
@@ -133,8 +141,12 @@ function makeHarness(
       warn: (m) => logs.push(`warn:${m}`),
       error: (m) => logs.push(`error:${m}`),
     },
-    async sleep(ms) {
+    async sleep(ms, signal) {
       delays.push(ms);
+      // The loop hands its own `stopController.signal` here, which is the only
+      // way a test can reach it — and reaching it is what makes the abort-leak
+      // assertion a real count rather than a hope that Node emits a warning.
+      options.captureSignal?.(signal);
       // Yields a **macrotask**, not just a microtask. The loop is otherwise all
       // promises, so a `sleep` that resolves synchronously starves the timer
       // queue and `flush`'s `setTimeout` never fires — the whole suite
@@ -142,6 +154,7 @@ function makeHarness(
       await new Promise((resolve) => setTimeout(resolve, 0));
     },
     random: () => 0.5,
+    now: () => options.clock?.value ?? 0,
     onStateChange: (state) => states.push(state),
     onReconnectAttempt: () => {
       reconnectSignals += 1;
@@ -262,22 +275,101 @@ async function backoffGrowsAndResets(): Promise<void> {
   );
   await h.listener.stop();
 
-  // A connect that succeeds resets the exponent, so the next failure retries
+  // A connection that *held* resets the exponent, so the next failure retries
   // from the base rather than continuing to climb.
-  const recovering = [makeFake(), makeFake()];
-  const h2 = makeHarness(recovering);
+  const clock = { value: 5_000_000 };
+  const recovering = [makeFake(), makeFake(), makeFake()];
+  const h2 = makeHarness(recovering, { clock });
   h2.listener.start();
   await flush();
+  clock.value += DEFAULT_STABLE_MS + 1;
   recovering[0].emitError(new Error("first loss"));
   await flush();
   const firstDelay = h2.delays[0];
+  clock.value += DEFAULT_STABLE_MS + 1;
   recovering[1].emitError(new Error("second loss"));
   await flush();
   assert(
     h2.delays[1] === firstDelay,
-    `a successful connect must reset backoff (${h2.delays[1]} vs ${firstDelay})`,
+    `a connection that held must reset backoff (${h2.delays[1]} vs ${firstDelay})`,
   );
   await h2.listener.stop();
+}
+
+/**
+ * The flap the security review found: a peer that accepts and immediately drops
+ * must still escalate.
+ *
+ * Resetting the exponent the moment `LISTEN` returns looks correct and is not —
+ * pgbouncer at its pool limit, or a replica in recovery, would pin the retry
+ * rate at the ~1 s floor indefinitely. Without the stability window this test
+ * sees a flat delay sequence instead of a growing one.
+ */
+async function acceptThenDropStillEscalates(): Promise<void> {
+  // Non-zero start: a clock reading of 0 used to alias with the "never
+  // connected" sentinel, which hid the very defect this test guards.
+  const clock = { value: 5_000_000 };
+  const fakes = [makeFake(), makeFake(), makeFake(), makeFake()];
+  const h = makeHarness(fakes, { clock });
+  h.listener.start();
+  await flush();
+
+  // Each connection succeeds, then dies immediately — the clock never advances,
+  // so no connection ever reaches DEFAULT_STABLE_MS.
+  for (const fake of fakes) {
+    fake.emitError(new Error("dropped immediately"));
+    await flush(4);
+  }
+
+  assert(h.delays.length >= 3, `expected several retries, got ${h.delays.length}`);
+  assert(
+    h.delays[1] > h.delays[0] && h.delays[2] > h.delays[1],
+    `an accept-then-drop flap must still escalate, got ${JSON.stringify(h.delays.slice(0, 3))}`,
+  );
+
+  await h.listener.stop();
+}
+
+/**
+ * The abort listener must not accumulate one per reconnect.
+ *
+ * `stopController` lives as long as the process while `waitForLoss` runs once
+ * per iteration, so a registration without removal leaks in proportion to
+ * database availability — and eventually prints `MaxListenersExceededWarning`
+ * from somewhere that looks unrelated.
+ */
+async function doesNotLeakAbortListeners(): Promise<void> {
+  let signal: AbortSignal | null = null;
+  const fakes = Array.from({ length: 12 }, () => makeFake());
+  const h = makeHarness(fakes, {
+    captureSignal: (s) => {
+      signal = s;
+    },
+  });
+
+  h.listener.start();
+  await flush();
+  for (const fake of fakes) {
+    fake.emitError(new Error("cycle"));
+    await flush(3);
+  }
+
+  assert(
+    h.listener.reconnects() >= 10,
+    `test needs enough cycles to be meaningful, got ${h.listener.reconnects()}`,
+  );
+  assert(signal !== null, "the loop should have handed its stop signal to sleep()");
+
+  // Counted, not inferred. Relying on Node's MaxListenersExceededWarning was the
+  // first attempt and it never fired for an AbortSignal, so the leak mutation
+  // survived a test that looked like it covered it.
+  const listeners = getEventListeners(signal as unknown as AbortSignal, "abort").length;
+  assert(
+    listeners <= 1,
+    `abort listeners accumulated across ${h.listener.reconnects()} reconnects: ${listeners}`,
+  );
+
+  await h.listener.stop();
 }
 
 /** The §5 table, and the cap being a hard ceiling rather than cap × 1.2. */
@@ -285,20 +377,20 @@ function backoffPolicyHoldsItsCeiling(): void {
   const max = () => 1;
   const min = () => 0;
   assert(
-    listenerBackoffMs(0, () => 0.5) === DEFAULT_LISTENER_BACKOFF.baseMs,
+    backoffDelayMs(0, () => 0.5) === DEFAULT_BACKOFF.baseMs,
     "mid-jitter first retry should equal baseMs",
   );
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const high = listenerBackoffMs(attempt, max);
-    const low = listenerBackoffMs(attempt, min);
+    const high = backoffDelayMs(attempt, max);
+    const low = backoffDelayMs(attempt, min);
     assert(
-      high <= DEFAULT_LISTENER_BACKOFF.capMs,
+      high <= DEFAULT_BACKOFF.capMs,
       `attempt ${attempt} exceeded the cap: ${high}`,
     );
     assert(low >= 0, `attempt ${attempt} produced a negative delay: ${low}`);
   }
   assert(
-    listenerBackoffMs(50, max) === DEFAULT_LISTENER_BACKOFF.capMs,
+    backoffDelayMs(50, max) === DEFAULT_BACKOFF.capMs,
     "a far-out attempt should sit exactly at the cap, not above it",
   );
 }
@@ -428,6 +520,8 @@ export async function runTelemetryListenerTests(): Promise<void> {
   await recoversFromConnectFailure();
   await reconnectsAfterEndEvent();
   await backoffGrowsAndResets();
+  await acceptThenDropStillEscalates();
+  await doesNotLeakAbortListeners();
   backoffPolicyHoldsItsCeiling();
   await stopHaltsTheLoop();
   await survivesBadPayloads();
