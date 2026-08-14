@@ -353,8 +353,9 @@ export async function runMqttAdapterTests(): Promise<void> {
     assert(call.url === "mqtts://phe.thinkiot.co.in:8883", `wrong broker URL: ${call.url}`);
     // ADR 0016 §5 gives reconnect backoff to the host — exponential, base 1 s,
     // cap 60 s, ±20% jitter — and rule 4 says an adapter owns no timer.
-    // index.js sets `reconnectPeriod: MQTT_RECONNECT_MS ?? 5000`; leaving that
-    // on would race the supervisor and hide disconnections from it.
+    // The ADR 0007 pilot set `reconnectPeriod: MQTT_RECONNECT_MS ?? 5000`;
+    // leaving that on would race the supervisor and hide disconnections from it.
+    // Both were deleted at §6 commit 4.
     assert(
       call.options.reconnectPeriod === 0,
       `the library's own reconnect must be off, got ${call.options.reconnectPeriod}`,

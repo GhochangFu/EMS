@@ -107,7 +107,7 @@ Plain text, on `INGEST_HOST_HEALTH_PORT`. No metrics library — `prom-client`
 is deferred to `F1.10` / `F3.16` (ADR 0016 §Dependencies).
 
 ```
-ingest-host degraded endpoints=1 rtus=1 skipped=0 notify=off uptime=39s
+ingest-host degraded endpoints=1 rtus=1 skipped=0 notify=on uptime=39s
 endpoint protocol=mqtt key=phe.thinkiot.co.in:8883 state=disconnected rtus=861736076104923 restarts=1 pollFailures=0 queue=0 dropped=0 written=0 writeFailures=0 lastSample=never
 ```
 
@@ -126,7 +126,7 @@ adapter conformance suite asserts it with a seeded sentinel.
 ## The ADR 0016 §6 commit 3 parallel verification (historical)
 
 **This section records what was done on 2026-08-06. It is no longer runnable**
-— commit 4 deleted the legacy process there is nothing left to compare against,
+— commit 4 deleted the legacy process, so there is nothing left to compare against,
 along with both commands the procedure used (`pnpm start:host` and
 `INGEST_NOTIFY=off`). It is kept because the *result* below is the evidence the
 cutover rested on, and evidence with no method is not checkable.

@@ -499,9 +499,13 @@ describe("repo invariants", () => {
     //     symptom is silent: rows keep landing while every dashboard goes dead.
     //
     // Amendment 3 records why this is the guarantee worth pinning statically.
+    // `walk`, not `readdirSync` — a top-level scan says "apps/ingest/src must
+    // hold exactly one entry point" while letting `src/legacy/index.js` through,
+    // which is a message promising more than the check delivers.
     const ingestSrc = join(repoRoot, "apps", "ingest", "src");
-    const entryPoints = readdirSync(ingestSrc)
-      .filter((name) => /^(index|main)\.(ts|js)$/.test(name))
+    const entryPoints = walk(ingestSrc)
+      .map((f) => relative(ingestSrc, f).split("\\").join("/"))
+      .filter((f) => /(^|\/)(index|main)\.(ts|js)$/.test(f))
       .sort();
     expect(
       entryPoints,
@@ -532,15 +536,31 @@ describe("repo invariants", () => {
     // **Reads and assignments, not mentions.** Naming the variable in prose is
     // how the next person learns why it must not come back — `config.ts` and
     // `main.ts` both explain the deletion, and an invariant that forbade the word
-    // would force those comments out and take the reason with them. So this
-    // matches an actual `env.INGEST_NOTIFY` read and an actual YAML key, which
-    // are the two shapes that could revive the switch.
+    // would force those comments out and take the reason with them.
+    //
+    // So comments are stripped first and then *any* mention of the name is a
+    // failure. Matching `env.INGEST_NOTIFY` instead looks tighter and is weaker:
+    // it misses `env["INGEST_NOTIFY"]`, `const { INGEST_NOTIFY } = env` and any
+    // `getEnv("INGEST_NOTIFY")` helper — three ways to revive the switch that
+    // read perfectly naturally. Compose likewise accepts both `KEY: value` and
+    // list-form `- KEY=value`, and only the first was caught before.
+    const stripComments = (src: string): string =>
+      src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
     const compose = readFileSync(join(repoRoot, "docker-compose.yml"), "utf8");
     const survivors = [...sourceFiles()]
       .map((f) => [relative(repoRoot, f).split("\\").join("/"), readFileSync(f, "utf8")] as const)
-      .filter(([f, src]) => /\benv\.INGEST_NOTIFY\b/.test(src) && !/\.(spec|test)\.tsx?$/.test(f))
+      .filter(
+        ([f, src]) =>
+          /\bINGEST_NOTIFY\b/.test(stripComments(src)) && !/\.(spec|test)\.tsx?$/.test(f),
+      )
       .map(([f]) => f)
-      .concat(/^\s*INGEST_NOTIFY\s*:/m.test(compose) ? ["docker-compose.yml"] : []);
+      .concat(
+        /^\s*-?\s*INGEST_NOTIFY\s*[:=]/m.test(
+          compose.replace(/(^|\s)#[^\n]*/g, "$1"),
+        )
+          ? ["docker-compose.yml"]
+          : [],
+      );
     expect(
       survivors,
       `INGEST_NOTIFY is read or set in: ${survivors.join(", ")}. ADR 0016 §6 commit 4 deleted it ` +

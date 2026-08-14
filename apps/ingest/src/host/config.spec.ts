@@ -45,17 +45,28 @@ export function runHostConfigTests(): void {
 
   {
     // A stale `INGEST_NOTIFY` in an operator's `.env` is **ignored**, not
-    // refused. The variable had two legal values and both are now meaningless;
-    // refusing to start on its presence would take the pilot down over a
-    // no-op. `off` is the one that matters — it must not be honoured.
-    for (const stale of ["off", "on", "true", "garbage", ""]) {
-      const config: Record<string, unknown> = {
-        ...readHostConfig({ ...BASE, INGEST_NOTIFY: stale }),
-      };
+    // refused: refusing to start over a variable that can no longer do anything
+    // would take the pilot down for nothing.
+    //
+    // The assertion is that these values **no longer throw**, which is the half
+    // that actually changed — `"true"`, `"1"`, `"yes"` and `"enabled"` each
+    // refused startup before commit 4, on the reasoning that a typo must not
+    // silently pick a side. There is no side left to pick. Asserting key-absence
+    // in a loop would not have worked: `readHostConfig` never reads the
+    // variable, so the loop value cannot influence the outcome and every
+    // iteration would assert the same thing as the block above.
+    for (const stale of ["off", "on", "true", "1", "yes", "enabled", "garbage", ""]) {
+      let threw = false;
+      try {
+        readHostConfig({ ...BASE, INGEST_NOTIFY: stale });
+      } catch {
+        threw = true;
+      }
       assert(
-        !("notifyEnabled" in config),
-        `INGEST_NOTIFY="${stale}" must be inert — it may neither reintroduce the ` +
-          `switch nor suppress notification`,
+        !threw,
+        `INGEST_NOTIFY="${stale}" must be inert, not refused — a value left in an ` +
+          `operator's .env can no longer change anything, and failing startup over ` +
+          `it trades a real outage for a no-op`,
       );
     }
   }

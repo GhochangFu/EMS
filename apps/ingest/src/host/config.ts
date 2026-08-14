@@ -81,8 +81,14 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   //
   // There is no `notifyEnabled` here on purpose. The host always notifies, so
   // there is no configuration that can run ingest with realtime silently off —
-  // the failure mode commit 4 exists to remove. `config.spec.ts` asserts an
-  // `INGEST_NOTIFY=off` in the environment cannot suppress notification.
+  // the failure mode commit 4 exists to remove.
+  //
+  // Two things carry that guarantee, and neither is in this file: the positive
+  // `pg_notify` assertion in `normaliser.spec.ts`, which fails if any
+  // suppression path returns, and the `tests/repo-invariants.test.ts` check that
+  // nothing reads the variable. `config.spec.ts` only asserts the key is absent
+  // from what this function returns — it cannot reach a write path, and saying
+  // otherwise would credit it with a guarantee it does not carry.
   return {
     databaseUrl,
     healthPort: positiveInt(env.INGEST_HOST_HEALTH_PORT, DEFAULT_HEALTH_PORT, "INGEST_HOST_HEALTH_PORT"),
