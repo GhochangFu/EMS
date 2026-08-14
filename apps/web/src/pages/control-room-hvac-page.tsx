@@ -377,13 +377,13 @@ function HvacDiagram({
       <circle cx="100" cy="120" r="14" fill="none" stroke={airStroke} strokeWidth="1.6" />
       <line x1="86" y1="120" x2="114" y2="120" stroke={airStroke} strokeWidth="1.6" />
       <line x1="100" y1="106" x2="100" y2="134" stroke={airStroke} strokeWidth="1.6" />
-      <text x="100" y="160" textAnchor="middle" className="fill-bms-muted font-mono text-[9px]">FAN {n(slice.fanSpeedPct, 0)}%</text>
-      <rect x="160" y="106" width="60" height="28" rx="4" className={slice.compressorOk === 0 ? "fill-red-100 stroke-red-600" : "fill-emerald-50 stroke-bms-green"} />
+      <text x="100" y="160" textAnchor="middle" className="fill-bms-muted font-mono text-[9px]">FAN {n(freshValue(slice.fanSpeedPct, status === "offline"), 0)}%</text>
+      <rect x="160" y="106" width="60" height="28" rx="4" className={status === "offline" ? "fill-gray-200 stroke-gray-400" : slice.compressorOk === 0 ? "fill-red-100 stroke-red-600" : "fill-emerald-50 stroke-bms-green"} />
       <text x="190" y="124" textAnchor="middle" className="fill-bms-green font-mono text-[10px] font-bold">COMP</text>
       <line x1="240" y1="80" x2="320" y2="80" stroke="#f97316" strokeWidth="3" markerEnd={`url(#airArrow-${label})`} strokeDasharray={running ? "0" : "4 3"} />
-      <text x="280" y="74" textAnchor="middle" className="fill-orange-500 font-mono text-[9px]">RETURN {n(slice.returnAirTempC, 1)}C</text>
+      <text x="280" y="74" textAnchor="middle" className="fill-orange-500 font-mono text-[9px]">RETURN {n(freshValue(slice.returnAirTempC, status === "offline"), 1)}C</text>
       <line x1="320" y1="120" x2="240" y2="120" stroke={airStroke} strokeWidth="3" markerEnd={`url(#airArrow-${label})`} strokeDasharray={running ? "0" : "4 3"} />
-      <text x="280" y="138" textAnchor="middle" className="fill-cyan-600 font-mono text-[9px]">SUPPLY {n(slice.supplyAirTempC, 1)}C</text>
+      <text x="280" y="138" textAnchor="middle" className="fill-cyan-600 font-mono text-[9px]">SUPPLY {n(freshValue(slice.supplyAirTempC, status === "offline"), 1)}C</text>
       <rect x="320" y="60" width="240" height="80" rx="8" fill="#fafbfc" stroke="#cbd5e1" strokeDasharray="4 3" strokeWidth="1.4" />
       <text x="440" y="92" textAnchor="middle" className="fill-bms-ink font-condensed text-[14px] font-bold">CONTROL ROOM</text>
       <text x="440" y="110" textAnchor="middle" className="fill-bms-muted font-mono text-[10px]">setpoint 22.0C</text>

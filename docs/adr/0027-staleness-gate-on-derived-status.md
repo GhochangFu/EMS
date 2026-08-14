@@ -47,7 +47,10 @@ human gate.
 
 ## Decision
 
-Answered at the §10 gate on 2026-08-14.
+**Decisions 1–5 were answered by the repository owner at the §10 gate on
+2026-08-14.** Decisions 6 and 7 are implementation placement, recorded here
+because they are cross-cutting, not because a human chose them — an earlier
+draft of this ADR filed all seven under the gate, which over-attributed.
 
 1. **Staleness outranks every value-derived state.** A stale tile reads
    `offline`, including when its last reading was `critical`. Rationale: the
@@ -83,8 +86,15 @@ Ranking `offline` above `critical` means **one dead sensor turns the banner
 `OFFLINE` while a different, live sensor is genuinely critical** — a real alarm
 masked by an unrelated comms fault. The decision stands as taken, and the
 masking is closed by making the count visible rather than by re-ranking: every
-page header shows a live critical count alongside the banner, so a genuine
-alarm is never invisible even when the banner reads `OFFLINE`.
+page that merges statuses shows a live critical count alongside the banner, so
+a genuine alarm is never invisible even when the banner reads `OFFLINE`.
+
+That claim was **false when first written** — the count reached only four of the
+six merging pages, and the two it missed were `-overview-` (the main dashboard,
+which merges every domain including leak and smoke) and `-it-`. Found by the
+`F4.38` compliance review. It is now on all six and is held by a repo invariant,
+because a claim of this kind in a safety path should not depend on a reviewer
+noticing.
 
 ## Dependencies
 
@@ -94,8 +104,15 @@ holds.
 ## Consequences
 
 - Seven pages change status derivation; two of them gain a status member and
-  the label / pill / tile / marker functions that switch on it. Those switches
-  are exhaustive over their unions, so the compiler enumerates the call sites.
+  the label / pill / tile / marker functions that render it.
+- **Do not rely on the compiler to enumerate those call sites.** An earlier
+  version of this ADR said the switches are exhaustive so `tsc` would find them
+  all. Only four functions across two pages are exhaustive `switch`es; every
+  other renderer is an `if`/ternary chain **whose default is the healthy green
+  branch**. Adding a union member therefore compiles silently and renders the
+  new state as *normal*: the review found a dead breaker's table row reading
+  `CLOSED`, and dead feeders drawn as energised green paths on two SLDs. When
+  adding a status, grep the renderers; test `offline` first in every chain.
 - **Dashboards will show more `offline` than before, and some of it is real
   backlog rather than regression.** Any asset the simulator or pilot is not
   currently feeding becomes visibly offline instead of silently frozen. That is

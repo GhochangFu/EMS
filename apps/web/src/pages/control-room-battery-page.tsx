@@ -366,10 +366,21 @@ function BatteryStringCard({
           <div
             key={cell.index}
             className={`rounded border p-1 text-center ${cellClass(string.state.status)}`}
-            title={`Cell #${cell.index} · ${cell.voltage.toFixed(2)} V · ${cell.temperature.toFixed(1)} C`}
+            /* Every cell is synthesised from the string's own batteryV /
+               batteryTempC, so once the string is stale the whole grid — and
+               its tooltip — is derived from a frozen reading. It is the most
+               convincing fake live data on the page: 32 individual voltages.
+               ADR 0027 decision 3. */
+            title={
+              string.state.stale
+                ? `Cell #${cell.index} · ${STALE_VALUE}`
+                : `Cell #${cell.index} · ${cell.voltage.toFixed(2)} V · ${cell.temperature.toFixed(1)} C`
+            }
           >
             <div className="font-mono text-[10px]">#{cell.index}</div>
-            <div className="font-mono text-[10px] font-semibold">{cell.voltage.toFixed(2)}V</div>
+            <div className="font-mono text-[10px] font-semibold">
+              {string.state.stale ? STALE_VALUE : `${cell.voltage.toFixed(2)}V`}
+            </div>
           </div>
         ))}
       </div>

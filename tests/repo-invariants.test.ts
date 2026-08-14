@@ -716,8 +716,33 @@ describe("repo invariants", () => {
       const src = readFileSync(join(repoRoot, rel), "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .replace(/^[ \t]*\/\/.*$/gm, "");
-      if (!/\bisStale\s*\(/.test(src)) {
-        offenders.push(`${rel} never calls isStale`);
+      // **Scoped to the derivation body, not the file.** The first version of
+      // this check searched the whole file for `isStale(`, and the F4.38
+      // compliance review showed it was a decoy-satisfied no-op on exactly the
+      // two pages that matter most: `-overview-` and `-sld-` each call `isStale`
+      // a second time for a header value, so deleting the *status guard*
+      // entirely — restoring the original defect — left every test green.
+      // Reproduced before fixing: the same deletion on `-hvac-` (one call) was
+      // caught, on `-overview-` (two calls) it was not.
+      //
+      // AGENTS.md §4.4 records this as a seventh instance of the invariant trap:
+      // not a weak guard, not an unreachable one, but a guard **defeated by an
+      // unrelated legitimate call to the same function in the same file**.
+      const derive = (() => {
+        const at = src.search(/function derive(RuleState|RuleStatus|BreakerRuleState)\b/);
+        if (at < 0) {
+          return null;
+        }
+        // Body ends at the first line-start `}` after the signature.
+        const end = src.indexOf("\n}", at);
+        return end < 0 ? src.slice(at) : src.slice(at, end);
+      })();
+      if (derive === null) {
+        offenders.push(`${rel} has no recognised status-derivation function`);
+      } else if (!/\bisStale\s*\(/.test(derive)) {
+        offenders.push(
+          `${rel} derives status without calling isStale (a call elsewhere in the file does not count)`,
+        );
       }
       if (!/from "\.\.\/lib\/schematic-telemetry"/.test(src)) {
         offenders.push(`${rel} does not import the shared gate`);
@@ -732,6 +757,15 @@ describe("repo invariants", () => {
       // has at least one numeric readout, so every page must gate at least one.
       if (!/\bfreshValue\s*\(/.test(src)) {
         offenders.push(`${rel} renders values without gating them on staleness`);
+      }
+      // The decision-2 mitigation. ADR 0027 says the masking is "closed by
+      // making the count visible", so a page that merges statuses but shows no
+      // live-critical count leaves the ADR's own claim unmet — which is what
+      // the compliance review found on `-overview-` and `-it-`.
+      if (/function mergeStatus/.test(src) && !/\bliveCritical\b/.test(src)) {
+        offenders.push(
+          `${rel} merges statuses with offline outranking critical but shows no live-critical count`,
+        );
       }
       // Decision 2 — `offline` outranks `critical` in the page banner. Checked
       // by position because the ranking *is* the order of these lookups, and a

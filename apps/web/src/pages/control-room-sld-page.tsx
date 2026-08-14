@@ -15,7 +15,11 @@ import {
 import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
-import { freshValue, isStale } from "../lib/schematic-telemetry";
+import {
+  freshValue,
+  isStale,
+  STALE_VALUE,
+} from "../lib/schematic-telemetry";
 import type { AuthUser } from "../stores/auth-store";
 
 type ControlRoomSldPageProps = {
@@ -56,7 +60,7 @@ function statusClass(status: BreakerVisualStatus): string {
   }
   // A deliberately different grey from `open` — see BreakerVisualStatus.
   if (status === "offline") {
-    return "border-slate-300 bg-slate-200 text-slate-700";
+    return "border-gray-300 bg-gray-200 text-gray-600";
   }
   if (status === "critical") {
     return "border-red-200 bg-red-100 text-red-800";
@@ -162,10 +166,13 @@ function ControlRoomSldContent() {
   const rules = rulesQuery.data?.items ?? [];
   const q1 = useCr("CR-Q1");
   // The header meters are all the incomer's own readings (ADR 0027 decision 3).
+  // The `?? 0` forms below were left ungated in the first pass, so a dead CR-Q1
+  // rendered "0.00 / 0.00 kW·kVA" and "0.0 kWh" — measured-looking zeroes,
+  // three columns from four meters that correctly blanked. Found in review.
   const q1Stale = isStale(q1.lastSeenMs, Date.now());
-  const totalKw = q1.kw ?? 0;
-  const kva = q1.pf ? totalKw / q1.pf : 0;
-  const kwhToday = q1.kwhToday ?? 0;
+  const totalKw = freshValue(q1.kw, q1Stale);
+  const kva = q1.pf && totalKw !== null ? totalKw / q1.pf : null;
+  const kwhToday = freshValue(q1.kwhToday, q1Stale);
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
@@ -268,21 +275,25 @@ function Breaker({ cx, cy, label, code, rules }: { cx: number; cy: number; label
   const s = useCr(code);
   const state = deriveBreakerRuleState(code, s, rules, Date.now());
   const circleClass =
-    state.status === "open"
-      ? "fill-gray-100 stroke-gray-400"
-      : state.status === "critical"
-        ? "fill-red-50 stroke-red-600"
-        : state.status === "warning"
-          ? "fill-amber-50 stroke-amber-500"
-          : "fill-white stroke-bms-green";
+    state.status === "offline"
+      ? "fill-gray-200 stroke-gray-400"
+      : state.status === "open"
+        ? "fill-gray-100 stroke-gray-400"
+        : state.status === "critical"
+          ? "fill-red-50 stroke-red-600"
+          : state.status === "warning"
+            ? "fill-amber-50 stroke-amber-500"
+            : "fill-white stroke-bms-green";
   const textClass =
-    state.status === "open"
+    state.status === "offline"
       ? "fill-gray-500 font-mono text-[8px] font-bold"
-      : state.status === "critical"
-        ? "fill-red-700 font-mono text-[8px] font-bold"
-        : state.status === "warning"
-          ? "fill-amber-700 font-mono text-[8px] font-bold"
-          : "fill-bms-green font-mono text-[8px] font-bold";
+      : state.status === "open"
+        ? "fill-gray-500 font-mono text-[8px] font-bold"
+        : state.status === "critical"
+          ? "fill-red-700 font-mono text-[8px] font-bold"
+          : state.status === "warning"
+            ? "fill-amber-700 font-mono text-[8px] font-bold"
+            : "fill-bms-green font-mono text-[8px] font-bold";
   return (
     <g>
       <circle cx={cx} cy={cy} r={12} className={circleClass} strokeWidth={2} />
@@ -308,8 +319,19 @@ function Branch({ y, breaker, breakerCode, box, sub, outBreaker, outCode, rules 
 function LoadBranch({ y, breaker, code, title, sub, rules }: { y: number; breaker: string; code: string; title: string; sub: string; rules: RuleListItem[] }) {
   const s = useCr(code);
   const state = deriveBreakerRuleState(code, s, rules, Date.now());
-  const closed = state.status !== "open";
-  const stroke = state.status === "warning" ? "#f59e0b" : state.status === "critical" ? "#dc2626" : closed ? "#039855" : "#94a3b8";
+  // A dead feed is not a closed one: `!== "open"` used to make `offline` count
+  // as closed, so the diagram drew a green energised arrow into it.
+  const closed = state.status !== "open" && state.status !== "offline";
+  const stroke =
+    state.status === "offline"
+      ? "#94a3b8"
+      : state.status === "warning"
+        ? "#f59e0b"
+        : state.status === "critical"
+          ? "#dc2626"
+          : closed
+            ? "#039855"
+            : "#94a3b8";
   return (
     <g>
       <line x1={326} y1={y} x2={380} y2={y} stroke={stroke} strokeWidth={3} />
@@ -326,15 +348,18 @@ function Pdu({ y, breaker, code, title, loadCode, rules }: { y: number; breaker:
   const state = deriveBreakerRuleState(code, breakerSlice, rules, Date.now());
   const warn = state.status === "warning";
   const critical = state.status === "critical";
-  const stroke = critical ? "#dc2626" : warn ? "#f59e0b" : "#039855";
+  const dark = state.status === "offline";
+  const stroke = dark ? "#94a3b8" : critical ? "#dc2626" : warn ? "#f59e0b" : "#039855";
   return (
     <g>
-      <line x1={696} y1={y} x2={740} y2={y} stroke={stroke} strokeWidth={3} markerEnd="url(#crArrow)" />
+      <line x1={696} y1={y} x2={740} y2={y} stroke={stroke} strokeWidth={3} markerEnd={dark ? undefined : "url(#crArrow)"} />
       <Breaker cx={760} cy={y} label={breaker} code={code} rules={rules} />
-      <line x1={770} y1={y} x2={810} y2={y} stroke={stroke} strokeWidth={3} markerEnd="url(#crArrow)" />
-      <rect x={810} y={y - 19} width={160} height={38} rx={6} className={critical ? "fill-red-50 stroke-red-600" : warn ? "fill-amber-50 stroke-amber-500" : "fill-white stroke-bms-green"} />
-      <text x={890} y={y + 1} textAnchor="middle" className={critical ? "fill-red-800 font-condensed text-[12px] font-bold" : warn ? "fill-amber-900 font-condensed text-[12px] font-bold" : "fill-bms-ink font-condensed text-[12px] font-bold"}>{title}</text>
-      <text x={890} y={y + 13} textAnchor="middle" className="fill-bms-muted font-mono text-[9px]">{n(freshValue(s.rackKw, state.stale), 2)} kW</text>
+      <line x1={770} y1={y} x2={810} y2={y} stroke={stroke} strokeWidth={3} markerEnd={dark ? undefined : "url(#crArrow)"} />
+      <rect x={810} y={y - 19} width={160} height={38} rx={6} className={dark ? "fill-gray-200 stroke-gray-400" : critical ? "fill-red-50 stroke-red-600" : warn ? "fill-amber-50 stroke-amber-500" : "fill-white stroke-bms-green"} />
+      <text x={890} y={y + 1} textAnchor="middle" className={dark ? "fill-gray-600 font-condensed text-[12px] font-bold" : critical ? "fill-red-800 font-condensed text-[12px] font-bold" : warn ? "fill-amber-900 font-condensed text-[12px] font-bold" : "fill-bms-ink font-condensed text-[12px] font-bold"}>{title}</text>
+      {/* Gated on the *load* asset's own freshness, not the breaker's: the two
+          are different assets and either can die alone. */}
+      <text x={890} y={y + 13} textAnchor="middle" className="fill-bms-muted font-mono text-[9px]">{n(freshValue(s.rackKw, isStale(s.lastSeenMs, Date.now())), 2)} kW</text>
     </g>
   );
 }
@@ -375,15 +400,26 @@ function BreakerTable({ rules }: { rules: RuleListItem[] }) {
 function BreakerRow({ row, rules }: { row: (typeof CR_BREAKERS)[number]; rules: RuleListItem[] }) {
   const s = useCr(row.code);
   const state = deriveBreakerRuleState(row.code, s, rules, Date.now());
+  // `offline` is tested FIRST in every chain on this page, and that ordering is
+  // the fix rather than a style choice: each of these ternaries ends in a green
+  // "healthy" default, so a status the chain does not name falls through to
+  // *closed and energised*. Before this arm existed a breaker whose telemetry
+  // had died read "CLOSED" — the exact claim F4.38 exists to stop the page
+  // making. The compiler could not catch it because these are ternaries, not
+  // exhaustive switches.
   const statusLabel =
-    state.status === "open"
-      ? "OPEN"
-      : state.status === "critical"
-        ? "CRITICAL"
-        : state.status === "warning"
-          ? "WARN"
-          : "CLOSED";
-  const tripCause = state.matchedRule?.name ?? (state.status === "open" ? row.tripCause : "-");
+    state.status === "offline"
+      ? "OFFLINE"
+      : state.status === "open"
+        ? "OPEN"
+        : state.status === "critical"
+          ? "CRITICAL"
+          : state.status === "warning"
+            ? "WARN"
+            : "CLOSED";
+  const tripCause = state.stale
+    ? STALE_VALUE
+    : (state.matchedRule?.name ?? (state.status === "open" ? row.tripCause : "-"));
   return (
     <tr>
       <td className="px-3 py-2 font-medium text-bms-ink">{row.label}</td>

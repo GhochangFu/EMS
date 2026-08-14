@@ -262,7 +262,7 @@ function ControlRoomUpsContent() {
     .filter((v): v is number => v != null && !Number.isNaN(v));
   const avgLoad =
     loads.length === 0 ? null : loads.reduce((a, b) => a + b, 0) / loads.length;
-  const backups = units
+  const backups = liveUnits
     .map((unit) => unit.slice.backupMin)
     .filter((value): value is number => value !== null);
   const worstBackup = backups.length > 0 ? Math.min(...backups) : null;
@@ -426,17 +426,17 @@ function UnitDetail({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <DetailCard title="Input / Output">
-          <Row label="Output voltage" value={`${n(unit.slice.outputVoltageV, 1)} V`} />
-          <Row label="Output frequency" value={`${n(unit.slice.outputFreqHz, 2)} Hz`} />
-          <Row label="Output current" value={`${n(unit.slice.current, 1)} A`} />
-          <Row label="Power factor" value={`${n(unit.slice.pf, 2)} lag`} />
-          <Row label="Real power" value={`${n(unit.slice.kw, 2)} kW`} />
+          <Row label="Output voltage" value={`${n(freshValue(unit.slice.outputVoltageV, unit.state.stale), 1)} V`} />
+          <Row label="Output frequency" value={`${n(freshValue(unit.slice.outputFreqHz, unit.state.stale), 2)} Hz`} />
+          <Row label="Output current" value={`${n(freshValue(unit.slice.current, unit.state.stale), 1)} A`} />
+          <Row label="Power factor" value={`${n(freshValue(unit.slice.pf, unit.state.stale), 2)} lag`} />
+          <Row label="Real power" value={`${n(freshValue(unit.slice.kw, unit.state.stale), 2)} kW`} />
         </DetailCard>
         <DetailCard title="Battery">
-          <Row label="Battery voltage" value={`${n(unit.slice.batteryV ?? unit.battery.batteryV, 1)} V`} />
-          <Row label="Battery current" value={`${n(unit.battery.current, 1)} A`} />
-          <Row label="Backup time" value={`${n(unit.slice.backupMin, 0)} min @ ${n(unit.slice.loadPct, 0)}% load`} />
-          <Row label="Battery temp" value={`${n(unit.slice.batteryTempC ?? unit.battery.batteryTempC, 1)} C`} />
+          <Row label="Battery voltage" value={`${n(freshValue(unit.slice.batteryV ?? unit.battery.batteryV, unit.state.stale), 1)} V`} />
+          <Row label="Battery current" value={`${n(freshValue(unit.battery.current, unit.state.stale), 1)} A`} />
+          <Row label="Backup time" value={`${n(freshValue(unit.slice.backupMin, unit.state.stale), 0)} min @ ${n(freshValue(unit.slice.loadPct, unit.state.stale), 0)}% load`} />
+          <Row label="Battery temp" value={`${n(freshValue(unit.slice.batteryTempC ?? unit.battery.batteryTempC, unit.state.stale), 1)} C`} />
           <Row label="String count" value="32 cells · 12V VRLA" />
         </DetailCard>
       </div>
@@ -474,6 +474,7 @@ function UpsBlockDiagram({
   status: UpsStatus;
 }) {
   const line = stroke(status);
+  const dark = status === "offline";
   const battV = slice.batteryV ?? battery.batteryV;
   const battTemp = slice.batteryTempC ?? battery.batteryTempC;
   return (
@@ -483,19 +484,21 @@ function UpsBlockDiagram({
           <path d="M0,0 L6,3 L0,6 Z" fill={line} />
         </marker>
       </defs>
-      <Block x={14} y={80} title="AC INPUT" sub={`${n(slice.outputVoltageV, 1)} V`} status={status} />
+      {/* ADR 0027 decision 3: these SVG labels are the same readings as the
+          detail rows and were the last place showing frozen numbers. */}
+      <Block x={14} y={80} title="AC INPUT" sub={`${n(freshValue(slice.outputVoltageV, dark), 1)} V`} status={status} />
       <Flow x1={134} y1={110} x2={178} y2={110} color={line} />
       <Block x={178} y={80} title="RECTIFIER" sub="AC -> DC" status={status} />
       <Flow x1={298} y1={110} x2={342} y2={110} color={line} />
-      <Block x={342} y={80} title="DC BUS" sub={`${n(battV, 0)} V`} status={status} />
+      <Block x={342} y={80} title="DC BUS" sub={`${n(freshValue(battV, dark), 0)} V`} status={status} />
       <line x1="402" y1="138" x2="402" y2="170" stroke={line} strokeWidth={2} strokeDasharray="4 3" />
-      <Block x={342} y={170} title="BATTERY" sub={`${n(battV, 1)} V · ${n(battTemp, 1)} C`} status={status} />
+      <Block x={342} y={170} title="BATTERY" sub={`${n(freshValue(battV, dark), 1)} V · ${n(freshValue(battTemp, dark), 1)} C`} status={status} />
       <Flow x1={462} y1={110} x2={506} y2={110} color={line} />
       <Block x={506} y={80} title="INVERTER" sub="DC -> AC" status={status} />
       <Flow x1={626} y1={110} x2={670} y2={110} color={line} />
       <Block x={670} y={80} w={100} title="STATIC SW" sub="NORMAL" status={status} />
       <Flow x1={770} y1={110} x2={810} y2={110} color={line} />
-      <Block x={810} y={80} w={80} title="LOAD" sub={`${n(slice.loadPct, 0)}%`} status={status} />
+      <Block x={810} y={80} w={80} title="LOAD" sub={`${n(freshValue(slice.loadPct, dark), 0)}%`} status={status} />
       <text x="450" y="40" textAnchor="middle" className="fill-gray-400 font-mono text-[10px]">BYPASS LINE (auto)</text>
       <line x1="74" y1="60" x2="850" y2="60" stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="5 5" />
     </svg>

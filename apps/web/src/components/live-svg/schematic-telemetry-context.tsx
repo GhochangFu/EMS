@@ -244,12 +244,17 @@ export function SchematicTelemetryProvider({
     const nowMs = Date.now();
     // Cooling wins over real power where any asset reports it, as before —
     // a CRAC schematic's "total" is its cooling duty, not its input draw.
-    const cool = sumFresh(slices, (s) => s.coolingKw, nowMs);
-    const kw = sumFresh(slices, (s) => s.kw, nowMs);
-    return {
-      totalKw: cool.total !== null ? cool.total : kw.total,
-      staleAssets: cool.staleExcluded,
-    };
+    // **The basis is chosen before summing, not after.** Picking it from
+    // `cool.total !== null` meant that once every cooling asset went stale the
+    // total silently fell back to summing `kw` over the live electrical assets
+    // — the header kept its "MW" label while changing what it measured, and the
+    // stale note explained a drop that was really a substitution. Raised by the
+    // F4.38 security review.
+    const coolingBasis = slices.some((s) => s.coolingKw != null);
+    const sum = coolingBasis
+      ? sumFresh(slices, (s) => s.coolingKw, nowMs)
+      : sumFresh(slices, (s) => s.kw, nowMs);
+    return { totalKw: sum.total, staleAssets: sum.staleExcluded };
   }, [byAssetId, trackedIds, staleTick]);
 
   const value = useMemo(

@@ -431,9 +431,10 @@ export function freshValue(
 /**
  * How many of these slices have stopped reporting.
  *
- * Used for the "· N assets stale" flag beside an aggregate (ADR 0027
- * decision 4). A dropped contribution that is not counted is worse than one
- * that is silently included: the number moves and nothing explains it.
+ * Used where a *count of unreachable assets* is wanted regardless of which
+ * point is being summed. For the "· N assets stale" flag beside a specific
+ * aggregate use `sumFresh`'s `staleExcluded`, which counts only the slices that
+ * would actually have contributed to that sum.
  */
 export function staleCount(
   slices: readonly SchematicTelemetrySlice[],
@@ -480,12 +481,20 @@ export function sumFresh(
   let contributed = false;
   let staleExcluded = 0;
   for (const s of slices) {
+    const v = pick(s);
+    const usable = v !== null && !Number.isNaN(v);
     if (isStale(s.lastSeenMs, nowMs)) {
-      staleExcluded += 1;
+      // Only count a stale slice if it *would* have contributed. Counting every
+      // stale slice regardless made the bus header read "· 9 assets stale" for
+      // nine assets that never carried a kW, and a flag that is permanently on
+      // is a flag an operator learns to ignore. Raised by the F4.38 security
+      // review.
+      if (usable) {
+        staleExcluded += 1;
+      }
       continue;
     }
-    const v = pick(s);
-    if (v === null || Number.isNaN(v)) {
+    if (!usable) {
       continue;
     }
     total += v;

@@ -328,6 +328,14 @@ export function runSchematicTelemetryTests(): void {
     "a live asset that does not carry the point contributes nothing",
   );
 
+  // A stale slice that never carried the summed point must not inflate the
+  // "N assets stale" flag — a flag that is permanently on gets ignored.
+  const staleNoPoint = sumFresh([live, freshAt(NOW - 4 * 3_600_000)], (s) => s.kw, NOW);
+  assert(
+    staleNoPoint.total === 10 && staleNoPoint.staleExcluded === 0,
+    `a stale slice with no value for the point is not counted, got ${staleNoPoint.staleExcluded}`,
+  );
+
   // `F4.32` leaves the value column unconstrained, so a NaN can reach here from
   // the database. One must not poison the whole sum.
   const withNaN = sumFresh(

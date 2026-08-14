@@ -125,9 +125,13 @@ export default defineConfig({
       // `localhost` resolves to IPv6 first, `access-control.integration` fails the
       // whole run with a connection timeout rather than skipping — correctly, since
       // a set `DATABASE_URL` is a claim that a database exists. CI is unaffected.
-      // Ratcheted by `F4.38` from 38.9/33.4/39.8/39.2. Measured 2026-08-15
-      // against the live database, all 156 tests running and none skipped:
-      // 39.25 statements · 33.69 branches · 40.09 functions · 39.54 lines.
+      // Ratcheted by `F4.38` from the `F4.37` **measurement** of
+      // 38.98/33.42/39.88/39.26 (its thresholds were 38.9/33.4/39.8/39.2 —
+      // comparing this measurement against those thresholds would overstate the
+      // gain by the safety margin, which an earlier version of this note did).
+      // Measured 2026-08-15 against the live database, all 156 tests running
+      // and none skipped, after the review round:
+      // 39.28 statements · 33.73 branches · 40.09 functions · 39.57 lines.
       // (54 files / 156 tests.)
       //
       // The rise is entirely `schematic-telemetry.ts` again — `freshValue`,
