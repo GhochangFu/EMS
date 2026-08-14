@@ -46,6 +46,28 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * Whether the `bms_telemetry` NOTIFY listener is currently subscribed (`F4.34`).
+   *
+   * This is the signal that makes a dead realtime path visible. Before it, a
+   * dropped listener meant rows landing in the hypertable while every dashboard
+   * sat silent — no error, no alarm, and nothing to alert on. `/health` is
+   * deliberately left alone: it is documented as a liveness probe, and a
+   * listener drop is not a reason to have an orchestrator restart a process
+   * that is otherwise serving traffic correctly.
+   */
+  private readonly telemetryListenerConnected = new Gauge({
+    name: "bms_api_telemetry_listener_connected",
+    help: "1 when the API is subscribed to the bms_telemetry NOTIFY channel, 0 otherwise.",
+    registers: [this.registry],
+  });
+
+  private readonly telemetryListenerReconnects = new Counter({
+    name: "bms_api_telemetry_listener_reconnects_total",
+    help: "Reconnect attempts made by the bms_telemetry NOTIFY listener.",
+    registers: [this.registry],
+  });
+
   constructor() {
     this.registry.setDefaultLabels({
       service: process.env.OTEL_SERVICE_NAME ?? "bms-api",
@@ -84,5 +106,15 @@ export class MetricsService {
   /** Records alarm event emission by alarm event type. */
   countAlarmEvent(type: "created" | "acknowledged"): void {
     this.alarmEvents.labels(type).inc();
+  }
+
+  /** Records whether the telemetry NOTIFY listener is subscribed right now. */
+  setTelemetryListenerConnected(connected: boolean): void {
+    this.telemetryListenerConnected.set(connected ? 1 : 0);
+  }
+
+  /** Records one reconnect attempt by the telemetry NOTIFY listener. */
+  countTelemetryListenerReconnect(): void {
+    this.telemetryListenerReconnects.inc();
   }
 }
