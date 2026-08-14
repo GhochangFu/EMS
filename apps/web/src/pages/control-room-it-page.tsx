@@ -15,6 +15,7 @@ import {
 import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
+import { freshValue, isStale } from "../lib/schematic-telemetry";
 import type { AuthUser } from "../stores/auth-store";
 
 type ControlRoomItPageProps = {
@@ -34,6 +35,8 @@ type RackPowerStatus = "normal" | "warning" | "critical" | "offline";
 type RuleMatchState = {
   status: RackPowerStatus;
   matchedRule: RuleListItem | null;
+  /** True when the asset has stopped reporting (ADR 0027). */
+  stale: boolean;
 };
 
 function statusLabel(status: RackPowerStatus): string {
@@ -108,15 +111,26 @@ function severityStatus(severity: string | null): RackPowerStatus {
   return severity === "critical" ? "critical" : "warning";
 }
 
+/**
+ * Tile status for one rack or PDU (ADR 0027).
+ *
+ * Staleness is checked before the PDU/health test, because those fields are
+ * frozen last-known values: a rack that lost telemetry while both PDUs read
+ * healthy would otherwise render `normal` indefinitely.
+ */
 function deriveRuleStatus(
   assetCode: string,
   slice: SchematicTelemetrySlice,
   rules: RuleListItem[],
+  nowMs: number,
 ): RuleMatchState {
+  if (isStale(slice.lastSeenMs, nowMs)) {
+    return { status: "offline", matchedRule: null, stale: true };
+  }
   const offline =
     slice.pduAStatus === 0 || slice.pduBStatus === 0 || slice.healthPct === 0;
   if (offline) {
-    return { status: "offline", matchedRule: null };
+    return { status: "offline", matchedRule: null, stale: false };
   }
 
   const matchedRule = rules.find((rule) => {
@@ -135,16 +149,17 @@ function deriveRuleStatus(
   });
 
   return matchedRule
-    ? { status: severityStatus(matchedRule.severity), matchedRule }
-    : { status: "normal", matchedRule: null };
+    ? { status: severityStatus(matchedRule.severity), matchedRule, stale: false }
+    : { status: "normal", matchedRule: null, stale: false };
 }
 
+/** `offline` outranks `critical` — ADR 0027 decision 2; see the env page note. */
 function mergeStatus(states: RuleMatchState[]): RuleMatchState {
   return (
+    states.find((state) => state.status === "offline") ??
     states.find((state) => state.status === "critical") ??
     states.find((state) => state.status === "warning") ??
-    states.find((state) => state.status === "offline") ??
-    { status: "normal", matchedRule: null }
+    { status: "normal", matchedRule: null, stale: false }
   );
 }
 
@@ -254,9 +269,11 @@ function RackCard({
   const rack = useCr(code);
   const a = useCr(pduA);
   const b = useCr(pduB);
-  const aState = deriveRuleStatus(pduA, a, rules);
-  const bState = deriveRuleStatus(pduB, b, rules);
-  const rackState = mergeStatus([aState, bState, deriveRuleStatus(code, rack, rules)]);
+  const nowMs = Date.now();
+  const aState = deriveRuleStatus(pduA, a, rules, nowMs);
+  const bState = deriveRuleStatus(pduB, b, rules, nowMs);
+  const rackSelf = deriveRuleStatus(code, rack, rules, nowMs);
+  const rackState = mergeStatus([aState, bState, rackSelf]);
   const pct = rack.rackKw == null ? 0 : Math.min(100, (rack.rackKw / ratedKw) * 100);
   return (
     <section className="rounded border border-gray-200 bg-white p-4">
@@ -272,7 +289,7 @@ function RackCard({
       <div className="mt-4">
         <div className="flex justify-between text-sm">
           <span className="text-bms-muted">Load</span>
-          <span className="font-mono font-semibold text-bms-ink">{n(rack.rackKw, 2)} kW</span>
+          <span className="font-mono font-semibold text-bms-ink">{n(freshValue(rack.rackKw, rackSelf.stale), 2)} kW</span>
         </div>
         <div className="mt-2 h-2 rounded bg-gray-200">
           <div className="h-2 rounded bg-bms-green" style={{ width: `${pct}%` }} />
@@ -283,8 +300,8 @@ function RackCard({
         <PduBadge label="PDU-B" code={pduB} status={bState} util={b.pduUtilPct} />
       </div>
       <div className="mt-4 text-sm">
-        <Row label="Outlets" value={`${n(rack.outletsUsed, 0)}/24`} />
-        <Row label="Rack temperature" value={`${n(rack.rackTempC, 1)} °C`} />
+        <Row label="Outlets" value={`${n(freshValue(rack.outletsUsed, rackSelf.stale), 0)}/24`} />
+        <Row label="Rack temperature" value={`${n(freshValue(rack.rackTempC, rackSelf.stale), 1)} °C`} />
         <Row label="Rated load" value={`${ratedKw.toFixed(1)} kW`} />
         {rackState.matchedRule ? (
           <Row label="Rule" value={rackState.matchedRule.name} />
@@ -351,7 +368,7 @@ function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
   ] as const;
   const pduStates = pduNodes.map((node) => ({
     ...node,
-    state: deriveRuleStatus(node.code, node.slice, rules),
+    state: deriveRuleStatus(node.code, node.slice, rules, Date.now()),
   }));
   const netState = mergeStatus(pduStates.slice(0, 2).map((node) => node.state));
   const vwState = mergeStatus(pduStates.slice(2).map((node) => node.state));
@@ -373,8 +390,8 @@ function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
               <path d="M0,0 L6,3 L0,6 Z" fill="#039855" />
             </marker>
           </defs>
-          <MapBox x={20} y={40} w={120} h={40} title="UPS-1 · 30 kVA" sub={`${n(ups1.loadPct, 0)}% · ${n(ups1.backupMin, 0)} min`} status={deriveRuleStatus("CR-UPS-1", ups1, rules).status} />
-          <MapBox x={20} y={120} w={120} h={40} title="UPS-2 · 30 kVA" sub={`${n(ups2.loadPct, 0)}% · ${n(ups2.backupMin, 0)} min`} status={deriveRuleStatus("CR-UPS-2", ups2, rules).status} />
+          <MapBox x={20} y={40} w={120} h={40} title="UPS-1 · 30 kVA" sub={`${n(ups1.loadPct, 0)}% · ${n(ups1.backupMin, 0)} min`} status={deriveRuleStatus("CR-UPS-1", ups1, rules, Date.now()).status} />
+          <MapBox x={20} y={120} w={120} h={40} title="UPS-2 · 30 kVA" sub={`${n(ups2.loadPct, 0)}% · ${n(ups2.backupMin, 0)} min`} status={deriveRuleStatus("CR-UPS-2", ups2, rules, Date.now()).status} />
 
           {pduStates.map((node) => (
             <g key={node.code}>

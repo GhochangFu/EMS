@@ -11,9 +11,12 @@ import {
   applyReading,
   deriveStatus,
   emptySlice,
+  freshValue,
   FRESH_MS,
   isStale,
   readingTimestampMs,
+  staleCount,
+  sumFresh,
   type SchematicTelemetrySlice,
 } from "./schematic-telemetry";
 
@@ -282,5 +285,58 @@ export function runSchematicTelemetryTests(): void {
   assert(
     deriveStatus(poisoned, NOW - 10 * 60_000).status === "offline",
     "a rewound client clock does not resurrect a dead asset",
+  );
+
+  // --- ADR 0027 staleness gate (F4.38) ------------------------------------
+
+  assert(freshValue(42, false) === 42, "a fresh value passes through");
+  assert(freshValue(42, true) === null, "a stale value is withheld");
+  assert(
+    freshValue(0, false) === 0,
+    "zero is a real reading and must not be treated as absent",
+  );
+
+  const live = { ...freshAt(NOW), kw: 10 };
+  const dead = { ...freshAt(NOW - 4 * 3_600_000), kw: 999 };
+  const neverSeen = emptySlice();
+
+  assert(staleCount([live, dead, neverSeen], NOW) === 2, "two of three are stale");
+  assert(staleCount([], NOW) === 0, "an empty set has nothing stale");
+  assert(staleCount([live], NOW) === 0, "a live asset is not counted");
+
+  // The bus header case: a dead asset must stop contributing its last known
+  // load, and the exclusion must be counted so the drop can be explained.
+  const sum = sumFresh([live, dead], (s) => s.kw, NOW);
+  assert(sum.total === 10, `only the live asset contributes, got ${sum.total}`);
+  assert(sum.staleExcluded === 1, "the excluded asset is counted");
+
+  // `null` and `0` are different answers and the distinction is load-bearing:
+  // a fully dead bus must not render `0 MW`, which reads as measured.
+  const allDead = sumFresh([dead], (s) => s.kw, NOW);
+  assert(
+    allDead.total === null && allDead.staleExcluded === 1,
+    "an all-stale set totals null, not 0",
+  );
+  const genuineZero = sumFresh([{ ...freshAt(NOW), kw: 0 }], (s) => s.kw, NOW);
+  assert(
+    genuineZero.total === 0,
+    "a live asset reading zero totals 0, not null",
+  );
+  const noPoint = sumFresh([freshAt(NOW)], (s) => s.kw, NOW);
+  assert(
+    noPoint.total === null,
+    "a live asset that does not carry the point contributes nothing",
+  );
+
+  // `F4.32` leaves the value column unconstrained, so a NaN can reach here from
+  // the database. One must not poison the whole sum.
+  const withNaN = sumFresh(
+    [live, { ...freshAt(NOW), kw: Number.NaN }],
+    (s) => s.kw,
+    NOW,
+  );
+  assert(
+    withNaN.total === 10,
+    `a NaN reading is skipped rather than propagated, got ${withNaN.total}`,
   );
 }

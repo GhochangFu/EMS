@@ -15,6 +15,11 @@ import {
 import { DisabledCommandButton } from "../components/disabled-command-button";
 import { PageHeader } from "../components/page-header";
 import { AppShell } from "../layouts/app-shell";
+import {
+  freshValue,
+  isStale,
+  STALE_VALUE,
+} from "../lib/schematic-telemetry";
 import type { AuthUser } from "../stores/auth-store";
 
 type ControlRoomEnvPageProps = {
@@ -26,6 +31,8 @@ type EnvStatus = "normal" | "warning" | "critical" | "offline";
 type RuleState = {
   status: EnvStatus;
   matchedRule: RuleListItem | null;
+  /** True when the asset has stopped reporting (ADR 0027). */
+  stale: boolean;
 };
 
 const ZONES = [
@@ -52,7 +59,9 @@ const SMOKE_SENSORS = [
 ] as const;
 
 function n(value: number | null, digits = 1): string {
-  return value == null || Number.isNaN(value) ? "-" : value.toFixed(digits);
+  return value == null || Number.isNaN(value)
+    ? STALE_VALUE
+    : value.toFixed(digits);
 }
 
 function useCr(code: string) {
@@ -97,13 +106,24 @@ function severityStatus(severity: string | null): EnvStatus {
   return severity === "critical" ? "critical" : "warning";
 }
 
+/**
+ * Tile status for one asset (ADR 0027).
+ *
+ * **Staleness is a gate in front of the rules, not a state beside them.** It
+ * used to test `lastSeenMs === null` only — "has this sensor ever reported" —
+ * so a leak sensor that died reading dry stayed `normal` for ever and the
+ * threshold rules kept evaluating a `leak_state` nobody could vouch for. Now a
+ * sensor that has stopped reporting is `offline` whatever its last value said,
+ * including `critical`: the honest statement is that we no longer know.
+ */
 function deriveRuleState(
   assetCode: string,
   slice: SchematicTelemetrySlice,
   rules: RuleListItem[],
+  nowMs: number,
 ): RuleState {
-  if (slice.lastSeenMs === null) {
-    return { status: "offline", matchedRule: null };
+  if (isStale(slice.lastSeenMs, nowMs)) {
+    return { status: "offline", matchedRule: null, stale: true };
   }
   const matchedRule = rules.find((rule) => {
     if (
@@ -120,16 +140,26 @@ function deriveRuleState(
     return observed !== null && compareValue(observed, rule.operator, rule.thresholdValue);
   });
   return matchedRule
-    ? { status: severityStatus(matchedRule.severity), matchedRule }
-    : { status: "normal", matchedRule: null };
+    ? { status: severityStatus(matchedRule.severity), matchedRule, stale: false }
+    : { status: "normal", matchedRule: null, stale: false };
 }
 
+/**
+ * Page banner status.
+ *
+ * `offline` is ranked **above** `critical` by ADR 0027 decision 2: if sensors
+ * have stopped reporting, the headline fact is that the page cannot see the
+ * room. The known cost is that one dead sensor outranks a different sensor's
+ * live alarm, which is why the header carries a separate live-critical count —
+ * see `liveCritical` in the page body. Do not "fix" the masking by re-ranking
+ * here without revisiting the ADR.
+ */
 function mergeStatus(states: RuleState[]): RuleState {
   return (
+    states.find((state) => state.status === "offline") ??
     states.find((state) => state.status === "critical") ??
     states.find((state) => state.status === "warning") ??
-    states.find((state) => state.status === "offline") ??
-    { status: "normal", matchedRule: null }
+    { status: "normal", matchedRule: null, stale: false }
   );
 }
 
@@ -221,20 +251,24 @@ function ControlRoomEnvContent() {
   const zoneSlices = [opConsole, videowall, rackA, rackB, batteryRoom, upsRoom];
   const leakSlices = [leak01, leak02, leak03, leak04];
   const smokeSlices = [smoke01, smoke02, smoke03, smoke04];
+  // Read at render. The provider's `staleTick` (F4.37) is what guarantees a
+  // render happens while nothing is arriving, which is exactly when these
+  // statuses need to change.
+  const nowMs = Date.now();
   const zones = ZONES.map((zone, index) => ({
     ...zone,
     slice: zoneSlices[index],
-    state: deriveRuleState(zone.code, zoneSlices[index], rules),
+    state: deriveRuleState(zone.code, zoneSlices[index], rules, nowMs),
   }));
   const leaks = LEAK_SENSORS.map((sensor, index) => ({
     ...sensor,
     slice: leakSlices[index],
-    state: deriveRuleState(sensor.code, leakSlices[index], rules),
+    state: deriveRuleState(sensor.code, leakSlices[index], rules, nowMs),
   }));
   const smoke = SMOKE_SENSORS.map((sensor, index) => ({
     ...sensor,
     slice: smokeSlices[index],
-    state: deriveRuleState(sensor.code, smokeSlices[index], rules),
+    state: deriveRuleState(sensor.code, smokeSlices[index], rules, nowMs),
   }));
   const allStates = [
     ...zones.map((zone) => zone.state),
@@ -242,19 +276,43 @@ function ControlRoomEnvContent() {
     ...smoke.map((sensor) => sensor.state),
   ];
   const overall = mergeStatus(allStates);
-  const avgTemp =
-    zones.reduce((sum, zone) => sum + (zone.slice.temperatureC ?? 0), 0) / zones.length;
-  const avgHumidity =
-    zones.reduce((sum, zone) => sum + (zone.slice.humidityPct ?? 0), 0) / zones.length;
+  // Averages over the zones still reporting only (ADR 0027 decision 4). A dead
+  // zone used to keep dragging its last temperature into the KPI, and worse,
+  // `?? 0` counted a missing reading as 0 C.
+  const liveZones = zones.filter((zone) => !zone.state.stale);
+  const avgOf = (pick: (z: (typeof liveZones)[number]) => number | null) => {
+    const vals = liveZones
+      .map(pick)
+      .filter((v): v is number => v != null && !Number.isNaN(v));
+    return vals.length === 0
+      ? null
+      : vals.reduce((a, b) => a + b, 0) / vals.length;
+  };
+  const avgTemp = avgOf((zone) => zone.slice.temperatureC);
+  const avgHumidity = avgOf((zone) => zone.slice.humidityPct);
+  const staleZones = zones.length - liveZones.length;
   const wetCount = leaks.filter((sensor) => sensor.state.status === "critical").length;
   const smokeAlerts = smoke.filter((sensor) => sensor.state.status === "critical").length;
+  const staleSensors =
+    leaks.filter((s) => s.state.stale).length +
+    smoke.filter((s) => s.state.stale).length;
+  // ADR 0027's mitigation for decision 2: `offline` outranks `critical` in the
+  // banner, so a live alarm could otherwise be hidden behind an unrelated dead
+  // sensor. This count is never outranked by anything.
+  const liveCritical = [...zones, ...leaks, ...smoke].filter(
+    (item) => item.state.status === "critical",
+  ).length;
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
       <PageHeader
         eyebrow="R.crEnv"
         title="Environment Monitoring"
-        subtitle="Temperature · humidity · water leak · smoke · zone-level sensors · rule-driven status"
+        subtitle={
+          liveCritical > 0
+            ? `${liveCritical} ACTIVE CRITICAL · temperature · humidity · water leak · smoke · rule-driven status`
+            : "Temperature · humidity · water leak · smoke · zone-level sensors · rule-driven status"
+        }
         actions={
           <>
             <DisabledCommandButton>Test Sensors · disabled</DisabledCommandButton>
@@ -264,10 +322,35 @@ function ControlRoomEnvContent() {
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <KpiTile label="Avg Room T" status="ready" value={n(avgTemp, 1)} unit="C" tone={statusTone(overall.status)} />
-        <KpiTile label="Avg Humidity" status="ready" value={n(avgHumidity, 0)} unit="%" />
-        <KpiTile label="Leak Sensors" status="ready" value={String(leaks.length)} hint={`${wetCount} wet`} tone={wetCount > 0 ? "critical" : "default"} />
-        <KpiTile label="Smoke Sensors" status="ready" value={String(smoke.length)} hint={`${smokeAlerts} alerts`} tone={smokeAlerts > 0 ? "critical" : "default"} />
+        <KpiTile
+          label="Avg Room T"
+          status="ready"
+          value={n(avgTemp, 1)}
+          unit="C"
+          hint={staleZones > 0 ? `${staleZones} zone(s) stale` : undefined}
+          tone={statusTone(overall.status)}
+        />
+        <KpiTile
+          label="Avg Humidity"
+          status="ready"
+          value={n(avgHumidity, 0)}
+          unit="%"
+          hint={staleZones > 0 ? `${staleZones} zone(s) stale` : undefined}
+        />
+        <KpiTile
+          label="Leak Sensors"
+          status="ready"
+          value={String(leaks.length)}
+          hint={`${wetCount} wet${staleSensors > 0 ? ` · ${staleSensors} stale` : ""}`}
+          tone={wetCount > 0 ? "critical" : "default"}
+        />
+        <KpiTile
+          label="Smoke Sensors"
+          status="ready"
+          value={String(smoke.length)}
+          hint={`${smokeAlerts} alerts${staleSensors > 0 ? ` · ${staleSensors} stale` : ""}`}
+          tone={smokeAlerts > 0 ? "critical" : "default"}
+        />
         <KpiTile label="Zones Monitored" status="ready" value={String(zones.length)} hint="editable thresholds in Rule Engine" />
       </div>
 
@@ -288,8 +371,16 @@ function ControlRoomEnvContent() {
                 </span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-3">
-                <Metric label="Temperature" value={n(zone.slice.temperatureC, 1)} unit="C" />
-                <Metric label="Humidity" value={n(zone.slice.humidityPct, 0)} unit="%" />
+                <Metric
+                  label="Temperature"
+                  value={n(freshValue(zone.slice.temperatureC, zone.state.stale), 1)}
+                  unit="C"
+                />
+                <Metric
+                  label="Humidity"
+                  value={n(freshValue(zone.slice.humidityPct, zone.state.stale), 0)}
+                  unit="%"
+                />
               </div>
               <p className="mt-2 text-xs text-bms-muted">Range {zone.range}</p>
               {zone.state.matchedRule ? (
@@ -316,7 +407,11 @@ function ControlRoomEnvContent() {
           rows={leaks.map((sensor) => ({
             id: sensor.id,
             location: sensor.location,
-            state: sensor.state.status === "critical" ? "WET" : "DRY",
+            state: sensor.state.stale
+              ? STALE_VALUE
+              : sensor.state.status === "critical"
+                ? "WET"
+                : "DRY",
             status: sensor.state.status,
           }))}
         />
@@ -325,7 +420,11 @@ function ControlRoomEnvContent() {
           rows={smoke.map((sensor) => ({
             id: sensor.id,
             location: sensor.location,
-            state: sensor.state.status === "critical" ? "ALARM" : "NORMAL",
+            state: sensor.state.stale
+              ? STALE_VALUE
+              : sensor.state.status === "critical"
+                ? "ALARM"
+                : "NORMAL",
             status: sensor.state.status,
           }))}
         />

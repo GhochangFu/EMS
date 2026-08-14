@@ -308,6 +308,14 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
   const ctx = useSchematicTelemetryContext();
   const totalKw = ctx?.totalKw ?? null;
   const busMw = totalKw != null ? (totalKw / 1000).toFixed(2) : "—";
+  // ADR 0027 decision 4: the total now excludes assets that have stopped
+  // reporting, so it must say how many it left out. A headline megawatt figure
+  // that quietly shrank when a feed died is the failure F4.38 exists to close.
+  const staleAssets = ctx?.staleAssets ?? 0;
+  const staleNote =
+    staleAssets > 0
+      ? ` · ${staleAssets} asset${staleAssets === 1 ? "" : "s"} stale`
+      : "";
 
   const ups = useSchematicTelemetryByCode(SLD_UPS_ASSET_CODE);
   const upsStroke = strokeFor(ups.status);
@@ -357,7 +365,7 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
         textAnchor="middle"
         className="fill-[#007C3C] font-condensed text-[13px] font-bold"
       >
-        MAIN LV BUS · 415 V · {busMw} MW
+        MAIN LV BUS · 415 V · {busMw} MW{staleNote}
       </text>
 
       <g>
@@ -476,7 +484,7 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
       <g transform="translate(20 430)">
         <rect width={860} height={40} fill="#F7F8FA" stroke="#D8DCE3" rx={4} />
         <text x={20} y={18} className="font-mono text-[10px]" fill={LABEL_MUTED}>
-          Total feeders from live telemetry · Main bus {busMw} MW · PUE indicative 1.42 · N+1
+          Total feeders from live telemetry · Main bus {busMw} MW{staleNote} · PUE indicative 1.42 · N+1
         </text>
         <text x={20} y={32} className="font-mono text-[9px]" fill="#7A8494">
           Animated dashes show power flow; grey indicates stale or offline points (stop sim to

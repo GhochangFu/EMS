@@ -682,4 +682,114 @@ describe("repo invariants", () => {
     // in its own `useMemo` keyed on the slice would freeze the status again with
     // every assertion here still green. No consumer does that today.
   });
+
+  it("every control-room page derives status through the shared staleness gate", () => {
+    // ADR 0027 (`F4.38`). Each of these pages derives its own tile status, and
+    // before `F4.38` **none** of them consulted `lastSeenMs` as a clock — a dead
+    // leak or smoke sensor rendered `normal` indefinitely.
+    //
+    // **No behavioural test in this repo can hold this**, for the same reason as
+    // the tick invariant above: the pages are React components and
+    // `apps/web/vitest.config.ts` is `environment: "node"` by choice. The gate
+    // itself (`isStale`, `freshValue`, `sumFresh`) is unit-tested in
+    // `schematic-telemetry.spec.ts`; what cannot be tested is that the pages
+    // still *call* it. Deleting the call from any one page restores the original
+    // defect on that page alone, silently, and every suite stays green.
+    //
+    // Two things are asserted per page, matching ADR 0027 decisions 6 and 7:
+    // the page consults the shared gate, and it does not invent its own
+    // freshness window or its own timer. A page-local `FRESH_MS` would drift
+    // from the schematic's; a page-local `setInterval` would duplicate the
+    // provider's `staleTick` and re-render the tree twice as often.
+    const pages = [
+      "overview",
+      "sld",
+      "ups",
+      "battery",
+      "it",
+      "hvac",
+      "env",
+    ].map((name) => `apps/web/src/pages/control-room-${name}-page.tsx`);
+
+    const offenders: string[] = [];
+    for (const rel of pages) {
+      const src = readFileSync(join(repoRoot, rel), "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^[ \t]*\/\/.*$/gm, "");
+      if (!/\bisStale\s*\(/.test(src)) {
+        offenders.push(`${rel} never calls isStale`);
+      }
+      if (!/from "\.\.\/lib\/schematic-telemetry"/.test(src)) {
+        offenders.push(`${rel} does not import the shared gate`);
+      }
+      if (/\bFRESH_MS\s*=/.test(src)) {
+        offenders.push(`${rel} defines its own freshness window`);
+      }
+      if (/\bsetInterval\s*\(/.test(src)) {
+        offenders.push(`${rel} starts its own timer instead of using staleTick`);
+      }
+      // Decision 3 — a stale tile must not render its last numbers. Every page
+      // has at least one numeric readout, so every page must gate at least one.
+      if (!/\bfreshValue\s*\(/.test(src)) {
+        offenders.push(`${rel} renders values without gating them on staleness`);
+      }
+      // Decision 2 — `offline` outranks `critical` in the page banner. Checked
+      // by position because the ranking *is* the order of these lookups, and a
+      // reordering is a one-line change that no assertion here would otherwise
+      // see. `-sld-` has no mergeStatus and is skipped.
+      const merge = src.slice(src.indexOf("function mergeStatus"));
+      if (merge.startsWith("function mergeStatus")) {
+        const off = merge.indexOf('"offline"');
+        const crit = merge.indexOf('"critical"');
+        if (off < 0 || crit < 0 || off > crit) {
+          offenders.push(
+            `${rel} ranks critical at or above offline in mergeStatus (ADR 0027 decision 2)`,
+          );
+        }
+      }
+    }
+    // The aggregate half of decision 4 lives in the context, not the pages.
+    // Mutation-tested: passing a constant instead of the clock to `sumFresh`
+    // silently re-includes every dead asset in the bus total and no suite
+    // notices, so the clock source is pinned here.
+    const ctx = readFileSync(
+      join(repoRoot, "apps/web/src/components/live-svg/schematic-telemetry-context.tsx"),
+      "utf8",
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+    // **Every** call, not any call. Two earlier versions of this check were
+    // wrong and both were caught by mutating rather than by reading: `[^)]*`
+    // stops at the arrow function's own parenthesis and failed on clean code,
+    // and a single `.test()` passed because the *other* `sumFresh` call still
+    // carried the clock while the mutated one did not.
+    if (!/const nowMs = Date\.now\(\);/.test(ctx)) {
+      offenders.push(
+        "schematic-telemetry-context.tsx must read Date.now() when summing totalKw",
+      );
+    }
+    for (let i = ctx.indexOf("sumFresh("); i >= 0; i = ctx.indexOf("sumFresh(", i + 1)) {
+      const call = ctx.slice(i, ctx.indexOf(");", i) + 2);
+      if (!/,\s*nowMs\s*\)/.test(call)) {
+        offenders.push(
+          `schematic-telemetry-context.tsx calls sumFresh without the clock: ${call.trim()} — ` +
+            "a constant there re-includes dead assets in the bus total",
+        );
+      }
+    }
+
+    // **Known limit, stated rather than implied.** These checks prove each page
+    // consults the gate; they do not prove *every* rendered value is gated.
+    // Mutation-tested: dropping `freshValue` from a single render site survives,
+    // because the page still calls it elsewhere. Closing that needs a component
+    // test harness this repo does not have (jsdom is a dependency ADR).
+    expect(
+      offenders,
+      `ADR 0027 violated: ${offenders.join("; ")}. Every control-room page must decide staleness ` +
+        "through `isStale` from `lib/schematic-telemetry`, and must take its re-render from the " +
+        "provider's staleTick rather than its own interval. A page that stops consulting the gate " +
+        "renders a dead sensor's last value as a live reading — for leak and smoke sensors that is " +
+        "a safety-relevant claim the page cannot support.",
+    ).toEqual([]);
+  });
 });

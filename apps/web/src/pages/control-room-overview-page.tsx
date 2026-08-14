@@ -17,6 +17,7 @@ import {
 import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
+import { freshValue, isStale } from "../lib/schematic-telemetry";
 import { canAccessControlRoomArea } from "../lib/control-room-access";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 
@@ -32,11 +33,20 @@ function useCr(code: string) {
   return useSchematicTelemetryByCode(code).slice;
 }
 
-type CrStatus = "normal" | "warning" | "critical" | "open";
+/**
+ * `offline` is distinct from `open` on purpose (ADR 0027 decision 5): `open`
+ * means the breaker is open — knowledge about the plant — while `offline` means
+ * we can no longer see the asset at all. Overloading one for the other would
+ * make a disconnected breaker and a dead feed indistinguishable on the page
+ * where breaker state matters most.
+ */
+type CrStatus = "normal" | "warning" | "critical" | "open" | "offline";
 
 type RuleState = {
   status: CrStatus;
   matchedRule: RuleListItem | null;
+  /** True when the asset has stopped reporting (ADR 0027). */
+  stale: boolean;
 };
 
 function compareValue(
@@ -109,13 +119,25 @@ function severityStatus(severity: string | null): CrStatus {
   return severity === "critical" ? "critical" : "warning";
 }
 
+/**
+ * Tile status for one asset (ADR 0027).
+ *
+ * Staleness precedes the breaker test, and the two answers are different:
+ * `open` asserts the breaker is open, which is only knowable from a current
+ * reading. Once telemetry stops, `slice.breaker` is a frozen value and the page
+ * must say `NO DATA` rather than keep asserting a breaker position.
+ */
 function deriveRuleState(
   assetCode: string,
   slice: SchematicTelemetrySlice,
   rules: RuleListItem[],
+  nowMs: number,
 ): RuleState {
+  if (isStale(slice.lastSeenMs, nowMs)) {
+    return { status: "offline", matchedRule: null, stale: true };
+  }
   if (slice.breaker === 0) {
-    return { status: "open", matchedRule: null };
+    return { status: "open", matchedRule: null, stale: false };
   }
   const matchedRule = rules.find((rule) => {
     if (
@@ -132,16 +154,17 @@ function deriveRuleState(
     return observed !== null && compareValue(observed, rule.operator, rule.thresholdValue);
   });
   return matchedRule
-    ? { status: severityStatus(matchedRule.severity), matchedRule }
-    : { status: "normal", matchedRule: null };
+    ? { status: severityStatus(matchedRule.severity), matchedRule, stale: false }
+    : { status: "normal", matchedRule: null, stale: false };
 }
 
 function mergeStatus(states: RuleState[]): RuleState {
   return (
+    states.find((state) => state.status === "offline") ??
     states.find((state) => state.status === "critical") ??
     states.find((state) => state.status === "warning") ??
     states.find((state) => state.status === "open") ??
-    { status: "normal", matchedRule: null }
+    { status: "normal", matchedRule: null, stale: false }
   );
 }
 
@@ -163,6 +186,11 @@ function statusPillClass(status: CrStatus): string {
       return "border-amber-200 bg-amber-100 text-amber-900";
     case "open":
       return "border-gray-200 bg-gray-100 text-gray-700";
+    // Deliberately not the same muted grey as `open`: an open breaker is a
+    // known plant state, a stale tile is an absence of knowledge, and an
+    // operator must be able to tell them apart at a glance (ADR 0027).
+    case "offline":
+      return "border-slate-300 bg-slate-200 text-slate-700";
     case "normal":
       return "border-bms-green/20 bg-bms-green/10 text-bms-green";
   }
@@ -176,6 +204,8 @@ function statusLabel(status: CrStatus): string {
       return "WARN";
     case "open":
       return "OPEN";
+    case "offline":
+      return "NO DATA";
     case "normal":
       return "OK";
   }
@@ -248,41 +278,41 @@ function ControlRoomOverviewContent() {
   };
   const breakerStates = CR_BREAKERS.map((row) => ({
     code: row.code,
-    state: deriveRuleState(row.code, breakerSlices[row.code], rules),
+    state: deriveRuleState(row.code, breakerSlices[row.code], rules, Date.now()),
   }));
   const pduStates = [
-    { code: "CR-NET-RACK-PDU-A", state: deriveRuleState("CR-NET-RACK-PDU-A", netPduA, rules) },
-    { code: "CR-NET-RACK-PDU-B", state: deriveRuleState("CR-NET-RACK-PDU-B", netPduB, rules) },
-    { code: "CR-VW-RACK-PDU-A", state: deriveRuleState("CR-VW-RACK-PDU-A", vwPduA, rules) },
-    { code: "CR-VW-RACK-PDU-B", state: deriveRuleState("CR-VW-RACK-PDU-B", vwPduB, rules) },
+    { code: "CR-NET-RACK-PDU-A", state: deriveRuleState("CR-NET-RACK-PDU-A", netPduA, rules, Date.now()) },
+    { code: "CR-NET-RACK-PDU-B", state: deriveRuleState("CR-NET-RACK-PDU-B", netPduB, rules, Date.now()) },
+    { code: "CR-VW-RACK-PDU-A", state: deriveRuleState("CR-VW-RACK-PDU-A", vwPduA, rules, Date.now()) },
+    { code: "CR-VW-RACK-PDU-B", state: deriveRuleState("CR-VW-RACK-PDU-B", vwPduB, rules, Date.now()) },
   ];
   const upsStates = [
-    { code: "CR-UPS-1", state: deriveRuleState("CR-UPS-1", ups1, rules) },
-    { code: "CR-UPS-2", state: deriveRuleState("CR-UPS-2", ups2, rules) },
+    { code: "CR-UPS-1", state: deriveRuleState("CR-UPS-1", ups1, rules, Date.now()) },
+    { code: "CR-UPS-2", state: deriveRuleState("CR-UPS-2", ups2, rules, Date.now()) },
   ];
   const batteryStates = [
-    { code: "CR-BATT-1", state: deriveRuleState("CR-BATT-1", batt1, rules) },
-    { code: "CR-BATT-2", state: deriveRuleState("CR-BATT-2", batt2, rules) },
+    { code: "CR-BATT-1", state: deriveRuleState("CR-BATT-1", batt1, rules, Date.now()) },
+    { code: "CR-BATT-2", state: deriveRuleState("CR-BATT-2", batt2, rules, Date.now()) },
   ];
   const hvacStates = [
-    { code: "CR-HVAC-1", state: deriveRuleState("CR-HVAC-1", hvac1, rules) },
-    { code: "CR-HVAC-2", state: deriveRuleState("CR-HVAC-2", hvac2, rules) },
+    { code: "CR-HVAC-1", state: deriveRuleState("CR-HVAC-1", hvac1, rules, Date.now()) },
+    { code: "CR-HVAC-2", state: deriveRuleState("CR-HVAC-2", hvac2, rules, Date.now()) },
   ];
   const environmentStates = [
-    { code: "CR-ENV-OP-CONSOLE", state: deriveRuleState("CR-ENV-OP-CONSOLE", envConsole, rules) },
-    { code: "CR-ENV-VIDEOWALL", state: deriveRuleState("CR-ENV-VIDEOWALL", envVideowall, rules) },
-    { code: "CR-ENV-RACK-A", state: deriveRuleState("CR-ENV-RACK-A", envRackA, rules) },
-    { code: "CR-ENV-RACK-B", state: deriveRuleState("CR-ENV-RACK-B", envRackB, rules) },
-    { code: "CR-ENV-BATTERY-ROOM", state: deriveRuleState("CR-ENV-BATTERY-ROOM", envBattery, rules) },
-    { code: "CR-ENV-UPS-ROOM", state: deriveRuleState("CR-ENV-UPS-ROOM", envUps, rules) },
-    { code: "CR-LEAK-01", state: deriveRuleState("CR-LEAK-01", leak1, rules) },
-    { code: "CR-LEAK-02", state: deriveRuleState("CR-LEAK-02", leak2, rules) },
-    { code: "CR-LEAK-03", state: deriveRuleState("CR-LEAK-03", leak3, rules) },
-    { code: "CR-LEAK-04", state: deriveRuleState("CR-LEAK-04", leak4, rules) },
-    { code: "CR-SMOKE-01", state: deriveRuleState("CR-SMOKE-01", smoke1, rules) },
-    { code: "CR-SMOKE-02", state: deriveRuleState("CR-SMOKE-02", smoke2, rules) },
-    { code: "CR-SMOKE-03", state: deriveRuleState("CR-SMOKE-03", smoke3, rules) },
-    { code: "CR-SMOKE-04", state: deriveRuleState("CR-SMOKE-04", smoke4, rules) },
+    { code: "CR-ENV-OP-CONSOLE", state: deriveRuleState("CR-ENV-OP-CONSOLE", envConsole, rules, Date.now()) },
+    { code: "CR-ENV-VIDEOWALL", state: deriveRuleState("CR-ENV-VIDEOWALL", envVideowall, rules, Date.now()) },
+    { code: "CR-ENV-RACK-A", state: deriveRuleState("CR-ENV-RACK-A", envRackA, rules, Date.now()) },
+    { code: "CR-ENV-RACK-B", state: deriveRuleState("CR-ENV-RACK-B", envRackB, rules, Date.now()) },
+    { code: "CR-ENV-BATTERY-ROOM", state: deriveRuleState("CR-ENV-BATTERY-ROOM", envBattery, rules, Date.now()) },
+    { code: "CR-ENV-UPS-ROOM", state: deriveRuleState("CR-ENV-UPS-ROOM", envUps, rules, Date.now()) },
+    { code: "CR-LEAK-01", state: deriveRuleState("CR-LEAK-01", leak1, rules, Date.now()) },
+    { code: "CR-LEAK-02", state: deriveRuleState("CR-LEAK-02", leak2, rules, Date.now()) },
+    { code: "CR-LEAK-03", state: deriveRuleState("CR-LEAK-03", leak3, rules, Date.now()) },
+    { code: "CR-LEAK-04", state: deriveRuleState("CR-LEAK-04", leak4, rules, Date.now()) },
+    { code: "CR-SMOKE-01", state: deriveRuleState("CR-SMOKE-01", smoke1, rules, Date.now()) },
+    { code: "CR-SMOKE-02", state: deriveRuleState("CR-SMOKE-02", smoke2, rules, Date.now()) },
+    { code: "CR-SMOKE-03", state: deriveRuleState("CR-SMOKE-03", smoke3, rules, Date.now()) },
+    { code: "CR-SMOKE-04", state: deriveRuleState("CR-SMOKE-04", smoke4, rules, Date.now()) },
   ];
   const activeRuleStates = [
     ...(canElectrical ? breakerStates : []),
@@ -437,13 +467,13 @@ function MiniSld({ rules }: { rules: RuleListItem[] }) {
   const hvac1 = useCr("CR-HVAC-1");
   const netRack = useCr("CR-NET-RACK");
   const vwRack = useCr("CR-VW-SRV-RACK");
-  const q1State = deriveRuleState("CR-Q1", q1, rules);
-  const q4State = deriveRuleState("CR-Q4", q4, rules);
-  const q5State = deriveRuleState("CR-Q5", q5, rules);
-  const q6State = deriveRuleState("CR-Q6", q6, rules);
-  const q8State = deriveRuleState("CR-Q8", q8, rules);
-  const q9State = deriveRuleState("CR-Q9", q9, rules);
-  const q10State = deriveRuleState("CR-Q10", q10, rules);
+  const q1State = deriveRuleState("CR-Q1", q1, rules, Date.now());
+  const q4State = deriveRuleState("CR-Q4", q4, rules, Date.now());
+  const q5State = deriveRuleState("CR-Q5", q5, rules, Date.now());
+  const q6State = deriveRuleState("CR-Q6", q6, rules, Date.now());
+  const q8State = deriveRuleState("CR-Q8", q8, rules, Date.now());
+  const q9State = deriveRuleState("CR-Q9", q9, rules, Date.now());
+  const q10State = deriveRuleState("CR-Q10", q10, rules, Date.now());
   const netState = mergeStatus([q6State]);
   const vwState = mergeStatus([q8State, q9State]);
   return (
@@ -669,12 +699,12 @@ function ItRackLoadSummary({
   const vwA = useCr("CR-VW-RACK-PDU-A");
   const vwB = useCr("CR-VW-RACK-PDU-B");
   const netState = mergeStatus([
-    deriveRuleState("CR-NET-RACK-PDU-A", netA, rules),
-    deriveRuleState("CR-NET-RACK-PDU-B", netB, rules),
+    deriveRuleState("CR-NET-RACK-PDU-A", netA, rules, Date.now()),
+    deriveRuleState("CR-NET-RACK-PDU-B", netB, rules, Date.now()),
   ]);
   const vwState = mergeStatus([
-    deriveRuleState("CR-VW-RACK-PDU-A", vwA, rules),
-    deriveRuleState("CR-VW-RACK-PDU-B", vwB, rules),
+    deriveRuleState("CR-VW-RACK-PDU-A", vwA, rules, Date.now()),
+    deriveRuleState("CR-VW-RACK-PDU-B", vwB, rules, Date.now()),
   ]);
   return (
     <section className="rounded border border-gray-200 bg-white p-4">
@@ -745,7 +775,11 @@ function EnergySnapshot({
   main: SchematicTelemetrySlice;
   totalLoad: number;
 }) {
-  const kva = main.pf ? totalLoad / main.pf : null;
+  // ADR 0027 decision 3: once the main incomer stops reporting, its last pf /
+  // kWh / frequency are no longer readings and must not render as though they
+  // were. `totalLoad` is already gated upstream by `ctx.totalKw`.
+  const mainStale = isStale(main.lastSeenMs, Date.now());
+  const kva = main.pf && !mainStale ? totalLoad / main.pf : null;
   return (
     <section className="rounded border border-gray-200 bg-white p-4">
       <h2 className="font-condensed text-lg font-bold text-bms-ink">
@@ -754,9 +788,9 @@ function EnergySnapshot({
       <div className="mt-3 space-y-2 text-sm">
         <Row label="Real Power" value={enabled ? `${n(totalLoad, 2)} kW` : "—"} />
         <Row label="Apparent" value={enabled ? `${n(kva, 2)} kVA` : "—"} />
-        <Row label="Power Factor" value={enabled ? `${n(main.pf, 2)} lag` : "—"} />
-        <Row label="kWh Today" value={enabled ? `${n(main.kwhToday, 1)} kWh` : "—"} />
-        <Row label="Frequency" value={enabled ? `${n(main.frequencyHz, 2)} Hz` : "—"} />
+        <Row label="Power Factor" value={enabled ? `${n(freshValue(main.pf, mainStale), 2)} lag` : "—"} />
+        <Row label="kWh Today" value={enabled ? `${n(freshValue(main.kwhToday, mainStale), 1)} kWh` : "—"} />
+        <Row label="Frequency" value={enabled ? `${n(freshValue(main.frequencyHz, mainStale), 2)} Hz` : "—"} />
       </div>
       <div className={`mt-3 h-10 rounded ${enabled ? "bg-gradient-to-r from-bms-green/20 via-bms-green to-amber-400" : "bg-gray-100"}`} />
       <p className="mt-1 text-center font-mono text-[10px] text-bms-muted">

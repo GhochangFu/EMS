@@ -16,6 +16,11 @@ import {
 import { DisabledCommandButton } from "../components/disabled-command-button";
 import { PageHeader } from "../components/page-header";
 import { AppShell } from "../layouts/app-shell";
+import {
+  freshValue,
+  isStale,
+  STALE_VALUE,
+} from "../lib/schematic-telemetry";
 import type { AuthUser } from "../stores/auth-store";
 
 type ControlRoomHvacPageProps = {
@@ -27,6 +32,8 @@ type HvacStatus = "normal" | "warning" | "critical" | "offline";
 type RuleState = {
   status: HvacStatus;
   matchedRule: RuleListItem | null;
+  /** True when the unit has stopped reporting (ADR 0027). */
+  stale: boolean;
 };
 
 const HVAC_UNITS = [
@@ -35,7 +42,9 @@ const HVAC_UNITS = [
 ] as const;
 
 function n(value: number | null, digits = 1): string {
-  return value == null || Number.isNaN(value) ? "-" : value.toFixed(digits);
+  return value == null || Number.isNaN(value)
+    ? STALE_VALUE
+    : value.toFixed(digits);
 }
 
 function useCr(code: string) {
@@ -90,13 +99,22 @@ function severityStatus(severity: string | null): HvacStatus {
   return severity === "critical" ? "critical" : "warning";
 }
 
+/**
+ * Tile status for one CRAC unit (ADR 0027).
+ *
+ * Staleness gates the rules rather than sitting beside them: a unit that has
+ * stopped reporting is `offline` whatever its last reading said. It previously
+ * tested `lastSeenMs === null` only, so a dead unit kept rendering its final
+ * temperatures as a live cooling state.
+ */
 function deriveRuleState(
   assetCode: string,
   slice: SchematicTelemetrySlice,
   rules: RuleListItem[],
+  nowMs: number,
 ): RuleState {
-  if (slice.lastSeenMs === null) {
-    return { status: "offline", matchedRule: null };
+  if (isStale(slice.lastSeenMs, nowMs)) {
+    return { status: "offline", matchedRule: null, stale: true };
   }
   const matchedRule = rules.find((rule) => {
     if (
@@ -113,16 +131,17 @@ function deriveRuleState(
     return observed !== null && compareValue(observed, rule.operator, rule.thresholdValue);
   });
   return matchedRule
-    ? { status: severityStatus(matchedRule.severity), matchedRule }
-    : { status: "normal", matchedRule: null };
+    ? { status: severityStatus(matchedRule.severity), matchedRule, stale: false }
+    : { status: "normal", matchedRule: null, stale: false };
 }
 
+/** `offline` outranks `critical` — ADR 0027 decision 2; see the env page note. */
 function mergeStatus(states: RuleState[]): RuleState {
   return (
+    states.find((state) => state.status === "offline") ??
     states.find((state) => state.status === "critical") ??
     states.find((state) => state.status === "warning") ??
-    states.find((state) => state.status === "offline") ??
-    { status: "normal", matchedRule: null }
+    { status: "normal", matchedRule: null, stale: false }
   );
 }
 
@@ -184,22 +203,40 @@ function ControlRoomHvacContent() {
   const rules = rulesQuery.data?.items ?? [];
   const hvac1 = useCr("CR-HVAC-1");
   const hvac2 = useCr("CR-HVAC-2");
+  const nowMs = Date.now();
   const units = [
-    { ...HVAC_UNITS[0], slice: hvac1, state: deriveRuleState("CR-HVAC-1", hvac1, rules) },
-    { ...HVAC_UNITS[1], slice: hvac2, state: deriveRuleState("CR-HVAC-2", hvac2, rules) },
+    { ...HVAC_UNITS[0], slice: hvac1, state: deriveRuleState("CR-HVAC-1", hvac1, rules, nowMs) },
+    { ...HVAC_UNITS[1], slice: hvac2, state: deriveRuleState("CR-HVAC-2", hvac2, rules, nowMs) },
   ];
   const overall = mergeStatus(units.map((unit) => unit.state));
+  // Aggregates count only the units still reporting (ADR 0027 decision 4). The
+  // `?? 0` forms below used to fold a dead unit in as 0 kW / 0 C, which reads
+  // as measured rather than missing.
+  const liveUnits = units.filter((unit) => !unit.state.stale);
+  const staleUnits = units.length - liveUnits.length;
+  const returns = liveUnits
+    .map((unit) => unit.slice.returnAirTempC)
+    .filter((v): v is number => v != null && !Number.isNaN(v));
   const avgReturn =
-    units.reduce((sum, unit) => sum + (unit.slice.returnAirTempC ?? 0), 0) / units.length;
-  const totalCooling = units.reduce((sum, unit) => sum + (unit.slice.coolingKw ?? 0), 0);
-  const activeUnits = units.filter((unit) => (unit.slice.fanSpeedPct ?? 0) > 20).length;
+    returns.length === 0 ? null : returns.reduce((a, b) => a + b, 0) / returns.length;
+  const coolings = liveUnits
+    .map((unit) => unit.slice.coolingKw)
+    .filter((v): v is number => v != null && !Number.isNaN(v));
+  const totalCooling =
+    coolings.length === 0 ? null : coolings.reduce((a, b) => a + b, 0);
+  const activeUnits = liveUnits.filter((unit) => (unit.slice.fanSpeedPct ?? 0) > 20).length;
+  const liveCritical = units.filter((u) => u.state.status === "critical").length;
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
       <PageHeader
         eyebrow="R.crHvac"
         title="HVAC System · 2 x 4 TR Precision AC"
-        subtitle="Lead/Lag operation · auto changeover · airflow indication · rule-driven status"
+        subtitle={
+          liveCritical > 0
+            ? `${liveCritical} ACTIVE CRITICAL · lead/lag operation · auto changeover · rule-driven status`
+            : "Lead/Lag operation · auto changeover · airflow indication · rule-driven status"
+        }
         actions={
           <>
             <DisabledCommandButton>Force Changeover · disabled</DisabledCommandButton>
@@ -211,8 +248,20 @@ function ControlRoomHvacContent() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <KpiTile label="Overall Status" status="ready" value={statusLabel(overall.status)} tone={statusTone(overall.status)} />
         <KpiTile label="Active Units" status="ready" value={String(activeUnits)} unit="/ 2" />
-        <KpiTile label="Avg Return Air" status="ready" value={n(avgReturn, 1)} unit="C" />
-        <KpiTile label="Cooling Output" status="ready" value={n(totalCooling, 1)} unit="kW" />
+        <KpiTile
+          label="Avg Return Air"
+          status="ready"
+          value={n(avgReturn, 1)}
+          unit="C"
+          hint={staleUnits > 0 ? `${staleUnits} unit(s) stale` : undefined}
+        />
+        <KpiTile
+          label="Cooling Output"
+          status="ready"
+          value={n(totalCooling, 1)}
+          unit="kW"
+          hint={staleUnits > 0 ? `${staleUnits} unit(s) stale` : undefined}
+        />
         <KpiTile label="Rule Alerts" status="ready" value={String(units.filter((unit) => unit.state.matchedRule).length)} hint="editable in Rule Engine" tone={statusTone(overall.status)} />
       </div>
 
@@ -282,15 +331,15 @@ function HvacUnitCard({
         <HvacDiagram slice={unit.slice} status={unit.state.status} label={unit.label} running={running} />
         <div className="grid grid-cols-3 gap-3 text-center">
           <Metric label="Setpoint" value="22.0" unit="C" />
-          <Metric label="Return Air" value={n(unit.slice.returnAirTempC, 1)} unit="C" tone={statusTone(unit.state.status)} />
-          <Metric label="Supply Air" value={n(unit.slice.supplyAirTempC, 1)} unit="C" />
+          <Metric label="Return Air" value={n(freshValue(unit.slice.returnAirTempC, unit.state.stale), 1)} unit="C" tone={statusTone(unit.state.status)} />
+          <Metric label="Supply Air" value={n(freshValue(unit.slice.supplyAirTempC, unit.state.stale), 1)} unit="C" />
         </div>
         <div className="border-t border-gray-200 pt-3">
-          <Row label="Compressor" value={`${unit.slice.compressorOk === 0 ? "FAULT" : running ? "ON" : "READY"}`} />
-          <Row label="Fan" value={`${n(unit.slice.fanSpeedPct, 0)}% · ${n(unit.slice.fanRpm, 0)} rpm`} />
-          <Row label="Cooling" value={`${n(unit.slice.coolingKw, 1)} kW`} />
+          <Row label="Compressor" value={unit.state.stale ? STALE_VALUE : `${unit.slice.compressorOk === 0 ? "FAULT" : running ? "ON" : "READY"}`} />
+          <Row label="Fan" value={`${n(freshValue(unit.slice.fanSpeedPct, unit.state.stale), 0)}% · ${n(freshValue(unit.slice.fanRpm, unit.state.stale), 0)} rpm`} />
+          <Row label="Cooling" value={`${n(freshValue(unit.slice.coolingKw, unit.state.stale), 1)} kW`} />
           <Row label="Run hours" value={`${unit.runHours.toLocaleString()} h`} />
-          <Row label="Health" value={unit.state.status === "critical" ? "82%" : "96%"} />
+          <Row label="Health" value={unit.state.stale ? STALE_VALUE : unit.state.status === "critical" ? "82%" : "96%"} />
           <Row label="Last service" value={unit.service} />
         </div>
         {unit.state.matchedRule ? (

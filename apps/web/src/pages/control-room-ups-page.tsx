@@ -16,6 +16,11 @@ import {
 import { DisabledCommandButton } from "../components/disabled-command-button";
 import { PageHeader } from "../components/page-header";
 import { AppShell } from "../layouts/app-shell";
+import {
+  freshValue,
+  isStale,
+  STALE_VALUE,
+} from "../lib/schematic-telemetry";
 import type { AuthUser } from "../stores/auth-store";
 
 type ControlRoomUpsPageProps = {
@@ -28,6 +33,8 @@ type UpsStatus = "normal" | "warning" | "critical" | "offline";
 type RuleState = {
   status: UpsStatus;
   matchedRule: RuleListItem | null;
+  /** True when the asset has stopped reporting (ADR 0027). */
+  stale: boolean;
 };
 
 const UPS_UNITS = [
@@ -36,7 +43,9 @@ const UPS_UNITS = [
 ] as const;
 
 function n(value: number | null, digits = 1): string {
-  return value == null || Number.isNaN(value) ? "-" : value.toFixed(digits);
+  return value == null || Number.isNaN(value)
+    ? STALE_VALUE
+    : value.toFixed(digits);
 }
 
 function useCr(code: string) {
@@ -91,13 +100,28 @@ function severityStatus(severity: string | null): UpsStatus {
   return severity === "critical" ? "critical" : "warning";
 }
 
+/**
+ * Tile status for one asset (ADR 0027).
+ *
+ * **Two different things both render `offline` here and the order matters.**
+ * The existing `breaker === 0 || healthPct === 0` test is a statement about the
+ * *plant* — disconnected, or a dead string — read from the last values we
+ * received. Staleness is a statement about our *knowledge*, and it has to come
+ * first: those two fields are frozen once telemetry stops, so a unit that died
+ * while healthy reported `normal` for ever, and one that died tripped kept
+ * asserting a trip nobody could confirm.
+ */
 function deriveRuleState(
   assetCode: string,
   slice: SchematicTelemetrySlice,
   rules: RuleListItem[],
+  nowMs: number,
 ): RuleState {
+  if (isStale(slice.lastSeenMs, nowMs)) {
+    return { status: "offline", matchedRule: null, stale: true };
+  }
   if (slice.breaker === 0 || slice.healthPct === 0) {
-    return { status: "offline", matchedRule: null };
+    return { status: "offline", matchedRule: null, stale: false };
   }
 
   const matchedRule = rules.find((rule) => {
@@ -116,16 +140,17 @@ function deriveRuleState(
   });
 
   return matchedRule
-    ? { status: severityStatus(matchedRule.severity), matchedRule }
-    : { status: "normal", matchedRule: null };
+    ? { status: severityStatus(matchedRule.severity), matchedRule, stale: false }
+    : { status: "normal", matchedRule: null, stale: false };
 }
 
+/** `offline` outranks `critical` — ADR 0027 decision 2; see the env page note. */
 function mergeStatus(states: RuleState[]): RuleState {
   return (
+    states.find((state) => state.status === "offline") ??
     states.find((state) => state.status === "critical") ??
     states.find((state) => state.status === "warning") ??
-    states.find((state) => state.status === "offline") ??
-    { status: "normal", matchedRule: null }
+    { status: "normal", matchedRule: null, stale: false }
   );
 }
 
@@ -217,18 +242,26 @@ function ControlRoomUpsContent() {
   const ups2 = useCr("CR-UPS-2");
   const batt1 = useCr("CR-BATT-1");
   const batt2 = useCr("CR-BATT-2");
+  const nowMs = Date.now();
   const units = [
-    { ...UPS_UNITS[0], slice: ups1, battery: batt1, state: deriveRuleState("CR-UPS-1", ups1, rules) },
-    { ...UPS_UNITS[1], slice: ups2, battery: batt2, state: deriveRuleState("CR-UPS-2", ups2, rules) },
+    { ...UPS_UNITS[0], slice: ups1, battery: batt1, state: deriveRuleState("CR-UPS-1", ups1, rules, nowMs) },
+    { ...UPS_UNITS[1], slice: ups2, battery: batt2, state: deriveRuleState("CR-UPS-2", ups2, rules, nowMs) },
   ];
   const selected = units.find((unit) => unit.code === tab) ?? units[0];
   const totalCapacity = units.reduce((sum, unit) => sum + unit.capacityKva, 0);
-  const totalKw = units.reduce(
-    (sum, unit) => sum + (capacityKw(unit.slice.loadPct, unit.capacityKva) ?? 0),
-    0,
-  );
+  // Aggregates count only the units still reporting (ADR 0027 decision 4).
+  const liveUnits = units.filter((unit) => !unit.state.stale);
+  const staleUnits = units.length - liveUnits.length;
+  const liveCritical = units.filter((u) => u.state.status === "critical").length;
+  const kws = liveUnits
+    .map((unit) => capacityKw(unit.slice.loadPct, unit.capacityKva))
+    .filter((v): v is number => v != null && !Number.isNaN(v));
+  const totalKw = kws.length === 0 ? null : kws.reduce((a, b) => a + b, 0);
+  const loads = liveUnits
+    .map((unit) => unit.slice.loadPct)
+    .filter((v): v is number => v != null && !Number.isNaN(v));
   const avgLoad =
-    units.reduce((sum, unit) => sum + (unit.slice.loadPct ?? 0), 0) / units.length;
+    loads.length === 0 ? null : loads.reduce((a, b) => a + b, 0) / loads.length;
   const backups = units
     .map((unit) => unit.slice.backupMin)
     .filter((value): value is number => value !== null);
@@ -240,7 +273,11 @@ function ControlRoomUpsContent() {
       <PageHeader
         eyebrow="R.crUps"
         title="UPS Monitoring · 2 x 30 kVA"
-        subtitle="Per-unit and combined view · rectifier to battery to inverter to load · rule-driven status"
+        subtitle={
+          liveCritical > 0
+            ? `${liveCritical} ACTIVE CRITICAL · per-unit and combined view · rule-driven status`
+            : "Per-unit and combined view · rectifier to battery to inverter to load · rule-driven status"
+        }
         actions={
           <>
             <DisabledCommandButton>Manual Bypass · disabled</DisabledCommandButton>
@@ -251,8 +288,8 @@ function ControlRoomUpsContent() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiTile label="Total Capacity" status="ready" value={String(totalCapacity)} unit="kVA" />
-        <KpiTile label="Total Load" status="ready" value={n(totalKw, 2)} unit="kW" />
-        <KpiTile label="Average Load" status="ready" value={n(avgLoad, 0)} unit="%" />
+        <KpiTile label="Total Load" status="ready" value={n(totalKw, 2)} unit="kW" hint={staleUnits > 0 ? `${staleUnits} unit(s) stale` : undefined} />
+        <KpiTile label="Average Load" status="ready" value={n(avgLoad, 0)} unit="%" hint={staleUnits > 0 ? `${staleUnits} unit(s) stale` : undefined} />
         <KpiTile label="Worst Backup" status="ready" value={n(worstBackup, 0)} unit="min" tone={statusTone(overall.status)} />
       </div>
 
@@ -332,11 +369,11 @@ function CombinedSummary({
               <tr key={unit.code}>
                 <td className="px-4 py-3 font-semibold text-bms-ink">{unit.label}</td>
                 <td className="px-4 py-3 uppercase">{modeFor(unit.slice, unit.state.status)}</td>
-                <td className="px-4 py-3">{n(unit.slice.loadPct, 0)}%</td>
-                <td className="px-4 py-3">{n(unit.slice.outputVoltageV, 1)} / {n(unit.slice.outputFreqHz, 2)}</td>
-                <td className="px-4 py-3">{n(unit.slice.batteryV ?? unit.battery.batteryV, 1)} V</td>
-                <td className="px-4 py-3">{n(unit.slice.backupMin, 0)} min</td>
-                <td className="px-4 py-3">{n(unit.slice.healthPct, 0)}%</td>
+                <td className="px-4 py-3">{n(freshValue(unit.slice.loadPct, unit.state.stale), 0)}%</td>
+                <td className="px-4 py-3">{n(freshValue(unit.slice.outputVoltageV, unit.state.stale), 1)} / {n(freshValue(unit.slice.outputFreqHz, unit.state.stale), 2)}</td>
+                <td className="px-4 py-3">{n(freshValue(unit.slice.batteryV ?? unit.battery.batteryV, unit.state.stale), 1)} V</td>
+                <td className="px-4 py-3">{n(freshValue(unit.slice.backupMin, unit.state.stale), 0)} min</td>
+                <td className="px-4 py-3">{n(freshValue(unit.slice.healthPct, unit.state.stale), 0)}%</td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
                     {statusLabel(unit.state.status)}
@@ -368,9 +405,9 @@ function UnitDetail({
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiTile label="Mode" status="ready" value={mode.toUpperCase()} tone={statusTone(unit.state.status)} />
-        <KpiTile label="Load" status="ready" value={n(unit.slice.loadPct, 0)} unit="%" hint={`${n(capacityKw(unit.slice.loadPct, unit.capacityKva), 2)} kW`} />
-        <KpiTile label="Backup Time" status="ready" value={n(unit.slice.backupMin, 0)} unit="min" />
-        <KpiTile label="Health" status="ready" value={n(unit.slice.healthPct, 0)} unit="%" tone={statusTone(unit.state.status)} />
+        <KpiTile label="Load" status="ready" value={n(freshValue(unit.slice.loadPct, unit.state.stale), 0)} unit="%" hint={`${n(freshValue(capacityKw(unit.slice.loadPct, unit.capacityKva), unit.state.stale), 2)} kW`} />
+        <KpiTile label="Backup Time" status="ready" value={n(freshValue(unit.slice.backupMin, unit.state.stale), 0)} unit="min" />
+        <KpiTile label="Health" status="ready" value={n(freshValue(unit.slice.healthPct, unit.state.stale), 0)} unit="%" tone={statusTone(unit.state.status)} />
       </div>
 
       <section className="rounded border border-gray-200 bg-white">

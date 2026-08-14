@@ -15,6 +15,7 @@ import {
 import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
+import { freshValue, isStale } from "../lib/schematic-telemetry";
 import type { AuthUser } from "../stores/auth-store";
 
 type ControlRoomSldPageProps = {
@@ -29,16 +30,33 @@ function useCr(code: string) {
   return useSchematicTelemetryByCode(code).slice;
 }
 
-type BreakerVisualStatus = "normal" | "warning" | "critical" | "open";
+/**
+ * `offline` is distinct from `open` (ADR 0027 decision 5). `open` asserts the
+ * breaker is open — a fact about the plant, only knowable from a current
+ * reading. `offline` says we cannot see the breaker at all. On a single-line
+ * diagram those must never look the same.
+ */
+type BreakerVisualStatus =
+  | "normal"
+  | "warning"
+  | "critical"
+  | "open"
+  | "offline";
 
 type BreakerRuleState = {
   status: BreakerVisualStatus;
   matchedRule: RuleListItem | null;
+  /** True when the asset has stopped reporting (ADR 0027). */
+  stale: boolean;
 };
 
 function statusClass(status: BreakerVisualStatus): string {
   if (status === "open") {
     return "border-gray-200 bg-gray-100 text-gray-700";
+  }
+  // A deliberately different grey from `open` — see BreakerVisualStatus.
+  if (status === "offline") {
+    return "border-slate-300 bg-slate-200 text-slate-700";
   }
   if (status === "critical") {
     return "border-red-200 bg-red-100 text-red-800";
@@ -95,13 +113,24 @@ function severityStatus(severity: string | null): BreakerVisualStatus {
   return severity === "critical" ? "critical" : "warning";
 }
 
+/**
+ * Breaker tile status (ADR 0027).
+ *
+ * Staleness precedes the breaker test because `slice.breaker` freezes when
+ * telemetry stops: a dead feed would otherwise keep asserting a closed breaker
+ * indefinitely, which on an SLD reads as "this path is energised".
+ */
 function deriveBreakerRuleState(
   code: string,
   slice: SchematicTelemetrySlice,
   rules: RuleListItem[],
+  nowMs: number,
 ): BreakerRuleState {
+  if (isStale(slice.lastSeenMs, nowMs)) {
+    return { status: "offline", matchedRule: null, stale: true };
+  }
   if (slice.breaker === 0) {
-    return { status: "open", matchedRule: null };
+    return { status: "open", matchedRule: null, stale: false };
   }
 
   const matchedRule = rules.find((rule) => {
@@ -120,8 +149,8 @@ function deriveBreakerRuleState(
   });
 
   return matchedRule
-    ? { status: severityStatus(matchedRule.severity), matchedRule }
-    : { status: "normal", matchedRule: null };
+    ? { status: severityStatus(matchedRule.severity), matchedRule, stale: false }
+    : { status: "normal", matchedRule: null, stale: false };
 }
 
 function ControlRoomSldContent() {
@@ -132,6 +161,8 @@ function ControlRoomSldContent() {
   });
   const rules = rulesQuery.data?.items ?? [];
   const q1 = useCr("CR-Q1");
+  // The header meters are all the incomer's own readings (ADR 0027 decision 3).
+  const q1Stale = isStale(q1.lastSeenMs, Date.now());
   const totalKw = q1.kw ?? 0;
   const kva = q1.pf ? totalKw / q1.pf : 0;
   const kwhToday = q1.kwhToday ?? 0;
@@ -146,10 +177,10 @@ function ControlRoomSldContent() {
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <Meter label="Voltage R" value={n(q1.voltage, 1)} unit="V" />
-        <Meter label="Voltage Y" value={n((q1.voltage ?? 230) + 0.7, 1)} unit="V" />
-        <Meter label="Voltage B" value={n((q1.voltage ?? 230) - 0.8, 1)} unit="V" />
-        <Meter label="Frequency" value={n(q1.frequencyHz, 2)} unit="Hz" />
+        <Meter label="Voltage R" value={n(freshValue(q1.voltage, q1Stale), 1)} unit="V" />
+        <Meter label="Voltage Y" value={n(freshValue(q1.voltage == null ? null : q1.voltage + 0.7, q1Stale), 1)} unit="V" />
+        <Meter label="Voltage B" value={n(freshValue(q1.voltage == null ? null : q1.voltage - 0.8, q1Stale), 1)} unit="V" />
+        <Meter label="Frequency" value={n(freshValue(q1.frequencyHz, q1Stale), 2)} unit="Hz" />
         <Meter label="kW · kVA" value={`${n(totalKw, 2)} / ${n(kva, 2)}`} unit="" />
         <Meter label="kWh Today" value={n(kwhToday, 1)} unit="kWh" />
       </div>
@@ -235,7 +266,7 @@ function SldBox({ x, y, w, h, title, sub }: { x: number; y: number; w: number; h
 
 function Breaker({ cx, cy, label, code, rules }: { cx: number; cy: number; label: string; code: string; rules: RuleListItem[] }) {
   const s = useCr(code);
-  const state = deriveBreakerRuleState(code, s, rules);
+  const state = deriveBreakerRuleState(code, s, rules, Date.now());
   const circleClass =
     state.status === "open"
       ? "fill-gray-100 stroke-gray-400"
@@ -276,7 +307,7 @@ function Branch({ y, breaker, breakerCode, box, sub, outBreaker, outCode, rules 
 
 function LoadBranch({ y, breaker, code, title, sub, rules }: { y: number; breaker: string; code: string; title: string; sub: string; rules: RuleListItem[] }) {
   const s = useCr(code);
-  const state = deriveBreakerRuleState(code, s, rules);
+  const state = deriveBreakerRuleState(code, s, rules, Date.now());
   const closed = state.status !== "open";
   const stroke = state.status === "warning" ? "#f59e0b" : state.status === "critical" ? "#dc2626" : closed ? "#039855" : "#94a3b8";
   return (
@@ -292,7 +323,7 @@ function LoadBranch({ y, breaker, code, title, sub, rules }: { y: number; breake
 function Pdu({ y, breaker, code, title, loadCode, rules }: { y: number; breaker: string; code: string; title: string; loadCode: string; rules: RuleListItem[] }) {
   const breakerSlice = useCr(code);
   const s = useCr(loadCode);
-  const state = deriveBreakerRuleState(code, breakerSlice, rules);
+  const state = deriveBreakerRuleState(code, breakerSlice, rules, Date.now());
   const warn = state.status === "warning";
   const critical = state.status === "critical";
   const stroke = critical ? "#dc2626" : warn ? "#f59e0b" : "#039855";
@@ -303,7 +334,7 @@ function Pdu({ y, breaker, code, title, loadCode, rules }: { y: number; breaker:
       <line x1={770} y1={y} x2={810} y2={y} stroke={stroke} strokeWidth={3} markerEnd="url(#crArrow)" />
       <rect x={810} y={y - 19} width={160} height={38} rx={6} className={critical ? "fill-red-50 stroke-red-600" : warn ? "fill-amber-50 stroke-amber-500" : "fill-white stroke-bms-green"} />
       <text x={890} y={y + 1} textAnchor="middle" className={critical ? "fill-red-800 font-condensed text-[12px] font-bold" : warn ? "fill-amber-900 font-condensed text-[12px] font-bold" : "fill-bms-ink font-condensed text-[12px] font-bold"}>{title}</text>
-      <text x={890} y={y + 13} textAnchor="middle" className="fill-bms-muted font-mono text-[9px]">{n(s.rackKw, 2)} kW</text>
+      <text x={890} y={y + 13} textAnchor="middle" className="fill-bms-muted font-mono text-[9px]">{n(freshValue(s.rackKw, state.stale), 2)} kW</text>
     </g>
   );
 }
@@ -343,7 +374,7 @@ function BreakerTable({ rules }: { rules: RuleListItem[] }) {
 
 function BreakerRow({ row, rules }: { row: (typeof CR_BREAKERS)[number]; rules: RuleListItem[] }) {
   const s = useCr(row.code);
-  const state = deriveBreakerRuleState(row.code, s, rules);
+  const state = deriveBreakerRuleState(row.code, s, rules, Date.now());
   const statusLabel =
     state.status === "open"
       ? "OPEN"
@@ -363,9 +394,9 @@ function BreakerRow({ row, rules }: { row: (typeof CR_BREAKERS)[number]; rules: 
           {statusLabel}
         </span>
       </td>
-      <td className="px-3 py-2 text-right font-mono">{n(s.current, 1)}</td>
-      <td className="px-3 py-2 text-right font-mono">{n(s.kw, 2)}</td>
-      <td className="px-3 py-2 text-right font-mono">{n(s.kwhToday, 1)}</td>
+      <td className="px-3 py-2 text-right font-mono">{n(freshValue(s.current, state.stale), 1)}</td>
+      <td className="px-3 py-2 text-right font-mono">{n(freshValue(s.kw, state.stale), 2)}</td>
+      <td className="px-3 py-2 text-right font-mono">{n(freshValue(s.kwhToday, state.stale), 1)}</td>
       <td className="px-3 py-2 text-bms-muted">{tripCause}</td>
     </tr>
   );
