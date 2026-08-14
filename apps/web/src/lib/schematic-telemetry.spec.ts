@@ -1,4 +1,11 @@
-import type { TelemetryReading } from "@bms/shared";
+import type {
+  ControlRoomEnvironmentPointKey,
+  ControlRoomItPointKey,
+  ControlRoomUpsPointKey,
+  ElectricalPointKey,
+  HvacPointKey,
+  TelemetryReading,
+} from "@bms/shared";
 
 import {
   applyReading,
@@ -9,6 +16,28 @@ import {
   readingTimestampMs,
   type SchematicTelemetrySlice,
 } from "./schematic-telemetry";
+
+/**
+ * Every point key `applyReading` handles.
+ *
+ * The five shared sets cover 32 of the 34 arms. `frequency_hz` and `kwh_today`
+ * are named explicitly because they are in **no** shared set, which typing this
+ * table surfaced. They are not dead code: both are real, live points (35,789
+ * and 33,327 rows in the pilot database at the time of writing), and they reach
+ * `applyReading` because `onSocketPayload` filters by tracked **asset**, not by
+ * point key. What they miss is REST hydration, which iterates the subscribed
+ * key list — so `frequencyHz` and `kwhToday` read `null` until the first socket
+ * payload lands. Pre-existing and out of `F4.37`'s scope; recorded here rather
+ * than papered over with a `string` key.
+ */
+type KnownPointKey =
+  | ElectricalPointKey
+  | HvacPointKey
+  | ControlRoomUpsPointKey
+  | ControlRoomItPointKey
+  | ControlRoomEnvironmentPointKey
+  | "frequency_hz"
+  | "kwh_today";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -77,6 +106,18 @@ export function runSchematicTelemetryTests(): void {
     "one millisecond past FRESH_MS is stale",
   );
 
+  // The client's own clock stepping backward (NTP correction, an operator
+  // changing system time) makes every stored lastSeenMs future-relative to now.
+  // Without this clause the difference is negative, nothing exceeds FRESH_MS,
+  // and every tile reads `running` again — the F4.37 defect through a different
+  // door, and one the write-time clamp cannot reach. Raised by the security
+  // review, which falsified the "clamping bounds the damage" claim.
+  assert(isStale(NOW + 1, NOW), "a lastSeenMs ahead of now is stale, not fresh");
+  assert(
+    isStale(NOW, NOW - 60_000),
+    "a clock stepping back a minute makes prior readings stale, not fresh",
+  );
+
   // --- deriveStatus -------------------------------------------------------
 
   assert(
@@ -116,8 +157,12 @@ export function runSchematicTelemetryTests(): void {
   //
   // Each key must set **exactly** its own field, so a duplicated arm fails on
   // the field it wrongly wrote rather than passing on the one it got right.
+  // Keys are typed against the shared unions, not `string`, so a typo shared
+  // between this table and the switch cannot pass silently — raised by the
+  // `F4.37` compliance review, which noted a `string` key would let both sides
+  // be wrong in the same way.
   const POINT_KEY_FIELDS: ReadonlyArray<
-    readonly [string, keyof SchematicTelemetrySlice]
+    readonly [KnownPointKey, keyof SchematicTelemetrySlice]
   > = [
     ["kw", "kw"],
     ["kvar", "kvar"],
@@ -231,5 +276,11 @@ export function runSchematicTelemetryTests(): void {
   assert(
     deriveStatus(poisoned, NOW + 33 * 60_000).status === "offline",
     "it is offline well before its own timestamp would have expired",
+  );
+  // And the same asset must not come back to life if the workstation clock is
+  // wound back past the reading — the whole point of the isStale clause.
+  assert(
+    deriveStatus(poisoned, NOW - 10 * 60_000).status === "offline",
+    "a rewound client clock does not resurrect a dead asset",
   );
 }
