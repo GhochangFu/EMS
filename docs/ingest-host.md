@@ -1,35 +1,43 @@
 # The ingest host
 
-Operator notes for `apps/ingest`'s second entry point, added by `F1.1`
-(**[ADR 0016](./adr/0016-ingest-adapter-framework.md)**).
+Operator notes for `apps/ingest`, whose one entry point is the pluggable adapter
+host from `F1.1` (**[ADR 0016](./adr/0016-ingest-adapter-framework.md)**).
 
-## Why there are two entry points
+## One entry point, as of §6 commit 4
 
-`apps/ingest` currently ships two programs:
+| Command | What it is |
+| --- | --- |
+| `pnpm start` → `node dist/main.js` | The pluggable adapter host, and what the pilot runs. Serves MQTT today; `F1.2`–`F1.6` add protocols. |
 
-| | Command | What it is |
-| --- | --- | --- |
-| Legacy | `pnpm start` → `node src/index.js` | The original PHE MQTT pilot (ADR 0007). **Frozen** — not one line edited by `F1.1`. No longer serves the pilot. |
-| Host | `pnpm start:host` → `node dist/main.js` | The pluggable adapter host, and **what the pilot runs** since 2026-08-06. Serves MQTT today; `F1.2`–`F1.6` add protocols. |
+**The strangler migration is finished.** ADR 0016 §6 ran it in four commits:
+commit 2 built the host beside the ADR 0007 pilot's `src/index.js`, commit 3
+verified the two produced an identical point set and cut the deployment over on
+**2026-08-06**, and **commit 4 (2026-08-14) deleted `src/index.js`**, pointed
+`"start"` at `dist/main.js`, removed the compose `command:` override and deleted
+the `INGEST_NOTIFY` flag.
 
-This is the strangler migration in ADR 0016 §6, and the two coexist
-deliberately. **§6 commit 3 step 4 was taken on 2026-08-06**: the compose
-`ingest` service carries `command: ["pnpm", "start:host"]` and `INGEST_NOTIFY:
-"on"`. `pnpm start` is still the legacy process and still unedited, so reverting
-the cutover is deleting that one compose line — no image rebuild, no code edit.
+Two consequences worth knowing before an incident, not during one:
 
-What remains is **§6 commit 4**: deleting `src/index.js`, pointing `"start"` at
-`dist/main.js`, removing the compose override and retiring `INGEST_NOTIFY`. It
-**needs a named owner** (ADR 0016 Resolved decision 4). Until someone owns it
-the two-entry-point window stays open, and that duplication becoming permanent
-is the realistic failure mode of a strangler — now more so, because the operational
-pressure that would have forced the issue is gone.
-
-The host must be built before it can run — it is TypeScript:
+- **There is no longer a legacy path one line away.** Reverting the cutover used
+  to be deleting a compose line; it is now reverting a commit. What that line
+  bought — a fallback that needed no rebuild — is gone deliberately, because a
+  permanent second entry point is the realistic failure mode of a strangler
+  (ADR 0016 Resolved decision 4).
+- **`pnpm start` needs a build first.** The host is TypeScript and there is no
+  JavaScript entry point behind it any more, so an unbuilt tree does not fall
+  back — it fails to start:
 
 ```bash
 pnpm --filter ingest build
 ```
+
+The image builds it (`apps/ingest/Dockerfile` runs `pnpm --filter ingest build`
+before `CMD ["pnpm", "start"]`), so this only bites a local run.
+
+One thing commit 4 did **not** do: retire the `MQTT_USERNAME` / `MQTT_PASSWORD`
+fallback. `bms.rtu_connection_configs` is still empty (re-measured 2026-08-14),
+so that fallback is the pilot's only working credential path. It moved to
+`E8.4` — see [ADR 0016 Amendment 3](./adr/0016-ingest-adapter-framework.md).
 
 ## Environment
 
@@ -37,42 +45,46 @@ Adapters never read `process.env` at all (ADR 0016 §4). The **host** reads it i
 `src/host/config.ts` — and in one other place, which the table below makes
 explicit: the pilot-era `MQTT_*` credential fallback inside the unmodified
 `src/rtu-config.js`, reached through `resolveMqttConnection`. That fallback is
-currently the only working credential path, and Resolved decision 5 keeps it
-past cutover: no RTU has an `rtu_connection_configs` row to read instead.
+still the only working credential path (ADR 0016 Amendment 3).
 
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `DATABASE_URL` | — | Required. |
-| `INGEST_NOTIFY` | `off` | `on` \| `off` only. **Compose sets `on`, and since the cutover that is required, not optional — see below.** Any other value is refused at startup rather than guessed at. |
-| `INGEST_HOST_HEALTH_PORT` | `9103` | The default is deliberately *not* `INGEST_METRICS_PORT` — `src/index.js` holds `9102`, and a parallel run needs both. **Compose sets it to `9102`** so the published port means the same thing whichever process runs; run a side-by-side comparison outside compose, on the default. |
-| `INGEST_RELOAD_MS` | `60000` | How often point mappings are refreshed. Matches `index.js`. |
+| `INGEST_HOST_HEALTH_PORT` | `9103` | **Compose sets it to `9102`**, which is the port it publishes. The default is 9103 rather than 9102 for a historical reason: the ADR 0007 entry point bound 9102 as `INGEST_METRICS_PORT` and §6 commit 3 needed both processes up at once. That entry point is gone, but the separate default is kept so two hosts side by side still need only one variable set. |
+| `INGEST_RELOAD_MS` | `60000` | How often point mappings are refreshed. Matches what the ADR 0007 pilot did. |
 | `MQTT_HOST` / `MQTT_PORT` / `MQTT_USERNAME` / `MQTT_PASSWORD` | pilot-era | MQTT **only**, resolved by the host through the unmodified `src/rtu-config.js`. No new adapter gets an environment fallback. |
-| `MQTT_TLS_REJECT_UNAUTHORIZED` | on | Only the exact string `false` disables TLS verification, matching `index.js`. |
+| `MQTT_TLS_REJECT_UNAUTHORIZED` | on | Only the exact string `false` disables TLS verification, as in the ADR 0007 pilot. |
 | `CREDENTIAL_ENCRYPTION_KEY` | — | ADR 0012. Without it, encrypted per-RTU credentials are simply not read. |
 
-### `INGEST_NOTIFY` defaults to **off** — and since the cutover that default is the *dangerous* direction
+**Deleted at §6 commit 4, and not merely defaulted:** `INGEST_NOTIFY`,
+`INGEST_METRICS_PORT` and `MQTT_RECONNECT_MS`. The last two were read only by the
+deleted entry point — the host owns its own reconnect (exponential, jittered) and
+binds `INGEST_HOST_HEALTH_PORT`. A copy left in an old `.env` is inert; the specs
+assert that rather than leaving it to be discovered.
 
-The default exists for the parallel window. While two processes ran, both wrote
-the same rows through `ON CONFLICT (time, asset_id, point_key) DO UPDATE`, so
-concurrent *writes* were idempotent. Concurrent `pg_notify` is not:
+### Realtime is unconditional, and that is the point of commit 4
+
+The host always emits `pg_notify('bms_telemetry', …)`. There is no flag, no
+option and no default that can turn it off.
+
+It was not always so, and the history is worth keeping because the reasoning
+inverted. During the parallel-run window two processes wrote the same rows
+through `ON CONFLICT (time, asset_id, point_key) DO UPDATE`, so concurrent
+*writes* were idempotent. Concurrent `pg_notify` is not:
 `telemetry-notify.service.ts` holds a `LISTEN bms_telemetry` and fans every
-payload to Socket.IO, so two notifying processes deliver **every PHE reading to
-the live dashboards twice**. Off by default meant a stray `pnpm start:host`
-could not double the dashboards.
+payload to Socket.IO, so two notifying processes would have delivered **every PHE
+reading to the live dashboards twice**. `INGEST_NOTIFY` defaulted to off for
+exactly that window.
 
-**That safety argument inverted at the cutover.** The host is now the only
-ingest process, so nothing can double anything, and the flag is what stands
-between the pilot and silent realtime death: unset it, typo it, or lose the
-`environment:` entry from the compose service while `command:` stays, and rows
-keep landing while every dashboard goes dead. There is no error and no alarm —
-the only signal is `notify=off` in the health body. `INGEST_NOTIFY: "on"` in
-`docker-compose.yml` is now **required configuration, not a preference**.
+**At the cutover that safety argument inverted.** With one ingest process nothing
+could double, and the flag became the only way to reach a state where rows keep
+landing while every dashboard goes dead — no error, no alarm, the sole signal
+being `notify=off` in the health body. For eight days it was compose's
+`INGEST_NOTIFY: "on"` line alone that kept realtime alive.
 
-Quote it. Unquoted `on` is YAML boolean `true`, and `readHostConfig` refuses it.
-
-ADR 0016 §6 **deletes this flag in commit 4**, which is now the change that
-removes the failure mode rather than merely tidying up. It must not survive as a
-permanent way to run ingest with realtime silently off.
+Commit 4 deleted the flag rather than defaulting it to on, so that state is
+unreachable rather than merely unlikely. The health body still reports
+`notify=on`; it is now a literal, and no snapshot can render `notify=off`.
 
 ## Health endpoint
 
@@ -96,45 +108,36 @@ endpoint protocol=mqtt key=phe.thinkiot.co.in:8883 state=disconnected rtus=86173
 Logs are JSON lines on stdout. Credential values never appear in them — the
 adapter conformance suite asserts it with a seeded sentinel.
 
-## Running the ADR 0016 §6 commit 3 parallel verification
+## The ADR 0016 §6 commit 3 parallel verification (historical)
 
-The point of the exercise is to prove the host writes what the legacy process
-writes, before anything is cut over.
+**This section records what was done on 2026-08-06. It is no longer runnable**
+— commit 4 deleted the legacy process there is nothing left to compare against,
+along with both commands the procedure used (`pnpm start:host` and
+`INGEST_NOTIFY=off`). It is kept because the *result* below is the evidence the
+cutover rested on, and evidence with no method is not checkable.
 
-**This procedure ran on 2026-08-06 and step 4 was taken** — it is kept as the
-recipe for re-running the comparison, not as pending work. Since the compose
-`ingest` service now runs the host, step 1 is no longer "leave it as it is": you
-must put the *legacy* process back first, by removing the `command:` override
-(or overriding it to `["pnpm", "start"]`) and recreating the container. That
-recreate costs one message, the same as the cutover did.
+The point of the exercise was to prove the host wrote what the legacy process
+wrote, before anything was cut over. As run:
 
-1. Get the legacy process running as the compose `ingest` service — see above.
-2. Build, then start the host **against the same database**, with notify off
-   and its own health port (leave `INGEST_HOST_HEALTH_PORT` unset so it takes
-   the 9103 default; compose pins the deployed process to 9102):
-
-```bash
-pnpm --filter ingest build
-```
-
-```bash
-cd apps/ingest && DATABASE_URL="$DATABASE_URL" INGEST_NOTIFY=off pnpm start:host
-```
-
+1. Leave the legacy process running as the compose `ingest` service.
+2. Build, then start the host **against the same database**, with notify off and
+   its own health port (`INGEST_HOST_HEALTH_PORT` unset, taking the 9103
+   default) so the two could not collide:
+   `cd apps/ingest && DATABASE_URL="$DATABASE_URL" INGEST_NOTIFY=off pnpm start:host`
 3. Over the window, compare row counts, timestamps and per-RTU sample rates in
    `telemetry.point_values`. Both processes upsert the same primary key, so
    agreement means the host resolved the same points from the same payloads.
-   **Expect exactly one difference: `network_strength`.** See *Deliberate
-   divergences* below — a run that shows agreement on that point means the host
-   is on a build older than 2026-08-06, and a run that shows any *other*
-   difference is a finding.
-4. Only then set `INGEST_NOTIFY=on` **and** flip the compose `ingest` service to
+   Exactly one difference was expected: `network_strength` — see *Deliberate
+   divergences* below.
+4. Then set `INGEST_NOTIFY=on` **and** flip the compose `ingest` service to
    `command: ["pnpm", "start:host"]` in the same step, stopping the legacy
-   process. The image must already contain `dist/main.js` — an image built
-   before the `pnpm build` step was added to `apps/ingest/Dockerfile` gives a
-   crash loop, not a fallback, so rebuild before recreating. Reverting is
-   deleting one compose line — no image rebuild and no code edit, though it
-   still costs the one-message recreate gap.
+   process.
+
+**If a comparison of this kind is ever needed again** — for `F1.2`–`F1.6`, where
+a new adapter's output wants checking against a known-good one — it cannot be
+this procedure. There is one entry point now, so the two sides have to be two
+*endpoints* under one host, or one host against a recorded fixture, and neither
+is built. That is a real gap and it belongs to whichever item first needs it.
 
 ### Result of the 2026-08-06 run
 
@@ -185,24 +188,30 @@ service was rebuilt and recreated onto `pnpm start:host` with `INGEST_NOTIFY:
   one per endpoint and per skipped binding, not a fixed count. A check matching
   on the old substring breaks. Nothing in `infra/observability/` scrapes this
   port today.
-- **`INGEST_NOTIFY: "on"` is now required configuration.** With one ingest
-  process there is nothing to double, so the flag no longer protects anything —
-  it is the only thing keeping realtime alive. Losing it fails silently: rows
-  keep landing, dashboards go dead, and the sole signal is `notify=off` in the
-  health body. See the `INGEST_NOTIFY` section above.
+- **`INGEST_NOTIFY: "on"` became required configuration** — with one ingest
+  process there was nothing to double, so the flag stopped protecting anything
+  and became the only thing keeping realtime alive. It held that role for eight
+  days. **Commit 4 deleted it on 2026-08-14**, which is why realtime is now
+  unconditional rather than one compose line deep.
 - **One message was lost to the container restart**, the minute between the
   legacy process's last write and the host's first. Recreating the container is
   not a hot swap; a cutover run during a maintenance window would cost the same
   minute. The gap is a genuine hole in the series, not a display artefact.
 
-## Deliberate divergences from `index.js`
+## Deliberate divergences from the ADR 0007 pilot parser
 
-`index.js` is frozen under ADR 0016 §6 while it runs the pilot, so a defect
-found in the shared parse logic can only be fixed on the host side. Two
+While `src/index.js` ran the pilot it was frozen under ADR 0016 §6, so a defect
+found in the shared parse logic could only be fixed on the host side. Two
 behaviours therefore differ **on purpose**. Both are in
 `apps/ingest/src/adapters/mqtt.ts`; neither is a porting error.
 
-| Divergence | Host | `index.js` |
+**Commit 4 deleted `index.js`, and this table stays** — it is not a comparison
+with a file you can still read, it is the record of what the host does
+differently from the behaviour the pilot had in the field for a year. The
+`network_strength` row in particular explains a step change in the data on
+2026-08-06 that is otherwise unexplained. Read the right-hand column as history.
+
+| Divergence | Host | ADR 0007 pilot (`index.js`, deleted) |
 |---|---|---|
 | Readings published beside the `values` block | Merged in, nested wins a collision | Unreachable — `body.values` replaces the body |
 | `dev_id` / `ts` as mappable readings | Never; envelope only | Readable, but only on a payload with no `values` block |
@@ -228,10 +237,16 @@ seed created; `verify-hierarchy-seed.ts` expects 252 PHE points, not 264. A
 future vendor re-export that still carries `TS` will not resurrect them.
 
 This was the standing argument for completing the cutover, and it is why the
-cutover was taken on 2026-08-06 rather than left pending. A pilot running
-`pnpm start` loses `network_strength` every minute.
+cutover was taken on 2026-08-06 rather than left pending: while the legacy
+process served the pilot it lost `network_strength` every minute. Since commit 4
+there is no process that can — `pnpm start` is the host.
 
 ## Known limits in this build
+
+Several entries below say a limit is *unchanged from* `index.js`. That file was
+deleted at §6 commit 4; the comparison is kept because it says which limits the
+host **inherited** from the ADR 0007 pilot rather than introduced, which is what
+decides whether a fix belongs to `F1.7`/`F1.10` or to this host.
 
 - **Reload refreshes point mappings only.** Mapping a new point onto an
   already-served RTU takes effect within `INGEST_RELOAD_MS`. Enabling a *new*

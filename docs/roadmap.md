@@ -750,20 +750,18 @@ Process (`AGENTS.md` §10).
   (§9.10)~~ ✅ **cleared** — §2 gained a *Template content* row, and §6 gained
   the two deferral bullets covering what ADR 0019 deliberately left closed.
 
-### Ingest adapter framework (F1.1) — cut over, commit 4 pending
+### Ingest adapter framework (F1.1) — strangler migration complete
 - **Status:** ADR 0016 §6 **commits 2 and 3 landed** (PR #13, then PR #19 on
-  2026-08-06). `F1.1` stays `⬜` in `docs/BACKLOG.md` — commit 4 has not.
+  2026-08-06), and **commit 4 followed on 2026-08-14** — see below.
 - **Delivered:** `apps/ingest/src/host/` — supervisor (one per endpoint, owning
   every timer), exponential backoff with jitter, bounded drop-oldest sample
   queue, ADR 0018-axis binding plan, normaliser, the NOTIFY chunker that the
-  two surviving copies (`apps/ingest/src/index.js`, `apps/sim/src/index.js`)
-  collapse into at commit 4 / `F1.11`,
-  plain-text health endpoint on `INGEST_HOST_HEALTH_PORT` (9103, separate from
-  the legacy 9102 so both can run at once) — plus `src/adapters/mqtt.ts`,
-  `src/adapter/registry.ts`, and a shared adapter conformance suite. `src/main.ts`
-  is wiring only. `src/index.js` is **frozen, not one line edited**, and
-  `pnpm start` still runs it — but **compose and the pilot run the host** since
-  the commit 3 cutover. Operator notes: `docs/ingest-host.md`.
+  remaining copy (`apps/sim/src/index.js`) collapses into at `F1.11`,
+  plain-text health endpoint on `INGEST_HOST_HEALTH_PORT` (9103, kept separate
+  from the retired 9102) — plus `src/adapters/mqtt.ts`, `src/adapter/registry.ts`,
+  and a shared adapter conformance suite. `src/main.ts` is wiring only, and since
+  commit 4 it is the **only** entry point: `src/index.js` was frozen throughout
+  the migration and then deleted. Operator notes: `docs/ingest-host.md`.
 - **Scope promoted:** the interface, the host, and MQTT — which ADR 0007 had
   already promoted and this only ports onto the interface. Individual protocol
   adapters (F1.2 Modbus, F1.3 BACnet, F1.4 OPC-UA, F1.5 SNMP/REST, F1.6 DCS)
@@ -794,18 +792,43 @@ Process (`AGENTS.md` §10).
   database *is* the pilot's. Same for Resolved decision 5. Treat the 22 as
   historical — the catalog is 21 since migration `0025` dropped
   `device_timestamp`.
-- **Owed — commit 4:** an owner for deleting `apps/ingest/src/index.js`, pointing
-  `"start"` at `dist/main.js`, removing the compose `command:` override and
-  deleting the `INGEST_NOTIFY` flag with it. Until someone does, the
-  two-entrypoint window stays open — the realistic failure mode of a strangler
-  migration, and **more likely now, not less**: the cutover removed the
-  operational pressure that would have forced the issue. It also stopped being
-  tidying-up. `INGEST_NOTIFY` defaults off, which was the safe direction while
-  two processes ran and is the dangerous one now that the host serves alone:
-  compose's `INGEST_NOTIFY: "on"` is the only thing keeping realtime alive, and
-  losing that line means rows keep landing while every dashboard goes silently
-  dead. Commit 4 removes that failure mode. **ADR 0016 Resolved decision 4
-  records that this has no named owner.**
+- **~~Owed~~ ✅ commit 4 — done 2026-08-14, four of its five actions.** The
+  repository owner took ADR 0016 Resolved decision 4's named-owner gate.
+  `apps/ingest/src/index.js` is deleted, `"start"` runs `dist/main.js`,
+  `start:host` is gone, the compose `command:` override is gone, and the
+  `INGEST_NOTIFY` flag is deleted so `pg_notify` is unconditional. That last one
+  was the point rather than tidying-up: after the cutover the flag's off-default
+  was the only reachable state in which telemetry lands while every dashboard is
+  dead, with no error and no alarm, and for eight days compose's
+  `INGEST_NOTIFY: "on"` line alone stood between the pilot and that.
+  `MQTT_RECONNECT_MS` and `INGEST_METRICS_PORT` went with the entry point that
+  was the only reader of either.
+
+  **The fifth action did not land, and is reassigned.** Retiring the
+  `MQTT_USERNAME` / `MQTT_PASSWORD` fallback needs an encrypted credential row to
+  read instead, and `bms.rtu_connection_configs` is still empty — re-measured
+  2026-08-14 rather than taken from Resolved decision 5's 2026-08-04 reading,
+  because AGENTS.md is explicit that the emptiness is a measurement with a date
+  and E8.3 shipped a UI that can write that table. `CREDENTIAL_ENCRYPTION_KEY`
+  *is* set, so the blocker is data rather than configuration. It moves to
+  **`E8.4`**, which already owns the credential surface. Recorded in **ADR 0016
+  Amendment 3**, which also discharges Resolved decision 5's "confirm against the
+  production pilot" caveat — the database the pilot writes to is the compose
+  `postgres` service, so the database needing confirmation was the pilot's.
+
+  **Two structural guarantees are now repo invariants**, because no behavioural
+  test can fail when a second entry point merely *appears* or when an
+  `INGEST_NOTIFY` branch is added somewhere new: `apps/ingest/src` must hold
+  exactly one entry point and it must be `main.ts`, and nothing outside the specs
+  may read the flag or set it in compose. Both were mutation-tested, along with
+  reinstating `notifyEnabled`, suppressing NOTIFY in `writeResolved`, rendering
+  `notify=off`, and repointing `start` at the deleted file — six mutations, six
+  failures.
+
+  **One thing this closes off:** reverting the cutover used to be deleting one
+  compose line, with no rebuild and no code edit. It is now reverting a commit.
+  That fallback was given up deliberately — a permanent second entry point is
+  precisely the strangler failure mode Resolved decision 4 named.
 - **Known limits carried forward:** reload refreshes point *mappings* only (a
   new RTU or a changed endpoint needs a restart); RTUs sharing an endpoint share
   credentials until `F1.7`; a batch lost to a failed write is gone until `F1.10`
