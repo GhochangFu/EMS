@@ -249,6 +249,13 @@ function CrSldSvg({ rules }: { rules: RuleListItem[] }) {
       <Pdu y={148} breaker="Q7" code="CR-Q7" title="NET RACK · PDU-B" loadCode="CR-NET-RACK-PDU-B" rules={rules} />
       <Pdu y={195} breaker="Q8" code="CR-Q8" title="VW SRV · PDU-A" loadCode="CR-VW-RACK-PDU-A" rules={rules} />
       <Pdu y={240} breaker="Q9" code="CR-Q9" title="VW SRV · PDU-B" loadCode="CR-VW-RACK-PDU-B" rules={rules} />
+      {/* `F4.39`: these two voltages, and the "ONLINE" / "RUN · LEAD" /
+          "STANDBY" words above, are **hardcoded mockup placeholders** — they are
+          not read from any slice. ADR 0027's staleness gate therefore does not
+          and cannot reach them: there is nothing to go stale. They are left as
+          they are because wiring them to telemetry (or relabelling them as
+          nameplate data) is a product decision, but note the consequence — on a
+          live SLD they read exactly like measurements. */}
       <SldBox x={990} y={86} w={90} h={38} title="BATT-1" sub="384 V" />
       <SldBox x={990} y={130} w={90} h={38} title="BATT-2" sub="386 V" />
       <line x1={570} y1={115} x2={990} y2={105} stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="4 4" />

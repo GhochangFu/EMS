@@ -293,9 +293,11 @@ function ControlRoomEnvContent() {
   const staleZones = zones.length - liveZones.length;
   const wetCount = leaks.filter((sensor) => sensor.state.status === "critical").length;
   const smokeAlerts = smoke.filter((sensor) => sensor.state.status === "critical").length;
-  const staleSensors =
-    leaks.filter((s) => s.state.stale).length +
-    smoke.filter((s) => s.state.stale).length;
+  // Counted per group, not pooled. A single `staleSensors` total was shown on
+  // both tiles, so the Leak Sensors tile read "4 … 8 stale" — more stale than
+  // it has sensors. Caught on the running deployment, not by a test.
+  const staleLeaks = leaks.filter((s) => s.state.stale).length;
+  const staleSmoke = smoke.filter((s) => s.state.stale).length;
   // ADR 0027's mitigation for decision 2: `offline` outranks `critical` in the
   // banner, so a live alarm could otherwise be hidden behind an unrelated dead
   // sensor. This count is never outranked by anything.
@@ -341,14 +343,14 @@ function ControlRoomEnvContent() {
           label="Leak Sensors"
           status="ready"
           value={String(leaks.length)}
-          hint={`${wetCount} wet${staleSensors > 0 ? ` · ${staleSensors} stale` : ""}`}
+          hint={`${wetCount} wet${staleLeaks > 0 ? ` · ${staleLeaks} stale` : ""}`}
           tone={wetCount > 0 ? "critical" : "default"}
         />
         <KpiTile
           label="Smoke Sensors"
           status="ready"
           value={String(smoke.length)}
-          hint={`${smokeAlerts} alerts${staleSensors > 0 ? ` · ${staleSensors} stale` : ""}`}
+          hint={`${smokeAlerts} alerts${staleSmoke > 0 ? ` · ${staleSmoke} stale` : ""}`}
           tone={smokeAlerts > 0 ? "critical" : "default"}
         />
         <KpiTile label="Zones Monitored" status="ready" value={String(zones.length)} hint="editable thresholds in Rule Engine" />
