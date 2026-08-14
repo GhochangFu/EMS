@@ -570,4 +570,116 @@ describe("repo invariants", () => {
         "not. The specs may read it (they assert it is inert).",
     ).toEqual([]);
   });
+
+  it("the schematic staleness tick stays wired to the context value", () => {
+    // `F4.37` clamped future telemetry timestamps so a dead asset stops
+    // rendering `running`. The clamp is unit-tested; **the thing that makes it
+    // observable is not, and cannot be** without a component test harness this
+    // repo does not have (`apps/web/vitest.config.ts` is `environment: "node"`
+    // by choice, and adding jsdom is a dependency ADR).
+    //
+    // The gap is specific. `deriveStatus` reads the clock during render, so it
+    // is only re-evaluated when something re-renders the tree. On a healthy
+    // system that is a socket payload — but the case this whole item exists for
+    // is the asset going quiet, and if the *site* goes quiet nothing re-renders
+    // at all. Every tile then freezes on its last computed status, which is the
+    // original symptom with the arithmetic fixed underneath it. The consumers'
+    // `refetchInterval: 15_000` does not rescue it: TanStack Query's structural
+    // sharing returns the identical `data` reference when a refetch changes
+    // nothing, so an unchanged rule list re-renders nothing.
+    //
+    // So `staleTick` must (a) exist on a timer and (b) be a dependency of the
+    // context `value` memo — React propagates context by reference identity, so
+    // a tick that does not change that identity notifies no consumer and is
+    // dead code that looks alive. Both deletions were mutation-tested and both
+    // are invisible to every *behavioural* suite: with the interval deleted the
+    // full run reports 53 of 54 files passing and the only failing test is this
+    // one. That is the measurement that justifies a static invariant here rather
+    // than "we should add a component test later".
+    //
+    // This is the AGENTS.md §4.4 shape — a guard that cannot fire under the
+    // condition it guards — reached by wiring rather than by a sentinel.
+    const rel = "apps/web/src/components/live-svg/schematic-telemetry-context.tsx";
+    const src = readFileSync(join(repoRoot, rel), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^[ \t]*\/\/.*$/gm, "");
+
+    expect(
+      src,
+      `${rel} must drive staleness re-evaluation from a timer. Without it the offline state is ` +
+        "only reached when some other asset on the same schematic reports, so a site-wide outage " +
+        "leaves every tile frozen on `running` — the exact F4.37 symptom, one layer down.",
+    ).toMatch(/setInterval\(\s*\(\)\s*=>\s*\{[\s\S]{0,120}?setStaleTick/);
+    expect(
+      src,
+      `${rel} must use the shared STALE_TICK_MS rather than an inline period, so the bound on ` +
+        "offline-detection latency (FRESH_MS + STALE_TICK_MS) is stated in one place.",
+    ).toMatch(/STALE_TICK_MS/);
+
+    // Any dependency array carrying both — `totalKw` identifies the context
+    // value's memo without pinning the rest of the list's order or contents.
+    const depArrays = src.match(/\[[^[\]]*\]/g) ?? [];
+    const wired = depArrays.some(
+      (arr) => /\btotalKw\b/.test(arr) && /\bstaleTick\b/.test(arr),
+    );
+    expect(
+      wired,
+      `${rel} must list staleTick in the context value's useMemo dependencies. React propagates ` +
+        "context by reference identity: if the memo does not depend on the tick, the value object " +
+        "is reused, no consumer re-renders, and the timer runs forever changing nothing.",
+    ).toBe(true);
+
+    // The timer must be unconditional. `schematic-telemetry-context.tsx` says so
+    // in a comment, and the F4.37 compliance review showed the two assertions
+    // above did not hold it: gating the effect on
+    // `if (trackedIds.length === 0) return;` — the shape the two effects either
+    // side of it already use — left the whole suite green. A schematic whose
+    // assets have not resolved yet still renders tiles that must go offline, and
+    // an empty dependency array is what stops the interval being torn down and
+    // recreated on unrelated state changes.
+    // Anchored on `setInterval`, not on `setStaleTick`: the first `setStaleTick`
+    // in the file is the `useState` destructure, which precedes every
+    // `useEffect` and made an earlier version of this locator silently return
+    // the empty string.
+    const tickEffect = (() => {
+      const at = src.indexOf("setInterval");
+      if (at < 0) {
+        return "";
+      }
+      const start = src.lastIndexOf("useEffect(", at);
+      const depsAt = src.indexOf("}, [", at);
+      return start < 0 || depsAt < 0 ? "" : src.slice(start, depsAt + 8);
+    })();
+    expect(
+      tickEffect,
+      "could not locate the staleness tick effect — the assertions below prove nothing.",
+    ).not.toBe("");
+    expect(
+      /\}\s*,\s*\[\s*\]\s*\)/.test(tickEffect),
+      `${rel}: the staleness interval must have an empty dependency array, so it is created once ` +
+        "and never torn down by unrelated state.",
+    ).toBe(true);
+    expect(
+      /\breturn\b/.test(tickEffect.slice(0, tickEffect.indexOf("setInterval"))),
+      `${rel}: nothing may return from the staleness effect before setInterval. Gating it on ` +
+        "trackedIds (the shape the neighbouring effects use) silently disables offline detection " +
+        "for exactly the schematics that have not resolved their assets yet.",
+    ).toBe(false);
+
+    // Third leg, added by the F4.37 security review: the first two guarantee a
+    // re-render happens, not that anything re-reads the clock when it does.
+    // Memoising the status, or deriving `nowMs` from `ctx.staleTick` instead of
+    // the clock, would leave the timer firing and the tiles frozen — and both
+    // earlier assertions would still pass. The status must be computed from a
+    // live `Date.now()` at render.
+    expect(
+      src,
+      `${rel} must call deriveStatus with Date.now() read at render. Taking the time from the ` +
+        "tick counter, or memoising the result, re-freezes every tile while leaving this file " +
+        "looking correctly wired.",
+    ).toMatch(/deriveStatus\(\s*\w+\s*,\s*Date\.now\(\)\s*\)/);
+    // Residual this cannot reach: a *consumer* wrapping `useSchematicTelemetry`
+    // in its own `useMemo` keyed on the slice would freeze the status again with
+    // every assertion here still green. No consumer does that today.
+  });
 });
