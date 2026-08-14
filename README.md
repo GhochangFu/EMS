@@ -29,7 +29,7 @@ broader AI layer remain out of scope until explicitly promoted.
 | [`docs/security/encryption-at-rest.md`](./docs/security/encryption-at-rest.md) | **Read before deploying.** What is and is not encrypted at rest, and the host/platform encryption a deployer must configure. |
 | [`docs/observability-runbook.md`](./docs/observability-runbook.md) | Sprint D Prometheus/Grafana/Loki health-check steps. |
 | [`docs/phase-2-ingestion-readiness.md`](./docs/phase-2-ingestion-readiness.md) | Phase 2 Sprint 0 source inventory, mapping, and Path A / Path B decision workbook. |
-| [`docs/ingest-host.md`](./docs/ingest-host.md) | The `apps/ingest` adapter host — why there are two entry points, its environment, and the ADR 0016 parallel-run procedure. |
+| [`docs/ingest-host.md`](./docs/ingest-host.md) | The `apps/ingest` adapter host — its environment, why realtime is unconditional, and the ADR 0016 strangler migration that ended at §6 commit 4. |
 | [`docs/decisions.md`](./docs/decisions.md) | ADR-lite log of non-obvious choices made during the prototype. |
 | [`docs/adr/`](./docs/adr) | Phase 1+ architecture decisions. |
 

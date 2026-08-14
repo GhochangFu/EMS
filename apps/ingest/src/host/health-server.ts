@@ -15,7 +15,6 @@ import type { SupervisorHealth } from "./supervisor.js";
 export type HealthSnapshot = {
   readonly endpoints: readonly SupervisorHealth[];
   readonly skipped: readonly SkippedBinding[];
-  readonly notifyEnabled: boolean;
   readonly startedAt: Date;
 };
 
@@ -32,7 +31,18 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
   lines.push(
     `ingest-host ${unhealthy.length === 0 ? "ok" : "degraded"} ` +
       `endpoints=${snapshot.endpoints.length} rtus=${devices} ` +
-      `skipped=${snapshot.skipped.length} notify=${snapshot.notifyEnabled ? "on" : "off"} ` +
+      // `notify=on` is a literal since ADR 0016 §6 commit 4 deleted the switch.
+      // Kept for continuity — an operator or check matching on the token still
+      // finds it — but it reports *intent*, not delivery, and would print `on`
+      // with every notification failing.
+      //
+      // The delivery signal is `written=` and `writeFailures=` on the endpoint
+      // lines: commit 4 left no branch between writing and notifying, so
+      // `writeResolved` does both or throws, and the supervisor only counts
+      // `samplesWritten` when the whole call succeeded. `docs/ingest-host.md`
+      // says so; do not reintroduce a `notify` field that varies, because a
+      // varying one would mean the switch is back.
+      `skipped=${snapshot.skipped.length} notify=on ` +
       `uptime=${uptimeSeconds}s`,
   );
 

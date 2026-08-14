@@ -1,15 +1,15 @@
 /**
  * The single `pg_notify` chunker (ADR 0016 §2).
  *
- * There are two byte-identical copies of this function on `main` today —
- * `chunkReadings()` in `apps/ingest/src/index.js` and
+ * There were two byte-identical copies of this function when ADR 0016 was
+ * written — `chunkReadings()` in `apps/ingest/src/index.js` and
  * `chunkReadingsForNotify()` in `apps/sim/src/index.js`, each with its own
- * `MAX_NOTIFY_UTF8_BYTES = 7000`. ADR 0016 §2 makes the host the owner so a
- * third copy per protocol is not the default outcome of the F1.2–F1.6 fan-out.
+ * `MAX_NOTIFY_UTF8_BYTES = 7000`. §2 makes the host the owner so a third copy
+ * per protocol is not the default outcome of the F1.2–F1.6 fan-out.
  *
- * Neither copy is edited here. `index.js` is frozen for the whole strangler
- * window (§6) and `apps/sim` keeps its own write path until `F1.11` decides
- * otherwise (§Consequences, Neutral).
+ * **One copy remains**: §6 commit 4 deleted `apps/ingest/src/index.js`, and
+ * `apps/sim` keeps its own write path until `F1.11` decides otherwise
+ * (§Consequences, Neutral).
  */
 
 /**

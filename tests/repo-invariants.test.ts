@@ -485,4 +485,89 @@ describe("repo invariants", () => {
         "is exactly what ADR 0026 was written to undo.",
     ).toEqual([]);
   });
+
+  it("ingest has one entry point and no NOTIFY switch", () => {
+    // ADR 0016 §6 commit 4 ended the strangler migration. Both halves of that are
+    // structural, and neither can be carried by a behavioural test:
+    //
+    //   - No suite fails if `src/index.js` reappears alongside `main.ts`. The
+    //     two-entrypoint window reopening is exactly the "duplication becoming
+    //     permanent" that Resolved decision 4 named as the realistic failure mode
+    //     of a strangler, and it would look like an addition, not a regression.
+    //   - `apps/ingest`'s own specs prove the *host* always notifies, but nothing
+    //     stops a new `INGEST_NOTIFY` branch being added somewhere else, and the
+    //     symptom is silent: rows keep landing while every dashboard goes dead.
+    //
+    // Amendment 3 records why this is the guarantee worth pinning statically.
+    // `walk`, not `readdirSync` — a top-level scan says "apps/ingest/src must
+    // hold exactly one entry point" while letting `src/legacy/index.js` through,
+    // which is a message promising more than the check delivers.
+    const ingestSrc = join(repoRoot, "apps", "ingest", "src");
+    const entryPoints = walk(ingestSrc)
+      .map((f) => relative(ingestSrc, f).split("\\").join("/"))
+      .filter((f) => /(^|\/)(index|main)\.(ts|js)$/.test(f))
+      .sort();
+    expect(
+      entryPoints,
+      `apps/ingest/src must hold exactly one entry point and it must be main.ts, found: ` +
+        `${entryPoints.join(", ")}. ADR 0016 §6 commit 4 deleted index.js; a second entry point ` +
+        "reopens the two-entrypoint window the strangler migration closed. `rtu-config.js` is " +
+        "not an entry point and is deliberately kept — it is the ADR 0012 credential seam.",
+    ).toEqual(["main.ts"]);
+
+    const pkg = JSON.parse(
+      readFileSync(join(repoRoot, "apps", "ingest", "package.json"), "utf8"),
+    ) as { scripts?: Record<string, string> };
+    expect(
+      pkg.scripts?.start,
+      "apps/ingest `start` must run the compiled host. Anything else means the image's CMD " +
+        "(`pnpm start`) is not the host, which is how the pilot silently runs the wrong process.",
+    ).toBe("node dist/main.js");
+    expect(
+      Object.keys(pkg.scripts ?? {}),
+      "`start:host` was removed at commit 4 — two names for one entry point is the duplication " +
+        "the strangler exists to end.",
+    ).not.toContain("start:host");
+
+    // The flag must be gone from source *and* from the deployment. Compose is
+    // included deliberately: `INGEST_NOTIFY: "on"` there was load-bearing before
+    // commit 4, so a copy surviving would read as required configuration.
+    //
+    // **Reads and assignments, not mentions.** Naming the variable in prose is
+    // how the next person learns why it must not come back — `config.ts` and
+    // `main.ts` both explain the deletion, and an invariant that forbade the word
+    // would force those comments out and take the reason with them.
+    //
+    // So comments are stripped first and then *any* mention of the name is a
+    // failure. Matching `env.INGEST_NOTIFY` instead looks tighter and is weaker:
+    // it misses `env["INGEST_NOTIFY"]`, `const { INGEST_NOTIFY } = env` and any
+    // `getEnv("INGEST_NOTIFY")` helper — three ways to revive the switch that
+    // read perfectly naturally. Compose likewise accepts both `KEY: value` and
+    // list-form `- KEY=value`, and only the first was caught before.
+    const stripComments = (src: string): string =>
+      src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    const compose = readFileSync(join(repoRoot, "docker-compose.yml"), "utf8");
+    const survivors = [...sourceFiles()]
+      .map((f) => [relative(repoRoot, f).split("\\").join("/"), readFileSync(f, "utf8")] as const)
+      .filter(
+        ([f, src]) =>
+          /\bINGEST_NOTIFY\b/.test(stripComments(src)) && !/\.(spec|test)\.tsx?$/.test(f),
+      )
+      .map(([f]) => f)
+      .concat(
+        /^\s*-?\s*INGEST_NOTIFY\s*[:=]/m.test(
+          compose.replace(/(^|\s)#[^\n]*/g, "$1"),
+        )
+          ? ["docker-compose.yml"]
+          : [],
+      );
+    expect(
+      survivors,
+      `INGEST_NOTIFY is read or set in: ${survivors.join(", ")}. ADR 0016 §6 commit 4 deleted it ` +
+        "so that no configuration can run ingest with realtime off — a state in which telemetry " +
+        "lands and every dashboard is dead, with no error and no alarm. Explaining the deletion " +
+        "in a comment is fine and encouraged; reading the variable or setting it in compose is " +
+        "not. The specs may read it (they assert it is inert).",
+    ).toEqual([]);
+  });
 });

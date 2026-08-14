@@ -314,10 +314,11 @@ export function createMqttAdapter(
         rejectUnauthorized: ctx.config.rejectUnauthorized,
         // **The library's own reconnect is switched off.** ADR 0016 §5 gives
         // reconnect backoff to the host — exponential, base 1 s, cap 60 s, ±20%
-        // jitter — and an adapter owns no timer (rule 4). `index.js` sets
+        // jitter — and an adapter owns no timer (rule 4). The ADR 0007 pilot set
         // `reconnectPeriod: MQTT_RECONNECT_MS ?? 5000`; leaving that on would
         // mean two reconnect policies racing, and the supervisor could never
-        // observe a disconnection it was supposed to manage.
+        // observe a disconnection it was supposed to manage. That pilot and its
+        // `MQTT_RECONNECT_MS` were both deleted at §6 commit 4.
         reconnectPeriod: 0,
       });
       client = handle;

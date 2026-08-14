@@ -125,6 +125,31 @@ export default defineConfig({
       // `localhost` resolves to IPv6 first, `access-control.integration` fails the
       // whole run with a connection timeout rather than skipping — correctly, since
       // a set `DATABASE_URL` is a claim that a database exists. CI is unaffected.
+      // Ratcheted by `F1.1` (ADR 0016 §6 commit 4) from 35.7/30.8/37.6/35.9.
+      // Measured 2026-08-14 against the live database, **all 152 tests running
+      // and none skipped**: 36.53 statements · 31.26 branches · 38.23 functions
+      // · 36.75 lines. (52 files / 152 tests.)
+      //
+      // The rise is a **denominator shrink, not new tests** — deleting
+      // `apps/ingest/src/index.js` removed 234 lines that no test ever imported,
+      // and `apps/ingest/src/**/*.js` is in `include` above. Worth stating,
+      // because "coverage went up" normally means the numerator moved and here it
+      // did not: nothing became better tested.
+      //
+      // **Getting a complete run needed a database fix that is not in this
+      // branch.** `rollup-conversion.integration` fails in teardown with `tuple
+      // decompression limit exceeded` once `point_values` has compressed chunks:
+      // `cleanupProbes` issues a `DELETE` with no time predicate, so Timescale
+      // decompresses candidate tuples across every compressed chunk before
+      // filtering and blows the 100k
+      // `max_tuples_decompressed_per_dml_transaction` cap — even though the probe
+      // assets do not exist and it matches zero rows. Verified pre-existing by
+      // running it with this branch stashed. CI never sees it (a fresh database
+      // has no compressed chunks), so it is invisible to the pipeline by
+      // construction and only bites a machine with history. `decompress_chunk`
+      // locally is the workaround; the compression policy re-compresses on its
+      // own schedule.
+      //
       // Ratcheted by `F4.29` (ADR 0026) from 35.5/30.7/36.9/35.7. Measured
       // 2026-08-10 against the live database, all seven integration suites running:
       // 35.78 statements · 30.88 branches · 37.68 functions · 35.97 lines.
@@ -140,10 +165,10 @@ export default defineConfig({
       // tests at all** before this item (ADR 0025 fact 7) and is now exercised
       // through `energyPreview` rather than by reconstructing its queries.
       thresholds: {
-        statements: 35.7,
-        branches: 30.8,
-        functions: 37.6,
-        lines: 35.9,
+        statements: 36.5,
+        branches: 31.2,
+        functions: 38.2,
+        lines: 36.7,
       },
     },
   },

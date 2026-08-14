@@ -24,45 +24,66 @@ const BASE = { DATABASE_URL: "postgres://localhost/bms" };
 
 /** Host environment parsing (ADR 0016 §6). */
 export function runHostConfigTests(): void {
-  // ---- NOTIFY is off unless explicitly turned on --------------------------
+  // ---- there is no NOTIFY switch any more (ADR 0016 §6 commit 4) ----------
 
   {
-    // **The single most consequential default in this file.** During the §6
-    // parallel-run window the legacy index.js is still notifying, and
-    // telemetry-notify.service.ts fans every payload to Socket.IO — so a second
-    // notifying process delivers every PHE reading to live dashboards twice.
-    const config = readHostConfig({ ...BASE });
+    // Commit 4 deleted `INGEST_NOTIFY`, and this is the assertion that keeps it
+    // deleted. The host always notifies, so no environment can run ingest with
+    // realtime silently off — rows landing while every dashboard is dead, with no
+    // error and no alarm, was the live failure mode the flag had become.
+    //
+    // Asserting the *absence* of the key is what makes this fail if the flag is
+    // reinstated. A behavioural assertion cannot: `readHostConfig` has no way to
+    // observe whether anything notifies.
+    const config: Record<string, unknown> = { ...readHostConfig({ ...BASE }) };
     assert(
-      config.notifyEnabled === false,
-      "NOTIFY must default to OFF — an unset flag must not double-deliver readings",
+      !("notifyEnabled" in config),
+      "HostConfig must carry no notify switch — commit 4 removed the only way to " +
+        "run ingest with realtime silently off, and a reinstated flag restores it",
     );
   }
 
-  assert(readHostConfig({ ...BASE, INGEST_NOTIFY: "on" }).notifyEnabled, '"on" enables NOTIFY');
-  assert(!readHostConfig({ ...BASE, INGEST_NOTIFY: "off" }).notifyEnabled, '"off" disables NOTIFY');
-  assert(readHostConfig({ ...BASE, INGEST_NOTIFY: " ON " }).notifyEnabled, "the flag is trimmed and case-insensitive");
-  assert(!readHostConfig({ ...BASE, INGEST_NOTIFY: "" }).notifyEnabled, "an empty flag is off");
-
-  // A typo must not silently pick a side. `INGEST_NOTIFY=true` reading as
-  // "off" would look like a broken realtime feed; reading as "on" would double
-  // the dashboards. Refusing to start is the only answer that cannot mislead.
-  for (const bad of ["true", "1", "yes", "enabled"]) {
-    expectThrow(
-      () => readHostConfig({ ...BASE, INGEST_NOTIFY: bad }),
-      `INGEST_NOTIFY="${bad}" must be rejected, not guessed at`,
-    );
+  {
+    // A stale `INGEST_NOTIFY` in an operator's `.env` is **ignored**, not
+    // refused: refusing to start over a variable that can no longer do anything
+    // would take the pilot down for nothing.
+    //
+    // The assertion is that these values **no longer throw**, which is the half
+    // that actually changed — `"true"`, `"1"`, `"yes"` and `"enabled"` each
+    // refused startup before commit 4, on the reasoning that a typo must not
+    // silently pick a side. There is no side left to pick. Asserting key-absence
+    // in a loop would not have worked: `readHostConfig` never reads the
+    // variable, so the loop value cannot influence the outcome and every
+    // iteration would assert the same thing as the block above.
+    for (const stale of ["off", "on", "true", "1", "yes", "enabled", "garbage", ""]) {
+      let threw = false;
+      try {
+        readHostConfig({ ...BASE, INGEST_NOTIFY: stale });
+      } catch {
+        threw = true;
+      }
+      assert(
+        !threw,
+        `INGEST_NOTIFY="${stale}" must be inert, not refused — a value left in an ` +
+          `operator's .env can no longer change anything, and failing startup over ` +
+          `it trades a real outage for a no-op`,
+      );
+    }
   }
 
-  // ---- the health port is not the legacy metrics port ---------------------
+  // ---- the health port default survives the entry point that caused it ----
 
   {
-    /** `index.js:27` — `INGEST_METRICS_PORT ?? "9102"`. */
-    const LEGACY_METRICS_PORT = 9102;
+    // The ADR 0007 pilot bound 9102 as `INGEST_METRICS_PORT`, and §6 commit 3
+    // needed both processes up at once, so the host could not share it. Commit 4
+    // deleted that entry point and the variable with it. The default stays 9103
+    // rather than being "tidied" to 9102, so two hosts side by side still need
+    // only one variable set.
+    const RETIRED_METRICS_PORT = 9102;
     const config = readHostConfig({ ...BASE });
     assert(
-      config.healthPort !== LEGACY_METRICS_PORT,
-      `the host must not default to index.js's ${LEGACY_METRICS_PORT} — §6 commit 3 runs ` +
-        `both processes at once, so they cannot share a port. Got ${config.healthPort}.`,
+      config.healthPort !== RETIRED_METRICS_PORT,
+      `the host must not default to the retired ${RETIRED_METRICS_PORT}. Got ${config.healthPort}.`,
     );
     assert(
       config.healthPort === DEFAULT_HEALTH_PORT,
@@ -71,11 +92,12 @@ export function runHostConfigTests(): void {
   }
 
   {
-    // Setting the legacy variable must have no effect here.
+    // `INGEST_METRICS_PORT` no longer exists anywhere. A copy left in an old
+    // `.env` must not move the host's port.
     const config = readHostConfig({ ...BASE, INGEST_METRICS_PORT: "9102" });
     assert(
       config.healthPort === DEFAULT_HEALTH_PORT,
-      "INGEST_METRICS_PORT belongs to index.js and must not move the host's port",
+      "the retired INGEST_METRICS_PORT must not move the host's port",
     );
   }
 
@@ -99,7 +121,7 @@ export function runHostConfigTests(): void {
   }
 
   assert(readHostConfig({ ...BASE }).reloadMs === DEFAULT_RELOAD_MS, "the reload default is 60 s");
-  assert(DEFAULT_RELOAD_MS === 60_000, "index.js reloads every 60 s; the host matches it");
+  assert(DEFAULT_RELOAD_MS === 60_000, "the ADR 0007 pilot reloaded every 60 s; the host matches it");
   assert(
     readHostConfig({ ...BASE, INGEST_RELOAD_MS: "5000" }).reloadMs === 5_000,
     "the reload interval is overridable",
@@ -116,8 +138,8 @@ export function runHostConfigTests(): void {
   // ---- the MQTT TLS escape hatch is transcribed, not reinterpreted --------
 
   {
-    // index.js:204 is `process.env.MQTT_TLS_REJECT_UNAUTHORIZED !== "false"`,
-    // so *only* the exact string "false" turns verification off.
+    // The ADR 0007 pilot tested `MQTT_TLS_REJECT_UNAUTHORIZED !== "false"`, so
+    // *only* the exact string "false" turns verification off.
     assert(
       readHostConfig({ ...BASE }).mqttConnectionDefaults.rejectUnauthorized === true,
       "TLS verification defaults on",
@@ -125,7 +147,7 @@ export function runHostConfigTests(): void {
     assert(
       readHostConfig({ ...BASE, MQTT_TLS_REJECT_UNAUTHORIZED: "false" }).mqttConnectionDefaults
         .rejectUnauthorized === false,
-      '"false" turns TLS verification off, matching index.js',
+      '"false" turns TLS verification off, matching the ADR 0007 pilot',
     );
     for (const value of ["FALSE", "0", "no", "", "true"]) {
       assert(

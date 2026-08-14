@@ -7,8 +7,10 @@ function assert(condition: boolean, message: string): void {
 }
 
 /**
- * `chunkReadings()` exactly as `apps/ingest/src/index.js:39-59` implements it
- * today, transcribed rather than paraphrased.
+ * `chunkReadings()` exactly as the ADR 0007 pilot implemented it, transcribed
+ * rather than paraphrased. That file (`apps/ingest/src/index.js`) was deleted at
+ * ADR 0016 §6 commit 4; this transcription is now the only record of the
+ * behaviour, which is why it must not be "tidied".
  *
  * This is the oracle. The host's version is a rewrite that trades O(n²)
  * `JSON.stringify` calls for incremental byte accounting, and it runs in front
