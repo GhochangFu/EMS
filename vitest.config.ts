@@ -125,6 +125,23 @@ export default defineConfig({
       // `localhost` resolves to IPv6 first, `access-control.integration` fails the
       // whole run with a connection timeout rather than skipping — correctly, since
       // a set `DATABASE_URL` is a claim that a database exists. CI is unaffected.
+      // Ratcheted by `F4.38` from the `F4.37` **measurement** of
+      // 38.98/33.42/39.88/39.26 (its thresholds were 38.9/33.4/39.8/39.2 —
+      // comparing this measurement against those thresholds would overstate the
+      // gain by the safety margin, which an earlier version of this note did).
+      // Measured 2026-08-15 against the live database, all 156 tests running
+      // and none skipped, after the review round:
+      // 39.28 statements · 33.73 branches · 40.09 functions · 39.57 lines.
+      // (54 files / 156 tests.)
+      //
+      // The rise is entirely `schematic-telemetry.ts` again — `freshValue`,
+      // `staleCount` and `sumFresh` arrive tested. The seven page files that
+      // consume them are **not** in the denominator (`include` reaches
+      // `apps/web/src/lib/**` and nothing above it), so the largest part of this
+      // change is invisible to this gate. That is why ADR 0027's page-level
+      // guarantee is carried by a static invariant in `tests/repo-invariants.test.ts`
+      // rather than by coverage.
+      //
       // Ratcheted by `F4.37` from 38.2/32.3/39.5/38.4. Measured 2026-08-14 against
       // the live database, all 155 tests running and none skipped:
       // 38.98 statements · 33.42 branches · 39.88 functions · 39.26 lines.
@@ -226,10 +243,10 @@ export default defineConfig({
       // tests at all** before this item (ADR 0025 fact 7) and is now exercised
       // through `energyPreview` rather than by reconstructing its queries.
       thresholds: {
-        statements: 38.9,
-        branches: 33.4,
-        functions: 39.8,
-        lines: 39.2,
+        statements: 39.2,
+        branches: 33.6,
+        functions: 40.0,
+        lines: 39.5,
       },
     },
   },

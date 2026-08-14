@@ -378,15 +378,10 @@ export function isStale(lastSeenMs: number | null, nowMs: number): boolean {
  * **This is the only freshness gate in the web client, and it does not cover
  * the pages most operators watch.** It reaches the SVG schematics through
  * `useSchematicTelemetry`; the seven control-room pages each derive their own
- * tile status locally (`deriveRuleState` on five, `deriveRuleStatus` on `-it-`,
- * `deriveBreakerRuleState` on `-sld-`), and none of them consults `lastSeenMs`
- * as a clock — `-env-` and `-hvac-` check only that it is not `null`, i.e. "has
- * this asset *ever* reported". A dead leak or smoke sensor therefore
- * keeps rendering its last known value as `normal` indefinitely. That is
- * `F4.38`, deliberately not fixed here: it needs no clock skew and no attacker,
- * and choosing what a stale-but-last-known-wet sensor should render is a
- * product decision in a safety path — `mergeStatus` currently ranks `critical`
- * above `offline`, so suppressing a frozen escalation is not obviously right.
+ * tile status locally, and until `F4.38` none of them consulted `lastSeenMs` as
+ * a clock. **They do now** — `ADR 0027` makes staleness a gate in front of
+ * every derived status and every rendered value, and the helpers below are the
+ * shared implementation. This function remains the schematic's own path.
  */
 export function deriveStatus(
   slice: SchematicTelemetrySlice,
@@ -402,4 +397,108 @@ export function deriveStatus(
     return { status: "fault", stale: false };
   }
   return { status: "running", stale: false };
+}
+
+// ---------------------------------------------------------------------------
+// ADR 0027 — the staleness gate shared by the seven control-room pages (F4.38)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a tile shows in place of a number it can no longer vouch for.
+ *
+ * ADR 0027 decision 3. A stale tile renders this rather than its last reading,
+ * because **a number with no timestamp beside it is exactly what made this
+ * failure invisible**: a dead sensor's last value looks identical to a live
+ * one. Blanking forces the reader to notice there is no current data.
+ */
+export const STALE_VALUE = "—";
+
+/**
+ * A point value, or `null` once the slice is stale (ADR 0027 decision 3).
+ *
+ * Callers render `STALE_VALUE` for `null`. Returning `null` rather than the
+ * string keeps the formatting decision — units, precision, `toFixed` — with the
+ * caller that owns it, and keeps this function usable for a value that feeds
+ * arithmetic rather than a label.
+ */
+export function freshValue(
+  value: number | null,
+  stale: boolean,
+): number | null {
+  return stale ? null : value;
+}
+
+/**
+ * How many of these slices have stopped reporting.
+ *
+ * Used where a *count of unreachable assets* is wanted regardless of which
+ * point is being summed. For the "· N assets stale" flag beside a specific
+ * aggregate use `sumFresh`'s `staleExcluded`, which counts only the slices that
+ * would actually have contributed to that sum.
+ */
+export function staleCount(
+  slices: readonly SchematicTelemetrySlice[],
+  nowMs: number,
+): number {
+  let n = 0;
+  for (const s of slices) {
+    if (isStale(s.lastSeenMs, nowMs)) {
+      n += 1;
+    }
+  }
+  return n;
+}
+
+/** A summed aggregate and the number of assets left out of it. */
+export type FreshSum = {
+  /** `null` when no slice contributed — distinct from a genuine `0`. */
+  readonly total: number | null;
+  /** Slices excluded because they are stale. */
+  readonly staleExcluded: number;
+};
+
+/**
+ * Sums one numeric point across only the slices still reporting (ADR 0027
+ * decision 4).
+ *
+ * **`null` total and `0` total are different answers and must stay so.** `null`
+ * means nothing contributed — every asset stale, or none carrying the point;
+ * `0` means assets are reporting and the load really is zero. Collapsing them
+ * would let a fully dead bus render `0 MW`, which reads as "measured" rather
+ * than "unknown" and is the same class of failure this ADR exists to close.
+ *
+ * `NaN` values are skipped rather than propagated: one `NaN` would otherwise
+ * turn the whole sum into `NaN`, which renders as nothing useful and loses the
+ * contributions that were valid. The unconstrained `double precision` column
+ * (`F4.32`) makes that reachable from the database rather than only in theory.
+ */
+export function sumFresh(
+  slices: readonly SchematicTelemetrySlice[],
+  pick: (slice: SchematicTelemetrySlice) => number | null,
+  nowMs: number,
+): FreshSum {
+  let total = 0;
+  let contributed = false;
+  let staleExcluded = 0;
+  for (const s of slices) {
+    const v = pick(s);
+    const usable = v !== null && !Number.isNaN(v);
+    if (isStale(s.lastSeenMs, nowMs)) {
+      // Only count a stale slice if it *would* have contributed. Counting every
+      // stale slice regardless made the bus header read "· 9 assets stale" for
+      // nine assets that never carried a kW, and a flag that is permanently on
+      // is a flag an operator learns to ignore. Raised by the F4.38 security
+      // review.
+      if (usable) {
+        staleExcluded += 1;
+      }
+      continue;
+    }
+    if (!usable) {
+      continue;
+    }
+    total += v;
+    contributed = true;
+  }
+  return { total: contributed ? total : null, staleExcluded };
 }

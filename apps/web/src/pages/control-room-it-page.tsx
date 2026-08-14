@@ -15,6 +15,7 @@ import {
 import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
+import { freshValue, isStale } from "../lib/schematic-telemetry";
 import type { AuthUser } from "../stores/auth-store";
 
 type ControlRoomItPageProps = {
@@ -34,6 +35,8 @@ type RackPowerStatus = "normal" | "warning" | "critical" | "offline";
 type RuleMatchState = {
   status: RackPowerStatus;
   matchedRule: RuleListItem | null;
+  /** True when the asset has stopped reporting (ADR 0027). */
+  stale: boolean;
 };
 
 function statusLabel(status: RackPowerStatus): string {
@@ -108,15 +111,26 @@ function severityStatus(severity: string | null): RackPowerStatus {
   return severity === "critical" ? "critical" : "warning";
 }
 
+/**
+ * Tile status for one rack or PDU (ADR 0027).
+ *
+ * Staleness is checked before the PDU/health test, because those fields are
+ * frozen last-known values: a rack that lost telemetry while both PDUs read
+ * healthy would otherwise render `normal` indefinitely.
+ */
 function deriveRuleStatus(
   assetCode: string,
   slice: SchematicTelemetrySlice,
   rules: RuleListItem[],
+  nowMs: number,
 ): RuleMatchState {
+  if (isStale(slice.lastSeenMs, nowMs)) {
+    return { status: "offline", matchedRule: null, stale: true };
+  }
   const offline =
     slice.pduAStatus === 0 || slice.pduBStatus === 0 || slice.healthPct === 0;
   if (offline) {
-    return { status: "offline", matchedRule: null };
+    return { status: "offline", matchedRule: null, stale: false };
   }
 
   const matchedRule = rules.find((rule) => {
@@ -135,16 +149,17 @@ function deriveRuleStatus(
   });
 
   return matchedRule
-    ? { status: severityStatus(matchedRule.severity), matchedRule }
-    : { status: "normal", matchedRule: null };
+    ? { status: severityStatus(matchedRule.severity), matchedRule, stale: false }
+    : { status: "normal", matchedRule: null, stale: false };
 }
 
+/** `offline` outranks `critical` — ADR 0027 decision 2; see the env page note. */
 function mergeStatus(states: RuleMatchState[]): RuleMatchState {
   return (
+    states.find((state) => state.status === "offline") ??
     states.find((state) => state.status === "critical") ??
     states.find((state) => state.status === "warning") ??
-    states.find((state) => state.status === "offline") ??
-    { status: "normal", matchedRule: null }
+    { status: "normal", matchedRule: null, stale: false }
   );
 }
 
@@ -157,21 +172,40 @@ function ControlRoomItContent() {
   const rules = rulesQuery.data?.items ?? [];
   const net = useCr("CR-NET-RACK");
   const vw = useCr("CR-VW-SRV-RACK");
-  const totalKw = (net.rackKw ?? 0) + (vw.rackKw ?? 0);
+  const nowMs = Date.now();
+  // ADR 0027 decisions 3 and 4. `?? 0` meant two dead racks summed to
+  // "0.00 kW", which reads as a measurement rather than an absence.
+  const netStale = isStale(net.lastSeenMs, nowMs);
+  const vwStale = isStale(vw.lastSeenMs, nowMs);
+  const rackKws = [
+    freshValue(net.rackKw, netStale),
+    freshValue(vw.rackKw, vwStale),
+  ].filter((v): v is number => v != null && !Number.isNaN(v));
+  const totalKw = rackKws.length === 0 ? null : rackKws.reduce((a, b) => a + b, 0);
+  const staleRacks = [netStale, vwStale].filter(Boolean).length;
+  // ADR 0027 decision 2's mitigation — offline now outranks critical here too.
+  const liveCritical = [
+    deriveRuleStatus("CR-NET-RACK", net, rules, nowMs),
+    deriveRuleStatus("CR-VW-SRV-RACK", vw, rules, nowMs),
+  ].filter((state) => state.status === "critical").length;
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
       <PageHeader
         eyebrow="R.crIT"
         title="IT & Rack Load Monitoring"
-        subtitle="Network rack · Videowall server rack · PDU status · UPS source mapping"
+        subtitle={
+          liveCritical > 0
+            ? `${liveCritical} ACTIVE CRITICAL · network rack · videowall server rack · PDU status`
+            : "Network rack · Videowall server rack · PDU status · UPS source mapping"
+        }
         actions={<StatusPill label="Live rack telemetry" />}
       />
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Summary label="Total rack load" value={`${n(totalKw, 2)} kW`} />
-        <Summary label="Network rack temp" value={`${n(net.rackTempC, 1)} °C`} />
-        <Summary label="Videowall rack temp" value={`${n(vw.rackTempC, 1)} °C`} />
+        <Summary label="Total rack load" value={`${n(totalKw, 2)} kW${staleRacks > 0 ? ` · ${staleRacks} stale` : ""}`} />
+        <Summary label="Network rack temp" value={`${n(freshValue(net.rackTempC, netStale), 1)} °C`} />
+        <Summary label="Videowall rack temp" value={`${n(freshValue(vw.rackTempC, vwStale), 1)} °C`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -254,9 +288,11 @@ function RackCard({
   const rack = useCr(code);
   const a = useCr(pduA);
   const b = useCr(pduB);
-  const aState = deriveRuleStatus(pduA, a, rules);
-  const bState = deriveRuleStatus(pduB, b, rules);
-  const rackState = mergeStatus([aState, bState, deriveRuleStatus(code, rack, rules)]);
+  const nowMs = Date.now();
+  const aState = deriveRuleStatus(pduA, a, rules, nowMs);
+  const bState = deriveRuleStatus(pduB, b, rules, nowMs);
+  const rackSelf = deriveRuleStatus(code, rack, rules, nowMs);
+  const rackState = mergeStatus([aState, bState, rackSelf]);
   const pct = rack.rackKw == null ? 0 : Math.min(100, (rack.rackKw / ratedKw) * 100);
   return (
     <section className="rounded border border-gray-200 bg-white p-4">
@@ -272,7 +308,7 @@ function RackCard({
       <div className="mt-4">
         <div className="flex justify-between text-sm">
           <span className="text-bms-muted">Load</span>
-          <span className="font-mono font-semibold text-bms-ink">{n(rack.rackKw, 2)} kW</span>
+          <span className="font-mono font-semibold text-bms-ink">{n(freshValue(rack.rackKw, rackSelf.stale), 2)} kW</span>
         </div>
         <div className="mt-2 h-2 rounded bg-gray-200">
           <div className="h-2 rounded bg-bms-green" style={{ width: `${pct}%` }} />
@@ -283,8 +319,8 @@ function RackCard({
         <PduBadge label="PDU-B" code={pduB} status={bState} util={b.pduUtilPct} />
       </div>
       <div className="mt-4 text-sm">
-        <Row label="Outlets" value={`${n(rack.outletsUsed, 0)}/24`} />
-        <Row label="Rack temperature" value={`${n(rack.rackTempC, 1)} °C`} />
+        <Row label="Outlets" value={`${n(freshValue(rack.outletsUsed, rackSelf.stale), 0)}/24`} />
+        <Row label="Rack temperature" value={`${n(freshValue(rack.rackTempC, rackSelf.stale), 1)} °C`} />
         <Row label="Rated load" value={`${ratedKw.toFixed(1)} kW`} />
         {rackState.matchedRule ? (
           <Row label="Rule" value={rackState.matchedRule.name} />
@@ -295,6 +331,7 @@ function RackCard({
 }
 
 function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
+  const mapNow = Date.now();
   const ups1 = useCr("CR-UPS-1");
   const ups2 = useCr("CR-UPS-2");
   const net = useCr("CR-NET-RACK");
@@ -351,10 +388,14 @@ function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
   ] as const;
   const pduStates = pduNodes.map((node) => ({
     ...node,
-    state: deriveRuleStatus(node.code, node.slice, rules),
+    state: deriveRuleStatus(node.code, node.slice, rules, mapNow),
   }));
   const netState = mergeStatus(pduStates.slice(0, 2).map((node) => node.state));
   const vwState = mergeStatus(pduStates.slice(2).map((node) => node.state));
+  const ups1State = deriveRuleStatus("CR-UPS-1", ups1, rules, mapNow);
+  const ups2State = deriveRuleStatus("CR-UPS-2", ups2, rules, mapNow);
+  const netStale = isStale(net.lastSeenMs, mapNow);
+  const vwStale = isStale(vw.lastSeenMs, mapNow);
 
   return (
     <section className="rounded border border-gray-200 bg-white">
@@ -373,8 +414,11 @@ function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
               <path d="M0,0 L6,3 L0,6 Z" fill="#039855" />
             </marker>
           </defs>
-          <MapBox x={20} y={40} w={120} h={40} title="UPS-1 · 30 kVA" sub={`${n(ups1.loadPct, 0)}% · ${n(ups1.backupMin, 0)} min`} status={deriveRuleStatus("CR-UPS-1", ups1, rules).status} />
-          <MapBox x={20} y={120} w={120} h={40} title="UPS-2 · 30 kVA" sub={`${n(ups2.loadPct, 0)}% · ${n(ups2.backupMin, 0)} min`} status={deriveRuleStatus("CR-UPS-2", ups2, rules).status} />
+          {/* ADR 0027 decision 3 — these SVG labels sit inside boxes whose
+              colour already reflects staleness, so a frozen number here reads
+              as current. */}
+          <MapBox x={20} y={40} w={120} h={40} title="UPS-1 · 30 kVA" sub={`${n(freshValue(ups1.loadPct, ups1State.stale), 0)}% · ${n(freshValue(ups1.backupMin, ups1State.stale), 0)} min`} status={ups1State.status} />
+          <MapBox x={20} y={120} w={120} h={40} title="UPS-2 · 30 kVA" sub={`${n(freshValue(ups2.loadPct, ups2State.stale), 0)}% · ${n(freshValue(ups2.backupMin, ups2State.stale), 0)} min`} status={ups2State.status} />
 
           {pduStates.map((node) => (
             <g key={node.code}>
@@ -385,15 +429,15 @@ function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
                 w={120}
                 h={32}
                 title={node.label}
-                sub={`${n(node.slice.pduUtilPct, 0)}%`}
+                sub={`${n(freshValue(node.slice.pduUtilPct, node.state.stale), 0)}%`}
                 status={node.state.status}
               />
               <MapLine x1={400} y1={node.lineY} x2={500} y2={node.rackLineY} status={node.state.status} />
             </g>
           ))}
 
-          <MapBox x={500} y={30} w={180} h={50} title="NETWORK RACK" sub={`${n(net.rackKw, 2)} kW · ${n(net.outletsUsed, 0)}/24 outlets`} status={netState.status} />
-          <MapBox x={500} y={120} w={180} h={50} title="VW SERVER RACK" sub={`${n(vw.rackKw, 2)} kW · ${n(vw.outletsUsed, 0)}/24 outlets`} status={vwState.status} />
+          <MapBox x={500} y={30} w={180} h={50} title="NETWORK RACK" sub={`${n(freshValue(net.rackKw, netStale), 2)} kW · ${n(freshValue(net.outletsUsed, netStale), 0)}/24 outlets`} status={netState.status} />
+          <MapBox x={500} y={120} w={180} h={50} title="VW SERVER RACK" sub={`${n(freshValue(vw.rackKw, vwStale), 2)} kW · ${n(freshValue(vw.outletsUsed, vwStale), 0)}/24 outlets`} status={vwState.status} />
         </svg>
         <div className="mt-3 grid gap-2 text-xs text-bms-muted sm:grid-cols-2">
           {[netState, vwState]

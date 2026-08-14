@@ -16,6 +16,11 @@ import {
 import { DisabledCommandButton } from "../components/disabled-command-button";
 import { PageHeader } from "../components/page-header";
 import { AppShell } from "../layouts/app-shell";
+import {
+  freshValue,
+  isStale,
+  STALE_VALUE,
+} from "../lib/schematic-telemetry";
 import type { AuthUser } from "../stores/auth-store";
 
 type ControlRoomBatteryPageProps = {
@@ -27,6 +32,8 @@ type BatteryStatus = "normal" | "warning" | "critical" | "offline";
 type RuleState = {
   status: BatteryStatus;
   matchedRule: RuleListItem | null;
+  /** True when the asset has stopped reporting (ADR 0027). */
+  stale: boolean;
 };
 
 type CellReading = {
@@ -41,7 +48,9 @@ const STRINGS = [
 ] as const;
 
 function n(value: number | null, digits = 1): string {
-  return value == null || Number.isNaN(value) ? "-" : value.toFixed(digits);
+  return value == null || Number.isNaN(value)
+    ? STALE_VALUE
+    : value.toFixed(digits);
 }
 
 function useCr(code: string) {
@@ -90,13 +99,28 @@ function severityStatus(severity: string | null): BatteryStatus {
   return severity === "critical" ? "critical" : "warning";
 }
 
+/**
+ * Tile status for one asset (ADR 0027).
+ *
+ * **Two different things both render `offline` here and the order matters.**
+ * The existing `breaker === 0 || healthPct === 0` test is a statement about the
+ * *plant* — disconnected, or a dead string — read from the last values we
+ * received. Staleness is a statement about our *knowledge*, and it has to come
+ * first: those two fields are frozen once telemetry stops, so a unit that died
+ * while healthy reported `normal` for ever, and one that died tripped kept
+ * asserting a trip nobody could confirm.
+ */
 function deriveRuleState(
   assetCode: string,
   slice: SchematicTelemetrySlice,
   rules: RuleListItem[],
+  nowMs: number,
 ): RuleState {
+  if (isStale(slice.lastSeenMs, nowMs)) {
+    return { status: "offline", matchedRule: null, stale: true };
+  }
   if (slice.breaker === 0 || slice.healthPct === 0) {
-    return { status: "offline", matchedRule: null };
+    return { status: "offline", matchedRule: null, stale: false };
   }
 
   const matchedRule = rules.find((rule) => {
@@ -115,17 +139,18 @@ function deriveRuleState(
   });
 
   if (matchedRule) {
-    return { status: severityStatus(matchedRule.severity), matchedRule };
+    return { status: severityStatus(matchedRule.severity), matchedRule, stale: false };
   }
-  return { status: "normal", matchedRule: null };
+  return { status: "normal", matchedRule: null, stale: false };
 }
 
+/** `offline` outranks `critical` — ADR 0027 decision 2; see the env page note. */
 function mergeStatus(states: RuleState[]): RuleState {
   return (
+    states.find((state) => state.status === "offline") ??
     states.find((state) => state.status === "critical") ??
     states.find((state) => state.status === "warning") ??
-    states.find((state) => state.status === "offline") ??
-    { status: "normal", matchedRule: null }
+    { status: "normal", matchedRule: null, stale: false }
   );
 }
 
@@ -210,25 +235,33 @@ function ControlRoomBatteryContent() {
   const batt2 = useCr("CR-BATT-2");
   const ups1 = useCr("CR-UPS-1");
   const ups2 = useCr("CR-UPS-2");
+  const nowMs = Date.now();
   const strings = [
     {
       ...STRINGS[0],
       slice: batt1,
       ups: ups1,
       cells: generateCells(batt1.batteryV, batt1.batteryTempC, STRINGS[0].seed),
-      state: deriveRuleState(STRINGS[0].code, batt1, rules),
+      state: deriveRuleState(STRINGS[0].code, batt1, rules, nowMs),
     },
     {
       ...STRINGS[1],
       slice: batt2,
       ups: ups2,
       cells: generateCells(batt2.batteryV, batt2.batteryTempC, STRINGS[1].seed),
-      state: deriveRuleState(STRINGS[1].code, batt2, rules),
+      state: deriveRuleState(STRINGS[1].code, batt2, rules, nowMs),
     },
   ];
   const overall = mergeStatus(strings.map((string) => string.state));
+  // Aggregates count only the strings still reporting (ADR 0027 decision 4).
+  const liveStrings = strings.filter((string) => !string.state.stale);
+  const staleStrings = strings.length - liveStrings.length;
+  const liveCritical = strings.filter((s) => s.state.status === "critical").length;
+  const healths = liveStrings
+    .map((string) => string.slice.healthPct)
+    .filter((v): v is number => v != null && !Number.isNaN(v));
   const avgHealth =
-    strings.reduce((sum, string) => sum + (string.slice.healthPct ?? 0), 0) / strings.length;
+    healths.length === 0 ? null : healths.reduce((a, b) => a + b, 0) / healths.length;
   const ruleAlertCount = strings.filter((string) => string.state.matchedRule).length;
 
   return (
@@ -236,7 +269,11 @@ function ControlRoomBatteryContent() {
       <PageHeader
         eyebrow="R.crBat"
         title="Battery Bank · 2 strings, 32 cells each"
-        subtitle="String voltage · cell grid · charge / discharge · health · rule-driven status"
+        subtitle={
+          liveCritical > 0
+            ? `${liveCritical} ACTIVE CRITICAL · string voltage · cell grid · health · rule-driven status`
+            : "String voltage · cell grid · charge / discharge · health · rule-driven status"
+        }
         actions={
           <>
             <DisabledCommandButton>Equalize Charge · disabled</DisabledCommandButton>
@@ -246,10 +283,10 @@ function ControlRoomBatteryContent() {
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <KpiTile label="String 1 V" status="ready" value={n(strings[0].slice.batteryV, 1)} unit="V" hint="32 cells · 12V VRLA" tone={statusTone(strings[0].state.status)} />
-        <KpiTile label="String 2 V" status="ready" value={n(strings[1].slice.batteryV, 1)} unit="V" hint="32 cells · 12V VRLA" tone={statusTone(strings[1].state.status)} />
-        <KpiTile label="Charge Current" status="ready" value={n(strings[0].slice.current, 1)} unit="A" hint="float charge" />
-        <KpiTile label="Health Index" status="ready" value={n(avgHealth, 0)} unit="%" tone={statusTone(overall.status)} />
+        <KpiTile label="String 1 V" status="ready" value={n(freshValue(strings[0].slice.batteryV, strings[0].state.stale), 1)} unit="V" hint="32 cells · 12V VRLA" tone={statusTone(strings[0].state.status)} />
+        <KpiTile label="String 2 V" status="ready" value={n(freshValue(strings[1].slice.batteryV, strings[1].state.stale), 1)} unit="V" hint="32 cells · 12V VRLA" tone={statusTone(strings[1].state.status)} />
+        <KpiTile label="Charge Current" status="ready" value={n(freshValue(strings[0].slice.current, strings[0].state.stale), 1)} unit="A" hint="float charge" />
+        <KpiTile label="Health Index" status="ready" value={n(avgHealth, 0)} unit="%" hint={staleStrings > 0 ? `${staleStrings} string(s) stale` : undefined} tone={statusTone(overall.status)} />
         <KpiTile label="Rule Alerts" status="ready" value={String(ruleAlertCount)} hint="editable in Rule Engine" tone={statusTone(overall.status)} />
       </div>
 
@@ -329,10 +366,21 @@ function BatteryStringCard({
           <div
             key={cell.index}
             className={`rounded border p-1 text-center ${cellClass(string.state.status)}`}
-            title={`Cell #${cell.index} · ${cell.voltage.toFixed(2)} V · ${cell.temperature.toFixed(1)} C`}
+            /* Every cell is synthesised from the string's own batteryV /
+               batteryTempC, so once the string is stale the whole grid — and
+               its tooltip — is derived from a frozen reading. It is the most
+               convincing fake live data on the page: 32 individual voltages.
+               ADR 0027 decision 3. */
+            title={
+              string.state.stale
+                ? `Cell #${cell.index} · ${STALE_VALUE}`
+                : `Cell #${cell.index} · ${cell.voltage.toFixed(2)} V · ${cell.temperature.toFixed(1)} C`
+            }
           >
             <div className="font-mono text-[10px]">#{cell.index}</div>
-            <div className="font-mono text-[10px] font-semibold">{cell.voltage.toFixed(2)}V</div>
+            <div className="font-mono text-[10px] font-semibold">
+              {string.state.stale ? STALE_VALUE : `${cell.voltage.toFixed(2)}V`}
+            </div>
           </div>
         ))}
       </div>

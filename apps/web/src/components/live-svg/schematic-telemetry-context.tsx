@@ -21,6 +21,7 @@ import {
   deriveStatus,
   emptySlice,
   STALE_TICK_MS,
+  sumFresh,
   type SchematicTelemetrySlice,
 } from "../../lib/schematic-telemetry";
 import { socketBaseUrl } from "../../lib/socket-url";
@@ -41,8 +42,20 @@ type Ctx = {
     { code: string; name: string; siteName: string; domain: string }
   >;
   byAssetId: Record<string, SchematicTelemetrySlice>;
-  /** Sum of `cooling_kw` if any present, else sum of `kw`. */
+  /**
+   * Sum of `cooling_kw` if any present, else sum of `kw` — over the assets
+   * **still reporting** since `F4.38` (ADR 0027 decision 4). `null` means
+   * nothing contributed, which is not the same answer as `0`.
+   */
   totalKw: number | null;
+  /**
+   * Assets left out of `totalKw` because they are stale.
+   *
+   * Render it beside the total. A number that silently shrank when a feed died
+   * is the failure this item exists to close, so the exclusion must be visible
+   * wherever the total is.
+   */
+  staleAssets: number;
   /**
    * Increments every `STALE_TICK_MS` (`F4.37`).
    *
@@ -210,27 +223,39 @@ export function SchematicTelemetryProvider({
     };
   }, [accessToken, trackedIds.join("|"), onSocketPayload]);
 
-  const totalKw = useMemo(() => {
-    let sumCool = 0;
-    let anyCool = false;
-    let sumKw = 0;
-    let anyKw = false;
-    for (const id of trackedIds) {
-      const s = byAssetId[id];
-      if (s?.coolingKw != null && !Number.isNaN(s.coolingKw)) {
-        sumCool += s.coolingKw;
-        anyCool = true;
-      }
-      if (s?.kw != null && !Number.isNaN(s.kw)) {
-        sumKw += s.kw;
-        anyKw = true;
-      }
-    }
-    if (anyCool) {
-      return sumCool;
-    }
-    return anyKw ? sumKw : null;
-  }, [byAssetId, trackedIds]);
+  /**
+   * Bus total over the assets still reporting (ADR 0027 decision 4).
+   *
+   * Before `F4.38` this summed every slice's last known value, so a dead asset
+   * kept contributing load it was no longer producing — the header asserted
+   * megawatts that nothing was measuring. `sumFresh` drops stale slices and
+   * counts what it dropped, so the fall in the number is explained on screen
+   * rather than mysterious.
+   *
+   * `staleTick` is in the dependency list on purpose: this reads the clock, so
+   * it has to be recomputed on the timer as well as on new telemetry. Without
+   * it the total would only be re-summed when a reading arrives, which is the
+   * signal that stops in the outage this is meant to show.
+   */
+  const { totalKw, staleAssets } = useMemo(() => {
+    const slices = trackedIds
+      .map((id) => byAssetId[id])
+      .filter((s): s is SchematicTelemetrySlice => s != null);
+    const nowMs = Date.now();
+    // Cooling wins over real power where any asset reports it, as before —
+    // a CRAC schematic's "total" is its cooling duty, not its input draw.
+    // **The basis is chosen before summing, not after.** Picking it from
+    // `cool.total !== null` meant that once every cooling asset went stale the
+    // total silently fell back to summing `kw` over the live electrical assets
+    // — the header kept its "MW" label while changing what it measured, and the
+    // stale note explained a drop that was really a substitution. Raised by the
+    // F4.38 security review.
+    const coolingBasis = slices.some((s) => s.coolingKw != null);
+    const sum = coolingBasis
+      ? sumFresh(slices, (s) => s.coolingKw, nowMs)
+      : sumFresh(slices, (s) => s.kw, nowMs);
+    return { totalKw: sum.total, staleAssets: sum.staleExcluded };
+  }, [byAssetId, trackedIds, staleTick]);
 
   const value = useMemo(
     () => ({
@@ -238,9 +263,10 @@ export function SchematicTelemetryProvider({
       assetMetaById,
       byAssetId,
       totalKw,
+      staleAssets,
       staleTick,
     }),
-    [idByCode, assetMetaById, byAssetId, totalKw, staleTick],
+    [idByCode, assetMetaById, byAssetId, totalKw, staleAssets, staleTick],
   );
 
   useEffect(() => {

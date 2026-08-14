@@ -16,6 +16,11 @@ import {
 import { DisabledCommandButton } from "../components/disabled-command-button";
 import { PageHeader } from "../components/page-header";
 import { AppShell } from "../layouts/app-shell";
+import {
+  freshValue,
+  isStale,
+  STALE_VALUE,
+} from "../lib/schematic-telemetry";
 import type { AuthUser } from "../stores/auth-store";
 
 type ControlRoomUpsPageProps = {
@@ -28,6 +33,8 @@ type UpsStatus = "normal" | "warning" | "critical" | "offline";
 type RuleState = {
   status: UpsStatus;
   matchedRule: RuleListItem | null;
+  /** True when the asset has stopped reporting (ADR 0027). */
+  stale: boolean;
 };
 
 const UPS_UNITS = [
@@ -36,7 +43,9 @@ const UPS_UNITS = [
 ] as const;
 
 function n(value: number | null, digits = 1): string {
-  return value == null || Number.isNaN(value) ? "-" : value.toFixed(digits);
+  return value == null || Number.isNaN(value)
+    ? STALE_VALUE
+    : value.toFixed(digits);
 }
 
 function useCr(code: string) {
@@ -91,13 +100,28 @@ function severityStatus(severity: string | null): UpsStatus {
   return severity === "critical" ? "critical" : "warning";
 }
 
+/**
+ * Tile status for one asset (ADR 0027).
+ *
+ * **Two different things both render `offline` here and the order matters.**
+ * The existing `breaker === 0 || healthPct === 0` test is a statement about the
+ * *plant* — disconnected, or a dead string — read from the last values we
+ * received. Staleness is a statement about our *knowledge*, and it has to come
+ * first: those two fields are frozen once telemetry stops, so a unit that died
+ * while healthy reported `normal` for ever, and one that died tripped kept
+ * asserting a trip nobody could confirm.
+ */
 function deriveRuleState(
   assetCode: string,
   slice: SchematicTelemetrySlice,
   rules: RuleListItem[],
+  nowMs: number,
 ): RuleState {
+  if (isStale(slice.lastSeenMs, nowMs)) {
+    return { status: "offline", matchedRule: null, stale: true };
+  }
   if (slice.breaker === 0 || slice.healthPct === 0) {
-    return { status: "offline", matchedRule: null };
+    return { status: "offline", matchedRule: null, stale: false };
   }
 
   const matchedRule = rules.find((rule) => {
@@ -116,16 +140,17 @@ function deriveRuleState(
   });
 
   return matchedRule
-    ? { status: severityStatus(matchedRule.severity), matchedRule }
-    : { status: "normal", matchedRule: null };
+    ? { status: severityStatus(matchedRule.severity), matchedRule, stale: false }
+    : { status: "normal", matchedRule: null, stale: false };
 }
 
+/** `offline` outranks `critical` — ADR 0027 decision 2; see the env page note. */
 function mergeStatus(states: RuleState[]): RuleState {
   return (
+    states.find((state) => state.status === "offline") ??
     states.find((state) => state.status === "critical") ??
     states.find((state) => state.status === "warning") ??
-    states.find((state) => state.status === "offline") ??
-    { status: "normal", matchedRule: null }
+    { status: "normal", matchedRule: null, stale: false }
   );
 }
 
@@ -217,19 +242,27 @@ function ControlRoomUpsContent() {
   const ups2 = useCr("CR-UPS-2");
   const batt1 = useCr("CR-BATT-1");
   const batt2 = useCr("CR-BATT-2");
+  const nowMs = Date.now();
   const units = [
-    { ...UPS_UNITS[0], slice: ups1, battery: batt1, state: deriveRuleState("CR-UPS-1", ups1, rules) },
-    { ...UPS_UNITS[1], slice: ups2, battery: batt2, state: deriveRuleState("CR-UPS-2", ups2, rules) },
+    { ...UPS_UNITS[0], slice: ups1, battery: batt1, state: deriveRuleState("CR-UPS-1", ups1, rules, nowMs) },
+    { ...UPS_UNITS[1], slice: ups2, battery: batt2, state: deriveRuleState("CR-UPS-2", ups2, rules, nowMs) },
   ];
   const selected = units.find((unit) => unit.code === tab) ?? units[0];
   const totalCapacity = units.reduce((sum, unit) => sum + unit.capacityKva, 0);
-  const totalKw = units.reduce(
-    (sum, unit) => sum + (capacityKw(unit.slice.loadPct, unit.capacityKva) ?? 0),
-    0,
-  );
+  // Aggregates count only the units still reporting (ADR 0027 decision 4).
+  const liveUnits = units.filter((unit) => !unit.state.stale);
+  const staleUnits = units.length - liveUnits.length;
+  const liveCritical = units.filter((u) => u.state.status === "critical").length;
+  const kws = liveUnits
+    .map((unit) => capacityKw(unit.slice.loadPct, unit.capacityKva))
+    .filter((v): v is number => v != null && !Number.isNaN(v));
+  const totalKw = kws.length === 0 ? null : kws.reduce((a, b) => a + b, 0);
+  const loads = liveUnits
+    .map((unit) => unit.slice.loadPct)
+    .filter((v): v is number => v != null && !Number.isNaN(v));
   const avgLoad =
-    units.reduce((sum, unit) => sum + (unit.slice.loadPct ?? 0), 0) / units.length;
-  const backups = units
+    loads.length === 0 ? null : loads.reduce((a, b) => a + b, 0) / loads.length;
+  const backups = liveUnits
     .map((unit) => unit.slice.backupMin)
     .filter((value): value is number => value !== null);
   const worstBackup = backups.length > 0 ? Math.min(...backups) : null;
@@ -240,7 +273,11 @@ function ControlRoomUpsContent() {
       <PageHeader
         eyebrow="R.crUps"
         title="UPS Monitoring · 2 x 30 kVA"
-        subtitle="Per-unit and combined view · rectifier to battery to inverter to load · rule-driven status"
+        subtitle={
+          liveCritical > 0
+            ? `${liveCritical} ACTIVE CRITICAL · per-unit and combined view · rule-driven status`
+            : "Per-unit and combined view · rectifier to battery to inverter to load · rule-driven status"
+        }
         actions={
           <>
             <DisabledCommandButton>Manual Bypass · disabled</DisabledCommandButton>
@@ -251,8 +288,8 @@ function ControlRoomUpsContent() {
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiTile label="Total Capacity" status="ready" value={String(totalCapacity)} unit="kVA" />
-        <KpiTile label="Total Load" status="ready" value={n(totalKw, 2)} unit="kW" />
-        <KpiTile label="Average Load" status="ready" value={n(avgLoad, 0)} unit="%" />
+        <KpiTile label="Total Load" status="ready" value={n(totalKw, 2)} unit="kW" hint={staleUnits > 0 ? `${staleUnits} unit(s) stale` : undefined} />
+        <KpiTile label="Average Load" status="ready" value={n(avgLoad, 0)} unit="%" hint={staleUnits > 0 ? `${staleUnits} unit(s) stale` : undefined} />
         <KpiTile label="Worst Backup" status="ready" value={n(worstBackup, 0)} unit="min" tone={statusTone(overall.status)} />
       </div>
 
@@ -332,11 +369,11 @@ function CombinedSummary({
               <tr key={unit.code}>
                 <td className="px-4 py-3 font-semibold text-bms-ink">{unit.label}</td>
                 <td className="px-4 py-3 uppercase">{modeFor(unit.slice, unit.state.status)}</td>
-                <td className="px-4 py-3">{n(unit.slice.loadPct, 0)}%</td>
-                <td className="px-4 py-3">{n(unit.slice.outputVoltageV, 1)} / {n(unit.slice.outputFreqHz, 2)}</td>
-                <td className="px-4 py-3">{n(unit.slice.batteryV ?? unit.battery.batteryV, 1)} V</td>
-                <td className="px-4 py-3">{n(unit.slice.backupMin, 0)} min</td>
-                <td className="px-4 py-3">{n(unit.slice.healthPct, 0)}%</td>
+                <td className="px-4 py-3">{n(freshValue(unit.slice.loadPct, unit.state.stale), 0)}%</td>
+                <td className="px-4 py-3">{n(freshValue(unit.slice.outputVoltageV, unit.state.stale), 1)} / {n(freshValue(unit.slice.outputFreqHz, unit.state.stale), 2)}</td>
+                <td className="px-4 py-3">{n(freshValue(unit.slice.batteryV ?? unit.battery.batteryV, unit.state.stale), 1)} V</td>
+                <td className="px-4 py-3">{n(freshValue(unit.slice.backupMin, unit.state.stale), 0)} min</td>
+                <td className="px-4 py-3">{n(freshValue(unit.slice.healthPct, unit.state.stale), 0)}%</td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
                     {statusLabel(unit.state.status)}
@@ -368,9 +405,9 @@ function UnitDetail({
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiTile label="Mode" status="ready" value={mode.toUpperCase()} tone={statusTone(unit.state.status)} />
-        <KpiTile label="Load" status="ready" value={n(unit.slice.loadPct, 0)} unit="%" hint={`${n(capacityKw(unit.slice.loadPct, unit.capacityKva), 2)} kW`} />
-        <KpiTile label="Backup Time" status="ready" value={n(unit.slice.backupMin, 0)} unit="min" />
-        <KpiTile label="Health" status="ready" value={n(unit.slice.healthPct, 0)} unit="%" tone={statusTone(unit.state.status)} />
+        <KpiTile label="Load" status="ready" value={n(freshValue(unit.slice.loadPct, unit.state.stale), 0)} unit="%" hint={`${n(freshValue(capacityKw(unit.slice.loadPct, unit.capacityKva), unit.state.stale), 2)} kW`} />
+        <KpiTile label="Backup Time" status="ready" value={n(freshValue(unit.slice.backupMin, unit.state.stale), 0)} unit="min" />
+        <KpiTile label="Health" status="ready" value={n(freshValue(unit.slice.healthPct, unit.state.stale), 0)} unit="%" tone={statusTone(unit.state.status)} />
       </div>
 
       <section className="rounded border border-gray-200 bg-white">
@@ -389,17 +426,17 @@ function UnitDetail({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <DetailCard title="Input / Output">
-          <Row label="Output voltage" value={`${n(unit.slice.outputVoltageV, 1)} V`} />
-          <Row label="Output frequency" value={`${n(unit.slice.outputFreqHz, 2)} Hz`} />
-          <Row label="Output current" value={`${n(unit.slice.current, 1)} A`} />
-          <Row label="Power factor" value={`${n(unit.slice.pf, 2)} lag`} />
-          <Row label="Real power" value={`${n(unit.slice.kw, 2)} kW`} />
+          <Row label="Output voltage" value={`${n(freshValue(unit.slice.outputVoltageV, unit.state.stale), 1)} V`} />
+          <Row label="Output frequency" value={`${n(freshValue(unit.slice.outputFreqHz, unit.state.stale), 2)} Hz`} />
+          <Row label="Output current" value={`${n(freshValue(unit.slice.current, unit.state.stale), 1)} A`} />
+          <Row label="Power factor" value={`${n(freshValue(unit.slice.pf, unit.state.stale), 2)} lag`} />
+          <Row label="Real power" value={`${n(freshValue(unit.slice.kw, unit.state.stale), 2)} kW`} />
         </DetailCard>
         <DetailCard title="Battery">
-          <Row label="Battery voltage" value={`${n(unit.slice.batteryV ?? unit.battery.batteryV, 1)} V`} />
-          <Row label="Battery current" value={`${n(unit.battery.current, 1)} A`} />
-          <Row label="Backup time" value={`${n(unit.slice.backupMin, 0)} min @ ${n(unit.slice.loadPct, 0)}% load`} />
-          <Row label="Battery temp" value={`${n(unit.slice.batteryTempC ?? unit.battery.batteryTempC, 1)} C`} />
+          <Row label="Battery voltage" value={`${n(freshValue(unit.slice.batteryV ?? unit.battery.batteryV, unit.state.stale), 1)} V`} />
+          <Row label="Battery current" value={`${n(freshValue(unit.battery.current, unit.state.stale), 1)} A`} />
+          <Row label="Backup time" value={`${n(freshValue(unit.slice.backupMin, unit.state.stale), 0)} min @ ${n(freshValue(unit.slice.loadPct, unit.state.stale), 0)}% load`} />
+          <Row label="Battery temp" value={`${n(freshValue(unit.slice.batteryTempC ?? unit.battery.batteryTempC, unit.state.stale), 1)} C`} />
           <Row label="String count" value="32 cells · 12V VRLA" />
         </DetailCard>
       </div>
@@ -437,6 +474,7 @@ function UpsBlockDiagram({
   status: UpsStatus;
 }) {
   const line = stroke(status);
+  const dark = status === "offline";
   const battV = slice.batteryV ?? battery.batteryV;
   const battTemp = slice.batteryTempC ?? battery.batteryTempC;
   return (
@@ -446,19 +484,21 @@ function UpsBlockDiagram({
           <path d="M0,0 L6,3 L0,6 Z" fill={line} />
         </marker>
       </defs>
-      <Block x={14} y={80} title="AC INPUT" sub={`${n(slice.outputVoltageV, 1)} V`} status={status} />
+      {/* ADR 0027 decision 3: these SVG labels are the same readings as the
+          detail rows and were the last place showing frozen numbers. */}
+      <Block x={14} y={80} title="AC INPUT" sub={`${n(freshValue(slice.outputVoltageV, dark), 1)} V`} status={status} />
       <Flow x1={134} y1={110} x2={178} y2={110} color={line} />
       <Block x={178} y={80} title="RECTIFIER" sub="AC -> DC" status={status} />
       <Flow x1={298} y1={110} x2={342} y2={110} color={line} />
-      <Block x={342} y={80} title="DC BUS" sub={`${n(battV, 0)} V`} status={status} />
+      <Block x={342} y={80} title="DC BUS" sub={`${n(freshValue(battV, dark), 0)} V`} status={status} />
       <line x1="402" y1="138" x2="402" y2="170" stroke={line} strokeWidth={2} strokeDasharray="4 3" />
-      <Block x={342} y={170} title="BATTERY" sub={`${n(battV, 1)} V · ${n(battTemp, 1)} C`} status={status} />
+      <Block x={342} y={170} title="BATTERY" sub={`${n(freshValue(battV, dark), 1)} V · ${n(freshValue(battTemp, dark), 1)} C`} status={status} />
       <Flow x1={462} y1={110} x2={506} y2={110} color={line} />
       <Block x={506} y={80} title="INVERTER" sub="DC -> AC" status={status} />
       <Flow x1={626} y1={110} x2={670} y2={110} color={line} />
       <Block x={670} y={80} w={100} title="STATIC SW" sub="NORMAL" status={status} />
       <Flow x1={770} y1={110} x2={810} y2={110} color={line} />
-      <Block x={810} y={80} w={80} title="LOAD" sub={`${n(slice.loadPct, 0)}%`} status={status} />
+      <Block x={810} y={80} w={80} title="LOAD" sub={`${n(freshValue(slice.loadPct, dark), 0)}%`} status={status} />
       <text x="450" y="40" textAnchor="middle" className="fill-gray-400 font-mono text-[10px]">BYPASS LINE (auto)</text>
       <line x1="74" y1="60" x2="850" y2="60" stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="5 5" />
     </svg>
