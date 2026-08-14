@@ -963,3 +963,100 @@ keeps them database-free in tests — but `main.ts` has to **construct** a real
 `pg.Pool`, and a hand-written ambient declaration for a third-party
 constructor is a silent-drift generator: it keeps compiling after the library
 changes shape. The published types are the honest option.
+
+## Amendment 3 — Resolved decisions 4 and 5 at §6 commit 4 (2026-08-14)
+
+Written at the §6 commit 4 gate. It closes decision 4, discharges decision 5's
+caveat, and records that decision 5's *conclusion* survives — which is what
+makes commit 4 land four of its five actions rather than all five.
+
+### Decision 4 — the owner is named
+
+Decision 4 left the cutover needing a named owner and AGENTS.md §6 restates it
+as "do not do it unprompted". **The repository owner owns §6 commit 4**,
+instructed 2026-08-14. The two-entrypoint window closes with this commit, which
+is the outcome decision 4 called the realistic failure mode of a strangler
+migration if nobody claimed it.
+
+Recorded because the gate names an owner and not merely an instruction: an agent
+asked to "start `F1.1`" has cleared *unprompted*, which is a weaker warrant than
+this. The distinction is the same one AGENTS.md §6 draws about the commit 3
+parallel run, where the act was covered by a broader request that never named
+it.
+
+### Decision 5 — the caveat is discharged, the conclusion is not
+
+Decision 5 found no RTU carried an `rtu_connection_configs` row, concluded the
+`MQTT_USERNAME` / `MQTT_PASSWORD` fallback could not be retired in commit 4, and
+carried a caveat: *"this was the local seeded database; confirm against the
+production pilot before acting on it."*
+
+**Both halves are now settled, and they point in opposite directions.**
+
+The caveat is discharged: the database the pilot writes to is the compose
+`postgres` service, so the database that needed confirming *is* the pilot's.
+That was already true at the 2026-08-06 cutover; it is stated here because
+§10.1 makes this ADR authoritative and AGENTS.md only the index, and the index
+has been carrying the discharge alone since the cutover sweep.
+
+The conclusion is **re-measured and still true.** Queried 2026-08-14 against
+that database, `postgres` up and `ingest` down:
+
+```
+    rtu_code     | source_type | ingest_enabled | has_config_row | has_ciphertext
+-----------------+-------------+----------------+----------------+----------------
+ 861736076104923 | mqtt        | t              | f              | f
+
+ conn_config_rows
+------------------
+                0
+```
+
+Zero rows in `bms.rtu_connection_configs`, and the one `ingest_enabled` RTU —
+the PHE pilot — has neither a config row nor a ciphertext. So the env fallback
+is still the only working credential path, and deleting it in commit 4 would
+leave the pilot unable to authenticate.
+
+**This is a measurement with a date, not a standing fact.** E8.3 shipped a
+credentials UI on 2026-08-10, so the wizard can now write that table; re-query
+before relying on the emptiness again. `CREDENTIAL_ENCRYPTION_KEY` **is** set
+(verified present, 44 base64 characters — a 32-byte key), so the ADR 0012 path
+is available and merely unpopulated: the blocker is data, not configuration.
+That is a change from acceptance, when the key's state was not recorded.
+
+### What commit 4 therefore does
+
+Four of §6 commit 4's five actions land:
+
+1. `apps/ingest/src/index.js` is deleted.
+2. `"start"` points at `dist/main.js`; `start:host` is removed rather than kept
+   as an alias, because two names for one entrypoint is the duplication the
+   strangler exists to end.
+3. The compose `command:` override is removed — `pnpm start` is now the host.
+4. The `INGEST_NOTIFY` flag is deleted and `pg_notify` becomes unconditional.
+
+The fifth — retiring `MQTT_USERNAME` / `MQTT_PASSWORD` — **does not land, and is
+reassigned to `E8.4`**, which already owns the credential surface (rotation, the
+unconfigured-key visibility, and the fallback that reports `source: "db"` while
+serving env values). It is named in a backlog row rather than left in this ADR's
+prose, because ADR 0016 §6 commit 4 is itself the precedent for how deferred
+work goes unowned when only an ADR names it.
+
+Nothing about the interface frozen in §1 changes, so `F1.2`–`F1.6` are
+unaffected.
+
+### Why deleting the flag is the point of this commit, not tidying
+
+§6 wrote `INGEST_NOTIFY=off` as the default because during the parallel-run
+window `index.js` was still notifying and two notifying processes would deliver
+every PHE reading to the dashboards twice. **That reasoning expired at the
+commit 3 cutover.** With the host serving alone nothing can double, and the
+default became the dangerous direction: drop compose's `INGEST_NOTIFY: "on"` and
+rows keep landing while every dashboard goes dead — no error, no alarm, the only
+signal being `notify=off` in the health body.
+
+So the flag's deletion removes a live failure mode. The two edits are coupled
+and must land together: making `notifyEnabled` unconditional while compose still
+sets the variable is harmless, but removing the compose line while the flag
+still exists reintroduces exactly the outage described above. They are one
+commit for that reason.
