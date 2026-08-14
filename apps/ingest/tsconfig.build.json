@@ -6,5 +6,8 @@
     "rootDir": "src"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/index.js", "src/**/*.test.ts", "src/**/*.test.js", "src/**/*.spec.ts"]
+  // `src/index.js` was excluded here until ADR 0016 §6 commit 4 deleted it.
+  // `src/**/*.test.js` is still load-bearing: `rtu-config.test.js` is the one
+  // ingest test CI has run since ADR 0007, and it must stay out of `dist`.
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.js", "src/**/*.spec.ts"]
 }

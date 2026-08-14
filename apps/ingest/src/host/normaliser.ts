@@ -226,37 +226,33 @@ function toNotifyReading(row: PointValueRow): NotifyReading {
   };
 }
 
-export type WriteOptions = {
-  /**
-   * Whether to emit `pg_notify('bms_telemetry', …)`.
-   *
-   * **Defaults to off.** During the ADR 0016 §6 parallel-run window the legacy
-   * process is still notifying, and `telemetry-notify.service.ts` fans every
-   * payload to Socket.IO — so two notifying processes deliver every PHE reading
-   * to live dashboards twice. Writes are idempotent under
-   * `ON CONFLICT DO UPDATE`; notifications are not.
-   */
-  readonly notify?: boolean;
-};
-
 export type WriteResult = {
   readonly rowsWritten: number;
   readonly notificationsSent: number;
 };
 
 /**
- * Writes resolved rows and, when enabled, notifies.
+ * Writes resolved rows and notifies.
+ *
+ * **Notification is unconditional (ADR 0016 §6 commit 4).** It used to sit
+ * behind a `notify` option defaulting to off, which was right only while the
+ * ADR 0007 pilot entry point was also notifying — two notifying processes
+ * deliver every PHE reading to live dashboards twice, because writes are
+ * idempotent under `ON CONFLICT DO UPDATE` and notifications are not. With one
+ * ingest process there is nothing to double, and the option had become the
+ * *dangerous* direction: it was the only way to run ingest writing rows while
+ * every dashboard went dead, with no error and no alarm. It is deleted rather
+ * than defaulted to `true` so that state is unreachable.
  *
  * The upsert runs inside a transaction and the notifications are sent **after**
- * `COMMIT`, exactly as `index.js` does it — a listener must never be told about
- * a reading that then rolls back. `pg_notify` is not transactional in the same
+ * `COMMIT`, exactly as the pilot did it — a listener must never be told about a
+ * reading that then rolls back. `pg_notify` is not transactional in the same
  * direction either: payloads queued inside a transaction are delivered on
  * commit, so ordering here is about the failure path, not the happy one.
  */
 export async function writeResolved(
   client: QueryableClient,
   rows: readonly PointValueRow[],
-  options: WriteOptions = {},
 ): Promise<WriteResult> {
   if (rows.length === 0) {
     return { rowsWritten: 0, notificationsSent: 0 };
@@ -273,10 +269,6 @@ export async function writeResolved(
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
-  }
-
-  if (options.notify !== true) {
-    return { rowsWritten: rows.length, notificationsSent: 0 };
   }
 
   // Notify the deduped set — the rows actually written. Notifying the raw

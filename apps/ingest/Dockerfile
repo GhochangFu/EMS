@@ -23,8 +23,9 @@ RUN pnpm install --filter ingest... --frozen-lockfile --ignore-scripts \
 COPY apps/ingest ./apps/ingest
 COPY packages/shared ./packages/shared
 # Compile before CMD, so a type error fails the image build rather than the
-# running pilot (ADR 0016 §6). `pnpm start` is deliberately unchanged and still
-# runs the legacy `src/index.js`; the strangler cutover is a later commit.
+# running pilot (ADR 0016 §6). Since §6 commit 4 the compile is **required**, not
+# defensive: `pnpm start` is `node dist/main.js` and there is no longer a
+# JavaScript entry point to fall back to if this step is removed.
 RUN pnpm --filter @bms/shared build && pnpm --filter ingest build
 WORKDIR /app/apps/ingest
 CMD ["pnpm", "start"]

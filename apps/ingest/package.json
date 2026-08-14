@@ -4,9 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
-    "build": "tsc -p tsconfig.build.json",
-    "start:host": "node dist/main.js"
+    "start": "node dist/main.js",
+    "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@bms/shared": "workspace:*",

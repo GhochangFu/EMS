@@ -13,50 +13,31 @@
 export type HostConfig = {
   readonly databaseUrl: string;
   /**
-   * Whether the host emits `pg_notify('bms_telemetry', …)`.
-   *
-   * **Off unless `INGEST_NOTIFY` is exactly `on`.** During the §6 parallel-run
-   * window the legacy `index.js` was still notifying and
-   * `telemetry-notify.service.ts` fans every payload to Socket.IO, so two
-   * notifying processes would deliver every PHE reading to live dashboards
-   * twice. Writes are idempotent under `ON CONFLICT DO UPDATE`; notifications
-   * are not. Defaulting *on* would have meant a stray `pnpm start:host` doubled
-   * every reading on the operator's screen.
-   *
-   * **That reasoning expired at the §6 commit 3 cutover on 2026-08-06.** The
-   * host is now the only ingest process, so nothing can double, and the default
-   * has become the *dangerous* direction: it is the compose service's
-   * `INGEST_NOTIFY: "on"` alone that keeps realtime alive. Lose that line and
-   * rows keep landing while every dashboard goes dead — no error, no alarm,
-   * only `notify=off` in the health body. Do not read the default as safe.
-   *
-   * ADR 0016 §6 deletes this flag in commit 4, which is now the change that
-   * removes that failure mode rather than merely tidying up. It must not
-   * survive as a permanent way to run ingest with realtime silently off.
-   */
-  readonly notifyEnabled: boolean;
-  /**
    * Health endpoint port.
    *
-   * **Deliberately not `INGEST_METRICS_PORT`.** `index.js:27` binds that one
-   * (default 9102), and §6 commit 3 requires both processes running at once —
-   * sharing the variable would make the new host fail to bind, or worse, race
-   * the legacy one for the port.
+   * **The default is 9103 and not 9102 for a historical reason worth keeping.**
+   * The ADR 0007 pilot entry point bound 9102 as `INGEST_METRICS_PORT`, and §6
+   * commit 3 required both processes running at once — a shared variable would
+   * have made the host fail to bind, or raced the legacy process for the port.
+   * Commit 4 deleted that entry point and the variable with it, so the collision
+   * is gone; the default stays 9103 so a side-by-side run of two hosts (a future
+   * `F1.10`/`E7.2` concern) still needs only one variable set.
    *
-   * The compose service nonetheless sets this to 9102 post-cutover, so its one
-   * published port means the same thing whichever process runs. That is safe
-   * because a container runs one process; run a side-by-side comparison outside
-   * compose, on this default.
+   * The compose service sets this to 9102, which is the port it publishes.
    */
   readonly healthPort: number;
-  /** How often the point-lookup tables are refreshed. `index.js` uses 60 s. */
+  /**
+   * How often the point-lookup tables are refreshed. The ADR 0007 pilot used
+   * 60 s and this preserves it.
+   */
   readonly reloadMs: number;
   /**
    * MQTT-only connection defaults taken from the environment.
    *
-   * `index.js` honours `MQTT_TLS_REJECT_UNAUTHORIZED`; dropping it would mean a
-   * TLS failure the moment the host runs against a pilot configured with it.
-   * Merged *under* the stored JSONB, so a database value always wins.
+   * `MQTT_TLS_REJECT_UNAUTHORIZED` is honoured because the ADR 0007 pilot
+   * honoured it and the PHE broker is why that escape hatch exists; dropping it
+   * would mean a TLS failure against a pilot configured with it. Merged *under*
+   * the stored JSONB, so a database value always wins.
    */
   readonly mqttConnectionDefaults: Readonly<Record<string, unknown>>;
 };
@@ -65,7 +46,7 @@ export type HostConfig = {
  * Annotated `number` rather than left as literal types.
  *
  * Without the annotation TypeScript infers `9103` and narrows any comparison
- * against it, so the spec's "must not collide with the legacy 9102 port"
+ * against it, so the spec's "must not default to the retired 9102 port"
  * assertion becomes a provable tautology that checks nothing at run time.
  * `tsc` caught exactly that — `TS2367: types '9103' and '9102' have no overlap`.
  */
@@ -92,19 +73,24 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
     throw new Error("DATABASE_URL is required");
   }
 
-  const notifyRaw = env.INGEST_NOTIFY?.trim().toLowerCase();
-  if (notifyRaw !== undefined && notifyRaw !== "" && notifyRaw !== "on" && notifyRaw !== "off") {
-    throw new Error(`INGEST_NOTIFY must be "on" or "off", got "${env.INGEST_NOTIFY ?? ""}"`);
-  }
-
+  // `INGEST_NOTIFY` was deleted at ADR 0016 §6 commit 4 and is deliberately
+  // **ignored** rather than refused. A stale `INGEST_NOTIFY=off` left in an
+  // operator's `.env` now does nothing, which is the safe direction: realtime
+  // stays on. Refusing to start on its presence would take the pilot down over a
+  // variable that no longer has any effect.
+  //
+  // There is no `notifyEnabled` here on purpose. The host always notifies, so
+  // there is no configuration that can run ingest with realtime silently off —
+  // the failure mode commit 4 exists to remove. `config.spec.ts` asserts an
+  // `INGEST_NOTIFY=off` in the environment cannot suppress notification.
   return {
     databaseUrl,
-    notifyEnabled: notifyRaw === "on",
     healthPort: positiveInt(env.INGEST_HOST_HEALTH_PORT, DEFAULT_HEALTH_PORT, "INGEST_HOST_HEALTH_PORT"),
     reloadMs: positiveInt(env.INGEST_RELOAD_MS, DEFAULT_RELOAD_MS, "INGEST_RELOAD_MS"),
     mqttConnectionDefaults: {
-      // `index.js:204` — `!== "false"`, so anything other than the exact string
-      // "false" leaves verification on. Transcribed rather than reinterpreted.
+      // The ADR 0007 pilot tested `!== "false"`, so anything other than the exact
+      // string "false" leaves verification on. Transcribed rather than
+      // reinterpreted.
       rejectUnauthorized: env.MQTT_TLS_REJECT_UNAUTHORIZED !== "false",
     },
   };

@@ -15,7 +15,6 @@ import type { SupervisorHealth } from "./supervisor.js";
 export type HealthSnapshot = {
   readonly endpoints: readonly SupervisorHealth[];
   readonly skipped: readonly SkippedBinding[];
-  readonly notifyEnabled: boolean;
   readonly startedAt: Date;
 };
 
@@ -32,7 +31,11 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
   lines.push(
     `ingest-host ${unhealthy.length === 0 ? "ok" : "degraded"} ` +
       `endpoints=${snapshot.endpoints.length} rtus=${devices} ` +
-      `skipped=${snapshot.skipped.length} notify=${snapshot.notifyEnabled ? "on" : "off"} ` +
+      // `notify=on` is a literal since ADR 0016 §6 commit 4 deleted the switch.
+      // Kept in the body rather than dropped: `docs/ingest-host.md` tells
+      // operators to read this token, it is the only place notification state was
+      // ever visible, and it is now structurally true rather than configured.
+      `skipped=${snapshot.skipped.length} notify=on ` +
       `uptime=${uptimeSeconds}s`,
   );
 

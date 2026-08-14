@@ -27,7 +27,7 @@ import {
 } from "./rtu-config.js";
 
 /**
- * The ingest host entry point (ADR 0016 §6, commit 2).
+ * The ingest host entry point — **the only one** (ADR 0016 §6, commit 4).
  *
  * **Wiring only.** Every decision this file could have made lives in a tested
  * module instead — `readHostConfig` parses the environment, `planEndpoints`
@@ -36,10 +36,12 @@ import {
  * the one piece with no test around it, so a branch here is a branch nothing
  * checks.
  *
- * `src/index.js` is untouched and `pnpm start` still runs it. This is
- * `pnpm start:host`, the second entry point the strangler needs, and it starts
- * with `INGEST_NOTIFY` off so it can run *alongside* the live pilot without
- * double-delivering every reading to the dashboards.
+ * The strangler migration is finished: commit 2 built this alongside the ADR 0007
+ * pilot's `src/index.js`, commit 3 verified the two agreed and cut the
+ * deployment over on 2026-08-06, and commit 4 deleted `index.js` so `pnpm start`
+ * runs `dist/main.js`. `pg_notify` is unconditional — the `INGEST_NOTIFY` switch
+ * existed only for the parallel-run window and its survival would have meant a
+ * way to write rows while every dashboard silently went dead (Amendment 3).
  */
 
 async function main(): Promise<void> {
@@ -143,7 +145,7 @@ async function main(): Promise<void> {
         }
         const client = await pool.connect();
         try {
-          await writeResolved(client, rows, { notify: hostConfig.notifyEnabled });
+          await writeResolved(client, rows);
         } finally {
           client.release();
         }
@@ -157,7 +159,6 @@ async function main(): Promise<void> {
   const health = await startHealthServer(hostConfig.healthPort, () => ({
     endpoints: [...supervisors.values()].map((supervisor) => supervisor.health()),
     skipped,
-    notifyEnabled: hostConfig.notifyEnabled,
     startedAt,
   }));
 
@@ -165,9 +166,6 @@ async function main(): Promise<void> {
     endpoints: supervisors.size,
     skipped: skipped.length,
     healthPort: health.port,
-    // Stated at startup so the parallel-run window cannot be entered by
-    // accident with realtime already doubled.
-    notify: hostConfig.notifyEnabled ? "on" : "off",
   });
 
   const reloadTimer = setInterval(() => {

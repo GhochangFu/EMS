@@ -31,7 +31,6 @@ function snapshot(overrides: Partial<HealthSnapshot> = {}): HealthSnapshot {
   return {
     endpoints: [endpoint()],
     skipped: [],
-    notifyEnabled: false,
     startedAt: STARTED_AT,
     ...overrides,
   };
@@ -47,15 +46,22 @@ export function runHealthRenderTests(): void {
     assert(body.includes("endpoints=1"), "the endpoint count is reported");
     assert(body.includes("rtus=2"), "the RTU count sums each endpoint's devices");
     assert(body.includes("uptime=330s"), `uptime is derived from startedAt:\n${body}`);
-    // The parallel-run window is entered by a human reading this line.
-    assert(body.includes("notify=off"), "the NOTIFY state must be visible, not assumed");
-    assert(body.endsWith("\n"), "the body ends with a newline, like index.js's");
+    assert(body.endsWith("\n"), "the body ends with a newline, as the ADR 0007 pilot's did");
   }
 
   {
+    // `notify=on` is now a literal, not a rendering of configuration — ADR 0016
+    // §6 commit 4 deleted the switch, so the only honest value is `on`.
+    //
+    // Kept asserted rather than dropped with the field for two reasons: the token
+    // is what `docs/ingest-host.md` tells operators to read, and printing
+    // `notify=off` from a host that always notifies would be a lie no other test
+    // would catch.
+    const body = renderHealth(snapshot(), NOW);
+    assert(body.includes("notify=on"), `the health body must report notify=on:\n${body}`);
     assert(
-      renderHealth(snapshot({ notifyEnabled: true }), NOW).includes("notify=on"),
-      "notify=on is reported when realtime is live",
+      !body.includes("notify=off"),
+      "no snapshot may render notify=off — the host cannot run with realtime off",
     );
   }
 

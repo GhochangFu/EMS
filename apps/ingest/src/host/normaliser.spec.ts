@@ -327,32 +327,33 @@ export async function runNormaliserWriteTests(): Promise<void> {
     assert(calls[2].text === "COMMIT", `the transaction must commit, got "${calls[2].text}"`);
   }
 
-  // ---- notify defaults to OFF ---------------------------------------------
+  // ---- notify is unconditional (ADR 0016 §6 commit 4) ----------------------
+
+  {
+    // There is no way to write rows without notifying. Until commit 4 there was:
+    // `notify` defaulted to off, which was right only while the ADR 0007 pilot
+    // was also notifying, and afterwards was the one configuration that wrote
+    // telemetry while every dashboard went silently dead.
+    //
+    // Reinstating a suppression path — an option, a flag, an early return — makes
+    // this assertion fail, which is the point of stating it positively on the
+    // plain call rather than only testing the enabled case.
+    const { client, calls } = makeFakeClient();
+    const result = await writeResolved(client, rows);
+    assert(
+      calls.some((c) => c.text.includes("pg_notify")),
+      "a plain writeResolved must notify — no argument, environment or default " +
+        "may suppress realtime (ADR 0016 §6 commit 4, Amendment 3)",
+    );
+    assert(result.notificationsSent === 1, "the notification is reported, not merely sent");
+    assert(result.rowsWritten === 2, "both rows are still written");
+  }
+
+  // ---- the notification's shape and ordering -------------------------------
 
   {
     const { client, calls } = makeFakeClient();
     const result = await writeResolved(client, rows);
-    assert(
-      !calls.some((c) => c.text.includes("pg_notify")),
-      "NOTIFY must be off unless explicitly enabled — two notifying processes " +
-        "double-deliver every PHE reading to live dashboards (ADR 0016 §6)",
-    );
-    assert(result.notificationsSent === 0, "no notifications are reported when notify is off");
-    assert(result.rowsWritten === 2, "rows are still written with notify off");
-  }
-
-  {
-    const { client, calls } = makeFakeClient();
-    const result = await writeResolved(client, rows, { notify: false });
-    assert(!calls.some((c) => c.text.includes("pg_notify")), "notify:false suppresses NOTIFY");
-    assert(result.notificationsSent === 0, "notify:false reports no notifications");
-  }
-
-  // ---- notify on -----------------------------------------------------------
-
-  {
-    const { client, calls } = makeFakeClient();
-    const result = await writeResolved(client, rows, { notify: true });
     const notifies = calls.filter((c) => c.text.includes("pg_notify"));
     assert(notifies.length === 1, `two small rows fit one notification, got ${notifies.length}`);
     assert(result.notificationsSent === 1, "the notification count is reported");
@@ -389,7 +390,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
       "RTU-1",
     );
     const { client, calls } = makeFakeClient();
-    await writeResolved(client, resolved, { notify: true });
+    await writeResolved(client, resolved);
     const payload = JSON.parse(
       String(calls.find((c) => c.text.includes("pg_notify"))?.values?.[1]),
     ) as { readings: { value: number }[] };
@@ -410,7 +411,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
       unit: "m³/h",
     }));
     const { client, calls } = makeFakeClient();
-    const result = await writeResolved(client, many, { notify: true });
+    const result = await writeResolved(client, many);
     const inserts = calls.filter((c) => c.text.startsWith("INSERT INTO telemetry.point_values"));
     assert(inserts.length === 3, `2500 rows must split into 3 statements, got ${inserts.length}`);
     assert(
@@ -438,7 +439,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
     const { client, calls } = makeFakeClient(/^INSERT/);
     let rejected = false;
     try {
-      await writeResolved(client, rows, { notify: true });
+      await writeResolved(client, rows);
     } catch {
       rejected = true;
     }
@@ -454,7 +455,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
 
   {
     const { client, calls } = makeFakeClient();
-    const result = await writeResolved(client, [], { notify: true });
+    const result = await writeResolved(client, []);
     assert(calls.length === 0, "an empty batch must not open a transaction or notify");
     assert(result.rowsWritten === 0, "an empty batch writes nothing");
   }
