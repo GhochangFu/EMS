@@ -16,52 +16,23 @@ import { io, type Socket } from "socket.io-client";
 
 import { fetchTelemetryRecent } from "../../api/telemetry";
 import { fetchAssets } from "../../api/assets";
+import {
+  applyReading,
+  deriveStatus,
+  emptySlice,
+  STALE_TICK_MS,
+  type SchematicTelemetrySlice,
+} from "../../lib/schematic-telemetry";
 import { socketBaseUrl } from "../../lib/socket-url";
 import { useAuthStore } from "../../stores/auth-store";
 import type { LiveSvgStatus } from "./types";
 
-const FRESH_MS = 25_000;
-
-export type SchematicTelemetrySlice = {
-  kw: number | null;
-  kvar: number | null;
-  breaker: number | null;
-  voltage: number | null;
-  current: number | null;
-  pf: number | null;
-  frequencyHz: number | null;
-  kwhToday: number | null;
-  loadPct: number | null;
-  outputVoltageV: number | null;
-  outputFreqHz: number | null;
-  batteryV: number | null;
-  batteryTempC: number | null;
-  backupMin: number | null;
-  healthPct: number | null;
-  rackKw: number | null;
-  rackTempC: number | null;
-  pduAStatus: number | null;
-  pduBStatus: number | null;
-  pduUtilPct: number | null;
-  outletsUsed: number | null;
-  supplyAirTempC: number | null;
-  returnAirTempC: number | null;
-  fanRpm: number | null;
-  fanSpeedPct: number | null;
-  chwFlowLps: number | null;
-  chwSupplyTempC: number | null;
-  chwReturnTempC: number | null;
-  /** 1 = OK, 0 = trip (HVAC). */
-  compressorOk: number | null;
-  coolingKw: number | null;
-  temperatureC: number | null;
-  humidityPct: number | null;
-  /** 0 = dry, 1 = wet. */
-  leakState: number | null;
-  /** 0 = normal, 1 = alarm. */
-  smokeState: number | null;
-  lastSeenMs: number | null;
-};
+/**
+ * Re-exported so the seven control-room pages that import this type keep their
+ * existing import path — `F4.37` moved the definition to
+ * `lib/schematic-telemetry.ts` to make it testable, not to churn callers.
+ */
+export type { SchematicTelemetrySlice };
 
 type Ctx = {
   idByCode: Map<string, string>;
@@ -72,147 +43,20 @@ type Ctx = {
   byAssetId: Record<string, SchematicTelemetrySlice>;
   /** Sum of `cooling_kw` if any present, else sum of `kw`. */
   totalKw: number | null;
+  /**
+   * Increments every `STALE_TICK_MS` (`F4.37`).
+   *
+   * It carries no information — it is here to change this context value's
+   * identity on a timer, so consumers re-render and `deriveStatus` re-reads the
+   * clock. Without it, staleness is only recomputed when a socket payload
+   * arrives for some asset on this schematic, which is precisely the event that
+   * stops during the outage the offline state exists to show. **Removing it
+   * silently freezes every schematic on its last status.**
+   */
+  staleTick: number;
 };
 
 const SchematicTelemetryContext = createContext<Ctx | null>(null);
-
-function emptySlice(): SchematicTelemetrySlice {
-  return {
-    kw: null,
-    kvar: null,
-    breaker: null,
-    voltage: null,
-    current: null,
-    pf: null,
-    frequencyHz: null,
-    kwhToday: null,
-    loadPct: null,
-    outputVoltageV: null,
-    outputFreqHz: null,
-    batteryV: null,
-    batteryTempC: null,
-    backupMin: null,
-    healthPct: null,
-    rackKw: null,
-    rackTempC: null,
-    pduAStatus: null,
-    pduBStatus: null,
-    pduUtilPct: null,
-    outletsUsed: null,
-    supplyAirTempC: null,
-    returnAirTempC: null,
-    fanRpm: null,
-    fanSpeedPct: null,
-    chwFlowLps: null,
-    chwSupplyTempC: null,
-    chwReturnTempC: null,
-    compressorOk: null,
-    coolingKw: null,
-    temperatureC: null,
-    humidityPct: null,
-    leakState: null,
-    smokeState: null,
-    lastSeenMs: null,
-  };
-}
-
-function applyReading(
-  prev: SchematicTelemetrySlice,
-  r: TelemetryReading,
-): SchematicTelemetrySlice {
-  const t = new Date(r.time).getTime();
-  const next = { ...prev, lastSeenMs: t };
-  switch (r.pointKey) {
-    case "kw":
-      return { ...next, kw: r.value };
-    case "kvar":
-      return { ...next, kvar: r.value };
-    case "breaker_main":
-      return { ...next, breaker: r.value };
-    case "voltage_l1_v":
-      return { ...next, voltage: r.value };
-    case "current_a":
-      return { ...next, current: r.value };
-    case "pf":
-      return { ...next, pf: r.value };
-    case "frequency_hz":
-      return { ...next, frequencyHz: r.value };
-    case "kwh_today":
-      return { ...next, kwhToday: r.value };
-    case "load_pct":
-      return { ...next, loadPct: r.value };
-    case "output_voltage_v":
-      return { ...next, outputVoltageV: r.value };
-    case "output_freq_hz":
-      return { ...next, outputFreqHz: r.value };
-    case "battery_v":
-      return { ...next, batteryV: r.value };
-    case "battery_temp_c":
-      return { ...next, batteryTempC: r.value };
-    case "backup_min":
-      return { ...next, backupMin: r.value };
-    case "health_pct":
-      return { ...next, healthPct: r.value };
-    case "rack_kw":
-      return { ...next, rackKw: r.value };
-    case "rack_temp_c":
-      return { ...next, rackTempC: r.value };
-    case "pdu_a_status":
-      return { ...next, pduAStatus: r.value };
-    case "pdu_b_status":
-      return { ...next, pduBStatus: r.value };
-    case "pdu_util_pct":
-      return { ...next, pduUtilPct: r.value };
-    case "outlets_used":
-      return { ...next, outletsUsed: r.value };
-    case "supply_air_temp_c":
-      return { ...next, supplyAirTempC: r.value };
-    case "return_air_temp_c":
-      return { ...next, returnAirTempC: r.value };
-    case "fan_rpm":
-      return { ...next, fanRpm: r.value };
-    case "fan_speed_pct":
-      return { ...next, fanSpeedPct: r.value };
-    case "chw_flow_lps":
-      return { ...next, chwFlowLps: r.value };
-    case "chw_supply_temp_c":
-      return { ...next, chwSupplyTempC: r.value };
-    case "chw_return_temp_c":
-      return { ...next, chwReturnTempC: r.value };
-    case "compressor_ok":
-      return { ...next, compressorOk: r.value };
-    case "cooling_kw":
-      return { ...next, coolingKw: r.value };
-    case "temperature_c":
-      return { ...next, temperatureC: r.value };
-    case "humidity_pct":
-      return { ...next, humidityPct: r.value };
-    case "leak_state":
-      return { ...next, leakState: r.value };
-    case "smoke_state":
-      return { ...next, smokeState: r.value };
-    default:
-      return next;
-  }
-}
-
-function deriveStatus(slice: SchematicTelemetrySlice): {
-  status: LiveSvgStatus;
-  stale: boolean;
-} {
-  const stale =
-    slice.lastSeenMs == null || Date.now() - slice.lastSeenMs > FRESH_MS;
-  if (stale) {
-    return { status: "offline", stale: true };
-  }
-  if (slice.breaker === 0) {
-    return { status: "fault", stale: false };
-  }
-  if (slice.compressorOk === 0) {
-    return { status: "fault", stale: false };
-  }
-  return { status: "running", stale: false };
-}
 
 type ProviderProps = {
   /** Asset codes to follow (must exist in `GET /api/v1/assets`). */
@@ -271,6 +115,21 @@ export function SchematicTelemetryProvider({
   );
   const accessToken = useAuthStore((state) => state.accessToken);
 
+  /**
+   * Forces staleness to be re-evaluated on a timer (`F4.37`) — see `Ctx.staleTick`.
+   * Mounted unconditionally: a schematic tracking no assets still renders tiles
+   * that must go offline.
+   */
+  const [staleTick, setStaleTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setStaleTick((n) => n + 1);
+    }, STALE_TICK_MS);
+    return () => {
+      window.clearInterval(id);
+    };
+  }, []);
+
   /** Hydrate latest values from REST when asset list is ready. */
   useEffect(() => {
     if (trackedIds.length === 0) {
@@ -290,7 +149,7 @@ export function SchematicTelemetryProvider({
             const rows = await fetchTelemetryRecent(ref, "15m");
             const latest = rows[0];
             if (latest) {
-              slice = applyReading(slice, latest);
+              slice = applyReading(slice, latest, Date.now());
             }
           } catch {
             /* leave partial */
@@ -315,13 +174,21 @@ export function SchematicTelemetryProvider({
       if (readings.length === 0) {
         return;
       }
+      // One clock reading for the batch: the clamp only needs to bound a
+      // future timestamp, and a per-reading `Date.now()` would let two readings
+      // in the same payload disagree about when "now" was.
+      const nowMs = Date.now();
       setByAssetId((prev) => {
         const next = { ...prev };
         for (const r of readings) {
           if (!trackedIds.includes(r.assetId)) {
             continue;
           }
-          next[r.assetId] = applyReading(next[r.assetId] ?? emptySlice(), r);
+          next[r.assetId] = applyReading(
+            next[r.assetId] ?? emptySlice(),
+            r,
+            nowMs,
+          );
         }
         return next;
       });
@@ -371,8 +238,9 @@ export function SchematicTelemetryProvider({
       assetMetaById,
       byAssetId,
       totalKw,
+      staleTick,
     }),
-    [idByCode, assetMetaById, byAssetId, totalKw],
+    [idByCode, assetMetaById, byAssetId, totalKw, staleTick],
   );
 
   useEffect(() => {
@@ -409,7 +277,10 @@ export function useSchematicTelemetry(assetId: string | undefined): {
     assetId && ctx?.byAssetId[assetId]
       ? ctx.byAssetId[assetId]!
       : emptySlice();
-  const { status, stale } = deriveStatus(slice);
+  // Read at render rather than taken from `ctx.staleTick`, so the comparison
+  // uses the true current time; the tick's only job is to make this render
+  // happen when nothing else would.
+  const { status, stale } = deriveStatus(slice, Date.now());
   return { slice, status, stale };
 }
 

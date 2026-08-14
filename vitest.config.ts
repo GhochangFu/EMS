@@ -125,6 +125,24 @@ export default defineConfig({
       // `localhost` resolves to IPv6 first, `access-control.integration` fails the
       // whole run with a connection timeout rather than skipping — correctly, since
       // a set `DATABASE_URL` is a claim that a database exists. CI is unaffected.
+      // Ratcheted by `F4.37` from 38.2/32.3/39.5/38.4. Measured 2026-08-14 against
+      // the live database, all 155 tests running and none skipped:
+      // 38.98 statements · 33.40 branches · 39.88 functions · 39.26 lines.
+      // (54 files / 155 tests.)
+      //
+      // **This is the mirror image of the `F4.34` dip below and worth reading
+      // next to it.** Moving the schematic slice core out of a `.tsx` component
+      // and into `apps/web/src/lib/` moved it *into* the denominator — `include`
+      // covers `apps/web/src/lib/**` and nothing above it — so code that had
+      // been invisible to this gate for six sprints now counts. The first
+      // measurement after the move was only 38.26/32.31/39.88/38.52, because the
+      // 34-arm point-key switch arrived uncovered; the table-driven mapping test
+      // in `schematic-telemetry.spec.ts` is what turned it into a real rise.
+      //
+      // The lesson generalises: a coverage number moves when code crosses the
+      // `include` boundary, in either direction, without anything becoming
+      // better or worse tested. Only the +0.7 here is new testing.
+      //
       // Ratcheted by `F4.36` from 37.7/31.8/39.2/38.0. Measured 2026-08-14 against
       // the live database, all 153 tests running and none skipped:
       // 38.24 statements · 32.31 branches · 39.53 functions · 38.50 lines.
@@ -200,10 +218,10 @@ export default defineConfig({
       // tests at all** before this item (ADR 0025 fact 7) and is now exercised
       // through `energyPreview` rather than by reconstructing its queries.
       thresholds: {
-        statements: 38.2,
-        branches: 32.3,
-        functions: 39.5,
-        lines: 38.4,
+        statements: 38.9,
+        branches: 33.3,
+        functions: 39.8,
+        lines: 39.2,
       },
     },
   },
