@@ -29,6 +29,37 @@ docker compose --profile core --profile sim --profile observability up --build
 5. Confirm alarm event and websocket event counters move.
 6. In Grafana Explore, choose Loki and query `{service="api"}` or
    `{service="sim"}` to inspect container logs.
+7. Confirm `bms_api_telemetry_listener_connected` is **1** on
+   `http://localhost:4000/metrics`.
+
+## Realtime is dead but the API is up
+
+`bms_api_telemetry_listener_connected` is the signal (`F4.34`). It is `1` while
+the API holds its `LISTEN bms_telemetry` subscription and `0` otherwise.
+
+**This is the one failure the rest of the dashboard cannot show you.** Request
+rate, latency and ingest rate all stay healthy while every live tile stops
+updating, because telemetry is still being written — it just is not being
+announced to anyone.
+
+- **Gauge 0, ingest `written=` climbing** → the fault is on the API side. The
+  listener reconnects on its own with the ADR 0016 §5 backoff (1 s doubling to a
+  60 s ceiling), so a gauge that returns to 1 by itself is expected; one that
+  stays 0 means Postgres is refusing the connection. Check the API logs for
+  `bms_telemetry listener lost:` — the reason is interpolated into that line.
+- **`bms_api_telemetry_listener_reconnects_total` climbing steadily while the
+  gauge flaps** → something accepts the connection then drops it (pgbouncer at
+  its pool limit, a replica in recovery). The listener escalates its backoff in
+  this case rather than hammering, so the counter's *rate* is the diagnostic.
+- **Readings published while the gauge is 0 are gone from the live push.**
+  `NOTIFY` has no replay. Nothing is lost from history — the rows are in the
+  hypertable and the UI re-seeds from `GET /telemetry/points/:pointRef/recent` —
+  so a page refresh recovers the chart even though the missed ticks never
+  arrive as live events.
+
+Before `F4.34` this state was not merely invisible: an unhandled `error` event
+took the whole API process down, so the symptom was a dead API rather than a
+stale dashboard.
 
 ## Laptop Notes
 

@@ -804,6 +804,27 @@ Process (`AGENTS.md` §10).
   `MQTT_RECONNECT_MS` and `INGEST_METRICS_PORT` went with the entry point that
   was the only reader of either.
 
+  **The downstream half closed on 2026-08-14 as `F4.34`** (PR #33, merged
+  `c27e9c8`). Commit 4 made that dead-dashboard state unreachable *by ingest
+  configuration*; the API's `LISTEN bms_telemetry` still had no error handler and
+  no reconnect, so the same outage was one hop away. It was worse than the
+  narrowing recorded: `pg.Client` is an `EventEmitter`, an `error` event with no
+  listener throws, and with no `uncaughtException` handler in `apps/api` and no
+  `restart:` on the compose service, a dropped connection took the **whole API**
+  down and left it down — reproduced against a live database rather than reasoned
+  about. The listener now supervises itself, and
+  `bms_api_telemetry_listener_connected` on `/metrics` is the signal that a
+  realtime path has died while REST keeps serving. `/health` was deliberately
+  left alone: it is a liveness probe, and restarting a process that is serving
+  traffic correctly is not the right response to a lost subscription.
+
+  The ADR 0016 §5 backoff moved to `packages/shared/src/ingest.ts` in the same
+  change, because that listener became its second consumer and the ADR states
+  those numbers precisely so a second policy never gets invented. Note that
+  `packages/shared` sits **outside** the coverage denominator, so the extraction
+  lowered the reported percentage while removing a duplicate and adding no
+  untested line.
+
   **The fifth action did not land, and is reassigned.** Retiring the
   `MQTT_USERNAME` / `MQTT_PASSWORD` fallback needs an encrypted credential row to
   read instead, and `bms.rtu_connection_configs` is still empty — re-measured
