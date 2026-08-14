@@ -41,7 +41,7 @@ plus the assessment docs and `AGENTS.production.md` referenced therein.
 ## 1. Wave plan at a glance
 
 ```
-WAVE 0  enablers+quick wins: [F4.4⭐ ✅] [F2.1⭐ ✅] F1.1⭐ F2.3⭐ F3.8⭐ [F4.1⭐ ✅] [F4.2⭐ ✅] F4.20⭐ F3.3⭐
+WAVE 0  enablers+quick wins: [F4.4⭐ ✅] [F2.1⭐ ✅] [F1.1⭐ ✅] F2.3⭐ F3.8⭐ [F4.1⭐ ✅] [F4.2⭐ ✅] F4.20⭐ F3.3⭐
         [F4.11 ✅] [F4.12 ✅] F3.6 F1.8 F1.9 F4.24 E8.1🟡 E8.2 E8.3✅ E8.4
         + ADRs(E1.1, E7.1, positioning)
 WAVE 1  F1.2 F1.3 F1.4 F1.5 F1.6 F1.7 F1.10  [F2.2 ✅] F2.4  F3.7 F3.10 F3.1 F3.4 F3.11
@@ -130,7 +130,7 @@ still safe in parallel.
 | Slot | Run in parallel | Tracks | Notes |
 |------|-----------------|--------|-------|
 | ~~**1**~~ **CLOSED** | ~~**F4.4** ⭐~~ ✅ · ~~F4.11~~ ✅ · ~~F4.12~~ ✅ · E8.1 🟡 | F | **F4.4** (ADR 0014, PR #1) — Vitest + coverage gate + `db:seed` run on every PR, so delegating to agents is safe from here. **F4.11 + F4.12** (ADR 0017, PR #2) — F4.11 shipped for operator *and* viewer once the write matrix gated the 16 mutating endpoints in rules/alarms/work-orders/maintenance, which carried `JwtAuthGuard` and no role check. **E8.1 partial** (🟡) — software scope only; the row's volume/object-storage/backup surface is deliberately *not* built, see [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md). Its review raised **E8.3** and **E8.4** as new scope. |
-| **2** *(part)* | ~~**F2.1** ⭐~~ ✅ · ~~F4.10~~ ✅ · **F1.1** ⭐ · **F3.8** ⭐ | B · F · A · D | **F2.1** (ADR 0015, PR #5) released the migration lock and opened the critical path — `E1.7`, `F2.2` and `F2.7` unblock. **F4.10** (PR #4) was pulled forward from wave 1: it was the only P0 in the unblocked set, and ADR 0017 names it as where the write matrix gets its end-to-end proof. `F1.1` and `F3.8` remain; `F3.8` still needs a §9.4 dependency ADR. |
+| **2** *(part)* | ~~**F2.1** ⭐~~ ✅ · ~~F4.10~~ ✅ · ~~**F1.1** ⭐~~ ✅ · **F3.8** ⭐ | B · F · A · D | **F2.1** (ADR 0015, PR #5) released the migration lock and opened the critical path — `E1.7`, `F2.2` and `F2.7` unblock. **F4.10** (PR #4) was pulled forward from wave 1: it was the only P0 in the unblocked set, and ADR 0017 names it as where the write matrix gets its end-to-end proof. `F1.1` and `F3.8` remain; `F3.8` still needs a §9.4 dependency ADR. |
 | **3** | **F2.3** ⭐ · ~~**F4.1** ⭐~~ ✅ · **F3.3** ⭐ | B · F · C | Second enabler batch. F2.3 continues track B (same owner as F2.1). **F4.1 done 2026-08-10** (ADR 0023, PR #21) — it was the only one of the three that needed no other item first. |
 | **4** *(part)* | F1.2 · ~~F2.2~~ ✅ · F3.6 | A · B · D | First dependents unlock: Modbus (needs F1.1), template instantiation (needs F2.1), alarm-engine unification (independent). **F2.2** (ADR 0015 Amendment 1, PR #7) was pulled forward from this slot the moment `F2.1` landed — it is P0, needs no DDL, and a template nobody can instantiate is a schema rather than a feature. `F1.2` still waits on `F1.1`. |
 | **5** *(part)* | F1.3 · ~~**E1.7**~~ ✅ · F3.7 | A · B · D | **E1.7** (ADR 0019, PR #9) was pulled forward the moment `F2.1` landed — P0 critical path, no DDL, and it is the last thing between `main` and `E5.1`. It unblocks all three domain packs. F3.7 still needs F3.8. |
@@ -145,6 +145,41 @@ still safe in parallel.
 Completing slot 12 reaches the **Foundry demo**: a water plant onboarded from a
 rich template by the agent, with health scores, pre-threshold anomaly alerts,
 and enriched alarms.
+
+### F1.1 landed and opened the adapter fan-out (2026-08-14, PR #30)
+
+Re-derived from the `Depends` column, not read off the slot table. **Nine of the
+eleven rows listing `F1.1` are now fully unblocked**; two are not:
+
+| Item | P | Track | Note |
+|------|---|-------|------|
+| **F1.2** Modbus TCP/RTU | **P0** | A | The flagship fan-out. `F1.2`–`F1.6` implement the *same* frozen interface in their *own* files, which is why §1b slot 6 calls them the cleanest 3-agent parallel batch in the plan. |
+| **F1.3** BACnet/IP | **P0** | A | |
+| **F1.6** DCS / SCADA / PLC | **P0** | A | Client-specific. |
+| **F1.7** MQTT beyond one RTU | **P0** | A | **See below — one of only two that need no new scope ADR.** |
+| F1.4 OPC-UA · F1.5 SNMP/REST | P1 | A | |
+| **F1.10** backpressure + 1 h disk buffer | P1 | A | The other one needing no scope ADR. A disk-buffer library would be §9.4-gated. |
+| E5.4 water-quality instrumentation | P1 | A | |
+| E6.1 IEC 60870 | P2 | A | Wave 5. |
+
+**Still blocked, recorded so the next cascade check does not re-derive it:**
+`E7.2` (edge gateway runtime) lists `F1.1` **and** `F1.10`, and `F3.24` (agent
+protocol onboarding) lists `F1.1` **and** `F3.21` — each is one item away, not
+zero. *(`F1.10` starts with the characters `F1.1`, and a prefix match rather than
+a whole-token match silently reports `E7.2` as unblocked. That happened while
+deriving this table and was caught by re-running with an exact match.)*
+
+**The nine are not nine startable items, and `Depends` cannot say so.** AGENTS.md
+§6 gates every *further protocol implementation* behind **its own ADR**,
+unconditionally under §10 — not only where a library has to be settled under
+§9.4. So `F1.2`, `F1.3`, `F1.4`, `F1.5`, `F1.6`, `E5.4` and `E6.1` are eligible
+on the board and each still needs a scope decision before any code. **`F1.7` and
+`F1.10` are the exceptions**: MQTT is already promoted (ADR 0007) and
+backpressure is host-side, so neither reopens the protocol question.
+
+This is the same shape as `E5.1` waiting on a client answer, and the same shape
+as `F1.8`/`F1.9` having been listed eligible while the schema forbade what they
+required: **a board tracks features, not the constraints on starting them.**
 
 ### Newly unblocked after slot 1 (2026-08-04)
 
@@ -309,7 +344,7 @@ single shared file). `F3.8` needs a dependency ADR before build.
 
 | ID | Feature | P | Effort | Wave | Depends | Status |
 |----|---------|---|--------|------|---------|--------|
-| **F1.1** | Ingest adapter framework (`IngestAdapter`, pluggable) ⭐ — ADR 0016 §6 commits 1–3 landed (PR #13, PR #19); **commit 4 built 2026-08-14** on `feat/f1-1-commit-4-cutover`, awaiting merge. Four of its five actions land; the fifth (retiring the `MQTT_USERNAME`/`MQTT_PASSWORD` fallback) was conditioned by §6 on a `rtu_connection_configs` row that does not exist, so it moved to `E8.4` — ADR 0016 Amendment 3 | P0 | 4–5 | 0 | — | 🔵 |
+| **F1.1** | Ingest adapter framework (`IngestAdapter`, pluggable) ⭐ — **DONE 2026-08-14.** ADR 0016 §6 ran as four commits: 1–2 built the toolchain and the host beside the ADR 0007 pilot (PR #13), 3 verified the two agreed and cut the *deployment* over 2026-08-06 (PR #19), and **4 merged as `ddc07a0`** (PR [#30](https://github.com/GhochangFu/EMS/pull/30)) deleting `src/index.js`, pointing `pnpm start` at `dist/main.js`, removing the compose `command:` override and deleting the `INGEST_NOTIFY` flag. **CI green;** the `chore(agents):` sweep landed separately as `28d91d2` (PR [#31](https://github.com/GhochangFu/EMS/pull/31)). **Commit 4 needed a *named owner*, not merely an instruction** (Resolved decision 4, restated in AGENTS.md §6 as “do not do it unprompted”) — the two are different, “start F1.1” clears only the second, and the owner was asked for separately; **ADR 0016 Amendment 3** records it. **Four of five actions landed. The fifth did not, and that is §6 being followed rather than amended:** it conditioned retiring the `MQTT_USERNAME`/`MQTT_PASSWORD` fallback on the pilot RTU having an `rtu_connection_configs` row, and it has none — re-measured 2026-08-14 at **0 rows** table-wide rather than trusted from decision 5's 2026-08-04 reading, because AGENTS.md is explicit that the emptiness is a measurement with a date and E8.3 shipped a UI that can write it. `CREDENTIAL_ENCRYPTION_KEY` **is** set, so it is blocked on **data, not configuration**; reassigned to **`E8.4`**. **Deleting `INGEST_NOTIFY` was the point, not tidying up:** post-cutover its off-default was the only reachable state in which telemetry lands while every dashboard is dead — no error, no alarm — and for eight days compose's `INGEST_NOTIFY: "on"` line alone stood between the pilot and that. **Verified:** 152 tests / 52 files green, zero skipped; **eleven mutations all failing correctly**, each verified to have *applied* first; the shipped **compiled** artifact executed against a real Postgres with a real `LISTEN bms_telemetry` receiving the payload, cleanup honouring the §4.4 post-`DELETE` obligation at 0 residual raw rows and 0 residual `_1m` buckets; and the built image checked to run `node dist/main.js` with `INGEST_NOTIFY` present only as comments and **no code path reading it**. Coverage ratcheted 35.7/30.8/37.6/35.9 → **36.5/31.2/38.2/36.7**, and the comment records that the rise is a **denominator shrink** — `index.js` was 234 lines no test imported — not new coverage. **Two structural guarantees became repo invariants** because no behavioural test can fail when a second entry point merely *appears*: one entry point in `apps/ingest/src`, and nothing outside the specs reading `INGEST_NOTIFY`. The first version of the second matched only `env.INGEST_NOTIFY` and let four other shapes through (`env["…"]`, destructuring, a `getEnv()` helper, compose list form) — found by the compliance review, all four now caught and proved by mutation. **Both reviews ran, no blocking findings.** Security called it a net reduction in attack surface and **corrected an overclaim**: the outage is unreachable *by ingest configuration* only, since the API's `LISTEN` has no reconnect — now **`F4.34`**. Compliance found my AGENTS.md sweep list **incomplete at four of seven**, the three misses all anchoring on *commit 2* rather than on `index.js`. **Deployed: backend N/A at merge time, database and frontend N/A** — no migration, `apps/web` untouched, and the ingest container was not running on this machine, so nothing was restarted; the deployment change is that `pnpm start` now *is* the host, which the image was verified to do. **Cascade: nine items** — see the note in §1b | P0 | 4–5 | 0 | — | ✅ |
 | F1.8 | Manual time-series entry API + UI. **Genuinely buildable as of ADR 0018** — `assets.rtu_id` was `NOT NULL`, so an asset with no gateway could not exist and a hand-entered reading had nowhere to live. Points now carry `source_kind = 'manual'` | P0 | 2–3 | 0 | — | ⬜ |
 | F1.9 | Telemetry history bulk import (CSV/Excel). **Genuinely buildable as of ADR 0018** — same constraint; imported points may also land as `'unmapped'` before their gateway is wired | P0 | 3–4 | 0 | — | ⬜ |
 | F1.2 | Modbus TCP/RTU adapter | P0 | 10–12 | 1 | F1.1 | ⬜ |
@@ -464,7 +499,7 @@ single shared file). `F3.8` needs a dependency ADR before build.
 flowchart LR
     subgraph W0["Wave 0 · Enablers"]
         F44["F4.4 Test runner+CI ⭐ ✅"]
-        F11["F1.1 Adapter fw ⭐"]
+        F11["F1.1 Adapter fw ⭐ ✅"]
         F21["F2.1 Templates ⭐ ✅"]
         F23["F2.3 Calc DSL ⭐"]
         F38["F3.8 Notifications ⭐"]
@@ -718,7 +753,7 @@ batch; everything from here lands alone.
 | Owed | Source | Landed as |
 |------|--------|-----------|
 | ~~ADR 0019~~ ✅ | E1.7 | **First promotion under the one-per-PR rule.** §2 gained a **Template content** row; the status line, §3 and §6's "also promoted" paragraph name ADR 0019. §6 also gained **two deferral bullets** — the *five* things ADR 0019 leaves closed (`health` → `E1.1`, `optimisation` → `E1.6`, opaque `kpis.expression` → `F2.3`, ordering-only `dashboards` → `F3.1`, and `alarms.philosophy` → `E2.1`), and the fact that nothing deploys template content into a running rule or maintenance row. A promotion that records only what *opened* leaves an agent free to widen what it closed — review caught this draft doing exactly that, omitting `alarms.philosophy` even though ADR 0019 §3 explicitly instructs the rulebook to state it. |
-| **ADR 0016 §6 commit 4** | F1.1 | **Owed: the `chore(agents):` sweep.** Commit 4 landed 2026-08-14 (one entry point, unconditional NOTIFY); AGENTS.md is deliberately untouched per §9.10. **Seven locations, and the compliance review found three of them that my own list missed** — all three anchor on *commit 2* rather than on `index.js`, which is why a search for the obvious strings does not surface them: **`:524-527`** §6's first adapter bullet (“promoted as far as §6 commit 2 … **that is the whole of what is in scope**” — the sentence a scope reviewer reads first), **`:638`** §6 “also promoted since”, and **`:700`** §8. The four already known: **`:165`** §2 *Real ingestion* (three separate false claims — two entry points, the `command:` override being “the whole of it”, and `INGEST_NOTIFY: "on"` being “the only thing keeping realtime alive”), **`:169`** §2 *Ingest adapters* (Amendment 3 now exists; commit 4 is done and owned; add that the env-fallback retirement moved to `E8.4`), **`:228-234`** the §3 tree comment, and **`:538-552`** §6's gate bullet — which should record the gate as *satisfied*, the framing §6 already uses for commit 3, not be deleted. **`:165` carries an operational trap**, raised by the security review: an operator following it during a dead-dashboard incident re-adds `INGEST_NOTIFY: "on"` to compose, which now **fails CI** via the new repo invariant and does nothing anyway. **Verified as NOT falsified, so leave them:** `:169`'s `process.env` / `rtu-config.js` sentence (that file is untouched), the `rtu_connection_configs` emptiness (re-measured, still true), §2 *Containers* / *CI-CD*, and §7 item 8's `node --check apps/sim/src/index.js` (sim, still present). Per §10.1 these are **corrections, not a promotion** — scope moved when ADR 0016 was accepted — so they may batch, following the 2026-08-06 cutover sweep's precedent. |
+| ~~ADR 0016 §6 commit 4~~ ✅ | F1.1 (PR #31) | **Landed as `28d91d2`.** *Original target list:* **Owed: the `chore(agents):` sweep.** Commit 4 landed 2026-08-14 (one entry point, unconditional NOTIFY); AGENTS.md is deliberately untouched per §9.10. **Seven locations, and the compliance review found three of them that my own list missed** — all three anchor on *commit 2* rather than on `index.js`, which is why a search for the obvious strings does not surface them: **`:524-527`** §6's first adapter bullet (“promoted as far as §6 commit 2 … **that is the whole of what is in scope**” — the sentence a scope reviewer reads first), **`:638`** §6 “also promoted since”, and **`:700`** §8. The four already known: **`:165`** §2 *Real ingestion* (three separate false claims — two entry points, the `command:` override being “the whole of it”, and `INGEST_NOTIFY: "on"` being “the only thing keeping realtime alive”), **`:169`** §2 *Ingest adapters* (Amendment 3 now exists; commit 4 is done and owned; add that the env-fallback retirement moved to `E8.4`), **`:228-234`** the §3 tree comment, and **`:538-552`** §6's gate bullet — which should record the gate as *satisfied*, the framing §6 already uses for commit 3, not be deleted. **`:165` carries an operational trap**, raised by the security review: an operator following it during a dead-dashboard incident re-adds `INGEST_NOTIFY: "on"` to compose, which now **fails CI** via the new repo invariant and does nothing anyway. **Verified as NOT falsified, so leave them:** `:169`'s `process.env` / `rtu-config.js` sentence (that file is untouched), the `rtu_connection_configs` emptiness (re-measured, still true), §2 *Containers* / *CI-CD*, and §7 item 8's `node --check apps/sim/src/index.js` (sim, still present). Per §10.1 these are **corrections, not a promotion** — scope moved when ADR 0016 was accepted — so they may batch, following the 2026-08-06 cutover sweep's precedent. |
 | ~~ADR 0016 §6 commit 2~~ ✅ | F1.1 (PR #13) | The **first promotion of a partly-delivered ADR**, which is why it names the boundary rather than the feature. §2's *Ingest adapters* row and §6's adapter bullet had both said the interface was **all** that was in scope; the host, `src/adapters/mqtt.ts` and `src/adapter/registry.ts` are now on `main`, so both say so — and both state that MQTT is **not new scope** (ADR 0007 promoted it; this ports it onto the interface) and that a further adapter is still a §9.4 ADR, because "add a file and a registry key" is mechanical ease, not permission. §2's *Real ingestion* row gains the two entry points and `INGEST_NOTIFY=off`. **`F1.1` stays `⬜`**: commit 3 (parallel run against the real PHE deployment) and commit 4 (cutover) have not landed, and promoting the rulebook wording is not closing the item. **Also carried, on the record rather than inferred from the diff:** `docs/ingest-host.md` shipped in PR #13 with the same false "`process.env` is read in exactly one place" sentence as §2, and is corrected in the same breath — a runbook correction, not a second promotion. |
 
 ## 6. Instrumentation / hardware note (SOW §8)
