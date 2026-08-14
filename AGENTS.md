@@ -13,8 +13,9 @@
 > (ADR 0021), onboarding credential capture off the chat transcript
 > (ADR 0022), the telemetry continuous aggregates (**ADR 0023**), their
 > compression and retention policies (**ADR 0024**), the conversion of every
-> remaining rollup read onto them (**ADR 0025**) and one shared CSV escaping
-> rule for both exports (**ADR 0026**). General
+> remaining rollup read onto them (**ADR 0025**), one shared CSV escaping
+> rule for both exports (**ADR 0026**) and the staleness gate in front of every
+> derived status and rendered value in the web client (**ADR 0027**). General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
@@ -153,7 +154,7 @@ entry **D-0001**.
 
 | Layer        | Technology |
 |--------------|------------|
-| Frontend     | React 18, TypeScript 5, Vite, Tailwind CSS, TanStack Query, Zustand, React Router, Leaflet, ECharts. **Whether an asset is live is decided in exactly one place since `F4.37` (2026-08-14): `apps/web/src/lib/schematic-telemetry.ts`.** `FRESH_MS`, the arrival clamp and `isStale` live there, extracted from the context component so they can be tested at all — the context imports React, TanStack Query and socket.io-client, and `vitest.config.ts` only counts `apps/web/src/lib/**` toward coverage, so anything above it is untestable *and* invisible to the gate. Put new pure logic there, not in the component. **Freshness is computed at render, so it needs something to force one**: the provider's `staleTick` is the only periodic re-render in the app, and a `refetchInterval` is not a substitute — TanStack v5 tracks accessed properties and structurally shares results, so an unchanged response notifies nobody. **Note what this does *not* cover, before trusting a status on screen**: it reaches the SVG schematics through `useSchematicTelemetry`, and the seven control-room pages each derive their tiles locally without consulting it, so a dead sensor there still renders its last value as normal (`F4.38`) |
+| Frontend     | React 18, TypeScript 5, Vite, Tailwind CSS, TanStack Query, Zustand, React Router, Leaflet, ECharts. **Whether an asset is live is decided in exactly one place since `F4.37` (2026-08-14): `apps/web/src/lib/schematic-telemetry.ts`.** `FRESH_MS`, the arrival clamp and `isStale` live there, extracted from the context component so they can be tested at all — the context imports React, TanStack Query and socket.io-client, and `vitest.config.ts` only counts `apps/web/src/lib/**` toward coverage, so anything above it is untestable *and* invisible to the gate. Put new pure logic there, not in the component. **Freshness is computed at render, so it needs something to force one**: the provider's `staleTick` is the only periodic re-render in the app, and a `refetchInterval` is not a substitute — TanStack v5 tracks accessed properties and structurally shares results, so an unchanged response notifies nobody. **Since `F4.38` (2026-08-15, ADR 0027) the gate reaches everything on screen**, not just the SVG schematics: all seven control-room pages derive their tiles through `isStale`, a stale tile renders `—` rather than its last numbers, `offline` outranks `critical` in every page banner, and aggregates (`ctx.totalKw`, the KPI averages) exclude stale slices and show the count they excluded. Two rules follow for anyone adding to these pages. **Status renderers are `if`/ternary chains whose default is the healthy branch, so a new status member compiles silently and draws as `normal`** — test `offline` first in every chain; the compiler will not find them for you. And **read the clock at render**, taking the re-render from the provider's `staleTick`: a page that starts its own interval or caches the status re-freezes the tiles. `tests/repo-invariants.test.ts` holds both, plus the live-critical count that stops a dead sensor masking a live alarm. Still uncovered by construction: values that are **hardcoded literals** rather than slice-derived — the SLD's `BATT-1 · 384 V` is not read from anything, so no staleness gate can reach it (`F4.39`) |
 | Backend API  | NestJS (Node 20 LTS, TypeScript) |
 | Realtime     | NestJS WebSocket gateway over Socket.IO with Redis adapter when `REDIS_URL` is set. The source is `LISTEN bms_telemetry` on a dedicated `pg` connection (`telemetry-notify.service.ts` → `telemetry-listener.ts`), fanned out through `TelemetryBroadcastHub`. **That listener supervises itself since `F4.34` (2026-08-14)** — error handler, reconnect with the ADR 0016 §5 backoff, and a re-`LISTEN` on every reconnect. Before it, the listener connected once with no `error` handler, and because `pg.Client` is an `EventEmitter` an unhandled `error` event **threw**: with no `uncaughtException` handler in `apps/api` and no `restart:` on the compose service, any dropped connection took the whole API down and left it down. Watch `bms_api_telemetry_listener_connected` on `/metrics` — 0 means realtime is dead while REST still serves. **`NOTIFY` has no replay**, so readings published during an outage never reach the live push; they are still in the hypertable, and clients recover history through `GET /telemetry/points/:pointRef/recent`. **The payload is validated since `F4.36` (2026-08-14)** — `telemetry-reading.schema.ts` checks every reading, drops the invalid ones individually and delivers the rest, because one `null` entry used to throw inside `AlarmThresholdService.collapseLatest` *before any rule ran* and silently suppress alarms for the whole batch. Watch `bms_api_telemetry_readings_dropped_total` beside the gauge: non-zero means something is publishing in a shape the contract does not allow, and `NOTIFY` needs **no table privilege**, so any role that can connect can write to that channel. It counts rejected *readings* — a broken envelope (non-JSON, `readings` not an array) is log-only. The payload is capped at 500 readings because validating is far dearer than the cast it replaced and the 8000-byte `NOTIFY` limit bounds bytes, not entries. **A future-dated `time` still passes validation here, deliberately, and that is not an oversight**: `resolveSamples` trusts `sample.at`, and the PHE pilot was measured writing 33 minutes ahead of `now()` (`F4.28`), so rejecting it server-side would delete real telemetry. Verified 2026-08-14 by publishing a reading 33 minutes ahead — accepted and broadcast, `dropped_total` unchanged. **The sink is what was fixed instead (`F4.37`, PR #39)**: the web client clamps on arrival, so a skewed producer costs at most `FRESH_MS` of delayed offline detection rather than pinning a dead asset `running` forever |
 | Auth         | Keycloak/OIDC for pilot compose; local JWT fallback only for native WSL development |
@@ -360,7 +361,7 @@ Do not add top-level folders without updating this section.
   A test that is *invariant under the change it guards* is the recurring trap here
   — `F4.1` shipped one, `F4.28` shipped two more, and `F4.29` shipped a third, each
   caught in review. Assume your new guard has this defect and **mutate the code to
-  prove it fails**; five of the six instances looked convincing until someone did.
+  prove it fails**; six of the seven instances looked convincing until someone did.
   **And mutate against the shapes you did not write, not only the one you did**:
   `F1.1`'s invariant matched `env.INGEST_NOTIFY`, which looks tight and is weak —
   `env["INGEST_NOTIFY"]`, `const { INGEST_NOTIFY } = env`, a `getEnv("…")` helper
@@ -391,6 +392,23 @@ Do not add top-level folders without updating this section.
   function itself; here it took a static invariant to hold the wiring, and both
   deletions that disable it (removing the timer, dropping it from the context
   memo) left 53 of 54 test files passing.
+  **`F4.38` adds a seventh, and it is the one to watch whenever you write a
+  static invariant**: the guard was defeated by an **unrelated legitimate call to
+  the same function in the same file**. The invariant asserted that each
+  control-room page calls `isStale(` — searching the whole file. Two pages call
+  it a second time for an unrelated header value, so deleting the *status guard*
+  outright, restoring the very defect the item fixed, left every test green.
+  Reproduced before fixing: the same deletion on a page with one call was caught;
+  on a page with two it was not. **Scope a static check to the construct it is
+  about** — the function body, the dependency array, that specific call — never
+  to "does this token appear anywhere in the file". A file-wide search is
+  satisfied by a decoy, and the decoy is usually code you wrote yourself for a
+  good reason. The same round produced two more invariant defects deserving the
+  same suspicion: one regex **failed on clean code**, so its "kill" was spurious;
+  another passed on clean code and still let the mutation through, because it
+  matched a different call site. **Run every new invariant against the unmutated
+  tree first** — a check that fails on clean code proves nothing when it fails on
+  mutated code.
 - **A `DELETE` from `telemetry.point_values` does not remove the aggregate rows,
   and no scheduled policy repairs it.** Follow any such delete with
   `refresh_continuous_aggregate` over the deleted range for all four levels,
