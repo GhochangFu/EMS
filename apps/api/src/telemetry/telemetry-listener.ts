@@ -117,8 +117,9 @@ export function parseNotification(raw: string | undefined): TelemetryReading[] |
   // Unchecked cast, matching the pre-`F4.34` code exactly. Any role that can
   // connect to the database can `NOTIFY` this channel — no table privilege is
   // required — so the trust boundary is database credentials rather than the
-  // MQTT edge. Validating here would be real defence in depth and is recorded
-  // as its own row rather than changed under a reconnect fix.
+  // MQTT edge. Validating here would be real defence in depth; it is `F4.36`,
+  // kept out of this fix because changing a data path under a reconnect change
+  // is how two defects get one test.
   return payload.readings as TelemetryReading[];
 }
 
