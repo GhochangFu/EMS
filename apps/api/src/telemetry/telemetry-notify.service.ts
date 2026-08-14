@@ -53,7 +53,9 @@ export function buildListenerDeps(args: {
   hub: Pick<TelemetryBroadcastHub, "emitReadings">;
   metrics: Pick<
     MetricsService,
-    "setTelemetryListenerConnected" | "countTelemetryListenerReconnect"
+    | "setTelemetryListenerConnected"
+    | "countTelemetryListenerReconnect"
+    | "countTelemetryReadingsDropped"
   >;
   logger: ListenerLogger;
 }): TelemetryListenerDeps {
@@ -69,6 +71,9 @@ export function buildListenerDeps(args: {
     },
     onReconnectAttempt: () => {
       args.metrics.countTelemetryListenerReconnect();
+    },
+    onDropped: (count) => {
+      args.metrics.countTelemetryReadingsDropped(count);
     },
   };
 }

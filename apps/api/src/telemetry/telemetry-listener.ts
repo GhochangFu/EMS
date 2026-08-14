@@ -5,6 +5,8 @@ import {
   type TelemetryReading,
 } from "@bms/shared";
 
+import { parseReadings, type ReadingParseResult } from "./telemetry-reading.schema";
+
 /**
  * The telemetry `LISTEN bms_telemetry` loop (`F4.34`).
  *
@@ -90,6 +92,8 @@ export type TelemetryListenerDeps = {
   /** Fired on every transition, and on every reconnect attempt. */
   onStateChange?(state: ListenerState): void;
   onReconnectAttempt?(): void;
+  /** Called with how many readings a payload lost to validation (`F4.36`). */
+  onDropped?(count: number): void;
   policy?: BackoffPolicy;
   stableMs?: number;
 };
@@ -103,24 +107,22 @@ export type TelemetryListener = {
   reconnects(): number;
 };
 
-/** Parses one payload into readings, or `null` when it carries none. */
-export function parseNotification(raw: string | undefined): TelemetryReading[] | null {
-  let payload: { readings?: unknown };
+/**
+ * Parses one payload, keeping only readings that validate (`F4.36`).
+ *
+ * Returns `null` when the payload is not decodable JSON or carries no
+ * `readings` array. Otherwise every returned reading has been checked field by
+ * field — see `telemetry-reading.schema.ts` for why the invalid ones are
+ * dropped individually rather than the batch being discarded.
+ */
+export function parseNotification(raw: string | undefined): ReadingParseResult | null {
+  let payload: unknown;
   try {
-    payload = JSON.parse(raw ?? "{}") as { readings?: unknown };
+    payload = JSON.parse(raw ?? "{}");
   } catch {
     return null;
   }
-  if (!Array.isArray(payload.readings)) {
-    return null;
-  }
-  // Unchecked cast, matching the pre-`F4.34` code exactly. Any role that can
-  // connect to the database can `NOTIFY` this channel — no table privilege is
-  // required — so the trust boundary is database credentials rather than the
-  // MQTT edge. Validating here would be real defence in depth; it is `F4.36`,
-  // kept out of this fix because changing a data path under a reconnect change
-  // is how two defects get one test.
-  return payload.readings as TelemetryReading[];
+  return parseReadings(payload);
 }
 
 /** Builds the listener. Nothing runs until `start()`. */
@@ -242,13 +244,25 @@ export function createTelemetryListener(deps: TelemetryListenerDeps): TelemetryL
         await client.connect();
         await client.query("LISTEN bms_telemetry");
         client.on("notification", (msg) => {
-          const readings = parseNotification(msg.payload);
-          if (readings === null) {
+          const parsed = parseNotification(msg.payload);
+          if (parsed === null) {
             logger.warn("Failed to parse bms_telemetry payload");
             return;
           }
+          if (parsed.dropped > 0) {
+            // Field paths, never values (§9.6): the payload is unvalidated data
+            // of unknown provenance, and echoing it would turn a validation
+            // failure into a log-injection and secret-spill surface.
+            logger.warn(
+              `Dropped ${parsed.dropped} invalid bms_telemetry reading(s); fields: ${parsed.failedFields.join(", ")}`,
+            );
+            deps.onDropped?.(parsed.dropped);
+          }
+          if (parsed.readings.length === 0) {
+            return;
+          }
           try {
-            deps.onReadings(readings);
+            deps.onReadings(parsed.readings);
           } catch (error) {
             logger.warn(`Failed to broadcast bms_telemetry payload: ${reason(error)}`);
           }
