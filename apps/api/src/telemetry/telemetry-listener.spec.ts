@@ -20,6 +20,15 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
+/** A reading in exactly the shape both real producers emit. */
+const VALID_READING = {
+  time: "2026-08-14T15:00:00.000Z",
+  assetId: "asset-1",
+  pointKey: "kw",
+  value: 42.5,
+  unit: "kW",
+};
+
 /** Lets the listener loop advance past its pending microtasks and timers. */
 async function flush(times = 8): Promise<void> {
   for (let i = 0; i < times; i += 1) {
@@ -117,6 +126,7 @@ function makeHarness(
     onReadings?: () => void;
     clock?: { value: number };
     captureSignal?: (signal: AbortSignal) => void;
+    onDropped?: (count: number) => void;
   } = {},
 ): Harness {
   const delays: number[] = [];
@@ -159,6 +169,7 @@ function makeHarness(
     onReconnectAttempt: () => {
       reconnectSignals += 1;
     },
+    onDropped: (count) => options.onDropped?.(count),
   });
 
   const harness: Harness = {
@@ -420,7 +431,7 @@ async function survivesBadPayloads(): Promise<void> {
   assert(parseNotification(undefined) === null, "an absent payload should parse to null");
   assert(parseNotification('{"readings":"nope"}') === null, "a non-array should parse to null");
   assert(
-    parseNotification('{"readings":[]}')?.length === 0,
+    parseNotification('{"readings":[]}')?.readings.length === 0,
     "an empty readings array is valid and empty",
   );
 
@@ -434,7 +445,7 @@ async function survivesBadPayloads(): Promise<void> {
   await flush();
 
   fakes[0].emitNotification("{ not json");
-  fakes[0].emitNotification('{"readings":[{"pointKey":"kw"}]}');
+  fakes[0].emitNotification(JSON.stringify({ readings: [VALID_READING] }));
   await flush();
 
   assert(
@@ -479,6 +490,7 @@ async function reportsStateTransitions(): Promise<void> {
 async function wiresMetricsToListenerState(): Promise<void> {
   const gauge: boolean[] = [];
   const reconnects: number[] = [];
+  const dropCounts: number[] = [];
   const emitted: TelemetryReading[][] = [];
 
   const deps = buildListenerDeps({
@@ -491,6 +503,7 @@ async function wiresMetricsToListenerState(): Promise<void> {
     metrics: {
       setTelemetryListenerConnected: (connected: boolean) => gauge.push(connected),
       countTelemetryListenerReconnect: () => reconnects.push(1),
+      countTelemetryReadingsDropped: (count: number) => dropCounts.push(count),
     },
     logger: { log: () => {}, warn: () => {}, error: () => {} },
   });
@@ -508,12 +521,127 @@ async function wiresMetricsToListenerState(): Promise<void> {
   deps.onReconnectAttempt?.();
   assert(reconnects.length === 1, "a reconnect attempt should increment the counter");
 
-  deps.onReadings([{ pointKey: "kw" } as unknown as TelemetryReading]);
+  deps.onReadings([VALID_READING as TelemetryReading]);
   assert(emitted.length === 1, "readings should reach the broadcast hub");
+
+  assert(deps.onDropped !== undefined, "drops must be wired to the counter");
+  deps.onDropped?.(3);
+  assert(
+    dropCounts.length === 1 && dropCounts[0] === 3,
+    `dropped readings should reach the metric, got ${JSON.stringify(dropCounts)}`,
+  );
+}
+
+/**
+ * `F4.36` — invalid readings are dropped, valid ones in the same batch survive.
+ *
+ * The batch below is the payload that was published against the running stack
+ * on 2026-08-14: it broadcast three junk entries and threw `TypeError` inside
+ * `AlarmThresholdService.collapseLatest`, which runs before any rule and so
+ * suppressed alarm evaluation for the whole batch. That is why the valid
+ * reading must still be delivered — dropping whole batches would let one bad
+ * entry blind the alarm path for everything published beside it.
+ */
+function dropsInvalidReadingsKeepsValidOnes(): void {
+  const hostile = {
+    readings: [
+      { time: "not-a-date", assetId: null, pointKey: 42, value: "NaN", unit: {} },
+      "just-a-string",
+      null,
+      VALID_READING,
+    ],
+  };
+  const parsed = parseNotification(JSON.stringify(hostile));
+  assert(parsed !== null, "a well-formed envelope should still parse");
+  assert(
+    parsed!.readings.length === 1,
+    `exactly the one valid reading should survive, got ${parsed!.readings.length}`,
+  );
+  assert(parsed!.dropped === 3, `three readings should be dropped, got ${parsed!.dropped}`);
+  assert(
+    parsed!.readings[0]!.assetId === "asset-1",
+    "the surviving reading should be the valid one",
+  );
+  assert(
+    parsed!.failedFields.includes("<entry>"),
+    `a non-object entry should be named, got ${JSON.stringify(parsed!.failedFields)}`,
+  );
+
+  // Field-by-field, so a schema loosened on one field is caught on that field.
+  const cases: Array<[string, unknown]> = [
+    ["unparsable time", { ...VALID_READING, time: "not-a-date" }],
+    ["numeric time", { ...VALID_READING, time: 1786719464363 }],
+    ["missing assetId", { ...VALID_READING, assetId: undefined }],
+    ["empty assetId", { ...VALID_READING, assetId: "" }],
+    ["null assetId", { ...VALID_READING, assetId: null }],
+    ["empty pointKey", { ...VALID_READING, pointKey: "" }],
+    ["string value", { ...VALID_READING, value: "42.5" }],
+    ["null value", { ...VALID_READING, value: null }],
+  ];
+  for (const [label, entry] of cases) {
+    const result = parseNotification(JSON.stringify({ readings: [entry] }));
+    assert(
+      result !== null && result.readings.length === 0 && result.dropped === 1,
+      `${label} should be dropped`,
+    );
+  }
+
+  // NaN is a legal Postgres double and the column has no CHECK (F4.32); it
+  // reaches JSON as null, which must not become a reading.
+  const nanResult = parseNotification('{"readings":[{"time":"2026-08-14T15:00:00.000Z","assetId":"a","pointKey":"kw","value":null,"unit":null}]}');
+  assert(nanResult?.dropped === 1, "a NaN-origin null value must be dropped");
+
+  // Tolerant where the type allows it: an absent unit is normalised, not dropped.
+  const noUnit = parseNotification(
+    JSON.stringify({ readings: [{ ...VALID_READING, unit: undefined }] }),
+  );
+  assert(
+    noUnit?.readings.length === 1 && noUnit.readings[0]!.unit === null,
+    "an absent unit should normalise to null rather than drop the reading",
+  );
+
+  // Unknown keys are stripped, not rejected — and must not reach a browser.
+  const extra = parseNotification(
+    JSON.stringify({ readings: [{ ...VALID_READING, injected: "<script>" }] }),
+  );
+  assert(extra?.readings.length === 1, "an extra key should not drop the reading");
+  assert(
+    !Object.prototype.hasOwnProperty.call(extra!.readings[0]!, "injected"),
+    "unknown keys must be stripped before broadcast",
+  );
+}
+
+/** Drops are counted and logged by field name — never by value (§9.6). */
+async function reportsDropsWithoutEchoingThePayload(): Promise<void> {
+  const dropped: number[] = [];
+  const fakes = [makeFake()];
+  const h = makeHarness(fakes, { onDropped: (n) => dropped.push(n) });
+  h.listener.start();
+  await flush();
+
+  const secret = "hunter2-should-never-appear";
+  fakes[0].emitNotification(
+    JSON.stringify({ readings: [{ ...VALID_READING, assetId: secret, value: "not-a-number" }] }),
+  );
+  await flush();
+
+  assert(dropped.length === 1 && dropped[0] === 1, "one dropped reading should be reported");
+  const dropLog = h.logs.find((l) => l.includes("Dropped 1 invalid"));
+  assert(dropLog !== undefined, `a drop should be logged, got ${JSON.stringify(h.logs)}`);
+  assert(dropLog!.includes("value"), "the failing field should be named");
+  assert(
+    !h.logs.some((l) => l.includes(secret)),
+    "the payload's contents must never reach the log",
+  );
+  assert(h.batches.length === 0, "nothing should be broadcast when every reading is invalid");
+
+  await h.listener.stop();
 }
 
 /** Entry point for the sibling `.test.ts` (ADR 0014). */
 export async function runTelemetryListenerTests(): Promise<void> {
+  dropsInvalidReadingsKeepsValidOnes();
+  await reportsDropsWithoutEchoingThePayload();
   await wiresMetricsToListenerState();
   await reconnectsAfterConnectionError();
   await attachesErrorHandlerBeforeConnect();
