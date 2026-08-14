@@ -826,10 +826,34 @@ Process (`AGENTS.md` §10).
   entry silently suppressed alarm evaluation for every good reading beside it.
   Invalid readings are now dropped individually and the rest of the batch is
   delivered, precisely so one malformed reading cannot blind the alarm path.
-  Watch `bms_api_telemetry_readings_dropped_total`. Still open: a **future-dated**
-  timestamp passes validation and pins an asset non-stale in the UI (`F4.37`) —
-  the fix belongs in the web client, because the pilot legitimately writes ahead
-  of `now()` and a server-side reject would delete real telemetry.
+  Watch `bms_api_telemetry_readings_dropped_total`.
+
+  **`F4.37` closed the future-dated case on the same day** (PR #39, merged
+  `3c7e1ce`), and it closed it in the web client rather than the schema. A
+  future timestamp made `Date.now() - lastSeenMs` negative, which is also not
+  `> FRESH_MS`, so a dead asset rendered `running` — permanently, since for an
+  asset that never sends again the future never arrives. The API still accepts
+  such a reading **deliberately**: `resolveSamples` trusts `sample.at` and the
+  PHE pilot writes 33 minutes ahead of `now()`, so rejecting it server-side
+  would delete real telemetry. Re-verified rather than assumed — a reading dated
+  33 minutes ahead was published against the running stack and was accepted and
+  broadcast with the drop counter unmoved. The client now clamps on arrival, so
+  a skewed producer costs at most `FRESH_MS` of delayed offline detection.
+
+  Two things about this item are worth carrying forward more than the fix. The
+  first is that **the clamp alone would have shipped doing nothing.** Staleness
+  is computed during render, so it is only re-evaluated when something
+  re-renders — and the only thing that reliably did was an incoming reading,
+  which is precisely what stops in the case the guard exists for. A `staleTick`
+  in the provider is what makes it observable; the consumer pages'
+  `refetchInterval` is not a substitute, because TanStack v5 structurally shares
+  results and notifies nobody when a refetch changes nothing. The second is
+  `F4.38`, raised here and **more severe than the item that found it**: the
+  seven control-room pages derive their tiles without consulting freshness at
+  all, so a dead leak or smoke sensor renders `normal` indefinitely — no clock
+  skew and no attacker required. It is left for the owner because `mergeStatus`
+  ranks `critical` above `offline`, and whether a sensor frozen mid-alarm should
+  keep escalating is a product decision in a safety path.
 
   The ADR 0016 §5 backoff moved to `packages/shared/src/ingest.ts` in the same
   change, because that listener became its second consumer and the ADR states
