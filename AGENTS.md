@@ -458,6 +458,45 @@ Do not add top-level folders without updating this section.
   script, or invariant, wire it into `.github/workflows/ci.yml` in the same
   change — this repo has shipped orphaned specs and orphaned migrations before.
 
+**Green tests are not a deployment. Verify every item against the running
+Docker stack before calling it done** — the database, the API and the browser,
+whichever of the three the change touches. State the result in the closure
+record, and name the layers that were **N/A** rather than omitting them, so a
+reader can tell "not applicable" from "not checked".
+
+This is not ceremony. Every item that has done it found something the suite
+could not:
+
+- `F4.28` — the running API container was still serving *compiled* code from
+  before the change. Proved stale by grepping `dist/` for the old query, then
+  rebuilt. A passing suite says nothing about what is deployed.
+- `F4.34` — the pre-fix crash was reproduced against a live Postgres by
+  terminating the connection server-side, which is what established it was an
+  API-wide outage rather than a stale-dashboard defect.
+- `F4.36` — publishing one malformed payload showed the real damage was
+  **alarm suppression**, not a cosmetic cast. That reframed the item and settled
+  its open design question on evidence.
+- `F4.38` — the deployed page rendered four leak sensors as `DRY` and four smoke
+  sensors as `NORMAL` after three hours of silence. It also exposed a bug no test
+  could reach (one tile read "4 sensors · 8 stale") and raised `F4.39`.
+
+**Prove the artifact is not stale before you read anything from it.** A rebuilt
+image and a reloaded page are different things:
+
+- Containers serve the image they were started with. `docker compose build` does
+  not restart anything — `up -d <service>` does. Confirm the new code is really
+  in there (grep the compiled output, or check the served bundle hash).
+- **The browser caches the bundle, and a cached read looks exactly like a failed
+  fix.** In `F4.38` the first page read after a correct rebuild showed the
+  pre-fix output; a hard reload showed the fix working. Had that been taken at
+  face value it would have sent someone debugging code that was already right.
+  Hard-reload, and confirm the served asset hash changed.
+
+**Check both directions.** That the defect is gone is half of it; the other half
+is that the fix does not fire when it should not. `F4.38` stopped the simulator
+to watch tiles go stale, *and* ran it to confirm live assets still render
+normally — a staleness gate that marks healthy plant offline is its own defect.
+
 ### 4.7 Authorization (ADR 0009/0010 master data · ADR 0017 operations)
 
 Two role gates exist and they are **not** interchangeable. Both resolve the
