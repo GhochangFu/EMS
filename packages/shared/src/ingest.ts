@@ -112,3 +112,61 @@ export type DiscoveredPoint = {
   /** A live reading, so `F3.24` can show an operator the value while they map the point. */
   readonly sampleValue?: number;
 };
+
+/**
+ * Reconnect backoff policy (ADR 0016 §5).
+ *
+ * Lives here rather than in `apps/ingest` because it has **two** consumers: the
+ * ingest supervisor, and the API's `bms_telemetry` NOTIFY listener (`F4.34`).
+ * The ADR states the numbers precisely "so five agents do not invent five
+ * policies", so a second copy would have defeated the point of writing them
+ * down — and a prose "keep these in sync" note is exactly the guarantee §4.4
+ * says to make structural instead.
+ *
+ * Moved here from `apps/ingest/src/host/backoff.ts` by `F4.34`. Its spec moved
+ * with it unchanged apart from the import line, which is what shows the move
+ * was faithful.
+ */
+export type BackoffPolicy = {
+  readonly baseMs: number;
+  readonly factor: number;
+  readonly capMs: number;
+  /** Fractional band, e.g. `0.2` for ±20%. */
+  readonly jitter: number;
+};
+
+/** The ADR 0016 §5 table, verbatim. */
+export const DEFAULT_BACKOFF: BackoffPolicy = {
+  baseMs: 1_000,
+  factor: 2,
+  capMs: 60_000,
+  jitter: 0.2,
+};
+
+/**
+ * Delay before retry number `attempt` (0-based: `0` is the first retry).
+ *
+ * Exponential from `baseMs`, capped at `capMs`, then spread ±`jitter` at
+ * random within that band. Jitter is what stops an outage turning every
+ * consumer into a synchronised thundering herd when it recovers.
+ *
+ * **The cap is a hard ceiling.** Jitter is applied after the exponential is
+ * capped, so the upper bound is clamped back to `capMs` rather than allowed to
+ * reach `capMs × 1.2`. A delay is therefore never longer than the ADR's stated
+ * 60 s, at the cost of a slight downward bias once the cap is reached — which
+ * is the right trade: a supervisor that waits *longer* than its documented
+ * ceiling is the surprising failure.
+ *
+ * `random` is injected rather than `Math.random` so the spread is testable.
+ */
+export function backoffDelayMs(
+  attempt: number,
+  random: () => number,
+  policy: BackoffPolicy = DEFAULT_BACKOFF,
+): number {
+  const exponential = policy.baseMs * policy.factor ** Math.max(0, attempt);
+  const capped = Math.min(policy.capMs, exponential);
+  const band = capped * policy.jitter;
+  const jittered = capped - band + random() * 2 * band;
+  return Math.round(Math.min(policy.capMs, Math.max(0, jittered)));
+}

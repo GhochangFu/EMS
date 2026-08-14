@@ -125,6 +125,34 @@ export default defineConfig({
       // `localhost` resolves to IPv6 first, `access-control.integration` fails the
       // whole run with a connection timeout rather than skipping — correctly, since
       // a set `DATABASE_URL` is a claim that a database exists. CI is unaffected.
+      // Ratcheted by `F4.34` from 36.5/31.2/38.2/36.7. Measured 2026-08-14
+      // against the live database, all 153 tests running and none skipped:
+      // 37.79 statements · 31.89 branches · 39.29 functions · 38.03 lines.
+      // (53 files / 153 tests.)
+      //
+      // **An earlier run in the same item measured 37.93/31.81/39.52/38.17 —
+      // higher — and the difference is worth knowing about.** The compliance
+      // review showed the ADR 0016 §5 backoff had been copied rather than
+      // shared, so it moved to `packages/shared/src/ingest.ts`. `include` above
+      // covers `apps/*` only, so **moving covered code into `packages/shared`
+      // deletes it from the numerator and the gate stops seeing it**. Coverage
+      // fell ~0.15 for a change that removed a duplicate and added no untested
+      // line. Anyone extracting into `packages/*` should expect the same dip and
+      // not read it as a regression; whether `packages/shared` belongs in the
+      // denominator at all is a separate question and not settled here.
+      //
+      // Unlike the `F1.1` entry below, this rise **is** new coverage rather than
+      // a denominator shrink: `telemetry-listener.ts` and `listener-backoff.ts`
+      // are new files that arrive tested, and `telemetry-notify.service.ts` went
+      // from entirely uncovered to having its wiring exercised. Worth
+      // distinguishing, since the two look identical in the summary line.
+      //
+      // `rollup-conversion.integration` completed here, which it does **not**
+      // do on a database with compressed chunks (`F4.33`). That is not a fix —
+      // this machine's chunks were decompressed manually during `F1.1` and the
+      // compression policy had not yet re-compressed them. `F4.33` is still open
+      // and will bite again once it does.
+      //
       // Ratcheted by `F1.1` (ADR 0016 §6 commit 4) from 35.7/30.8/37.6/35.9.
       // Measured 2026-08-14 against the live database, **all 152 tests running
       // and none skipped**: 36.53 statements · 31.26 branches · 38.23 functions
@@ -165,10 +193,10 @@ export default defineConfig({
       // tests at all** before this item (ADR 0025 fact 7) and is now exercised
       // through `energyPreview` rather than by reconstructing its queries.
       thresholds: {
-        statements: 36.5,
-        branches: 31.2,
-        functions: 38.2,
-        lines: 36.7,
+        statements: 37.7,
+        branches: 31.8,
+        functions: 39.2,
+        lines: 38.0,
       },
     },
   },

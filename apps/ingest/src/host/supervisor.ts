@@ -1,7 +1,7 @@
 import type { IngestProtocol, SourceSample } from "@bms/shared/ingest";
 
 import type { AdapterLogger, IngestAdapter, IngestAdapterFactory } from "../adapter/types.js";
-import { backoffDelayMs, DEFAULT_BACKOFF, type BackoffPolicy } from "./backoff.js";
+import { backoffDelayMs, DEFAULT_BACKOFF, type BackoffPolicy } from "@bms/shared/ingest";
 import type { EndpointPlan } from "./bindings.js";
 import { createSampleQueue, DEFAULT_QUEUE_CAPACITY, type SampleQueue } from "./sample-queue.js";
 

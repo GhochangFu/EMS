@@ -1,4 +1,4 @@
-import { backoffDelayMs, DEFAULT_BACKOFF } from "./backoff.js";
+import { backoffDelayMs, DEFAULT_BACKOFF } from "@bms/shared/ingest";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
