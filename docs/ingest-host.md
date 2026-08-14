@@ -83,8 +83,23 @@ being `notify=off` in the health body. For eight days it was compose's
 `INGEST_NOTIFY: "on"` line alone that kept realtime alive.
 
 Commit 4 deleted the flag rather than defaulting it to on, so that state is
-unreachable rather than merely unlikely. The health body still reports
-`notify=on`; it is now a literal, and no snapshot can render `notify=off`.
+unreachable **by ingest configuration** rather than merely unlikely. Two limits
+on that, both worth knowing before an incident:
+
+- **`notify=on` in the health body is now a literal and tells you nothing about
+  delivery.** It reports intent, and it prints `on` whether or not a single
+  notification has succeeded. **Watch `written=` and `lastSample=` on the
+  endpoint line instead** — since commit 4 there is no branch between writing and
+  notifying, so `writeResolved` either does both or throws, and a failing
+  `pg_notify` lands in `writeFailures=` rather than passing silently. A rising
+  `written=` is therefore evidence that notifications are flowing; `notify=on` is
+  not.
+- **The same silent outage is still reachable one hop downstream.** The API's
+  `telemetry-notify.service.ts` holds the `LISTEN bms_telemetry` with no error
+  handler and no reconnect, so a dropped listener connection gives dead
+  dashboards with healthy ingest — `notify=on`, `written=` climbing, nothing in
+  the logs. That is pre-existing and outside this host; it has its own backlog
+  row. If dashboards are dead and ingest looks healthy, suspect the listener.
 
 ## Health endpoint
 

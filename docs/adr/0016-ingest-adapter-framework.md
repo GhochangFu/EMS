@@ -1060,3 +1060,24 @@ and must land together: making `notifyEnabled` unconditional while compose still
 sets the variable is harmless, but removing the compose line while the flag
 still exists reintroduces exactly the outage described above. They are one
 commit for that reason.
+
+**Correction, from the security review of this commit: "unreachable" above is
+too broad, and the accurate claim is "unreachable by ingest configuration".**
+The same silent outage — rows landing, every dashboard dead, no error and no
+alarm — is still reachable one hop downstream. `apps/api`'s
+`telemetry-notify.service.ts` connects once and issues `LISTEN bms_telemetry`
+with **no `error` handler and no reconnect**, so a dropped listener connection
+reproduces it exactly, with `notify=on` still showing in the ingest health body.
+That is pre-existing and outside this commit, but stating it here rather than
+letting the stronger claim stand is the difference between a decision record and
+a press release. It is raised as its own backlog row.
+
+**One more boundary, because this commit will be cited as precedent.** A stale
+`INGEST_NOTIFY` is *ignored* rather than refused, and that is right only because
+the flag governed **delivery, not access or crypto**: ignoring it fails towards
+realtime being on, the gateway still enforces per-asset scope on every reading,
+so the worst case is the dead dashboard the operator was trying to avoid.
+**Do not generalise it.** A stale value for a flag governing TLS verification
+(`MQTT_TLS_REJECT_UNAUTHORIZED`), `AUTH_MODE`, or the local-JWT fallback must
+still refuse startup, because there the fail-open direction weakens a security
+property rather than restoring one.

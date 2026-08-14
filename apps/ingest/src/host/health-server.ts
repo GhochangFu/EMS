@@ -32,9 +32,16 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
     `ingest-host ${unhealthy.length === 0 ? "ok" : "degraded"} ` +
       `endpoints=${snapshot.endpoints.length} rtus=${devices} ` +
       // `notify=on` is a literal since ADR 0016 §6 commit 4 deleted the switch.
-      // Kept in the body rather than dropped: `docs/ingest-host.md` tells
-      // operators to read this token, it is the only place notification state was
-      // ever visible, and it is now structurally true rather than configured.
+      // Kept for continuity — an operator or check matching on the token still
+      // finds it — but it reports *intent*, not delivery, and would print `on`
+      // with every notification failing.
+      //
+      // The delivery signal is `written=` and `writeFailures=` on the endpoint
+      // lines: commit 4 left no branch between writing and notifying, so
+      // `writeResolved` does both or throws, and the supervisor only counts
+      // `samplesWritten` when the whole call succeeded. `docs/ingest-host.md`
+      // says so; do not reintroduce a `notify` field that varies, because a
+      // varying one would mean the switch is back.
       `skipped=${snapshot.skipped.length} notify=on ` +
       `uptime=${uptimeSeconds}s`,
   );
