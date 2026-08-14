@@ -851,9 +851,34 @@ Process (`AGENTS.md` §10).
   `F4.38`, raised here and **more severe than the item that found it**: the
   seven control-room pages derive their tiles without consulting freshness at
   all, so a dead leak or smoke sensor renders `normal` indefinitely — no clock
-  skew and no attacker required. It is left for the owner because `mergeStatus`
+  skew and no attacker required. It was left for the owner because `mergeStatus`
   ranks `critical` above `offline`, and whether a sensor frozen mid-alarm should
   keep escalating is a product decision in a safety path.
+
+  **`F4.38` closed it the next day** (PR #45, merged `00d1acc`) under
+  **ADR 0027**, whose four decisions were taken at the §10 gate: staleness
+  outranks every value-derived state, `offline` outranks `critical` in the page
+  banner, a stale tile renders `—` rather than its last numbers, and aggregates
+  exclude stale slices and flag the count. The banner ranking has a known cost —
+  one dead sensor can outrank a *different* live critical — so every merging page
+  carries a live-critical count that nothing outranks.
+
+  Two things from it are worth more than the fix. **It was the first item
+  verified against the running Docker stack under the rule added in PR #43**, and
+  that check earned its place immediately: with nothing reporting for 3.3 hours
+  the main dashboard read `OK` for every domain, four leak sensors read `DRY` and
+  four smoke sensors `NORMAL`. Stopping the simulator with no reload showed the
+  tiles flipping inside the freshness budget — proof that `staleTick`, not the
+  gate, is what makes any of it observable. The check also found a bug no test
+  could reach (one tile reading "4 sensors · 8 stale") and raised **`F4.39`**:
+  the SLD's `BATT-1 · 384 V` is a hardcoded literal, so no staleness gate can
+  ever reach it.
+
+  **And the invariant written to hold the fix was itself defective** — it
+  searched each file for `isStale(`, and two pages call it a second time for an
+  unrelated header value, so deleting the status guard outright left every test
+  green. That is AGENTS.md §4.4's seventh instance: a guard defeated by a decoy
+  call in the same file.
 
   The ADR 0016 §5 backoff moved to `packages/shared/src/ingest.ts` in the same
   change, because that listener became its second consumer and the ADR states
