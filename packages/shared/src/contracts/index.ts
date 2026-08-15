@@ -2,16 +2,27 @@
  * `@bms/shared/contracts` — the runtime half of this package (ADR 0030
  * decision 2).
  *
- * **The surface here is provisional.** `F4.23`'s spike is what currently
- * populates it; the implementation replaces `spike.ts` with the real schema
- * modules. The subpath itself is not provisional — it is the boundary decision
- * 2 chose, drawing the line between *contract* (validated, runtime) and
- * *constant* (`ELECTRICAL_POINT_KEYS` and friends, which stay on the root
- * entry) at the import site rather than in a second package.
+ * These schemas ARE the response contracts. Every corresponding type on the
+ * root entry is `z.infer` of one of them, so there is no second description to
+ * drift — ADR 0029 decision 1's thesis applied to the response side.
  *
- * The export entry is declared in `package.json` beside `.` and `./ingest`.
- * An undeclared subpath fails at import under pnpm rather than at build, so
- * the declaration is load-bearing, not tidiness.
+ * **The subpath does not reach `apps/api`, and that is measured, not assumed.**
+ * `apps/api` compiles with `moduleResolution: "node"` (node10), which ignores
+ * the package `exports` map entirely; `tsc` reports *"There are types at
+ * …/dist/contracts/index.d.ts, but this result could not be resolved under your
+ * current 'moduleResolution' setting."* Node's own runtime resolution honours
+ * `exports` and works, which is the dangerous half — it would have compiled
+ * nowhere and run fine. `index.ts` therefore re-exports everything here, the
+ * same workaround `./ingest` already uses and for the same documented reason.
+ * See ADR 0030 Amendment 2.
+ *
+ * So: `apps/web` may import `@bms/shared/contracts` and get the contract/
+ * constant separation decision 2 wanted. `apps/api` imports from `@bms/shared`
+ * until its module resolution changes, which is its own decision.
  */
-export * from "./equality";
-export * from "./spike";
+export * from "./admin";
+export * from "./auth";
+export * from "./dashboard";
+export * from "./onboarding";
+export * from "./operations";
+export type { Assignable, Measured, Strict } from "./equality";
