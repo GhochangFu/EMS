@@ -874,6 +874,40 @@ Process (`AGENTS.md` §10).
   the SLD's `BATT-1 · 384 V` is a hardcoded literal, so no staleness gate can
   ever reach it.
 
+  **`F4.39` closed that the same day** (PR #48, merged `816f14e`) under
+  **ADR 0028**, and it turned out to be about the assumption underneath
+  ADR 0027 rather than about literals. ADR 0027 answered *"is this reading
+  current?"* and took for granted that the thing on screen was a reading. The
+  row as raised was wrong twice: it said no other page was affected (five are,
+  though most of those are legitimate nameplate data), and it missed the worst
+  class entirely — values **synthesized from real telemetry and labelled as a
+  different measurement**. `Voltage Y` was the measured R phase `+ 0.7`; the
+  battery grid derives all 32 cell voltages from one string reading. Those pass
+  the staleness gate *correctly* — they blank when the source dies and move when
+  the real reading moves — which is exactly what makes them convincing. A static
+  `384 V` at least sits inert.
+
+  The rule that came out of it: **a value may be labelled a measurement of X
+  only if it comes from telemetry that measures X.** `kVA` from `kW` and `pf` is
+  fine; 32 cell voltages from one string voltage is not. Everything static now
+  renders through a marker component as nameplate, configuration or simulated.
+
+  **The review record is the part worth keeping.** Three rounds killed nine
+  mutations a green suite had already accepted and falsified five of my own
+  claims. Restoring the two literal battery voltages — verbatim the defect the
+  item existed to fix — passed everything. Gutting both marker components left
+  every call site correctly wrapped and no marker rendered anywhere, which is
+  the `F4.37` class arriving from a new direction: every check asserted that
+  call sites *use* the guard and none asserted the guard *does* anything. And
+  two findings in the final round were each the same defect one call site over
+  from a fix made in the round before — which is why AGENTS.md §4.4 now says
+  fixing the instance is not fixing the class.
+
+  The deployment check earned its place a second time, finding four things no
+  test reached, including a **failed rebuild that went on serving the previous
+  bundle** — indistinguishable from a working fix until the asset hash was
+  compared with what the browser had loaded.
+
   **And the invariant written to hold the fix was itself defective** — it
   searched each file for `isStale(`, and two pages call it a second time for an
   unrelated header value, so deleting the status guard outright left every test
