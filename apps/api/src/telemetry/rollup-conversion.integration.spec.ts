@@ -150,13 +150,70 @@ function assertClose(
  * Deletes telemetry **before** the assets, because `point_values.asset_id` has no
  * cascade. Matched by `code`, not by a remembered id, so a crashed earlier run is
  * cleaned up too.
+ *
+ * ## Why the ids are resolved first (`F4.40`)
+ *
+ * This used to be one statement, with the codes resolved in a subquery:
+ *
+ * ```sql
+ * DELETE FROM telemetry.point_values
+ *  WHERE asset_id IN (SELECT id FROM bms.assets WHERE code = ANY($1::text[]))
+ * ```
+ *
+ * `asset_id` is a **segmentby** column on `point_values` (`ADR 0024`), so a
+ * constant filter on it is evaluated against compressed batches directly. A
+ * subquery is not a constant: TimescaleDB cannot push it into the batch filter, so
+ * it decompresses **every** compressed batch to find out whether any row matches.
+ * Past the `max_tuples_decompressed_per_dml_transaction` ceiling (100000) that is
+ * not slow, it is a hard `tuple decompression limit exceeded by operation`.
+ *
+ * Measured on a dev database with 4 of 15 chunks compressed: **186706 tuples
+ * decompressed, and zero assets matched** — the suite had not yet created them.
+ * Nothing about the fixture's own size is involved, which is why this could not be
+ * tuned around.
+ *
+ * `ADR 0024` compresses at 7 days, so this reached every database older than a
+ * week and no CI run ever, CI creating its database per run.
+ *
+ * **A time bound would also have avoided it, and is the weaker fix**: it works only
+ * while no compressed chunk falls inside the bound, which silently couples this
+ * suite to `ADR 0024`'s 7-day threshold — and it cannot span a crashed run whose
+ * future-dated rows have since fallen behind the bound, leaving telemetry that
+ * blocks the `bms.assets` delete below. Resolving the ids removes the cause
+ * instead: the delete becomes a segmentby-constant filter, which is the form both
+ * other **TypeScript** telemetry deletes already use
+ * (`point-aggregates.integration.spec.ts`, `point_key = $1` and
+ * `point_key = 'kw' AND asset_id = $1::uuid`).
+ *
+ * Not the form the SQL ones use, and that is worth knowing rather than glossing:
+ * migrations `0014` and `0021` both delete from `point_values` with
+ * `USING <temp table>` — a join, the same shape as the defect above. They were
+ * correct when written; migration `0028` added compression underneath them years
+ * later. They are merged and forward-only, so they stay as they are, but the next
+ * migration of that shape cannot copy them.
  */
 export async function cleanupProbes(pool: pg.Pool): Promise<void> {
-  await pool.query(
-    `DELETE FROM telemetry.point_values
-     WHERE asset_id IN (SELECT id FROM bms.assets WHERE code = ANY($1::text[]))`,
+  // The `F4.28` guard, now covering the destructive half of this suite as well as
+  // the creating half. It was reachable only from `createProbes`, so both cleanup
+  // calls — `beforeAll` before creation, `afterAll` after — ran against whatever
+  // `DATABASE_URL` named. That was survivable while the delete above *failed* on a
+  // mis-pointed aged database: the decompression error was an accidental
+  // fail-closed. Fixing the delete removed that accident, so the guard has to be
+  // real here. A `DELETE` is a stronger case for it than the `INSERT` it was
+  // written for.
+  assertSafeToWriteFixtures();
+
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.assets WHERE code = ANY($1::text[])`,
     [[PLAIN_CODE, SOLAR_CODE]],
   );
+  // One statement per id rather than `= ANY($1::uuid[])`: a scalar comparison is
+  // the form measured to prune compressed batches here, and the array form's
+  // pruning is a planner detail this suite should not depend on. Never more than
+  // two ids, so the cost of being explicit is nil.
+  for (const { id } of rows) {
+    await pool.query(`DELETE FROM telemetry.point_values WHERE asset_id = $1::uuid`, [id]);
+  }
   await pool.query(`DELETE FROM bms.assets WHERE code = ANY($1::text[])`, [
     [PLAIN_CODE, SOLAR_CODE],
   ]);

@@ -1,11 +1,43 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
+
+/** Every `.ts` under the given roots, excluding build output and dependencies. */
+function sourceFiles(roots: string[]): string[] {
+  const found: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === "dist" || entry.name === "build") {
+        continue;
+      }
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) {
+        found.push(full);
+      }
+    }
+  };
+  for (const root of roots) {
+    walk(join(repoRoot, root));
+  }
+  return found;
+}
+
+/**
+ * Comments removed, so prose *about* SQL is never mistaken for SQL. Block comments
+ * go wholesale (this is what clears a fenced example inside a JSDoc); line comments
+ * only when the line starts with `//`, which leaves `https://` inside a string
+ * alone.
+ */
+function executableText(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
 
 /**
  * ADR 0024 (`F4.2`) — static guards on compression and retention.
@@ -166,5 +198,113 @@ describe("ADR 0024 — compression and retention bounds", () => {
       "0028 must reset lock_timeout before it ends — drizzle's transaction spans the whole run, " +
         "so the bound would otherwise leak into every later migration in that run",
     ).toMatch(/SET LOCAL lock_timeout = DEFAULT/);
+  });
+
+  /**
+   * `F4.40` — every `DELETE` against a telemetry hypertable must be prunable
+   * against compressed batches.
+   *
+   * `0028` segments `telemetry.point_values` by `asset_id` and `point_key`, so a
+   * **constant** filter on either is evaluated against compressed batches without
+   * opening them. Anything the planner cannot fold to a constant — a subquery, a
+   * CTE, a join — forces TimescaleDB to decompress **every** batch to decide
+   * whether a row matches, and past
+   * `max_tuples_decompressed_per_dml_transaction` (100000) that is a hard error:
+   * `tuple decompression limit exceeded by operation`.
+   *
+   * Measured on a dev database with 4 of 15 chunks compressed: the `F4.28` cleanup
+   * decompressed **186706 tuples while matching zero assets**. The count has
+   * nothing to do with how much the statement intends to delete, which is why no
+   * amount of scoping the fixture could have avoided it.
+   *
+   * **Why this is a static invariant and not a test.** The failure needs a database
+   * with a compressed chunk, and `ADR 0024` compresses at 7 days — so CI, which
+   * creates its database per run, is structurally incapable of ever seeing it. It
+   * is exactly the §4.6 asymmetry: green in CI, red on every developer's machine
+   * after the first week and on every pilot instance.
+   *
+   * **The rule is stated by shape, not by string.** `F4.39` recorded that pinning
+   * the exact defect catches only the exact defect: `IN (SELECT ...)` rewritten as
+   * a CTE, a `USING` join, or a fresh spec file with its own subquery are all the
+   * same defect wearing different clothes. So the assertion is the invariant
+   * itself — a delete here is a single-table statement filtered on a segmentby
+   * column — and every one of those rewrites fails it.
+   *
+   * **TypeScript only, and the exclusion is the interesting part.** Migrations
+   * `0014` and `0021` both delete from `point_values` with `USING <temp table>`,
+   * which is the join form this check rejects. They were correct when written —
+   * `0028` added compression underneath them afterwards — and they are merged and
+   * forward-only, so widening the scan to `.sql` would fail the build on two files
+   * nobody is allowed to edit. The hazard for the *next* such migration is real
+   * and is not held here; it is held in AGENTS.md §4.4, whose sentence naming
+   * `0014`/`0021` as precedents to follow was corrected by this item.
+   */
+  it("keeps every telemetry DELETE prunable against compressed batches", () => {
+    const sites: { where: string; statement: string }[] = [];
+
+    for (const file of sourceFiles(["apps", "packages"])) {
+      const text = executableText(readFileSync(file, "utf8"));
+      const rel = relative(repoRoot, file).replace(/\\/g, "/");
+      for (const match of text.matchAll(/DELETE\s+FROM\s+telemetry\.\w+/gi)) {
+        // To the end of the enclosing template literal — pool.query takes its SQL
+        // as one backticked string throughout this repo. Capped, because that
+        // assumption is not enforced: a telemetry DELETE written inside a quoted
+        // string instead would run this slice to the next backtick anywhere in the
+        // file, which almost certainly contains a `SELECT` and would fail far from
+        // its cause. No statement here is close to 2000 characters, so the cap
+        // only ever truncates the pathological case — and a truncated slice still
+        // contains the WHERE clause both assertions read.
+        const from = match.index;
+        const end = text.indexOf("`", from);
+        const to = Math.min(end === -1 ? text.length : end, from + 2000);
+        const statement = text.slice(from, to).replace(/\s+/g, " ").trim();
+        sites.push({ where: rel, statement });
+      }
+    }
+
+    // A broken walk must fail loudly rather than pass having scanned nothing —
+    // the vacuous green this repo keeps rediscovering. Three sites today (`F4.1`'s
+    // two and `F4.28`'s one), but the floor is 1, not 3: 3 would additionally pin
+    // the census, so legitimately removing one of those deletes would fail the
+    // build with a message claiming the walk was broken when it was not. A floor
+    // exists to catch zero.
+    expect(
+      sites.length,
+      "this scan found no DELETE against a telemetry hypertable at all. Every one of them was " +
+        "removed, or the file walk is broken — either way this check is asserting nothing.",
+    ).toBeGreaterThanOrEqual(1);
+
+    for (const { where, statement } of sites) {
+      expect(
+        statement,
+        `${where}: this DELETE reaches telemetry.point_values through a subquery or join. ` +
+          "asset_id and point_key are SEGMENTBY columns (migration 0028), and only a CONSTANT " +
+          "filter on them prunes compressed batches — anything else makes TimescaleDB decompress " +
+          "every batch to evaluate the predicate and fail with `tuple decompression limit " +
+          "exceeded by operation` on any database older than ADR 0024's 7-day compression " +
+          "threshold. CI cannot see this, because its database is created per run. Resolve the " +
+          `ids in a separate query first and filter on them directly. Statement: ${statement}`,
+      ).not.toMatch(/\b(SELECT|JOIN|USING)\b/i);
+
+      expect(
+        statement,
+        `${where}: this DELETE does not filter telemetry.point_values on a segmentby column. ` +
+          "Without `asset_id =` or `point_key =` it scans and decompresses every batch in every " +
+          `chunk. Statement: ${statement}`,
+      ).toMatch(/\b(asset_id|point_key)\s*=/);
+
+      // The remediation above — "resolve the ids in a separate query first" — hands
+      // the author a JavaScript variable holding an id and a SQL string that wants
+      // it, which is exactly the moment someone reaches for `${id}`. §4.4 already
+      // says parameterised queries only; this says it where the temptation is
+      // manufactured, so the fix for one rule cannot quietly break another.
+      expect(
+        statement,
+        `${where}: this DELETE interpolates a value into its SQL. AGENTS.md §4.4 is ` +
+          "parameterised queries only — and resolving ids in a separate query, which the rule " +
+          "above asks for, is precisely where that gets forgotten. Bind it instead. " +
+          `Statement: ${statement}`,
+      ).not.toMatch(/\$\{/);
+    }
   });
 });

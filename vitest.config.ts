@@ -214,19 +214,22 @@ export default defineConfig({
       // because "coverage went up" normally means the numerator moved and here it
       // did not: nothing became better tested.
       //
-      // **Getting a complete run needed a database fix that is not in this
-      // branch.** `rollup-conversion.integration` fails in teardown with `tuple
-      // decompression limit exceeded` once `point_values` has compressed chunks:
-      // `cleanupProbes` issues a `DELETE` with no time predicate, so Timescale
-      // decompresses candidate tuples across every compressed chunk before
-      // filtering and blows the 100k
-      // `max_tuples_decompressed_per_dml_transaction` cap — even though the probe
-      // assets do not exist and it matches zero rows. Verified pre-existing by
-      // running it with this branch stashed. CI never sees it (a fresh database
-      // has no compressed chunks), so it is invisible to the pipeline by
-      // construction and only bites a machine with history. `decompress_chunk`
-      // locally is the workaround; the compression policy re-compresses on its
-      // own schedule.
+      // **Getting a complete run needed a database fix, raised as `F4.40` and
+      // since landed** — this note recorded it as an open blocker and no longer
+      // should. `rollup-conversion.integration` failed with `tuple decompression
+      // limit exceeded` once `point_values` had compressed chunks. The cause was
+      // not the missing time predicate this note first blamed: `asset_id` is a
+      // **segmentby** column, so a constant filter on it prunes compressed
+      // batches, and the `DELETE` filtered it through a *subquery* — which the
+      // planner cannot fold to a constant, so every batch was decompressed to
+      // evaluate the predicate. Measured 186706 tuples decompressed while
+      // matching **zero** rows. Fixed by resolving the ids first; held by a
+      // static invariant in `tests/adr-0024-retention-bounds.test.ts`.
+      //
+      // CI never saw it and never will (a fresh database has no compressed
+      // chunks), so it was invisible to the pipeline by construction and bit only
+      // machines with history — which is every developer's after ADR 0024's
+      // 7-day compression threshold, and every pilot.
       //
       // Ratcheted by `F4.29` (ADR 0026) from 35.5/30.7/36.9/35.7. Measured
       // 2026-08-10 against the live database, all seven integration suites running:

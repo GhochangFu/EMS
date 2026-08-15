@@ -833,4 +833,79 @@ describe("repo invariants", () => {
         "a safety-relevant claim the page cannot support.",
     ).toEqual([]);
   });
+
+  /**
+   * `F4.40` — no assertion may gate on a **cumulative** TimescaleDB job counter.
+   *
+   * `timescaledb_information.job_stats` exposes lifetime totals: `total_failures`,
+   * `total_successes`, `total_runs`, `total_crashes`. Nothing resets them short of
+   * recreating the database. An assertion that one of them is zero therefore says
+   * "nothing has ever gone wrong here", which is a claim about a database's whole
+   * history, not about whether anything is wrong **now**.
+   *
+   * `assertRefreshPoliciesHaveNotFailed` asserted `total_failures === 0` and was
+   * measured at **1 failure against 432 successes**, with `last_run_status =
+   * Success` and the aggregate current — a transient `55P03` (a refresh policy and
+   * a manual `refresh_continuous_aggregate` competing for one window, which
+   * `assertEnergySummaryMatchesRaw` retries *because* it is expected) had latched
+   * the suite permanently red. `last_run_status` is the non-latching signal and it
+   * was already there, in the very next clause.
+   *
+   * **CI is structurally blind to this**: its database is created per run, so every
+   * cumulative counter starts at zero and stays there. The check can only ever fire
+   * on a developer's machine or a pilot — the §4.6 asymmetry, in the direction that
+   * trains people to stop reading a red suite.
+   *
+   * Stated by shape rather than by the one identifier, per `F4.39`'s corollary that
+   * fixing the instance is not fixing the class: any of the four counters, compared
+   * to zero in any direction, in any file.
+   */
+  it("no test assertion gates on a cumulative TimescaleDB job counter", () => {
+    // Not "compared to zero" — *referenced at all*, in executable code, in a test.
+    // Enumerating the comparison forms is what F4.39 showed does not work: `=== 0`
+    // survives as `toBe(0)`, as `> 0` on the negation, as a threshold on a ratio.
+    // No suite here has a use for a lifetime counter, so the honest rule is that
+    // reading one is the defect, whatever is then done with it.
+    const counters = /\b(total_failures|total_successes|total_runs|total_crashes)\b/;
+    const offenders: string[] = [];
+
+    // `apps/**` and `packages/**` only, which is where every suite that opens a
+    // database connection lives. Files under `tests/` are static source scanners
+    // that never reach TimescaleDB — and this rule's own regex, three lines up,
+    // would otherwise be its first offender.
+    const scanned = sourceFiles().filter((f) => /\.(spec|test)\.tsx?$/.test(f));
+
+    // An empty `offenders` is the passing state, so nothing about it distinguishes
+    // "scanned everything, found nothing" from "scanned nothing". The sibling check
+    // in `adr-0024-retention-bounds.test.ts` counts its sites for the same reason.
+    // 40 is far below the current count and far above zero.
+    expect(
+      scanned.length,
+      "this scan found almost no spec/test files. The walk is broken, and an empty offender " +
+        "list below would mean nothing.",
+    ).toBeGreaterThan(40);
+
+    for (const file of scanned) {
+      const text = readFileSync(file, "utf8");
+      if (!counters.test(text)) continue;
+      const rel = relative(repoRoot, file).replace(/\\/g, "/");
+      for (const [index, line] of text.split(/\r?\n/).entries()) {
+        // Prose about the rule is not the rule being broken — this very block, and
+        // the note now standing where the deleted clause was, both name the columns.
+        if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;
+        if (counters.test(line)) {
+          offenders.push(`${rel}:${index + 1} — ${line.trim()}`);
+        }
+      }
+    }
+
+    expect(
+      offenders,
+      `cumulative TimescaleDB job counters read in a test:\n${offenders.join("\n")}\n\n` +
+        "These columns are lifetime totals that never reset, so one transient failure years ago " +
+        "fails the suite for the life of that database — while CI, whose database is created per " +
+        "run, never sees it. Assert `last_run_status` instead: it says whether the job is healthy " +
+        "NOW, which is the question worth asking. See F4.40.",
+    ).toEqual([]);
+  });
 });
