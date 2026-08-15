@@ -812,11 +812,18 @@ describe("repo invariants", () => {
       }
     }
 
-    // **Known limit, stated rather than implied.** These checks prove each page
-    // consults the gate; they do not prove *every* rendered value is gated.
-    // Mutation-tested: dropping `freshValue` from a single render site survives,
-    // because the page still calls it elsewhere. Closing that needs a component
-    // test harness this repo does not have (jsdom is a dependency ADR).
+    // **Known limit, stated rather than implied — and it has since cost
+    // something.** These checks prove each page consults the gate; they do not
+    // prove *every* rendered value is gated. Mutation-tested: dropping
+    // `freshValue` from a single render site survives, because the page still
+    // calls it elsewhere. Closing that needs a component test harness this repo
+    // does not have (jsdom is a dependency ADR).
+    //
+    // `F4.39` found a real instance rather than a hypothetical one: the battery
+    // page's string header rendered `batteryV` and `backupMin` through bare
+    // `n(...)` with no `freshValue`, so that line held its last numbers while
+    // the tiles directly above it blanked. It was found by reading the page for
+    // a different reason, not by any suite.
     expect(
       offenders,
       `ADR 0027 violated: ${offenders.join("; ")}. Every control-room page must decide staleness ` +

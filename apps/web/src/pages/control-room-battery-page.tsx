@@ -15,6 +15,7 @@ import {
 } from "../components/live-svg/schematic-telemetry-context";
 import { DisabledCommandButton } from "../components/disabled-command-button";
 import { PageHeader } from "../components/page-header";
+import { StaticValue } from "../components/static-value";
 import { AppShell } from "../layouts/app-shell";
 import {
   freshValue,
@@ -241,6 +242,14 @@ function ControlRoomBatteryContent() {
       ...STRINGS[0],
       slice: batt1,
       ups: ups1,
+      // The string and its UPS are **different assets and either can die
+      // alone**, so the UPS's backup-minutes reading needs the UPS's own clock.
+      // Gating it on the string's `state.stale` — as the first F4.39 pass did —
+      // means a dead `CR-UPS-1` keeps rendering its last autonomy figure for as
+      // long as `CR-BATT-1` reports. Autonomy is the number an operator uses to
+      // decide whether there is time to react, so a frozen one is the worst
+      // value on the page to get wrong. Raised by the F4.39 security review.
+      upsStale: isStale(ups1.lastSeenMs, nowMs),
       cells: generateCells(batt1.batteryV, batt1.batteryTempC, STRINGS[0].seed),
       state: deriveRuleState(STRINGS[0].code, batt1, rules, nowMs),
     },
@@ -248,6 +257,7 @@ function ControlRoomBatteryContent() {
       ...STRINGS[1],
       slice: batt2,
       ups: ups2,
+      upsStale: isStale(ups2.lastSeenMs, nowMs),
       cells: generateCells(batt2.batteryV, batt2.batteryTempC, STRINGS[1].seed),
       state: deriveRuleState(STRINGS[1].code, batt2, rules, nowMs),
     },
@@ -295,17 +305,36 @@ function ControlRoomBatteryContent() {
       ))}
 
       <div className="grid gap-4 lg:grid-cols-2">
+        {/* `F4.39`, caught by the re-review: these four bank temperatures are
+            the *same* average of the *same* synthesized cells that was deleted
+            from the string header one card up — and unlike the header they were
+            not gated at all. `bankTemp` always returns a number, and
+            `generateCells` defaults its base temperature to 26 when
+            `batteryTempC` is null, so with the whole estate offline this card
+            showed four confident temperatures beside a header reading `—`.
+            Verbatim the defect F4.39 exists to fix, on the page F4.39 edited.
+            Now gated on the string's own clock and marked, because there are no
+            per-bank sensors — the split into 1A/1B is a presentation of one
+            string reading. */}
         <DetailCard title="Per-Bank Temperature">
           {strings.flatMap((string, index) => [
             <Row
               key={`${string.code}-a`}
               label={`Bank ${index + 1}A (cells 1-16, ${string.code})`}
-              value={`${n(bankTemp(string.cells.slice(0, 16)), 1)} C`}
+              value={
+                <StaticValue kind="simulated">
+                  {`${n(freshValue(bankTemp(string.cells.slice(0, 16)), string.state.stale), 1)} C`}
+                </StaticValue>
+              }
             />,
             <Row
               key={`${string.code}-b`}
               label={`Bank ${index + 1}B (cells 17-32, ${string.code})`}
-              value={`${n(bankTemp(string.cells.slice(16)), 1)} C`}
+              value={
+                <StaticValue kind="simulated">
+                  {`${n(freshValue(bankTemp(string.cells.slice(16)), string.state.stale), 1)} C`}
+                </StaticValue>
+              }
             />,
           ])}
         </DetailCard>
@@ -333,21 +362,32 @@ function BatteryStringCard({
     seed: number;
     slice: SchematicTelemetrySlice;
     ups: SchematicTelemetrySlice;
+    upsStale: boolean;
     cells: CellReading[];
     state: RuleState;
   };
 }) {
-  const avgCellV =
-    string.cells.reduce((sum, cell) => sum + cell.voltage, 0) / string.cells.length;
-  const avgTemp =
-    string.cells.reduce((sum, cell) => sum + cell.temperature, 0) / string.cells.length;
   return (
     <section className="rounded border border-gray-200 bg-white">
       <div className="flex flex-col gap-2 border-b border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-condensed text-lg font-bold text-bms-ink">{string.title}</h2>
+          {/* Two defects on one line, both found in `F4.39`.
+              1. `batteryV` and `backupMin` were rendered **ungated** — `n(...)`
+                 with no `freshValue`, so this line held its last numbers while
+                 the tiles above it blanked. `F4.38`'s invariant is scoped to the
+                 derivation function, which is what made it correct and also what
+                 let a raw render site slip past it.
+              2. "avg cell" and "avg temp" averaged the 32 synthesized cells, so
+                 they restated `batteryV`/`batteryTempC` as if two more
+                 instruments had confirmed them. They are replaced by the real
+                 string temperature (ADR 0028 decision 4).
+              3. And a third, found by the review: `backupMin` comes from the
+                 **UPS**, so it takes `upsStale`, not the string's flag. */}
           <p className="text-xs text-bms-muted">
-            {n(string.slice.batteryV, 1)} V · avg cell {avgCellV.toFixed(2)} V · avg temp {avgTemp.toFixed(1)} C · backup {n(string.ups.backupMin, 0)} min
+            {n(freshValue(string.slice.batteryV, string.state.stale), 1)} V ·{" "}
+            {n(freshValue(string.slice.batteryTempC, string.state.stale), 1)} C · backup{" "}
+            {n(freshValue(string.ups.backupMin, string.upsStale), 0)} min
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -361,7 +401,18 @@ function BatteryStringCard({
           </span>
         </div>
       </div>
-      <div className="grid grid-cols-4 gap-2 p-4 sm:grid-cols-8 lg:grid-cols-16">
+      {/* `F4.39`: the grid stays, marked once at its head rather than 32 times.
+          No RTU profile carries per-cell points, so there is nothing to wire —
+          these 32 voltages are synthesized from the string's own `batteryV`
+          plus a per-string seed. They pass the ADR 0027 staleness gate
+          correctly, which is exactly what made them convincing: they blank when
+          the string dies and move when it reports. Wiring them needs an
+          ingestion change, not a UI one (ADR 0028 consequences). */}
+      <div className="flex items-center justify-between border-t border-gray-100 px-4 pt-3 text-xs text-bms-muted">
+        <span>Per-cell detail</span>
+        <StaticValue kind="simulated">synthesized from the string reading</StaticValue>
+      </div>
+      <div className="grid grid-cols-4 gap-2 px-4 pb-4 pt-2 sm:grid-cols-8 lg:grid-cols-16">
         {string.cells.map((cell) => (
           <div
             key={cell.index}
@@ -432,7 +483,7 @@ function DetailCard({ title, children }: { title: string; children: ReactNode })
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3 text-sm">
       <span className="text-bms-muted">{label}</span>

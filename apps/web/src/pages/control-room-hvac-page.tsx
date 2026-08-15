@@ -15,9 +15,11 @@ import {
 } from "../components/live-svg/schematic-telemetry-context";
 import { DisabledCommandButton } from "../components/disabled-command-button";
 import { PageHeader } from "../components/page-header";
+import { StaticTspan, StaticValue } from "../components/static-value";
 import { AppShell } from "../layouts/app-shell";
 import {
   freshValue,
+  isHvacRunning,
   isStale,
   STALE_VALUE,
 } from "../lib/schematic-telemetry";
@@ -224,7 +226,12 @@ function ControlRoomHvacContent() {
     .filter((v): v is number => v != null && !Number.isNaN(v));
   const totalCooling =
     coolings.length === 0 ? null : coolings.reduce((a, b) => a + b, 0);
-  const activeUnits = liveUnits.filter((unit) => (unit.slice.fanSpeedPct ?? 0) > 20).length;
+  // `=== true`, so a live unit that publishes no fan speed is not counted as
+  // active *or* silently counted as idle — `isHvacRunning` returns `null` for
+  // "fresh but this point is absent" (ADR 0028).
+  const activeUnits = liveUnits.filter(
+    (unit) => isHvacRunning(unit.slice.fanSpeedPct) === true,
+  ).length;
   const liveCritical = units.filter((u) => u.state.status === "critical").length;
 
   return (
@@ -272,28 +279,48 @@ function ControlRoomHvacContent() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
+        {/* `F4.39`: "Elapsed 96 / 168 h" and the progress bar under it are gone.
+            Nothing counts changeover hours — the number and the 58% bar were
+            invented, and a progress bar is read as a live countdown. The three
+            rows that remain are configuration: they describe how the pair is
+            set up, which is static and correctly so (ADR 0028 decision 3). */}
         <DetailCard title="Lead / Lag Strategy">
-          <Row label="Current cycle" value="AC-1 LEAD · AC-2 STANDBY" />
-          <Row label="Changeover interval" value="168 h" />
-          <Row label="Elapsed" value="96 / 168 h" />
-          <Row label="Trip response" value="Standby auto-start in < 30 s" />
-          <div className="mt-3 h-3 rounded-full bg-gray-100">
-            <div className="h-3 rounded-full bg-bms-green" style={{ width: "58%" }} />
-          </div>
+          <Row
+            label="Current cycle"
+            value={<StaticValue kind="configuration">AC-1 LEAD · AC-2 STANDBY</StaticValue>}
+          />
+          <Row
+            label="Changeover interval"
+            value={<StaticValue kind="configuration">168 h</StaticValue>}
+          />
+          <Row
+            label="Trip response"
+            value={<StaticValue kind="configuration">Standby auto-start in &lt; 30 s</StaticValue>}
+          />
         </DetailCard>
+        {/* Run hours are module-level constants (`runHours: 12840`), not a
+            counter — marked `simulated` rather than removed, because they are
+            plausible maintenance data and the maintenance module is where they
+            would come from. The "Imbalance 452 h · within 5% tolerance" line is
+            deleted: it stated a tolerance verdict, which is a diagnostic
+            conclusion drawn from numbers nobody measured. */}
         <DetailCard title="Run-Hour Balance">
           {units.map((unit) => (
             <div key={unit.code} className="space-y-1">
-              <Row label={unit.label} value={`${unit.runHours.toLocaleString()} h`} />
+              <Row
+                label={unit.label}
+                value={
+                  <StaticValue kind="simulated">{`${unit.runHours.toLocaleString()} h`}</StaticValue>
+                }
+              />
               <div className="h-2 rounded-full bg-gray-100">
                 <div
-                  className="h-2 rounded-full bg-bms-green"
+                  className="h-2 rounded-full bg-slate-300"
                   style={{ width: `${Math.min(100, unit.runHours / 200)}%` }}
                 />
               </div>
             </div>
           ))}
-          <p className="text-xs text-bms-muted">Imbalance 452 h · within 5% tolerance</p>
         </DetailCard>
       </div>
     </div>
@@ -313,7 +340,10 @@ function HvacUnitCard({
     state: RuleState;
   };
 }) {
-  const running = unit.state.status !== "offline" && (unit.slice.fanSpeedPct ?? 0) > 20;
+  // `null` when the unit is fresh but publishes no fan speed — distinct from
+  // `false` (reported, and idle). The `?? 0` form this replaces rendered that
+  // as "idle" and `READY`, which for the STANDBY unit is its normal reading.
+  const running = unit.state.status === "offline" ? null : isHvacRunning(unit.slice.fanSpeedPct);
   return (
     <section className="rounded border border-gray-200 bg-white">
       <div className="flex flex-col gap-2 border-b border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -321,7 +351,7 @@ function HvacUnitCard({
           <h2 className="font-condensed text-lg font-bold text-bms-ink">
             {unit.label} · 4 TR · {unit.role}
           </h2>
-          <p className="text-xs text-bms-muted">{running ? "cooling" : "idle"} · {unit.code}</p>
+          <p className="text-xs text-bms-muted">{running == null ? STALE_VALUE : running ? "cooling" : "idle"} · {unit.code}</p>
         </div>
         <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
           {statusLabel(unit.state.status)}
@@ -330,17 +360,28 @@ function HvacUnitCard({
       <div className="space-y-4 p-4">
         <HvacDiagram slice={unit.slice} status={unit.state.status} label={unit.label} running={running} />
         <div className="grid grid-cols-3 gap-3 text-center">
-          <Metric label="Setpoint" value="22.0" unit="C" />
+          <Metric
+            label="Setpoint"
+            value={<StaticValue kind="configuration">22.0</StaticValue>}
+            unit="C"
+          />
           <Metric label="Return Air" value={n(freshValue(unit.slice.returnAirTempC, unit.state.stale), 1)} unit="C" tone={statusTone(unit.state.status)} />
           <Metric label="Supply Air" value={n(freshValue(unit.slice.supplyAirTempC, unit.state.stale), 1)} unit="C" />
         </div>
         <div className="border-t border-gray-200 pt-3">
-          <Row label="Compressor" value={unit.state.stale ? STALE_VALUE : `${unit.slice.compressorOk === 0 ? "FAULT" : running ? "ON" : "READY"}`} />
+          <Row label="Compressor" value={unit.state.stale || running == null ? STALE_VALUE : unit.slice.compressorOk === 0 ? "FAULT" : running ? "ON" : "READY"} />
           <Row label="Fan" value={`${n(freshValue(unit.slice.fanSpeedPct, unit.state.stale), 0)}% · ${n(freshValue(unit.slice.fanRpm, unit.state.stale), 0)} rpm`} />
           <Row label="Cooling" value={`${n(freshValue(unit.slice.coolingKw, unit.state.stale), 1)} kW`} />
-          <Row label="Run hours" value={`${unit.runHours.toLocaleString()} h`} />
-          <Row label="Health" value={unit.state.stale ? STALE_VALUE : unit.state.status === "critical" ? "82%" : "96%"} />
-          <Row label="Last service" value={unit.service} />
+          <Row
+            label="Run hours"
+            value={<StaticValue kind="simulated">{`${unit.runHours.toLocaleString()} h`}</StaticValue>}
+          />
+          {/* `F4.39`: "Health" is deleted. It was `status === "critical" ? "82%"
+              : "96%"` — two invented percentages wearing the ADR 0027 staleness
+              gate, so it blanked honestly when the unit died and lied the rest
+              of the time. A health index reads as a computed diagnostic, which
+              is precisely what it was not. */}
+          <Row label="Last service" value={<StaticValue kind="simulated">{unit.service}</StaticValue>} />
         </div>
         {unit.state.matchedRule ? (
           <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -361,7 +402,12 @@ function HvacDiagram({
   slice: SchematicTelemetrySlice;
   status: HvacStatus;
   label: string;
-  running: boolean;
+  /**
+   * `null` when the unit is offline or publishes no fan speed. The airflow
+   * arrows render in the muted colour for both, which is correct: an animated
+   * cyan airflow is a claim that air is moving (ADR 0028).
+   */
+  running: boolean | null;
 }) {
   const airStroke = running ? "#06b6d4" : "#94a3b8";
   return (
@@ -386,7 +432,10 @@ function HvacDiagram({
       <text x="280" y="138" textAnchor="middle" className="fill-cyan-600 font-mono text-[9px]">SUPPLY {n(freshValue(slice.supplyAirTempC, status === "offline"), 1)}C</text>
       <rect x="320" y="60" width="240" height="80" rx="8" fill="#fafbfc" stroke="#cbd5e1" strokeDasharray="4 3" strokeWidth="1.4" />
       <text x="440" y="92" textAnchor="middle" className="fill-bms-ink font-condensed text-[14px] font-bold">CONTROL ROOM</text>
-      <text x="440" y="110" textAnchor="middle" className="fill-bms-muted font-mono text-[10px]">setpoint 22.0C</text>
+      {/* The same setpoint as the `Setpoint` metric below, inside the diagram.
+          Found on the deployed page — a census that reads component props
+          misses literals sitting in SVG text nodes. */}
+      <text x="440" y="110" textAnchor="middle" className="fill-bms-muted font-mono text-[10px]"><StaticTspan kind="configuration">setpoint 22.0C</StaticTspan></text>
       <text x="440" y="124" textAnchor="middle" className="fill-bms-muted font-mono text-[10px]">racks + operators</text>
     </svg>
   );
@@ -408,7 +457,7 @@ function Metric({
   tone = "default",
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   unit: string;
   tone?: "default" | "warning" | "critical";
 }) {
@@ -425,7 +474,7 @@ function Metric({
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3 text-sm">
       <span className="text-bms-muted">{label}</span>

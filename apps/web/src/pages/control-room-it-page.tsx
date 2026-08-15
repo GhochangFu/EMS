@@ -191,6 +191,9 @@ function ControlRoomItContent() {
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
+      {/* `F4.39`: "Live rack telemetry" asserted exactly what the page could
+          not confirm when both racks were stale. `staleRacks` is already
+          computed for the total; the pill now uses it. */}
       <PageHeader
         eyebrow="R.crIT"
         title="IT & Rack Load Monitoring"
@@ -199,7 +202,15 @@ function ControlRoomItContent() {
             ? `${liveCritical} ACTIVE CRITICAL · network rack · videowall server rack · PDU status`
             : "Network rack · Videowall server rack · PDU status · UPS source mapping"
         }
-        actions={<StatusPill label="Live rack telemetry" />}
+        actions={
+          // `> 0`, not `=== 2`: with one rack of two dead, the total directly
+          // below already reads "· 1 stale", and a green pill above it denied
+          // what the page itself was saying.
+          <StatusPill
+            label={staleRacks > 0 ? "Rack telemetry offline" : "Live rack telemetry"}
+            tone={staleRacks > 0 ? "offline" : "ok"}
+          />
+        }
       />
 
       <div className="grid gap-3 sm:grid-cols-3">
