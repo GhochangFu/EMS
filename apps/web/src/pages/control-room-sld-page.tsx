@@ -18,6 +18,7 @@ import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
 import {
   freshValue,
+  isHvacRunning,
   isStale,
   STALE_VALUE,
 } from "../lib/schematic-telemetry";
@@ -187,7 +188,15 @@ function ControlRoomSldContent() {
         title="Electrical Power · Single Line Diagram"
         subtitle="Incoming feeder to main panel to UPS input/output to load distribution"
         actions={
-          <StatusPill label={q1Stale ? "Offline" : "Live"} tone={q1Stale ? "offline" : "ok"} />
+          // Labelled "Incomer", not "Live". `q1Stale` covers exactly the four
+          // header meters, which all read from `CR-Q1` — but the pill sits in
+          // the *page* header above 12 breakers, 2 UPS, 2 strings and 3 loads
+          // it says nothing about. Now that it is derived it carries authority
+          // it lacked as decoration, so it names its subject.
+          <StatusPill
+            label={q1Stale ? "Incomer offline" : "Incomer live"}
+            tone={q1Stale ? "offline" : "ok"}
+          />
         }
       />
 
@@ -285,12 +294,30 @@ function Flow({ x1, y1, x2, y2 }: { x1: number; y1: number; x2: number; y2: numb
   return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#039855" strokeWidth={3} markerEnd="url(#crArrow)" />;
 }
 
-function SldBox({ x, y, w, h, title, sub }: { x: number; y: number; w: number; h: number; title: string; sub: React.ReactNode }) {
+/**
+ * `offline` boxes take the page's own offline grey, not the default green.
+ *
+ * Before `F4.39` every `SldBox` was static, so an unconditional green outline
+ * was harmless decoration. Now that `BatteryBox` and `Branch` put gated values
+ * inside one, a dead battery string would render `— V` in a confident green
+ * box, leaving an em-dash as the only sign anything is wrong — on a diagram
+ * where green means energised. ADR 0027 decision 5 already separates `offline`
+ * from `open`; this box now uses that vocabulary. Raised by the F4.39 review.
+ */
+function SldBox({ x, y, w, h, title, sub, offline = false }: { x: number; y: number; w: number; h: number; title: string; sub: React.ReactNode; offline?: boolean }) {
   return (
     <g>
-      <rect x={x} y={y} width={w} height={h} rx={6} className="fill-white stroke-bms-green" strokeWidth={1.5} />
-      <text x={x + w / 2} y={y + h / 2 - 2} textAnchor="middle" className="fill-bms-ink font-condensed text-[12px] font-bold">{title}</text>
-      {sub ? <text x={x + w / 2} y={y + h / 2 + 13} textAnchor="middle" className="fill-bms-muted font-mono text-[9px]">{sub}</text> : null}
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={6}
+        className={offline ? "fill-gray-200 stroke-gray-400" : "fill-white stroke-bms-green"}
+        strokeWidth={1.5}
+      />
+      <text x={x + w / 2} y={y + h / 2 - 2} textAnchor="middle" className={`font-condensed text-[12px] font-bold ${offline ? "fill-gray-600" : "fill-bms-ink"}`}>{title}</text>
+      {sub ? <text x={x + w / 2} y={y + h / 2 + 13} textAnchor="middle" className={`font-mono text-[9px] ${offline ? "fill-gray-500" : "fill-bms-muted"}`}>{sub}</text> : null}
     </g>
   );
 }
@@ -311,6 +338,7 @@ function BatteryBox({ x, y, code, title }: { x: number; y: number; code: string;
       h={38}
       title={title}
       sub={`${n(freshValue(s.batteryV, stale), 1)} V`}
+      offline={stale}
     />
   );
 }
@@ -364,6 +392,7 @@ function Branch({ y, breaker, breakerCode, box, boxCode, ratingKva, outBreaker, 
         w={120}
         h={58}
         title={box}
+        offline={upsStale}
         sub={
           <>
             {`${n(freshValue(ups.loadPct, upsStale), 0)}% load · `}
@@ -383,9 +412,11 @@ function Branch({ y, breaker, breakerCode, box, boxCode, ratingKva, outBreaker, 
  * lead/lag pair — `CR LIGHTS / AUX` has neither, and used to pass `sub=""`.
  *
  * The sub-line used to read `RUN · LEAD` / `STANDBY` as literals. `RUN` is now
- * decided by the unit's own fan speed, using the same `> 20` test the HVAC page
- * applies, so the two pages cannot disagree about what running means. The role
- * is configuration — lead/lag assignment is set, not measured — so it is marked
+ * decided by the unit's own fan speed through `isHvacRunning`, which both this
+ * page and the HVAC page import — the first version of this docblock claimed
+ * the two "cannot disagree" while `20` sat copied in three places with nothing
+ * holding them together, which the compliance review caught. The role is
+ * configuration — lead/lag assignment is set, not measured — so it is marked
  * rather than derived (ADR 0028).
  */
 function LoadBranch({ y, breaker, code, title, unitCode, role, rules }: { y: number; breaker: string; code: string; title: string; unitCode?: string; role?: string; rules: RuleListItem[] }) {
@@ -395,11 +426,23 @@ function LoadBranch({ y, breaker, code, title, unitCode, role, rules }: { y: num
   // and the one that does not.
   const unit = useCr(unitCode ?? code);
   const unitStale = isStale(unit.lastSeenMs, Date.now());
+  // A compressor fault outranks fan speed: the schematic's own `deriveStatus`
+  // already treats `compressorOk === 0` as a fault, and a tripped unit with a
+  // coasting fan must not read `RUN` here. `isHvacRunning` returns `null` when
+  // the unit is fresh but publishes no fan speed — absent is not zero.
+  const running = isHvacRunning(unit.fanSpeedPct);
   const runWord = unitStale
     ? STALE_VALUE
-    : (unit.fanSpeedPct ?? 0) > 20
-      ? "RUN"
-      : "IDLE";
+    : unit.compressorOk === 0
+      ? "FAULT"
+      : running == null
+        ? STALE_VALUE
+        : running
+          ? "RUN"
+          : "IDLE";
+  // Bound to the fallback rather than to the render site: no `unitCode` means
+  // `unit` is the breaker's own slice, whose fan speed is meaningless.
+  const unitWord = unitCode ? runWord : null;
   const state = deriveBreakerRuleState(code, s, rules, Date.now());
   // A dead feed is not a closed one: `!== "open"` used to make `offline` count
   // as closed, so the diagram drew a green energised arrow into it.
@@ -425,10 +468,13 @@ function LoadBranch({ y, breaker, code, title, unitCode, role, rules }: { y: num
         w={120}
         h={36}
         title={title}
+        // A load with no unit follows its breaker, which is the only thing
+        // reporting on that branch.
+        offline={unitCode ? unitStale : state.status === "offline"}
         sub={
-          unitCode ? (
+          unitWord ? (
             <>
-              {`${runWord} · `}
+              {`${unitWord} · `}
               <StaticTspan kind="configuration">{role ?? ""}</StaticTspan>
             </>
           ) : (

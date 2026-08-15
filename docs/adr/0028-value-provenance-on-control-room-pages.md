@@ -64,8 +64,19 @@ they are cross-cutting, not because a human chose them.
 
 1. **Values with a real source are wired to it.** `CR-BATT-1` / `CR-BATT-2` are
    already in `CR_TRACKED_ASSET_CODES`, so the SLD's provider already carries
-   their slices — the battery boxes read `batteryV`. The `ONLINE`, `RUN · LEAD`
-   and `STANDBY` words come from the rule state already derived on the page.
+   their slices — the battery boxes read `batteryV`.
+
+   An earlier draft of this decision said the `ONLINE`, `RUN · LEAD` and
+   `STANDBY` words "come from the rule state already derived on the page".
+   **None of the three does**, and the compliance review was right to call it:
+   - `ONLINE` is *gone*, not rederived. For a UPS it means running on mains
+     rather than on battery, and `CONTROL_ROOM_UPS_POINT_KEYS` has no
+     mains/battery-mode point at all — there is nothing to derive it from. The
+     box shows the measured `loadPct` instead.
+   - `RUN`/`IDLE`/`FAULT` come from the unit's own `fanSpeedPct` and
+     `compressorOk` via `isHvacRunning`, not from rule state.
+   - `LEAD`/`STANDBY` are not derived at all — they are lead/lag assignment,
+     which is configuration, and they carry the `configuration` marker.
 2. **Values with no source are removed or explicitly marked**, never left
    looking like readings.
 3. **Nameplate and configuration data render through one shared marker
@@ -115,12 +126,36 @@ they are cross-cutting, not because a human chose them.
    scoped to the construct rather than the file, per the `F4.38` finding that a
    file-wide token search is defeated by an unrelated call in the same file.
 
+   **This decision was written before it was true, and it took two review
+   rounds and seven mutations to make it so.** As first landed the checks
+   asserted that *call sites use* the wrapper and nothing asserted that the
+   wrapper *renders* anything: gutting both components so they returned
+   `{children}` left every page correctly wrapped, the unit spec green — it
+   tests the lookup tables — and no marker visible anywhere in the application.
+   Three further shapes survived, including restoring the two literal battery
+   voltages verbatim, which is the defect that raised `F4.39` in the first
+   place. All seven are caught now and the harness is recorded in
+   `tests/repo-invariants-provenance.test.ts`. AGENTS.md §4.4's rule is the
+   lesson: **mutate against the shapes you did not write, not only the one you
+   did.**
+
 ## Consequences
 
-- The SLD header drops from six meters to four, and its grid drops to four
-  columns with it. Deliberate: three phase columns where one phase is metered is
-  worse than one honest column. (The column count was missed in review and
-  caught only by looking at the deployed page, which left an empty fifth cell.)
+- **Mockup reference (AGENTS.md §5).** The closest originals are `R.crSld` and
+  `R.crHvac` in `TRINETRA.html`. `R.crSld`'s `c6` header banner carries Voltage
+  R/Y/B, Frequency, kW·kVA and kWh Today; this change drops the two unsourced
+  phase columns and narrows the grid to four, which §5 permits as omitting data
+  that is not available. The omission is deliberate and recorded here rather
+  than left for a future reader to mistake for drift.
+- The SLD header therefore drops from six meters to four. Deliberate: three
+  phase columns where one phase is metered is worse than one honest column. (The
+  column count was missed in review and caught only by looking at the deployed
+  page, which left an empty fifth cell.)
+- **The UPS box gains a rating the mockup does not have.** `TRINETRA.html:2568`
+  reads `ONLINE · 48%`; this renders `{loadPct}% load · 30 kVA` with the rating
+  marked `nameplate`. The percentage restores the mockup's number, which the
+  literal `ONLINE · 30 kVA` had displaced; the rating is an addition, kept
+  because it is the one piece of the old string that was true.
 - The battery cell grid stays on screen and is marked. Removing it would delete
   a visualisation operators use to see cell balance in the demo; keeping it
   unmarked asserts instrumentation that does not exist. Wiring it is out of
@@ -138,5 +173,17 @@ they are cross-cutting, not because a human chose them.
   as `configuration`. They are static today and correctly so; when setpoint
   writeback lands they become `measured`-adjacent and the marker changes with
   them.
+- `StaticValue` and `StaticTspan` share one file, against §4.2's one-component-
+  per-file rule. They are two renderings of a single concept and always change
+  together; splitting them would put the HTML and SVG halves of the same
+  decision in different files. Recorded as a deliberate exception rather than an
+  oversight.
+- Two cross-asset staleness bugs were found by the security review and fixed
+  here, one introduced by this change and one pre-existing in its mirror image:
+  the Battery page gated the UPS's `backupMin` on the *string's* clock, and the
+  UPS page gated the string's `batteryV`/`current`/`batteryTempC` on the *UPS's*.
+  `ownElse` in `lib/schematic-telemetry.ts` exists so the flag is selected with
+  the source — `freshValue(own ?? fallback, ownStale)` reads naturally and is
+  wrong, because the `??` resolves before the gate is applied.
 - This ADR does not add a dependency, a table or a route. It constrains how the
   web client labels what it already renders.

@@ -242,6 +242,14 @@ function ControlRoomBatteryContent() {
       ...STRINGS[0],
       slice: batt1,
       ups: ups1,
+      // The string and its UPS are **different assets and either can die
+      // alone**, so the UPS's backup-minutes reading needs the UPS's own clock.
+      // Gating it on the string's `state.stale` — as the first F4.39 pass did —
+      // means a dead `CR-UPS-1` keeps rendering its last autonomy figure for as
+      // long as `CR-BATT-1` reports. Autonomy is the number an operator uses to
+      // decide whether there is time to react, so a frozen one is the worst
+      // value on the page to get wrong. Raised by the F4.39 security review.
+      upsStale: isStale(ups1.lastSeenMs, nowMs),
       cells: generateCells(batt1.batteryV, batt1.batteryTempC, STRINGS[0].seed),
       state: deriveRuleState(STRINGS[0].code, batt1, rules, nowMs),
     },
@@ -249,6 +257,7 @@ function ControlRoomBatteryContent() {
       ...STRINGS[1],
       slice: batt2,
       ups: ups2,
+      upsStale: isStale(ups2.lastSeenMs, nowMs),
       cells: generateCells(batt2.batteryV, batt2.batteryTempC, STRINGS[1].seed),
       state: deriveRuleState(STRINGS[1].code, batt2, rules, nowMs),
     },
@@ -334,6 +343,7 @@ function BatteryStringCard({
     seed: number;
     slice: SchematicTelemetrySlice;
     ups: SchematicTelemetrySlice;
+    upsStale: boolean;
     cells: CellReading[];
     state: RuleState;
   };
@@ -352,11 +362,13 @@ function BatteryStringCard({
               2. "avg cell" and "avg temp" averaged the 32 synthesized cells, so
                  they restated `batteryV`/`batteryTempC` as if two more
                  instruments had confirmed them. They are replaced by the real
-                 string temperature (ADR 0028 decision 4). */}
+                 string temperature (ADR 0028 decision 4).
+              3. And a third, found by the review: `backupMin` comes from the
+                 **UPS**, so it takes `upsStale`, not the string's flag. */}
           <p className="text-xs text-bms-muted">
             {n(freshValue(string.slice.batteryV, string.state.stale), 1)} V ·{" "}
             {n(freshValue(string.slice.batteryTempC, string.state.stale), 1)} C · backup{" "}
-            {n(freshValue(string.ups.backupMin, string.state.stale), 0)} min
+            {n(freshValue(string.ups.backupMin, string.upsStale), 0)} min
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

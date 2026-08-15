@@ -13,6 +13,8 @@ import {
   emptySlice,
   freshValue,
   FRESH_MS,
+  isHvacRunning,
+  ownElse,
   isStale,
   readingTimestampMs,
   staleCount,
@@ -347,4 +349,30 @@ export function runSchematicTelemetryTests(): void {
     withNaN.total === 10,
     `a NaN reading is skipped rather than propagated, got ${withNaN.total}`,
   );
+}
+
+/** `ownElse` and `isHvacRunning` — ADR 0028, raised by the F4.39 reviews. */
+export function runProvenanceHelperTests(): void {
+  // Each candidate is judged by its OWN clock. Written the obvious way —
+  // `freshValue(own ?? fallback, ownStale)` — the `??` resolves first, so the
+  // fallback arrives already chosen and is then judged by the other asset's
+  // freshness. Two pages had that bug, in opposite directions.
+  assert(ownElse(230, false, 999, false) === 230, "a fresh own value wins");
+  assert(ownElse(null, false, 400, false) === 400, "falls back when own is absent");
+  assert(
+    ownElse(null, false, 400, true) === null,
+    "a stale fallback is withheld even though the owner is fresh — the bug this exists to stop",
+  );
+  assert(
+    ownElse(230, true, 400, false) === null,
+    "a stale own value is withheld rather than falling through to the other asset",
+  );
+  assert(ownElse(0, false, 400, false) === 0, "a measured zero is not treated as absent");
+
+  // `null` means "fresh, but this unit does not publish fan speed", which is
+  // not "not running". Rendering it as IDLE hid a standby unit taking over.
+  assert(isHvacRunning(null) === null, "an absent fan speed is unknown, not idle");
+  assert(isHvacRunning(0) === false, "a reported zero fan speed is idle");
+  assert(isHvacRunning(21) === true, "above the threshold is running");
+  assert(isHvacRunning(20) === false, "the threshold itself is not running");
 }

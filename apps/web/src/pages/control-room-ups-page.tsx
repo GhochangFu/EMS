@@ -19,6 +19,7 @@ import { StaticTspan, StaticValue } from "../components/static-value";
 import { AppShell } from "../layouts/app-shell";
 import {
   freshValue,
+  ownElse,
   isStale,
   STALE_VALUE,
 } from "../lib/schematic-telemetry";
@@ -245,8 +246,14 @@ function ControlRoomUpsContent() {
   const batt2 = useCr("CR-BATT-2");
   const nowMs = Date.now();
   const units = [
-    { ...UPS_UNITS[0], slice: ups1, battery: batt1, state: deriveRuleState("CR-UPS-1", ups1, rules, nowMs) },
-    { ...UPS_UNITS[1], slice: ups2, battery: batt2, state: deriveRuleState("CR-UPS-2", ups2, rules, nowMs) },
+    // `battStale` is the **battery** asset's clock. The Battery card below reads
+    // some values from `CR-BATT-n` rather than from the UPS, and gating those on
+    // the UPS's flag lets a dead string keep rendering its last volts, current
+    // and temperature for as long as its UPS reports. Pre-existing, and the
+    // mirror image of the defect F4.39 fixed on the Battery page — raised by the
+    // same review, fixed here because it is the same one-line class of error.
+    { ...UPS_UNITS[0], slice: ups1, battery: batt1, battStale: isStale(batt1.lastSeenMs, nowMs), state: deriveRuleState("CR-UPS-1", ups1, rules, nowMs) },
+    { ...UPS_UNITS[1], slice: ups2, battery: batt2, battStale: isStale(batt2.lastSeenMs, nowMs), state: deriveRuleState("CR-UPS-2", ups2, rules, nowMs) },
   ];
   const selected = units.find((unit) => unit.code === tab) ?? units[0];
   const totalCapacity = units.reduce((sum, unit) => sum + unit.capacityKva, 0);
@@ -398,6 +405,7 @@ function UnitDetail({
     capacityKva: 30;
     slice: SchematicTelemetrySlice;
     battery: SchematicTelemetrySlice;
+    battStale: boolean;
     state: RuleState;
   };
 }) {
@@ -434,10 +442,13 @@ function UnitDetail({
           <Row label="Real power" value={`${n(freshValue(unit.slice.kw, unit.state.stale), 2)} kW`} />
         </DetailCard>
         <DetailCard title="Battery">
-          <Row label="Battery voltage" value={`${n(freshValue(unit.slice.batteryV ?? unit.battery.batteryV, unit.state.stale), 1)} V`} />
-          <Row label="Battery current" value={`${n(freshValue(unit.battery.current, unit.state.stale), 1)} A`} />
+          {/* Each value takes the clock of the asset it came from. The `??`
+              forms genuinely span two assets, so the flag has to be chosen with
+              the source rather than applied to the result — see `ownElse`. */}
+          <Row label="Battery voltage" value={`${n(ownElse(unit.slice.batteryV, unit.state.stale, unit.battery.batteryV, unit.battStale), 1)} V`} />
+          <Row label="Battery current" value={`${n(freshValue(unit.battery.current, unit.battStale), 1)} A`} />
           <Row label="Backup time" value={`${n(freshValue(unit.slice.backupMin, unit.state.stale), 0)} min @ ${n(freshValue(unit.slice.loadPct, unit.state.stale), 0)}% load`} />
-          <Row label="Battery temp" value={`${n(freshValue(unit.slice.batteryTempC ?? unit.battery.batteryTempC, unit.state.stale), 1)} C`} />
+          <Row label="Battery temp" value={`${n(ownElse(unit.slice.batteryTempC, unit.state.stale, unit.battery.batteryTempC, unit.battStale), 1)} C`} />
           <Row
             label="String count"
             value={<StaticValue kind="nameplate">32 cells · 12V VRLA</StaticValue>}

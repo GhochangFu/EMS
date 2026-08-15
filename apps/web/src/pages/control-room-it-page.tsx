@@ -203,9 +203,12 @@ function ControlRoomItContent() {
             : "Network rack · Videowall server rack · PDU status · UPS source mapping"
         }
         actions={
+          // `> 0`, not `=== 2`: with one rack of two dead, the total directly
+          // below already reads "· 1 stale", and a green pill above it denied
+          // what the page itself was saying.
           <StatusPill
-            label={staleRacks === 2 ? "Rack telemetry offline" : "Live rack telemetry"}
-            tone={staleRacks === 2 ? "offline" : "ok"}
+            label={staleRacks > 0 ? "Rack telemetry offline" : "Live rack telemetry"}
+            tone={staleRacks > 0 ? "offline" : "ok"}
           />
         }
       />

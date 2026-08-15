@@ -429,6 +429,54 @@ export function freshValue(
 }
 
 /**
+ * Fan speed above which an HVAC unit counts as running, in percent.
+ *
+ * The `F4.39` compliance review caught a docblock claiming the SLD and HVAC
+ * pages "cannot disagree about what running means" while `20` sat copied in
+ * three places with nothing holding them together. It lives here for the same
+ * reason freshness does (ADR 0027 decision 6, ADR 0028 decision 6).
+ */
+export const HVAC_RUNNING_FAN_PCT = 20;
+
+/**
+ * Whether an HVAC unit is running, from its own fan speed.
+ *
+ * `null` means the unit is fresh but publishes no `fan_speed_pct`, which is not
+ * the same as "not running" — `lastSeenMs` advances on *any* point key, so a
+ * unit reporting only return-air temperature would otherwise read `IDLE`. For
+ * the STANDBY unit of a lead/lag pair `IDLE` is the normal configuration, so a
+ * changeover during which that point is missing would draw as business as
+ * usual. The caller renders `null` as `—`.
+ */
+export function isHvacRunning(fanSpeedPct: number | null): boolean | null {
+  return fanSpeedPct == null ? null : fanSpeedPct > HVAC_RUNNING_FAN_PCT;
+}
+
+/**
+ * Pick whichever asset actually reported the value, gated by **that asset's**
+ * clock.
+ *
+ * Some rows fall back across assets — the UPS page shows its own `batteryV` if
+ * the UPS publishes one and the battery string's otherwise. Written as
+ * `freshValue(own ?? fallback, ownStale)` that reads fine and is wrong: the
+ * `??` resolves first, so the fallback arrives already chosen and is then
+ * judged by the *other* asset's freshness. A dead string keeps rendering its
+ * last volts for as long as its UPS reports, and vice versa.
+ *
+ * The two assets are independent and either can die alone, so the flag has to
+ * be selected together with the source. Raised by the `F4.39` security review,
+ * which found the same error in both directions on two different pages.
+ */
+export function ownElse(
+  own: number | null,
+  ownStale: boolean,
+  fallback: number | null,
+  fallbackStale: boolean,
+): number | null {
+  return own != null ? freshValue(own, ownStale) : freshValue(fallback, fallbackStale);
+}
+
+/**
  * How many of these slices have stopped reporting.
  *
  * Used where a *count of unreachable assets* is wanted regardless of which
