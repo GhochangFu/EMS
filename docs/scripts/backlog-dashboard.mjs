@@ -370,7 +370,11 @@ function render(forClient) {
         })
         .join("")
     : `<article class="card lamp-idle reveal"><h3>Nothing in flight</h3>
-        <div class="why">No branch outside <code>main</code> maps to a backlog item right now.</div></article>`;
+        <div class="why">${
+          client
+            ? "Nothing is part-built right now — the last item finished and the next has not started."
+            : "No branch outside <code>main</code> maps to a backlog item right now."
+        }</div></article>`;
 
   const nextHtml = readyIds
     .map((id) => item(id))
@@ -801,12 +805,26 @@ function render(forClient) {
 }
 
 
-// The fingerprint rides in the page itself rather than a sidecar file, so the
-// question "has anything a reader would notice moved?" is answerable from the
-// artifact alone. The auto-republish loop keys off the CHANGED/UNCHANGED line.
-const FP = /<!-- fingerprint: ([0-9a-f]+) -->/;
-const previous = existsSync(OUT) ? (readFileSync(OUT, "utf8").match(FP)?.[1] ?? null) : null;
-const changed = previous !== data.fingerprint;
+// The verdict compares against the last fingerprint we know was PUBLISHED, not
+// the last one written to disk. Those differ whenever a run regenerates but the
+// publish does not happen — a failed publish, a leak check that fails, an
+// interrupted session. Keying off the file on disk made the *next* run report
+// UNCHANGED and leave the artifact stale, which is the one failure this whole
+// mechanism exists to prevent. So the marker is advanced only by an explicit:
+//
+//     node docs/scripts/backlog-dashboard.mjs --mark-published
+//
+// run after the Artifact publish actually succeeds.
+const MARKER = join(repoRoot, "docs", "status", ".published-fingerprint");
+const published = existsSync(MARKER) ? readFileSync(MARKER, "utf8").trim() : null;
+
+if (process.argv.includes("--mark-published")) {
+  writeFileSync(MARKER, `${data.fingerprint}\n`);
+  console.log(`marked ${data.fingerprint} as published`);
+  process.exit(0);
+}
+
+const changed = published !== data.fingerprint;
 
 /** Wrap a page fragment in a real document, for files opened outside claude.ai. */
 const standalone = (fragment) => {
@@ -856,6 +874,7 @@ console.log(
 );
 console.log(
   changed
-    ? `CHANGED ${previous ?? "(first run)"} -> ${data.fingerprint} — republish the artifact`
+    ? `CHANGED ${published ?? "(never published)"} -> ${data.fingerprint} — republish the artifact, ` +
+      `then run this script again with --mark-published`
     : `UNCHANGED ${data.fingerprint} — nothing a reader would notice moved; skip the republish`,
 );
