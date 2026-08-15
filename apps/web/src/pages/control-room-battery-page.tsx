@@ -15,6 +15,7 @@ import {
 } from "../components/live-svg/schematic-telemetry-context";
 import { DisabledCommandButton } from "../components/disabled-command-button";
 import { PageHeader } from "../components/page-header";
+import { StaticValue } from "../components/static-value";
 import { AppShell } from "../layouts/app-shell";
 import {
   freshValue,
@@ -337,17 +338,25 @@ function BatteryStringCard({
     state: RuleState;
   };
 }) {
-  const avgCellV =
-    string.cells.reduce((sum, cell) => sum + cell.voltage, 0) / string.cells.length;
-  const avgTemp =
-    string.cells.reduce((sum, cell) => sum + cell.temperature, 0) / string.cells.length;
   return (
     <section className="rounded border border-gray-200 bg-white">
       <div className="flex flex-col gap-2 border-b border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-condensed text-lg font-bold text-bms-ink">{string.title}</h2>
+          {/* Two defects on one line, both found in `F4.39`.
+              1. `batteryV` and `backupMin` were rendered **ungated** — `n(...)`
+                 with no `freshValue`, so this line held its last numbers while
+                 the tiles above it blanked. `F4.38`'s invariant is scoped to the
+                 derivation function, which is what made it correct and also what
+                 let a raw render site slip past it.
+              2. "avg cell" and "avg temp" averaged the 32 synthesized cells, so
+                 they restated `batteryV`/`batteryTempC` as if two more
+                 instruments had confirmed them. They are replaced by the real
+                 string temperature (ADR 0028 decision 4). */}
           <p className="text-xs text-bms-muted">
-            {n(string.slice.batteryV, 1)} V · avg cell {avgCellV.toFixed(2)} V · avg temp {avgTemp.toFixed(1)} C · backup {n(string.ups.backupMin, 0)} min
+            {n(freshValue(string.slice.batteryV, string.state.stale), 1)} V ·{" "}
+            {n(freshValue(string.slice.batteryTempC, string.state.stale), 1)} C · backup{" "}
+            {n(freshValue(string.ups.backupMin, string.state.stale), 0)} min
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -361,7 +370,18 @@ function BatteryStringCard({
           </span>
         </div>
       </div>
-      <div className="grid grid-cols-4 gap-2 p-4 sm:grid-cols-8 lg:grid-cols-16">
+      {/* `F4.39`: the grid stays, marked once at its head rather than 32 times.
+          No RTU profile carries per-cell points, so there is nothing to wire —
+          these 32 voltages are synthesized from the string's own `batteryV`
+          plus a per-string seed. They pass the ADR 0027 staleness gate
+          correctly, which is exactly what made them convincing: they blank when
+          the string dies and move when it reports. Wiring them needs an
+          ingestion change, not a UI one (ADR 0028 consequences). */}
+      <div className="flex items-center justify-between border-t border-gray-100 px-4 pt-3 text-xs text-bms-muted">
+        <span>Per-cell detail</span>
+        <StaticValue kind="simulated">synthesized from the string reading</StaticValue>
+      </div>
+      <div className="grid grid-cols-4 gap-2 px-4 pb-4 pt-2 sm:grid-cols-8 lg:grid-cols-16">
         {string.cells.map((cell) => (
           <div
             key={cell.index}

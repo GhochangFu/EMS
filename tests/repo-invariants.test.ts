@@ -812,11 +812,18 @@ describe("repo invariants", () => {
       }
     }
 
-    // **Known limit, stated rather than implied.** These checks prove each page
-    // consults the gate; they do not prove *every* rendered value is gated.
-    // Mutation-tested: dropping `freshValue` from a single render site survives,
-    // because the page still calls it elsewhere. Closing that needs a component
-    // test harness this repo does not have (jsdom is a dependency ADR).
+    // **Known limit, stated rather than implied — and it has since cost
+    // something.** These checks prove each page consults the gate; they do not
+    // prove *every* rendered value is gated. Mutation-tested: dropping
+    // `freshValue` from a single render site survives, because the page still
+    // calls it elsewhere. Closing that needs a component test harness this repo
+    // does not have (jsdom is a dependency ADR).
+    //
+    // `F4.39` found a real instance rather than a hypothetical one: the battery
+    // page's string header rendered `batteryV` and `backupMin` through bare
+    // `n(...)` with no `freshValue`, so that line held its last numbers while
+    // the tiles directly above it blanked. It was found by reading the page for
+    // a different reason, not by any suite.
     expect(
       offenders,
       `ADR 0027 violated: ${offenders.join("; ")}. Every control-room page must decide staleness ` +
@@ -824,6 +831,161 @@ describe("repo invariants", () => {
         "provider's staleTick rather than its own interval. A page that stops consulting the gate " +
         "renders a dead sensor's last value as a live reading — for leak and smoke sensors that is " +
         "a safety-relevant claim the page cannot support.",
+    ).toEqual([]);
+  });
+
+  it("no control-room value is synthesized, and static ones carry their marker", () => {
+    // ADR 0028 (`F4.39`). ADR 0027 answered "is this reading current?" and
+    // assumed the thing on screen was a reading. Two ways that failed:
+    //
+    // 1. **Values the gate cannot reach** — `BATT-1 · 384 V` was a string
+    //    literal, found on the deployed page asserting a confident voltage
+    //    while twelve breakers beside it correctly read `OFFLINE`.
+    // 2. **Values the gate reaches, gates correctly, and that are fabricated
+    //    anyway** — `Voltage Y` was the measured R phase `+ 0.7`. It blanked
+    //    when the incomer died and moved when the real reading moved, which is
+    //    what made it convincing. The battery page's 32-cell grid was the same
+    //    trick at scale, from one string voltage.
+    //
+    // Only (2) is machine-checkable in general, so that is what the first half
+    // asserts. The second half pins the specific values, because "is this
+    // number real?" is not decidable from source.
+    const pages = ["overview", "sld", "ups", "battery", "it", "hvac", "env"].map(
+      (name) => [name, `apps/web/src/pages/control-room-${name}-page.tsx`] as const,
+    );
+    const sources = new Map(
+      pages.map(([name, rel]) => [
+        name,
+        readFileSync(join(repoRoot, rel), "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/^[ \t]*\/\/.*$/gm, ""),
+      ]),
+    );
+    const offenders: string[] = [];
+
+    // **Scoped to `freshValue(`'s first argument, deliberately.** A general
+    // "slice field ± numeric literal" search is unusable here: these pages are
+    // SVG and every diagram coordinate (`cy + 4`, `y - 29`, `x + w / 2`) would
+    // fire. `freshValue(...)` is the construct that *declares* "this is a gated
+    // measurement", so an offset applied inside it is precisely the claim being
+    // policed — the F4.38 rule about scoping a static check to the construct it
+    // is about, applied to a different construct.
+    for (const [name, src] of sources) {
+      for (let i = src.indexOf("freshValue("); i >= 0; i = src.indexOf("freshValue(", i + 1)) {
+        let depth = 0;
+        let end = i + "freshValue(".length;
+        for (; end < src.length; end += 1) {
+          const ch = src[end];
+          if (ch === "(") depth += 1;
+          else if (ch === ")") {
+            if (depth === 0) break;
+            depth -= 1;
+          } else if (ch === "," && depth === 0) break;
+        }
+        const firstArg = src.slice(i + "freshValue(".length, end);
+        if (/[A-Za-z_$][\w$]*\s*[+\-]\s*\d/.test(firstArg)) {
+          offenders.push(
+            `control-room-${name}-page.tsx offsets a measurement inside freshValue: ` +
+              `${firstArg.trim()} — that labels one instrument's reading as another's`,
+          );
+        }
+      }
+    }
+
+    // Census of static values that must stay marked. A literal that has been
+    // *removed* is not an offence — deleting an invented number is a valid fix,
+    // and pinning its presence would forbid that.
+    const marked: Array<readonly [string, string]> = [
+      ["sld", "11 kV INCOMER"],
+      ["sld", "XFMR 100 kVA"],
+      ["sld", "MAIN BUS 415V"],
+      ["sld", "UPS OUT BUS 230V"],
+      ["hvac", "AC-1 LEAD · AC-2 STANDBY"],
+      ["hvac", "Standby auto-start in"],
+      ["ups", "32 cells · 12V VRLA"],
+    ];
+    for (const [name, literal] of marked) {
+      const src = sources.get(name) ?? "";
+      for (let i = src.indexOf(literal); i >= 0; i = src.indexOf(literal, i + 1)) {
+        // **"Am I inside the element", not "does the file mention it".** The
+        // F4.38 finding was that a file-wide token search is satisfied by an
+        // unrelated call elsewhere in the same file — and these pages now use
+        // the marker in several places each, so a file-wide check would be
+        // decoy-satisfied by construction. Nearest opening tag must be closer
+        // than the nearest closing tag.
+        const before = src.slice(0, i);
+        const open = Math.max(
+          before.lastIndexOf("<StaticValue"),
+          before.lastIndexOf("<StaticTspan"),
+        );
+        const close = Math.max(
+          before.lastIndexOf("</StaticValue>"),
+          before.lastIndexOf("</StaticTspan>"),
+        );
+        if (open < 0 || close > open) {
+          offenders.push(
+            `control-room-${name}-page.tsx renders "${literal}" outside a provenance marker — ` +
+              "static data must be visibly distinct from a live reading (ADR 0028 decision 3)",
+          );
+        }
+      }
+    }
+
+    // **The census list above cannot hold the battery cell grid**, and the
+    // mutation run proved it: deleting the grid's marker left every check green
+    // (M4 SURVIVED). The list asserts "this literal, if present, is wrapped" —
+    // so removing the wrapper *and* its text reads as a legitimate deletion.
+    // For the grid that is exactly the dangerous edit: 32 synthesized voltages
+    // stay on screen and the one thing saying so disappears.
+    //
+    // Scoped to the component that renders the grid, not the file: the page
+    // uses the marker elsewhere, so a file-wide search would be decoy-satisfied
+    // in the same way F4.38's was.
+    const batt = sources.get("battery") ?? "";
+    const gridAt = batt.indexOf("string.cells.map(");
+    if (gridAt < 0) {
+      offenders.push(
+        "control-room-battery-page.tsx no longer renders a recognisable cell grid — " +
+          "if it was removed, drop this check with it",
+      );
+    } else {
+      const fnAt = batt.lastIndexOf("\nfunction ", gridAt);
+      const body = batt.slice(fnAt < 0 ? 0 : fnAt, gridAt);
+      if (!/<StaticValue\s+kind="simulated"/.test(body)) {
+        offenders.push(
+          "control-room-battery-page.tsx renders the per-cell grid without marking it simulated — " +
+            "no RTU profile carries per-cell points, so all 32 voltages come from one string reading",
+        );
+      }
+    }
+
+    // Regression pins for the values `F4.39` deleted. Each was invented and
+    // each read as a diagnostic: a health index, a changeover countdown, a
+    // tolerance verdict, and 32 per-cell voltages averaged back into a summary.
+    const removed: Array<readonly [string, RegExp, string]> = [
+      ["hvac", /"96%"|"82%"/, "an invented health index"],
+      ["hvac", /Imbalance \d/, "an invented run-hour tolerance verdict"],
+      ["hvac", /Elapsed"/, "an invented changeover countdown"],
+      ["battery", /\bavgCellV\b/, "an average of synthesized cell voltages"],
+    ];
+    for (const [name, pattern, what] of removed) {
+      if (pattern.test(sources.get(name) ?? "")) {
+        offenders.push(
+          `control-room-${name}-page.tsx reintroduces ${what} (removed by F4.39, ADR 0028)`,
+        );
+      }
+    }
+
+    // **Known limit.** This cannot decide whether a *new* number is real — only
+    // that the known ones stay honest and that the one machine-checkable
+    // fabrication pattern stays absent. The census is maintained by hand, and
+    // ADR 0028 decision 7 records why marking every static value (denominators,
+    // headings, hints) would make the marker meaningless rather than safer.
+    expect(
+      offenders,
+      `ADR 0028 violated: ${offenders.join("; ")}. A value may be labelled as a measurement of X ` +
+        "only if it comes from telemetry that measures X; anything static must render through " +
+        "StaticValue/StaticTspan so an operator can tell it is not a reading.",
     ).toEqual([]);
   });
 });

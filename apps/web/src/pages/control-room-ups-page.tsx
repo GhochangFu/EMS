@@ -15,6 +15,7 @@ import {
 } from "../components/live-svg/schematic-telemetry-context";
 import { DisabledCommandButton } from "../components/disabled-command-button";
 import { PageHeader } from "../components/page-header";
+import { StaticTspan, StaticValue } from "../components/static-value";
 import { AppShell } from "../layouts/app-shell";
 import {
   freshValue,
@@ -437,7 +438,10 @@ function UnitDetail({
           <Row label="Battery current" value={`${n(freshValue(unit.battery.current, unit.state.stale), 1)} A`} />
           <Row label="Backup time" value={`${n(freshValue(unit.slice.backupMin, unit.state.stale), 0)} min @ ${n(freshValue(unit.slice.loadPct, unit.state.stale), 0)}% load`} />
           <Row label="Battery temp" value={`${n(freshValue(unit.slice.batteryTempC ?? unit.battery.batteryTempC, unit.state.stale), 1)} C`} />
-          <Row label="String count" value="32 cells · 12V VRLA" />
+          <Row
+            label="String count"
+            value={<StaticValue kind="nameplate">32 cells · 12V VRLA</StaticValue>}
+          />
         </DetailCard>
       </div>
 
@@ -496,7 +500,11 @@ function UpsBlockDiagram({
       <Flow x1={462} y1={110} x2={506} y2={110} color={line} />
       <Block x={506} y={80} title="INVERTER" sub="DC -> AC" status={status} />
       <Flow x1={626} y1={110} x2={670} y2={110} color={line} />
-      <Block x={670} y={80} w={100} title="STATIC SW" sub="NORMAL" status={status} />
+      {/* `F4.39`: `NORMAL` sits in a row where every other sub-line is a live
+          reading, and it is a claim about switch position that no point
+          reports. The block's colour still comes from real status; the word is
+          marked so it is not read as a fourth measurement. */}
+      <Block x={670} y={80} w={100} title="STATIC SW" sub={<StaticTspan kind="simulated">NORMAL</StaticTspan>} status={status} />
       <Flow x1={770} y1={110} x2={810} y2={110} color={line} />
       <Block x={810} y={80} w={80} title="LOAD" sub={`${n(freshValue(slice.loadPct, dark), 0)}%`} status={status} />
       <text x="450" y="40" textAnchor="middle" className="fill-gray-400 font-mono text-[10px]">BYPASS LINE (auto)</text>
@@ -517,7 +525,7 @@ function Block({
   y: number;
   w?: number;
   title: string;
-  sub: string;
+  sub: ReactNode;
   status: UpsStatus;
 }) {
   return (
@@ -556,7 +564,7 @@ function DetailCard({ title, children }: { title: string; children: ReactNode })
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3">
       <span className="text-bms-muted">{label}</span>

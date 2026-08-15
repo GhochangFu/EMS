@@ -13,6 +13,7 @@ import {
   useSchematicTelemetryByCode,
 } from "../components/live-svg/schematic-telemetry-context";
 import { PageHeader } from "../components/page-header";
+import { StaticTspan } from "../components/static-value";
 import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
 import {
@@ -183,10 +184,14 @@ function ControlRoomSldContent() {
         actions={<StatusPill label="Live" />}
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      {/* `F4.39`: this row used to carry three phase columns. Y and B were the
+          measured R reading `+ 0.7` and `- 0.8` — a second and third instrument
+          that does not exist. They gated correctly on staleness and moved with
+          the real reading, which is what made them convincing. One metered
+          phase, honestly labelled, is worth more than three (ADR 0028
+          decision 4). */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <Meter label="Voltage R" value={n(freshValue(q1.voltage, q1Stale), 1)} unit="V" />
-        <Meter label="Voltage Y" value={n(freshValue(q1.voltage == null ? null : q1.voltage + 0.7, q1Stale), 1)} unit="V" />
-        <Meter label="Voltage B" value={n(freshValue(q1.voltage == null ? null : q1.voltage - 0.8, q1Stale), 1)} unit="V" />
         <Meter label="Frequency" value={n(freshValue(q1.frequencyHz, q1Stale), 2)} unit="Hz" />
         <Meter label="kW · kVA" value={`${n(totalKw, 2)} / ${n(kva, 2)}`} unit="" />
         <Meter label="kWh Today" value={n(kwhToday, 1)} unit="kWh" />
@@ -228,36 +233,41 @@ function CrSldSvg({ rules }: { rules: RuleListItem[] }) {
           <path d="M0,0 L6,3 L0,6 Z" fill="#039855" />
         </marker>
       </defs>
-      <SldBox x={20} y={200} w={100} h={60} title="UTILITY" sub="11 kV INCOMER" />
+      <SldBox x={20} y={200} w={100} h={60} title="UTILITY" sub={<StaticTspan kind="nameplate">11 kV INCOMER</StaticTspan>} />
       <Flow x1={120} y1={230} x2={160} y2={230} />
       <circle cx={180} cy={220} r={13} className="fill-white stroke-bms-green" strokeWidth={2} />
       <circle cx={180} cy={240} r={13} className="fill-white stroke-bms-green" strokeWidth={2} />
-      <text x={180} y={200} textAnchor="middle" className="fill-bms-green font-mono text-[9px]">XFMR 100 kVA</text>
+      <text x={180} y={200} textAnchor="middle" className="fill-bms-green font-mono text-[9px]"><StaticTspan kind="nameplate">XFMR 100 kVA</StaticTspan></text>
       <Flow x1={200} y1={230} x2={240} y2={230} />
       <Breaker cx={260} cy={230} label="Q1" code="CR-Q1" rules={rules} />
       <Flow x1={274} y1={230} x2={320} y2={230} />
       <rect x={320} y={80} width={6} height={320} rx={2} className="fill-bms-green" />
-      <text x={323} y={74} textAnchor="middle" className="fill-bms-green font-condensed text-[11px] font-bold">MAIN BUS 415V</text>
-      <Branch y={115} breaker="Q2" breakerCode="CR-Q2" box="UPS-1" sub="ONLINE · 30 kVA" outBreaker="Q4" outCode="CR-Q4" rules={rules} />
-      <Branch y={170} breaker="Q3" breakerCode="CR-Q3" box="UPS-2" sub="ONLINE · 30 kVA" outBreaker="Q5" outCode="CR-Q5" rules={rules} />
-      <LoadBranch y={240} breaker="Q10" code="CR-Q10" title="HVAC-1 (4 TR)" sub="RUN · LEAD" rules={rules} />
-      <LoadBranch y={290} breaker="Q11" code="CR-Q11" title="HVAC-2 (4 TR)" sub="STANDBY" rules={rules} />
-      <LoadBranch y={340} breaker="Q12" code="CR-Q12" title="CR LIGHTS / AUX" sub="" rules={rules} />
+      <text x={323} y={74} textAnchor="middle" className="fill-bms-green font-condensed text-[11px] font-bold"><StaticTspan kind="nameplate">MAIN BUS 415V</StaticTspan></text>
+      {/* `F4.39`: the UPS boxes used to read `ONLINE · 30 kVA`. "ONLINE" was a
+          literal, and it is not a claim telemetry supports anyway — for a UPS
+          it means running on mains rather than on battery, which is a fact
+          about the plant, not about whether the asset is reporting. It is
+          replaced by the load percentage, which is measured. */}
+      <Branch y={115} breaker="Q2" breakerCode="CR-Q2" box="UPS-1" boxCode="CR-UPS-1" ratingKva={30} outBreaker="Q4" outCode="CR-Q4" rules={rules} />
+      <Branch y={170} breaker="Q3" breakerCode="CR-Q3" box="UPS-2" boxCode="CR-UPS-2" ratingKva={30} outBreaker="Q5" outCode="CR-Q5" rules={rules} />
+      <LoadBranch y={240} breaker="Q10" code="CR-Q10" title="HVAC-1 (4 TR)" unitCode="CR-HVAC-1" role="LEAD" rules={rules} />
+      <LoadBranch y={290} breaker="Q11" code="CR-Q11" title="HVAC-2 (4 TR)" unitCode="CR-HVAC-2" role="STANDBY" rules={rules} />
+      <LoadBranch y={340} breaker="Q12" code="CR-Q12" title="CR LIGHTS / AUX" rules={rules} />
       <rect x={690} y={80} width={6} height={200} rx={2} className="fill-bms-green" />
-      <text x={693} y={74} textAnchor="middle" className="fill-bms-green font-condensed text-[11px] font-bold">UPS OUT BUS 230V</text>
+      <text x={693} y={74} textAnchor="middle" className="fill-bms-green font-condensed text-[11px] font-bold"><StaticTspan kind="nameplate">UPS OUT BUS 230V</StaticTspan></text>
       <Pdu y={105} breaker="Q6" code="CR-Q6" title="NET RACK · PDU-A" loadCode="CR-NET-RACK-PDU-A" rules={rules} />
       <Pdu y={148} breaker="Q7" code="CR-Q7" title="NET RACK · PDU-B" loadCode="CR-NET-RACK-PDU-B" rules={rules} />
       <Pdu y={195} breaker="Q8" code="CR-Q8" title="VW SRV · PDU-A" loadCode="CR-VW-RACK-PDU-A" rules={rules} />
       <Pdu y={240} breaker="Q9" code="CR-Q9" title="VW SRV · PDU-B" loadCode="CR-VW-RACK-PDU-B" rules={rules} />
-      {/* `F4.39`: these two voltages, and the "ONLINE" / "RUN · LEAD" /
-          "STANDBY" words above, are **hardcoded mockup placeholders** — they are
-          not read from any slice. ADR 0027's staleness gate therefore does not
-          and cannot reach them: there is nothing to go stale. They are left as
-          they are because wiring them to telemetry (or relabelling them as
-          nameplate data) is a product decision, but note the consequence — on a
-          live SLD they read exactly like measurements. */}
-      <SldBox x={990} y={86} w={90} h={38} title="BATT-1" sub="384 V" />
-      <SldBox x={990} y={130} w={90} h={38} title="BATT-2" sub="386 V" />
+      {/* `F4.39`: these two read `384 V` and `386 V` as string literals, and
+          were found on the deployed page still asserting a confident voltage
+          while the whole estate was offline and twelve breakers beside them
+          correctly read `OFFLINE`. `CR-BATT-1` / `CR-BATT-2` are already in
+          `CR_TRACKED_ASSET_CODES`, so the provider was carrying the real
+          `batteryV` the whole time — nothing needed subscribing, the values
+          were simply never read (ADR 0028 decision 1). */}
+      <BatteryBox x={990} y={86} code="CR-BATT-1" title="BATT-1" />
+      <BatteryBox x={990} y={130} code="CR-BATT-2" title="BATT-2" />
       <line x1={570} y1={115} x2={990} y2={105} stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="4 4" />
       <line x1={570} y1={170} x2={990} y2={149} stroke="#94a3b8" strokeWidth={1.4} strokeDasharray="4 4" />
     </svg>
@@ -268,13 +278,33 @@ function Flow({ x1, y1, x2, y2 }: { x1: number; y1: number; x2: number; y2: numb
   return <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#039855" strokeWidth={3} markerEnd="url(#crArrow)" />;
 }
 
-function SldBox({ x, y, w, h, title, sub }: { x: number; y: number; w: number; h: number; title: string; sub: string }) {
+function SldBox({ x, y, w, h, title, sub }: { x: number; y: number; w: number; h: number; title: string; sub: React.ReactNode }) {
   return (
     <g>
       <rect x={x} y={y} width={w} height={h} rx={6} className="fill-white stroke-bms-green" strokeWidth={1.5} />
       <text x={x + w / 2} y={y + h / 2 - 2} textAnchor="middle" className="fill-bms-ink font-condensed text-[12px] font-bold">{title}</text>
       {sub ? <text x={x + w / 2} y={y + h / 2 + 13} textAnchor="middle" className="fill-bms-muted font-mono text-[9px]">{sub}</text> : null}
     </g>
+  );
+}
+
+/**
+ * A battery string on the SLD, reading the real `batteryV` point (ADR 0028
+ * decision 1) and gated by ADR 0027 like every other measured value — so a
+ * string that stops reporting blanks to `—` instead of holding its last volts.
+ */
+function BatteryBox({ x, y, code, title }: { x: number; y: number; code: string; title: string }) {
+  const s = useCr(code);
+  const stale = isStale(s.lastSeenMs, Date.now());
+  return (
+    <SldBox
+      x={x}
+      y={y}
+      w={90}
+      h={38}
+      title={title}
+      sub={`${n(freshValue(s.batteryV, stale), 1)} V`}
+    />
   );
 }
 
@@ -309,13 +339,31 @@ function Breaker({ cx, cy, label, code, rules }: { cx: number; cy: number; label
   );
 }
 
-function Branch({ y, breaker, breakerCode, box, sub, outBreaker, outCode, rules }: { y: number; breaker: string; breakerCode: string; box: string; sub: string; outBreaker: string; outCode: string; rules: RuleListItem[] }) {
+/**
+ * A UPS branch. The box sub-line pairs the UPS's own measured load with its
+ * nameplate rating (ADR 0028) — the rating is marked, the load is gated.
+ */
+function Branch({ y, breaker, breakerCode, box, boxCode, ratingKva, outBreaker, outCode, rules }: { y: number; breaker: string; breakerCode: string; box: string; boxCode: string; ratingKva: number; outBreaker: string; outCode: string; rules: RuleListItem[] }) {
+  const ups = useCr(boxCode);
+  const upsStale = isStale(ups.lastSeenMs, Date.now());
   return (
     <g>
       <Flow x1={326} y1={y} x2={380} y2={y} />
       <Breaker cx={400} cy={y} label={breaker} code={breakerCode} rules={rules} />
       <Flow x1={411} y1={y} x2={450} y2={y} />
-      <SldBox x={450} y={y - 29} w={120} h={58} title={box} sub={sub} />
+      <SldBox
+        x={450}
+        y={y - 29}
+        w={120}
+        h={58}
+        title={box}
+        sub={
+          <>
+            {`${n(freshValue(ups.loadPct, upsStale), 0)}% load · `}
+            <StaticTspan kind="nameplate">{`${ratingKva} kVA`}</StaticTspan>
+          </>
+        }
+      />
       <Flow x1={570} y1={y} x2={610} y2={y} />
       <Breaker cx={630} cy={y} label={outBreaker} code={outCode} rules={rules} />
       <Flow x1={641} y1={y} x2={690} y2={y} />
@@ -323,8 +371,28 @@ function Branch({ y, breaker, breakerCode, box, sub, outBreaker, outCode, rules 
   );
 }
 
-function LoadBranch({ y, breaker, code, title, sub, rules }: { y: number; breaker: string; code: string; title: string; sub: string; rules: RuleListItem[] }) {
+/**
+ * A load branch. `unitCode`/`role` are optional because not every load is a
+ * lead/lag pair — `CR LIGHTS / AUX` has neither, and used to pass `sub=""`.
+ *
+ * The sub-line used to read `RUN · LEAD` / `STANDBY` as literals. `RUN` is now
+ * decided by the unit's own fan speed, using the same `> 20` test the HVAC page
+ * applies, so the two pages cannot disagree about what running means. The role
+ * is configuration — lead/lag assignment is set, not measured — so it is marked
+ * rather than derived (ADR 0028).
+ */
+function LoadBranch({ y, breaker, code, title, unitCode, role, rules }: { y: number; breaker: string; code: string; title: string; unitCode?: string; role?: string; rules: RuleListItem[] }) {
   const s = useCr(code);
+  // Called unconditionally with the breaker's own code as the fallback: a hook
+  // behind `unitCode ?` would change hook order between loads that have a unit
+  // and the one that does not.
+  const unit = useCr(unitCode ?? code);
+  const unitStale = isStale(unit.lastSeenMs, Date.now());
+  const runWord = unitStale
+    ? STALE_VALUE
+    : (unit.fanSpeedPct ?? 0) > 20
+      ? "RUN"
+      : "IDLE";
   const state = deriveBreakerRuleState(code, s, rules, Date.now());
   // A dead feed is not a closed one: `!== "open"` used to make `offline` count
   // as closed, so the diagram drew a green energised arrow into it.
@@ -344,7 +412,23 @@ function LoadBranch({ y, breaker, code, title, sub, rules }: { y: number; breake
       <line x1={326} y1={y} x2={380} y2={y} stroke={stroke} strokeWidth={3} />
       <Breaker cx={400} cy={y} label={breaker} code={code} rules={rules} />
       <line x1={411} y1={y} x2={450} y2={y} stroke={stroke} strokeWidth={3} markerEnd={closed ? "url(#crArrow)" : undefined} />
-      <SldBox x={450} y={y - 18} w={120} h={36} title={title} sub={sub} />
+      <SldBox
+        x={450}
+        y={y - 18}
+        w={120}
+        h={36}
+        title={title}
+        sub={
+          unitCode ? (
+            <>
+              {`${runWord} · `}
+              <StaticTspan kind="configuration">{role ?? ""}</StaticTspan>
+            </>
+          ) : (
+            ""
+          )
+        }
+      />
     </g>
   );
 }
