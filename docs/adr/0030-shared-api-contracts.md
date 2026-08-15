@@ -446,3 +446,98 @@ measure**, bought at no cost on the four it did. Nothing about zero drift on
 
 Decision 5 is therefore **settled as drafted**, and the failure policy is no
 longer blocking.
+
+---
+
+## Amendment 2 — what building it changed (2026-08-15)
+
+The schemas are written and `index.ts` now derives every response type with
+`z.infer`. Two facts turned up that the accepted decisions did not anticipate.
+Neither reverses a decision; one narrows where decision 2's benefit lands, and
+one is a small contract change that could not be avoided.
+
+### The subpath does not reach `apps/api`
+
+**`apps/api` compiles with `moduleResolution: "node"` (node10), which ignores
+the package `exports` map entirely.** `@bms/shared/contracts` therefore does not
+typecheck from that package. TypeScript says so in as many words:
+
+> There are types at `…/dist/contracts/index.d.ts`, but this result could not be
+> resolved under your current 'moduleResolution' setting.
+
+**Node's own runtime resolution honours `exports` and works** — which is the
+dangerous half of this, not the safe half. A subpath import from `apps/api`
+fails to compile but would run correctly, so anyone who reached for a
+`@ts-expect-error` would get a working, untyped import.
+
+This was already known here and already answered: `index.ts` re-exports
+`./ingest` for exactly this reason, in a comment that predates `F4.23`. The
+same workaround is applied — **`index.ts` re-exports the schemas as values** —
+so `apps/api` imports contracts from `@bms/shared` and `apps/web` uses
+`@bms/shared/contracts`.
+
+**What this costs is half of decision 2's stated benefit.** The subpath was
+chosen to draw the contract/constant line *at the import site*; it now draws it
+for `apps/web` only. That is worth stating plainly rather than filing under
+"resolved": the decision is not wrong, but it does not buy what it was said to
+buy for one of the two consumers.
+
+**Left open, and not taken here:** moving `apps/api` to `node16`/`nodenext`/
+`bundler` would make the subpath universal. That is a build-configuration change
+touching every import in the package, with CommonJS/ESM interop and NestJS
+decorator metadata in its blast radius. It is `apps/api`'s decision and needs
+its own justification, not a side effect of a contracts package.
+
+### A required `unknown` property is not expressible in Zod
+
+`AuditLogEntryDto.payload` was `unknown` and **required**. It is now optional,
+and this is the only contract the migration changed.
+
+`z.unknown()` yields an **optional** key: Zod marks any key whose output
+includes `undefined`, and `unknown` includes `undefined`. Unlike Amendment 1's
+three encoding rules, **this one has no passing sibling encoding** —
+`z.any()`, `z.custom<unknown>()` and every other spelling infer an output that
+`undefined` extends, so the key is optional under all of them.
+
+**The practical gap is nil and the principle is not.** `payload: unknown`
+already permitted the value `undefined`, so no consumer could ever have relied
+on the key carrying something; the difference is only whether a *producer* is
+forced to write it. Blast radius was measured rather than argued: the full
+build and **all 180 tests, including every integration suite against a real
+database**, pass unchanged.
+
+It is recorded here, and in the type's own doc comment, because a contract
+weakened without announcement is precisely what this package now exists to
+prevent.
+
+### The migration was proved, and the proof is deliberately not kept
+
+Before `index.ts` was switched, **81 assertions** compared each schema to the
+hand-written type it was about to replace, at strict type identity. **79 were
+identical on the first run**; the 2 that differed are the `payload` case above.
+
+Those assertions are **not in the repository**. Once the types are `z.infer` of
+the schemas, `Strict<z.infer<S>, z.infer<S>>` is trivially `true` and all 79
+become tautologies — and the fact that they were once meaningful is exactly
+what would have made them hard to spot later. AGENTS.md §4.4 is a running list
+of guards that passed while checking nothing.
+
+What is kept instead is the pair of properties that can still break:
+`tests/adr-0030-contract-derivation.test.ts` rejects a hand-written response
+type in `index.ts`, and rejects `.merge()` / `.omit().extend()` in
+`contracts/`. Both were mutation-tested — 2 of 2 mutations die — and the second
+exists because the property it protects (strict identity, not assignability) is
+invisible to every runtime test.
+
+### One guard got better
+
+`tests/ingest-contracts.test.ts` verified that every ingest protocol is
+expressible in onboarding by **scraping the `OnboardingProtocol` union out of
+`index.ts` as text**, because a type is erased before a test can see it. With
+the schema as the source, the union is a runtime value and is now simply read
+from `onboardingProtocolSchema.options`.
+
+Worth recording for a reason beyond the tidiness: **the old check failed loudly
+when the migration broke it**, because it carried an anti-vacuity floor. It
+would otherwise have gone quietly green over an empty scrape — the failure mode
+§4.4 exists to catch, caught.
