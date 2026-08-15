@@ -63,6 +63,12 @@ contract here; it produces a route index with the payloads missing.
    static guard whenever a rule could acquire one. A document that disagrees
    with the validator is worse than no document, because it is believed.
 
+   > ⚠️ **This decision is necessary but was not sufficient, and
+   > [Amendment 1](#amendment-1--what-the-document-does-where-the-conversion-is-lossy-2026-08-15)
+   > completes it.** It forbids a *second* description and says nothing about
+   > the generated one being **silently incomplete**, which the `F4.20` spike
+   > measured it to be at 11 sites.
+
 2. **The document is served in every environment at `GET /api/v1/docs-json` and
    is guarded by `JwtAuthGuard`. The Swagger UI shell at `GET /api/v1/docs` is
    not guarded, and does not need to be.** The owner chose availability over
@@ -202,3 +208,120 @@ on the branch until the lockfile lands; nothing else in the repo changes.
   entry** for 0029, and a **§4.3 note** saying where API description lives and
   that it is generated from the Zod schemas rather than from decorators. No §6
   line to soften. Tracked in `docs/BACKLOG.md` §5 until it lands, per §10.1.
+
+---
+
+## Amendment 1 — what the document does where the conversion is lossy (2026-08-15)
+
+Accepted 2026-08-15 by the repository owner. Raised by `F4.20`'s conversion
+spike, which this ADR mandated be run before any building precisely so that a
+finding of this kind would arrive before the code that depends on it.
+
+### Measured facts
+
+Measured on `main` at `9f7f7e4` with `zod@3.25.76`,
+`zod-to-json-schema@3.25.2`, `@nestjs/swagger@8.1.1`.
+
+A. **Structural conversion is a non-issue.** All **63 exported schemas across
+   the 19 `*.schema.ts` files convert with zero failures**, and none of the
+   constructs this ADR feared most is even present in the tree — no
+   `z.discriminatedUnion`, no `z.lazy`, no `.brand`, no `.catch`. The
+   Dependencies section's stated risk did not materialise.
+
+B. **Refinements are dropped silently.** `zod-to-json-schema` emits nothing at
+   all for `.refine` / `.superRefine` — no marker, no warning, no error. There
+   are **11 such sites across 5 files**: `asset-templates-content` (2 + 3),
+   `asset-templates` (0 + 2), `audit` (0 + 2), `onboarding` (1 + 0),
+   `telemetry-reading` (1 + 0).
+
+C. **The consequence, demonstrated rather than argued.** On
+   `telemetryReadingSchema.time`, which is `z.string().refine(parsable
+   timestamp)`: the payload `{"time":"not-a-timestamp", …}` is **rejected by
+   Zod** with "must be a parsable timestamp" and **accepted by the generated
+   JSON Schema**, which describes that field as exactly `{"type":"string"}`.
+   At those 11 sites the document is strictly **more permissive** than the
+   validator — a caller reads it, sends a conforming payload, and receives a
+   `400` the document says is impossible.
+
+D. **Coercion is not a problem, contrary to the Dependencies section.** Six of
+   the seven `z.coerce` sites are in *query* schemas, where
+   `{"type":"integer","minimum":…,"default":…}` is the correct OpenAPI
+   description of a query parameter rather than a mismatch. The seventh,
+   `ruleDraftBodySchema.thresholdValue`, is in a request body and makes the
+   document **narrower** than the validator — the safe direction, since a client
+   that follows the document always works.
+
+E. **A refinement's message cannot be read off the schema.** This is what
+   decides the mechanism below. `.refine(fn, { message })` produces a
+   `ZodEffects` whose `_def.effect` is `{ type: "refinement", refinement: fn }`
+   — the message is captured inside the closure, `_def.message` is `null`, and
+   there is no `errorMap`. The only way to recover the text is to **run** the
+   refinement against a value that fails it, which requires already knowing a
+   failing value and is impossible in general. So "carry the validator's own
+   message into the document" cannot be automated, however much one would like
+   it to be.
+
+F. **`.describe()` does not survive `.refine()`.** `z.string().describe("x")
+   .refine(…)` yields `description === null`, because `.refine` wraps the
+   described schema in a new `ZodEffects`; `z.string().refine(…).describe("x")`
+   yields `"x"`. Order matters, the failure is silent, and it is therefore a
+   trap the static guard below has to cover rather than a convention to
+   remember.
+
+### Decision
+
+9. **Where the generated schema is incomplete, the document says so, in three
+   parts.**
+
+   a. **Marker — automatic.** Every schema carrying a refinement is stamped
+      `x-zod-refined: true`. This is derived from the schema object
+      (`ZodEffects` with `effect.type === "refinement"`), so it cannot be
+      forgotten and cannot drift.
+
+   b. **Prose — authored, because fact E leaves no alternative.** The
+      constraint is stated in the field's `description`, written with
+      `.describe()` **after** the refinement. It is not scraped from the
+      validator; it cannot be. This is prose *about* a rule, not a second
+      machine-checkable copy of it: nothing enforces it, so unlike a
+      hand-written `format`/`pattern` it can never cause a payload to be
+      wrongly accepted or rejected.
+
+   c. **Document-level declaration.** The document's top-level `description`
+      states that it is a **lower bound on validation**: fields marked
+      `x-zod-refined` carry constraints the schema cannot express, and a
+      payload valid against this document may still be refused.
+
+10. **A static guard makes (9a) and (9b) inseparable, and covers fact F's
+    ordering trap.** Every `.refine` / `.superRefine` site must have a
+    `.describe()` applied *after* it; a refined schema that reaches the document
+    without a description fails the build, and so does a `.describe()` placed
+    before the refinement, where it is silently discarded. The guard checks
+    **presence and order, not accuracy** — no test can know whether the prose
+    still matches the predicate, and this ADR does not pretend otherwise.
+
+11. **Decision 1 stands unamended in its prohibition.** No hand-written JSON
+    Schema fragment may be introduced to mirror a refinement — no invented
+    `format`, `pattern` or `minimum` that restates in JSON Schema what the
+    predicate already says. That is the second enforceable description decision
+    1 forbids, and it is the one that can silently disagree with the validator.
+    The option was considered at the gate and declined for exactly that reason.
+
+### Consequences
+
+- **11 sites gain a `.describe()` inside `F4.20`.** Author work, not
+  generation, and it is the only part of this item that touches the schema
+  files themselves.
+- **The residual gap is real and is the honest ceiling.** A human reader learns
+  *that* a constraint exists and *what* it is; a generated client still cannot
+  enforce it and will still occasionally send something the API refuses. The
+  alternative that closes that gap is a second enforceable description, which
+  can be wrong in the direction that silently accepts bad payloads. A document
+  that under-promises is recoverable; one that over-promises is not.
+- **The prose can go stale and nothing will detect it.** Stated here rather
+  than discovered later. It is accepted because a stale sentence misleads a
+  reader who can see the 400, whereas a stale `pattern` misleads a machine that
+  cannot.
+- **`x-zod-refined` is a vendor extension**, so conforming tooling ignores it
+  rather than failing on it. The document remains valid OpenAPI 3.
+- **Fact D retires a risk this ADR carried.** The Dependencies section's warning
+  about coercion should be read as measured and closed, not open.
