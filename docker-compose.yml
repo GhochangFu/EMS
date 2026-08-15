@@ -98,6 +98,15 @@ services:
       PORT: 4000
       LOG_LEVEL: info
       ENERGY_TARIFF_ZAR_PER_KWH: 2.15
+      # ADR 0029 Amendment 2. Passed through from `.env`, with **no default
+      # here on purpose**: the image sets `NODE_ENV=production`, so this stack
+      # is "production" as far as the gate is concerned even when it is someone's
+      # laptop. Defaulting it to `true` for local convenience would also turn the
+      # docs on for any pilot brought up from this same file, and where they are
+      # on they are UNAUTHENTICATED — the whole route inventory. So a developer
+      # who wants them writes `API_DOCS_ENABLED=true` in their own `.env`, and a
+      # deployment that says nothing gets nothing.
+      API_DOCS_ENABLED: ${API_DOCS_ENABLED:-}
       REDIS_URL: redis://redis:6379
       AUTH_MODE: oidc
       OIDC_ISSUER: http://localhost:8080/realms/bms

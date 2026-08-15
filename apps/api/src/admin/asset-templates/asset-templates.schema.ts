@@ -55,7 +55,8 @@ const templatePointsBodySchema = z
       }
       seen.add(point.pointKey);
     });
-  });
+  })
+  .describe("Every `pointKey` must be unique within this template's points.");
 
 export const createAssetTemplateBodySchema = z.object({
   organizationId: z.string().uuid(),
@@ -145,6 +146,12 @@ export const instantiateAssetsBodySchema = z
       seen.add(asset.code);
     });
   })
+  .describe(
+    "Supply exactly one of `rtuId` (wired assets) or `locationId` " +
+      "(gateway-less assets) — never both, because an RTU already determines " +
+      "its location. Every `code` in `assets` must be unique within the batch; " +
+      "asset codes are globally unique.",
+  )
   /**
    * Narrows the exclusive pair into a discriminated target.
    *
@@ -176,3 +183,20 @@ export type TemplatePointBody = z.infer<typeof templatePointBodySchema>;
 export type InstantiateAssetsBody = z.infer<typeof instantiateAssetsBodySchema>;
 export type InstantiateAssetBody = z.infer<typeof instantiateAssetBodySchema>;
 export type InstantiationTargetInput = InstantiateAssetsBody["target"];
+
+/**
+ * The `status` filter on `GET /admin/asset-templates`.
+ *
+ * Moved here from the controller by `F4.20`: declared there, it was invisible
+ * to ADR 0029's registry, which can only see schemas exported from a
+ * `*.schema.ts` — so that route's only parameter would have gone undocumented
+ * for a reason no reader could have guessed.
+ *
+ * It was **not** the only schema declared inside a controller, which a first
+ * version of this note claimed. Three controllers also hold a local
+ * `idParamSchema`. Those stay: a path parameter is described by Nest's own
+ * reflection rather than by the registry, so moving them would change nothing
+ * about the document. Their real problem is that they duplicate
+ * `admin.schema.ts`'s `idParamSchema`, which is a different item's to fix.
+ */
+export const templateStatusQuerySchema = z.enum(["draft", "published", "archived"]);

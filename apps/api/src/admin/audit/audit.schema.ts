@@ -54,7 +54,8 @@ export const auditListQuerySchema = z
     if (value.from && value.to && new Date(value.from) > new Date(value.to)) {
       addWindowOrderIssue(ctx);
     }
-  });
+  })
+  .describe("When both are supplied, `from` must not be later than `to`.");
 
 /**
  * `GET /api/v1/admin/audit/export`. The window is **required** and bounded, and
@@ -85,7 +86,11 @@ export const auditExportQuerySchema = z
         message: `Export window must not exceed ${MAX_EXPORT_SPAN_DAYS} days`,
       });
     }
-  });
+  })
+  .describe(
+    "`from` must not be later than `to`, and the window must not exceed " +
+      `${MAX_EXPORT_SPAN_DAYS} days.`,
+  );
 
 export type AuditListQuery = z.infer<typeof auditListQuerySchema>;
 export type AuditExportQuery = z.infer<typeof auditExportQuerySchema>;

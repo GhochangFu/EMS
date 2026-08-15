@@ -70,7 +70,8 @@ export const telemetryReadingSchema = z.object({
     .string()
     .refine((value) => !Number.isNaN(Date.parse(value)), {
       message: "must be a parsable timestamp",
-    }),
+    })
+    .describe("Must be a timestamp `Date.parse` accepts; ISO 8601 is the expected form."),
   assetId: z.string().min(1),
   pointKey: z.string().min(1),
   /**
