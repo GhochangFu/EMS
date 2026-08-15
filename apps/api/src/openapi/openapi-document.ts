@@ -44,6 +44,22 @@ export interface BuiltDocument {
 const BODY_VERBS = new Set(["post", "put", "patch"]);
 
 /**
+ * What the Swagger UI shell is handed instead of the real document.
+ *
+ * `SwaggerModule` bakes whatever it is given into `/docs/swagger-ui-init.js`,
+ * which is served **unauthenticated** and which `raw: false` does not suppress.
+ * Handing it the real document published every path in the API beside the
+ * guarded route — measured at 128 KB on the running container. The shell needs
+ * a document-shaped object to boot; it does not need this one, and it fetches
+ * the real one from the guarded URL at load time.
+ */
+export const EMPTY_DOCUMENT: OpenAPIObject = {
+  openapi: "3.0.0",
+  info: { title: "TRINETRA Enterprise EMS API", version: "v1" },
+  paths: {},
+};
+
+/**
  * Builds the document and reports what is wrong with it rather than throwing.
  *
  * **Reporting rather than throwing is deliberate.** This runs during

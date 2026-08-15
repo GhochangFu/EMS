@@ -9,7 +9,7 @@ import { Logger as PinoLogger } from "nestjs-pino";
 import { SwaggerModule } from "@nestjs/swagger";
 
 import { AppModule } from "./app.module";
-import { buildOpenApiDocument } from "./openapi/openapi-document";
+import { buildOpenApiDocument, EMPTY_DOCUMENT } from "./openapi/openapi-document";
 import { OpenApiDocumentStore } from "./openapi/openapi.controller";
 import { createSocketIoAdapter } from "./realtime/redis-io.adapter";
 
@@ -34,15 +34,25 @@ async function bootstrap(): Promise<void> {
   // `SwaggerModule.createDocument` needs the instantiated application, which is
   // also why it reaches the guarded controller through a store rather than DI.
   //
-  // **`raw: false` is load-bearing.** Without it `SwaggerModule.setup` also
-  // publishes its own copy of the document, unguarded, and decision 2's
-  // `JwtAuthGuard` on `/docs-json` becomes decorative — the exact shape of
-  // "the guard is wired but does nothing" that AGENTS.md §4.4 records twice.
-  // The UI is pointed at the guarded route instead, and `persistAuthorization`
-  // keeps the reader's bearer token across reloads so it stays usable.
+  // **The UI is given an EMPTY document on purpose**, and this is the part that
+  // makes decision 2's guard real rather than decorative.
+  //
+  // `raw: false` stops `SwaggerModule` publishing `/docs-json` and
+  // `/docs-yaml`. It does **not** stop it generating
+  // `/docs/swagger-ui-init.js`, which bakes whatever document it is handed
+  // straight into an unauthenticated script. Measured against the running
+  // container: with the real document passed here, that file was **200 without
+  // a token and 128 KB**, containing every path in the API — so the
+  // `JwtAuthGuard` on `/docs-json` was guarding a copy while another sat beside
+  // it in the open. No test caught this; hitting the running stack did, which
+  // is the fourth consecutive item where that has been true (§4.6).
+  //
+  // So the shell is handed a document with no paths, and told to fetch the real
+  // one from the guarded route at load time. `persistAuthorization` keeps the
+  // reader's bearer token across reloads so the page stays usable.
   const { document } = buildOpenApiDocument(app);
   app.get(OpenApiDocumentStore).set(document);
-  SwaggerModule.setup("docs", app, document, {
+  SwaggerModule.setup("docs", app, EMPTY_DOCUMENT, {
     useGlobalPrefix: true,
     raw: false,
     swaggerOptions: {
