@@ -16,7 +16,8 @@ below stand as written, with three sharpened by the ruling:
   Decision 3 stands.
 - **Q4 — the failure direction is decided after the spike**, not now. The
   default direction is recorded; decision 5 is rewritten to say what the spike
-  must produce before it can be settled.
+  must produce before it can be settled. **The spike has since run and Q4 is
+  settled as drafted — see Amendment 1.**
 
 `F4.23` is `⬜ → 🟡`. Its dependency `F4.20` is `✅` (ADR 0029, PR #61), so the
 row is eligible; this ADR exists because *eligible* and *right as written* are
@@ -342,3 +343,106 @@ Status section records only what was chosen.
 4. **Throw or log-and-pass on a failed response?** → *Decide after the spike.*
    Decision 5, which now names spike question (b) as the blocking deliverable
    and records the default direction for the spike to falsify.
+
+---
+
+## Amendment 1 — the spike ran (2026-08-15)
+
+Decision 4 mandated a spike before any schema was written, and made its second
+question a blocking deliverable for decision 5. Both halves are done. **Neither
+result changes a decision** — which is worth stating plainly, because ADR 0029's
+spike reversed one and the expectation here was that this one might too.
+
+### (a) Every structural class converts, and the strict bar holds
+
+A census sorted the **99 named declarations** into structural classes. Nine
+types covering **every** class were converted and asserted against **both**
+bars — strict conditional-type identity, and mutual assignability — each
+assertion a standalone `const` so `tsc` reports every failure instead of
+stopping at the first.
+
+**14 measurements. 3 strict failures. 0 assignability failures.** Every strict
+failure has a passing sibling encoding, so all three are authoring choices
+rather than limits:
+
+| exported shape | fails | passes |
+|---|---|---|
+| `A & B` | `.merge()` — flattens | `z.intersection` |
+| `Omit<A, k> & B` | `.omit().extend()` — flattens | `z.intersection(A.omit(…), B)` |
+| all-`readonly` object | plain `z.object` — infers mutable | `.readonly()` |
+
+**Decision 4(a)'s "identical" needs no softening, and the strict bar earns its
+keep.** Nothing failed assignability — under that bar alone all three wrong
+encodings pass silently, and the package would have begun flattening
+intersections, changing the identity of an exported type for anyone doing
+type-level work on it with no signal anywhere. **Strict is the only bar that
+discriminates, and what it discriminates is exactly the encoding choice.** Those
+three rules are what the `chore(agents):` sweep should carry into §4.
+
+**A completeness scan ran separately from the census, and earned its place.**
+The taxonomy was regex-derived, so a construct nobody thought to look for would
+have been filed under "object" and counted as covered. The scan found two —
+`readonly` property modifiers and `Date`-typed properties, **18 sites across 4
+types, all in `ingest.ts`**. Both were then measured rather than assumed:
+`Date` converts cleanly through `z.date()`, so it was the modifier, not the
+type.
+
+**Found while doing it, and pre-existing:** `apps/web/vite.config.ts` aliased
+`"@bms/shared"` as a string, which Vite matches as a **prefix** — so
+`@bms/shared/contracts` resolved to `…/src/index.ts/contracts`, a path that
+cannot exist. `tsc` resolves the subpath correctly through the `exports` map and
+says nothing, so it fails only at `vite build`, pointing at a file nobody wrote.
+It was latent because `@bms/shared/ingest` is used only by `apps/ingest`, which
+does not go through Vite; **decision 2 makes `apps/web` the first subpath
+consumer, so it would have bitten mid-implementation.** Fixed with the array
+form, most specific first.
+
+**Bundle cost, measured against the current output as the Consequences asked
+rather than asserted:** 1,807.61 kB raw / 555.03 kB gzip becomes 1,866.75 /
+568.66 with `zod` and one schema — **+59.1 kB raw, +13.6 kB gzip (+3.3% /
++2.5%)**.
+
+### (b) Drift is zero on the measured surface
+
+Four endpoints were sampled against the running stack, comparing the observed
+wire shape against fingerprints derived from the proven schemas. Shape only —
+key paths and type tags, no value ever left the page, and the session's token
+was read and used inside the page that already held it.
+
+| endpoint | type | declared paths | missing | extra | type drift |
+|---|---|---|---|---|---|
+| `/alarms` | `AlarmListItem` | 12 | 0 | 0 | 0 |
+| `/admin/organizations` | `AdminOrganizationDto` | 7 | 0 | 0 | 0 |
+| `/dashboard/locations` | `LocationKpiSummary` | 16 | 0 | 0 | 0 |
+| `/dashboard/locations/:id` | `LocationDashboardDto` | 64 | 0 | 0 | 0 |
+
+**99 declared paths, zero drift.**
+
+**The first sample was not good enough, and the difference matters.** Against a
+single location, 8 of the 64 paths on `LocationDashboardDto` came back
+unobserved — `telemetry` was `array:empty` and `latestAlarm` was `null` on
+every asset. **An unobserved path is neither satisfied nor violated**, and
+reporting it as either would have been false. Widening to all **16 locations —
+148 assets, 492 telemetry rows, 30 non-null `latestAlarm` objects** — closed
+the gap exactly: 64 declared, 64 observed. Of 9 declared-nullable fields **8
+were actually seen carrying `null`**; only `province` never did, which is a
+fact about the data, not a contract violation.
+
+**The scope limit is the important part of this result.** Four endpoints of 93
+routes, chosen because they are the ones the spike had proven schemas for.
+**"Zero drift where measured" is not "the API has no drift."**
+
+### What this settles for decision 5
+
+Question (b) existed because a drift count of zero and a count of ten make
+different answers correct. **It is zero**, so throwing would not have caused an
+outage on any measured path.
+
+**The recorded default stands — throw in dev and test, log-and-pass in
+production — but its justification changes.** It is no longer a hedge against
+suspected chaos; it is cheap insurance for the **89 routes this spike did not
+measure**, bought at no cost on the four it did. Nothing about zero drift on
+4 % of the surface licenses throwing on the other 96 %.
+
+Decision 5 is therefore **settled as drafted**, and the failure policy is no
+longer blocking.
