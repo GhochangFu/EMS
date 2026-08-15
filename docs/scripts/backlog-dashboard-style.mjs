@@ -110,6 +110,14 @@ a{color:var(--accent-ink)}
   max-width:100%; min-width:0; overflow-wrap:anywhere}
 .stamp b{color:var(--ink); font-weight:600}
 .stamp .live{display:flex; align-items:center; gap:6px; color:var(--accent-ink)}
+.theme{display:flex; gap:0; margin-top:7px; border:1px solid var(--edge); border-radius:2px; overflow:hidden}
+.theme button{font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+  padding:4px 9px; border:0; border-left:1px solid var(--edge); background:var(--panel);
+  color:var(--ink-3); cursor:pointer; transition:background .15s ease, color .15s ease}
+.theme button:first-child{border-left:0}
+.theme button:hover{color:var(--accent-ink)}
+.theme button[aria-pressed="true"]{background:var(--accent); color:var(--paper)}
+.theme button:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
 .stamp .dot{width:7px; height:7px; border-radius:50%; background:var(--accent); flex:none}
 
 /* ---------- refresh explainer ---------- */
@@ -172,6 +180,25 @@ section{display:flex; flex-direction:column; gap:12px}
 .heat .cell{aspect-ratio:2.1/1; display:grid; place-items:center; border-radius:2px;
   font-size:13px; font-weight:700; border:1px solid var(--edge-soft); color:var(--ink)}
 .heat .cell.z{color:var(--ink-3); background:var(--panel-2)}
+
+/* swimlanes */
+.lanes-scroll{overflow-x:auto}
+.lanes{display:grid; gap:2px; min-width:600px}
+.lane-hd{font-family:var(--mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--ink-3); padding:0 0 4px 7px}
+.lane-name{display:flex; align-items:baseline; gap:7px; font-size:12px; color:var(--ink-2);
+  padding:7px 10px 7px 0; border-top:1px solid var(--edge-soft); min-width:0}
+.lane-name b{font-family:var(--mono); color:var(--accent-ink); flex:none}
+.lane-name span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+/* Uniform, not striped: the grid is 7 columns wide, so nth-child parity
+   alternates *within* a row and flips between rows — a checkerboard, which
+   reads as meaning something it does not. */
+.lane-cell{display:flex; flex-wrap:wrap; align-content:flex-start; gap:3px;
+  padding:7px; border-top:1px solid var(--edge-soft); background:var(--panel-2); border-radius:2px}
+.chip-i{display:block; width:11px; height:11px; border-radius:2px; background:var(--lamp);
+  border:1px solid color-mix(in srgb, var(--lamp) 55%, var(--panel))}
+.chip-i.p0i{box-shadow:0 0 0 1.5px var(--panel), 0 0 0 2.5px var(--lamp)}
+.lane-none{color:var(--ink-3); font-size:11px; line-height:11px; opacity:.5}
 
 /* critical path */
 .paths{display:flex; flex-direction:column; gap:9px}
