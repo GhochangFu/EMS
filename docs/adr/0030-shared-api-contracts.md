@@ -2,9 +2,21 @@
 
 ## Status
 
-**Proposed** — 2026-08-15. Four questions are left open for the repository
-owner at the §10 gate; they are collected at the end. Nothing is built until
-they are answered.
+**Accepted** — 2026-08-15, by the repository owner, who ruled on all four
+questions the draft left open. Each was answered as drafted, so the decisions
+below stand as written, with three sharpened by the ruling:
+
+- **Q1 — grow `packages/shared`, schemas under a `contracts/` subpath.** The
+  draft offered the whole package or a new `packages/contracts`; the owner took
+  the subpath variant, which the draft raised because §4.5's 1,000-line cap
+  forces new modules under either option anyway. Decision 2 is rewritten to it.
+- **Q2 — `packages/ui` and `telemetry-sdk` split onto their own rows,
+  deferred.** Not dropped. Decision 1 stands, and now names the two rows.
+- **Q3 — request schemas stay in `apps/api`.** ADR 0029 is untouched.
+  Decision 3 stands.
+- **Q4 — the failure direction is decided after the spike**, not now. The
+  default direction is recorded; decision 5 is rewritten to say what the spike
+  must produce before it can be settled.
 
 `F4.23` is `⬜ → 🟡`. Its dependency `F4.20` is `✅` (ADR 0029, PR #61), so the
 row is eligible; this ADR exists because *eligible* and *right as written* are
@@ -139,27 +151,34 @@ rests on a hand-written assertion at the SQL boundary.
 
 ## Decision
 
-**All of the following are proposals.** Decisions 1, 2, 4 and 7 restate
-questions the owner must settle; the rest follow from them.
-
-1. **`F4.23` is split, and only the contracts half is proposed for promotion
-   now.** `packages/ui` and `telemetry-sdk` are **not** built under this ADR.
+1. **`F4.23` is split, and only the contracts half is promoted.**
+   `packages/ui` and `telemetry-sdk` are **not** built under this ADR.
    Facts 9 and 10 are the reason: neither has a consumer on `main` or in any
    promoted scope, and this repository has already paid once for a second path
    built ahead of its consumer — ADR 0016 §6, cited again by ADR 0029
    Amendment 2 when it **deleted** the guarded OpenAPI machinery rather than
    leave it dormant. Building either now repeats that, twice.
 
-   They are **not dropped.** They keep their place in the backlog, split into
-   their own rows, so the provenance survives and each is reconsidered when a
-   consumer appears — a second frontend for `packages/ui`, a named external
-   integrator for `telemetry-sdk`.
+   They are **not dropped.** They keep their place in the backlog as
+   **`F4.41` (`packages/ui`)** and **`F4.42` (`telemetry-sdk`)**, so the
+   provenance survives and each is reconsidered when a consumer appears.
+
+   The two rows are **not equivalent, and are written differently.** `F4.41`
+   is an ordinary deferred item with a stated trigger: a second frontend.
+   `F4.42` cannot be estimated at all — fact 9 is that nothing in this
+   repository says what a telemetry SDK would wrap or who would call it — so
+   its row records that its **purpose is undefined** and that a named consumer
+   and a scope statement are prerequisites to sizing it. A row that cannot be
+   written honestly should say so rather than carry an invented estimate.
 
 2. **The contract package is `packages/shared` grown a runtime — not a new
-   directory.** Add `zod` to `packages/shared`, express the response contracts
-   as Zod schemas there, and derive the existing exported types with
-   `z.infer<typeof …>` so **all 148 existing import sites keep compiling
-   unchanged**.
+   directory — and the schemas live under a `contracts/` subpath.** Add `zod`
+   to `packages/shared`, express the response contracts as Zod schemas in new
+   modules under `packages/shared/src/contracts/`, publish them through a
+   **`@bms/shared/contracts` export entry** — the package already does exactly
+   this for `./ingest`, so the mechanism is established rather than invented —
+   and derive the existing exported types with `z.infer<typeof …>` so **all
+   148 existing import sites keep compiling unchanged**.
 
    This is ADR 0029 decision 1 applied to the response side. That decision's
    thesis was that the description is generated from the schema that already
@@ -169,20 +188,32 @@ questions the owner must settle; the rest follow from them.
    description, and a migration window in which both are true and neither is
    authoritative.
 
-   **The alternative is stated and is the owner's to take:** create
-   `packages/contracts` as the north-star tree names it, and migrate the types
-   out of `shared`. It costs a package, a build-chain slot, a `postinstall`
-   entry, and a period of two-sources-of-truth; it buys the name in the
-   production rulebook and a clean split between *contract* and *constant*
-   (`packages/shared` also holds `ELECTRICAL_POINT_KEYS` and friends, which are
-   not contracts).
+   **The subpath is what makes the one-package answer honest.** The objection
+   to growing `shared` is that it already mixes contracts with things that are
+   not contracts — `ELECTRICAL_POINT_KEYS`, `TELEMETRY_POINT_REF_SEP` and the
+   other point-key constants. A separate export entry draws that line at the
+   import site without a second manifest, a second build-chain slot, a second
+   `postinstall` entry, or a window with two sources of truth.
+
+   **New modules were forced anyway.** `packages/shared/src/index.ts` is
+   **966 lines** against §4.5's 1,000-line cap, so schemas for 100 types could
+   not have gone there under any option. The subpath costs nothing that was
+   avoidable.
+
+   **What was given up:** the name `packages/contracts` in
+   `docs/AGENTS.production.md`. That file is the north star and is allowed to
+   diverge from `main`; see the Consequences.
 
 3. **Request schemas stay in `apps/api/src/**/*.schema.ts`.** Facts 7 and 8:
    moving them breaks ADR 0029's registry and its guard, and no client would
-   use them. If the owner wants them moved anyway, this ADR must carry the ADR
-   0029 amendment explicitly — the registry's imports and the test's walk root
-   both change, and the anti-vacuity floor has to be re-derived rather than
-   quietly lowered.
+   use them. **Ruled: they stay, and ADR 0029 is untouched by this ADR.**
+
+   Recorded for whoever revisits it: the move becomes worth making when the
+   web should fail fast on a bad payload before a round trip. That is a
+   separate item, and it carries the ADR 0029 amendment itself — the registry's
+   relative imports and the contract test's walk root both change, and the
+   `> 10` anti-vacuity floor has to be **re-derived**, not quietly lowered to
+   whatever the new tree happens to contain.
 
 4. **A spike runs before any schema is written.** ADR 0029 mandated one, and it
    found the fact that decided the design; this ADR mandates the same. It
@@ -204,10 +235,25 @@ questions the owner must settle; the rest follow from them.
    If (a) fails for a type, the schema is not contorted to match: the finding
    amends this ADR, per ADR 0029's precedent.
 
-5. **Nothing validates in production until decision 7 is answered.** A response
-   validator that throws converts a cosmetic drift — an extra field, a
-   `null` where the type said optional — into an outage on a page that
-   currently renders fine.
+5. **The failure direction is decided after the spike, not before it — and
+   the spike must deliver the number that decides it.** The owner deferred
+   this deliberately, which makes spike question (b) a blocking deliverable
+   rather than a curiosity: **a drift count of zero and a drift count of ten
+   make different answers correct.** Throwing is affordable at zero and an
+   outage on day one at ten, and no one can currently say which this is,
+   because no response has ever been checked.
+
+   **The default direction, recorded so the spike has something to falsify:**
+   throw in dev and test, log-and-pass in production, both from one
+   `safeParse`. The reasoning is the failure-direction asymmetry this
+   repository already applied to `API_DOCS_ENABLED` in ADR 0029 Amendment 2 —
+   for a monitoring product, a blank Control Room page during an incident is a
+   worse failure than a page rendering with one drifted field. Loud where a
+   developer sees it; forgiving where an operator does.
+
+   **Until that decision lands, nothing validates in production.** A validator
+   shipped ahead of its failure policy has chosen one by default, and the
+   default would be whichever the first implementation happened to write.
 
 6. **Scope limits, stated so they are not absorbed later.** Out of scope for
    this ADR: `packages/ui`; `telemetry-sdk`; RFC 7807 error envelopes
@@ -218,11 +264,15 @@ questions the owner must settle; the rest follow from them.
    cheap to revisit, because the document generator already converts Zod. That
    is a later decision, not a consequence of this one.
 
-7. **The estimate is wrong and is restated.** 6–8 covered three packages. Under
-   decision 1 the contracts half alone is **3–5**, and that number carries the
-   spike, the `z.infer` equality proof, and whatever (b) turns up — the same
-   ingredients that made `F4.20`'s 2–3 wrong. `packages/ui` and `telemetry-sdk`
-   carry their own estimates on their own rows, when they have consumers.
+7. **The estimate is wrong and is restated.** 6–8 covered three packages.
+   Decision 1 having been ruled, `F4.23`'s Effort cell becomes **3–5** for the
+   contracts half — and that number carries the spike, the `z.infer` equality
+   proof, and whatever (b) turns up, the same ingredients that made `F4.20`'s
+   2–3 wrong. **It should be read as the estimate most likely to move.**
+
+   `F4.41` carries its own estimate. **`F4.42` carries none**, per decision 1 —
+   an undefined purpose cannot be sized, and a placeholder number would be the
+   invention this ADR is trying to avoid.
 
 ## Dependencies
 
@@ -231,11 +281,14 @@ already declares**, resolving to the `3.25.76` already in the lockfile. No new
 package enters the tree; this is a workspace manifest change that makes an
 existing dependency explicit where it is used.
 
-It is still a manifest change, so **§9.4 gates it** and it is part of what the
-owner is approving here.
+It is still a manifest change, so **§9.4 gates it — and accepting this ADR is
+that approval**, which is what the gate asks for.
 
-If the owner takes the `packages/contracts` alternative in decision 2, that
-package's manifest is a second §9.4 surface with the same single dependency.
+**One manifest, not two.** Decision 2 having been ruled in favour of the
+subpath, `packages/shared/package.json` is the only manifest that changes: the
+`zod` dependency, and the `./contracts` export entry beside `./ingest`. The
+`packages/contracts` alternative would have been a second §9.4 surface
+carrying the same single dependency; it was not taken.
 
 ## Consequences
 
@@ -247,33 +300,45 @@ package's manifest is a second §9.4 surface with the same single dependency.
 - **`apps/web` gains `zod` transitively.** Bundle cost is real and small; it
   should be measured against the current `vite build` output rather than
   asserted.
-- **Build chain and `postinstall` are unchanged under decision 2** and both
-  need editing under the alternative (facts 12–13).
-- **`F4.6` (contract tests) is what this unblocks**, and only under decision 2
-  or its alternative — a contracts package with no runtime does not enable a
-  contract test, which is the whole reason the row's Zod parenthetical matters.
-- **ADR 0029 is untouched under decision 3** and amended under its alternative.
-- **Two backlog rows are created** under decision 1, and the `F4.23` row is
-  rewritten to the contracts half. Per the backlog's own rule, nothing is
-  deleted — scope removal is `⛔ dropped` with the row intact, and this is a
-  split rather than a removal.
+- **Build chain and `postinstall` are unchanged**, decision 2 having been
+  ruled. Facts 12–13 described the cost of the alternative; it was not taken,
+  so no root script changes.
+- **The `@bms/shared/contracts` export entry is a manifest edit** to
+  `packages/shared/package.json`, alongside `./` and `./ingest`. Consumers
+  resolving the subpath depend on it being declared; an undeclared subpath
+  fails at import under pnpm, not at build.
+- **`F4.6` (contract tests) is what this unblocks** — and only because
+  decision 2 ships a runtime. A contracts package holding types alone does not
+  enable a contract test, which is the whole reason the row's Zod parenthetical
+  matters.
+- **ADR 0029 is untouched**, decision 3 having been ruled.
+- **Two backlog rows are created** — `F4.41` and `F4.42` — and the `F4.23` row
+  is rewritten to the contracts half with its Effort at 3–5 per decision 7.
+  Per the backlog's own rule nothing is deleted: scope removal is `⛔ dropped`
+  with the row intact, and this is a split rather than a removal.
 - **`docs/AGENTS.production.md` is not edited by this ADR.** It is a north-star
-  document and it is allowed to describe a layout `main` does not have. If the
-  owner accepts decision 2, the divergence between its `packages/contracts` and
-  this repo's `packages/shared` is worth a line there eventually — in its own
-  change, not this one.
+  document and it is allowed to describe a layout `main` does not have.
+  Decision 2 having been taken, its `packages/contracts` will not exist —
+  `@bms/shared/contracts` serves the role. That divergence is worth a line
+  there eventually, in its own change, not this one.
+- **The `AGENTS.md` promotion this ADR owes** is a `chore(agents):` sweep under
+  §9.10/§10.1, after the feature lands: a §2 row for runtime-validated
+  contracts, a §3 entry for `packages/shared/src/contracts/`, and whatever
+  §4.x rule the spike's findings turn out to justify. It is **not** written
+  yet, because the spike may change what there is to say.
 
-## Open questions for the repository owner (§10 gate)
+## Questions resolved at the §10 gate
 
-1. **One package or two?** Grow `packages/shared` (decision 2), or create
-   `packages/contracts` as the north-star tree names it?
-2. **`packages/ui` and `telemetry-sdk`** — split into their own rows and defer
-   (decision 1), keep them inside `F4.23` and build all three, or `⛔ drop`
-   them outright?
-3. **Request schemas** — leave them in `apps/api` (decision 3), or move them
-   and amend ADR 0029 in this ADR?
-4. **On a response that fails validation** — throw (fail fast, and a drift
-   becomes an outage), or log-and-pass (the page keeps rendering, and the drift
-   is discovered in logs)? Decision 5 blocks on this. The spike's question (b)
-   should inform it, so this one may reasonably be answered after the spike
-   rather than before.
+All four were put to the repository owner on 2026-08-15 and all four were
+answered as drafted. Kept here as the record of what was asked, since the
+Status section records only what was chosen.
+
+1. **One package or two?** → *Grow `packages/shared`, schemas under a
+   `contracts/` subpath.* Decision 2.
+2. **`packages/ui` and `telemetry-sdk`?** → *Split onto their own rows,
+   deferred — not dropped.* Decision 1, now `F4.41` and `F4.42`.
+3. **Request schemas — move them?** → *No; they stay in `apps/api`.*
+   Decision 3.
+4. **Throw or log-and-pass on a failed response?** → *Decide after the spike.*
+   Decision 5, which now names spike question (b) as the blocking deliverable
+   and records the default direction for the spike to falsify.
