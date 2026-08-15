@@ -64,3 +64,12 @@ TODO.local.md
 # --- Drizzle local artifacts -----------------------------------------------
 drizzle/.snapshot.json.bak
 .claude/worktrees/
+
+# --- Generated build-status dashboard ---------------------------------------
+# Rebuilt by docs/scripts/backlog-dashboard.mjs on every run, and by the routine
+# that republishes the artifact. Committing them would churn the diff on every
+# cycle for output nobody reviews. See docs/status/README.md.
+docs/status/backlog-status.json
+docs/status/backlog-dashboard.html
+docs/status/backlog-dashboard.standalone.html
+docs/status/backlog-dashboard.client.html
