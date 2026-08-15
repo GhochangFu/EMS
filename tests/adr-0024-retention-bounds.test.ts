@@ -247,24 +247,32 @@ describe("ADR 0024 — compression and retention bounds", () => {
       const rel = relative(repoRoot, file).replace(/\\/g, "/");
       for (const match of text.matchAll(/DELETE\s+FROM\s+telemetry\.\w+/gi)) {
         // To the end of the enclosing template literal — pool.query takes its SQL
-        // as one backticked string throughout this repo.
+        // as one backticked string throughout this repo. Capped, because that
+        // assumption is not enforced: a telemetry DELETE written inside a quoted
+        // string instead would run this slice to the next backtick anywhere in the
+        // file, which almost certainly contains a `SELECT` and would fail far from
+        // its cause. No statement here is close to 2000 characters, so the cap
+        // only ever truncates the pathological case — and a truncated slice still
+        // contains the WHERE clause both assertions read.
         const from = match.index;
         const end = text.indexOf("`", from);
-        const statement = (end === -1 ? text.slice(from) : text.slice(from, end))
-          .replace(/\s+/g, " ")
-          .trim();
+        const to = Math.min(end === -1 ? text.length : end, from + 2000);
+        const statement = text.slice(from, to).replace(/\s+/g, " ").trim();
         sites.push({ where: rel, statement });
       }
     }
 
     // A broken walk must fail loudly rather than pass having scanned nothing —
-    // the vacuous green this repo keeps rediscovering. Three sites today:
-    // F4.1's two and F4.28's one.
+    // the vacuous green this repo keeps rediscovering. Three sites today (`F4.1`'s
+    // two and `F4.28`'s one), but the floor is 1, not 3: 3 would additionally pin
+    // the census, so legitimately removing one of those deletes would fail the
+    // build with a message claiming the walk was broken when it was not. A floor
+    // exists to catch zero.
     expect(
       sites.length,
       "this scan found no DELETE against a telemetry hypertable at all. Every one of them was " +
         "removed, or the file walk is broken — either way this check is asserting nothing.",
-    ).toBeGreaterThanOrEqual(3);
+    ).toBeGreaterThanOrEqual(1);
 
     for (const { where, statement } of sites) {
       expect(
