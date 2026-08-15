@@ -914,6 +914,37 @@ Process (`AGENTS.md` §10).
   green. That is AGENTS.md §4.4's seventh instance: a guard defeated by a decoy
   call in the same file.
 
+  **`F4.40` came out of verifying `F4.39` and is about the test suite rather
+  than the product** (PR #52, merged `d2132eb`; sweep #53, `fae282c`). Two
+  suites failed on `main` with a working stack, and both assumed **the database
+  has no history** — which is true of CI, whose database is created per run, and
+  of nothing else. A fixture cleanup deleted through a subquery on `asset_id`, a
+  **segmentby** column: a constant filter there prunes compressed batches, a
+  subquery cannot be folded to one, so TimescaleDB decompressed every batch to
+  evaluate the predicate. Measured **186706 tuples decompressed while matching
+  zero rows** — the cost set by what the statement must examine, not by what it
+  deletes. And a policy check asserted `job_stats.total_failures = 0`, a
+  lifetime counter that never resets, so one transient failure reddened the
+  suite for the life of that database (1 failure against 432 successes, the
+  aggregate current). `DATABASE_URL=… pnpm test:coverage` now completes on an
+  aged database — 56 files, 162 tests — where before it could not run at all.
+
+  **The item's most useful output was a line in the rulebook, not in its diff.**
+  AGENTS.md told the next migration that deletes telemetry to follow migrations
+  `0014` and `0021` as precedents, and both use `DELETE ... USING <temp table>`
+  — the join form that now fails on a compressed hypertable. They were correct
+  when written; migration `0028` added compression underneath them afterwards.
+  Forward-only, so they stay; the static invariant is scoped to `.ts`
+  deliberately, so it cannot fail the build on two files nobody may edit — which
+  is exactly why the rule for the next migration had to be written in §4.4. It
+  surfaced only by chasing an overclaim in one of this item's own comments.
+
+  **§4.6 gained the half of its asymmetry it was missing.** It covered a skipped
+  suite reporting green; it did not cover CI having no history at all. A suite
+  can be permanently green in CI and structurally red on every real database,
+  which is the worse direction: the pipeline reports success while the people who
+  run the suite learn to ignore it.
+
   The ADR 0016 §5 backoff moved to `packages/shared/src/ingest.ts` in the same
   change, because that listener became its second consumer and the ADR states
   those numbers precisely so a second policy never gets invented. Note that
