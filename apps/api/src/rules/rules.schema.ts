@@ -1,3 +1,4 @@
+import { authorableRuleCategorySchema } from "@bms/shared";
 import { z } from "zod";
 
 /**
@@ -6,7 +7,21 @@ import { z } from "zod";
  * is a copy that drifts, and a template that authors `neq` or `major` would be
  * authoring alarms this engine cannot run. Everything else here stays private.
  */
-export const categorySchema = z.enum(["comfort", "energy", "safety", "operations"]);
+
+/**
+ * The **authorable** rule categories — what an operator may create.
+ *
+ * Re-exported from `@bms/shared` rather than declared here, applying this
+ * file's own rule to itself: it used to restate the four values, and
+ * `packages/shared` needed the same list to type a template alarm's category
+ * (ADR 0019 §3). That was two copies of one vocabulary.
+ *
+ * **This is narrower than what the API returns.** `AutomationRuleCategory` is
+ * this set plus `electrical`, which migration 0022 writes directly for the PHE
+ * pilot's 48 rules. The read union is derived from this one, so it cannot
+ * drift below it. `F4.43`.
+ */
+export const categorySchema = authorableRuleCategorySchema;
 const ruleTypeSchema = z.enum(["threshold", "time_window"]);
 export const operatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
 export const severitySchema = z.enum(["info", "warning", "critical"]);

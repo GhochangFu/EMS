@@ -1,5 +1,5 @@
 import type {
-  AutomationRuleCategory,
+  AuthorableRuleCategory,
   AutomationRuleOperator,
   AutomationRuleSeverity,
   MaintenanceGenerationMode,
@@ -49,7 +49,13 @@ export type TemplateAlarm = {
   thresholdValue: number;
   severity: AutomationRuleSeverity;
   message: string;
-  category?: AutomationRuleCategory;
+  /**
+   * ADR 0019 is an AUTHORING surface, so this is the authorable vocabulary —
+   * deliberately NOT `AutomationRuleCategory`, which is wider by `electrical`
+   * for what migration 0022 writes directly (F4.43). A template must not be
+   * able to author a category the API would refuse.
+   */
+  category?: AuthorableRuleCategory;
   philosophy?: TemplateAlarmPhilosophy;
 };
 

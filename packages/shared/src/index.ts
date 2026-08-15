@@ -138,6 +138,12 @@ export type MaintenanceScheduleItem = z.infer<typeof Op.maintenanceScheduleItemS
 // ---------------------------------------------------------------------------
 
 export type AutomationRuleType = z.infer<typeof Op.automationRuleTypeSchema>;
+/**
+ * What an operator may author. The **narrower** of the two vocabularies —
+ * see `automationRuleCategorySchema`.
+ */
+export type AuthorableRuleCategory = z.infer<typeof Op.authorableRuleCategorySchema>;
+/** What the API may RETURN. Wider: migration 0022 writes `electrical` directly. */
 export type AutomationRuleCategory = z.infer<typeof Op.automationRuleCategorySchema>;
 export type AutomationRuleOperator = z.infer<typeof Op.automationRuleOperatorSchema>;
 export type AutomationRuleSeverity = z.infer<typeof Op.automationRuleSeveritySchema>;

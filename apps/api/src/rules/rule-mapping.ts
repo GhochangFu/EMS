@@ -1,4 +1,5 @@
 import type {
+  AuthorableRuleCategory,
   AutomationRuleAction,
   AutomationRuleCategory,
   AutomationRuleCondition,
@@ -101,13 +102,32 @@ export function mapRuleRow(row: RuleRow): RuleListItem {
   };
 }
 
-/** Rebuilds the draft body a stored rule would have been created from. */
+/**
+ * Rebuilds the draft body a stored rule would have been created from.
+ *
+ * **A seeded rule has no honest draft body, and this preserves that rather
+ * than papering over it.** Migration 0022 writes `category = 'electrical'` for
+ * the PHE pilot's 48 rules, which is *not* authorable — no operator could have
+ * created them — so the cast below is narrowing a value that genuinely does not
+ * fit the authorable set.
+ *
+ * It is kept as a cast, and behaviour is unchanged, because that behaviour was
+ * checked rather than assumed: the two callers (`mergeRuleDraft` and
+ * `validateRuleDraft`) do business validation — duplicate codes, asset
+ * existence — and **never re-parse the category**. So an update to a PHE rule
+ * carries `electrical` straight back to the row, which is what should happen:
+ * editing a rule's threshold must not silently reclassify it.
+ *
+ * Widening `RuleDraftBody` instead would be the wrong fix — it would let the
+ * rule builder offer `electrical`, which `F4.43` deliberately does not. See
+ * ADR 0030 Amendment 3.
+ */
 export function ruleBodyFromRow(row: RuleRow): RuleDraftBody {
   return {
     code: row.code,
     name: row.name,
     description: row.description,
-    category: row.category as AutomationRuleCategory,
+    category: row.category as AuthorableRuleCategory,
     ruleType: row.ruleType as AutomationRuleType,
     assetId: row.assetId,
     pointKey: row.pointKey,
