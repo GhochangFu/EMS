@@ -14,10 +14,18 @@
       "types": "./dist/ingest.d.ts",
       "import": "./dist/ingest.js",
       "require": "./dist/ingest.js"
+    },
+    "./contracts": {
+      "types": "./dist/contracts/index.d.ts",
+      "import": "./dist/contracts/index.js",
+      "require": "./dist/contracts/index.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "zod": "^3.24.1"
   },
   "devDependencies": {
     "typescript": "~5.7.3"
