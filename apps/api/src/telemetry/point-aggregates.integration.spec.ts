@@ -556,15 +556,36 @@ export async function assertRefreshOffsetsAreSafe(pool: pg.Pool): Promise<void> 
  * visibly stale.
  *
  * Tolerates a policy that has not run yet (a database migrated seconds ago) but
- * refuses one that has run and **failed**.
+ * refuses one whose **last** run failed.
+ *
+ * ## Why it no longer looks at `total_failures` (`F4.40`)
+ *
+ * It used to assert `total_failures === 0` as well. That column is **cumulative and
+ * never resets**, so a single transient failure at any point in a database's life
+ * reddened this suite permanently — and the message it printed,
+ * *"its aggregate is stale and nothing else reports that"*, was an overclaim on
+ * both halves. Measured on a dev database: `point_values_5m` at **1 failure against
+ * 432 successes**, `last_run_status = Success`, the aggregate current. Something
+ * else did report it, in the very next clause, and that clause passed.
+ *
+ * A refresh policy competes for a window with `refresh_continuous_aggregate` calls
+ * (this file makes them; so does `pnpm db:refresh-aggregates`) and loses with
+ * `55P03` — {@link assertEnergySummaryMatchesRaw} retries that error precisely
+ * because it is expected and transient. A counter that latches on it turns a
+ * self-healing condition into a permanent red, and a permanently-red suite is one
+ * people stop reading.
+ *
+ * `last_run_status` is the honest signal: it says whether the aggregate is current
+ * **now**, which is the question ADR 0023's bullet actually asks. Invisible in CI
+ * either way, because a CI database is created per run and its counters start at
+ * zero — the same asymmetry §4.6 exists to catch.
  */
 export async function assertRefreshPoliciesHaveNotFailed(pool: pg.Pool): Promise<void> {
   const { rows } = await pool.query<{
     view: string;
     last_run_status: string | null;
-    total_failures: string;
   }>(
-    `SELECT j.hypertable_name AS view, s.last_run_status, coalesce(s.total_failures, 0)::text AS total_failures
+    `SELECT j.hypertable_name AS view, s.last_run_status
      FROM timescaledb_information.jobs j
      LEFT JOIN timescaledb_information.job_stats s ON s.job_id = j.job_id
      WHERE j.proc_name = 'policy_refresh_continuous_aggregate'
@@ -573,11 +594,6 @@ export async function assertRefreshPoliciesHaveNotFailed(pool: pg.Pool): Promise
   );
   assert(rows.length === 4, `expected 4 refresh policies, found ${rows.length}`);
   for (const r of rows) {
-    assert(
-      Number(r.total_failures) === 0,
-      `${r.view}'s refresh policy has ${r.total_failures} failures — its aggregate is stale and ` +
-        "nothing else reports that",
-    );
     assert(
       r.last_run_status === null || r.last_run_status === "Success",
       `${r.view}'s refresh policy last ran with status ${r.last_run_status}`,
