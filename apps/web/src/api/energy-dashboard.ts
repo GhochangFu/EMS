@@ -1,3 +1,8 @@
+import {
+  energyCentreSummarySchema,
+  energySourceMixResponseSchema,
+  energyTopConsumersResponseSchema,
+} from "@bms/shared/contracts";
 import type {
   EnergyCentreSummary,
   EnergySourceMixPoint,
@@ -5,6 +10,7 @@ import type {
 } from "@bms/shared";
 
 import { withAuth } from "./http";
+import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -19,7 +25,7 @@ export async function fetchEnergySummary(
   if (!res.ok) {
     throw new Error(`energy summary ${res.status}`);
   }
-  return res.json() as Promise<EnergyCentreSummary>;
+  return checkResponse(energyCentreSummarySchema, await res.json(), "dashboard/energy/summary");
 }
 
 export async function fetchEnergySourceMix(
@@ -33,7 +39,7 @@ export async function fetchEnergySourceMix(
   if (!res.ok) {
     throw new Error(`energy source-mix ${res.status}`);
   }
-  return res.json() as Promise<{ points: EnergySourceMixPoint[] }>;
+  return checkResponse(energySourceMixResponseSchema, await res.json(), "dashboard/energy/source-mix");
 }
 
 export async function fetchEnergyTopConsumers(
@@ -48,5 +54,5 @@ export async function fetchEnergyTopConsumers(
   if (!res.ok) {
     throw new Error(`energy top-consumers ${res.status}`);
   }
-  return res.json() as Promise<{ consumers: EnergyTopConsumer[] }>;
+  return checkResponse(energyTopConsumersResponseSchema, await res.json(), "dashboard/energy/top-consumers");
 }

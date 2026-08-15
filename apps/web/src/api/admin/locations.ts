@@ -1,8 +1,14 @@
-import type { AdminLocationDto, AdminLocationSummaryDto, MasterDataActiveFilter } from "@bms/shared";
+import {
+  adminLocationDtoSchema,
+  adminLocationSummaryDtoSchema,
+  locationsListResponseSchema,
+} from "@bms/shared/contracts";
+import type { AdminLocationDto, AdminLocationSummaryDto, MasterDataActiveFilter, LocationsListResponse } from "@bms/shared";
 
 import { adminFetch } from "./client";
 
-export type LocationsListResponse = { items: AdminLocationDto[] };
+export type { LocationsListResponse };
+
 
 export async function fetchAdminLocations(
   active: MasterDataActiveFilter = "all",
@@ -12,13 +18,13 @@ export async function fetchAdminLocations(
   if (organizationId) {
     params.set("organizationId", organizationId);
   }
-  return adminFetch(`/admin/locations?${params}`);
+  return adminFetch(`/admin/locations?${params}`, locationsListResponseSchema);
 }
 
 export async function fetchAdminLocationSummary(
   id: string,
 ): Promise<AdminLocationSummaryDto> {
-  return adminFetch(`/admin/locations/${id}`);
+  return adminFetch(`/admin/locations/${id}`, adminLocationSummaryDtoSchema);
 }
 
 export async function createAdminLocation(input: {
@@ -33,7 +39,7 @@ export async function createAdminLocation(input: {
   longitude: number;
   meta?: Record<string, unknown>;
 }): Promise<AdminLocationDto> {
-  return adminFetch("/admin/locations", {
+  return adminFetch("/admin/locations", adminLocationDtoSchema, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -53,7 +59,7 @@ export async function updateAdminLocation(
     longitude: number;
   }>,
 ): Promise<AdminLocationDto> {
-  return adminFetch(`/admin/locations/${id}`, {
+  return adminFetch(`/admin/locations/${id}`, adminLocationDtoSchema, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -61,9 +67,9 @@ export async function updateAdminLocation(
 }
 
 export async function deactivateAdminLocation(id: string): Promise<AdminLocationDto> {
-  return adminFetch(`/admin/locations/${id}/deactivate`, { method: "POST" });
+  return adminFetch(`/admin/locations/${id}/deactivate`, adminLocationDtoSchema, { method: "POST" });
 }
 
 export async function reactivateAdminLocation(id: string): Promise<AdminLocationDto> {
-  return adminFetch(`/admin/locations/${id}/reactivate`, { method: "POST" });
+  return adminFetch(`/admin/locations/${id}/reactivate`, adminLocationDtoSchema, { method: "POST" });
 }

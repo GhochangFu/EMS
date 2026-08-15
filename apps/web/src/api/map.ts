@@ -1,6 +1,10 @@
+import {
+  mapSitesResponseSchema,
+} from "@bms/shared/contracts";
 import type { MapSiteDto } from "@bms/shared";
 
 import { withAuth } from "./http";
+import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -9,5 +13,5 @@ export async function fetchMapSites(): Promise<MapSiteDto[]> {
   if (!res.ok) {
     throw new Error(`map sites ${res.status}`);
   }
-  return res.json() as Promise<MapSiteDto[]>;
+  return checkResponse(mapSitesResponseSchema, await res.json(), "map/sites");
 }

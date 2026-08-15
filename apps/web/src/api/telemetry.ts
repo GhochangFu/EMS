@@ -1,6 +1,10 @@
+import {
+  recentTelemetryResponseSchema,
+} from "@bms/shared/contracts";
 import type { TelemetryReading } from "@bms/shared";
 
 import { withAuth } from "./http";
+import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -16,5 +20,5 @@ export async function fetchTelemetryRecent(
   if (!res.ok) {
     throw new Error(`telemetry ${res.status}`);
   }
-  return res.json() as Promise<TelemetryReading[]>;
+  return checkResponse(recentTelemetryResponseSchema, await res.json(), "telemetry/points/:id/recent");
 }

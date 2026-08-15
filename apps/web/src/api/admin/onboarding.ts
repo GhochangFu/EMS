@@ -1,3 +1,9 @@
+import {
+  onboardingChatResponseDtoSchema,
+  onboardingCommitResponseDtoSchema,
+  onboardingSessionDtoSchema,
+  onboardingValidateResponseDtoSchema,
+} from "@bms/shared/contracts";
 import type {
   OnboardingChatResponseDto,
   OnboardingCommitResponseDto,
@@ -6,6 +12,7 @@ import type {
 } from "@bms/shared";
 
 import { adminFetch, getAdminAuthHeaders } from "./client";
+import { checkResponse } from "../validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -13,7 +20,7 @@ const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 export async function createOnboardingSession(
   organizationId: string,
 ): Promise<OnboardingChatResponseDto> {
-  return adminFetch("/admin/onboarding/sessions", {
+  return adminFetch("/admin/onboarding/sessions", onboardingChatResponseDtoSchema, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ organizationId }),
@@ -24,7 +31,7 @@ export async function createOnboardingSession(
 export async function fetchOnboardingSession(
   sessionId: string,
 ): Promise<OnboardingSessionDto> {
-  return adminFetch(`/admin/onboarding/sessions/${sessionId}`);
+  return adminFetch(`/admin/onboarding/sessions/${sessionId}`, onboardingSessionDtoSchema);
 }
 
 /** Sends a chat message to the onboarding bot. */
@@ -32,7 +39,7 @@ export async function sendOnboardingChat(
   sessionId: string,
   message: string,
 ): Promise<OnboardingChatResponseDto> {
-  return adminFetch(`/admin/onboarding/sessions/${sessionId}/chat`, {
+  return adminFetch(`/admin/onboarding/sessions/${sessionId}/chat`, onboardingChatResponseDtoSchema, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message }),
@@ -51,7 +58,7 @@ export async function setOnboardingCredentials(
   rtuIndex: number,
   credentials: Record<string, string>,
 ): Promise<OnboardingSessionDto> {
-  return adminFetch(`/admin/onboarding/sessions/${sessionId}/credentials`, {
+  return adminFetch(`/admin/onboarding/sessions/${sessionId}/credentials`, onboardingSessionDtoSchema, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ rtuIndex, credentials }),
@@ -91,7 +98,7 @@ export async function uploadOnboardingExcel(
     const text = await res.text();
     throw new Error(text || `Upload failed (${res.status})`);
   }
-  return res.json() as Promise<OnboardingChatResponseDto>;
+  return checkResponse(onboardingChatResponseDtoSchema, await res.json(), "admin onboarding upload");
 }
 
 /** Patches draft from inline editor. */
@@ -99,7 +106,7 @@ export async function patchOnboardingDraft(
   sessionId: string,
   draft: OnboardingSessionDto["draft"],
 ): Promise<OnboardingSessionDto> {
-  return adminFetch(`/admin/onboarding/sessions/${sessionId}/draft`, {
+  return adminFetch(`/admin/onboarding/sessions/${sessionId}/draft`, onboardingSessionDtoSchema, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ draft }),
@@ -110,7 +117,7 @@ export async function patchOnboardingDraft(
 export async function validateOnboardingSession(
   sessionId: string,
 ): Promise<OnboardingValidateResponseDto> {
-  return adminFetch(`/admin/onboarding/sessions/${sessionId}/validate`, {
+  return adminFetch(`/admin/onboarding/sessions/${sessionId}/validate`, onboardingValidateResponseDtoSchema, {
     method: "POST",
   });
 }
@@ -119,7 +126,7 @@ export async function validateOnboardingSession(
 export async function commitOnboardingSession(
   sessionId: string,
 ): Promise<OnboardingCommitResponseDto> {
-  return adminFetch(`/admin/onboarding/sessions/${sessionId}/commit`, {
+  return adminFetch(`/admin/onboarding/sessions/${sessionId}/commit`, onboardingCommitResponseDtoSchema, {
     method: "POST",
   });
 }

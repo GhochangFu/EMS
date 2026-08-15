@@ -27,6 +27,7 @@ import type { z } from "zod";
 import type * as A from "./contracts/admin";
 import type * as Au from "./contracts/auth";
 import type * as D from "./contracts/dashboard";
+import type * as E from "./contracts/envelopes";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
 import { TELEMETRY_POINT_REF_SEP } from "./constants";
@@ -237,6 +238,34 @@ export type OnboardingValidateResponseDto = z.infer<
 export type OnboardingCommitResponseDto = z.infer<
   typeof Ob.onboardingCommitResponseDtoSchema
 >;
+
+// ---------------------------------------------------------------------------
+// Response envelopes
+//
+// These lived in `apps/web/src/api/` — thirteen `export type XListResponse =
+// { items: SomeDto[] }` declarations beside the fetch that cast to them, plus
+// one (`AssetRow`) with no shared counterpart at all. A row type shared while
+// the envelope around it is stranded in one app is a contract that is only
+// half shared, and only the shared half was checkable.
+// ---------------------------------------------------------------------------
+
+export type OrganizationsListResponse = z.infer<typeof E.organizationsListResponseSchema>;
+export type LocationsListResponse = z.infer<typeof E.locationsListResponseSchema>;
+export type RtusListResponse = z.infer<typeof E.rtusListResponseSchema>;
+export type AssetsListResponse = z.infer<typeof E.assetsListResponseSchema>;
+export type AssetPointsListResponse = z.infer<typeof E.assetPointsListResponseSchema>;
+export type PointKeysListResponse = z.infer<typeof E.pointKeysListResponseSchema>;
+export type AlarmsListResponse = z.infer<typeof E.alarmsListResponseSchema>;
+export type WorkOrdersListResponse = z.infer<typeof E.workOrdersListResponseSchema>;
+export type MaintenanceSchedulesResponse = z.infer<
+  typeof E.maintenanceSchedulesResponseSchema
+>;
+export type ConvertMaintenanceResponse = z.infer<typeof E.convertMaintenanceResponseSchema>;
+export type RulesResponse = z.infer<typeof E.rulesResponseSchema>;
+export type RuleExecutionsResponse = z.infer<typeof E.ruleExecutionsResponseSchema>;
+export type RuleBuilderCatalogResponse = z.infer<typeof E.ruleBuilderCatalogResponseSchema>;
+/** `GET /api/v1/assets` — the asset picker's row (was `AssetRow` in `apps/web`). */
+export type AssetPickerRow = z.infer<typeof E.assetPickerRowSchema>;
 
 // ---------------------------------------------------------------------------
 // Re-exported sibling modules

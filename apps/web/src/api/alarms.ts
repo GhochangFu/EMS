@@ -1,6 +1,11 @@
+import {
+  alarmListItemSchema,
+  alarmsListResponseSchema,
+} from "@bms/shared/contracts";
 import type { AlarmListItem } from "@bms/shared";
 
 import { clearSessionOnAuthFailure, withAuth } from "./http";
+import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -22,7 +27,7 @@ export async function fetchAlarmsPage(
     clearSessionOnAuthFailure(res);
     throw new Error(`alarms ${res.status}`);
   }
-  return res.json() as Promise<AlarmsListResponse>;
+  return checkResponse(alarmsListResponseSchema, await res.json(), "alarms");
 }
 
 export async function ackAlarm(
@@ -41,5 +46,5 @@ export async function ackAlarm(
     const text = await res.text();
     throw new Error(text || `ack ${res.status}`);
   }
-  return res.json() as Promise<AlarmListItem>;
+  return checkResponse(alarmListItemSchema, await res.json(), "alarms/:id/ack");
 }

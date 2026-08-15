@@ -1,6 +1,10 @@
+import {
+  energyReportPreviewSchema,
+} from "@bms/shared/contracts";
 import type { EnergyReportPreview } from "@bms/shared";
 
 import { clearSessionOnAuthFailure, withAuth } from "./http";
+import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -28,7 +32,7 @@ export async function fetchEnergyReportPreview(
     clearSessionOnAuthFailure(res);
     throw new Error(`energy-report-preview ${res.status}`);
   }
-  return res.json() as Promise<EnergyReportPreview>;
+  return checkResponse(energyReportPreviewSchema, await res.json(), "reports/energy/preview");
 }
 
 /** Downloads the Sprint E CSV export and triggers a browser save. */
