@@ -103,7 +103,8 @@ they are cross-cutting, not because a human chose them.
    - a `KpiTile` hint, which is subordinate text under a value that is itself
      marked or measured.
 
-   This is why the census counted five affected pages but only three changed.
+   This is why the census counted five affected pages but only some values on
+   them changed.
    Marking every one of these would put a badge on roughly half the text on the
    page, and a marker that appears everywhere stops being read — which would
    cost exactly the honesty the marker exists to buy.
@@ -116,8 +117,10 @@ they are cross-cutting, not because a human chose them.
 
 ## Consequences
 
-- The SLD header drops from six meters to five. Deliberate: three phase columns
-  where one phase is metered is worse than one honest column.
+- The SLD header drops from six meters to four, and its grid drops to four
+  columns with it. Deliberate: three phase columns where one phase is metered is
+  worse than one honest column. (The column count was missed in review and
+  caught only by looking at the deployed page, which left an empty fifth cell.)
 - The battery cell grid stays on screen and is marked. Removing it would delete
   a visualisation operators use to see cell balance in the demo; keeping it
   unmarked asserts instrumentation that does not exist. Wiring it is out of

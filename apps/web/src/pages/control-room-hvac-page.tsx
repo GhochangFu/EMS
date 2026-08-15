@@ -15,7 +15,7 @@ import {
 } from "../components/live-svg/schematic-telemetry-context";
 import { DisabledCommandButton } from "../components/disabled-command-button";
 import { PageHeader } from "../components/page-header";
-import { StaticValue } from "../components/static-value";
+import { StaticTspan, StaticValue } from "../components/static-value";
 import { AppShell } from "../layouts/app-shell";
 import {
   freshValue,
@@ -418,7 +418,10 @@ function HvacDiagram({
       <text x="280" y="138" textAnchor="middle" className="fill-cyan-600 font-mono text-[9px]">SUPPLY {n(freshValue(slice.supplyAirTempC, status === "offline"), 1)}C</text>
       <rect x="320" y="60" width="240" height="80" rx="8" fill="#fafbfc" stroke="#cbd5e1" strokeDasharray="4 3" strokeWidth="1.4" />
       <text x="440" y="92" textAnchor="middle" className="fill-bms-ink font-condensed text-[14px] font-bold">CONTROL ROOM</text>
-      <text x="440" y="110" textAnchor="middle" className="fill-bms-muted font-mono text-[10px]">setpoint 22.0C</text>
+      {/* The same setpoint as the `Setpoint` metric below, inside the diagram.
+          Found on the deployed page — a census that reads component props
+          misses literals sitting in SVG text nodes. */}
+      <text x="440" y="110" textAnchor="middle" className="fill-bms-muted font-mono text-[10px]"><StaticTspan kind="configuration">setpoint 22.0C</StaticTspan></text>
       <text x="440" y="124" textAnchor="middle" className="fill-bms-muted font-mono text-[10px]">racks + operators</text>
     </svg>
   );

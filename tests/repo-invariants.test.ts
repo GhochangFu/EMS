@@ -903,6 +903,12 @@ describe("repo invariants", () => {
       ["hvac", "AC-1 LEAD · AC-2 STANDBY"],
       ["hvac", "Standby auto-start in"],
       ["ups", "32 cells · 12V VRLA"],
+      // These two sit in bare SVG text nodes rather than component props, and
+      // both were missed by the source census — found by looking at the
+      // deployed pages. Pinned here because that is the blind spot: a sweep
+      // written around `value=`/`sub=` props does not see `>setpoint 22.0C<`.
+      ["hvac", "setpoint 22.0C"],
+      ["overview", "11 kV"],
     ];
     for (const [name, literal] of marked) {
       const src = sources.get(name) ?? "";

@@ -15,6 +15,7 @@ import {
   useSchematicTelemetryByCode,
 } from "../components/live-svg/schematic-telemetry-context";
 import { PageHeader } from "../components/page-header";
+import { StaticTspan } from "../components/static-value";
 import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
 import { freshValue, isStale } from "../lib/schematic-telemetry";
@@ -534,7 +535,7 @@ function MiniSld({ rules }: { rules: RuleListItem[] }) {
       <line x1="92" y1="120" x2="148" y2="120" stroke={svgStroke(q1State.status)} strokeWidth={3} />
       <rect x="14" y="92" width="78" height="56" rx="6" className={svgBoxClass(q1State.status)} />
       <text x="53" y="118" textAnchor="middle" className="fill-bms-ink font-condensed text-[13px] font-bold">UTILITY</text>
-      <text x="53" y="134" textAnchor="middle" className="fill-bms-muted font-mono text-[10px]">11 kV</text>
+      <text x="53" y="134" textAnchor="middle" className="fill-bms-muted font-mono text-[10px]"><StaticTspan kind="nameplate">11 kV</StaticTspan></text>
       <circle cx="170" cy="120" r="14" className={svgBoxClass(q1State.status)} strokeWidth={2} />
       <text x="170" y="124" textAnchor="middle" className="fill-bms-green font-mono text-[9px] font-bold">Q1</text>
       <line x1="184" y1="120" x2="240" y2="120" stroke={svgStroke(q1State.status)} strokeWidth={3} />

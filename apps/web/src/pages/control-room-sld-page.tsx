@@ -177,11 +177,18 @@ function ControlRoomSldContent() {
 
   return (
     <div className="mx-auto max-w-[1320px] space-y-4 pb-8">
+      {/* `F4.39`, found on the deployed page: the pill below read a green
+          "LIVE" directly above four meters all showing `—`. It was the single
+          most prominent claim on the screen and the only one not derived from
+          anything. It now follows the incomer, which is the page's own source
+          for every header meter. */}
       <PageHeader
         eyebrow="R.crSld"
         title="Electrical Power · Single Line Diagram"
         subtitle="Incoming feeder to main panel to UPS input/output to load distribution"
-        actions={<StatusPill label="Live" />}
+        actions={
+          <StatusPill label={q1Stale ? "Offline" : "Live"} tone={q1Stale ? "offline" : "ok"} />
+        }
       />
 
       {/* `F4.39`: this row used to carry three phase columns. Y and B were the
@@ -190,7 +197,7 @@ function ControlRoomSldContent() {
           the real reading, which is what made them convincing. One metered
           phase, honestly labelled, is worth more than three (ADR 0028
           decision 4). */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Meter label="Voltage R" value={n(freshValue(q1.voltage, q1Stale), 1)} unit="V" />
         <Meter label="Frequency" value={n(freshValue(q1.frequencyHz, q1Stale), 2)} unit="Hz" />
         <Meter label="kW · kVA" value={`${n(totalKw, 2)} / ${n(kva, 2)}`} unit="" />
