@@ -229,6 +229,15 @@ describe("ADR 0024 — compression and retention bounds", () => {
    * same defect wearing different clothes. So the assertion is the invariant
    * itself — a delete here is a single-table statement filtered on a segmentby
    * column — and every one of those rewrites fails it.
+   *
+   * **TypeScript only, and the exclusion is the interesting part.** Migrations
+   * `0014` and `0021` both delete from `point_values` with `USING <temp table>`,
+   * which is the join form this check rejects. They were correct when written —
+   * `0028` added compression underneath them afterwards — and they are merged and
+   * forward-only, so widening the scan to `.sql` would fail the build on two files
+   * nobody is allowed to edit. The hazard for the *next* such migration is real
+   * and is not held here; it is held in AGENTS.md §4.4, whose sentence naming
+   * `0014`/`0021` as precedents to follow was corrected by this item.
    */
   it("keeps every telemetry DELETE prunable against compressed batches", () => {
     const sites: { where: string; statement: string }[] = [];

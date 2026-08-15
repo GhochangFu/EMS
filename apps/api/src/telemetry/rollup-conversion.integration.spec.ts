@@ -180,8 +180,17 @@ function assertClose(
  * suite to `ADR 0024`'s 7-day threshold — and it cannot span a crashed run whose
  * future-dated rows have since fallen behind the bound, leaving telemetry that
  * blocks the `bms.assets` delete below. Resolving the ids removes the cause
- * instead: the delete is a segmentby-constant filter, which is the form the two
- * other telemetry deletes in this repo already use.
+ * instead: the delete becomes a segmentby-constant filter, which is the form both
+ * other **TypeScript** telemetry deletes already use
+ * (`point-aggregates.integration.spec.ts`, `point_key = $1` and
+ * `point_key = 'kw' AND asset_id = $1::uuid`).
+ *
+ * Not the form the SQL ones use, and that is worth knowing rather than glossing:
+ * migrations `0014` and `0021` both delete from `point_values` with
+ * `USING <temp table>` — a join, the same shape as the defect above. They were
+ * correct when written; migration `0028` added compression underneath them years
+ * later. They are merged and forward-only, so they stay as they are, but the next
+ * migration of that shape cannot copy them.
  */
 export async function cleanupProbes(pool: pg.Pool): Promise<void> {
   // The `F4.28` guard, now covering the destructive half of this suite as well as

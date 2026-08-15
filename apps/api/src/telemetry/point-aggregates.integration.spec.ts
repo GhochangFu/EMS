@@ -568,12 +568,16 @@ export async function assertRefreshOffsetsAreSafe(pool: pg.Pool): Promise<void> 
  * 432 successes**, `last_run_status = Success`, the aggregate current. Something
  * else did report it, in the very next clause, and that clause passed.
  *
- * A refresh policy competes for a window with `refresh_continuous_aggregate` calls
- * (this file makes them; so does `pnpm db:refresh-aggregates`) and loses with
- * `55P03` — {@link assertEnergySummaryMatchesRaw} retries that error precisely
- * because it is expected and transient. A counter that latches on it turns a
- * self-healing condition into a permanent red, and a permanently-red suite is one
- * people stop reading.
+ * **What that one failure actually was is unrecoverable, and that is the second
+ * argument against the clause.** `job_stats` keeps the count, not the error — no
+ * message, no timestamp for it, nothing to act on. The most likely candidate is a
+ * `55P03`: a refresh policy competes for a window with `refresh_continuous_aggregate`
+ * calls (this file makes them; so does `pnpm db:refresh-aggregates`) and loses, and
+ * {@link assertEnergySummaryMatchesRaw} retries exactly that error precisely because
+ * it is expected and transient. But that is inference, not diagnosis. An assertion
+ * whose failure cannot be investigated even in principle has only one honest
+ * outcome — it gets ignored — and a counter that latches turns a self-healing
+ * condition into a permanent red on the way there.
  *
  * `last_run_status` is the honest signal: it says whether the aggregate is current
  * **now**, which is the question ADR 0023's bullet actually asks. Invisible in CI
