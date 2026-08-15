@@ -17,7 +17,9 @@
 > rule for both exports (**ADR 0026**), the staleness gate in front of every
 > derived status and rendered value in the web client (**ADR 0027**) and the
 > provenance rule that decides which of those values is a reading at all
-> (**ADR 0028**). General
+> (**ADR 0028**), and the OpenAPI document generated from the Zod schemas that
+> validate each request (**ADR 0029**, with amendments for the refinements the
+> conversion drops and for the docs being absent rather than guarded). General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
@@ -240,6 +242,13 @@ bms/
 │   │                            escaper anywhere else under src/, or a CSV
 │   │                            producer outside apps/api/src, fails
 │   │                            tests/repo-invariants.test.ts
+│   │                            src/openapi/ generates the API document from
+│   │                            the Zod schemas (ADR 0029) — openapi-registry.ts
+│   │                            is the ONE place a route is joined to its
+│   │                            schema, and there is deliberately no controller
+│   │                            there: Amendment 2 deleted the guarded endpoint
+│   │                            rather than leave a second, unreachable way to
+│   │                            publish the route inventory
 │   ├── sim/                   ← telemetry simulator (Node script)
 │   └── ingest/                ← PHE MQTT TLS subscriber (ADR 0007), one pilot RTU.
 │                                ONE entry point since §6 commit 4 (2026-08-14):
@@ -327,6 +336,40 @@ Do not add top-level folders without updating this section.
   even after `F4.28` gave the rest of that file coverage. Serialisation lives in a
   pure `*.serialise.ts` beside the service — `admin/audit/audit.serialise.ts` and
   `reports/reports.serialise.ts` are the two models.
+- **The API description is generated from the Zod schemas, never written
+  alongside them** (ADR 0029). `@nestjs/swagger`'s decorators do not work here
+  and it is worth knowing why before reaching for them: they derive schemas from
+  TypeScript metadata on DTO classes, this codebase has none — `class-validator`
+  and `class-transformer` are absent and 13 controllers declare
+  `@Body() body: unknown` — so the generated document would describe every
+  payload as an untyped object while looking complete. A new route is joined to
+  its schema in `src/openapi/openapi-registry.ts`, keyed by Nest's
+  `operationId`, and its schema must live in a `*.schema.ts`: one declared inside
+  a controller is invisible to the registry and its payload silently vanishes
+  from the document.
+- **Follow every `.refine`/`.superRefine` with a `.describe()`, in that order**
+  (ADR 0029 Amendment 1). `zod-to-json-schema` emits **nothing** for a
+  refinement — no marker, no warning — so the document is strictly *more
+  permissive* than the validator wherever one is unexplained, and a caller who
+  trusts it receives a `400` the document says is impossible. Measured: 63
+  schemas convert with zero failures while 11 refinement sites vanish. The
+  message cannot be recovered from the schema (`.refine` captures it in a
+  closure; `_def.message` is `null`), which is why the prose is authored rather
+  than extracted. Order matters and fails silently:
+  `z.string().describe("x").refine(…)` yields **no** description, because
+  `.refine` wraps the described schema in a new `ZodEffects`.
+  `tests/adr-0029-openapi-contract.test.ts` fails the build on both.
+- **Where the OpenAPI docs are served they are unauthenticated, so they are
+  absent by default** (ADR 0029 Amendment 2). There is no guarded state and
+  attempting one is wasted work: Swagger UI does not send an `Authorization`
+  header when it fetches the spec, so a guarded document renders as "No
+  operations defined in spec!" and nothing in the page can recover it.
+  `API_DOCS_ENABLED` gates the whole route — unset means on everywhere except
+  `NODE_ENV=production`, and the API image sets `NODE_ENV=production`, so the
+  compose stack serves nothing until a developer opts in through their own
+  `.env`. Turning it on publishes the complete route inventory, including the
+  §4.7 operations matrix and the ADR 0012 credential endpoints, to anyone who
+  can reach the port. **Do not describe an enabled instance as protected.**
 
 ### 4.4 SQL (Postgres / TimescaleDB)
 - Schema-qualified (`bms.assets`, `telemetry.point_values`).
@@ -555,6 +598,26 @@ Do not add top-level folders without updating this section.
 - A check that CI does not execute is not a gate. When you add a test suite,
   script, or invariant, wire it into `.github/workflows/ci.yml` in the same
   change — this repo has shipped orphaned specs and orphaned migrations before.
+- **You cannot instantiate a Nest module in a test here, and it is not worth
+  discovering that twice** (`F4.20`). Vitest transforms TypeScript with esbuild,
+  which does **not** emit `design:paramtypes`, so Nest's constructor injection
+  resolves every dependency to `undefined`: building `AppModule` dies in
+  `TelemetryGateway.afterInit` with `this.hub` undefined, and no websocket
+  adapter fixes it because the cause is missing metadata. That is why every
+  integration suite here constructs services directly — `new
+  DashboardService(pool)` — and it is a constraint rather than a style. Changing
+  it means an swc transform, which is a §9.4 dependency ADR. Until then, a
+  guarantee that needs the running application is either a static check over the
+  source or a documented manual verification — **and if it is manual, say so in
+  the test that stands in for it**, so the substitute is never mistaken for the
+  gate.
+- **A static check is not a substitute for reading what is served.** `F4.20`
+  shipped a green suite, `pnpm typecheck`, `pnpm typecheck:tests` and a static
+  invariant, and the served document still (a) published every route
+  unauthenticated through `swagger-ui-init.js`, (b) dropped every cross-field
+  rule from its query schemas, and (c) could not be read at all from the UI it
+  shipped with. All three were found by fetching the document from the running
+  container. §4.6's deployment rule is not a formality for UI work.
 
 **Green tests are not a deployment. Verify every item against the running
 Docker stack before calling it done** — the database, the API and the browser,
