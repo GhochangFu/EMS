@@ -176,3 +176,13 @@ export type TemplatePointBody = z.infer<typeof templatePointBodySchema>;
 export type InstantiateAssetsBody = z.infer<typeof instantiateAssetsBodySchema>;
 export type InstantiateAssetBody = z.infer<typeof instantiateAssetBodySchema>;
 export type InstantiationTargetInput = InstantiateAssetsBody["target"];
+
+/**
+ * The `status` filter on `GET /admin/asset-templates`.
+ *
+ * Moved here from the controller by `F4.20`: it was the one schema in
+ * `apps/api` validating request input from outside a `*.schema.ts` file, which
+ * made it invisible to ADR 0029's registry and would have left that route's
+ * only parameter undocumented for a reason no reader could have guessed.
+ */
+export const templateStatusQuerySchema = z.enum(["draft", "published", "archived"]);

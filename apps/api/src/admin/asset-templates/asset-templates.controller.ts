@@ -12,7 +12,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { ZodError, z } from "zod";
+import { ZodError } from "zod";
 
 import type { JwtPayload } from "@bms/shared";
 
@@ -22,12 +22,11 @@ import { idParamSchema } from "../admin.schema";
 import {
   createAssetTemplateBodySchema,
   instantiateAssetsBodySchema,
+  templateStatusQuerySchema,
   updateAssetTemplateBodySchema,
 } from "./asset-templates.schema";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
-
-const statusQuerySchema = z.enum(["draft", "published", "archived"]);
 
 @Controller("admin/asset-templates")
 @UseGuards(JwtAuthGuard)
@@ -46,7 +45,7 @@ export class AssetTemplatesAdminController {
     return this.service.list(
       user,
       organizationId ? idParamSchema.parse(organizationId) : undefined,
-      status ? statusQuerySchema.parse(status) : undefined,
+      status ? templateStatusQuerySchema.parse(status) : undefined,
     );
   }
 
