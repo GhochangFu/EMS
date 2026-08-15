@@ -1,8 +1,13 @@
-import type { AdminAssetPointDto, MasterDataActiveFilter } from "@bms/shared";
+import {
+  adminAssetPointDtoSchema,
+  assetPointsListResponseSchema,
+} from "@bms/shared/contracts";
+import type { AdminAssetPointDto, MasterDataActiveFilter, AssetPointsListResponse } from "@bms/shared";
 
 import { adminFetch } from "./client";
 
-export type AssetPointsListResponse = { items: AdminAssetPointDto[] };
+export type { AssetPointsListResponse };
+
 
 export async function fetchAdminAssetPoints(
   active: MasterDataActiveFilter = "all",
@@ -16,7 +21,7 @@ export async function fetchAdminAssetPoints(
   if (locationId) {
     params.set("locationId", locationId);
   }
-  return adminFetch(`/admin/asset-points?${params}`);
+  return adminFetch(`/admin/asset-points?${params}`, assetPointsListResponseSchema);
 }
 
 export async function createAdminAssetPoint(input: {
@@ -26,7 +31,7 @@ export async function createAdminAssetPoint(input: {
   sensorCode?: string;
   unit?: string;
 }): Promise<AdminAssetPointDto> {
-  return adminFetch("/admin/asset-points", {
+  return adminFetch("/admin/asset-points", adminAssetPointDtoSchema, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -42,7 +47,7 @@ export async function updateAdminAssetPoint(
     unit: string;
   }>,
 ): Promise<AdminAssetPointDto> {
-  return adminFetch(`/admin/asset-points/${id}`, {
+  return adminFetch(`/admin/asset-points/${id}`, adminAssetPointDtoSchema, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -52,11 +57,11 @@ export async function updateAdminAssetPoint(
 export async function deactivateAdminAssetPoint(
   id: string,
 ): Promise<AdminAssetPointDto> {
-  return adminFetch(`/admin/asset-points/${id}/deactivate`, { method: "POST" });
+  return adminFetch(`/admin/asset-points/${id}/deactivate`, adminAssetPointDtoSchema, { method: "POST" });
 }
 
 export async function reactivateAdminAssetPoint(
   id: string,
 ): Promise<AdminAssetPointDto> {
-  return adminFetch(`/admin/asset-points/${id}/reactivate`, { method: "POST" });
+  return adminFetch(`/admin/asset-points/${id}/reactivate`, adminAssetPointDtoSchema, { method: "POST" });
 }

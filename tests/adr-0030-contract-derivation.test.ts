@@ -64,6 +64,48 @@ describe("ADR 0030 — contracts stay single-source", () => {
     ).toEqual([]);
   });
 
+  it("leaves no unchecked response cast in the web api layer", () => {
+    // ADR 0030 decision 5. Every reader in `apps/web/src/api/` used to end
+    // `return res.json() as Promise<T>` — an assertion the compiler accepts and
+    // nothing confirms. 33 of them were replaced by `checkResponse`, and the
+    // 42 admin calls by a required schema argument on `adminFetch`.
+    //
+    // **This rule is what stops the next one being added.** Nothing else would
+    // notice: a new unchecked reader compiles, passes review as ordinary code,
+    // and behaves correctly right up until the day the API changes shape.
+    const apiDir = join(repoRoot, "apps", "web", "src", "api");
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) files.push(full);
+      }
+    };
+    walk(apiDir);
+
+    expect(files.length, "no api modules found — the walk is broken").toBeGreaterThan(10);
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const rel = relative(repoRoot, file).replace(/\\/g, "/");
+      readFileSync(file, "utf8")
+        .split(/\r?\n/)
+        .forEach((line, i) => {
+          if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+          if (/\bas\s+Promise</.test(line)) offenders.push(`${rel}:${i + 1} — ${line.trim().slice(0, 80)}`);
+        });
+    }
+
+    expect(
+      offenders,
+      `these reads cast instead of checking:\n${offenders.join("\n")}\n\n` +
+        "Use `checkResponse(schema, await res.json(), \"<endpoint>\")` — or `adminFetch`, " +
+        "which takes the schema as a required argument. `as Promise<T>` tells the compiler " +
+        "what the payload is; it does not ask the payload (ADR 0030 decision 5).",
+    ).toEqual([]);
+  });
+
   it("never encodes an intersection with a flattening combinator", () => {
     // ADR 0030 Amendment 1, rules 1 and 2 — measured, not styled.
     //

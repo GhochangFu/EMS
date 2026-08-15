@@ -1,3 +1,7 @@
+import {
+  workOrderListItemSchema,
+  workOrdersListResponseSchema,
+} from "@bms/shared/contracts";
 import type {
   WorkOrderListItem,
   WorkOrderPriority,
@@ -5,6 +9,7 @@ import type {
 } from "@bms/shared";
 
 import { clearSessionOnAuthFailure, withAuth } from "./http";
+import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -43,7 +48,7 @@ export async function fetchWorkOrders(
     clearSessionOnAuthFailure(res);
     throw new Error(`work-orders ${res.status}`);
   }
-  return res.json() as Promise<WorkOrdersListResponse>;
+  return checkResponse(workOrdersListResponseSchema, await res.json(), "work-orders");
 }
 
 /** POST /api/v1/work-orders */
@@ -62,7 +67,7 @@ export async function createWorkOrder(
     const text = await res.text();
     throw new Error(text || `work-order-create ${res.status}`);
   }
-  return res.json() as Promise<WorkOrderListItem>;
+  return checkResponse(workOrderListItemSchema, await res.json(), "work-orders");
 }
 
 /** PATCH /api/v1/work-orders/:id/status */
@@ -82,7 +87,7 @@ export async function updateWorkOrderStatus(
     const text = await res.text();
     throw new Error(text || `work-order-status ${res.status}`);
   }
-  return res.json() as Promise<WorkOrderListItem>;
+  return checkResponse(workOrderListItemSchema, await res.json(), "work-orders/:id/status");
 }
 
 /** PATCH /api/v1/work-orders/reorder */
@@ -104,7 +109,7 @@ export async function reorderWorkOrders(
     const text = await res.text();
     throw new Error(text || `work-order-reorder ${res.status}`);
   }
-  return res.json() as Promise<WorkOrdersListResponse>;
+  return checkResponse(workOrdersListResponseSchema, await res.json(), "work-orders/reorder");
 }
 
 /** POST /api/v1/work-orders/:id/close */
@@ -125,5 +130,5 @@ export async function closeWorkOrder(
     const text = await res.text();
     throw new Error(text || `work-order-close ${res.status}`);
   }
-  return res.json() as Promise<WorkOrderListItem>;
+  return checkResponse(workOrderListItemSchema, await res.json(), "work-orders/:id/close");
 }

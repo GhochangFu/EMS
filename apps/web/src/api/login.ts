@@ -1,4 +1,10 @@
+import {
+  currentUserResponseSchema,
+  loginResponseSchema,
+} from "@bms/shared/contracts";
 import type { CurrentUserResponse, LoginResponse } from "@bms/shared";
+
+import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -18,7 +24,7 @@ export async function loginRequest(
     const text = await res.text();
     throw new Error(text || `Login failed (${res.status})`);
   }
-  return res.json() as Promise<LoginResponse>;
+  return checkResponse(loginResponseSchema, await res.json(), "auth/login");
 }
 
 /** GET /api/v1/auth/me — hydrates DB-backed role and location scope. */
@@ -31,5 +37,5 @@ export async function fetchCurrentUser(
   if (!res.ok) {
     throw new Error(`Current user failed (${res.status})`);
   }
-  return res.json() as Promise<CurrentUserResponse>;
+  return checkResponse(currentUserResponseSchema, await res.json(), "auth/me");
 }

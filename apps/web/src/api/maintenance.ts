@@ -1,3 +1,8 @@
+import {
+  convertMaintenanceResponseSchema,
+  maintenanceScheduleItemSchema,
+  maintenanceSchedulesResponseSchema,
+} from "@bms/shared/contracts";
 import type {
   MaintenanceGenerationMode,
   MaintenanceScheduleItem,
@@ -7,6 +12,7 @@ import type {
 } from "@bms/shared";
 
 import { clearSessionOnAuthFailure, withAuth } from "./http";
+import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -66,7 +72,7 @@ export async function fetchMaintenanceSchedules(input: {
     clearSessionOnAuthFailure(res);
     throw new Error(`maintenance-schedules ${res.status}`);
   }
-  return res.json() as Promise<MaintenanceSchedulesResponse>;
+  return checkResponse(maintenanceSchedulesResponseSchema, await res.json(), "maintenance/schedules");
 }
 
 /** POST /api/v1/maintenance/schedules */
@@ -85,7 +91,7 @@ export async function createMaintenanceSchedule(
     const text = await res.text();
     throw new Error(text || `maintenance-create ${res.status}`);
   }
-  return res.json() as Promise<MaintenanceScheduleItem>;
+  return checkResponse(maintenanceScheduleItemSchema, await res.json(), "maintenance/schedules");
 }
 
 /** PATCH /api/v1/maintenance/schedules/:id */
@@ -106,7 +112,7 @@ export async function updateMaintenanceSchedule(input: {
     const text = await res.text();
     throw new Error(text || `maintenance-update ${res.status}`);
   }
-  return res.json() as Promise<MaintenanceScheduleItem>;
+  return checkResponse(maintenanceScheduleItemSchema, await res.json(), "maintenance/schedules/:id");
 }
 
 /** POST /api/v1/maintenance/schedules/:id/convert */
@@ -129,5 +135,5 @@ export async function convertMaintenanceSchedule(input: {
     const text = await res.text();
     throw new Error(text || `maintenance-convert ${res.status}`);
   }
-  return res.json() as Promise<ConvertMaintenanceResponse>;
+  return checkResponse(convertMaintenanceResponseSchema, await res.json(), "maintenance/schedules/:id/convert");
 }

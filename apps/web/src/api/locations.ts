@@ -1,6 +1,11 @@
+import {
+  locationDashboardDtoSchema,
+  locationsSummaryResponseSchema,
+} from "@bms/shared/contracts";
 import type { LocationDashboardDto, LocationKpiSummary } from "@bms/shared";
 
 import { withAuth } from "./http";
+import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -10,7 +15,7 @@ export async function fetchLocationKpis(): Promise<{ items: LocationKpiSummary[]
   if (!res.ok) {
     throw new Error(`location kpis ${res.status}`);
   }
-  return res.json() as Promise<{ items: LocationKpiSummary[] }>;
+  return checkResponse(locationsSummaryResponseSchema, await res.json(), "dashboard/locations");
 }
 
 /** GET /api/v1/dashboard/locations/:locationId */
@@ -37,5 +42,5 @@ export async function fetchLocationDashboard(
   if (!res.ok) {
     throw new Error(`location dashboard ${res.status}`);
   }
-  return res.json() as Promise<LocationDashboardDto>;
+  return checkResponse(locationDashboardDtoSchema, await res.json(), "dashboard/locations/:id:id");
 }

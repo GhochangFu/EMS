@@ -1,3 +1,10 @@
+import {
+  ruleBuilderCatalogResponseSchema,
+  ruleExecutionsResponseSchema,
+  ruleListItemSchema,
+  rulePreviewResultSchema,
+  rulesResponseSchema,
+} from "@bms/shared/contracts";
 import type {
   AutomationRuleAction,
   AutomationRuleCategory,
@@ -11,6 +18,7 @@ import type {
 } from "@bms/shared";
 
 import { clearSessionOnAuthFailure, withAuth } from "./http";
+import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -48,7 +56,7 @@ export async function fetchRules(): Promise<RulesResponse> {
     clearSessionOnAuthFailure(res);
     throw new Error(`rules ${res.status}`);
   }
-  return res.json() as Promise<RulesResponse>;
+  return checkResponse(rulesResponseSchema, await res.json(), "rules");
 }
 
 /** GET /api/v1/rules/catalog */
@@ -58,7 +66,7 @@ export async function fetchRuleBuilderCatalog(): Promise<RuleBuilderCatalogRespo
     clearSessionOnAuthFailure(res);
     throw new Error(`rule-catalog ${res.status}`);
   }
-  return res.json() as Promise<RuleBuilderCatalogResponse>;
+  return checkResponse(ruleBuilderCatalogResponseSchema, await res.json(), "rules/catalog");
 }
 
 /** GET /api/v1/rules/executions */
@@ -71,7 +79,7 @@ export async function fetchRuleExecutions(
     clearSessionOnAuthFailure(res);
     throw new Error(`rule-executions ${res.status}`);
   }
-  return res.json() as Promise<RuleExecutionsResponse>;
+  return checkResponse(ruleExecutionsResponseSchema, await res.json(), "rules/executions");
 }
 
 /** PATCH /api/v1/rules/:id/enabled */
@@ -95,7 +103,7 @@ export async function setRuleEnabled(input: {
     const text = await res.text();
     throw new Error(text || `rule-toggle ${res.status}`);
   }
-  return res.json() as Promise<RuleListItem>;
+  return checkResponse(ruleListItemSchema, await res.json(), "rules/:id/enabled");
 }
 
 /** POST /api/v1/rules/evaluate */
@@ -108,7 +116,7 @@ export async function evaluateRules(): Promise<RuleExecutionsResponse> {
     const text = await res.text();
     throw new Error(text || `rule-evaluate ${res.status}`);
   }
-  return res.json() as Promise<RuleExecutionsResponse>;
+  return checkResponse(ruleExecutionsResponseSchema, await res.json(), "rules/evaluate");
 }
 
 /** POST /api/v1/rules */
@@ -125,7 +133,7 @@ export async function createRuleDraft(input: RuleDraftPayload): Promise<RuleList
     const text = await res.text();
     throw new Error(text || `rule-create ${res.status}`);
   }
-  return res.json() as Promise<RuleListItem>;
+  return checkResponse(ruleListItemSchema, await res.json(), "rules");
 }
 
 /** PATCH /api/v1/rules/:id */
@@ -145,7 +153,7 @@ export async function updateRuleDraft(input: {
     const text = await res.text();
     throw new Error(text || `rule-update ${res.status}`);
   }
-  return res.json() as Promise<RuleListItem>;
+  return checkResponse(ruleListItemSchema, await res.json(), "rules/:id");
 }
 
 /** POST /api/v1/rules/preview */
@@ -164,7 +172,7 @@ export async function previewRuleDraft(
     const text = await res.text();
     throw new Error(text || `rule-preview ${res.status}`);
   }
-  return res.json() as Promise<RulePreviewResult>;
+  return checkResponse(rulePreviewResultSchema, await res.json(), "rules/preview");
 }
 
 /** POST /api/v1/rules/:id/publish */
@@ -208,5 +216,5 @@ async function ruleLifecycleRequest(
     const text = await res.text();
     throw new Error(text || `rule-${action} ${res.status}`);
   }
-  return res.json() as Promise<RuleListItem>;
+  return checkResponse(ruleListItemSchema, await res.json(), "rules/:id/:action");
 }

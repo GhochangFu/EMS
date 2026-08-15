@@ -1,8 +1,11 @@
-import type { AdminPointKeyDto, MasterDataActiveFilter } from "@bms/shared";
+import {
+  adminPointKeyDtoSchema,
+  pointKeysListResponseSchema,
+} from "@bms/shared/contracts";
+import type { AdminPointKeyDto, MasterDataActiveFilter, PointKeysListResponse } from "@bms/shared";
 
 import { activeQuery, adminFetch } from "./client";
 
-export type PointKeysListResponse = { items: AdminPointKeyDto[] };
 
 export async function fetchAdminPointKeys(
   active: MasterDataActiveFilter = "all",
@@ -12,11 +15,11 @@ export async function fetchAdminPointKeys(
   if (organizationId) {
     params.set("organizationId", organizationId);
   }
-  return adminFetch(`/admin/point-keys?${params}`);
+  return adminFetch(`/admin/point-keys?${params}`, pointKeysListResponseSchema);
 }
 
 export async function fetchAdminPointKey(id: string): Promise<AdminPointKeyDto> {
-  return adminFetch(`/admin/point-keys/${id}`);
+  return adminFetch(`/admin/point-keys/${id}`, adminPointKeyDtoSchema);
 }
 
 export async function createAdminPointKey(input: {
@@ -27,7 +30,7 @@ export async function createAdminPointKey(input: {
   unit?: string;
   description?: string;
 }): Promise<AdminPointKeyDto> {
-  return adminFetch("/admin/point-keys", {
+  return adminFetch("/admin/point-keys", adminPointKeyDtoSchema, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -43,7 +46,7 @@ export async function updateAdminPointKey(
     description: string;
   }>,
 ): Promise<AdminPointKeyDto> {
-  return adminFetch(`/admin/point-keys/${id}`, {
+  return adminFetch(`/admin/point-keys/${id}`, adminPointKeyDtoSchema, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -51,9 +54,9 @@ export async function updateAdminPointKey(
 }
 
 export async function deactivateAdminPointKey(id: string): Promise<AdminPointKeyDto> {
-  return adminFetch(`/admin/point-keys/${id}/deactivate`, { method: "POST" });
+  return adminFetch(`/admin/point-keys/${id}/deactivate`, adminPointKeyDtoSchema, { method: "POST" });
 }
 
 export async function reactivateAdminPointKey(id: string): Promise<AdminPointKeyDto> {
-  return adminFetch(`/admin/point-keys/${id}/reactivate`, { method: "POST" });
+  return adminFetch(`/admin/point-keys/${id}/reactivate`, adminPointKeyDtoSchema, { method: "POST" });
 }

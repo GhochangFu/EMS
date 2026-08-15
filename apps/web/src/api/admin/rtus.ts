@@ -1,8 +1,14 @@
-import type { AdminRtuDto, AdminRtuSummaryDto, MasterDataActiveFilter } from "@bms/shared";
+import {
+  adminRtuDtoSchema,
+  adminRtuSummaryDtoSchema,
+  rtusListResponseSchema,
+} from "@bms/shared/contracts";
+import type { AdminRtuDto, AdminRtuSummaryDto, MasterDataActiveFilter, RtusListResponse } from "@bms/shared";
 
 import { adminFetch } from "./client";
 
-export type RtusListResponse = { items: AdminRtuDto[] };
+export type { RtusListResponse };
+
 
 export async function fetchAdminRtus(
   active: MasterDataActiveFilter = "all",
@@ -12,11 +18,11 @@ export async function fetchAdminRtus(
   if (locationId) {
     params.set("locationId", locationId);
   }
-  return adminFetch(`/admin/rtus?${params}`);
+  return adminFetch(`/admin/rtus?${params}`, rtusListResponseSchema);
 }
 
 export async function fetchAdminRtuSummary(id: string): Promise<AdminRtuSummaryDto> {
-  return adminFetch(`/admin/rtus/${id}`);
+  return adminFetch(`/admin/rtus/${id}`, adminRtuSummaryDtoSchema);
 }
 
 export async function createAdminRtu(
@@ -31,7 +37,7 @@ export async function createAdminRtu(
     ingestEnabled?: boolean;
   },
 ): Promise<AdminRtuDto> {
-  return adminFetch("/admin/rtus", {
+  return adminFetch("/admin/rtus", adminRtuDtoSchema, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -48,7 +54,7 @@ export async function updateAdminRtu(
     ingestEnabled: boolean;
   }>,
 ): Promise<AdminRtuDto> {
-  return adminFetch(`/admin/rtus/${id}`, {
+  return adminFetch(`/admin/rtus/${id}`, adminRtuDtoSchema, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -56,9 +62,9 @@ export async function updateAdminRtu(
 }
 
 export async function deactivateAdminRtu(id: string): Promise<AdminRtuDto> {
-  return adminFetch(`/admin/rtus/${id}/deactivate`, { method: "POST" });
+  return adminFetch(`/admin/rtus/${id}/deactivate`, adminRtuDtoSchema, { method: "POST" });
 }
 
 export async function reactivateAdminRtu(id: string): Promise<AdminRtuDto> {
-  return adminFetch(`/admin/rtus/${id}/reactivate`, { method: "POST" });
+  return adminFetch(`/admin/rtus/${id}/reactivate`, adminRtuDtoSchema, { method: "POST" });
 }

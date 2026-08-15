@@ -1,6 +1,11 @@
+import {
+  dashboardKpisSchema,
+  loadTrendResponseSchema,
+} from "@bms/shared/contracts";
 import type { DashboardKpis, LoadTrendPoint } from "@bms/shared";
 
 import { withAuth } from "./http";
+import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -9,7 +14,7 @@ export async function fetchDashboardKpis(): Promise<DashboardKpis> {
   if (!res.ok) {
     throw new Error(`dashboard kpis ${res.status}`);
   }
-  return res.json() as Promise<DashboardKpis>;
+  return checkResponse(dashboardKpisSchema, await res.json(), "dashboard/kpis");
 }
 
 export async function fetchLoadTrend(
@@ -22,5 +27,5 @@ export async function fetchLoadTrend(
   if (!res.ok) {
     throw new Error(`load-trend ${res.status}`);
   }
-  return res.json() as Promise<{ points: LoadTrendPoint[] }>;
+  return checkResponse(loadTrendResponseSchema, await res.json(), "dashboard/load-trend");
 }

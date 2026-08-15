@@ -541,3 +541,84 @@ Worth recording for a reason beyond the tidiness: **the old check failed loudly
 when the migration broke it**, because it carried an anti-vacuity floor. It
 would otherwise have gone quietly green over an empty scrape — the failure mode
 §4.4 exists to catch, caught.
+
+---
+
+## Amendment 3 — the validator found real drift on its first run (2026-08-16)
+
+Decision 5 is implemented: 33 direct reads in `apps/web/src/api/` call
+`checkResponse`, and the 42 admin calls take the schema as a required argument
+on `adminFetch`. Two things came out of building it, and the second is the
+point of the whole item.
+
+### It validates, it does not transform
+
+`checkResponse` returns the **original payload**, never `result.data`.
+
+Zod strips unknown keys, so returning the parsed value would silently delete
+any field the server sends that a schema has not caught up with. That converts
+this from a safety net into an efficient way to lose data: a server adding a
+field is doing the ordinary thing, and a client erasing it because its schema
+is one version behind is not. Success is a complete no-op on the value.
+
+Two further consequences of building it, recorded because neither is obvious:
+
+- **`readJson` refuses a non-2xx response without reading the body.** Every
+  reader in that directory calls `clearSessionOnAuthFailure` before touching
+  the body; handing a 401 to the checker would skip that and report an error
+  envelope as contract drift, which the production branch would then swallow.
+  An auth regression no schema test would catch, so it is an assertion rather
+  than a comment.
+- **Logs carry `path` and `code` only.** Zod's issues embed the received value
+  — in `received`, and inside `message` for enum and literal mismatches — so
+  logging them verbatim would publish whatever the server sent into the console
+  of a shared operations workstation. AGENTS.md §9.6.
+
+**No new dependency.** Typing the validator wanted `ZodTypeAny`, and importing
+it would have made `zod` a direct dependency of `apps/web` — a third manifest
+and a §9.4 gate this ADR does not cover. `contracts/schema-types.ts` re-exports
+`Contract` and `ContractSchema` instead, keeping `zod` an implementation detail
+of the contracts package.
+
+### The finding: `GET /rules` has never matched its contract
+
+Verified on the rebuilt container per §4.6, and **the first run reported
+drift** — on an endpoint the spike had not sampled.
+
+`GET /rules` returns `invalid_enum_value` on `items[].category` and
+`items[].source` for every row but one. Measured in the database rather than
+inferred: **48 of 89 rules carry `category = "electrical"` and
+`source = "phe_alarm_seed"`, and neither value appears in either union.**
+`AutomationRuleCategory` declares `comfort | energy | safety | operations`;
+`source` declares `operator_rule | simulator_threshold`. Two declared values
+are unused and two live values are undeclared.
+
+**The majority of rows on that endpoint have never conformed**, and three
+things had to line up to keep it invisible:
+
+1. **No `CHECK` constraint** on either `varchar(64)` column, so the database
+   accepts anything.
+2. **`rule-mapping.ts:80,82` casts** — `row.category as AutomationRuleCategory`
+   — which is exactly the unchecked-assertion pattern this item removed from
+   the web, sitting one layer earlier and still there.
+3. The web then rendered the value typed as something it is not, so an
+   exhaustive `switch` on category would have silently mishandled 54% of rules.
+
+**This is the argument for the item, made by the item.** The spike measured
+zero drift and said plainly that it had covered 4 endpoints of 93; the first
+thing that checked a fifth found a defect in the majority of one endpoint's
+rows. "Zero drift where measured" was the right claim, and this is why it was
+worded that way.
+
+**Deliberately not fixed here** — it is `F4.43`. Whether these are legitimate
+values the union forgot (widen it, and add the `CHECK` that would have caught
+this, which is DDL and needs its own ADR) or bad data from the PHE seed (fix
+the seed) is a scope decision. Widening a schema to make a validator pass is
+precisely what `checkResponse`'s own error message tells the next person not
+to do, and it would be a poor first act for the mechanism.
+
+**One live cost, stated plainly:** the validator throws in dev and test, so
+`/rules` now raises under `pnpm --filter web dev` until `F4.43` is settled.
+That is decision 5 working as intended rather than a regression — production
+log-and-passes, which is why the page still renders — but it is a cost someone
+pays tomorrow morning, and it should be a choice rather than a surprise.

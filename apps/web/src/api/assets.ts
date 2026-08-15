@@ -1,4 +1,8 @@
+import {
+  assetPickerResponseSchema,
+} from "@bms/shared/contracts";
 import { withAuth } from "./http";
+import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -16,5 +20,5 @@ export async function fetchAssets(): Promise<AssetRow[]> {
   if (!res.ok) {
     throw new Error(`assets ${res.status}`);
   }
-  return res.json() as Promise<AssetRow[]>;
+  return checkResponse(assetPickerResponseSchema, await res.json(), "assets");
 }
