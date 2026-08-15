@@ -73,3 +73,7 @@ docs/status/backlog-status.json
 docs/status/backlog-dashboard.html
 docs/status/backlog-dashboard.standalone.html
 docs/status/backlog-dashboard.client.html
+
+# Advanced only after a successful artifact publish, so a failed publish cannot
+# be mistaken for "nothing changed". See docs/status/README.md.
+docs/status/.published-fingerprint

@@ -586,17 +586,36 @@ const payload = {
   warnings,
 };
 
-// Fingerprint of everything a reader would notice. The generation stamps change
-// on every run by definition, and an uncommitted working tree is not news — so
-// both are excluded, which is what lets the auto-republish loop stay quiet when
-// nothing has actually moved.
+// Fingerprint of the BOARD, and nothing else.
+//
+// It was briefly a hash of the whole payload minus the timestamps, which meant
+// the recent-commit log and the checked-out branch were inside it: every commit
+// anywhere triggered a republish, even when not one item had moved. On an
+// hourly loop that is noise dressed as news.
+//
+// So it covers exactly what a reader is here for — which items exist, what
+// state each is in, what each is waiting on, and the totals — projected field
+// by field rather than by subtraction, so adding a field to the payload cannot
+// silently widen it again.
 payload.fingerprint = createHash("sha256")
   .update(
     JSON.stringify({
-      ...payload,
-      generatedAt: null,
-      generatedAtIST: null,
-      repo: { ...payload.repo, dirty: null },
+      counts: payload.counts,
+      inFlight: payload.inProgress.map((p) => p.id).sort(),
+      tracks: payload.tracks,
+      items: items
+        .map((it) => [
+          it.id,
+          it.status,
+          it.priority,
+          it.wave,
+          it.title,
+          it.dependsRaw,
+          it.readyToStart,
+          it.gate?.kind ?? null,
+          it.deliveredOn,
+        ])
+        .sort((a, b) => a[0].localeCompare(b[0])),
     }),
   )
   .digest("hex")

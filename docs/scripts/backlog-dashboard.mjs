@@ -291,6 +291,57 @@ function heatmap() {
   </div>`;
 }
 
+/**
+ * Swimlanes: one lane per track, one column per wave, one chip per item.
+ *
+ * The board calls tracks "swim-lanes one person or agent can own end to end",
+ * and waves its time axis — so this is the plan drawn the way it is described,
+ * rather than a shape imposed on it. Reading down a column shows what a wave
+ * costs across the whole team; reading along a lane shows one owner's road.
+ */
+function swimlanes() {
+  const waveIds = [...new Set(data.items.map((i) => i.wave))].sort();
+  const lanes = data.tracks
+    .map((t) => {
+      const cells = waveIds
+        .map((w) => {
+          const rows = data.items
+            .filter((i) => i.track === t.id && i.wave === w)
+            .sort(
+              (a, b) =>
+                STATE_KEYS.findIndex((s) => s.key === a.stateKey) -
+                  STATE_KEYS.findIndex((s) => s.key === b.stateKey) ||
+                (P_ORDER[a.priority] ?? 9) - (P_ORDER[b.priority] ?? 9),
+            );
+          const chips = rows
+            .map((it) => {
+              const st = stateOf(it);
+              return `<i class="chip-i ${st.cls}${it.priority === "P0" ? " p0i" : ""}"
+                title="${esc(`${it.id} · ${it.priority} · ${st.label} — ${it.title}`)}"></i>`;
+            })
+            .join("");
+          return `<div class="lane-cell">${chips || '<span class="lane-none">·</span>'}</div>`;
+        })
+        .join("");
+      return `<div class="lane-name"><b>${esc(t.id)}</b><span>${esc(t.name)}</span></div>${cells}`;
+    })
+    .join("");
+
+  return `<div class="fig reveal">
+    <h3>The plan as swimlanes</h3>
+    <div class="lanes-scroll">
+      <div class="lanes" style="grid-template-columns:minmax(150px,auto) repeat(${waveIds.length},1fr)">
+        <div class="lane-hd"></div>${waveIds.map((w) => `<div class="lane-hd">Wave ${esc(w)}</div>`).join("")}
+        ${lanes}
+      </div>
+    </div>
+    ${legend()}
+    <div class="cap">One square per item — ${data.counts.total} in all. Lanes are the tracks a
+      single owner can carry end to end; columns are execution layers, not dates. A ring marks a
+      P0. Hover any square for its id and title.</div>
+  </div>`;
+}
+
 /** The chains BACKLOG.md §1 protects, with live states read from §2. */
 function paths() {
   const cls = (n) =>
@@ -370,7 +421,11 @@ function render(forClient) {
         })
         .join("")
     : `<article class="card lamp-idle reveal"><h3>Nothing in flight</h3>
-        <div class="why">No branch outside <code>main</code> maps to a backlog item right now.</div></article>`;
+        <div class="why">${
+          client
+            ? "Nothing is part-built right now — the last item finished and the next has not started."
+            : "No branch outside <code>main</code> maps to a backlog item right now."
+        }</div></article>`;
 
   const nextHtml = readyIds
     .map((id) => item(id))
@@ -551,6 +606,11 @@ function render(forClient) {
           <span>head <b>${esc(data.repo.head)}</b> · ${esc(data.repo.headDate)} IST</span>
           <span>backlog edited ${esc(data.source.date)} IST</span>`
           }
+          <div class="theme" role="group" aria-label="Colour theme">
+            <button type="button" data-theme-set="auto" aria-pressed="true">Auto</button>
+            <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+            <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+          </div>
         </div>
       </div>
 
@@ -588,6 +648,7 @@ function render(forClient) {
           and where the remaining work sits in the plan.</p></div>
       <div class="figs">${gauge()}${burnup()}</div>
       <div class="figs-2">${waves()}${heatmap()}</div>
+      ${swimlanes()}
     </section>
 
     <section>
@@ -696,6 +757,34 @@ function render(forClient) {
   (function () {
     var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+    /* Theme. The host stamps data-theme on <html> from the viewer's claude.ai
+       appearance setting, and stamps nothing at all on "system" — so Auto means
+       "remove the attribute and let prefers-color-scheme decide", which is also
+       how the page behaves for anyone opening the standalone file. */
+    var root = document.documentElement;
+    var store = function (v) {
+      try { v === null ? localStorage.removeItem("bb-theme") : localStorage.setItem("bb-theme", v); }
+      catch (e) { /* storage may be blocked in the sandbox; the choice is still applied */ }
+    };
+    var read = function () {
+      try { return localStorage.getItem("bb-theme"); } catch (e) { return null; }
+    };
+    function setTheme(mode, persist) {
+      if (mode === "auto") root.removeAttribute("data-theme");
+      else root.setAttribute("data-theme", mode);
+      document.querySelectorAll("[data-theme-set]").forEach(function (b) {
+        b.setAttribute("aria-pressed", String(b.dataset.themeSet === mode));
+      });
+      if (persist) store(mode === "auto" ? null : mode);
+    }
+    document.querySelectorAll("[data-theme-set]").forEach(function (b) {
+      b.addEventListener("click", function () { setTheme(b.dataset.themeSet, true); });
+    });
+    var saved = read();
+    // An explicit saved choice wins; otherwise adopt whatever the host stamped
+    // so the buttons show the truth rather than claiming Auto over a stamp.
+    setTheme(saved || root.getAttribute("data-theme") || "auto", false);
+
     /* Reveal on scroll. Without IntersectionObserver everything shows at once. */
     var targets = document.querySelectorAll(".reveal");
     if (reduce || !("IntersectionObserver" in window)) {
@@ -801,12 +890,26 @@ function render(forClient) {
 }
 
 
-// The fingerprint rides in the page itself rather than a sidecar file, so the
-// question "has anything a reader would notice moved?" is answerable from the
-// artifact alone. The auto-republish loop keys off the CHANGED/UNCHANGED line.
-const FP = /<!-- fingerprint: ([0-9a-f]+) -->/;
-const previous = existsSync(OUT) ? (readFileSync(OUT, "utf8").match(FP)?.[1] ?? null) : null;
-const changed = previous !== data.fingerprint;
+// The verdict compares against the last fingerprint we know was PUBLISHED, not
+// the last one written to disk. Those differ whenever a run regenerates but the
+// publish does not happen — a failed publish, a leak check that fails, an
+// interrupted session. Keying off the file on disk made the *next* run report
+// UNCHANGED and leave the artifact stale, which is the one failure this whole
+// mechanism exists to prevent. So the marker is advanced only by an explicit:
+//
+//     node docs/scripts/backlog-dashboard.mjs --mark-published
+//
+// run after the Artifact publish actually succeeds.
+const MARKER = join(repoRoot, "docs", "status", ".published-fingerprint");
+const published = existsSync(MARKER) ? readFileSync(MARKER, "utf8").trim() : null;
+
+if (process.argv.includes("--mark-published")) {
+  writeFileSync(MARKER, `${data.fingerprint}\n`);
+  console.log(`marked ${data.fingerprint} as published`);
+  process.exit(0);
+}
+
+const changed = published !== data.fingerprint;
 
 /** Wrap a page fragment in a real document, for files opened outside claude.ai. */
 const standalone = (fragment) => {
@@ -856,6 +959,7 @@ console.log(
 );
 console.log(
   changed
-    ? `CHANGED ${previous ?? "(first run)"} -> ${data.fingerprint} — republish the artifact`
+    ? `CHANGED ${published ?? "(never published)"} -> ${data.fingerprint} — republish the artifact, ` +
+      `then run this script again with --mark-published`
     : `UNCHANGED ${data.fingerprint} — nothing a reader would notice moved; skip the republish`,
 );
