@@ -112,7 +112,8 @@ export const setCredentialsBodySchema = z
       .record(z.string().min(1).max(4096))
       .refine((value) => Object.keys(value).length > 0, {
         message: "At least one credential field is required",
-      }),
+      })
+      .describe("At least one credential field is required; an empty object is refused."),
   })
   .strict();
 

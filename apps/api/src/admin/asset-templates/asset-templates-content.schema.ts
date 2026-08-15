@@ -113,7 +113,8 @@ const safeKeySchema = z
   .string()
   .refine((name) => !UNSAFE_KEYS.includes(name), {
     message: `Not a usable key here: ${UNSAFE_KEYS.join(", ")}`,
-  });
+  })
+  .describe(`Must not be one of the prototype-pollution keys: ${UNSAFE_KEYS.join(", ")}.`);
 const MAX_SECTION_ENTRIES = 200;
 const MAX_DASHBOARD_VIEWS = 20;
 const MAX_FEATURED_POINTS = 50;
@@ -234,11 +235,13 @@ const contentEnvelopeSchema = z
       .array(templateKpiSchema)
       .max(MAX_SECTION_ENTRIES)
       .superRefine((kpis, ctx) => uniqueBy(kpis, (kpi) => kpi.code, ctx, "KPI"))
+      .describe("Every KPI `code` must be unique within this array.")
       .optional(),
     alarms: z
       .array(templateAlarmSchema)
       .max(MAX_SECTION_ENTRIES)
       .superRefine((alarms, ctx) => uniqueBy(alarms, (alarm) => alarm.code, ctx, "alarm"))
+      .describe("Every alarm `code` must be unique within this array.")
       .optional(),
     maintenance: z.array(templateMaintenancePlanSchema).max(MAX_SECTION_ENTRIES).optional(),
     dashboards: z
@@ -247,6 +250,7 @@ const contentEnvelopeSchema = z
         (views) => Object.keys(views).length <= MAX_DASHBOARD_VIEWS,
         `At most ${MAX_DASHBOARD_VIEWS} dashboard views per template`,
       )
+      .describe(`At most ${MAX_DASHBOARD_VIEWS} dashboard views per template.`)
       .optional(),
   })
   .strict();
@@ -296,6 +300,12 @@ export const templateContentSchema = z
       }
     }
   })
+  .describe(
+    `Must nest no deeper than ${MAX_CONTENT_DEPTH} levels, must serialise within ` +
+      `${MAX_CONTENT_BYTES} bytes, must not use the prototype-pollution keys ` +
+      `(${UNSAFE_KEYS.join(", ")}), and must not carry a key reserved for a ` +
+      "backlog item that has not specified its shape yet.",
+  )
   .pipe(contentEnvelopeSchema);
 
 export type TemplateContentParsed = z.infer<typeof templateContentSchema>;
