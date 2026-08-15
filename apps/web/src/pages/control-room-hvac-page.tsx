@@ -19,6 +19,7 @@ import { StaticTspan, StaticValue } from "../components/static-value";
 import { AppShell } from "../layouts/app-shell";
 import {
   freshValue,
+  isHvacRunning,
   isStale,
   STALE_VALUE,
 } from "../lib/schematic-telemetry";
@@ -225,7 +226,12 @@ function ControlRoomHvacContent() {
     .filter((v): v is number => v != null && !Number.isNaN(v));
   const totalCooling =
     coolings.length === 0 ? null : coolings.reduce((a, b) => a + b, 0);
-  const activeUnits = liveUnits.filter((unit) => (unit.slice.fanSpeedPct ?? 0) > 20).length;
+  // `=== true`, so a live unit that publishes no fan speed is not counted as
+  // active *or* silently counted as idle — `isHvacRunning` returns `null` for
+  // "fresh but this point is absent" (ADR 0028).
+  const activeUnits = liveUnits.filter(
+    (unit) => isHvacRunning(unit.slice.fanSpeedPct) === true,
+  ).length;
   const liveCritical = units.filter((u) => u.state.status === "critical").length;
 
   return (
@@ -334,7 +340,10 @@ function HvacUnitCard({
     state: RuleState;
   };
 }) {
-  const running = unit.state.status !== "offline" && (unit.slice.fanSpeedPct ?? 0) > 20;
+  // `null` when the unit is fresh but publishes no fan speed — distinct from
+  // `false` (reported, and idle). The `?? 0` form this replaces rendered that
+  // as "idle" and `READY`, which for the STANDBY unit is its normal reading.
+  const running = unit.state.status === "offline" ? null : isHvacRunning(unit.slice.fanSpeedPct);
   return (
     <section className="rounded border border-gray-200 bg-white">
       <div className="flex flex-col gap-2 border-b border-gray-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -342,7 +351,7 @@ function HvacUnitCard({
           <h2 className="font-condensed text-lg font-bold text-bms-ink">
             {unit.label} · 4 TR · {unit.role}
           </h2>
-          <p className="text-xs text-bms-muted">{running ? "cooling" : "idle"} · {unit.code}</p>
+          <p className="text-xs text-bms-muted">{running == null ? STALE_VALUE : running ? "cooling" : "idle"} · {unit.code}</p>
         </div>
         <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClass(unit.state.status)}`}>
           {statusLabel(unit.state.status)}
@@ -360,7 +369,7 @@ function HvacUnitCard({
           <Metric label="Supply Air" value={n(freshValue(unit.slice.supplyAirTempC, unit.state.stale), 1)} unit="C" />
         </div>
         <div className="border-t border-gray-200 pt-3">
-          <Row label="Compressor" value={unit.state.stale ? STALE_VALUE : `${unit.slice.compressorOk === 0 ? "FAULT" : running ? "ON" : "READY"}`} />
+          <Row label="Compressor" value={unit.state.stale || running == null ? STALE_VALUE : unit.slice.compressorOk === 0 ? "FAULT" : running ? "ON" : "READY"} />
           <Row label="Fan" value={`${n(freshValue(unit.slice.fanSpeedPct, unit.state.stale), 0)}% · ${n(freshValue(unit.slice.fanRpm, unit.state.stale), 0)} rpm`} />
           <Row label="Cooling" value={`${n(freshValue(unit.slice.coolingKw, unit.state.stale), 1)} kW`} />
           <Row
@@ -393,7 +402,12 @@ function HvacDiagram({
   slice: SchematicTelemetrySlice;
   status: HvacStatus;
   label: string;
-  running: boolean;
+  /**
+   * `null` when the unit is offline or publishes no fan speed. The airflow
+   * arrows render in the muted colour for both, which is correct: an animated
+   * cyan airflow is a claim that air is moving (ADR 0028).
+   */
+  running: boolean | null;
 }) {
   const airStroke = running ? "#06b6d4" : "#94a3b8";
   return (

@@ -412,12 +412,19 @@ function Branch({ y, breaker, breakerCode, box, boxCode, ratingKva, outBreaker, 
  * lead/lag pair — `CR LIGHTS / AUX` has neither, and used to pass `sub=""`.
  *
  * The sub-line used to read `RUN · LEAD` / `STANDBY` as literals. `RUN` is now
- * decided by the unit's own fan speed through `isHvacRunning`, which both this
- * page and the HVAC page import — the first version of this docblock claimed
- * the two "cannot disagree" while `20` sat copied in three places with nothing
- * holding them together, which the compliance review caught. The role is
- * configuration — lead/lag assignment is set, not measured — so it is marked
- * rather than derived (ADR 0028).
+ * decided by the unit's own fan speed through `isHvacRunning`, which this page
+ * and the HVAC page both import.
+ *
+ * That sentence has been wrong twice, which is worth more than the sentence.
+ * The first version claimed the two pages "cannot disagree" while `20` sat
+ * copied in three places with nothing holding them together. The second
+ * extracted the helper, used it *here*, and repeated the claim — while the
+ * HVAC page still had both its copies. Each round the docblock described the
+ * intended end state rather than the code, and only the second reviewer to
+ * read both files caught it.
+ *
+ * The role is configuration — lead/lag assignment is set, not measured — so it
+ * is marked rather than derived (ADR 0028).
  */
 function LoadBranch({ y, breaker, code, title, unitCode, role, rules }: { y: number; breaker: string; code: string; title: string; unitCode?: string; role?: string; rules: RuleListItem[] }) {
   const s = useCr(code);

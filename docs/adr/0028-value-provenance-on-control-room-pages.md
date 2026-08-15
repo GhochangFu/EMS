@@ -74,7 +74,10 @@ they are cross-cutting, not because a human chose them.
      mains/battery-mode point at all — there is nothing to derive it from. The
      box shows the measured `loadPct` instead.
    - `RUN`/`IDLE`/`FAULT` come from the unit's own `fanSpeedPct` and
-     `compressorOk` via `isHvacRunning`, not from rule state.
+     `compressorOk` via `isHvacRunning`, not from rule state. (This was true of
+     `-sld-` only when first written — `-hvac-` kept two copies of the raw
+     `(fanSpeedPct ?? 0) > 20` test, so the page that names the concept was the
+     one page not using it. Both now import the helper.)
    - `LEAD`/`STANDBY` are not derived at all — they are lead/lag assignment,
      which is configuration, and they carry the `configuration` marker.
 2. **Values with no source are removed or explicitly marked**, never left
@@ -151,11 +154,13 @@ they are cross-cutting, not because a human chose them.
   phase columns where one phase is metered is worse than one honest column. (The
   column count was missed in review and caught only by looking at the deployed
   page, which left an empty fifth cell.)
-- **The UPS box gains a rating the mockup does not have.** `TRINETRA.html:2568`
-  reads `ONLINE · 48%`; this renders `{loadPct}% load · 30 kVA` with the rating
-  marked `nameplate`. The percentage restores the mockup's number, which the
-  literal `ONLINE · 30 kVA` had displaced; the rating is an addition, kept
-  because it is the one piece of the old string that was true.
+- **The UPS box converges on the mockup rather than diverging from it.**
+  `TRINETRA.html:2557-2558` renders UPS-1 as `ONLINE · 30 kVA` *and* `L 62%` —
+  the mockup carries both the rating and the load. What shipped had kept the
+  rating and dropped the load; this restores the load as a measured value,
+  keeps the rating marked `nameplate`, and drops only `ONLINE`, which no point
+  reports. (An earlier draft of this bullet claimed the rating was an addition
+  the mockup lacked, citing line 2568 alone. The re-review corrected it.)
 - The battery cell grid stays on screen and is marked. Removing it would delete
   a visualisation operators use to see cell balance in the demo; keeping it
   unmarked asserts instrumentation that does not exist. Wiring it is out of
@@ -178,6 +183,13 @@ they are cross-cutting, not because a human chose them.
   together; splitting them would put the HTML and SVG halves of the same
   decision in different files. Recorded as a deliberate exception rather than an
   oversight.
+- **The UPS Mode column is an inference, and is marked as one.** `modeFor`
+  returns `battery` below 15 minutes of backup and `online` above it — but
+  mains-versus-battery is exactly the claim `ONLINE` was dropped from the SLD
+  boxes for, and no point reports it. The word is kept, because the column is
+  load-bearing and the inference is reasonable, and marked `simulated` so it
+  does not read as measured. `offline` stays unmarked: that one is a real
+  statement about whether the asset is reporting.
 - Two cross-asset staleness bugs were found by the security review and fixed
   here, one introduced by this change and one pre-existing in its mirror image:
   the Battery page gated the UPS's `backupMin` on the *string's* clock, and the

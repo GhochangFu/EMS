@@ -19,9 +19,11 @@ type StaticValueProps = {
  * The staleness gate of `ADR 0027` cannot reach nameplate, setpoint or
  * simulated data — there is nothing to go stale — so the honesty has to be
  * visual. Use this anywhere a static value sits among live ones; the repo
- * invariant in `tests/repo-invariants.test.ts` checks for this wrapper rather
- * than against numeric literals, which would be unenforceable when nameplate
- * values are legitimate.
+ * invariants in `tests/repo-invariants-provenance.test.ts` check for this
+ * wrapper rather than against numeric literals, which would be unenforceable
+ * when nameplate values are legitimate — and separately check that these
+ * components render something, because an earlier version of them could be
+ * gutted with every call site left correct and the whole suite green.
  */
 export function StaticValue({ children, kind }: StaticValueProps) {
   const marker = provenanceMarker(kind);

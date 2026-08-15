@@ -10,9 +10,14 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
  * Value-provenance invariants (ADR 0028, `F4.39`).
  *
  * Split out of `repo-invariants.test.ts` rather than appended to it: that file
- * was at 997 lines and the checks below take it past the AGENTS.md §4.5 cap of
- * 1000. Raised by the `F4.39` compliance review, which also supplied three of
- * the five checks here — each one a mutation that survived the first version.
+ * is 829 lines on `main` and these checks take the pair past the AGENTS.md §4.5
+ * cap of 1000. (An earlier version of this note said "997 lines", which was the
+ * intermediate state with these checks still inline, not the file's own size —
+ * the split conclusion held, the premise did not.)
+ *
+ * Raised by the `F4.39` compliance reviews, which between two rounds supplied
+ * four of the checks here. Every one of them started as a mutation that
+ * survived a version of this file that looked finished.
  */
 describe("value provenance", () => {
   it("no control-room value is synthesized, and static ones carry their marker", () => {
@@ -73,6 +78,22 @@ describe("value provenance", () => {
           offenders.push(
             `control-room-${name}-page.tsx offsets a measurement inside freshValue: ` +
               `${firstArg.trim()} — that labels one instrument's reading as another's`,
+          );
+        }
+        // **`??` inside the gate is the cross-asset bug.** The `??` resolves
+        // first, so the fallback arrives already chosen and is then judged by
+        // the *other* asset's freshness — a dead battery string keeps rendering
+        // its last volts for as long as its UPS reports, and vice versa. Both
+        // directions were live in this repo; the second survived the fix to the
+        // first because only the instance was fixed.
+        //
+        // Deliberately flags every `??` here, including a same-asset fallback
+        // that would be harmless: `ownElse` expresses that case too, and a rule
+        // with no exceptions is one nobody has to adjudicate at review time.
+        if (firstArg.includes("??")) {
+          offenders.push(
+            `control-room-${name}-page.tsx resolves a fallback inside freshValue: ` +
+              `${firstArg.trim()} — use ownElse so each candidate is judged by its own asset's clock`,
           );
         }
       }
@@ -156,14 +177,53 @@ describe("value provenance", () => {
     // load branches, which is the same defect one call site over — an em-dash
     // was again the only signal. Scoped to the element, so a call passing a
     // literal `sub` is correctly ignored.
+    //
+    // **`freshValue(` alone was not enough**, and the re-review proved it by
+    // mutation: `LoadBranch` hoists its gated value into `runWord`, so its
+    // element text contains no `freshValue(` and the first version of this
+    // check skipped the very call site its comment cites. A gated box is now
+    // recognised either by the call or by the staleness flag it passes, which
+    // is the same hoisting evasion the offset scan above discloses — it showed
+    // up here first because this check reads elements rather than calls.
     const sld = sources.get("sld") ?? "";
     for (let i = sld.indexOf("<SldBox"); i >= 0; i = sld.indexOf("<SldBox", i + 1)) {
       const close = sld.indexOf("/>", i);
       const element = sld.slice(i, close < 0 ? sld.length : close);
-      if (/freshValue\s*\(/.test(element) && !/\boffline=/.test(element)) {
+      const gated =
+        /freshValue\s*\(/.test(element) || /\b\w*[sS]tale\b/.test(element) || /\bunitWord\b/.test(element);
+      if (gated && !/\boffline=/.test(element)) {
         offenders.push(
           "control-room-sld-page.tsx renders a gated value in an SldBox without passing `offline` — " +
             "the box stays green while its value blanks, so an em-dash is the only sign it is dead",
+        );
+      }
+    }
+
+    // **Everything derived from the synthesized cells is marked, not just the
+    // grid.** `bankTemp` averages the same cells the string header's deleted
+    // "avg temp" did, and it was left rendering four confident bank
+    // temperatures — ungated, because `bankTemp` always returns a number and
+    // `generateCells` defaults its base to 26 when `batteryTempC` is null. So
+    // with the estate offline the card showed measurements beside a header
+    // reading `—`. Found by the re-review, on the page this item had edited.
+    for (let i = batt.indexOf("bankTemp("); i >= 0; i = batt.indexOf("bankTemp(", i + 1)) {
+      // Skip the definition itself; only call sites make a claim on screen.
+      if (/function\s+$/.test(batt.slice(Math.max(0, i - 12), i))) {
+        continue;
+      }
+      const before = batt.slice(0, i);
+      const open = before.lastIndexOf("<StaticValue");
+      const close = before.lastIndexOf("</StaticValue>");
+      if (open < 0 || close > open) {
+        offenders.push(
+          "control-room-battery-page.tsx renders a bank temperature outside a provenance marker — " +
+            "there are no per-bank sensors; it is an average of cells synthesized from one string reading",
+        );
+      }
+      const call = batt.slice(i, batt.indexOf(")", batt.indexOf(")", i) + 1) + 1);
+      if (!/freshValue\s*\(/.test(batt.slice(Math.max(0, i - 60), i + call.length))) {
+        offenders.push(
+          "control-room-battery-page.tsx renders a bank temperature without gating it on the string's clock",
         );
       }
     }

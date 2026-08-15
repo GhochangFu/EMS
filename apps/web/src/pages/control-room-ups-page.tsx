@@ -348,6 +348,7 @@ function CombinedSummary({
     capacityKva: 30;
     slice: SchematicTelemetrySlice;
     battery: SchematicTelemetrySlice;
+    battStale: boolean;
     state: RuleState;
   }>;
 }) {
@@ -376,10 +377,29 @@ function CombinedSummary({
             {units.map((unit) => (
               <tr key={unit.code}>
                 <td className="px-4 py-3 font-semibold text-bms-ink">{unit.label}</td>
-                <td className="px-4 py-3 uppercase">{modeFor(unit.slice, unit.state.status)}</td>
+                {/* `offline` is a real statement (the asset stopped reporting);
+                    `online`/`battery` is an inference from `backupMin < 15`,
+                    and no point reports UPS operating mode — the same reason
+                    `ONLINE` was dropped from the SLD boxes (ADR 0028 decision
+                    1). Marked rather than removed, because the column is
+                    load-bearing in the table and the inference is reasonable;
+                    what it must not do is read as measured. */}
+                <td className="px-4 py-3 uppercase">
+                  {unit.state.status === "offline" ? (
+                    modeFor(unit.slice, unit.state.status)
+                  ) : (
+                    <StaticValue kind="simulated">
+                      {modeFor(unit.slice, unit.state.status)}
+                    </StaticValue>
+                  )}
+                </td>
                 <td className="px-4 py-3">{n(freshValue(unit.slice.loadPct, unit.state.stale), 0)}%</td>
                 <td className="px-4 py-3">{n(freshValue(unit.slice.outputVoltageV, unit.state.stale), 1)} / {n(freshValue(unit.slice.outputFreqHz, unit.state.stale), 2)}</td>
-                <td className="px-4 py-3">{n(freshValue(unit.slice.batteryV ?? unit.battery.batteryV, unit.state.stale), 1)} V</td>
+                {/* The detail card below was converted to `ownElse` first and
+                    this row was missed, so the `??`-before-the-gate pattern
+                    survived in the one place that lists both units at once.
+                    Caught by the F4.39 re-review. */}
+                <td className="px-4 py-3">{n(ownElse(unit.slice.batteryV, unit.state.stale, unit.battery.batteryV, unit.battStale), 1)} V</td>
                 <td className="px-4 py-3">{n(freshValue(unit.slice.backupMin, unit.state.stale), 0)} min</td>
                 <td className="px-4 py-3">{n(freshValue(unit.slice.healthPct, unit.state.stale), 0)}%</td>
                 <td className="px-4 py-3">

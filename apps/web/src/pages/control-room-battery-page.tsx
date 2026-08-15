@@ -305,17 +305,36 @@ function ControlRoomBatteryContent() {
       ))}
 
       <div className="grid gap-4 lg:grid-cols-2">
+        {/* `F4.39`, caught by the re-review: these four bank temperatures are
+            the *same* average of the *same* synthesized cells that was deleted
+            from the string header one card up — and unlike the header they were
+            not gated at all. `bankTemp` always returns a number, and
+            `generateCells` defaults its base temperature to 26 when
+            `batteryTempC` is null, so with the whole estate offline this card
+            showed four confident temperatures beside a header reading `—`.
+            Verbatim the defect F4.39 exists to fix, on the page F4.39 edited.
+            Now gated on the string's own clock and marked, because there are no
+            per-bank sensors — the split into 1A/1B is a presentation of one
+            string reading. */}
         <DetailCard title="Per-Bank Temperature">
           {strings.flatMap((string, index) => [
             <Row
               key={`${string.code}-a`}
               label={`Bank ${index + 1}A (cells 1-16, ${string.code})`}
-              value={`${n(bankTemp(string.cells.slice(0, 16)), 1)} C`}
+              value={
+                <StaticValue kind="simulated">
+                  {`${n(freshValue(bankTemp(string.cells.slice(0, 16)), string.state.stale), 1)} C`}
+                </StaticValue>
+              }
             />,
             <Row
               key={`${string.code}-b`}
               label={`Bank ${index + 1}B (cells 17-32, ${string.code})`}
-              value={`${n(bankTemp(string.cells.slice(16)), 1)} C`}
+              value={
+                <StaticValue kind="simulated">
+                  {`${n(freshValue(bankTemp(string.cells.slice(16)), string.state.stale), 1)} C`}
+                </StaticValue>
+              }
             />,
           ])}
         </DetailCard>
@@ -464,7 +483,7 @@ function DetailCard({ title, children }: { title: string; children: ReactNode })
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex justify-between gap-3 text-sm">
       <span className="text-bms-muted">{label}</span>
