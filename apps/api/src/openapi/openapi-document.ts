@@ -3,7 +3,12 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import type { OpenAPIObject } from "@nestjs/swagger";
 
 import { REQUEST_SCHEMAS } from "./openapi-registry";
-import { convertZodSchema, LOWER_BOUND_NOTICE, type UnexplainedRefinement } from "./zod-openapi";
+import {
+  convertZodSchema,
+  LOWER_BOUND_NOTICE,
+  REFINED_MARKER,
+  type UnexplainedRefinement,
+} from "./zod-openapi";
 
 /**
  * `F4.20` / ADR 0029 — assembling the document.
@@ -27,6 +32,8 @@ type Operation = {
   operationId?: string;
   requestBody?: unknown;
   parameters?: unknown[];
+  description?: string;
+  [REFINED_MARKER]?: boolean;
 };
 
 export interface BuiltDocument {
@@ -124,6 +131,33 @@ export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
         schema: propSchema,
       }));
       operation.parameters = [...(operation.parameters ?? []), ...parameters];
+
+      // **Splitting the object throws away everything said ABOUT the object**,
+      // and that is exactly where a query schema's refinements live: they are
+      // cross-field by nature (`from` must not be later than `to`; the window
+      // must not exceed 90 days) and so cannot sit on any single parameter.
+      //
+      // Found by reading the served document rather than by any test: the audit
+      // list and export routes came out with their parameters documented and
+      // their window rules stated **nowhere** — the same silent-permissiveness
+      // defect ADR 0029 Amendment 1 exists to prevent, reintroduced by the code
+      // written to prevent it.
+      //
+      // OpenAPI has no construct for a constraint spanning parameters, so the
+      // honest home is the operation's own description, with the marker beside
+      // it so a machine can still see that something is unexpressed.
+      const objectLevel = converted.schema as {
+        description?: string;
+        [REFINED_MARKER]?: boolean;
+      };
+      if (objectLevel[REFINED_MARKER]) {
+        operation[REFINED_MARKER] = true;
+        if (objectLevel.description) {
+          operation.description = [operation.description, objectLevel.description]
+            .filter(Boolean)
+            .join(" ");
+        }
+      }
       void path;
     }
   }
