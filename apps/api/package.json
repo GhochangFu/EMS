@@ -15,6 +15,7 @@
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/platform-express": "^10.4.15",
     "@nestjs/platform-socket.io": "^10.4.15",
+    "@nestjs/swagger": "^8.1.1",
     "@nestjs/websockets": "^10.4.15",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/auto-instrumentations-node": "^0.73.0",
@@ -35,7 +36,8 @@
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.1",
     "xlsx": "^0.18.5",
-    "zod": "^3.24.1"
+    "zod": "^3.24.1",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.9",
