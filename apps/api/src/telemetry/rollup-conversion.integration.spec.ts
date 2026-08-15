@@ -184,6 +184,16 @@ function assertClose(
  * other telemetry deletes in this repo already use.
  */
 export async function cleanupProbes(pool: pg.Pool): Promise<void> {
+  // The `F4.28` guard, now covering the destructive half of this suite as well as
+  // the creating half. It was reachable only from `createProbes`, so both cleanup
+  // calls — `beforeAll` before creation, `afterAll` after — ran against whatever
+  // `DATABASE_URL` named. That was survivable while the delete above *failed* on a
+  // mis-pointed aged database: the decompression error was an accidental
+  // fail-closed. Fixing the delete removed that accident, so the guard has to be
+  // real here. A `DELETE` is a stronger case for it than the `INSERT` it was
+  // written for.
+  assertSafeToWriteFixtures();
+
   const { rows } = await pool.query<{ id: string }>(
     `SELECT id FROM bms.assets WHERE code = ANY($1::text[])`,
     [[PLAIN_CODE, SOLAR_CODE]],

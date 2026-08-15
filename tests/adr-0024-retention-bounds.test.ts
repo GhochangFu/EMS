@@ -275,6 +275,19 @@ describe("ADR 0024 — compression and retention bounds", () => {
           "Without `asset_id =` or `point_key =` it scans and decompresses every batch in every " +
           `chunk. Statement: ${statement}`,
       ).toMatch(/\b(asset_id|point_key)\s*=/);
+
+      // The remediation above — "resolve the ids in a separate query first" — hands
+      // the author a JavaScript variable holding an id and a SQL string that wants
+      // it, which is exactly the moment someone reaches for `${id}`. §4.4 already
+      // says parameterised queries only; this says it where the temptation is
+      // manufactured, so the fix for one rule cannot quietly break another.
+      expect(
+        statement,
+        `${where}: this DELETE interpolates a value into its SQL. AGENTS.md §4.4 is ` +
+          "parameterised queries only — and resolving ids in a separate query, which the rule " +
+          "above asks for, is precisely where that gets forgotten. Bind it instead. " +
+          `Statement: ${statement}`,
+      ).not.toMatch(/\$\{/);
     }
   });
 });

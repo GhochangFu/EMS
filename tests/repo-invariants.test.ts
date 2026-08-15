@@ -869,7 +869,23 @@ describe("repo invariants", () => {
     const counters = /\b(total_failures|total_successes|total_runs|total_crashes)\b/;
     const offenders: string[] = [];
 
-    for (const file of sourceFiles().filter((f) => /\.(spec|test)\.tsx?$/.test(f))) {
+    // `apps/**` and `packages/**` only, which is where every suite that opens a
+    // database connection lives. Files under `tests/` are static source scanners
+    // that never reach TimescaleDB — and this rule's own regex, three lines up,
+    // would otherwise be its first offender.
+    const scanned = sourceFiles().filter((f) => /\.(spec|test)\.tsx?$/.test(f));
+
+    // An empty `offenders` is the passing state, so nothing about it distinguishes
+    // "scanned everything, found nothing" from "scanned nothing". The sibling check
+    // in `adr-0024-retention-bounds.test.ts` counts its sites for the same reason.
+    // 40 is far below the current count and far above zero.
+    expect(
+      scanned.length,
+      "this scan found almost no spec/test files. The walk is broken, and an empty offender " +
+        "list below would mean nothing.",
+    ).toBeGreaterThan(40);
+
+    for (const file of scanned) {
       const text = readFileSync(file, "utf8");
       if (!counters.test(text)) continue;
       const rel = relative(repoRoot, file).replace(/\\/g, "/");
