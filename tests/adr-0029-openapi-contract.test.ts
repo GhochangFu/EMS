@@ -127,6 +127,78 @@ describe("ADR 0029 decision 10 — refinements explain themselves", () => {
     ).toEqual([]);
   });
 
+  /**
+   * ADR 0029 decision 6, by the only mechanism this repo has.
+   *
+   * **Decision 6 asks for a runtime count** — build the document, compare the
+   * number of documented operations against the routes Nest actually
+   * registered. That was written, and it cannot run here. Vitest transforms TS
+   * with esbuild, which does not emit `design:paramtypes`, so Nest's
+   * constructor injection resolves to `undefined` and `AppModule` cannot be
+   * instantiated at all: booting it failed in `TelemetryGateway.afterInit` with
+   * `this.hub` undefined. No test in this repo has ever built a Nest module —
+   * every integration suite constructs services directly (`new
+   * DashboardService(pool)`) — and that is why. Fixing it means adding an swc
+   * transform, which is a dependency change ADR 0029 does not cover.
+   *
+   * **The runtime count was verified manually instead**, against the running
+   * container with a token: **94 documented operations** for the 93 REST routes
+   * plus `/docs-json` itself, and **35 request bodies**, which is exactly the 43
+   * registry entries minus the 8 GET query schemas. Recorded because a manual
+   * check is not a gate and should not be mistaken for one.
+   *
+   * What this static check holds is the defect decision 6 *names*: a controller
+   * that is silently absent. A controller class listed in no module's
+   * `controllers` array is invisible to Nest, and therefore to the document,
+   * while its file still exists and still compiles.
+   */
+  it("registers every controller with a module", () => {
+    const controllers: string[] = [];
+    const modules: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === "node_modules" || entry.name === "dist") continue;
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith(".controller.ts")) controllers.push(full);
+        else if (entry.name.endsWith(".module.ts")) modules.push(full);
+      }
+    };
+    walk(join(repoRoot, "apps", "api", "src"));
+
+    expect(controllers.length, "no controllers found — the walk is broken").toBeGreaterThan(10);
+    expect(modules.length, "no modules found — the walk is broken").toBeGreaterThan(5);
+
+    // **Only the `controllers: [...]` arrays**, never the whole module file.
+    // Searching the file is satisfied by the `import { XController }` line at
+    // the top, so deleting the class from the array — the actual defect —
+    // passes. Verified by mutation: the file-wide version SURVIVED removing
+    // `OpenApiController` from its module. This is AGENTS.md §4.4's seventh
+    // instance exactly: a static check defeated by a legitimate occurrence of
+    // the same token elsewhere in the same file.
+    const registered = modules
+      .map((file) => readFileSync(file, "utf8"))
+      .flatMap((text) => [...text.matchAll(/controllers\s*:\s*\[([\s\S]*?)\]/g)].map((m) => m[1]))
+      .join("\n");
+
+    const orphans = controllers
+      .flatMap((file) => {
+        const match = readFileSync(file, "utf8").match(/export class (\w+Controller)\b/);
+        return match ? [{ file, name: match[1] as string }] : [];
+      })
+      .filter(({ name }) => !new RegExp(`\\b${name}\\b`).test(registered))
+      .map(({ file }) => relative(repoRoot, file).replace(/\\/g, "/"));
+
+    expect(
+      orphans,
+      `these controllers are declared by no module:\n${orphans.join("\n")}\n\n` +
+        "Nest never registers them, so their routes do not exist and the OpenAPI " +
+        "document cannot describe what it cannot see. The file still compiles and still " +
+        "looks like a working controller, which is what makes this silent (ADR 0029 " +
+        "decision 6).",
+    ).toEqual([]);
+  });
+
   it("keeps body and query schemas out of the controllers", () => {
     // ADR 0029 decisions 1 and 3: the registry binds routes to the schemas that
     // validate them, and it can only see schemas that live in a `*.schema.ts`.
