@@ -211,7 +211,13 @@ bms/
 │                                ADR 0028's (F4.39). They are split because the
 │                                pair exceeds the §4.5 1000-line cap, so put a
 │                                new value-honesty check in the second and
-│                                anything else in the first
+│                                anything else in the first — but the first is
+│                                now 911 lines, so the NEXT check that does not
+│                                belong to an existing ADR file needs a third
+│                                file, not another append (F4.40). A check that
+│                                does belong to one goes there instead:
+│                                adr-0024-retention-bounds.test.ts took F4.40's
+│                                compressed-delete rule for that reason
 ├── exports/                   ← PHE MQTT reference + point-mapping CSVs (ADR 0007/0011)
 ├── infra/
 │   ├── keycloak/              ← Phase 1 Sprint C realm export
@@ -452,6 +458,26 @@ Do not add top-level folders without updating this section.
   finest first. Migrations `0014` and `0021` are precedents that predate the
   aggregates; the next one of that shape must do this. `F4.1`'s own test suite
   violated this rule and orphaned aggregate rows on every run — fixed in `F4.2`.
+  **Copy what those two migrations do about aggregates, not how they write the
+  delete** (`F4.40`) — see the next bullet, which they would now fail.
+- **A `DELETE` from `telemetry.point_values` must filter `asset_id` or
+  `point_key` with a *constant*, and must not reach the table through a
+  subquery, CTE or join.** Migration `0028` segments the table by those two
+  columns, so a constant filter on either is evaluated against compressed
+  batches without opening them. Anything the planner cannot fold to a constant
+  makes TimescaleDB decompress **every** batch to evaluate the predicate, and
+  past `max_tuples_decompressed_per_dml_transaction` (100000) that is a hard
+  error, not a slow query. Measured in `F4.40` on a dev database with 4 of 15
+  chunks compressed: **186706 tuples decompressed while matching zero rows** —
+  the cost is set by what the statement must *examine*, not by what it deletes,
+  which is why no amount of scoping the target helps. Resolve ids in a prior
+  statement and filter on them directly. A time bound also avoids it and is the
+  weaker fix: it holds only while no compressed chunk falls inside the bound,
+  which silently couples the caller to this file's 7-day threshold.
+  `tests/adr-0024-retention-bounds.test.ts` holds this for `.ts`. It cannot hold
+  it for `.sql`: `0014` and `0021` both use `DELETE ... USING <temp table>`,
+  they were correct when written, and they are merged and forward-only — so the
+  rule for the next migration lives here and nowhere else.
 - **But that rule is conditional, and ADR 0024 is what made it so: refresh only
   where raw still holds the range.** Since retention exists, a refresh over a
   range raw has *dropped* is the opposite of a repair — it recomputes from an
@@ -502,6 +528,23 @@ Do not add top-level folders without updating this section.
   that silently skipped the database tests asserts nothing. A *set* one is a
   claim that a database exists, so a failed connection fails everywhere rather
   than skipping. Coverage thresholds assume these suites ran.
+- **CI's database is created per run, so it has no history — and the asymmetry
+  runs the other way too** (`F4.40`). Everything that accrues over a database's
+  life is absent there by construction: compressed chunks, retention having
+  fired, watermarks, and every lifetime counter in
+  `timescaledb_information.job_stats`. A suite can therefore be **permanently
+  green in CI and structurally red on every real database**, which is worse than
+  the reverse, because the pipeline reports success while the people who run the
+  suite learn to ignore it. Two instances, both found on `main` with CI green:
+  a fixture cleanup that failed on any database older than the 7-day compression
+  threshold — every developer's, after the first week — and an assertion that
+  `job_stats.total_failures = 0`, a cumulative counter that never resets, so one
+  transient failure reddened the suite for the life of that database (measured:
+  1 failure against 432 successes, `last_run_status = Success`, the aggregate
+  current). **Never assert on a lifetime counter**; assert the thing that
+  describes now, which for a policy is `last_run_status`. And when a check can
+  only ever fail outside CI, say so where it is written — that is a static
+  invariant's job, not a suite's. Held in `tests/repo-invariants.test.ts`.
 - New behaviour ships with its test in the same PR. Bug fixes ship with the
   test that would have caught the bug.
 - **Coverage is a ratchet, not a target.** Thresholds in `vitest.config.ts` sit
