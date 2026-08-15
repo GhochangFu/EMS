@@ -40,16 +40,25 @@ describe("ADR 0016 ingest contracts", () => {
   it("keeps every ingest protocol expressible in onboarding", () => {
     const { INGEST_PROTOCOLS } = loadIngest();
 
-    // `OnboardingProtocol` is a type, so the compile-time guard in `ingest.ts`
-    // is erased at runtime and cannot fail a test run. Read the union from
-    // source instead: if the two drift, F3.24 could offer a protocol that
-    // nothing is able to ingest.
-    const indexSource = readFileSync(join(repoRoot, "packages/shared/src/index.ts"), "utf8");
-    const union = indexSource.match(/export type OnboardingProtocol =([\s\S]*?);/)?.[1];
-    expect(union, "OnboardingProtocol union not found in packages/shared/src/index.ts").toBeTruthy();
+    // **This used to scrape the union out of `index.ts` as text**, because
+    // `OnboardingProtocol` was a type and types are erased before a test can
+    // see them. `F4.23` (ADR 0030) made the schema the source and the type
+    // `z.infer` of it, so the union is now a RUNTIME value and can simply be
+    // read. Strictly better: a source scan cannot tell a real union from one
+    // inside a comment, and it breaks whenever the declaration is reformatted.
+    //
+    // The old form did not fail silently when it broke — its anti-vacuity
+    // floor caught the migration on the first run, which is the whole reason
+    // §4.4 asks for one.
+    const { onboardingProtocolSchema } = require_("@bms/shared/contracts") as {
+      onboardingProtocolSchema: { options: readonly string[] };
+    };
+    const onboarding = [...onboardingProtocolSchema.options];
 
-    const onboarding = [...(union ?? "").matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
-    expect(onboarding.length).toBeGreaterThan(0);
+    expect(
+      onboarding.length,
+      "onboardingProtocolSchema exposed no options — the schema shape changed and this check is now vacuous",
+    ).toBeGreaterThan(0);
 
     const missing = INGEST_PROTOCOLS.filter((p) => !onboarding.includes(p));
     expect(missing, `ingest protocols absent from OnboardingProtocol: ${missing.join(", ")}`).toEqual(
