@@ -11,7 +11,6 @@ import { HealthModule } from "./health/health.module";
 import { MaintenanceModule } from "./maintenance/maintenance.module";
 import { MapModule } from "./map/map.module";
 import { ObservabilityModule } from "./observability/observability.module";
-import { OpenApiModule } from "./openapi/openapi.module";
 import { ReportsModule } from "./reports/reports.module";
 import { RulesModule } from "./rules/rules.module";
 import { TelemetryModule } from "./telemetry/telemetry.module";
@@ -45,7 +44,6 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     RulesModule,
     ReportsModule,
     MapModule,
-    OpenApiModule,
   ],
 })
 export class AppModule {}

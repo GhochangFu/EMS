@@ -325,3 +325,88 @@ F. **`.describe()` does not survive `.refine()`.** `z.string().describe("x")
   rather than failing on it. The document remains valid OpenAPI 3.
 - **Fact D retires a risk this ADR carried.** The Dependencies section's warning
   about coercion should be read as measured and closed, not open.
+
+---
+
+## Amendment 2 — the document is absent or open, never guarded (2026-08-15)
+
+Accepted 2026-08-15 by the repository owner. **This reverses decision 2**, which
+was implemented, deployed and then measured not to work.
+
+### Measured facts
+
+G. **Swagger UI cannot read a guarded document.** It does not attach an
+   `Authorization` header when it fetches the spec named by `swaggerOptions.url`
+   — that header is applied to *Try it out* requests, not to loading the
+   specification. Observed on the running container: `/api/v1/docs` rendered,
+   fell back to the empty document it had been handed, and displayed **"No
+   operations defined in spec!"**. There is no Authorize control to recover
+   with, because an empty document declares no security scheme. So decision 2's
+   phrasing — *"the reader supplies a bearer token and the page is blank until
+   they do"* — was wrong: blank is the **only** state a guarded document can
+   produce in a browser.
+
+H. **`raw: false` does not suppress `swagger-ui-init.js`.** Before the empty
+   document was substituted, that file answered **200 with no token at
+   128136 bytes**, carrying every path in the API. The `JwtAuthGuard` on
+   `/docs-json` was guarding one copy while another sat beside it in the open.
+   Fixed at the time by handing the shell an empty document; recorded here
+   because it is the reason to distrust "the guard is on it" as a statement
+   about a Swagger deployment.
+
+I. **A query schema's refinements were being discarded.** A `GET`'s schema is
+   split into individual `in: "query"` parameters, and that split dropped
+   everything said about the *object* — which is exactly where a query schema's
+   refinements live, being cross-field by nature. `GET /admin/audit` and
+   `/admin/audit/export` appeared with every parameter documented and their
+   window rules stated nowhere. Fixed by moving the prose to the operation's
+   `description` with the marker beside it. Unrelated to this amendment's
+   decision, and recorded because it was found the same way: by reading the
+   served document rather than by any test.
+
+### Decision
+
+12. **Where the docs are served, the document and the UI are
+    **unauthenticated**. Where they are not, no route is registered at all.**
+    There is no third state. Guarding was tried and produces a page that cannot
+    work (fact G); serving a guarded document for machines only, with a UI that
+    never loads, was rejected as worse than either honest option.
+
+13. **`API_DOCS_ENABLED` decides, and the default is chosen so the unsafe
+    direction must be asked for.** Explicit `true` enables them anywhere;
+    explicit `false` disables them anywhere; unset means enabled everywhere
+    **except** `NODE_ENV=production`. An unrecognised value (`1`, `yes`, `on`)
+    falls through to the default rather than being read as true — the failure
+    directions are not symmetric, since reading a typo as "enabled" publishes
+    the API inventory. Implemented as a pure function beside the auth-mode
+    resolver it is modelled on, and tested independently of bootstrap.
+
+14. **What this gives up, stated plainly.** An Ion Exchange integrator can no
+    longer read the contract from a pilot instance using credentials they
+    already have — which was the reason decision 2 chose the JWT. They receive
+    the document out of band, or someone sets `API_DOCS_ENABLED=true` and
+    accepts that the complete route inventory, including the ADR 0017 operations
+    matrix and the ADR 0012 credential endpoints, is then readable by anyone who
+    can reach the port. **That is not a guarded state and must not be described
+    as one.**
+
+15. **The guarded-document machinery is deleted, not left dormant.**
+    `OpenApiController`, `OpenApiDocumentStore`, `OpenApiModule` and
+    `EMPTY_DOCUMENT` all existed only to serve a document behind a guard.
+    Keeping them "in case" would leave a second, unreachable way to publish the
+    API inventory sitting in the tree — and this repo has already paid for a
+    dormant second path once, in ADR 0016 §6's ingest entry point.
+
+### Consequences
+
+- **`/api/v1/docs` now works** — it is the ordinary `SwaggerModule` deployment,
+  serving its own document, which is what makes the UI usable at all.
+- **The three consumers are unaffected.** `F4.23`, `E3.3` and `E6.2` need a
+  machine-readable contract, and they read it from a checked-out repository or a
+  development instance, not from a production URL.
+- **`swagger-ui-init.js` embedding the document is no longer a defect**, because
+  there is no longer a guard for it to bypass. The `raw` flag returns to its
+  default.
+- **A production instance with `API_DOCS_ENABLED` unset serves nothing at
+  `/api/v1/docs`** — a 404, not a 401. Worth knowing before someone reports it
+  as a bug.
