@@ -945,6 +945,55 @@ Process (`AGENTS.md` §10).
   which is the worse direction: the pipeline reports success while the people who
   run the suite learn to ignore it.
 
+  **`F4.20` gave the API an OpenAPI document, and its real subject is how much a
+  green suite does not tell you** (PR #61, merged `2645263`; sweep #62; ADR 0029
+  and both amendments). The document is generated from the Zod schemas that
+  already validate each request, because `@nestjs/swagger`'s decorators read
+  TypeScript metadata off DTO classes and this codebase has none — the default
+  approach yields a route index with every payload an untyped object *while
+  looking complete*. 43 handlers are joined to their schemas by Nest
+  `operationId` in one registry file, so a renamed schema is a compile error
+  rather than a stale document.
+
+  **Two amendments, both from measurement rather than review.** The first:
+  `zod-to-json-schema` emits **nothing** for `.refine`/`.superRefine`, so 63
+  schemas convert with zero failures while **11 refinement sites vanish** — shown
+  on `telemetryReadingSchema.time`, where a payload Zod rejects is accepted by
+  the generated schema. The owner's chosen fix, carrying the validator's own
+  message into the document, turned out to be impossible: `.refine` captures its
+  message in a closure and `_def.message` is `null`. So the marker is derived and
+  the prose is authored, and because `.describe()` placed *before* a refinement
+  is silently discarded, the guard checks order rather than presence.
+
+  The second **reversed an accepted decision**. Putting the document behind the
+  JWT was built, deployed, and then measured not to work: Swagger UI sends no
+  `Authorization` header when it fetches a spec, so the page rendered "No
+  operations defined in spec!" with nothing able to recover it. The docs are now
+  absent or open, never guarded, gated by `API_DOCS_ENABLED` — and since the API
+  image sets `NODE_ENV=production`, the compose stack serves nothing until a
+  developer opts in through their own `.env`.
+
+  **Three defects were found by fetching the served document, none reachable by
+  the suite.** `/docs/swagger-ui-init.js` answered 200 with no token at 128 KB,
+  carrying every path in the API, so the guard was protecting one copy while
+  another sat in the open — the exact failure the comment two lines above it
+  warned about. A `GET`'s schema was split into query parameters in a way that
+  discarded the object-level refinements, so both audit routes shipped with
+  their window rules stated nowhere despite carrying a `.describe()` and passing
+  every check. And the UI could not read its own document. This is the fourth
+  consecutive item where the deployment check found what the tests could not,
+  and the sharpest case yet: a green suite, two clean typechecks and a static
+  invariant, and three defects in what was actually served.
+
+  **One guarantee did not land in the form its ADR specified, and the reason is
+  now a rule.** Decision 6 asked for a runtime operation count; a Nest module
+  cannot be instantiated in a test here, because vitest's esbuild transform emits
+  no `design:paramtypes` and constructor injection resolves to `undefined`. No
+  test in this repo has ever built one — that is why every integration suite
+  constructs services directly. The count was verified manually instead, and the
+  static check standing in for it says so in its own comment rather than passing
+  as the gate.
+
   The ADR 0016 §5 backoff moved to `packages/shared/src/ingest.ts` in the same
   change, because that listener became its second consumer and the ADR states
   those numbers precisely so a second policy never gets invented. Note that
