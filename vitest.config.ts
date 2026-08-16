@@ -125,6 +125,31 @@ export default defineConfig({
       // `localhost` resolves to IPv6 first, `access-control.integration` fails the
       // whole run with a connection timeout rather than skipping — correctly, since
       // a set `DATABASE_URL` is a claim that a database exists. CI is unaffected.
+      //
+      // Ratcheted by `F4.46` from 39.2/33.6/40.0/39.5. Measured 2026-08-16
+      // against the live database, all 202 tests running and none skipped:
+      // 40.32 statements · 35.25 branches · 41.56 functions · 40.61 lines.
+      // (66 files / 202 tests.)
+      //
+      // **Only part of that rise is `F4.46`'s**, and the split was measured
+      // rather than assumed — the note below records this file getting it wrong
+      // twice, so the parent commit (`b4d03d3`, the tip of `main`) was measured
+      // the same way for comparison: 39.80 · 34.24 · 40.98 · 40.10 (64 files /
+      // 197 tests). So:
+      //
+      //   - `F4.46` itself is +0.52 statements, **+1.01 branches**, +0.58
+      //     functions, +0.51 lines. Branches lead by a wide margin because what
+      //     this item added is almost entirely decision logic —
+      //     `offersNoSeverityOption` is two arms, `severityFromRule` is a
+      //     `safeParse` fork, and the API cases exercise both severity branches
+      //     of `validateRuleDraft` for the first time;
+      //   - the other ~0.5 predates this branch. `main` had already drifted from
+      //     the `F4.38` measurement of 39.28/33.73/40.09/39.57 up to
+      //     39.80/34.24/40.98/40.10 across `F4.43`–`F4.45`, none of which
+      //     ratcheted. Those three points of gain were sitting unprotected: a
+      //     regression could have given all of it back without tripping this
+      //     gate. Ratcheting here banks it.
+      //
       // Ratcheted by `F4.38` from the `F4.37` **measurement** of
       // 38.98/33.42/39.88/39.26 (its thresholds were 38.9/33.4/39.8/39.2 —
       // comparing this measurement against those thresholds would overstate the
@@ -246,10 +271,10 @@ export default defineConfig({
       // tests at all** before this item (ADR 0025 fact 7) and is now exercised
       // through `energyPreview` rather than by reconstructing its queries.
       thresholds: {
-        statements: 39.2,
-        branches: 33.6,
-        functions: 40.0,
-        lines: 39.5,
+        statements: 40.3,
+        branches: 35.2,
+        functions: 41.5,
+        lines: 40.6,
       },
     },
   },
