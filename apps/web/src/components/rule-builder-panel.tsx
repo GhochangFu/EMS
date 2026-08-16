@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type {
+  AuthorableRuleCategory,
   AutomationRuleCategory,
   AutomationRuleOperator,
   AutomationRuleType,
@@ -17,13 +18,29 @@ import {
   updateRuleDraft,
   type RuleDraftPayload,
 } from "../api/rules";
+import {
+  authorableCategories,
+  categoryAuthoring,
+  categoryLabels,
+  omitLockedCategory,
+} from "../lib/rule-category-authoring";
 
 type BuilderForm = {
   id?: string;
   code: string;
   name: string;
   description: string;
-  category: AutomationRuleCategory;
+  /**
+   * The **authorable** category — deliberately narrower than what a rule can
+   * carry on the way out. Typing this wide is what let `F4.44` happen: the
+   * assignment in `formFromRule` compiled, and the `<select>` then fell back to
+   * its first option while this state held something else. Keep it narrow, and
+   * the compiler points at any new path that tries to put a readable-only value
+   * into an authoring control.
+   */
+  category: AuthorableRuleCategory;
+  /** Non-null when the loaded rule's category is not operator-authorable. */
+  lockedCategory: AutomationRuleCategory | null;
   ruleType: AutomationRuleType;
   assetId: string;
   pointKey: string;
@@ -52,6 +69,7 @@ const emptyForm: BuilderForm = {
   name: "",
   description: "",
   category: "operations",
+  lockedCategory: null,
   ruleType: "threshold",
   assetId: "",
   pointKey: "",
@@ -189,18 +207,38 @@ export function RuleBuilderPanel({
             />
           </Field>
           <Field label="Category">
-            <select
-              className={fieldClass}
-              value={form.category}
-              onChange={(e) =>
-                setForm({ ...form, category: e.target.value as AutomationRuleCategory })
-              }
-            >
-              <option value="operations">Operations</option>
-              <option value="energy">Energy</option>
-              <option value="comfort">Comfort</option>
-              <option value="safety">Safety</option>
-            </select>
+            {form.lockedCategory ? (
+              /*
+               * Read-only rather than a <select> with no matching <option>.
+               * That control renders its FIRST option, not a blank — so before
+               * `F4.44` this field claimed "Operations" for 48 rules that are
+               * `electrical`, and looked entirely correct doing it. The rule
+               * keeps its category on save because the field is left out of the
+               * payload; see `omitLockedCategory`.
+               */
+              <div
+                className="w-full rounded border border-amber-200 bg-amber-50 px-2 py-2 text-sm text-amber-900"
+                title="Written by the PHE pilot migration. Operators cannot author this category, and saving will not change it."
+              >
+                {categoryLabels[form.lockedCategory]}
+                <span className="ml-2 text-xs text-amber-700">not operator-editable</span>
+              </div>
+            ) : (
+              <select
+                className={fieldClass}
+                value={form.category}
+                onChange={(e) =>
+                  setForm({ ...form, category: e.target.value as AuthorableRuleCategory })
+                }
+              >
+                {/* Options come from the write schema, never a hand-kept copy (§4.8). */}
+                {authorableCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {categoryLabels[category]}
+                  </option>
+                ))}
+              </select>
+            )}
           </Field>
           <Field label="Rule type">
             <select
@@ -450,7 +488,18 @@ function PreviewResult({ result }: { result: RulePreviewResult }) {
   );
 }
 
+/**
+ * Builds the wire payload, dropping `category` when the rule carries one no
+ * operator may author — the server then keeps the value it already holds.
+ * Verified rather than assumed; see `omitLockedCategory`.
+ */
 function buildPayload(form: BuilderForm): RuleDraftPayload {
+  return omitLockedCategory(buildFullPayload(form), form.lockedCategory);
+}
+
+function buildFullPayload(form: BuilderForm): RuleDraftPayload & {
+  category: AuthorableRuleCategory;
+} {
   if (form.ruleType === "time_window") {
     return {
       code: form.code || undefined,
@@ -486,12 +535,18 @@ function buildPayload(form: BuilderForm): RuleDraftPayload {
 
 function formFromRule(rule: RuleListItem): BuilderForm {
   const timeCondition = "days" in rule.condition ? rule.condition : null;
+  // A stored rule carries the READ vocabulary; the form holds the WRITE one.
+  // This is the conversion `F4.44` was missing — before it, `rule.category` was
+  // assigned straight across because the form's field was typed wide enough to
+  // accept it, which is precisely why the compiler said nothing.
+  const category = categoryAuthoring(rule.category);
   return {
     id: rule.id,
     code: rule.code.toUpperCase(),
     name: rule.name,
     description: rule.description ?? "",
-    category: rule.category,
+    category: category.selected,
+    lockedCategory: category.locked,
     ruleType: rule.ruleType,
     assetId: rule.assetId ?? "",
     pointKey: rule.pointKey ?? "",

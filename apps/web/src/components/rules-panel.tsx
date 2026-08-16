@@ -15,6 +15,7 @@ import {
   fetchRules,
   setRuleEnabled,
 } from "../api/rules";
+import { categoryLabels } from "../lib/rule-category-authoring";
 import { RuleBuilderPanel } from "./rule-builder-panel";
 
 type RuleFilter = AutomationRuleCategory | "all";
@@ -27,13 +28,13 @@ type LifecycleFilter = "all" | "draft" | "published" | "archived";
  * was `F4.43`: `electrical` was absent, and the PHE pilot's 48 rules rendered
  * with an empty badge and could not be selected at all.
  */
-const categoryLabels: Record<AutomationRuleCategory, string> = {
-  comfort: "Comfort",
-  energy: "Energy",
-  safety: "Safety",
-  operations: "Operations",
-  electrical: "Electrical",
-};
+/*
+ * Moved to `lib/rule-category-authoring.ts` by `F4.44` and imported here, so
+ * the badge, the filter dropdown and the rule builder cannot disagree about
+ * what a category is called. It remains `Record<AutomationRuleCategory, string>`
+ * there, which is what makes a new union member a compile error rather than an
+ * `undefined` label.
+ */
 
 const ruleTypeLabels: Record<AutomationRuleType, string> = {
   threshold: "Threshold",
