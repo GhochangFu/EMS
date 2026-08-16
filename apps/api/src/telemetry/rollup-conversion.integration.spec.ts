@@ -96,9 +96,21 @@ const SOLAR_CODE = "PV-F428-PROBE";
  * fixture while `now()` is still behind it. 45 minutes against a suite that runs in
  * seconds leaves two orders of magnitude of headroom.
  *
+ * **`LEAD_MINUTES` is a floor, not the actual lead** (`F4.35`). `base` is rounded
+ * **up** to the next hour boundary, so the realised lead varies between 45 and 105
+ * minutes depending on where `now()` falls in the hour. Only the floor matters —
+ * every premise above is monotone in the lead, so a longer one is strictly safer.
+ *
  * The span crosses at least one hour boundary, which sites 4–6 need: a fixture
  * inside a single hour gives `_1h` a fold of 1 per asset, and
  * {@link assertReportTopConsumersMatchRaw} would then correctly refuse to run.
+ *
+ * **`SPAN_MINUTES` is load-bearing modulo 60 and must stay a non-multiple of it.**
+ * With `base` on an hour boundary, 90 minutes splits `_1h` into exactly two buckets
+ * of 60 and 30 minutes — 1092 and 546 samples, a fixed 2:1 weighting. Raise it to
+ * 120 and the split becomes 60/60, the weights equalise, and the naive
+ * average-of-averages becomes *algebraically identical* to the correct form, which
+ * silently disarms the two discriminating assertions. See {@link createProbes}.
  */
 const LEAD_MINUTES = 45;
 const SPAN_MINUTES = 90;
@@ -301,15 +313,43 @@ export async function createProbes(pool: pg.Pool): Promise<Probes> {
   if (!(dbNow instanceof Date)) {
     throw new Error("could not read now() from the database");
   }
-  // Floored to a minute boundary. Not cosmetic: samples are laid out at
-  // `base + minute*60s + s*1s` with up to 47 per minute, so an unaligned `base`
-  // pushes the tail of every dense minute into the *next* minute bucket — 90
-  // minute indices landing in 91 buckets, which is how the first run of this suite
-  // failed. Alignment makes `bucketCount` exactly `SPAN_MINUTES` and keeps each
-  // bucket's sample count exactly `SAMPLES_PER_MINUTE`, which the fold assertions
-  // rely on. Costs under a minute of the lead.
+  // Rounded UP to the next hour boundary. Two separate reasons, and both are load-
+  // bearing:
+  //
+  // 1. **Minute alignment** (the original reason, unchanged — an hour boundary is
+  //    also a minute boundary). Samples are laid out at `base + minute*60s + s*1s`
+  //    with up to 47 per minute, so an unaligned `base` pushes the tail of every
+  //    dense minute into the *next* minute bucket — 90 minute indices landing in 91
+  //    buckets, which is how the first run of this suite failed. Alignment makes
+  //    `bucketCount` exactly `SPAN_MINUTES` and keeps each bucket's sample count
+  //    exactly `SAMPLES_PER_MINUTE`, which the fold assertions rely on.
+  //
+  // 2. **`_1h` determinism** (`F4.35`). This used to floor to a *minute*, which left
+  //    `base`'s minute-of-hour equal to `(now() + 45) mod 60` — the fixture's only
+  //    input that varied between runs, and the whole of the suite's wall-clock
+  //    dependence. It decides how the 90-minute span splits across `_1h` buckets,
+  //    and {@link assertReportTopConsumersMatchRaw} requires that split to weight
+  //    the buckets *unequally*: where the weights are symmetric, the count-weighted
+  //    mean and the naive average-of-bucket-means coincide **exactly** — the values
+  //    are linear in the minute index, so a symmetric weighting cancels the drift —
+  //    and the assertion that the fixture separates the two forms correctly fires.
+  //    Swept all 60 offsets against a real database: minute 15 splits 819/819 and
+  //    minute 45 splits 273/1092/273, both symmetric, both giving a gap of 1.4e-14
+  //    against a 0.01 threshold. Minutes 14 and 44 clear it by 1.7% and 36%. That is
+  //    the CI failure in the `F4.35` row, reproduced to its exact digits (naive
+  //    83.81236263736264 vs raw 83.81236263736261).
+  //
+  //    Anchoring to an hour boundary removes the variable rather than tolerating it:
+  //    `base` is always minute 0, so the split is always 60 + 30 minutes — 1092 and
+  //    546 samples, a 2:1 weighting, gap **2.775 kW**, which the sweep shows is the
+  //    joint maximum over all 60 offsets. Not "usually far from the threshold":
+  //    identical on every run, because no run-varying input reaches it any more.
+  //
+  // Rounding **up** rather than down matters: flooring to the hour would put `base`
+  // as much as 14 minutes *behind* `now()`, destroying the future-dating premise
+  // this entire file rests on. Costs at most an extra hour of lead, which is free.
   const base = new Date(
-    Math.floor((dbNow.getTime() + LEAD_MINUTES * 60_000) / 60_000) * 60_000,
+    Math.ceil((dbNow.getTime() + LEAD_MINUTES * 60_000) / 3_600_000) * 3_600_000,
   );
 
   const times: string[] = [];
