@@ -23,7 +23,10 @@
 > **response** contracts that are now schemas rather than types, validated at
 > the web client's boundary (**ADR 0030**, with amendments for the conversion
 > spike, for what building it changed, and for the real drift its validator
-> found on its first run). General
+> found on its first run), and the separation of a rule's **concern** from its
+> plant **domain**, with both vocabularies moved out of code into
+> `bms.rule_categories` / `bms.asset_domains` (**ADR 0031** and its Amendment 1,
+> `F4.45`). General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
@@ -175,14 +178,14 @@ entry **D-0001**.
 | Real ingestion | `apps/ingest` MQTT TLS subscriber for the PHE pilot; writes `telemetry.point_values` and `pg_notify('bms_telemetry', …)` like the simulator (ADR 0007). One pilot RTU only; no EMQX. **One entry point since the ADR 0016 §6 strangler migration finished**: `pnpm start` → `node dist/main.js` is the adapter host, and it is what compose and the pilot run. Commit 3 cut the *deployment* over on 2026-08-06; **commit 4 on 2026-08-14 deleted `src/index.js`**, removed the compose `command:` override and the `start:host` script, so there is no longer a legacy path one line away — reverting means reverting the commit. The host needs a build before it runs and does **not** fall back to JavaScript if you skip it; the image compiles before `CMD`. **`pg_notify` is unconditional and `INGEST_NOTIFY` no longer exists** — do not add it back to `docker-compose.yml`, which a repo invariant now fails on: it would do nothing, because the flag is gone from the code. If dashboards are dead while ingest is healthy, the cause is downstream, not a missing compose line; watch `written=` on the health body, since `notify=on` there is a literal and reports intent rather than delivery. **The downstream half was `F4.34` and it is fixed (2026-08-14, PR #33)** — the API's `LISTEN` now reconnects rather than dying, so the check is `bms_api_telemetry_listener_connected` on the API's `/metrics`: ingest `written=` climbing with that gauge at 0 localises the fault to the API side in one step. See [`docs/ingest-host.md`](./docs/ingest-host.md) |
 | Master data  | Organization → Location → RTU → Asset → Point-key catalog + `/admin/*` CRUD with `admin`/`organization_admin`/`location_admin` roles (ADR 0008–0010). **ADR 0018** separates the axes: an asset must have a `location_id` (`NOT NULL`) and need not have an `rtu_id` (nullable); telemetry provenance binds at `asset_points.source_kind` (`measured`/`manual`/`computed`/`unmapped`), not at the asset |
 | Asset templates | `bms.asset_templates` + `bms.template_points`, where a row **is** a version and `assets.template_id` pins it (ADR 0015). Published versions are immutable; editing one creates the next draft. `POST /admin/asset-templates/:id/instantiate` builds assets from a published version — target is `rtuId` **xor** `locationId`. A `template_points.kind = 'derived'` point is still re-validated against the active catalog, but never becomes an `asset_points` row — it has no honest `source_data_key` until the calc engine (`F2.6`) owns it |
-| Template content | `asset_templates.content` carries the `E1.7` overlay under **ADR 0019**, tiered by whether a consumer exists on `main`. **Bound** (`alarms`, `maintenance`) import their enums from `rules.schema.ts` / `maintenance.schema.ts` — never restate them. **`alarms.philosophy` is the exception inside that row: Anchored, not Bound.** `E2.1` owns its vocabulary and is unbuilt, so its four fields may still be renamed or restructured, and its other three — affected assets, energy/water/production impact, ETR — are properties of a *live alarm instance* and must not be added to a template. **Anchored** (`kpis`, `dashboards`) check point-key references while leaving bodies opaque: `expression` sits behind `dialect: "unvalidated"` until `F2.3`, and a dashboard view carries *ordered point keys only* until `F3.1`. **Reserved** (`health`, `optimisation`) are **rejected**, each naming its blocking item. Every referenced point key must be one the template declares — checked on create, update and publish, because `content` and `points` are patched independently and a points patch can orphan content the request never mentioned. `POST :id/draft` is deliberately **exempt**: it byte-copies stored content, and validating it would strand a pre-ADR template behind its own immutable published version. Nothing converts this into a running rule or a maintenance row; it is the authoring surface only |
+| Template content | `asset_templates.content` carries the `E1.7` overlay under **ADR 0019**, tiered by whether a consumer exists on `main`. **Bound** (`alarms`, `maintenance`) import their vocabularies from `rules.schema.ts` / `maintenance.schema.ts` — never restate them. **Since `F4.45` one of them is no longer an enum**: `alarms[].category` is a *code* into `bms.rule_categories` (ADR 0031 A1), so the schema bounds its shape only and the check that it names a live concern moved to `AssetTemplatesAdminService.assertTemplateAlarmCategories`, called on create and update. `operator` and `severity` are still enums and still bound the way this row describes. The guard was **relocated, not dropped** — a template is an authoring surface, so a category that does not exist is a defect authored now and found whenever template alarms become rules. **`alarms.philosophy` is the exception inside that row: Anchored, not Bound.** `E2.1` owns its vocabulary and is unbuilt, so its four fields may still be renamed or restructured, and its other three — affected assets, energy/water/production impact, ETR — are properties of a *live alarm instance* and must not be added to a template. **Anchored** (`kpis`, `dashboards`) check point-key references while leaving bodies opaque: `expression` sits behind `dialect: "unvalidated"` until `F2.3`, and a dashboard view carries *ordered point keys only* until `F3.1`. **Reserved** (`health`, `optimisation`) are **rejected**, each naming its blocking item. Every referenced point key must be one the template declares — checked on create, update and publish, because `content` and `points` are patched independently and a points patch can orphan content the request never mentioned. `POST :id/draft` is deliberately **exempt**: it byte-copies stored content, and validating it would strand a pre-ADR template behind its own immutable published version. Nothing converts this into a running rule or a maintenance row; it is the authoring surface only |
 | Ingest adapters | `IngestAdapter` interface frozen by **ADR 0016**: the host owns *supervision and cadence* (poll loop, overlap guard, backoff, jitter, bounded queue, process lifetime); adapters own the protocol connection and parse, implementing `connect` / `disconnect` / `health`. **The host is now built** (§6 commit 2): `apps/ingest/src/host/` supplies the supervisor, bounded queue, binding plan, normaliser and health endpoint, `src/main.ts` is wiring only, and **the §5 backoff table itself moved to `packages/shared/src/ingest.ts` on 2026-08-14 (`F4.34`)** because the API's telemetry listener became its second consumer — the ADR states those numbers precisely "so five agents do not invent five policies", so a second copy would have defeated the point of writing them down; change them in one place and both the ingest supervisor and the API listener follow, and `src/adapters/mqtt.ts` ports the pilot's MQTT connection onto the interface behind `src/adapter/registry.ts` — a port that **deliberately diverges** from the ADR 0007 pilot's parser in three ways, listed in `docs/ingest-host.md`. That happened because `index.js` was frozen while it served the pilot, so a defect found in the shared parse logic could only be fixed on the host side; §6 commit 4 has since deleted it, and the divergence list is kept as the record of what the host does differently from the behaviour that ran in the field — it is what explains the step change in the pilot's data on 2026-08-06. **MQTT is the only implementation, and it is not new scope** — ADR 0007 promoted it, this moves it onto the frozen interface. Modbus, BACnet, OPC-UA, SNMP, REST polling and DCS each still need **their own ADR** under §10 — unconditionally, not only where a protocol library has to be settled under §9.4; see §6. Adapters never read `process.env` (ADR 0016 §4); the host reads it in `host/config.ts`, **plus** the pilot-era `MQTT_*` and `CREDENTIAL_ENCRYPTION_KEY` reads in the unmodified `rtu-config.js`. That `MQTT_USERNAME`/`MQTT_PASSWORD` fallback is the *only* working credential path, and ADR 0016 Resolved decision 5 expected it to **survive cutover**. **It did, and the expectation is no longer a prediction:** the pilot has run on that path since 2026-08-06, `bms.rtu_connection_configs` held no rows when the cutover ran, and the decision's own caveat — that the emptiness was measured on a local seeded database and needed confirming against the production pilot — is discharged by that database *being* the pilot's. Treat the emptiness as a **measurement with a date, not a standing fact**: the onboarding wizard writes that table, so re-query before relying on it. **ADR 0016 Amendment 3 (2026-08-14) now records this**, and it re-measured rather than restating: `bms.rtu_connection_configs` still held **0 rows**, so the fallback survives, and `CREDENTIAL_ENCRYPTION_KEY` *is* set — the ADR 0012 path is blocked on **data, not configuration**. Amendment 3 also names the repository owner as §6 commit 4's owner, closing Resolved decision 4. Writing an `rtu_connection_configs` row is still prerequisite work for anyone who wants the ADR 0012 path. Amendment 1 widens the schema fields to `ZodType<T, ZodTypeDef, unknown>` so `.default()`/`.transform()` schemas compile; Amendment 2 adds `@types/pg`. **§6 commits 3 and 4 are both discharged** — the parallel run and the cutover ran against the live PHE feed on 2026-08-06, and commit 4 landed 2026-08-14 (PR #30): `src/index.js` and the `INGEST_NOTIFY` flag are deleted, `pnpm start` is the host, and `pg_notify` is unconditional. That was not tidying up — post-cutover the flag's off-default was the only reachable state in which telemetry lands while every dashboard is dead, with no error and no alarm. **Four of commit 4's five actions landed. The fifth did not, and that is §6 being followed rather than amended**: it conditioned retiring the `MQTT_USERNAME`/`MQTT_PASSWORD` fallback on the pilot RTU having an `rtu_connection_configs` row, and it has none. Reassigned to **`E8.4`** |
 | AI onboarding | Scoped admin ingestion wizard using OpenAI chat completions with structured JSON, and a deterministic rule-based fallback when `OPENAI_API_KEY` is unset (ADR 0011). **Credentials never transit the chat** (**ADR 0022**, `E8.3`): they arrive through `POST /api/v1/admin/onboarding/sessions/:id/credentials`, and a chat turn that appears to carry one is **refused — not parsed, not stored, not forwarded to the model**. The wizard used to *prompt* for them and parse them out of the turn, which left plaintext in `onboarding_sessions.messages`; migration `0026` purges that column on every existing row (session rows are kept — `audit_log` references them by id). The detector that spots a credential-bearing turn is a **nudge, not the control** — six review rounds found it simultaneously too narrow and too broad, and its documented misses are asserted as tests. The control is that credentials have a typed home. Do not "improve" that detector without reading ADR 0022's amendments first |
 | Secrets      | AES-256-GCM encrypted RTU connection credentials via `CREDENTIAL_ENCRYPTION_KEY`; never returned decrypted by the API (ADR 0012). Writers into that store: the master-data RTU admin, and the onboarding credentials endpoint above (**ADR 0022**), which **fails closed** with 503 when the key is unset rather than reporting a success that stored nothing. In an onboarding draft the blob is keyed by **RTU `code`, never by array position** — the draft's `rtus` array is replaced wholesale by any patch, so a positional key delivered one broker's password into a different broker's connection config. A code claimed by no RTU, or by more than one, drops rather than guesses |
 | Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension. Every mutating endpoint across these four domains is gated by the **operations write matrix** (ADR 0017) — see §4.7. The Energy CSV export escapes through the shared serialiser, **not** its own rule — see the *CSV exports* row (ADR 0026) |
 | Audit read   | `bms.audit_log` becomes readable under **ADR 0021** (`F4.14`): `GET /api/v1/admin/audit` and `/audit/export` (CSV + XLSX), in `apps/api/src/admin/audit/`. **Global admin only** — the table has no tenancy column, so §4.7's scope predicates cannot be applied to it at all; scoped reads for `organization_admin` and below are **deferred to their own ADR**, not silently omitted. Purely additive: no DDL, no trigger, no new package (`xlsx` was already an api dependency). `payload` is returned **verbatim**, which makes every `payload: body` call site a security surface — see §4.7. Export requires a `from`/`to` window of ≤366 days and is capped at 50,000 rows, **refusing rather than truncating**; the cap was measured, not assumed, and is a *row* bound with **no byte bound** — that gap is recorded in ADR 0021, not fixed. Append-only storage and hash-chaining are `F4.15` and stay out of scope (§6) |
 | CSV exports  | **Both** CSV downloads escape through one module, `apps/api/src/serialise/csv.ts` (**ADR 0026**, `F4.29`): the audit export (ADR 0021) and the Energy Consumption report. Before it they disagreed — the audit one neutralised spreadsheet formula leaders and the reports one only quoted, so an asset `code` beginning `=` was delivered as a **live formula**. `csvTextCell` prefixes an apostrophe when a value starts with `=` `+` `-` `@` TAB or CR, **then** tests the quote trigger `/["\n\r,]/` — that order is load-bearing, since the guarded form of a CR-led value still contains a CR and must be quoted or the record splits. All six are formula-*initiating* characters, **not** "characters a spreadsheet strips as whitespace": `\r` must stay in the leader list *and* the trigger, and deleting it from either reopens a hole every test would still pass. **Numeric cells are exempt and take `csvNumberCell`**, because the guard neutralises cells whose Excel formula reading differs from their literal text and for a number it does not (`=-5` is `-5`) — guarding one would import the client's figures as text and break their arithmetic. The split is enforced by the two functions' **parameter types**, never by a regex that re-parses output, and escaped cells carry a branded `CsvField` so a raw string in a row is a **compile error**. The audit call site is still blanket because all nine of its columns are string-shaped: the two exports are **consistent, not identical**. `toSheetRows` (XLSX) is correctly unguarded — SheetJS writes `t="str"`, ECMA-376's *cached formula result* type, and the safety is the **absence of any `<f>` element**, not the cell type. Whether a leading U+0020/U+00A0/U+FEFF is stripped-then-evaluated is an **open question** (`F4.31`) inherited from ADR 0021, not settled here: do not add characters to the leader list on reasoning alone |
-| API contracts | **Every API *response* type is `z.infer` of a schema in `packages/shared/src/contracts/`, never written twice** (**ADR 0030**, `F4.23`). The contract was never missing — `packages/shared` already exported 100 types imported at 148 sites — what was missing was a **runtime**: every export was a `type`, and `apps/web` imported `zod` zero times, so no response was checked anywhere. 88 schemas now cover them, and `apps/web` calls `checkResponse(schema, payload, endpoint)` (`src/api/validate.ts`) on 33 direct reads plus all 42 `adminFetch` calls, whose `schema` parameter is **required** so the compiler finds every site. **It validates and does not transform** — Zod strips unknown keys, so returning `result.data` would silently delete a field the server has newly added; `checkResponse` returns the original payload either way. **Failure direction is asymmetric on purpose**: throw in dev/test, log-and-pass in production, because a blank Control Room during an incident is worse than one drifted field — the same asymmetry ADR 0029 Amendment 2 applied to `API_DOCS_ENABLED`. Issues are logged as **`path` and `code` only** (§9.6): a Zod issue embeds the *received value*, so logging `message` publishes server data to a shared operations console. **Three findings worth carrying:** `@bms/shared/contracts` **does not typecheck from `apps/api`**, which compiles `moduleResolution: "node"` (node10) and ignores the `exports` map while Node's *runtime* resolution honours it — the dangerous half — so `index.ts` re-exports the schemas and the subpath is an `apps/web` convenience only; a **required `unknown` property is not expressible in Zod** (`z.unknown()` yields an *optional* key, and `z.any()`/`z.custom<unknown>()` behave identically), which is why `AuditLogEntryDto.payload` is the one contract this migration changed; and the validator **found real drift on its first run against the deployment** — `GET /rules` had never conformed, 48 of 89 rows carrying an undeclared `category`, fixed in `F4.43`. That is the argument for the 89 routes the spike did not measure. See §4.8 |
+| API contracts | **Every API *response* type is `z.infer` of a schema in `packages/shared/src/contracts/`, never written twice** (**ADR 0030**, `F4.23`). The contract was never missing — `packages/shared` already exported 100 types imported at 148 sites — what was missing was a **runtime**: every export was a `type`, and `apps/web` imported `zod` zero times, so no response was checked anywhere. 88 schemas now cover them, and `apps/web` calls `checkResponse(schema, payload, endpoint)` (`src/api/validate.ts`) on 33 direct reads plus all 42 `adminFetch` calls, whose `schema` parameter is **required** so the compiler finds every site. **It validates and does not transform** — Zod strips unknown keys, so returning `result.data` would silently delete a field the server has newly added; `checkResponse` returns the original payload either way. **Failure direction is asymmetric on purpose**: throw in dev/test, log-and-pass in production, because a blank Control Room during an incident is worse than one drifted field — the same asymmetry ADR 0029 Amendment 2 applied to `API_DOCS_ENABLED`. Issues are logged as **`path` and `code` only** (§9.6): a Zod issue embeds the *received value*, so logging `message` publishes server data to a shared operations console. **Three findings worth carrying:** `@bms/shared/contracts` **does not typecheck from `apps/api`**, which compiles `moduleResolution: "node"` (node10) and ignores the `exports` map while Node's *runtime* resolution honours it — the dangerous half — so `index.ts` re-exports the schemas and the subpath is an `apps/web` convenience only; a **required `unknown` property is not expressible in Zod** (`z.unknown()` yields an *optional* key, and `z.any()`/`z.custom<unknown>()` behave identically), which is why `AuditLogEntryDto.payload` is the one contract this migration changed; and the validator **found real drift on its first run against the deployment** — `GET /rules` had never conformed, 48 of 89 rows carrying an undeclared `category`, fixed in `F4.43`. That is the argument for the 89 routes the spike did not measure. **`RuleListItem` gained `assetDomain` in `F4.45`** (ADR 0031), read from `bms.assets.domain` on the join that already served `assetCode`/`siteName` — a rule's plant domain is the *asset's* fact and is never stored on the rule. **Two contract fields are deliberately no longer enums**: `category` and `assetDomain` are `z.string()` codes, because ADR 0031 Amendment 1 moved both vocabularies into `bms.rule_categories` / `bms.asset_domains` so a domain pack ships a sector with an `INSERT`. The cost is stated rather than hidden — this validator can no longer report an unknown category the way it reported `electrical`; that check moved to two foreign keys, where it is absolute rather than advisory, and to `VocabulariesService` at each write boundary so an unknown code stays a **400** rather than becoming a 500. See §4.8 |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, **ingest** and DB |
 | CI/CD        | GitHub Actions: install, build/typecheck, `typecheck:tests`, **the `apps/ingest` image build**, migration validation, **`db:seed` against a fresh schema**, **`db:refresh-aggregates`** (ADR 0023 — a no-op on a fresh database, since `db:seed` writes zero telemetry rows; it runs so the backfill path cannot rot unexercised), and `test:coverage` (ADR 0014). The Postgres service image is **pinned** to the same tag as `docker-compose.yml`, because the aggregate suite asserts behaviour measured on TimescaleDB 2.29.1. The image build is there because no workflow built one, so `apps/ingest/Dockerfile` sat broken on `main` while CI stayed green — it is the only ingest image gated, being the only one that installs before COPYing sources |
 | Testing      | Vitest, one project per app + a repo-wide `repo` project; coverage gate on a ratcheting baseline (ADR 0014). See §4.6 |
@@ -244,6 +247,19 @@ bms/
 │   │                            src/admin/asset-templates/ holds ADR 0015's
 │   │                            lifecycle + instantiation services, and
 │   │                            ADR 0019's content contract.
+│   │                            src/vocabularies/ serves AND enforces the two
+│   │                            open vocabularies (ADR 0031 A1). Its service is
+│   │                            not a convenience: with the value set in a
+│   │                            table rather than a z.enum, it is the only
+│   │                            thing keeping an unknown code a 400 instead of
+│   │                            a 500 from a foreign key. validateRuleDraft
+│   │                            calls it, covering rule create, update, preview
+│   │                            and publish. duplicateRule does NOT — it inlines
+│   │                            its own insert copying current.category, which
+│   │                            the FK still accepts because the source row is
+│   │                            valid, but which does NOT re-check `active`, so
+│   │                            duplicating a rule whose category was since
+│   │                            retired propagates the retired code
 │   │                            src/testing/ is test-only helpers (ADR 0025) —
 │   │                            the one src/ directory excluded from
 │   │                            tsconfig.build.json, so it is NOT runtime code.
@@ -518,10 +534,10 @@ Do not add top-level folders without updating this section.
 
   **`F4.23`/`F4.43` add the other end of this, and it is the one that makes you
   delete work you are proud of.** The bullet above says to prefer a type over a
-  static test. Prefer **construction** over both: `automationRuleCategorySchema`
-  is built as `[...authorableRuleCategorySchema.options, "electrical"]`, so
-  "the read vocabulary contains the write vocabulary" is true by the way it is
-  written and there is nothing left to check. **The corollary is that the guard
+  static test. Prefer **construction** over both: `F4.43` built its read
+  vocabulary as `[...authorableRuleCategorySchema.options, "electrical"]`, so
+  "the read vocabulary contains the write vocabulary" was true by the way it was
+  written and there was nothing left to check. **The corollary is that the guard
   you would have written must then be deleted, not kept** — a tautology that was
   meaningful when it was written is the hardest dead guard to notice later,
   because its history argues for it. Two instances in two items: `F4.23` proved
@@ -533,6 +549,27 @@ Do not add top-level folders without updating this section.
   for `F4.43` is "nobody restates a vocabulary" — a **source scan**, deliberately,
   because comparing the two enums' values passes just as happily when someone
   re-inlines the literal and keeps it in sync today.
+
+  **`F4.45` is what this rule looks like when it comes due, and it is worth
+  reading before you argue for keeping something.** `F4.44` had built a lock so
+  the rule builder could show a category no operator may author; it was correct,
+  load-bearing, and the only thing protecting 48 rules while the vocabulary
+  question was open. ADR 0031 then made a non-authorable category *structurally
+  impossible*, so the lock could never fire again — and it was **deleted**, along
+  with its module. Two things made that happen rather than drift: the lock's own
+  spec carried an assertion saying *if these two vocabularies are ever equal,
+  this module should be deleted rather than left passing*, and it **fired**; and
+  the ADR named the exact symbols to remove in its Consequences. **Write the
+  tripwire that tells the next person your guard is dead**, because by then its
+  history will argue for it and the code will still be green.
+
+  The same item is also the cautionary half. A guard is only as good as its
+  ability to match its own subject: `F4.45`'s first attempt at a
+  "nobody re-inlines the enum" scan searched for `assetDomainSchema`, a symbol
+  that **has never existed in this repo** and is not even a substring of the
+  live `assetDomainCodeSchema` — so a real revert would have walked through it
+  reporting success. If you write a source scan, add a case that proves the
+  pattern still matches a violation, or you have written a comment.
 
   The same item produced a corollary worth its own sentence: **fixing the
   instance is not fixing the class.** Two findings from one review round were
@@ -840,22 +877,79 @@ Log **`path` and `code` only** — a Zod issue carries the received value, and
 §9.6 applies to a console on a shared operations workstation exactly as it
 applies to a log file.
 
-**A vocabulary is declared once and everything else is derived from it.** Where
-a read vocabulary must be wider than a write vocabulary — as
-`automationRuleCategorySchema` is wider than `authorableRuleCategorySchema`,
-because migration `0022` writes `electrical` directly and no operator may author
-it — build the wide one from the narrow one's `.options`, so the containment
-holds by construction rather than by a test (§4.4). Re-export rather than
-restate across package boundaries: `apps/api/src/rules/rules.schema.ts` exports
-the shared schema under its own name, which is that file's own rule — *a copied
-enum is a copy that drifts* — finally applied to itself.
+**A vocabulary is declared once and everything else is derived from it.**
+Re-export rather than restate across package boundaries:
+`apps/api/src/rules/rules.schema.ts` exports the shared schema under its own
+name, which is that file's own rule — *a copied enum is a copy that drifts* —
+finally applied to itself.
+
+**Where a read vocabulary genuinely must be wider than a write vocabulary,
+build the wide one from the narrow one's `.options`** so the containment holds
+by construction rather than by a test (§4.4). `F4.43` did exactly that —
+`automationRuleCategorySchema` was `[...authorableRuleCategorySchema.options,
+"electrical"]`, because migration `0022` wrote `electrical` directly and no
+operator could author it. **That asymmetry is gone**, and the rule is kept here
+as history rather than deleted, because the shape recurs: `F4.45` ended it not
+by narrowing or widening either union but by noticing the two vocabularies were
+*different axes*. So before you build one union out of another, check that the
+wider one is genuinely the same kind of thing — an asymmetry that will not
+resolve is often two vocabularies wearing one name.
+
+**Before you declare a vocabulary, decide whether it is closed or open, because
+they want opposite mechanisms.** ADR 0031 is the worked example, and it got this
+wrong first.
+
+- A **closed** vocabulary is one the business cannot extend without a code
+  change anyway: a badge's *tone*, an operator, a severity — things the engine
+  itself must understand. Declare it as a `z.enum`, back it with a `CHECK` if it
+  is stored, and lean on exhaustive `switch`.
+- An **open** vocabulary names *what a thing is* in the customer's world, and it
+  grows with the business: a plant **domain**, and a rule's **concern**. Put it
+  in a table with a foreign key. A foreign key is **stronger** than a `CHECK`,
+  not weaker — the column still cannot hold an undeclared value — and adding one
+  becomes an `INSERT` a domain pack ships in its own seed rather than a
+  migration and a deploy.
+
+  A concern looks closed and is not, which is why it is listed here rather than
+  above: four values have covered every rule so far, but the owner's ruling was
+  *"categories should be configurable"*, and nothing in the engine branches on
+  one — it is a badge, a filter and a sort key. **Whether the engine must
+  understand a value is the test, not how stable the list looks.**
+
+The tell is not the current data. `assets.domain` held exactly four values
+across all 148 rows, which is what a census showed and what a four-value `CHECK`
+was ruled on; the roadmap had already scheduled **three domain packs**
+(`E5.1`/`E5.2`/`E5.3`), so that list was known-wrong on a shorter timescale than
+the roadmap itself. **Ask what the roadmap intends to add, not what the table
+currently holds** — and migrations here are forward-only, so guessing wrong
+costs a second one.
+
+**Two consequences that are easy to miss when a vocabulary opens up.** An
+exhaustive `switch` over it cannot stay exhaustive, so move the exhaustiveness
+onto something that *is* closed — `rules-panel.tsx`'s `categoryStyle` became
+`toneClass` (the unrelated `categoryStyle` in `maintenance-schedules-panel.tsx`
+is still live and still correctly an enum switch), switching
+on `rule_categories.tone`, so a newly seeded category arrives styled instead of
+rendering the literal class `"undefined"` the way `F4.43`'s 48 badges did. And
+the request schema stops rejecting unknown values, so an unknown code reaches
+the database and returns a **500 where Zod gave a 400 naming the options** —
+put the check back at each write boundary (`VocabulariesService`) rather than
+letting the constraint be the error message.
+
+**A vocabulary describing what a thing *is* belongs on the thing.**
+`automation_rules.category` carried `electrical` for as long as migration `0022`
+had been deployed, and that was never a concern — it was the *asset's* plant
+domain, copied onto rows that reference it. One column holding two axes forces a
+false choice, and it produced three items' worth of defects. `bms.assets.domain`
+already held the fact, correctly, and unused.
 
 **Widening a response union to make a validator pass is a scope decision, not a
 fix.** `F4.43` widened one only after establishing from the migration that the
 value was legitimate; the alternative reading was bad seed data, and the two
-have opposite fixes. Ask which it is before editing the schema, and note that
-neither `automation_rules.category` nor `.source` has a `CHECK` constraint, so
-the database will not tell you.
+have opposite fixes. Ask which it is before editing the schema — and note that
+what the database will tell you has changed: since `F4.45`,
+`automation_rules.category` and `assets.domain` both carry foreign keys, but
+`automation_rules.source` still has **no** constraint at all.
 
 ---
 
