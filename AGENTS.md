@@ -19,7 +19,11 @@
 > provenance rule that decides which of those values is a reading at all
 > (**ADR 0028**), and the OpenAPI document generated from the Zod schemas that
 > validate each request (**ADR 0029**, with amendments for the refinements the
-> conversion drops and for the docs being absent rather than guarded). General
+> conversion drops and for the docs being absent rather than guarded), and the
+> **response** contracts that are now schemas rather than types, validated at
+> the web client's boundary (**ADR 0030**, with amendments for the conversion
+> spike, for what building it changed, and for the real drift its validator
+> found on its first run). General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
@@ -158,7 +162,7 @@ entry **D-0001**.
 
 | Layer        | Technology |
 |--------------|------------|
-| Frontend     | React 18, TypeScript 5, Vite, Tailwind CSS, TanStack Query, Zustand, React Router, Leaflet, ECharts. **Whether an asset is live is decided in exactly one place since `F4.37` (2026-08-14): `apps/web/src/lib/schematic-telemetry.ts`.** `FRESH_MS`, the arrival clamp and `isStale` live there, extracted from the context component so they can be tested at all — the context imports React, TanStack Query and socket.io-client, and `vitest.config.ts` only counts `apps/web/src/lib/**` toward coverage, so anything above it is untestable *and* invisible to the gate. Put new pure logic there, not in the component. **Freshness is computed at render, so it needs something to force one**: the provider's `staleTick` is the only periodic re-render in the app, and a `refetchInterval` is not a substitute — TanStack v5 tracks accessed properties and structurally shares results, so an unchanged response notifies nobody. **Since `F4.38` (2026-08-15, ADR 0027) the gate reaches everything on screen**, not just the SVG schematics: all seven control-room pages derive their tiles through `isStale`, a stale tile renders `—` rather than its last numbers, `offline` outranks `critical` in every page banner, and aggregates (`ctx.totalKw`, the KPI averages) exclude stale slices and show the count they excluded. Two rules follow for anyone adding to these pages. **Status renderers are `if`/ternary chains whose default is the healthy branch, so a new status member compiles silently and draws as `normal`** — test `offline` first in every chain; the compiler will not find them for you. And **read the clock at render**, taking the re-render from the provider's `staleTick`: a page that starts its own interval or caches the status re-freezes the tiles. `tests/repo-invariants.test.ts` holds both, plus the live-critical count that stops a dead sensor masking a live alarm. **`F4.39` (2026-08-15, ADR 0028) closed the assumption underneath all of this — that the thing on screen is a reading at all.** Every value on a control-room page is now one of: *measured* / *derived* (gated by ADR 0027), or *nameplate* / *configuration* / *simulated*, which render through `StaticValue` / `StaticTspan` (`components/static-value.tsx`) and are visibly marked `NP` / `SET` / `SIM`. The rule that decides which: **a value may be labelled a measurement of X only if it comes from telemetry that measures X** — `kVA` from `kW` and `pf` is fine, "Voltage Y" from Voltage R is not, and 32 cell voltages from one string voltage is not. Markers qualify *values*, not headings, hints or `x / y` denominators, whose form already says they are not readings. Three more traps this drew out: **each value takes the clock of the asset it came from** — `freshValue(own ?? fallback, ownStale)` reads naturally and is wrong, because the `??` resolves before the gate, so use `ownElse`; **absent is not zero** — `(fanSpeedPct ?? 0) > 20` renders a unit that publishes no fan speed as `IDLE`, which for a standby unit is its normal reading, so use `isHvacRunning`, which returns `null`; and a box holding a gated value must be able to **render offline**, or an em-dash inside a confident green outline is the only signal. Checks live in `tests/repo-invariants-provenance.test.ts` |
+| Frontend     | React 18, TypeScript 5, Vite, Tailwind CSS, TanStack Query, Zustand, React Router, Leaflet, ECharts. **Whether an asset is live is decided in exactly one place since `F4.37` (2026-08-14): `apps/web/src/lib/schematic-telemetry.ts`.** `FRESH_MS`, the arrival clamp and `isStale` live there, extracted from the context component so they can be tested at all — the context imports React, TanStack Query and socket.io-client, and `vitest.config.ts` only counts `apps/web/src/lib/**` toward coverage, so anything above it is untestable *and* invisible to the gate. Put new pure logic there, not in the component. **Freshness is computed at render, so it needs something to force one**: the provider's `staleTick` is the only periodic re-render in the app, and a `refetchInterval` is not a substitute — TanStack v5 tracks accessed properties and structurally shares results, so an unchanged response notifies nobody. **Since `F4.38` (2026-08-15, ADR 0027) the gate reaches everything on screen**, not just the SVG schematics: all seven control-room pages derive their tiles through `isStale`, a stale tile renders `—` rather than its last numbers, `offline` outranks `critical` in every page banner, and aggregates (`ctx.totalKw`, the KPI averages) exclude stale slices and show the count they excluded. Two rules follow for anyone adding to these pages. **Status renderers are `if`/ternary chains whose default is the healthy branch, so a new status member compiles silently and draws as `normal`** — test `offline` first in every chain; the compiler will not find them for you. And **read the clock at render**, taking the re-render from the provider's `staleTick`: a page that starts its own interval or caches the status re-freezes the tiles. `tests/repo-invariants.test.ts` holds both, plus the live-critical count that stops a dead sensor masking a live alarm. **`F4.39` (2026-08-15, ADR 0028) closed the assumption underneath all of this — that the thing on screen is a reading at all.** Every value on a control-room page is now one of: *measured* / *derived* (gated by ADR 0027), or *nameplate* / *configuration* / *simulated*, which render through `StaticValue` / `StaticTspan` (`components/static-value.tsx`) and are visibly marked `NP` / `SET` / `SIM`. The rule that decides which: **a value may be labelled a measurement of X only if it comes from telemetry that measures X** — `kVA` from `kW` and `pf` is fine, "Voltage Y" from Voltage R is not, and 32 cell voltages from one string voltage is not. Markers qualify *values*, not headings, hints or `x / y` denominators, whose form already says they are not readings. Three more traps this drew out: **each value takes the clock of the asset it came from** — `freshValue(own ?? fallback, ownStale)` reads naturally and is wrong, because the `??` resolves before the gate, so use `ownElse`; **absent is not zero** — `(fanSpeedPct ?? 0) > 20` renders a unit that publishes no fan speed as `IDLE`, which for a standby unit is its normal reading, so use `isHvacRunning`, which returns `null`; and a box holding a gated value must be able to **render offline**, or an em-dash inside a confident green outline is the only signal. Checks live in `tests/repo-invariants-provenance.test.ts`. **Since `F4.23` (2026-08-15, ADR 0030) every response this client reads is checked against a schema before any of the above sees it** — see the *API contracts* row and §4.8; a `fetch` in `src/api/` that does not go through `checkResponse` is the gap that row exists to close |
 | Backend API  | NestJS (Node 20 LTS, TypeScript) |
 | Realtime     | NestJS WebSocket gateway over Socket.IO with Redis adapter when `REDIS_URL` is set. The source is `LISTEN bms_telemetry` on a dedicated `pg` connection (`telemetry-notify.service.ts` → `telemetry-listener.ts`), fanned out through `TelemetryBroadcastHub`. **That listener supervises itself since `F4.34` (2026-08-14)** — error handler, reconnect with the ADR 0016 §5 backoff, and a re-`LISTEN` on every reconnect. Before it, the listener connected once with no `error` handler, and because `pg.Client` is an `EventEmitter` an unhandled `error` event **threw**: with no `uncaughtException` handler in `apps/api` and no `restart:` on the compose service, any dropped connection took the whole API down and left it down. Watch `bms_api_telemetry_listener_connected` on `/metrics` — 0 means realtime is dead while REST still serves. **`NOTIFY` has no replay**, so readings published during an outage never reach the live push; they are still in the hypertable, and clients recover history through `GET /telemetry/points/:pointRef/recent`. **The payload is validated since `F4.36` (2026-08-14)** — `telemetry-reading.schema.ts` checks every reading, drops the invalid ones individually and delivers the rest, because one `null` entry used to throw inside `AlarmThresholdService.collapseLatest` *before any rule ran* and silently suppress alarms for the whole batch. Watch `bms_api_telemetry_readings_dropped_total` beside the gauge: non-zero means something is publishing in a shape the contract does not allow, and `NOTIFY` needs **no table privilege**, so any role that can connect can write to that channel. It counts rejected *readings* — a broken envelope (non-JSON, `readings` not an array) is log-only. The payload is capped at 500 readings because validating is far dearer than the cast it replaced and the 8000-byte `NOTIFY` limit bounds bytes, not entries. **A future-dated `time` still passes validation here, deliberately, and that is not an oversight**: `resolveSamples` trusts `sample.at`, and the PHE pilot was measured writing 33 minutes ahead of `now()` (`F4.28`), so rejecting it server-side would delete real telemetry. Verified 2026-08-14 by publishing a reading 33 minutes ahead — accepted and broadcast, `dropped_total` unchanged. **The sink is what was fixed instead (`F4.37`, PR #39)**: the web client clamps on arrival, so a skewed producer costs at most `FRESH_MS` of delayed offline detection rather than pinning a dead asset `running` forever |
 | Auth         | Keycloak/OIDC for pilot compose; local JWT fallback only for native WSL development |
@@ -178,6 +182,7 @@ entry **D-0001**.
 | Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension. Every mutating endpoint across these four domains is gated by the **operations write matrix** (ADR 0017) — see §4.7. The Energy CSV export escapes through the shared serialiser, **not** its own rule — see the *CSV exports* row (ADR 0026) |
 | Audit read   | `bms.audit_log` becomes readable under **ADR 0021** (`F4.14`): `GET /api/v1/admin/audit` and `/audit/export` (CSV + XLSX), in `apps/api/src/admin/audit/`. **Global admin only** — the table has no tenancy column, so §4.7's scope predicates cannot be applied to it at all; scoped reads for `organization_admin` and below are **deferred to their own ADR**, not silently omitted. Purely additive: no DDL, no trigger, no new package (`xlsx` was already an api dependency). `payload` is returned **verbatim**, which makes every `payload: body` call site a security surface — see §4.7. Export requires a `from`/`to` window of ≤366 days and is capped at 50,000 rows, **refusing rather than truncating**; the cap was measured, not assumed, and is a *row* bound with **no byte bound** — that gap is recorded in ADR 0021, not fixed. Append-only storage and hash-chaining are `F4.15` and stay out of scope (§6) |
 | CSV exports  | **Both** CSV downloads escape through one module, `apps/api/src/serialise/csv.ts` (**ADR 0026**, `F4.29`): the audit export (ADR 0021) and the Energy Consumption report. Before it they disagreed — the audit one neutralised spreadsheet formula leaders and the reports one only quoted, so an asset `code` beginning `=` was delivered as a **live formula**. `csvTextCell` prefixes an apostrophe when a value starts with `=` `+` `-` `@` TAB or CR, **then** tests the quote trigger `/["\n\r,]/` — that order is load-bearing, since the guarded form of a CR-led value still contains a CR and must be quoted or the record splits. All six are formula-*initiating* characters, **not** "characters a spreadsheet strips as whitespace": `\r` must stay in the leader list *and* the trigger, and deleting it from either reopens a hole every test would still pass. **Numeric cells are exempt and take `csvNumberCell`**, because the guard neutralises cells whose Excel formula reading differs from their literal text and for a number it does not (`=-5` is `-5`) — guarding one would import the client's figures as text and break their arithmetic. The split is enforced by the two functions' **parameter types**, never by a regex that re-parses output, and escaped cells carry a branded `CsvField` so a raw string in a row is a **compile error**. The audit call site is still blanket because all nine of its columns are string-shaped: the two exports are **consistent, not identical**. `toSheetRows` (XLSX) is correctly unguarded — SheetJS writes `t="str"`, ECMA-376's *cached formula result* type, and the safety is the **absence of any `<f>` element**, not the cell type. Whether a leading U+0020/U+00A0/U+FEFF is stripped-then-evaluated is an **open question** (`F4.31`) inherited from ADR 0021, not settled here: do not add characters to the leader list on reasoning alone |
+| API contracts | **Every API *response* type is `z.infer` of a schema in `packages/shared/src/contracts/`, never written twice** (**ADR 0030**, `F4.23`). The contract was never missing — `packages/shared` already exported 100 types imported at 148 sites — what was missing was a **runtime**: every export was a `type`, and `apps/web` imported `zod` zero times, so no response was checked anywhere. 88 schemas now cover them, and `apps/web` calls `checkResponse(schema, payload, endpoint)` (`src/api/validate.ts`) on 33 direct reads plus all 42 `adminFetch` calls, whose `schema` parameter is **required** so the compiler finds every site. **It validates and does not transform** — Zod strips unknown keys, so returning `result.data` would silently delete a field the server has newly added; `checkResponse` returns the original payload either way. **Failure direction is asymmetric on purpose**: throw in dev/test, log-and-pass in production, because a blank Control Room during an incident is worse than one drifted field — the same asymmetry ADR 0029 Amendment 2 applied to `API_DOCS_ENABLED`. Issues are logged as **`path` and `code` only** (§9.6): a Zod issue embeds the *received value*, so logging `message` publishes server data to a shared operations console. **Three findings worth carrying:** `@bms/shared/contracts` **does not typecheck from `apps/api`**, which compiles `moduleResolution: "node"` (node10) and ignores the `exports` map while Node's *runtime* resolution honours it — the dangerous half — so `index.ts` re-exports the schemas and the subpath is an `apps/web` convenience only; a **required `unknown` property is not expressible in Zod** (`z.unknown()` yields an *optional* key, and `z.any()`/`z.custom<unknown>()` behave identically), which is why `AuditLogEntryDto.payload` is the one contract this migration changed; and the validator **found real drift on its first run against the deployment** — `GET /rules` had never conformed, 48 of 89 rows carrying an undeclared `category`, fixed in `F4.43`. That is the argument for the 89 routes the spike did not measure. See §4.8 |
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, **ingest** and DB |
 | CI/CD        | GitHub Actions: install, build/typecheck, `typecheck:tests`, **the `apps/ingest` image build**, migration validation, **`db:seed` against a fresh schema**, **`db:refresh-aggregates`** (ADR 0023 — a no-op on a fresh database, since `db:seed` writes zero telemetry rows; it runs so the backfill path cannot rot unexercised), and `test:coverage` (ADR 0014). The Postgres service image is **pinned** to the same tag as `docker-compose.yml`, because the aggregate suite asserts behaviour measured on TimescaleDB 2.29.1. The image build is there because no workflow built one, so `apps/ingest/Dockerfile` sat broken on `main` while CI stayed green — it is the only ingest image gated, being the only one that installs before COPYing sources |
 | Testing      | Vitest, one project per app + a repo-wide `repo` project; coverage gate on a ratcheting baseline (ADR 0014). See §4.6 |
@@ -219,7 +224,16 @@ bms/
 │                                file, not another append (F4.40). A check that
 │                                does belong to one goes there instead:
 │                                adr-0024-retention-bounds.test.ts took F4.40's
-│                                compressed-delete rule for that reason
+│                                compressed-delete rule for that reason, and
+│                                F4.23 opened adr-0030-contract-derivation.test.ts
+│                                rather than appending. F4.43's checks are in
+│                                rule-vocabulary.test.ts — named for the SUBJECT,
+│                                not an ADR, because it belongs to no ADR of its
+│                                own (ADR 0030 Amendment 3 records it). Both
+│                                conventions are live: adr-00NN-*.test.ts where a
+│                                file tracks one ADR, a subject name where it
+│                                does not. A new file here must ALSO be added to
+│                                the typecheck:tests script — see §4.6
 ├── exports/                   ← PHE MQTT reference + point-mapping CSVs (ADR 0007/0011)
 ├── infra/
 │   ├── keycloak/              ← Phase 1 Sprint C realm export
@@ -263,7 +277,22 @@ bms/
 │   │                            ingest supervisor AND the API telemetry listener.
 │   │                            NOT in the coverage denominator — vitest.config.ts
 │   │                            includes apps/* only, so moving covered code here
-│   │                            silently removes it from the numerator
+│   │                            silently removes it from the numerator.
+│   │                            src/contracts/ holds the RESPONSE schemas
+│   │                            (ADR 0030) and src/constants.ts the point-key
+│   │                            catalogues that index.ts grew too large to hold.
+│   │                            The package is no longer type-only: it depends
+│   │                            on zod, and the ./contracts export entry in its
+│   │                            manifest is what makes the subpath resolve at
+│   │                            all under pnpm. Import it as @bms/shared/contracts
+│   │                            from apps/web ONLY — apps/api compiles
+│   │                            moduleResolution:"node" (node10), which ignores
+│   │                            the exports map, so there the subpath fails tsc
+│   │                            while WORKING at runtime; index.ts re-exports
+│   │                            everything for that reason, as ./ingest already
+│   │                            documents. REQUEST schemas stay in apps/api
+│   │                            (ADR 0030 decision 3) — moving them would break
+│   │                            ADR 0029's registry and its guard
 │   └── db/                    ← Drizzle schema, migrations, seeds (incl. phe-catalog.json)
 └── docs/
     ├── adr/                   ← Phase 1+ architecture decisions (the live scope record)
@@ -487,6 +516,24 @@ Do not add top-level folders without updating this section.
   asserted the guard *does* anything, so write the check that the thing you are
   enforcing with is itself alive.
 
+  **`F4.23`/`F4.43` add the other end of this, and it is the one that makes you
+  delete work you are proud of.** The bullet above says to prefer a type over a
+  static test. Prefer **construction** over both: `automationRuleCategorySchema`
+  is built as `[...authorableRuleCategorySchema.options, "electrical"]`, so
+  "the read vocabulary contains the write vocabulary" is true by the way it is
+  written and there is nothing left to check. **The corollary is that the guard
+  you would have written must then be deleted, not kept** — a tautology that was
+  meaningful when it was written is the hardest dead guard to notice later,
+  because its history argues for it. Two instances in two items: `F4.23` proved
+  the schema migration with **81** assertions of strict type identity between
+  each schema and the type it replaced, then deleted all 81 — after the switch
+  they compare `z.infer<typeof S>` with itself; and `F4.43` did not write the
+  containment test at all, for the same reason one line later. Neither deletion
+  loses a guarantee. What survives is the part that is *not* structural, which
+  for `F4.43` is "nobody restates a vocabulary" — a **source scan**, deliberately,
+  because comparing the two enums' values passes just as happily when someone
+  re-inlines the literal and keeps it in sync today.
+
   The same item produced a corollary worth its own sentence: **fixing the
   instance is not fixing the class.** Two findings from one review round were
   each "the same defect one call site over" from a fix made in the round before
@@ -598,6 +645,13 @@ Do not add top-level folders without updating this section.
 - A check that CI does not execute is not a gate. When you add a test suite,
   script, or invariant, wire it into `.github/workflows/ci.yml` in the same
   change — this repo has shipped orphaned specs and orphaned migrations before.
+- **A new file in `tests/` must be added to the root `typecheck:tests` script by
+  hand.** That script names each file explicitly rather than globbing, because
+  `tests/` has no `tsconfig.json` of its own and the flags are passed on the
+  command line. So a new invariant file is type-checked by nothing until it is
+  listed, and `pnpm test` passing tells you only that it *ran* — vitest strips
+  types with esbuild and never checks them. `F4.23` and `F4.43` each added a file
+  and each had to edit that line.
 - **You cannot instantiate a Nest module in a test here, and it is not worth
   discovering that twice** (`F4.20`). Vitest transforms TypeScript with esbuild,
   which does **not** emit `design:paramtypes`, so Nest's constructor injection
@@ -739,6 +793,68 @@ creates an audit-read exposure**, so re-run that check whenever one changes.
 The obligation is on the call sites, not on one writer: there are 15
 `insert(auditLog)` sites in total and 14 do not go through
 `MasterDataAuditService`.
+
+### 4.8 Shared API contracts (ADR 0030)
+
+A response type and its schema are **one declaration**. `packages/shared/src/`
+holds the type as `z.infer<typeof …Schema>`; the schema lives in
+`contracts/`. Writing both by hand is how they drift, and the drift is
+invisible because the hand-written type is what the compiler believes.
+`tests/adr-0030-contract-derivation.test.ts` fails the build on a hand-written
+response type in `index.ts`.
+
+**Three encodings preserve type identity and their obvious siblings do not.**
+Measured on 14 conversions in the ADR's spike, against *two* bars — strict
+conditional-type identity and mutual assignability. It produced **3 strict
+failures and 0 assignability failures**, so the strict bar is the only one that
+discriminates: under assignability alone all three wrong encodings pass
+silently and the package starts flattening intersections with no signal
+anywhere.
+
+- `A & B` → **`z.intersection(a, b)`**. `a.merge(b)` flattens the two into one
+  object type, which is assignable to the intersection and is not it.
+- `Omit<A, k> & B` → **`z.intersection(a.omit({…}), b)`**. `.omit().extend()`
+  flattens the same way.
+- An all-`readonly` object → **`.readonly()`**. The modifier is the thing that
+  is lost, not the property types; `Date` converts fine via `z.date()`.
+
+The check on those is a source scan for the flattening combinators in
+`contracts/`, not a type test, because a flattened schema still typechecks
+everywhere it is used.
+
+**A required `unknown` property cannot be expressed.** `z.unknown()` produces an
+*optional* key — Zod marks any key whose output includes `undefined` — and
+there is no passing sibling: `z.any()` and `z.custom<unknown>()` behave
+identically. Do not spend an afternoon on it as this repo already has. Record
+the gap where the schema is, as `auditLogEntrySchema.payload` does.
+
+**Validate at the boundary; never transform there.** `checkResponse` returns the
+**original payload**, not `result.data`. Zod strips unknown keys, so returning
+the parsed value silently deletes any field the server has added since the
+schema was written — a validator that quietly edits the data it validates is
+worse than none. And **the failure direction is not symmetric**: throw in
+dev/test so drift is impossible to ignore, log-and-pass in production because a
+blank Control Room during an incident is a bigger outage than one wrong field.
+Log **`path` and `code` only** — a Zod issue carries the received value, and
+§9.6 applies to a console on a shared operations workstation exactly as it
+applies to a log file.
+
+**A vocabulary is declared once and everything else is derived from it.** Where
+a read vocabulary must be wider than a write vocabulary — as
+`automationRuleCategorySchema` is wider than `authorableRuleCategorySchema`,
+because migration `0022` writes `electrical` directly and no operator may author
+it — build the wide one from the narrow one's `.options`, so the containment
+holds by construction rather than by a test (§4.4). Re-export rather than
+restate across package boundaries: `apps/api/src/rules/rules.schema.ts` exports
+the shared schema under its own name, which is that file's own rule — *a copied
+enum is a copy that drifts* — finally applied to itself.
+
+**Widening a response union to make a validator pass is a scope decision, not a
+fix.** `F4.43` widened one only after establishing from the migration that the
+value was legitimate; the alternative reading was bad seed data, and the two
+have opposite fixes. Ask which it is before editing the schema, and note that
+neither `automation_rules.category` nor `.source` has a `CHECK` constraint, so
+the database will not tell you.
 
 ---
 
