@@ -26,7 +26,8 @@ function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
     // ADR 0031's two axes on one row: the concern is `safety`, the plant domain
     // is `electrical` and lives on the asset. This fixture used to carry
     // `category: "electrical"` — a row the database can no longer hold, since
-    // `automation_rules_category_check` (migration 0029) rejects it.
+    // `automation_rules_category_fk` (migration 0029) rejects it — `electrical` is not
+    // a row in `bms.rule_categories`.
     category: "safety",
     ruleType: "threshold",
     source: "operator_rule",

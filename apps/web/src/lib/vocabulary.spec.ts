@@ -1,4 +1,5 @@
 import { badgeToneSchema } from "@bms/shared/contracts";
+import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 import type { RuleCategoryDto } from "@bms/shared";
 
 import {
@@ -107,13 +108,28 @@ export function runVocabularyTests(): void {
   // Defaults come from the vocabulary, not from a literal
   // ---------------------------------------------------------------------
 
+  // The fixture deliberately puts `safety` first, as `sort_order` does in the
+  // real seed. An earlier version of this returned `categories[0]` and this
+  // assertion pinned `"safety"` — so the builder opened on Safety while the
+  // API's `ruleDraftBodySchema` still defaulted an omitted field to
+  // `operations`. A form showing one concern while the server would store
+  // another is F4.44's control/state divergence by another route, and the test
+  // was asserting it rather than catching it.
   assert(
-    defaultCategoryCode(categories) === "safety",
-    "a new draft must start on the first offered category, so the <select> and the " +
-      "form state agree — disagreeing is exactly what F4.44 was",
+    defaultCategoryCode(categories) === DEFAULT_RULE_CATEGORY_CODE,
+    `a new draft must start on the server's own default (${DEFAULT_RULE_CATEGORY_CODE}), ` +
+      "not on whichever concern happens to sort first",
+  );
+
+  // …but the vocabulary is data, so the default may not be on offer. Retiring
+  // that row must not leave the builder defaulting to something absent from its
+  // own <select> — which is the index-0 fallback in the other direction.
+  assert(
+    defaultCategoryCode([categories[0]]) === "safety",
+    "when the server default is not offered, fall back to the first entry that is",
   );
   assert(
-    defaultCategoryCode([]) === "operations",
+    defaultCategoryCode([]) === DEFAULT_RULE_CATEGORY_CODE,
     "an empty vocabulary must still yield a usable default rather than undefined",
   );
   assert(

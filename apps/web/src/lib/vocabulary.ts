@@ -1,3 +1,4 @@
+import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 import type { AssetDomainDto, BadgeTone, RuleCategoryDto } from "@bms/shared";
 
 /**
@@ -90,18 +91,36 @@ export function toneFor(
 /**
  * The category a fresh draft starts on.
  *
- * Reads the first entry rather than hardcoding `operations`, so a deployment
- * that retires or reorders the vocabulary does not leave the builder defaulting
- * to a value it no longer offers — which is the `<select>` index-0 divergence
- * `F4.44` was about, arriving by a different route.
+ * **Matches the server's own default**, which is the point: `ruleDraftBodySchema`
+ * defaults an omitted category to `DEFAULT_RULE_CATEGORY_CODE`, and a form that
+ * starts somewhere else shows the operator one concern while an unsent field
+ * would store another. An earlier version returned `categories[0]`, which meant
+ * the builder opened on `Safety` — first by `sort_order` — while the server
+ * still said `operations`. That is `F4.44`'s divergence between a control and
+ * the state behind it, arriving by a different route.
+ *
+ * Falls back to the first offered entry when the default is not on the list,
+ * because the vocabulary is data: retiring that row with `active = false` must
+ * not leave the builder defaulting to something it does not offer.
  */
 export function defaultCategoryCode(
   categories: readonly RuleCategoryDto[] | undefined,
 ): string {
-  return categories?.[0]?.code ?? "operations";
+  const preferred = categories?.find(
+    (category) => category.code === DEFAULT_RULE_CATEGORY_CODE,
+  );
+  return preferred?.code ?? categories?.[0]?.code ?? DEFAULT_RULE_CATEGORY_CODE;
 }
 
-/** The domain a fresh asset form starts on, by the same reasoning. */
+/**
+ * The domain a fresh asset form starts on.
+ *
+ * No server-side counterpart to match here — `createAssetBodySchema` requires
+ * `domain` rather than defaulting it, deliberately, since ADR 0031 decision 7
+ * dropped the column's `DEFAULT 'electrical'` precisely so that unstated plant
+ * is an error rather than a guess. This only picks which option the form opens
+ * on, and the operator must still confirm it.
+ */
 export function defaultDomainCode(domains: readonly AssetDomainDto[] | undefined): string {
   return domains?.[0]?.code ?? "electrical";
 }

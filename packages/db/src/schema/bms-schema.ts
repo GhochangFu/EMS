@@ -158,7 +158,11 @@ export const assets = bmsSchema.table("assets", {
   // ADR 0031: the plant axis, and a foreign key rather than a fixed vocabulary
   // (Amendment 1) — the roadmap schedules three domain packs, so adding a
   // sector must be an INSERT, not a migration. `assets_domain_fk` in migration
-  // 0029 is the enforcement, and it is stronger than the CHECK it replaced.
+  // 0029 is the enforcement.
+  //
+  // It replaced **no constraint at all**: before 0029 this was a bare varchar
+  // with `DEFAULT 'electrical'` and nothing checking it, which is how the
+  // vocabulary drifted unnoticed in the first place (F4.43).
   //
   // The `DEFAULT 'electrical'` was dropped there too. A default that silently
   // classifies unstated plant is how `automation_rules.category` acquired the

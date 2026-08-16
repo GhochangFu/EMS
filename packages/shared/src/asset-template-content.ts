@@ -11,10 +11,17 @@ import type {
  * The `asset_templates.content` overlay (ADR 0019, backlog `E1.7`).
  *
  * These are the DTO types; the Zod validator that produces them lives in
- * `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts`,
- * because `@bms/shared` is types-only and a Zod schema here would be a runtime
- * dependency (AGENTS.md §9.4). A compile-time assignability assertion in that
- * file keeps the two from drifting apart.
+ * `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts`.
+ * A compile-time assignability assertion in that file keeps the two from
+ * drifting apart.
+ *
+ * That split was originally justified by `@bms/shared` being **types-only**, so
+ * that a Zod schema here would have added a runtime dependency (AGENTS.md
+ * §9.4). **That reason expired with ADR 0030**, which gave this package a
+ * runtime and `src/contracts/`. The split stands on its own merits now — the
+ * validator is an API-side concern and ADR 0019 §8 ratifies where it lives —
+ * but it is no longer load-bearing, and a future move would not be blocked by
+ * §9.4.
  *
  * Two sections are deliberately absent: `health` (`E1.1`) and `optimisation`
  * (`E1.6`) are *rejected* by the validator rather than accepted untyped, so
@@ -56,7 +63,8 @@ export type TemplateAlarm = {
    * because the returned union was wider by `electrical` — what migration 0022
    * wrote directly (F4.43). ADR 0031 removed that gap at the cause: `electrical`
    * is a plant domain and now lives only on the asset, and
-   * `automation_rules_category_check` stops the column holding anything else.
+   * `automation_rules_category_fk` stops the column holding a code that is not a
+   * row in `bms.rule_categories`.
    * So there is one vocabulary, and a template still cannot author a category
    * the API would refuse.
    */

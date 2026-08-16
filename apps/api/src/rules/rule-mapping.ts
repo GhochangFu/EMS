@@ -121,12 +121,17 @@ export function mapRuleRow(row: RuleRow): RuleListItem {
  * must not silently reclassify a rule.
  *
  * ADR 0031 removed the mismatch at the source. `electrical` is a plant domain,
- * it lives on the asset, migration `0029` moved those rows to `safety`, and
- * `automation_rules_category_check` bounds the column to the same four values
- * this type accepts. **The cast still stands because Drizzle types the column
- * `varchar`** — it is narrowing `string`, not narrowing a real union, and the
- * database is what guarantees it. The absence of re-parsing therefore stopped
- * being load-bearing; it is now merely harmless.
+ * it lives on the asset, and migration `0029` moved those rows to `safety`.
+ *
+ * **The cast is now a formality, and it is worth being exact about why.**
+ * Since Amendment 1 `AutomationRuleCategory` is a `string`, so this asserts
+ * nothing the input type did not already allow — Drizzle types the column
+ * `varchar` and both sides are `string`. What actually bounds the value is
+ * `automation_rules_category_fk`, a foreign key into `bms.rule_categories`:
+ * an **open** set, extended by `INSERT`, not a fixed four. Do not restore a
+ * narrower claim here; the vocabulary is deliberately not knowable at compile
+ * time. The absence of re-parsing therefore stopped being load-bearing, and is
+ * now merely harmless.
  */
 export function ruleBodyFromRow(row: RuleRow): RuleDraftBody {
   return {

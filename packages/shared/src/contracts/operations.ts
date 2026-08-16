@@ -234,6 +234,25 @@ export const ruleCategoryCodeSchema = z.string().min(1).max(64);
 export const assetDomainCodeSchema = z.string().min(1).max(64);
 
 /**
+ * The concern a rule gets when nobody picks one.
+ *
+ * Declared once and imported by both sides deliberately. The API's
+ * `ruleDraftBodySchema` defaults to it, and the rule builder starts a new draft
+ * on it — and those two silently disagreeing is a real defect, not a tidiness
+ * point: the builder briefly defaulted to whichever concern sorted first, which
+ * made a form show `Safety` while an unsent field would have stored
+ * `operations`. That is the `F4.44` divergence — control and state disagreeing
+ * about the same field — arriving by a different route.
+ *
+ * It is a code, not a member of a union, so it is only *meaningful* while a row
+ * with this code exists. `bms.rule_categories` seeds it in migration `0029`,
+ * and `active = false` on that row would make the builder offer a list this
+ * value is not in — which is why `defaultCategoryCode` falls back to the first
+ * offered entry rather than trusting this blindly.
+ */
+export const DEFAULT_RULE_CATEGORY_CODE = "operations";
+
+/**
  * How a category badge is styled. **This** vocabulary is genuinely closed — it
  * is presentation, owned by the frontend, and it keeps a SQL `CHECK`
  * (`rule_categories_tone_check`).

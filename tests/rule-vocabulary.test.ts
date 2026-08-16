@@ -65,18 +65,30 @@ describe("F4.45 rule vocabularies", () => {
       "utf8",
     );
 
-    for (const [name, pattern] of [
-      ["a rule category enum", /automationRuleCategorySchema\s*=\s*z\.enum\(/],
-      ["a plant domain enum", /assetDomainSchema\s*=\s*z\.enum\(/],
-    ] as const) {
-      expect(
-        pattern.test(operations),
-        `packages/shared/src/contracts/operations.ts declares ${name} again.\n\n` +
-          "Both vocabularies are rows (ADR 0031 Amendment 1) so that a domain pack " +
-          "ships a sector with an INSERT rather than a migration and a deploy. " +
-          "`E5.1`, `E5.2` and `E5.3` are all on the roadmap.",
-      ).toBe(false);
-    }
+    // Matched against the names that ACTUALLY exist, plus the ones a revert
+    // would plausibly restore. The first version of this guard named
+    // `assetDomainSchema` — a symbol that has never existed in this repo, and
+    // not even a substring of the live `assetDomainCodeSchema` — so a real
+    // revert would have walked straight through it. A guard that cannot match
+    // its own subject is the §4.4 failure this file exists to prevent.
+    const enumRevert =
+      /\b(ruleCategoryCode|assetDomainCode|automationRuleCategory|assetDomain|authorableRuleCategory)Schema\s*=\s*z\.enum\(/;
+
+    const offender = enumRevert.exec(operations);
+    expect(
+      offender?.[0],
+      "packages/shared/src/contracts/operations.ts declares a vocabulary enum again.\n\n" +
+        "Both vocabularies are rows (ADR 0031 Amendment 1) so that a domain pack " +
+        "ships a sector with an INSERT rather than a migration and a deploy. " +
+        "`E5.1`, `E5.2` and `E5.3` are all on the roadmap.",
+    ).toBeUndefined();
+
+    // Anti-vacuity: prove the pattern can fire, so a future rename of the
+    // symbols cannot silently turn this assertion into a no-op.
+    expect(
+      enumRevert.test('export const assetDomainCodeSchema = z.enum(["electrical"]);'),
+      "the revert pattern no longer matches a reverted declaration — update it",
+    ).toBe(true);
 
     // The tables must actually exist, or the above passes vacuously.
     expect(migration0029).toMatch(/CREATE TABLE IF NOT EXISTS bms\.rule_categories/);

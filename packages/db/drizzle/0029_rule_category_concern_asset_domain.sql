@@ -35,6 +35,51 @@
 -- transaction, so a mis-ordered file aborts the entire migration rather than
 -- leaving a half-applied state.
 
+-- 0. Preflight: fail readably rather than cryptically.
+--
+--    Before this branch, `assets.domain`, `asset_templates.domain` and the
+--    onboarding draft all accepted `z.string().min(1).max(64)` — arbitrary text
+--    — and `onboarding-excel.service.ts` reads the `domain` cell of an uploaded
+--    spreadsheet verbatim. So a deployment this tree has never seen may hold a
+--    value outside the seeded vocabulary.
+--
+--    Without this block, one such row aborts the entire pending-migration
+--    transaction at step 5 with a bare SQLSTATE 23503 naming a constraint, not
+--    a value or a table. Drizzle wraps all pending migrations in one
+--    transaction, so nothing is half-applied either way — the only thing at
+--    stake is whether the operator can tell what to fix.
+--
+--    Note this deliberately includes a hand-made `category = 'electrical'`:
+--    step 4 reclassifies only `source = 'phe_alarm_seed'` rows, on purpose, so
+--    any other row carrying that value is something a human must decide about
+--    rather than something this migration should silently rewrite.
+DO $$
+DECLARE
+  offender record;
+BEGIN
+  FOR offender IN
+    SELECT 'bms.assets.domain' AS col, domain AS value, count(*) AS rows
+      FROM bms.assets
+     WHERE domain NOT IN ('electrical', 'hvac', 'it', 'environment', 'water')
+     GROUP BY domain
+    UNION ALL
+    SELECT 'bms.asset_templates.domain', domain, count(*)
+      FROM bms.asset_templates
+     WHERE domain NOT IN ('electrical', 'hvac', 'it', 'environment', 'water')
+     GROUP BY domain
+    UNION ALL
+    SELECT 'bms.automation_rules.category', category, count(*)
+      FROM bms.automation_rules
+     WHERE category NOT IN ('comfort', 'energy', 'safety', 'operations')
+       AND NOT (source = 'phe_alarm_seed' AND category = 'electrical')
+     GROUP BY category
+  LOOP
+    RAISE EXCEPTION
+      'ADR 0031: % holds % row(s) with the value ''%'', which is not in the vocabulary this migration seeds. Add it to bms.asset_domains / bms.rule_categories, or correct the rows, then re-run.',
+      offender.col, offender.rows, offender.value;
+  END LOOP;
+END $$;
+
 -- 1. The two vocabularies, as data.
 --
 --    `code` is the primary key rather than a surrogate uuid, deliberately and
@@ -140,6 +185,18 @@ WHERE source = 'phe_alarm_seed'
 -- vocabulary row that assets still reference must fail loudly rather than
 -- cascade into deleting plant or nulling a NOT NULL column. Retiring a value is
 -- `active = false`, which is why that column exists.
+--
+-- **These foreign keys check existence, not `active`.** That is a real gap and
+-- it is deliberate: a row already carrying a since-retired code must keep
+-- resolving, so the constraint cannot look at the flag. `VocabulariesService`
+-- is therefore load-bearing rather than belt-and-braces — it is the only thing
+-- stopping a *new* write from choosing a retired value, and any writer that
+-- bypasses it (a future migration, a seed, psql) gets no such protection.
+--
+-- `automation_rules.category` also keeps `DEFAULT 'operations'`, which the FK
+-- cannot see. If that row were ever deleted while no rule referenced it, the
+-- delete would succeed and every later insert omitting `category` would fail on
+-- the dangling default. Retire with `active = false` and this cannot arise.
 DO $$
 BEGIN
   IF NOT EXISTS (

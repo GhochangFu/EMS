@@ -520,7 +520,7 @@ function formFromRule(rule: RuleListItem): BuilderForm {
     // assignment again. It was one before `F4.44` too — but then it was a
     // *lie* the compiler allowed, because the stored value could be
     // `electrical` and the control offered four options. Migration `0029` and
-    // `automation_rules_category_check` are what make it honest now.
+    // `automation_rules_category_fk` are what make it honest now.
     category: rule.category,
     ruleType: rule.ruleType,
     assetId: rule.assetId ?? "",

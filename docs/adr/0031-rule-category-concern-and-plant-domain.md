@@ -145,6 +145,14 @@ None. No new npm package, so §9.4 is not engaged.
 
 ## Consequences
 
+> **Superseded in part by Amendment 1.** Everything below that reasons from a
+> `CHECK` constraint should be read as "the vocabulary is closed by
+> `automation_rules_category_fk` / `assets_domain_fk` into
+> `bms.rule_categories` / `bms.asset_domains`". The *conclusions* are unchanged
+> — a foreign key closes the set at least as firmly — but the mechanism named is
+> not the one that shipped. Marked inline rather than rewritten, so the
+> reasoning as it stood at the gate stays legible.
+
 - **`F4.44`'s lock becomes dead code, and this ADR requires deleting it.** That
   is not a criticism of `F4.44` — its lock was correct, load-bearing, and the
   only thing protecting 48 rules while the vocabulary question was open. But

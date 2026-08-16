@@ -30,11 +30,13 @@ export type RuleRow = {
   assetName: string | null;
   siteName: string | null;
   /**
-   * `string`, not `AssetDomain`, because this describes what the *driver*
-   * hands back: Drizzle types the column `varchar` and the CHECK that makes it
-   * a four-value set lives in the database (migration `0029`). `mapRuleRow`
-   * narrows it, and the response validator is what would notice if the
-   * database ever disagreed — which is exactly how `F4.43` was found.
+   * `string`, because this describes what the *driver* hands back: Drizzle
+   * types the column `varchar`.
+   *
+   * What bounds the value is `assets_domain_fk` (migration `0029`), a foreign
+   * key into `bms.asset_domains` — an **open** set that a domain pack extends
+   * with an `INSERT`, not a fixed list. `AssetDomain` is itself a `string`
+   * since ADR 0031 Amendment 1, so nothing here is narrowing a union.
    */
   assetDomain: string | null;
   pointKey: string | null;

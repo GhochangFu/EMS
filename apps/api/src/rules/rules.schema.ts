@@ -1,4 +1,4 @@
-import { ruleCategoryCodeSchema } from "@bms/shared";
+import { DEFAULT_RULE_CATEGORY_CODE, ruleCategoryCodeSchema } from "@bms/shared";
 import { z } from "zod";
 
 /**
@@ -62,7 +62,7 @@ export const ruleDraftBodySchema = z.object({
   code: ruleCodeSchema.optional(),
   name: z.string().trim().min(3).max(255),
   description: z.string().trim().max(2000).nullable().optional(),
-  category: categorySchema.default("operations"),
+  category: categorySchema.default(DEFAULT_RULE_CATEGORY_CODE),
   ruleType: ruleTypeSchema,
   assetId: z.string().uuid().nullable().optional(),
   pointKey: z.string().trim().min(1).max(128).nullable().optional(),

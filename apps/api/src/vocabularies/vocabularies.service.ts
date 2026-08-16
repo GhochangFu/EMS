@@ -127,7 +127,13 @@ export class VocabulariesService {
             .where(eq(ruleCategories.active, true))
             .orderBy(asc(ruleCategories.sortOrder));
 
-    return `${field} "${code}" is not a live value. Expected one of: ${available
+    // The rejected code is echoed so the caller can see what was wrong with
+    // their input — but it is caller-supplied text, and Nest logs 4xx messages.
+    // Stripping control characters closes the log-injection line break (§4.3);
+    // the length is already bounded at 64 by the request schema.
+    const safe = code.replace(/[^\x20-\x7e]/g, "");
+
+    return `${field} "${safe}" is not a live value. Expected one of: ${available
       .map((row) => row.code)
       .join(", ")}.`;
   }

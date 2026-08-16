@@ -1412,6 +1412,13 @@ Process (`AGENTS.md` §10).
   exhaustive `switch` with no `default` returning `undefined` for a value
   TypeScript said could not occur. The visible cost was 54% of rules rendering an
   **empty, unstyled** badge with no way to filter to them.
+- **Superseded by `F4.45` (ADR 0031 + Amendment 1), 2026-08-16.** The paragraph
+  below describes the code as `F4.43` left it and is kept as the record of that
+  step. It is **no longer current**: `electrical` turned out to be a plant
+  *domain* sharing a column with concerns, so the axes were split, the 48 rows
+  moved to `safety`, and both vocabularies became rows
+  (`bms.rule_categories`, `bms.asset_domains`) referenced by foreign keys —
+  there is no `authorableRuleCategorySchema` and no derived read union any more.
 - **`F4.43` fixed it structurally rather than by test.** The read union is built
   as `[...authorableRuleCategorySchema.options, "electrical"]`, so read ⊇ write
   holds by construction and the containment test would have been a tautology —
