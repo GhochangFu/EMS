@@ -97,6 +97,43 @@ describe("F4.43 rule vocabularies", () => {
     expect(migration).toContain("phe_alarm_seed");
   });
 
+  it("builds the rule builder's options from the schema, never from literals", () => {
+    // `F4.44`. The builder used to hardcode four `<option>` elements. That is
+    // not merely duplication — a `<select>` whose value matches no option
+    // renders its FIRST option rather than a blank, so the hand-kept list
+    // falling behind the schema does not look like a bug, it looks like a
+    // different category. Measured on the running stack before the fix: the DOM
+    // read `operations` while React's state held `electrical`.
+    //
+    // Scoped to the construct rather than to a token appearing anywhere in the
+    // file (AGENTS.md §4.4, the seventh instance): a category name inside an
+    // `<option value="…">` in this file has no legitimate form.
+    const source = readFileSync(
+      join(repoRoot, "apps", "web", "src", "components", "rule-builder-panel.tsx"),
+      "utf8",
+    );
+
+    const everyCategory = [...contracts.automationRuleCategorySchema.options];
+
+    // Anti-vacuity floor: an empty list would make the loop below assert nothing.
+    expect(everyCategory.length).toBeGreaterThanOrEqual(5);
+
+    for (const category of everyCategory) {
+      const hardcoded = new RegExp(`<option[^>]*value=["']${category}["']`);
+      expect(
+        hardcoded.test(source),
+        `apps/web/src/components/rule-builder-panel.tsx hardcodes <option value="${category}">.\n\n` +
+          "Render the options from `authorableCategories` in " +
+          "`apps/web/src/lib/rule-category-authoring.ts`, which reads them off " +
+          "`authorableRuleCategorySchema`. A hand-kept copy that falls behind the schema " +
+          "does not render as broken — it renders as the wrong category (F4.44).",
+      ).toBe(false);
+    }
+
+    // …and the derived list must actually be the thing driving the control.
+    expect(source).toMatch(/authorableCategories\.map\(/);
+  });
+
   it("keeps `electrical` out of what an operator can author", () => {
     // The asymmetry is the point of the item. If this ever fails, someone has
     // widened the WRITE vocabulary — which is a real decision with ADR 0019 §3

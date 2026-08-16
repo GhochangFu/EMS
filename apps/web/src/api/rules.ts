@@ -6,8 +6,8 @@ import {
   rulesResponseSchema,
 } from "@bms/shared/contracts";
 import type {
+  AuthorableRuleCategory,
   AutomationRuleAction,
-  AutomationRuleCategory,
   AutomationRuleCondition,
   AutomationRuleOperator,
   AutomationRuleType,
@@ -38,7 +38,18 @@ export type RuleDraftPayload = {
   code?: string;
   name: string;
   description?: string | null;
-  category: AutomationRuleCategory;
+  /**
+   * The **authorable** vocabulary only — the API rejects anything else with
+   * `invalid_enum_value`, which is what `F4.44` was hitting when this was typed
+   * `AutomationRuleCategory` and the builder sent `electrical` straight back.
+   *
+   * **Optional, and the absence is meaningful**: leaving it out asks the server
+   * to keep the category it already stores. That is the only way to edit one of
+   * the 48 PHE rules — their `electrical` cannot round-trip through a write
+   * schema that does not accept it. `mergeRuleDraft` preserves an absent field;
+   * an *`undefined`* one would clear it, so omit the key rather than setting it.
+   */
+  category?: AuthorableRuleCategory;
   ruleType: AutomationRuleType;
   assetId?: string | null;
   pointKey?: string | null;
