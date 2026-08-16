@@ -189,11 +189,59 @@ export const maintenanceScheduleItemSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const automationRuleTypeSchema = z.enum(["threshold", "time_window"]);
-export const automationRuleCategorySchema = z.enum([
+
+/**
+ * What a rule's `category` can be **on the way out**.
+ *
+ * **This is deliberately wider than what the API accepts on the way in**, and
+ * the asymmetry is the whole point of `F4.43` — do not "tidy" it by making the
+ * two match without reading this.
+ *
+ * `apps/api/src/rules/rules.schema.ts`'s `categorySchema` is the *write*
+ * vocabulary: four values, and ADR 0019 §3 binds template `content.alarms` to
+ * it as well. No operator can author an `electrical` rule and none should be
+ * able to.
+ *
+ * `electrical` exists because
+ * `packages/db/drizzle/0022_phe_alarm_threshold_rules.sql` writes it directly
+ * for the PHE pilot's **48 threshold rules** — bypassing the API, which a
+ * migration is entitled to do. It was absent here until `F4.23`'s response
+ * validator reported it, at which point 48 of 89 rules had been rendering with
+ * an **empty, unstyled** category badge and no way to filter to them, because
+ * `categoryStyle`'s exhaustive `switch` returned `undefined` for a value
+ * TypeScript said could not occur.
+ *
+ * A read union that omits what the database contains is not a stricter
+ * contract; it is a false one.
+ *
+ * **`safety` is authorable and simply unpopulated** (0 rows) — the rule builder
+ * offers it. It is not dead.
+ *
+ * **Residual risk, accepted knowingly:** neither `category` nor `source` has a
+ * `CHECK` constraint, so a future writer can still introduce a value nobody
+ * declared. Constraining them is DDL and was scoped out of `F4.43` as its own
+ * ADR. Until then, the response validator is what would notice — which is how
+ * this one was found.
+ */
+export const authorableRuleCategorySchema = z.enum([
   "comfort",
   "energy",
   "safety",
   "operations",
+]);
+
+/**
+ * **Derived from the authorable set, not restated beside it.** The read union
+ * is the write union plus what migrations write directly, so read ⊇ write holds
+ * *by construction* rather than by a test that has to be remembered.
+ *
+ * A test asserting the containment would have been tautological the moment this
+ * was written this way — AGENTS.md §4.4's list of guards that pass while
+ * checking nothing. Making it impossible beats checking it did not happen.
+ */
+export const automationRuleCategorySchema = z.enum([
+  ...authorableRuleCategorySchema.options,
+  "electrical",
 ]);
 export const automationRuleOperatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
 export const automationRuleSeveritySchema = z.enum(["info", "warning", "critical"]);
@@ -224,7 +272,18 @@ export const ruleListItemSchema = z.object({
   description: z.string().nullable(),
   category: automationRuleCategorySchema,
   ruleType: automationRuleTypeSchema,
-  source: z.enum(["operator_rule", "simulator_threshold"]),
+  /**
+   * Who created the rule. `phe_alarm_seed` is migration 0022's marker for the
+   * PHE pilot's 48 rules — same omission as `category` above, found the same
+   * way, and the migration uses it as its own idempotency key
+   * (`WHERE r.source = 'phe_alarm_seed'`), so it is load-bearing rather than
+   * decorative.
+   *
+   * `simulator_threshold` is declared and written by nothing. Left in place
+   * deliberately: removing a value from a *response* union narrows a contract,
+   * and that is a separate change from widening one.
+   */
+  source: z.enum(["operator_rule", "simulator_threshold", "phe_alarm_seed"]),
   enabled: z.boolean(),
   assetId: z.string().nullable(),
   assetCode: z.string().nullable(),

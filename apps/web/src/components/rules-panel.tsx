@@ -21,11 +21,18 @@ type RuleFilter = AutomationRuleCategory | "all";
 type StatusFilter = "all" | "enabled" | "disabled";
 type LifecycleFilter = "all" | "draft" | "published" | "archived";
 
+/**
+ * Also drives the category filter below, which iterates this record — so a
+ * category missing here is not merely unlabelled, it is **unfilterable**. That
+ * was `F4.43`: `electrical` was absent, and the PHE pilot's 48 rules rendered
+ * with an empty badge and could not be selected at all.
+ */
 const categoryLabels: Record<AutomationRuleCategory, string> = {
   comfort: "Comfort",
   energy: "Energy",
   safety: "Safety",
   operations: "Operations",
+  electrical: "Electrical",
 };
 
 const ruleTypeLabels: Record<AutomationRuleType, string> = {
@@ -33,6 +40,17 @@ const ruleTypeLabels: Record<AutomationRuleType, string> = {
   time_window: "Time window",
 };
 
+/**
+ * Exhaustive by design — there is no `default`, so adding a category to
+ * `AutomationRuleCategory` makes this fail to compile rather than silently
+ * return `undefined`.
+ *
+ * That is exactly what it did before `F4.43`: `electrical` was in the database
+ * but not in the union, so this returned `undefined` for 48 of 89 rules and the
+ * badge rendered with the literal class `"undefined"` — unstyled, and typed as
+ * impossible. **Keep it exhaustive.** A `default` here would turn the next
+ * omission back into a silent one.
+ */
 function categoryStyle(category: AutomationRuleCategory): string {
   switch (category) {
     case "safety":
@@ -41,6 +59,8 @@ function categoryStyle(category: AutomationRuleCategory): string {
       return "border-bms-green/20 bg-bms-green/10 text-bms-green";
     case "comfort":
       return "border-sky-200 bg-sky-50 text-sky-700";
+    case "electrical":
+      return "border-amber-200 bg-amber-50 text-amber-700";
     case "operations":
       return "border-gray-200 bg-white text-bms-muted";
   }
