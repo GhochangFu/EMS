@@ -27,6 +27,7 @@ import type {
 import { AccessControlService } from "../../auth/access-control.service";
 import { DRIZZLE } from "../../database/database.tokens";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { readEncryptedCredentials } from "./onboarding-redaction";
 import { OnboardingValidateService } from "./onboarding-validate.service";
@@ -50,6 +51,7 @@ export class OnboardingCommitService {
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
     private readonly validateService: OnboardingValidateService,
+    private readonly vocabularies: VocabulariesService,
   ) {}
 
   /** Commits a draft session when validation passes. */
@@ -81,6 +83,19 @@ export class OnboardingCommitService {
         message: "Draft is not ready to commit",
         errors: validation.errors,
       });
+    }
+
+    // ADR 0031 Amendment 1 — every draft asset's plant domain must be a live
+    // `bms.asset_domains` code before the transaction opens.
+    //
+    // Checked here rather than inside the transaction on purpose: a commit
+    // writes locations, RTUs, point keys, assets and mappings together, and a
+    // foreign-key failure partway through rolls all of it back and reports a
+    // constraint name. This is also the path an uploaded spreadsheet reaches —
+    // `onboarding-excel.service.ts` reads the `domain` cell verbatim — so it is
+    // the most likely source of an unknown code in the whole API.
+    for (const assetDraft of draft.assets ?? []) {
+      await this.vocabularies.assertAssetDomain(assetDraft.domain);
     }
 
     return this.db.transaction(async (tx) => {

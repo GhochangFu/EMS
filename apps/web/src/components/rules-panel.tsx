@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import type {
+  AssetDomainDto,
   AutomationRuleCategory,
   AutomationRuleType,
+  RuleCategoryDto,
   RuleExecutionItem,
   RuleListItem,
 } from "@bms/shared";
@@ -15,7 +17,8 @@ import {
   fetchRules,
   setRuleEnabled,
 } from "../api/rules";
-import { categoryLabels } from "../lib/rule-category-authoring";
+import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
+import { labelFor, toneClass, toneFor } from "../lib/vocabulary";
 import { RuleBuilderPanel } from "./rule-builder-panel";
 
 type RuleFilter = AutomationRuleCategory | "all";
@@ -23,49 +26,28 @@ type StatusFilter = "all" | "enabled" | "disabled";
 type LifecycleFilter = "all" | "draft" | "published" | "archived";
 
 /**
- * Also drives the category filter below, which iterates this record — so a
- * category missing here is not merely unlabelled, it is **unfilterable**. That
- * was `F4.43`: `electrical` was absent, and the PHE pilot's 48 rules rendered
- * with an empty badge and could not be selected at all.
- */
-/*
- * Moved to `lib/rule-category-authoring.ts` by `F4.44` and imported here, so
- * the badge, the filter dropdown and the rule builder cannot disagree about
- * what a category is called. It remains `Record<AutomationRuleCategory, string>`
- * there, which is what makes a new union member a compile error rather than an
- * `undefined` label.
+ * Both vocabularies are fetched, not declared (ADR 0031 Amendment 1). The badge
+ * label, the badge styling and the filter dropdown all read the same
+ * `vocabularies` query, so they cannot disagree about what a category is
+ * called — which is what the old shared `categoryLabels` record bought, kept
+ * now by having one source rather than one type.
+ *
+ * `categoryStyle` used to live here as an exhaustive `switch` over the category
+ * union, and its comment said to keep it exhaustive because `F4.43` was exactly
+ * what a non-exhaustive one did: `electrical` returned `undefined` and 48 of 89
+ * rules rendered with the literal class `"undefined"`.
+ *
+ * With the vocabulary open, that `switch` **could not** be exhaustive — so the
+ * styling moved to `toneClass` in `lib/vocabulary.ts`, which switches over
+ * **tone** instead. Tone is a closed set pinned by `rule_categories_tone_check`,
+ * so exhaustiveness is preserved where it can actually hold, and a newly seeded
+ * category arrives already styled.
  */
 
 const ruleTypeLabels: Record<AutomationRuleType, string> = {
   threshold: "Threshold",
   time_window: "Time window",
 };
-
-/**
- * Exhaustive by design — there is no `default`, so adding a category to
- * `AutomationRuleCategory` makes this fail to compile rather than silently
- * return `undefined`.
- *
- * That is exactly what it did before `F4.43`: `electrical` was in the database
- * but not in the union, so this returned `undefined` for 48 of 89 rules and the
- * badge rendered with the literal class `"undefined"` — unstyled, and typed as
- * impossible. **Keep it exhaustive.** A `default` here would turn the next
- * omission back into a silent one.
- */
-function categoryStyle(category: AutomationRuleCategory): string {
-  switch (category) {
-    case "safety":
-      return "border-red-200 bg-red-50 text-red-700";
-    case "energy":
-      return "border-bms-green/20 bg-bms-green/10 text-bms-green";
-    case "comfort":
-      return "border-sky-200 bg-sky-50 text-sky-700";
-    case "electrical":
-      return "border-amber-200 bg-amber-50 text-amber-700";
-    case "operations":
-      return "border-gray-200 bg-white text-bms-muted";
-  }
-}
 
 function statusStyle(item: RuleExecutionItem): string {
   switch (item.status) {
@@ -131,6 +113,16 @@ export function RulesPanel() {
     queryKey: ["rules", "executions"],
     queryFn: () => fetchRuleExecutions(25),
   });
+  // ADR 0031 Amendment 1 — labels, badge tones and the filter list all come
+  // from here. `staleTime` is generous because these are reference rows that
+  // change when a domain pack ships, not while an operator is working.
+  const vocabQ = useQuery({
+    queryKey: vocabulariesQueryKey,
+    queryFn: fetchVocabularies,
+    staleTime: 5 * 60 * 1000,
+  });
+  const ruleCategories = vocabQ.data?.ruleCategories;
+  const assetDomains = vocabQ.data?.assetDomains;
 
   const toggleM = useMutation({
     mutationFn: setRuleEnabled,
@@ -215,9 +207,9 @@ export function RulesPanel() {
                 onChange={(e) => setCategoryFilter(e.target.value as RuleFilter)}
               >
                 <option value="all">All categories</option>
-                {Object.entries(categoryLabels).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
+                {(ruleCategories ?? []).map((category) => (
+                  <option key={category.code} value={category.code}>
+                    {category.label}
                   </option>
                 ))}
               </select>
@@ -266,6 +258,8 @@ export function RulesPanel() {
                   rule={rule}
                   pending={toggleM.isPending}
                   lifecyclePending={duplicateM.isPending || archiveM.isPending}
+                  ruleCategories={ruleCategories}
+                  assetDomains={assetDomains}
                   onEdit={() => setSelectedRule(rule)}
                   onDuplicate={() =>
                     duplicateM.mutate({
@@ -343,6 +337,8 @@ function RuleCard({
   rule,
   pending,
   lifecyclePending,
+  ruleCategories,
+  assetDomains,
   onEdit,
   onDuplicate,
   onArchive,
@@ -351,6 +347,8 @@ function RuleCard({
   rule: RuleListItem;
   pending: boolean;
   lifecyclePending: boolean;
+  ruleCategories: readonly RuleCategoryDto[] | undefined;
+  assetDomains: readonly AssetDomainDto[] | undefined;
   onEdit: () => void;
   onDuplicate: () => void;
   onArchive: () => void;
@@ -378,12 +376,25 @@ function RuleCard({
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="font-semibold text-bms-ink">{rule.name}</h3>
           <span
-            className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${categoryStyle(
-              rule.category,
+            className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${toneClass(
+              toneFor(ruleCategories, rule.category),
             )}`}
           >
-            {categoryLabels[rule.category]}
+            {labelFor(ruleCategories, rule.category)}
           </span>
+          {/*
+            ADR 0031's second axis, beside the first. Null when the rule targets
+            no asset — the domain is the asset's fact, so a rule without one has
+            no domain to show rather than an unknown one.
+          */}
+          {rule.assetDomain ? (
+            <span
+              className="rounded-full border border-dashed border-gray-300 bg-white px-2 py-0.5 text-[11px] text-bms-muted"
+              title="Plant domain, from the asset this rule watches"
+            >
+              {labelFor(assetDomains, rule.assetDomain)}
+            </span>
+          ) : null}
           <span className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-bms-muted">
             {ruleTypeLabels[rule.ruleType]}
           </span>

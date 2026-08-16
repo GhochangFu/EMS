@@ -197,6 +197,13 @@
       "when": 1779494400000,
       "tag": "0028_compression_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1779580800000,
+      "tag": "0029_rule_category_concern_asset_domain",
+      "breakpoints": true
     }
   ]
 }

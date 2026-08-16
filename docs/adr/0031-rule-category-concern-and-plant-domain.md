@@ -6,6 +6,13 @@
 ruled by the repository owner on the same day; the answers are recorded in
 *Questions resolved at the §10 gate* below and folded into the decisions.
 
+**Amendment 1 — 2026-08-16, `Proposed`.** Decisions 7 and 8 said each
+vocabulary gets a `CHECK` constraint. Building `F4.45` produced evidence those
+answers were given on incomplete information, and the owner ruled that **both
+vocabularies become data**. See *Amendment 1* at the end of this document; it
+supersedes the enum/`CHECK` half of decisions 6–8. **It has not yet been
+accepted at the §10 gate.**
+
 **This ADR authorises DDL over live pilot data**, which nothing else in this
 thread has. `F4.43` and `F4.44` were deliberately constrained to avoid it. Read
 decisions 6–8 before writing the migration.
@@ -193,3 +200,140 @@ None. No new npm package, so §9.4 is not engaged.
   paragraph on the read/write asymmetry also becomes **historical** rather than
   current, since decision 6 ends it — rewrite it as the worked example it now is,
   do not delete it. Not written yet, per §9.10; it lands after `F4.45`.
+
+---
+
+## Amendment 1 — the vocabularies are data, not DDL
+
+**Status: Proposed — 2026-08-16.** Ruled by the repository owner during
+`F4.45`; awaiting §10 acceptance.
+
+### What prompted it
+
+Decision 7 gave `assets.domain` a four-value `CHECK`, and decision 8 gave
+`automation_rules.category` the same. Both were answered at the gate on the
+strength of a census of existing rows — 86 `electrical`, 34 `environment`,
+14 `hvac`, 14 `it`; 148 assets, no other value present.
+
+**That census was true and the conclusion drawn from it was wrong**, for a
+reason no amount of measuring the current data could have surfaced: it
+described what the column *holds*, not what the roadmap has already committed
+to putting in it.
+
+Two facts found while building:
+
+1. The asset-template integration suites create templates with
+   `domain = 'water'` and assert the instantiated asset inherits it
+   (`asset-templates.instantiate.integration.spec.ts`, `…lifecycle…`, 14 sites).
+   Under the `CHECK` those fixtures would have had to be rewritten — changing
+   tests to fit a schema, when the tests described the product correctly and the
+   schema did not.
+2. `docs/BACKLOG.md` schedules **three domain packs**: `E5.1` water-treatment
+   (P0, the flagship, Ion Exchange's core business), `E5.2` mechanical/utility,
+   `E5.3` facility/smart-building. A fixed list of plant domains is therefore
+   known-wrong on a shorter timescale than the roadmap itself.
+
+Put to the owner as a choice between four values and five, the answer was
+neither: *"this product might incorporate other sectors as well … can you make
+it dynamic?"* — and, asked whether that extended to rule categories, *"Yes
+Categories should be configurable."*
+
+### Decisions
+
+**A1.1 — Both vocabularies become tables.** `bms.rule_categories` and
+`bms.asset_domains`, each keyed by `code`. `automation_rules.category`,
+`assets.domain` and `asset_templates.domain` become foreign keys into them
+(`automation_rules_category_fk`, `assets_domain_fk`,
+`asset_templates_domain_fk`, migration `0029`).
+
+This does **not** weaken decision 7's reasoning, which was that the plant axis
+must not move onto a *less* constrained column than the one it left. A foreign
+key is stronger than a `CHECK`: the column still cannot hold an undeclared
+value, and the set can no longer be out of step with itself. What changes is
+that declaring a value is an `INSERT` a domain pack ships in its own seed.
+
+**A1.2 — `code` is the primary key, not a surrogate uuid.** Domain packs
+round-trip through JSON, which code references survive and uuids do not — the
+reasoning `template_points.pointKey` already records. It also keeps
+`assets.domain` legible and leaves the 148 existing rows untouched.
+
+**A1.3 — Retire with `active = false`, never `DELETE`.** The foreign keys carry
+no `ON DELETE` clause deliberately, so deleting a value that plant still
+references fails loudly rather than cascading into deleted plant or a nulled
+`NOT NULL` column. `GET /api/v1/vocabularies` serves active rows only.
+
+**A1.4 — Badge styling becomes a column, and it keeps a `CHECK`.**
+`rule_categories.tone` is one of `critical` · `warning` · `positive` ·
+`informational` · `neutral`, bounded by `rule_categories_tone_check`.
+
+This is the one place the amendment *adds* a fixed vocabulary, and the
+asymmetry is the point. `categoryStyle` was an exhaustive `switch` over the
+category union whose own comment said to keep it exhaustive, because `F4.43`
+was precisely what a non-exhaustive one does: `undefined` for a value the type
+system said could not occur, and 48 badges rendered with the literal class
+`"undefined"`. With the category vocabulary open, that `switch` **cannot** be
+exhaustive. Switching on tone can be — tone is presentation, owned by the
+frontend, and genuinely closed — so a newly seeded category arrives styled
+rather than blank. Exhaustiveness moved to where it can still hold.
+
+**A1.5 — `water` is seeded now, unused.** Zero of 148 assets carry it. It is
+seeded because `E5.1` is the P0 flagship and the template suites already use
+it — the same shape as `safety` being authorable and unpopulated before this
+item. Declared-but-unpopulated is the honest state; absent would not be.
+
+**A1.6 — Both tables are global, not organization-scoped.** A domain pack is a
+product capability (`E5.1`/`E5.2`/`E5.3`), not a per-customer setting. If a
+tenant ever needs its own sector, that is a new decision with its own evidence.
+
+**A1.7 — The boundary check moves to a service.** `VocabulariesService`
+(`apps/api/src/vocabularies/`) validates a code at every write path that stores
+one: asset create/update, onboarding commit, template create/update, and
+`validateRuleDraft` — which is the single choke point for rule create, update,
+preview **and duplicate**.
+
+This is not optional tidiness. With the vocabulary out of the request schema,
+an unknown code would otherwise reach Postgres and return a **500 where the
+enum used to give a 400**, and the Zod `invalid_enum_value` message that listed
+the valid options would be gone. The service reproduces both: rejection at the
+boundary, and the live list named back to the caller.
+
+**A1.8 — ADR 0019 §3's template-alarm guard is relocated, not dropped.**
+`templateContentSchema` typed `alarms[].category` with the shared enum, so an
+unknown category was a Zod issue — and `asset-templates-content.schema.spec.ts`
+asserts exactly that (*"`water` is not a live rule category"*). A pure schema
+cannot query a table, so the check moves to
+`AssetTemplatesAdminService.assertTemplateAlarmCategories`. Nothing converts a
+template alarm into an `automation_rules` row today, but a template is an
+authoring surface: a category that does not exist is a defect authored now and
+discovered whenever that conversion is built — which is the shape of the
+`electrical` bug this ADR is unwinding.
+
+### Consequences
+
+- **The contract no longer declares either value set.** `ruleCategoryCodeSchema`
+  and `assetDomainCodeSchema` are `z.string()`, so ADR 0030's response validator
+  can no longer report an unknown category the way it reported `electrical`.
+  That check did not vanish — it moved to the database, where it is absolute
+  rather than advisory — but it is no longer the *contract's* check, and this is
+  recorded rather than glossed because the whole `F4.43` lesson is that a
+  contract which stops describing reality is worse than one that admits it.
+- **`AuthorableRuleCategory` is deleted**, and `AutomationRuleCategory` is now a
+  `string`. Two names for one vocabulary was a distinction the schema no longer
+  supports.
+- **`F4.44`'s lock is deleted**, per §4.4 and this ADR's own Consequences
+  section. `apps/web/src/lib/rule-category-authoring.ts` is replaced by
+  `lib/vocabulary.ts`, whose subject is resolving a code to a label and a tone
+  to a class — the part that is still logic once the options are fetched.
+- **The rules page, the rule builder and the asset admin form share one query
+  key**, so three screens cannot offer three different vocabularies.
+- **`rtus.domain` and `point_keys.domain` are deliberately untouched.** They are
+  different columns on different axes, both nullable, and a point key's domain
+  may legitimately diverge from the plant's. Constraining them is a separate
+  decision with its own evidence to gather.
+- **Effort was re-estimated from 2–3 to 6–8** and the item now touches all five
+  packages.
+- **The `AGENTS.md` promotion owed grows accordingly**: the §2 *API contracts*
+  row gains `assetDomain` **and** the note that two vocabularies are now rows;
+  §4.8 gains the rule that a vocabulary describing *what a thing is* belongs on
+  the thing, plus the distinction between an open vocabulary (a table) and a
+  closed one (an enum) and how to tell them apart. Not written yet, per §9.10.

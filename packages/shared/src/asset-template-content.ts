@@ -1,5 +1,5 @@
 import type {
-  AuthorableRuleCategory,
+  AutomationRuleCategory,
   AutomationRuleOperator,
   AutomationRuleSeverity,
   MaintenanceGenerationMode,
@@ -50,12 +50,17 @@ export type TemplateAlarm = {
   severity: AutomationRuleSeverity;
   message: string;
   /**
-   * ADR 0019 is an AUTHORING surface, so this is the authorable vocabulary —
-   * deliberately NOT `AutomationRuleCategory`, which is wider by `electrical`
-   * for what migration 0022 writes directly (F4.43). A template must not be
-   * able to author a category the API would refuse.
+   * ADR 0019 §3 binds this to the rule vocabulary rather than restating it.
+   *
+   * This used to be `AuthorableRuleCategory`, a deliberately narrower type,
+   * because the returned union was wider by `electrical` — what migration 0022
+   * wrote directly (F4.43). ADR 0031 removed that gap at the cause: `electrical`
+   * is a plant domain and now lives only on the asset, and
+   * `automation_rules_category_check` stops the column holding anything else.
+   * So there is one vocabulary, and a template still cannot author a category
+   * the API would refuse.
    */
-  category?: AuthorableRuleCategory;
+  category?: AutomationRuleCategory;
   philosophy?: TemplateAlarmPhilosophy;
 };
 

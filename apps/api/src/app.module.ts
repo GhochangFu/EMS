@@ -14,6 +14,7 @@ import { ObservabilityModule } from "./observability/observability.module";
 import { ReportsModule } from "./reports/reports.module";
 import { RulesModule } from "./rules/rules.module";
 import { TelemetryModule } from "./telemetry/telemetry.module";
+import { VocabulariesModule } from "./vocabularies/vocabularies.module";
 import { WorkOrdersModule } from "./work-orders/work-orders.module";
 
 @Module({
@@ -44,6 +45,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     RulesModule,
     ReportsModule,
     MapModule,
+    VocabulariesModule,
   ],
 })
 export class AppModule {}

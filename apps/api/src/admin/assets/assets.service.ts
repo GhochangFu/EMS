@@ -13,6 +13,7 @@ import type { AdminAssetDto, AdminAssetSummaryDto, JwtPayload } from "@bms/share
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { DRIZZLE } from "../../database/database.tokens";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreateAssetBody, UpdateAssetBody } from "./assets.schema";
 
@@ -22,6 +23,7 @@ export class AssetsAdminService {
     @Inject(DRIZZLE) private readonly db: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    private readonly vocabularies: VocabulariesService,
   ) {}
 
   /** Lists assets scoped to writable locations. */
@@ -114,6 +116,10 @@ export class AssetsAdminService {
       throw new ForbiddenException("Location is outside your access scope");
     }
     await this.assertRtuLocation(body.rtuId, body.locationId);
+    // ADR 0031 Amendment 1 — the plant vocabulary is data, so the request
+    // schema can only check shape. Without this the code would reach
+    // `assets_domain_fk` and return a 500 where the enum used to give a 400.
+    await this.vocabularies.assertAssetDomain(body.domain);
 
     const [created] = await this.db
       .insert(assets)
@@ -172,6 +178,13 @@ export class AssetsAdminService {
       throw new ForbiddenException("Location is outside your access scope");
     }
     await this.assertRtuLocation(nextRtuId, nextLocationId);
+    // Only when the caller supplies one: `updateAssetBodySchema` is a partial,
+    // and re-checking `existing.domain` would make a rename fail on an asset
+    // whose domain was retired — punishing an edit for something it did not
+    // touch.
+    if (body.domain !== undefined) {
+      await this.vocabularies.assertAssetDomain(body.domain);
+    }
 
     await this.db
       .update(assets)

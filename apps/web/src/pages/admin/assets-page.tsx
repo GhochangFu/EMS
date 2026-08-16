@@ -13,6 +13,8 @@ import {
 } from "../../api/admin/assets";
 import { fetchAdminLocationSummary, fetchAdminLocations } from "../../api/admin/locations";
 import { fetchAdminRtuSummary, fetchAdminRtus } from "../../api/admin/rtus";
+import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
+import { defaultDomainCode } from "../../lib/vocabulary";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
 import {
   HierarchyFilterBar,
@@ -42,9 +44,22 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
     siteName: "",
     locationId: locationId ?? "",
     rtuId: rtuId ?? "",
+    // A literal here and only here: this initializer runs before `vocabQ`
+    // exists. The value is replaced by `defaultDomainCode` in the "Add asset"
+    // handler below, which is what actually opens the form.
     domain: "electrical",
   });
   const [error, setError] = useState<string | null>(null);
+
+  // ADR 0031 Amendment 1 — the plant vocabulary is data, so the form's options
+  // are fetched. Same query key as the rules page: one nine-row payload, one
+  // cache entry, and no chance of two screens offering different domains.
+  const vocabQ = useQuery({
+    queryKey: vocabulariesQueryKey,
+    queryFn: fetchVocabularies,
+    staleTime: 5 * 60 * 1000,
+  });
+  const assetDomains = vocabQ.data?.assetDomains ?? [];
 
   const locationSummaryQ = useQuery({
     queryKey: ["admin", "location-summary", locationId],
@@ -154,7 +169,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                 siteName: "",
                 locationId: locationId ?? selection.locationId ?? "",
                 rtuId: rtuId ?? selection.rtuId ?? "",
-                domain: "electrical",
+                domain: defaultDomainCode(vocabQ.data?.assetDomains),
               });
               setModalOpen(true);
             }}
@@ -324,12 +339,27 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
               </label>
               <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
                 Domain
-                <input
+                {/*
+                  A <select> over the live vocabulary, not free text (ADR 0031).
+                  `assets_domain_fk` closed this set in migration 0029, so a
+                  typed value could only ever come back as a rejection — and the
+                  field gave no hint what the valid codes were. Options are
+                  fetched, never restated, for the same reason the rule
+                  builder's are (§4.8): a hand-kept list that falls behind does
+                  not render as broken, it renders as the wrong value.
+                */}
+                <select
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
                   value={form.domain}
                   required
                   onChange={(event) => setForm({ ...form, domain: event.target.value })}
-                />
+                >
+                  {assetDomains.map((domain) => (
+                    <option key={domain.code} value={domain.code}>
+                      {domain.label}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
             {error ? <div className="mt-2 text-xs text-red-700">{error}</div> : null}

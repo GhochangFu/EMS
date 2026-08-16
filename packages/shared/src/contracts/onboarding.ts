@@ -11,6 +11,8 @@
  */
 import { z } from "zod";
 
+import { assetDomainCodeSchema } from "./operations";
+
 /** Onboarding wizard phase tracked by the AI bot. */
 export const onboardingPhaseSchema = z.enum([
   "location",
@@ -93,7 +95,18 @@ export const onboardingDraftAssetSchema = z.object({
   code: z.string(),
   name: z.string(),
   siteName: z.string(),
-  domain: z.string(),
+  /**
+   * ADR 0031 — this draft becomes a `bms.assets` row, so it carries the plant
+   * vocabulary `assets_domain_fk` enforces. Shape only: the live value set is
+   * a table (`bms.asset_domains`), so the check that the code *exists* happens
+   * at commit against the database, not here.
+   *
+   * The `domain` fields on `onboardingDraftRtuSchema` and
+   * `onboardingDraftPointKeySchema` above are **different columns**
+   * (`rtus.domain`, `point_keys.domain`), both nullable and neither
+   * constrained, and deliberately stay a bare `z.string()`.
+   */
+  domain: assetDomainCodeSchema,
   meta: z.record(z.unknown()).optional(),
 });
 

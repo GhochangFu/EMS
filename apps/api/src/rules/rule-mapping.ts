@@ -1,5 +1,5 @@
 import type {
-  AuthorableRuleCategory,
+  AssetDomain,
   AutomationRuleAction,
   AutomationRuleCategory,
   AutomationRuleCondition,
@@ -80,12 +80,19 @@ export function mapRuleRow(row: RuleRow): RuleListItem {
     description: row.description,
     category: row.category as AutomationRuleCategory,
     ruleType: row.ruleType as AutomationRuleType,
-    source: row.source as "operator_rule" | "simulator_threshold",
+    // `phe_alarm_seed` belongs in this cast: migration 0022 writes it on 48
+    // rows and `ruleListItemSchema` declares it. Omitting it asserted a type
+    // the data has always contradicted — harmless only because a cast is not a
+    // check and the response schema accepted the real value anyway. ADR 0031
+    // makes `source = 'phe_alarm_seed'` migration 0029's filter key, so the
+    // value is load-bearing rather than incidental.
+    source: row.source as "operator_rule" | "simulator_threshold" | "phe_alarm_seed",
     enabled: row.enabled,
     assetId: row.assetId,
     assetCode: row.assetCode,
     assetName: row.assetName,
     siteName: row.siteName,
+    assetDomain: row.assetDomain as AssetDomain | null,
     pointKey: row.pointKey,
     operator: row.operator as AutomationRuleOperator | null,
     thresholdValue: row.thresholdValue,
@@ -105,29 +112,28 @@ export function mapRuleRow(row: RuleRow): RuleListItem {
 /**
  * Rebuilds the draft body a stored rule would have been created from.
  *
- * **A seeded rule has no honest draft body, and this preserves that rather
- * than papering over it.** Migration 0022 writes `category = 'electrical'` for
- * the PHE pilot's 48 rules, which is *not* authorable — no operator could have
- * created them — so the cast below is narrowing a value that genuinely does not
- * fit the authorable set.
+ * **The cast used to be narrowing a value that genuinely did not fit.**
+ * Migration 0022 wrote `category = 'electrical'` on the PHE pilot's 48 rules,
+ * which no operator could author, and neither caller (`mergeRuleDraft`,
+ * `validateRuleDraft`) re-parses the category — they check duplicate codes and
+ * asset existence only. So an update to a PHE rule carried `electrical`
+ * straight back to the row, which was the right behaviour: editing a threshold
+ * must not silently reclassify a rule.
  *
- * It is kept as a cast, and behaviour is unchanged, because that behaviour was
- * checked rather than assumed: the two callers (`mergeRuleDraft` and
- * `validateRuleDraft`) do business validation — duplicate codes, asset
- * existence — and **never re-parse the category**. So an update to a PHE rule
- * carries `electrical` straight back to the row, which is what should happen:
- * editing a rule's threshold must not silently reclassify it.
- *
- * Widening `RuleDraftBody` instead would be the wrong fix — it would let the
- * rule builder offer `electrical`, which `F4.43` deliberately does not. See
- * ADR 0030 Amendment 3.
+ * ADR 0031 removed the mismatch at the source. `electrical` is a plant domain,
+ * it lives on the asset, migration `0029` moved those rows to `safety`, and
+ * `automation_rules_category_check` bounds the column to the same four values
+ * this type accepts. **The cast still stands because Drizzle types the column
+ * `varchar`** — it is narrowing `string`, not narrowing a real union, and the
+ * database is what guarantees it. The absence of re-parsing therefore stopped
+ * being load-bearing; it is now merely harmless.
  */
 export function ruleBodyFromRow(row: RuleRow): RuleDraftBody {
   return {
     code: row.code,
     name: row.name,
     description: row.description,
-    category: row.category as AuthorableRuleCategory,
+    category: row.category as AutomationRuleCategory,
     ruleType: row.ruleType as AutomationRuleType,
     assetId: row.assetId,
     pointKey: row.pointKey,

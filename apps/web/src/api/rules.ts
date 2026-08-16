@@ -6,8 +6,8 @@ import {
   rulesResponseSchema,
 } from "@bms/shared/contracts";
 import type {
-  AuthorableRuleCategory,
   AutomationRuleAction,
+  AutomationRuleCategory,
   AutomationRuleCondition,
   AutomationRuleOperator,
   AutomationRuleType,
@@ -39,17 +39,17 @@ export type RuleDraftPayload = {
   name: string;
   description?: string | null;
   /**
-   * The **authorable** vocabulary only — the API rejects anything else with
-   * `invalid_enum_value`, which is what `F4.44` was hitting when this was typed
-   * `AutomationRuleCategory` and the builder sent `electrical` straight back.
+   * A rule's concern (ADR 0031). One vocabulary now, so this is the same type
+   * the API returns — `F4.44` needed a narrower one because `electrical` could
+   * not round-trip through a write schema that did not accept it, and migration
+   * `0029` removed that value from the column entirely.
    *
-   * **Optional, and the absence is meaningful**: leaving it out asks the server
-   * to keep the category it already stores. That is the only way to edit one of
-   * the 48 PHE rules — their `electrical` cannot round-trip through a write
-   * schema that does not accept it. `mergeRuleDraft` preserves an absent field;
-   * an *`undefined`* one would clear it, so omit the key rather than setting it.
+   * **Optional because the server supplies a default on create** and treats an
+   * absent field as "keep what is stored" on update. Note the distinction if
+   * you ever build this payload by hand: `mergeRuleDraft` preserves an *absent*
+   * key but an explicit `undefined` would clear it, so omit rather than unset.
    */
-  category?: AuthorableRuleCategory;
+  category?: AutomationRuleCategory;
   ruleType: AutomationRuleType;
   assetId?: string | null;
   pointKey?: string | null;

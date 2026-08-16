@@ -29,6 +29,14 @@ export type RuleRow = {
   assetCode: string | null;
   assetName: string | null;
   siteName: string | null;
+  /**
+   * `string`, not `AssetDomain`, because this describes what the *driver*
+   * hands back: Drizzle types the column `varchar` and the CHECK that makes it
+   * a four-value set lives in the database (migration `0029`). `mapRuleRow`
+   * narrows it, and the response validator is what would notice if the
+   * database ever disagreed — which is exactly how `F4.43` was found.
+   */
+  assetDomain: string | null;
   pointKey: string | null;
   operator: string | null;
   thresholdValue: number | null;

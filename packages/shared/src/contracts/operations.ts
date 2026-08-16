@@ -191,58 +191,94 @@ export const maintenanceScheduleItemSchema = z.object({
 export const automationRuleTypeSchema = z.enum(["threshold", "time_window"]);
 
 /**
- * What a rule's `category` can be **on the way out**.
+ * Both of a rule's axes are **open vocabularies stored as data** (ADR 0031 +
+ * Amendment 1), so neither is a `z.enum` here.
  *
- * **This is deliberately wider than what the API accepts on the way in**, and
- * the asymmetry is the whole point of `F4.43` — do not "tidy" it by making the
- * two match without reading this.
+ * ## Why these are not enums
  *
- * `apps/api/src/rules/rules.schema.ts`'s `categorySchema` is the *write*
- * vocabulary: four values, and ADR 0019 §3 binds template `content.alarms` to
- * it as well. No operator can author an `electrical` rule and none should be
- * able to.
+ * `automation_rules.category` used to hold two different kinds of thing at
+ * once. `comfort`/`energy`/`safety`/`operations` are **concerns** — what a rule
+ * is about. `electrical` is a **plant domain** — what equipment it watches,
+ * which no operator ever chose: migration `0022` wrote it directly on the PHE
+ * pilot's 48 rules. Every defect in this area was a symptom of that overload:
  *
- * `electrical` exists because
- * `packages/db/drizzle/0022_phe_alarm_threshold_rules.sql` writes it directly
- * for the PHE pilot's **48 threshold rules** — bypassing the API, which a
- * migration is entitled to do. It was absent here until `F4.23`'s response
- * validator reported it, at which point 48 of 89 rules had been rendering with
- * an **empty, unstyled** category badge and no way to filter to them, because
- * `categoryStyle`'s exhaustive `switch` returned `undefined` for a value
- * TypeScript said could not occur.
+ * - `F4.23`'s response validator reported it, after 48 of 89 rules had rendered
+ *   with an **empty, unstyled** badge for as long as `0022` had been deployed,
+ *   because `categoryStyle`'s exhaustive `switch` returned `undefined` for a
+ *   value TypeScript said could not occur.
+ * - `F4.43` widened the *read* union only, leaving a documented asymmetry.
+ * - `F4.44` found the authoring surface still wrong underneath it: a `<select>`
+ *   whose value matches no `<option>` renders its **first** option, so editing a
+ *   PHE rule silently claimed `Operations`.
  *
- * A read union that omits what the database contains is not a stricter
- * contract; it is a false one.
+ * `F4.45` fixed the cause: the axes are separate, and each has a table.
+ * `automation_rules_category_fk` and `assets_domain_fk` (migration `0029`) are
+ * the enforcement — **stronger than the enum they replaced**, because a foreign
+ * key cannot be out of step with the values that exist.
  *
- * **`safety` is authorable and simply unpopulated** (0 rows) — the rule builder
- * offers it. It is not dead.
+ * The domain vocabulary is open because the roadmap says so: `E5.1`
+ * water-treatment, `E5.2` mechanical/utility and `E5.3` facility/smart-building
+ * are three scheduled domain packs, each of which would otherwise have needed a
+ * migration to declare itself.
  *
- * **Residual risk, accepted knowingly:** neither `category` nor `source` has a
- * `CHECK` constraint, so a future writer can still introduce a value nobody
- * declared. Constraining them is DDL and was scoped out of `F4.43` as its own
- * ADR. Until then, the response validator is what would notice — which is how
- * this one was found.
+ * ## What this costs, stated plainly
+ *
+ * A `z.string()` here means the response validator can no longer report an
+ * unknown category the way it reported `electrical`. That check moved to the
+ * database, where it is absolute rather than advisory — but it is no longer
+ * *this file's* check, and the next reader should know that rather than assume
+ * this contract still describes the value set. `GET /api/v1/vocabularies` is
+ * where the live set comes from.
  */
-export const authorableRuleCategorySchema = z.enum([
-  "comfort",
-  "energy",
-  "safety",
-  "operations",
-]);
+export const ruleCategoryCodeSchema = z.string().min(1).max(64);
+export const assetDomainCodeSchema = z.string().min(1).max(64);
 
 /**
- * **Derived from the authorable set, not restated beside it.** The read union
- * is the write union plus what migrations write directly, so read ⊇ write holds
- * *by construction* rather than by a test that has to be remembered.
+ * How a category badge is styled. **This** vocabulary is genuinely closed — it
+ * is presentation, owned by the frontend, and it keeps a SQL `CHECK`
+ * (`rule_categories_tone_check`).
  *
- * A test asserting the containment would have been tautological the moment this
- * was written this way — AGENTS.md §4.4's list of guards that pass while
- * checking nothing. Making it impossible beats checking it did not happen.
+ * It exists because `categoryStyle` was an exhaustive `switch` over the old
+ * enum: with the category vocabulary open, a newly seeded category would have
+ * rendered unstyled, which is exactly the `F4.43` empty-badge failure. Styling
+ * has to travel with the value.
  */
-export const automationRuleCategorySchema = z.enum([
-  ...authorableRuleCategorySchema.options,
-  "electrical",
+export const badgeToneSchema = z.enum([
+  "critical",
+  "warning",
+  "positive",
+  "informational",
+  "neutral",
 ]);
+
+/** One row of `bms.rule_categories`. */
+export const ruleCategoryDtoSchema = z.object({
+  code: ruleCategoryCodeSchema,
+  label: z.string(),
+  tone: badgeToneSchema,
+  sortOrder: z.number(),
+  active: z.boolean(),
+});
+
+/** One row of `bms.asset_domains`. */
+export const assetDomainDtoSchema = z.object({
+  code: assetDomainCodeSchema,
+  label: z.string(),
+  sortOrder: z.number(),
+  active: z.boolean(),
+});
+
+/**
+ * `GET /api/v1/vocabularies` — both axes in one response.
+ *
+ * One endpoint rather than two because every consumer needs both together: the
+ * rules page renders a concern badge beside a plant badge, and a single query
+ * means a single cache key and no half-loaded render.
+ */
+export const vocabulariesResponseSchema = z.object({
+  ruleCategories: z.array(ruleCategoryDtoSchema),
+  assetDomains: z.array(assetDomainDtoSchema),
+});
 export const automationRuleOperatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
 export const automationRuleSeveritySchema = z.enum(["info", "warning", "critical"]);
 export const automationRuleLifecycleStatusSchema = z.enum(["draft", "published", "archived"]);
@@ -270,7 +306,7 @@ export const ruleListItemSchema = z.object({
   code: z.string(),
   name: z.string(),
   description: z.string().nullable(),
-  category: automationRuleCategorySchema,
+  category: ruleCategoryCodeSchema,
   ruleType: automationRuleTypeSchema,
   /**
    * Who created the rule. `phe_alarm_seed` is migration 0022's marker for the
@@ -289,6 +325,15 @@ export const ruleListItemSchema = z.object({
   assetCode: z.string().nullable(),
   assetName: z.string().nullable(),
   siteName: z.string().nullable(),
+  /**
+   * The rule's **plant domain**, read from the asset (ADR 0031) — the second
+   * axis, never stored on the rule.
+   *
+   * `nullable` for the same reason `assetCode` and `siteName` are: the rules
+   * query LEFT JOINs `assets`, and a rule need not target one. The column
+   * itself is `NOT NULL`, so a null here means "no asset", never "no domain".
+   */
+  assetDomain: assetDomainCodeSchema.nullable(),
   pointKey: z.string().nullable(),
   operator: automationRuleOperatorSchema.nullable(),
   thresholdValue: z.number().nullable(),
@@ -309,7 +354,13 @@ export const ruleBuilderCatalogAssetSchema = z.object({
   code: z.string(),
   name: z.string(),
   siteName: z.string(),
-  domain: z.string(),
+  /**
+   * Sourced from `assets.domain` by the catalogue query in `rules.service.ts`,
+   * which is the one thing that makes the enum safe here (ADR 0031). Other
+   * `domain` fields in these contracts read from `rtus`, `point_keys` or
+   * `asset_templates` and stay `z.string()`.
+   */
+  domain: assetDomainCodeSchema,
   pointKeys: z.array(z.string()),
 });
 
