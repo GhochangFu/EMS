@@ -30,8 +30,29 @@ const OUT_CLIENT = join(repoRoot, "docs", "status", "backlog-dashboard.client.ht
 
 const data = JSON.parse(readFileSync(IN, "utf8"));
 
+// A bare "§4.6" is a pointer into AGENTS.md, this repository's internal
+// rulebook. To a reader without that file it says nothing; to one who guesses
+// what it is, it describes how the team is governed. "SOW §8" is the client's
+// own statement of work — theirs to read, and deliberately kept.
+//
+// Declared once and derived twice (AGENTS.md §4.8): the client render redacts
+// on this pattern below, and the leak check at the foot of the file re-tests
+// the finished document on the same one. They cannot drift into disagreeing
+// about what counts as a leak. The two are not redundant — the redaction only
+// reaches text that passes through `esc`, so the check still independently
+// covers section numbers written into the page's hardcoded prose.
+const BARE_SECTION = String.raw`(?<!SOW )§\d+(?:\.\d+)*`;
+const REDACT_SECTION = new RegExp(BARE_SECTION, "g");
+const SECTION_STANDIN = "[internal ref]";
+
+// Redaction happens here rather than at each call site on purpose. Board prose
+// arrives from BACKLOG.md and reaches the page through titles, tooltips, lane
+// chips and the search index; a helper applied by hand would have to be
+// remembered at every one of them, and the next new one would leak by default.
+// `client` is declared further down with the rest of the audience switch; `esc`
+// is never called before that runs.
 const esc = (s) =>
-  String(s ?? "").replace(
+  (client ? String(s ?? "").replace(REDACT_SECTION, SECTION_STANDIN) : String(s ?? "")).replace(
     /[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
   );
@@ -940,12 +961,35 @@ const LEAKS = [
   [/github\.com/i, "GitHub link"],
   [/BACKLOG\.md|AGENTS\.md|e5\.1-client-questions/i, "internal file path"],
   [/\bbranch\b|\brefs\/|\bcommit\b|\bpull request\b/i, "branch or commit reference"],
-  // "SOW §4" is the client's own statement of work — theirs to read, not a leak.
-  [/(?<!SOW )§\d/, "internal rulebook section reference"],
+  // Same pattern the client render redacts on, built from the one declaration
+  // at the top of the file. This is not a re-test of the redaction: it reads
+  // the assembled document, so it still catches a section number typed straight
+  // into the page's own prose, which never passes through `esc`.
+  [new RegExp(BARE_SECTION), "internal rulebook section reference"],
 ];
 const found = LEAKS.filter(([re]) => re.test(forClient)).map(([, what]) => what);
 if (found.length) {
   console.error(`client variant still contains: ${found.join(", ")}`);
+  process.exitCode = 1;
+}
+
+// The other direction, and the one the check above cannot see. Redaction and
+// leak check share a pattern so they can never disagree about what a leak is —
+// but that also means a pattern which is too *broad* is invisible: widen it and
+// the client text quietly loses "SOW §8", the client's own statement of work,
+// while the check, reading the same rule, still reports clean.
+//
+// Presence, not count: the client cut legitimately drops SOW references that
+// only appear in the detail bodies it suppresses, so the two totals differ by
+// design. Presence is still exact for the failure it guards, because losing the
+// carve-out is all-or-nothing — no pattern eats some SOW references and spares
+// others. The expectation is read from the internal render rather than written
+// down here, so it follows BACKLOG.md instead of going stale against it.
+const SOW_SECTION = /SOW §\d/;
+if (SOW_SECTION.test(internal) && !SOW_SECTION.test(forClient)) {
+  console.error(
+    "client variant dropped every SOW section reference — the redaction pattern is too broad",
+  );
   process.exitCode = 1;
 }
 
