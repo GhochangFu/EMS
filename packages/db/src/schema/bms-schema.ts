@@ -89,6 +89,57 @@ export const rtus = bmsSchema.table("rtus", {
     .defaultNow(),
 });
 
+/**
+ * The plant-domain vocabulary (ADR 0031 Amendment 1) — **data, not DDL**.
+ *
+ * `assets.domain` and `asset_templates.domain` are foreign keys into this
+ * table, so the axis is still referentially closed, but adding a sector is an
+ * `INSERT` a domain pack can ship in its own seed rather than a migration and a
+ * deploy. `E5.1` (water-treatment), `E5.2` (mechanical/utility) and `E5.3`
+ * (facility/smart-building) are all on the roadmap, which is what makes a fixed
+ * list the wrong shape here.
+ *
+ * `code` is the primary key rather than a surrogate uuid: domain packs
+ * round-trip through JSON, which code references survive and uuids do not —
+ * the same reasoning `templatePoints.pointKey` records.
+ *
+ * Retire a value with `active = false`, never `DELETE`. The foreign keys carry
+ * no `ON DELETE` clause precisely so a delete that plant still references
+ * fails loudly.
+ */
+export const assetDomains = bmsSchema.table("asset_domains", {
+  code: varchar("code", { length: 64 }).primaryKey(),
+  label: varchar("label", { length: 128 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(100),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * The rule-concern vocabulary (ADR 0031 Amendment 1) — also data.
+ *
+ * Four rows today, and unlike `assetDomains` this one is not expected to grow
+ * with sectors: a water-treatment plant has the same comfort/energy/safety/
+ * operations concerns as a substation. It is a table anyway so that "not
+ * expected to" can never again mean "cannot" — which is the assumption
+ * `electrical` violated for as long as migration 0022 had been deployed.
+ *
+ * `tone` drives the badge styling. It has to be data for the same reason the
+ * vocabulary does: `categoryStyle` in the web app was an exhaustive `switch`,
+ * and an open vocabulary would have made a new category render unstyled, which
+ * is precisely the `F4.43` failure. It is a *presentation* vocabulary owned by
+ * the frontend, and that one is genuinely closed, so it keeps a SQL `CHECK`
+ * (`rule_categories_tone_check`, migration 0029) rather than a table of its own.
+ */
+export const ruleCategories = bmsSchema.table("rule_categories", {
+  code: varchar("code", { length: 64 }).primaryKey(),
+  label: varchar("label", { length: 128 }).notNull(),
+  tone: varchar("tone", { length: 32 }).notNull().default("neutral"),
+  sortOrder: integer("sort_order").notNull().default(100),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const assets = bmsSchema.table("assets", {
   id: uuid("id").primaryKey().defaultRandom(),
   code: varchar("code", { length: 64 }).notNull().unique(),
@@ -104,7 +155,22 @@ export const assets = bmsSchema.table("assets", {
     .notNull()
     .references(() => locations.id),
   rtuId: uuid("rtu_id").references(() => rtus.id),
-  domain: varchar("domain", { length: 64 }).notNull().default("electrical"),
+  // ADR 0031: the plant axis, and a foreign key rather than a fixed vocabulary
+  // (Amendment 1) — the roadmap schedules three domain packs, so adding a
+  // sector must be an INSERT, not a migration. `assets_domain_fk` in migration
+  // 0029 is the enforcement.
+  //
+  // It replaced **no constraint at all**: before 0029 this was a bare varchar
+  // with `DEFAULT 'electrical'` and nothing checking it, which is how the
+  // vocabulary drifted unnoticed in the first place (F4.43).
+  //
+  // The `DEFAULT 'electrical'` was dropped there too. A default that silently
+  // classifies unstated plant is how `automation_rules.category` acquired the
+  // drift F4.43 found; the column is NOT NULL, so an INSERT that omits a domain
+  // must fail rather than be assigned one.
+  domain: varchar("domain", { length: 64 })
+    .notNull()
+    .references(() => assetDomains.code),
   // ADR 0015: pins the exact template *version* this asset was built from,
   // because a row in `asset_templates` IS a version. Null means hand-created,
   // which every seeded asset is. Publishing a newer version never touches it.
@@ -226,7 +292,13 @@ export const assetTemplates = bmsSchema.table("asset_templates", {
   version: integer("version").notNull().default(1),
   name: varchar("name", { length: 255 }).notNull(),
   assetType: varchar("asset_type", { length: 64 }).notNull(),
-  domain: varchar("domain", { length: 64 }).notNull(),
+  // ADR 0031 Amendment 1: instantiating a template copies this straight onto
+  // the asset it creates, so it shares the asset's vocabulary — otherwise an
+  // unconstrained value here becomes a foreign-key violation one hop later, at
+  // instantiation time, far from the form that caused it.
+  domain: varchar("domain", { length: 64 })
+    .notNull()
+    .references(() => assetDomains.code),
   description: text("description"),
   // draft | published | archived — mirrors automation_rules.lifecycle_status.
   // A two-state `active` boolean cannot express "drafted, not yet publishable".
@@ -470,7 +542,14 @@ export const automationRules = bmsSchema.table("automation_rules", {
   code: varchar("code", { length: 64 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  category: varchar("category", { length: 64 }).notNull().default("operations"),
+  // ADR 0031: a **concern**, not a plant domain. `automation_rules_category_fk`
+  // (migration 0029) is what stops this column holding the other axis again —
+  // it held `electrical` on 48 rows for as long as migration 0022 had been
+  // deployed, and nothing noticed until F4.23 put a validator on the boundary.
+  category: varchar("category", { length: 64 })
+    .notNull()
+    .default("operations")
+    .references(() => ruleCategories.code),
   ruleType: varchar("rule_type", { length: 32 }).notNull(),
   source: varchar("source", { length: 64 }).notNull().default("operator_rule"),
   enabled: boolean("enabled").notNull().default(true),

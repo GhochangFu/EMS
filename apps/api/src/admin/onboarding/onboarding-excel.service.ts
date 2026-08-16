@@ -5,6 +5,24 @@ import type { OnboardingDraft, OnboardingProtocol } from "@bms/shared";
 
 import type { OnboardingDraftInput } from "./onboarding.schema";
 
+/**
+ * Reads a spreadsheet's `domain` cell into a plant-domain code (ADR 0031).
+ *
+ * **Case and spacing are normalised; an unrecognised value is not.** A sheet
+ * written by hand says `HVAC` or ` Electrical `, and those are the same domain
+ * — folding them is not guessing. Anything else is passed through *unchanged*
+ * so `OnboardingCommitService` rejects it against `bms.asset_domains` and names
+ * the valid codes to whoever uploaded the sheet.
+ *
+ * What this replaces is the previous `|| "electrical"` fallback, which silently
+ * classified any unreadable cell as electrical plant. That is the same failure
+ * `assets.domain`'s dropped `DEFAULT` removes at the other end: answering
+ * confidently when nobody said.
+ */
+function assetDomainFromCell(cell: string): string {
+  return cell.trim().toLowerCase();
+}
+
 export type ParsedExcel = {
   location: NonNullable<OnboardingDraft["location"]>;
   rtus: NonNullable<OnboardingDraft["rtus"]>;
@@ -295,7 +313,7 @@ export class OnboardingExcelService {
         code: get(values, "asset_code"),
         name: get(values, "asset_name") || get(values, "asset_code"),
         siteName: get(values, "site_name") || defaultSiteName,
-        domain: get(values, "domain") || "electrical",
+        domain: assetDomainFromCell(get(values, "domain")),
       };
     });
   }

@@ -9,136 +9,235 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const require_ = createRequire(import.meta.url);
 
 /**
- * `F4.43` — a rule's `category` has two vocabularies, and they must stay
- * related in one direction only.
+ * `F4.43` → `F4.45` — a rule's concern, the plant domain beside it, and the
+ * rule that **neither is a hardcoded list any more** (ADR 0031 + Amendment 1).
  *
- * - **authorable** — `authorableRuleCategorySchema`, four values. What an
- *   operator may create, and what ADR 0019 §3 binds template `content.alarms`
- *   to.
- * - **readable** — `automationRuleCategorySchema`, five. What the API may
- *   *return*, including `electrical`, which
- *   `packages/db/drizzle/0022_phe_alarm_threshold_rules.sql` writes directly
- *   for the PHE pilot's 48 rules, bypassing the API as a migration may.
+ * ## The history, which is the reason these tests exist
+ *
+ * `automation_rules.category` held two kinds of thing in one column.
+ * `comfort`/`energy`/`safety`/`operations` are *concerns*. `electrical` is a
+ * *plant domain*, written directly by
+ * `packages/db/drizzle/0022_phe_alarm_threshold_rules.sql` on the PHE pilot's
+ * 48 rules. Every defect here was a symptom of that overload:
+ *
+ * - 48 of 89 rules rendered with an **empty, unstyled** badge and could not be
+ *   filtered to, because `categoryStyle`'s exhaustive `switch` returned
+ *   `undefined` for a value the type system said could not occur. Nothing
+ *   noticed until `F4.23` put a response validator on the boundary.
+ * - `F4.43` widened the *read* union only, leaving a documented asymmetry.
+ * - `F4.44` found the authoring surface still wrong: a `<select>` whose value
+ *   matches no `<option>` renders its **first** option, so editing a PHE rule
+ *   silently claimed `Operations`.
+ * - `F4.45` split the axes and moved both vocabularies into tables, because the
+ *   roadmap schedules three domain packs (`E5.1`, `E5.2`, `E5.3`) and a fixed
+ *   list would have cost a migration and a deploy per sector.
  *
  * ## What is NOT tested here, and why
  *
- * **That readable ⊇ authorable.** It holds *by construction* — the read enum is
- * built from `authorableRuleCategorySchema.options` plus `electrical` — so an
- * assertion would be a tautology, and a tautology that once had meaning is the
- * hardest kind of dead guard to notice later (AGENTS.md §4.4). Making it
- * impossible beat testing that it had not happened.
+ * **The vocabulary contents.** They are rows now — `bms.rule_categories` and
+ * `bms.asset_domains` — so any list asserted here would be a copy of the seed,
+ * i.e. exactly the duplication this item removed. `automation_rules_category_fk`
+ * and `assets_domain_fk` are the enforcement.
  *
- * What remains testable is everything that is *not* structural: that nobody
- * restates a vocabulary instead of importing it, and that the two values which
- * started this item are still described.
- *
- * ## The history worth keeping
- *
- * `electrical` sat in the database and outside the read union for as long as
- * migration 0022 had been deployed. 48 of 89 rules rendered with an empty,
- * unstyled badge and could not be filtered to, because `categoryStyle`'s
- * exhaustive `switch` returned `undefined` for a value the type system said
- * could not occur. Nothing noticed until `F4.23` put a response validator on
- * the boundary. Neither column has a `CHECK` constraint — that was scoped out
- * as its own ADR — so the validator and these rules are the whole of the
- * enforcement today.
+ * What remains checkable from the repo is the thing that actually regresses:
+ * **that no surface reintroduces a hardcoded copy**, and that the migration
+ * keys stay intact.
  */
-describe("F4.43 rule vocabularies", () => {
+describe("F4.45 rule vocabularies", () => {
   const contracts = require_("@bms/shared/contracts") as {
-    authorableRuleCategorySchema: { options: readonly string[] };
-    automationRuleCategorySchema: { options: readonly string[] };
+    badgeToneSchema: { options: readonly string[] };
     ruleListItemSchema: { shape: { source: { options: readonly string[] } } };
   };
 
-  it("declares each vocabulary once, and never restates one", () => {
-    // `rules.schema.ts` used to declare its own copy of the four values while
-    // `packages/shared` needed the same list to type a template alarm — two
-    // copies of one vocabulary, in a file whose own comment says "a copied
-    // enum is a copy that drifts". It now re-exports the shared schema.
-    //
-    // A source scan rather than a value comparison, deliberately: comparing
-    // the values would pass just as happily if someone re-inlined the literal
-    // and kept it in sync *today*, which is the state that drifts tomorrow.
-    const source = readFileSync(
-      join(repoRoot, "apps", "api", "src", "rules", "rules.schema.ts"),
+  const migrationDir = join(repoRoot, "packages", "db", "drizzle");
+  const migration0029 = readFileSync(
+    join(migrationDir, "0029_rule_category_concern_asset_domain.sql"),
+    "utf8",
+  );
+
+  it("keeps both vocabularies out of the code and in the database", () => {
+    // The regression this guards is a *revert*: someone finding the fetch
+    // inconvenient and pasting the four values back into a `z.enum`. That
+    // compiles, passes every behavioural test, and quietly reintroduces the
+    // deploy-per-sector cost ADR 0031 Amendment 1 removed.
+    const operations = readFileSync(
+      join(repoRoot, "packages", "shared", "src", "contracts", "operations.ts"),
       "utf8",
     );
 
-    const declaresOwnCategoryEnum =
-      /export const categorySchema\s*=\s*z\.enum\(/.test(source);
+    // Matched against the names that ACTUALLY exist, plus the ones a revert
+    // would plausibly restore. The first version of this guard named
+    // `assetDomainSchema` — a symbol that has never existed in this repo, and
+    // not even a substring of the live `assetDomainCodeSchema` — so a real
+    // revert would have walked straight through it. A guard that cannot match
+    // its own subject is the §4.4 failure this file exists to prevent.
+    const enumRevert =
+      /\b(ruleCategoryCode|assetDomainCode|automationRuleCategory|assetDomain|authorableRuleCategory)Schema\s*=\s*z\.enum\(/;
+
+    const offender = enumRevert.exec(operations);
+    expect(
+      offender?.[0],
+      "packages/shared/src/contracts/operations.ts declares a vocabulary enum again.\n\n" +
+        "Both vocabularies are rows (ADR 0031 Amendment 1) so that a domain pack " +
+        "ships a sector with an INSERT rather than a migration and a deploy. " +
+        "`E5.1`, `E5.2` and `E5.3` are all on the roadmap.",
+    ).toBeUndefined();
+
+    // Anti-vacuity: prove the pattern can fire, so a future rename of the
+    // symbols cannot silently turn this assertion into a no-op.
+    expect(
+      enumRevert.test('export const assetDomainCodeSchema = z.enum(["electrical"]);'),
+      "the revert pattern no longer matches a reverted declaration — update it",
+    ).toBe(true);
+
+    // The tables must actually exist, or the above passes vacuously.
+    expect(migration0029).toMatch(/CREATE TABLE IF NOT EXISTS bms\.rule_categories/);
+    expect(migration0029).toMatch(/CREATE TABLE IF NOT EXISTS bms\.asset_domains/);
+  });
+
+  it("closes both columns with a foreign key, not a CHECK", () => {
+    // A CHECK would have been the tempting shape and is the one this migration
+    // was first written with. The FK is what makes the vocabulary extensible
+    // *without* making it unenforced — the distinction worth pinning, because
+    // "make it dynamic" is very easily read as "drop the constraint".
+    for (const constraint of [
+      "automation_rules_category_fk",
+      "assets_domain_fk",
+      "asset_templates_domain_fk",
+    ]) {
+      expect(migration0029, `${constraint} is missing from migration 0029`).toContain(
+        constraint,
+      );
+    }
 
     expect(
-      declaresOwnCategoryEnum,
-      "apps/api/src/rules/rules.schema.ts declares its own category enum again.\n\n" +
-        "It must re-export `authorableRuleCategorySchema` from `@bms/shared` instead. " +
-        "Two declarations of one vocabulary is what F4.43 removed, and the file's own " +
-        "comment gives the reason: a copied enum is a copy that drifts.",
+      /CHECK \(category IN/.test(migration0029) || /CHECK \(domain IN/.test(migration0029),
+      "migration 0029 constrains a vocabulary with a CHECK. That freezes the value " +
+        "set in DDL, which is what Amendment 1 replaced: adding a sector must be an " +
+        "INSERT. The tone CHECK is the deliberate exception — tone is presentation, " +
+        "owned by the frontend, and genuinely closed.",
     ).toBe(false);
 
-    // …and the re-export must actually be the shared one.
-    expect(source).toMatch(/categorySchema\s*=\s*authorableRuleCategorySchema/);
+    // The one CHECK that should be there.
+    expect(migration0029).toContain("rule_categories_tone_check");
+  });
+
+  it("migrates the 48 PHE rows before constraining, keyed on a constant", () => {
+    // Order is load-bearing and cannot be checked any other way from here:
+    // drizzle wraps the run in one transaction, so the FK must come after both
+    // the seed and the UPDATE or the whole migration aborts.
+    const seedAt = migration0029.indexOf("INSERT INTO bms.rule_categories");
+    const updateAt = migration0029.indexOf("UPDATE bms.automation_rules");
+    const fkAt = migration0029.indexOf("automation_rules_category_fk");
+
+    expect(seedAt).toBeGreaterThan(-1);
+    expect(updateAt).toBeGreaterThan(seedAt);
+    expect(fkAt).toBeGreaterThan(updateAt);
+
+    // AGENTS.md §4.4: the UPDATE filters on a constant, never a join or
+    // subquery, so it touches exactly the rows migration 0022 wrote.
+    expect(migration0029).toMatch(/WHERE source = 'phe_alarm_seed'/);
+    expect(migration0029).toMatch(/AND category = 'electrical'/);
   });
 
   it("still describes what migration 0022 actually writes", () => {
-    // Pinned by name rather than by count: a count stays green while
-    // `electrical` is swapped for something else.
-    expect([...contracts.automationRuleCategorySchema.options]).toContain("electrical");
-
-    const sources = [...contracts.ruleListItemSchema.shape.source.options];
-    expect(sources).toContain("phe_alarm_seed");
-
-    // `phe_alarm_seed` is load-bearing, not decorative: migration 0022 uses it
-    // as its own idempotency key (`WHERE r.source = 'phe_alarm_seed'`), so a
-    // rename would make the migration re-insert on the next run.
-    const migration = readFileSync(
-      join(repoRoot, "packages", "db", "drizzle", "0022_phe_alarm_threshold_rules.sql"),
-      "utf8",
+    // `phe_alarm_seed` is load-bearing in two migrations now: 0022 uses it as
+    // its own idempotency key, and 0029 uses it as the constant selecting the
+    // 48 rows to reclassify. A rename breaks both — 0022 would re-insert on a
+    // fresh database, and 0029 would migrate nothing and then fail its own FK.
+    expect([...contracts.ruleListItemSchema.shape.source.options]).toContain(
+      "phe_alarm_seed",
     );
-    expect(migration).toContain("phe_alarm_seed");
+
+    for (const file of [
+      "0022_phe_alarm_threshold_rules.sql",
+      "0029_rule_category_concern_asset_domain.sql",
+    ]) {
+      expect(
+        readFileSync(join(migrationDir, file), "utf8"),
+        `${file} no longer keys on phe_alarm_seed`,
+      ).toContain("phe_alarm_seed");
+    }
   });
 
-  it("builds the rule builder's options from the schema, never from literals", () => {
-    // `F4.44`. The builder used to hardcode four `<option>` elements. That is
-    // not merely duplication — a `<select>` whose value matches no option
-    // renders its FIRST option rather than a blank, so the hand-kept list
-    // falling behind the schema does not look like a bug, it looks like a
-    // different category. Measured on the running stack before the fix: the DOM
-    // read `operations` while React's state held `electrical`.
+  it("renders every control's options from the fetched vocabulary", () => {
+    // `F4.44`, generalised. A `<select>` whose value matches no `<option>`
+    // renders its FIRST option rather than a blank, so a hand-kept list falling
+    // behind does not look like a bug — it looks like a different value.
+    // Measured on the running stack before that fix: the DOM read `operations`
+    // while React's state held `electrical`.
     //
     // Scoped to the construct rather than to a token appearing anywhere in the
-    // file (AGENTS.md §4.4, the seventh instance): a category name inside an
-    // `<option value="…">` in this file has no legitimate form.
-    const source = readFileSync(
-      join(repoRoot, "apps", "web", "src", "components", "rule-builder-panel.tsx"),
+    // file (AGENTS.md §4.4): a vocabulary code inside an `<option value="…">`
+    // in these files has no legitimate form.
+    const surfaces = [
+      {
+        path: join(repoRoot, "apps", "web", "src", "components", "rule-builder-panel.tsx"),
+        source: "ruleCategories.map(",
+      },
+      {
+        path: join(repoRoot, "apps", "web", "src", "pages", "admin", "assets-page.tsx"),
+        source: "assetDomains.map(",
+      },
+    ];
+
+    // Seeded codes, read from the migration rather than restated here, so this
+    // covers whatever the seed actually contains.
+    //
+    // Scoped to the two vocabulary INSERT statements. A blanket scan of the
+    // whole file also picks up the `tone` column — and `critical` is both a
+    // tone and a rule *severity*, whose legitimate `<option value="critical">`
+    // then reads as a hardcoded vocabulary. The first assertion this test ever
+    // made was that false positive.
+    const seededCodes = (table: string): string[] => {
+      const from = migration0029.indexOf(`INSERT INTO bms.${table}`);
+      expect(from, `no seed INSERT for bms.${table}`).toBeGreaterThan(-1);
+      const statement = migration0029.slice(from, migration0029.indexOf(";", from));
+      return [...statement.matchAll(/\(\s*'([a-z_]+)'/g)].map((match) => match[1]);
+    };
+
+    const seeded = [...seededCodes("rule_categories"), ...seededCodes("asset_domains")];
+
+    expect(seeded).toContain("safety");
+    expect(seeded).toContain("electrical");
+    expect(seeded.length).toBeGreaterThanOrEqual(8);
+
+    for (const surface of surfaces) {
+      const source = readFileSync(surface.path, "utf8");
+
+      for (const code of seeded) {
+        expect(
+          new RegExp(`<option[^>]*value=["']${code}["']`).test(source),
+          `${surface.path} hardcodes <option value="${code}">. Render the options ` +
+            "from the `vocabularies` query instead — a hand-kept copy that falls " +
+            "behind does not render as broken, it renders as the wrong value (F4.44).",
+        ).toBe(false);
+      }
+
+      expect(source, `${surface.path} no longer maps the fetched vocabulary`).toContain(
+        surface.source,
+      );
+    }
+  });
+
+  it("styles badges by tone, which is the only closed vocabulary left", () => {
+    // `categoryStyle` was an exhaustive `switch` over the category union, and
+    // its own comment said to keep it exhaustive because F4.43 was exactly what
+    // a non-exhaustive one did. With the vocabulary open it *cannot* be
+    // exhaustive — so exhaustiveness moved to tone, which is closed and pinned
+    // by `rule_categories_tone_check`.
+    const panel = readFileSync(
+      join(repoRoot, "apps", "web", "src", "components", "rules-panel.tsx"),
       "utf8",
     );
 
-    const everyCategory = [...contracts.automationRuleCategorySchema.options];
+    expect(
+      /function categoryStyle/.test(panel),
+      "rules-panel.tsx declares `categoryStyle` again. A switch over an open " +
+        "vocabulary cannot be exhaustive; style by `tone` via `toneClass` instead.",
+    ).toBe(false);
 
-    // Anti-vacuity floor: an empty list would make the loop below assert nothing.
-    expect(everyCategory.length).toBeGreaterThanOrEqual(5);
-
-    for (const category of everyCategory) {
-      const hardcoded = new RegExp(`<option[^>]*value=["']${category}["']`);
-      expect(
-        hardcoded.test(source),
-        `apps/web/src/components/rule-builder-panel.tsx hardcodes <option value="${category}">.\n\n` +
-          "Render the options from `authorableCategories` in " +
-          "`apps/web/src/lib/rule-category-authoring.ts`, which reads them off " +
-          "`authorableRuleCategorySchema`. A hand-kept copy that falls behind the schema " +
-          "does not render as broken — it renders as the wrong category (F4.44).",
-      ).toBe(false);
-    }
-
-    // …and the derived list must actually be the thing driving the control.
-    expect(source).toMatch(/authorableCategories\.map\(/);
-  });
-
-  it("keeps `electrical` out of what an operator can author", () => {
-    // The asymmetry is the point of the item. If this ever fails, someone has
-    // widened the WRITE vocabulary — which is a real decision with ADR 0019 §3
-    // in its blast radius, not a tidy-up.
-    expect([...contracts.authorableRuleCategorySchema.options]).not.toContain("electrical");
-    expect([...contracts.authorableRuleCategorySchema.options]).toHaveLength(4);
+    expect(panel).toMatch(/toneClass\(/);
+    expect([...contracts.badgeToneSchema.options].length).toBeGreaterThanOrEqual(5);
   });
 });

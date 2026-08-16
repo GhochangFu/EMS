@@ -29,6 +29,16 @@ export type RuleRow = {
   assetCode: string | null;
   assetName: string | null;
   siteName: string | null;
+  /**
+   * `string`, because this describes what the *driver* hands back: Drizzle
+   * types the column `varchar`.
+   *
+   * What bounds the value is `assets_domain_fk` (migration `0029`), a foreign
+   * key into `bms.asset_domains` — an **open** set that a domain pack extends
+   * with an `INSERT`, not a fixed list. `AssetDomain` is itself a `string`
+   * since ADR 0031 Amendment 1, so nothing here is narrowing a union.
+   */
+  assetDomain: string | null;
   pointKey: string | null;
   operator: string | null;
   thresholdValue: number | null;

@@ -21,6 +21,7 @@ import type {
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { DRIZZLE } from "../../database/database.tokens";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   findUnresolvedContentRefs,
@@ -49,6 +50,7 @@ export class AssetTemplatesAdminService {
     @Inject(DRIZZLE) private readonly db: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    private readonly vocabularies: VocabulariesService,
   ) {}
 
   /** Lists template versions visible to the caller, newest version first. */
@@ -124,6 +126,12 @@ export class AssetTemplatesAdminService {
   ): Promise<AdminAssetTemplateDto> {
     await this.assertCanAuthor(jwt, body.organizationId);
     await this.assertPointKeysActive(body.organizationId, body.points);
+    // ADR 0031 Amendment 1. Checked here rather than at instantiation because
+    // that is where the value is *chosen*: a template stores this domain and
+    // stamps it onto every asset built from it, so a bad code caught later
+    // surfaces on someone else's batch, long after the form that set it.
+    await this.vocabularies.assertAssetDomain(body.domain);
+    await this.assertTemplateAlarmCategories(body.content);
     if (body.content) {
       this.assertContentRefsResolve(body.content, body.points);
     }
@@ -190,6 +198,10 @@ export class AssetTemplatesAdminService {
     if (body.points) {
       await this.assertPointKeysActive(template.organizationId, body.points);
     }
+    if (body.domain !== undefined) {
+      await this.vocabularies.assertAssetDomain(body.domain);
+    }
+    await this.assertTemplateAlarmCategories(body.content);
     if (body.content) {
       // The effective point set: what this request carries when it carries
       // points, and what is already stored when it does not. A `PATCH` that
@@ -533,6 +545,38 @@ export class AssetTemplatesAdminService {
    * Names every unresolved key, for the same reason `assertPointKeysActive`
    * does: bisecting a forty-point template by hand is not a debugging strategy.
    */
+  /**
+   * ADR 0019 §3's binding of template `content.alarms[].category` to the live
+   * rule vocabulary, **relocated rather than dropped** (ADR 0031 Amendment 1).
+   *
+   * It used to be free: `templateContentSchema` typed the field with the shared
+   * `z.enum`, so an unknown category was a Zod issue naming the valid values.
+   * With the vocabulary now in `bms.rule_categories`, a pure schema cannot know
+   * the set — but the guarantee is worth keeping, so it moves to the one layer
+   * that can ask.
+   *
+   * **Why keep it at all**, given nothing converts a template alarm into an
+   * `automation_rules` row today: the point is that a template is an authoring
+   * surface. A category that no longer exists is a defect authored *now* and
+   * discovered whenever that conversion is built — which is exactly the shape
+   * of the `electrical` bug this whole ADR is unwinding, where a value sat
+   * unnoticed in the database for as long as it took someone to look.
+   */
+  private async assertTemplateAlarmCategories(
+    content: TemplateContentParsed | undefined,
+  ): Promise<void> {
+    const categories = (content?.alarms ?? [])
+      .map((alarm) => alarm.category)
+      .filter((category): category is string => typeof category === "string");
+
+    // `category` is optional on a template alarm, so an absent one is not a
+    // failure — it means "unspecified", and the rule builder's default applies
+    // if this ever becomes a rule.
+    for (const category of new Set(categories)) {
+      await this.vocabularies.assertRuleCategory(category);
+    }
+  }
+
   private assertContentRefsResolve(
     content: TemplateContentParsed,
     points: { pointKey: string }[],

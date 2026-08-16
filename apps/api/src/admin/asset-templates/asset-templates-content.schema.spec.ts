@@ -100,7 +100,29 @@ export function runTemplateContentSchemaTests(): void {
     templateContentSchema.safeParse({ alarms: [{ ...alarm, category: "energy" }] }).success,
     "`energy` is a live rule category and must be accepted",
   );
-  rejects({ alarms: [{ ...alarm, category: "water" }] }, "`water` is not a live rule category");
+
+  // This used to assert the schema REJECTS `category: "water"`, and it did,
+  // because `categorySchema` was a `z.enum` of four values.
+  //
+  // ADR 0031 Amendment 1 made the rule vocabulary a table (`bms.rule_categories`)
+  // so that a domain pack can ship a sector with an INSERT rather than a
+  // migration. A pure Zod schema cannot ask the database what is live, so
+  // `categorySchema` now checks *shape* and the liveness check moved to
+  // `AssetTemplatesAdminService.assertTemplateAlarmCategories` — kept, not
+  // dropped, because a template is an authoring surface and a category that
+  // does not exist is a defect authored now and found much later.
+  //
+  // Asserting acceptance here rather than deleting the case: it records the
+  // boundary that actually moved, so nobody reads the absence as an oversight.
+  assert(
+    templateContentSchema.safeParse({ alarms: [{ ...alarm, category: "water" }] }).success,
+    "an unknown category is now a SERVICE-level rejection, not a schema one — see " +
+      "`assertTemplateAlarmCategories`. If this fails, `categorySchema` has been " +
+      "turned back into an enum and the vocabulary is frozen in code again.",
+  );
+
+  // What the schema still owns is shape. An empty code is not a code.
+  rejects({ alarms: [{ ...alarm, category: "" }] }, "an empty category is not a code");
 
   rejects(
     { alarms: [alarm, { ...alarm, message: "Duplicate" }] },

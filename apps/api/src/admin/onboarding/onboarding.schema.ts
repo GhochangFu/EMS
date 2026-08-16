@@ -1,3 +1,4 @@
+import { assetDomainCodeSchema } from "@bms/shared";
 import { z } from "zod";
 
 export const onboardingPhaseSchema = z.enum([
@@ -65,7 +66,13 @@ export const draftAssetSchema = z.object({
   code: z.string().min(2).max(64),
   name: z.string().min(2).max(255),
   siteName: z.string().min(2).max(255),
-  domain: z.string().min(1).max(64),
+  // ADR 0031 Amendment 1: shape only — the live vocabulary is
+  // `bms.asset_domains`, checked at commit. This path matters most of the
+  // three: `onboarding-excel.service.ts` reads the `domain` column of an
+  // uploaded spreadsheet verbatim, so an arbitrary cell can reach
+  // `assets.domain`. `OnboardingCommitService` rejects an unknown code with the
+  // valid list, instead of letting `assets_domain_fk` produce a 500.
+  domain: assetDomainCodeSchema,
   meta: z.record(z.unknown()).optional(),
 });
 

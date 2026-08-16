@@ -6,6 +6,7 @@ import { createDb } from "@bms/db";
 import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { instantiateAssetsBodySchema } from "./asset-templates.schema";
@@ -70,9 +71,10 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
     const db = createDb(created);
     const access = new AccessControlService(db);
     const audit = new MasterDataAuditService(db);
+    const vocabularies = new VocabulariesService(db);
     const instantiation = new AssetTemplateInstantiationService(db, access, audit);
     svc = {
-      templates: new AssetTemplatesAdminService(db, access, audit),
+      templates: new AssetTemplatesAdminService(db, access, audit, vocabularies),
       // Parse through the real schema so these cases exercise the controller's
       // path, transform included — not a hand-built post-transform shape.
       instantiate: (jwt, templateId, body) =>

@@ -24,7 +24,10 @@ function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
     code: "RULE-1",
     name: "Feeder overload",
     description: null,
-    category: "electrical",
+    // See `rule-mapping.spec.ts`: concern and plant domain are separate axes
+    // since ADR 0031, and `category: "electrical"` is no longer a row the
+    // database can hold.
+    category: "safety",
     ruleType: "threshold",
     source: "operator_rule",
     enabled: true,
@@ -32,6 +35,7 @@ function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
     assetCode: "ASSET-1",
     assetName: "Feeder 1",
     siteName: "Site A",
+    assetDomain: "electrical",
     pointKey: "kw",
     operator: "gt",
     thresholdValue: 100,

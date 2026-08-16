@@ -16,6 +16,7 @@ import {
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
+  AssetDomain,
   AutomationRuleLifecycleStatus,
   RuleBuilderCatalogAsset,
   JwtPayload,
@@ -26,6 +27,7 @@ import type {
 } from "@bms/shared";
 
 import { DRIZZLE } from "../database/database.tokens";
+import { VocabulariesService } from "../vocabularies/vocabularies.service";
 // The three modules extracted for AGENTS.md §4.5 (1000-line cap). Each holds
 // pure logic — no database, no clock — which is why it sits outside the service
 // and carries its own spec instead of needing one here.
@@ -48,7 +50,10 @@ import type { EvaluationResult, RuleDraftValues, RuleRow } from "./rules.types";
 
 @Injectable()
 export class RulesService {
-  constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: BmsDb,
+    private readonly vocabularies: VocabulariesService,
+  ) {}
 
   /** Lists Sprint D automation rules with optional asset context. */
   async listRules(assetIds?: string[] | null): Promise<{ items: RuleListItem[] }> {
@@ -81,6 +86,11 @@ export class RulesService {
     return {
       assets: rows.map((row) => ({
         ...row,
+        // `assets_domain_fk` (migration 0029) is what guarantees this code is a
+        // live `bms.asset_domains` row. `AssetDomain` is a `string` since ADR
+        // 0031 Amendment 1, so this is not a narrowing cast any more — the
+        // vocabulary is data, and the foreign key is the enforcement.
+        domain: row.domain as AssetDomain,
         pointKeys: pointKeysForAsset(row.domain, row.code),
       })),
     };
@@ -201,6 +211,9 @@ export class RulesService {
       assetCode: null,
       assetName: null,
       siteName: null,
+      // A preview is evaluated against a draft, not a joined row — the asset
+      // columns are null here by construction, and the domain is one of them.
+      assetDomain: null,
       pointKey: values.pointKey ?? null,
       operator: values.operator ?? null,
       thresholdValue: values.thresholdValue ?? null,
@@ -511,6 +524,10 @@ export class RulesService {
         assetCode: assets.code,
         assetName: assets.name,
         siteName: assets.siteName,
+        // ADR 0031's second axis. It rides the LEFT JOIN that was already here
+        // for `assetCode`/`assetName`/`siteName` — no extra query, no extra
+        // round trip, and null exactly when the rule targets no asset.
+        assetDomain: assets.domain,
         pointKey: automationRules.pointKey,
         operator: automationRules.operator,
         thresholdValue: automationRules.thresholdValue,
@@ -576,6 +593,16 @@ export class RulesService {
     dto: RuleDraftBody,
     currentId?: string,
   ): Promise<RuleDraftValues> {
+    // ADR 0031 Amendment 1: the category vocabulary is data, so this is where a
+    // bad one is caught — `categorySchema` can only check shape now.
+    //
+    // Every write path funnels through here: create, update, preview and
+    // **duplicate**. That last one matters. `duplicateRule` copies the stored
+    // category onto a new row without re-parsing it, so before this check it
+    // was the one route that could mint a row carrying whatever the source row
+    // happened to hold.
+    await this.vocabularies.assertRuleCategory(dto.category);
+
     const code = dto.code?.trim().toUpperCase();
     if (code) {
       const existingRules = await this.db

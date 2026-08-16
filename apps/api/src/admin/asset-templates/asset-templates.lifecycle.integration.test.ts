@@ -6,6 +6,7 @@ import { createDb } from "@bms/db";
 import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import {
@@ -76,6 +77,7 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
       db,
       new AccessControlService(db),
       new MasterDataAuditService(db),
+      new VocabulariesService(db),
     );
     fx = await loadFixtures(created);
     // Before as well as after: a crashed previous run must not fail this one.

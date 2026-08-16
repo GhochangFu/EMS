@@ -1,3 +1,4 @@
+import { assetDomainCodeSchema } from "@bms/shared";
 import { z } from "zod";
 
 import { templateContentSchema } from "./asset-templates-content.schema";
@@ -63,7 +64,13 @@ export const createAssetTemplateBodySchema = z.object({
   code: z.string().min(1).max(64),
   name: z.string().min(1).max(255),
   assetType: z.string().min(1).max(64),
-  domain: z.string().min(1).max(64),
+  // ADR 0031 Amendment 1: shape only; `AssetTemplatesService` checks the code
+  // against `bms.asset_domains`. Instantiating a template copies this value
+  // straight onto every asset it creates
+  // (`asset-templates-instantiate.service.ts`), so an unchecked template domain
+  // becomes a foreign-key violation one hop later, at instantiation time, far
+  // from the form that caused it.
+  domain: assetDomainCodeSchema,
   description: z.string().max(2000).nullish(),
   content: templateContentSchema.optional(),
   points: templatePointsBodySchema.default([]),
@@ -77,7 +84,7 @@ export const createAssetTemplateBodySchema = z.object({
 export const updateAssetTemplateBodySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   assetType: z.string().min(1).max(64).optional(),
-  domain: z.string().min(1).max(64).optional(),
+  domain: assetDomainCodeSchema.optional(),
   description: z.string().max(2000).nullish(),
   content: templateContentSchema.optional(),
   points: templatePointsBodySchema.optional(),

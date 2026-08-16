@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { CredentialCryptoService } from "../security/credential-crypto.service";
+import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { AssetPointsAdminController } from "./asset-points/asset-points.controller";
 import { AssetPointsAdminService } from "./asset-points/asset-points.service";
 import { AssetTemplateInstantiationService } from "./asset-templates/asset-templates-instantiate.service";
@@ -29,6 +30,7 @@ import { RtusAdminController } from "./rtus/rtus.controller";
 import { RtusAdminService } from "./rtus/rtus.service";
 
 @Module({
+  imports: [VocabulariesModule],
   controllers: [
     OrganizationsAdminController,
     LocationsAdminController,

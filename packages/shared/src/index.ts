@@ -139,12 +139,21 @@ export type MaintenanceScheduleItem = z.infer<typeof Op.maintenanceScheduleItemS
 
 export type AutomationRuleType = z.infer<typeof Op.automationRuleTypeSchema>;
 /**
- * What an operator may author. The **narrower** of the two vocabularies —
- * see `automationRuleCategorySchema`.
+ * A rule's **concern**, as a code into `bms.rule_categories`.
+ *
+ * A `string`, not a union, since ADR 0031 Amendment 1 — the vocabulary is data,
+ * and `automation_rules_category_fk` is what closes it. `AuthorableRuleCategory`
+ * used to name a narrower write half; there is no narrower half now.
  */
-export type AuthorableRuleCategory = z.infer<typeof Op.authorableRuleCategorySchema>;
-/** What the API may RETURN. Wider: migration 0022 writes `electrical` directly. */
-export type AutomationRuleCategory = z.infer<typeof Op.automationRuleCategorySchema>;
+export type AutomationRuleCategory = z.infer<typeof Op.ruleCategoryCodeSchema>;
+/** The plant axis, as a code into `bms.asset_domains` (ADR 0031). */
+export type AssetDomain = z.infer<typeof Op.assetDomainCodeSchema>;
+/** How a category badge is styled — a closed *presentation* vocabulary. */
+export type BadgeTone = z.infer<typeof Op.badgeToneSchema>;
+export type RuleCategoryDto = z.infer<typeof Op.ruleCategoryDtoSchema>;
+export type AssetDomainDto = z.infer<typeof Op.assetDomainDtoSchema>;
+/** `GET /api/v1/vocabularies` — both axes, so a page renders neither half-loaded. */
+export type VocabulariesResponse = z.infer<typeof Op.vocabulariesResponseSchema>;
 export type AutomationRuleOperator = z.infer<typeof Op.automationRuleOperatorSchema>;
 export type AutomationRuleSeverity = z.infer<typeof Op.automationRuleSeveritySchema>;
 export type AutomationRuleLifecycleStatus = z.infer<

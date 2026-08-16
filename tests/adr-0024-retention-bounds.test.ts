@@ -65,10 +65,17 @@ describe("ADR 0024 — compression and retention bounds", () => {
     // 0018/0021/0022 all shipped unjournaled and left bms.point_keys missing.
     const journal = read("packages/db/drizzle/meta/_journal.json");
     expect(journal).toContain("0028_compression_retention");
-    expect(JSON.parse(journal).entries.at(-1)).toMatchObject({
-      idx: 28,
-      tag: "0028_compression_retention",
-    });
+
+    // Found by tag, not by `entries.at(-1)`. This asserted "0028 is the LAST
+    // entry", which pinned the journal's end forever and failed the moment
+    // `F4.45` added 0029 — reporting a false problem with the new migration
+    // instead of the true one, that this test outgrew its own claim. What it
+    // protects is that 0028 is *journaled at all*, since an unapplied .sql file
+    // is this repo's most-repeated failure.
+    const entry = JSON.parse(journal).entries.find(
+      (candidate: { tag: string }) => candidate.tag === "0028_compression_retention",
+    );
+    expect(entry).toMatchObject({ idx: 28, tag: "0028_compression_retention" });
   });
 
   it("keeps the aggregate backfill lower-bounded", () => {
