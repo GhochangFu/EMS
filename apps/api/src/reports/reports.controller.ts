@@ -45,6 +45,11 @@ export class ReportsController {
     "Content-Disposition",
     'attachment; filename="energy-consumption-report.csv"',
   )
+  // The export is scope-filtered per user via `readableAssetIds` and carries
+  // asset codes, names and site names, so a shared-cache hit across two
+  // differently-scoped users would leak data across scopes — the same
+  // failure `F4.14` closed for the audit export (`audit.controller.ts`).
+  @Header("Cache-Control", "no-store")
   async energyCsv(
     @CurrentUser() user: JwtPayload,
     @Query() query: unknown,
