@@ -596,11 +596,18 @@ export class RulesService {
     // ADR 0031 Amendment 1: the category vocabulary is data, so this is where a
     // bad one is caught — `categorySchema` can only check shape now.
     //
-    // Every write path funnels through here: create, update, preview and
-    // **duplicate**. That last one matters. `duplicateRule` copies the stored
-    // category onto a new row without re-parsing it, so before this check it
-    // was the one route that could mint a row carrying whatever the source row
-    // happened to hold.
+    // Four write paths funnel through here: `createDraft`, `updateRule`,
+    // `previewRule` and `publishRule`.
+    //
+    // **`duplicateRule` does not**, and an earlier version of this comment
+    // claimed the opposite. It opens its own transaction and inlines the insert
+    // with `category: current.category`. That is not a hole in the foreign key
+    // — the source row is already valid, so the copy is too — but it does mean
+    // duplication is the one path that never re-checks, and the FK tests
+    // *existence*, not `active`. Duplicating a rule whose category has since
+    // been retired therefore propagates the retired code. Small, and recorded
+    // rather than fixed here because retiring a category is not yet a workflow
+    // anything performs.
     await this.vocabularies.assertRuleCategory(dto.category);
 
     const code = dto.code?.trim().toUpperCase();

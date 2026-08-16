@@ -296,16 +296,30 @@ product capability (`E5.1`/`E5.2`/`E5.3`), not a per-customer setting. If a
 tenant ever needs its own sector, that is a new decision with its own evidence.
 
 **A1.7 — The boundary check moves to a service.** `VocabulariesService`
-(`apps/api/src/vocabularies/`) validates a code at every write path that stores
-one: asset create/update, onboarding commit, template create/update, and
-`validateRuleDraft` — which is the single choke point for rule create, update,
-preview **and duplicate**.
+(`apps/api/src/vocabularies/`) validates a code at asset create/update,
+onboarding commit, template create/update, and `validateRuleDraft` — which
+covers rule create, update, preview and **publish**.
 
 This is not optional tidiness. With the vocabulary out of the request schema,
 an unknown code would otherwise reach Postgres and return a **500 where the
 enum used to give a 400**, and the Zod `invalid_enum_value` message that listed
 the valid options would be gone. The service reproduces both: rejection at the
 boundary, and the live list named back to the caller.
+
+> **Correction, 2026-08-16.** As first written this decision said
+> `validateRuleDraft` was "the single choke point for rule create, update,
+> preview **and duplicate**". That was wrong in both directions and the
+> `chore(agents):` sweep's compliance review caught it: `duplicateRule` opens
+> its own transaction and inlines `category: current.category`, so it never
+> calls the check, while `publishRule` — which does — went unmentioned.
+>
+> The gap this leaves is real but narrow. Duplication copies a category from a
+> row the foreign key has already validated, so the copy is valid too; what it
+> skips is the `active` flag, which the FK does not test either. Duplicating a
+> rule whose category has since been retired therefore propagates the retired
+> code. Recorded rather than fixed, because retiring a category is not yet a
+> workflow anything performs — and recorded *here* rather than only in the code,
+> because the claim was repeated from this ADR into four other places.
 
 **A1.8 — ADR 0019 §3's template-alarm guard is relocated, not dropped.**
 `templateContentSchema` typed `alarms[].category` with the shared enum, so an
