@@ -2,8 +2,13 @@
 
 ## Status
 
-Proposed — the shape was ruled by the repository owner on 2026-08-16; three
-questions below remain open at the §10 gate.
+**Accepted** — 2026-08-16. The two-axes shape and all three gate questions were
+ruled by the repository owner on the same day; the answers are recorded in
+*Questions resolved at the §10 gate* below and folded into the decisions.
+
+**This ADR authorises DDL over live pilot data**, which nothing else in this
+thread has. `F4.43` and `F4.44` were deliberately constrained to avoid it. Read
+decisions 6–8 before writing the migration.
 
 ## Context
 
@@ -88,39 +93,44 @@ safety one.**
    type derives via `z.infer`; the web client's `checkResponse` then covers it
    at the boundary like every other field.
 
-## Open questions for the §10 gate
+6. **The 48 rows carrying `category = 'electrical'` are migrated to `safety`.**
+   Their plant fact survives on the asset — all 48 sit on assets whose `domain`
+   is already `electrical` — so only the concern is being supplied, and they are
+   36 `critical` and 12 `warning` voltage alarms. `electrical` then leaves the
+   category vocabulary entirely: `automationRuleCategorySchema` collapses to the
+   authorable four, and the read/write asymmetry `F4.43` introduced **ends**.
+   The migration must key on the rows it means — `source = 'phe_alarm_seed' AND
+   category = 'electrical'` — never on category alone.
+7. **`bms.assets.domain` gets a declared vocabulary and a `CHECK`:**
+   `electrical` · `hvac` · `it` · `environment`, matching what the column already
+   contains (86 / 14 / 14 / 34, total 148, no other value present). A matching
+   enum replaces the bare `z.string()` in the contract, so the domain is checked
+   at the API boundary like every other field. **The `DEFAULT 'electrical'` is
+   dropped** — a default that silently classifies unstated plant is how this
+   column would have acquired the same drift `category` did.
+8. **`automation_rules.category` gets a four-value `CHECK`**, available only
+   because decision 6 clears the 48 rows first. Ordering is therefore not
+   cosmetic: **migrate, then constrain, in that order, in one migration.** A
+   constraint added first fails on 48 existing rows.
 
-**These are the owner's, and nothing is built until they are answered.**
+## Questions resolved at the §10 gate
 
-1. **What happens to the 48 rows carrying `category = 'electrical'`?**
-   `electrical` is not a concern, so under decision 1 it has no home in the
-   column.
-   - *(a) Migrate them to a concern.* **Now non-lossy**, which it was not when
-     this was declined during `F4.43`: all 48 sit on assets whose `domain` is
-     already `electrical`, so the plant fact survives in the asset and only the
-     concern is being supplied. They are 36 `critical` and 12 `warning` voltage
-     alarms, which argues for `safety`. Costs a migration over live pilot data.
-   - *(b) Keep `electrical` in the **read** union permanently as a legacy value.*
-     No data change, and the badge keeps rendering. The cost is that the column
-     stays mixed forever for those rows, and every future reader has to know why.
+All three were put to the repository owner on 2026-08-16 and all three were
+answered as recommended. Kept as the record of what was asked, since the
+Decision section records only what was chosen.
 
-   These have opposite costs and the choice is not an agent's to make. The
-   earlier ruling — *"leave the pilot data alone"* — points at (b); the fact that
-   (a) is no longer lossy is new information that did not exist when that ruling
-   was given.
-
-2. **Does `assets.domain` get a declared vocabulary and a `CHECK`?** It is
-   `character varying(64) NOT NULL DEFAULT 'electrical'` with **no constraint**,
-   and the contract types it as a bare `z.string()`. So this ADR moves the plant
-   axis onto a column that is *less* constrained than the one it is moving off,
-   and **the default silently makes any asset created without a domain
-   electrical**. Constraining it is DDL and is the honest place for the `CHECK`
-   work queued in `docs/BACKLOG.md` §5.
-
-3. **Does `automation_rules.category` get a `CHECK` too?** This is the queued
-   §5 row. It is answerable only after question 1: a four-value `CHECK` rejects
-   the 48 rows as they stand, so (a) makes it available and (b) forces a
-   five-value constraint that encodes the legacy exception in the database.
+1. **The 48 `electrical` rows — migrate or keep as legacy?** → *Migrate to
+   `safety`.* Decision 6. The owner had declined migration during `F4.43`; what
+   changed is that it is **no longer lossy** — the plant fact lives on the asset,
+   which was not established when the earlier ruling was given. That was put to
+   them explicitly as new information rather than treated as settled.
+2. **Does `assets.domain` get a vocabulary and a `CHECK`?** → *Yes, four values.*
+   Decision 7, including dropping the default. Without this the ADR would have
+   relocated the defect rather than fixed it: the plant axis would have moved
+   onto a **less** constrained column than the one it left.
+3. **Does `category` get a `CHECK`?** → *Yes, four values, contingent on (1)
+   being migrate.* Decision 8. The contingency is real and is now an ordering
+   constraint inside the migration.
 
 ## Dependencies
 
@@ -128,27 +138,58 @@ None. No new npm package, so §9.4 is not engaged.
 
 ## Consequences
 
-- **`F4.44`'s fix stays exactly as built and is not superseded.** Its lock is
-  written for the *class* — any readable category the builder does not offer —
-  rather than for `electrical`, so it keeps working under either answer to
-  question 1, and becomes dead code only if (a) is chosen *and* `electrical`
-  later leaves the read union. That is the right order: it protects the data
-  while the vocabulary question is open.
+- **`F4.44`'s lock becomes dead code, and this ADR requires deleting it.** That
+  is not a criticism of `F4.44` — its lock was correct, load-bearing, and the
+  only thing protecting 48 rules while the vocabulary question was open. But
+  decisions 6 and 8 together make a non-authorable category **structurally
+  impossible**: the 48 rows are migrated, `electrical` leaves the union, and a
+  `CHECK` stops any other value arriving. `categoryAuthoring` would then always
+  return `locked: null`, `omitLockedCategory` would never omit, and the builder's
+  locked branch would be unreachable.
+
+  AGENTS.md §4.4 is explicit that a guard made vacuous by a change must be
+  **deleted, not kept**, precisely because its having once been meaningful is
+  what makes it hard to spot later — and `F4.23`/`F4.44` are the two worked
+  examples that rule cites. So `F4.45` deletes `categoryAuthoring`,
+  `omitLockedCategory`, `isAuthorableCategory`, `BuilderForm.lockedCategory` and
+  the locked render branch. **`authorableCategories` and `categoryLabels` stay**
+  — they are the derive-don't-restate mechanism, not the lock — as does
+  `tests/rule-vocabulary.test.ts`'s `<option>`-literal scan.
+
+  Anyone tempted to keep the lock "for defence in depth" should note that the
+  `CHECK` is the defence, and the response validator (ADR 0030) is what would
+  notice a value arriving some other way.
 - **No backfill for the 16 + 2 rules** on electrical assets carrying
   `operations` / `energy`. They are correct under this model.
-- **The category filter narrows from five entries to four** if question 1 is
-  answered (a), because no rule will carry `electrical`. Under (b) it keeps
-  five, one of which no new rule can ever use.
+- **The category filter narrows from five entries to four**, since no rule will
+  carry `electrical` once decision 6 has run.
+- **The read/write asymmetry `F4.43` introduced ends.** `automationRuleCategorySchema`
+  and `authorableRuleCategorySchema` become the same four values, so the derived
+  construction (`[...authorable.options, "electrical"]`) collapses to one enum.
+  `tests/rule-vocabulary.test.ts` must be re-read as a whole when that happens:
+  its "keeps `electrical` out of what an operator can author" case survives
+  trivially, and its "still describes what migration 0022 writes" case is about
+  `source = 'phe_alarm_seed'`, which decision 6 **keeps** — the migration still
+  uses it as its idempotency key, so that half stays meaningful.
 - **A domain filter is deliberately not decided here.** Showing the domain is
   decision 3; filtering by it is additive and should follow real use.
-- **This partly absorbs the queued `CHECK`-constraint ADR** in `docs/BACKLOG.md`
-  §5. That row asked which vocabulary a constraint should take; questions 2 and 3
-  above are the same question asked of both columns, and the §5 row should point
-  here rather than be answered separately.
+- **This absorbs the queued `CHECK`-constraint ADR** in `docs/BACKLOG.md` §5.
+  That row asked which vocabulary a constraint should take; decisions 7 and 8
+  are the same question asked of both columns, and answering it for one alone
+  would have been the narrower and worse fix.
+- **This is the first DDL over live pilot data in this thread, and the ordering
+  inside the migration is load-bearing.** `F4.43` and `F4.44` were both scoped to
+  avoid touching it. Decision 8's `CHECK` fails on 48 existing rows unless
+  decision 6's `UPDATE` runs first, in the same migration. `migration-reviewer`
+  should see it before merge, and per AGENTS.md §4.4 the `UPDATE` must filter on
+  a **constant** (`source = 'phe_alarm_seed' AND category = 'electrical'`) rather
+  than reach `automation_rules` through a subquery or join.
 - **`docs/AGENTS.production.md` is not edited by this ADR**, per the same
   reasoning ADR 0030 recorded.
 - **The `AGENTS.md` promotion this ADR owes** is a `chore(agents):` sweep under
   §9.10/§10.1 after the feature lands: the §2 *API contracts* row gains the
   `assetDomain` field, and §4.8 gains the rule that a vocabulary describing
-  *what a thing is* belongs on the thing, not on rows that reference it. It is
-  not written yet, and should not be until the three questions are answered.
+  *what a thing is* belongs on the thing, not on rows that reference it. §4.8's
+  paragraph on the read/write asymmetry also becomes **historical** rather than
+  current, since decision 6 ends it — rewrite it as the worked example it now is,
+  do not delete it. Not written yet, per §9.10; it lands after `F4.45`.
