@@ -20,6 +20,7 @@ broader AI layer remain out of scope until explicitly promoted.
 |------|------------|
 | [`AGENTS.md`](./AGENTS.md) | **Active rulebook.** Read this before editing anything. |
 | [`ESKOM_SMOC.html`](./ESKOM_SMOC.html) | UX reference mockup. Single-file SPA prototype. Treat as read-only. |
+| [`docs/ux/ion-exchange-reference-alignment.md`](./docs/ux/ion-exchange-reference-alignment.md) | **Read before changing dashboard layout or the app shell.** The client's reference dashboards (SOW pp. 9–10) read against the running deployment — what the mockups do not cover, and which two layout decisions are ADR-gated. Board mapping lives in [`docs/BACKLOG.md`](./docs/BACKLOG.md) §7. |
 | [`docs/AGENTS.production.md`](./docs/AGENTS.production.md) | North-star rulebook for the production target. Reference, not enforcement. |
 | [`docs/roadmap.md`](./docs/roadmap.md) | Prototype week-by-week plan + numbered post-prototype phases. |
 | [`docs/BACKLOG.md`](./docs/BACKLOG.md) | **Live pending-feature backlog** (F/E ids, waves, dependencies, status). |
