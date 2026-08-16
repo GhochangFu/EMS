@@ -1357,7 +1357,7 @@ Process (`AGENTS.md` §10).
   real spreadsheet import parsers — inherited from `F4.14`, not introduced here),
   `F4.32` (a CHECK constraint moving finiteness into the database).
 
-### Shared API contracts with a runtime (F4.23, F4.43) — done
+### Shared API contracts with a runtime (F4.23, F4.43, F4.44) — done
 
 - **Status:** done (ADR 0030 and its three amendments). Four PRs, CI green
   throughout: [#64](https://github.com/GhochangFu/EMS/pull/64) accepted the ADR
@@ -1428,10 +1428,32 @@ Process (`AGENTS.md` §10).
   others (89, the exact database count), and **zero** elements carry the literal
   class `undefined`. Plus `pnpm build`, `pnpm typecheck:tests`, and 62 files /
   193 tests with `DATABASE_URL` set.
+- **`F4.44` closed the half `F4.43` left open** (PR
+  [#70](https://github.com/GhochangFu/EMS/pull/70), merged `df6d3d8`). `F4.43`
+  widened what the API may *return*; the rule builder is where an operator
+  *writes*, and it still offered four values while being opened to edit rules
+  carrying a fifth. The symptom was not the one predicted from source, and the
+  difference is the whole lesson: a `<select>` whose value matches no `<option>`
+  renders its **first** option, so the form read `Operations` for 48 rules that
+  are `electrical` — plausible, and wrong. A blank control would have looked
+  broken. Saving then failed on a field the operator was never shown, or
+  silently reclassified the rule if they "corrected" it.
+  A locked category now renders read-only and is **omitted from the payload**, so
+  the server keeps what it stores — verified against the real schemas rather than
+  assumed, because `mergeRuleDraft` gives `category` no `undefined` check and a
+  present-but-`undefined` key would have cleared it. The preview path was checked
+  **before** the design was chosen: its audit row records no category, so the
+  omission writes nothing false into `bms.audit_log`.
+  **Why the compiler was silent, which is the part worth carrying:** widening a
+  union only errors where a consumer's type was *narrower*. The builder's field
+  was already the wide type, so the change made it compile more comfortably, not
+  less — "the compiler found two propagations" was mistaken for "there are two".
 - **Still owed:** `F4.6` (contract tests) is now unblocked and is what this
   existed to enable; `F4.41` and `F4.42` stay deferred until each has a consumer;
-  the `CHECK` constraints and `apps/api`'s module resolution are both queued in
-  `docs/BACKLOG.md` §5 as decisions, not documentation of decisions.
+  `apps/api`'s module resolution is queued in `docs/BACKLOG.md` §5 as a decision
+  rather than documentation of one. The `CHECK`-constraint question was
+  **absorbed into ADR 0031** — it turned out to be one question asked of two
+  columns, and not answerable on its own.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
