@@ -1357,6 +1357,82 @@ Process (`AGENTS.md` §10).
   real spreadsheet import parsers — inherited from `F4.14`, not introduced here),
   `F4.32` (a CHECK constraint moving finiteness into the database).
 
+### Shared API contracts with a runtime (F4.23, F4.43) — done
+
+- **Status:** done (ADR 0030 and its three amendments). Four PRs, CI green
+  throughout: [#64](https://github.com/GhochangFu/EMS/pull/64) accepted the ADR
+  (`1450909`), [#65](https://github.com/GhochangFu/EMS/pull/65) the spike
+  (`8facc97`), [#66](https://github.com/GhochangFu/EMS/pull/66) the schemas
+  (`1b0da54`), [#67](https://github.com/GhochangFu/EMS/pull/67) the web
+  validation (`b6e18d7`); `F4.43` followed as
+  [#68](https://github.com/GhochangFu/EMS/pull/68) (`89079fc`).
+- **The row's premise had shifted, and reading it against `main` is what found
+  that.** `F4.23` asked for `packages/contracts` (Zod), `packages/ui` and a
+  `telemetry-sdk` — three names transcribed from `docs/AGENTS.production.md`,
+  the north-star tree whose own header says not to assume it is enforced. But
+  the shared contract was **not missing**: `packages/shared` already exported
+  **100** types covering essentially every response, imported at **148** sites,
+  so the API is written against the client's contract today. What was missing
+  was a **runtime** — every export was a `type`, `packages/shared` declared no
+  dependencies at all, and `apps/web` imported `zod` **zero** times. And two of
+  the three packages had no consumer anywhere: `telemetry-sdk` has **no stated
+  purpose in the repository** beyond that tree. They were split onto `F4.41` and
+  `F4.42`, deferred rather than dropped, rather than building a second path
+  ahead of its consumer — the pattern this repo has already paid for twice
+  (ADR 0016 §6, ADR 0029 Amendment 2).
+- **The spike ran before the design was committed, and changed nothing** — worth
+  saying because ADR 0029's reversed a decision. Both halves: *(a)* every
+  structural class converts, measured as 14 conversions against **two** bars,
+  giving 3 strict-identity failures and **0** assignability failures. That gap
+  is the finding — the strict bar is the only one that discriminates, so under
+  assignability alone all three wrong encodings pass silently. All three are
+  encoding choices with a passing sibling, and they are now §4.8. *(b)* drift
+  was **zero** across 99 declared paths on 4 endpoints — but the first sample
+  was not good enough, 8 of 64 paths unobserved against one location, and **an
+  unobserved path is neither satisfied nor violated**; widening to all 16
+  locations closed it exactly. The scope limit is the point: 4 endpoints of 93,
+  so *zero drift where measured* is not *the API has no drift*.
+- **The failure direction is asymmetric, and (b) is what justified it.** Throw in
+  dev/test, log-and-pass in production — no longer a hedge against suspected
+  chaos, but cheap insurance for the 89 routes the spike did not measure, at no
+  cost on the four it did. A blank Control Room during an incident is a bigger
+  outage than one drifted field.
+- **The migration was proved and the proof deleted.** 81 assertions of strict
+  type identity between each schema and the type it replaced, **79 identical on
+  the first run**; after the switch all 81 compare `z.infer<typeof S>` with
+  itself, so keeping them would have been 79 vacuous guards. The two that
+  differed share one cause and it is the only contract this change altered: a
+  **required `unknown` property is not expressible in Zod**, and unlike the three
+  encoding rules it has no passing sibling.
+- **The first run against the deployment found a defect nothing else had.**
+  `GET /rules` had **never** matched its contract: 48 of 89 rows carry
+  `category = "electrical"`, written directly by migration `0022` for the PHE
+  pilot, and the union did not contain it. Three things had to line up to keep it
+  invisible — no `CHECK` constraint, a cast in `rule-mapping.ts`, and an
+  exhaustive `switch` with no `default` returning `undefined` for a value
+  TypeScript said could not occur. The visible cost was 54% of rules rendering an
+  **empty, unstyled** badge with no way to filter to them.
+- **`F4.43` fixed it structurally rather than by test.** The read union is built
+  as `[...authorableRuleCategorySchema.options, "electrical"]`, so read ⊇ write
+  holds by construction and the containment test would have been a tautology —
+  it was therefore not written. `rules.schema.ts` re-exports the shared enum
+  instead of restating it, applying its own comment (*a copied enum is a copy
+  that drifts*) to itself. Widening propagated into two places the compiler found
+  and the author had not, both correct objections: ADR 0019's template authoring
+  surface needs the *narrow* vocabulary, and `ruleBodyFromRow` rebuilds a draft a
+  seeded rule never had — its two callers were **checked**, not assumed, and
+  never re-parse the category, so editing a PHE rule's threshold cannot silently
+  reclassify it.
+- **Verified on the rebuilt containers**, which is the whole point: drift reports
+  across 9 routes went **1 → 0**, `/rules` renders 48 Electrical badges and 41
+  others (89, the exact database count), and **zero** elements carry the literal
+  class `undefined`. Plus `pnpm build`, `pnpm typecheck:tests`, and 62 files /
+  193 tests with `DATABASE_URL` set.
+- **Still owed:** `F4.6` (contract tests) is now unblocked and is what this
+  existed to enable; `F4.41` and `F4.42` stay deferred until each has a consumer;
+  the `CHECK` constraints and `apps/api`'s module resolution are both queued in
+  `docs/BACKLOG.md` §5 as decisions, not documentation of decisions.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
