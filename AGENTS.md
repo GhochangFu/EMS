@@ -804,8 +804,9 @@ invisible because the hand-written type is what the compiler believes.
 response type in `index.ts`.
 
 **Three encodings preserve type identity and their obvious siblings do not.**
-Measured on 14 conversions in the ADR's spike, against *two* bars — strict
-conditional-type identity and mutual assignability. It produced **3 strict
+Measured on **9** conversions in the ADR's spike, each asserted against *two*
+bars — strict conditional-type identity and mutual assignability — for **14
+measurements** in total. They produced **3 strict
 failures and 0 assignability failures**, so the strict bar is the only one that
 discriminates: under assignability alone all three wrong encodings pass
 silently and the package starts flattening intersections with no signal
@@ -826,7 +827,7 @@ everywhere it is used.
 *optional* key — Zod marks any key whose output includes `undefined` — and
 there is no passing sibling: `z.any()` and `z.custom<unknown>()` behave
 identically. Do not spend an afternoon on it as this repo already has. Record
-the gap where the schema is, as `auditLogEntrySchema.payload` does.
+the gap where the schema is, as `auditLogEntryDtoSchema.payload` does.
 
 **Validate at the boundary; never transform there.** `checkResponse` returns the
 **original payload**, not `result.data`. Zod strips unknown keys, so returning

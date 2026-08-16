@@ -61,7 +61,9 @@ pnpm monorepo (`apps/*`, `packages/*`):
 - `apps/api` — NestJS REST + WebSocket (module-per-domain under `src/`)
 - `apps/sim` — telemetry simulator (Node script)
 - `apps/ingest` — MQTT TLS subscriber for the PHE real-ingestion pilot
-- `packages/shared` — cross-cutting TS types & constants
+- `packages/shared` — cross-cutting TS types & constants, **and since ADR 0030
+  a runtime**: `src/contracts/` holds the Zod schemas every API *response* type
+  is `z.infer`red from, so it depends on `zod` rather than being type-only
 - `packages/db` — Drizzle schema, migrations, seeds
 - `docs/adr/` — architecture decision records (the live record of scope changes)
 - `docs/roadmap.md` — phase/sprint plan and status
