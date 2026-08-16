@@ -136,3 +136,71 @@ jobs:
       # would go green while coverage regressed.
       - name: Run tests
         run: pnpm test:coverage
+
+  # F4.48, second half. The first half added a redaction pattern and a leak
+  # check to docs/scripts/backlog-dashboard.mjs; this is what makes it a gate.
+  # AGENTS.md §4.6: "A check that CI does not execute is not a gate." Until this
+  # job existed the check fired only when a human happened to type the command,
+  # which is exactly the shape §4.6 names.
+  #
+  # RUN IS NOT PUBLISH. This regenerates into the runner's throwaway workspace
+  # purely for the exit code. The four outputs under docs/status/ are gitignored
+  # and nothing here commits, uploads or serves them. `--mark-published` is
+  # deliberately NOT passed: it exits 0 before the leak check and writes the
+  # fingerprint marker, so passing it would both skip the gate and claim a
+  # publication that did not happen. Publishing stays the manual per-cycle step
+  # documented in docs/status/README.md.
+  #
+  # A separate job, not a step in build-and-migrate: both scripts import only
+  # node: builtins, so this needs no pnpm install, no Postgres and no Docker. It
+  # therefore reports in well under a minute instead of being buried behind the
+  # full build, and a leak fails on its own line rather than looking like a test
+  # failure.
+  client-dashboard-leak-check:
+    name: Client dashboard leak check
+    runs-on: ubuntu-latest
+
+    steps:
+      # Default fetch-depth (shallow) on purpose. backlog-status.mjs shells out
+      # to git for branch and commit context, and its git() helper swallows
+      # every error, so a shallow clone degrades that panel rather than
+      # crashing. It cannot weaken this gate: the client variant carries no
+      # git-derived content at all — measured, not assumed — so what is checked
+      # here is derived from docs/BACKLOG.md, which is fully present at depth 1.
+      #
+      # That measurement is also why fetch-depth: 0 is not used. If commit
+      # subjects DID reach the client page, the LEAKS patterns for "branch",
+      # "commit" and "AGENTS.md" would turn this job red on any unrelated PR
+      # whose commit message used those words. Keep it that way: if a future
+      # change renders commit context into the client cut, exclude that panel
+      # from the client variant rather than loosening the patterns.
+      #
+      # EXPECTED IN THE LOG, NOT A FAILURE: this step prints
+      #   fatal: malformed object name origin/main
+      # and then "in progress (derived from git): none". That is backlog-status's
+      # git() helper meeting a shallow clone with no origin/main ref, exactly as
+      # described above — the error is swallowed, the run continues, the job
+      # exits 0. Confirmed on run 31962279039. Do not "fix" it by deepening the
+      # checkout; read the paragraph above first, because the depth is holding
+      # this job stable against unrelated commit messages.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # No `cache: pnpm` here — there is no pnpm in this job to cache for.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The pair, in this order, is the workflow documented in
+      # docs/status/README.md: backlog-dashboard.mjs reads
+      # docs/status/backlog-status.json, which is gitignored and so does not
+      # exist on a fresh checkout. Running the dashboard alone would fail with
+      # ENOENT on every run and prove nothing.
+      #
+      # Failure is via process.exitCode (non-zero) from the leak check, which
+      # covers both directions: content that must not reach the client variant,
+      # and the over-redaction guard that fires if the pattern eats every SOW
+      # section reference.
+      - name: Regenerate the status dashboard and fail on a client-facing leak
+        run: node docs/scripts/backlog-status.mjs && node docs/scripts/backlog-dashboard.mjs
