@@ -6,12 +6,12 @@
 ruled by the repository owner on the same day; the answers are recorded in
 *Questions resolved at the §10 gate* below and folded into the decisions.
 
-**Amendment 1 — 2026-08-16, `Proposed`.** Decisions 7 and 8 said each
-vocabulary gets a `CHECK` constraint. Building `F4.45` produced evidence those
-answers were given on incomplete information, and the owner ruled that **both
-vocabularies become data**. See *Amendment 1* at the end of this document; it
-supersedes the enum/`CHECK` half of decisions 6–8. **It has not yet been
-accepted at the §10 gate.**
+**Amendment 1 — Accepted 2026-08-16.** Decisions 7 and 8 said each vocabulary
+gets a `CHECK` constraint. Building `F4.45` produced evidence those answers were
+given on incomplete information, and the owner ruled that **both vocabularies
+become data**, then accepted the amendment at the §10 gate the same day. See
+*Amendment 1* at the end of this document; it supersedes the enum/`CHECK` half
+of decisions 6–8.
 
 **This ADR authorises DDL over live pilot data**, which nothing else in this
 thread has. `F4.43` and `F4.44` were deliberately constrained to avoid it. Read
@@ -213,8 +213,10 @@ None. No new npm package, so §9.4 is not engaged.
 
 ## Amendment 1 — the vocabularies are data, not DDL
 
-**Status: Proposed — 2026-08-16.** Ruled by the repository owner during
-`F4.45`; awaiting §10 acceptance.
+**Status: Accepted — 2026-08-16.** Ruled by the repository owner during
+`F4.45`, and accepted at the §10 gate the same day, after both review agents
+had flagged that implementing against an unaccepted amendment was the one
+blocking issue in the change.
 
 ### What prompted it
 
