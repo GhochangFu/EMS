@@ -157,6 +157,23 @@ const GATES = [
       "Held for a decision on the compliance-reporting track.",
     source: "AGENTS.md §6",
   },
+  {
+    ids: ["F3.29"],
+    kind: "adr",
+    // Not a Depends edge: F3.29 does not wait on another backlog item to ship,
+    // it waits on the §5 IA decision. Its own row says so ("wave unset, gated
+    // by the §5 Domain-first navigation IA decision it shares a surface with"),
+    // and the §5 row names F3.29 back — but the board reads neither, so
+    // without this entry F3.29 renders as ready to start.
+    reason:
+      "The §5 Domain-first navigation IA decision owns the same surface " +
+      "(app-shell.tsx). Reordering the sidebar around utility domains departs " +
+      "from AGENTS.md §5 'match the original screen's information architecture " +
+      "first', so it is a §10 scope call, not an implementation pass.",
+    clientReason:
+      "Held for a decision on the navigation structure of the application shell.",
+    source: "BACKLOG.md §5 — Domain-first navigation IA",
+  },
 ];
 
 // The chains BACKLOG.md §1 names as the critical path, converging on the
