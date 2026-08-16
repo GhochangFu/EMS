@@ -18,6 +18,11 @@ import {
   type RuleDraftPayload,
 } from "../api/rules";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
+import {
+  offersNoSeverityOption,
+  severityFromRule,
+  type RuleSeverity,
+} from "../lib/rule-severity";
 import { defaultCategoryCode } from "../lib/vocabulary";
 
 type BuilderForm = {
@@ -31,7 +36,13 @@ type BuilderForm = {
   pointKey: string;
   operator: AutomationRuleOperator;
   thresholdValue: string;
-  severity: "info" | "warning" | "critical";
+  /**
+   * Nullable since `F4.46`. A rule may have no severity — the API stores one
+   * that way today — and a non-nullable form field could not hold that, so
+   * opening such a rule silently promoted it to `warning` and saving wrote the
+   * promotion back.
+   */
+  severity: RuleSeverity | null;
   actionType: "notify" | "review" | "trace_only";
   actionTarget: string;
   days: string[];
@@ -361,14 +372,26 @@ export function RuleBuilderPanel({
             <Field label="Severity">
               <select
                 className={fieldClass}
-                value={form.severity}
+                value={form.severity ?? ""}
                 onChange={(e) =>
-                  setForm({
-                    ...form,
-                    severity: e.target.value as "info" | "warning" | "critical",
-                  })
+                  setForm({ ...form, severity: severityFromRule(e.target.value) })
                 }
               >
+                {/*
+                  `F4.46`. The control had no way to say "none", so the one rule
+                  stored that way could not be edited without acquiring a
+                  severity. Empty value, because that is what `<select>` gives
+                  back for an unset option; `severityFromRule` turns it into the
+                  `null` the API expects.
+
+                  Offered where "none" is already the truth rather than on every
+                  rule — see `offersNoSeverityOption`, which is where that rule
+                  and its reasoning live, because logic in JSX is outside the
+                  web test include (`vitest.config.ts` covers `src/lib/**`).
+                */}
+                {offersNoSeverityOption(form.ruleType, form.severity) && (
+                  <option value="">None</option>
+                )}
                 <option value="info">Info</option>
                 <option value="warning">Warning</option>
                 <option value="critical">Critical</option>
@@ -527,20 +550,13 @@ function formFromRule(rule: RuleListItem): BuilderForm {
     pointKey: rule.pointKey ?? "",
     operator: rule.operator ?? "gt",
     thresholdValue: rule.thresholdValue === null ? "" : String(rule.thresholdValue),
-    severity: normalizeSeverity(rule.severity),
+    severity: severityFromRule(rule.severity),
     actionType: rule.action.type,
     actionTarget: rule.action.target,
     days: timeCondition?.days ?? emptyForm.days,
     startTime: timeCondition?.startTime ?? emptyForm.startTime,
     endTime: timeCondition?.endTime ?? emptyForm.endTime,
   };
-}
-
-function normalizeSeverity(value: string | null): "info" | "warning" | "critical" {
-  if (value === "info" || value === "critical") {
-    return value;
-  }
-  return "warning";
 }
 
 function validateForm(form: BuilderForm): string | null {

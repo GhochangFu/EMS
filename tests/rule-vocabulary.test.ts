@@ -241,3 +241,57 @@ describe("F4.45 rule vocabularies", () => {
     expect([...contracts.badgeToneSchema.options].length).toBeGreaterThanOrEqual(5);
   });
 });
+
+/**
+ * `F4.46` — a rule may carry **no** severity, and the builder has to be able to
+ * say so without handing out "none" as a fresh choice on rules that feed the
+ * alarm engine.
+ *
+ * This lives in `tests/` rather than beside the component because the decision
+ * it guards is in JSX, and `apps/web/vitest.config.ts` includes `src/lib/**`
+ * only: the predicate's own cases run there, but nothing runs the *wiring*.
+ * Reverting the panel to an unconditional `<option value="">` — the state this
+ * branch shipped for most of its life — left every other test green.
+ *
+ * Scoped to the construct, not to the symbol (AGENTS.md §4.4 and the `F4.38`
+ * decoy): `offersNoSeverityOption` and `severityFromRule` each appear more than
+ * once in this file, so "does the name occur" would pass on a panel whose
+ * option is no longer gated at all.
+ */
+describe("F4.46 no-severity affordance", () => {
+  const panel = readFileSync(
+    join(repoRoot, "apps", "web", "src", "components", "rule-builder-panel.tsx"),
+    "utf8",
+  );
+
+  it("gates the None option on the predicate rather than rendering it always", () => {
+    expect(
+      /offersNoSeverityOption\(\s*form\.ruleType,\s*form\.severity\s*\)\s*&&\s*\(?\s*<option value="">/.test(
+        panel,
+      ),
+      'rule-builder-panel.tsx renders <option value=""> without gating it on ' +
+        "`offersNoSeverityOption(form.ruleType, form.severity)`. Offering `None` on " +
+        "every rule makes clearing a threshold rule's severity newly authorable, " +
+        "which is product scope (§10) and not what F4.46 fixed.",
+    ).toBe(true);
+
+    // ...and exactly once, so the gated form cannot sit beside an ungated one.
+    // Scoped to the None option: the panel's other two `<option value="">` are
+    // the "Select asset" / "Select point" placeholders, which are a different
+    // construct and legitimately unconditional.
+    expect([...panel.matchAll(/<option value="">None<\/option>/g)]).toHaveLength(1);
+  });
+
+  it("narrows the stored severity instead of substituting one", () => {
+    // The defect itself: a local narrowing that answered `"warning"` for a row
+    // that had no severity, so opening such a rule and pressing Save gave it
+    // one. The replacement is imported, so the panel must not declare its own.
+    expect(
+      /function normalizeSeverity/.test(panel),
+      "rule-builder-panel.tsx declares `normalizeSeverity` again. Narrowing a " +
+        "stored severity belongs in `lib/rule-severity.ts`, where it is under test.",
+    ).toBe(false);
+
+    expect(panel).toMatch(/severityFromRule\(rule\.severity\)/);
+  });
+});

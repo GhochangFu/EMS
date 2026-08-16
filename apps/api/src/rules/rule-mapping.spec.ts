@@ -17,7 +17,12 @@ function assert(condition: boolean, message: string): void {
 const CREATED = new Date("2026-01-01T10:00:00.000Z");
 const UPDATED = new Date("2026-02-02T11:30:00.000Z");
 
-function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
+/**
+ * Exported so `rules.service.spec.ts` can compose the real `mergeRuleDraft`
+ * with the real `validateRuleDraft` (`F4.46`) over the same row shape, rather
+ * than restating a second fixture that could drift from this one.
+ */
+export function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
   return {
     id: "rule-1",
     code: "RULE-1",
@@ -182,6 +187,19 @@ function testMergeRuleDraft(): void {
   assert(untouched.description === "Trips above 100 kW", "an absent key keeps the value");
   assert(untouched.thresholdValue === 100, "an absent threshold keeps the value");
   assert(untouched.assetId === "asset-1", "an absent assetId keeps the value");
+  assert(untouched.severity === "warning", "an absent severity keeps the value");
+
+  // `F4.46`. The three checks above all run over a row whose severity is
+  // `"warning"`, so neither direction of the defect could show here: the value
+  // being preserved was also the value being substituted downstream. A stored
+  // **null** is the case that mattered, and it has to survive an update that
+  // simply does not mention severity — which is every update the builder sends
+  // for a rule that has none.
+  const noSeverity = mergeRuleDraft(ruleRow({ severity: null }), {});
+  assert(
+    noSeverity.severity === null,
+    `an absent severity over a null row must stay null, got ${String(noSeverity.severity)}`,
+  );
 
   // An explicit null CLEARS it. This is the distinction a plain spread loses,
   // and the reason the per-field checks exist.

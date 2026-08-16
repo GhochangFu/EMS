@@ -1,0 +1,69 @@
+import { automationRuleSeveritySchema } from "@bms/shared/contracts";
+import type { AutomationRuleSeverity, AutomationRuleType } from "@bms/shared";
+
+/**
+ * The severities a rule may carry — **re-exported, not restated** (AGENTS.md
+ * §4.8). The list itself lives once, in
+ * `packages/shared/src/contracts/operations.ts:302`, and this alias exists only
+ * so the builder can name it without every call site importing the contract.
+ * A rule may also carry none, which is what the `| null` at each use site says.
+ */
+export type RuleSeverity = AutomationRuleSeverity;
+
+/**
+ * Narrows a stored severity for the rule builder, **preserving "none"**.
+ *
+ * `automation_rules.severity` is nullable (`bms-schema.ts:560`) and the read
+ * contract types it `z.string().nullable()` (`contracts/operations.ts:359`), so
+ * the builder has to narrow it before it can put it in a `<select>`. Narrowing
+ * is all this does. Substituting a value is `F4.46`: the version of this that
+ * lived inline in `rule-builder-panel.tsx` returned `"warning"` for `null`, so
+ * loading the one rule that has no severity and pressing Save gave it one.
+ *
+ * That a rule can have none is not an accident of the seed. The alarm engine
+ * only ever loads `ruleType = "threshold"` (`alarm-threshold.service.ts:99`),
+ * so a time-window rule — `weekday_energy_review` is the only one — has nothing
+ * to be severe about.
+ *
+ * An unrecognised string maps to `null` for the same reason: it is the only
+ * answer that does not invent data, and the builder shows it as `None` rather
+ * than silently displaying a severity the rule does not have. Nothing can
+ * produce one today, since the write schema is an enum (`rules.schema.ts:32`).
+ *
+ * It runs in the other direction too, on the `<select>`'s value. `""` is how
+ * "no severity" is spelled in the DOM and is not a value the schema accepts, so
+ * it has to become `null` before it is sent — otherwise clearing the field
+ * would be a 400 rather than a clear. Same rule, same answer, which is why
+ * there is one function and not two.
+ */
+export function severityFromRule(value: string | null): RuleSeverity | null {
+  const parsed = automationRuleSeveritySchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Whether the builder offers `None` as a severity for the rule being edited.
+ *
+ * `F4.46` is a **display** defect: a stored null has to survive being looked at.
+ * It is not a licence to make "no severity" a fresh choice on rules that feed
+ * the alarm engine — that is product scope, and the owner's call (§10), so the
+ * option is offered only where it is already the truth:
+ *
+ * - a **time-window** rule, which the alarm engine never loads
+ *   (`alarm-threshold.service.ts:99`) and so has nothing to be severe about; or
+ * - **any** rule that already holds no severity, whatever its type.
+ *
+ * The second arm is the one that is easy to leave out and is not optional.
+ * `severity` is nullable for every rule type, so a threshold rule with no
+ * severity is reachable through the API today. Gating on the type alone would
+ * render a `<select>` whose value matches none of its options; a browser then
+ * shows the first one, and Save writes `info` — `F4.46` again, in a new place.
+ * That failure is exactly the one `F4.43` already paid for once, on the
+ * category control.
+ */
+export function offersNoSeverityOption(
+  ruleType: AutomationRuleType,
+  severity: RuleSeverity | null,
+): boolean {
+  return ruleType === "time_window" || severity === null;
+}

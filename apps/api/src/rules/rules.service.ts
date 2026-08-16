@@ -657,7 +657,18 @@ export class RulesService {
         pointKey: dto.pointKey,
         operator: dto.operator,
         thresholdValue: dto.thresholdValue,
-        severity: dto.severity ?? "warning",
+        // `F4.46`. No default here, on purpose. `severity` is nullable in the
+        // schema and every other layer round-trips the null, so substituting
+        // one on this path meant an update that merely omitted the field
+        // overwrote a stored null — `updateRule` funnels through here after
+        // `mergeRuleDraft` has carefully preserved it.
+        //
+        // The `NOT NULL` that a default exists to satisfy is `alarms.severity`,
+        // and that boundary already has its own: `normalizeSeverity`
+        // (`alarm-threshold.service.ts:138`) maps a null rule to `"warning"`
+        // when the alarm engine builds its cache. One default, at the edge that
+        // needs it.
+        severity: dto.severity ?? null,
         condition: dto.condition,
         action: dto.action,
       };
@@ -677,7 +688,12 @@ export class RulesService {
       pointKey: null,
       operator: null,
       thresholdValue: null,
-      severity: dto.severity ?? "info",
+      // `F4.46`, and this one defended nothing even in principle: the alarm
+      // engine's cache query filters to `ruleType = "threshold"`
+      // (`alarm-threshold.service.ts:99`), so a time-window rule never reaches
+      // the code that requires a severity. The seed agrees — `weekday_energy_review`
+      // is the only time-window rule and the only row with no severity.
+      severity: dto.severity ?? null,
       condition: dto.condition,
       action: dto.action,
     };
