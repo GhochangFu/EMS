@@ -16,7 +16,7 @@ node docs/scripts/backlog-status.mjs && node docs/scripts/backlog-dashboard.mjs
 Then republish `docs/status/backlog-dashboard.html` with the Artifact tool,
 **passing the URL above as `url`**. Publishing without it creates a second,
 competing artifact — which is the one failure mode that matters here, because
-whoever holds the old link would silently stop seeing updates.
+whoever holds the old link is left on a page that nothing rebuilds again.
 
 The page does **not** poll. Its "Data as of" stamp is the honest statement of
 how fresh it is, so run the two commands and republish as the last step of each
@@ -41,6 +41,10 @@ recurring jobs auto-expire after 7 days. Restart it with:
 The loop is a convenience, not the contract. The reliable path stays the same:
 regenerate and republish as the last step of each build cycle.
 
+Either way, republishing only rebuilds the page. Whether a reader sees the
+rebuild is decided by the **Shared version** control described under
+[Sharing it](#sharing-it) — not by the republish.
+
 All times on the page are **IST**. `backlog-status.mjs` sets `TZ=Asia/Kolkata`
 for its git calls and formats the generation stamp through `Intl`, so nothing
 downstream has to convert.
@@ -50,14 +54,29 @@ downstream has to convert.
 Two routes, for two different audiences.
 
 **The link, for people who want the current picture.** The artifact is private
-until you open it and share it from the page's own share menu. Whoever you share
-it with keeps seeing updates, because republishing keeps the same URL.
+until you open it and share it from the page's own share menu. That menu has two
+separate controls, and both decide what a reader gets:
+
+| Control | Decides |
+|---------|---------|
+| **General access** | *who* can open the link at all |
+| **Shared version** | *which* version those people see |
+
+**Set `Shared version` to `Latest`.** The control also lists every numbered
+version, and it can sit on one of those instead. If it does, republishing does
+**not** reach your readers: the URL stays the same and the page still rebuilds,
+but every viewer stays on the version that was pinned. This is the quiet
+failure — you refresh the board each cycle, and nobody sees it.
+
+On `Latest`, each republish reaches everyone who holds the link, with no further
+action.
 
 **The file, for people who just want a report.** Two cuts, both self-contained —
 every style, script and chart inlined, no external requests — so they open from
 disk, an email attachment or a network share, online or off. Both are
 **snapshots**: whoever holds one sees the "Data as of" time it was generated at,
-forever. Print-to-PDF from the browser works if someone wants it flatter still.
+forever — unlike the link on `Latest`, which follows every republish. Print-to-PDF
+from the browser works if someone wants it flatter still.
 
 | File | Audience | Contains |
 |------|----------|----------|
