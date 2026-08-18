@@ -148,6 +148,18 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   }, [rows, alarmSeverities]);
   const distributionTotal = Math.max(rows.length, 1);
 
+  /**
+   * The sixth card waits for the vocabulary, not just for a non-zero count.
+   *
+   * The two queries resolve independently, and `alarmSeverities` is `[]` until
+   * `vocabQ` lands — against an empty vocabulary *every* severity is
+   * unresolvable, so an alarms-first paint would have flashed `Critical 0 ·
+   * Major 0 · Minor 0 · Unrecognised 25`. That is a false alarm about the
+   * plant, invented by a load order. Three zeroes on their own read as an
+   * ordinary loading state; a full Unrecognised count does not.
+   */
+  const showUnrecognised = vocabQ.isSuccess && summary.unrecognised > 0;
+
   function submitAck(e: FormEvent): void {
     e.preventDefault();
     if (!ackTarget) {
@@ -195,7 +207,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
         */}
         <div
           className={`grid gap-3 sm:grid-cols-2 ${
-            summary.unrecognised > 0 ? "lg:grid-cols-6" : "lg:grid-cols-5"
+            showUnrecognised ? "lg:grid-cols-6" : "lg:grid-cols-5"
           }`}
         >
           <AlarmSummaryCard label="Critical" value={summary.critical} tone="critical" emptyLabel="all clear" />
@@ -203,7 +215,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           <AlarmSummaryCard label="Minor" value={summary.minor} tone="info" />
           <AlarmSummaryCard label="Active (Unack)" value={summary.active} tone="ok" />
           <AlarmSummaryCard label="Acknowledged" value={summary.acknowledged} tone="ok" />
-          {summary.unrecognised > 0 ? (
+          {showUnrecognised ? (
             <AlarmSummaryCard label="Unrecognised" value={summary.unrecognised} tone="offline" />
           ) : null}
         </div>
