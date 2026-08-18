@@ -264,6 +264,48 @@ deferred work only inside an ADR is how ADR 0016 §6 commit 4 stayed unowned, an
 this is the item with the most exposure of anything this ADR defers: it bears on
 already-shipped code in *both* exports.
 
+### Result so far — one parser of three, 2026-08-18 (`F4.31`)
+
+**Excel: no bypass.** Reproduce it with `pnpm csv:formula-probe`, which builds the
+file through the *real* `csvTextCell` rather than by hand.
+
+| Payload | First char | Excel showed | Evaluated? |
+|---|---|---|---|
+| `=1+1` (guarded) | `U+0027` | `'=1+1` | no |
+| `U+0020` + `=1+1` | `U+0020` | ` =1+1` | **no** |
+| `U+00A0` + `=1+1` | `U+00A0` | ` =1+1` | **no** |
+| `U+FEFF` + `=1+1` | `U+FEFF` | `﻿=1+1` | **no** |
+| `=1+1` **unguarded control** | `U+003D` | `2` | **yes** |
+
+The control is what makes the negative result mean anything: Excel *does*
+evaluate an unguarded formula in the same file, so "nothing evaluated" is not
+"nothing could have".
+
+**Two caveats, both material, neither rounded away.**
+
+**It was Excel 2013 (15.0.4454.1503), not the Excel 365 the task named.** That is
+what is installed here. A 365 result may differ and the row stays open for it.
+
+**The first run silently tested nothing, and the reason is worth carrying.**
+`apps/api` sends `Content-Type: text/csv; charset=utf-8` but writes **no BOM**,
+and Excel ignores that header when opening a file — it decoded as ANSI, so
+`U+00A0` arrived as `Â`+NBSP and `U+FEFF` as `ï»¿`. Both then begin with a
+*letter*, which is trivially not a formula, so two of the four cases passed
+without ever being asked the question. The probe now writes **two** files, with
+and without a BOM, and the table above is from the BOM file. A result from the
+no-BOM file alone is not an answer.
+
+That mis-decoding is its own small finding about the shipped export, separate
+from formula injection: **non-ASCII text in either CSV renders as mojibake in
+Excel today.** An asset or site name with an accent is enough. Not fixed here —
+adding a BOM changes every consumer of both endpoints — and not folded into
+`F4.31`, whose question is injection.
+
+**Still open: LibreOffice and Google Sheets.** LibreOffice is not installed here.
+The Sheets check needs the file in a Drive account and was not run. Until both
+are done the leader list must not be widened *or* declared safe on this evidence
+— one parser is one parser.
+
 Related, and the reason the mechanism matters: the original comment on that list
 said TAB and CR were "stripped as leading whitespace on import". They are not —
 all six are formula-*initiating* characters. The wrong mechanism made a dangerous
