@@ -109,12 +109,22 @@ export function csvTextCell(value: string): CsvField {
  * neither `NULL` nor caught by `COALESCE`, propagates through `SUM`/`AVG`, and
  * sorts above every value so `MAX` returns it too.
  *
- * What actually keeps `NaN` out is in **another application**: the ingest rejects
- * non-finite samples before they are written (`apps/ingest/src/host/
- * normaliser.ts:129`, `adapters/mqtt.ts:222`). `apps/api` enforces nothing, and
- * `telemetry.point_values.value` has no CHECK constraint — verified, the only
- * constraint on that table is its primary key — so any direct writer can store
- * `'NaN'::float8`. Measured 0 such rows on 2026-08-10.
+ * **`F4.32` closed the hole this paragraph used to describe.** It read: the
+ * guarantee lives in another application — the ingest rejects non-finite samples
+ * (`apps/ingest/src/host/normaliser.ts:129`, `adapters/mqtt.ts:222`) — while
+ * `apps/api` enforces nothing and the column has no CHECK, so any direct writer
+ * can store `'NaN'::float8`.
+ *
+ * It does now: `point_values_value_finite_check` (migration `0031`) rejects
+ * `NaN` and both infinities at the database. Note the constraint is a **range
+ * test**, not the `CHECK (value = value)` that `F4.32` prescribed — Postgres
+ * defines `NaN = NaN` as true so float columns can be indexed, which makes the
+ * classic idiom a no-op here.
+ *
+ * **The throw below stays**, and not as dead weight. It still guards a bad cast
+ * past the erased brand, and it covers every row written before `0031` on a
+ * database that has not run it yet. Measured 0 non-finite rows on 2026-08-10 and
+ * again on 2026-08-18.
  *
  * Throwing is still right: a `NaN` in a client energy report must not be delivered
  * quietly as the text `"NaN"`, which is what the old code did. But know the failure
@@ -129,7 +139,7 @@ export function csvNumberCell(value: number): CsvField {
     throw new Error(
       `csvNumberCell received ${String(value)}, which is not a finite number. Nothing in apps/api ` +
         "keeps NaN out of telemetry.point_values — the ingest normaliser does, and it is a " +
-        "different application with no CHECK constraint behind it — so this is a defect upstream " +
+        "different application, and on a database predating migration 0031 there is no CHECK behind it — " +
         "of the serialiser. Fix the source rather than emitting the cell, and do not soften this " +
         "to an empty cell: a client-facing energy report must not carry a silent NaN.",
     );

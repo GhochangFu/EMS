@@ -586,8 +586,11 @@ function dropsInvalidReadingsKeepsValidOnes(): void {
     );
   }
 
-  // NaN is a legal Postgres double and the column has no CHECK (F4.32); it
-  // reaches JSON as null, which must not become a reading.
+  // NaN is a legal Postgres double, and it reaches JSON as null — which must not
+  // become a reading. The column *does* carry a CHECK since `F4.32`
+  // (`point_values_value_finite_check`, migration `0031`), so this is no longer
+  // the last line of defence; it is still the right one, because a null here is
+  // a dropped sample rather than a rejected write.
   const nanResult = parseNotification('{"readings":[{"time":"2026-08-14T15:00:00.000Z","assetId":"a","pointKey":"kw","value":null,"unit":null}]}');
   assert(nanResult?.dropped === 1, "a NaN-origin null value must be dropped");
 

@@ -211,6 +211,13 @@
       "when": 1779667200000,
       "tag": "0030_alarm_severity_vocabulary",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1779753600000,
+      "tag": "0031_point_values_finite_check",
+      "breakpoints": true
     }
   ]
 }
