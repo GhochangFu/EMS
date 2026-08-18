@@ -59,6 +59,64 @@ export type CsvField = string & { readonly [csvFieldBrand]: "escaped" };
 const FORMULA_LEADERS = ["=", "+", "-", "@", "\t", "\r"];
 
 /**
+ * Characters that force a cell to be quoted.
+ *
+ * `"`, LF, CR and `,` are RFC 4180: they are what can break a cell out of its
+ * own field in a **comma**-delimited reader. TAB, `;` and `|` are not — they are
+ * here because of `F4.50`, and the reason is measured rather than defensive.
+ *
+ * **Excel 2013 evaluated a formula out of an unquoted cell in four different
+ * consumers**, none of which reads the file as comma-delimited:
+ *
+ * | Consumer | Cell as imported |
+ * |---|---|
+ * | Clipboard paste, TAB delimiter | `tab_split,foo` · **`=1+1` → 2** |
+ * | Clipboard paste, `;` delimiter | `semicolon_split,foo` · **`=1+1` → 2** |
+ * | File open, comma+TAB (LibreOffice's separator checkboxes are sticky) | `tab_split` · `foo` · **`=1+1` → 2** |
+ * | File open, `;` only (Excel double-click in a `;`-list-separator locale) | `semicolon_split,foo` · **`=1+1` → 2** |
+ *
+ * `|` was not in `F4.50`'s description and measures identically; LibreOffice
+ * offers it in the same dialog. **Space is deliberately excluded**: LibreOffice
+ * offers it too, but quoting on it would quote nearly every cell this app emits,
+ * and the class of "separator some consumer might pick" has no bound. This list
+ * is the separators that are *default-offered and absent from our data*, not a
+ * claim to have enumerated every possible one.
+ *
+ * **What this buys is narrower than it looks, and the deciding variable is not
+ * the one you would guess.** It is **whether the comma is among the consumer's
+ * delimiters** — not which extra separator that consumer adds.
+ *
+ * Excel honours the `"` text qualifier only when the quote **opens a field**.
+ *
+ * - **Comma among the delimiters** (comma+TAB, comma+`;`): our quote sits on a
+ *   real field boundary, so it is honoured and the cell arrives **intact** —
+ *   measured with one, two and three separators in the same cell. **Closed.**
+ * - **Comma not a delimiter at all** (`;`-only open, and both clipboard pastes):
+ *   our quote is text in the middle of a field. Excel splits straight through
+ *   it, and quoting buys **much less than it first appears**.
+ *
+ * The first write-up of this said those cases were "mitigated", because a single
+ * separator leaves the closing `"` stuck to the formula fragment and `=1+1"` is
+ * invalid. **That generalised from one payload shape and is false.** Put *two*
+ * separators in one cell and the closing quote lands on a later fragment:
+ * `"foo;=1+1;bar"` imports as `"foo` · **`=1+1` → 2** · `bar"`. Measured, with a
+ * working control, on `foo;=1+1;bar`, `foo;=1+1;`, `a;=1+1;b;c` and the TAB
+ * equivalent. **So for a non-comma consumer this is not a guard at all** — it
+ * narrows the payloads that work, and nothing more. Tracked as `F4.51`.
+ *
+ * The honest limit: a consumer that imports an RFC 4180 comma-delimited file
+ * without the comma is misreading it, and **no cell-level escaping in this
+ * module can repair that**, because the apostrophe guard only ever protects the
+ * first fragment. Protecting every fragment means rewriting the operator's data.
+ *
+ * Byte cost when this shipped: **zero**. TAB, `;` and `|` appeared in 0 rows of
+ * every column either export can emit (148 assets, 17 locations, 5431 audit
+ * rows, 2026-08-18) — latent, exactly like ADR 0026 fact 3, and invisible to any
+ * test that reads only real data.
+ */
+const QUOTE_TRIGGER = /["\n\r,\t;|]/;
+
+/**
  * Escapes a cell that carries text — quoting it, and neutralising a leading
  * formula character by prefixing an apostrophe, which makes the cell literal.
  *
@@ -69,9 +127,17 @@ const FORMULA_LEADERS = ["=", "+", "-", "@", "\t", "\r"];
  *
  * **The order is load-bearing.** The apostrophe goes on *before* the trigger is
  * tested, so the guarded form is re-examined and quoted. Swap the two and a
- * CR-led value escapes quoting again. With `,`, `"`, LF and CR all in the trigger,
- * a value cannot break out of its field or forge a record — only its own cell
- * content is under an attacker's control.
+ * CR-led value escapes quoting again.
+ *
+ * This paragraph used to end: "a value cannot break out of its field or forge a
+ * record — only its own cell content is under an attacker's control." **`F4.50`
+ * measured that claim false**, and it is worth knowing *how* it was false rather
+ * than only that it was. It held for a comma-delimited reader and silently
+ * assumed every reader is one. Excel 2013 evaluated `foo<TAB>=1+1` out of its
+ * field in four consumers that are not — see `QUOTE_TRIGGER`. Widening the
+ * trigger closes the one where the comma is still a delimiter and demotes the
+ * rest; **it does not restore the original claim**, because Excel ignores a `"`
+ * that does not open a field. Do not reinstate a sentence of that shape here.
  *
  * Takes `string`, not `string | null`. Every caller's columns are `NOT NULL` in
  * the schema, so unlike `audit.serialise.ts`' `cellValue` there is no `?? ""` to
@@ -108,7 +174,9 @@ export function csvTextCell(value: string): CsvField {
   const leads = (candidate: string): boolean =>
     FORMULA_LEADERS.some((lead) => candidate.startsWith(lead));
   const guarded = leads(value) || leads(value.trimStart()) ? `'${value}` : value;
-  if (/["\n\r,]/.test(guarded)) {
+  // Safe as a module constant: no `g` flag, so there is no `lastIndex` to carry
+  // between calls.
+  if (QUOTE_TRIGGER.test(guarded)) {
     return `"${guarded.replace(/"/g, '""')}"` as CsvField;
   }
   return guarded as CsvField;

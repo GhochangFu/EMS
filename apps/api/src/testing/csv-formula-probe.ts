@@ -74,15 +74,31 @@ import { csvDocument, csvTextCell, type CsvField } from "../serialise/csv";
  *   character it does not know (U+200B here) anywhere in the prefix disables
  *   the whole trimmed check. This is the discriminating test for "does a parser
  *   strip something `trimStart` does not".
- * - `tab_split` / `semicolon_split` — a different class: not formula *detection*
- *   but **field splitting**. TAB is in `FORMULA_LEADERS` yet not in the quote
- *   trigger, and `;` is in neither, so both are emitted unquoted. Any consumer
- *   treating either as a delimiter — a clipboard paste into Excel, LibreOffice
- *   sticky separator checkboxes, or Excel opening a .csv in a locale whose list
- *   separator is `;` — gets a second cell beginning `=`. Both are
- *   **pre-existing**, not introduced by the trimming fix.
+ * - `tab_split` / `semicolon_split` / `pipe_split` — a different class: not
+ *   formula *detection* but **field splitting**. **Answered by `F4.50`, and the
+ *   answer was yes.** Excel 2013 evaluated `=1+1` out of the unquoted cell in
+ *   four consumers: a clipboard paste under a TAB delimiter, the same under `;`,
+ *   a file open with comma+TAB, and a file open with `;` only. All three
+ *   characters are now in the quote trigger, so this probe emits them **quoted**
+ *   — the rows stay because re-running them is how the fix is checked, not
+ *   because the question is still open.
  *
  * A row here is a question, not a claim. Put the answer in ADR 0026.
+ *
+ * ## Two traps this probe has now fallen into twice
+ *
+ * Both are the same shape — a run that looks like a clean negative but asked
+ * nothing — and both cost a wrong closure before they were caught.
+ *
+ * 1. **Encoding** (`F4.31`). No BOM meant Excel decoded ANSI, so `U+00A0` became
+ *    `Â`+NBSP and `U+FEFF` became `ï»¿`. Both begin with a *letter*. Hence the
+ *    two output files.
+ * 2. **The delimiter arguments** (`F4.50`). `Workbooks.OpenText` **ignores** its
+ *    `Tab`/`Semicolon`/`Comma` arguments when the file extension is `.csv` and
+ *    uses the locale list separator instead. Four runs returned identical tables
+ *    and the comma split even with `Comma:=False`. Copy to `.txt` first. And a
+ *    clipboard paste follows Excel's **sticky** import delimiters rather than
+ *    TAB unconditionally — set them deliberately, and put them back.
  */
 const CASES: readonly (readonly [string, string])[] = [
   ["plain", "=1+1"],
@@ -93,6 +109,7 @@ const CASES: readonly (readonly [string, string])[] = [
   ["zwsp_inner", " ​=1+1"],
   ["tab_split", "foo\t=1+1"],
   ["semicolon_split", "foo;=1+1"],
+  ["pipe_split", "foo|=1+1"],
 ];
 
 function buildRows(): CsvField[][] {
@@ -105,6 +122,18 @@ function buildRows(): CsvField[][] {
   // is the row that proves the parser would have evaluated a formula if the
   // guard had let one through.
   rows.push([csvTextCell("CONTROL_unguarded"), "=1+1" as CsvField]);
+
+  // **A second control, and `F4.50` is why it exists.** The row above only works
+  // in a reader that splits on the **comma** — it puts the formula in column 2.
+  // Import the same file with TAB or `;` as the delimiter and the whole line
+  // stays one cell beginning `CONTROL`, which is trivially not a formula, so the
+  // control silently stops controlling. Three of four runs in the `F4.50`
+  // verification were vacuous for exactly that reason before this row was added.
+  //
+  // A **one-cell** row cannot have that problem: whatever the delimiter, there is
+  // nothing before the `=`. Use this one whenever the import is not
+  // comma-delimited. `csvDocument` emits a single-cell row as a bare line.
+  rows.push(["=1+1" as CsvField]);
   return rows;
 }
 

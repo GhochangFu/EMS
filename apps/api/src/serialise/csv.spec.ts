@@ -131,6 +131,62 @@ export function runCsvSerialiseTests(): void {
   assert(csvTextCell("  Pump A") === "  Pump A", "indented text is not a formula");
   assert(csvTextCell(" ") === " ", "a lone space is not a formula");
 
+  // --- separators other than the comma (F4.50) ------------------------------
+  //
+  // **Measured, not defensive.** Excel 2013 evaluated `=1+1` out of an unquoted
+  // cell in four consumers that do not read the file as comma-delimited: a
+  // clipboard paste under a TAB delimiter, the same under `;`, a file open with
+  // comma+TAB (LibreOffice's separator checkboxes are sticky), and a file open
+  // with `;` only (Excel double-click in a `;`-list-separator locale). The
+  // anti-vacuity control evaluated in every run.
+  //
+  // Written out **literally**, like LEADERS above and for the same reason: a
+  // test that imports `QUOTE_TRIGGER` still passes after someone narrows it.
+  const SEPARATORS = [
+    [",", "RFC 4180 — the delimiter we actually emit"],
+    ["\t", "TAB — a clipboard paste, and LibreOffice's sticky checkbox"],
+    [";", "semicolon — Excel double-click in a ;-list-separator locale"],
+    ["|", "pipe — LibreOffice offers it in the same dialog"],
+  ] as const;
+
+  for (const [sep, why] of SEPARATORS) {
+    const cell = csvTextCell(`foo${sep}=1+1`);
+    assert(
+      cell === `"foo${sep}=1+1"`,
+      `${why}: ${JSON.stringify(`foo${sep}=1+1`)} must be quoted, got ${JSON.stringify(cell)}`,
+    );
+  }
+
+  // The rule is about the **separator**, not about the payload behind it. An
+  // ordinary asset name containing a semicolon quotes too — that is the byte
+  // change this cost, and it was 0 rows on 2026-08-18.
+  assert(
+    csvTextCell("Chiller 1; Bay 2") === '"Chiller 1; Bay 2"',
+    "a semicolon quotes even with nothing dangerous after it",
+  );
+
+  // **Two separators in one cell, and this is the residual `F4.51` names.**
+  // Asserted so the emitted bytes are pinned, NOT because the outcome is safe.
+  // A reader who imports this file without the comma as a delimiter splits the
+  // cell into `"a`, `=1+1`, `b`, `c"` — and the middle fragment is a bare
+  // formula that **Excel 2013 evaluated to 2**. The closing quote only lands on
+  // the formula when the cell holds exactly one separator, which is the whole
+  // reason the first write-up of `F4.50` wrongly called those consumers
+  // "mitigated". Nothing `csvTextCell` can do fixes this: the apostrophe guard
+  // protects the first fragment only.
+  assert(
+    csvTextCell("a;=1+1;b;c") === '"a;=1+1;b;c"',
+    "a multi-separator cell is quoted — which is all this module can do about it",
+  );
+
+  // **Space is deliberately NOT a trigger**, and this asserts the exclusion so
+  // that nobody "completes" the list by adding it. LibreOffice offers space in
+  // the same dialog, but quoting on it would quote nearly every cell this app
+  // emits. The class "separator some consumer might pick" has no bound; the
+  // list above is the separators that are default-offered *and* absent from our
+  // data, which is a different and defensible claim.
+  assert(csvTextCell("Pump A =1+1") === "Pump A =1+1", "a space must not force quoting");
+
   // --- the coupled defect (ADR 0026 fact 4) ---------------------------------
   // A value *starting* with CR is guarded to `'\rfoo`, which still contains a CR.
   // `reports.service.ts` quoted on /["\n,]/ only, so before this fix the guarded

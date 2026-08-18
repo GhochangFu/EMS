@@ -1352,10 +1352,26 @@ Process (`AGENTS.md` §10).
   exactly 400 bytes. **No migration and no `apps/web` change**, so there was
   nothing to deploy at the database or frontend tier; recorded that way rather
   than as three green ticks.
-- **Still owed:** `F4.30` (`Cache-Control: no-store` on the energy route, the one
-  place the two exports still differ), `F4.31` (verify the guard against the three
-  real spreadsheet import parsers — inherited from `F4.14`, not introduced here),
-  `F4.32` (a CHECK constraint moving finiteness into the database).
+- **Still owed: nothing. All three closed, and two of them found real defects.**
+  `F4.30` set `Cache-Control: no-store` on the energy route (`20c4a53`).
+  `F4.32` moved finiteness into the database — as a **range test**, because
+  Postgres defines `NaN = NaN` as true and the prescribed `CHECK (value = value)`
+  is a no-op there (`6160655`). `F4.31` ran the guard past the three real import
+  parsers and **found a live bypass**: Google Sheets evaluated a cell led by one
+  U+0020 space, shipped in both exports since `73a9fd2` (`c7eb6cb`).
+- `F4.31`'s security review then raised **`F4.50`**, which is the same lesson one
+  layer out. The guard assumed every consumer reads the file as
+  comma-delimited. Excel 2013 evaluated `foo<TAB>=1+1` out of its cell in **four**
+  consumers that do not — two clipboard pastes, a comma+TAB file open, and a
+  `;`-locale file open. TAB, `;` and `|` joined the quote trigger
+  (ADR 0026 *Amendment 1*). **What it closes is bounded, and the bound was found
+  by attacking the claim rather than by shipping it:** Excel honours the `"`
+  qualifier only when the quote opens a field, so the deciding variable is
+  whether the **comma** is still among the consumer's delimiters. Where it is,
+  the cell arrives intact — a real closure. Where it is not, two separators in
+  one cell put the closing quote on a later fragment and `=1+1` evaluates anyway.
+  Residual filed as **`F4.51`**, with the honest note that no cell-level escaping
+  in that module can repair it.
 
 ### Shared API contracts with a runtime (F4.23, F4.43, F4.44) — done
 
