@@ -44,6 +44,93 @@ export function runCsvSerialiseTests(): void {
     );
   }
 
+  // --- leading whitespace before a leader (F4.31) ---------------------------
+  //
+  // **A measured bypass, not a hypothetical.** ADR 0026 left this an open
+  // question and declined to guess. `F4.31` ran the file through the three
+  // parsers, and **Google Sheets evaluated `" =1+1"` to `2`** — one leading
+  // U+0020 space, stripped by the importer, formula evaluated underneath. The
+  // unguarded control in the same file also evaluated, so the result is real
+  // rather than an artifact of the import settings.
+  //
+  // These cases go well past the one payload that was tested, deliberately
+  // (§4.4: fix the class, not the instance). Adding `" "` to FORMULA_LEADERS
+  // would have closed exactly the probe's own example and nothing else.
+  const WHITESPACE_LEADS = [
+    [" ", "U+0020 space — the measured Sheets bypass"],
+    [" ", "U+00A0 no-break space — safe in Sheets, guarded anyway"],
+    ["﻿", "U+FEFF BOM — safe in Sheets, guarded anyway"],
+    ["  ", "two spaces — never tested in a parser, and must not need to be"],
+    ["  ﻿ ", "a mixed run of all three"],
+  ] as const;
+
+  // Only the four NON-whitespace leaders here, and the exclusion is a finding
+  // rather than a convenience. TAB and CR are leaders *and* whitespace, so
+  // `" \t1+1"` trims to `"1+1"` — text, not a formula — and guarding it would be
+  // guarding nothing. The first version of this loop ran all six and failed on
+  // exactly that case, which is how the distinction got noticed.
+  const NON_WHITESPACE_LEADERS = ["=", "+", "-", "@"] as const;
+
+  for (const [prefix, why] of WHITESPACE_LEADS) {
+    for (const lead of NON_WHITESPACE_LEADERS) {
+      const cell = csvTextCell(`${prefix}${lead}1+1`);
+      assert(
+        cell.startsWith("'") || cell.startsWith(`"'`),
+        `${why}: ${JSON.stringify(prefix + lead)} must be guarded, got ${JSON.stringify(cell)}`,
+      );
+    }
+  }
+
+  // Whitespace *through* a whitespace leader and onto a real one still guards —
+  // the case the loop above cannot express.
+  //
+  // **Only payloads whose first character is NOT itself a leader.** The security
+  // review caught `"\t =1+1"` sitting in this list: it starts with TAB, so the
+  // *raw* check already catches it and it survives deleting the trimmed check
+  // entirely — it looked like it discriminated and did not. These two do.
+  //
+  // Asserted with `startsWith`, not `includes("'")`. The weaker form was the
+  // review's other catch: it passes on any value that merely *contains* an
+  // apostrophe anywhere.
+  for (const payload of [" \t=1+1", " \r@SUM(1)"]) {
+    const cell = csvTextCell(payload);
+    assert(
+      cell.startsWith("'") || cell.startsWith(`"'`),
+      `${JSON.stringify(payload)} reaches a formula leader after trimming and must be guarded, ` +
+        `got ${JSON.stringify(cell)}`,
+    );
+  }
+
+  // The value still has to survive intact — the guard neutralises, it does not
+  // sanitise. An operator whose asset name genuinely begins with a space must
+  // read it back unchanged.
+  assert(
+    csvTextCell(" =1+1") === "' =1+1",
+    "the whitespace and the payload both survive the guard",
+  );
+
+  // **The raw check still fires where the trimmed one does not**, so keep it —
+  // but the claim is narrower than the first version of this comment made it,
+  // and the security review was right to say so. TAB and CR are leaders *and*
+  // whitespace, so they trim to the empty string; the raw check is therefore
+  // uniquely load-bearing for values like `"\t"`, `"\r"` and `"\tfoo"` — **none
+  // of which carries a formula body**. `"\t=1+1"` is caught by the *trimmed*
+  // check. So dropping the raw test would be a behaviour change and a
+  // departure from OWASP's stated rule, not an exploitable regression. Kept
+  // because it is free and correct, not because it is the thing holding the
+  // vulnerability shut.
+  for (const lone of ["\t", "\r"]) {
+    const cell = csvTextCell(lone);
+    assert(
+      cell.includes(`'${lone}`),
+      `a lone ${JSON.stringify(lone)} must still be guarded — it trims to the empty string`,
+    );
+  }
+
+  // Whitespace with no leader under it is ordinary text and must not be touched.
+  assert(csvTextCell("  Pump A") === "  Pump A", "indented text is not a formula");
+  assert(csvTextCell(" ") === " ", "a lone space is not a formula");
+
   // --- the coupled defect (ADR 0026 fact 4) ---------------------------------
   // A value *starting* with CR is guarded to `'\rfoo`, which still contains a CR.
   // `reports.service.ts` quoted on /["\n,]/ only, so before this fix the guarded

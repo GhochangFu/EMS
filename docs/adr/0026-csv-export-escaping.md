@@ -240,7 +240,7 @@ None. No package is added or upgraded, so §9.4 is not engaged.
   which is what the §3 entry above is for. This is a different answer from ADRs
   0022–0025 and is stated affirmatively.
 
-## Open question — leading whitespace, unresolved on purpose
+## Open question — leading whitespace — **RESOLVED: there was a bypass, and the fix is confirmed in the parser that had it**
 
 `FORMULA_LEADERS` is OWASP's six. A value led by **U+0020, U+00A0 or U+FEFF**
 passes `csvTextCell` completely unmodified and unquoted: no leader match, no quote
@@ -263,6 +263,92 @@ reasoning alone — a comment in `csv.ts` says so at the list.
 deferred work only inside an ADR is how ADR 0016 §6 commit 4 stayed unowned, and
 this is the item with the most exposure of anything this ADR defers: it bears on
 already-shipped code in *both* exports.
+
+### RESOLVED 2026-08-18 (`F4.31`) — there **was** a bypass, in Google Sheets
+
+**This section used to say the best available reading was that no parser strips
+such a prefix and evaluates. That reading was wrong.**
+
+`pnpm csv:formula-probe` builds the file through the real `csvTextCell`; it was
+imported into three parsers, each with an **unguarded control cell** in the same
+file so that "nothing evaluated" could be told apart from "this parser never
+evaluates".
+
+| Payload | Google Sheets | Excel 2013 |
+|---|---|---|
+| `=1+1` (guarded) | text | text |
+| **`U+0020` + `=1+1`** | **`2` — EVALUATED** | text |
+| `U+00A0` + `=1+1` | text | text |
+| `U+FEFF` + `=1+1` | text | text |
+| `=1+1` **unguarded control** | `2` | `2` |
+
+**Google Sheets strips a single leading space and evaluates what is underneath.**
+The control evaluated in the same import, so this is a real result and not an
+artifact of the import settings. It had shipped in **both** CSV exports since
+`73a9fd2` (`F4.14`) — `F4.29` inherited it rather than introducing it, exactly as
+this ADR predicted, but the prediction that it was harmless was the wrong half.
+
+**The fix is the class, not the instance** (AGENTS.md §4.4). `csvTextCell` now
+guards when *either* the raw value **or** the value with leading whitespace
+stripped begins with a formula leader. Adding `" "` to `FORMULA_LEADERS` would
+have closed precisely the one payload the probe happened to use; the trimming
+form also covers `"  =1+1"`, a mixed run of all three characters, and anything
+else a parser might strip. Both checks are kept: TAB and CR are leaders *and*
+whitespace, so they trim away to nothing, and replacing the raw test with the
+trimmed one would silently unguard them while every existing test passed.
+
+**Two things the run itself taught, both worth keeping.**
+
+*The first attempt tested nothing.* `apps/api` sends
+`Content-Type: text/csv; charset=utf-8` but writes **no BOM**, and Excel ignores
+that header when opening a file — it decoded ANSI, so `U+00A0` arrived as
+`Â`+NBSP and `U+FEFF` as `ï»¿`. Both then begin with a *letter*, trivially not a
+formula, so two of four cases passed without being asked the question. The probe
+now emits two files, with and without a BOM. Sheets reads UTF-8 natively and
+needs only the plain one.
+
+*That same missing BOM is a separate, live defect.* **Non-ASCII text in either
+CSV renders as mojibake in Excel today** — an accented site or asset name is
+enough. Not fixed here: adding a BOM changes every consumer of both endpoints,
+and it is not a formula-injection question.
+
+**The fix is confirmed in Google Sheets, 2026-08-18.** The regenerated file was
+re-imported; `space_u0020` now renders as **text** where the same row previously
+rendered `2`, and the unguarded control still rendered `2`, so the import did
+evaluate formulas and the negative is real.
+
+That confirmation was owed. This section briefly claimed the fix was verified on
+the strength of what `csvTextCell` returned **in Node**, which the security
+review correctly rejected: the guard emits `"' =1+1"` — apostrophe, *space*,
+equals — and the only apostrophe form any parser had imported was `'=1+1`.
+Sheets is the one parser proved to do something non-obvious with a leading space
+before formula detection, so that interaction had to be measured, not reasoned.
+
+| Payload | Sheets, before fix | Sheets, after fix |
+|---|---|---|
+| **`U+0020` + `=1+1`** | **`2` — evaluated** | **text** |
+| `=1+1` unguarded control | `2` | `2` |
+
+**Three of the review's four new probe rows came back negative, which closes its
+L4 concern for Sheets.** `zwsp_lead` (`"​ =1+1"`) and `zwsp_inner`
+(`" ​=1+1"`) both rendered as text and **were not evaluated**, despite being
+unguarded — one U+200B anywhere in the leading run defeats `trimStart`, so these
+reached Sheets bare. Sheets did not strip the ZWSP and did not evaluate. Combined
+with its earlier refusal of U+00A0 and U+FEFF, **Sheets' strip set is narrower
+than `trimStart`'s**, which is the evidenced form of the residual caveat below.
+
+`tab_split` and `semicolon_split` also rendered as single text cells — but that
+result carries **no information about the risk they name**. Sheets' importer
+splits on the separator you choose, so importing with a comma was never going to
+split on TAB or `;`. Their vector is a *different consumer*: a clipboard paste
+into Excel, LibreOffice's sticky separator checkboxes, or Excel opening a `.csv`
+in a locale whose list separator is `;`. Untested, pre-existing, and tracked as
+`F4.50` rather than folded in here.
+
+**Still untested: LibreOffice 7.x****Still untested: LibreOffice 7.x**, which is not installed in this environment.
+The guard is now strictly stronger than it was, so LibreOffice cannot be
+*newly* exposed by this change — but the row stays open until someone runs it,
+because a third parser might strip something `trimStart` does not.
 
 Related, and the reason the mechanism matters: the original comment on that list
 said TAB and CR were "stripped as leading whitespace on import". They are not —

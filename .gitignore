@@ -77,3 +77,9 @@ docs/status/backlog-dashboard.client.html
 # Advanced only after a successful artifact publish, so a failed publish cannot
 # be mistaken for "nothing changed". See docs/status/README.md.
 docs/status/.published-fingerprint
+
+# F4.31 — `pnpm csv:formula-probe` writes these into the cwd for manual
+# opening in Excel / LibreOffice / Sheets. They are artifacts of a check, not
+# inputs to one: the script regenerates them from the real `csvTextCell`.
+csv-formula-probe.csv
+csv-formula-probe-bom.csv

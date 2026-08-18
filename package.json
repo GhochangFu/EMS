@@ -10,6 +10,7 @@
     "db:seed": "pnpm --filter @bms/db seed",
     "db:refresh-aggregates": "pnpm --filter @bms/db refresh-aggregates",
     "db:generate": "pnpm --filter @bms/db generate",
+    "csv:formula-probe": "tsx apps/api/src/testing/csv-formula-probe.ts",
     "typecheck:tests": "pnpm --filter api exec tsc -p tsconfig.json --noEmit && tsc -p packages/db/tsconfig.json --noEmit && tsc -p apps/ingest/tsconfig.json --noEmit && tsc --noEmit --module esnext --moduleResolution bundler --target es2022 --skipLibCheck vitest.config.ts apps/api/vitest.config.ts apps/web/vitest.config.ts apps/ingest/vitest.config.ts tests/repo-invariants.test.ts tests/repo-invariants-provenance.test.ts tests/adr-0018-source-axis.test.ts tests/ingest-contracts.test.ts tests/adr-0024-retention-bounds.test.ts tests/adr-0025-level-selector.test.ts tests/adr-0029-openapi-contract.test.ts tests/adr-0030-contract-derivation.test.ts tests/rule-vocabulary.test.ts tests/logger-redaction.test.ts",
     "test": "vitest run",
     "test:watch": "vitest",
