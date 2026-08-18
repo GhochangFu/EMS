@@ -1,7 +1,12 @@
 type AlarmSummaryCardProps = {
   label: string;
   value: number;
-  tone: "critical" | "warning" | "info" | "ok";
+  /**
+   * `offline` is the neutral grey, and matches `StatusPill`'s tone of the same
+   * name (`status-pill.tsx:3`). The alarms page uses it for severities the
+   * product does not recognise (`F4.46`), which are neither urgent nor calm.
+   */
+  tone: "critical" | "warning" | "info" | "ok" | "offline";
   emptyLabel?: string;
 };
 
@@ -19,7 +24,9 @@ export function AlarmSummaryCard({
         ? "after:bg-amber-500"
         : tone === "info"
           ? "after:bg-sky-500"
-          : "after:bg-bms-green";
+          : tone === "offline"
+            ? "after:bg-gray-400"
+            : "after:bg-bms-green";
   const icon =
     tone === "critical"
       ? "!"
@@ -27,7 +34,9 @@ export function AlarmSummaryCard({
         ? "!"
         : tone === "info"
           ? "i"
-          : "o";
+          : tone === "offline"
+            ? "?"
+            : "o";
 
   return (
     <div className={`relative overflow-hidden rounded-lg border border-gray-200 bg-white p-4 shadow-sm after:absolute after:inset-x-0 after:top-0 after:h-0.5 ${border}`}>

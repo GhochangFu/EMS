@@ -256,8 +256,14 @@ export class DashboardService {
           COUNT(*) FILTER (
             WHERE al.acknowledged_at IS NULL AND al.severity = 'critical'
           )::int AS critical_alarm_count,
+          -- F4.46: this read IN ('warning', 'major'). 'major' is the mockup's
+          -- word for a warning (ESKOM_SMOC.html), not a value this product
+          -- stores -- it is in no contract, no schema and no row. Measured
+          -- 2026-08-18: bms.alarms holds warning 20 / critical 19 / info 1.
+          -- The predicate matched nothing, so dropping it changes no count; it
+          -- stops the query implying a vocabulary that does not exist.
           COUNT(*) FILTER (
-            WHERE al.acknowledged_at IS NULL AND al.severity IN ('warning', 'major')
+            WHERE al.acknowledged_at IS NULL AND al.severity = 'warning'
           )::int AS warning_alarm_count,
           (ARRAY_AGG(al.severity ORDER BY al.raised_at DESC) FILTER (
             WHERE al.acknowledged_at IS NULL
