@@ -36,6 +36,14 @@ export type CsvField = string & { readonly [csvFieldBrand]: "escaped" };
  * passed, because the specs iterate their own copy of this list and would be
  * edited alongside it.
  *
+ * **`F4.50` weakened the second half of that sentence, so read it with the
+ * `QUOTE_TRIGGER` block below.** "The trigger stops the record splitting" holds
+ * for a **comma-delimited** reader and only for one. A consumer that splits on
+ * TAB, `;` or `|` tears through our quotes, so for that consumer the trigger
+ * stops nothing and this list is the only thing left. The conclusion above is
+ * unchanged and in fact strengthened — `\r` belongs here — but do not carry the
+ * "the trigger has it covered" half into any new reasoning.
+ *
  * **Leading whitespace is handled separately, and it is not theoretical.**
  * ADR 0026 left it an open question — a value led by U+0020, U+00A0 or U+FEFF
  * passed this list unmatched. `F4.31` ran the experiment, and **Google Sheets
@@ -72,15 +80,30 @@ const FORMULA_LEADERS = ["=", "+", "-", "@", "\t", "\r"];
  * |---|---|
  * | Clipboard paste, TAB delimiter | `tab_split,foo` · **`=1+1` → 2** |
  * | Clipboard paste, `;` delimiter | `semicolon_split,foo` · **`=1+1` → 2** |
- * | File open, comma+TAB (LibreOffice's separator checkboxes are sticky) | `tab_split` · `foo` · **`=1+1` → 2** |
+ * | File open, comma+TAB (the LibreOffice sticky-checkbox shape; measured in Excel, LibreOffice untested) | `tab_split` · `foo` · **`=1+1` → 2** |
  * | File open, `;` only (Excel double-click in a `;`-list-separator locale) | `semicolon_split,foo` · **`=1+1` → 2** |
  *
- * `|` was not in `F4.50`'s description and measures identically; LibreOffice
- * offers it in the same dialog. **Space is deliberately excluded**: LibreOffice
- * offers it too, but quoting on it would quote nearly every cell this app emits,
- * and the class of "separator some consumer might pick" has no bound. This list
- * is the separators that are *default-offered and absent from our data*, not a
- * claim to have enumerated every possible one.
+ * `|` was not in `F4.50`'s description, and it is **not a default checkbox** —
+ * both wizards offer Tab / Comma / Semicolon / Space, and `|` is reachable only
+ * through the free-text "Other" field. It was added on the argument that it
+ * "measures identically", which was **an assumption at the time it was written**
+ * and is now a measurement. Opened with `|` as the only delimiter, the unguarded
+ * bytes evaluate; opened with comma+`|`, the guarded cell arrives intact while
+ * the unguarded one in the same table splits and evaluates. That run is the
+ * cleanest single piece of evidence for this whole change, because it puts the
+ * before and after side by side under one parser.
+ *
+ * **Space is deliberately excluded, and the honest reason is cost — not safety.**
+ * An earlier version of this paragraph gave the membership rule as "separators
+ * that are default-offered *and* absent from our data", which dressed an
+ * engineering trade-off up as a principle. Space is a **default checkbox** in
+ * both import wizards, and `"Pump A =1+1 x"` split on space yields a clean
+ * `=1+1` fragment with not even a trailing quote to spoil it. So a
+ * space-delimited import **remains exploitable after this change**. It is
+ * excluded because quoting on it would quote nearly every cell either export
+ * emits, which is a real cost against a consumer choice nobody has made — not
+ * because it is safe. The class "separator some consumer might pick" has no
+ * bound, and this list does not claim to enumerate it.
  *
  * **What this buys is narrower than it looks, and the deciding variable is not
  * the one you would guess.** It is **whether the comma is among the consumer's
@@ -104,15 +127,35 @@ const FORMULA_LEADERS = ["=", "+", "-", "@", "\t", "\r"];
  * equivalent. **So for a non-comma consumer this is not a guard at all** — it
  * narrows the payloads that work, and nothing more. Tracked as `F4.51`.
  *
+ * **The apostrophe guard falls to the same split, and that is worth stating
+ * separately** because this module presents the two as a pair — apostrophe for
+ * the formula, quote for the field. `"\t=1+1\tz"` re-cut on TAB yields a bare
+ * `=1+1` fragment; the `'` sits at the head of the *whole cell*, so once a
+ * consumer re-cuts the field there is nothing in front of the formula. Against a
+ * non-comma consumer with an adaptive payload, **neither half holds**.
+ *
  * The honest limit: a consumer that imports an RFC 4180 comma-delimited file
  * without the comma is misreading it, and **no cell-level escaping in this
- * module can repair that**, because the apostrophe guard only ever protects the
- * first fragment. Protecting every fragment means rewriting the operator's data.
+ * module can repair that**, because both guards are positional and a re-split
+ * moves the position. Protecting every fragment means rewriting the operator's
+ * own data, which breaks the reader that is doing it right.
  *
- * Byte cost when this shipped: **zero**. TAB, `;` and `|` appeared in 0 rows of
- * every column either export can emit (148 assets, 17 locations, 5431 audit
- * rows, 2026-08-18) — latent, exactly like ADR 0026 fact 3, and invisible to any
- * test that reads only real data.
+ * Byte cost when this shipped: **zero**, measured 2026-08-18. TAB, `;` and `|`
+ * appeared in 0 rows of every column either export emits that can hold them:
+ * `bms.assets.code`/`.name`/`.site_name` (148), `bms.locations.name` (17),
+ * `bms.audit_log.reason`/`.action`/`.entity_type` and the joined `users.email`
+ * (5487). The remaining exported columns cannot hold one by construction —
+ * `id`/`actor_id`/`entity_id` are `uuid`, `created_at` is a timestamp, and the
+ * report's `template.title` is a literal in `reports.service.ts`. `payload` is
+ * covered below. Latent, exactly like ADR 0026 fact 3, and invisible to any test
+ * that reads only real data.
+ *
+ * **`payload` was never exposed to this**, contrary to the first draft of this
+ * paragraph. `audit.serialise.ts` renders it through `JSON.stringify`, which
+ * emits TAB, CR and LF as the two-character escapes `\t`, `\r`, `\n` rather than
+ * the characters themselves; and any object, array or string payload contains a
+ * `"`, so the cell was already quoted under the old trigger. Only a bare `5` or
+ * `true` escapes quoting, and neither carries a separator.
  */
 const QUOTE_TRIGGER = /["\n\r,\t;|]/;
 
@@ -135,9 +178,11 @@ const QUOTE_TRIGGER = /["\n\r,\t;|]/;
  * than only that it was. It held for a comma-delimited reader and silently
  * assumed every reader is one. Excel 2013 evaluated `foo<TAB>=1+1` out of its
  * field in four consumers that are not — see `QUOTE_TRIGGER`. Widening the
- * trigger closes the one where the comma is still a delimiter and demotes the
- * rest; **it does not restore the original claim**, because Excel ignores a `"`
- * that does not open a field. Do not reinstate a sentence of that shape here.
+ * trigger closes the ones where the comma is still a delimiter and, for the
+ * rest, only **narrows the payloads that work** — two separators in a cell and
+ * the formula evaluates anyway (`F4.51`). **It does not restore the original
+ * claim**, because Excel ignores a `"` that does not open a field. Do not
+ * reinstate a sentence of that shape here.
  *
  * Takes `string`, not `string | null`. Every caller's columns are `NOT NULL` in
  * the schema, so unlike `audit.serialise.ts`' `cellValue` there is no `?? ""` to

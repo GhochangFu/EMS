@@ -136,17 +136,21 @@ export function runCsvSerialiseTests(): void {
   // **Measured, not defensive.** Excel 2013 evaluated `=1+1` out of an unquoted
   // cell in four consumers that do not read the file as comma-delimited: a
   // clipboard paste under a TAB delimiter, the same under `;`, a file open with
-  // comma+TAB (LibreOffice's separator checkboxes are sticky), and a file open
-  // with `;` only (Excel double-click in a `;`-list-separator locale). The
-  // anti-vacuity control evaluated in every run.
+  // comma+TAB (the LibreOffice sticky-checkbox shape), and a file open with `;`
+  // only (Excel double-click in a `;`-list-separator locale). The anti-vacuity
+  // control evaluated in every run.
+  //
+  // **Every measurement here is Excel 2013.** LibreOffice is named for the
+  // *shape* of the consumer, not as a parser that was run — it is not installed
+  // on the machine this was measured on, same as `F4.31`.
   //
   // Written out **literally**, like LEADERS above and for the same reason: a
   // test that imports `QUOTE_TRIGGER` still passes after someone narrows it.
   const SEPARATORS = [
     [",", "RFC 4180 — the delimiter we actually emit"],
-    ["\t", "TAB — a clipboard paste, and LibreOffice's sticky checkbox"],
+    ["\t", "TAB — a clipboard paste, and the sticky separator checkbox"],
     [";", "semicolon — Excel double-click in a ;-list-separator locale"],
-    ["|", "pipe — LibreOffice offers it in the same dialog"],
+    ["|", "pipe — reachable via the wizards' free-text Other field"],
   ] as const;
 
   for (const [sep, why] of SEPARATORS) {
@@ -179,12 +183,16 @@ export function runCsvSerialiseTests(): void {
     "a multi-separator cell is quoted — which is all this module can do about it",
   );
 
-  // **Space is deliberately NOT a trigger**, and this asserts the exclusion so
-  // that nobody "completes" the list by adding it. LibreOffice offers space in
-  // the same dialog, but quoting on it would quote nearly every cell this app
-  // emits. The class "separator some consumer might pick" has no bound; the
-  // list above is the separators that are default-offered *and* absent from our
-  // data, which is a different and defensible claim.
+  // **Space is deliberately NOT a trigger, and the exclusion is a cost decision
+  // rather than a safety one.** This assertion is an anti-widening pin — it is
+  // invariant under narrowing the trigger, by design, and that is the only
+  // assertion in this block of which that is true.
+  //
+  // Do not read it as "space is safe". Space is a **default checkbox** in both
+  // import wizards, and `"Pump A =1+1 x"` split on space gives a clean `=1+1`
+  // fragment with no trailing quote to spoil it — so a space-delimited import is
+  // exploitable today. It is excluded because quoting on it would quote nearly
+  // every cell either export emits, against a consumer choice nobody has made.
   assert(csvTextCell("Pump A =1+1") === "Pump A =1+1", "a space must not force quoting");
 
   // --- the coupled defect (ADR 0026 fact 4) ---------------------------------

@@ -4,10 +4,12 @@
 
 Accepted — 2026-08-10, at the `F4.29` gate.
 
-Amended **2026-08-18** (`F4.50`, decisions 11–12): the quote trigger gains TAB,
-`;` and `|`. See *Amendment 1*, which also records the limit. It closes the
-consumers that still treat the comma as a delimiter; for the ones that do not it
-narrows the working payloads and **is not a guard** — residual tracked as `F4.51`.
+Amendment 1 — **Accepted 2026-08-18** (`F4.50`, decisions 11–12). The owner was
+shown the measurement and ruled the scope at the §10 gate: widen the quote
+trigger to TAB, `;` and `|`, and record it here as an amendment rather than as a
+new ADR. See *Amendment 1*, which also records the limit. It closes the consumers
+that still treat the comma as a delimiter; for the ones that do not it narrows
+the working payloads and **is not a guard** — residual tracked as `F4.51`.
 
 ## Context
 
@@ -401,8 +403,22 @@ export's `code`/`name`/`siteName`, all validated for length only (fact 2).
 
 `QUOTE_TRIGGER` is now `/["\n\r,\t;|]/`.
 
-`|` was not named in the `F4.50` row. It measures identically and LibreOffice
-offers it in the same dialog, so it is the same decision, not a second one.
+`|` was not named in the `F4.50` row. LibreOffice offers it in the same dialog,
+so it went in as part of this decision rather than as a second one.
+
+**It was added on the claim that it "measures identically", and at the moment
+that claim was written it was an assumption — `|` had not been opened as a
+delimiter in any run.** It has been now (`OpenText` with `Other:=True,
+OtherChar:="|"`), and the claim holds:
+
+| Run | Unguarded bytes | Guarded bytes |
+|---|---|---|
+| `\|` only | `foo` · **`=1+1` → 2** | single: `"foo` · `=1+1"` — multi: `"a` · **`=1+1` → 2** · `b"` |
+| comma+`\|` | `a` · **`=1+1` → 2** · `b` | **intact** — `foo\|=1+1` and `a\|=1+1\|b` in one cell each |
+
+The comma+`|` row is the clearest single piece of evidence in this amendment: the
+guarded and unguarded forms of the same payload sit in one table under one
+parser, and only the unguarded one evaluates.
 
 **Space is deliberately excluded, and the exclusion is the honest part of this
 decision.** LibreOffice offers space as a separator too. Quoting on it would
