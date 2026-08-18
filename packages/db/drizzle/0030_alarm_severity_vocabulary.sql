@@ -55,7 +55,13 @@
 CREATE TABLE IF NOT EXISTS bms.alarm_severities (
   code varchar(64) PRIMARY KEY,
   label varchar(128) NOT NULL,
-  tone varchar(32) NOT NULL DEFAULT 'info',
+  -- No DEFAULT, deliberately. 0029 gives `rule_categories.tone` a default of
+  -- `neutral`, which is genuinely neutral; `info` would be a CLAIM -- a level
+  -- seeded without a tone would silently become the least-urgent colour, which
+  -- is F4.46 finding (2) exactly. ADR 0032 decision 1 lists no default and its
+  -- Context says a level cannot be declared without a tone; a default falsified
+  -- that for the one column where it matters most.
+  tone varchar(32) NOT NULL,
   rank integer NOT NULL,
   active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -134,7 +140,7 @@ END $$;
 --    `GET /api/v1/vocabularies`, and passes `assertAlarmSeverity` — which checks
 --    existence and `active`, not length — and only then fails the write with
 --    SQLSTATE 22001. That is a 500 from the database on exactly the path ADR
---    0032 decision 6 says the service exists to turn into a 400.
+--    0032 decision 7 says the service exists to turn into a 400.
 --
 --    0029 has no such gap: `assets.domain`, `asset_templates.domain` and
 --    `automation_rules.category` are all varchar(64), matching their key.

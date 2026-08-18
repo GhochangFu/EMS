@@ -5,6 +5,7 @@ import type {
   AutomationRuleCondition,
   AutomationRuleLifecycleStatus,
   AutomationRuleOperator,
+  AutomationRuleSeverity,
   AutomationRuleType,
   RuleListItem,
 } from "@bms/shared";
@@ -144,7 +145,11 @@ export function ruleBodyFromRow(row: RuleRow): RuleDraftBody {
     pointKey: row.pointKey,
     operator: row.operator as AutomationRuleOperator | null,
     thresholdValue: row.thresholdValue,
-    severity: row.severity as "info" | "warning" | "critical" | null,
+    // ADR 0032, and the same rule the `category` line above states: do not
+    // restore a narrower claim here, the vocabulary is deliberately not knowable
+    // at compile time. This compiled only because `AutomationRuleSeverity`
+    // became `string`, so nothing errored on a cast that had quietly gone false.
+    severity: row.severity as AutomationRuleSeverity | null,
     condition: asCondition(row.condition),
     action: asAction(row.action),
   };

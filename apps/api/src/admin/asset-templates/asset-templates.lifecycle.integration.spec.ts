@@ -521,11 +521,20 @@ export async function assertLegacyContentBlocksPublishButNotForking(
   // The rejection must describe *structure*, not echo stored values back out.
   // Pre-ADR content is arbitrary JSON written by whoever.
   //
-  // The bad value goes in an **enum** field deliberately. Zod's
-  // `invalid_enum_value` message is the one that echoes what it received
-  // ("Invalid enum value. Expected 'info' | … , received 'x'"); `invalid_literal`
-  // names only the *expected* value, so asserting against that field would pass
-  // no matter how the error is built and prove nothing.
+  // **This block's original rationale died with ADR 0032 and had to be
+  // rebuilt.** It read: "the bad value goes in an *enum* field deliberately —
+  // Zod's `invalid_enum_value` message is the one that echoes what it received".
+  // Both halves stopped being true at once. `severity` is no longer an enum, so
+  // `parseStoredContent` no longer produces an echoing Zod message for it, and
+  // the assertion below would have guarded a path that has no echo left by
+  // construction — invariant under the change it guards, the §4.4 pattern.
+  //
+  // What replaced the enum is a pair of hand-written vocabulary checks in
+  // `assertTemplateAlarmCategories`, and **both are probed here**, separately.
+  // `category` is the one that matters most: the security review found that
+  // `publish` began calling that method in the same commit that introduced the
+  // severity check, so the echoing `assertRuleCategory` path became newly
+  // reachable over stored content while only `severity` was being tested.
   const secretish = "s3://internal-bucket/rotate-me";
   await pool.query(`UPDATE bms.asset_templates SET content = $2::jsonb WHERE id = $1`, [
     draft.id,
@@ -542,20 +551,52 @@ export async function assertLegacyContentBlocksPublishButNotForking(
       ],
     }),
   ]);
-  let leaked: string | null = null;
-  try {
-    await svc.publish(fx.adminJwt, draft.id);
-  } catch (err) {
-    leaked = err instanceof Error ? err.message : String(err);
+  async function publishError(): Promise<string> {
+    try {
+      await svc.publish(fx.adminJwt, draft.id);
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+    throw new Error("invalid stored content must still block publish");
   }
-  assert(leaked !== null, "invalid stored content must still block publish");
+
+  const leakedSeverity = await publishError();
   assert(
-    (leaked ?? "").includes("alarms.0.severity"),
-    `the error must name the offending path, got: ${leaked}`,
+    leakedSeverity.includes("alarms.0.severity"),
+    `the error must name the offending path, got: ${leakedSeverity}`,
   );
   assert(
-    !(leaked ?? "").includes(secretish),
-    `the error must not echo the stored value back to the caller, got: ${leaked}`,
+    !leakedSeverity.includes(secretish),
+    `the error must not echo the stored value back to the caller, got: ${leakedSeverity}`,
+  );
+
+  // Now the same probe on `category`, the branch that routes through
+  // `assertRuleCategory` unless it is written out. `severity` is restored to a
+  // live code so the category check is the one that fires.
+  await pool.query(`UPDATE bms.asset_templates SET content = $2::jsonb WHERE id = $1`, [
+    draft.id,
+    JSON.stringify({
+      alarms: [
+        {
+          code: "A",
+          pointKey: fx.pointKeys[0],
+          operator: "gt",
+          thresholdValue: 1,
+          severity: "warning",
+          category: secretish,
+          message: "m",
+        },
+      ],
+    }),
+  ]);
+  const leakedCategory = await publishError();
+  assert(
+    leakedCategory.includes("alarms.0.category"),
+    `the error must name the offending path, got: ${leakedCategory}`,
+  );
+  assert(
+    !leakedCategory.includes(secretish),
+    `a stored category must not be echoed back either, got: ${leakedCategory}`,
   );
   await pool.query(`UPDATE bms.asset_templates SET content = $2::jsonb WHERE id = $1`, [
     draft.id,

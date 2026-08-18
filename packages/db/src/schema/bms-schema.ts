@@ -166,7 +166,9 @@ export const ruleCategories = bmsSchema.table("rule_categories", {
 export const alarmSeverities = bmsSchema.table("alarm_severities", {
   code: varchar("code", { length: 64 }).primaryKey(),
   label: varchar("label", { length: 128 }).notNull(),
-  tone: varchar("tone", { length: 32 }).notNull().default("info"),
+  // No default: see migration 0030. `info` would be a claim, and a level
+  // seeded without a tone must fail rather than quietly become the calmest one.
+  tone: varchar("tone", { length: 32 }).notNull(),
   // Named to match the raw SQL. `.unique()` with no argument makes drizzle
   // derive `alarm_severities_rank_unique`, so `\d` and this file would describe
   // the same object under two names.

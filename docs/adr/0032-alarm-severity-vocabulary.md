@@ -5,7 +5,7 @@
 **Accepted** — 2026-08-18. Ruled by the repository owner while closing `F4.46`,
 after the row's own premise was found to be wrong (below).
 
-This ADR authorises DDL over live pilot data. Read decisions 3–6 before writing
+This ADR authorises DDL over live pilot data. Read decisions 1–6 before writing
 the migration.
 
 ## Context
@@ -19,8 +19,23 @@ occurrences — and its **Amendment 1** moved the other way: the `CHECK`
 constraints drafted for `automation_rules.category` and `assets.domain` were
 replaced by lookup tables and foreign keys, on the owner's explicit ruling
 (*"this product might incorporate other sectors as well … can you make it
-dynamic?"*). So severity's storage was **undecided**, not decided, and the row
-was building on a premise nobody had ruled.
+dynamic?"*).
+
+**But a live rule *had* decided it, and this ADR reverses that rule rather than
+merely filling a gap.** `AGENTS.md` §4.8 lists "a badge's *tone*, an operator, **a
+severity**" as examples of a closed vocabulary and instructs: "Declare it as a
+`z.enum`, back it with a `CHECK` if it is stored, and lean on exhaustive
+`switch`." That text is owner-approved — it landed in the `chore(agents):` sweep
+promoting ADR 0031 — and CLAUDE.md's precedence carve-out covers the status line
+and §6 only, not §4 code rules. The compliance review caught this ADR rebutting
+the backlog row's citation while never naming the document that actually said it.
+
+The owner ruled for the table, so the decision stands; what this ADR owes is the
+acknowledgement and a **`chore(agents):` sweep**, tracked in `BACKLOG.md` §5 per
+§10.1. Two sentences go stale on merge: §4.8's severity example, and §4.8's
+"**Two** contract fields are deliberately no longer enums: `category` and
+`assetDomain`" — now three. Editing `AGENTS.md` is not this change's to make
+(§9.10).
 
 Three facts decide it now.
 
@@ -60,7 +75,9 @@ behaviour needs, and a new level cannot be declared without it.
 ## Decision
 
 1. **`bms.alarm_severities`, keyed by `code`.** Columns: `code varchar(64)`
-   primary key, `label varchar(128) NOT NULL`, `tone varchar(32) NOT NULL`,
+   primary key, `label varchar(128) NOT NULL`, `tone varchar(32) NOT NULL` (no
+   default — `info` would be a claim, and a level seeded without a tone must
+   fail rather than quietly become the calmest one),
    `rank integer NOT NULL UNIQUE`, `active boolean NOT NULL DEFAULT true`,
    `created_at timestamptz NOT NULL DEFAULT now()`. `code` is the primary key
    rather than a surrogate uuid, for the reason ADR 0031 A1.2 already records:
@@ -157,7 +174,7 @@ None. No new npm package (AGENTS.md §9.4 is not engaged).
   migration review caught it before merge. The foreign key admits *every* code
   in `bms.alarm_severities` — that is the entire point of the design — so a rule
   seeded at `high` passed the FK, reached that method, and had its severity
-  rewritten to `warning` on every alarm it raised. The promise below would have
+  rewritten to `warning` on every alarm it raised. The promise above would have
   been false on the one path that matters most.
 
   The method now supplies only the default it genuinely owes — `null →

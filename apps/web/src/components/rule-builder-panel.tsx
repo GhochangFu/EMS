@@ -107,16 +107,29 @@ export function RuleBuilderPanel({
     staleTime: 5 * 60 * 1000,
   });
   const ruleCategories = vocabQ.data?.ruleCategories ?? [];
-  const alarmSeverities = vocabQ.data?.alarmSeverities ?? [];
+  // Memoised, and both of those matter. `severityFromRule` narrows against this
+  // array, so a fresh `[]` on every render would make the effect below either
+  // miss the vocabulary or re-run forever depending on the dependency list.
+  const alarmSeverities = useMemo(() => vocabQ.data?.alarmSeverities ?? [], [vocabQ.data]);
 
+  // **Gated on the vocabulary, and this is a write-path guard, not a cosmetic
+  // one.** `formFromRule` calls `severityFromRule`, which narrows against
+  // `alarmSeverities`; against an empty array it returns `null`. So if the rule
+  // was selected before `GET /api/v1/vocabularies` resolved, the form seeded
+  // `severity: null`, the control showed **None**, and saving any unrelated
+  // field then persisted that null over a real severity.
+  //
+  // That is round-trip corruption — `F4.46` finding (1) arriving through a load
+  // order instead of through `normalizeSeverity`, and its row calls that half
+  // "the reason this is `P0`". Found by the compliance review, not by a test.
   useEffect(() => {
-    if (!selectedRule) {
+    if (!selectedRule || !vocabQ.isSuccess) {
       return;
     }
     setForm(formFromRule(selectedRule, alarmSeverities));
     setPreview(null);
     setError(null);
-  }, [selectedRule]);
+  }, [selectedRule, alarmSeverities, vocabQ.isSuccess]);
 
   const assets = catalogQ.data?.assets ?? [];
   const selectedAsset = assets.find((asset) => asset.id === form.assetId);

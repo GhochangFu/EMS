@@ -156,7 +156,7 @@ export type AssetDomainDto = z.infer<typeof Op.assetDomainDtoSchema>;
 export type AlarmSeverityDto = z.infer<typeof Op.alarmSeverityDtoSchema>;
 /** The `StatusPill` palette, as a type. Closed; see `pillToneSchema`. */
 export type PillTone = z.infer<typeof Op.pillToneSchema>;
-/** `GET /api/v1/vocabularies` — both axes, so a page renders neither half-loaded. */
+/** `GET /api/v1/vocabularies` — all three open vocabularies, so a page renders none half-loaded. */
 export type VocabulariesResponse = z.infer<typeof Op.vocabulariesResponseSchema>;
 export type AutomationRuleOperator = z.infer<typeof Op.automationRuleOperatorSchema>;
 export type AutomationRuleSeverity = z.infer<typeof Op.automationRuleSeveritySchema>;

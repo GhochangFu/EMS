@@ -300,14 +300,21 @@ describe("F4.46 no-severity affordance", () => {
     // pinning the exact call text.
     expect(panel).toMatch(/severityFromRule\(rule\.severity\s*,/);
 
-    // The hardcoded `<option>` list is the F4.43/F4.44 shape: a `<select>`
-    // whose value can sit outside its own options renders the first one, and
-    // Save then writes a severity nobody chose. With the vocabulary open it
-    // would also hide any newly seeded level. Options must come from the data.
+    // A hardcoded `<option>` list is the F4.43/F4.44 shape: a `<select>` whose
+    // value can sit outside its own options renders the first one, and Save
+    // then writes a severity nobody chose. With the vocabulary open it would
+    // also hide any newly seeded level.
+    //
+    // **Asserted as the positive construct, not as the absence of a literal.**
+    // The first version of this guard was `/<option value="critical">/` -> false,
+    // which §4.4 calls a decoy: `<option value='critical'>`,
+    // `<option value={"critical"}>`, or a list starting at `info` all walk
+    // through it and report success. What actually has to be true is that the
+    // options come from the data.
     expect(
-      /<option value="critical">/.test(panel),
-      "rule-builder-panel.tsx hardcodes severity options again. Render them " +
-        "from the `alarmSeverities` vocabulary (ADR 0032).",
-    ).toBe(false);
+      panel,
+      "rule-builder-panel.tsx must render severity options from the " +
+        "`alarmSeverities` vocabulary (ADR 0032), not from a literal list.",
+    ).toMatch(/\{alarmSeverities\.map\(/);
   });
 });

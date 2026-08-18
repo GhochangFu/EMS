@@ -131,7 +131,7 @@ export class AssetTemplatesAdminService {
     // stamps it onto every asset built from it, so a bad code caught later
     // surfaces on someone else's batch, long after the form that set it.
     await this.vocabularies.assertAssetDomain(body.domain);
-    await this.assertTemplateAlarmCategories(body.content);
+    await this.assertTemplateAlarmVocabularies(body.content);
     if (body.content) {
       this.assertContentRefsResolve(body.content, body.points);
     }
@@ -201,7 +201,7 @@ export class AssetTemplatesAdminService {
     if (body.domain !== undefined) {
       await this.vocabularies.assertAssetDomain(body.domain);
     }
-    await this.assertTemplateAlarmCategories(body.content);
+    await this.assertTemplateAlarmVocabularies(body.content);
     if (body.content) {
       // The effective point set: what this request carries when it carries
       // points, and what is already stored when it does not. A `PATCH` that
@@ -286,7 +286,7 @@ export class AssetTemplatesAdminService {
     //
     // `create` and `update` already called this on the *incoming* body; the gap
     // was only ever on stored content, which is exactly what publish reads.
-    await this.assertTemplateAlarmCategories(storedContent);
+    await this.assertTemplateAlarmVocabularies(storedContent);
 
     const now = new Date();
     await this.db
@@ -573,46 +573,60 @@ export class AssetTemplatesAdminService {
    * of the `electrical` bug this whole ADR is unwinding, where a value sat
    * unnoticed in the database for as long as it took someone to look.
    */
-  private async assertTemplateAlarmCategories(
+  private async assertTemplateAlarmVocabularies(
     content: TemplateContentParsed | undefined,
   ): Promise<void> {
-    const categories = (content?.alarms ?? [])
-      .map((alarm) => alarm.category)
-      .filter((category): category is string => typeof category === "string");
+    const alarms = content?.alarms ?? [];
+    if (alarms.length === 0) {
+      return;
+    }
+
+    // ADR 0032. `severity` was a `z.enum` until then, so `templateContentSchema`
+    // rejected an unknown value by itself; with the vocabulary in the database
+    // the schema checks shape only, and without a check here a template could
+    // author an alarm at a severity the rule engine cannot run — the drift ADR
+    // 0019 §3 exists to prevent. `category` moved the same way under ADR 0031
+    // Amendment 1.
+    //
+    // **Neither branch calls `assertRuleCategory` / `assertAlarmSeverity`, and
+    // that is the point of writing them out.** Those methods echo the rejected
+    // code back, which is right for a value the caller just typed into a request
+    // body and wrong here: this runs over *stored* content, and pre-ADR rows
+    // hold arbitrary JSON written by whoever. Echoing would turn a publish
+    // rejection into a disclosure channel for whatever the row happens to hold.
+    //
+    // The severity half was written this way first and the category half was
+    // not, which the security review caught: `publish` began calling this method
+    // in the same commit, so the echoing category branch was newly reachable
+    // over stored content. Both are non-echoing now — they name the path and
+    // list the expected codes, and nothing else.
+    const [{ ruleCategories: liveCategories, alarmSeverities: liveSeverities }] = [
+      await this.vocabularies.list(),
+    ];
 
     // `category` is optional on a template alarm, so an absent one is not a
     // failure — it means "unspecified", and the rule builder's default applies
     // if this ever becomes a rule.
-    for (const category of new Set(categories)) {
-      await this.vocabularies.assertRuleCategory(category);
+    const liveCategoryCodes = new Set(liveCategories.map((row) => row.code));
+    const badCategory = alarms.findIndex(
+      (alarm) => typeof alarm.category === "string" && !liveCategoryCodes.has(alarm.category),
+    );
+    if (badCategory >= 0) {
+      throw new BadRequestException(
+        `content.alarms.${badCategory}.category is not a live category. Expected one of: ${[
+          ...liveCategoryCodes,
+        ].join(", ")}.`,
+      );
     }
 
-    // ADR 0032, and this arrived with it rather than being an oversight before.
-    // `severity` is REQUIRED on a template alarm, and until ADR 0032 it was a
-    // `z.enum`, so `templateContentSchema` rejected an unknown value by itself —
-    // `asset-templates-content.schema.spec.ts` asserted exactly that for
-    // `major` and `minor`. With the vocabulary moved into the database the
-    // schema checks shape only, so without this a template could author an
-    // alarm at a severity the rule engine cannot run, which is the drift ADR
-    // 0019 §3 exists to prevent.
-    //
-    // **It deliberately does NOT call `assertAlarmSeverity`.** That method
-    // echoes the rejected code back, which is right for a value the caller just
-    // typed into a request body and wrong here: this validates *stored* content
-    // on publish, and `asset-templates.lifecycle.integration.spec.ts` exists
-    // because pre-ADR rows hold arbitrary JSON written by whoever — its fixture
-    // puts an `s3://` URL in this exact field and asserts the error names the
-    // path without repeating the value. Echoing it would turn a publish
-    // rejection into a disclosure channel for whatever the row happens to hold.
-    const severities = content?.alarms ?? [];
-    if (severities.length > 0) {
-      const live = new Set((await this.vocabularies.list()).alarmSeverities.map((s) => s.code));
-      const index = severities.findIndex((alarm) => !live.has(alarm.severity));
-      if (index >= 0) {
-        throw new BadRequestException(
-          `content.alarms.${index}.severity is not a live severity. Expected one of: ${[...live].join(", ")}.`,
-        );
-      }
+    const liveSeverityCodes = new Set(liveSeverities.map((row) => row.code));
+    const badSeverity = alarms.findIndex((alarm) => !liveSeverityCodes.has(alarm.severity));
+    if (badSeverity >= 0) {
+      throw new BadRequestException(
+        `content.alarms.${badSeverity}.severity is not a live severity. Expected one of: ${[
+          ...liveSeverityCodes,
+        ].join(", ")}.`,
+      );
     }
   }
 

@@ -329,11 +329,14 @@ export const alarmSeverityDtoSchema = z.object({
 });
 
 /**
- * `GET /api/v1/vocabularies` — both axes in one response.
+ * `GET /api/v1/vocabularies` — all three open vocabularies in one response.
  *
- * One endpoint rather than two because every consumer needs both together: the
- * rules page renders a concern badge beside a plant badge, and a single query
- * means a single cache key and no half-loaded render.
+ * One endpoint rather than three because every consumer needs them together:
+ * the rules page renders a concern badge beside a plant badge and a severity
+ * control, and a single query means a single cache key and no half-loaded
+ * render. It was two axes until ADR 0032 added `alarmSeverities`; the argument
+ * for one endpoint got stronger rather than weaker, since the alarms page needs
+ * the severity list before it can classify a single row.
  */
 export const vocabulariesResponseSchema = z.object({
   ruleCategories: z.array(ruleCategoryDtoSchema),

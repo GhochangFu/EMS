@@ -5,11 +5,13 @@ import { VocabulariesService } from "./vocabularies.service";
 
 /**
  * `GET /api/v1/vocabularies` — the rule-concern and plant-domain vocabularies
- * (ADR 0031 Amendment 1).
+ * (ADR 0031 Amendment 1) and the alarm-severity one (ADR 0032).
  *
- * One endpoint rather than two: every consumer needs both together — the rules
- * page renders a concern badge beside a plant badge — so one request means one
- * cache key and no half-loaded render.
+ * One endpoint rather than three: every consumer needs them together — the
+ * rules page renders a concern badge beside a plant badge and a severity
+ * control — so one request means one cache key and no half-loaded render. ADR
+ * 0032 strengthened that argument rather than weakening it: the alarms page
+ * cannot classify a single row until the severity list has arrived.
  *
  * **Not scoped by asset access, deliberately.** These are product-level
  * reference lists, not tenant data: knowing that `hvac` is a valid domain

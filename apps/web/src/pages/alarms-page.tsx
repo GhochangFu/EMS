@@ -160,6 +160,20 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
    */
   const showUnrecognised = vocabQ.isSuccess && summary.unrecognised > 0;
 
+  /**
+   * Whether the three severity counts are a claim about the plant at all.
+   *
+   * Without the vocabulary every severity is unresolvable, so `critical`,
+   * `major` and `minor` are all 0 — and `Critical` carries `emptyLabel="all
+   * clear"`, which is an affirmative statement of calm rather than a neutral
+   * zero. Rendering that beside a table listing 25 open alarms is `F4.46`
+   * finding (2) re-entering by a different door: the board saying calm when it
+   * is not. The compliance review caught it; the earlier fix gated only the
+   * sixth card, which is not enough on the error path, where the state is
+   * permanent and silent once the retries are exhausted.
+   */
+  const severityReady = vocabQ.isSuccess;
+
   function submitAck(e: FormEvent): void {
     e.preventDefault();
     if (!ackTarget) {
@@ -205,12 +219,25 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           fix would move unrecognised rows out of `Minor` and into nothing at
           all, under-reporting the board instead of mis-reporting it.
         */}
+        {vocabQ.isError ? (
+          <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+            Severity classification is unavailable — the vocabulary could not be
+            loaded, so the counts below are not a reading of the plant. The alarm
+            list itself is unaffected; severities render in their stored form.
+          </p>
+        ) : null}
+
         <div
           className={`grid gap-3 sm:grid-cols-2 ${
             showUnrecognised ? "lg:grid-cols-6" : "lg:grid-cols-5"
           }`}
         >
-          <AlarmSummaryCard label="Critical" value={summary.critical} tone="critical" emptyLabel="all clear" />
+          <AlarmSummaryCard
+            label="Critical"
+            value={summary.critical}
+            tone="critical"
+            emptyLabel={severityReady ? "all clear" : undefined}
+          />
           <AlarmSummaryCard label="Major" value={summary.major} tone="warning" />
           <AlarmSummaryCard label="Minor" value={summary.minor} tone="info" />
           <AlarmSummaryCard label="Active (Unack)" value={summary.active} tone="ok" />
