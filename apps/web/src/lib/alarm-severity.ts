@@ -67,6 +67,22 @@ export function alarmSeverityTone(severity: string): AlarmSeverityTone {
  * bucket is now an equality test and unknowns have their own counter, so the
  * four always sum to the number of rows: a value we cannot classify can no
  * longer hide inside one we can.
+ *
+ * **How reachable is the unknown case? Through the product's own write path,
+ * it is not** — worth stating plainly rather than leaving the card looking
+ * livelier than it is. `AlarmThresholdService.normalizeSeverity`
+ * (`alarm-threshold.service.ts:138`) is the only rule-driven writer of
+ * `bms.alarms.severity`, and it collapses anything outside the three values —
+ * `null` included — to `"warning"` before the insert. That default is
+ * deliberate and documented (`alarms.severity` is `NOT NULL`, and `F4.46`'s
+ * write-path fix moved the defaulting *to* that edge on purpose).
+ *
+ * So this is a **boundary guard, not a live path**. It earns its place because
+ * the boundary is genuinely open: the column is `varchar(32)` with no `CHECK`
+ * (`bms-schema.ts:429`) and the read contract is `z.string()`
+ * (`contracts/operations.ts:82`), so a second writer, a direct `INSERT`, or a
+ * migration is all it takes. The page's job is to not lie about a value it
+ * cannot read, whoever wrote it.
  */
 export type AlarmSeveritySummary = {
   critical: number;
@@ -75,6 +91,15 @@ export type AlarmSeveritySummary = {
   unrecognised: number;
 };
 
+/**
+ * Counts one page of alarm severities into the four buckets above.
+ *
+ * Every input increments exactly one counter, so the four always sum to
+ * `severities.length` — the property the summary row depends on and the reason
+ * `unrecognised` exists at all rather than the unknown case simply being
+ * dropped. Asserted in `alarm-severity.spec.ts`, including over an input made
+ * only of unknowns.
+ */
 export function summariseAlarmSeverities(
   severities: readonly string[],
 ): AlarmSeveritySummary {

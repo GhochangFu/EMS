@@ -262,6 +262,16 @@ export class DashboardService {
           -- 2026-08-18: bms.alarms holds warning 20 / critical 19 / info 1.
           -- The predicate matched nothing, so dropping it changes no count; it
           -- stops the query implying a vocabulary that does not exist.
+          --
+          -- These two sub-counts name two severities and count only those, so a
+          -- row holding anything else is in open_alarm_count and in neither of
+          -- them. That asymmetry is deliberate and it is NOT introduced here:
+          -- the old predicate excluded every unrecognised value too, except the
+          -- single literal 'major' that never occurs. Widening either sub-count
+          -- to absorb unknowns would be the mirror of the bug F4.46 just fixed
+          -- on the web side -- counting a value we cannot classify as one we
+          -- can. If the unknown case ever needs to be visible here, it wants
+          -- its own unrecognised_alarm_count, not a wider WHERE.
           COUNT(*) FILTER (
             WHERE al.acknowledged_at IS NULL AND al.severity = 'warning'
           )::int AS warning_alarm_count,
