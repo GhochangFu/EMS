@@ -4,10 +4,10 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
+  assertConstraintReachesEveryChunk,
   assertFiniteValueStillAccepted,
   assertNonFiniteValuesAreRejected,
   assertPrescribedIdiomWouldNotHaveWorked,
-  cleanup,
 } from "./finite-value-check.integration.spec";
 
 /**
@@ -32,14 +32,16 @@ const connectionString = requireIntegrationDb({
 describe.skipIf(!connectionString)("F4.32 finite telemetry values", () => {
   let pool: pg.Pool;
 
+  // No cleanup hook, and that is the design rather than an omission: every
+  // insert this suite makes is rolled back, so it writes nothing to clean up.
+  // A DELETE-based cleanup would also have been a lie on a hypertable, since a
+  // continuous aggregate that absorbed the row is not repaired by removing it.
   beforeAll(async () => {
     pool = await openIntegrationPool(connectionString as string, "F4.32");
-    await cleanup(pool);
   });
 
   afterAll(async () => {
     if (pool) {
-      await cleanup(pool);
       await pool.end();
     }
   });
@@ -54,5 +56,9 @@ describe.skipIf(!connectionString)("F4.32 finite telemetry values", () => {
 
   it("records why `CHECK (value = value)` was not used", async () => {
     await assertPrescribedIdiomWouldNotHaveWorked(pool);
+  });
+
+  it("reaches every chunk, not just the hypertable parent", async () => {
+    await assertConstraintReachesEveryChunk(pool);
   });
 });

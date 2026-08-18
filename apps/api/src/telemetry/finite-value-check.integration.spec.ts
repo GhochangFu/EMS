@@ -9,33 +9,48 @@ function assert(condition: boolean, message: string): void {
 const ASSET = "00000000-0000-4000-8000-0000f4320001";
 const POINT = "f4_32_probe";
 
-/** Removes anything this suite wrote, whatever it managed to write. */
-export async function cleanup(pool: pg.Pool): Promise<void> {
-  await pool.query(`DELETE FROM telemetry.point_values WHERE point_key = $1`, [POINT]);
-}
-
 /**
- * Attempts one insert and reports whether the database refused it.
+ * Runs one insert inside a transaction that is **always rolled back**, and
+ * reports whether the database refused it.
+ *
+ * **Nothing here commits, deliberately.** The first version of this suite
+ * committed its probe row into whatever `DATABASE_URL` names, which is the exact
+ * hazard migration `0031`'s own exception message warns about: a raw row that a
+ * continuous aggregate absorbs cannot be un-absorbed by deleting it (AGENTS.md
+ * §4.4), so a `DELETE`-based cleanup is not a cleanup. Proving that a `CHECK`
+ * rejects a value never needs a commit — and the round-trip assertion still sees
+ * its own insert, because a transaction reads its own writes.
  *
  * The value is passed as **text** and cast in SQL rather than bound as a JS
  * number, because `node-postgres` serialises `NaN` and `Infinity` in ways that
- * would make this test about the driver rather than about the constraint.
+ * would make this a test of the driver rather than of the constraint.
  */
-async function insertRejected(pool: pg.Pool, literal: string): Promise<boolean> {
+async function withRolledBackInsert<T>(
+  pool: pg.Pool,
+  literal: string,
+  onInserted: (client: pg.PoolClient) => Promise<T>,
+): Promise<{ rejected: boolean; result?: T }> {
+  const client = await pool.connect();
   try {
-    await pool.query(
-      `INSERT INTO telemetry.point_values ("time", asset_id, point_key, value)
-       VALUES (now(), $1::uuid, $2, $3::float8)`,
-      [ASSET, POINT, literal],
-    );
-    return false;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    assert(
-      /point_values_value_finite_check/.test(message),
-      `insert of ${literal} failed for the wrong reason: ${message}`,
-    );
-    return true;
+    await client.query("BEGIN");
+    try {
+      await client.query(
+        `INSERT INTO telemetry.point_values ("time", asset_id, point_key, value)
+         VALUES (now(), $1::uuid, $2, $3::float8)`,
+        [ASSET, POINT, literal],
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      assert(
+        /point_values_value_finite_check/.test(message),
+        `insert of ${literal} failed for the wrong reason: ${message}`,
+      );
+      return { rejected: true };
+    }
+    return { rejected: false, result: await onInserted(client) };
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
   }
 }
 
@@ -65,31 +80,39 @@ async function insertRejected(pool: pg.Pool, literal: string): Promise<boolean> 
  * The range form rejects `NaN` *because of* that same ordering rule, and covers
  * `±Infinity` as well — which matches what the normaliser actually guarantees
  * (finite), rather than the narrower not-NaN the prescribed form aimed at.
- *
- * The `assertFiniteValueStillAccepted` case is the half that is easy to leave
- * out: a constraint that rejects everything would pass every case above it.
  */
 export async function assertNonFiniteValuesAreRejected(pool: pg.Pool): Promise<void> {
   for (const literal of ["NaN", "Infinity", "-Infinity"]) {
+    const { rejected } = await withRolledBackInsert(pool, literal, async () => undefined);
     assert(
-      await insertRejected(pool, literal),
+      rejected,
       `the database accepted ${literal} into telemetry.point_values.value — ` +
         `point_values_value_finite_check is missing or too weak`,
     );
   }
 }
 
-/** The other direction: ordinary readings must still be writable. */
+/**
+ * The other direction, and the half that is easy to leave out: a constraint
+ * rejecting *everything* would satisfy every case above.
+ */
 export async function assertFiniteValueStillAccepted(pool: pg.Pool): Promise<void> {
-  const rejected = await insertRejected(pool, "42.5");
-  assert(!rejected, "the constraint rejected a finite value — it is too strict");
+  const { rejected, result } = await withRolledBackInsert(pool, "42.5", async (client) => {
+    // Bounded by `time` as well as `point_key`. Without a time predicate this
+    // scans all 17 chunks and decompresses 6 of them — cheap on the pilot,
+    // not cheap later, and the aggregates exist precisely so reads do not do
+    // that.
+    const { rows } = await client.query<{ value: number }>(
+      `SELECT value FROM telemetry.point_values
+        WHERE point_key = $1 AND "time" > now() - interval '1 minute'`,
+      [POINT],
+    );
+    return rows;
+  });
 
-  const { rows } = await pool.query<{ value: number }>(
-    `SELECT value FROM telemetry.point_values WHERE point_key = $1`,
-    [POINT],
-  );
-  assert(rows.length === 1, `expected exactly one probe row, found ${rows.length}`);
-  assert(Number(rows[0].value) === 42.5, `probe row round-tripped as ${rows[0].value}`);
+  assert(!rejected, "the constraint rejected a finite value — it is too strict");
+  assert(result !== undefined && result.length === 1, `expected one probe row, found ${result?.length}`);
+  assert(Number(result?.[0].value) === 42.5, `probe row round-tripped as ${result?.[0].value}`);
 }
 
 /**
@@ -97,8 +120,8 @@ export async function assertFiniteValueStillAccepted(pool: pg.Pool): Promise<voi
  * is a *test* rather than a comment somebody has to trust.
  *
  * If a future Postgres ever adopted IEEE 754 comparison semantics this would
- * fail, which is the correct outcome: the migration's central claim would have
- * stopped being true and someone should look.
+ * fail, which is the correct outcome: migration `0031`'s central claim would
+ * have stopped being true and someone should look.
  */
 export async function assertPrescribedIdiomWouldNotHaveWorked(pool: pg.Pool): Promise<void> {
   const { rows } = await pool.query<{ eq: boolean }>(
@@ -108,5 +131,34 @@ export async function assertPrescribedIdiomWouldNotHaveWorked(pool: pg.Pool): Pr
     rows[0].eq === true,
     "Postgres now reports NaN <> NaN. `CHECK (value = value)` would work after " +
       "all, and migration 0031's reasoning needs revisiting.",
+  );
+}
+
+/**
+ * The constraint reaches every chunk, not just the parent.
+ *
+ * TimescaleDB attaches chunks by PostgreSQL inheritance, and PostgreSQL refuses
+ * to attach a child lacking the parent's `CHECK` — so this holds for chunks
+ * created in the future too. Asserted because the migration review raised it and
+ * "it should propagate" is not the same as "it did".
+ */
+export async function assertConstraintReachesEveryChunk(pool: pg.Pool): Promise<void> {
+  const { rows } = await pool.query<{ parents: string; children: string }>(
+    `SELECT count(*) FILTER (WHERE conrelid = 'telemetry.point_values'::regclass) AS parents,
+            count(*) FILTER (WHERE conrelid <> 'telemetry.point_values'::regclass) AS children
+       FROM pg_constraint WHERE conname = 'point_values_value_finite_check'`,
+  );
+  const parents = Number(rows[0].parents);
+  const children = Number(rows[0].children);
+
+  assert(parents === 1, `expected the constraint on the hypertable parent, found ${parents}`);
+
+  const { rows: chunkRows } = await pool.query<{ n: string }>(
+    `SELECT count(*) AS n FROM timescaledb_information.chunks
+      WHERE hypertable_name = 'point_values'`,
+  );
+  assert(
+    children === Number(chunkRows[0].n),
+    `constraint is on ${children} chunks but the hypertable has ${chunkRows[0].n}`,
   );
 }
