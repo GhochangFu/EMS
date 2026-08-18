@@ -18,6 +18,24 @@ export const pointValues = telemetrySchema.table(
     time: timestamp("time", { withTimezone: true }).notNull(),
     assetId: uuid("asset_id").notNull(),
     pointKey: varchar("point_key", { length: 128 }).notNull(),
+    /**
+     * `F4.32`: constrained to a **finite** value by
+     * `point_values_value_finite_check` (migration `0031`), not merely to
+     * NOT NULL.
+     *
+     * `NaN` and `±Infinity` are legal `double precision` values in Postgres.
+     * They survive `SUM`/`AVG`, and because Postgres sorts `NaN` above every
+     * other value so that float columns can be indexed, `MAX` returns it too.
+     * Until `0031` the only thing keeping them out lived in *another
+     * application* — the ingest normaliser — so any direct writer could store
+     * one, and one row made `/reports/energy/export.csv` a persistent 500.
+     *
+     * **The constraint is a range test, not the `CHECK (value = value)` that
+     * `F4.32` prescribed.** That idiom relies on IEEE 754's `NaN != NaN`, which
+     * PostgreSQL deliberately does not implement — it defines `NaN = NaN` as
+     * true precisely so the value can be sorted and indexed. The prescribed
+     * form is therefore a no-op here; it was tested and accepted `'NaN'`.
+     */
     value: doublePrecision("value").notNull(),
     unit: varchar("unit", { length: 32 }),
   },
