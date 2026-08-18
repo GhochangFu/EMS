@@ -240,7 +240,7 @@ None. No package is added or upgraded, so §9.4 is not engaged.
   which is what the §3 entry above is for. This is a different answer from ADRs
   0022–0025 and is stated affirmatively.
 
-## Open question — leading whitespace, unresolved on purpose
+## Open question — leading whitespace — **RESOLVED, and the answer was a bypass**
 
 `FORMULA_LEADERS` is OWASP's six. A value led by **U+0020, U+00A0 or U+FEFF**
 passes `csvTextCell` completely unmodified and unquoted: no leader match, no quote
@@ -264,47 +264,58 @@ deferred work only inside an ADR is how ADR 0016 §6 commit 4 stayed unowned, an
 this is the item with the most exposure of anything this ADR defers: it bears on
 already-shipped code in *both* exports.
 
-### Result so far — one parser of three, 2026-08-18 (`F4.31`)
+### RESOLVED 2026-08-18 (`F4.31`) — there **was** a bypass, in Google Sheets
 
-**Excel: no bypass.** Reproduce it with `pnpm csv:formula-probe`, which builds the
-file through the *real* `csvTextCell` rather than by hand.
+**This section used to say the best available reading was that no parser strips
+such a prefix and evaluates. That reading was wrong.**
 
-| Payload | First char | Excel showed | Evaluated? |
-|---|---|---|---|
-| `=1+1` (guarded) | `U+0027` | `'=1+1` | no |
-| `U+0020` + `=1+1` | `U+0020` | ` =1+1` | **no** |
-| `U+00A0` + `=1+1` | `U+00A0` | ` =1+1` | **no** |
-| `U+FEFF` + `=1+1` | `U+FEFF` | `﻿=1+1` | **no** |
-| `=1+1` **unguarded control** | `U+003D` | `2` | **yes** |
+`pnpm csv:formula-probe` builds the file through the real `csvTextCell`; it was
+imported into three parsers, each with an **unguarded control cell** in the same
+file so that "nothing evaluated" could be told apart from "this parser never
+evaluates".
 
-The control is what makes the negative result mean anything: Excel *does*
-evaluate an unguarded formula in the same file, so "nothing evaluated" is not
-"nothing could have".
+| Payload | Google Sheets | Excel 2013 |
+|---|---|---|
+| `=1+1` (guarded) | text | text |
+| **`U+0020` + `=1+1`** | **`2` — EVALUATED** | text |
+| `U+00A0` + `=1+1` | text | text |
+| `U+FEFF` + `=1+1` | text | text |
+| `=1+1` **unguarded control** | `2` | `2` |
 
-**Two caveats, both material, neither rounded away.**
+**Google Sheets strips a single leading space and evaluates what is underneath.**
+The control evaluated in the same import, so this is a real result and not an
+artifact of the import settings. It had shipped in **both** CSV exports since
+`73a9fd2` (`F4.14`) — `F4.29` inherited it rather than introducing it, exactly as
+this ADR predicted, but the prediction that it was harmless was the wrong half.
 
-**It was Excel 2013 (15.0.4454.1503), not the Excel 365 the task named.** That is
-what is installed here. A 365 result may differ and the row stays open for it.
+**The fix is the class, not the instance** (AGENTS.md §4.4). `csvTextCell` now
+guards when *either* the raw value **or** the value with leading whitespace
+stripped begins with a formula leader. Adding `" "` to `FORMULA_LEADERS` would
+have closed precisely the one payload the probe happened to use; the trimming
+form also covers `"  =1+1"`, a mixed run of all three characters, and anything
+else a parser might strip. Both checks are kept: TAB and CR are leaders *and*
+whitespace, so they trim away to nothing, and replacing the raw test with the
+trimmed one would silently unguard them while every existing test passed.
 
-**The first run silently tested nothing, and the reason is worth carrying.**
-`apps/api` sends `Content-Type: text/csv; charset=utf-8` but writes **no BOM**,
-and Excel ignores that header when opening a file — it decoded as ANSI, so
-`U+00A0` arrived as `Â`+NBSP and `U+FEFF` as `ï»¿`. Both then begin with a
-*letter*, which is trivially not a formula, so two of the four cases passed
-without ever being asked the question. The probe now writes **two** files, with
-and without a BOM, and the table above is from the BOM file. A result from the
-no-BOM file alone is not an answer.
+**Two things the run itself taught, both worth keeping.**
 
-That mis-decoding is its own small finding about the shipped export, separate
-from formula injection: **non-ASCII text in either CSV renders as mojibake in
-Excel today.** An asset or site name with an accent is enough. Not fixed here —
-adding a BOM changes every consumer of both endpoints — and not folded into
-`F4.31`, whose question is injection.
+*The first attempt tested nothing.* `apps/api` sends
+`Content-Type: text/csv; charset=utf-8` but writes **no BOM**, and Excel ignores
+that header when opening a file — it decoded ANSI, so `U+00A0` arrived as
+`Â`+NBSP and `U+FEFF` as `ï»¿`. Both then begin with a *letter*, trivially not a
+formula, so two of four cases passed without being asked the question. The probe
+now emits two files, with and without a BOM. Sheets reads UTF-8 natively and
+needs only the plain one.
 
-**Still open: LibreOffice and Google Sheets.** LibreOffice is not installed here.
-The Sheets check needs the file in a Drive account and was not run. Until both
-are done the leader list must not be widened *or* declared safe on this evidence
-— one parser is one parser.
+*That same missing BOM is a separate, live defect.* **Non-ASCII text in either
+CSV renders as mojibake in Excel today** — an accented site or asset name is
+enough. Not fixed here: adding a BOM changes every consumer of both endpoints,
+and it is not a formula-injection question.
+
+**Still untested: LibreOffice 7.x**, which is not installed in this environment.
+The guard is now strictly stronger than it was, so LibreOffice cannot be
+*newly* exposed by this change — but the row stays open until someone runs it,
+because a third parser might strip something `trimStart` does not.
 
 Related, and the reason the mechanism matters: the original comment on that list
 said TAB and CR were "stripped as leading whitespace on import". They are not —

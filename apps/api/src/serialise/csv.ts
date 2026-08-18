@@ -36,12 +36,21 @@ export type CsvField = string & { readonly [csvFieldBrand]: "escaped" };
  * passed, because the specs iterate their own copy of this list and would be
  * edited alongside it.
  *
- * Leading U+0020, U+00A0 and U+FEFF are deliberately **not** here. OWASP's set
- * stops at these six, and a leading space is itself one of the commonly cited
- * text-forcing prefixes. Neither review could verify the behaviour of the three
- * closed-source import parsers, and neither would name a bypass it had not
- * reproduced — see ADR 0026 "Open question". Do not add characters here on
- * reasoning alone; open one file in Excel, LibreOffice and Sheets first.
+ * **Leading whitespace is handled separately, and it is not theoretical.**
+ * ADR 0026 left it an open question — a value led by U+0020, U+00A0 or U+FEFF
+ * passed this list unmatched. `F4.31` ran the experiment, and **Google Sheets
+ * evaluated a cell led by a single U+0020 space**: `" =1+1"` imported as `2`.
+ * The unguarded control in the same file also evaluated, so that is a real
+ * result and not an artifact. Excel 2013 did not evaluate any of the three, and
+ * Sheets did not evaluate U+00A0 or U+FEFF — but one parser evaluating is
+ * enough, and this list is shared by both CSV exports.
+ *
+ * The fix is in `csvTextCell` rather than here, and it is deliberately the
+ * **class** and not the instance (AGENTS.md §4.4): the guard now also tests the
+ * value with leading whitespace stripped, so `"  =1+1"`, `"  =1+1"` and any
+ * other run of whitespace before a leader are covered — not only the single
+ * space that happened to be tested. Adding `" "` here would have fixed exactly
+ * the one case the probe used.
  *
  * Module-private on purpose. The specs assert against a **literal** copy of this
  * list, because a test that imports the constant cannot detect the constant
@@ -72,7 +81,21 @@ const FORMULA_LEADERS = ["=", "+", "-", "@", "\t", "\r"];
  * `/reports/energy/preview` stayed 200 on the same row.
  */
 export function csvTextCell(value: string): CsvField {
-  const guarded = FORMULA_LEADERS.some((lead) => value.startsWith(lead)) ? `'${value}` : value;
+  // **Both, and both are load-bearing** (`F4.31`).
+  //
+  // The trimmed check is the fix for the Sheets bypass: it strips a leading run
+  // of whitespace — U+0020, U+00A0, U+FEFF and any mixture — and asks whether a
+  // formula leader is underneath. `String.prototype.trimStart` covers all three
+  // characters ADR 0026 asked about, which was verified rather than assumed.
+  //
+  // The raw check cannot be dropped for it. TAB and CR are *themselves* leaders
+  // **and** whitespace, so a value that is a lone `"\t"` or `"\r"` trims to the
+  // empty string and matches nothing — replacing the raw test with the trimmed
+  // one would silently unguard exactly those two, while every existing test kept
+  // passing. Measured before writing this.
+  const leads = (candidate: string): boolean =>
+    FORMULA_LEADERS.some((lead) => candidate.startsWith(lead));
+  const guarded = leads(value) || leads(value.trimStart()) ? `'${value}` : value;
   if (/["\n\r,]/.test(guarded)) {
     return `"${guarded.replace(/"/g, '""')}"` as CsvField;
   }
