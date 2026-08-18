@@ -90,12 +90,30 @@ export function runTemplateContentSchemaTests(): void {
   const withAlarm = parse({ alarms: [alarm] });
   assert(withAlarm.alarms?.length === 1, "a valid alarm must parse");
 
-  // `packages/shared` AutomationRuleOperator has no `neq`, and severity is three
-  // values. A template authoring either would author an alarm the rule engine
-  // cannot run — which is the entire argument for importing the enums.
+  // `packages/shared` AutomationRuleOperator has no `neq`. A template authoring
+  // one would author an alarm the rule engine cannot run — which is the entire
+  // argument for importing the enum rather than restating it.
   rejects({ alarms: [{ ...alarm, operator: "neq" }] }, "`neq` is not a live operator");
-  rejects({ alarms: [{ ...alarm, severity: "major" }] }, "`major` is not a live severity");
-  rejects({ alarms: [{ ...alarm, severity: "minor" }] }, "`minor` is not a live severity");
+
+  // This used to assert the schema REJECTS `severity: "major"` and `"minor"`,
+  // and it did, because `severitySchema` was a `z.enum` of three values.
+  //
+  // **ADR 0032 moved that check, and this is the same trade ADR 0031 Amendment 1
+  // already made for `category` two lines down.** The severity vocabulary is
+  // `bms.alarm_severities` now, so the schema checks shape and
+  // `alarms_severity_fk` closes the set — which is what lets client ask `B9`
+  // add a fourth level with an INSERT instead of a migration. The alarm the
+  // rule engine cannot run is still refused; it is refused by
+  // `assertTemplateAlarmSeverities` in `asset-templates.service.ts`, one layer
+  // out, and by the foreign key underneath it.
+  //
+  // Asserting acceptance here is deliberate rather than an omission: it records
+  // that the boundary moved, so a future reader does not restore a `z.enum`
+  // here and silently re-close a vocabulary the owner ruled open.
+  assert(
+    templateContentSchema.safeParse({ alarms: [{ ...alarm, severity: "major" }] }).success,
+    "an unknown severity is now a shape-valid code — liveness is the service's check, not this schema's",
+  );
   assert(
     templateContentSchema.safeParse({ alarms: [{ ...alarm, category: "energy" }] }).success,
     "`energy` is a live rule category and must be accepted",

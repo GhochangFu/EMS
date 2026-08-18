@@ -610,6 +610,18 @@ export class RulesService {
     // anything performs.
     await this.vocabularies.assertRuleCategory(dto.category);
 
+    // ADR 0032. `severity` stopped being a `z.enum` when the vocabulary became
+    // data, so the request schema now checks shape only and this is where an
+    // unknown code becomes a 400 instead of a foreign-key 500.
+    //
+    // Guarded on null rather than asserted unconditionally: a rule may hold no
+    // severity — `F4.46`'s write-path fix established that, and
+    // `automation_rules.severity` is nullable — and a nullable foreign key does
+    // not check NULL against the referenced table, so neither does this.
+    if (dto.severity != null) {
+      await this.vocabularies.assertAlarmSeverity(dto.severity);
+    }
+
     const code = dto.code?.trim().toUpperCase();
     if (code) {
       const existingRules = await this.db

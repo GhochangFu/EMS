@@ -1,4 +1,8 @@
-import { DEFAULT_RULE_CATEGORY_CODE, ruleCategoryCodeSchema } from "@bms/shared";
+import {
+  automationRuleSeveritySchema,
+  DEFAULT_RULE_CATEGORY_CODE,
+  ruleCategoryCodeSchema,
+} from "@bms/shared";
 import { z } from "zod";
 
 /**
@@ -29,7 +33,21 @@ import { z } from "zod";
 export const categorySchema = ruleCategoryCodeSchema;
 const ruleTypeSchema = z.enum(["threshold", "time_window"]);
 export const operatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
-export const severitySchema = z.enum(["info", "warning", "critical"]);
+/**
+ * A rule's severity (ADR 0032) — shape only, and re-exported rather than
+ * declared here for the same reason `categorySchema` is.
+ *
+ * This was an enum until ADR 0032 made the vocabulary data. It now checks that
+ * a code is a plausible code; that it is a *live* one is checked by
+ * `VocabulariesService.assertAlarmSeverity`, and closed absolutely by
+ * `alarms_severity_fk` and `automation_rules_severity_fk`.
+ *
+ * ADR 0019 §3 binds template `content.alarms` to this same vocabulary, so the
+ * two must not drift into different notions of what a severity even looks like
+ * — which is why the template path gained its own `assertAlarmSeverity` call
+ * when this stopped rejecting unknown values by itself.
+ */
+export const severitySchema = automationRuleSeveritySchema;
 const actionTypeSchema = z.enum(["notify", "review", "trace_only"]);
 const daySchema = z.string().regex(/^(sun|mon|tue|wed|thu|fri|sat)$/);
 const timeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);

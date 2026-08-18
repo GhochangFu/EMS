@@ -232,6 +232,17 @@ export const automationRuleTypeSchema = z.enum(["threshold", "time_window"]);
  */
 export const ruleCategoryCodeSchema = z.string().min(1).max(64);
 export const assetDomainCodeSchema = z.string().min(1).max(64);
+/**
+ * A severity code (ADR 0032). Shape only, for the same reason as the two above:
+ * the set now lives in `bms.alarm_severities` and is closed by
+ * `alarms_severity_fk` / `automation_rules_severity_fk`, not by this file.
+ *
+ * **This used to be a `z.enum`**, and the change is worth knowing about: a
+ * string outside the live set no longer fails *here*. It fails at
+ * `VocabulariesService.assertAlarmSeverity` with a 400, or at the foreign key.
+ * `GET /api/v1/vocabularies` is where the live set comes from.
+ */
+export const alarmSeverityCodeSchema = z.string().min(1).max(64);
 
 /**
  * The concern a rule gets when nobody picks one.
@@ -288,6 +299,36 @@ export const assetDomainDtoSchema = z.object({
 });
 
 /**
+ * How a severity pill and summary card are styled (ADR 0032).
+ *
+ * Closed for the same reason `badgeToneSchema` is closed and for no other: it
+ * is presentation, owned by the frontend, and it keeps a SQL `CHECK`
+ * (`alarm_severities_tone_check`). These five are the `StatusPill` palette
+ * (`status-pill.tsx:3`) exactly — a sixth value here renders nothing.
+ *
+ * It is a *different* list from `badgeToneSchema` on purpose. That one styles a
+ * category badge and has `positive` / `informational` / `neutral`; this one
+ * styles an alarm and has `offline` / `ok`. Merging them would force one
+ * component's palette onto the other.
+ */
+export const pillToneSchema = z.enum(["critical", "warning", "info", "offline", "ok"]);
+
+/** One row of `bms.alarm_severities`. */
+export const alarmSeverityDtoSchema = z.object({
+  code: alarmSeverityCodeSchema,
+  label: z.string(),
+  tone: pillToneSchema,
+  /**
+   * Urgency. Higher is more urgent, and the seeded values are spaced by ten so
+   * a level can be added between two existing ones without renumbering live
+   * rows — see ADR 0032 decision 2. This is the column that lets an open
+   * vocabulary carry a column that has behaviour attached.
+   */
+  rank: z.number(),
+  active: z.boolean(),
+});
+
+/**
  * `GET /api/v1/vocabularies` — both axes in one response.
  *
  * One endpoint rather than two because every consumer needs both together: the
@@ -297,9 +338,16 @@ export const assetDomainDtoSchema = z.object({
 export const vocabulariesResponseSchema = z.object({
   ruleCategories: z.array(ruleCategoryDtoSchema),
   assetDomains: z.array(assetDomainDtoSchema),
+  /** ADR 0032. Ordered by `rank` ascending, so the array reads least- to most-urgent. */
+  alarmSeverities: z.array(alarmSeverityDtoSchema),
 });
 export const automationRuleOperatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
-export const automationRuleSeveritySchema = z.enum(["info", "warning", "critical"]);
+/**
+ * ADR 0032: a code, not a union. Was `z.enum(["info","warning","critical"])`.
+ * The set is closed by `bms.alarm_severities` and the two foreign keys; this
+ * checks shape only. See `alarmSeverityCodeSchema` for what moved and why.
+ */
+export const automationRuleSeveritySchema = alarmSeverityCodeSchema;
 export const automationRuleLifecycleStatusSchema = z.enum(["draft", "published", "archived"]);
 export const ruleExecutionStatusSchema = z.enum([
   "matched",

@@ -10,6 +10,7 @@ import type {
   AutomationRuleCategory,
   AutomationRuleCondition,
   AutomationRuleOperator,
+  AutomationRuleSeverity,
   AutomationRuleType,
   RuleBuilderCatalogAsset,
   RuleExecutionItem,
@@ -55,7 +56,13 @@ export type RuleDraftPayload = {
   pointKey?: string | null;
   operator?: AutomationRuleOperator | null;
   thresholdValue?: number | null;
-  severity?: "info" | "warning" | "critical" | null;
+  /**
+   * ADR 0032: a code, not a union. This was `"info" | "warning" | "critical"`,
+   * a restatement of an enum that no longer exists — the set lives in
+   * `bms.alarm_severities` and is closed by `automation_rules_severity_fk`.
+   * `null` is a rule that carries no severity (`F4.46`).
+   */
+  severity?: AutomationRuleSeverity | null;
   condition: AutomationRuleCondition;
   action: AutomationRuleAction;
 };

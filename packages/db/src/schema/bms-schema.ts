@@ -140,6 +140,38 @@ export const ruleCategories = bmsSchema.table("rule_categories", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * The alarm severity vocabulary (ADR 0032, migration 0030).
+ *
+ * `F4.46` asserted this column wanted a `CHECK`, citing ADR 0031. That citation
+ * does not hold — ADR 0031 does not mention severity, and its Amendment 1 moved
+ * the opposite way. Client ask `B9` may add a fourth level (`high`), and
+ * migrations here are forward-only, so a frozen set costs a migration and a
+ * deploy the week the answer arrives.
+ *
+ * **`rank` is what makes an open set safe for a column with behaviour attached.**
+ * Unlike `category`, which ADR 0031 checked and found inert, severity orders by
+ * urgency and selects a colour. A value declared with neither would arrive
+ * unsortable and unstyled — the `F4.43` failure again — so the table carries
+ * both and a level cannot be declared without them. Higher `rank` is more
+ * urgent, and the seeded values are spaced by ten (10/20/30) so `high` fits at
+ * 25 without renumbering live rows. `UNIQUE`: two levels with the same urgency
+ * have no defined order.
+ *
+ * `tone` is a *presentation* vocabulary owned by the frontend, and that one is
+ * genuinely closed, so it keeps a SQL `CHECK` (`alarm_severities_tone_check`)
+ * rather than a table of its own — the same line ADR 0031 drew for
+ * `rule_categories.tone`. Its five values are the `StatusPill` palette.
+ */
+export const alarmSeverities = bmsSchema.table("alarm_severities", {
+  code: varchar("code", { length: 64 }).primaryKey(),
+  label: varchar("label", { length: 128 }).notNull(),
+  tone: varchar("tone", { length: 32 }).notNull().default("info"),
+  rank: integer("rank").notNull().unique(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const assets = bmsSchema.table("assets", {
   id: uuid("id").primaryKey().defaultRandom(),
   code: varchar("code", { length: 64 }).notNull().unique(),
@@ -426,7 +458,13 @@ export const alarms = bmsSchema.table("alarms", {
     .notNull()
     .references(() => assets.id),
   ruleKey: varchar("rule_key", { length: 64 }),
-  severity: varchar("severity", { length: 32 }).notNull(),
+  // ADR 0032: `alarms_severity_fk` (migration 0030) is what closes this column.
+  // It was `varchar(32)` with no constraint, so the only thing keeping it clean
+  // was that every writer happened to be well-behaved — `F4.46` found the page
+  // reading it defensively for exactly that reason.
+  severity: varchar("severity", { length: 32 })
+    .notNull()
+    .references(() => alarmSeverities.code),
   message: text("message").notNull(),
   raisedAt: timestamp("raised_at", { withTimezone: true })
     .notNull()
@@ -557,7 +595,12 @@ export const automationRules = bmsSchema.table("automation_rules", {
   pointKey: varchar("point_key", { length: 128 }),
   operator: varchar("operator", { length: 16 }),
   thresholdValue: doublePrecision("threshold_value"),
-  severity: varchar("severity", { length: 32 }),
+  // ADR 0032, and it stays NULLABLE on purpose. `F4.46`'s write-path fix
+  // established that a rule may hold no severity — the alarm engine only loads
+  // `ruleType = 'threshold'`, so a time-window rule has nothing to be severe
+  // about — and a nullable foreign key permits exactly that, since NULL is not
+  // checked against the referenced table.
+  severity: varchar("severity", { length: 32 }).references(() => alarmSeverities.code),
   condition: jsonb("condition").notNull().default({}),
   action: jsonb("action").notNull().default({}),
   lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }),

@@ -1,9 +1,10 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { io, type Socket } from "socket.io-client";
 
 import { ackAlarm, fetchAlarmsPage } from "../api/alarms";
+import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { alarmSeverityTone, summariseAlarmSeverities } from "../lib/alarm-severity";
 import { AlarmSummaryCard } from "../components/alarm-summary-card";
 import { AppShell } from "../layouts/app-shell";
@@ -122,9 +123,20 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
     () => rows.filter((alarm) => matchesAlarmSearch(alarm, searchQuery)),
     [rows, searchQuery],
   );
+  // ADR 0032: severity styling is data now, so the page needs the vocabulary as
+  // well as the alarms. Same query key as the rule builder, so the two share one
+  // cache entry rather than each fetching the same five rows.
+  const vocabQ = useQuery({
+    queryKey: vocabulariesQueryKey,
+    queryFn: fetchVocabularies,
+    staleTime: 5 * 60 * 1000,
+  });
+  const alarmSeverities = useMemo(() => vocabQ.data?.alarmSeverities ?? [], [vocabQ.data]);
+
   const summary = useMemo(() => {
     const { critical, major, minor, unrecognised } = summariseAlarmSeverities(
       rows.map((alarm) => alarm.severity),
+      alarmSeverities,
     );
     const active = rows.filter((alarm) => !alarm.acknowledgedAt).length;
     const acknowledged = rows.filter((alarm) => alarm.acknowledgedAt).length;
@@ -133,7 +145,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
       count: rows.filter((alarm) => alarmSubsystem(alarm) === subsystem).length,
     }));
     return { critical, major, minor, unrecognised, active, acknowledged, bySubsystem };
-  }, [rows]);
+  }, [rows, alarmSeverities]);
   const distributionTotal = Math.max(rows.length, 1);
 
   function submitAck(e: FormEvent): void {
@@ -295,7 +307,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                       <td className="px-3 py-2">
                         <StatusPill
                           label={a.severity}
-                          tone={alarmSeverityTone(a.severity)}
+                          tone={alarmSeverityTone(a.severity, alarmSeverities)}
                         />
                       </td>
                       <td className="px-3 py-2">

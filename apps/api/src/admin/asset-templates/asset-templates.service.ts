@@ -275,7 +275,18 @@ export class AssetTemplatesAdminService {
       );
     }
     await this.assertPointKeysActive(template.organizationId, points);
-    this.assertContentRefsResolve(this.parseStoredContent(template), points);
+    const storedContent = this.parseStoredContent(template);
+    this.assertContentRefsResolve(storedContent, points);
+
+    // ADR 0032. Publish used to get this for free: `parseStoredContent` ran the
+    // schema, and while `severity` and `category` were `z.enum`s the schema was
+    // the vocabulary check. Both are codes now, so the schema passes a stored
+    // value that no vocabulary row backs, and without this line a pre-ADR row
+    // could be published carrying an alarm the rule engine cannot run.
+    //
+    // `create` and `update` already called this on the *incoming* body; the gap
+    // was only ever on stored content, which is exactly what publish reads.
+    await this.assertTemplateAlarmCategories(storedContent);
 
     const now = new Date();
     await this.db
@@ -574,6 +585,34 @@ export class AssetTemplatesAdminService {
     // if this ever becomes a rule.
     for (const category of new Set(categories)) {
       await this.vocabularies.assertRuleCategory(category);
+    }
+
+    // ADR 0032, and this arrived with it rather than being an oversight before.
+    // `severity` is REQUIRED on a template alarm, and until ADR 0032 it was a
+    // `z.enum`, so `templateContentSchema` rejected an unknown value by itself —
+    // `asset-templates-content.schema.spec.ts` asserted exactly that for
+    // `major` and `minor`. With the vocabulary moved into the database the
+    // schema checks shape only, so without this a template could author an
+    // alarm at a severity the rule engine cannot run, which is the drift ADR
+    // 0019 §3 exists to prevent.
+    //
+    // **It deliberately does NOT call `assertAlarmSeverity`.** That method
+    // echoes the rejected code back, which is right for a value the caller just
+    // typed into a request body and wrong here: this validates *stored* content
+    // on publish, and `asset-templates.lifecycle.integration.spec.ts` exists
+    // because pre-ADR rows hold arbitrary JSON written by whoever — its fixture
+    // puts an `s3://` URL in this exact field and asserts the error names the
+    // path without repeating the value. Echoing it would turn a publish
+    // rejection into a disclosure channel for whatever the row happens to hold.
+    const severities = content?.alarms ?? [];
+    if (severities.length > 0) {
+      const live = new Set((await this.vocabularies.list()).alarmSeverities.map((s) => s.code));
+      const index = severities.findIndex((alarm) => !live.has(alarm.severity));
+      if (index >= 0) {
+        throw new BadRequestException(
+          `content.alarms.${index}.severity is not a live severity. Expected one of: ${[...live].join(", ")}.`,
+        );
+      }
     }
   }
 
