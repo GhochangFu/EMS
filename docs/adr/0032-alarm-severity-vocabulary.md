@@ -5,7 +5,7 @@
 **Accepted** — 2026-08-18. Ruled by the repository owner while closing `F4.46`,
 after the row's own premise was found to be wrong (below).
 
-This ADR authorises DDL over live pilot data. Read decisions 3–5 before writing
+This ADR authorises DDL over live pilot data. Read decisions 3–6 before writing
 the migration.
 
 ## Context
@@ -90,27 +90,50 @@ behaviour needs, and a new level cannot be declared without it.
 
 5. **The migration preflights and is idempotent.** It fails with a readable
    `RAISE EXCEPTION` naming the table, value and row count if any row holds a
-   code outside the seeded set, rather than aborting the whole pending-migration
-   transaction on a bare SQLSTATE 23503. Constraint-existence lookups are
-   qualified by `conrelid`, since `conname` is unique per relation and not
-   globally. Measured before writing (2026-08-18): `bms.alarms` holds `warning`
-   20 / `critical` 19 / `info` 1; `bms.automation_rules` holds `critical` 46 /
-   `warning` 42 / `NULL` 1. No other value exists, so the preflight is expected
-   to pass and is there for deployments this tree has not seen.
+   code the vocabulary does not declare, rather than aborting the whole
+   pending-migration transaction on a bare SQLSTATE 23503. Constraint-existence
+   lookups are qualified by `conrelid`, since `conname` is unique per relation
+   and not globally. Measured before writing (2026-08-18): `bms.alarms` holds
+   `warning` 20 / `critical` 19 / `info` 1; `bms.automation_rules` holds
+   `critical` 46 / `warning` 42 / `NULL` 1.
 
-6. **`VocabulariesService` gains `alarmSeverities`.** `GET /api/v1/vocabularies`
+   **The vocabulary is created and seeded *before* the preflight**, which is a
+   deliberate departure from `0029` and the second thing the migration review
+   corrected. `0029` could preflight against literal lists because both its
+   tables were brand new and could not already hold anything. Here the table may
+   already have been extended — that is the design — so a literal list makes a
+   re-run abort on a value the table already contains and then tell the operator
+   to add a code that is already there. The preflight asks the real question
+   instead: is this row's severity a code `bms.alarm_severities` declares?
+
+   The seed uses a **bare `ON CONFLICT DO NOTHING`**, with no conflict target. A
+   named `(code)` arbiter swallows only that constraint's violations, so a row
+   whose code is new but whose `rank` collides would abort the transaction —
+   reachable the moment somebody re-ranks the ladder to answer `B9`.
+
+6. **The referencing columns are widened to `varchar(64)` to match
+   `alarm_severities.code`.** They were `varchar(32)`. The mismatch was not
+   untidiness: a 33–64 character code can be seeded, is returned by
+   `GET /api/v1/vocabularies`, and passes `assertAlarmSeverity` — which checks
+   existence and `active`, not length — and only then fails the write with
+   SQLSTATE 22001. That is a 500 from the database on precisely the path
+   decision 7 says the service exists to turn into a 400. Widening a `varchar`
+   is catalog-only in Postgres, so this is safe on the populated pilot tables.
+   `0029` has no equivalent gap; its three referencing columns are already 64.
+
+7. **`VocabulariesService` gains `alarmSeverities`.** `GET /api/v1/vocabularies`
    returns the active rows as a third array, and `assertAlarmSeverity(code)`
    joins `assertRuleCategory` / `assertAssetDomain` so an unknown code is a
    **400 at the boundary rather than a 500 from a constraint violation** — the
    reason that service exists. Reads stay uncached, for ADR 0031's reason: a
    cache would hide a newly seeded value until restart.
 
-7. **`automationRuleSeveritySchema` stops being a `z.enum`.** It becomes a
+8. **`automationRuleSeveritySchema` stops being a `z.enum`.** It becomes a
    shape-only code schema, exactly as `ruleCategoryCodeSchema` did under ADR
    0031 Amendment 1. The set is closed by the foreign key; the schema checks
    only that a code is plausible.
 
-8. **`alarmSeverityTone` reads `tone` from the vocabulary; the exhaustive
+9. **`alarmSeverityTone` reads `tone` from the vocabulary; the exhaustive
    `switch` is deleted.** Keeping it would reproduce `F4.43`. **The unknown
    branch stays**, and this ADR does not weaken it: the foreign key makes an
    unknown code impossible *at rest*, but the page renders an alarm payload
@@ -127,14 +150,26 @@ None. No new npm package (AGENTS.md §9.4 is not engaged).
 - **`B9` becomes an `INSERT`.** If the client asks for `high`, it is one seeded
   row at rank 25 with tone `warning`, and no migration, no deploy, and no code
   change. That was the point.
-- **`AlarmThresholdService.normalizeSeverity` (`alarm-threshold.service.ts:138`)
-  is left as it is, and its second arm becomes unreachable.** Its `null →
-  "warning"` default is deliberate and documented — `alarms.severity` is `NOT
-  NULL` and `F4.46` moved the defaulting *to* that edge on purpose. Its
-  fall-through for an *unrecognised* value can no longer fire once
-  `automation_rules.severity` carries a foreign key. Recorded rather than
-  removed: deleting a branch because a constraint now prevents it is a change
-  to make deliberately, with its own test, not as a side effect of this one.
+- **`AlarmThresholdService.normalizeSeverity` had to change, and an earlier
+  draft of this ADR got that wrong.** It said the method could be left alone
+  because its unrecognised-value arm "can no longer fire once
+  `automation_rules.severity` carries a foreign key". **That is false**, and the
+  migration review caught it before merge. The foreign key admits *every* code
+  in `bms.alarm_severities` — that is the entire point of the design — so a rule
+  seeded at `high` passed the FK, reached that method, and had its severity
+  rewritten to `warning` on every alarm it raised. The promise below would have
+  been false on the one path that matters most.
+
+  The method now supplies only the default it genuinely owes — `null →
+  "warning"`, because `alarms.severity` is `NOT NULL` and `F4.46` moved the
+  defaulting *to* that edge — and passes any non-null code through.
+  `alarm-threshold.service.spec.ts` asserts both directions, and was confirmed
+  to fail against the old body.
+
+  The general lesson is worth keeping: **opening a vocabulary invalidates every
+  closed list that reads it, not only the ones the compiler can find.** This one
+  was a hand-written `if` over three string literals, so nothing in the type
+  system pointed at it.
 - **The `F4.46` scope note is superseded**, not merely disagreed with. Its
   "severity wants a `CHECK`" sentence should be read against this ADR.
 - **`rank` has no consumer on the day it lands.** Nothing sorts alarms by

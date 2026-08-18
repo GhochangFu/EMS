@@ -167,7 +167,10 @@ export const alarmSeverities = bmsSchema.table("alarm_severities", {
   code: varchar("code", { length: 64 }).primaryKey(),
   label: varchar("label", { length: 128 }).notNull(),
   tone: varchar("tone", { length: 32 }).notNull().default("info"),
-  rank: integer("rank").notNull().unique(),
+  // Named to match the raw SQL. `.unique()` with no argument makes drizzle
+  // derive `alarm_severities_rank_unique`, so `\d` and this file would describe
+  // the same object under two names.
+  rank: integer("rank").notNull().unique("alarm_severities_rank_key"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -462,7 +465,11 @@ export const alarms = bmsSchema.table("alarms", {
   // It was `varchar(32)` with no constraint, so the only thing keeping it clean
   // was that every writer happened to be well-behaved — `F4.46` found the page
   // reading it defensively for exactly that reason.
-  severity: varchar("severity", { length: 32 })
+  // ADR 0032, and 64 rather than 32 on purpose: it must match
+  // `alarm_severities.code`, or a long code passes `assertAlarmSeverity` and
+  // then fails the write with SQLSTATE 22001 — a 500 on the exact path that
+  // service exists to turn into a 400. Migration 0030 widens it.
+  severity: varchar("severity", { length: 64 })
     .notNull()
     .references(() => alarmSeverities.code),
   message: text("message").notNull(),
@@ -600,7 +607,7 @@ export const automationRules = bmsSchema.table("automation_rules", {
   // `ruleType = 'threshold'`, so a time-window rule has nothing to be severe
   // about — and a nullable foreign key permits exactly that, since NULL is not
   // checked against the referenced table.
-  severity: varchar("severity", { length: 32 }).references(() => alarmSeverities.code),
+  severity: varchar("severity", { length: 64 }).references(() => alarmSeverities.code),
   condition: jsonb("condition").notNull().default({}),
   action: jsonb("action").notNull().default({}),
   lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }),
