@@ -61,11 +61,13 @@ function selectChain(rows: unknown[]): Chain {
 
 function validator(rows: unknown[] = []): ValidateAccess {
   const db = { select: () => selectChain(rows) } as unknown as BmsDb;
-  // The category vocabulary is data (ADR 0031 Amendment 1) and lives in
-  // `bms.rule_categories`; whether a code is live is not what these cases are
-  // about, so the check is satisfied rather than exercised.
+  // Both vocabularies are data — categories under ADR 0031 Amendment 1,
+  // severities under ADR 0032 — and live in `bms.rule_categories` and
+  // `bms.alarm_severities`. Whether a code is live is not what these cases are
+  // about, so both checks are satisfied rather than exercised.
   const vocabularies = {
     assertRuleCategory: async () => undefined,
+    assertAlarmSeverity: async () => undefined,
   } as unknown as VocabulariesService;
   return new RulesService(db, vocabularies) as unknown as ValidateAccess;
 }

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type {
+  AlarmSeverityDto,
   AutomationRuleCategory,
   AutomationRuleOperator,
   AutomationRuleType,
@@ -106,15 +107,29 @@ export function RuleBuilderPanel({
     staleTime: 5 * 60 * 1000,
   });
   const ruleCategories = vocabQ.data?.ruleCategories ?? [];
+  // Memoised, and both of those matter. `severityFromRule` narrows against this
+  // array, so a fresh `[]` on every render would make the effect below either
+  // miss the vocabulary or re-run forever depending on the dependency list.
+  const alarmSeverities = useMemo(() => vocabQ.data?.alarmSeverities ?? [], [vocabQ.data]);
 
+  // **Gated on the vocabulary, and this is a write-path guard, not a cosmetic
+  // one.** `formFromRule` calls `severityFromRule`, which narrows against
+  // `alarmSeverities`; against an empty array it returns `null`. So if the rule
+  // was selected before `GET /api/v1/vocabularies` resolved, the form seeded
+  // `severity: null`, the control showed **None**, and saving any unrelated
+  // field then persisted that null over a real severity.
+  //
+  // That is round-trip corruption — `F4.46` finding (1) arriving through a load
+  // order instead of through `normalizeSeverity`, and its row calls that half
+  // "the reason this is `P0`". Found by the compliance review, not by a test.
   useEffect(() => {
-    if (!selectedRule) {
+    if (!selectedRule || !vocabQ.isSuccess) {
       return;
     }
-    setForm(formFromRule(selectedRule));
+    setForm(formFromRule(selectedRule, alarmSeverities));
     setPreview(null);
     setError(null);
-  }, [selectedRule]);
+  }, [selectedRule, alarmSeverities, vocabQ.isSuccess]);
 
   const assets = catalogQ.data?.assets ?? [];
   const selectedAsset = assets.find((asset) => asset.id === form.assetId);
@@ -126,7 +141,7 @@ export function RuleBuilderPanel({
   const createM = useMutation({
     mutationFn: createRuleDraft,
     onSuccess: (rule) => {
-      setForm(formFromRule(rule));
+      setForm(formFromRule(rule, alarmSeverities));
       invalidateRules(qc);
       setError(null);
     },
@@ -136,7 +151,7 @@ export function RuleBuilderPanel({
   const updateM = useMutation({
     mutationFn: updateRuleDraft,
     onSuccess: (rule) => {
-      setForm(formFromRule(rule));
+      setForm(formFromRule(rule, alarmSeverities));
       invalidateRules(qc);
       setError(null);
     },
@@ -156,7 +171,7 @@ export function RuleBuilderPanel({
   const publishM = useMutation({
     mutationFn: publishRule,
     onSuccess: (rule) => {
-      setForm(formFromRule(rule));
+      setForm(formFromRule(rule, alarmSeverities));
       invalidateRules(qc);
       setError(null);
     },
@@ -374,7 +389,7 @@ export function RuleBuilderPanel({
                 className={fieldClass}
                 value={form.severity ?? ""}
                 onChange={(e) =>
-                  setForm({ ...form, severity: severityFromRule(e.target.value) })
+                  setForm({ ...form, severity: severityFromRule(e.target.value, alarmSeverities) })
                 }
               >
                 {/*
@@ -392,9 +407,19 @@ export function RuleBuilderPanel({
                 {offersNoSeverityOption(form.ruleType, form.severity) && (
                   <option value="">None</option>
                 )}
-                <option value="info">Info</option>
-                <option value="warning">Warning</option>
-                <option value="critical">Critical</option>
+                {/*
+                  ADR 0032: rendered from the vocabulary, not from a hardcoded
+                  list. A hardcoded list here is the `F4.43`/`F4.44` shape —
+                  a `<select>` whose value can be outside its own options, which
+                  a browser resolves by showing the first one, so Save writes a
+                  severity nobody chose. Ordered least- to most-urgent because
+                  the API returns them by `rank`.
+                */}
+                {alarmSeverities.map((entry) => (
+                  <option key={entry.code} value={entry.code}>
+                    {entry.label}
+                  </option>
+                ))}
               </select>
             </Field>
             <Field label="Action">
@@ -532,7 +557,7 @@ function buildPayload(form: BuilderForm): RuleDraftPayload & {
   };
 }
 
-function formFromRule(rule: RuleListItem): BuilderForm {
+function formFromRule(rule: RuleListItem, vocabulary: AlarmSeverityDto[]): BuilderForm {
   const timeCondition = "days" in rule.condition ? rule.condition : null;
   return {
     id: rule.id,
@@ -550,7 +575,7 @@ function formFromRule(rule: RuleListItem): BuilderForm {
     pointKey: rule.pointKey ?? "",
     operator: rule.operator ?? "gt",
     thresholdValue: rule.thresholdValue === null ? "" : String(rule.thresholdValue),
-    severity: severityFromRule(rule.severity),
+    severity: severityFromRule(rule.severity, vocabulary),
     actionType: rule.action.type,
     actionTarget: rule.action.target,
     days: timeCondition?.days ?? emptyForm.days,

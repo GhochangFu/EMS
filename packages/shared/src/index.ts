@@ -152,7 +152,11 @@ export type AssetDomain = z.infer<typeof Op.assetDomainCodeSchema>;
 export type BadgeTone = z.infer<typeof Op.badgeToneSchema>;
 export type RuleCategoryDto = z.infer<typeof Op.ruleCategoryDtoSchema>;
 export type AssetDomainDto = z.infer<typeof Op.assetDomainDtoSchema>;
-/** `GET /api/v1/vocabularies` — both axes, so a page renders neither half-loaded. */
+/** ADR 0032 — one row of `bms.alarm_severities`, with its `rank` and `tone`. */
+export type AlarmSeverityDto = z.infer<typeof Op.alarmSeverityDtoSchema>;
+/** The `StatusPill` palette, as a type. Closed; see `pillToneSchema`. */
+export type PillTone = z.infer<typeof Op.pillToneSchema>;
+/** `GET /api/v1/vocabularies` — all three open vocabularies, so a page renders none half-loaded. */
 export type VocabulariesResponse = z.infer<typeof Op.vocabulariesResponseSchema>;
 export type AutomationRuleOperator = z.infer<typeof Op.automationRuleOperatorSchema>;
 export type AutomationRuleSeverity = z.infer<typeof Op.automationRuleSeveritySchema>;

@@ -1,9 +1,10 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { io, type Socket } from "socket.io-client";
 
 import { ackAlarm, fetchAlarmsPage } from "../api/alarms";
+import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { alarmSeverityTone, summariseAlarmSeverities } from "../lib/alarm-severity";
 import { AlarmSummaryCard } from "../components/alarm-summary-card";
 import { AppShell } from "../layouts/app-shell";
@@ -122,9 +123,20 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
     () => rows.filter((alarm) => matchesAlarmSearch(alarm, searchQuery)),
     [rows, searchQuery],
   );
+  // ADR 0032: severity styling is data now, so the page needs the vocabulary as
+  // well as the alarms. Same query key as the rule builder, so the two share one
+  // cache entry rather than each fetching the same five rows.
+  const vocabQ = useQuery({
+    queryKey: vocabulariesQueryKey,
+    queryFn: fetchVocabularies,
+    staleTime: 5 * 60 * 1000,
+  });
+  const alarmSeverities = useMemo(() => vocabQ.data?.alarmSeverities ?? [], [vocabQ.data]);
+
   const summary = useMemo(() => {
     const { critical, major, minor, unrecognised } = summariseAlarmSeverities(
       rows.map((alarm) => alarm.severity),
+      alarmSeverities,
     );
     const active = rows.filter((alarm) => !alarm.acknowledgedAt).length;
     const acknowledged = rows.filter((alarm) => alarm.acknowledgedAt).length;
@@ -133,8 +145,34 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
       count: rows.filter((alarm) => alarmSubsystem(alarm) === subsystem).length,
     }));
     return { critical, major, minor, unrecognised, active, acknowledged, bySubsystem };
-  }, [rows]);
+  }, [rows, alarmSeverities]);
   const distributionTotal = Math.max(rows.length, 1);
+
+  /**
+   * The sixth card waits for the vocabulary, not just for a non-zero count.
+   *
+   * The two queries resolve independently, and `alarmSeverities` is `[]` until
+   * `vocabQ` lands — against an empty vocabulary *every* severity is
+   * unresolvable, so an alarms-first paint would have flashed `Critical 0 ·
+   * Major 0 · Minor 0 · Unrecognised 25`. That is a false alarm about the
+   * plant, invented by a load order. Three zeroes on their own read as an
+   * ordinary loading state; a full Unrecognised count does not.
+   */
+  const showUnrecognised = vocabQ.isSuccess && summary.unrecognised > 0;
+
+  /**
+   * Whether the three severity counts are a claim about the plant at all.
+   *
+   * Without the vocabulary every severity is unresolvable, so `critical`,
+   * `major` and `minor` are all 0 — and `Critical` carries `emptyLabel="all
+   * clear"`, which is an affirmative statement of calm rather than a neutral
+   * zero. Rendering that beside a table listing 25 open alarms is `F4.46`
+   * finding (2) re-entering by a different door: the board saying calm when it
+   * is not. The compliance review caught it; the earlier fix gated only the
+   * sixth card, which is not enough on the error path, where the state is
+   * permanent and silent once the retries are exhausted.
+   */
+  const severityReady = vocabQ.isSuccess;
 
   function submitAck(e: FormEvent): void {
     e.preventDefault();
@@ -181,17 +219,30 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           fix would move unrecognised rows out of `Minor` and into nothing at
           all, under-reporting the board instead of mis-reporting it.
         */}
+        {vocabQ.isError ? (
+          <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+            Severity classification is unavailable — the vocabulary could not be
+            loaded, so the counts below are not a reading of the plant. The alarm
+            list itself is unaffected; severities render in their stored form.
+          </p>
+        ) : null}
+
         <div
           className={`grid gap-3 sm:grid-cols-2 ${
-            summary.unrecognised > 0 ? "lg:grid-cols-6" : "lg:grid-cols-5"
+            showUnrecognised ? "lg:grid-cols-6" : "lg:grid-cols-5"
           }`}
         >
-          <AlarmSummaryCard label="Critical" value={summary.critical} tone="critical" emptyLabel="all clear" />
+          <AlarmSummaryCard
+            label="Critical"
+            value={summary.critical}
+            tone="critical"
+            emptyLabel={severityReady ? "all clear" : undefined}
+          />
           <AlarmSummaryCard label="Major" value={summary.major} tone="warning" />
           <AlarmSummaryCard label="Minor" value={summary.minor} tone="info" />
           <AlarmSummaryCard label="Active (Unack)" value={summary.active} tone="ok" />
           <AlarmSummaryCard label="Acknowledged" value={summary.acknowledged} tone="ok" />
-          {summary.unrecognised > 0 ? (
+          {showUnrecognised ? (
             <AlarmSummaryCard label="Unrecognised" value={summary.unrecognised} tone="offline" />
           ) : null}
         </div>
@@ -295,7 +346,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                       <td className="px-3 py-2">
                         <StatusPill
                           label={a.severity}
-                          tone={alarmSeverityTone(a.severity)}
+                          tone={alarmSeverityTone(a.severity, alarmSeverities)}
                         />
                       </td>
                       <td className="px-3 py-2">

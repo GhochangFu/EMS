@@ -1,4 +1,18 @@
+import type { AlarmSeverityDto } from "@bms/shared";
+
 import { offersNoSeverityOption, severityFromRule } from "./rule-severity";
+
+/**
+ * What migration `0030` seeds (ADR 0032). `severityFromRule` narrows against
+ * the vocabulary now rather than against a `z.enum`, because that schema became
+ * shape-only when the set moved into the database — a static check would accept
+ * every string and never report "none".
+ */
+const SEEDED: AlarmSeverityDto[] = [
+  { code: "info", label: "Info", tone: "info", rank: 10, active: true },
+  { code: "warning", label: "Warning", tone: "warning", rank: 20, active: true },
+  { code: "critical", label: "Critical", tone: "critical", rank: 30, active: true },
+];
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -18,12 +32,12 @@ function assert(condition: boolean, message: string): void {
  * before now.
  */
 export function runRuleSeverityTests(): void {
-  assert(severityFromRule("info") === "info", "info must survive");
-  assert(severityFromRule("warning") === "warning", "warning must survive");
-  assert(severityFromRule("critical") === "critical", "critical must survive");
+  assert(severityFromRule("info", SEEDED) === "info", "info must survive");
+  assert(severityFromRule("warning", SEEDED) === "warning", "warning must survive");
+  assert(severityFromRule("critical", SEEDED) === "critical", "critical must survive");
 
   assert(
-    severityFromRule(null) === null,
+    severityFromRule(null, SEEDED) === null,
     "a rule with no severity must stay a rule with no severity",
   );
 
@@ -32,14 +46,14 @@ export function runRuleSeverityTests(): void {
   // invent data, and it is the visible one: the control reads `None` rather
   // than showing a severity the rule does not have.
   assert(
-    severityFromRule("major") === null,
+    severityFromRule("major", SEEDED) === null,
     "an unrecognised severity must degrade to none, not to a guess",
   );
 
   // The same function reads the `<select>` back. Its empty option is how "none"
   // is expressed in the DOM, and it has to leave as `null` rather than as the
   // empty string, which `severitySchema` would reject.
-  assert(severityFromRule("") === null, "the empty option must mean no severity");
+  assert(severityFromRule("", SEEDED) === null, "the empty option must mean no severity");
 }
 
 /**

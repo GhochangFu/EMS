@@ -65,7 +65,15 @@ export class DashboardService {
         COALESCE(SUM(latest.kw), 0)::float8 AS total_kw,
         COUNT(DISTINCT al.id) FILTER (WHERE al.acknowledged_at IS NULL)::int AS open_alarms,
         COUNT(DISTINCT al.id) FILTER (
-          WHERE al.acknowledged_at IS NULL AND al.severity = 'critical'
+          -- ADR 0032: matched on TONE, not on a severity code. tone is the closed
+          -- half of that ADR (bounded by alarm_severities_tone_check) while the code
+          -- set is open, so a level seeded to answer client ask B9 -- high at rank 25
+          -- with tone warning -- must roll up here without a code change. Matching
+          -- the literal 'critical' made that promise false, which the compliance
+          -- review caught after F4.46 fixed only the 'major' half of this same file
+          -- (AGENTS.md 4.4: fix the class, not the instance).
+          WHERE al.acknowledged_at IS NULL
+            AND al.severity IN (SELECT code FROM bms.alarm_severities WHERE tone = 'critical')
         )::int AS critical_alarms
       FROM bms.locations l
       INNER JOIN bms.organizations o ON o.id = l.organization_id
@@ -254,7 +262,10 @@ export class DashboardService {
           al.asset_id,
           COUNT(*) FILTER (WHERE al.acknowledged_at IS NULL)::int AS open_alarm_count,
           COUNT(*) FILTER (
-            WHERE al.acknowledged_at IS NULL AND al.severity = 'critical'
+            -- ADR 0032: by tone, so a newly seeded level rolls up. See the note
+            -- on the KPI query above.
+            WHERE al.acknowledged_at IS NULL
+              AND al.severity IN (SELECT code FROM bms.alarm_severities WHERE tone = 'critical')
           )::int AS critical_alarm_count,
           -- F4.46: this read IN ('warning', 'major'). 'major' is the mockup's
           -- word for a warning (ESKOM_SMOC.html), not a value this product
@@ -273,7 +284,8 @@ export class DashboardService {
           -- can. If the unknown case ever needs to be visible here, it wants
           -- its own unrecognised_alarm_count, not a wider WHERE.
           COUNT(*) FILTER (
-            WHERE al.acknowledged_at IS NULL AND al.severity = 'warning'
+            WHERE al.acknowledged_at IS NULL
+              AND al.severity IN (SELECT code FROM bms.alarm_severities WHERE tone = 'warning')
           )::int AS warning_alarm_count,
           (ARRAY_AGG(al.severity ORDER BY al.raised_at DESC) FILTER (
             WHERE al.acknowledged_at IS NULL
@@ -443,7 +455,7 @@ export class DashboardService {
           WHERE k.kw_time > now() - interval '20 seconds') AS sites_online,
         (SELECT COUNT(DISTINCT site_name)::int FROM asset_sites) AS sites_total,
         (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE acknowledged_at IS NULL) AS alarms_open,
-        (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE acknowledged_at IS NULL AND severity = 'critical') AS alarms_critical
+        (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE acknowledged_at IS NULL AND severity IN (SELECT code FROM bms.alarm_severities WHERE tone = 'critical')) AS alarms_critical
     `,
       [assetIds ?? null],
     );

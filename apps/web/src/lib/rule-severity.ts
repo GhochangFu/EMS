@@ -1,12 +1,11 @@
-import { automationRuleSeveritySchema } from "@bms/shared/contracts";
-import type { AutomationRuleSeverity, AutomationRuleType } from "@bms/shared";
+import type { AlarmSeverityDto, AutomationRuleSeverity, AutomationRuleType } from "@bms/shared";
 
 /**
  * The severities a rule may carry — **re-exported, not restated** (AGENTS.md
- * §4.8). The list itself lives once, in
- * `packages/shared/src/contracts/operations.ts:302`, and this alias exists only
- * so the builder can name it without every call site importing the contract.
- * A rule may also carry none, which is what the `| null` at each use site says.
+ * §4.8). Since ADR 0032 the list is not a union at all: it is the set of `code`
+ * values in `bms.alarm_severities`, so this is a code, and liveness is decided
+ * by the vocabulary rather than by the type. A rule may also carry none, which
+ * is what the `| null` at each use site says.
  */
 export type RuleSeverity = AutomationRuleSeverity;
 
@@ -27,8 +26,15 @@ export type RuleSeverity = AutomationRuleSeverity;
  *
  * An unrecognised string maps to `null` for the same reason: it is the only
  * answer that does not invent data, and the builder shows it as `None` rather
- * than silently displaying a severity the rule does not have. Nothing can
- * produce one today, since the write schema is an enum (`rules.schema.ts:32`).
+ * than silently displaying a severity the rule does not have.
+ *
+ * **ADR 0032 changed what "unrecognised" is measured against, not the answer.**
+ * It used to mean "outside `automationRuleSeveritySchema`", which was a
+ * `z.enum`; that schema is now shape-only, so a static check would accept every
+ * string and this function would never return `null` for a bad code. The
+ * vocabulary is passed in instead. `automation_rules_severity_fk` makes a
+ * stored unknown impossible at rest, so this fires on vocabulary skew — a
+ * retired code, or a client holding a stale list.
  *
  * It runs in the other direction too, on the `<select>`'s value. `""` is how
  * "no severity" is spelled in the DOM and is not a value the schema accepts, so
@@ -36,9 +42,14 @@ export type RuleSeverity = AutomationRuleSeverity;
  * would be a 400 rather than a clear. Same rule, same answer, which is why
  * there is one function and not two.
  */
-export function severityFromRule(value: string | null): RuleSeverity | null {
-  const parsed = automationRuleSeveritySchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
+export function severityFromRule(
+  value: string | null,
+  vocabulary: readonly AlarmSeverityDto[],
+): RuleSeverity | null {
+  if (typeof value !== "string" || value === "") {
+    return null;
+  }
+  return vocabulary.some((entry) => entry.code === value) ? value : null;
 }
 
 /**
