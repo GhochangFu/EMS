@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { io, type Socket } from "socket.io-client";
 
 import { ackAlarm, fetchAlarmsPage } from "../api/alarms";
+import { alarmSeverityTone, summariseAlarmSeverities } from "../lib/alarm-severity";
 import { AlarmSummaryCard } from "../components/alarm-summary-card";
 import { AppShell } from "../layouts/app-shell";
 import { PageHeader } from "../components/page-header";
@@ -49,16 +50,6 @@ function alarmSubsystem(alarm: AlarmListItem): AlarmSubsystem {
     return "IT";
   }
   return "Security";
-}
-
-function severityTone(severity: string): "critical" | "warning" | "info" {
-  if (severity === "critical") {
-    return "critical";
-  }
-  if (severity === "warning" || severity === "major") {
-    return "warning";
-  }
-  return "info";
 }
 
 function matchesAlarmSearch(alarm: AlarmListItem, query: string): boolean {
@@ -132,20 +123,16 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
     [rows, searchQuery],
   );
   const summary = useMemo(() => {
-    const critical = rows.filter((alarm) => alarm.severity === "critical").length;
-    const major = rows.filter(
-      (alarm) => alarm.severity === "warning" || alarm.severity === "major",
-    ).length;
-    const minor = rows.filter(
-      (alarm) => !["critical", "warning", "major"].includes(alarm.severity),
-    ).length;
+    const { critical, major, minor, unrecognised } = summariseAlarmSeverities(
+      rows.map((alarm) => alarm.severity),
+    );
     const active = rows.filter((alarm) => !alarm.acknowledgedAt).length;
     const acknowledged = rows.filter((alarm) => alarm.acknowledgedAt).length;
     const bySubsystem = alarmSubsystems.map((subsystem) => ({
       subsystem,
       count: rows.filter((alarm) => alarmSubsystem(alarm) === subsystem).length,
     }));
-    return { critical, major, minor, active, acknowledged, bySubsystem };
+    return { critical, major, minor, unrecognised, active, acknowledged, bySubsystem };
   }, [rows]);
   const distributionTotal = Math.max(rows.length, 1);
 
@@ -185,12 +172,28 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           subtitle="Threshold rules run on telemetry in the API · acknowledgements are audited"
         />
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {/*
+          Critical / Major / Minor are the mockup's names for the stored
+          `critical` / `warning` / `info` (AGENTS.md §5). The sixth card is not
+          in the mockup because the mockup has no way to draw a severity the
+          product cannot classify — it appears only when one exists, so a clean
+          board stays the five cards the reference shows. Without it, `F4.46`'s
+          fix would move unrecognised rows out of `Minor` and into nothing at
+          all, under-reporting the board instead of mis-reporting it.
+        */}
+        <div
+          className={`grid gap-3 sm:grid-cols-2 ${
+            summary.unrecognised > 0 ? "lg:grid-cols-6" : "lg:grid-cols-5"
+          }`}
+        >
           <AlarmSummaryCard label="Critical" value={summary.critical} tone="critical" emptyLabel="all clear" />
           <AlarmSummaryCard label="Major" value={summary.major} tone="warning" />
           <AlarmSummaryCard label="Minor" value={summary.minor} tone="info" />
           <AlarmSummaryCard label="Active (Unack)" value={summary.active} tone="ok" />
           <AlarmSummaryCard label="Acknowledged" value={summary.acknowledged} tone="ok" />
+          {summary.unrecognised > 0 ? (
+            <AlarmSummaryCard label="Unrecognised" value={summary.unrecognised} tone="offline" />
+          ) : null}
         </div>
 
         <SectionCard
@@ -292,7 +295,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                       <td className="px-3 py-2">
                         <StatusPill
                           label={a.severity}
-                          tone={severityTone(a.severity)}
+                          tone={alarmSeverityTone(a.severity)}
                         />
                       </td>
                       <td className="px-3 py-2">
