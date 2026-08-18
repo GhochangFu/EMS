@@ -50,15 +50,38 @@ import { csvDocument, csvTextCell, type CsvField } from "../serialise/csv";
  *
  * For each row, does the cell display `2`?
  *
- * - `CONTROL_unguarded` **must** display `2`. It bypasses the guard on purpose.
- *   If it does not, that parser does not evaluate CSV formulas at all and the
- *   whole run proves nothing — this is the anti-vacuity check, and without it
- *   "nothing evaluated" is indistinguishable from "nothing could have".
- * - `plain` must not. That is the shipped guard working.
- * - `space_u0020`, `nbsp_u00a0`, `bom_ufeff` are the question. **If any displays
- *   `2`, that is a live vulnerability in shipped code** — widen `FORMULA_LEADERS`
- *   and add a test. If none does, record the negative result in ADR 0026 with
- *   the parser name and version.
+ * **There are three controls, and which one is valid depends on the delimiter.**
+ * Reading the wrong one is how a vacuous run gets recorded as a clean negative —
+ * it has happened, see the trap list below.
+ *
+ * - `CONTROL_unguarded` (`CONTROL_unguarded,=1+1`) — valid **only for a
+ *   comma-delimited import**, where it puts `=1+1` in its own cell. Under a TAB
+ *   or `;` import the line stays one cell beginning `CONTROL`, which is trivially
+ *   not a formula, so it **cannot** display `2` and proves nothing.
+ * - The **last line of the file** is a bare `=1+1` — a one-cell row, and
+ *   therefore delimiter-independent. **Use this one whenever the import is not
+ *   comma-delimited.** It must display `2`.
+ * - `CONTROL_split_tab` / `_semicolon` / `_pipe` — the shipped bytes as they were
+ *   *before* `F4.50`: a raw `foo<sep>=1+1` bypassing the guard, one per
+ *   separator. **Read the one matching your delimiter.** These answer a question
+ *   the other two cannot: *did this import split the field at all?* Without them
+ *   "the guarded rows did not evaluate" is indistinguishable from "this parser
+ *   never split anything", and the quoting fix looks confirmed when it was never
+ *   exercised.
+ *
+ * If the control matching your delimiter does not display `2`, that parser does
+ * not evaluate CSV formulas in that mode and the run proves nothing.
+ *
+ * Then read the payload rows:
+ *
+ * - `plain` must not display `2`. That is the shipped guard working.
+ * - `space_u0020`, `nbsp_u00a0`, `bom_ufeff`, `zwsp_lead`, `zwsp_inner` — the
+ *   leading-whitespace question. **If any displays `2`, that is a live
+ *   vulnerability in shipped code**; widen the guard and add a test. If none
+ *   does, record the negative in ADR 0026 with the parser name and version.
+ * - `tab_split`, `semicolon_split`, `pipe_split` must not display `2` **while
+ *   the matching `CONTROL_split_*` does**. Only that pairing is a result; either
+ *   half alone is not.
  */
 
 /**
@@ -74,15 +97,38 @@ import { csvDocument, csvTextCell, type CsvField } from "../serialise/csv";
  *   character it does not know (U+200B here) anywhere in the prefix disables
  *   the whole trimmed check. This is the discriminating test for "does a parser
  *   strip something `trimStart` does not".
- * - `tab_split` / `semicolon_split` — a different class: not formula *detection*
- *   but **field splitting**. TAB is in `FORMULA_LEADERS` yet not in the quote
- *   trigger, and `;` is in neither, so both are emitted unquoted. Any consumer
- *   treating either as a delimiter — a clipboard paste into Excel, LibreOffice
- *   sticky separator checkboxes, or Excel opening a .csv in a locale whose list
- *   separator is `;` — gets a second cell beginning `=`. Both are
- *   **pre-existing**, not introduced by the trimming fix.
+ * - `tab_split` / `semicolon_split` / `pipe_split` — a different class: not
+ *   formula *detection* but **field splitting**. **Answered by `F4.50`, and the
+ *   answer was yes.** Excel 2013 evaluated `=1+1` out of the unquoted cell in
+ *   four consumers: a clipboard paste under a TAB delimiter, the same under `;`,
+ *   a file open with comma+TAB, and a file open with `;` only. All three
+ *   characters are now in the quote trigger, so this probe emits them **quoted**
+ *   — the rows stay because re-running them is how the fix is checked, not
+ *   because the question is still open.
  *
  * A row here is a question, not a claim. Put the answer in ADR 0026.
+ *
+ * ## Three traps this probe has fallen into
+ *
+ * All three are the same shape — a run that looks like a clean negative but
+ * asked nothing — and each was one step from being recorded as a result.
+ *
+ * 1. **Encoding** (`F4.31`). No BOM meant Excel decoded ANSI, so `U+00A0` became
+ *    `Â`+NBSP and `U+FEFF` became `ï»¿`. Both begin with a *letter*. Hence the
+ *    two output files.
+ * 2. **The delimiter arguments** (`F4.50`). `Workbooks.OpenText` **ignores** its
+ *    `Tab`/`Semicolon`/`Comma` arguments when the file extension is `.csv` and
+ *    uses the locale list separator instead. Four runs returned identical tables
+ *    and the comma split even with `Comma:=False`. Copy to `.txt` first. And a
+ *    clipboard paste follows Excel's **sticky** import delimiters rather than
+ *    TAB unconditionally — set them deliberately, and put them back.
+ * 3. **The control that cannot control** (`F4.50` again, during verification).
+ *    `CONTROL_unguarded,=1+1` only isolates the formula when the comma is the
+ *    delimiter; under TAB or `;` the line is one cell beginning `CONTROL`. Three
+ *    of four verification runs were vacuous, and the clean-looking result was
+ *    nearly written down. Hence the one-cell control and the `CONTROL_split_*`
+ *    rows. **A control is not a control until you have seen it fire in the
+ *    configuration you are actually running.**
  */
 const CASES: readonly (readonly [string, string])[] = [
   ["plain", "=1+1"],
@@ -93,6 +139,7 @@ const CASES: readonly (readonly [string, string])[] = [
   ["zwsp_inner", " ​=1+1"],
   ["tab_split", "foo\t=1+1"],
   ["semicolon_split", "foo;=1+1"],
+  ["pipe_split", "foo|=1+1"],
 ];
 
 function buildRows(): CsvField[][] {
@@ -105,6 +152,41 @@ function buildRows(): CsvField[][] {
   // is the row that proves the parser would have evaluated a formula if the
   // guard had let one through.
   rows.push([csvTextCell("CONTROL_unguarded"), "=1+1" as CsvField]);
+
+  // **A second control, and `F4.50` is why it exists.** The row above only works
+  // in a reader that splits on the **comma** — it puts the formula in column 2.
+  // Import the same file with TAB or `;` as the delimiter and the whole line
+  // stays one cell beginning `CONTROL`, which is trivially not a formula, so the
+  // control silently stops controlling. Three of four runs in the `F4.50`
+  // verification were vacuous for exactly that reason before this row was added.
+  //
+  // A **one-cell** row cannot have that problem: whatever the delimiter, there is
+  // nothing before the `=`. Use this one whenever the import is not
+  // comma-delimited. `csvDocument` emits a single-cell row as a bare line.
+  rows.push(["=1+1" as CsvField]);
+
+  // **A third control, answering the question the other two cannot.** Both of
+  // the above are *line-leading* formulas: they show that the parser evaluates,
+  // not that it **split the field**. Since `F4.50` every payload row above is
+  // emitted quoted, so a run where nothing evaluates is equally consistent with
+  // "the quoting worked" and "this import mode never split anything" — and only
+  // the first of those is a result.
+  //
+  // These rows are the pre-`F4.50` bytes: raw, unguarded, one separator each. If
+  // the import splits on that separator at all, the matching row evaluates. Cast
+  // past the brand exactly as `CONTROL_unguarded` does, and for the same reason.
+  //
+  // **One per separator in the quote trigger, not just the TAB that happened to
+  // be tested first** (§4.4). A single TAB control is inert in a `;` import and
+  // silently stops controlling — the same shape as the bug that made three of
+  // four verification runs vacuous. Read the row that matches your delimiter.
+  for (const [label, sep] of [
+    ["tab", "\t"],
+    ["semicolon", ";"],
+    ["pipe", "|"],
+  ] as const) {
+    rows.push([csvTextCell(`CONTROL_split_${label}`), `foo${sep}=1+1` as CsvField]);
+  }
   return rows;
 }
 

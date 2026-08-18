@@ -4,6 +4,13 @@
 
 Accepted — 2026-08-10, at the `F4.29` gate.
 
+Amendment 1 — **Accepted 2026-08-18** (`F4.50`, decisions 11–12). The owner was
+shown the measurement and ruled the scope at the §10 gate: widen the quote
+trigger to TAB, `;` and `|`, and record it here as an amendment rather than as a
+new ADR. See *Amendment 1*, which also records the limit. It closes the consumers
+that still treat the comma as a delimiter; for the ones that do not it narrows
+the working payloads and **is not a guard** — residual tracked as `F4.51`.
+
 ## Context
 
 This repository serves two CSV downloads:
@@ -357,6 +364,165 @@ edit look safe, namely deleting `\r` from the leader list on the grounds that th
 quote trigger already handles CR. That would reopen the hole while every test
 still passed, because the specs iterate their own copy of the list. Corrected in
 place.
+
+## Amendment 1 (`F4.50`, 2026-08-18) — the quote trigger is not only about the comma
+
+The decision above treats the quote trigger as an RFC 4180 concern: quote on `"`,
+LF, CR and `,`, because those are what break a cell out of its field **in a
+comma-delimited reader**. Nothing in this ADR ever states the assumption; it is
+carried by the choice of four characters, which is why it survived two reviews.
+
+Where it *was* stated is `csvTextCell`'s own docstring, which ended: "With `,`,
+`"`, LF and CR all in the trigger, a value cannot break out of its field or forge
+a record — only its own cell content is under an attacker's control."
+
+**That sentence was false, and this amendment records how far.** It held for a
+comma-delimited reader and silently assumed every reader is one. It has been
+replaced in the module with the correction and an instruction not to reinstate a
+sentence of that shape.
+
+### What was measured
+
+Excel 2013 (15.0.4454), Windows list separator `,`. Payloads produced by the
+shipped `csvTextCell`. Anti-vacuity control in every run.
+
+Against the bytes shipped since `73a9fd2`, **the formula evaluated in four
+different consumers**, none of which reads the file as comma-delimited:
+
+| Consumer | Imported as |
+|---|---|
+| Clipboard paste, TAB delimiter | `tab_split,foo` · **`=1+1` → 2** |
+| Clipboard paste, `;` delimiter | `semicolon_split,foo` · **`=1+1` → 2** |
+| File open, comma+TAB (LibreOffice's separator checkboxes are sticky) | `tab_split` · `foo` · **`=1+1` → 2** |
+| File open, `;` only (Excel double-click in a `;`-list-separator locale) | `semicolon_split,foo` · **`=1+1` → 2** |
+
+Reachable inputs are the audit export's `reason` and `payload` and the reports
+export's `code`/`name`/`siteName`, all validated for length only (fact 2).
+
+### Decision 11 — TAB, `;` and `|` join the quote trigger
+
+`QUOTE_TRIGGER` is now `/["\n\r,\t;|]/`.
+
+`|` was not named in the `F4.50` row. LibreOffice offers it in the same dialog,
+so it went in as part of this decision rather than as a second one.
+
+**It was added on the claim that it "measures identically", and at the moment
+that claim was written it was an assumption — `|` had not been opened as a
+delimiter in any run.** It has been now (`OpenText` with `Other:=True,
+OtherChar:="|"`), and the claim holds:
+
+| Run | Unguarded bytes | Guarded bytes |
+|---|---|---|
+| `\|` only | `foo` · **`=1+1` → 2** | single: `"foo` · `=1+1"` — multi: `"a` · **`=1+1` → 2** · `b"` |
+| comma+`\|` | `a` · **`=1+1` → 2** · `b` | **intact** — `foo\|=1+1` and `a\|=1+1\|b` in one cell each |
+
+The comma+`|` row is the clearest single piece of evidence in this amendment: the
+guarded and unguarded forms of the same payload sit in one table under one
+parser, and only the unguarded one evaluates.
+
+**Space is deliberately excluded, and the exclusion is the honest part of this
+decision.** LibreOffice offers space as a separator too. Quoting on it would
+quote nearly every cell either export emits. The class "a separator some consumer
+might select" has no bound, so the rule cannot be "defend against all of them".
+What is defensible is narrower: *the separators that are default-offered by
+mainstream importers **and** absent from our data*. `csv.spec.ts` asserts the
+exclusion, so that nobody later "completes" the list.
+
+### Decision 12 — what this closes, and what it does not
+
+Excel honours the `"` text qualifier **only when the quote opens a field**. So
+the deciding variable is **whether the comma is among the consumer's
+delimiters** — not which extra separator that consumer adds.
+
+| Consumer | Comma a delimiter? | Result |
+|---|---|---|
+| Open, comma+TAB | yes | cell **intact**, `foo<TAB>=1+1` in one cell |
+| Open, comma+`;` | yes | cell **intact** |
+| Open, `;` only | no | splits through the quotes |
+| Paste, TAB | no | splits through the quotes |
+| Paste, `;` | no | splits through the quotes |
+
+**Where the comma survives, this is a real closure**, and it holds for one, two
+or three separators in the same cell — measured, not extrapolated.
+
+**Where the comma does not survive, it is not a guard at all.** The first draft of
+this decision claimed those cases were "mitigated", on the reasoning that the
+closing `"` stays stuck to the formula fragment and `=1+1"` is invalid. **That
+generalised from a single-separator payload and is false.** Put two separators in
+one cell and the closing quote lands on a *later* fragment:
+
+    "foo;=1+1;bar"   imports as   "foo  ·  =1+1 → 2  ·  bar"
+
+Measured with a working control on `foo;=1+1;bar`, `foo;=1+1;`, `a;=1+1;b;c` and
+the TAB equivalent — all evaluated. So for a non-comma consumer the widened
+trigger narrows the set of payloads that work and does nothing more. **Tracked as
+`F4.51`.**
+
+This correction is kept in the record rather than quietly rewritten, because the
+mistake is the interesting part: the mitigation claim came from reasoning about
+one example instead of varying the payload, which is the same failure this ADR's
+*Open question* section already documents once.
+
+The honest statement of the limit: **a consumer that imports an RFC 4180
+comma-delimited file without the comma is misreading it, and no cell-level
+escaping in this module can repair that** — the apostrophe guard only ever
+protects the first fragment, and protecting every fragment means rewriting the
+operator's own data.
+
+### Verification
+
+Re-run of the regenerated probe — built by the real `csvTextCell` — through the
+same four consumers: **no formula evaluated in any of them**, with the control
+evaluating in all four.
+
+**That run is not the whole story, and reading it as one is how the "mitigated"
+claim survived.** Every probe payload carries exactly *one* separator. Varying
+that — the multi-separator cases in decision 12 — evaluates in three of the four.
+The probe's rows are a regression check on the shipped guard, **not** a
+demonstration that the non-comma consumers are safe.
+
+The first verification pass was **vacuous in three of the four runs** and the
+result was nearly recorded anyway. The probe's control is
+`CONTROL_unguarded,=1+1`, which only puts the formula in its own cell when the
+comma is the delimiter; under TAB or `;` the line stays one cell beginning
+`CONTROL` and cannot evaluate whatever the guard does. A second control — a
+**one-cell** row holding `=1+1`, which works under any delimiter — was added to
+`csv-formula-probe.ts` and the runs repeated.
+
+### Byte cost
+
+**Zero on the live database, 2026-08-18.** TAB, `;` and `|` appear in 0 rows of
+`bms.assets.code`, `.name`, `.site_name` (148 rows), `bms.locations.name` (17)
+and `bms.audit_log.reason` / `.payload` (5431). Today's exports are byte-identical
+before and after — the same shape as fact 3, and the same reason this is safe to
+ship and invisible to any test that reads only real data. (5246 of 5431 payloads
+already contain a comma and were already quoted.)
+
+### Two method traps, both of which produced a clean-looking negative
+
+`F4.31` hit the first; this amendment hit the second. Both are recorded because
+each cost a wrong result before it was caught.
+
+1. **Encoding.** No BOM meant Excel decoded ANSI, so `U+00A0` and `U+FEFF`
+   arrived as text beginning with a letter.
+2. **The delimiter arguments are ignored for `.csv`.** `Workbooks.OpenText`
+   discards its `Tab`/`Semicolon`/`Comma` arguments when the file extension is
+   `.csv` and uses the locale list separator instead. The first run returned four
+   identical tables and the comma split even with `Comma:=False`. Copy to `.txt`.
+   Relatedly, a clipboard paste follows Excel's **sticky** import delimiters, not
+   TAB unconditionally — so `F4.50`'s row was wrong to say "always TAB-delimited".
+
+### Still untested
+
+**LibreOffice 7.x**, as in `F4.31` — it is not installed on the machine this was
+measured on. The sticky-checkbox vector was measured in Excel, which has the same
+behaviour, but not in the product the row names. The guard is strictly stronger
+than before, so LibreOffice cannot be newly exposed by this change.
+
+The **HTTP layer** was not exercised: the local stack runs `AUTH_MODE=oidc`.
+Verification went as far as the deployed container — `dist/serialise/csv.js`
+carries the widened trigger, and both compiled serialisers quote all three
+characters.
 
 ## Still divergent between the two exports
 
