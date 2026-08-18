@@ -88,11 +88,23 @@ export function csvTextCell(value: string): CsvField {
   // formula leader is underneath. `String.prototype.trimStart` covers all three
   // characters ADR 0026 asked about, which was verified rather than assumed.
   //
-  // The raw check cannot be dropped for it. TAB and CR are *themselves* leaders
-  // **and** whitespace, so a value that is a lone `"\t"` or `"\r"` trims to the
-  // empty string and matches nothing — replacing the raw test with the trimmed
-  // one would silently unguard exactly those two, while every existing test kept
-  // passing. Measured before writing this.
+  // The raw check is kept, and the reason is narrower than an earlier version of
+  // this comment claimed — the security review corrected it. TAB and CR are
+  // *themselves* leaders **and** whitespace, so they trim to the empty string;
+  // the raw check is therefore uniquely load-bearing only for `"\t"`, `"\r"`,
+  // `"\tfoo"` and their kin, **none of which carries a formula body**.
+  // `"\t=1+1"` is caught by the trimmed check. Dropping the raw test would be a
+  // behaviour change and a departure from OWASP's rule as stated, not an
+  // exploitable regression. It stays because it is free and correct.
+  //
+  // **Known gap, and it is the contiguity rather than any one character.**
+  // `trimStart` strips a *contiguous* run, so one character it does not know —
+  // U+200B, U+200E, a C0 control — anywhere in the leading run disables the whole
+  // trimmed check: `"​ =1+1"` is unguarded today. Not closed on reasoning,
+  // per this module's own rule: Sheets was measured **not** to evaluate behind
+  // U+00A0 or U+FEFF, both of which `trimStart` does strip, so its strip set
+  // looks strictly narrower than ours. `csv-formula-probe.ts` carries the rows
+  // that would settle it.
   const leads = (candidate: string): boolean =>
     FORMULA_LEADERS.some((lead) => candidate.startsWith(lead));
   const guarded = leads(value) || leads(value.trimStart()) ? `'${value}` : value;

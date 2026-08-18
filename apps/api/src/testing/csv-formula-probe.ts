@@ -61,12 +61,38 @@ import { csvDocument, csvTextCell, type CsvField } from "../serialise/csv";
  *   the parser name and version.
  */
 
-/** The four payloads, each fed through the *real* shipped guard. */
+/**
+ * The payloads, each fed through the *real* shipped guard.
+ *
+ * The first four are ADR 0026's original question. `space_u0020` is the one
+ * that **evaluated in Google Sheets**, which is why the guard now trims.
+ *
+ * The rest were added by the security review of that fix and are **not yet
+ * answered by any parser**:
+ *
+ * - `zwsp_lead` / `zwsp_inner` — `trimStart` strips a *contiguous* run, so one
+ *   character it does not know (U+200B here) anywhere in the prefix disables
+ *   the whole trimmed check. This is the discriminating test for "does a parser
+ *   strip something `trimStart` does not".
+ * - `tab_split` / `semicolon_split` — a different class: not formula *detection*
+ *   but **field splitting**. TAB is in `FORMULA_LEADERS` yet not in the quote
+ *   trigger, and `;` is in neither, so both are emitted unquoted. Any consumer
+ *   treating either as a delimiter — a clipboard paste into Excel, LibreOffice
+ *   sticky separator checkboxes, or Excel opening a .csv in a locale whose list
+ *   separator is `;` — gets a second cell beginning `=`. Both are
+ *   **pre-existing**, not introduced by the trimming fix.
+ *
+ * A row here is a question, not a claim. Put the answer in ADR 0026.
+ */
 const CASES: readonly (readonly [string, string])[] = [
   ["plain", "=1+1"],
   ["space_u0020", " =1+1"],
   ["nbsp_u00a0", " =1+1"],
   ["bom_ufeff", "﻿=1+1"],
+  ["zwsp_lead", "​ =1+1"],
+  ["zwsp_inner", " ​=1+1"],
+  ["tab_split", "foo\t=1+1"],
+  ["semicolon_split", "foo;=1+1"],
 ];
 
 function buildRows(): CsvField[][] {

@@ -83,11 +83,21 @@ export function runCsvSerialiseTests(): void {
 
   // Whitespace *through* a whitespace leader and onto a real one still guards —
   // the case the loop above cannot express.
-  for (const payload of [" \t=1+1", "\t =1+1", " \r@SUM(1)"]) {
+  //
+  // **Only payloads whose first character is NOT itself a leader.** The security
+  // review caught `"\t =1+1"` sitting in this list: it starts with TAB, so the
+  // *raw* check already catches it and it survives deleting the trimmed check
+  // entirely — it looked like it discriminated and did not. These two do.
+  //
+  // Asserted with `startsWith`, not `includes("'")`. The weaker form was the
+  // review's other catch: it passes on any value that merely *contains* an
+  // apostrophe anywhere.
+  for (const payload of [" \t=1+1", " \r@SUM(1)"]) {
     const cell = csvTextCell(payload);
     assert(
-      cell.includes("'"),
-      `${JSON.stringify(payload)} reaches a formula leader after trimming and must be guarded`,
+      cell.startsWith("'") || cell.startsWith(`"'`),
+      `${JSON.stringify(payload)} reaches a formula leader after trimming and must be guarded, ` +
+        `got ${JSON.stringify(cell)}`,
     );
   }
 
@@ -99,11 +109,16 @@ export function runCsvSerialiseTests(): void {
     "the whitespace and the payload both survive the guard",
   );
 
-  // **The raw check cannot be replaced by the trimmed one**, which is the part a
-  // future simplification would get wrong. TAB and CR are both leaders AND
-  // whitespace, so they trim away to nothing and match no leader afterwards.
-  // Dropping the raw test would silently unguard exactly these two while every
-  // other assertion in this file kept passing.
+  // **The raw check still fires where the trimmed one does not**, so keep it —
+  // but the claim is narrower than the first version of this comment made it,
+  // and the security review was right to say so. TAB and CR are leaders *and*
+  // whitespace, so they trim to the empty string; the raw check is therefore
+  // uniquely load-bearing for values like `"\t"`, `"\r"` and `"\tfoo"` — **none
+  // of which carries a formula body**. `"\t=1+1"` is caught by the *trimmed*
+  // check. So dropping the raw test would be a behaviour change and a
+  // departure from OWASP's stated rule, not an exploitable regression. Kept
+  // because it is free and correct, not because it is the thing holding the
+  // vulnerability shut.
   for (const lone of ["\t", "\r"]) {
     const cell = csvTextCell(lone);
     assert(

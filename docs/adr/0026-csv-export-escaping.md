@@ -240,7 +240,7 @@ None. No package is added or upgraded, so §9.4 is not engaged.
   which is what the §3 entry above is for. This is a different answer from ADRs
   0022–0025 and is stated affirmatively.
 
-## Open question — leading whitespace — **RESOLVED, and the answer was a bypass**
+## Open question — leading whitespace — **the answer was a bypass; the fix awaits one confirming import**
 
 `FORMULA_LEADERS` is OWASP's six. A value led by **U+0020, U+00A0 or U+FEFF**
 passes `csvTextCell` completely unmodified and unquoted: no leader match, no quote
@@ -311,6 +311,39 @@ needs only the plain one.
 CSV renders as mojibake in Excel today** — an accented site or asset name is
 enough. Not fixed here: adding a BOM changes every consumer of both endpoints,
 and it is not a formula-injection question.
+
+**The fix itself has NOT been measured in the parser that broke, and this
+section said otherwise for a few hours.** The security review caught it. The only
+apostrophe form any parser has ever imported is `'=1+1` — apostrophe immediately
+followed by `=`. The guard emits a **different** string for the case that
+failed:
+
+    csvTextCell(" =1+1") === "' =1+1"     // apostrophe, SPACE, equals
+
+Sheets is precisely the parser proved to do something non-obvious with a leading
+space *before* formula detection. Whether its text-prefix-apostrophe handling
+runs before, after or interleaved with that strip is the exact interaction this
+fix depends on, and it is unmeasured. "The regenerated probe shows all four
+guarded" describes what `csvTextCell` **returned in Node** — not what a
+spreadsheet did with it. **Import `csv-formula-probe.csv` into Sheets once and
+record the result here.** Until then the fix is reasoned, not verified.
+
+**Four further rows were added to the probe by the same review, none answered.**
+`zwsp_lead` and `zwsp_inner` test the real shape of the `trimStart` gap: it
+strips a *contiguous* run, so one character it does not know — U+200B here —
+anywhere in the prefix disables the whole trimmed check, and `"​ =1+1"` is
+unguarded today. That is ranked low on evidence rather than hope: Sheets was
+measured **not** to evaluate behind U+00A0 or U+FEFF, both of which `trimStart`
+*does* strip, so its strip set looks strictly narrower than ours.
+
+`tab_split` and `semicolon_split` are a different class — not formula detection
+but **field splitting**, and both **pre-existing**. TAB is in `FORMULA_LEADERS`
+and not in the quote trigger; `;` is in neither. So `foo	=1+1` and `foo;=1+1`
+are emitted unquoted, and any consumer treating either as a delimiter yields a
+second cell beginning `=`. The module's own docstring argues CR must be in *both*
+lists for exactly this reason, which makes TAB's absence an internal
+inconsistency rather than only an outside claim. Tracked separately rather than
+folded in here.
 
 **Still untested: LibreOffice 7.x**, which is not installed in this environment.
 The guard is now strictly stronger than it was, so LibreOffice cannot be
