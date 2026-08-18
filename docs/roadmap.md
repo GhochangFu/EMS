@@ -1462,6 +1462,61 @@ Process (`AGENTS.md` §10).
   **absorbed into ADR 0031** — it turned out to be one question asked of two
   columns, and not answerable on its own.
 
+### Alarm severity as a vocabulary (F4.46, ADR 0032) — done
+
+- **Status:** merged 2026-08-18 (PRs #88, #89).
+- **What it was.** `F4.46` was a three-part defect on one column. The rule
+  builder rewrote a severity it did not recognise back onto the row on save
+  (closed earlier by #80); the alarms page **coloured and counted** an
+  unrecognised severity as the least urgent thing on the board; and `major`
+  appeared in three readers while existing in no contract, no schema and no row.
+- **`major` was not dead data — it was the mockup's word.** `ESKOM_SMOC.html`
+  and `TRINETRA.html` both draw a `Major` card with warning styling, while the
+  product stores `warning`. The page was comparing stored values against a
+  *display* vocabulary. The label stayed; the comparisons went. A third reader —
+  a SQL predicate in `dashboard.service.ts` — meant the collision had reached the
+  API, not just the web client.
+- **Then the storage question, which the backlog row had answered wrongly.** It
+  asked for a `CHECK` constraint and an exhaustive `switch`, citing ADR 0031.
+  ADR 0031 does not mention severity, and its Amendment 1 had moved the opposite
+  way. The owner ruled for a lookup table: `bms.alarm_severities` (migration
+  `0030`), keyed by `code`, carrying **`rank`** for urgency and **`tone`** for
+  colour, with foreign keys on `alarms.severity` and a nullable
+  `automation_rules.severity`.
+- **Why `rank` and `tone` are the point.** ADR 0031 could open `category` freely
+  because nothing branches on it. Severity has behaviour attached, and the row
+  read that as a reason to freeze the set. It is instead a reason to make the
+  *behaviour* data: a level declared with no rank and no tone would arrive
+  unsortable and unstyled, which is the `F4.43` empty-badge failure again.
+- **Measured, not asserted.** Before seeding, an alarm at `severity = 'high'` is
+  rejected by `alarms_severity_fk`. After one `INSERT` at rank 25 with tone
+  `warning`, the same write succeeds and the page draws `HIGH` amber, counted
+  under Major — with no code change. That is the whole cost of answering client
+  ask **B9**, against a migration and a deploy under the `CHECK`.
+- **Three review passes found real defects, and one falsified the ADR itself.**
+  `AlarmThresholdService.normalizeSeverity` rewrote anything outside three
+  literals to `warning`, so a rule seeded at `high` passed the foreign key and
+  was then downgraded on every alarm it raised — the "no code change" promise
+  false on the path that matters most. Also: a preflight hardcoding the three
+  codes (so a re-run aborted on a value the table already held); `varchar(32)`
+  columns against a `varchar(64)` key, turning a long code into a **500** on the
+  path `assertAlarmSeverity` exists to make a 400; four *more* hardcoded severity
+  literals in the dashboard SQL; a `tone` default that would have made an
+  untoned level silently the calmest colour; and a rule-builder effect that
+  persisted `severity: null` if a rule was opened before the vocabulary loaded.
+- **The lesson worth carrying, now in AGENTS.md §4.8.** *Opening a vocabulary
+  invalidates every closed list that reads it, not only the ones the compiler can
+  find.* Most of the above were hand-written `if`s and SQL literals; nothing in
+  the type system pointed at any of them. And the closed/open test gained a third
+  answer: a vocabulary is only closed if the **behaviour cannot be carried as
+  data**.
+- **Still owed:** nothing blocking. Two retirement gaps are recorded in ADR 0032
+  rather than fixed — `duplicateRule` copies a code without re-checking `active`,
+  and a rule holding a retired severity becomes uneditable. Neither is reachable
+  until something retires a value, which nothing does yet. Client ask **B9** is
+  still open: if Ion Exchange confirms a `High` level, someone must rule its tone
+  and its rank.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
