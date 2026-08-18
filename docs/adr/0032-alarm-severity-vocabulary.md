@@ -194,7 +194,24 @@ None. No new npm package (AGENTS.md §9.4 is not engaged).
   correctly now so that the first thing which needs it — escalation, or the
   ordering of a four-level ladder — finds the data already true rather than
   backfilling urgency onto live rows.
-- **Retirement is untested against live plant.** `active = false` is the
-  declared path, and the foreign keys check existence rather than the flag, so a
-  retired value keeps resolving for rows that already hold it. No row has been
-  retired yet, so that path rests on ADR 0031's precedent.
+- **Retirement is untested against live plant, and both reviews found the same
+  two holes in it.** `active = false` is the declared path, and the foreign keys
+  check existence rather than the flag, so a retired value keeps resolving for
+  rows that already hold it. No row has been retired yet, so that path rests on
+  ADR 0031's precedent. Two specific gaps, recorded rather than fixed here
+  because both are the *retirement* workflow rather than this ADR's subject, and
+  neither is reachable until something retires a value:
+
+  1. **`duplicateRule` (`rules.service.ts`) reintroduces a retired code.** It
+     copies `category` and `severity` straight into a new row without
+     `validateRuleDraft`, so neither `assertRuleCategory` nor
+     `assertAlarmSeverity` runs and only the foreign key — existence, not
+     `active` — is left. A duplicate *is* a new write, which is exactly what
+     `VocabulariesService` is supposed to be the only guard for. Pre-existing
+     for `category` under ADR 0031; this ADR extends the same gap to a second
+     column, which is why it belongs here rather than staying unsaid.
+  2. **A rule already holding a retired severity becomes uneditable.**
+     `updateRule` funnels through `validateRuleDraft` → `assertAlarmSeverity`,
+     so an edit that never touches severity is rejected with a 400 on a value
+     the row already had. Retirement therefore freezes rows rather than merely
+     stopping new uses of the value.
