@@ -22,6 +22,7 @@ import {
   assertOrphanedRefsAreCaughtAtPublish,
   assertPointKeyCatalogIsEnforced,
   assertPublishFreezes,
+  assertUnknownSkillRejectedOnCreate,
   assertVersionBumpCopiesPoints,
   cleanup,
   loadFixtures,
@@ -136,6 +137,10 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
 
     it("rejects content naming a catalogued point the template does not declare", async () => {
       await assertContentRefsCheckedOnCreate(svc, fx);
+    });
+
+    it("rejects an unknown philosophy.skill on create (ADR 0034)", async () => {
+      await assertUnknownSkillRejectedOnCreate(svc, fx);
     });
 
     it("resolves a content-only patch against the stored point set", async () => {
