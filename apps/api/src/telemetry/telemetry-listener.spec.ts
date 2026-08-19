@@ -537,7 +537,8 @@ async function wiresMetricsToListenerState(): Promise<void> {
  *
  * The batch below is the payload that was published against the running stack
  * on 2026-08-14: it broadcast three junk entries and threw `TypeError` inside
- * `AlarmThresholdService.collapseLatest`, which runs before any rule and so
+ * `AlarmEngineService.collapseLatest` (named `AlarmThresholdService` at the
+ * time, renamed by F3.6), which runs before any rule and so
  * suppressed alarm evaluation for the whole batch. That is why the valid
  * reading must still be delivered — dropping whole batches would let one bad
  * entry blind the alarm path for everything published beside it.

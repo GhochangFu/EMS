@@ -37,6 +37,7 @@ export class AlarmsService {
     id: string;
     assetId: string;
     ruleKey: string | null;
+    ruleId: string | null;
     severity: string;
     message: string;
     raisedAt: Date;
@@ -50,6 +51,7 @@ export class AlarmsService {
       id: r.id,
       assetId: r.assetId,
       ruleKey: r.ruleKey,
+      ruleId: r.ruleId,
       severity: r.severity,
       message: r.message,
       raisedAt: r.raisedAt.toISOString(),
@@ -81,6 +83,7 @@ export class AlarmsService {
         id: alarms.id,
         assetId: alarms.assetId,
         ruleKey: alarms.ruleKey,
+        ruleId: alarms.ruleId,
         severity: alarms.severity,
         message: alarms.message,
         raisedAt: alarms.raisedAt,
@@ -191,6 +194,7 @@ export class AlarmsService {
           id: alarms.id,
           assetId: alarms.assetId,
           ruleKey: alarms.ruleKey,
+          ruleId: alarms.ruleId,
           severity: alarms.severity,
           message: alarms.message,
           raisedAt: alarms.raisedAt,

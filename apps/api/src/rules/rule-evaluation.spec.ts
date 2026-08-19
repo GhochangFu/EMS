@@ -91,6 +91,14 @@ function testCompare(): void {
   assert(compare(100, "eq", 100), "eq: equal must match");
   assert(!compare(100.0001, "eq", 100), "eq: near-equal must not match");
 
+  // `CR_HVAC_1_COMPRESSOR_FAULT` (automation-rules-seed.ts) is `compressor_ok
+  // eq 0` — a live `eq` rule on a boolean-as-number state point, not a
+  // theoretical case. `F3.6` is about to route this rule through the same
+  // `compare` the threshold engine used privately; this pins the exact values
+  // that rule depends on before the merge, not after.
+  assert(compare(0, "eq", 0), "eq: compressor_ok=0 must match a threshold of 0 (fault)");
+  assert(!compare(1, "eq", 0), "eq: compressor_ok=1 must not match a threshold of 0 (healthy)");
+
   // Negatives and zero — a `Math.abs` or truthiness slip survives positives only.
   assert(compare(-1, "gt", -2), "gt must order negatives");
   assert(compare(0, "gte", 0), "gte must accept zero against zero");

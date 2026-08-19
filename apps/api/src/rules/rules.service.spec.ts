@@ -3,6 +3,7 @@ import "reflect-metadata";
 import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 import type { BmsDb } from "@bms/db";
 
+import type { AlarmRaiser } from "../alarms/alarm-raise.service";
 import type { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { mergeRuleDraft } from "./rule-mapping";
 import { ruleRow } from "./rule-mapping.spec";
@@ -69,7 +70,10 @@ function validator(rows: unknown[] = []): ValidateAccess {
     assertRuleCategory: async () => undefined,
     assertAlarmSeverity: async () => undefined,
   } as unknown as VocabulariesService;
-  return new RulesService(db, vocabularies) as unknown as ValidateAccess;
+  // `validateRuleDraft` never raises — F3.6's addition to the constructor,
+  // untouched by anything this file exercises.
+  const alarmRaiser = {} as unknown as AlarmRaiser;
+  return new RulesService(db, vocabularies, alarmRaiser) as unknown as ValidateAccess;
 }
 
 const HVAC_ASSET = [{ code: "AHU-1", domain: "hvac" }];
@@ -117,12 +121,16 @@ function timeWindowDraft(severity?: RuleDraftBody["severity"]): RuleDraftBody {
  * update that simply did not mention severity overwrote a stored null.
  *
  * The defaults were not merely unused, they were misplaced. `alarms.severity`
- * is `NOT NULL` (`bms-schema.ts:429`) and that boundary already has its own
- * default: `AlarmThresholdService.normalizeSeverity`
- * (`alarm-threshold.service.ts:138`) maps a null row to `"warning"` as it
- * builds the rule cache. The time-window default protected nothing at all — the
- * cache query filters to `ruleType = "threshold"` (`:99`), so a time-window
- * rule never reaches the alarm engine to need a severity.
+ * is `NOT NULL` (`bms-schema.ts:474`) and that boundary already has its own
+ * default: `defaultAlarmSeverity` (`alarm-severity-default.ts:21`) maps a null
+ * rule to `"warning"` when `AlarmRaiser` raises it (F3.6 — this function used
+ * to live as `AlarmThresholdService.normalizeSeverity` and was extracted when
+ * the streaming and on-demand engines were unified). The time-window default
+ * protected nothing at all — the streaming cache query filters to `ruleType =
+ * "threshold"` (`alarm-engine.service.ts:81`), and `shouldRaise`
+ * (`alarm-raise.service.ts`) makes the same exclusion explicit for the
+ * on-demand evaluator, so a time-window rule never reaches either engine to
+ * need a severity.
  */
 export async function runRuleSeverityRoundTripTests(): Promise<void> {
   const omittedThreshold = await validator(HVAC_ASSET).validateRuleDraft(thresholdDraft());
