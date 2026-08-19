@@ -3,9 +3,12 @@
 // requires an ADR in docs/adr/ (Promotion Process §10).
 //
 // Fires on Edit/Write/MultiEdit of any package.json. When it detects an added
-// dependency specifier, it returns an "ask" decision so a human confirms an ADR
-// exists before the change lands. Fails OPEN on any error — a broken hook must
-// never block the workflow.
+// dependency specifier, it returns a "deny" decision, which blocks the tool call
+// outright. "ask" was not enough: under permissions.defaultMode "auto" an "ask"
+// is resolved without reaching a human, so an unattended session sailed straight
+// past the gate. "deny" holds in every permission mode.
+//
+// Fails OPEN on any error — a broken hook must never block the workflow.
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -62,13 +65,15 @@ function specLines(text) {
       'AGENTS.md §9.4 / §4: adding or changing a dependency requires an ADR in ' +
       'docs/adr/ (Promotion Process §10). Detected manifest change:\n' +
       added.slice(0, 8).map((l) => '  ' + l).join('\n') +
-      '\nConfirm an ADR exists (or this is a script/version-only change) before proceeding.';
+      '\nThis edit is blocked. Land the ADR first, then apply the manifest change ' +
+      'in the same PR. If this is a script or version-only change that needs no ADR, ' +
+      'the human applies it directly — an agent must not decide that on its own.';
 
     process.stdout.write(
       JSON.stringify({
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          permissionDecision: 'ask',
+          permissionDecision: 'deny',
           permissionDecisionReason: reason,
         },
       })

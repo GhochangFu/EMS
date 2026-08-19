@@ -14,8 +14,16 @@
 // untracked migrations are still freely editable, so `pnpm db:generate`
 // followed by hand-tuning keeps working.
 //
-// Returns an "ask" decision so a human can override deliberately (e.g. fixing
-// a typo in a migration that has genuinely never left this machine).
+// Returns a "deny" decision, which blocks the tool call outright. This was an
+// "ask", on the assumption that an "ask" reaches a human who can override it
+// deliberately. Under permissions.defaultMode "auto" it does not: the decision
+// is resolved without a prompt, so the override was never the human's to make.
+// "deny" holds in every permission mode.
+//
+// The legitimate override survives, it just belongs to the human: to edit a
+// migration that has genuinely never been applied anywhere, apply the edit
+// directly rather than through an agent.
+//
 // Fails OPEN on any error — a broken hook must never block the workflow.
 
 import { execFileSync } from 'node:child_process';
@@ -70,13 +78,15 @@ function isTrackedByGit(file) {
       'pilot would silently diverge from what this file says.\n\n' +
       'Prefer forward-only: add a NEW migration (`pnpm db:generate`) that makes ' +
       'the change.\n\n' +
-      'Override only if this migration has genuinely never been applied anywhere.';
+      'This edit is blocked. If this migration has genuinely never been applied ' +
+      'anywhere, the human applies the edit directly — an agent must not decide ' +
+      'that on its own.';
 
     process.stdout.write(
       JSON.stringify({
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          permissionDecision: 'ask',
+          permissionDecision: 'deny',
           permissionDecisionReason: reason,
         },
       })
