@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import {
   fetchAlarmDetails,
@@ -7,7 +7,7 @@ import {
   type AlarmEnrichmentUpsertBody,
 } from "../api/alarms";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
-import { alarmSkillLabel, formatThresholdPairing } from "../lib/alarm-details";
+import { alarmSkillLabel, formatThresholdPairing, toLocalDateTimeInputValue } from "../lib/alarm-details";
 import { alarmSeverityTone } from "../lib/alarm-severity";
 import { StatusPill } from "./status-pill";
 
@@ -26,6 +26,10 @@ type FormState = {
   energyImpact: string;
   waterImpact: string;
   productionImpact: string;
+  /** `<input type="datetime-local">`'s own unzoned local-time string
+   * (`YYYY-MM-DDTHH:mm`), not the server's UTC ISO — converted only at
+   * submit. Storing the ISO string here and slicing it for display was the
+   * bug: the slice reads UTC digits as if they were local. */
   etrAt: string;
   skillCode: string;
 };
@@ -45,6 +49,10 @@ const EMPTY_FORM: FormState = {
  * ADR 0034 — the Alarm Details panel. The read half (value-vs-threshold,
  * asset context) needs no write access; the enrichment form is hidden for a
  * `viewer`, matching the write endpoint's role gate.
+ *
+ * Affected assets (ADR 0034 decision 4) are shown read-only here — the API
+ * and its scope guard are built and tested (`alarm-enrichment.service.ts`),
+ * but an add/remove picker is not part of this slice.
  */
 export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPanelProps) {
   const qc = useQueryClient();
@@ -66,8 +74,20 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
   const skills = vocabQ.data?.alarmSkills ?? [];
   const severities = vocabQ.data?.alarmSeverities ?? [];
 
+  /**
+   * Hydrate the form once per `alarmId`, not on every `detailsQ.data`
+   * change. `QueryClient` here has no `staleTime` set on this query and the
+   * default client refetches on window focus, so without this guard a
+   * background refetch while the operator is mid-edit would silently
+   * overwrite their unsaved text with whatever is stored (found in review).
+   */
+  const hydratedForRef = useRef<string | null>(null);
   useEffect(() => {
-    const enrichment = detailsQ.data?.enrichment;
+    if (!detailsQ.data || hydratedForRef.current === alarmId) {
+      return;
+    }
+    hydratedForRef.current = alarmId;
+    const enrichment = detailsQ.data.enrichment;
     setForm({
       rootCause: enrichment?.rootCause ?? "",
       impact: enrichment?.impact ?? "",
@@ -75,10 +95,10 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
       energyImpact: enrichment?.energyImpact ?? "",
       waterImpact: enrichment?.waterImpact ?? "",
       productionImpact: enrichment?.productionImpact ?? "",
-      etrAt: enrichment?.etrAt ?? "",
+      etrAt: enrichment?.etrAt ? toLocalDateTimeInputValue(enrichment.etrAt) : "",
       skillCode: enrichment?.skillCode ?? "",
     });
-  }, [detailsQ.data]);
+  }, [detailsQ.data, alarmId]);
 
   const saveM = useMutation({
     mutationFn: (body: AlarmEnrichmentUpsertBody) => saveAlarmEnrichment(alarmId, body),
@@ -102,11 +122,14 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
       energyImpact: form.energyImpact || null,
       waterImpact: form.waterImpact || null,
       productionImpact: form.productionImpact || null,
-      etrAt: form.etrAt || null,
+      etrAt: form.etrAt ? new Date(form.etrAt).toISOString() : null,
       // A `<select>` whose value matches no `<option>` renders its first
       // option, which is the `F4.44` trap — the current value is always kept
       // as an option even if the vocabulary has since retired it (below).
       skillCode: form.skillCode || null,
+      // affectedAssetIds intentionally omitted — this panel has no editor
+      // for it yet, and omitting the key (vs. sending `[]`) leaves the
+      // stored set untouched rather than clearing it.
     });
   }
 
@@ -201,13 +224,43 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                     <dd className="text-bms-muted">{details.enrichment.rootCause ?? "—"}</dd>
                   </div>
                   <div>
+                    <dt className="font-semibold text-bms-ink">Impact</dt>
+                    <dd className="text-bms-muted">{details.enrichment.impact ?? "—"}</dd>
+                  </div>
+                  <div>
                     <dt className="font-semibold text-bms-ink">Corrective actions</dt>
                     <dd className="text-bms-muted">{details.enrichment.correctiveActions ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-bms-ink">Energy impact</dt>
+                    <dd className="text-bms-muted">{details.enrichment.energyImpact ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-bms-ink">Water impact</dt>
+                    <dd className="text-bms-muted">{details.enrichment.waterImpact ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-bms-ink">Production impact</dt>
+                    <dd className="text-bms-muted">{details.enrichment.productionImpact ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-bms-ink">ETR</dt>
+                    <dd className="text-bms-muted">
+                      {details.enrichment.etrAt ? new Date(details.enrichment.etrAt).toLocaleString() : "—"}
+                    </dd>
                   </div>
                   <div>
                     <dt className="font-semibold text-bms-ink">Skill</dt>
                     <dd className="text-bms-muted">
                       {alarmSkillLabel(details.enrichment.skillCode, skills) ?? "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-bms-ink">Affected assets</dt>
+                    <dd className="text-bms-muted">
+                      {details.enrichment.affectedAssets.length > 0
+                        ? details.enrichment.affectedAssets.map((a) => a.assetCode).join(", ")
+                        : "—"}
                     </dd>
                   </div>
                 </dl>
@@ -229,6 +282,18 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                   />
                 </div>
                 <div>
+                  <label className="text-xs font-medium text-bms-muted" htmlFor="impact">
+                    Impact
+                  </label>
+                  <textarea
+                    id="impact"
+                    className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    rows={2}
+                    value={form.impact}
+                    onChange={(ev) => setForm((f) => ({ ...f, impact: ev.target.value }))}
+                  />
+                </div>
+                <div>
                   <label className="text-xs font-medium text-bms-muted" htmlFor="corrective-actions">
                     Corrective actions
                   </label>
@@ -239,6 +304,44 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                     value={form.correctiveActions}
                     onChange={(ev) => setForm((f) => ({ ...f, correctiveActions: ev.target.value }))}
                   />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-xs font-medium text-bms-muted" htmlFor="energy-impact">
+                      Energy impact
+                    </label>
+                    <textarea
+                      id="energy-impact"
+                      className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                      rows={2}
+                      value={form.energyImpact}
+                      onChange={(ev) => setForm((f) => ({ ...f, energyImpact: ev.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-bms-muted" htmlFor="water-impact">
+                      Water impact
+                    </label>
+                    <textarea
+                      id="water-impact"
+                      className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                      rows={2}
+                      value={form.waterImpact}
+                      onChange={(ev) => setForm((f) => ({ ...f, waterImpact: ev.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-bms-muted" htmlFor="production-impact">
+                      Production impact
+                    </label>
+                    <textarea
+                      id="production-impact"
+                      className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                      rows={2}
+                      value={form.productionImpact}
+                      onChange={(ev) => setForm((f) => ({ ...f, productionImpact: ev.target.value }))}
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="text-xs font-medium text-bms-muted" htmlFor="skill-code">
@@ -266,15 +369,16 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                     id="etr"
                     type="datetime-local"
                     className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-                    value={form.etrAt.slice(0, 16)}
-                    onChange={(ev) =>
-                      setForm((f) => ({
-                        ...f,
-                        etrAt: ev.target.value ? new Date(ev.target.value).toISOString() : "",
-                      }))
-                    }
+                    value={form.etrAt}
+                    onChange={(ev) => setForm((f) => ({ ...f, etrAt: ev.target.value }))}
                   />
                 </div>
+                {details.enrichment && details.enrichment.affectedAssets.length > 0 ? (
+                  <p className="text-xs text-bms-muted">
+                    Affected assets: {details.enrichment.affectedAssets.map((a) => a.assetCode).join(", ")}{" "}
+                    (editing this list is not available here yet)
+                  </p>
+                ) : null}
                 {saveError ? (
                   <p className="text-xs text-red-600" role="alert">
                     {saveError}

@@ -11,7 +11,7 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
@@ -23,6 +23,16 @@ import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmsService } from "./alarms.service";
 import { alarmEnrichmentUpsertBodySchema } from "./enrichment.schema";
+
+/**
+ * Security review finding: the two new routes below passed `id` straight to
+ * a `uuid` column with no shape check, so a non-UUID id reached Postgres
+ * `22P02` and returned a 500. `list`/`acknowledge` share this gap but predate
+ * this ADR, so they are out of scope here; `../admin/admin.schema`'s
+ * `idParamSchema` is the same check, kept local rather than reached for
+ * across an admin/non-admin module boundary.
+ */
+const alarmIdParamSchema = z.string().uuid();
 
 @Controller("alarms")
 @UseGuards(JwtAuthGuard)
@@ -55,7 +65,15 @@ export class AlarmsController {
    * write-role check, unlike `acknowledge` and the enrichment write. */
   @Get(":id/details")
   async getDetails(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
-    return this.details.get(id, await this.accessControl.readableAssetIds(user));
+    try {
+      const alarmId = alarmIdParamSchema.parse(id);
+      return await this.details.get(alarmId, await this.accessControl.readableAssetIds(user));
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
   }
 
   @Post(":id/ack")
@@ -92,10 +110,11 @@ export class AlarmsController {
   ) {
     await this.accessControl.assertOperationsWriteRole(user, "operational");
     try {
+      const alarmId = alarmIdParamSchema.parse(id);
       const dto = alarmEnrichmentUpsertBodySchema.parse(body);
       const assetIds = await this.accessControl.readableAssetIds(user);
-      await this.enrichment.upsert(id, user, dto, assetIds);
-      return this.details.get(id, assetIds);
+      await this.enrichment.upsert(alarmId, user, dto, assetIds);
+      return await this.details.get(alarmId, assetIds);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

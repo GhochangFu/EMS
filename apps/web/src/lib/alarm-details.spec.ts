@@ -1,6 +1,11 @@
 import type { AlarmSkillDto } from "@bms/shared";
 
-import { alarmSkillLabel, formatThresholdPairing, operatorSymbol } from "./alarm-details";
+import {
+  alarmSkillLabel,
+  formatThresholdPairing,
+  operatorSymbol,
+  toLocalDateTimeInputValue,
+} from "./alarm-details";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -51,6 +56,25 @@ export function runFormatThresholdPairingTests(): void {
   assert(
     noUnit?.current === "42" && noUnit.threshold === "≤50",
     `a missing unit must not render as the literal string "null", got ${JSON.stringify(noUnit)}`,
+  );
+}
+
+/**
+ * Code review finding: the panel used to slice a UTC ISO string directly
+ * (`etrAt.slice(0, 16)`) into a `datetime-local` input, which renders the
+ * given digits as LOCAL time — reading UTC wall-clock digits as if they were
+ * local. Round-tripped through a real local `Date` rather than asserted
+ * against a fixed string, so this test does not itself depend on the
+ * machine's timezone: whatever zone it runs in, converting a local moment to
+ * UTC and back must recover the same local digits.
+ */
+export function runToLocalDateTimeInputValueTests(): void {
+  const local = new Date(2026, 7, 19, 20, 30); // 19 Aug 2026, 20:30, local time
+  const iso = local.toISOString();
+  const result = toLocalDateTimeInputValue(iso);
+  assert(
+    result === "2026-08-19T20:30",
+    `expected the local wall-clock time back ("2026-08-19T20:30"), got "${result}" (iso was ${iso})`,
   );
 }
 

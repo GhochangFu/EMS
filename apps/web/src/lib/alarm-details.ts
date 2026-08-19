@@ -74,3 +74,17 @@ export function alarmSkillLabel(
   }
   return vocabulary.find((entry) => entry.code === code)?.label ?? code;
 }
+
+/**
+ * UTC ISO → the local-time string an `<input type="datetime-local">`
+ * expects. Code review finding: displaying a stored ETR by slicing its UTC
+ * ISO string directly renders those UTC digits as if they were local time,
+ * wrong by the machine's UTC offset in every timezone but +0. Uses local
+ * `Date` getters — `getHours`/`getMinutes`, not `getUTCHours` — precisely
+ * because those return the wall-clock time in the browser's own timezone.
+ */
+export function toLocalDateTimeInputValue(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}

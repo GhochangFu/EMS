@@ -4,6 +4,7 @@ import {
   runAlarmSkillLabelTests,
   runFormatThresholdPairingTests,
   runOperatorSymbolTests,
+  runToLocalDateTimeInputValueTests,
 } from "./alarm-details.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -18,5 +19,9 @@ describe("alarm-details", () => {
 
   it("resolves a skill label by code, falling back to the raw code", () => {
     runAlarmSkillLabelTests();
+  });
+
+  it("converts a UTC ISO timestamp to the local wall-clock digits a datetime-local input expects", () => {
+    runToLocalDateTimeInputValueTests();
   });
 });
