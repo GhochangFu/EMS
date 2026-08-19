@@ -218,6 +218,20 @@
       "when": 1779753600000,
       "tag": "0031_point_values_finite_check",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1779840000000,
+      "tag": "0032_alarm_rule_link",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1779926400000,
+      "tag": "0033_eskom_simulator_threshold_rules",
+      "breakpoints": true
     }
   ]
 }

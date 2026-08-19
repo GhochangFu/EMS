@@ -243,6 +243,107 @@ describe("F4.45 rule vocabularies", () => {
 });
 
 /**
+ * `F3.6` / ADR 0033 — the ESKOM demo thresholds move from a hardcoded ladder
+ * in `AlarmThresholdService` to seeded rows, migration `0033`, so the merge
+ * that deletes the ladder (F3.6 task 4) does not silently drop the demo's
+ * alarms for a deploy window.
+ *
+ * `kw >= 115` is the one worth pinning by construction: the naive fix is to
+ * skip seeding it because `UPS-A` already carries `demand_ceiling_notify`,
+ * which silently drops the demand-high alarm on every OTHER Eskom electrical
+ * asset once the ladder is deleted (traced against `apps/sim/src/index.js`
+ * during F3.6 — every non-`CR-*` electrical asset uses the unbounded
+ * `(v * i * pf) / 1000` formula and can cross 115 kW). The migration avoids
+ * the duplicate by keying its `NOT EXISTS` guard on the condition tuple
+ * `(asset_id, point_key, operator, threshold_value)`, not on `UPS-A`'s asset
+ * code — this test guards against that code creeping back in.
+ */
+describe("F3.6 ESKOM simulator threshold rules (migration 0033)", () => {
+  const migrationDir = join(repoRoot, "packages", "db", "drizzle");
+  const migration0033 = readFileSync(
+    join(migrationDir, "0033_eskom_simulator_threshold_rules.sql"),
+    "utf8",
+  );
+
+  it("carries a live source value, not one 'declared and written by nothing'", () => {
+    const contracts = require_("@bms/shared/contracts") as {
+      ruleListItemSchema: { shape: { source: { options: readonly string[] } } };
+    };
+    expect([...contracts.ruleListItemSchema.shape.source.options]).toContain(
+      "simulator_threshold",
+    );
+
+    const operations = readFileSync(
+      join(repoRoot, "packages", "shared", "src", "contracts", "operations.ts"),
+      "utf8",
+    );
+    expect(
+      operations,
+      "operations.ts still describes simulator_threshold as written by nothing — " +
+        "migration 0033 is that writer now, update the comment alongside the code",
+    ).not.toMatch(/simulator_threshold.*declared and written by nothing/s);
+  });
+
+  it("scopes every seed to the ESKOM org and the electrical domain", () => {
+    // Every INSERT joins the same three tables and filters the same two ways.
+    // A block missing either filter would seed rules onto assets outside the
+    // demo org, or onto HVAC/IT/environment assets that never report these
+    // point keys in the simulator.
+    const inserts = migration0033.split("INSERT INTO bms.automation_rules").slice(1);
+    expect(inserts.length).toBe(5);
+    for (const block of inserts) {
+      expect(block).toMatch(/WHERE o\.code = 'ESKOM'/);
+      expect(block).toMatch(/AND a\.domain = 'electrical'/);
+    }
+  });
+
+  it("keys the kw>=115 guard on the condition tuple, not on UPS-A's asset code", () => {
+    const demandBlock = migration0033.slice(
+      migration0033.indexOf("_DEMAND_HIGH"),
+      migration0033.indexOf("-- 5. Power factor low"),
+    );
+
+    expect(
+      demandBlock,
+      "the kw>=115 seed hardcodes UPS-A's asset code — this recreates the coverage " +
+        "gap F3.6 found: every other Eskom electrical asset that can reach 115 kW " +
+        "would then be excluded too, not just the one already covered by " +
+        "demand_ceiling_notify",
+    ).not.toMatch(/UPS-A/);
+
+    expect(demandBlock).toMatch(/r\.point_key = 'kw'/);
+    expect(demandBlock).toMatch(/r\.operator = 'gte'/);
+    expect(demandBlock).toMatch(/r\.threshold_value = 115/);
+  });
+
+  it("carries the alarmMessage/unit markers composeAlarmMessage renders", () => {
+    // These three strings are what pin the seeded rules to the exact pre-merge
+    // alarm text — see apps/api/src/rules/alarm-message.spec.ts.
+    expect(migration0033).toContain('"alarmMessage":"voltage_l1_critical"');
+    expect(migration0033).toContain('"alarmMessage":"voltage_l1_high"');
+    expect(migration0033).toContain('"alarmMessage":"breaker_main_open"');
+    expect(migration0033).toContain('"unit":"V"');
+    expect(migration0033).toContain('"unit":"kW"');
+  });
+
+  it("uses a rule concern for category, not the plant-domain value 0022 used", () => {
+    // ADR 0031 split category (concern) from domain (plant sector). 'electrical'
+    // is a valid asset_domains code but automation_rules_category_fk (migration
+    // 0029) rejects it as a category — the exact drift 0022 shipped and F4.23
+    // eventually caught. This migration must not repeat it.
+    expect(
+      migration0033,
+      "migration 0033 uses 'electrical' as a rule category — that is the plant " +
+        "domain axis (ADR 0031), and automation_rules_category_fk will reject it",
+    ).not.toMatch(/'electrical',\s*\n\s*'threshold'/);
+
+    for (const category of ["'safety'", "'energy'"]) {
+      expect(migration0033).toContain(category);
+    }
+  });
+});
+
+/**
  * `F4.46` — a rule may carry **no** severity, and the builder has to be able to
  * say so without handing out "none" as a fresh choice on rules that feed the
  * alarm engine.

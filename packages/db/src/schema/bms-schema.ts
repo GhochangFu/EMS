@@ -480,6 +480,12 @@ export const alarms = bmsSchema.table("alarms", {
     .defaultNow(),
   acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
   acknowledgedBy: uuid("acknowledged_by").references(() => users.id),
+  // ADR 0033 / F3.6, migration 0032. Nullable — a historical alarm raised
+  // before this column existed, or by the pre-merge hardcoded ladder, cannot
+  // always be attributed to a rule. `alarms_open_per_rule_uidx` (partial,
+  // `WHERE acknowledged_at IS NULL AND rule_id IS NOT NULL`) is what makes the
+  // alarm-raise dedupe a constraint instead of a SELECT-then-INSERT race.
+  ruleId: uuid("rule_id").references(() => automationRules.id),
 });
 
 export const workOrders = bmsSchema.table("work_orders", {
