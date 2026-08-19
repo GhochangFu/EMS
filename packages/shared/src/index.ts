@@ -30,6 +30,7 @@ import type * as D from "./contracts/dashboard";
 import type * as E from "./contracts/envelopes";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
+import type * as Te from "./contracts/telemetry-entry";
 import { TELEMETRY_POINT_REF_SEP } from "./constants";
 
 /** Point-key catalogues and the `pointRef` separator — the non-contract half. */
@@ -203,6 +204,18 @@ export type AdminOrganizationSummaryDto = z.infer<
 export type AdminLocationSummaryDto = z.infer<typeof A.adminLocationSummaryDtoSchema>;
 export type AdminRtuSummaryDto = z.infer<typeof A.adminRtuSummaryDtoSchema>;
 export type AdminAssetSummaryDto = z.infer<typeof A.adminAssetSummaryDtoSchema>;
+
+// ---------------------------------------------------------------------------
+// Telemetry entry — manual + bulk import (ADR 0018, `F1.8`/`F1.9`)
+// ---------------------------------------------------------------------------
+
+/** The full `bms.asset_points.source_kind` vocabulary. */
+export type PointSourceKind = z.infer<typeof Te.pointSourceKindSchema>;
+/** What a caller may ask the write path for — excludes `measured`. */
+export type WritableSourceKind = z.infer<typeof Te.writableSourceKindSchema>;
+export type TelemetryEntryRow = z.infer<typeof Te.telemetryEntryRowSchema>;
+export type RejectedRowDto = z.infer<typeof Te.rejectedRowDtoSchema>;
+export type TelemetryWriteResultDto = z.infer<typeof Te.telemetryWriteResultDtoSchema>;
 
 // ---------------------------------------------------------------------------
 // Audit reads (ADR 0021, `F4.14`)
