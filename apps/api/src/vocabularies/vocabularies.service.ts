@@ -1,10 +1,11 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { alarmSeverities, assetDomains, ruleCategories } from "@bms/db";
+import { alarmSeverities, alarmSkills, assetDomains, ruleCategories } from "@bms/db";
 import { asc, eq } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 import type {
   AlarmSeverityDto,
+  AlarmSkillDto,
   AssetDomainDto,
   RuleCategoryDto,
   VocabulariesResponse,
@@ -13,8 +14,8 @@ import type {
 import { DRIZZLE } from "../database/database.tokens";
 
 /**
- * The two open vocabularies — rule concerns and plant domains (ADR 0031
- * Amendment 1).
+ * Four open vocabularies — rule concerns and plant domains (ADR 0031
+ * Amendment 1), alarm severity (ADR 0032), and alarm skill (ADR 0034).
  *
  * **Why this service exists at all.** Both vocabularies used to be `z.enum`s, so
  * a bad value was rejected by the request schema with a clear 400 naming the
@@ -45,7 +46,7 @@ export class VocabulariesService {
    * stops being offered for new work while existing rows keep resolving.
    */
   async list(): Promise<VocabulariesResponse> {
-    const [categories, domains, severities] = await Promise.all([
+    const [categories, domains, severities, skills] = await Promise.all([
       this.db
         .select({
           code: ruleCategories.code,
@@ -81,6 +82,18 @@ export class VocabulariesService {
         .from(alarmSeverities)
         .where(eq(alarmSeverities.active, true))
         .orderBy(asc(alarmSeverities.rank)),
+      // ADR 0034: no urgency, so ordered by sortOrder like assetDomains, not
+      // by a rank column the way severity is.
+      this.db
+        .select({
+          code: alarmSkills.code,
+          label: alarmSkills.label,
+          sortOrder: alarmSkills.sortOrder,
+          active: alarmSkills.active,
+        })
+        .from(alarmSkills)
+        .where(eq(alarmSkills.active, true))
+        .orderBy(asc(alarmSkills.sortOrder), asc(alarmSkills.code)),
     ]);
 
     return {
@@ -91,6 +104,7 @@ export class VocabulariesService {
       ruleCategories: categories as RuleCategoryDto[],
       assetDomains: domains as AssetDomainDto[],
       alarmSeverities: severities as AlarmSeverityDto[],
+      alarmSkills: skills as AlarmSkillDto[],
     };
   }
 
@@ -147,6 +161,24 @@ export class VocabulariesService {
   }
 
   /**
+   * Rejects an alarm skill/trade that is not a live vocabulary row (ADR
+   * 0034). Same shape as `assertAlarmSeverity` — without this, an unknown
+   * code would travel to Postgres and return as
+   * `alarm_enrichments_skill_code_fkey`, a 500 where there should be a 400.
+   */
+  async assertAlarmSkill(code: string): Promise<void> {
+    const [row] = await this.db
+      .select({ active: alarmSkills.active })
+      .from(alarmSkills)
+      .where(eq(alarmSkills.code, code))
+      .limit(1);
+
+    if (!row || !row.active) {
+      throw new BadRequestException(await this.unknownCodeMessage("skill", code));
+    }
+  }
+
+  /**
    * Names the valid values back to the caller.
    *
    * The enum did this for free — a Zod `invalid_enum_value` lists its options —
@@ -154,7 +186,7 @@ export class VocabulariesService {
    * import sheet. Costs one extra query on the failure path only.
    */
   private async unknownCodeMessage(
-    field: "domain" | "category" | "severity",
+    field: "domain" | "category" | "severity" | "skill",
     code: string,
   ): Promise<string> {
     const available =
@@ -170,11 +202,17 @@ export class VocabulariesService {
               .from(ruleCategories)
               .where(eq(ruleCategories.active, true))
               .orderBy(asc(ruleCategories.sortOrder))
-          : await this.db
-              .select({ code: alarmSeverities.code })
-              .from(alarmSeverities)
-              .where(eq(alarmSeverities.active, true))
-              .orderBy(asc(alarmSeverities.rank));
+          : field === "severity"
+            ? await this.db
+                .select({ code: alarmSeverities.code })
+                .from(alarmSeverities)
+                .where(eq(alarmSeverities.active, true))
+                .orderBy(asc(alarmSeverities.rank))
+            : await this.db
+                .select({ code: alarmSkills.code })
+                .from(alarmSkills)
+                .where(eq(alarmSkills.active, true))
+                .orderBy(asc(alarmSkills.sortOrder));
 
     // The rejected code is echoed so the caller can see what was wrong with
     // their input — but it is caller-supplied text, and Nest logs 4xx messages.
