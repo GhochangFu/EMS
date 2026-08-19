@@ -91,7 +91,7 @@ export function SchematicTelemetryProvider({
   const qc = useQueryClient();
   const assetsQ = useQuery({
     queryKey: ["assets"],
-    queryFn: fetchAssets,
+    queryFn: () => fetchAssets(),
   });
 
   const keysMemo = useMemo(() => [...pointKeys], [pointKeys.join("|")]);

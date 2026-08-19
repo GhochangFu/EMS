@@ -11,6 +11,7 @@ import {
   assertDetailsEmptyScopeThrows,
   assertDetailsFiltersAffectedAssetsByScope,
   assertDetailsOmitsPairingWhenNoRule,
+  assertDetailsReturnsOrganizationId,
   assertDetailsReturnsThresholdPairing,
   assertDetailsScopedByAssetIds,
   assertEnrichmentUpsertCreatesThenUpdates,
@@ -80,6 +81,10 @@ describe.skipIf(!connectionString)("E2.1 — alarm enrichment schema against a r
 
   it("details: returns the value-vs-threshold pairing for an alarm with a linked rule", async () => {
     await assertDetailsReturnsThresholdPairing(db);
+  });
+
+  it("details: returns the alarm's own asset's organizationId", async () => {
+    await assertDetailsReturnsOrganizationId(db);
   });
 
   it("details: returns nulls for the pairing when the alarm has no linked rule", async () => {

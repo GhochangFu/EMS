@@ -415,6 +415,10 @@ export const alarmEnrichmentDtoSchema = z.object({
 export const alarmDetailsResponseSchema = z.object({
   id: z.string(),
   assetId: z.string(),
+  /** The alarm's own asset's organization — found needed in review: the
+   * affected-asset picker (ADR 0034 decision 4) must narrow its candidate
+   * list to this organization, or it mixes assets across tenants. */
+  organizationId: z.string(),
   assetCode: z.string(),
   assetName: z.string(),
   assetDomain: z.string(),

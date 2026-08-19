@@ -212,7 +212,7 @@ export function CracPage({ user }: CracPageProps) {
   const [selectedId, setSelectedId] = useState<string | undefined>();
   const assetsQuery = useQuery({
     queryKey: ["assets"],
-    queryFn: fetchAssets,
+    queryFn: () => fetchAssets(),
   });
   const canViewCrac =
     assetsQuery.isSuccess &&

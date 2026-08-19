@@ -8,6 +8,7 @@ import {
   alarms,
   assets,
   automationRules,
+  locations,
   pointValues,
   users,
 } from "@bms/db";
@@ -43,6 +44,19 @@ async function firstSeededAssetId(db: BmsDb): Promise<string> {
     throw new Error("no seeded asset available — run pnpm db:seed first");
   }
   return asset.id;
+}
+
+async function organizationIdForAsset(db: BmsDb, assetId: string): Promise<string> {
+  const [row] = await db
+    .select({ organizationId: locations.organizationId })
+    .from(assets)
+    .innerJoin(locations, eq(assets.locationId, locations.id))
+    .where(eq(assets.id, assetId))
+    .limit(1);
+  if (!row) {
+    throw new Error(`no location/organization found for asset ${assetId}`);
+  }
+  return row.organizationId;
 }
 
 async function firstSeededUser(db: BmsDb): Promise<Pick<JwtPayload, "sub" | "email">> {
@@ -271,6 +285,28 @@ export async function assertDetailsReturnsThresholdPairing(db: BmsDb): Promise<v
       `expected the latest sample, got ${details.currentValue} ${details.currentValueUnit}`,
     );
     assert(details.currentValueAt != null, "expected the sample's timestamp");
+
+    tx.rollback();
+  });
+}
+
+/**
+ * `GET .../details` returns the alarm's own asset's `organizationId` — the
+ * affected-asset picker (ADR 0034 decision 4) needs this to narrow its
+ * candidate list; review found the picker mixing assets across
+ * organizations before this field existed.
+ */
+export async function assertDetailsReturnsOrganizationId(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const expectedOrgId = await organizationIdForAsset(tx, assetId);
+    const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_DETAILS_ORG");
+
+    const details = await new AlarmDetailsService(tx).get(alarmId, null);
+    assert(
+      details.organizationId === expectedOrgId,
+      `expected organizationId ${expectedOrgId}, got ${details.organizationId}`,
+    );
 
     tx.rollback();
   });
