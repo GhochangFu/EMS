@@ -28,6 +28,7 @@ import { OrganizationsAdminController } from "./organizations/organizations.cont
 import { OrganizationsAdminService } from "./organizations/organizations.service";
 import { RtusAdminController } from "./rtus/rtus.controller";
 import { RtusAdminService } from "./rtus/rtus.service";
+import { TelemetryWriteService } from "./telemetry-entry/telemetry-write.service";
 
 @Module({
   imports: [VocabulariesModule],
@@ -61,6 +62,7 @@ import { RtusAdminService } from "./rtus/rtus.service";
     AssetTemplatesAdminService,
     AssetTemplateInstantiationService,
     AuditAdminService,
+    TelemetryWriteService,
   ],
 })
 export class AdminModule {}
