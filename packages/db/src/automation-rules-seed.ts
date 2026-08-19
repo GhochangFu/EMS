@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { BmsDb } from "./client";
 import type { SeededAsset } from "./eskom-assets-seed";
-import { automationRules } from "./schema/bms-schema";
+import { assets, automationRules, locations, organizations } from "./schema/bms-schema";
 
 /**
  * Rule Engine seed rows, split out of `seed.ts` to keep it under the
@@ -418,7 +418,162 @@ async function seedCrEnvironmentRules(
   }
 }
 
-/** Seeds every automation rule, in the order `seed.ts` originally ran them. */
+/**
+ * The five ESKOM demo alarm-ladder checks, as `bms.automation_rules` rows —
+ * same code convention (`ESKOM_<asset code, - to _>_<suffix>`), condition
+ * tuples and severities as
+ * `packages/db/drizzle/0033_eskom_simulator_threshold_rules.sql`.
+ *
+ * Migration review (F3.6): migration `0033`'s own INSERTs join
+ * `bms.assets`/`locations`/`organizations` to find ESKOM's electrical
+ * assets, but those rows exist only because `pnpm db:seed` created them —
+ * and `pnpm db:migrate` runs BEFORE seed. On a fresh database the join in
+ * `0033` hits empty tables, every INSERT there writes zero rows, and
+ * `drizzle` still marks it applied. This table is the seed-side source of
+ * truth for the same five rules: a no-op (via `upsertRuleByCode`, matched
+ * by code) on a database where `0033` already seeded them, and the only
+ * path that creates them on a fresh one.
+ */
+const ESKOM_LADDER_RULES = [
+  {
+    suffix: "VOLTAGE_CRITICAL",
+    nameSuffix: "L1 voltage critical",
+    description: "IF L1 voltage is at or above 239.5 V THEN raise a critical alarm.",
+    category: "safety",
+    pointKey: "voltage_l1_v",
+    operator: "gte",
+    thresholdValue: 239.5,
+    severity: "critical",
+    condition: { window: "latest", unit: "V", alarmMessage: "voltage_l1_critical" },
+  },
+  {
+    suffix: "VOLTAGE_WARN",
+    nameSuffix: "L1 voltage warning",
+    description: "IF L1 voltage is at or above 237 V THEN raise a warning alarm.",
+    category: "safety",
+    pointKey: "voltage_l1_v",
+    operator: "gte",
+    thresholdValue: 237,
+    severity: "warning",
+    condition: { window: "latest", unit: "V", alarmMessage: "voltage_l1_high" },
+  },
+  {
+    suffix: "BREAKER_OPEN",
+    nameSuffix: "main breaker open",
+    description: "IF main breaker status drops below 0.5 THEN raise a critical alarm.",
+    category: "safety",
+    pointKey: "breaker_main",
+    operator: "lt",
+    thresholdValue: 0.5,
+    severity: "critical",
+    condition: { window: "latest", alarmMessage: "breaker_main_open" },
+  },
+  {
+    suffix: "DEMAND_HIGH",
+    nameSuffix: "demand high",
+    description: "IF current demand is above 115 kW THEN raise a warning alarm.",
+    category: "energy",
+    pointKey: "kw",
+    operator: "gte",
+    thresholdValue: 115,
+    severity: "warning",
+    condition: { window: "latest", unit: "kW" },
+  },
+  {
+    suffix: "PF_LOW",
+    nameSuffix: "power factor low",
+    description: "IF power factor is below 0.82 THEN raise a warning alarm.",
+    category: "energy",
+    pointKey: "pf",
+    operator: "lt",
+    thresholdValue: 0.82,
+    severity: "warning",
+    condition: { window: "latest" },
+  },
+] as const;
+
+/**
+ * Seeds the ESKOM ladder onto every electrical asset, skipping `DEMAND_HIGH`
+ * wherever a `(kw, gte, 115)` rule already exists on that asset — matching
+ * `0033`'s own condition-tuple `NOT EXISTS` guard, which is what keeps
+ * `UPS-A`'s `demand_ceiling_notify` (seeded above by `seedDemoRules`) from
+ * getting a duplicate `ESKOM_UPS_A_DEMAND_HIGH` beside it. A code-keyed
+ * `upsertRuleByCode` alone cannot see that: the two rules have different
+ * codes, so it would insert both, and `alarms_open_per_rule_uidx` does not
+ * dedupe two different `rule_id`s raised from the same reading.
+ *
+ * Queries `bms.assets`/`locations`/`organizations` directly — the same join
+ * migration `0033` uses — rather than taking the eskom-assets-seed.ts
+ * catalog as a parameter. Asset scoping mismatch, caught by testing this
+ * against a fresh database: `ESK-MANUAL-01` (`access-fixtures-seed.ts`) is
+ * an ESKOM electrical asset too, but it is not in that catalog and is
+ * created by `seedAccessControlFixtures`, which `seed.ts` runs AFTER
+ * `seedAutomationRules`. `seed.ts` therefore calls this function a second
+ * time, on its own, once every ESKOM electrical asset actually exists.
+ */
+export async function seedEskomLadderRules(db: BmsDb): Promise<void> {
+  const electricalAssets = await db
+    .select({ id: assets.id, code: assets.code, name: assets.name })
+    .from(assets)
+    .innerJoin(locations, eq(locations.id, assets.locationId))
+    .innerJoin(organizations, eq(organizations.id, locations.organizationId))
+    .where(and(eq(organizations.code, "ESKOM"), eq(assets.domain, "electrical")));
+  if (electricalAssets.length === 0) {
+    return;
+  }
+
+  const demandHighRows = await db
+    .select({ assetId: automationRules.assetId })
+    .from(automationRules)
+    .where(
+      and(
+        eq(automationRules.pointKey, "kw"),
+        eq(automationRules.operator, "gte"),
+        eq(automationRules.thresholdValue, 115),
+      ),
+    );
+  const assetsWithDemandHigh = new Set(
+    demandHighRows.map((row) => row.assetId).filter((id): id is string => id !== null),
+  );
+
+  for (const asset of electricalAssets) {
+    for (const rule of ESKOM_LADDER_RULES) {
+      if (rule.suffix === "DEMAND_HIGH" && assetsWithDemandHigh.has(asset.id)) {
+        continue;
+      }
+      await upsertRuleByCode(
+        db,
+        `ESKOM_${asset.code.replaceAll("-", "_")}_${rule.suffix}`,
+        {
+          name: `${asset.name} ${rule.nameSuffix}`,
+          description: rule.description,
+          category: rule.category,
+          ruleType: "threshold",
+          source: "simulator_threshold",
+          enabled: true,
+          lifecycleStatus: "published",
+          publishedAt: new Date(),
+          assetId: asset.id,
+          pointKey: rule.pointKey,
+          operator: rule.operator,
+          thresholdValue: rule.thresholdValue,
+          severity: rule.severity,
+          condition: rule.condition,
+          action: { type: "notify", target: rule.category === "energy" ? "Energy Manager" : "Operations" },
+        },
+      );
+    }
+  }
+}
+
+/**
+ * Seeds every automation rule, in the order `seed.ts` originally ran them.
+ *
+ * NOT `seedEskomLadderRules` — that one needs every ESKOM electrical asset
+ * to exist first, including `ESK-MANUAL-01` (`access-fixtures-seed.ts`),
+ * which `seed.ts` creates after this function runs. `seed.ts` calls it
+ * separately, later in its own sequence.
+ */
 export async function seedAutomationRules(
   db: BmsDb,
   assetRows: readonly SeededAsset[],

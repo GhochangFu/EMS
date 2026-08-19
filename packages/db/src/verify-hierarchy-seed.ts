@@ -11,6 +11,7 @@ export async function verifyHierarchySeed(pool: pg.Pool): Promise<void> {
     phe_points: string;
     orphan_assets: string;
     loc_mismatch: string;
+    eskom_ladder_rules: string;
   }>(`
     SELECT
       (SELECT COUNT(*)::text FROM bms.organizations) AS orgs,
@@ -35,7 +36,9 @@ export async function verifyHierarchySeed(pool: pg.Pool): Promise<void> {
       (SELECT COUNT(*)::text FROM bms.assets WHERE location_id IS NULL) AS orphan_assets,
       (SELECT COUNT(*)::text FROM bms.assets a
         INNER JOIN bms.rtus r ON r.id = a.rtu_id
-        WHERE a.location_id IS DISTINCT FROM r.location_id) AS loc_mismatch
+        WHERE a.location_id IS DISTINCT FROM r.location_id) AS loc_mismatch,
+      (SELECT COUNT(*)::text FROM bms.automation_rules
+        WHERE source = 'simulator_threshold') AS eskom_ladder_rules
   `);
 
   const row = checks.rows[0];
@@ -74,6 +77,15 @@ export async function verifyHierarchySeed(pool: pg.Pool): Promise<void> {
   }
   if (Number(row.loc_mismatch) !== 0) {
     errors.push(`asset/RTU location mismatch: ${row.loc_mismatch}`);
+  }
+  // Migration review (F3.6): migration 0033's own seed of these rows is a
+  // silent no-op on a fresh database (it joins assets that only exist once
+  // seed has already run, and seed runs after migrate). This is what would
+  // have caught it — `automation-rules-seed.ts`'s `seedEskomLadderRules` is
+  // the seed-side source of truth now, so a zero count here means it broke,
+  // not that a fresh database is merely missing a migration-only feature.
+  if (Number(row.eskom_ladder_rules) === 0) {
+    errors.push("ESKOM simulator threshold rules: expected > 0, got 0");
   }
 
   if (errors.length > 0) {
