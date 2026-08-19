@@ -226,6 +226,15 @@ describe("ADR 0018 — source axis separation", () => {
     ).toMatch(
       /writableSourceKindSchema = pointSourceKindSchema\.extract\(\[[^\]]*"manual"[^\]]*"unmapped"[^\]]*\]\)/,
     );
-    expect(contract).not.toMatch(/writableSourceKindSchema[\s\S]*?"measured"/);
+    // Scoped to the single statement, not "the rest of the file" — a bare
+    // `[\s\S]*?` here would fire on the NEXT `.extract(["measured", ...])`
+    // anyone writes below this line (there is already one, in admin.ts),
+    // blaming writableSourceKindSchema for a match that has nothing to do
+    // with it.
+    const statementMatch = contract.match(/writableSourceKindSchema = [^\n]+;/);
+    if (!statementMatch) {
+      throw new Error("could not find the writableSourceKindSchema statement to check");
+    }
+    expect(statementMatch[0]).not.toContain('"measured"');
   });
 });
