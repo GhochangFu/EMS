@@ -85,9 +85,15 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
   // ADR 0034 decision 4. `fetchAssets` is already scoped server-side to the
   // caller's readable assets — the same set `PUT .../enrichment` checks
   // affectedAssetIds against — so nothing here re-derives scope.
+  // Narrowed to the alarm's own organization (found missing in review — an
+  // unscoped list mixed assets from every organization the caller could
+  // see). Gated on `detailsQ.data` so it never fires with an undefined
+  // `organizationId`, which would silently fetch the unscoped list.
+  const organizationId = detailsQ.data?.organizationId;
   const assetsQ = useQuery({
-    queryKey: ["assets", "picker"],
-    queryFn: fetchAssets,
+    queryKey: ["assets", "picker", organizationId],
+    queryFn: () => fetchAssets(organizationId),
+    enabled: !!organizationId,
     staleTime: 5 * 60 * 1000,
   });
   const assets = assetsQ.data ?? [];

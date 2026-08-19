@@ -182,7 +182,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
 
   const assetsQ = useQuery({
     queryKey: ["assets", "list"],
-    queryFn: fetchAssets,
+    queryFn: () => fetchAssets(),
   });
 
   useEffect(() => {

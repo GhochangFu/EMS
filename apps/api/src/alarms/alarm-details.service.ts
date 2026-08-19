@@ -53,6 +53,7 @@ export class AlarmDetailsService {
         assetDomain: assets.domain,
         siteName: assets.siteName,
         locationName: locations.name,
+        organizationId: locations.organizationId,
         thresholdOperator: automationRules.operator,
         thresholdValue: automationRules.thresholdValue,
         rulePointKey: automationRules.pointKey,
@@ -121,6 +122,7 @@ export class AlarmDetailsService {
     return {
       id: row.id,
       assetId: row.assetId,
+      organizationId: row.organizationId,
       assetCode: row.assetCode,
       assetName: row.assetName,
       assetDomain: row.assetDomain,

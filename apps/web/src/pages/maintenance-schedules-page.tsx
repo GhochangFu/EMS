@@ -17,7 +17,7 @@ export function MaintenanceSchedulesPage({
 }: MaintenanceSchedulesPageProps) {
   const assetsQ = useQuery({
     queryKey: ["assets", "list"],
-    queryFn: fetchAssets,
+    queryFn: () => fetchAssets(),
   });
 
   return (
