@@ -26,7 +26,11 @@ import type {
   RulePreviewResult,
 } from "@bms/shared";
 
-import { AlarmRaiser, shouldRaise } from "../alarms/alarm-raise.service";
+import {
+  AlarmRaiser,
+  isSampleFreshEnoughToRaise,
+  shouldRaise,
+} from "../alarms/alarm-raise.service";
 import { DRIZZLE } from "../database/database.tokens";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { alarmMessageFieldsFromCondition } from "./alarm-message";
@@ -482,23 +486,36 @@ export class RulesService {
       // was untrue and every on-demand-raised alarm's trace omitted
       // `alarmId` — the one thing `evaluatedBy`/`source` don't already say.
       let raisedAlarmId: string | null = null;
-      if (shouldRaise(row, result) && row.assetId && result.observedValue !== null) {
-        const { alarmMessage, unit } = alarmMessageFieldsFromCondition(row.condition);
-        const raised = await this.alarmRaiser.raise(
-          row.assetId,
-          {
-            id: row.id,
-            code: row.code,
-            name: row.name,
-            pointKey: row.pointKey,
-            severity: row.severity,
-            alarmMessage,
-            unit,
-          },
-          result.observedValue,
-          { recordTrace: false },
-        );
-        raisedAlarmId = raised.alarmId;
+      if (
+        shouldRaise(row, result) &&
+        row.assetId &&
+        row.pointKey &&
+        result.observedValue !== null
+      ) {
+        // Security review, F3.6: `result`'s sample can be of any age (see
+        // `batchedLatestPointValues`'s doc comment) — bounding it here, not
+        // in the loader, keeps the trace above honest about a genuinely
+        // stale match while still refusing to raise, or re-open, an alarm
+        // from telemetry an asset stopped sending long ago.
+        const sample = await sampleLookup(row.assetId, row.pointKey);
+        if (sample && isSampleFreshEnoughToRaise(sample.time, new Date())) {
+          const { alarmMessage, unit } = alarmMessageFieldsFromCondition(row.condition);
+          const raised = await this.alarmRaiser.raise(
+            row.assetId,
+            {
+              id: row.id,
+              code: row.code,
+              name: row.name,
+              pointKey: row.pointKey,
+              severity: row.severity,
+              alarmMessage,
+              unit,
+            },
+            result.observedValue,
+            { recordTrace: false },
+          );
+          raisedAlarmId = raised.alarmId;
+        }
       }
 
       const [created] = await this.db
@@ -683,7 +700,7 @@ export class RulesService {
     const pairs = new Map<string, { assetId: string; pointKey: string }>();
     for (const row of rows) {
       if (row.ruleType === "threshold" && row.assetId && row.pointKey) {
-        pairs.set(`${row.assetId} ${row.pointKey}`, {
+        pairs.set(`${row.assetId}:${row.pointKey}`, {
           assetId: row.assetId,
           pointKey: row.pointKey,
         });
@@ -717,7 +734,7 @@ export class RulesService {
       `);
 
       for (const r of result.rows) {
-        samples.set(`${r.asset_id} ${r.point_key}`, {
+        samples.set(`${r.asset_id}:${r.point_key}`, {
           time: new Date(r.time),
           value: r.value,
           unit: r.unit,
@@ -725,7 +742,7 @@ export class RulesService {
       }
     }
 
-    return async (assetId, pointKey) => samples.get(`${assetId} ${pointKey}`) ?? null;
+    return async (assetId, pointKey) => samples.get(`${assetId}:${pointKey}`) ?? null;
   }
 
   private async validateRuleDraft(

@@ -65,10 +65,11 @@ async function insertMatchingFixture(
   db: BmsDb,
   assetId: string,
   suffix: string,
+  sampleTime: Date = new Date(),
 ): Promise<{ ruleId: string }> {
   const pointKey = `f36_task5_test_point_${suffix}`;
   await db.insert(pointValues).values({
-    time: new Date(),
+    time: sampleTime,
     assetId,
     pointKey,
     value: 600_000,
@@ -170,6 +171,52 @@ export async function assertRaisesUnscopedButReturnsScoped(db: BmsDb): Promise<v
           `got ${JSON.stringify(trace?.alarmId)}`,
       );
     }
+
+    tx.rollback();
+  });
+}
+
+/**
+ * Security review (F3.6): a sample far older than
+ * `isSampleFreshEnoughToRaise`'s bound must still be reported as `matched`
+ * in the trace (honest about what the fleet's last reading was), but must
+ * NOT raise — and must not touch `bms.alarms` at all. This is the case an
+ * asset that stopped reporting (offline RTU, decommissioned) exercises the
+ * moment anyone presses "Evaluate now".
+ */
+export async function assertStaleSampleMatchesButDoesNotRaise(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const [assetId] = await twoSeededAssetIds(tx);
+    const staleTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 1 day old
+    const { ruleId } = await insertMatchingFixture(tx, assetId, "stale", staleTime);
+
+    const service = new RulesService(tx, stubVocabularies(), new AlarmRaiser(tx, stubGateway()));
+    await service.evaluateEnabledRules(ACTOR, [assetId]);
+
+    const openAlarms = await tx
+      .select({ id: alarms.id })
+      .from(alarms)
+      .where(and(eq(alarms.assetId, assetId), eq(alarms.ruleId, ruleId)));
+    assert(
+      openAlarms.length === 0,
+      `a stale sample must not raise an alarm, found ${openAlarms.length}`,
+    );
+
+    const traces = await tx
+      .select({ status: ruleExecutions.status, matched: ruleExecutions.matched, trace: ruleExecutions.trace })
+      .from(ruleExecutions)
+      .where(eq(ruleExecutions.ruleId, ruleId));
+    assert(traces.length === 1, `expected exactly 1 rule_executions row, found ${traces.length}`);
+    const [traceRow] = traces;
+    assert(
+      traceRow?.status === "matched" && traceRow.matched === true,
+      "the trace must still report the true (stale) match honestly, not silently downgrade to skipped",
+    );
+    const trace = traceRow?.trace as Record<string, unknown> | null;
+    assert(
+      trace?.alarmId === undefined,
+      `a stale match must carry no alarmId in its trace, got ${JSON.stringify(trace?.alarmId)}`,
+    );
 
     tx.rollback();
   });

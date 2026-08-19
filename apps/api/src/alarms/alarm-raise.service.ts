@@ -30,6 +30,33 @@ export function shouldRaise(
   return rule.ruleType === "threshold" && evaluation.matched;
 }
 
+/**
+ * How stale a telemetry sample can be and still be trusted to raise a fresh
+ * alarm through the on-demand path. Wider than the 25-second "live" badge
+ * `dashboard.service.ts`/`map.service.ts` use for the UI — this only needs to
+ * reject a sample from an asset that has stopped reporting (an offline RTU,
+ * a decommissioned asset), not ordinary publish jitter across domains.
+ */
+export const MAX_RAISE_SAMPLE_AGE_MS = 15 * 60 * 1000;
+
+/**
+ * Gates a raise on how old its telemetry sample is — separate from
+ * `shouldRaise`, which only asks whether the rule matched.
+ *
+ * `RulesService.evaluateEnabledRules` (F3.6 task 5, on-demand) is the only
+ * caller that needs this: it can read a sample of any age from
+ * `telemetry.point_values` (730-day retention, ADR 0024), unlike the
+ * streaming engine (`AlarmEngineService`), whose samples are always the live
+ * reading that just arrived on the hub. Security review, F3.6: without this
+ * gate, pressing "Evaluate now" against a long-silent asset raises an alarm
+ * off stale data today, and — because acknowledging an alarm clears the
+ * dedupe key `alarms_open_per_rule_uidx` relies on — re-opens the same
+ * alarm every time the button is pressed again afterwards.
+ */
+export function isSampleFreshEnoughToRaise(sampleTime: Date, now: Date): boolean {
+  return now.getTime() - sampleTime.getTime() <= MAX_RAISE_SAMPLE_AGE_MS;
+}
+
 /** What `AlarmRaiser.raise` needs from a rule, regardless of which engine evaluated it. */
 export type AlarmRaiseRule = AlarmMessageRule & {
   id: string;
