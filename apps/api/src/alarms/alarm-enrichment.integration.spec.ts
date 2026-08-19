@@ -1,7 +1,18 @@
-import { is, TransactionRollbackError } from "drizzle-orm";
+import { NotFoundException } from "@nestjs/common";
+import { is, sql, TransactionRollbackError } from "drizzle-orm";
 
-import { alarmAffectedAssets, alarmEnrichments, alarmSkills, alarms, assets, automationRules } from "@bms/db";
+import {
+  alarmAffectedAssets,
+  alarmEnrichments,
+  alarmSkills,
+  alarms,
+  assets,
+  automationRules,
+  pointValues,
+} from "@bms/db";
 import type { BmsDb } from "@bms/db";
+
+import { AlarmDetailsService } from "./alarm-details.service";
 
 /**
  * `E2.1` (ADR 0034) — the enrichment schema against a real database.
@@ -55,6 +66,36 @@ async function insertTestAlarm(db: BmsDb, assetId: string, code: string): Promis
       ruleId: rule.id,
       severity: "warning",
       message: `E2.1 integration test alarm — ${code}`,
+    })
+    .returning({ id: alarms.id });
+  if (!alarm) {
+    throw new Error(`failed to insert test alarm ${code}`);
+  }
+  return alarm.id;
+}
+
+/** A second seeded asset, distinct from `firstSeededAssetId`, for out-of-scope cases. */
+async function secondSeededAssetId(db: BmsDb, excludeId: string): Promise<string> {
+  const [asset] = await db
+    .select({ id: assets.id })
+    .from(assets)
+    .where(sql`${assets.id} != ${excludeId}`)
+    .limit(1);
+  if (!asset) {
+    throw new Error("need at least two seeded assets — run pnpm db:seed first");
+  }
+  return asset.id;
+}
+
+/** An alarm with no linked rule — a historical alarm, or one raised outside the rule engine. */
+async function insertTestAlarmWithoutRule(db: BmsDb, assetId: string, code: string): Promise<string> {
+  const [alarm] = await db
+    .insert(alarms)
+    .values({
+      assetId,
+      ruleId: null,
+      severity: "warning",
+      message: `E2.1 integration test alarm (no rule) — ${code}`,
     })
     .returning({ id: alarms.id });
   if (!alarm) {
@@ -172,6 +213,126 @@ export async function assertUndeclaredSkillRejected(db: BmsDb): Promise<void> {
     assert(
       code === "23503",
       `an undeclared skill_code must be rejected by the foreign key (23503), got ${code ?? "no error"}`,
+    );
+
+    tx.rollback();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/alarms/:id/details (ADR 0034 decision 5)
+// ---------------------------------------------------------------------------
+
+/** An alarm with a linked threshold rule returns the value-vs-threshold pairing. */
+export async function assertDetailsReturnsThresholdPairing(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_DETAILS_THRESHOLD");
+    await tx.insert(pointValues).values({
+      time: new Date("2026-08-19T10:00:00Z"),
+      assetId,
+      pointKey: "e21_test_point",
+      value: 42,
+      unit: "kW",
+    });
+
+    const details = await new AlarmDetailsService(tx).get(alarmId, null);
+    assert(
+      details.thresholdOperator === "gte" && details.thresholdValue === 999_999,
+      `expected the linked rule's operator/threshold, got ${details.thresholdOperator} ${details.thresholdValue}`,
+    );
+    assert(
+      details.currentValue === 42 && details.currentValueUnit === "kW",
+      `expected the latest sample, got ${details.currentValue} ${details.currentValueUnit}`,
+    );
+    assert(details.currentValueAt != null, "expected the sample's timestamp");
+
+    tx.rollback();
+  });
+}
+
+/** An alarm with no linked rule returns nulls for the pairing, not a failure. */
+export async function assertDetailsOmitsPairingWhenNoRule(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const alarmId = await insertTestAlarmWithoutRule(tx, assetId, "E21_TEST_DETAILS_NO_RULE");
+
+    const details = await new AlarmDetailsService(tx).get(alarmId, null);
+    assert(
+      details.thresholdOperator === null &&
+        details.thresholdValue === null &&
+        details.currentValue === null,
+      "expected the threshold/current-value block to be null together when rule_id IS NULL",
+    );
+
+    tx.rollback();
+  });
+}
+
+/**
+ * An alarm outside the caller's asset scope is not found — matching
+ * `AlarmsService.acknowledge`'s posture (`NotFoundException`, not a 403 that
+ * would confirm the alarm exists).
+ */
+export async function assertDetailsScopedByAssetIds(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const otherAssetId = await secondSeededAssetId(tx, assetId);
+    const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_DETAILS_SCOPE");
+
+    let notFound = false;
+    try {
+      await new AlarmDetailsService(tx).get(alarmId, [otherAssetId]);
+    } catch (err) {
+      notFound = err instanceof NotFoundException;
+    }
+    assert(notFound, "an alarm outside the caller's assetIds must raise NotFoundException");
+
+    tx.rollback();
+  });
+}
+
+/** An empty assetIds array (zero-asset scope) raises not-found without querying. */
+export async function assertDetailsEmptyScopeThrows(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_DETAILS_EMPTY_SCOPE");
+
+    let notFound = false;
+    try {
+      await new AlarmDetailsService(tx).get(alarmId, []);
+    } catch (err) {
+      notFound = err instanceof NotFoundException;
+    }
+    assert(notFound, "an empty assetIds scope must raise NotFoundException, matching AlarmsService.list");
+
+    tx.rollback();
+  });
+}
+
+/** Affected assets come back when in scope; an out-of-scope one is filtered, not leaked. */
+export async function assertDetailsFiltersAffectedAssetsByScope(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const inScopeAffected = await secondSeededAssetId(tx, assetId);
+    const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_DETAILS_AFFECTED_SCOPE");
+    const [enrichment] = await tx
+      .insert(alarmEnrichments)
+      .values({ alarmId, rootCause: "test" })
+      .returning({ id: alarmEnrichments.id });
+    if (!enrichment) {
+      throw new Error("failed to insert test enrichment");
+    }
+    await tx
+      .insert(alarmAffectedAssets)
+      .values([{ enrichmentId: enrichment.id, assetId: inScopeAffected }]);
+
+    // Caller's scope is [assetId] only — the alarm's own asset, not the
+    // affected one — so the affected asset must be filtered out of the result.
+    const details = await new AlarmDetailsService(tx).get(alarmId, [assetId]);
+    assert(
+      details.enrichment?.affectedAssets.length === 0,
+      `expected the out-of-scope affected asset to be filtered, got ${details.enrichment?.affectedAssets.length}`,
     );
 
     tx.rollback();

@@ -8,6 +8,11 @@ import type { BmsDb } from "@bms/db";
 import {
   assertAffectedAssetPairUnique,
   assertAlarmSkillsSeeded,
+  assertDetailsEmptyScopeThrows,
+  assertDetailsFiltersAffectedAssetsByScope,
+  assertDetailsOmitsPairingWhenNoRule,
+  assertDetailsReturnsThresholdPairing,
+  assertDetailsScopedByAssetIds,
   assertOneEnrichmentPerAlarm,
   assertUndeclaredSkillRejected,
 } from "./alarm-enrichment.integration.spec";
@@ -64,5 +69,25 @@ describe.skipIf(!connectionString)("E2.1 — alarm enrichment schema against a r
 
   it("rejects an enrichment with an undeclared skill code", async () => {
     await assertUndeclaredSkillRejected(db);
+  });
+
+  it("details: returns the value-vs-threshold pairing for an alarm with a linked rule", async () => {
+    await assertDetailsReturnsThresholdPairing(db);
+  });
+
+  it("details: returns nulls for the pairing when the alarm has no linked rule", async () => {
+    await assertDetailsOmitsPairingWhenNoRule(db);
+  });
+
+  it("details: raises not-found for an alarm outside the caller's asset scope", async () => {
+    await assertDetailsScopedByAssetIds(db);
+  });
+
+  it("details: raises not-found for an empty asset scope", async () => {
+    await assertDetailsEmptyScopeThrows(db);
+  });
+
+  it("details: filters affected assets outside the caller's scope", async () => {
+    await assertDetailsFiltersAffectedAssetsByScope(db);
   });
 });

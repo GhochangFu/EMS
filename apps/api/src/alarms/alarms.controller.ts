@@ -18,6 +18,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { alarmAckBodySchema } from "./ack.schema";
+import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmsService } from "./alarms.service";
 
 @Controller("alarms")
@@ -26,6 +27,7 @@ export class AlarmsController {
   constructor(
     private readonly alarms: AlarmsService,
     private readonly accessControl: AccessControlService,
+    private readonly details: AlarmDetailsService,
   ) {}
 
   @Get()
@@ -43,6 +45,13 @@ export class AlarmsController {
       limit,
       assetIds: await this.accessControl.readableAssetIds(user),
     });
+  }
+
+  /** ADR 0034 decision 5. A read, gated by asset scope like `list` — no
+   * write-role check, unlike `acknowledge` and the enrichment write. */
+  @Get(":id/details")
+  async getDetails(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    return this.details.get(id, await this.accessControl.readableAssetIds(user));
   }
 
   @Post(":id/ack")
