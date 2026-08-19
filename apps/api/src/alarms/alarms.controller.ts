@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -19,7 +20,9 @@ import type { JwtPayload } from "@bms/shared";
 import { AccessControlService } from "../auth/access-control.service";
 import { alarmAckBodySchema } from "./ack.schema";
 import { AlarmDetailsService } from "./alarm-details.service";
+import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmsService } from "./alarms.service";
+import { alarmEnrichmentUpsertBodySchema } from "./enrichment.schema";
 
 @Controller("alarms")
 @UseGuards(JwtAuthGuard)
@@ -28,6 +31,7 @@ export class AlarmsController {
     private readonly alarms: AlarmsService,
     private readonly accessControl: AccessControlService,
     private readonly details: AlarmDetailsService,
+    private readonly enrichment: AlarmEnrichmentService,
   ) {}
 
   @Get()
@@ -70,6 +74,28 @@ export class AlarmsController {
         dto.reason,
         await this.accessControl.readableAssetIds(user),
       );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /** ADR 0034 decision 6. Returns the freshly computed details response so
+   * the browser needs no second round trip. */
+  @Put(":id/enrichment")
+  async upsertEnrichment(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    await this.accessControl.assertOperationsWriteRole(user, "operational");
+    try {
+      const dto = alarmEnrichmentUpsertBodySchema.parse(body);
+      const assetIds = await this.accessControl.readableAssetIds(user);
+      await this.enrichment.upsert(id, user, dto, assetIds);
+      return this.details.get(id, assetIds);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

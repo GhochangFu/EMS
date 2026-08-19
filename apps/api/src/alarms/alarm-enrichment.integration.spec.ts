@@ -1,5 +1,5 @@
-import { NotFoundException } from "@nestjs/common";
-import { is, sql, TransactionRollbackError } from "drizzle-orm";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { eq, is, sql, TransactionRollbackError } from "drizzle-orm";
 
 import {
   alarmAffectedAssets,
@@ -9,10 +9,14 @@ import {
   assets,
   automationRules,
   pointValues,
+  users,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import type { JwtPayload } from "@bms/shared";
 
 import { AlarmDetailsService } from "./alarm-details.service";
+import { AlarmEnrichmentService } from "./alarm-enrichment.service";
+import { VocabulariesService } from "../vocabularies/vocabularies.service";
 
 /**
  * `E2.1` (ADR 0034) — the enrichment schema against a real database.
@@ -39,6 +43,14 @@ async function firstSeededAssetId(db: BmsDb): Promise<string> {
     throw new Error("no seeded asset available — run pnpm db:seed first");
   }
   return asset.id;
+}
+
+async function firstSeededUser(db: BmsDb): Promise<Pick<JwtPayload, "sub" | "email">> {
+  const [user] = await db.select({ id: users.id, email: users.email }).from(users).limit(1);
+  if (!user) {
+    throw new Error("no seeded user available — run pnpm db:seed first");
+  }
+  return { sub: user.id, email: user.email };
 }
 
 async function insertTestAlarm(db: BmsDb, assetId: string, code: string): Promise<string> {
@@ -334,6 +346,181 @@ export async function assertDetailsFiltersAffectedAssetsByScope(db: BmsDb): Prom
       details.enrichment?.affectedAssets.length === 0,
       `expected the out-of-scope affected asset to be filtered, got ${details.enrichment?.affectedAssets.length}`,
     );
+
+    tx.rollback();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// PUT /api/v1/alarms/:id/enrichment (ADR 0034 decision 6)
+// ---------------------------------------------------------------------------
+
+/** A first upsert creates the row; a second overwrites it — one row, not two. */
+export async function assertEnrichmentUpsertCreatesThenUpdates(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_CREATE_UPDATE");
+    const actor = await firstSeededUser(tx);
+    const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
+
+    await svc.upsert(alarmId, actor, { rootCause: "first" }, null);
+    await svc.upsert(alarmId, actor, { rootCause: "second" }, null);
+
+    const rows = await tx
+      .select({ id: alarmEnrichments.id, rootCause: alarmEnrichments.rootCause })
+      .from(alarmEnrichments)
+      .where(eq(alarmEnrichments.alarmId, alarmId));
+    assert(rows.length === 1, `expected exactly one enrichment row after two upserts, got ${rows.length}`);
+    assert(
+      rows[0]?.rootCause === "second",
+      `expected the second write to overwrite the first, got ${rows[0]?.rootCause}`,
+    );
+
+    tx.rollback();
+  });
+}
+
+/** `created_at` survives an update; `updated_at`/`updated_by` are (re)written. */
+export async function assertEnrichmentUpsertTimestampsBehaveOnUpdate(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_TIMESTAMPS");
+    const actor = await firstSeededUser(tx);
+    const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
+
+    await svc.upsert(alarmId, actor, { rootCause: "v1" }, null);
+    const [before] = await tx
+      .select({ createdAt: alarmEnrichments.createdAt, updatedAt: alarmEnrichments.updatedAt })
+      .from(alarmEnrichments)
+      .where(eq(alarmEnrichments.alarmId, alarmId));
+    if (!before) {
+      throw new Error("missing enrichment after the first upsert");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await svc.upsert(alarmId, actor, { rootCause: "v2" }, null);
+    const [after] = await tx
+      .select({
+        createdAt: alarmEnrichments.createdAt,
+        updatedAt: alarmEnrichments.updatedAt,
+        updatedBy: alarmEnrichments.updatedBy,
+      })
+      .from(alarmEnrichments)
+      .where(eq(alarmEnrichments.alarmId, alarmId));
+    if (!after) {
+      throw new Error("missing enrichment after the second upsert");
+    }
+
+    assert(
+      after.createdAt.getTime() === before.createdAt.getTime(),
+      "created_at must not change on an update",
+    );
+    assert(after.updatedAt.getTime() > before.updatedAt.getTime(), "updated_at must advance on an update");
+    assert(after.updatedBy === actor.sub, "updated_by must record the actor");
+
+    tx.rollback();
+  });
+}
+
+/** An unknown skillCode is a 400 from `assertAlarmSkill`, not a 500 from the foreign key. */
+export async function assertEnrichmentUpsertRejectsUnknownSkill(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_BAD_SKILL");
+    const actor = await firstSeededUser(tx);
+    const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
+
+    let rejected = false;
+    try {
+      await svc.upsert(alarmId, actor, { skillCode: "e21_test_not_a_real_skill" }, null);
+    } catch (err) {
+      rejected = err instanceof BadRequestException;
+    }
+    assert(rejected, "an unknown skillCode must raise BadRequestException, not a raw FK violation");
+
+    tx.rollback();
+  });
+}
+
+/**
+ * An `affectedAssetIds` entry outside the caller's scope is rejected, and
+ * nothing is written — the finding beyond ADR 0034: scoping the alarm does
+ * not scope the caller-supplied affected-asset ids on its own.
+ */
+export async function assertEnrichmentUpsertRejectsOutOfScopeAffectedAsset(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const outOfScopeAsset = await secondSeededAssetId(tx, assetId);
+    const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_SCOPE_AFFECTED");
+    const actor = await firstSeededUser(tx);
+    const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
+
+    let rejected = false;
+    try {
+      await svc.upsert(alarmId, actor, { affectedAssetIds: [outOfScopeAsset] }, [assetId]);
+    } catch (err) {
+      rejected = err instanceof BadRequestException;
+    }
+    assert(rejected, "an affectedAssetIds entry outside the caller's scope must be rejected");
+
+    const rows = await tx
+      .select({ id: alarmEnrichments.id })
+      .from(alarmEnrichments)
+      .where(eq(alarmEnrichments.alarmId, alarmId));
+    assert(rows.length === 0, "nothing should be written when an affected asset is out of scope");
+
+    tx.rollback();
+  });
+}
+
+/** `affectedAssetIds` is a set: replacing it drops the ids no longer listed. */
+export async function assertEnrichmentUpsertReplacesAffectedAssetSet(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const otherAsset = await secondSeededAssetId(tx, assetId);
+    const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_REPLACE_AFFECTED");
+    const actor = await firstSeededUser(tx);
+    const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
+
+    await svc.upsert(alarmId, actor, { affectedAssetIds: [assetId, otherAsset] }, null);
+    await svc.upsert(alarmId, actor, { affectedAssetIds: [assetId] }, null);
+
+    const [enrichment] = await tx
+      .select({ id: alarmEnrichments.id })
+      .from(alarmEnrichments)
+      .where(eq(alarmEnrichments.alarmId, alarmId));
+    if (!enrichment) {
+      throw new Error("missing enrichment");
+    }
+    const rows = await tx
+      .select({ assetId: alarmAffectedAssets.assetId })
+      .from(alarmAffectedAssets)
+      .where(eq(alarmAffectedAssets.enrichmentId, enrichment.id));
+    assert(
+      rows.length === 1 && rows[0]?.assetId === assetId,
+      `expected only [assetId] to remain, got ${rows.map((r) => r.assetId).join(", ")}`,
+    );
+
+    tx.rollback();
+  });
+}
+
+/** An alarm outside the caller's scope raises not-found, matching `AlarmDetailsService.get`. */
+export async function assertEnrichmentUpsertScopedByAssetIds(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const otherAssetId = await secondSeededAssetId(tx, assetId);
+    const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_SCOPE_ALARM");
+    const actor = await firstSeededUser(tx);
+    const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
+
+    let notFound = false;
+    try {
+      await svc.upsert(alarmId, actor, { rootCause: "x" }, [otherAssetId]);
+    } catch (err) {
+      notFound = err instanceof NotFoundException;
+    }
+    assert(notFound, "an alarm outside the caller's assetIds must raise NotFoundException");
 
     tx.rollback();
   });

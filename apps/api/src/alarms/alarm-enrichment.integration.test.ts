@@ -13,6 +13,12 @@ import {
   assertDetailsOmitsPairingWhenNoRule,
   assertDetailsReturnsThresholdPairing,
   assertDetailsScopedByAssetIds,
+  assertEnrichmentUpsertCreatesThenUpdates,
+  assertEnrichmentUpsertRejectsOutOfScopeAffectedAsset,
+  assertEnrichmentUpsertRejectsUnknownSkill,
+  assertEnrichmentUpsertReplacesAffectedAssetSet,
+  assertEnrichmentUpsertScopedByAssetIds,
+  assertEnrichmentUpsertTimestampsBehaveOnUpdate,
   assertOneEnrichmentPerAlarm,
   assertUndeclaredSkillRejected,
 } from "./alarm-enrichment.integration.spec";
@@ -89,5 +95,29 @@ describe.skipIf(!connectionString)("E2.1 — alarm enrichment schema against a r
 
   it("details: filters affected assets outside the caller's scope", async () => {
     await assertDetailsFiltersAffectedAssetsByScope(db);
+  });
+
+  it("enrichment upsert: creates then overwrites the same row", async () => {
+    await assertEnrichmentUpsertCreatesThenUpdates(db);
+  });
+
+  it("enrichment upsert: created_at survives an update; updated_at/updated_by are rewritten", async () => {
+    await assertEnrichmentUpsertTimestampsBehaveOnUpdate(db);
+  });
+
+  it("enrichment upsert: rejects an unknown skillCode with a 400", async () => {
+    await assertEnrichmentUpsertRejectsUnknownSkill(db);
+  });
+
+  it("enrichment upsert: rejects an out-of-scope affected asset and writes nothing", async () => {
+    await assertEnrichmentUpsertRejectsOutOfScopeAffectedAsset(db);
+  });
+
+  it("enrichment upsert: replaces the affected-asset set", async () => {
+    await assertEnrichmentUpsertReplacesAffectedAssetSet(db);
+  });
+
+  it("enrichment upsert: raises not-found for an alarm outside the caller's scope", async () => {
+    await assertEnrichmentUpsertScopedByAssetIds(db);
   });
 });
