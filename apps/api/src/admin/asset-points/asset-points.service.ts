@@ -267,6 +267,9 @@ export class AssetPointsAdminService {
       sensorCode: point.sensorCode,
       unit: point.unit,
       active: point.active,
+      // asset_points_source_kind_check guarantees this is one of the four
+      // values; drizzle types the column as the column's raw varchar type.
+      sourceKind: point.sourceKind as AdminAssetPointDto["sourceKind"],
       createdAt: point.createdAt.toISOString(),
     };
   }

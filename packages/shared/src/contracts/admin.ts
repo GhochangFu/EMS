@@ -91,6 +91,8 @@ export const adminAssetPointDtoSchema = z.object({
   sensorCode: z.string().nullable(),
   unit: z.string().nullable(),
   active: z.boolean(),
+  /** ADR 0018 — where this point's provenance comes from. */
+  sourceKind: pointSourceKindSchema,
   createdAt: z.string(),
 });
 
