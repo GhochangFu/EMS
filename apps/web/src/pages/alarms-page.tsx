@@ -6,6 +6,7 @@ import { io, type Socket } from "socket.io-client";
 import { ackAlarm, fetchAlarmsPage } from "../api/alarms";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { alarmSeverityTone, summariseAlarmSeverities } from "../lib/alarm-severity";
+import { AlarmDetailsPanel } from "../components/alarm-details-panel";
 import { AlarmSummaryCard } from "../components/alarm-summary-card";
 import { AppShell } from "../layouts/app-shell";
 import { PageHeader } from "../components/page-header";
@@ -79,6 +80,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   const [reason, setReason] = useState("");
   const [ackError, setAckError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [detailsTargetId, setDetailsTargetId] = useState<string | null>(null);
   const accessToken = useAuthStore((state) => state.accessToken);
 
   const listQ = useInfiniteQuery({
@@ -367,6 +369,13 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                           <button
                             type="button"
                             className="rounded border border-gray-300 px-2.5 py-1 text-xs font-semibold text-bms-ink hover:bg-gray-50"
+                            onClick={() => setDetailsTargetId(a.id)}
+                          >
+                            Details
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded border border-gray-300 px-2.5 py-1 text-xs font-semibold text-bms-ink hover:bg-gray-50"
                             onClick={() => startWorkOrder(a)}
                           >
                             Work order
@@ -458,6 +467,14 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
             </form>
           </div>
         </div>
+      ) : null}
+
+      {detailsTargetId ? (
+        <AlarmDetailsPanel
+          alarmId={detailsTargetId}
+          readOnly={user.role === "viewer"}
+          onClose={() => setDetailsTargetId(null)}
+        />
       ) : null}
     </AppShell>
   );

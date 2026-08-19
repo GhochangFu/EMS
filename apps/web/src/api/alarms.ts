@@ -1,8 +1,9 @@
 import {
+  alarmDetailsResponseSchema,
   alarmListItemSchema,
   alarmsListResponseSchema,
 } from "@bms/shared/contracts";
-import type { AlarmListItem } from "@bms/shared";
+import type { AlarmDetailsResponse, AlarmEnrichmentUpsertBody, AlarmListItem } from "@bms/shared";
 
 import { clearSessionOnAuthFailure, withAuth } from "./http";
 import { checkResponse } from "./validate";
@@ -47,4 +48,34 @@ export async function ackAlarm(
     throw new Error(text || `ack ${res.status}`);
   }
   return checkResponse(alarmListItemSchema, await res.json(), "alarms/:id/ack");
+}
+
+/** GET /api/v1/alarms/:id/details (ADR 0034 decision 5). */
+export async function fetchAlarmDetails(id: string): Promise<AlarmDetailsResponse> {
+  const res = await fetch(`${base}/api/v1/alarms/${id}/details`, withAuth());
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    throw new Error(`alarms/:id/details ${res.status}`);
+  }
+  return checkResponse(alarmDetailsResponseSchema, await res.json(), "alarms/:id/details");
+}
+
+/** PUT /api/v1/alarms/:id/enrichment (ADR 0034 decision 6). */
+export async function saveAlarmEnrichment(
+  id: string,
+  body: AlarmEnrichmentUpsertBody,
+): Promise<AlarmDetailsResponse> {
+  const res = await fetch(`${base}/api/v1/alarms/${id}/enrichment`, {
+    ...withAuth({
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  });
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    const text = await res.text();
+    throw new Error(text || `alarms/:id/enrichment ${res.status}`);
+  }
+  return checkResponse(alarmDetailsResponseSchema, await res.json(), "alarms/:id/enrichment");
 }
