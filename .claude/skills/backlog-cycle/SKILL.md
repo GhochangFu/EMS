@@ -70,8 +70,9 @@ Infer the mode from the request; ask only if genuinely ambiguous.
      cached page looks exactly like a failed fix.
    - Check both directions: the defect is gone, *and* the fix does not fire when
      it should not.
-2. Run the review agents as applicable: `agents-compliance-reviewer`,
-   `security-reviewer`, and `migration-reviewer` for anything under
+2. Run the review agents concurrently. Three always — `code-reviewer`
+   (correctness, contract drift, tests that do not gate), `security-reviewer`,
+   `agents-compliance-reviewer` — plus `migration-reviewer` for anything under
    `packages/db`.
 3. Flip Status to `✅ done` in `docs/BACKLOG.md`.
 4. **Cascade check.** Report which items this newly unblocks (any item listing

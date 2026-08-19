@@ -41,14 +41,35 @@ the superpowers skills, made concrete):
 | Step | Who | Skill / tool | Human touch? |
 |------|-----|--------------|--------------|
 | 1. **Pick** next *unblocked* item (enablers first) | Claude | sequencing doc | — |
-| 2. **Brainstorm + ADR** — scope, deps, interface | Human + Claude | `superpowers:brainstorming`, `new-adr` | ✅ **gate** |
-| 3. **Plan** — written, reviewable | Claude | `superpowers:writing-plans` | 👀 skim |
+| 2. **Brainstorm + ADR** — scope, deps, interface | Human + Claude | `superpowers:brainstorming`, `new-adr` — **requires `/model opus` first** | ✅ **gate** |
+| 3. **Plan** — written, reviewable | Claude | `plan-architect` agent (Opus-pinned) | 👀 skim |
 | 4. **Build via TDD** | Claude (+ subagents) | `superpowers:test-driven-development` | — |
-| 5. **Review** — 3 passes in parallel | Subagents | `agents-compliance-reviewer`, `security-reviewer`, code review | 👀 batched |
+| 5. **Review** — parallel passes | Subagents | `code-reviewer`, `security-reviewer`, `agents-compliance-reviewer`, plus `migration-reviewer` for anything under `packages/db` | 👀 batched |
 | 6. **Verify against the running Docker stack** | Claude | `docker compose`, psql, browser | — |
 | 7. **Approve & merge** | Human | — | ✅ **gate** |
 
 The human owns **steps 2 and 7** only. Everything else Claude carries.
+
+### Steps 2 and 3 run on Opus, and they get there by different routes
+
+Scope and plan are the two places where a cheaper model costs the most: a bad plan
+is executed faithfully, and a bad scope decision survives the ADR that records it.
+Both steps therefore run on Opus. The session model for steps 1 and 4–6 is
+whatever the operator has set — Sonnet, in the normal case.
+
+**A skill has no model of its own.** None of the installed `SKILL.md` files
+declares one, so an inline skill runs on whatever the session is set to. That is
+why the two rows above read differently:
+
+- **Step 3 is delegated.** The `plan-architect` agent is pinned `model: opus` in
+  its own frontmatter, so the plan is written on Opus no matter what the session
+  runs. It is read-only and returns the plan text; the caller transcribes it. It
+  refuses to plan past the step-2 gate.
+- **Step 2 cannot be delegated.** Brainstorming is a dialogue with the human, and
+  the ADR is the gate artifact that comes out of that dialogue — a subagent
+  drafting it would invert the gate. So step 2 is enforced by refusal instead:
+  Claude states that Opus is required and stops until the operator runs
+  `/model opus`. It does not brainstorm or draft an ADR on a cheaper model.
 
 ### Step 6 is not optional, and it is not the test suite again
 
@@ -86,7 +107,10 @@ fire when it should not.
   `F1.4` OPC-UA are parallel subagent tasks — same interface, separate files.
   Same after `F2.1`/`F2.3`: calc engine, tag-mapping, instantiation.
 - **Read-only exploration** (`Explore` agent) running alongside the main build.
-- **The three review agents** at step 5, concurrently.
+- **The review agents** at step 5, concurrently. Three always
+  (`code-reviewer`, `security-reviewer`, `agents-compliance-reviewer`), and a
+  fourth, `migration-reviewer`, whenever the diff touches `packages/db`. They are
+  read-only and touch no files, so they never collide.
 
 ### ⛔ Do NOT fan out — the serial spine
 
