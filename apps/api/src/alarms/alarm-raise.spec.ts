@@ -1,4 +1,9 @@
-import { isSampleFreshEnoughToRaise, MAX_RAISE_SAMPLE_AGE_MS, shouldRaise } from "./alarm-raise.service";
+import {
+  isSampleFreshEnoughToRaise,
+  MAX_RAISE_CLOCK_SKEW_MS,
+  MAX_RAISE_SAMPLE_AGE_MS,
+  shouldRaise,
+} from "./alarm-raise.service";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -74,6 +79,41 @@ function testIsSampleFreshEnoughToRaise(): void {
       now,
     ),
     "a month-old sample — an offline or decommissioned asset's last reading — must not raise",
+  );
+
+  // Code review and security review, PR #100: a one-sided `now - sampleTime
+  // <= MAX` check treats every future-dated sample as infinitely fresh (the
+  // difference is negative). Real, not hypothetical — the pilot RTU's clock
+  // has been measured running ~34 minutes ahead of the server.
+  assert(
+    isSampleFreshEnoughToRaise(
+      new Date(now.getTime() + 34 * 60 * 1000),
+      now,
+    ),
+    "a sample 34 minutes ahead of the server clock — the documented pilot RTU skew — must still raise",
+  );
+  assert(
+    isSampleFreshEnoughToRaise(
+      new Date(now.getTime() + MAX_RAISE_CLOCK_SKEW_MS),
+      now,
+    ),
+    "a sample exactly at the clock-skew bound must still be fresh enough to raise",
+  );
+  assert(
+    !isSampleFreshEnoughToRaise(
+      new Date(now.getTime() + MAX_RAISE_CLOCK_SKEW_MS + 1),
+      now,
+    ),
+    "a sample one millisecond past the clock-skew bound must not be fresh enough to raise",
+  );
+  assert(
+    !isSampleFreshEnoughToRaise(
+      new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+      now,
+    ),
+    "a sample a week in the future — an implausible clock, not ordinary skew — must not raise " +
+      "(the exact hole a one-sided bound leaves open: a dead asset's last, future-dated sample " +
+      "would otherwise stay \"fresh\" until real time catches up to it)",
   );
 }
 

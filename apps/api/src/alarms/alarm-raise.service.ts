@@ -40,6 +40,29 @@ export function shouldRaise(
 export const MAX_RAISE_SAMPLE_AGE_MS = 15 * 60 * 1000;
 
 /**
+ * How far ahead of the server clock a sample's own timestamp is still
+ * trusted, rather than treated as implausible and rejected outright.
+ *
+ * `sample.time` comes from the RTU's clock, not the server's
+ * (`apps/ingest/src/adapters/mqtt.ts`'s header: "The pilot RTU makes the
+ * point concrete: its clock ran ~34 minutes ahead of the server on
+ * 2026-08-06.") A one-sided `now - sampleTime <= MAX_RAISE_SAMPLE_AGE_MS`
+ * check treats every future-dated sample as infinitely fresh, since the
+ * difference is negative — re-opening exactly the security-review hole this
+ * gate exists to close, off a different input, for a condition this repo has
+ * already measured on real hardware. Deliberately wider than
+ * `MAX_RAISE_SAMPLE_AGE_MS`, not equal to it: an equal, symmetric bound would
+ * reject the documented pilot RTU's genuinely live readings as "too far in
+ * the future" during ordinary operation.
+ *
+ * This bounds the damage; it does not remove the dependency on a device
+ * clock — clamping at the ingest sink is tracked separately (`F1.7`,
+ * `docs/BACKLOG.md`, referenced from `telemetry-reading.schema.ts`'s `F4.37`
+ * note) and is a §10 gate decision, not this function's job.
+ */
+export const MAX_RAISE_CLOCK_SKEW_MS = 60 * 60 * 1000;
+
+/**
  * Gates a raise on how old its telemetry sample is — separate from
  * `shouldRaise`, which only asks whether the rule matched.
  *
@@ -52,9 +75,15 @@ export const MAX_RAISE_SAMPLE_AGE_MS = 15 * 60 * 1000;
  * off stale data today, and — because acknowledging an alarm clears the
  * dedupe key `alarms_open_per_rule_uidx` relies on — re-opens the same
  * alarm every time the button is pressed again afterwards.
+ *
+ * Two-sided, not one-sided: code review and security review both caught that
+ * a future-dated sample defeats a `now - sampleTime <= MAX` check entirely
+ * (the difference is negative, so it is always "fresh"). `NaN` (an invalid
+ * date) fails both comparisons, so it stays rejected either way.
  */
 export function isSampleFreshEnoughToRaise(sampleTime: Date, now: Date): boolean {
-  return now.getTime() - sampleTime.getTime() <= MAX_RAISE_SAMPLE_AGE_MS;
+  const age = now.getTime() - sampleTime.getTime();
+  return age >= -MAX_RAISE_CLOCK_SKEW_MS && age <= MAX_RAISE_SAMPLE_AGE_MS;
 }
 
 /** What `AlarmRaiser.raise` needs from a rule, regardless of which engine evaluated it. */

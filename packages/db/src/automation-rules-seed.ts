@@ -492,15 +492,38 @@ const ESKOM_LADDER_RULES = [
   },
 ] as const;
 
+/** A rule's condition, as the tuple `0033`'s own `NOT EXISTS` guards key on. */
+function conditionKey(
+  assetId: string,
+  pointKey: string,
+  operator: string,
+  thresholdValue: number,
+): string {
+  return `${assetId}::${pointKey}::${operator}::${thresholdValue}`;
+}
+
 /**
- * Seeds the ESKOM ladder onto every electrical asset, skipping `DEMAND_HIGH`
- * wherever a `(kw, gte, 115)` rule already exists on that asset — matching
- * `0033`'s own condition-tuple `NOT EXISTS` guard, which is what keeps
- * `UPS-A`'s `demand_ceiling_notify` (seeded above by `seedDemoRules`) from
- * getting a duplicate `ESKOM_UPS_A_DEMAND_HIGH` beside it. A code-keyed
- * `upsertRuleByCode` alone cannot see that: the two rules have different
- * codes, so it would insert both, and `alarms_open_per_rule_uidx` does not
- * dedupe two different `rule_id`s raised from the same reading.
+ * Seeds the ESKOM ladder onto every electrical asset, skipping any of the
+ * five rules wherever that asset already carries a rule with the same
+ * `(asset_id, point_key, operator, threshold_value)` condition — matching
+ * `0033`'s own condition-tuple `NOT EXISTS` guard exactly, not just for
+ * `DEMAND_HIGH`. That is what keeps `UPS-A`'s `demand_ceiling_notify`
+ * (seeded above by `seedDemoRules`) from getting a duplicate
+ * `ESKOM_UPS_A_DEMAND_HIGH` beside it.
+ *
+ * Code review and migration review, PR #100: an earlier draft keyed only
+ * `DEMAND_HIGH` on the condition tuple and left the other four on
+ * `upsertRuleByCode`'s code match. Asset `code` is operator-editable
+ * (`apps/api/src/admin/assets/assets.schema.ts` has no case/charset
+ * constraint on it) and `upsertRuleByCode` only case-folds its *stored* side
+ * — a rename, or a lowercase code, generates a code that does not match the
+ * existing row, so a re-seed inserted a second rule with the identical
+ * condition (two `rule_id`s, so `alarms_open_per_rule_uidx` does not dedupe
+ * them — the exact defect this item exists to close) or, for a duplicate
+ * generated code, aborted `pnpm db:seed` on the `code` unique constraint.
+ * Keying every rule on its condition tuple removes the dependency on the
+ * code matching at all: an already-seeded condition is skipped outright,
+ * whatever code it was seeded under.
  *
  * Queries `bms.assets`/`locations`/`organizations` directly — the same join
  * migration `0033` uses — rather than taking the eskom-assets-seed.ts
@@ -522,23 +545,34 @@ export async function seedEskomLadderRules(db: BmsDb): Promise<void> {
     return;
   }
 
-  const demandHighRows = await db
-    .select({ assetId: automationRules.assetId })
-    .from(automationRules)
-    .where(
-      and(
-        eq(automationRules.pointKey, "kw"),
-        eq(automationRules.operator, "gte"),
-        eq(automationRules.thresholdValue, 115),
-      ),
-    );
-  const assetsWithDemandHigh = new Set(
-    demandHighRows.map((row) => row.assetId).filter((id): id is string => id !== null),
+  const existingRows = await db
+    .select({
+      assetId: automationRules.assetId,
+      pointKey: automationRules.pointKey,
+      operator: automationRules.operator,
+      thresholdValue: automationRules.thresholdValue,
+    })
+    .from(automationRules);
+  const existingConditions = new Set(
+    existingRows
+      .filter(
+        (row): row is {
+          assetId: string;
+          pointKey: string;
+          operator: string;
+          thresholdValue: number;
+        } =>
+          row.assetId !== null &&
+          row.pointKey !== null &&
+          row.operator !== null &&
+          row.thresholdValue !== null,
+      )
+      .map((row) => conditionKey(row.assetId, row.pointKey, row.operator, row.thresholdValue)),
   );
 
   for (const asset of electricalAssets) {
     for (const rule of ESKOM_LADDER_RULES) {
-      if (rule.suffix === "DEMAND_HIGH" && assetsWithDemandHigh.has(asset.id)) {
+      if (existingConditions.has(conditionKey(asset.id, rule.pointKey, rule.operator, rule.thresholdValue))) {
         continue;
       }
       await upsertRuleByCode(

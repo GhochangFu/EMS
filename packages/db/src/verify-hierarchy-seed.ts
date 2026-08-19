@@ -11,7 +11,7 @@ export async function verifyHierarchySeed(pool: pg.Pool): Promise<void> {
     phe_points: string;
     orphan_assets: string;
     loc_mismatch: string;
-    eskom_ladder_rules: string;
+    eskom_uncovered_electrical_assets: string;
   }>(`
     SELECT
       (SELECT COUNT(*)::text FROM bms.organizations) AS orgs,
@@ -37,8 +37,17 @@ export async function verifyHierarchySeed(pool: pg.Pool): Promise<void> {
       (SELECT COUNT(*)::text FROM bms.assets a
         INNER JOIN bms.rtus r ON r.id = a.rtu_id
         WHERE a.location_id IS DISTINCT FROM r.location_id) AS loc_mismatch,
-      (SELECT COUNT(*)::text FROM bms.automation_rules
-        WHERE source = 'simulator_threshold') AS eskom_ladder_rules
+      -- Zero uncovered assets, not a nonzero total: a total alone cannot tell
+      -- "every asset got its five rules" from "most did, one silently didn't"
+      -- (migration review, PR #100 -- the gap ESK-MANUAL-01 itself exposed).
+      (SELECT COUNT(*)::text FROM bms.assets a
+        INNER JOIN bms.locations l ON l.id = a.location_id
+        INNER JOIN bms.organizations o ON o.id = l.organization_id
+        WHERE o.code = 'ESKOM' AND a.domain = 'electrical'
+          AND NOT EXISTS (
+            SELECT 1 FROM bms.automation_rules r
+            WHERE r.asset_id = a.id AND r.source = 'simulator_threshold'
+          )) AS eskom_uncovered_electrical_assets
   `);
 
   const row = checks.rows[0];
@@ -82,10 +91,15 @@ export async function verifyHierarchySeed(pool: pg.Pool): Promise<void> {
   // silent no-op on a fresh database (it joins assets that only exist once
   // seed has already run, and seed runs after migrate). This is what would
   // have caught it — `automation-rules-seed.ts`'s `seedEskomLadderRules` is
-  // the seed-side source of truth now, so a zero count here means it broke,
-  // not that a fresh database is merely missing a migration-only feature.
-  if (Number(row.eskom_ladder_rules) === 0) {
-    errors.push("ESKOM simulator threshold rules: expected > 0, got 0");
+  // the seed-side source of truth now, so an asset with zero `simulator_
+  // threshold` rows here means it broke, not that a fresh database is merely
+  // missing a migration-only feature. A nonzero-total check alone would not
+  // have caught `ESK-MANUAL-01` being silently skipped — a total can stay
+  // nonzero while one asset quietly loses all five of its rules.
+  if (Number(row.eskom_uncovered_electrical_assets) !== 0) {
+    errors.push(
+      `ESKOM electrical assets with no simulator_threshold rule: ${row.eskom_uncovered_electrical_assets}`,
+    );
   }
 
   if (errors.length > 0) {
