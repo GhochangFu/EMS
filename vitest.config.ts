@@ -270,11 +270,21 @@ export default defineConfig({
       // 35.81 lines. Most of the rise is `reports.service.ts`, which had **no
       // tests at all** before this item (ADR 0025 fact 7) and is now exercised
       // through `energyPreview` rather than by reconstructing its queries.
+      // Ratcheted by `E2.1` (ADR 0034) from 40.3/35.2/41.5/40.6. Measured
+      // 2026-08-19 against the live database, all 80 test files running and
+      // none skipped: 43.22 statements · 39.33 branches · 45.07 functions ·
+      // 43.44 lines (80 files / 253 tests). The rise is new coverage:
+      // `alarm-details.ts` (lib, tested first — operatorSymbol,
+      // formatThresholdPairing, alarmSkillLabel) plus the integration
+      // suites for `bms.alarm_enrichments`/`bms.alarm_skills`,
+      // `VocabulariesService`'s fourth vocabulary, the template
+      // `philosophy.skill` tightening, `AlarmDetailsService` and
+      // `AlarmEnrichmentService`.
       thresholds: {
-        statements: 40.3,
-        branches: 35.2,
-        functions: 41.5,
-        lines: 40.6,
+        statements: 43.0,
+        branches: 39.1,
+        functions: 44.8,
+        lines: 43.2,
       },
     },
   },
