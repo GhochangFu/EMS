@@ -14,6 +14,7 @@ import {
   assertDetailsReturnsThresholdPairing,
   assertDetailsScopedByAssetIds,
   assertEnrichmentUpsertCreatesThenUpdates,
+  assertEnrichmentUpsertDeleteScopedToCallerAccess,
   assertEnrichmentUpsertRejectsOutOfScopeAffectedAsset,
   assertEnrichmentUpsertRejectsUnknownSkill,
   assertEnrichmentUpsertReplacesAffectedAssetSet,
@@ -119,5 +120,9 @@ describe.skipIf(!connectionString)("E2.1 — alarm enrichment schema against a r
 
   it("enrichment upsert: raises not-found for an alarm outside the caller's scope", async () => {
     await assertEnrichmentUpsertScopedByAssetIds(db);
+  });
+
+  it("enrichment upsert: a scoped replace does not delete an out-of-scope affected asset", async () => {
+    await assertEnrichmentUpsertDeleteScopedToCallerAccess(db);
   });
 });

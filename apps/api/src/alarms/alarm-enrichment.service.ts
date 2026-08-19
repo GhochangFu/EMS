@@ -99,9 +99,20 @@ export class AlarmEnrichmentService {
       }
 
       if (body.affectedAssetIds !== undefined) {
+        // Scoped the same way the pre-write check above is: a scoped
+        // caller's "replace" only replaces the subset they can see. An
+        // unscoped delete here would silently destroy links to assets
+        // outside the caller's access on every scoped edit — the read side
+        // already filters those out (`AlarmDetailsService.get`), so the
+        // caller never even sees them to know they existed.
         await tx
           .delete(alarmAffectedAssets)
-          .where(eq(alarmAffectedAssets.enrichmentId, enrichment.id));
+          .where(
+            and(
+              eq(alarmAffectedAssets.enrichmentId, enrichment.id),
+              ...(assetIds ? [inArray(alarmAffectedAssets.assetId, assetIds)] : []),
+            ),
+          );
         if (body.affectedAssetIds.length > 0) {
           await tx.insert(alarmAffectedAssets).values(
             body.affectedAssetIds.map((assetId) => ({

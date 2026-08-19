@@ -99,6 +99,19 @@ async function secondSeededAssetId(db: BmsDb, excludeId: string): Promise<string
   return asset.id;
 }
 
+/** A third seeded asset, distinct from both given ids. */
+async function thirdSeededAssetId(db: BmsDb, excludeIds: [string, string]): Promise<string> {
+  const [asset] = await db
+    .select({ id: assets.id })
+    .from(assets)
+    .where(sql`${assets.id} NOT IN (${excludeIds[0]}, ${excludeIds[1]})`)
+    .limit(1);
+  if (!asset) {
+    throw new Error("need at least three seeded assets — run pnpm db:seed first");
+  }
+  return asset.id;
+}
+
 /** An alarm with no linked rule — a historical alarm, or one raised outside the rule engine. */
 async function insertTestAlarmWithoutRule(db: BmsDb, assetId: string, code: string): Promise<string> {
   const [alarm] = await db
@@ -521,6 +534,56 @@ export async function assertEnrichmentUpsertScopedByAssetIds(db: BmsDb): Promise
       notFound = err instanceof NotFoundException;
     }
     assert(notFound, "an alarm outside the caller's assetIds must raise NotFoundException");
+
+    tx.rollback();
+  });
+}
+
+/**
+ * Security finding: replacing `affectedAssetIds` must not delete a row for an
+ * asset outside the caller's scope. The insert direction was already scoped
+ * (`assertEnrichmentUpsertRejectsOutOfScopeAffectedAsset`); this is the delete
+ * direction, which a full unscoped `DELETE ... WHERE enrichment_id = ?` would
+ * silently destroy on the next scoped replace.
+ */
+export async function assertEnrichmentUpsertDeleteScopedToCallerAccess(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const assetId = await firstSeededAssetId(tx);
+    const inScopeAffected = await secondSeededAssetId(tx, assetId);
+    const outOfScopeAffected = await thirdSeededAssetId(tx, [assetId, inScopeAffected]);
+    const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_DELETE_SCOPE");
+    const actor = await firstSeededUser(tx);
+    const callerScope = [assetId, inScopeAffected];
+    const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
+
+    // Seed both an in-scope and an out-of-scope affected asset directly —
+    // bypassing the service's own insert-side scope check, the way a prior
+    // admin write (assetIds === null) legitimately could.
+    const [enrichment] = await tx
+      .insert(alarmEnrichments)
+      .values({ alarmId })
+      .returning({ id: alarmEnrichments.id });
+    if (!enrichment) {
+      throw new Error("failed to insert test enrichment");
+    }
+    await tx.insert(alarmAffectedAssets).values([
+      { enrichmentId: enrichment.id, assetId: inScopeAffected },
+      { enrichmentId: enrichment.id, assetId: outOfScopeAffected },
+    ]);
+
+    // The scoped caller replaces the set with an empty list — clearing only
+    // what they can see.
+    await svc.upsert(alarmId, actor, { affectedAssetIds: [] }, callerScope);
+
+    const remaining = await tx
+      .select({ assetId: alarmAffectedAssets.assetId })
+      .from(alarmAffectedAssets)
+      .where(eq(alarmAffectedAssets.enrichmentId, enrichment.id));
+    assert(
+      remaining.length === 1 && remaining[0]?.assetId === outOfScopeAffected,
+      `a scoped replace must not delete an affected-asset row outside the caller's scope; ` +
+        `expected [${outOfScopeAffected}] to survive, got [${remaining.map((r) => r.assetId).join(", ")}]`,
+    );
 
     tx.rollback();
   });
