@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useState } from "react";
 
-import { fetchAlarmDetails, saveAlarmEnrichment } from "../api/alarms";
+import {
+  fetchAlarmDetails,
+  saveAlarmEnrichment,
+  type AlarmEnrichmentUpsertBody,
+} from "../api/alarms";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { alarmSkillLabel, formatThresholdPairing } from "../lib/alarm-details";
 import { alarmSeverityTone } from "../lib/alarm-severity";
 import { StatusPill } from "./status-pill";
-import type { AlarmEnrichmentUpsertBody } from "@bms/shared";
 
 type AlarmDetailsPanelProps = {
   alarmId: string;

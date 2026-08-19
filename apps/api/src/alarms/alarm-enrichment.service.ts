@@ -3,10 +3,11 @@ import { and, eq, inArray, or } from "drizzle-orm";
 
 import { alarmAffectedAssets, alarmEnrichments, alarms, auditLog, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AlarmEnrichmentUpsertBody, JwtPayload } from "@bms/shared";
+import type { JwtPayload } from "@bms/shared";
 
 import { DRIZZLE } from "../database/database.tokens";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
+import type { AlarmEnrichmentUpsertBody } from "./enrichment.schema";
 
 /**
  * `PUT /api/v1/alarms/:id/enrichment` (ADR 0034 decision 6).

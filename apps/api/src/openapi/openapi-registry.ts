@@ -41,6 +41,7 @@ import {
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
 import { alarmAckBodySchema } from "../alarms/ack.schema";
+import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { loginBodySchema } from "../auth/login.schema";
 import { locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import {
@@ -89,6 +90,7 @@ import {
  */
 export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AlarmsController_acknowledge: alarmAckBodySchema,
+  AlarmsController_upsertEnrichment: alarmEnrichmentUpsertBodySchema,
   AssetPointsAdminController_create: createAssetPointBodySchema,
   AssetPointsAdminController_update: updateAssetPointBodySchema,
   AssetsAdminController_create: createAssetBodySchema,

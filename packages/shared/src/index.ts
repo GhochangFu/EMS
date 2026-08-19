@@ -122,8 +122,8 @@ export type AlarmAffectedAssetDto = z.infer<typeof Op.alarmAffectedAssetDtoSchem
 export type AlarmEnrichmentDto = z.infer<typeof Op.alarmEnrichmentDtoSchema>;
 /** `GET /api/v1/alarms/:id/details` (ADR 0034 decision 5). */
 export type AlarmDetailsResponse = z.infer<typeof Op.alarmDetailsResponseSchema>;
-/** `PUT /api/v1/alarms/:id/enrichment` request body (ADR 0034 decision 6). */
-export type AlarmEnrichmentUpsertBody = z.infer<typeof Op.alarmEnrichmentUpsertBodySchema>;
+// `AlarmEnrichmentUpsertBody` deliberately not here — it is a request type,
+// declared in `apps/api/src/alarms/enrichment.schema.ts` (AGENTS.md §3).
 
 // ---------------------------------------------------------------------------
 // Work orders and maintenance

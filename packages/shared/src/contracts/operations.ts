@@ -434,21 +434,11 @@ export const alarmDetailsResponseSchema = z.object({
   enrichment: alarmEnrichmentDtoSchema.nullable(),
 });
 
-/** `PUT /api/v1/alarms/:id/enrichment` request body (ADR 0034 decision 6). */
-export const alarmEnrichmentUpsertBodySchema = z
-  .object({
-    rootCause: z.string().max(2000).nullable().optional(),
-    impact: z.string().max(2000).nullable().optional(),
-    correctiveActions: z.string().max(2000).nullable().optional(),
-    energyImpact: z.string().max(2000).nullable().optional(),
-    waterImpact: z.string().max(2000).nullable().optional(),
-    productionImpact: z.string().max(2000).nullable().optional(),
-    /** No future-only refinement — revising a passed ETR is legitimate. */
-    etrAt: z.string().datetime({ offset: true }).nullable().optional(),
-    skillCode: alarmSkillCodeSchema.nullable().optional(),
-    affectedAssetIds: z.array(z.string().uuid()).max(50).optional(),
-  })
-  .strict();
+// `alarmEnrichmentUpsertBodySchema` (the `PUT .../enrichment` request body)
+// deliberately does NOT live here — AGENTS.md §3 / ADR 0030 decision 3:
+// request schemas stay in `apps/api` (`apps/api/src/alarms/enrichment.schema.ts`),
+// only response contracts live in this package. Found by compliance review
+// on ADR 0034: the first draft declared it here by mistake.
 
 export const automationRuleLifecycleStatusSchema = z.enum(["draft", "published", "archived"]);
 export const ruleExecutionStatusSchema = z.enum([
