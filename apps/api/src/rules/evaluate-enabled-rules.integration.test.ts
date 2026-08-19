@@ -5,7 +5,10 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
-import { assertRaisesUnscopedButReturnsScoped } from "./evaluate-enabled-rules.integration.spec";
+import {
+  assertRaisesUnscopedButReturnsScoped,
+  assertStaleSampleMatchesButDoesNotRaise,
+} from "./evaluate-enabled-rules.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 
 /**
@@ -51,6 +54,14 @@ describe.skipIf(!connectionString)("F3.6 — evaluateEnabledRules against a real
     "raises for every matched rule, but returns traces only for the caller's assetIds",
     async () => {
       await assertRaisesUnscopedButReturnsScoped(db);
+    },
+    30_000,
+  );
+
+  it(
+    "matches but does not raise for a sample older than the raise-freshness bound",
+    async () => {
+      await assertStaleSampleMatchesButDoesNotRaise(db);
     },
     30_000,
   );

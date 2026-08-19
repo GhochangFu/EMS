@@ -17,7 +17,7 @@ import { pheMapLocationRowsForInsert } from "./phe-map-seed";
 import { seedPheCatalog } from "./phe-pilot-seed";
 import { createDb } from "./client";
 import { backfillAssetLocations, seedAssetGroups } from "./asset-groups-seed";
-import { seedAutomationRules } from "./automation-rules-seed";
+import { seedAutomationRules, seedEskomLadderRules } from "./automation-rules-seed";
 import {
   seedDemoAlarms,
   seedDemoWorkOrders,
@@ -83,11 +83,8 @@ async function main(): Promise<void> {
     await seedEskomLocations(db, mapLocationRows, eskomOrgId);
     await ensureEskomDomainRtus(db, pool);
 
-    const assetRows = await seedEskomAssets(
-      db,
-      pool,
-      buildEskomAssetCatalog(controlRoomSiteName, rsmocDemoAssets),
-    );
+    const eskomCatalog = buildEskomAssetCatalog(controlRoomSiteName, rsmocDemoAssets);
+    const assetRows = await seedEskomAssets(db, pool, eskomCatalog);
 
     await seedDemoAlarms(db, assetRows, adminId);
     await seedDemoWorkOrders(db, assetRows, adminId);
@@ -107,6 +104,10 @@ async function main(): Promise<void> {
     await seedPheOrganizationAdmin(db, pool);
 
     await seedAccessControlFixtures(pool);
+    // After access fixtures, not inside seedAutomationRules: this needs every
+    // ESKOM electrical asset to exist, including ESK-MANUAL-01, which the
+    // call just above this one creates.
+    await seedEskomLadderRules(db);
     await enforceHierarchyNotNull(pool);
     const { verifyHierarchySeed } = await import("./verify-hierarchy-seed.js");
     await verifyHierarchySeed(pool);
