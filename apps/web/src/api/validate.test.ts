@@ -22,6 +22,7 @@ const validAlarm = {
   id: "a1",
   assetId: "as1",
   ruleKey: null,
+  ruleId: null,
   severity: "warning",
   message: "Temperature high",
   raisedAt: "2026-08-15T10:00:00Z",

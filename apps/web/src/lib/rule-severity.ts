@@ -19,10 +19,13 @@ export type RuleSeverity = AutomationRuleSeverity;
  * lived inline in `rule-builder-panel.tsx` returned `"warning"` for `null`, so
  * loading the one rule that has no severity and pressing Save gave it one.
  *
- * That a rule can have none is not an accident of the seed. The alarm engine
- * only ever loads `ruleType = "threshold"` (`alarm-threshold.service.ts:99`),
- * so a time-window rule — `weekday_energy_review` is the only one — has nothing
- * to be severe about.
+ * That a rule can have none is not an accident of the seed. The streaming
+ * alarm engine only ever loads `ruleType = "threshold"`
+ * (`alarm-engine.service.ts:81`, renamed from `AlarmThresholdService` by
+ * F3.6), and `shouldRaise` (`alarm-raise.service.ts`) makes the same
+ * exclusion explicit for the on-demand evaluator, which has no such query to
+ * filter on — so a time-window rule, `weekday_energy_review` the only one,
+ * has nothing to be severe about on either path.
  *
  * An unrecognised string maps to `null` for the same reason: it is the only
  * answer that does not invent data, and the builder shows it as `None` rather
@@ -60,8 +63,10 @@ export function severityFromRule(
  * the alarm engine — that is product scope, and the owner's call (§10), so the
  * option is offered only where it is already the truth:
  *
- * - a **time-window** rule, which the alarm engine never loads
- *   (`alarm-threshold.service.ts:99`) and so has nothing to be severe about; or
+ * - a **time-window** rule, which the streaming alarm engine never loads
+ *   (`alarm-engine.service.ts:81`) and `shouldRaise` (`alarm-raise.service
+ *   .ts`) excludes on the on-demand path too, so it has nothing to be severe
+ *   about; or
  * - **any** rule that already holds no severity, whatever its type.
  *
  * The second arm is the one that is easy to leave out and is not optional.

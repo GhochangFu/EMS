@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 
 import {
   assets,
@@ -26,8 +26,10 @@ import type {
   RulePreviewResult,
 } from "@bms/shared";
 
+import { AlarmRaiser, shouldRaise } from "../alarms/alarm-raise.service";
 import { DRIZZLE } from "../database/database.tokens";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
+import { alarmMessageFieldsFromCondition } from "./alarm-message";
 // The three modules extracted for AGENTS.md §4.5 (1000-line cap). Each holds
 // pure logic — no database, no clock — which is why it sits outside the service
 // and carries its own spec instead of needing one here.
@@ -35,6 +37,7 @@ import {
   evaluateThresholdRule,
   evaluateTimeWindowRule,
   unsupportedRuleType,
+  type LatestSampleLoader,
 } from "./rule-evaluation";
 import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
 import { pointKeysForAsset } from "./rule-points";
@@ -53,6 +56,7 @@ export class RulesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: BmsDb,
     private readonly vocabularies: VocabulariesService,
+    private readonly alarmRaiser: AlarmRaiser,
   ) {}
 
   /** Lists Sprint D automation rules with optional asset context. */
@@ -438,18 +442,65 @@ export class RulesService {
     return mapRuleRow(await this.getRuleRow(id));
   }
 
-  /** Evaluates all enabled Sprint D rules and records execution traces. */
+  /**
+   * Evaluates every enabled, published rule and records an execution trace
+   * for each — matched or not, which is the whole point of an "evaluate now"
+   * button. **Unscoped** (ADR 0033 decision 2): alarms are facts about the
+   * plant, not a view scoped to whoever clicked the button, so a
+   * location-scoped operator triggering this raises the same alarms a global
+   * admin would. Only the *returned* trace list is filtered to the caller's
+   * `assetIds` — matching how the streaming path (`AlarmEngineService`) has
+   * always raised without regard to who is watching.
+   */
   async evaluateEnabledRules(
     actor: Pick<JwtPayload, "sub" | "email">,
     assetIds?: string[] | null,
   ): Promise<{ items: RuleExecutionItem[] }> {
-    const rows = this.filterRuleRows(await this.ruleRows(), assetIds).filter(
+    const allRows = (await this.ruleRows()).filter(
       (row) => row.enabled && row.lifecycleStatus === "published",
     );
+    const scopedIds = new Set(this.filterRuleRows(allRows, assetIds).map((row) => row.id));
     const items: RuleExecutionItem[] = [];
 
-    for (const row of rows) {
-      const result = await this.evaluateRule(row);
+    // Decision 2 makes this evaluate every enabled+published rule regardless
+    // of the caller's scope — 337 on the seeded dev database as of F3.6, and
+    // growing (E5.1 alone adds a domain pack's worth). One query per rule for
+    // its telemetry sample measured at 4.3s for that count; this collapses it
+    // to one query total, keyed by the same `(assetId, pointKey)` pair
+    // `evaluateThresholdRule`'s loader already takes.
+    const sampleLookup = await this.batchedLatestPointValues(allRows);
+
+    for (const row of allRows) {
+      const result = await this.evaluateRule(row, sampleLookup);
+
+      // Raise before the trace insert below, so a successful raise's
+      // `alarmId` has somewhere to land in the SAME trace row rather than a
+      // second one — `recordTrace: false` because the insert two lines down
+      // already covers this evaluation, matched or not, and a second row
+      // would duplicate it. Code review caught an earlier draft that raised
+      // here but never actually read the result, so the comment's own claim
+      // was untrue and every on-demand-raised alarm's trace omitted
+      // `alarmId` — the one thing `evaluatedBy`/`source` don't already say.
+      let raisedAlarmId: string | null = null;
+      if (shouldRaise(row, result) && row.assetId && result.observedValue !== null) {
+        const { alarmMessage, unit } = alarmMessageFieldsFromCondition(row.condition);
+        const raised = await this.alarmRaiser.raise(
+          row.assetId,
+          {
+            id: row.id,
+            code: row.code,
+            name: row.name,
+            pointKey: row.pointKey,
+            severity: row.severity,
+            alarmMessage,
+            unit,
+          },
+          result.observedValue,
+          { recordTrace: false },
+        );
+        raisedAlarmId = raised.alarmId;
+      }
+
       const [created] = await this.db
         .insert(ruleExecutions)
         .values({
@@ -460,7 +511,16 @@ export class RulesService {
           message: result.message,
           trace: {
             ...result.trace,
-            evaluatedBy: actor.email,
+            ...(raisedAlarmId ? { alarmId: raisedAlarmId } : {}),
+            // The OIDC subject, not the email (security review, F3.6): this
+            // trace is now written for every enabled rule regardless of the
+            // caller's assetIds (ADR 0033 decision 2), and `listExecutions`
+            // scopes reads by asset, not by who evaluated — so an operator at
+            // location B can read a location-A operator's trace on assets B
+            // can see. `sub` is still an actionable identifier for an admin
+            // correlating against `bms.users`, without handing every scoped
+            // reader a plaintext email address they have no other route to.
+            evaluatedBy: actor.sub,
             source: row.source,
           },
         })
@@ -474,7 +534,7 @@ export class RulesService {
         .set({ lastEvaluatedAt: created?.evaluatedAt ?? new Date(), updatedAt: new Date() })
         .where(eq(automationRules.id, row.id));
 
-      if (created) {
+      if (created && scopedIds.has(row.id)) {
         items.push({
           id: created.id,
           ruleId: row.id,
@@ -559,11 +619,17 @@ export class RulesService {
    * Routes a rule to its evaluator. The service supplies the two things the
    * evaluators cannot have — the telemetry loader and the clock — and owns
    * nothing else about the decision.
+   *
+   * `loader` defaults to one query per call — fine for `previewRule`, a
+   * single rule. `evaluateEnabledRules` passes its own batched loader
+   * (`batchedLatestPointValues`) instead, so evaluating N rules costs one
+   * query rather than N.
    */
-  private async evaluateRule(row: RuleRow): Promise<EvaluationResult> {
+  private async evaluateRule(row: RuleRow, loader?: LatestSampleLoader): Promise<EvaluationResult> {
     if (row.ruleType === "threshold") {
-      return evaluateThresholdRule(row, (assetId, pointKey) =>
-        this.latestPointValue(assetId, pointKey),
+      return evaluateThresholdRule(
+        row,
+        loader ?? ((assetId, pointKey) => this.latestPointValue(assetId, pointKey)),
       );
     }
     if (row.ruleType === "time_window") {
@@ -587,6 +653,79 @@ export class RulesService {
       .orderBy(desc(pointValues.time))
       .limit(1);
     return sample ?? null;
+  }
+
+  /**
+   * The latest sample for every `(assetId, pointKey)` pair any threshold rule
+   * in `rows` needs, in one query.
+   *
+   * NOT the `DISTINCT ON` idiom `dashboard.service.ts`/`map.service.ts` use
+   * for the same "latest per group" shape, and that absence is deliberate,
+   * not an oversight: code review measured why. `DISTINCT ON` joined against
+   * an explicit pairs list cannot drive `point_values_point_asset_time_idx`
+   * the way it can when the join key is one specific asset already in scope,
+   * so Postgres falls back to scanning every chunk (decompressing the
+   * compressed ones) and sorting the result -- measured 613ms for 337 pairs
+   * against this table's 740k live rows on the running stack, worse
+   * wall-clock than the pre-batch shape looked on paper even though it is
+   * still one query instead of many. `CROSS JOIN LATERAL ... ORDER BY time
+   * DESC LIMIT 1` below lets the planner drive an index scan per pair
+   * instead -- measured 16ms for the identical 337 pairs. Both forms were
+   * timed with `EXPLAIN (ANALYZE, BUFFERS)` against the live stack before
+   * choosing this one; neither number was assumed from the idiom's shape.
+   *
+   * Returns a `LatestSampleLoader`: a rule this batch has no sample for
+   * (never published, or genuinely no telemetry yet) resolves to `null` from
+   * the map lookup -- `evaluateThresholdRule` already treats that as
+   * `skipped`, not `error`, so no caller-visible behaviour changes.
+   */
+  private async batchedLatestPointValues(rows: RuleRow[]): Promise<LatestSampleLoader> {
+    const pairs = new Map<string, { assetId: string; pointKey: string }>();
+    for (const row of rows) {
+      if (row.ruleType === "threshold" && row.assetId && row.pointKey) {
+        pairs.set(`${row.assetId} ${row.pointKey}`, {
+          assetId: row.assetId,
+          pointKey: row.pointKey,
+        });
+      }
+    }
+    const unique = [...pairs.values()];
+    const samples = new Map<string, { time: Date; value: number; unit: string | null }>();
+
+    if (unique.length > 0) {
+      const valuesList = sql.join(
+        unique.map(({ assetId, pointKey }) => sql`(${assetId}::uuid, ${pointKey}::varchar)`),
+        sql`, `,
+      );
+      const result = await this.db.execute<{
+        asset_id: string;
+        point_key: string;
+        time: Date;
+        value: number;
+        unit: string | null;
+      }>(sql`
+        WITH pairs (asset_id, point_key) AS (VALUES ${valuesList})
+        SELECT p.asset_id, p.point_key, s.time, s.value, s.unit
+        FROM pairs p
+        CROSS JOIN LATERAL (
+          SELECT pv.time, pv.value, pv.unit
+          FROM telemetry.point_values pv
+          WHERE pv.asset_id = p.asset_id AND pv.point_key = p.point_key
+          ORDER BY pv.time DESC
+          LIMIT 1
+        ) s
+      `);
+
+      for (const r of result.rows) {
+        samples.set(`${r.asset_id} ${r.point_key}`, {
+          time: new Date(r.time),
+          value: r.value,
+          unit: r.unit,
+        });
+      }
+    }
+
+    return async (assetId, pointKey) => samples.get(`${assetId} ${pointKey}`) ?? null;
   }
 
   private async validateRuleDraft(
@@ -676,10 +815,9 @@ export class RulesService {
         // `mergeRuleDraft` has carefully preserved it.
         //
         // The `NOT NULL` that a default exists to satisfy is `alarms.severity`,
-        // and that boundary already has its own: `normalizeSeverity`
-        // (`alarm-threshold.service.ts:138`) maps a null rule to `"warning"`
-        // when the alarm engine builds its cache. One default, at the edge that
-        // needs it.
+        // and that boundary already has its own: `defaultAlarmSeverity`
+        // (`alarm-severity-default.ts:21`) maps a null rule to `"warning"` when
+        // `AlarmRaiser` raises it. One default, at the edge that needs it.
         severity: dto.severity ?? null,
         condition: dto.condition,
         action: dto.action,
@@ -702,9 +840,12 @@ export class RulesService {
       thresholdValue: null,
       // `F4.46`, and this one defended nothing even in principle: the alarm
       // engine's cache query filters to `ruleType = "threshold"`
-      // (`alarm-threshold.service.ts:99`), so a time-window rule never reaches
-      // the code that requires a severity. The seed agrees — `weekday_energy_review`
-      // is the only time-window rule and the only row with no severity.
+      // (`alarm-engine.service.ts:81`), so a time-window rule never reaches the
+      // code that requires a severity. `shouldRaise` (F3.6,
+      // `alarm-raise.service.ts`) makes the same exclusion explicit for the
+      // on-demand evaluator, which has no such query to filter on. The seed
+      // agrees — `weekday_energy_review` is the only time-window rule and the
+      // only row with no severity.
       severity: dto.severity ?? null,
       condition: dto.condition,
       action: dto.action,

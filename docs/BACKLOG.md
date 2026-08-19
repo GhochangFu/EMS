@@ -416,7 +416,7 @@ single shared file). `F3.8` needs a dependency ADR before build.
 | ID | Status | Feature | P | Effort | Wave | Depends |
 |----|--------|---------|---|--------|------|---------|
 | **F3.8** | ⬜ | Email + webhook notification service ⭐ | P0 | 4–6 | 0 | — |
-| F3.6 | ⬜ | Unify alarm engine (merge `AlarmThresholdService` into DB rules) — **§7 makes this load-bearing for the UI too**: every reference dashboard devotes its right rail to a live **Active Alarms** table (Time · Asset · Alarm · Severity), where `/cr-overview` currently shows *Active Rule Warnings*. `F3.28` cannot render the rail from rules. | P0 | 4–6 | 0 | — |
+| F3.6 | 🔵 | Unify alarm engine (merge `AlarmThresholdService` into DB rules) — **§7 makes this load-bearing for the UI too**: every reference dashboard devotes its right rail to a live **Active Alarms** table (Time · Asset · Alarm · Severity), where `/cr-overview` currently shows *Active Rule Warnings*. `F3.28` cannot render the rail from rules. **STARTED 2026-08-19.** | P0 | 4–6 | 0 | — |
 | F3.7 | ⬜ | Execute rule actions (rules store `notify` but never fire) | P0 | incl. | 1 | F3.8 |
 | F3.10 | ⬜ | Alarm escalation profiles + auto-clear on normal | P1 | 4–6 | 1 | F3.6, F3.8 |
 | F3.11 | ⬜ | Scheduled / cron rule evaluation (BullMQ workers) | P1 | 4 | 1 | F4.24 |

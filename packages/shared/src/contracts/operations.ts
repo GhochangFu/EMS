@@ -79,6 +79,11 @@ export const alarmListItemSchema = z.object({
   id: z.string(),
   assetId: z.string(),
   ruleKey: z.string().nullable(),
+  // F3.6 / ADR 0033 (migration 0032). Nullable for the same reason `rule_id`
+  // is nullable in `bms.alarms`: a historical alarm raised before this column
+  // existed, or by the pre-merge hardcoded ladder, cannot always be
+  // attributed to a rule.
+  ruleId: z.string().nullable(),
   severity: z.string(),
   message: z.string(),
   raisedAt: z.string(),
@@ -385,9 +390,11 @@ export const ruleListItemSchema = z.object({
    * (`WHERE r.source = 'phe_alarm_seed'`), so it is load-bearing rather than
    * decorative.
    *
-   * `simulator_threshold` is declared and written by nothing. Left in place
-   * deliberately: removing a value from a *response* union narrows a contract,
-   * and that is a separate change from widening one.
+   * `simulator_threshold` is migration 0033's marker (F3.6 / ADR 0033) for the
+   * ESKOM demo's five threshold rules, seeded to replace the hardcoded ladder
+   * `AlarmThresholdService` used to evaluate in code — same idempotency-key
+   * role `phe_alarm_seed` plays above, via `NOT EXISTS` on the condition
+   * tuple rather than a `WHERE r.source = ...` literal.
    */
   source: z.enum(["operator_rule", "simulator_threshold", "phe_alarm_seed"]),
   enabled: z.boolean(),

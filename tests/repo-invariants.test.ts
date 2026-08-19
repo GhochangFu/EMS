@@ -908,4 +908,58 @@ describe("repo invariants", () => {
         "NOW, which is the question worth asking. See F4.40.",
     ).toEqual([]);
   });
+
+  it("bms.alarms has exactly one writer — AlarmRaiser (F3.6 / ADR 0033)", () => {
+    // The construct, not the symbol (AGENTS.md §4.4 / the F4.38 shape):
+    // `alarms.service.ts` legitimately references the `alarms` table symbol
+    // many times for SELECT and UPDATE; only `.insert(alarms)` is a write.
+    // A second writer would let a shared condition raise two open alarms
+    // again — the exact defect `alarms_open_per_rule_uidx` (migration 0032)
+    // and `AlarmRaiser`'s dedupe exist to close.
+    //
+    // Excludes `.spec`/`.test` files: this guards the application write path,
+    // not test fixtures — `alarm-raise.integration.spec.ts` inserts its own
+    // rule/severity fixtures inside a rolled-back transaction, never `alarms`
+    // itself, but the exclusion is the scope decision, not an accident of
+    // what happens to be true today.
+    //
+    // Two patterns, not one — code review caught the gap. `rules.service.ts`'s
+    // `batchedLatestPointValues` (F3.6) is this repo's first use of raw SQL
+    // via `db.execute(sql\`...\`)`, and a second `bms.alarms` writer using that
+    // idiom (`db.execute(sql\`INSERT INTO bms.alarms ...\`)`) would pass the
+    // first pattern clean while reopening the exact duplicate-alarm defect
+    // this test exists to close. The positive-control assertions below prove
+    // both patterns can still fire, so a future rename of the construct they
+    // look for cannot silently turn either into a no-op (the `F4.45` lesson).
+    const apiSrc = join(repoRoot, "apps", "api", "src");
+    const files = walk(apiSrc).filter(
+      (f) => /\.tsx?$/.test(f) && !/\.(spec|test)\.tsx?$/.test(f),
+    );
+    const drizzleWrite = /\.insert\(\s*alarms\s*\)/;
+    const rawSqlWrite = /insert\s+into\s+bms\.alarms/i;
+
+    expect(
+      drizzleWrite.test("this.db.insert(alarms).values({}).onConflictDoNothing()"),
+      "the drizzle-insert pattern no longer matches a real .insert(alarms) call — update it",
+    ).toBe(true);
+    expect(
+      rawSqlWrite.test("this.db.execute(sql`INSERT INTO bms.alarms (asset_id) VALUES (${id})`)"),
+      "the raw-SQL pattern no longer matches a real INSERT INTO bms.alarms — update it",
+    ).toBe(true);
+
+    const writers = files
+      .filter((f) => {
+        const text = readFileSync(f, "utf8");
+        return drizzleWrite.test(text) || rawSqlWrite.test(text);
+      })
+      .map((f) => relative(repoRoot, f).replace(/\\/g, "/"));
+
+    expect(
+      writers,
+      `bms.alarms has more than one writer: ${writers.join(", ")}. AlarmRaiser ` +
+        "(alarm-raise.service.ts) must be the only writer — drizzle `.insert(alarms)` " +
+        "or raw `INSERT INTO bms.alarms` — or the database's dedupe stops being the " +
+        "single source of truth for whether an alarm is already open.",
+    ).toEqual(["apps/api/src/alarms/alarm-raise.service.ts"]);
+  });
 });

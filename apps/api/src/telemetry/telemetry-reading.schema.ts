@@ -15,7 +15,8 @@ import type { TelemetryReading } from "@bms/shared";
  * publishing one malformed payload:
  *
  * 1. **Alarm evaluation stopped for the whole batch.**
- *    `AlarmThresholdService.evaluateReadings` runs `collapseLatest` before any
+ *    `AlarmEngineService.evaluateReadings` (named `AlarmThresholdService` at
+ *    the time, renamed by F3.6) runs `collapseLatest` before any
  *    rule, and it iterates every reading and dereferences `r.assetId`. A single
  *    `null` entry threw `TypeError`, and the throw is caught and logged as a
  *    warning — so one bad reading silently suppressed alarms for every good

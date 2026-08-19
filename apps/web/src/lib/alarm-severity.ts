@@ -59,12 +59,19 @@ export function alarmSeverityTone(
  *
  * **How reachable is the unknown case? Through the product's own write path, it
  * is not** — worth stating plainly rather than leaving the card looking livelier
- * than it is. `AlarmThresholdService.normalizeSeverity`
- * (`alarm-threshold.service.ts:138`) is the only rule-driven writer of
- * `bms.alarms.severity` and collapses anything outside the three seeded values
- * — `null` included — to `"warning"` before the insert, and since ADR 0032
- * `alarms_severity_fk` closes the column behind it. This is a boundary guard
- * against vocabulary skew between two fetches, not a live path.
+ * than it is. `AlarmRaiser` (`alarm-raise.service.ts`, F3.6, the sole writer of
+ * `bms.alarms` since the merge of `AlarmThresholdService` and `RulesService`'s
+ * on-demand evaluator) calls `defaultAlarmSeverity`
+ * (`alarm-severity-default.ts:21`) before every insert, which defaults *only*
+ * a `null` rule severity to `"warning"` — a non-null value passes through
+ * unchanged, deliberately: ADR 0032's migration review found the opposite
+ * behaviour (silently downgrading any unrecognised non-null code to
+ * `"warning"`) was itself the bug, since it falsified the promise that adding
+ * a severity costs one `INSERT` and no code change. Either way, `bms.alarms
+ * .severity` can only ever hold `null`'s default or an already-FK-validated
+ * code (`alarms_severity_fk`, ADR 0032), so the unknown/unrecognised bucket
+ * stays unreachable through the write path — it is a boundary guard against
+ * vocabulary skew between two fetches, not a live path.
  */
 export type AlarmSeveritySummary = {
   critical: number;
