@@ -116,6 +116,14 @@ export type EnergyReportPreview = z.infer<typeof Op.energyReportPreviewSchema>;
 export type AlarmListItem = z.infer<typeof Op.alarmListItemSchema>;
 /** Socket.IO `/ws/alarms` event payload. */
 export type AlarmSocketEvent = z.infer<typeof Op.alarmSocketEventSchema>;
+/** One row of `bms.alarm_affected_assets`, joined for display (ADR 0034). */
+export type AlarmAffectedAssetDto = z.infer<typeof Op.alarmAffectedAssetDtoSchema>;
+/** `bms.alarm_enrichments`, one row per alarm (ADR 0034, `E2.1`). */
+export type AlarmEnrichmentDto = z.infer<typeof Op.alarmEnrichmentDtoSchema>;
+/** `GET /api/v1/alarms/:id/details` (ADR 0034 decision 5). */
+export type AlarmDetailsResponse = z.infer<typeof Op.alarmDetailsResponseSchema>;
+/** `PUT /api/v1/alarms/:id/enrichment` request body (ADR 0034 decision 6). */
+export type AlarmEnrichmentUpsertBody = z.infer<typeof Op.alarmEnrichmentUpsertBodySchema>;
 
 // ---------------------------------------------------------------------------
 // Work orders and maintenance
@@ -154,9 +162,13 @@ export type RuleCategoryDto = z.infer<typeof Op.ruleCategoryDtoSchema>;
 export type AssetDomainDto = z.infer<typeof Op.assetDomainDtoSchema>;
 /** ADR 0032 — one row of `bms.alarm_severities`, with its `rank` and `tone`. */
 export type AlarmSeverityDto = z.infer<typeof Op.alarmSeverityDtoSchema>;
+/** ADR 0034 — one row of `bms.alarm_skills`. No `rank`/`tone`: a skill drives no styling. */
+export type AlarmSkillDto = z.infer<typeof Op.alarmSkillDtoSchema>;
+/** A skill/trade code, as a code into `bms.alarm_skills` (ADR 0034). */
+export type AlarmSkillCode = z.infer<typeof Op.alarmSkillCodeSchema>;
 /** The `StatusPill` palette, as a type. Closed; see `pillToneSchema`. */
 export type PillTone = z.infer<typeof Op.pillToneSchema>;
-/** `GET /api/v1/vocabularies` — all three open vocabularies, so a page renders none half-loaded. */
+/** `GET /api/v1/vocabularies` — all four open vocabularies, so a page renders none half-loaded. */
 export type VocabulariesResponse = z.infer<typeof Op.vocabulariesResponseSchema>;
 export type AutomationRuleOperator = z.infer<typeof Op.automationRuleOperatorSchema>;
 export type AutomationRuleSeverity = z.infer<typeof Op.automationRuleSeveritySchema>;

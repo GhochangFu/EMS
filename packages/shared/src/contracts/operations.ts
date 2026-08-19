@@ -250,6 +250,14 @@ export const assetDomainCodeSchema = z.string().min(1).max(64);
 export const alarmSeverityCodeSchema = z.string().min(1).max(64);
 
 /**
+ * A skill/trade code (ADR 0034, `E2.1`). Shape only, for the same reason as
+ * the three above: the set lives in `bms.alarm_skills` and is closed by
+ * `alarm_enrichments_skill_code_fkey`, not by this file.
+ * `GET /api/v1/vocabularies` is where the live set comes from.
+ */
+export const alarmSkillCodeSchema = z.string().min(1).max(64);
+
+/**
  * The concern a rule gets when nobody picks one.
  *
  * Declared once and imported by both sides deliberately. The API's
@@ -333,21 +341,34 @@ export const alarmSeverityDtoSchema = z.object({
   active: z.boolean(),
 });
 
+/** One row of `bms.alarm_skills` (ADR 0034). No `tone`, no `rank` — a skill
+ * drives no styling and carries no urgency; matches `assetDomainDtoSchema`'s
+ * shape, not `alarmSeverityDtoSchema`'s. */
+export const alarmSkillDtoSchema = z.object({
+  code: alarmSkillCodeSchema,
+  label: z.string(),
+  sortOrder: z.number(),
+  active: z.boolean(),
+});
+
 /**
- * `GET /api/v1/vocabularies` — all three open vocabularies in one response.
+ * `GET /api/v1/vocabularies` — all four open vocabularies in one response.
  *
- * One endpoint rather than three because every consumer needs them together:
+ * One endpoint rather than four because every consumer needs them together:
  * the rules page renders a concern badge beside a plant badge and a severity
  * control, and a single query means a single cache key and no half-loaded
- * render. It was two axes until ADR 0032 added `alarmSeverities`; the argument
- * for one endpoint got stronger rather than weaker, since the alarms page needs
- * the severity list before it can classify a single row.
+ * render. It was two axes until ADR 0032 added `alarmSeverities`, and three
+ * until ADR 0034 added `alarmSkills`; the argument for one endpoint got
+ * stronger rather than weaker each time, since a page cannot classify a
+ * single row until the relevant list has arrived.
  */
 export const vocabulariesResponseSchema = z.object({
   ruleCategories: z.array(ruleCategoryDtoSchema),
   assetDomains: z.array(assetDomainDtoSchema),
   /** ADR 0032. Ordered by `rank` ascending, so the array reads least- to most-urgent. */
   alarmSeverities: z.array(alarmSeverityDtoSchema),
+  /** ADR 0034. Ordered by `sortOrder` ascending. */
+  alarmSkills: z.array(alarmSkillDtoSchema),
 });
 export const automationRuleOperatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
 /**
@@ -356,6 +377,79 @@ export const automationRuleOperatorSchema = z.enum(["gt", "gte", "lt", "lte", "e
  * checks shape only. See `alarmSeverityCodeSchema` for what moved and why.
  */
 export const automationRuleSeveritySchema = alarmSeverityCodeSchema;
+
+/** One row of `bms.alarm_affected_assets`, joined for display (ADR 0034). */
+export const alarmAffectedAssetDtoSchema = z.object({
+  assetId: z.string(),
+  assetCode: z.string(),
+  assetName: z.string(),
+});
+
+/**
+ * `bms.alarm_enrichments`, one row per alarm (ADR 0034, `E2.1`). Every field
+ * but the timestamps is nullable/optional — an alarm may have no enrichment
+ * written yet, and each field is filled independently by an operator.
+ */
+export const alarmEnrichmentDtoSchema = z.object({
+  rootCause: z.string().nullable(),
+  impact: z.string().nullable(),
+  correctiveActions: z.string().nullable(),
+  energyImpact: z.string().nullable(),
+  waterImpact: z.string().nullable(),
+  productionImpact: z.string().nullable(),
+  etrAt: z.string().nullable(),
+  skillCode: alarmSkillCodeSchema.nullable(),
+  updatedBy: z.string().nullable(),
+  updatedAt: z.string(),
+  affectedAssets: z.array(alarmAffectedAssetDtoSchema),
+});
+
+/**
+ * `GET /api/v1/alarms/:id/details` (ADR 0034 decision 5). Computed at read
+ * time — nothing here is stored beyond the alarm/asset/rule rows and the
+ * enrichment itself. `thresholdOperator`/`thresholdValue`/`currentValue` are
+ * all `null` together when the alarm has no linked rule (`ruleId IS NULL`) —
+ * a historical alarm, or one raised outside the rule engine (ADR 0033
+ * decision 5) — rather than the request failing.
+ */
+export const alarmDetailsResponseSchema = z.object({
+  id: z.string(),
+  assetId: z.string(),
+  assetCode: z.string(),
+  assetName: z.string(),
+  assetDomain: z.string(),
+  locationName: z.string(),
+  siteName: z.string(),
+  severity: z.string(),
+  message: z.string(),
+  raisedAt: z.string(),
+  acknowledgedAt: z.string().nullable(),
+  acknowledgedBy: z.string().nullable(),
+  ruleId: z.string().nullable(),
+  thresholdOperator: automationRuleOperatorSchema.nullable(),
+  thresholdValue: z.number().nullable(),
+  currentValue: z.number().nullable(),
+  currentValueUnit: z.string().nullable(),
+  currentValueAt: z.string().nullable(),
+  enrichment: alarmEnrichmentDtoSchema.nullable(),
+});
+
+/** `PUT /api/v1/alarms/:id/enrichment` request body (ADR 0034 decision 6). */
+export const alarmEnrichmentUpsertBodySchema = z
+  .object({
+    rootCause: z.string().max(2000).nullable().optional(),
+    impact: z.string().max(2000).nullable().optional(),
+    correctiveActions: z.string().max(2000).nullable().optional(),
+    energyImpact: z.string().max(2000).nullable().optional(),
+    waterImpact: z.string().max(2000).nullable().optional(),
+    productionImpact: z.string().max(2000).nullable().optional(),
+    /** No future-only refinement — revising a passed ETR is legitimate. */
+    etrAt: z.string().datetime({ offset: true }).nullable().optional(),
+    skillCode: alarmSkillCodeSchema.nullable().optional(),
+    affectedAssetIds: z.array(z.string().uuid()).max(50).optional(),
+  })
+  .strict();
+
 export const automationRuleLifecycleStatusSchema = z.enum(["draft", "published", "archived"]);
 export const ruleExecutionStatusSchema = z.enum([
   "matched",
