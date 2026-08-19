@@ -4,6 +4,7 @@ import type { EnergyReportPreview, EnergyTopConsumer } from "@bms/shared";
 
 import {
   downloadEnergyReportCsv,
+  downloadEnergyReportXlsx,
   fetchEnergyReportPreview,
   type EnergyReportInput,
 } from "../api/reports";
@@ -20,7 +21,7 @@ const reportCards: ReportCard[] = [
   {
     title: "Energy Consumption",
     description: "Multi-site kWh, demand, PUE, cost, source mix, and top loads.",
-    formats: "CSV",
+    formats: "XLSX · CSV",
     active: true,
   },
   {
@@ -75,6 +76,10 @@ export function ReportsPanel() {
     mutationFn: () => downloadEnergyReportCsv(input),
   });
 
+  const xlsxM = useMutation({
+    mutationFn: () => downloadEnergyReportXlsx(input),
+  });
+
   const preview = previewQ.data;
   const summary = preview?.summary;
   const status = previewQ.isLoading
@@ -92,7 +97,8 @@ export function ReportsPanel() {
               Report Templates
             </h2>
             <p className="text-xs text-bms-muted">
-              Sprint E activates Energy Consumption CSV only.
+              Sprint E activates Energy Consumption only. XLSX is the
+              recommended format.
             </p>
           </div>
           <div className="divide-y divide-gray-200">
@@ -147,8 +153,24 @@ export function ReportsPanel() {
               onChange={(e) => setEndDate(e.target.value)}
             />
           </div>
+          {/*
+            XLSX leads because it is the safe format (ADR 0026 Amendment 2,
+            `F4.51`): the CSV keeps a documented residual that no server-side
+            escaping can close. CSV stays because it is the format the client's
+            existing tooling reads.
+          */}
           <button
             className="mt-4 w-full rounded bg-bms-green px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+            disabled={xlsxM.isPending || previewQ.isError || !preview}
+            onClick={() => xlsxM.mutate()}
+          >
+            {xlsxM.isPending ? "Preparing XLSX..." : "Export XLSX"}
+          </button>
+          {xlsxM.isError ? (
+            <p className="mt-2 text-xs text-red-600">XLSX export failed.</p>
+          ) : null}
+          <button
+            className="mt-2 w-full rounded border border-bms-green px-3 py-2 text-sm font-semibold text-bms-green disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400"
             disabled={csvM.isPending || previewQ.isError || !preview}
             onClick={() => csvM.mutate()}
           >

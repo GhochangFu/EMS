@@ -11,6 +11,11 @@ new ADR. See *Amendment 1*, which also records the limit. It closes the consumer
 that still treat the comma as a delimiter; for the ones that do not it narrows
 the working payloads and **is not a guard** — residual tracked as `F4.51`.
 
+Amendment 2 — **Accepted 2026-08-19** (`F4.51`). The owner was shown the write-path
+enumeration and ruled option **(c)+(a)**: add an XLSX export beside the CSV, and
+document the CSV residual rather than patch around it. The CSV bytes are
+unchanged. See *Amendment 2*.
+
 ## Context
 
 This repository serves two CSV downloads:
@@ -556,3 +561,115 @@ Not asked, because the repo has already settled it: apostrophe-prefix versus
 quoting. `audit.serialise.ts:77`–`79` committed to the reading that quoting does
 **not** stop Excel's import parser from evaluating `"=1+1"`, and re-opening that
 would be churn.
+
+## Amendment 2 (`F4.51`, 2026-08-19) — the residual is a format problem, not an escaping problem
+
+Amendment 1 widened the quote trigger and said plainly that for a non-comma
+consumer it narrows the working payloads and is not a guard. This amendment
+records what was done about that.
+
+### The defect, restated
+
+For a consumer whose delimiter set excludes the comma, a cell holding **two or
+more** separators still injects. Excel honours the `"` text qualifier only when
+the quote **opens a field**, so with two separators the closing `"` lands on a
+later fragment and the middle one arrives bare. Measured on Excel 2013
+(15.0.4454) with a working one-cell control: `"foo;=1+1;bar"` opened with `;` as
+the only delimiter imports as `"foo` · **`=1+1` → 2** · `bar"`. The TAB
+equivalent behaves the same. Exposure is **0 rows** — TAB, `;` and `|` appear in
+none of the 148 assets, 17 locations or 5431 audit rows measured on 2026-08-18.
+
+### Why option (b) was rejected, and the enumeration that decided it
+
+`F4.51` offered three options. Option (b) — reject `;`, TAB and `|` at the write
+path — was rejected because it **cannot be made complete**, which only became
+visible once the write paths were enumerated rather than cited:
+
+| Exported column | Write paths that accept the characters |
+|---|---|
+| asset `code`/`name`/`siteName` | `assets.schema.ts`, `asset-templates.schema.ts`, `asset-templates-content.schema.ts`, `onboarding.schema.ts` |
+| `locations.name` | `locations.schema.ts` |
+| `audit_log.reason` | 8 fields across `alarms`, `maintenance`, `rules`, `work-orders` |
+| `actor_email` | **`users.email`. No Zod write path exists** — the identity provider supplies it. |
+
+That is 13+ validation points, and the last row is unreachable by any write-path
+rule. A guard over part of that set reads as closed and is not — the failure mode
+this ADR's own history names three times (the missing BOM, the
+`CONTROL_unguarded` control, `F4.28`'s tautology). The `F4.51` row named two of
+the schema files; `reports.serialise.ts`'s docstring named the same two and
+called them "neither write path". **Both undercounted**, and the docstring is
+corrected in this change.
+
+Option (b) also carries a product cost with no measured benefit: `Pump A; spare`
+is a legitimate asset name, and forbidding it forever defends a consumer
+configuration nobody has reported.
+
+### Decision
+
+13. **Add `GET /api/v1/reports/energy/export.xlsx`.** Same query schema, same
+    `readableAssetIds` scope filter, same `Cache-Control: no-store`. A separate
+    route rather than a `?format=` switch, because the sibling route already
+    carries its format in its path and because the CSV response must stay
+    byte-identical.
+14. **The sheet rows are deliberately unguarded and unescaped.** The safety is
+    structural and belongs to the writer: `aoa_to_sheet` emits no `<f>` element,
+    so the file never instructs Excel to evaluate anything. `audit.serialise.ts`
+    carries that measurement, including the warning not to re-derive it from the
+    cell type — `t="str"` is ECMA-376's *cached formula result* type and does not
+    mean what it looks like. An apostrophe here would corrupt the operator's data
+    and close nothing. `reports.serialise.spec.ts` pins the intent so a later
+    reviewer cannot "complete" it.
+15. **Numeric cells stay `number` in the sheet.** `audit.serialise.ts` returns
+    `string[][]` because no audit column is one the client computes on; every
+    numeric column in this report is. Writing them as text would set `t="str"`
+    and silently break the client's arithmetic — the same harm decision 2 forbids
+    the apostrophe guard from causing in the CSV, arriving by a different route.
+16. **Both formats render from one table.** `energyTable` in
+    `reports.serialise.ts` is the single source; `energyCsvDocument` maps it
+    through `csvTextCell`/`csvNumberCell` and `energySheetRows` returns it as-is.
+    The first draft of this change used two literal lists, which can drift apart
+    silently while the client is told they are one report in two formats. **The
+    guard is the shared table itself, not a test** — an earlier version of this
+    line claimed "a spec assertion compares the row counts", and that assertion
+    was removed before merge because the shared table makes the counts
+    structurally equal, so it could not fail. The security review caught the ADR
+    still asserting it.
+17. **The CSV keeps its residual, documented.** It is not deprecated and its
+    bytes do not change. The client's existing tooling reads CSV, and the file is
+    valid RFC 4180 — the injection needs a consumer that misreads it. **In the
+    reports panel** the UI leads with XLSX and offers CSV beneath it. This clause
+    is scoped to the reports export deliberately: the audit export has **no web
+    affordance at all** — nothing under `apps/web/src` references
+    `admin/audit` — so it is API-only and has no default format to lead with.
+    Its `?format=xlsx` has been available since ADR 0021.
+
+### Consequences
+
+- No new dependency. `xlsx@^0.18.5` was already in `apps/api/package.json` for
+  the audit export, so **§9.4 does not gate this**. The audit export has served
+  `?format=xlsx` since ADR 0021; this closes the same gap on the reports side.
+- No programmatic consumer breaks: `apps/web/src/api/reports.ts` only triggers a
+  browser download, and nothing in the repository parses either export.
+- The residual stands for anyone who chooses CSV **and** a non-comma delimiter.
+  That is now a documented user choice rather than an unrecorded defect.
+- Not done, and deliberately: no write-path character restriction, and no change
+  to the CSV bytes. Anyone reopening option (b) must first answer the
+  `actor_email` row of the table above.
+- **`AGENTS.md` §6 puts this out of scope, and the owner overruled it.** §6 lists
+  "Energy reports (PDF / XLSX)" (line 1103), and line 1140 draws the contrast
+  deliberately — reports-domain XLSX out, audit CSV/XLSX in under ADR 0021 — so
+  the audit precedent does **not** carry on its own. Raised as a possible §10
+  promotion. **The owner ruled on 2026-08-19 that reports XLSX is in scope**, and
+  said the wording dates from the prototype phase.
+- **This is not the passive §6 lag `CLAUDE.md` describes, and an earlier draft of
+  this bullet wrongly called it that.** The compliance review caught it against
+  the record: `docs/BACKLOG.md:684` shows this ADR's *own* `chore(agents):` sweep
+  searching §6 a **fourth** time and reporting "the reports PDF/XLSX deferral,
+  neither touched". The line was examined and left in place — correctly, because
+  no ADR had promoted it then. So what moves it is the owner's ruling, not drift
+  and not the audit precedent. **No §10 promotion is owed. A §6 correction is**,
+  it must land as its own `chore(agents):` change (§9.10), and it must **narrow**
+  rather than delete: reports **PDF** is still out of scope, so line 1103 becomes
+  "Energy reports (PDF)" and line 1140 is rewritten. Tracked in the
+  `docs/BACKLOG.md` owed table per §10.1.
+

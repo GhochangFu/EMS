@@ -1372,6 +1372,21 @@ Process (`AGENTS.md` §10).
   one cell put the closing quote on a later fragment and `=1+1` evaluates anyway.
   Residual filed as **`F4.51`**, with the honest note that no cell-level escaping
   in that module can repair it.
+- **`F4.51` closed that residual by changing format rather than escaping**
+  (ADR 0026 *Amendment 2*, 2026-08-19). The owner was shown a write-path
+  enumeration and ruled option (c)+(a). Rejecting `;`/TAB/`|` at the write path
+  was the intuitive fix and is **impossible to complete**: the exported columns
+  are written by 13+ Zod validation points across five modules, and the audit
+  export's `actor_email` comes from `users.email`, which has no write path in
+  this codebase at all. A partial guard there would have read as closed. The
+  chosen fix was cheaper than the row assumed — `xlsx` was already a dependency
+  for the audit export, so §9.4 did not gate it, and only the reports side
+  lacked the format. `GET /reports/energy/export.xlsx` now ships beside the CSV,
+  whose bytes are unchanged; both render from one table so they cannot drift.
+  Verified on the compiled code in the container: the multi-separator payload
+  occupies one cell and the workbook carries zero `<f>` elements. **The CSV keeps
+  its residual and now documents it** — that is the `(a)` half, and it is a user
+  choice rather than an unrecorded defect.
 
 ### Shared API contracts with a runtime (F4.23, F4.43, F4.44) — done
 

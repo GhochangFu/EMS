@@ -35,25 +35,56 @@ export async function fetchEnergyReportPreview(
   return checkResponse(energyReportPreviewSchema, await res.json(), "reports/energy/preview");
 }
 
-/** Downloads the Sprint E CSV export and triggers a browser save. */
-export async function downloadEnergyReportCsv(
+/** Fetches an export response and triggers a browser save under `filename`. */
+async function saveExport(
+  path: string,
   input: EnergyReportInput,
+  filename: string,
+  label: string,
 ): Promise<void> {
-  const res = await fetch(
-    `${base}/api/v1/reports/energy/export.csv?${query(input)}`,
-    withAuth(),
-  );
+  const res = await fetch(`${base}${path}?${query(input)}`, withAuth());
   if (!res.ok) {
     clearSessionOnAuthFailure(res);
-    throw new Error(`energy-report-csv ${res.status}`);
+    throw new Error(`${label} ${res.status}`);
   }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `energy-consumption-${input.startDate}-to-${input.endDate}.csv`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+/** Downloads the Sprint E CSV export and triggers a browser save. */
+export async function downloadEnergyReportCsv(
+  input: EnergyReportInput,
+): Promise<void> {
+  return saveExport(
+    "/api/v1/reports/energy/export.csv",
+    input,
+    `energy-consumption-${input.startDate}-to-${input.endDate}.csv`,
+    "energy-report-csv",
+  );
+}
+
+/**
+ * Downloads the same report as `xlsx` (ADR 0026 Amendment 2, `F4.51`).
+ *
+ * Offered as the default in the panel because the CSV carries a residual the
+ * server cannot escape away: a cell holding two or more field separators still
+ * injects a formula into a consumer that does not treat the comma as a delimiter.
+ * The spreadsheet format has no such class — no `<f>` element is ever written.
+ */
+export async function downloadEnergyReportXlsx(
+  input: EnergyReportInput,
+): Promise<void> {
+  return saveExport(
+    "/api/v1/reports/energy/export.xlsx",
+    input,
+    `energy-consumption-${input.startDate}-to-${input.endDate}.xlsx`,
+    "energy-report-xlsx",
+  );
 }
