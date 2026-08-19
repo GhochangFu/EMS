@@ -6,11 +6,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/check-dependency-adr.mjs"
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-dependency-adr.mjs\""
           },
           {
             "type": "command",
-            "command": "node .claude/hooks/check-applied-migration-edit.mjs"
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-applied-migration-edit.mjs\""
           }
         ]
       }
@@ -21,11 +21,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/hooks/check-style-hygiene.mjs"
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-style-hygiene.mjs\""
           },
           {
             "type": "command",
-            "command": "node .claude/hooks/check-drizzle-journal.mjs"
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/check-drizzle-journal.mjs\""
           }
         ]
       }
