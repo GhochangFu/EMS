@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
 
-import { assetPoints, assets, locations, pointKeys } from "@bms/db";
+import { assetPoints, assets, locations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AdminAssetPointDto, JwtPayload } from "@bms/shared";
 
@@ -15,6 +15,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { DRIZZLE } from "../../database/database.tokens";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreateAssetPointBody, UpdateAssetPointBody } from "./asset-points.schema";
+import { resolveCatalogPointKey } from "./resolve-catalog-point-key";
 
 @Injectable()
 export class AssetPointsAdminService {
@@ -209,39 +210,21 @@ export class AssetPointsAdminService {
     return this.fetchRow(id);
   }
 
+  /**
+   * Wraps {@link resolveCatalogPointKey}, translating `ok:false` back into the
+   * `BadRequestException` this method threw before the check was extracted for
+   * `F1.9`'s reuse (ADR 0018) — same messages, so no existing caller's expected
+   * error text changes.
+   */
   private async resolveCatalogPointKey(
     assetId: string,
     pointKey: string,
   ): Promise<{ unit: string | null }> {
-    const [assetRow] = await this.db
-      .select({ organizationId: locations.organizationId })
-      .from(assets)
-      .innerJoin(locations, eq(assets.locationId, locations.id))
-      .where(eq(assets.id, assetId))
-      .limit(1);
-    if (!assetRow?.organizationId) {
-      throw new BadRequestException(
-        "Asset must belong to a location with an organization before mapping point keys",
-      );
+    const result = await resolveCatalogPointKey(this.db, assetId, pointKey);
+    if (!result.ok) {
+      throw new BadRequestException(result.reason);
     }
-
-    const [catalogRow] = await this.db
-      .select({ unit: pointKeys.unit })
-      .from(pointKeys)
-      .where(
-        and(
-          eq(pointKeys.organizationId, assetRow.organizationId),
-          eq(pointKeys.code, pointKey),
-          eq(pointKeys.active, true),
-        ),
-      )
-      .limit(1);
-    if (!catalogRow) {
-      throw new BadRequestException(
-        "Point key must exist in the organization catalog and be active",
-      );
-    }
-    return { unit: catalogRow.unit };
+    return { unit: result.unit };
   }
 
   private async fetchRow(id: string): Promise<AdminAssetPointDto> {
