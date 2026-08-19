@@ -84,13 +84,23 @@ describe("ADR 0034 alarm skill vocabulary", () => {
     expect(seededCodes.length).toBeGreaterThanOrEqual(5);
     expect(seededCodes).toContain("electrical");
 
+    const optionPattern = (code: string) => new RegExp(`<option[^>]*value=["']${code}["']`);
+
     for (const code of seededCodes) {
       expect(
-        new RegExp(`<option[^>]*value=["']${code}["']`).test(panel),
+        optionPattern(code).test(panel),
         `alarm-details-panel.tsx hardcodes <option value="${code}">. Render the ` +
           "options from skillOptions (the fetched vocabulary) instead.",
       ).toBe(false);
     }
+
+    // Anti-vacuity (AGENTS.md §4.4 / F4.45): prove the pattern can actually
+    // match a violation, so a future attribute-order or quote-style change in
+    // the panel cannot silently turn every assertion above into a no-op.
+    expect(
+      optionPattern("electrical").test('<option value="electrical">Electrical</option>'),
+      "the hardcoded-option pattern no longer matches a literal violation — update it",
+    ).toBe(true);
 
     expect(panel, "alarm-details-panel.tsx no longer maps the fetched skill vocabulary").toMatch(
       /skillOptions\.map\(/,

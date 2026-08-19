@@ -67,18 +67,24 @@ export async function assertAlarmSkillRejectsUnknownCode(db: BmsDb): Promise<voi
   await withRollback(db, async (tx) => {
     const service = new VocabulariesService(tx);
 
-    let threw = false;
+    let rejected = false;
+    let message = "";
     try {
       await service.assertAlarmSkill("e21_test_not_a_real_skill");
     } catch (err) {
-      threw = true;
-      const message = err instanceof Error ? err.message : String(err);
-      assert(
-        message.includes("electrical"),
-        `expected the rejection message to list live codes, got: ${message}`,
-      );
+      // `instanceof BadRequestException` first: this is the guarantee the
+      // method exists for (a 400, not the foreign key's 500) — asserting the
+      // message alone would pass just as well against a plain `Error`
+      // thrown for the wrong reason, which is exactly the class of gap this
+      // suite's other rejection tests were tightened against.
+      rejected = err instanceof BadRequestException;
+      message = err instanceof Error ? err.message : String(err);
     }
-    assert(threw, "assertAlarmSkill must reject a code with no matching row");
+    assert(rejected, "assertAlarmSkill must reject a code with no matching row with a BadRequestException");
+    assert(
+      message.includes("electrical"),
+      `expected the rejection message to list live codes, got: ${message}`,
+    );
 
     tx.rollback();
   });
