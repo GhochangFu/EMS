@@ -154,6 +154,53 @@ describe("ADR 0024 — compression and retention bounds", () => {
     }
   });
 
+  it("exposes raw's retention horizon as a guarded constant (owed by F1.8/F1.9)", () => {
+    // F1.8/F1.9's write path must reject a reading older than raw's own
+    // `drop_after` — an import that succeeds and then vanishes the next time
+    // retention runs is worse than a rejection at write time. The horizon is
+    // read from apps/api/src/telemetry/point-aggregates.ts, which already owns
+    // every other retention horizon this API cares about (RETENTION_DAYS,
+    // guarded the same way by adr-0025-level-selector.test.ts) — a second
+    // module would be a third home for the same fact.
+    //
+    // Following that file's own warning on a parse failure: this must THROW,
+    // never fall back to `null` or 0 — "no policy" and "could not parse" are
+    // different failures and must not read the same.
+    const migration = read("packages/db/drizzle/0028_compression_retention.sql");
+    const dropAfter = (relation: string): number => {
+      const pattern = new RegExp(
+        String.raw`add_retention_policy\('telemetry\.${relation}',\s*` +
+          String.raw`drop_after\s*=>\s*INTERVAL '(\d+) days'`,
+      );
+      const match = pattern.exec(migration);
+      if (!match) {
+        throw new Error(`0028 has no retention policy for telemetry.${relation}`);
+      }
+      return Number(match[1]);
+    };
+    const rawDays = dropAfter("point_values");
+
+    const source = read("apps/api/src/telemetry/point-aggregates.ts");
+    const constMatch = executableText(source).match(
+      /RAW_RETENTION_DAYS\s*=\s*(\d+)/,
+    );
+    if (!constMatch) {
+      throw new Error(
+        "apps/api/src/telemetry/point-aggregates.ts must export " +
+          "RAW_RETENTION_DAYS = <number>, equal to migration 0028's " +
+          "point_values drop_after interval",
+      );
+    }
+
+    expect(
+      Number(constMatch[1]),
+      `RAW_RETENTION_DAYS (${constMatch[1]}) must equal migration 0028's raw ` +
+        `drop_after (${rawDays} days) — a shorter value here rejects readings the ` +
+        "database would still have accepted; a longer one admits a write the next " +
+        "retention run silently deletes.",
+    ).toBe(rawDays);
+  });
+
   it("never drops the two coarse levels", () => {
     const migration = read("packages/db/drizzle/0028_compression_retention.sql");
 
