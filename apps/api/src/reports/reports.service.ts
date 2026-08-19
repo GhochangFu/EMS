@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import type { Pool } from "pg";
+import * as XLSX from "xlsx";
 
 import type { EnergyReportPreview, EnergyReportTemplate } from "@bms/shared";
 
@@ -11,13 +12,17 @@ import {
   levelForRange,
 } from "../telemetry/point-aggregates";
 import type { EnergyReportQuery } from "./reports.schema";
-import { energyCsvDocument } from "./reports.serialise";
+import {
+  assertFiniteCells,
+  energyCsvDocument,
+  energySheetRows,
+} from "./reports.serialise";
 
 const energyTemplate: EnergyReportTemplate = {
   id: "energy_consumption",
   title: "Energy Consumption",
   description: "Multi-site kWh, demand, PUE, cost, source mix, and top loads.",
-  formats: ["CSV"],
+  formats: ["CSV", "XLSX"],
   active: true,
 };
 
@@ -48,8 +53,11 @@ export class ReportsService {
       sourceTotals,
       topConsumers,
       notes: [
-        "CSV is generated on demand and not persisted in Sprint E.",
-        "PDF/XLSX output and report history remain deferred to later sprint scope.",
+        "CSV and XLSX are generated on demand and not persisted in Sprint E.",
+        // XLSX shipped with ADR 0026 Amendment 2 (`F4.51`). Leaving the old
+        // wording here would have told every client the format was deferred
+        // while the panel showed them the button for it.
+        "PDF output and report history remain deferred to later sprint scope.",
         "DG is a nominal slice because the simulator has no separate DG meter.",
       ],
     };
@@ -66,6 +74,33 @@ export class ReportsService {
     assetIds?: string[] | null,
   ): Promise<string> {
     return energyCsvDocument(await this.energyPreview(query, assetIds));
+  }
+
+  /**
+   * The same report as `xlsx` (ADR 0026 Amendment 2, `F4.51`).
+   *
+   * Offered beside the CSV rather than replacing it. `F4.51` measured that a cell
+   * holding two or more field separators still injects a formula into any consumer
+   * that does not treat the comma as a delimiter, and that no escaping in `csv.ts`
+   * can close it — the apostrophe guard protects the first fragment only. The
+   * class does not exist here: `aoa_to_sheet` writes no `<f>` element, so the file
+   * never instructs Excel to evaluate anything.
+   *
+   * The CSV route is untouched. Its bytes are a client deliverable, which is the
+   * reason ADR 0026 exists, and its residual is documented rather than silently
+   * patched.
+   */
+  async energyXlsx(
+    query: EnergyReportQuery,
+    assetIds?: string[] | null,
+  ): Promise<Buffer> {
+    const rows = assertFiniteCells(
+      energySheetRows(await this.energyPreview(query, assetIds)),
+    );
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "Energy");
+    return XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
   }
 
   private parseRange(query: EnergyReportQuery): {

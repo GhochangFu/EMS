@@ -117,6 +117,7 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   PointKeysAdminController_update: updatePointKeyBodySchema,
   ReportsController_energyCsv: energyReportQuerySchema,
   ReportsController_energyPreview: energyReportQuerySchema,
+  ReportsController_energyXlsx: energyReportQuerySchema,
   RtusAdminController_create: createRtuBodySchema,
   RtusAdminController_update: updateRtuBodySchema,
   RulesController_archiveRule: ruleLifecycleBodySchema,
