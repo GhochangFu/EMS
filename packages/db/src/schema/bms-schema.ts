@@ -7,6 +7,7 @@ import {
   pgSchema,
   text,
   timestamp,
+  unique,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -487,6 +488,82 @@ export const alarms = bmsSchema.table("alarms", {
   // alarm-raise dedupe a constraint instead of a SELECT-then-INSERT race.
   ruleId: uuid("rule_id").references(() => automationRules.id),
 });
+
+/**
+ * ADR 0034 (`E2.1`) — a fourth open vocabulary, in the ADR 0031/0032 shape:
+ * `INSERT`-able, not an enum. `sort_order`, not `rank`: a skill carries no
+ * urgency the way severity does, and two may legitimately sort together —
+ * this is `bms.asset_domains`'s half of the pattern, not severity's. No
+ * `tone`: a skill drives no styling.
+ */
+export const alarmSkills = bmsSchema.table("alarm_skills", {
+  code: varchar("code", { length: 64 }).primaryKey(),
+  label: varchar("label", { length: 128 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(100),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * ADR 0034 (`E2.1`) — one row per alarm, a companion table to `bms.alarms`
+ * rather than new columns on it, so F3.10's pending `cleared_at` addition and
+ * this one never touch the same table in parallel.
+ *
+ * `alarmId` is UNIQUE: exactly one enrichment per alarm instance, not a
+ * history of edits — an edit overwrites the row; `updatedBy`/`updatedAt`
+ * record who/when, not a version chain. `onDelete: "cascade"`, unlike
+ * `alarms.ruleId`'s `NO ACTION` (ADR 0033 decision 5): no code deletes a
+ * `bms.alarms` row today, and an enrichment has no independent meaning to
+ * preserve without the alarm it describes.
+ *
+ * `skillCode` is varchar(64), matching `alarm_skills.code`'s width from
+ * creation — unlike `alarms.severity`'s original varchar(32) that migration
+ * 0030 step 4 had to widen after the fact. No `onDelete` on `skillCode`:
+ * retiring a skill is `active = false`, not a delete.
+ */
+export const alarmEnrichments = bmsSchema.table("alarm_enrichments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  alarmId: uuid("alarm_id")
+    .notNull()
+    .unique()
+    .references(() => alarms.id, { onDelete: "cascade" }),
+  rootCause: text("root_cause"),
+  impact: text("impact"),
+  correctiveActions: text("corrective_actions"),
+  energyImpact: text("energy_impact"),
+  waterImpact: text("water_impact"),
+  productionImpact: text("production_impact"),
+  etrAt: timestamp("etr_at", { withTimezone: true }),
+  skillCode: varchar("skill_code", { length: 64 }).references(() => alarmSkills.code),
+  updatedBy: uuid("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * ADR 0034 (`E2.1`) — affected assets as a join table, matching the existing
+ * convention (`asset_group_members`) rather than a jsonb/array column, so a
+ * deleted asset cannot leave a dangling reference silently.
+ */
+export const alarmAffectedAssets = bmsSchema.table(
+  "alarm_affected_assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    enrichmentId: uuid("enrichment_id")
+      .notNull()
+      .references(() => alarmEnrichments.id, { onDelete: "cascade" }),
+    assetId: uuid("asset_id")
+      .notNull()
+      .references(() => assets.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    enrichmentAssetUnique: unique("alarm_affected_assets_enrichment_asset_key").on(
+      t.enrichmentId,
+      t.assetId,
+    ),
+  }),
+);
 
 export const workOrders = bmsSchema.table("work_orders", {
   id: uuid("id").primaryKey().defaultRandom(),
