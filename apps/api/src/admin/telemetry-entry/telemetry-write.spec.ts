@@ -1,6 +1,5 @@
 import type pg from "pg";
 
-import type { BmsDb } from "@bms/db";
 import type { JwtPayload, TelemetryEntryRow } from "@bms/shared";
 
 import type { TelemetryWriteService } from "./telemetry-write.service";
