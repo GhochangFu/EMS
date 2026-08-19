@@ -377,6 +377,45 @@ export async function assertContentRoundTrips(
   return created;
 }
 
+/**
+ * ADR 0034 (`E2.1`): `philosophy.skill` is a code into `bms.alarm_skills` now,
+ * not free text — `alarmSkillCodeSchema` checks shape only (a non-empty
+ * string, max 64 chars), so an unknown-but-well-shaped code passes Zod and
+ * must be caught by `assertTemplateAlarmVocabularies` on create, the same way
+ * an unknown `category`/`severity` already is.
+ */
+export async function assertUnknownSkillRejectedOnCreate(
+  svc: AssetTemplatesAdminService,
+  fx: Fixtures,
+): Promise<void> {
+  await expectRejection(
+    () =>
+      svc.create(fx.adminJwt, {
+        organizationId: fx.organizationId,
+        code: `${TEST_CODE}-BADSKILL`,
+        name: "Unknown skill on create",
+        assetType: "test_rig",
+        domain: "water",
+        content: templateContentSchema.parse({
+          alarms: [
+            {
+              code: "A",
+              pointKey: fx.pointKeys[0],
+              operator: "gt",
+              thresholdValue: 1,
+              severity: "warning",
+              message: "m",
+              philosophy: { skill: "e21_test_not_a_real_skill" },
+            },
+          ],
+        }),
+        points: [{ pointKey: fx.pointKeys[0], kind: "measured", required: true, sortOrder: 0 }],
+      }),
+    /alarms\.0\.philosophy\.skill/,
+    "creating a template whose philosophy.skill names no live bms.alarm_skills row",
+  );
+}
+
 /** A create whose content names a key the template does not declare is rejected,
  * and the key is named. */
 export async function assertContentRefsCheckedOnCreate(
@@ -598,6 +637,38 @@ export async function assertLegacyContentBlocksPublishButNotForking(
     !leakedCategory.includes(secretish),
     `a stored category must not be echoed back either, got: ${leakedCategory}`,
   );
+
+  // Now the same probe on `philosophy.skill` (ADR 0034, `E2.1`), the third
+  // branch `assertTemplateAlarmVocabularies` writes out non-echoing. `severity`
+  // and `category` are restored to live values so the skill check is the one
+  // that fires.
+  await pool.query(`UPDATE bms.asset_templates SET content = $2::jsonb WHERE id = $1`, [
+    draft.id,
+    JSON.stringify({
+      alarms: [
+        {
+          code: "A",
+          pointKey: fx.pointKeys[0],
+          operator: "gt",
+          thresholdValue: 1,
+          severity: "warning",
+          category: "operations",
+          message: "m",
+          philosophy: { skill: secretish },
+        },
+      ],
+    }),
+  ]);
+  const leakedSkill = await publishError();
+  assert(
+    leakedSkill.includes("alarms.0.philosophy.skill"),
+    `the error must name the offending path, got: ${leakedSkill}`,
+  );
+  assert(
+    !leakedSkill.includes(secretish),
+    `a stored skill code must not be echoed back either, got: ${leakedSkill}`,
+  );
+
   await pool.query(`UPDATE bms.asset_templates SET content = $2::jsonb WHERE id = $1`, [
     draft.id,
     JSON.stringify(legacy),

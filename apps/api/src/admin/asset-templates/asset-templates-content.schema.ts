@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { alarmSkillCodeSchema } from "@bms/shared";
 import type { TemplateContent } from "@bms/shared";
 
 import {
@@ -8,6 +9,10 @@ import {
   maintenancePrioritySchema,
 } from "../../maintenance/maintenance.schema";
 import { categorySchema, operatorSchema, severitySchema } from "../../rules/rules.schema";
+
+/** ADR 0034 (`E2.1`): a code into `bms.alarm_skills`. Declared once and
+ * re-exported, matching how `severitySchema` binds to the rule vocabulary. */
+export const skillSchema = alarmSkillCodeSchema;
 
 /**
  * The `asset_templates.content` contract (ADR 0019, backlog `E1.7`).
@@ -18,8 +23,9 @@ import { categorySchema, operatorSchema, severitySchema } from "../../rules/rule
  *
  * - **Bound** — the consumer is on `main`. `alarms` and `maintenance` import
  *   their enums from `rules.schema` and `maintenance.schema` rather than
- *   restating them. (`alarms.philosophy` is the one Anchored sub-object inside
- *   a Bound section; `E2.1` owns its vocabulary and has not been built.)
+ *   restating them. `alarms.philosophy.skill` joined this list under ADR 0034
+ *   (`E2.1`), importing from `@bms/shared` directly rather than through
+ *   `rules.schema` — a skill is not a rule concern.
  * - **Anchored** — the consumer is unbuilt but the *references* are checkable
  *   today. `kpis.expression` is opaque behind a `dialect` discriminator because
  *   `F2.3` owns formula syntax; `dashboards` carries ordering and nothing else
@@ -139,15 +145,18 @@ const alarmPhilosophySchema = z
     cause: z.string().max(2000).optional(),
     impact: z.string().max(2000).optional(),
     action: z.string().max(2000).optional(),
-    skill: z.string().max(255).optional(),
+    /** ADR 0034 (`E2.1`): a code into `bms.alarm_skills`, checked for shape
+     * only here — `assertTemplateAlarmVocabularies` closes the set. */
+    skill: skillSchema.optional(),
   })
   .strict();
 
 /**
- * `E2.1` names seven enrichment fields; four are here. The other three —
- * affected assets, energy/water/production impact, ETR — are properties of a
- * **live alarm instance**, not of an asset class, so a template cannot carry
- * them. That is a boundary, not a subset.
+ * ADR 0034 landed `E2.1`: `skill` above is now coded, and its vocabulary is
+ * enforced by `assertTemplateAlarmVocabularies`. The other three enrichment
+ * fields — affected assets, energy/water/production impact, ETR — remain
+ * properties of a **live alarm instance**, not of an asset class, so a
+ * template still cannot carry them. That is a boundary, not a subset.
  */
 const templateAlarmSchema = z
   .object({

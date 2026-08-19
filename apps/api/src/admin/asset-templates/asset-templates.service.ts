@@ -586,23 +586,26 @@ export class AssetTemplatesAdminService {
     // the schema checks shape only, and without a check here a template could
     // author an alarm at a severity the rule engine cannot run — the drift ADR
     // 0019 §3 exists to prevent. `category` moved the same way under ADR 0031
-    // Amendment 1.
+    // Amendment 1, and `philosophy.skill` under ADR 0034 (`E2.1`).
     //
-    // **Neither branch calls `assertRuleCategory` / `assertAlarmSeverity`, and
-    // that is the point of writing them out.** Those methods echo the rejected
-    // code back, which is right for a value the caller just typed into a request
-    // body and wrong here: this runs over *stored* content, and pre-ADR rows
-    // hold arbitrary JSON written by whoever. Echoing would turn a publish
-    // rejection into a disclosure channel for whatever the row happens to hold.
+    // **No branch calls `assertRuleCategory` / `assertAlarmSeverity` /
+    // `assertAlarmSkill`, and that is the point of writing them out.** Those
+    // methods echo the rejected code back, which is right for a value the
+    // caller just typed into a request body and wrong here: this runs over
+    // *stored* content, and pre-ADR rows hold arbitrary JSON written by
+    // whoever. Echoing would turn a publish rejection into a disclosure
+    // channel for whatever the row happens to hold.
     //
     // The severity half was written this way first and the category half was
     // not, which the security review caught: `publish` began calling this method
     // in the same commit, so the echoing category branch was newly reachable
-    // over stored content. Both are non-echoing now — they name the path and
-    // list the expected codes, and nothing else.
-    const [{ ruleCategories: liveCategories, alarmSeverities: liveSeverities }] = [
-      await this.vocabularies.list(),
-    ];
+    // over stored content. All three are non-echoing now — they name the path
+    // and list the expected codes, and nothing else.
+    const {
+      ruleCategories: liveCategories,
+      alarmSeverities: liveSeverities,
+      alarmSkills: liveSkills,
+    } = await this.vocabularies.list();
 
     // `category` is optional on a template alarm, so an absent one is not a
     // failure — it means "unspecified", and the rule builder's default applies
@@ -625,6 +628,22 @@ export class AssetTemplatesAdminService {
       throw new BadRequestException(
         `content.alarms.${badSeverity}.severity is not a live severity. Expected one of: ${[
           ...liveSeverityCodes,
+        ].join(", ")}.`,
+      );
+    }
+
+    // `philosophy` and `philosophy.skill` are both optional — absent is not a
+    // failure, matching `category`'s guard rather than `severity`'s unconditional
+    // one.
+    const liveSkillCodes = new Set(liveSkills.map((row) => row.code));
+    const badSkill = alarms.findIndex(
+      (alarm) =>
+        typeof alarm.philosophy?.skill === "string" && !liveSkillCodes.has(alarm.philosophy.skill),
+    );
+    if (badSkill >= 0) {
+      throw new BadRequestException(
+        `content.alarms.${badSkill}.philosophy.skill is not a live skill. Expected one of: ${[
+          ...liveSkillCodes,
         ].join(", ")}.`,
       );
     }

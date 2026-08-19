@@ -1,8 +1,9 @@
 import {
+  alarmDetailsResponseSchema,
   alarmListItemSchema,
   alarmsListResponseSchema,
 } from "@bms/shared/contracts";
-import type { AlarmListItem } from "@bms/shared";
+import type { AlarmDetailsResponse, AlarmListItem } from "@bms/shared";
 
 import { clearSessionOnAuthFailure, withAuth } from "./http";
 import { checkResponse } from "./validate";
@@ -47,4 +48,51 @@ export async function ackAlarm(
     throw new Error(text || `ack ${res.status}`);
   }
   return checkResponse(alarmListItemSchema, await res.json(), "alarms/:id/ack");
+}
+
+/** GET /api/v1/alarms/:id/details (ADR 0034 decision 5). */
+export async function fetchAlarmDetails(id: string): Promise<AlarmDetailsResponse> {
+  const res = await fetch(`${base}/api/v1/alarms/${id}/details`, withAuth());
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    throw new Error(`alarms/:id/details ${res.status}`);
+  }
+  return checkResponse(alarmDetailsResponseSchema, await res.json(), "alarms/:id/details");
+}
+
+/**
+ * The `PUT .../enrichment` request payload. Typed locally rather than
+ * imported from `@bms/shared` — request schemas live in `apps/api`
+ * (AGENTS.md §3), matching how `ackAlarm` above types its own body.
+ */
+export type AlarmEnrichmentUpsertBody = {
+  rootCause?: string | null;
+  impact?: string | null;
+  correctiveActions?: string | null;
+  energyImpact?: string | null;
+  waterImpact?: string | null;
+  productionImpact?: string | null;
+  etrAt?: string | null;
+  skillCode?: string | null;
+  affectedAssetIds?: string[];
+};
+
+/** PUT /api/v1/alarms/:id/enrichment (ADR 0034 decision 6). */
+export async function saveAlarmEnrichment(
+  id: string,
+  body: AlarmEnrichmentUpsertBody,
+): Promise<AlarmDetailsResponse> {
+  const res = await fetch(`${base}/api/v1/alarms/${id}/enrichment`, {
+    ...withAuth({
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  });
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    const text = await res.text();
+    throw new Error(text || `alarms/:id/enrichment ${res.status}`);
+  }
+  return checkResponse(alarmDetailsResponseSchema, await res.json(), "alarms/:id/enrichment");
 }

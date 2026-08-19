@@ -1,4 +1,5 @@
 import type {
+  AlarmSkillCode,
   AutomationRuleCategory,
   AutomationRuleOperator,
   AutomationRuleSeverity,
@@ -35,7 +36,12 @@ export type TemplateAlarmPhilosophy = {
   cause?: string;
   impact?: string;
   action?: string;
-  skill?: string;
+  /**
+   * ADR 0034 (`E2.1`): a code into `bms.alarm_skills`, not free text. Was
+   * `string` — no seed content populated it, so tightening carries no
+   * migration.
+   */
+  skill?: AlarmSkillCode;
 };
 
 /**
