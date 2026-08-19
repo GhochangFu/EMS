@@ -1590,11 +1590,17 @@ Process (`AGENTS.md` §10).
   8 read/write fields in the same fix pass. An add/remove editor for affected
   assets is still not built — the API and its scope guard are, and tested —
   called out inline in the panel rather than silently absent.
-- **Still owed:** an affected-asset picker in the web panel. `E2.2` (template
-  alarm philosophy knowledge base) lists `E1.7` (✅) and `E2.1` as its
-  dependencies — the code is built and merged, but `docs/BACKLOG.md`'s `E2.1`
-  row is not yet flipped to `✅`, which the dependency rule reads literally.
-  `E2.3` (AI-assisted root-cause suggestions) also needs `E1.2`
+- **The affected-asset picker landed 2026-08-19** (PR #104): a search-and-toggle
+  checkbox list over `GET /api/v1/assets` — already scoped server-side to the
+  caller's readable assets, the same set the write endpoint independently
+  checks `affectedAssetIds` against — with `filterAssetsByQuery`/
+  `toggleAssetSelection` in `lib/`, tested first. No existing multi-select
+  pattern existed anywhere in the repo to reuse; a checkbox list sidesteps the
+  `F4.44` no-matching-`<option>` trap entirely rather than needing to guard
+  against it. `docs/BACKLOG.md`'s `E2.1` row is flipped to `✅`.
+- **Nothing still owed on `E2.1` itself.** `E2.2` (template alarm philosophy
+  knowledge base) lists `E1.7` (✅) and `E2.1` (✅) as its dependencies and is
+  now unblocked. `E2.3` (AI-assisted root-cause suggestions) also needs `E1.2`
   (multi-variate anomaly detection), still `⬜`, so it stays blocked
   regardless.
 

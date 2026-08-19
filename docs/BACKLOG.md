@@ -57,7 +57,7 @@ WAVE 0  enablers+quick wins: [F4.4⭐ ✅] [F2.1⭐ ✅] [F1.1⭐ ✅] F2.3⭐ F
 WAVE 1  F1.2 F1.3 F1.4 F1.5 F1.6 F1.7 F1.10  [F2.2 ✅] F2.4  F3.7 F3.10 F3.1 F3.4 F3.11 F3.15
         F4.5 F4.7 F4.8 [F4.10 ✅] [F4.14 ✅] [F4.23 ✅] [F4.28 ✅] [F4.29 ✅] [F4.30 ✅] [F4.31 ✅] [F4.32 ✅] [F4.33 ✅] [F4.34 ✅] [F4.35 ✅] [F4.36 ✅] [F4.37 ✅] [F4.38 ✅] [F4.39 ✅] [F4.40 ✅] [F4.46 ✅] F4.47 [F4.48 ✅] [F4.49 ✅] [F4.50 ✅]  [E1.7 ✅] E3.1 E5.4
 WAVE 2  F2.5 F2.6 F2.7 F2.8  F3.2 F3.16 F3.20(P1↑)  F3.21⭐  F4.6 F4.15
-        E5.1 E5.2 E2.1 E1.1⭐
+        E5.1 E5.2 [E2.1 ✅] E1.1⭐
 WAVE 3  F3.22 F3.23 F3.24 F3.25 F3.26 F3.27  F3.12 F3.5
         E1.2 E1.3 E1.4 E4.1 E2.2 E3.2
 WAVE 4  F3.13 F3.14 F4.9 F4.27 F4.13 F4.16 F4.17 F4.21 F4.25
@@ -147,7 +147,7 @@ still safe in parallel.
 | **6** | F1.4 ‖ F1.5 ‖ F1.6 | A ‖ | **Flagship fan-out.** OPC-UA, SNMP/REST and DCS all implement the *same* frozen `F1.1` interface in their *own* files — the cleanest 3-agent parallel batch in the whole plan. |
 | **7** *(part)* | F2.4 · F3.1 · ~~F4.20~~ ✅ | B · C · F | Calc engine (needs F2.3), dashboard builder, OpenAPI. **F4.20 done 2026-08-15** (ADR 0029, PR #61) — pulled forward out of this slot, as F4.10 and F2.2 were out of theirs. |
 | **8** | **E5.1** 🔒 · F1.7 · F4.10 | B · A · F | E5.1 water-treatment domain pack — **P0 flagship**, Ion Exchange's core business (needs F2.1 + E1.7, both ✅). **🔒 Blocked on an unanswered client question set, not on a dependency — see the `E5.1` row in §2 Track B.** |
-| **9** | **E1.1** ⭐🔒 · F2.5 · E2.1 | ML · B · D | E1.1 (ML foundation) is the only new infrastructure the SOW adds — **ADR on the ML stack first**. |
+| **9** | **E1.1** ⭐🔒 · F2.5 · ~~E2.1~~ ✅ | ML · B · D | E1.1 (ML foundation) is the only new infrastructure the SOW adds — **ADR on the ML stack first**. **E2.1 done 2026-08-19** (ADR 0034, PR [#102](https://github.com/GhochangFu/EMS/pull/102) + sweep PR [#103](https://github.com/GhochangFu/EMS/pull/103) + picker follow-up PR [#104](https://github.com/GhochangFu/EMS/pull/104)). |
 | **10** | **F3.21** ⭐ · F2.7 · E1.3 · F3.2 | E · B · ML · C | Onboarding agent loop begins (needs create APIs + F4.4). **F2.7 (tag-mapping editor) must land here** — F3.23 in the next slot depends on it. |
 | **11** | F3.22 ‖ F3.23 ‖ F3.24 | E ‖ | Second fan-out: agent template / param-mapping / protocol onboarding — separate capabilities, separate files, all gated on F3.21. |
 | **12** | E1.2 · E4.1 · E3.1 | ML · C · M | Anomaly detection, sustainability metrics engine, work-order depth. |
@@ -420,7 +420,7 @@ single shared file). `F3.8` needs a dependency ADR before build.
 | F3.7 | ⬜ | Execute rule actions (rules store `notify` but never fire) | P0 | incl. | 1 | F3.8 |
 | F3.10 | ⬜ | Alarm escalation profiles + auto-clear on normal | P1 | 4–6 | 1 | F3.6, F3.8 |
 | F3.11 | ⬜ | Scheduled / cron rule evaluation (BullMQ workers) | P1 | 4 | 1 | F4.24 |
-| E2.1 | 🟡 | Alarm enrichment schema: root cause, impact, affected assets, corrective actions, energy/water/production impact, ETR, skills. **ADR 0034 accepted 2026-08-19** — companion table `bms.alarm_enrichments`, coded `bms.alarm_skills` vocabulary, join table for affected assets, and a read-time `GET /api/v1/alarms/:id/details` endpoint for the value-vs-threshold pairing. **§7 shows what the operator-facing half looks like** — an *Alarm Details* panel presenting **current value beside its threshold** ("112%" / "&gt;100%") with asset type, location, triggered-at and state. That pairing is the cheapest useful piece of this row and needs none of the AI work; note it is also **absent from the alarm text today**, which `F3.28` covers separately. | P1 | 4–6 | 2 | F3.6 |
+| E2.1 | ✅ | Alarm enrichment schema: root cause, impact, affected assets, corrective actions, energy/water/production impact, ETR, skills. **ADR 0034 accepted 2026-08-19** — companion table `bms.alarm_enrichments`, coded `bms.alarm_skills` vocabulary, join table for affected assets, and a read-time `GET /api/v1/alarms/:id/details` endpoint for the value-vs-threshold pairing. **§7 shows what the operator-facing half looks like** — an *Alarm Details* panel presenting **current value beside its threshold** ("112%" / "&gt;100%") with asset type, location, triggered-at and state. That pairing is the cheapest useful piece of this row and needs none of the AI work; note it is also **absent from the alarm text today**, which `F3.28` covers separately. **Done 2026-08-19** (PR [#102](https://github.com/GhochangFu/EMS/pull/102) — schema, API, panel, four-agent review with a High-severity security fix; sweep PR [#103](https://github.com/GhochangFu/EMS/pull/103); and the affected-asset picker follow-up (PR [#104](https://github.com/GhochangFu/EMS/pull/104)), closing the one gap PR #102's own review left open — decision 4's editor, not just its API). | P1 | 4–6 | 2 | F3.6 |
 | E2.2 | ⬜ | Template-driven alarm philosophy KB per asset class | P1 | 3–4 | 3 | E1.7, E2.1 |
 | F3.12 | ⬜ | Two-way command path: `commands`+`command_results`, queue + MQTT downlink | P1 | 8–10 | 3 | F4.24 |
 | F3.13 | ⬜ | Command safety gate (interlocks, time windows, role limits) | P1 | incl. | 4 | F3.12 |
@@ -571,7 +571,7 @@ flowchart LR
     subgraph TD["Alarms & Command"]
         F37["F3.7 Rule actions"]
         F310["F3.10 Escalation"]
-        E21["E2.1 Alarm enrichment"]
+        E21["E2.1 Alarm enrichment ✅"]
         E22["E2.2 Alarm KB"]
         F312["F3.12 Command path"]
         F313["F3.13/14 Safety+approval"]
