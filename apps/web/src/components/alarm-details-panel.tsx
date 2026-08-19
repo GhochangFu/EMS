@@ -6,7 +6,9 @@ import {
   saveAlarmEnrichment,
   type AlarmEnrichmentUpsertBody,
 } from "../api/alarms";
+import { fetchAssets } from "../api/assets";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
+import { filterAssetsByQuery, toggleAssetSelection } from "../lib/asset-picker";
 import { alarmSkillLabel, formatThresholdPairing, toLocalDateTimeInputValue } from "../lib/alarm-details";
 import { alarmSeverityTone } from "../lib/alarm-severity";
 import { StatusPill } from "./status-pill";
@@ -32,6 +34,7 @@ type FormState = {
    * bug: the slice reads UTC digits as if they were local. */
   etrAt: string;
   skillCode: string;
+  affectedAssetIds: string[];
 };
 
 const EMPTY_FORM: FormState = {
@@ -43,6 +46,7 @@ const EMPTY_FORM: FormState = {
   productionImpact: "",
   etrAt: "",
   skillCode: "",
+  affectedAssetIds: [],
 };
 
 /**
@@ -50,14 +54,18 @@ const EMPTY_FORM: FormState = {
  * asset context) needs no write access; the enrichment form is hidden for a
  * `viewer`, matching the write endpoint's role gate.
  *
- * Affected assets (ADR 0034 decision 4) are shown read-only here — the API
- * and its scope guard are built and tested (`alarm-enrichment.service.ts`),
- * but an add/remove picker is not part of this slice.
+ * Affected assets (ADR 0034 decision 4) are a search-and-toggle picker over
+ * `GET /api/v1/assets` — already scoped server-side to the caller's readable
+ * assets, the same set `PUT .../enrichment` independently checks
+ * `affectedAssetIds` against. The picker is a full-set editor: every save
+ * sends the current `affectedAssetIds`, including `[]`, since the form is
+ * always hydrated from the server's current set first.
  */
 export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPanelProps) {
   const qc = useQueryClient();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [assetQuery, setAssetQuery] = useState("");
 
   const detailsQ = useQuery({
     queryKey: ["alarms", "details", alarmId],
@@ -73,6 +81,16 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
   });
   const skills = vocabQ.data?.alarmSkills ?? [];
   const severities = vocabQ.data?.alarmSeverities ?? [];
+
+  // ADR 0034 decision 4. `fetchAssets` is already scoped server-side to the
+  // caller's readable assets — the same set `PUT .../enrichment` checks
+  // affectedAssetIds against — so nothing here re-derives scope.
+  const assetsQ = useQuery({
+    queryKey: ["assets", "picker"],
+    queryFn: fetchAssets,
+    staleTime: 5 * 60 * 1000,
+  });
+  const assets = assetsQ.data ?? [];
 
   /**
    * Hydrate the form once per `alarmId`, not on every `detailsQ.data`
@@ -97,6 +115,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
       productionImpact: enrichment?.productionImpact ?? "",
       etrAt: enrichment?.etrAt ? toLocalDateTimeInputValue(enrichment.etrAt) : "",
       skillCode: enrichment?.skillCode ?? "",
+      affectedAssetIds: enrichment?.affectedAssets.map((a) => a.assetId) ?? [],
     });
   }, [detailsQ.data, alarmId]);
 
@@ -127,9 +146,11 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
       // option, which is the `F4.44` trap — the current value is always kept
       // as an option even if the vocabulary has since retired it (below).
       skillCode: form.skillCode || null,
-      // affectedAssetIds intentionally omitted — this panel has no editor
-      // for it yet, and omitting the key (vs. sending `[]`) leaves the
-      // stored set untouched rather than clearing it.
+      // Always sent, including `[]`: the form is hydrated from the server's
+      // current set on open, so it is always a complete replacement, not a
+      // partial edit — unlike the free-text fields above, there is no
+      // "leave untouched" state for this field once the picker exists.
+      affectedAssetIds: form.affectedAssetIds,
     });
   }
 
@@ -373,12 +394,90 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                     onChange={(ev) => setForm((f) => ({ ...f, etrAt: ev.target.value }))}
                   />
                 </div>
-                {details.enrichment && details.enrichment.affectedAssets.length > 0 ? (
-                  <p className="text-xs text-bms-muted">
-                    Affected assets: {details.enrichment.affectedAssets.map((a) => a.assetCode).join(", ")}{" "}
-                    (editing this list is not available here yet)
-                  </p>
-                ) : null}
+                <div>
+                  <label className="text-xs font-medium text-bms-muted" htmlFor="affected-assets-search">
+                    Affected assets
+                  </label>
+                  {form.affectedAssetIds.length > 0 ? (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {form.affectedAssetIds.map((id) => {
+                        const asset = assets.find((a) => a.id === id);
+                        return (
+                          <span
+                            key={id}
+                            className="inline-flex items-center gap-1 rounded-full border border-gray-300 bg-gray-50 px-2 py-0.5 text-xs"
+                          >
+                            {asset?.code ?? id}
+                            <button
+                              type="button"
+                              className="text-bms-muted hover:text-red-600"
+                              aria-label={`Remove ${asset?.code ?? id}`}
+                              onClick={() =>
+                                setForm((f) => ({
+                                  ...f,
+                                  affectedAssetIds: toggleAssetSelection(f.affectedAssetIds, id),
+                                }))
+                              }
+                            >
+                              ×
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-xs text-bms-muted">None selected.</p>
+                  )}
+                  <input
+                    id="affected-assets-search"
+                    type="text"
+                    className="mt-2 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                    placeholder="Search assets by code, name or site…"
+                    value={assetQuery}
+                    onChange={(ev) => setAssetQuery(ev.target.value)}
+                  />
+                  <div className="mt-1 max-h-32 overflow-y-auto rounded border border-gray-200">
+                    {assetsQ.isLoading ? (
+                      <p className="px-2 py-1 text-xs text-bms-muted">Loading assets…</p>
+                    ) : (
+                      (() => {
+                        const matches = filterAssetsByQuery(assets, assetQuery);
+                        const visible = matches.slice(0, 50);
+                        return (
+                          <>
+                            {visible.map((asset) => (
+                              <label
+                                key={asset.id}
+                                className="flex items-center gap-2 px-2 py-1 text-xs hover:bg-gray-50"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={form.affectedAssetIds.includes(asset.id)}
+                                  onChange={() =>
+                                    setForm((f) => ({
+                                      ...f,
+                                      affectedAssetIds: toggleAssetSelection(f.affectedAssetIds, asset.id),
+                                    }))
+                                  }
+                                />
+                                <span className="font-medium">{asset.code}</span>
+                                <span className="text-bms-muted">{asset.name}</span>
+                              </label>
+                            ))}
+                            {visible.length === 0 ? (
+                              <p className="px-2 py-1 text-xs text-bms-muted">No matching assets.</p>
+                            ) : null}
+                            {matches.length > visible.length ? (
+                              <p className="border-t border-gray-100 px-2 py-1 text-xs text-bms-muted">
+                                {matches.length - visible.length} more match — refine your search
+                              </p>
+                            ) : null}
+                          </>
+                        );
+                      })()
+                    )}
+                  </div>
+                </div>
                 {saveError ? (
                   <p className="text-xs text-red-600" role="alert">
                     {saveError}
