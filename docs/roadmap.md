@@ -1548,6 +1548,56 @@ Process (`AGENTS.md` §10).
   still open: if Ion Exchange confirms a `High` level, someone must rule its tone
   and its rank.
 
+### Alarm enrichment schema (`E2.1`, ADR 0034) — done
+
+- **Status:** merged 2026-08-19 (PR #102).
+- **What it was.** The backlog row named seven fields — root cause, impact,
+  affected assets, corrective actions, energy/water/production impact, ETR,
+  skills. `E2.1` shipped the full row: a companion table to `bms.alarms`
+  (`bms.alarm_enrichments`, one row per alarm, `ON DELETE CASCADE`), a join
+  table for affected assets (`bms.alarm_affected_assets`), and a fourth open
+  vocabulary — `bms.alarm_skills` — in the ADR 0031/0032 shape. Two endpoints:
+  a read-time `GET /api/v1/alarms/:id/details` pairing the current value
+  beside its threshold (the backlog row's cheapest useful piece, needing no
+  schema at all), and `PUT /api/v1/alarms/:id/enrichment` to author the rest.
+- **Companion table, not new `alarms` columns.** `F3.10`'s pending
+  `bms.alarms.cleared_at` addition was the reason: two backlog items altering
+  the same table around the same time is exactly the collision a separate
+  table avoids.
+- **`skill` is coded; the rest stays free text.** Nothing today routes a work
+  order by skill or aggregates impact numerically — the owner ruled that
+  `E2.1`'s own reason for existing (telling an operator which trade to call)
+  is what closes `skill`, not the amended §4.8 "engine must understand it"
+  test alone. `TemplateAlarmPhilosophy.skill` (ADR 0019) tightened the same
+  way, from free text to the same vocabulary — safe with no backfill, since
+  no seed content had ever populated it.
+- **Review found a real security gap, not a hypothetical one.** The
+  enrichment write's affected-asset "replace" scoped the *insert* side against
+  the caller's readable assets but not the *delete* side: a scoped caller's
+  edit was silently destroying links to assets outside their access before
+  re-inserting their own set. Reproduced with a failing integration test
+  first, then fixed — the delete is now scoped the same way the pre-write
+  check is. Three more findings, each with a test: the `PUT` route was
+  missing from the OpenAPI registry (found independently by three of four
+  reviewers); the request-body schema was declared in `packages/shared`
+  rather than `apps/api`, against AGENTS.md §3; and two tests asserted on a
+  caught error's message alone rather than `instanceof BadRequestException`
+  first, the same weak-catch class caught once already mid-build.
+- **The panel shipped short of the ADR's own decision, and the gap is
+  recorded rather than hidden.** ADR 0034 decision 1 was to ship the full row
+  in one PR. Compliance and code review both caught the web panel rendering
+  only 3 of 8 enrichment fields and no affected-asset editor; extended to all
+  8 read/write fields in the same fix pass. An add/remove editor for affected
+  assets is still not built — the API and its scope guard are, and tested —
+  called out inline in the panel rather than silently absent.
+- **Still owed:** an affected-asset picker in the web panel. `E2.2` (template
+  alarm philosophy knowledge base) lists `E1.7` (✅) and `E2.1` as its
+  dependencies — the code is built and merged, but `docs/BACKLOG.md`'s `E2.1`
+  row is not yet flipped to `✅`, which the dependency rule reads literally.
+  `E2.3` (AI-assisted root-cause suggestions) also needs `E1.2`
+  (multi-variate anomaly detection), still `⬜`, so it stays blocked
+  regardless.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
