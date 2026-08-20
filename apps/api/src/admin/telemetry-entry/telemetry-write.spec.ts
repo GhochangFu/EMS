@@ -581,8 +581,8 @@ export async function runTelemetryWriteServiceTests(
 
   // ---- an audit row exists with the expected action and a uuid entity_id ----
 
-  const { rows: auditRows } = await pool.query<{ action: string; entity_id: string }>(
-    `SELECT action, entity_id FROM bms.audit_log
+  const { rows: auditRows } = await pool.query<{ action: string; entity_id: string; point_keys: string[] }>(
+    `SELECT action, entity_id, payload->'pointKeys' AS point_keys FROM bms.audit_log
       WHERE entity_type = 'asset' AND entity_id = $1 AND action = 'telemetry.manual_entry'
       ORDER BY created_at DESC LIMIT 1`,
     [fx.freshAssetId],
@@ -591,5 +591,12 @@ export async function runTelemetryWriteServiceTests(
   assert(
     /^[0-9a-f-]{36}$/i.test(auditRows[0].entity_id),
     `entity_id must be a uuid, got "${auditRows[0].entity_id}"`,
+  );
+  // The audit trail must name which point(s) were written, not just the
+  // asset and a row count — otherwise an overwrite is traceable to "this
+  // asset, this time window" but not reconstructable to "this point".
+  assert(
+    Array.isArray(auditRows[0].point_keys) && auditRows[0].point_keys.includes(fx.freshAssetPointKey.code),
+    `the audit payload must name the written point key, got ${JSON.stringify(auditRows[0].point_keys)}`,
   );
 }
