@@ -21,15 +21,27 @@ type AuditInput = {
 export class MasterDataAuditService {
   constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
 
-  /** Persists a master-data audit log entry. */
-  async write(input: AuditInput): Promise<void> {
-    const [actorRow] = await this.db
+  /**
+   * Persists a master-data audit log entry.
+   *
+   * `executor` lets a caller pass its own open `tx` instead of `this.db`.
+   * **Required** when the write happens inside a transaction: `pg`'s pool
+   * defaults to `max: 10` with no acquisition timeout
+   * (`apps/api/src/database/database.module.ts`), so asking the pool for a
+   * *second* client while the first sits inside an open transaction can wedge
+   * every pooled client waiting on one another with no timeout to break the
+   * deadlock. Passing `tx` also makes the audit row atomic with the mutation
+   * it describes — without it, a rolled-back transaction can leave an audit
+   * row on disk describing a write that never happened.
+   */
+  async write(input: AuditInput, executor: BmsDb = this.db): Promise<void> {
+    const [actorRow] = await executor
       .select({ id: users.id })
       .from(users)
       .where(or(eq(users.id, input.actor.sub), eq(users.email, input.actor.email)))
       .limit(1);
 
-    await this.db.insert(auditLog).values({
+    await executor.insert(auditLog).values({
       actorId: actorRow?.id ?? null,
       action: input.action,
       entityType: input.entityType,

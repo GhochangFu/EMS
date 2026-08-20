@@ -95,7 +95,16 @@ describe("ADR 0024 — compression and retention bounds", () => {
     expect(
       script,
       "the refresh must take a lower bound parameter",
-    ).toMatch(/refresh_continuous_aggregate\('\$\{view\}',\s*\$1::timestamptz\s*,\s*now\(\)\)/);
+    ).toMatch(/refresh_continuous_aggregate\('\$\{view\}',\s*\$1::timestamptz\s*,/);
+
+    // `main()`'s CLI backfill never passes an upper bound (`refreshLevel`'s
+    // `to` stays `null`), so it must still fall through to the server's own
+    // `now()` — `refreshAggregatesFrom` is the only caller that ever
+    // supplies `$2`, per that function's own margin-widening logic.
+    expect(
+      script,
+      "an omitted upper bound must fall through to the server's now(), not a fixed or unbounded one",
+    ).toMatch(/COALESCE\(\$2::timestamptz,\s*now\(\)\)/);
 
     // The bound must be DERIVED from the source's chunk list, not a second copy of
     // the retention interval that can drift from the policy governing it.

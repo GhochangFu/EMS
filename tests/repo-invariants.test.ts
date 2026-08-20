@@ -42,9 +42,16 @@ describe("repo invariants", () => {
     const files = sourceFiles();
     const present = new Set(files);
 
+    // A wrapper is either `foo.test.ts` or, for a DB-gated suite, ADR 0014's
+    // `foo.integration.test.ts` — `openIntegrationPool`/`requireIntegrationDb`
+    // gate those on a real database rather than a mock, and the naming says so.
     const orphans = files
       .filter((f) => /\.spec\.(ts|tsx|js|mjs)$/.test(f))
-      .filter((f) => !present.has(f.replace(/\.spec\.(ts|tsx|js|mjs)$/, ".test.$1")))
+      .filter(
+        (f) =>
+          !present.has(f.replace(/\.spec\.(ts|tsx|js|mjs)$/, ".test.$1")) &&
+          !present.has(f.replace(/\.spec\.(ts|tsx|js|mjs)$/, ".integration.test.$1")),
+      )
       .map((f) => relative(repoRoot, f).replace(/\\/g, "/"));
 
     // Assertions live in .spec files, but Vitest only discovers .test files —

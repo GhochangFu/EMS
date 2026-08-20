@@ -42,7 +42,7 @@ describe.skipIf(!connectionString)("TelemetryWriteService", () => {
     const db = createDb(created);
     const access = new AccessControlService(db);
     const audit = new MasterDataAuditService(db);
-    svc = new TelemetryWriteService(db, access, audit);
+    svc = new TelemetryWriteService(db, created, access, audit);
     fx = await loadFixtures(created);
   }, 60_000);
 
@@ -53,10 +53,18 @@ describe.skipIf(!connectionString)("TelemetryWriteService", () => {
     }
   }, 60_000);
 
-  it("scopes writes, resolves mappings, enforces units and retention, and audits", async () => {
-    if (!pool) throw new Error("pool not initialised");
-    await runTelemetryWriteServiceTests(pool, svc, fx);
-  });
+  it(
+    "scopes writes, resolves mappings, enforces units and retention, and audits",
+    async () => {
+      if (!pool) throw new Error("pool not initialised");
+      await runTelemetryWriteServiceTests(pool, svc, fx);
+    },
+    // ~10 write batches, several driving 4 refresh_continuous_aggregate
+    // calls each — comfortably under a second uncontended, but the vitest
+    // default (5s) has been observed to breach under a full-suite run
+    // sharing the database with other integration suites.
+    30_000,
+  );
 
   it("the CHECK boundary rejects what the service must never be able to write", async () => {
     if (!pool) throw new Error("pool not initialised");

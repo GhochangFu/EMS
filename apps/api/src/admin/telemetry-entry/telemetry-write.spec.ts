@@ -29,6 +29,13 @@ export type Fixtures = {
   freshAssetOrganizationId: string;
   /** One active point key in freshAssetId's organization, with its catalog unit. */
   freshAssetPointKey: { code: string; unit: string | null };
+  /**
+   * At least two more active point keys in the same organization, distinct
+   * from `freshAssetPointKey` and from each other — tests that need a
+   * still-unmapped point (SAVEPOINT isolation, dedup) must not collide with
+   * whichever earlier test already mapped `freshAssetPointKey`.
+   */
+  spareOrgPointKeys: { code: string; unit: string | null }[];
 };
 
 function assert(condition: boolean, message: string): void {
@@ -128,12 +135,19 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
 
   const { rows: keyRows } = await pool.query<{ code: string; unit: string | null }>(
     `SELECT code, unit FROM bms.point_keys
-      WHERE organization_id = $1 AND active = true ORDER BY code LIMIT 1`,
+      WHERE organization_id = $1 AND active = true ORDER BY code LIMIT 5`,
     [grant.organization_id],
   );
   const freshAssetPointKey = keyRows[0];
   if (!freshAssetPointKey) {
     throw new Error("telemetry-write fixtures missing — wc-admin's organization has no active point key");
+  }
+  const spareOrgPointKeys = keyRows.slice(1);
+  if (spareOrgPointKeys.length < 3) {
+    throw new Error(
+      "telemetry-write fixtures missing — wc-admin's organization needs at least 4 active point " +
+        "keys (1 for freshAssetPointKey, 3 spare). Run 'pnpm db:seed'.",
+    );
   }
 
   const freshCode = `${TEST_ASSET_PREFIX}${Date.now()}`;
@@ -171,6 +185,7 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
     freshAssetId,
     freshAssetOrganizationId: grant.organization_id,
     freshAssetPointKey,
+    spareOrgPointKeys,
   };
 }
 
@@ -334,6 +349,13 @@ export async function runTelemetryWriteServiceTests(
       beforeMapping,
     )} after=${JSON.stringify(afterMapping)}`,
   );
+  // This row lands on a real seeded asset outside TEST_ASSET_PREFIX, so
+  // `cleanup()` cannot reach it — delete it here, by the constant asset_id
+  // the ADR 0024 guard requires, so a local run leaves no stray reading.
+  await pool.query(
+    `DELETE FROM telemetry.point_values WHERE asset_id = $1 AND point_key = $2 AND time = $3`,
+    [fx.existingMeasured.assetId, fx.existingMeasured.pointKey, throughMeasuredTime],
+  );
 
   // ---- a unit mismatch rejects the row, nothing written ----------------------
 
@@ -379,6 +401,175 @@ export async function runTelemetryWriteServiceTests(
   assert(
     /retention|730|days/i.test(ancientResult.rejected[0]?.reason ?? ""),
     `the rejection reason should name the retention horizon, got: ${ancientResult.rejected[0]?.reason}`,
+  );
+
+  // ---- a source_data_key collision isolates only the rows that need it -----
+  // (Postgres SAVEPOINT behaviour of a nested `tx.transaction()` call — the
+  // one piece of the rewrite that rests on inferred rather than observed
+  // behaviour. If the nested transaction does not actually emit
+  // SAVEPOINT/ROLLBACK TO SAVEPOINT, the 23505 poisons the whole outer
+  // transaction and the next statement fails with 25P02, losing the entire
+  // batch — this test exists to catch exactly that.)
+
+  const [victimKey, plantedKey, safeKey] = fx.spareOrgPointKeys;
+  await pool.query(
+    `INSERT INTO bms.asset_points (asset_id, point_key, source_data_key, source_kind, rtu_id, unit, active)
+     VALUES ($1, $2, $3, 'manual', NULL, $4, true)`,
+    [fx.freshAssetId, plantedKey.code, `manual:${victimKey.code}`, plantedKey.unit],
+  );
+  const victimTime = new Date().toISOString();
+  const safeTime = new Date().toISOString();
+  const savepointResult = await svc.writeReadings(fx.adminJwt, {
+    rows: [
+      row({ assetId: fx.freshAssetId, pointKey: victimKey.code, time: victimTime, unit: victimKey.unit ?? undefined }),
+      row({ assetId: fx.freshAssetId, pointKey: safeKey.code, time: safeTime, unit: safeKey.unit ?? undefined }),
+    ],
+    sourceKind: "manual",
+    conflictPolicy: "reject",
+    auditAction: "telemetry.manual_entry",
+  });
+  assert(
+    savepointResult.result.written + savepointResult.result.skipped === 2,
+    `written + skipped must equal the input row count, got written=${savepointResult.result.written} ` +
+      `skipped=${savepointResult.result.skipped}`,
+  );
+  assert(
+    savepointResult.result.written === 1,
+    `only the non-colliding row must be written, wrote ${savepointResult.result.written}: ` +
+      JSON.stringify(savepointResult.rejected),
+  );
+  assert(
+    savepointResult.rejected.length === 1 && savepointResult.rejected[0]?.rowNumber === 1,
+    `row 1 (the colliding mapping) must be the only rejection, got ${JSON.stringify(savepointResult.rejected)}`,
+  );
+  assert(
+    (await fetchAssetPoint(pool, fx.freshAssetId, victimKey.code)) === null,
+    "no mapping may be created for the row whose source_data_key collided",
+  );
+  assert(
+    (await fetchPointValue(pool, fx.freshAssetId, victimKey.code, victimTime)) === null,
+    "no value may be written for the row whose mapping creation failed",
+  );
+  assert(
+    (await fetchAssetPoint(pool, fx.freshAssetId, safeKey.code)) !== null,
+    "the non-colliding row's mapping must still be created despite the other row's collision",
+  );
+  assert(
+    (await fetchPointValue(pool, fx.freshAssetId, safeKey.code, safeTime)) !== null,
+    "the non-colliding row's value must still be written despite the other row's collision",
+  );
+
+  // ---- an in-batch duplicate is rejected, not a crash ------------------------
+
+  const dupSourceTime = new Date().toISOString();
+  const dupResult = await svc.writeReadings(fx.adminJwt, {
+    rows: [
+      row({ assetId: fx.freshAssetId, pointKey: fx.freshAssetPointKey.code, time: dupSourceTime }),
+      row({ assetId: fx.freshAssetId, pointKey: fx.freshAssetPointKey.code, time: dupSourceTime }),
+    ],
+    sourceKind: "manual",
+    conflictPolicy: "reject",
+    auditAction: "telemetry.manual_entry",
+  });
+  assert(
+    dupResult.result.written + dupResult.result.skipped === 2,
+    `written + skipped must equal the input row count, got written=${dupResult.result.written} ` +
+      `skipped=${dupResult.result.skipped}`,
+  );
+  assert(dupResult.result.written === 1, `exactly one of the two duplicate rows must be written, wrote ${dupResult.result.written}`);
+  assert(
+    dupResult.rejected.length === 1 && /duplicate of row 1/i.test(dupResult.rejected[0]?.reason ?? ""),
+    `the second duplicate row must be rejected and name row 1, got ${JSON.stringify(dupResult.rejected)}`,
+  );
+
+  // ---- a reject-policy conflict is a visible rejection, not a silent skip ---
+
+  const conflictTime = new Date().toISOString();
+  const firstWrite = await svc.writeReadings(fx.adminJwt, {
+    rows: [row({ assetId: fx.freshAssetId, pointKey: fx.freshAssetPointKey.code, time: conflictTime })],
+    sourceKind: "manual",
+    conflictPolicy: "reject",
+    auditAction: "telemetry.manual_entry",
+  });
+  assert(firstWrite.result.written === 1, "the first write to a fresh (time, assetId, pointKey) must succeed");
+
+  const secondWrite = await svc.writeReadings(fx.adminJwt, {
+    rows: [row({ assetId: fx.freshAssetId, pointKey: fx.freshAssetPointKey.code, time: conflictTime, value: 99 })],
+    sourceKind: "manual",
+    conflictPolicy: "reject",
+    auditAction: "telemetry.manual_entry",
+  });
+  assert(secondWrite.result.written === 0, "a reject-policy conflict must write nothing");
+  assert(
+    secondWrite.rejected.length === 1 && /already exists/i.test(secondWrite.rejected[0]?.reason ?? ""),
+    `a reject-policy conflict must appear as a named rejection, not only a count, got ` +
+      `${JSON.stringify(secondWrite.rejected)}`,
+  );
+  // An attempt where every row was rejected must still leave an audit trail
+  // — driven by what was ATTEMPTED, not only by what landed.
+  const { rows: allRejectedAuditRows } = await pool.query<{ row_count: number }>(
+    `SELECT (payload->>'rowCount')::int AS row_count FROM bms.audit_log
+      WHERE entity_type = 'asset' AND entity_id = $1
+        AND payload->>'batchId' = $2`,
+    [fx.freshAssetId, secondWrite.result.batchId],
+  );
+  assert(
+    allRejectedAuditRows.length === 1 && allRejectedAuditRows[0]?.row_count === 0,
+    `an all-rejected batch must still write one audit row with rowCount 0, got ` +
+      `${JSON.stringify(allRejectedAuditRows)}`,
+  );
+  const unchangedValue = await fetchPointValue(pool, fx.freshAssetId, fx.freshAssetPointKey.code, conflictTime);
+  assert(
+    unchangedValue?.value === 42,
+    `the original value must be unchanged by the rejected conflicting write, got ${unchangedValue?.value}`,
+  );
+
+  // ---- a non-finite value and an unparsable time are both rejected ----------
+
+  const validationResult = await svc.writeReadings(fx.adminJwt, {
+    rows: [
+      { assetId: fx.freshAssetId, pointKey: fx.freshAssetPointKey.code, value: Number.NaN, time: new Date().toISOString() },
+      { assetId: fx.freshAssetId, pointKey: fx.freshAssetPointKey.code, value: 1, time: "not-a-real-date" },
+    ],
+    sourceKind: "manual",
+    conflictPolicy: "reject",
+    auditAction: "telemetry.manual_entry",
+  });
+  assert(validationResult.result.written === 0, "neither an unfinite value nor an unparsable time may be written");
+  assert(
+    validationResult.rejected.length === 2,
+    `both rows must be rejected, got ${JSON.stringify(validationResult.rejected)}`,
+  );
+
+  // ---- the post-commit aggregate refresh actually runs ----------------------
+  // A row older than `_1m`'s 3h start_offset sits outside ADR 0023's
+  // real-time branch — it appears in `point_values_1m` only if a refresh
+  // actually recomputed that bucket. Proves `refreshAggregatesFrom` ran
+  // rather than merely typechecking.
+
+  const oldEnoughTime = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+  const { rows: beforeBucket } = await pool.query(
+    `SELECT 1 FROM telemetry.point_values_1m
+      WHERE asset_id = $1 AND point_key = $2 AND bucket = time_bucket('1 minute', $3::timestamptz)`,
+    [fx.freshAssetId, fx.freshAssetPointKey.code, oldEnoughTime],
+  );
+  assert(beforeBucket.length === 0, "the 1m bucket for this not-yet-written reading must not already exist");
+
+  const refreshResult = await svc.writeReadings(fx.adminJwt, {
+    rows: [row({ assetId: fx.freshAssetId, pointKey: fx.freshAssetPointKey.code, time: oldEnoughTime, value: 7 })],
+    sourceKind: "manual",
+    conflictPolicy: "reject",
+    auditAction: "telemetry.manual_entry",
+  });
+  assert(refreshResult.result.written === 1, "the outside-real-time-window reading must be written");
+  const { rows: afterBucket } = await pool.query(
+    `SELECT 1 FROM telemetry.point_values_1m
+      WHERE asset_id = $1 AND point_key = $2 AND bucket = time_bucket('1 minute', $3::timestamptz)`,
+    [fx.freshAssetId, fx.freshAssetPointKey.code, oldEnoughTime],
+  );
+  assert(
+    afterBucket.length === 1,
+    "the 1m bucket must exist after the write — the post-commit refresh must have run synchronously",
   );
 
   // ---- an audit row exists with the expected action and a uuid entity_id ----
