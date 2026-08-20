@@ -7,6 +7,7 @@ import { fetchAdminLocations } from "../../api/admin/locations";
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { fetchAdminRtus } from "../../api/admin/rtus";
 import { isGlobalAdmin } from "../../lib/admin-access";
+import { isAssetLevelReady } from "../../lib/hierarchy-filter";
 import type { AuthUser } from "../../stores/auth-store";
 
 export type HierarchySelection = {
@@ -60,10 +61,7 @@ export function HierarchyFilterBar({
   const assetsQ = useQuery({
     queryKey: ["admin", "assets", "true", selection.locationId, selection.rtuId],
     queryFn: () => fetchAdminAssets("true", selection.locationId, selection.rtuId),
-    // A gateway-less asset has no rtuId to select — when "rtu" isn't one of
-    // the requested levels at all, locationId alone must be enough to load
-    // the asset list, not an rtuId the caller never asked for.
-    enabled: showAsset && Boolean(selection.locationId) && (!showRtu || Boolean(selection.rtuId)),
+    enabled: showAsset && isAssetLevelReady(showRtu, selection),
   });
 
   const orgLocked = !isGlobalAdmin(user.role) && (orgsQ.data?.items.length ?? 0) <= 1;
@@ -175,7 +173,7 @@ export function HierarchyFilterBar({
         <select
           className="rounded border border-gray-200 px-3 py-1.5 text-xs"
           value={selection.assetId ?? ""}
-          disabled={showRtu ? !selection.rtuId : !selection.locationId}
+          disabled={!isAssetLevelReady(showRtu, selection)}
           onChange={(event) => {
             updateSelection({
               organizationId: effectiveOrgId || selection.organizationId,
