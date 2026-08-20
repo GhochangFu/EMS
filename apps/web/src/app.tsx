@@ -30,6 +30,7 @@ import { OrganizationsAdminPage } from "./pages/admin/organizations-page";
 import { OnboardingChatPage } from "./pages/admin/onboarding-chat-page";
 import { PointKeysAdminPage } from "./pages/admin/point-keys-page";
 import { RtusAdminPage } from "./pages/admin/rtus-page";
+import { TelemetryImportPage } from "./pages/admin/telemetry-import-page";
 import { AuthCallbackPage } from "./pages/auth-callback-page";
 import { LoginPage } from "./pages/login-page";
 import { useAuthStore } from "./stores/auth-store";
@@ -414,6 +415,18 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <PointKeysAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/telemetry/import"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <TelemetryImportPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

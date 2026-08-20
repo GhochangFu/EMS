@@ -28,4 +28,5 @@ export type * from "./schema-types";
 export * from "./onboarding";
 export * from "./operations";
 export * from "./telemetry-entry";
+export * from "./telemetry-import";
 export type { Assignable, Measured, Strict } from "./equality";

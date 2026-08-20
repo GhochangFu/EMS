@@ -88,6 +88,15 @@ import {
  * is never added here — it would simply be absent from the document, which
  * reads as "no body". `tests/adr-0029-openapi-contract.test.ts` is what makes
  * that fail.
+ *
+ * **Multipart routes are deliberately absent.** The document generator hard-
+ * codes `application/json` for every registered operation, so a `multipart/
+ * form-data` route (a file upload) would be described wrong, not left
+ * undescribed, if it were registered here — worse than the "no body" gap
+ * above. `OnboardingController_uploadExcel` set this precedent; `Telemetry-
+ * ImportController_preview`/`_commit` (`F1.9`, both `FileInterceptor` routes
+ * with a `file` field the document has no way to say) follow it. Documenting
+ * multipart shape properly is a generator change, out of scope here.
  */
 export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AlarmsController_acknowledge: alarmAckBodySchema,

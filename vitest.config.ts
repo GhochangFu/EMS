@@ -281,23 +281,17 @@ export default defineConfig({
       // `philosophy.skill` tightening, `AlarmDetailsService` and
       // `AlarmEnrichmentService`.
       //
-      // Ratcheted by `F1.8` from 43.0/39.1/44.8/43.2. Measured 2026-08-20
-      // against the live database, all 89 test files running and none
-      // skipped: 45.71 statements · 41.26 branches · 47.16 functions ·
-      // 45.87 lines (89 files / 275 tests). The rise is the manual telemetry
-      // entry screen's write path: `manual-readings.schema.ts` and
-      // `manual-readings.controller.ts` (api, tested through a real
-      // `ManualReadingsController` instance, not a mock — role enforcement,
-      // response shape, conflictPolicy, and the 400 mapping) plus
-      // `manual-reading-form.ts` (web/lib — the datetime-local offset
-      // conversion, the unit-omission rule, and client-side format
-      // validation). `manual-readings-page.tsx` itself stays outside the
-      // denominator (`include` reaches `apps/web/src/lib/**` only).
+      // Ratcheted by `F1.8` (manual telemetry entry) + `F1.9` (CSV/Excel
+      // telemetry bulk import) landing together, from 43.0/39.1/44.8/43.2.
+      // The two PRs each measured their own delta in isolation before this
+      // merge; re-measured after resolving the merge conflicts, against the
+      // live database, all 94 files / 286 tests running and none skipped:
+      // 47.5 statements · 43.34 branches · 48.55 functions · 47.61 lines.
       thresholds: {
-        statements: 45.5,
-        branches: 41.0,
-        functions: 47.0,
-        lines: 45.6,
+        statements: 47.2,
+        branches: 43.0,
+        functions: 48.2,
+        lines: 47.3,
       },
     },
   },
