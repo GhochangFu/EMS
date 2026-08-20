@@ -5,6 +5,7 @@ import { AlarmsModule } from "./alarms/alarms.module";
 import { AdminModule } from "./admin/admin.module";
 import { AssetsModule } from "./assets/assets.module";
 import { AuthModule } from "./auth/auth.module";
+import { CalcModule } from "./calc/calc.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
@@ -30,6 +31,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     TelemetryModule,
     DashboardModule,
     AlarmsModule,
+    CalcModule,
     WorkOrdersModule,
     MaintenanceModule,
     RulesModule,
