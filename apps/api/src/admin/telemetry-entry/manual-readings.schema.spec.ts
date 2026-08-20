@@ -1,7 +1,8 @@
 import type { Measured, Strict } from "@bms/shared";
-import { telemetryWriteResponseSchema } from "@bms/shared";
+import { telemetryEntryRowSchema, telemetryWriteResponseSchema } from "@bms/shared";
 import type { z } from "zod";
 
+import { manualReadingsBodySchema } from "./manual-readings.schema";
 import type { WriteReadingsOutput } from "./telemetry-write.service";
 
 function assert(condition: boolean, message: string): void {
@@ -63,5 +64,93 @@ export function runManualReadingsSchemaTests(): void {
   assert(
     telemetryWriteResponseSchema.safeParse(withNullField).success,
     "a rejected row with field: null must parse — a row-level rejection is not always attributable to one field",
+  );
+}
+
+/**
+ * Behavioural cover for the F1.8/F1.9 manual-entry request body
+ * (`manual-readings.schema.ts`, `manualReadingsBodySchema`).
+ *
+ * `sourceKind` is deliberately absent from the body — the controller
+ * hardcodes `"manual"` — so a caller sending it must be rejected, which is
+ * also the test that proves `.strict()` is actually applied.
+ */
+export function runManualReadingsBodySchemaTests(): void {
+  const goodRow = {
+    assetId: "00000000-0000-4000-8000-000000000001",
+    pointKey: "kw",
+    value: 12.5,
+    time: "2026-08-19T12:00:00.000Z",
+  };
+  assert(telemetryEntryRowSchema.safeParse(goodRow).success, "sanity: goodRow must itself parse");
+
+  // ---- conflictPolicy default and explicit value -----------------------------
+
+  const withoutPolicy = manualReadingsBodySchema.safeParse({ rows: [goodRow] });
+  assert(withoutPolicy.success, `a body without conflictPolicy must parse: ${JSON.stringify(withoutPolicy)}`);
+  assert(
+    withoutPolicy.success && withoutPolicy.data.conflictPolicy === "reject",
+    "conflictPolicy must default to 'reject', not merely allow it to be omitted",
+  );
+
+  const withOverwrite = manualReadingsBodySchema.safeParse({
+    rows: [goodRow],
+    conflictPolicy: "overwrite",
+  });
+  assert(
+    withOverwrite.success && withOverwrite.data.conflictPolicy === "overwrite",
+    "an explicit conflictPolicy: 'overwrite' must survive parsing",
+  );
+
+  assert(
+    !manualReadingsBodySchema.safeParse({ rows: [goodRow], conflictPolicy: "merge" }).success,
+    "conflictPolicy: 'merge' must fail — only 'reject' and 'overwrite' exist",
+  );
+
+  // ---- .strict() — an unknown top-level key must fail ------------------------
+
+  assert(
+    !manualReadingsBodySchema.safeParse({ rows: [goodRow], sourceKind: "manual" }).success,
+    "an unknown key like sourceKind must fail — the controller hardcodes it, callers cannot set it",
+  );
+
+  // ---- row-count bounds (A4a's M2, discharged here via .max(50)) ------------
+
+  assert(
+    !manualReadingsBodySchema.safeParse({ rows: [] }).success,
+    "an empty rows array must fail",
+  );
+
+  const rows51 = Array.from({ length: 51 }, (_, i) => ({ ...goodRow, pointKey: `kw-${i}` }));
+  assert(!manualReadingsBodySchema.safeParse({ rows: rows51 }).success, "51 rows must fail");
+
+  const rows50 = Array.from({ length: 50 }, (_, i) => ({ ...goodRow, pointKey: `kw-${i}` }));
+  const parsed50 = manualReadingsBodySchema.safeParse({ rows: rows50 });
+  assert(parsed50.success, `exactly 50 rows must parse: ${JSON.stringify(parsed50)}`);
+
+  // ---- per-row validation, delegated to telemetryEntryRowSchema -------------
+
+  assert(
+    !manualReadingsBodySchema.safeParse({ rows: [{ ...goodRow, value: Number.NaN }] }).success,
+    "a row with value: NaN must fail",
+  );
+  assert(
+    !manualReadingsBodySchema.safeParse({ rows: [{ ...goodRow, value: Number.POSITIVE_INFINITY }] })
+      .success,
+    "a row with value: Infinity must fail",
+  );
+  assert(
+    !manualReadingsBodySchema.safeParse({ rows: [{ ...goodRow, time: "not-a-timestamp" }] }).success,
+    "a row with an unparsable time must fail",
+  );
+  assert(
+    !manualReadingsBodySchema.safeParse({ rows: [{ ...goodRow, assetId: "not-a-uuid" }] }).success,
+    "a row with a bad assetId must fail",
+  );
+
+  const { unit: _unused, ...rowWithoutUnit } = { ...goodRow, unit: "kW" };
+  assert(
+    manualReadingsBodySchema.safeParse({ rows: [rowWithoutUnit] }).success,
+    "a row with no unit key must parse — unit is optional",
   );
 }
