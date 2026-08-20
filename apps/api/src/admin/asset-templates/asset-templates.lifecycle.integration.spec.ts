@@ -122,6 +122,9 @@ export async function assertCreateStartsAtVersionOne(
         kind: "derived",
         formula: `{${fx.pointKeys[1]}}`,
         formulaDialect: "bms-calc-v1",
+        calcTrigger: "scheduled",
+        calcIntervalSeconds: 120,
+        maxInputAgeSeconds: 600,
         required: false,
         sortOrder: 0,
       },
@@ -140,7 +143,52 @@ export async function assertCreateStartsAtVersionOne(
     created.points[0].kind === "derived",
     "the derived kind must survive the round trip — F2.2 branches on it",
   );
+  assert(
+    created.points[0].calcTrigger === "scheduled" &&
+      created.points[0].calcIntervalSeconds === 120 &&
+      created.points[0].maxInputAgeSeconds === 600,
+    "ADR 0037: calcTrigger/calcIntervalSeconds/maxInputAgeSeconds must survive the create round trip",
+  );
   return created;
+}
+
+/**
+ * ADR 0037 decision 4's calc fields must survive not just create, but a
+ * PATCH that re-sends the whole points array — `templatePointsBodySchema`
+ * sends the points array whole on every update (task 4's own comment on
+ * `adminTemplatePointDtoSchema` names this), so if the GET→PATCH round trip
+ * ever drops a field, the next author save silently erases it.
+ */
+export async function assertCalcFieldsSurviveUpdateRoundTrip(
+  svc: AssetTemplatesAdminService,
+  fx: Fixtures,
+  created: AdminAssetTemplateDto,
+): Promise<void> {
+  const patched = await svc.update(fx.adminJwt, created.id, {
+    points: created.points.map((point) => ({
+      pointKey: point.pointKey,
+      label: point.label ?? undefined,
+      unit: point.unit ?? undefined,
+      kind: point.kind,
+      sourceDataKeyPattern: point.sourceDataKeyPattern ?? undefined,
+      formula: point.formula ?? undefined,
+      formulaDialect: point.formulaDialect ?? undefined,
+      calcTrigger: point.calcTrigger ?? undefined,
+      calcIntervalSeconds: point.calcIntervalSeconds ?? undefined,
+      maxInputAgeSeconds: point.maxInputAgeSeconds ?? undefined,
+      required: point.required,
+      sortOrder: point.sortOrder,
+    })),
+  });
+  const derived = patched.points.find((point) => point.kind === "derived");
+  assert(derived !== undefined, "the derived point must survive a PATCH that re-sends it");
+  assert(
+    derived?.calcTrigger === "scheduled" &&
+      derived.calcIntervalSeconds === 120 &&
+      derived.maxInputAgeSeconds === 600,
+    "the calc fields read back from GET must round-trip unchanged through a PATCH " +
+      "that echoes them — this is the erasure bug a missing DTO field would cause",
+  );
 }
 
 /**

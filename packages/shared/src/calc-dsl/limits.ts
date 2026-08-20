@@ -31,6 +31,7 @@ export const CALC_FUNCTION_ARITY: Readonly<Record<CalcFunctionName, { min: numbe
 
 /** `template_points.calc_trigger` (ADR 0037 decision 4). */
 export const CALC_TRIGGERS = ["streaming", "scheduled"] as const;
+export type CalcTrigger = (typeof CALC_TRIGGERS)[number];
 
 export const MIN_CALC_INTERVAL_SECONDS = 10;
 export const MAX_CALC_INTERVAL_SECONDS = 86_400;
