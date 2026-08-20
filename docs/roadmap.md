@@ -1043,14 +1043,43 @@ Process (`AGENTS.md` §10).
   (`measured` / `manual` / `computed` / `unmapped`), enforced by
   `asset_points_source_ref_check`. An asset must be *somewhere* and need not be
   *wired*, and one asset can now mix measured, hand-entered and computed points.
-- **Unblocks:** F1.8, F1.9.
-- **F1.9 (CSV/Excel telemetry bulk import) built 2026-08-20** — PR
-  [#109](https://github.com/GhochangFu/EMS/pull/109), open, pending human
-  review and merge. Composes a pure row parser and asset-code resolution
-  with the shared write path `F1.8` also builds on (`TelemetryWriteService`,
-  Phase A of the same plan, merged in PR #108), rather than a second copy of
-  its catalog/unit-precedence/retention decisions. `docs/BACKLOG.md`'s
-  `F1.9` row is not yet flipped to ✅ — that happens on merge.
+- **Unblocks:** F1.8, F1.9 — both merged 2026-08-20.
+- **F1.8 (manual telemetry entry) merged 2026-08-20** — PR
+  [#110](https://github.com/GhochangFu/EMS/pull/110): `POST
+  /admin/telemetry-entry/manual-readings` and the Manual Entry admin screen
+  (`/admin/manual-readings`), composing with `TelemetryWriteService` (Phase A,
+  merged in PR #108) rather than re-implementing its catalog/unit-precedence/
+  retention logic. **Notable:** a live Docker-stack verification pass (real
+  Keycloak logins as all three seeded roles, not a mock) found a real bug in
+  the shared `HierarchyFilterBar` component — the locations query was gated on
+  the raw, never-set `organizationId` instead of the resolved locked-org id,
+  silently emptying the whole location→RTU→asset cascade for every
+  non-global-admin user on any screen using the picker. Fixed via TDD
+  (`resolveEffectiveOrganizationId`); this was not caught by any prior review
+  pass, only by driving the UI as a scoped user.
+- **F1.9 (CSV/Excel telemetry bulk import) merged 2026-08-20** — PR
+  [#109](https://github.com/GhochangFu/EMS/pull/109): `POST
+  /admin/telemetry/import/preview` and `.../commit`, a pure row parser plus
+  asset-code resolution composed with the same shared write path,
+  scope-checked at both preview and commit so an out-of-scope `asset_code`
+  and a nonexistent one are indistinguishable. **Notable:** rebasing onto
+  ADR 0035's `xlsx` CDN pin (0.18.5 → 0.20.3) surfaced a second real bug —
+  `cellDates: true` silently shifted every imported timestamp by the host's
+  local UTC offset, for both CSV and genuine binary XLSX date cells, and
+  the existing "real Excel date cell" unit test missed it because its own
+  fixture builder wrote dates through the same buggy conversion on the write
+  side, cancelling the read-side bug out. Fixed by decoding date-typed cells
+  as raw numeric serials via `XLSX.SSF.parse_date_code` + `Date.UTC`, and
+  text cells via `Date.parse` — both host-timezone-independent. Confirmed
+  live: an explicit-offset timestamp uploaded through the real page landed
+  in the database at the exact correct UTC instant.
+- **Merge conflict:** #109 and #110 both independently edited
+  `apps/api/src/admin/admin.module.ts`, `packages/shared/src/index.ts`,
+  `vitest.config.ts` and `docs/BACKLOG.md` (each ratcheting coverage
+  thresholds from their own isolated measurement). Resolved by hand after
+  #110 merged first; coverage thresholds re-measured against the combined
+  codebase (94 files / 286 tests: 47.5/43.34/48.55/47.61%) rather than
+  trusting either PR's pre-merge number.
 - **Owed:** the companion ADR on location *depth* (`locations.parent_id`,
   `parent_asset_id`, and retiring the Eskom-era `locations.type` union). The
   design question is answered — subtree inheritance is in — and F4.10 carries an
