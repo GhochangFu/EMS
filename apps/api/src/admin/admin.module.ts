@@ -29,6 +29,8 @@ import { OrganizationsAdminService } from "./organizations/organizations.service
 import { RtusAdminController } from "./rtus/rtus.controller";
 import { RtusAdminService } from "./rtus/rtus.service";
 import { TelemetryWriteService } from "./telemetry-entry/telemetry-write.service";
+import { TelemetryImportController } from "./telemetry-import/telemetry-import.controller";
+import { TelemetryImportService } from "./telemetry-import/telemetry-import.service";
 
 @Module({
   imports: [VocabulariesModule],
@@ -42,6 +44,7 @@ import { TelemetryWriteService } from "./telemetry-entry/telemetry-write.service
     AssetTemplatesAdminController,
     AuditAdminController,
     OnboardingController,
+    TelemetryImportController,
   ],
   providers: [
     MasterDataAuditService,
@@ -63,6 +66,7 @@ import { TelemetryWriteService } from "./telemetry-entry/telemetry-write.service
     AssetTemplateInstantiationService,
     AuditAdminService,
     TelemetryWriteService,
+    TelemetryImportService,
   ],
 })
 export class AdminModule {}

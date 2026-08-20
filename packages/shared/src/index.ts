@@ -31,6 +31,7 @@ import type * as E from "./contracts/envelopes";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
 import type * as Te from "./contracts/telemetry-entry";
+import type * as Ti from "./contracts/telemetry-import";
 import { TELEMETRY_POINT_REF_SEP } from "./constants";
 
 /** Point-key catalogues and the `pointRef` separator — the non-contract half. */
@@ -216,6 +217,8 @@ export type WritableSourceKind = z.infer<typeof Te.writableSourceKindSchema>;
 export type TelemetryEntryRow = z.infer<typeof Te.telemetryEntryRowSchema>;
 export type RejectedRowDto = z.infer<typeof Te.rejectedRowDtoSchema>;
 export type TelemetryWriteResultDto = z.infer<typeof Te.telemetryWriteResultDtoSchema>;
+export type TelemetryImportPreviewDto = z.infer<typeof Ti.telemetryImportPreviewDtoSchema>;
+export type TelemetryImportCommitDto = z.infer<typeof Ti.telemetryImportCommitDtoSchema>;
 
 // ---------------------------------------------------------------------------
 // Audit reads (ADR 0021, `F4.14`)

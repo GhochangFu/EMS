@@ -40,6 +40,7 @@ import {
   createRtuBodySchema,
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
+import { telemetryImportOptionsBodySchema } from "../admin/telemetry-import/telemetry-import.schema";
 import { alarmAckBodySchema } from "../alarms/ack.schema";
 import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { loginBodySchema } from "../auth/login.schema";
@@ -130,6 +131,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   RulesController_publishRule: ruleLifecycleBodySchema,
   RulesController_setEnabled: ruleToggleBodySchema,
   RulesController_updateRule: ruleUpdateBodySchema,
+  TelemetryImportController_commit: telemetryImportOptionsBodySchema,
+  TelemetryImportController_preview: telemetryImportOptionsBodySchema,
   WorkOrdersController_close: closeWorkOrderBodySchema,
   WorkOrdersController_create: createWorkOrderBodySchema,
   WorkOrdersController_reorder: reorderWorkOrdersBodySchema,
