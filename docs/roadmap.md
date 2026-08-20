@@ -1640,6 +1640,69 @@ Process (`AGENTS.md` §10).
   (multi-variate anomaly detection), still `⬜`, so it stays blocked
   regardless.
 
+### Calculation formula DSL + definition schema (`F2.3`, ADR 0036) — done
+
+- **Status:** merged 2026-08-20 (PR #113).
+- **What it was.** `E1.7`/ADR 0019 left `kpis[].expression` as an opaque
+  string — `dialect: "unvalidated"` until a formula grammar existed to parse
+  it against — and `template_points` had no formula column at all, so a
+  derived point's *how* was undeclared. `F2.3` closes both gaps with one
+  grammar: `bms-calc-v1`, a hand-rolled scalar-arithmetic DSL (numbers,
+  `{pointKey}` brace references, `+ - * /`, parens, and five whitelisted
+  functions — `min`, `max`, `abs`, `round`, `clamp` — each with a fixed,
+  owner-ruled arity).
+- **No evaluator, on purpose.** This item defines and validates the grammar;
+  it computes nothing against live telemetry. That is `F2.4`'s scope, along
+  with what "the current value of `{X}`" means (latest sample vs. rolling
+  window) and null/stale-input/divide-by-zero handling.
+- **Parser lives in `packages/shared`, not `apps/api`.** Both the API
+  (write-time validation) and the future authoring UI (`F2.5`, live preview)
+  need the same grammar; a shared, hand-rolled parser avoids the duplication
+  ADR 0026 had to clean up for CSV escaping. No new npm dependency in any
+  workspace — `eval`/`new Function`/`vm` are never used, checked by a source
+  scan over the `calc-dsl` directory and independently confirmed by mutation
+  testing during review (a temporary `Function(...)` call was proven to fail
+  the guard, then removed).
+- **`template_points` gains two nullable columns**, `formula`/
+  `formula_dialect` — additive, forward-only, no `CHECK` constraint. The
+  `kind === "derived"` ⟺ `formula` present invariant is enforced at the Zod
+  layer instead, mirroring the existing `rtuId`/`locationId` exclusivity
+  precedent in the same schema file.
+- **A derived point may reference measured points only, never another
+  derived point — including itself.** Chaining would need dependency
+  ordering and cycle detection, which is execution-engine complexity `F2.4`
+  may or may not ever need; deciding it now would have been inventing
+  `F2.4`'s scope on its own behalf.
+- **Review found and fixed five issues, none Critical/High.** A numeric
+  literal long enough to overflow to `Infinity` passed silently (now caught
+  lexically); the no-eval regression test hardcoded its file/token list
+  rather than scanning the directory (a future `evaluator.ts` could have
+  slipped past it); a dead assertion inside an unreachable `catch`; the
+  parser's own `formatCalcError` renderer was written but not yet wired into
+  either validation site (fixed, so a malformed formula now names its real
+  `code`/`position` instead of one generic sentence per site); and two
+  overclaims in the ADR's Consequences section, narrowed during review rather
+  than left standing.
+- **Verified against the running stack, including a stale-container catch.**
+  Integration suites ran against the live database with real derived-point
+  fixtures, specifically covering `createDraftFrom` — the one write path that
+  passes raw `PointRow[]` and would otherwise silently drop the new columns
+  on "edit a published template". A follow-up live HTTP pass through the
+  user's already-authenticated browser session caught the running `api`
+  container serving code from *before* the review-round-2 fix commit — a
+  well-formed 400 with a plausible but stale error message, indistinguishable
+  from a real one without diffing the exact string against the source tree.
+  Rebuilt and restarted before trusting the result; all five scenarios
+  (valid create, malformed formula, unknown function, self-reference,
+  derived-referencing-derived) then matched the current code, and the test
+  rows were deleted afterward.
+- **Not included, by this repo's own convention:** the `chore(agents):`
+  sweep — AGENTS.md status line, §2/§3/§6, this file — is a separate
+  follow-up PR filed after merge, not bundled into the feature branch (see
+  `docs/BACKLOG.md` §5, "Owed `chore(agents):` promotions", ADR 0036 row).
+- **Unblocks `F2.4`** (calc execution engine), which lists `F2.3` as its only
+  dependency and is now eligible to start.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
