@@ -44,11 +44,19 @@ import pg from "pg";
  * refreshing a parent before its source materialises nothing.
  *
  * Scripts run with cwd = `packages/db` via `pnpm --filter @bms/db`.
+ *
+ * `loadEnv` runs inside `main()`, not here at module scope — `F1.8`/`F1.9`
+ * import {@link refreshAggregatesFrom} from `apps/api` for a targeted,
+ * already-bounded refresh after a write commits, and an import must not have
+ * the side effect of reading `.env` files relative to `process.cwd()` at
+ * whatever moment Nest happens to load this module. `main()` is the only
+ * caller that is genuinely a CLI entrypoint with no other config source.
  */
-const pkgRoot = process.cwd();
-
-loadEnv({ path: resolve(pkgRoot, "../../apps/api/.env") });
-loadEnv({ path: resolve(pkgRoot, ".env") });
+function loadCliEnv(): void {
+  const pkgRoot = process.cwd();
+  loadEnv({ path: resolve(pkgRoot, "../../apps/api/.env") });
+  loadEnv({ path: resolve(pkgRoot, ".env") });
+}
 
 /**
  * Coarsest last — a level refreshed before its source materialises nothing.
@@ -69,7 +77,7 @@ loadEnv({ path: resolve(pkgRoot, ".env") });
  * no refresh rebuilds them. Caught in review, not by a test; the probe suite now
  * covers two levels precisely because one level could not have caught it.
  */
-const LEVELS = [
+export const LEVELS = [
   { view: "telemetry.point_values_1m", source: { raw: "point_values" } },
   { view: "telemetry.point_values_5m", source: { aggregate: "point_values_1m" } },
   { view: "telemetry.point_values_1h", source: { aggregate: "point_values_5m" } },
@@ -108,18 +116,22 @@ const RETRY_DELAY_MS = 3_000;
  * a command that looks like it either works or doesn't. The conflict is transient
  * by construction: policy runs are short and bounded by their own `start_offset`.
  */
-async function refreshLevel(
-  client: pg.Client,
+export async function refreshLevel(
+  client: pg.Pool | pg.Client,
   view: string,
   from: Date | null,
+  to: Date | null = null,
 ): Promise<void> {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     try {
       // Lower-bounded at the level's own source floor, capped at `now()` — see
-      // `sourceFloor` and the loop in `main`.
+      // `sourceFloor` and the loop in `main`. `to` is `null` for every call
+      // `main()` makes, so `COALESCE` picks the SERVER's `now()` there,
+      // unchanged from before `to` existed. `refreshAggregatesFrom` is the
+      // only caller that ever passes a non-null `to`.
       await client.query(
-        `CALL refresh_continuous_aggregate('${view}', $1::timestamptz, now())`,
-        [from],
+        `CALL refresh_continuous_aggregate('${view}', $1::timestamptz, COALESCE($2::timestamptz, now()))`,
+        [from, to],
       );
       return;
     } catch (err: unknown) {
@@ -133,6 +145,96 @@ async function refreshLevel(
       );
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
     }
+  }
+}
+
+/**
+ * The margin subtracted from `from` before every refresh — not merely a
+ * floor applied when `from` sits close to `now()`. Two failure modes were
+ * measured 2026-08-20 against a live database, both against a plain
+ * `CALL refresh_continuous_aggregate(view, from, now())` with no margin:
+ *
+ * 1. `from` within roughly one bucket of `now()` raises
+ *    `ERROR: refresh window too small` outright.
+ * 2. `from` set to EXACTLY the target row's own timestamp — hours old, a
+ *    wide window by any reasonable measure — raises no error but silently
+ *    fails to materialize that row's bucket. A `from` comfortably earlier
+ *    than the target (even by as little as this level's own bucket width)
+ *    reliably does. Reproduced with a real `chw_flow_lps` reading:
+ *    `from = row.time` → bucket missing after a successful-looking `CALL`;
+ *    `from = row.time - 2 minutes` → bucket present.
+ *
+ * Both are cured by the same fix: always place `from` at least one bucket
+ * width before the earliest instant it needs to cover, never exactly at it.
+ */
+const REFRESH_MARGIN_MS: Readonly<Record<(typeof LEVELS)[number]["view"], number>> = {
+  "telemetry.point_values_1m": 2 * 60_000,
+  "telemetry.point_values_5m": 2 * 5 * 60_000,
+  "telemetry.point_values_1h": 2 * 60 * 60_000,
+  "telemetry.point_values_1d": 2 * 24 * 60 * 60_000,
+};
+
+/**
+ * Refreshes all four ADR 0023 levels over `[from, to]`, finest-first.
+ *
+ * For a single, already-bounded window — one write batch, not `main()`'s
+ * unbounded historical backfill — so unlike `main()` this does not derive a
+ * per-level floor from {@link sourceFloor}. A caller here already knows `from`
+ * sits inside raw's own retention (`F1.8`/`F1.9` reject any row older than
+ * `RAW_RETENTION_DAYS` before it can reach this), so the floor safety that
+ * exists to stop an unbounded run destroying archived aggregate history does
+ * not apply to a range that was never unbounded.
+ *
+ * **`to` defaults to `now()` but is capped at it, never exceeds it** — a
+ * batch's own `to` (typically its latest written row) is normally far
+ * earlier than `now()`, so the cap is what actually governs. Capping matters
+ * because `refreshLevel`'s own docstring already records what an
+ * unclamped-into-the-future watermark does: it parks the watermark ahead of
+ * the present, and the real-time branch — ADR 0023 decision 4 — covers
+ * nothing for the whole gap behind it.
+ *
+ * **A single row's `from === to` no longer forces a years-wide recompute.**
+ * Before this, `to` was hardcoded to `now()` regardless of the batch's own
+ * span — a one-row batch backdated near `RAW_RETENTION_DAYS` (730 days)
+ * refreshed a 730-day, four-level window synchronously in the request. `to`
+ * now follows the batch instead, so the refreshed span is the batch's own
+ * width, not "the batch's start to whenever this request happened to run."
+ *
+ * **Both `from` and `to` carry {@link REFRESH_MARGIN_MS} of margin, pushed
+ * in opposite directions** — `from` earlier, `to` later — never landing
+ * exactly on the caller's own bound. A window merely *wide enough* was not
+ * sufficient: `from = target - margin, to = target` (target sitting exactly
+ * on the trailing edge) reproduced the identical silent-no-materialize
+ * failure the leading-edge case did. Pushing `to` forward by the same
+ * margin (capped at `Date.now()`, so it cannot end up in the future — see
+ * `refreshLevel`'s own comment on why that must never happen) reliably
+ * clears it; reproduced and verified 2026-08-20 against a live database
+ * before landing this shape.
+ *
+ * **Why symmetric margin fixes it: TimescaleDB inscribes the refresh window
+ * in whole buckets** — `window_start` rounds UP to the next bucket boundary,
+ * `window_end` rounds DOWN to the previous one. A `to` sitting exactly at
+ * the target's own bucket rounds `window_end` DOWN past it, excluding the
+ * very bucket the caller needed — the same mechanism as failure mode 2
+ * above, just at the opposite edge. This is why the margin must be applied
+ * at BOTH ends, not just widened at one: "wide enough" and "landing inside a
+ * bucket rather than exactly on its boundary" are different properties, and
+ * only the second one is what TimescaleDB actually requires. Simplifying
+ * `to.getTime() + margin` back down to `to.getTime()` silently un-
+ * materialises every backfilled bucket again — this is the one property in
+ * this file an integration assertion, not a type, stands between and a
+ * green build.
+ */
+export async function refreshAggregatesFrom(
+  client: pg.Pool | pg.Client,
+  from: Date,
+  to: Date = new Date(),
+): Promise<void> {
+  for (const { view } of LEVELS) {
+    const margin = REFRESH_MARGIN_MS[view];
+    const widenedFrom = new Date(from.getTime() - margin);
+    const widenedTo = new Date(Math.min(to.getTime() + margin, Date.now()));
+    await refreshLevel(client, view, widenedFrom, widenedTo);
   }
 }
 
@@ -203,6 +305,7 @@ function sourceName(source: LevelSource): string {
 }
 
 async function main(): Promise<void> {
+  loadCliEnv();
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required to refresh aggregates");
@@ -307,7 +410,22 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err: unknown) => {
-  console.error(err);
-  process.exit(1);
-});
+/**
+ * Runs `main()` only when this file is the CLI entrypoint (`pnpm
+ * db:refresh-aggregates`), not merely imported — `apps/api` imports
+ * {@link refreshAggregatesFrom} from this module, and an import must never
+ * have the side effect of running the unbounded historical backfill against
+ * whatever `DATABASE_URL` the importing process happens to have.
+ *
+ * `require.main === module`, not `import.meta.url`: this package builds to
+ * CommonJS (`tsconfig.build.json`), and `import.meta` does not compile under
+ * `module: "CommonJS"`. `tsx` also runs this file as CommonJS by default —
+ * `package.json` carries no `"type": "module"` — so the same guard is correct
+ * for both the CLI run and the compiled `dist/` import.
+ */
+if (require.main === module) {
+  main().catch((err: unknown) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

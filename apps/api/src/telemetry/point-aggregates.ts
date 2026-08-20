@@ -54,6 +54,19 @@ const RETENTION_DAYS: Record<AggregateLevel, number | null> = {
   "1d": null, // likewise.
 };
 
+/**
+ * Raw `telemetry.point_values`' own retention horizon, in days — migration
+ * `0028`'s `drop_after` on raw. `tests/adr-0024-retention-bounds.test.ts`
+ * asserts this equals what the migration parses to, the same way
+ * `RETENTION_DAYS` above is guarded against `0028`'s aggregate policies.
+ *
+ * Owed by `F1.8`/`F1.9` (backlog): their write path must reject a reading
+ * older than this before it lands, rather than accept one that the next
+ * retention run silently deletes — "the import worked and the data vanished
+ * four days later" is a worse failure than a rejection at write time.
+ */
+export const RAW_RETENTION_DAYS = 730;
+
 /** Bucket width in seconds — used to convert an average kW into kWh. */
 const BUCKET_SECONDS: Record<AggregateLevel, number> = {
   "1m": 60,

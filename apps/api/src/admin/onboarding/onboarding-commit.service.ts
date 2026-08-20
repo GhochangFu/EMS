@@ -264,13 +264,16 @@ export class OnboardingCommitService {
         })
         .where(eq(onboardingSessions.id, sessionId));
 
-      await this.audit.write({
-        actor: jwt,
-        action: "master.onboarding.commit",
-        entityType: "onboarding_session",
-        entityId: sessionId,
-        payload: result,
-      });
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.onboarding.commit",
+          entityType: "onboarding_session",
+          entityId: sessionId,
+          payload: result,
+        },
+        tx,
+      );
 
       const [org] = await tx
         .select({ code: organizations.code })
@@ -278,13 +281,16 @@ export class OnboardingCommitService {
         .where(eq(organizations.id, session.organizationId))
         .limit(1);
 
-      await this.audit.write({
-        actor: jwt,
-        action: "master.location.create",
-        entityType: "location",
-        entityId: locationRow.id,
-        payload: { orgCode: org?.code, via: "onboarding" },
-      });
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.location.create",
+          entityType: "location",
+          entityId: locationRow.id,
+          payload: { orgCode: org?.code, via: "onboarding" },
+        },
+        tx,
+      );
 
       return {
         sessionId,

@@ -176,4 +176,65 @@ describe("ADR 0018 — source axis separation", () => {
     ).not.toMatch(/innerJoin\(rtus/);
     expect(service).toMatch(/leftJoin\(rtus/);
   });
+
+  it("exposes source_kind as a Zod enum matching the CHECK constraint (owed by F1.8/F1.9)", () => {
+    // ADR 0018's own "Risk accepted" section: source_kind is enforced by a
+    // CHECK constraint, not by Zod at the controller boundary, and "adding a
+    // schema-level enum is owed when F1.8/F1.9 expose the field to callers."
+    // This is that enum. A value present in one and not the other is exactly
+    // the drift a hand-maintained pair invites — so both are parsed from their
+    // own source of truth and compared, rather than one hard-coding the other's
+    // list.
+    const migration = read("packages/db/drizzle/0023_source_axis_separation.sql");
+    const checkMatch = migration.match(
+      /asset_points_source_kind_check\s+CHECK \(source_kind IN \(([^)]+)\)\)/,
+    );
+    if (!checkMatch) {
+      throw new Error("could not find asset_points_source_kind_check in migration 0023");
+    }
+    const fromMigration = new Set(
+      checkMatch[1].split(",").map((s) => s.trim().replace(/^'|'$/g, "")),
+    );
+
+    const contract = read("packages/shared/src/contracts/telemetry-entry.ts");
+    const enumMatch = contract.match(
+      /pointSourceKindSchema = z\.enum\(\[([^\]]+)\]\)/,
+    );
+    if (!enumMatch) {
+      throw new Error(
+        "packages/shared/src/contracts/telemetry-entry.ts must export " +
+          "pointSourceKindSchema = z.enum([...]) with the four source_kind values",
+      );
+    }
+    const fromContract = new Set(
+      enumMatch[1].split(",").map((s) => s.trim().replace(/^"|"$/g, "")),
+    );
+
+    expect(
+      [...fromContract].sort(),
+      "pointSourceKindSchema must list exactly the CHECK's four values, no more, no fewer",
+    ).toEqual([...fromMigration].sort());
+
+    // The vocabulary a caller may WRITE excludes 'measured' — the API cannot
+    // supply the rtu_id source_kind_check requires it to carry, so admitting
+    // it would turn a 400 that names the options into a 500 from
+    // asset_points_source_ref_check.
+    expect(
+      contract,
+      "writableSourceKindSchema must derive from pointSourceKindSchema via .extract(), " +
+        "not restate the list, and must exclude 'measured'",
+    ).toMatch(
+      /writableSourceKindSchema = pointSourceKindSchema\.extract\(\[[^\]]*"manual"[^\]]*"unmapped"[^\]]*\]\)/,
+    );
+    // Scoped to the single statement, not "the rest of the file" — a bare
+    // `[\s\S]*?` here would fire on the NEXT `.extract(["measured", ...])`
+    // anyone writes below this line (there is already one, in admin.ts),
+    // blaming writableSourceKindSchema for a match that has nothing to do
+    // with it.
+    const statementMatch = contract.match(/writableSourceKindSchema = [^\n]+;/);
+    if (!statementMatch) {
+      throw new Error("could not find the writableSourceKindSchema statement to check");
+    }
+    expect(statementMatch[0]).not.toContain('"measured"');
+  });
 });

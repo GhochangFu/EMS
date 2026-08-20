@@ -9,6 +9,8 @@
  */
 import { z } from "zod";
 
+import { pointSourceKindSchema } from "./telemetry-entry";
+
 export const masterDataActiveFilterSchema = z.enum(["true", "false", "all"]);
 
 export const adminOrganizationDtoSchema = z.object({
@@ -89,6 +91,8 @@ export const adminAssetPointDtoSchema = z.object({
   sensorCode: z.string().nullable(),
   unit: z.string().nullable(),
   active: z.boolean(),
+  /** ADR 0018 — where this point's provenance comes from. */
+  sourceKind: pointSourceKindSchema,
   createdAt: z.string(),
 });
 
@@ -274,9 +278,27 @@ export const assetInstantiationResultDtoSchema = z.object({
   templateVersion: z.number(),
   locationId: z.string(),
   rtuId: z.string().nullable(),
-  /** `measured` when instantiated through an RTU, `unmapped` through a location. */
-  sourceKind: z.enum(["measured", "unmapped"]),
+  /**
+   * `measured` when instantiated through an RTU, `unmapped` through a
+   * location. `.extract()` off `pointSourceKindSchema` (ADR 0018 §4.8) so this
+   * narrow, two-value vocabulary derives from the wide one by construction
+   * rather than by a second hand-maintained list that could drift from it.
+   */
+  sourceKind: pointSourceKindSchema.extract(["measured", "unmapped"]),
   assets: z.array(instantiatedAssetDtoSchema),
   assetCount: z.number(),
   pointCount: z.number(),
 });
+
+// Compile-time guard: the narrowing above must still describe exactly
+// "measured" | "unmapped" — not silently widen if `.extract()`'s argument
+// list is ever edited without checking what depends on the result.
+type AssertAssignable<A extends B, B> = A;
+export type AssetInstantiationSourceKindMatchesExpected = AssertAssignable<
+  z.infer<typeof assetInstantiationResultDtoSchema>["sourceKind"],
+  "measured" | "unmapped"
+>;
+export type ExpectedMatchesAssetInstantiationSourceKind = AssertAssignable<
+  "measured" | "unmapped",
+  z.infer<typeof assetInstantiationResultDtoSchema>["sourceKind"]
+>;
