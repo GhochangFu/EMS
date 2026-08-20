@@ -288,11 +288,27 @@ export default defineConfig({
       // merge; re-measured after resolving the merge conflicts, against the
       // live database, all 94 files / 286 tests running and none skipped:
       // 47.5 statements · 43.34 branches · 48.55 functions · 47.61 lines.
+      //
+      // Ratcheted by `F2.3` (calc formula DSL + definition schema, ADR 0036)
+      // from 47.2/43.0/48.2/47.3. Measured 2026-08-20 against the live
+      // database, all 97 files / 293 tests running and none skipped:
+      // 47.96 statements · 44.03 branches · 49.11 functions · 48.05 lines.
+      //
+      // The rise is the API-side surface this item added: the
+      // templatePointBodySchema/templatePointsBodySchema formula rules and
+      // the templateKpiSchema dialect-widening cross-check, exercised by the
+      // schema specs and by both asset-templates integration suites'
+      // derived-point fixtures. The bms-calc-v1 parser itself
+      // (packages/shared/src/calc-dsl) is NOT in this denominator — `include`
+      // reaches apps/api/src, apps/web/src/lib and apps/ingest/src only, the
+      // same effect this file's `F1.1` entry above records for anything
+      // moved into packages/*. Its own test project (`packages/shared`) is
+      // what proves those tests run; see that project's vitest.config.ts.
       thresholds: {
-        statements: 47.2,
-        branches: 43.0,
-        functions: 48.2,
-        lines: 47.3,
+        statements: 47.6,
+        branches: 43.7,
+        functions: 48.8,
+        lines: 47.7,
       },
     },
   },
