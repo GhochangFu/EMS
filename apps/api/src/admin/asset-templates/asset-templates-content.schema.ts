@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { alarmSkillCodeSchema } from "@bms/shared";
+import { alarmSkillCodeSchema, CALC_DIALECT, MAX_FORMULA_POINT_REFS, validateFormula } from "@bms/shared";
 import type { TemplateContent } from "@bms/shared";
 
 import {
@@ -27,9 +27,10 @@ export const skillSchema = alarmSkillCodeSchema;
  *   (`E2.1`), importing from `@bms/shared` directly rather than through
  *   `rules.schema` — a skill is not a rule concern.
  * - **Anchored** — the consumer is unbuilt but the *references* are checkable
- *   today. `kpis.expression` is opaque behind a `dialect` discriminator because
- *   `F2.3` owns formula syntax; `dashboards` carries ordering and nothing else
- *   because `F3.1` owns the widget vocabulary.
+ *   today. `kpis.expression` is validated under `bms-calc-v1` (ADR 0036,
+ *   `F2.3`) when `dialect` says so, and stays opaque behind `"unvalidated"`
+ *   for content written before that grammar existed; `dashboards` carries
+ *   ordering and nothing else because `F3.1` owns the widget vocabulary.
  * - **Reserved** — `health` and `optimisation` are rejected, each naming its own
  *   blocking item. A reserved key that is silently accepted lets `E5.1` author a
  *   shape `F3.1`/`E1.1` will contradict, and the contradiction surfaces a year
@@ -124,7 +125,8 @@ const safeKeySchema = z
 const MAX_SECTION_ENTRIES = 200;
 const MAX_DASHBOARD_VIEWS = 20;
 const MAX_FEATURED_POINTS = 50;
-const MAX_KPI_POINT_REFS = 20;
+// ADR 0036 decision 8: reused, not restated, so the two numbers cannot drift.
+const MAX_KPI_POINT_REFS = MAX_FORMULA_POINT_REFS;
 
 /**
  * Keys that will mean something later and mean nothing now. Each names its own
@@ -173,8 +175,14 @@ const templateAlarmSchema = z
 
 /**
  * `pointKeys` is separate from `expression` on purpose: it is what makes the
- * reference check possible without a formula parser, which is exactly the thing
- * `F2.3` has not built yet.
+ * reference check possible. Historically that was "possible without a formula
+ * parser" — `F2.3` had not built one yet. Now that it has (ADR 0036),
+ * `dialect: "bms-calc-v1"` turns `pointKeys` from an unverified bookkeeping
+ * array into a real two-way cross-check: every `{ref}` in `expression` must
+ * appear in `pointKeys`, and every entry in `pointKeys` must be used. A KPI
+ * left at `dialect: "unvalidated"` still validates exactly as before —
+ * nothing here forces a migration of stored content; re-validation only
+ * happens on the next author write.
  */
 const templateKpiSchema = z
   .object({
@@ -183,12 +191,42 @@ const templateKpiSchema = z
     unit: z.string().max(32).optional(),
     pointKeys: z.array(pointKeyRef).min(1).max(MAX_KPI_POINT_REFS),
     expression: z.string().min(1).max(1000),
-    /** `F2.3` adds its own value beside this one and migrates on its own
-     * schedule. Until then no expression claims to have been validated. */
-    dialect: z.literal("unvalidated"),
+    dialect: z.enum(["unvalidated", CALC_DIALECT]),
     higherIsBetter: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((kpi, ctx) => {
+    if (kpi.dialect !== CALC_DIALECT) {
+      return;
+    }
+    const result = validateFormula(kpi.expression, kpi.pointKeys);
+    if (!result.ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["expression"],
+        message: "This KPI's expression is invalid, or references a point key not in pointKeys",
+      });
+      return;
+    }
+    // The other direction — every `{ref}` in `expression` resolves to a
+    // declared key — was already checked by `validateFormula` above
+    // (`unknown_reference` fails it). This is only the reverse: a declared
+    // key the expression never uses.
+    const used = new Set(result.refs);
+    const unused = kpi.pointKeys.filter((key) => !used.has(key));
+    if (unused.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["pointKeys"],
+        message: "Every entry in pointKeys must be referenced by expression at least once",
+      });
+    }
+  })
+  .describe(
+    'When dialect is "bms-calc-v1", expression is parsed under bms-calc-v1 and rejected on ' +
+      "syntax error or unknown function; pointKeys must equal exactly the set of point " +
+      'references the expression uses. A "unvalidated" KPI is not parsed.',
+  );
 
 /** `createMaintenanceScheduleBodySchema` minus the two fields only an instance
  * can know (`assetId`, `firstDueAt`). */
