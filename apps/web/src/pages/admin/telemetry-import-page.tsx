@@ -40,7 +40,13 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
       setCommitResult(null);
       setError(null);
     },
-    onError: (err: Error) => setError(err.message),
+    onError: (err: Error) => {
+      // A failed re-preview (new file, changed options) must not leave the
+      // PRIOR preview on screen with Commit still enabled — that preview
+      // describes a file/options combination this attempt just replaced.
+      setPreview(null);
+      setError(err.message);
+    },
   });
 
   const commitMutation = useMutation({
