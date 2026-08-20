@@ -40,6 +40,7 @@ import {
   createRtuBodySchema,
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
+import { manualReadingsBodySchema } from "../admin/telemetry-entry/manual-readings.schema";
 import { alarmAckBodySchema } from "../alarms/ack.schema";
 import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { loginBodySchema } from "../auth/login.schema";
@@ -118,6 +119,7 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   MaintenanceController_createSchedule: createMaintenanceScheduleBodySchema,
   MaintenanceController_listSchedules: listMaintenanceQuerySchema,
   MaintenanceController_updateSchedule: updateMaintenanceScheduleBodySchema,
+  ManualReadingsController_create: manualReadingsBodySchema,
   OnboardingController_chat: chatBodySchema,
   OnboardingController_createSession: createSessionBodySchema,
   OnboardingController_patchDraft: patchDraftBodySchema,

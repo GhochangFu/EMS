@@ -25,6 +25,7 @@ import { AdminHubPage } from "./pages/admin/admin-hub-page";
 import { AssetPointsAdminPage } from "./pages/admin/asset-points-page";
 import { AssetsAdminPage } from "./pages/admin/assets-page";
 import { LocationsAdminPage } from "./pages/admin/locations-page";
+import { ManualReadingsPage } from "./pages/admin/manual-readings-page";
 import { OrganizationsAdminPage } from "./pages/admin/organizations-page";
 import { OnboardingChatPage } from "./pages/admin/onboarding-chat-page";
 import { PointKeysAdminPage } from "./pages/admin/point-keys-page";
@@ -390,6 +391,18 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <AssetPointsAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/manual-readings"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <ManualReadingsPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

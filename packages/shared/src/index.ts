@@ -217,6 +217,8 @@ export type WritableSourceKind = z.infer<typeof Te.writableSourceKindSchema>;
 export type TelemetryEntryRow = z.infer<typeof Te.telemetryEntryRowSchema>;
 export type RejectedRowDto = z.infer<typeof Te.rejectedRowDtoSchema>;
 export type TelemetryWriteResultDto = z.infer<typeof Te.telemetryWriteResultDtoSchema>;
+/** The full write-response envelope returned by the F1.8/F1.9 write endpoints. */
+export type TelemetryWriteResponse = z.infer<typeof Te.telemetryWriteResponseSchema>;
 export type TelemetryImportPreviewDto = z.infer<typeof Ti.telemetryImportPreviewDtoSchema>;
 export type TelemetryImportCommitDto = z.infer<typeof Ti.telemetryImportCommitDtoSchema>;
 

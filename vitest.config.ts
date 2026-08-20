@@ -281,20 +281,17 @@ export default defineConfig({
       // `philosophy.skill` tightening, `AlarmDetailsService` and
       // `AlarmEnrichmentService`.
       //
-      // Ratcheted by `F1.9` (CSV/Excel telemetry bulk import) from
-      // 43.0/39.1/44.8/43.2. Measured 2026-08-20 against the live database,
-      // all 90 test files running and none skipped: 46.63 statements ·
-      // 42.2 branches · 47.67 functions · 46.73 lines (90 files / 273 tests).
-      // The rise is new coverage: the pure parser `telemetry-import-rows.ts`,
-      // `telemetry-import.schema.ts`, `TelemetryImportService`'s integration
-      // suite (asset-code resolution, the preview/commit split, and the
-      // non-disclosure property), and the web `telemetry-import-preview.ts`
-      // formatter.
+      // Ratcheted by `F1.8` (manual telemetry entry) + `F1.9` (CSV/Excel
+      // telemetry bulk import) landing together, from 43.0/39.1/44.8/43.2.
+      // The two PRs each measured their own delta in isolation before this
+      // merge; re-measured after resolving the merge conflicts, against the
+      // live database, all 94 files / 286 tests running and none skipped:
+      // 47.5 statements · 43.34 branches · 48.55 functions · 47.61 lines.
       thresholds: {
-        statements: 46.4,
-        branches: 41.9,
-        functions: 47.4,
-        lines: 46.5,
+        statements: 47.2,
+        branches: 43.0,
+        functions: 48.2,
+        lines: 47.3,
       },
     },
   },

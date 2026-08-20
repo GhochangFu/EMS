@@ -28,6 +28,7 @@ import { OrganizationsAdminController } from "./organizations/organizations.cont
 import { OrganizationsAdminService } from "./organizations/organizations.service";
 import { RtusAdminController } from "./rtus/rtus.controller";
 import { RtusAdminService } from "./rtus/rtus.service";
+import { ManualReadingsController } from "./telemetry-entry/manual-readings.controller";
 import { TelemetryWriteService } from "./telemetry-entry/telemetry-write.service";
 import { TelemetryImportController } from "./telemetry-import/telemetry-import.controller";
 import { TelemetryImportService } from "./telemetry-import/telemetry-import.service";
@@ -44,6 +45,7 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     AssetTemplatesAdminController,
     AuditAdminController,
     OnboardingController,
+    ManualReadingsController,
     TelemetryImportController,
   ],
   providers: [

@@ -49,6 +49,7 @@ export const masterDataTabs = [
   { label: "RTUs", path: "/admin/rtus" },
   { label: "Assets", path: "/admin/assets" },
   { label: "Asset Points", path: "/admin/asset-points" },
+  { label: "Manual Entry", path: "/admin/manual-readings" },
   { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
   { label: "Import Telemetry", path: "/admin/telemetry/import" },
 ] as const;

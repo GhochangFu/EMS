@@ -369,6 +369,12 @@ export class TelemetryWriteService {
               sourceKind: input.sourceKind,
               conflictPolicy: input.conflictPolicy,
               rowCount: forAsset.length,
+              // Names which point(s) were written, not just the asset and a
+              // count — without it, an overwrite is traceable to "this
+              // asset, this time window" but not to "this point". Bounded by
+              // the row cap (50 for manual entry, 20,000 for import), same
+              // as rejectedRowNumbers below.
+              pointKeys: [...new Set(forAsset.map((a) => a.row.pointKey))],
               firstTime: sortedTimes[0] ?? null,
               lastTime: sortedTimes.at(-1) ?? null,
               rejectedRowNumbers: rejected.slice(0, 20).map((r) => r.rowNumber),
