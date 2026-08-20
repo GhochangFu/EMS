@@ -80,6 +80,51 @@ export function runTelemetryImportRowsTests(): void {
     );
   }
 
+  // ---- a locale-ambiguous CSV date is rejected, not silently misparsed (C-AMBIG) --
+  // SheetJS's CSV reader guesses date-like text into a numeric serial even
+  // without `cellDates: true` — and "03/08/2026" is guessed MONTH-FIRST
+  // (US convention), so if this were ever trusted as a genuine date serial
+  // it would silently store 8 March instead of 3 August. Must fail closed.
+
+  const ambiguousSlashCsv = buildWorkbookBuffer(
+    [HEADER, ["F19-ASSET-1", "kw", 12.5, "kW", "03/08/2026 10:00"]],
+    "csv",
+  );
+  const ambiguousSlashResult = parseWorkbook(ambiguousSlashCsv);
+  assert(ambiguousSlashResult.ok, "an ambiguous-date CSV must not fail the whole file");
+  if (ambiguousSlashResult.ok) {
+    assert(ambiguousSlashResult.rows.length === 0, "a locale-ambiguous date must not be silently accepted");
+    assert(ambiguousSlashResult.rejected[0]?.field === "time", "the rejection must name the time field");
+  }
+
+  const ambiguousDashCsv = buildWorkbookBuffer(
+    [HEADER, ["F19-ASSET-1", "kw", 12.5, "kW", "03-08-2026 10:00"]],
+    "csv",
+  );
+  const ambiguousDashResult = parseWorkbook(ambiguousDashCsv);
+  assert(ambiguousDashResult.ok, "an ambiguous-date CSV must not fail the whole file");
+  if (ambiguousDashResult.ok) {
+    assert(ambiguousDashResult.rows.length === 0, "a locale-ambiguous dash-separated date must not be silently accepted");
+  }
+
+  // ---- a CSV time cell with no zone is still asserted UTC, not host-local ---
+  // Bare ISO text with no offset gets SheetJS-guessed into a numeric serial
+  // too (unlike the unambiguous-day case above) — must decode as UTC, the
+  // same convention as every other case, not the host's local offset.
+
+  const bareIsoCsv = buildWorkbookBuffer(
+    [HEADER, ["F19-ASSET-1", "kw", 12.5, "kW", "2026-08-19T10:00:00"]],
+    "csv",
+  );
+  const bareIsoResult = parseWorkbook(bareIsoCsv);
+  assert(bareIsoResult.ok, "a bare (no-zone) ISO CSV timestamp must parse");
+  if (bareIsoResult.ok) {
+    assert(
+      bareIsoResult.rows[0]?.time === "2026-08-19T10:00:00.000Z",
+      `expected time 2026-08-19T10:00:00.000Z, got ${bareIsoResult.rows[0]?.time}`,
+    );
+  }
+
   // ---- a good XLSX file parses cleanly, same shape as CSV --------------------
 
   const goodXlsx = buildWorkbookBuffer(
@@ -225,9 +270,9 @@ export function runTelemetryImportRowsTests(): void {
 
   // ---- a real Excel date-time cell (not a string) parses correctly (C1) -----
   // A cell where the user picked a date/time in Excel comes back from
-  // `XLSX.read` as a numeric serial UNLESS `cellDates: true` is set, and
-  // `Date.parse(String(serial))` is always NaN — every such row would
-  // wrongly reject as "time must be a parsable timestamp".
+  // `XLSX.read` as a numeric serial, decoded via `parse_date_code` — only
+  // trusted for a genuine binary workbook (`isBinarySpreadsheet`), unlike
+  // the CSV numeric-guess cases above.
 
   const realDateTime = new Date(Date.UTC(2026, 7, 19, 10, 30, 0));
   const dateTimeCellResult = parseWorkbook(
