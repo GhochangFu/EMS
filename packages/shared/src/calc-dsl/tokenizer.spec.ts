@@ -67,6 +67,11 @@ export function runTokenizerTests(): void {
   expectFailCode(".5", "malformed_number", "a leading dot with no leading digit must fail");
   expectFailCode("1e3", "malformed_number", "the exponent form is out of grammar");
 
+  // a long enough digit run overflows to Infinity — CalcNumber.value: number
+  // promises a real number to every consumer of the AST, so this must be
+  // caught lexically rather than silently producing a non-finite literal
+  expectFailCode("9".repeat(400), "malformed_number", "a digit run overflowing to Infinity must fail");
+
   // ---- unary minus is not part of the number literal ---------------------------
 
   const negative = tokenize("-5");

@@ -119,7 +119,14 @@ export function tokenize(expression: string): Token[] {
         fail("malformed_number", start);
       }
       const text = expression.slice(start, j);
-      tokens.push({ kind: "number", position: start, text, numberValue: Number(text) });
+      const numberValue = Number(text);
+      // A long enough run of digits overflows to Infinity — still a "number"
+      // syntactically, but CalcNumber.value: number promises a real one to
+      // every downstream consumer (F2.4's evaluator, F2.5's AST preview).
+      if (!Number.isFinite(numberValue)) {
+        fail("malformed_number", start);
+      }
+      tokens.push({ kind: "number", position: start, text, numberValue });
       i = j;
       continue;
     }
