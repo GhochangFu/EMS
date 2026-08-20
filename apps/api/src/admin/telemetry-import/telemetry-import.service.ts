@@ -85,17 +85,15 @@ export class TelemetryImportService {
 
     const { result, rejected: writeRejected } = await this.writeService.writeReadings(jwt, {
       rows: resolved.map((r) => r.row),
+      // `resolved` is NOT in original-sheet order once out-of-scope/
+      // nonexistent asset codes have been filtered out above — supplying
+      // the sheet's own row numbers keeps every rejection `writeReadings`
+      // produces, including a duplicate's `reason` text, in the number the
+      // operator actually sees, with no after-the-fact translation needed.
+      rowNumbers: resolved.map((r) => r.rowNumber),
       sourceKind: opts.sourceKind,
       conflictPolicy: opts.conflictPolicy,
       auditAction: "telemetry.import",
-    });
-
-    // `writeReadings` numbers `rejected[].rowNumber` as a 1-based index into
-    // the `rows` array it was handed — not the original file. Translate
-    // back to the row number the operator actually sees in the sheet.
-    const remapped: RejectedRowDto[] = writeRejected.map((r) => {
-      const original = resolved[r.rowNumber - 1];
-      return { ...r, rowNumber: original ? original.rowNumber : r.rowNumber };
     });
 
     // `result.skipped` (from `writeReadings`) only counts rows rejected
@@ -104,7 +102,7 @@ export class TelemetryImportService {
     // them. Recompute from the full merged list so `skipped` and
     // `rejected.length` always agree, however many stages a row's
     // rejection came from.
-    const rejected = this.mergeRejected(parsed.rejected, resolutionRejected, remapped);
+    const rejected = this.mergeRejected(parsed.rejected, resolutionRejected, writeRejected);
 
     return {
       ...result,
