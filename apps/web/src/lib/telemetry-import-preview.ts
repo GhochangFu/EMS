@@ -54,3 +54,21 @@ export function summarizeCommit(dto: TelemetryImportCommitDto): string {
   }
   return `${parts.join(", ")}.`;
 }
+
+/**
+ * Turns a non-OK upload response into a message worth showing an operator.
+ *
+ * A 413 is special-cased: `FileInterceptor`'s own `limits.fileSize` rejects
+ * an oversize upload at the Multer layer, before the controller or any Zod
+ * validation runs, so its body is not this app's usual JSON error shape —
+ * showing it raw would be a framework error page, not a sentence about the
+ * 5 MB cap. Every other status passes its body text through unchanged (it
+ * is one of this app's own `BadRequestException`/`ForbiddenException`
+ * messages), falling back to a generic line only when the body is empty.
+ */
+export function describeImportUploadError(status: number, bodyText: string): string {
+  if (status === 413) {
+    return "File is too large — the limit is 5 MB.";
+  }
+  return bodyText.trim() || `Import failed (${status}).`;
+}

@@ -7,6 +7,7 @@ import type { TelemetryImportCommitDto, TelemetryImportPreviewDto } from "@bms/s
 import { clearSessionOnAuthFailure } from "../http";
 import { readJson } from "../validate";
 import { getAdminAuthHeaders } from "./client";
+import { describeImportUploadError } from "../../lib/telemetry-import-preview";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -36,8 +37,7 @@ export async function previewTelemetryImport(
   });
   if (!res.ok) {
     clearSessionOnAuthFailure(res);
-    const text = await res.text();
-    throw new Error(text || `admin telemetry import preview ${res.status}`);
+    throw new Error(describeImportUploadError(res.status, await res.text()));
   }
   return readJson(res, telemetryImportPreviewDtoSchema, "admin telemetry import preview");
 }
@@ -55,8 +55,7 @@ export async function commitTelemetryImport(
   });
   if (!res.ok) {
     clearSessionOnAuthFailure(res);
-    const text = await res.text();
-    throw new Error(text || `admin telemetry import commit ${res.status}`);
+    throw new Error(describeImportUploadError(res.status, await res.text()));
   }
   return readJson(res, telemetryImportCommitDtoSchema, "admin telemetry import commit");
 }

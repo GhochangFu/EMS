@@ -1,6 +1,11 @@
 import type { RejectedRowDto, TelemetryImportCommitDto, TelemetryImportPreviewDto } from "@bms/shared";
 
-import { groupRejectionsByReason, summarizeCommit, summarizePreview } from "./telemetry-import-preview";
+import {
+  describeImportUploadError,
+  groupRejectionsByReason,
+  summarizeCommit,
+  summarizePreview,
+} from "./telemetry-import-preview";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -119,5 +124,37 @@ export function runSummarizeCommitTests(): void {
     summarizeCommit(commit({ written: 0, rejected: [rejection({ rowNumber: 1 }), rejection({ rowNumber: 2 })] })) ===
       "Wrote 0 readings, 2 rows rejected.",
     "an all-rejected commit must still summarise cleanly",
+  );
+}
+
+/**
+ * Coverage for `describeImportUploadError` (FG4) — a 413 never reaches this
+ * repo's usual JSON-body error path (`FileInterceptor`'s own `fileSize`
+ * limit rejects an oversize upload at the Multer layer, before any handler
+ * or Zod validation runs), so its body is not the app's usual JSON error
+ * shape and needs its own friendly message rather than showing the raw text.
+ */
+export function runDescribeImportUploadErrorTests(): void {
+  assert(
+    describeImportUploadError(413, "") === "File is too large — the limit is 5 MB.",
+    `unexpected 413 message: "${describeImportUploadError(413, "")}"`,
+  );
+
+  // Even if a 413 body happens to carry text, the friendly message wins —
+  // that text is not this app's JSON error shape and should not be shown.
+  assert(
+    describeImportUploadError(413, "<html>Request Entity Too Large</html>") ===
+      "File is too large — the limit is 5 MB.",
+    "a 413 must always use the friendly message, regardless of its raw body",
+  );
+
+  assert(
+    describeImportUploadError(400, "Missing required column 'value'") === "Missing required column 'value'",
+    "a non-413 error must pass its body text through unchanged",
+  );
+
+  assert(
+    describeImportUploadError(500, "") === "Import failed (500).",
+    `unexpected fallback for an empty body: "${describeImportUploadError(500, "")}"`,
   );
 }

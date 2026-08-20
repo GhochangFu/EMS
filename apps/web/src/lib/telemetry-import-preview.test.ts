@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runDescribeImportUploadErrorTests,
   runGroupRejectionsByReasonTests,
   runSummarizeCommitTests,
   runSummarizePreviewTests,
@@ -18,5 +19,9 @@ describe("telemetry-import-preview", () => {
 
   it("summarises a commit result in one line, singular/plural correct", () => {
     runSummarizeCommitTests();
+  });
+
+  it("gives a 413 a friendly message; passes other error bodies through", () => {
+    runDescribeImportUploadErrorTests();
   });
 });

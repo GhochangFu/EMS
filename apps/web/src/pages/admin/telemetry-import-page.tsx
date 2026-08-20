@@ -161,10 +161,10 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
           <button
             type="button"
             className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-            disabled={preview.acceptedCount === 0 || commitMutation.isPending}
+            disabled={preview.acceptedCount === 0 || commitMutation.isPending || commitResult !== null}
             onClick={() => commitMutation.mutate()}
           >
-            {commitMutation.isPending ? "Committing…" : "Commit"}
+            {commitResult ? "Committed" : commitMutation.isPending ? "Committing…" : "Commit"}
           </button>
         </SectionCard>
       ) : null}
