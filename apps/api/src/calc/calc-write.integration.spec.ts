@@ -4,7 +4,7 @@ import type pg from "pg";
 import { assetPoints, assets, createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
-import { loadFixtures, type Fixtures } from "../admin/asset-templates/asset-templates.instantiate.integration.spec";
+import type { Fixtures } from "../admin/asset-templates/asset-templates.instantiate.integration.spec";
 import { MetricsService } from "../observability/metrics.service";
 import { CalcWriteService } from "./calc-write.service";
 

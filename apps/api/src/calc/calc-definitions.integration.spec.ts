@@ -1,10 +1,10 @@
-import { eq, like } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type pg from "pg";
 
 import { assets, assetTemplates, createDb, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
-import { loadFixtures, type Fixtures } from "../admin/asset-templates/asset-templates.instantiate.integration.spec";
+import type { Fixtures } from "../admin/asset-templates/asset-templates.instantiate.integration.spec";
 import { MetricsService } from "../observability/metrics.service";
 import { CalcDefinitionsService } from "./calc-definitions.service";
 
