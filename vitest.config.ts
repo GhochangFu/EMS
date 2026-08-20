@@ -16,6 +16,7 @@ export default defineConfig({
       "apps/api",
       "apps/web",
       "apps/ingest",
+      "packages/shared",
       {
         test: {
           name: "repo",

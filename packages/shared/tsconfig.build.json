@@ -9,5 +9,10 @@
     "declaration": true,
     "declarationMap": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  // `F2.3` gave this package its first vitest project. Without this exclusion
+  // `pnpm build` emits `dist/calc-dsl/*.spec.js` (and its `.d.ts`, referencing
+  // `vitest`) into every consumer and every Docker image — `apps/api/tsconfig.build.json`
+  // is the existing precedent for the same exclusion.
+  "exclude": ["**/*.spec.ts", "**/*.test.ts", "vitest.config.ts"]
 }
