@@ -16,14 +16,23 @@ function buildWorkbookBuffer(rows: (string | number)[][], bookType: "csv" | "xls
   return XLSX.write(book, { type: "buffer", bookType }) as Buffer;
 }
 
+/** Excel's 1900 date system: days since 1899-12-30, UTC-instant-agnostic. */
+function excelSerialForUtcInstant(date: Date): number {
+  return date.getTime() / 86400000 + 25569;
+}
+
 /**
  * Builds an XLSX buffer where any native `Date` cell is written as a real
- * Excel date-typed cell (not text) — `{ cellDates: true }` on `aoa_to_sheet`
- * is what makes that happen at write time, mirroring what Excel itself
- * produces when a user picks a date in a cell rather than typing a string.
+ * numeric date-serial cell (not text), the way a genuine Excel file stores
+ * a date the user picked in a cell. Writes the serial directly (`t: "n"`)
+ * rather than going through `aoa_to_sheet`'s own `{ cellDates: true }` —
+ * that write path re-derives the serial from the `Date`'s *local* getters,
+ * which would silently bake this host's timezone offset into the fixture
+ * itself and defeat the point of these tests.
  */
 function buildWorkbookBufferWithDates(rows: (string | number | Date)[][]): Buffer {
-  const sheet = XLSX.utils.aoa_to_sheet(rows, { cellDates: true });
+  const aoa = rows.map((row) => row.map((cell) => (cell instanceof Date ? excelSerialForUtcInstant(cell) : cell)));
+  const sheet = XLSX.utils.aoa_to_sheet(aoa);
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, "Import");
   return XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
@@ -50,6 +59,25 @@ export function runTelemetryImportRowsTests(): void {
     assert(row?.pointKey === "kw", "point_key must be carried through");
     assert(row?.value === 12.5, "value must be parsed as a number");
     assert(row?.unit === "kW", "unit must be carried through");
+    assert(row?.time === "2026-08-19T10:00:00.000Z", `expected time 2026-08-19T10:00:00.000Z, got ${row?.time}`);
+  }
+
+  // ---- a CSV time cell with an explicit UTC offset keeps its real instant ----
+  // (C-TZ) `Date.parse` honours an explicit offset the same way on every host,
+  // so this case fails on ANY machine — not just a non-UTC one — if the time
+  // cell is ever routed through a host-local reinterpretation instead.
+
+  const offsetCsv = buildWorkbookBuffer(
+    [HEADER, ["F19-ASSET-1", "kw", 12.5, "kW", "2026-08-20T07:37:50.634+05:30"]],
+    "csv",
+  );
+  const offsetCsvResult = parseWorkbook(offsetCsv);
+  assert(offsetCsvResult.ok, "a CSV file with an offset timestamp must parse");
+  if (offsetCsvResult.ok) {
+    assert(
+      offsetCsvResult.rows[0]?.time === "2026-08-20T02:07:50.634Z",
+      `expected time 2026-08-20T02:07:50.634Z, got ${offsetCsvResult.rows[0]?.time}`,
+    );
   }
 
   // ---- a good XLSX file parses cleanly, same shape as CSV --------------------

@@ -40,7 +40,7 @@ export type ParseWorkbookResult =
   | { readonly ok: true; readonly rows: ParsedImportRow[]; readonly rejected: ImportRowRejection[] }
   | { readonly ok: false; readonly reason: string };
 
-type SheetCell = string | number | boolean | Date;
+type SheetCell = string | number | boolean;
 
 function cellText(row: SheetCell[], index: number): string {
   if (index < 0) {
@@ -67,13 +67,15 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   try {
     book = XLSX.read(buffer, {
       type: "buffer",
-      // A date/time cell would otherwise come back as a raw serial number —
-      // `Date.parse(String(serial))` is always NaN for a datetime serial,
-      // and silently wrong (a bogus far-future date) for a date-only one.
-      // SheetJS constructs the resulting `Date` via UTC internally, so its
-      // `.toISOString()` already reflects the wall-clock value exactly as
-      // entered in the cell — verified by round-trip, not assumed.
-      cellDates: true,
+      // Deliberately NOT `cellDates: true`. SheetJS's `Date`-object
+      // construction (both for a real XLSX date-serial cell and for a CSV
+      // cell whose text merely looks like a date) reinterprets the value
+      // using this host's local timezone, silently shifting it by the host's
+      // UTC offset. A date-typed cell is read as a raw numeric serial
+      // instead and decoded ourselves with `XLSX.SSF.parse_date_code`, which
+      // recovers the wall-clock components UTC-safely; a text cell is parsed
+      // with `Date.parse`, which honours an explicit `Z`/offset the same way
+      // on every host. See the time-cell handling below.
       // Bounds how many rows SheetJS materializes before the row-cap check
       // below ever runs — without this, a small compressed file that
       // inflates to a huge sheet is fully parsed into a JS array first and
@@ -163,8 +165,14 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
 
     const timeCell = timeIdx >= 0 ? row[timeIdx] : undefined;
     let parsedTime: number;
-    if (timeCell instanceof Date) {
-      parsedTime = timeCell.getTime();
+    if (typeof timeCell === "number") {
+      // A real Excel date/time cell: a day-count serial, timezone-agnostic
+      // by construction. Decode its y/m/d/H/M/S components and re-assert
+      // them as UTC — the wall-clock value in the cell IS the UTC instant.
+      const decoded = XLSX.SSF.parse_date_code(timeCell);
+      parsedTime = decoded
+        ? Date.UTC(decoded.y, decoded.m - 1, decoded.d, decoded.H, decoded.M, decoded.S, Math.round((decoded.u ?? 0) * 1000))
+        : Number.NaN;
     } else {
       const timeRaw = cellText(row, timeIdx);
       parsedTime = timeRaw ? Date.parse(timeRaw) : Number.NaN;
