@@ -43,6 +43,7 @@ function buildWorkbookBuffer(rows: (string | number)[][], bookType: "csv" | "xls
 }
 
 const HEADER = ["asset_code", "point_key", "value", "unit", "time"];
+const HEADER_BY_ID = ["asset_id", "point_key", "value", "unit", "time"];
 
 /**
  * Deletes only this suite's rows, children first. Safe to call when absent.
@@ -111,10 +112,10 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
     throw new Error("telemetry-import fixtures missing — wc-admin's organization has no active point key");
   }
   const spareOrgPointKeys = keyRows.slice(1);
-  if (spareOrgPointKeys.length < 2) {
+  if (spareOrgPointKeys.length < 3) {
     throw new Error(
-      "telemetry-import fixtures missing — wc-admin's organization needs at least 3 active point " +
-        "keys (1 for freshAssetPointKey, 2 spare). Run 'pnpm db:seed'.",
+      "telemetry-import fixtures missing — wc-admin's organization needs at least 4 active point " +
+        "keys (1 for freshAssetPointKey, 3 spare). Run 'pnpm db:seed'.",
     );
   }
 
@@ -253,6 +254,59 @@ export async function runTelemetryImportServiceTests(
     "no point_values row may exist for the rejected out-of-scope write",
   );
 
+  // ---- the asset_id path has the identical non-disclosure property (FG1) ----
+  // Mirrors the asset_code block above, but keyed by `asset_id` directly —
+  // this path shares `resolveRows` but resolves no code, so it needs its
+  // own coverage; C2 shipped because it had none.
+
+  const outOfScopeIdTime = new Date().toISOString();
+  const outOfScopeIdBuffer = buildWorkbookBuffer([
+    HEADER_BY_ID,
+    [fx.outOfScopeAssetId, "kw", 1, "", outOfScopeIdTime],
+  ]);
+  const outOfScopeIdResult = await svc.commit(fx.scopedJwt, outOfScopeIdBuffer, defaultOpts);
+  assert(outOfScopeIdResult.written === 0, "an out-of-scope asset_id must write nothing");
+  assert(outOfScopeIdResult.rejected.length === 1, "the out-of-scope asset_id row must be reported as rejected");
+
+  const wellFormedNonexistentId = "00000000-0000-4000-8000-00000000f19f";
+  const nonexistentIdBuffer = buildWorkbookBuffer([
+    HEADER_BY_ID,
+    [wellFormedNonexistentId, "kw", 1, "", new Date().toISOString()],
+  ]);
+  const nonexistentIdResult = await svc.commit(fx.scopedJwt, nonexistentIdBuffer, defaultOpts);
+  assert(nonexistentIdResult.written === 0, "a well-formed but nonexistent asset_id must write nothing");
+  assert(
+    nonexistentIdResult.rejected[0]?.reason === outOfScopeIdResult.rejected[0]?.reason,
+    `an out-of-scope UUID and a nonexistent-but-valid UUID must reject with the IDENTICAL message, got ` +
+      `"${outOfScopeIdResult.rejected[0]?.reason}" vs "${nonexistentIdResult.rejected[0]?.reason}"`,
+  );
+
+  // ---- a malformed asset_id must reject cleanly, not 500 (C2/L1) ------------
+
+  const malformedIdBuffer = buildWorkbookBuffer([
+    HEADER_BY_ID,
+    ["not-a-uuid-at-all", "kw", 1, "", new Date().toISOString()],
+  ]);
+  const malformedIdResult = await svc.commit(fx.scopedJwt, malformedIdBuffer, defaultOpts);
+  assert(malformedIdResult.written === 0, "a malformed asset_id must write nothing");
+  assert(
+    malformedIdResult.rejected.length === 1,
+    `a malformed asset_id must be reported as a clean rejection, not thrown — got ${JSON.stringify(malformedIdResult.rejected)}`,
+  );
+  assert(
+    malformedIdResult.rejected[0]?.reason === outOfScopeIdResult.rejected[0]?.reason,
+    `a malformed asset_id must reject with the SAME non-disclosing message as a real out-of-scope one, got ` +
+      `"${malformedIdResult.rejected[0]?.reason}"`,
+  );
+  // Also exercised through preview(), which hits the same resolveRows path
+  // for a *different* caller (adminJwt) — confirms the UUID-shape guard
+  // runs before any DB lookup regardless of role, not just for scopedJwt.
+  const malformedIdPreview = await svc.preview(fx.adminJwt, malformedIdBuffer, defaultOpts);
+  assert(
+    malformedIdPreview.rejectedCount === 1 && malformedIdPreview.acceptedCount === 0,
+    `preview() must also reject a malformed asset_id cleanly, got ${JSON.stringify(malformedIdPreview)}`,
+  );
+
   // ---- a malformed workbook is a 400, and writes nothing ---------------------
 
   const garbage = Buffer.from("not a spreadsheet \x00\x01", "utf8");
@@ -267,7 +321,16 @@ export async function runTelemetryImportServiceTests(
   const afterCount = await countPointValuesForAsset(pool, fx.freshAssetId);
   assert(afterCount === beforeCount, "a malformed workbook must write nothing");
 
-  // ---- an oversize file is refused -------------------------------------------
+  // ---- an oversize file is refused (defense-in-depth path, FG4) -------------
+  // This exercises `TelemetryImportService.assertFileSize`, called directly
+  // here with an in-memory buffer — a real HTTP request never reaches it for
+  // an oversize upload: `FileInterceptor`'s own `limits.fileSize` (see the
+  // controller) rejects it first, at the Multer layer, as a
+  // `PayloadTooLargeException` (413), before a `Buffer` this large is even
+  // assembled. `assertFileSize` stays as a second, independent check
+  // (defense-in-depth, and the only oversize path a DB-gated service-level
+  // suite like this one CAN reach, since Vitest cannot drive a real Nest
+  // HTTP request — see the web client's handling of a raw 413 body).
 
   const oversized = Buffer.concat([
     buildWorkbookBuffer([HEADER, [fx.freshAssetCode, "kw", 1, "", new Date().toISOString()]]),
@@ -309,6 +372,50 @@ export async function runTelemetryImportServiceTests(
   assert(
     (await fetchPointValue(pool, fx.freshAssetId, spareA.code, t3)) !== null,
     "the second good row must be written",
+  );
+
+  // ---- a writeReadings-level rejection remaps to the ORIGINAL row number, ---
+  // ---- and `skipped` agrees with `rejected.length` (FG2 / C3) ---------------
+  // Row 2 is rejected by the PARSER (never reaches `resolveRows`), so the
+  // `resolved` array passed to `writeReadings` starts at original row 3 —
+  // deliberately NOT the first entry, so a remap bug that only works by
+  // coincidence at array index 0 would be caught here. Row 4's point key
+  // does not exist in the catalog, so `writeReadings` itself rejects it —
+  // this is the one rejection source no earlier test exercised.
+
+  const spareC = fx.spareOrgPointKeys[2];
+  const remapT1 = new Date(Date.now() + 10_000).toISOString();
+  const remapT2 = new Date(Date.now() + 11_000).toISOString();
+  const remapRows: (string | number)[][] = [
+    HEADER,
+    [fx.freshAssetCode, spareC.code, "still-not-a-number", "", remapT1], // row 2 — parser rejects
+    [fx.freshAssetCode, spareC.code, 40, spareC.unit ?? "", remapT2], // row 3 — good, written
+    [fx.freshAssetCode, "f19-unknown-catalog-point-key", 50, "", new Date().toISOString()], // row 4 — writeReadings rejects
+  ];
+  const remapResult = await svc.commit(fx.adminJwt, buildWorkbookBuffer(remapRows), defaultOpts);
+  assert(remapResult.written === 1, `expected exactly 1 row written, got ${remapResult.written}: ${JSON.stringify(remapResult.rejected)}`);
+  assert(
+    remapResult.rejected.length === 2,
+    `expected 2 rejections (parser + writeReadings), got ${JSON.stringify(remapResult.rejected)}`,
+  );
+  assert(
+    remapResult.skipped === remapResult.rejected.length,
+    `skipped (${remapResult.skipped}) must equal rejected.length (${remapResult.rejected.length}) — ` +
+      `skipped must count EVERY rejection, not only writeReadings's own`,
+  );
+  const remapRowNumbers = remapResult.rejected.map((r) => r.rowNumber).sort((a, b) => a - b);
+  assert(
+    remapRowNumbers[0] === 2 && remapRowNumbers[1] === 4,
+    `rejections must carry the ORIGINAL file row numbers (2 and 4), got ${JSON.stringify(remapRowNumbers)}`,
+  );
+  const catalogRejection = remapResult.rejected.find((r) => r.rowNumber === 4);
+  assert(
+    catalogRejection?.field === "pointKey",
+    `row 4's rejection must be the writeReadings-level catalog check, got ${JSON.stringify(catalogRejection)}`,
+  );
+  assert(
+    (await fetchPointValue(pool, fx.freshAssetId, spareC.code, remapT2)) !== null,
+    "row 3 (between the two rejections) must still be written",
   );
 
   // ---- a created mapping carries source_kind='unmapped', rtu_id NULL --------

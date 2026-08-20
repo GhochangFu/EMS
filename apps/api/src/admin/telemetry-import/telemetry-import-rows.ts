@@ -40,7 +40,7 @@ export type ParseWorkbookResult =
   | { readonly ok: true; readonly rows: ParsedImportRow[]; readonly rejected: ImportRowRejection[] }
   | { readonly ok: false; readonly reason: string };
 
-type SheetCell = string | number | boolean;
+type SheetCell = string | number | boolean | Date;
 
 function cellText(row: SheetCell[], index: number): string {
   if (index < 0) {
@@ -48,6 +48,10 @@ function cellText(row: SheetCell[], index: number): string {
   }
   const cell = row[index];
   return cell === undefined || cell === null ? "" : String(cell).trim();
+}
+
+function isBlankRow(row: SheetCell[]): boolean {
+  return row.every((cell) => String(cell ?? "").trim() === "");
 }
 
 /**
@@ -61,7 +65,23 @@ function cellText(row: SheetCell[], index: number): string {
 export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   let book: XLSX.WorkBook;
   try {
-    book = XLSX.read(buffer, { type: "buffer" });
+    book = XLSX.read(buffer, {
+      type: "buffer",
+      // A date/time cell would otherwise come back as a raw serial number —
+      // `Date.parse(String(serial))` is always NaN for a datetime serial,
+      // and silently wrong (a bogus far-future date) for a date-only one.
+      // SheetJS constructs the resulting `Date` via UTC internally, so its
+      // `.toISOString()` already reflects the wall-clock value exactly as
+      // entered in the cell — verified by round-trip, not assumed.
+      cellDates: true,
+      // Bounds how many rows SheetJS materializes before the row-cap check
+      // below ever runs — without this, a small compressed file that
+      // inflates to a huge sheet is fully parsed into a JS array first and
+      // the cap only rejects it after the fact. +2 keeps the header plus one
+      // overflow data row, so a file exactly one row over the cap is still
+      // correctly detected as over it.
+      sheetRows: MAX_IMPORT_ROWS + 2,
+    });
   } catch {
     return { ok: false, reason: "Could not read the uploaded file as CSV or Excel" };
   }
@@ -73,12 +93,11 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   }
 
   const raw = XLSX.utils.sheet_to_json<SheetCell[]>(sheet, { header: 1, defval: "" });
-  const nonEmpty = raw.filter((row) => row.some((cell) => String(cell ?? "").trim() !== ""));
-  if (nonEmpty.length === 0) {
+  if (raw.length === 0 || raw.every(isBlankRow)) {
     return { ok: false, reason: "Sheet is empty" };
   }
 
-  const headerRow = (nonEmpty[0] ?? []).map((cell) => String(cell ?? "").trim().toLowerCase());
+  const headerRow = (raw[0] ?? []).map((cell) => String(cell ?? "").trim().toLowerCase());
   for (const required of REQUIRED_HEADERS) {
     if (!headerRow.includes(required)) {
       return { ok: false, reason: `Missing required column '${required}'` };
@@ -90,8 +109,11 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
     return { ok: false, reason: "Missing required column 'asset_code' or 'asset_id'" };
   }
 
-  const dataRows = nonEmpty.slice(1);
-  if (dataRows.length === 0) {
+  // Everything after the header, in original sheet order, blanks included —
+  // this is what makes `rowNumber` (offset + 2) match the operator's actual
+  // Excel row, and what makes the cap below count what the sheet counts.
+  const dataRows = raw.slice(1);
+  if (dataRows.length === 0 || dataRows.every(isBlankRow)) {
     return { ok: false, reason: "Sheet has a header row but no data rows" };
   }
   if (dataRows.length > MAX_IMPORT_ROWS) {
@@ -113,7 +135,11 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   const seenAt = new Map<string, number>();
 
   dataRows.forEach((row, offset) => {
-    const rowNumber = offset + 2; // header occupies row 1
+    const rowNumber = offset + 2; // header occupies row 1; offset runs over the UNFILTERED rows
+
+    if (isBlankRow(row)) {
+      return; // silently ignored — spacer rows are common in hand-edited sheets
+    }
 
     const assetCode = hasAssetCode ? cellText(row, assetCodeIdx) : "";
     const assetId = hasAssetId ? cellText(row, assetIdIdx) : "";
@@ -135,9 +161,15 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
       return;
     }
 
-    const timeRaw = cellText(row, timeIdx);
-    const parsedTime = timeRaw ? Date.parse(timeRaw) : Number.NaN;
-    if (!timeRaw || Number.isNaN(parsedTime)) {
+    const timeCell = timeIdx >= 0 ? row[timeIdx] : undefined;
+    let parsedTime: number;
+    if (timeCell instanceof Date) {
+      parsedTime = timeCell.getTime();
+    } else {
+      const timeRaw = cellText(row, timeIdx);
+      parsedTime = timeRaw ? Date.parse(timeRaw) : Number.NaN;
+    }
+    if (Number.isNaN(parsedTime)) {
       rejected.push({ rowNumber, field: "time", reason: "time must be a parsable timestamp" });
       return;
     }

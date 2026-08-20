@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { inArray } from "drizzle-orm";
+import { inArray, or } from "drizzle-orm";
+import { z } from "zod";
 
 import { assets } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -25,6 +26,8 @@ import { MAX_IMPORT_FILE_BYTES, type TelemetryImportOptions } from "./telemetry-
  * `assetId` uses this same text.
  */
 const ASSET_NOT_FOUND_REASON = "Asset not found or outside your access scope";
+
+const assetIdShape = z.string().uuid();
 
 type ResolvedRow = { readonly rowNumber: number; readonly row: TelemetryEntryRow };
 
@@ -95,9 +98,18 @@ export class TelemetryImportService {
       return { ...r, rowNumber: original ? original.rowNumber : r.rowNumber };
     });
 
+    // `result.skipped` (from `writeReadings`) only counts rows rejected
+    // INSIDE that call — it knows nothing about rows the parser or
+    // `resolveRows` already turned away before `writeReadings` ever saw
+    // them. Recompute from the full merged list so `skipped` and
+    // `rejected.length` always agree, however many stages a row's
+    // rejection came from.
+    const rejected = this.mergeRejected(parsed.rejected, resolutionRejected, remapped);
+
     return {
       ...result,
-      rejected: this.mergeRejected(parsed.rejected, resolutionRejected, remapped),
+      skipped: rejected.length,
+      rejected,
     };
   }
 
@@ -118,10 +130,18 @@ export class TelemetryImportService {
   }
 
   /**
-   * Resolves `asset_code` to `assetId` for rows that need it, in one batch
-   * query rather than one per row, and checks scope for every resolved
-   * `assetId` via `accessControl.canManageAsset` — also batched, one call per
-   * distinct asset rather than per row.
+   * Resolves `asset_code`/`asset_id` to `{ assetId, locationId }` for every
+   * row, and checks scope, all with a FIXED number of DB round trips
+   * regardless of row count — one batch lookup plus one
+   * `writableLocationIds` call, then a pure in-memory membership test per
+   * row. Earlier this called `accessControl.canManageAsset` (~4 sequential
+   * queries) once per distinct resolved asset, inside the loop: over up to
+   * 20,000 rows that made per-row cost proportional to whether a row's
+   * asset was out-of-scope-but-real (several queries) or simply nonexistent
+   * (zero — it never entered the candidate set), a wall-clock-measurable,
+   * partition-searchable oracle over the asset-code namespace on top of
+   * being its own DoS amplification. Hoisting scope resolution out of the
+   * loop closes both at once.
    *
    * The scope check happens **here, in preview too**, not only inside
    * `writeReadings` at commit time: `writeReadings` resolves existence
@@ -133,39 +153,74 @@ export class TelemetryImportService {
    * existence fact `ASSET_NOT_FOUND_REASON` exists to hide. A code that
    * matches no asset at all, and one that exists but is out of scope, both
    * reject here with the identical message.
+   *
+   * A malformed `asset_id` cell (not a UUID shape at all) is rejected
+   * before it is ever compared against the `uuid`-typed `assets.id` column —
+   * without this, Postgres throws 22P02 (invalid input syntax) on the first
+   * such row, uncaught, a 500 that only a SCOPED caller could trigger (an
+   * `admin` role's own scope check would short-circuit before touching the
+   * DB with the bad value).
    */
   private async resolveRows(
     jwt: JwtPayload,
     rows: ParsedImportRow[],
   ): Promise<{ resolved: ResolvedRow[]; rejected: RejectedRowDto[] }> {
     const codes = [...new Set(rows.filter((r) => !r.assetId && r.assetCode).map((r) => r.assetCode as string))];
-    const codeToId = new Map<string, string>();
-    if (codes.length > 0) {
+    const ids = [
+      ...new Set(
+        rows
+          .filter((r) => r.assetId && assetIdShape.safeParse(r.assetId).success)
+          .map((r) => r.assetId as string),
+      ),
+    ];
+
+    const byCode = new Map<string, { id: string; locationId: string }>();
+    const byId = new Map<string, { locationId: string }>();
+    if (codes.length > 0 || ids.length > 0) {
+      const conditions = [];
+      if (codes.length > 0) conditions.push(inArray(assets.code, codes));
+      if (ids.length > 0) conditions.push(inArray(assets.id, ids));
       const found = await this.db
-        .select({ id: assets.id, code: assets.code })
+        .select({ id: assets.id, code: assets.code, locationId: assets.locationId })
         .from(assets)
-        .where(inArray(assets.code, codes));
+        .where(or(...conditions));
       for (const f of found) {
-        codeToId.set(f.code, f.id);
+        byCode.set(f.code, { id: f.id, locationId: f.locationId });
+        byId.set(f.id, { locationId: f.locationId });
       }
     }
 
-    const candidateIds = new Set<string>();
-    for (const r of rows) {
-      const id = r.assetId ?? (r.assetCode ? codeToId.get(r.assetCode) : undefined);
-      if (id) candidateIds.add(id);
-    }
-    const inScope = new Map<string, boolean>();
-    for (const id of candidateIds) {
-      inScope.set(id, await this.accessControl.canManageAsset(jwt, id));
-    }
+    // `null` means unrestricted (global admin) — see `AccessControlService`.
+    const writableLocationIds = await this.accessControl.writableLocationIds(jwt);
 
     const resolved: ResolvedRow[] = [];
     const rejected: RejectedRowDto[] = [];
     for (const r of rows) {
-      const assetId = r.assetId ?? (r.assetCode ? codeToId.get(r.assetCode) : undefined);
-      if (!assetId || !inScope.get(assetId)) {
-        rejected.push({ rowNumber: r.rowNumber, field: "assetCode", reason: ASSET_NOT_FOUND_REASON });
+      let assetId: string | undefined;
+      let locationId: string | undefined;
+      if (r.assetId) {
+        const match = byId.get(r.assetId);
+        if (match) {
+          assetId = r.assetId;
+          locationId = match.locationId;
+        }
+      } else if (r.assetCode) {
+        const match = byCode.get(r.assetCode);
+        if (match) {
+          assetId = match.id;
+          locationId = match.locationId;
+        }
+      }
+      const inScope =
+        assetId !== undefined &&
+        locationId !== undefined &&
+        (writableLocationIds === null || writableLocationIds.includes(locationId));
+      if (!assetId || !inScope) {
+        rejected.push({
+          rowNumber: r.rowNumber,
+          field: r.assetId ? "assetId" : "assetCode",
+          reason: ASSET_NOT_FOUND_REASON,
+        });
         continue;
       }
       resolved.push({

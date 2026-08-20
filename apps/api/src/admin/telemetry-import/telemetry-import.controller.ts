@@ -29,7 +29,13 @@ export class TelemetryImportController {
 
   @Post("preview")
   @HttpCode(HttpStatus.OK)
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_IMPORT_FILE_BYTES } }))
+  // `files: 1` caps the multipart part count for the file field itself;
+  // `fields: 4` caps the non-file fields (`sourceKind`, `conflictPolicy`,
+  // with headroom) — Multer defaults `fields` to Infinity at 1 MB each,
+  // otherwise unbounded regardless of `fileSize`.
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: MAX_IMPORT_FILE_BYTES, files: 1, fields: 4 } }),
+  )
   async preview(
     @UploadedFile() file: UploadedImportFile,
     @Body() body: unknown,
@@ -40,7 +46,13 @@ export class TelemetryImportController {
 
   @Post("commit")
   @HttpCode(HttpStatus.OK)
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_IMPORT_FILE_BYTES } }))
+  // `files: 1` caps the multipart part count for the file field itself;
+  // `fields: 4` caps the non-file fields (`sourceKind`, `conflictPolicy`,
+  // with headroom) — Multer defaults `fields` to Infinity at 1 MB each,
+  // otherwise unbounded regardless of `fileSize`.
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: MAX_IMPORT_FILE_BYTES, files: 1, fields: 4 } }),
+  )
   async commit(
     @UploadedFile() file: UploadedImportFile,
     @Body() body: unknown,

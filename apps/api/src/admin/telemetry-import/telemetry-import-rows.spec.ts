@@ -16,6 +16,19 @@ function buildWorkbookBuffer(rows: (string | number)[][], bookType: "csv" | "xls
   return XLSX.write(book, { type: "buffer", bookType }) as Buffer;
 }
 
+/**
+ * Builds an XLSX buffer where any native `Date` cell is written as a real
+ * Excel date-typed cell (not text) — `{ cellDates: true }` on `aoa_to_sheet`
+ * is what makes that happen at write time, mirroring what Excel itself
+ * produces when a user picks a date in a cell rather than typing a string.
+ */
+function buildWorkbookBufferWithDates(rows: (string | number | Date)[][]): Buffer {
+  const sheet = XLSX.utils.aoa_to_sheet(rows, { cellDates: true });
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, "Import");
+  return XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
+}
+
 const HEADER = ["asset_code", "point_key", "value", "unit", "time"];
 
 /** Coverage for `parseWorkbook` (`F1.9`) — pure, DB-free row parsing and validation. */
@@ -181,4 +194,74 @@ export function runTelemetryImportRowsTests(): void {
   if (missingAssetRefResult.ok) {
     assert(missingAssetRefResult.rejected[0]?.field === "assetCode", "the rejection must name the asset reference field");
   }
+
+  // ---- a real Excel date-time cell (not a string) parses correctly (C1) -----
+  // A cell where the user picked a date/time in Excel comes back from
+  // `XLSX.read` as a numeric serial UNLESS `cellDates: true` is set, and
+  // `Date.parse(String(serial))` is always NaN — every such row would
+  // wrongly reject as "time must be a parsable timestamp".
+
+  const realDateTime = new Date(Date.UTC(2026, 7, 19, 10, 30, 0));
+  const dateTimeCellResult = parseWorkbook(
+    buildWorkbookBufferWithDates([HEADER, ["F19-ASSET-1", "kw", 12.5, "kW", realDateTime]]),
+  );
+  assert(dateTimeCellResult.ok, "a file with a real Excel datetime cell must parse");
+  if (dateTimeCellResult.ok) {
+    assert(dateTimeCellResult.rejected.length === 0, `a real datetime cell must not be rejected, got ${JSON.stringify(dateTimeCellResult.rejected)}`);
+    assert(
+      dateTimeCellResult.rows[0]?.time === realDateTime.toISOString(),
+      `expected time ${realDateTime.toISOString()}, got ${dateTimeCellResult.rows[0]?.time}`,
+    );
+  }
+
+  // ---- a real Excel date-ONLY cell (midnight, no time-of-day) parses too ----
+  // The other C1 failure mode: a date-only cell reads as a serial integer,
+  // which parses to a plausible-looking but WRONG far-future date if
+  // stringified and re-parsed rather than read as the Date it already is.
+
+  const realDateOnly = new Date(Date.UTC(2026, 7, 19));
+  const dateOnlyCellResult = parseWorkbook(
+    buildWorkbookBufferWithDates([HEADER, ["F19-ASSET-1", "kw", 12.5, "kW", realDateOnly]]),
+  );
+  assert(dateOnlyCellResult.ok, "a file with a real Excel date-only cell must parse");
+  if (dateOnlyCellResult.ok) {
+    assert(dateOnlyCellResult.rejected.length === 0, "a real date-only cell must not be rejected");
+    assert(
+      dateOnlyCellResult.rows[0]?.time === realDateOnly.toISOString(),
+      `expected time ${realDateOnly.toISOString()}, got ${dateOnlyCellResult.rows[0]?.time}`,
+    );
+  }
+
+  // ---- a blank row in the middle must not shift later row numbers (C4) ------
+
+  const withBlankRow = buildWorkbookBuffer([
+    HEADER,
+    ["F19-ASSET-1", "kw", 10, "kW", "2026-08-19T10:00:00Z"], // row 2 — good
+    ["", "", "", "", ""], // row 3 — blank, must be silently skipped
+    ["F19-ASSET-1", "kw", "not-a-number", "kW", "2026-08-19T10:00:00Z"], // row 4 — bad value
+  ]);
+  const withBlankRowResult = parseWorkbook(withBlankRow);
+  assert(withBlankRowResult.ok, "a file with a blank row must not fail structurally");
+  if (withBlankRowResult.ok) {
+    assert(withBlankRowResult.rows.length === 1, `expected 1 accepted row, got ${withBlankRowResult.rows.length}`);
+    assert(withBlankRowResult.rows[0]?.rowNumber === 2, "the first good row must still be numbered 2");
+    assert(withBlankRowResult.rejected.length === 1, `expected 1 rejection, got ${withBlankRowResult.rejected.length}`);
+    assert(
+      withBlankRowResult.rejected[0]?.rowNumber === 4,
+      `the bad-value row after the blank must be numbered 4 (its true sheet row), got ${withBlankRowResult.rejected[0]?.rowNumber}`,
+    );
+  }
+
+  // ---- the row cap counts blank rows too, matching what the sheet counts ----
+
+  const capWithBlanksRows: (string | number)[][] = [HEADER];
+  for (let i = 0; i < MAX_IMPORT_ROWS; i += 1) {
+    capWithBlanksRows.push([`F19-ASSET-${i}`, "kw", 1, "kW", "2026-08-19T10:00:00Z"]);
+  }
+  capWithBlanksRows.push(["", "", "", "", ""]); // one blank row over the cap
+  const capWithBlanksResult = parseWorkbook(buildWorkbookBuffer(capWithBlanksRows, "csv"));
+  assert(
+    !capWithBlanksResult.ok,
+    "a blank row that pushes the sheet one row past the cap must still be refused as over the cap",
+  );
 }
