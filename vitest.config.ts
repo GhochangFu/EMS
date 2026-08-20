@@ -289,26 +289,36 @@ export default defineConfig({
       // live database, all 94 files / 286 tests running and none skipped:
       // 47.5 statements · 43.34 branches · 48.55 functions · 47.61 lines.
       //
-      // Ratcheted by `F2.3` (calc formula DSL + definition schema, ADR 0036)
-      // from 47.2/43.0/48.2/47.3. Measured 2026-08-20 against the live
-      // database, all 97 files / 293 tests running and none skipped:
-      // 47.96 statements · 44.03 branches · 49.11 functions · 48.05 lines.
+      // Ratcheted by `F2.4` (calc execution engine, ADR 0037) from
+      // 47.6/43.7/48.8/47.7. Measured 2026-08-20 against the live database,
+      // all 110 files / 337 tests running and none skipped:
+      // 50.19 statements · 45.68 branches · 50.98 functions · 50.24 lines.
       //
-      // The rise is the API-side surface this item added: the
-      // templatePointBodySchema/templatePointsBodySchema formula rules and
-      // the templateKpiSchema dialect-widening cross-check, exercised by the
-      // schema specs and by both asset-templates integration suites'
-      // derived-point fixtures. The bms-calc-v1 parser itself
-      // (packages/shared/src/calc-dsl) is NOT in this denominator — `include`
-      // reaches apps/api/src, apps/web/src/lib and apps/ingest/src only, the
-      // same effect this file's `F1.1` entry above records for anything
-      // moved into packages/*. Its own test project (`packages/shared`) is
-      // what proves those tests run; see that project's vitest.config.ts.
+      // The rise is `apps/api/src/calc/**` in full: two runtime hosts, the
+      // definition/input/write services, and the pure helpers each of them
+      // calls (calc-batch, calc-inputs, calc-schedule) — deliberately split
+      // out of the hosts so the decision logic (asset-isolation filtering,
+      // missing/stale classification, epoch-bucket truncation) is covered
+      // cheaply and directly rather than only indirectly through a host
+      // integration test. `evaluate.ts` (`packages/shared/src/calc-dsl`) is
+      // NOT in this denominator for the same reason `F2.3`'s parser wasn't —
+      // `include` reaches `apps/*` only; its own test project is what proves
+      // it runs.
+      //
+      // One flake surfaced while measuring, unrelated to this item:
+      // `alarm-enrichment.integration.spec.ts`'s `firstSeededAssetId` picks
+      // its fixture asset via `SELECT id FROM assets LIMIT 1` with no
+      // deterministic ORDER BY, and failed an FK insert once when run
+      // alongside the larger parallel integration-suite set this item adds.
+      // Reproduced in isolation: passes every time alone, and the full run
+      // above is the clean rerun. Pre-existing latent race, not introduced
+      // here — recorded rather than fixed, since fixing an unrelated
+      // suite's fixture resolution is out of this item's scope.
       thresholds: {
-        statements: 47.6,
-        branches: 43.7,
-        functions: 48.8,
-        lines: 47.7,
+        statements: 49.9,
+        branches: 45.3,
+        functions: 50.6,
+        lines: 50.0,
       },
     },
   },

@@ -23,16 +23,25 @@ function assert(condition: boolean, message: string): void {
 }
 
 export async function cleanup(pool: pg.Pool): Promise<void> {
-  // Time-bounded so Postgres can prune hypertable chunks instead of scanning
-  // the whole of telemetry.point_values by an asset_id subquery alone — this
-  // suite's fixtures only ever write "now", so a generous recent window
-  // covers every row a previous run could have left behind.
-  await pool.query(
-    `DELETE FROM telemetry.point_values
-      WHERE time > now() - interval '1 day'
-        AND asset_id IN (SELECT id FROM bms.assets WHERE code LIKE $1)`,
+  // ADR 0024 / tests/adr-0024-retention-bounds.test.ts: asset_id is a
+  // SEGMENTBY column, so only a CONSTANT filter on it prunes compressed
+  // batches — a DELETE reaching telemetry.point_values through a subquery
+  // or join forces TimescaleDB to decompress every batch to evaluate the
+  // predicate. Resolve the ids first, then filter on the resolved array
+  // directly (`= ANY($1)`, no SELECT/JOIN/USING in the DELETE itself).
+  const { rows: assetRows } = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.assets WHERE code LIKE $1`,
     [`${TEST_ASSET_PREFIX}%`],
   );
+  const assetIds = assetRows.map((r) => r.id);
+  if (assetIds.length > 0) {
+    // Also time-bounded so Postgres can prune hypertable chunks — this
+    // suite's fixtures only ever write "now".
+    await pool.query(
+      `DELETE FROM telemetry.point_values WHERE time > now() - interval '1 day' AND asset_id = ANY($1::uuid[])`,
+      [assetIds],
+    );
+  }
   await pool.query(
     `DELETE FROM bms.asset_points WHERE asset_id IN (SELECT id FROM bms.assets WHERE code LIKE $1)`,
     [`${TEST_ASSET_PREFIX}%`],
