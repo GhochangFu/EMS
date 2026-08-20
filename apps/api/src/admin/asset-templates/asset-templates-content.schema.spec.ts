@@ -201,13 +201,67 @@ export function runTemplateContentSchemaTests(): void {
   };
   assert(templateContentSchema.safeParse({ kpis: [kpi] }).success, "a valid KPI must parse");
 
-  // The dialect literal is what lets F2.3 add its own value and migrate on its
-  // own schedule. Accepting an arbitrary string here would let a pack claim its
-  // expressions had been validated when nothing has a parser yet.
-  rejects({ kpis: [{ ...kpi, dialect: "bms-calc-v1" }] }, "F2.3 has not landed its dialect yet");
   rejects({ kpis: [{ ...kpi, dialect: undefined }] }, "dialect is required, not defaulted");
+  rejects({ kpis: [{ ...kpi, dialect: "something-else" }] }, "dialect accepts only the two known values");
   rejects({ kpis: [{ ...kpi, pointKeys: [] }] }, "a KPI referencing no points cannot be checked");
   rejects({ kpis: [kpi, kpi] }, "two KPIs with the same code must be rejected");
+
+  // ADR 0036: `dialect: "unvalidated"` still parses exactly as before —
+  // nothing here forces a migration of stored content. `kpi.expression`
+  // ("power / permeate_flow") is not even legal bms-calc-v1 syntax (bare
+  // identifiers, no braces), and that is the point: it is accepted anyway.
+  assert(
+    templateContentSchema.safeParse({ kpis: [{ ...kpi, dialect: "unvalidated" }] }).success,
+    "an unvalidated KPI with a garbage expression must still parse",
+  );
+
+  const validCalc = {
+    code: "SPECIFIC_ENERGY_V2",
+    name: "Specific energy",
+    pointKeys: ["RO_FEED_PRESSURE", "RO_PERMEATE_FLOW"],
+    expression: "({RO_FEED_PRESSURE} + {RO_PERMEATE_FLOW}) / 2",
+    dialect: "bms-calc-v1",
+  };
+  assert(
+    templateContentSchema.safeParse({ kpis: [validCalc] }).success,
+    "a well-formed bms-calc-v1 KPI must parse",
+  );
+
+  const malformedCalc = { ...validCalc, code: "BAD1", expression: "{RO_FEED_PRESSURE} +" };
+  rejects({ kpis: [malformedCalc] }, "a syntactically invalid bms-calc-v1 expression must fail");
+  const malformedMessage = messagesFor({ kpis: [malformedCalc] });
+  assert(
+    !malformedMessage.includes("{RO_FEED_PRESSURE} +"),
+    `the malformed-expression error must not echo the expression, got: ${malformedMessage}`,
+  );
+
+  const unknownFn = { ...validCalc, code: "BAD2", expression: "pow({RO_FEED_PRESSURE}, 2)" };
+  rejects({ kpis: [unknownFn] }, "an unknown function such as pow must fail");
+  assert(
+    !messagesFor({ kpis: [unknownFn] }).includes("pow"),
+    "the unknown-function error must not name the function",
+  );
+
+  const missingFromPointKeys = {
+    ...validCalc,
+    code: "BAD3",
+    pointKeys: ["RO_FEED_PRESSURE"],
+    expression: "{RO_FEED_PRESSURE} + {RO_PERMEATE_FLOW}",
+  };
+  rejects(
+    { kpis: [missingFromPointKeys] },
+    "an expression ref missing from pointKeys must fail",
+  );
+
+  const unusedPointKey = {
+    ...validCalc,
+    code: "BAD4",
+    pointKeys: ["RO_FEED_PRESSURE", "RO_PERMEATE_FLOW", "UNUSED"],
+  };
+  rejects(
+    { kpis: [unusedPointKey] },
+    "a declared pointKeys entry the expression never uses must fail — both directions of the cross-check",
+  );
 
   // ---- dashboards: anchored, ordering only ---------------------------------
 

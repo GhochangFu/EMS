@@ -386,6 +386,12 @@ export const templatePoints = bmsSchema.table("template_points", {
   // source key for a computed tag.
   kind: varchar("kind", { length: 32 }).notNull().default("measured"),
   sourceDataKeyPattern: varchar("source_data_key_pattern", { length: 128 }),
+  // ADR 0036 decisions 5 and 7: how a derived point is computed. Nullable —
+  // the kind/formula exclusivity (derived requires both set, measured
+  // requires both absent) is enforced in apps/api's Zod layer, not a DB
+  // CHECK; see migration 0035's header for why.
+  formula: text("formula"),
+  formulaDialect: varchar("formula_dialect", { length: 32 }),
   required: boolean("required").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
   meta: jsonb("meta").notNull().default({}),

@@ -239,6 +239,13 @@
       "when": 1780012800000,
       "tag": "0034_alarm_enrichment",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1780099200000,
+      "tag": "0035_template_point_formula",
+      "breakpoints": true
     }
   ]
 }

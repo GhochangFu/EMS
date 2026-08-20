@@ -5,6 +5,10 @@ import {
   templatePointBodySchema,
 } from "./asset-templates.schema";
 
+function firstMessage(result: { success: false; error: { issues: { message: string }[] } }): string {
+  return result.error.issues[0]?.message ?? "";
+}
+
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
@@ -32,17 +36,99 @@ export function runAssetTemplateSchemaTests(): void {
   assert(point.required === true, "a point must default to required");
   assert(point.sortOrder === 0, "a point must default to sortOrder 0");
 
-  // `derived` is the only other legal value, and it is load-bearing: F2.2 must
-  // not emit an asset_points row for a derived point, because
-  // asset_points.source_data_key is NOT NULL and a computed tag has no source.
-  assert(
-    templatePointBodySchema.safeParse({ pointKey: "X", kind: "derived" }).success,
-    '"derived" must be accepted as a point kind',
-  );
   assert(
     !templatePointBodySchema.safeParse({ pointKey: "X", kind: "computed" }).success,
     'an unknown kind such as "computed" must be rejected — the CHECK constraint ' +
       "would otherwise reject it as a 500 rather than a 400",
+  );
+
+  // ---- ADR 0036 decision 5: derived points must carry a formula -------------
+
+  assert(
+    !templatePointBodySchema.safeParse({ pointKey: "X", kind: "derived" }).success,
+    "a derived point with no formula must now be rejected — F2.3 requires one",
+  );
+  assert(
+    templatePointBodySchema.safeParse({
+      pointKey: "X",
+      kind: "derived",
+      formula: "{A}",
+      formulaDialect: "bms-calc-v1",
+    }).success,
+    "a derived point with a formula and the frozen dialect must be accepted",
+  );
+  assert(
+    !templatePointBodySchema.safeParse({
+      pointKey: "X",
+      kind: "measured",
+      formula: "{A}",
+      formulaDialect: "bms-calc-v1",
+    }).success,
+    "a measured point must not carry a formula",
+  );
+  assert(
+    !templatePointBodySchema.safeParse({
+      pointKey: "X",
+      kind: "derived",
+      formula: "{A}",
+      formulaDialect: "unvalidated",
+    }).success,
+    "a derived point's formulaDialect must be bms-calc-v1, not any other string",
+  );
+
+  // ---- ADR 0036 decision 7: a derived point's siblings ------------------------
+
+  const withUndeclaredRef = createAssetTemplateBodySchema.safeParse({
+    ...validTemplate,
+    points: [
+      { pointKey: "A" },
+      { pointKey: "D", kind: "derived", formula: "{A} + {B}", formulaDialect: "bms-calc-v1" },
+    ],
+  });
+  assert(!withUndeclaredRef.success, "a derived formula referencing an undeclared point must fail");
+  assert(
+    withUndeclaredRef.success === false &&
+      withUndeclaredRef.error.issues.some((issue) => issue.path.join(".").includes("1")),
+    "the error must name the offending point's index",
+  );
+
+  const withDerivedRef = createAssetTemplateBodySchema.safeParse({
+    ...validTemplate,
+    points: [
+      { pointKey: "A" },
+      { pointKey: "D1", kind: "derived", formula: "{A}", formulaDialect: "bms-calc-v1" },
+      { pointKey: "D2", kind: "derived", formula: "{D1}", formulaDialect: "bms-calc-v1" },
+    ],
+  });
+  assert(!withDerivedRef.success, "a derived formula referencing another derived point must fail");
+
+  const withSelfRef = createAssetTemplateBodySchema.safeParse({
+    ...validTemplate,
+    points: [{ pointKey: "D", kind: "derived", formula: "{D}", formulaDialect: "bms-calc-v1" }],
+  });
+  assert(!withSelfRef.success, "a derived formula referencing itself must fail");
+
+  const withMeasuredOnlyRefs = createAssetTemplateBodySchema.safeParse({
+    ...validTemplate,
+    points: [
+      { pointKey: "A" },
+      { pointKey: "B" },
+      { pointKey: "D", kind: "derived", formula: "{A} + {B}", formulaDialect: "bms-calc-v1" },
+    ],
+  });
+  assert(
+    withMeasuredOnlyRefs.success,
+    "a derived formula referencing only measured siblings must succeed",
+  );
+
+  const malformed = createAssetTemplateBodySchema.safeParse({
+    ...validTemplate,
+    points: [{ pointKey: "D", kind: "derived", formula: "{A} +", formulaDialect: "bms-calc-v1" }],
+  });
+  assert(!malformed.success, "a malformed formula must fail");
+  assert(
+    malformed.success === false && !firstMessage(malformed).includes("{A} +"),
+    "the malformed-formula error must not echo the formula text",
   );
 
   // ---- duplicate point keys ------------------------------------------------

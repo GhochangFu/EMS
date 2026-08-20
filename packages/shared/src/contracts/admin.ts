@@ -9,6 +9,7 @@
  */
 import { z } from "zod";
 
+import { CALC_DIALECT } from "../calc-dsl";
 import { pointSourceKindSchema } from "./telemetry-entry";
 
 export const masterDataActiveFilterSchema = z.enum(["true", "false", "all"]);
@@ -205,6 +206,11 @@ export const adminTemplatePointDtoSchema = z.object({
   unit: z.string().nullable(),
   kind: templatePointKindSchema,
   sourceDataKeyPattern: z.string().nullable(),
+  // ADR 0036 decisions 5 and 7. Both null for a measured point; both set for a
+  // derived one (enforced in apps/api's templatePointBodySchema, not here —
+  // this is a read-side DTO).
+  formula: z.string().nullable(),
+  formulaDialect: z.literal(CALC_DIALECT).nullable(),
   required: z.boolean(),
   sortOrder: z.number(),
   createdAt: z.string(),

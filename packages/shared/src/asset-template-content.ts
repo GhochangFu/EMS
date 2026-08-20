@@ -3,6 +3,7 @@ import type {
   AutomationRuleCategory,
   AutomationRuleOperator,
   AutomationRuleSeverity,
+  CalcDialect,
   MaintenanceGenerationMode,
   MaintenanceScheduleCategory,
   WorkOrderPriority,
@@ -79,10 +80,12 @@ export type TemplateAlarm = {
 };
 
 /**
- * `expression` is opaque: `F2.3` owns formula syntax and has not frozen it, so
- * `dialect` stays `"unvalidated"` until it does. `pointKeys` is listed
- * separately from the expression precisely so references can be checked without
- * a parser.
+ * `expression` is opaque behind `dialect: "unvalidated"` — content written
+ * before ADR 0036 (`F2.3`) and never re-saved. `dialect: "bms-calc-v1"` means
+ * `expression` has been parsed under the `bms-calc-v1` grammar
+ * (`packages/shared/src/calc-dsl`) and `pointKeys` is exactly the set of
+ * point references it uses, not merely a bookkeeping array checked without a
+ * parser.
  */
 export type TemplateKpi = {
   code: string;
@@ -90,7 +93,7 @@ export type TemplateKpi = {
   unit?: string;
   pointKeys: string[];
   expression: string;
-  dialect: "unvalidated";
+  dialect: "unvalidated" | CalcDialect;
   higherIsBetter?: boolean;
 };
 

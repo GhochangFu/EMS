@@ -117,7 +117,14 @@ export async function assertCreateStartsAtVersionOne(
     domain: "water",
     points: [
       { pointKey: fx.pointKeys[1], kind: "measured", required: true, sortOrder: 1 },
-      { pointKey: fx.pointKeys[0], kind: "derived", required: false, sortOrder: 0 },
+      {
+        pointKey: fx.pointKeys[0],
+        kind: "derived",
+        formula: `{${fx.pointKeys[1]}}`,
+        formulaDialect: "bms-calc-v1",
+        required: false,
+        sortOrder: 0,
+      },
     ],
   });
 
@@ -238,6 +245,22 @@ export async function assertVersionBumpCopiesPoints(
   assert(
     draft.points.every((point) => point.templateId === draft.id),
     "copied points must belong to the new draft, not still to the source version",
+  );
+  // createDraftFrom passes raw PointRow[] (from a plain SELECT) into
+  // replacePoints, a different shape than the create/update TemplatePointBody[]
+  // path — an easy place for a field-by-field mapper to silently drop a
+  // column with no compile error and no other failing test.
+  assert(
+    draft.points.every((point, i) => point.formula === published.points[i].formula),
+    "createDraftFrom must copy formula — replacePoints takes raw PointRows on this path",
+  );
+  assert(
+    draft.points.every((point, i) => point.formulaDialect === published.points[i].formulaDialect),
+    "createDraftFrom must copy formulaDialect too",
+  );
+  assert(
+    published.points.some((point) => point.kind === "derived" && point.formula !== null),
+    "fixture sanity: this assertion is meaningless unless a derived point with a formula exists",
   );
 
   // Publishing v2 does not touch v1. Ever. That is what makes a pin meaningful.
