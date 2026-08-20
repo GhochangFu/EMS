@@ -50,6 +50,7 @@ export const masterDataTabs = [
   { label: "Assets", path: "/admin/assets" },
   { label: "Asset Points", path: "/admin/asset-points" },
   { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
+  { label: "Import Telemetry", path: "/admin/telemetry/import" },
 ] as const;
 
 /** Returns tabs visible for the given role. */
