@@ -14,8 +14,9 @@ import { TelemetryWriteService } from "./telemetry-write.service";
 /**
  * `F1.8` — Vitest entry point for `ManualReadingsController`'s own contract.
  * Assertions live in the sibling `.spec` (ADR 0014); this file owns the
- * database lifecycle. Shares fixtures/cleanup with `telemetry-write.spec.ts`
- * — same `TEST_ASSET_PREFIX`, same rows, so both suites clean up the same way.
+ * database lifecycle. Reuses `telemetry-write.spec.ts`'s fixture logic under
+ * its own asset-code prefix, so this suite's rows never collide with that
+ * suite's when both `*.integration.test.ts` files run concurrently.
  */
 const connectionString = requireIntegrationDb({
   item: "F1.8",

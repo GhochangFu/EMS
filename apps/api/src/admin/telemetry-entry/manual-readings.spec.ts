@@ -3,9 +3,27 @@ import type pg from "pg";
 import { telemetryWriteResponseSchema } from "@bms/shared";
 
 import type { ManualReadingsController } from "./manual-readings.controller";
-import { cleanup, loadFixtures, TEST_ASSET_PREFIX, type Fixtures } from "./telemetry-write.spec";
+import {
+  cleanup as sharedCleanup,
+  loadFixtures as sharedLoadFixtures,
+  type Fixtures,
+} from "./telemetry-write.spec";
 
-export { cleanup, loadFixtures, TEST_ASSET_PREFIX };
+/**
+ * Distinct from `telemetry-write.spec.ts`'s own prefix so this suite's fresh
+ * asset can never be deleted by the other suite's `cleanup()` (or vice versa)
+ * when Vitest runs the two `*.integration.test.ts` files concurrently.
+ */
+export const TEST_ASSET_PREFIX = "F18-MANUAL-TEST-";
+
+export function cleanup(pool: pg.Pool): Promise<void> {
+  return sharedCleanup(pool, TEST_ASSET_PREFIX);
+}
+
+export function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
+  return sharedLoadFixtures(pool, TEST_ASSET_PREFIX);
+}
+
 export type { Fixtures };
 
 function assert(condition: boolean, message: string): void {

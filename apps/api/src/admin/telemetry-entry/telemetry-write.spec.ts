@@ -57,10 +57,10 @@ function assert(condition: boolean, message: string): void {
  * history to evaluate the predicate — measured failing outright with `tuple
  * decompression limit exceeded by operation` on this seeded database.
  */
-export async function cleanup(pool: pg.Pool): Promise<void> {
+export async function cleanup(pool: pg.Pool, prefix: string = TEST_ASSET_PREFIX): Promise<void> {
   const { rows: testAssets } = await pool.query<{ id: string }>(
     `SELECT id FROM bms.assets WHERE code LIKE $1`,
-    [`${TEST_ASSET_PREFIX}%`],
+    [`${prefix}%`],
   );
   for (const { id } of testAssets) {
     await pool.query(`DELETE FROM telemetry.point_values WHERE asset_id = $1::uuid`, [id]);
@@ -69,18 +69,25 @@ export async function cleanup(pool: pg.Pool): Promise<void> {
   await pool.query(
     `DELETE FROM bms.asset_points
       WHERE asset_id IN (SELECT id FROM bms.assets WHERE code LIKE $1)`,
-    [`${TEST_ASSET_PREFIX}%`],
+    [`${prefix}%`],
   );
   await pool.query(
     `DELETE FROM bms.audit_log
       WHERE entity_type = 'asset'
         AND entity_id IN (SELECT id FROM bms.assets WHERE code LIKE $1)`,
-    [`${TEST_ASSET_PREFIX}%`],
+    [`${prefix}%`],
   );
-  await pool.query(`DELETE FROM bms.assets WHERE code LIKE $1`, [`${TEST_ASSET_PREFIX}%`]);
+  await pool.query(`DELETE FROM bms.assets WHERE code LIKE $1`, [`${prefix}%`]);
 }
 
-export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
+/**
+ * `prefix` lets a sibling suite (e.g. `manual-readings.spec.ts`) reuse this
+ * fixture logic under its own asset-code prefix, so the two integration
+ * suites' fixture rows can never collide when Vitest runs their files
+ * concurrently — a shared prefix would let one suite's `cleanup()` delete
+ * the other's fresh asset mid-run.
+ */
+export async function loadFixtures(pool: pg.Pool, prefix: string = TEST_ASSET_PREFIX): Promise<Fixtures> {
   const { rows: grants } = await pool.query<{ organization_id: string; location_id: string }>(
     `SELECT l.organization_id, l.id AS location_id
        FROM bms.users u
@@ -150,7 +157,7 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
     );
   }
 
-  const freshCode = `${TEST_ASSET_PREFIX}${Date.now()}`;
+  const freshCode = `${prefix}${Date.now()}`;
   const { rows: assetRows } = await pool.query<{ id: string }>(
     `INSERT INTO bms.assets (code, name, site_name, location_id, rtu_id, domain, active)
      VALUES ($1, 'F1.8/F1.9 write-path fixture', 'Fixture Site', $2, NULL, 'water', true)
