@@ -249,6 +249,8 @@ export async function publishFixtureTemplate(
         required: true,
         sortOrder: 2,
         sourceDataKeyPattern: "{asset_code}_EFFICIENCY",
+        formula: `{${fx.pointKeys[0].code}}`,
+        formulaDialect: "bms-calc-v1",
       },
       {
         pointKey: fx.pointKeys[3].code,

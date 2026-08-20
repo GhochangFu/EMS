@@ -1,4 +1,4 @@
-import { assetDomainCodeSchema } from "@bms/shared";
+import { assetDomainCodeSchema, CALC_DIALECT, validateFormula } from "@bms/shared";
 import { z } from "zod";
 
 import { templateContentSchema } from "./asset-templates-content.schema";
@@ -21,15 +21,43 @@ import { templateContentSchema } from "./asset-templates-content.schema";
 
 const pointKeyCode = z.string().min(1).max(128);
 
-export const templatePointBodySchema = z.object({
-  pointKey: pointKeyCode,
-  label: z.string().max(255).nullish(),
-  unit: z.string().max(32).nullish(),
-  kind: z.enum(["measured", "derived"]).default("measured"),
-  sourceDataKeyPattern: z.string().max(128).nullish(),
-  required: z.boolean().default(true),
-  sortOrder: z.number().int().min(0).default(0),
-});
+export const templatePointBodySchema = z
+  .object({
+    pointKey: pointKeyCode,
+    label: z.string().max(255).nullish(),
+    unit: z.string().max(32).nullish(),
+    kind: z.enum(["measured", "derived"]).default("measured"),
+    sourceDataKeyPattern: z.string().max(128).nullish(),
+    // ADR 0036 decision 5. Cross-point rules (a derived formula's references
+    // must resolve to measured siblings, decision 7) cannot live here — a
+    // per-point refinement cannot see the rest of the array — and are enforced
+    // by templatePointsBodySchema's own superRefine below instead.
+    formula: z.string().min(1).max(1000).nullish(),
+    formulaDialect: z.literal(CALC_DIALECT).nullish(),
+    required: z.boolean().default(true),
+    sortOrder: z.number().int().min(0).default(0),
+  })
+  .superRefine((point, ctx) => {
+    const hasFormula = point.formula != null || point.formulaDialect != null;
+    if (point.kind === "derived" && (!point.formula || point.formulaDialect !== CALC_DIALECT)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["formula"],
+        message: `A derived point requires "formula" and formulaDialect: "${CALC_DIALECT}"`,
+      });
+    }
+    if (point.kind === "measured" && hasFormula) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["formula"],
+        message: 'A measured point must not carry a formula — only "derived" points may',
+      });
+    }
+  })
+  .describe(
+    'A derived point requires "formula" and formulaDialect: "bms-calc-v1"; a measured ' +
+      "point must carry neither.",
+  );
 
 /**
  * A template's full point set. Sent whole on create and on every draft update —
@@ -40,6 +68,11 @@ export const templatePointBodySchema = z.object({
  * Duplicate `pointKey`s are rejected here rather than by
  * `template_points_template_point_key_unique`, so the caller is told which code
  * collided instead of receiving a constraint name.
+ *
+ * ADR 0036 decision 7's sibling rule lives here too, not on
+ * `templatePointBodySchema`: a per-point refinement cannot see the rest of the
+ * array, and "does this formula's `{ref}` resolve to a measured point" needs
+ * every other point's `kind`.
  */
 const templatePointsBodySchema = z
   .array(templatePointBodySchema)
@@ -56,8 +89,42 @@ const templatePointsBodySchema = z
       }
       seen.add(point.pointKey);
     });
+
+    const kindByKey = new Map(points.map((point) => [point.pointKey, point.kind]));
+    const declaredKeys = points.map((point) => point.pointKey);
+
+    points.forEach((point, index) => {
+      if (point.kind !== "derived" || !point.formula) {
+        // no formula, or already flagged by templatePointBodySchema's own
+        // per-point refinement — nothing this sibling-scoped check can add
+        return;
+      }
+      const result = validateFormula(point.formula, declaredKeys);
+      if (!result.ok) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, "formula"],
+          message: "This point's formula is invalid or references an undeclared point key",
+        });
+        return;
+      }
+      const derivedRef = result.refs.find((ref) => kindByKey.get(ref) === "derived");
+      if (derivedRef) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, "formula"],
+          message:
+            "This point's formula references another derived point — a derived formula may " +
+            "only reference measured points",
+        });
+      }
+    });
   })
-  .describe("Every `pointKey` must be unique within this template's points.");
+  .describe(
+    "Every `pointKey` must be unique within this template's points. A derived point's " +
+      "`formula` must parse under bms-calc-v1, every `{ref}` must resolve to a point declared " +
+      "in this array, and none of those references may resolve to another derived point.",
+  );
 
 export const createAssetTemplateBodySchema = z.object({
   organizationId: z.string().uuid(),
