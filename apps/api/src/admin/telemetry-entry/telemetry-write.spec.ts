@@ -489,6 +489,35 @@ export async function runTelemetryWriteServiceTests(
     `the second duplicate row must be rejected and name row 1, got ${JSON.stringify(dupResult.rejected)}`,
   );
 
+  // ---- caller-supplied rowNumbers are used verbatim, in the reason text too -
+  // The importer's `rows` array is NOT in original-sheet order once
+  // out-of-scope/nonexistent asset codes have been filtered out by
+  // `resolveRows` — a 1-based index into `rows` names the wrong sheet row,
+  // both as the rejection's own `rowNumber` field and inside a duplicate
+  // rejection's `reason` text. `rowNumbers` lets a caller report both in ITS
+  // OWN numbering.
+
+  const callerNumberedTime = new Date().toISOString();
+  const callerNumberedResult = await svc.writeReadings(fx.adminJwt, {
+    rows: [
+      row({ assetId: fx.freshAssetId, pointKey: fx.freshAssetPointKey.code, time: callerNumberedTime }),
+      row({ assetId: fx.freshAssetId, pointKey: fx.freshAssetPointKey.code, time: callerNumberedTime }),
+    ],
+    rowNumbers: [42, 43],
+    sourceKind: "manual",
+    conflictPolicy: "reject",
+    auditAction: "telemetry.manual_entry",
+  });
+  assert(
+    callerNumberedResult.rejected.length === 1 && callerNumberedResult.rejected[0]?.rowNumber === 43,
+    `the duplicate's own rowNumber must be the caller-supplied 43, got ${JSON.stringify(callerNumberedResult.rejected)}`,
+  );
+  assert(
+    /duplicate of row 42/i.test(callerNumberedResult.rejected[0]?.reason ?? ""),
+    `the reason text must name the caller-supplied first-seen row 42, not a 1-based array index, got ` +
+      `"${callerNumberedResult.rejected[0]?.reason}"`,
+  );
+
   // ---- a reject-policy conflict is a visible rejection, not a silent skip ---
 
   const conflictTime = new Date().toISOString();
@@ -546,6 +575,25 @@ export async function runTelemetryWriteServiceTests(
   assert(
     validationResult.rejected.length === 2,
     `both rows must be rejected, got ${JSON.stringify(validationResult.rejected)}`,
+  );
+  // Every row here failed validation BEFORE the transaction opens — there is
+  // no `accepted` row to key an audit entry on, and the early return must
+  // still leave a trail: an attempt that touches the DB not at all is
+  // exactly the case with the least evidence otherwise.
+  const { rows: preTxAuditRows } = await pool.query<{ row_count: number; rejected_row_numbers: number[] }>(
+    `SELECT (payload->>'rowCount')::int AS row_count, payload->'rejectedRowNumbers' AS rejected_row_numbers
+       FROM bms.audit_log
+      WHERE entity_id = $1`,
+    [validationResult.result.batchId],
+  );
+  assert(
+    preTxAuditRows.length === 1 && preTxAuditRows[0]?.row_count === 0,
+    `a batch rejected entirely before the transaction must still write one audit row with rowCount 0, got ` +
+      `${JSON.stringify(preTxAuditRows)}`,
+  );
+  assert(
+    Array.isArray(preTxAuditRows[0]?.rejected_row_numbers) && preTxAuditRows[0]?.rejected_row_numbers.length === 2,
+    `the audit payload must name the rejected rows, got ${JSON.stringify(preTxAuditRows[0]?.rejected_row_numbers)}`,
   );
 
   // ---- the post-commit aggregate refresh actually runs ----------------------

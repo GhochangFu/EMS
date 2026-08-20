@@ -52,6 +52,16 @@ const UNIQUE_VIOLATION = "23505";
 
 export type WriteReadingsInput = {
   rows: readonly TelemetryEntryRow[];
+  /**
+   * Caller-supplied row numbers, same length and order as `rows`. When
+   * omitted, `rowNumber` defaults to a 1-based index into `rows` — correct
+   * for the manual-entry caller, whose `rows` array already IS in its own
+   * numbering. The importer's `rows` is NOT in original-sheet order once
+   * `resolveRows` has filtered out-of-scope/nonexistent asset codes, so it
+   * supplies this to keep every rejection — including a duplicate's `reason`
+   * text — in the sheet's own row numbers rather than an array index.
+   */
+  rowNumbers?: readonly number[];
   /** What a mapping is CREATED with, when one does not already exist for a row's (assetId, pointKey). */
   sourceKind: WritableSourceKind;
   conflictPolicy: "reject" | "overwrite";
@@ -137,7 +147,7 @@ export class TelemetryWriteService {
     const validated: AcceptedRow[] = [];
 
     for (let i = 0; i < input.rows.length; i += 1) {
-      const rowNumber = i + 1;
+      const rowNumber = input.rowNumbers?.[i] ?? i + 1;
       const row = input.rows[i];
       const outcome = await this.validateRow(jwt, row);
       if (!outcome.ok) {
@@ -172,6 +182,27 @@ export class TelemetryWriteService {
     }
 
     if (accepted.length === 0) {
+      // No row survived to be `accepted` — there is no assetId to key a
+      // per-asset audit row on the way the transaction below does. Key on
+      // the attempt itself instead: an all-rejected batch (the common shape
+      // for a scope-denied bulk import) must still leave a trail, not zero
+      // rows just because nothing reached the database.
+      const noWriteBatchId = randomUUID();
+      await this.audit.write({
+        actor: jwt,
+        action: input.auditAction,
+        entityType: "telemetry_batch",
+        entityId: noWriteBatchId,
+        payload: {
+          batchId: noWriteBatchId,
+          sourceKind: input.sourceKind,
+          conflictPolicy: input.conflictPolicy,
+          rowCount: 0,
+          // Row numbers only, same non-disclosure reasoning as the
+          // written-path audit below: never asset codes/ids here.
+          rejectedRowNumbers: rejected.slice(0, 20).map((r) => r.rowNumber),
+        },
+      });
       return {
         result: {
           written: 0,
@@ -179,7 +210,7 @@ export class TelemetryWriteService {
           assetPointsCreated: 0,
           firstTime: null,
           lastTime: null,
-          batchId: randomUUID(),
+          batchId: noWriteBatchId,
         },
         rejected,
       };
@@ -353,7 +384,10 @@ export class TelemetryWriteService {
       // where every row was rejected inside the transaction (an all-conflict
       // `reject`-policy batch, or every row's mapping collided) must still
       // leave an audit trail. `rowCount` still reports what was actually
-      // written, so the payload stays truthful even when that is zero.
+      // written, so the payload stays truthful even when that is zero. The
+      // OTHER way every row can be rejected — none surviving `validateRow`
+      // at all, so `accepted` is empty and this transaction never opens —
+      // is audited separately, above, before the early `return`.
       const assetIds = [...new Set(accepted.map((a) => a.row.assetId))];
       for (const assetId of assetIds) {
         const forAsset = writtenRows.filter((a) => a.row.assetId === assetId);

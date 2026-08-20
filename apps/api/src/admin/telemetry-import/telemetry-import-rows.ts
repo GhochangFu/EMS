@@ -55,6 +55,70 @@ function isBlankRow(row: SheetCell[]): boolean {
 }
 
 /**
+ * Matches ISO-8601 only: `YYYY-MM-DD` optionally followed by a `T`/space
+ * time-of-day and an optional `Z`/numeric offset. Deliberately rejects every
+ * other shape — `DD/MM/YYYY`, `MM/DD/YYYY`, `DD-MM-YYYY` and similar are
+ * locale-ambiguous and must fail closed, never guessed.
+ */
+const ISO_8601_RE =
+  /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}):(\d{2})(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
+
+/**
+ * Parses `text` as strict ISO-8601, UTC-safe on every host. An offset/`Z`
+ * suffix is handed to `Date.parse` (spec-correct for that shape); a bare
+ * date or date-time with no offset is explicitly asserted as UTC via
+ * `Date.UTC` rather than `Date.parse`, which treats an offset-less
+ * date-TIME string as local time per ECMA-262 — the same host-dependent
+ * shift this module exists to avoid. Returns `NaN` for anything else,
+ * including every locale-ambiguous separator shape.
+ */
+function parseStrictIsoUtc(text: string): number {
+  const m = ISO_8601_RE.exec(text);
+  if (!m) {
+    return Number.NaN;
+  }
+  const [, y, mo, d, h, mi, s, frac, zone] = m;
+  if (zone) {
+    return Date.parse(text);
+  }
+  return Date.UTC(
+    Number(y),
+    Number(mo) - 1,
+    Number(d),
+    h ? Number(h) : 0,
+    mi ? Number(mi) : 0,
+    s ? Number(s) : 0,
+    frac ? Math.round(Number(frac) * 1000) : 0,
+  );
+}
+
+/**
+ * Whether `book` came from a genuine binary spreadsheet format (XLSX, XLS,
+ * XLSB, ODS, …) rather than CSV/plain text. SheetJS sets `bookType` for the
+ * former and leaves it `undefined` for the latter — checked empirically
+ * against the installed xlsx build (ADR 0035), not assumed. Only a genuine
+ * binary date-serial cell is timezone-agnostic and safe to trust
+ * numerically; a CSV cell that merely *looks* like a date to SheetJS's own
+ * type-guessing (e.g. `03/08/2026`) is not — see `ISO_8601_RE` above.
+ */
+function isBinarySpreadsheet(book: XLSX.WorkBook): boolean {
+  return book.bookType !== undefined && book.bookType !== "csv" && book.bookType !== "txt";
+}
+
+/**
+ * The exact original text SheetJS read for a cell, bypassing whatever type
+ * it guessed the value into (`.v`) — SheetJS preserves the source text on
+ * `.w` even for a CSV cell it silently converted to a numeric date serial.
+ */
+function rawCellText(sheet: XLSX.WorkSheet, sheetRowIndex: number, colIndex: number): string | undefined {
+  if (colIndex < 0) {
+    return undefined;
+  }
+  const addr = XLSX.utils.encode_cell({ r: sheetRowIndex, c: colIndex });
+  return sheet[addr]?.w;
+}
+
+/**
  * Parses an uploaded CSV or XLSX buffer into accepted rows and per-row
  * rejections. Returns a discriminated result instead of throwing: a
  * genuinely unreadable buffer, a missing required column, an empty sheet, or
@@ -135,9 +199,11 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   const rows: ParsedImportRow[] = [];
   const rejected: ImportRowRejection[] = [];
   const seenAt = new Map<string, number>();
+  const trustNumericDateSerial = isBinarySpreadsheet(book);
 
   dataRows.forEach((row, offset) => {
     const rowNumber = offset + 2; // header occupies row 1; offset runs over the UNFILTERED rows
+    const sheetRowIndex = offset + 1; // 0-based index into `sheet`; header consumed row index 0
 
     if (isBlankRow(row)) {
       return; // silently ignored — spacer rows are common in hand-edited sheets
@@ -165,20 +231,30 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
 
     const timeCell = timeIdx >= 0 ? row[timeIdx] : undefined;
     let parsedTime: number;
-    if (typeof timeCell === "number") {
+    if (trustNumericDateSerial && typeof timeCell === "number") {
       // A real Excel date/time cell: a day-count serial, timezone-agnostic
       // by construction. Decode its y/m/d/H/M/S components and re-assert
       // them as UTC — the wall-clock value in the cell IS the UTC instant.
+      // Only trusted for a genuine binary spreadsheet — a CSV cell can be
+      // type-guessed into an identical-looking number by SheetJS's own
+      // locale-ambiguous date detection (see `isBinarySpreadsheet`).
       const decoded = XLSX.SSF.parse_date_code(timeCell);
       parsedTime = decoded
         ? Date.UTC(decoded.y, decoded.m - 1, decoded.d, decoded.H, decoded.M, decoded.S, Math.round((decoded.u ?? 0) * 1000))
         : Number.NaN;
     } else {
-      const timeRaw = cellText(row, timeIdx);
-      parsedTime = timeRaw ? Date.parse(timeRaw) : Number.NaN;
+      // The cell's original text, not `cellText(row, timeIdx)` — for a CSV
+      // cell SheetJS type-guessed into a number, `row[timeIdx]` is already
+      // that number, and stringifying it would parse the wrong value.
+      const timeRaw = rawCellText(sheet, sheetRowIndex, timeIdx) ?? cellText(row, timeIdx);
+      parsedTime = timeRaw ? parseStrictIsoUtc(timeRaw) : Number.NaN;
     }
     if (Number.isNaN(parsedTime)) {
-      rejected.push({ rowNumber, field: "time", reason: "time must be a parsable timestamp" });
+      rejected.push({
+        rowNumber,
+        field: "time",
+        reason: "time must be an ISO-8601 timestamp (e.g. 2026-08-19T10:00:00Z)",
+      });
       return;
     }
     const time = new Date(parsedTime).toISOString();
