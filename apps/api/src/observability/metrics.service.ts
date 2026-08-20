@@ -7,6 +7,13 @@ import {
   Registry,
 } from "prom-client";
 
+import type { CalcSkipReason } from "../calc/calc-definition";
+
+/** Runtime skip reasons (ADR 0037 decision 9) — a stored definition can be
+ * unusable (`CalcSkipReason`), or usable but skipped this evaluation because
+ * an input was absent or too old. */
+export type CalcRuntimeSkipReason = CalcSkipReason | "missing_input" | "stale_input" | "non_finite";
+
 @Injectable()
 export class MetricsService {
   readonly registry = new Registry();
@@ -90,6 +97,36 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * Calc engine skips, labelled by reason (ADR 0037 decision 9: "no skip is
+   * silent"). Covers both an unusable stored definition (`no_trigger`,
+   * `unparseable_formula`, …) and a usable one skipped this evaluation
+   * (`missing_input`, `stale_input`, `non_finite`). A skip is an absent
+   * value, never a wrong one — non-zero here is expected in steady state
+   * (an author has not yet tightened a loose default) and only becomes
+   * actionable relative to `bms_api_calc_values_written_total`.
+   */
+  private readonly calcSkipped = new Counter({
+    name: "bms_api_calc_skipped_total",
+    help: "Calc engine evaluations skipped, by reason.",
+    labelNames: ["reason"],
+    registers: [this.registry],
+  });
+
+  private readonly calcValuesWritten = new Counter({
+    name: "bms_api_calc_values_written_total",
+    help: "Derived point values written by the calc engine.",
+    registers: [this.registry],
+  });
+
+  /** Active formula count (ADR 0037 decision 7): "a gauge exposes the active
+   * formula count so growth is visible before it hurts." */
+  private readonly calcActiveFormulas = new Gauge({
+    name: "bms_api_calc_active_formulas",
+    help: "Derived formulas currently active (usable definitions loaded by the calc engine).",
+    registers: [this.registry],
+  });
+
   constructor() {
     this.registry.setDefaultLabels({
       service: process.env.OTEL_SERVICE_NAME ?? "bms-api",
@@ -143,5 +180,20 @@ export class MetricsService {
   /** Records readings refused by NOTIFY payload validation. */
   countTelemetryReadingsDropped(count: number): void {
     this.telemetryReadingsDropped.inc(count);
+  }
+
+  /** Records one calc engine skip, labelled by reason. */
+  countCalcSkipped(reason: CalcRuntimeSkipReason): void {
+    this.calcSkipped.labels(reason).inc();
+  }
+
+  /** Records one derived point value written by the calc engine. */
+  countCalcValuesWritten(count = 1): void {
+    this.calcValuesWritten.inc(count);
+  }
+
+  /** Sets the current count of active (usable) calc definitions. */
+  setCalcActiveFormulas(count: number): void {
+    this.calcActiveFormulas.set(count);
   }
 }
