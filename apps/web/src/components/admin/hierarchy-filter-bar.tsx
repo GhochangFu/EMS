@@ -7,6 +7,7 @@ import { fetchAdminLocations } from "../../api/admin/locations";
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { fetchAdminRtus } from "../../api/admin/rtus";
 import { isGlobalAdmin } from "../../lib/admin-access";
+import { isAssetLevelReady, resolveEffectiveOrganizationId } from "../../lib/hierarchy-filter";
 import type { AuthUser } from "../../stores/auth-store";
 
 export type HierarchySelection = {
@@ -45,10 +46,17 @@ export function HierarchyFilterBar({
     enabled: showOrg || showLocation || showRtu || showAsset,
   });
 
+  const orgLocked = !isGlobalAdmin(user.role) && (orgsQ.data?.items.length ?? 0) <= 1;
+
+  const effectiveOrgId = useMemo(
+    () => resolveEffectiveOrganizationId(orgLocked, selection.organizationId, orgsQ.data?.items[0]?.id),
+    [orgLocked, selection.organizationId, orgsQ.data?.items],
+  );
+
   const locationsQ = useQuery({
-    queryKey: ["admin", "locations", "true", selection.organizationId],
-    queryFn: () => fetchAdminLocations("true", selection.organizationId),
-    enabled: (showLocation || showRtu || showAsset) && Boolean(selection.organizationId),
+    queryKey: ["admin", "locations", "true", effectiveOrgId],
+    queryFn: () => fetchAdminLocations("true", effectiveOrgId),
+    enabled: (showLocation || showRtu || showAsset) && Boolean(effectiveOrgId),
   });
 
   const rtusQ = useQuery({
@@ -60,20 +68,8 @@ export function HierarchyFilterBar({
   const assetsQ = useQuery({
     queryKey: ["admin", "assets", "true", selection.locationId, selection.rtuId],
     queryFn: () => fetchAdminAssets("true", selection.locationId, selection.rtuId),
-    enabled: showAsset && Boolean(selection.locationId) && Boolean(selection.rtuId),
+    enabled: showAsset && isAssetLevelReady(showRtu, selection),
   });
-
-  const orgLocked = !isGlobalAdmin(user.role) && (orgsQ.data?.items.length ?? 0) <= 1;
-
-  const effectiveOrgId = useMemo(() => {
-    if (selection.organizationId) {
-      return selection.organizationId;
-    }
-    if (orgLocked && orgsQ.data?.items[0]) {
-      return orgsQ.data.items[0].id;
-    }
-    return "";
-  }, [orgLocked, orgsQ.data?.items, selection.organizationId]);
 
   function updateSelection(next: HierarchySelection): void {
     onNavigate(next);
@@ -172,7 +168,7 @@ export function HierarchyFilterBar({
         <select
           className="rounded border border-gray-200 px-3 py-1.5 text-xs"
           value={selection.assetId ?? ""}
-          disabled={!selection.rtuId}
+          disabled={!isAssetLevelReady(showRtu, selection)}
           onChange={(event) => {
             updateSelection({
               organizationId: effectiveOrgId || selection.organizationId,

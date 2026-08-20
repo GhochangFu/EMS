@@ -28,6 +28,7 @@ import { OrganizationsAdminController } from "./organizations/organizations.cont
 import { OrganizationsAdminService } from "./organizations/organizations.service";
 import { RtusAdminController } from "./rtus/rtus.controller";
 import { RtusAdminService } from "./rtus/rtus.service";
+import { ManualReadingsController } from "./telemetry-entry/manual-readings.controller";
 import { TelemetryWriteService } from "./telemetry-entry/telemetry-write.service";
 
 @Module({
@@ -42,6 +43,7 @@ import { TelemetryWriteService } from "./telemetry-entry/telemetry-write.service
     AssetTemplatesAdminController,
     AuditAdminController,
     OnboardingController,
+    ManualReadingsController,
   ],
   providers: [
     MasterDataAuditService,
