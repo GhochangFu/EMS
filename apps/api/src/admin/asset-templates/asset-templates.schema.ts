@@ -1,4 +1,4 @@
-import { assetDomainCodeSchema, CALC_DIALECT, validateFormula } from "@bms/shared";
+import { assetDomainCodeSchema, CALC_DIALECT, formatCalcError, validateFormula } from "@bms/shared";
 import { z } from "zod";
 
 import { templateContentSchema } from "./asset-templates-content.schema";
@@ -104,7 +104,7 @@ const templatePointsBodySchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: [index, "formula"],
-          message: "This point's formula is invalid or references an undeclared point key",
+          message: `Invalid formula: ${formatCalcError(result.errors[0])}`,
         });
         return;
       }
@@ -114,8 +114,11 @@ const templatePointsBodySchema = z
           code: z.ZodIssueCode.custom,
           path: [index, "formula"],
           message:
-            "This point's formula references another derived point — a derived formula may " +
-            "only reference measured points",
+            derivedRef === point.pointKey
+              ? "This point's formula references itself — a derived formula may only " +
+                "reference measured points"
+              : "This point's formula references another derived point — a derived formula " +
+                "may only reference measured points",
         });
       }
     });

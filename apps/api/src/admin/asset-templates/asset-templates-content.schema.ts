@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-import { alarmSkillCodeSchema, CALC_DIALECT, MAX_FORMULA_POINT_REFS, validateFormula } from "@bms/shared";
+import {
+  alarmSkillCodeSchema,
+  CALC_DIALECT,
+  formatCalcError,
+  MAX_FORMULA_POINT_REFS,
+  validateFormula,
+} from "@bms/shared";
 import type { TemplateContent } from "@bms/shared";
 
 import {
@@ -204,14 +210,17 @@ const templateKpiSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["expression"],
-        message: "This KPI's expression is invalid, or references a point key not in pointKeys",
+        message: `Invalid expression: ${formatCalcError(result.errors[0])}`,
       });
       return;
     }
     // The other direction — every `{ref}` in `expression` resolves to a
     // declared key — was already checked by `validateFormula` above
     // (`unknown_reference` fails it). This is only the reverse: a declared
-    // key the expression never uses.
+    // key the expression never uses. Does not also catch a *duplicate*
+    // pointKeys entry (["A","A"] with expression "{A}" passes both checks) —
+    // harmless, and pre-existing: pointKeys carried no uniqueness rule before
+    // this dialect existed either.
     const used = new Set(result.refs);
     const unused = kpi.pointKeys.filter((key) => !used.has(key));
     if (unused.length > 0) {
@@ -224,8 +233,9 @@ const templateKpiSchema = z
   })
   .describe(
     'When dialect is "bms-calc-v1", expression is parsed under bms-calc-v1 and rejected on ' +
-      "syntax error or unknown function; pointKeys must equal exactly the set of point " +
-      'references the expression uses. A "unvalidated" KPI is not parsed.',
+      "syntax error or unknown function; every entry in pointKeys must be used by expression " +
+      'at least once, and every {ref} in expression must appear in pointKeys. A "unvalidated" ' +
+      "KPI is not parsed.",
   );
 
 /** `createMaintenanceScheduleBodySchema` minus the two fields only an instance

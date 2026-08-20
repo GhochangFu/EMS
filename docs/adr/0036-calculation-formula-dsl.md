@@ -183,13 +183,20 @@ parser. §9.4 is not triggered.
   is the item that *does* own this vocabulary.
 - The migration adding `template_points.formula`/`formula_dialect` is
   additive and nullable — safe forward-only, no backfill. Implementation
-  should confirm no existing `kind: "derived"` rows exist pre-migration
-  (none are in seed data as of this ADR); if any do, the Zod-layer
-  enforcement in decision 5 makes them invalid on the next write, not
-  silently accepted.
-- Authors get a real error message on a malformed formula at save time
+  confirmed no existing `kind: "derived"` rows exist pre-migration (none are
+  in seed data as of this ADR). If any ever do, the Zod-layer enforcement in
+  decision 5 makes them invalid on their next `points` write through
+  `create`/`update` — **not** on every write: `createDraftFrom` copies a
+  version's points forward as stored, unvalidated, so a pre-existing invalid
+  row would carry into a new draft rather than being rejected there. Narrower
+  than this ADR's first draft claimed; recorded during implementation review
+  rather than closed, since closing it means running the point-set validator
+  over a version copy, which is an `apps/api` change, not this ADR's.
+- Authors get a real error message — the formula DSL's own `code`/`position`,
+  rendered through `formatCalcError` — on a malformed formula at save time
   instead of an opaque string that fails silently at some future evaluation
-  step — a materially better authoring experience for `F2.5`.
+  step. A materially better authoring experience for `F2.5`, which can reuse
+  the same renderer for a live-preview error instead of building its own.
 - The brace-reference syntax (decision 2) is a small but real UX choice:
   `{POINT_KEY}` is more verbose than a bare identifier but never collides
   with an unusual `point_key` value, and needs no escaping rules.

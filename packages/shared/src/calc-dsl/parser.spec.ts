@@ -71,16 +71,13 @@ export function runParserTests(): void {
   expectOk("min(max({A}, {B}), 5)");
 
   expectFailCode("pow({A}, 2)", "unknown_function", "pow is not a whitelisted function");
-  try {
-    const result = parseFormula("pow({A}, 2)");
-    if (!result.ok) {
-      assert(
-        !formatCalcError(result.errors[0]).includes("pow"),
-        "the unknown-function error must not name the function",
-      );
-    }
-  } catch {
-    // parseFormula never throws — nothing to catch, this branch is unreachable
+  const unknownFnResult = parseFormula("pow({A}, 2)");
+  assert(unknownFnResult.ok === false, "pow(...) must fail to parse");
+  if (!unknownFnResult.ok) {
+    assert(
+      !formatCalcError(unknownFnResult.errors[0]).includes("pow"),
+      "the unknown-function error must not name the function",
+    );
   }
 
   // ---- arity, exactly at and either side of each whitelisted function's bound ---
