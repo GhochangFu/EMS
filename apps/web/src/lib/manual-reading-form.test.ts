@@ -5,6 +5,7 @@ import {
   runDefaultLocalDateTimeTests,
   runDescribeWriteOutcomeTests,
   runLocalDateTimeToIsoTests,
+  runOffsetForLocalDateTimeTests,
   runValidateManualReadingFormTests,
 } from "./manual-reading-form.spec";
 
@@ -28,5 +29,9 @@ describe("manual-reading-form", () => {
 
   it("validates client-side format only, leaving semantic rules to the server", () => {
     runValidateManualReadingFormTests();
+  });
+
+  it("derives the datetime-local offset from the entered instant, not from now", () => {
+    runOffsetForLocalDateTimeTests();
   });
 });

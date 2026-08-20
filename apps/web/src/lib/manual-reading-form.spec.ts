@@ -5,6 +5,7 @@ import {
   defaultLocalDateTime,
   describeWriteOutcome,
   localDateTimeToIso,
+  offsetForLocalDateTime,
   validateManualReadingForm,
   type ManualReadingFormValues,
 } from "./manual-reading-form";
@@ -109,6 +110,42 @@ export function runBuildManualReadingRowTests(): void {
   assert(
     withNoCatalogUnit.unit === "kW",
     "when there is no catalog default at all, the operator's own unit must always be sent",
+  );
+
+  // A point key with no catalog unit at all (catalogUnit === null) leaves the
+  // unit box blank by construction (manual-readings-page.tsx seeds it from
+  // the catalog). A blank box must never be sent as a literal empty-string
+  // override — the write path treats "" as a real unit and either creates a
+  // mapping pinned to "" or rejects the row against an existing mapping.
+  const blankUnitNoCatalog = buildManualReadingRow({ ...BASE_FORM, unit: "" }, null, 0);
+  assert(
+    blankUnitNoCatalog.unit === undefined,
+    `a blank unit box with no catalog default must omit unit entirely, got ${JSON.stringify(blankUnitNoCatalog.unit)}`,
+  );
+
+  // Same when a catalog unit does exist but the operator cleared the box.
+  const blankUnitWithCatalog = buildManualReadingRow({ ...BASE_FORM, unit: "" }, "kW", 0);
+  assert(
+    blankUnitWithCatalog.unit === undefined,
+    `a blank unit box must omit unit even when a catalog default exists, got ${JSON.stringify(blankUnitWithCatalog.unit)}`,
+  );
+}
+
+export function runOffsetForLocalDateTimeTests(): void {
+  // Deterministic regardless of the runner's own TZ: the function must derive
+  // the offset from the *entered* wall-clock fields, not from "now" — a
+  // backfilled reading and today's date can straddle a DST boundary.
+  assert(
+    typeof offsetForLocalDateTime("2026-08-20T14:30") === "number",
+    "must return a numeric offset for a well-formed datetime-local value",
+  );
+  assert(
+    offsetForLocalDateTime("2026-08-20T14:30") === new Date(2026, 7, 20, 14, 30).getTimezoneOffset(),
+    "must derive the offset from the entered date's own local fields, not from the current instant",
+  );
+  assert(
+    offsetForLocalDateTime("2026-01-15T09:00") === new Date(2026, 0, 15, 9, 0).getTimezoneOffset(),
+    "must use the entered month/day, not today's — the two can carry different DST offsets",
   );
 }
 

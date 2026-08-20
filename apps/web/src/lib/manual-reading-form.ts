@@ -33,6 +33,29 @@ export function defaultLocalDateTime(now: Date): string {
   );
 }
 
+/**
+ * The offset to pass to `localDateTimeToIso` for a given `datetime-local`
+ * value — derived from the *entered* wall-clock fields, not from `new
+ * Date().getTimezoneOffset()` at submit time. A backfilled reading and
+ * today's date can straddle a DST boundary in a zone that observes it, so
+ * "now"'s offset is not always the entered instant's offset.
+ */
+export function offsetForLocalDateTime(value: string): number {
+  const match = LOCAL_DATETIME_RE.exec(value);
+  if (!match) {
+    throw new Error(`not a valid datetime-local value: "${value}"`);
+  }
+  const [, year, month, day, hour, minute, second] = match;
+  return new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second ?? 0),
+  ).getTimezoneOffset();
+}
+
 export type ManualReadingFormValues = {
   assetId: string;
   pointKey: string;
@@ -58,8 +81,9 @@ export function buildManualReadingRow(
     value: Number(form.value),
     time: localDateTimeToIso(form.time, offsetMinutes),
   };
-  if (catalogUnit === null || form.unit !== catalogUnit) {
-    row.unit = form.unit;
+  const unit = form.unit.trim();
+  if (unit !== "" && (catalogUnit === null || unit !== catalogUnit)) {
+    row.unit = unit;
   }
   return row;
 }

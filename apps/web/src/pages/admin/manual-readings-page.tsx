@@ -16,6 +16,7 @@ import {
   buildManualReadingRow,
   defaultLocalDateTime,
   describeWriteOutcome,
+  offsetForLocalDateTime,
   validateManualReadingForm,
   type ManualReadingFormValues,
 } from "../../lib/manual-reading-form";
@@ -58,7 +59,7 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
       if (Object.keys(errors).length > 0) {
         throw new Error("Fix the highlighted fields before submitting.");
       }
-      const row = buildManualReadingRow(form, catalogUnit, new Date().getTimezoneOffset());
+      const row = buildManualReadingRow(form, catalogUnit, offsetForLocalDateTime(form.time));
       return submitManualReadings([row], overwrite ? "overwrite" : "reject");
     },
     onSuccess: (response) => {
@@ -94,6 +95,9 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
               setSelection(next);
               setPointKey("");
               setUnit("");
+              setResult(null);
+              setSubmitError(null);
+              setFormErrors({});
             }}
             syncRoutes={false}
           />
