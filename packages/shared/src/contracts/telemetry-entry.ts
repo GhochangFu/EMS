@@ -28,6 +28,11 @@ export const writableSourceKindSchema = pointSourceKindSchema.extract(["manual",
  * by `.describe()` — `tests/adr-0029-openapi-contract.test.ts` scans for that
  * order; a `.describe()` placed before the refinement is silently discarded
  * by the OpenAPI conversion.
+ *
+ * `.strict()` so a row cannot smuggle a key like `sourceKind` or `rtuId` —
+ * both callers of this schema (F1.8's body wrapper, F1.9's importer) hardcode
+ * `sourceKind` themselves; a caller attempting to set it should get a 400
+ * naming the problem, not a silently-stripped key.
  */
 export const telemetryEntryRowSchema = z
   .object({
@@ -40,6 +45,7 @@ export const telemetryEntryRowSchema = z
       .refine((v) => !Number.isNaN(Date.parse(v)), "must be a parsable timestamp")
       .describe("ISO-8601 timestamp of the reading"),
   })
+  .strict()
   .describe("One hand-entered or imported telemetry reading.");
 
 /** One row a write attempt rejected, and why. */

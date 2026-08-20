@@ -12,6 +12,34 @@ function assert(condition: boolean, message: string): void {
 }
 
 /**
+ * `telemetryEntryRowSchema` itself must be `.strict()` — the body wrapper's
+ * own `.strict()` (tested below) only catches an unknown key at the top
+ * level; a caller could still smuggle `sourceKind`/`rtuId` inside a *row* and
+ * have it silently stripped rather than rejected. No privilege escalation
+ * follows (the write path builds every column by named property, never by
+ * spreading a row), but a caller sending `sourceKind` deserves the same 400
+ * a caller sending it at the top level already gets.
+ */
+export function runTelemetryEntryRowSchemaStrictnessTests(): void {
+  const goodRow = {
+    assetId: "00000000-0000-4000-8000-000000000001",
+    pointKey: "kw",
+    value: 12.5,
+    time: "2026-08-19T12:00:00.000Z",
+  };
+  assert(telemetryEntryRowSchema.safeParse(goodRow).success, "sanity: goodRow must itself parse");
+
+  assert(
+    !telemetryEntryRowSchema.safeParse({ ...goodRow, sourceKind: "manual" }).success,
+    "a row carrying sourceKind must be rejected, not silently stripped",
+  );
+  assert(
+    !telemetryEntryRowSchema.safeParse({ ...goodRow, rtuId: "00000000-0000-4000-8000-000000000002" }).success,
+    "a row carrying rtuId must be rejected, not silently stripped",
+  );
+}
+
+/**
  * Behavioural cover for the F1.8/F1.9 write-response envelope
  * (`packages/shared/src/contracts/telemetry-entry.ts`,
  * `telemetryWriteResponseSchema`).
