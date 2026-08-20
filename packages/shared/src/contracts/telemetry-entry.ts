@@ -60,3 +60,14 @@ export const telemetryWriteResultDtoSchema = z
     batchId: z.string().uuid(),
   })
   .readonly();
+
+/**
+ * The full write-response envelope — what the F1.8/F1.9 controllers return,
+ * accepted and rejected rows together. `telemetryWriteResultDtoSchema` alone
+ * only covers the accepted half; a caller also needs to know which rows were
+ * skipped and why.
+ */
+export const telemetryWriteResponseSchema = z.object({
+  result: telemetryWriteResultDtoSchema,
+  rejected: z.array(rejectedRowDtoSchema),
+});
