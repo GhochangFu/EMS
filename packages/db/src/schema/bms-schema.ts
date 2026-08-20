@@ -392,6 +392,13 @@ export const templatePoints = bmsSchema.table("template_points", {
   // CHECK; see migration 0035's header for why.
   formula: text("formula"),
   formulaDialect: varchar("formula_dialect", { length: 32 }),
+  // ADR 0037 decision 4: when the formula above runs, and how stale its
+  // inputs may be. Nullable for the same reason and by the same rule as
+  // formula/formulaDialect above — enforced in apps/api's Zod layer, not a
+  // DB CHECK; see migration 0036's header.
+  calcTrigger: varchar("calc_trigger", { length: 16 }),
+  calcIntervalSeconds: integer("calc_interval_seconds"),
+  maxInputAgeSeconds: integer("max_input_age_seconds"),
   required: boolean("required").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
   meta: jsonb("meta").notNull().default({}),
