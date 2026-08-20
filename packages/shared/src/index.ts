@@ -40,6 +40,14 @@ export * from "./constants";
 /** The schemas themselves. See the note above on why they are re-exported. */
 export * from "./contracts";
 
+/** The `bms-calc-v1` grammar (ADR 0036, `F2.3`) — tokenizer, parser, AST
+ * types, and the pure `parseFormula`/`validateFormula` surface. No `./calc-dsl`
+ * subpath is added to `package.json` `exports`: AGENTS.md §4.8 records that
+ * `apps/api` compiles with `moduleResolution: "node"` and ignores the
+ * `exports` map, so the barrel is the only route its main consumer typechecks
+ * through. */
+export * from "./calc-dsl";
+
 // ---------------------------------------------------------------------------
 // Auth and access scope
 // ---------------------------------------------------------------------------
