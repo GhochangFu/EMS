@@ -16,10 +16,12 @@ import {
  */
 export const TEST_ASSET_PREFIX = "F18-MANUAL-TEST-";
 
+/** Deletes this suite's own fixture rows (its own `TEST_ASSET_PREFIX`). Safe to call when absent. */
 export function cleanup(pool: pg.Pool): Promise<void> {
   return sharedCleanup(pool, TEST_ASSET_PREFIX);
 }
 
+/** Loads this suite's own fixtures, under its own `TEST_ASSET_PREFIX`. */
 export function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
   return sharedLoadFixtures(pool, TEST_ASSET_PREFIX);
 }
@@ -144,7 +146,7 @@ export async function runManualReadingsControllerTests(
     },
     fx.adminJwt,
   );
-  assert(rejectedSecond.result.written === 0, "conflictPolicy must default to 'reject' when omitted");
+  assert(rejectedSecond.result.written === 0, "an explicit conflictPolicy: 'reject' must reject a conflicting row");
 
   const overwrittenSecond = await controller.create(
     {

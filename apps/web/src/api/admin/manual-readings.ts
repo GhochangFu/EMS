@@ -3,6 +3,7 @@ import type { TelemetryEntryRow, TelemetryWriteResponse } from "@bms/shared";
 
 import { adminFetch } from "./client";
 
+/** Posts hand-entered readings to `POST /admin/telemetry-entry/manual-readings`. */
 export async function submitManualReadings(
   rows: TelemetryEntryRow[],
   conflictPolicy?: "reject" | "overwrite",
