@@ -1044,6 +1044,13 @@ Process (`AGENTS.md` §10).
   `asset_points_source_ref_check`. An asset must be *somewhere* and need not be
   *wired*, and one asset can now mix measured, hand-entered and computed points.
 - **Unblocks:** F1.8, F1.9.
+- **F1.9 (CSV/Excel telemetry bulk import) built 2026-08-20** — PR
+  [#109](https://github.com/GhochangFu/EMS/pull/109), open, pending human
+  review and merge. Composes a pure row parser and asset-code resolution
+  with the shared write path `F1.8` also builds on (`TelemetryWriteService`,
+  Phase A of the same plan, merged in PR #108), rather than a second copy of
+  its catalog/unit-precedence/retention decisions. `docs/BACKLOG.md`'s
+  `F1.9` row is not yet flipped to ✅ — that happens on merge.
 - **Owed:** the companion ADR on location *depth* (`locations.parent_id`,
   `parent_asset_id`, and retiring the Eskom-era `locations.type` union). The
   design question is answered — subtree inheritance is in — and F4.10 carries an
