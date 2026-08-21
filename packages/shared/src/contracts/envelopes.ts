@@ -20,6 +20,7 @@ import { z } from "zod";
 import {
   adminAssetDtoSchema,
   adminAssetPointDtoSchema,
+  adminAssetTemplateSummaryDtoSchema,
   adminLocationDtoSchema,
   adminOrganizationDtoSchema,
   adminPointKeyDtoSchema,
@@ -55,6 +56,33 @@ export const rtusListResponseSchema = itemsOf(adminRtuDtoSchema);
 export const assetsListResponseSchema = itemsOf(adminAssetDtoSchema);
 export const assetPointsListResponseSchema = itemsOf(adminAssetPointDtoSchema);
 export const pointKeysListResponseSchema = itemsOf(adminPointKeyDtoSchema);
+
+/**
+ * Asset templates — the two admin routes that had no envelope here.
+ *
+ * Added by `F2.5` (ADR 0038) and **not an API change**: no route, response
+ * shape or validator moves. `adminFetch` requires a schema argument, so a
+ * client for a route without one cannot be written at all, which is why the
+ * gap only surfaced when `apps/web` finally grew a template UI.
+ *
+ * The row stays `adminAssetTemplateSummaryDtoSchema` — a `z.intersection` of
+ * the full DTO minus `points`, and `{ pointCount }`. `itemsOf` accepts it
+ * because `ContractSchema` is `z.ZodTypeAny`. Do not "simplify" it to a flat
+ * `z.object` while wiring this envelope: that still typechecks, still passes
+ * `itemsOf`, and silently stops enforcing `pointCount` (ADR 0030 Amendment 1,
+ * rule 2 — the rule `tests/adr-0030-contract-derivation.test.ts` guards).
+ */
+export const assetTemplatesListResponseSchema = itemsOf(adminAssetTemplateSummaryDtoSchema);
+
+/**
+ * `DELETE /admin/asset-templates/:id` — deleting a draft.
+ *
+ * `z.literal(true)`, not `z.boolean()`. The route deletes the draft or throws
+ * (it refuses a published version outright), so it has no `false` to return.
+ * A `false` arriving here would mean the API changed what it returns, not that
+ * the delete failed — and the contract should say so rather than accept it.
+ */
+export const templateDraftDeletedResponseSchema = z.object({ deleted: z.literal(true) });
 
 // --- operations -------------------------------------------------------------
 
