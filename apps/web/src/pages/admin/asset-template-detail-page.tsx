@@ -44,6 +44,7 @@ import {
   type HierarchySelection,
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { AlarmsTab } from "../../components/asset-templates/alarms-tab";
 import { CalculationsTab } from "../../components/asset-templates/calculations-tab";
 import { DetailsTab } from "../../components/asset-templates/details-tab";
 import { KpisTab } from "../../components/asset-templates/kpis-tab";
@@ -297,10 +298,18 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
  * is why it became a real dispatcher with the first tab rather than waiting for
  * the last. The plan calls Unit 9 a fan-out point and says the five tabs are
  * "disjoint by construction"; they are not, because all five arrive here. With
- * the switch in place each remaining tab is one arm plus its own new file.
+ * the switch in place each tab was one arm plus its own new file.
  *
- * The unbuilt arms keep the placeholder. Rendering nothing would make a
- * finished shell look broken.
+ * All five are built, and the last arm is an explicit comparison followed by an
+ * exhaustiveness check rather than a bare fallback.
+ *
+ * **A bare fallback was written first, with a comment claiming a sixth tab
+ * would fail to compile. It would not** — verified by widening
+ * `TemplateTabId` and rebuilding: `tsc` exits 0 and the new tab silently
+ * renders the Alarms editor. Narrowing to `"alarms" | "sixth"` is still
+ * assignable to the fallback. The `never` assignment below is what makes the
+ * claim true, and it is a compile-time complement to Unit 8's source scan:
+ * that catches a change to the registry, this catches a change to the type.
  */
 function TemplateTabBody({
   tab,
@@ -325,9 +334,16 @@ function TemplateTabBody({
   if (tab === "kpis") {
     return <KpisTab template={template} editable={editable} onSaved={onSaved} />;
   }
+  if (tab === "alarms") {
+    return <AlarmsTab template={template} editable={editable} onSaved={onSaved} />;
+  }
+  // Unreachable while `TemplateTabId` names five tabs. Adding a sixth without
+  // an arm here is a type error on this line, naming the tab that has no
+  // editor — rather than a silent render of whichever arm came last.
+  const unreachable: never = tab;
   return (
     <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
-      The {tab} editor is not wired up yet.
+      The {String(unreachable)} editor is not wired up yet.
     </p>
   );
 }
