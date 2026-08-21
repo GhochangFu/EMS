@@ -314,11 +314,103 @@ export default defineConfig({
       // above is the clean rerun. Pre-existing latent race, not introduced
       // here — recorded rather than fixed, since fixing an unrelated
       // suite's fixture resolution is out of this item's scope.
+      // Ratcheted by `F2.5` (template authoring UI, ADR 0038) from
+      // 49.9/45.3/50.6/50.0. **Re-measured 2026-08-21 after the review round**,
+      // against the live database, all 130 files / 478 tests running and none
+      // skipped:
+      // 53.87 statements · 50.02 branches · 55.49 functions · 53.94 lines.
+      //
+      // The first measurement in this item was 53.62/49.67/55.03/53.69 at
+      // 128 files / 462 tests, and the thresholds were set to
+      // 53.3/49.3/54.7/53.4 against it. Three reviews then landed four defect
+      // fixes, each shipping the test that would have caught it (§4.6), and two
+      // further `lib/` modules — so both the numerator and the file count moved
+      // and the recorded figure went stale within the same item. Re-measured
+      // rather than left as a floor: a note asserting a figure the tree no
+      // longer has is the exact failure the `E8.3` entry above records.
+      //
+      // **The attribution is clean, and that was checked rather than assumed.**
+      // `git rev-list --count $(git merge-base origin/main HEAD)..origin/main`
+      // is 0 — `origin/main` has not moved since this branch left it at
+      // `724efa9` — so the whole delta over the `F2.4` measurement
+      // (50.19/45.68/50.98/50.24) belongs to this item. The `F4.46` entry above
+      // records finding ~0.5 of unattributed drift sitting in its rise, and the
+      // `F4.37`/`F4.38` entries record this file getting attribution wrong
+      // twice. There is no such drift here.
+      //
+      // The rise is **seventeen** new `apps/web/src/lib/` modules, each shipped
+      // with its spec in its own commit — the calc-DSL editor rules
+      // (`calc-decorations`, `calc-preview`, `calc-token-ranges`,
+      // `formula-editor-rules`) and thirteen `template-*` form-rule modules
+      // behind the five authoring tabs, the unsaved-edit guard and the
+      // instantiate payload. Branches lead again (+4.34 against +3.68
+      // statements) for the reason the rules-split entry gives: these modules
+      // are almost entirely decision logic — kind switching, trigger policy,
+      // vocabulary closure, and the optional-key builders that decide between
+      // an absent key and a sent value.
+      //
+      // **Most of this item's volume is invisible to this gate.** Ten new
+      // `.tsx` files landed alongside — the five tabs, the editor and its lazy
+      // wrapper, the tab strip, and two pages — and `include` reaches
+      // `apps/web/src/lib/**` and nothing above it. That is deliberate and is
+      // why the logic was put in `lib/` in the first place: `apps/web`'s Vitest
+      // project runs `environment: "node"` over `src/**/*.test.ts`, so a `.tsx`
+      // is unreachable by any test in this repo. What those files promise is
+      // carried by the source scans in `tests/adr-0038-*.test.ts`, the same way
+      // ADR 0027's page-level guarantee is carried in `tests/repo-invariants`.
+      //
+      // `packages/shared/src/calc-dsl`'s widened re-export is coverage-neutral
+      // here for the reason the `F2.4` entry gives: `include` covers `apps/*`.
+      //
+      // **Measured on a long-lived local database, not a freshly seeded one**,
+      // as every entry above was. Worth stating because this file already
+      // documents two local/CI divergences (`F4.33`, still open, and the
+      // `F4.34` note on compressed chunks). Two `CalcWriteService` warnings
+      // fired during the run — `refresh window too small`, and a synthesised
+      // `source_data_key` of 129 chars exceeding the 128-char column — so those
+      // branches in `apps/api/src/calc/**` were reached from accumulated state
+      // that `db:migrate` → `db:seed` may not reproduce. Two branches out of
+      // 3974 is ~0.05%, comfortably inside the margin these thresholds leave.
+      // Per axis, against the figures above: statements 0.37, branches
+      // **0.32**, functions 0.39, lines 0.34 — so 0.32 is the binding one and
+      // 0.05 sits well inside it. Recorded rather than assumed away.
+      //
+      // The first version of this line quoted "0.32–0.37" against the earlier
+      // measurement, where the real per-axis margins were statements 0.32,
+      // branches 0.37, functions 0.33 and **lines 0.29**. The range had left
+      // out the tightest axis, so it overstated the headroom by claiming a
+      // floor the gate did not have. Every axis is now listed rather than
+      // summarised, because a range hides which constraint binds — and this
+      // note's whole job is to say how a number was obtained.
+      // **The unordered-fixture race has a second instance, found while
+      // measuring this.** `evaluate-enabled-rules.integration.spec.ts:57` does
+      // `select({id}).from(assets).limit(2)` with **no ORDER BY** — the same
+      // shape as `alarm-enrichment.integration.spec.ts`'s `firstSeededAssetId`
+      // recorded below — and failed with
+      // `automation_rules_asset_id_fkey` on one full parallel run, passing 2/2
+      // in isolation immediately after. Two files now share the defect, so it
+      // is a pattern rather than one bad fixture. Still not fixed here: it is
+      // `apps/api` rules-module code and unrelated to this item. CI will see
+      // it intermittently.
+      //
+      // **Re-measured a third time, at the branch tip, 2026-08-21.** The
+      // section 7 browser pass and the owner's `wc-admin` sign-in each found a
+      // defect after the second measurement, and both fixes shipped with the
+      // test that would have caught them — so the figure moved again. All 131
+      // files / 483 tests running and none skipped:
+      // 54.04 statements · 50.32 branches · 55.61 functions · 54.11 lines.
+      //
+      // Ratcheted 53.5/49.7/55.1/53.6 → 53.7/50.0/55.3/53.8. Per axis the
+      // margin is statements 0.34, branches 0.32, functions 0.31, lines 0.31.
+      // Banked rather than left: at the previous thresholds roughly 0.2 of
+      // this item's own gain was unprotected, and a regression could have
+      // given it back without tripping the gate — which is the exact failure
+      // the `F4.46` entry above records finding in `main`.
       thresholds: {
-        statements: 49.9,
-        branches: 45.3,
-        functions: 50.6,
-        lines: 50.0,
+        statements: 53.7,
+        branches: 50.0,
+        functions: 55.3,
+        lines: 53.8,
       },
     },
   },

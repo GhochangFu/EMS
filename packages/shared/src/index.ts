@@ -312,6 +312,14 @@ export type RtusListResponse = z.infer<typeof E.rtusListResponseSchema>;
 export type AssetsListResponse = z.infer<typeof E.assetsListResponseSchema>;
 export type AssetPointsListResponse = z.infer<typeof E.assetPointsListResponseSchema>;
 export type PointKeysListResponse = z.infer<typeof E.pointKeysListResponseSchema>;
+/** `F2.5` (ADR 0038) — the template list. Rows omit `points`, carry `pointCount`. */
+export type AssetTemplatesListResponse = z.infer<
+  typeof E.assetTemplatesListResponseSchema
+>;
+/** `F2.5` (ADR 0038) — `DELETE /admin/asset-templates/:id` on a draft. */
+export type TemplateDraftDeletedResponse = z.infer<
+  typeof E.templateDraftDeletedResponseSchema
+>;
 export type AlarmsListResponse = z.infer<typeof E.alarmsListResponseSchema>;
 export type WorkOrdersListResponse = z.infer<typeof E.workOrdersListResponseSchema>;
 export type MaintenanceSchedulesResponse = z.infer<

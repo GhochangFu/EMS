@@ -1,0 +1,47 @@
+import { describe, it } from "vitest";
+
+import {
+  runBrokenFormulaRefTests,
+  runCalcFieldsSurviveARoundTripTests,
+  runChangeDetectionTests,
+  runEmptyOverridesBecomeNullTests,
+  runGridErrorTests,
+  runIncompleteDerivedPointTests,
+  runKindChangeTests,
+  runSeedTests,
+} from "./template-points-grid.spec";
+
+/** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
+describe("template points grid", () => {
+  it("carries every calc field through a load-and-save round trip", () => {
+    runCalcFieldsSurviveARoundTripTests();
+  });
+
+  it("seeds rows from the template and appends after the highest sortOrder", () => {
+    runSeedTests();
+  });
+
+  it("sends null for an emptied override, never an empty string", () => {
+    runEmptyOverridesBecomeNullTests();
+  });
+
+  it("clears the calc fields when a point stops being derived, and seeds none when it starts", () => {
+    runKindChangeTests();
+  });
+
+  it("catches duplicate keys, blank keys and the 500-point cap before the server does", () => {
+    runGridErrorTests();
+  });
+
+  it("refuses a derived point this tab cannot finish, and says where to finish it", () => {
+    runIncompleteDerivedPointTests();
+  });
+
+  it("names the formula an edit to another row just broke", () => {
+    runBrokenFormulaRefTests();
+  });
+
+  it("treats a change as what would be sent, not what was typed", () => {
+    runChangeDetectionTests();
+  });
+});

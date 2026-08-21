@@ -23,6 +23,8 @@ import { ControlRoomEnvPage } from "./pages/control-room-env-page";
 import { AdminRoute } from "./components/admin-route";
 import { AdminHubPage } from "./pages/admin/admin-hub-page";
 import { AssetPointsAdminPage } from "./pages/admin/asset-points-page";
+import { AssetTemplateDetailPage } from "./pages/admin/asset-template-detail-page";
+import { AssetTemplatesAdminPage } from "./pages/admin/asset-templates-page";
 import { AssetsAdminPage } from "./pages/admin/assets-page";
 import { LocationsAdminPage } from "./pages/admin/locations-page";
 import { ManualReadingsPage } from "./pages/admin/manual-readings-page";
@@ -379,6 +381,30 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <AssetPointsAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/asset-templates"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <AssetTemplatesAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/asset-templates/:templateId"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <AssetTemplateDetailPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

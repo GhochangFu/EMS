@@ -1,5 +1,7 @@
 import {
   canAccessOnboarding,
+  masterDataTabs,
+  visibleMasterDataTabs,
   canCreateLocations,
   canWriteOrganizations,
   canWritePointKeys,
@@ -47,4 +49,58 @@ export function runAdminAccessTests(): void {
   assert(defaultAdminRoute("organization_admin") === "/admin/organizations", "org admin default route");
   assert(canAccessOnboarding("organization_admin"), "org admin can onboard");
   assert(!canAccessOnboarding("location_admin"), "location admin cannot onboard");
+}
+
+/**
+ * The Asset Templates tab (`F2.5`, ADR 0038 decision 10).
+ *
+ * The tab is **not** `catalogOnly`. A location admin cannot author a template
+ * but can instantiate one, and this page is the only route to Instantiate —
+ * marking it `catalogOnly` would hide the page from the one role ADR 0015 §7
+ * exists to serve, and no test inside the page could ever see that.
+ */
+export function runAssetTemplateTabTests(): void {
+  const TEMPLATES = "/admin/asset-templates";
+
+  // The whole list, in order. Stronger than a count: it fails on a tab added,
+  // removed, renamed or reordered, and it says what the list should be.
+  assert(
+    masterDataTabs.map((tab) => tab.path).join(" ") ===
+      [
+        "/admin/organizations",
+        "/admin/locations",
+        "/admin/rtus",
+        "/admin/assets",
+        TEMPLATES,
+        "/admin/asset-points",
+        "/admin/manual-readings",
+        "/admin/point-keys",
+        "/admin/telemetry/import",
+      ].join(" "),
+    `master data tabs changed — got ${masterDataTabs.map((tab) => tab.path).join(" ")}`,
+  );
+  assert(
+    masterDataTabs.filter((tab) => tab.path === TEMPLATES).length === 1,
+    "the tab must appear exactly once",
+  );
+
+  for (const role of ["admin", "organization_admin", "location_admin"] as const) {
+    const paths = visibleMasterDataTabs(role).map((tab) => tab.path);
+    assert(paths.includes(TEMPLATES), `${role} must see the Asset Templates tab`);
+    assert(
+      paths.length === (role === "location_admin" ? 8 : 9),
+      `${role} sees the wrong number of tabs — got ${paths.length}`,
+    );
+  }
+
+  // The one role-dependent tab is still Point Keys, and it is still the only
+  // one. If Asset Templates ever became catalogOnly this would fail, which is
+  // the failure this test exists for.
+  const hidden = masterDataTabs
+    .filter((tab) => "catalogOnly" in tab && tab.catalogOnly)
+    .map((tab) => tab.path);
+  assert(
+    hidden.join(",") === "/admin/point-keys",
+    `only Point Keys is catalog-only — got ${hidden.join(",")}`,
+  );
 }
