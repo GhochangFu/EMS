@@ -438,7 +438,8 @@ const idsIn = (s) => [...new Set([...(s ?? "").matchAll(ID_RE)].map((m) => m[1].
 
 /**
  * "In progress" is DERIVED, not a board status — no row is 🔵. The signal is
- * the checked-out branch plus branches not yet merged into origin/main.
+ * the checked-out branch plus branches not yet merged into origin/main, minus
+ * the ones origin/main has already superseded by a squash merge (see below).
  */
 function gitContext(items) {
   const byId = new Map(items.map((it) => [it.id, it]));
@@ -450,11 +451,51 @@ function gitContext(items) {
 
   const branchIds = (name) => idsIn(name.replace(/[-_/]/g, " ").replace(/\bf(\d)\s(\d+)/gi, "F$1.$2"));
 
+  // `--no-merged` is the cheap first filter, and on its own it is WRONG for a
+  // squash merge: the merge replaces the branch's commits with one new commit,
+  // so the branch never becomes an ancestor of origin/main and stays "unmerged"
+  // forever. That is how the board reported F2.3 and F2.4 as in flight on
+  // 2026-08-21, hours after both had shipped in PR #113 and PR #116.
+  //
+  // Comparing content cannot repair it. `git merge-tree`, `git cherry` and
+  // patch-id all report a conflict or a miss as soon as main edits the same
+  // files again — which it had, so every one of them failed on that live case.
+  //
+  // The signal that does survive is the delivery commit on origin/main. It
+  // names the id in its SUBJECT — never search the body, because
+  // `git log --grep` reads the whole message and returns commits for unrelated
+  // items — it is not a docs/chore commit, and it is NEWER than the branch tip,
+  // because the merge created it after the last commit the branch received.
+  // Work that is still genuinely in flight fails that last test, which is what
+  // keeps a real branch on the board.
+  const NON_DELIVERY = /^(docs|chore|test|ci|build|style)\b/i;
+  const deliveries = new Map();
+  for (const line of git("log", "origin/main", "--pretty=%ct%x1f%s").split("\n").filter(Boolean)) {
+    const [ct, subject] = line.split("\x1f");
+    if (NON_DELIVERY.test(subject)) continue;
+    // A bare subject carrying a PR number counts too — the repo's older
+    // deliveries predate the `feat:` convention (`F2.2 — instantiate … (#7)`).
+    if (!/^feat\b/i.test(subject) && !/\(#\d+\)\s*$/.test(subject)) continue;
+    for (const id of idsIn(subject)) {
+      if (!byId.has(id)) continue;
+      if (!deliveries.has(id)) deliveries.set(id, Number(ct)); // log is newest-first
+    }
+  }
+
+  // `git branch -a` lists a local branch and its origin/ copy as two entries.
+  // Both carry the same id, so without this the same work is counted twice.
+  const seenBranch = new Set();
   const unmerged = git("branch", "-a", "--no-merged", "origin/main", "--format=%(refname:short)")
     .split("\n")
     .map((b) => b.trim())
     .filter(Boolean)
-    .filter((b) => !/^origin\/HEAD/.test(b));
+    .filter((b) => !/^origin\/HEAD/.test(b))
+    .filter((b) => {
+      const key = b.replace(/^origin\//, "");
+      if (seenBranch.has(key)) return false;
+      seenBranch.add(key);
+      return true;
+    });
 
   const active = new Map();
   const note = (id, source, current) => {
@@ -465,8 +506,36 @@ function gitContext(items) {
     active.set(id, entry);
   };
 
+  // The checked-out branch is exempt from the supersede test on purpose: having
+  // it checked out is a deliberate statement about what is being worked on, and
+  // the existing filter below already keeps a `current` entry when the row is
+  // done.
   for (const id of branchIds(branch)) note(id, `branch ${branch}`, true);
-  for (const b of unmerged) for (const id of branchIds(b)) note(id, `branch ${b}`, false);
+
+  const superseded = new Map();
+  for (const b of unmerged) {
+    const tip = Number(git("log", "-1", "--pretty=%ct", b) || 0);
+    for (const id of branchIds(b)) {
+      const delivered = deliveries.get(id);
+      if (delivered && tip && delivered > tip) {
+        superseded.set(id, b);
+        continue;
+      }
+      note(id, `branch ${b}`, false);
+    }
+  }
+
+  // A superseded branch whose row is still open is neither in flight nor
+  // nothing: it is merged work the board has not recorded. Say so, rather than
+  // drop it silently — that gap is what made the stale board look plausible.
+  for (const [id, b] of superseded) {
+    const it = byId.get(id);
+    if (it.status === "done" || it.status === "dropped") continue;
+    warn(
+      `${id}: origin/main already carries a delivery commit for it, but the board row reads ` +
+        `"${it.statusLabel}". Branch ${b} is stale, not in flight — flip the row or delete the branch.`,
+    );
+  }
 
   const log = git("log", "-40", "--date=format-local:%Y-%m-%d %H:%M", "--pretty=%h%x1f%ad%x1f%s")
     .split("\n")
