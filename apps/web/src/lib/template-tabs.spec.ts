@@ -65,7 +65,12 @@ export function runResolveTabTests(): void {
     assert(resolveTemplateTab(tab.id) === tab.id, `${tab.id} must resolve to itself`);
   }
 
-  for (const bad of [undefined, null, "", "Details", "health", "dashboards", "nonsense"]) {
+  // Ordered deliberately: a plausible-but-wrong id comes **first**. A resolver
+  // that trusted its input without checking would still reject `""` and `null`
+  // by accident, so a loop that tested those first would fail with a message
+  // about the empty string and hide the case that actually matters — a URL
+  // naming a tab that does not exist, rendering a body for it.
+  for (const bad of ["nonsense", "health", "dashboards", "Details", "", undefined, null]) {
     assert(
       resolveTemplateTab(bad) === DEFAULT_TEMPLATE_TAB,
       `${JSON.stringify(bad)} must fall back to Details, got ${resolveTemplateTab(bad)}`,

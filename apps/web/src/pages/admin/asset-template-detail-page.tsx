@@ -336,12 +336,27 @@ function InstantiateDialog({
       // RTU wins when both pickers are set: an RTU already implies its
       // location, so sending both would be the both-or-neither case the server
       // rejects.
-      return selection.rtuId
-        ? instantiateFromAdminAssetTemplate(template.id, { rtuId: selection.rtuId, assets })
-        : instantiateFromAdminAssetTemplate(template.id, {
-            locationId: selection.locationId ?? "",
-            assets,
-          });
+      if (selection.rtuId) {
+        return instantiateFromAdminAssetTemplate(template.id, {
+          rtuId: selection.rtuId,
+          assets,
+        });
+      }
+      if (selection.locationId) {
+        return instantiateFromAdminAssetTemplate(template.id, {
+          locationId: selection.locationId,
+          assets,
+        });
+      }
+      // No target chosen. The button below is disabled in this state, so this
+      // is unreachable — but writing `locationId: selection.locationId ?? ""`
+      // to satisfy the type would build a request guaranteed to 400, and the
+      // author would read a message about a location that does not exist
+      // instead of the one thing they have to do. A refusal that says what to
+      // do is the honest branch.
+      return Promise.reject(
+        new Error("Choose a location or an RTU to build these assets in."),
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "assets"] });
