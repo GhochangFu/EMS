@@ -1,4 +1,13 @@
-import { assetDomainCodeSchema, CALC_DIALECT, formatCalcError, validateFormula } from "@bms/shared";
+import {
+  assetDomainCodeSchema,
+  CALC_DIALECT,
+  CALC_TRIGGERS,
+  formatCalcError,
+  MAX_CALC_INTERVAL_SECONDS,
+  MAX_INPUT_AGE_SECONDS_BOUND,
+  MIN_CALC_INTERVAL_SECONDS,
+  validateFormula,
+} from "@bms/shared";
 import { z } from "zod";
 
 import { templateContentSchema } from "./asset-templates-content.schema";
@@ -34,6 +43,13 @@ export const templatePointBodySchema = z
     // by templatePointsBodySchema's own superRefine below instead.
     formula: z.string().min(1).max(1000).nullish(),
     formulaDialect: z.literal(CALC_DIALECT).nullish(),
+    // ADR 0037 decision 4: when the formula above runs, and how stale its
+    // inputs may be. Cross-checked against `kind`/`calcTrigger` below —
+    // a per-point refinement, unlike decision 7's cross-point rule, since
+    // every fact this needs lives on the point itself.
+    calcTrigger: z.enum(CALC_TRIGGERS).nullish(),
+    calcIntervalSeconds: z.number().int().min(MIN_CALC_INTERVAL_SECONDS).max(MAX_CALC_INTERVAL_SECONDS).nullish(),
+    maxInputAgeSeconds: z.number().int().min(1).max(MAX_INPUT_AGE_SECONDS_BOUND).nullish(),
     required: z.boolean().default(true),
     sortOrder: z.number().int().min(0).default(0),
   })
@@ -53,10 +69,42 @@ export const templatePointBodySchema = z
         message: 'A measured point must not carry a formula — only "derived" points may',
       });
     }
+
+    const hasCalcConfig =
+      point.calcTrigger != null || point.calcIntervalSeconds != null || point.maxInputAgeSeconds != null;
+    if (point.kind === "measured" && hasCalcConfig) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["calcTrigger"],
+        message: "A measured point must not carry calcTrigger, calcIntervalSeconds, or maxInputAgeSeconds",
+      });
+    }
+    if (point.kind === "derived") {
+      if (point.calcTrigger == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["calcTrigger"],
+          message: 'A derived point requires calcTrigger: "streaming" or "scheduled"',
+        });
+      } else if (point.calcTrigger === "scheduled" && point.calcIntervalSeconds == null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["calcIntervalSeconds"],
+          message: "A scheduled point requires calcIntervalSeconds",
+        });
+      } else if (point.calcTrigger === "streaming" && point.calcIntervalSeconds != null) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["calcIntervalSeconds"],
+          message: "A streaming point must not carry calcIntervalSeconds — it runs on every matching reading",
+        });
+      }
+    }
   })
   .describe(
-    'A derived point requires "formula" and formulaDialect: "bms-calc-v1"; a measured ' +
-      "point must carry neither.",
+    'A derived point requires "formula", formulaDialect: "bms-calc-v1", and a calcTrigger ' +
+      'of "streaming" or "scheduled" ("scheduled" also requires calcIntervalSeconds); a ' +
+      "measured point must carry none of those five fields.",
   );
 
 /**

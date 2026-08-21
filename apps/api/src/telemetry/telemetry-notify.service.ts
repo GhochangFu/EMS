@@ -9,6 +9,7 @@ import { Client } from "pg";
 import type { TelemetryReading } from "@bms/shared";
 
 import { MetricsService } from "../observability/metrics.service";
+import { sleep } from "./sleep";
 import { TelemetryBroadcastHub } from "./telemetry-broadcast.hub";
 import {
   createTelemetryListener,
@@ -17,25 +18,6 @@ import {
   type TelemetryListener,
   type TelemetryListenerDeps,
 } from "./telemetry-listener";
-
-/** Resolves after `ms`, or as soon as `signal` aborts — so shutdown never waits out a backoff. */
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise<void>((resolve) => {
-    if (signal.aborted) {
-      resolve();
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    function onAbort(): void {
-      clearTimeout(timer);
-      resolve();
-    }
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
 
 /**
  * Builds the listener's dependencies.

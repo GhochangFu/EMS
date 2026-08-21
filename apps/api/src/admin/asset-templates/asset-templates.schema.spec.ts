@@ -54,8 +54,93 @@ export function runAssetTemplateSchemaTests(): void {
       kind: "derived",
       formula: "{A}",
       formulaDialect: "bms-calc-v1",
+      calcTrigger: "streaming",
     }).success,
-    "a derived point with a formula and the frozen dialect must be accepted",
+    "a derived point with a formula, the frozen dialect, and a trigger must be accepted",
+  );
+
+  // ---- ADR 0037 decision 4: trigger mode is per formula ----------------------
+
+  assert(
+    !templatePointBodySchema.safeParse({
+      pointKey: "X",
+      kind: "derived",
+      formula: "{A}",
+      formulaDialect: "bms-calc-v1",
+    }).success,
+    "a derived point with no calcTrigger must now be rejected — F2.4 requires one",
+  );
+  assert(
+    !templatePointBodySchema.safeParse({
+      pointKey: "X",
+      kind: "derived",
+      formula: "{A}",
+      formulaDialect: "bms-calc-v1",
+      calcTrigger: "streaming",
+      calcIntervalSeconds: 60,
+    }).success,
+    "a streaming point must not carry calcIntervalSeconds",
+  );
+  assert(
+    !templatePointBodySchema.safeParse({
+      pointKey: "X",
+      kind: "derived",
+      formula: "{A}",
+      formulaDialect: "bms-calc-v1",
+      calcTrigger: "scheduled",
+    }).success,
+    "a scheduled point without calcIntervalSeconds must be rejected",
+  );
+  for (const bad of [9, 86_401]) {
+    assert(
+      !templatePointBodySchema.safeParse({
+        pointKey: "X",
+        kind: "derived",
+        formula: "{A}",
+        formulaDialect: "bms-calc-v1",
+        calcTrigger: "scheduled",
+        calcIntervalSeconds: bad,
+      }).success,
+      `calcIntervalSeconds of ${bad} is outside 10..86400 and must be rejected`,
+    );
+  }
+  for (const good of [10, 86_400]) {
+    assert(
+      templatePointBodySchema.safeParse({
+        pointKey: "X",
+        kind: "derived",
+        formula: "{A}",
+        formulaDialect: "bms-calc-v1",
+        calcTrigger: "scheduled",
+        calcIntervalSeconds: good,
+      }).success,
+      `calcIntervalSeconds of ${good} is within 10..86400 and must be accepted`,
+    );
+  }
+  assert(
+    !templatePointBodySchema.safeParse({
+      pointKey: "X",
+      kind: "measured",
+      calcTrigger: "streaming",
+    }).success,
+    "a measured point must not carry calcTrigger",
+  );
+  const validScheduled = templatePointBodySchema.safeParse({
+    pointKey: "X",
+    kind: "derived",
+    formula: "{A}",
+    formulaDialect: "bms-calc-v1",
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 300,
+    maxInputAgeSeconds: 600,
+  });
+  assert(validScheduled.success, "a valid scheduled point with all three fields must parse");
+  assert(
+    validScheduled.success &&
+      validScheduled.data.calcTrigger === "scheduled" &&
+      validScheduled.data.calcIntervalSeconds === 300 &&
+      validScheduled.data.maxInputAgeSeconds === 600,
+    "all three calc fields must survive parsing unchanged",
   );
   assert(
     !templatePointBodySchema.safeParse({
@@ -113,7 +198,13 @@ export function runAssetTemplateSchemaTests(): void {
     points: [
       { pointKey: "A" },
       { pointKey: "B" },
-      { pointKey: "D", kind: "derived", formula: "{A} + {B}", formulaDialect: "bms-calc-v1" },
+      {
+        pointKey: "D",
+        kind: "derived",
+        formula: "{A} + {B}",
+        formulaDialect: "bms-calc-v1",
+        calcTrigger: "streaming",
+      },
     ],
   });
   assert(
@@ -123,7 +214,15 @@ export function runAssetTemplateSchemaTests(): void {
 
   const malformed = createAssetTemplateBodySchema.safeParse({
     ...validTemplate,
-    points: [{ pointKey: "D", kind: "derived", formula: "{A} +", formulaDialect: "bms-calc-v1" }],
+    points: [
+      {
+        pointKey: "D",
+        kind: "derived",
+        formula: "{A} +",
+        formulaDialect: "bms-calc-v1",
+        calcTrigger: "streaming",
+      },
+    ],
   });
   assert(!malformed.success, "a malformed formula must fail");
   assert(

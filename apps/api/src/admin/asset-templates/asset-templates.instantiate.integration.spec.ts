@@ -251,6 +251,7 @@ export async function publishFixtureTemplate(
         sourceDataKeyPattern: "{asset_code}_EFFICIENCY",
         formula: `{${fx.pointKeys[0].code}}`,
         formulaDialect: "bms-calc-v1",
+        calcTrigger: "streaming",
       },
       {
         pointKey: fx.pointKeys[3].code,

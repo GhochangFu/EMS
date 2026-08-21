@@ -9,14 +9,23 @@ export type CalcFunctionName = "min" | "max" | "abs" | "round" | "clamp";
 export type CalcNumber = { kind: "number"; value: number };
 /** `position` is a 0-based character offset of the reference's opening `{`. */
 export type CalcPointRef = { kind: "ref"; pointKey: string; position: number };
-export type CalcUnary = { kind: "unary"; op: "-"; operand: CalcExpr };
+/**
+ * `position` on `unary`/`binary`/`call` is the 0-based offset of the node's
+ * own operator/function-name token — added for `F2.4` (ADR 0037 decision 9),
+ * which refuses a non-finite result at the node that produced it and reports
+ * that node's position, not the root's. `number` carries none: the tokenizer
+ * already rejects an overflowing literal (`malformed_number`), so a literal
+ * can never itself be the site of a non-finite refusal.
+ */
+export type CalcUnary = { kind: "unary"; op: "-"; operand: CalcExpr; position: number };
 export type CalcBinary = {
   kind: "binary";
   op: "+" | "-" | "*" | "/";
   left: CalcExpr;
   right: CalcExpr;
+  position: number;
 };
-export type CalcCall = { kind: "call"; fn: CalcFunctionName; args: CalcExpr[] };
+export type CalcCall = { kind: "call"; fn: CalcFunctionName; args: CalcExpr[]; position: number };
 
 export type CalcExpr = CalcNumber | CalcPointRef | CalcUnary | CalcBinary | CalcCall;
 

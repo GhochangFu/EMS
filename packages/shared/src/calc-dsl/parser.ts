@@ -85,7 +85,7 @@ class Parser {
         }
         this.advance();
         const right = this.parseTerm();
-        left = { kind: "binary", op: token.kind === "plus" ? "+" : "-", left, right };
+        left = { kind: "binary", op: token.kind === "plus" ? "+" : "-", left, right, position: token.position };
       }
     } finally {
       this.exit();
@@ -103,7 +103,7 @@ class Parser {
         }
         this.advance();
         const right = this.parseFactor();
-        left = { kind: "binary", op: token.kind === "star" ? "*" : "/", left, right };
+        left = { kind: "binary", op: token.kind === "star" ? "*" : "/", left, right, position: token.position };
       }
     } finally {
       this.exit();
@@ -127,7 +127,7 @@ class Parser {
 
       if (token.kind === "minus") {
         this.advance();
-        return { kind: "unary", op: "-", operand: this.parseFactor() };
+        return { kind: "unary", op: "-", operand: this.parseFactor(), position: token.position };
       }
 
       if (token.kind === "lparen") {
@@ -169,7 +169,7 @@ class Parser {
       fail("bad_arity", nameToken.position);
     }
 
-    return { kind: "call", fn: nameToken.text, args };
+    return { kind: "call", fn: nameToken.text, args, position: nameToken.position };
   }
 }
 

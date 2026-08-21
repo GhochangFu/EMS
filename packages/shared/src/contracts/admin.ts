@@ -9,7 +9,7 @@
  */
 import { z } from "zod";
 
-import { CALC_DIALECT } from "../calc-dsl";
+import { CALC_DIALECT, CALC_TRIGGERS } from "../calc-dsl";
 import { pointSourceKindSchema } from "./telemetry-entry";
 
 export const masterDataActiveFilterSchema = z.enum(["true", "false", "all"]);
@@ -211,6 +211,14 @@ export const adminTemplatePointDtoSchema = z.object({
   // this is a read-side DTO).
   formula: z.string().nullable(),
   formulaDialect: z.literal(CALC_DIALECT).nullable(),
+  // ADR 0037 decision 4. Read-side counterpart of the enforcement in
+  // apps/api's templatePointBodySchema — carried here for the same reason
+  // formula/formulaDialect are: templatePointsBodySchema sends the whole
+  // points array on every draft update, so an editor round-tripping a GET
+  // response back through PATCH must see these fields or lose them.
+  calcTrigger: z.enum(CALC_TRIGGERS).nullable(),
+  calcIntervalSeconds: z.number().nullable(),
+  maxInputAgeSeconds: z.number().nullable(),
   required: z.boolean(),
   sortOrder: z.number(),
   createdAt: z.string(),

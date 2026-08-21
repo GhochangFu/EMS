@@ -11,6 +11,7 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import {
   assertArchiveRules,
+  assertCalcFieldsSurviveUpdateRoundTrip,
   assertContentPatchResolvesAgainstStoredPoints,
   assertContentRefsCheckedOnCreate,
   assertContentRoundTrips,
@@ -95,6 +96,10 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
   it("creates version 1 as a draft, points in sort order", async () => {
     v1 = await assertCreateStartsAtVersionOne(svc, fx);
     expect(v1.version).toBe(1);
+  });
+
+  it("round-trips ADR 0037 calc fields through a PATCH that echoes them back (F2.4)", async () => {
+    await assertCalcFieldsSurviveUpdateRoundTrip(svc, fx, v1);
   });
 
   it("permits exactly one open draft per (organization, code)", async () => {
