@@ -1,6 +1,7 @@
 # TRINETRA BMS — Build Operating Model (Team of One + Agents)
 
-**Generated:** 2026-07-20
+**Generated:** 2026-07-20 · **Revised:** 2026-08-21 (model routing made
+per-step and session-independent; token discipline added as §6)
 **Purpose:** The standing playbook for *how* we build the pending features when the
 team is **one human (decisions + review) + Claude (execution) + subagents
 (bounded parallel work)**. It answers "who does what, in what order, and when do
@@ -31,6 +32,11 @@ Every rule below exists to spend that bandwidth sparingly and let agents absorb
 the rest. **The dependency graph still governs order — parallelism never skips
 an enabler.**
 
+A second budget sits underneath it: **tokens**. Agents are cheap in human time
+and not free in spend. So §2 routes every step to the cheapest model that can
+carry it, and §6 keeps the volume down — neither of them by moving work back
+onto the human.
+
 ---
 
 ## 2. The per-feature loop
@@ -38,38 +44,103 @@ an enabler.**
 Every pending-feature item goes through the same cycle (this is AGENTS.md §10 +
 the superpowers skills, made concrete):
 
-| Step | Who | Skill / tool | Human touch? |
-|------|-----|--------------|--------------|
-| 1. **Pick** next *unblocked* item (enablers first) | Claude | sequencing doc | — |
-| 2. **Brainstorm + ADR** — scope, deps, interface | Human + Claude | `superpowers:brainstorming`, `new-adr` — **requires `/model opus` first** | ✅ **gate** |
-| 3. **Plan** — written, reviewable | Claude | `plan-architect` agent (Opus-pinned) | 👀 skim |
-| 4. **Build via TDD** | Claude (+ subagents) | `superpowers:test-driven-development` | — |
-| 5. **Review** — parallel passes | Subagents | `code-reviewer`, `security-reviewer`, `agents-compliance-reviewer`, plus `migration-reviewer` for anything under `packages/db` | 👀 batched |
-| 6. **Verify against the running Docker stack** | Claude | `docker compose`, psql, browser | — |
-| 7. **Approve & merge** | Human | — | ✅ **gate** |
+| Step | Who | Model | Skill / tool | Human touch? |
+|------|-----|-------|--------------|--------------|
+| 1. **Pick** next *unblocked* item (enablers first) | Claude | **Haiku**, delegated | `backlog-cycle`, `BACKLOG.md` | — |
+| 2. **Brainstorm + ADR** — scope, deps, interface | Human + Claude | **Opus**, inline | `superpowers:brainstorming`, `new-adr` — **requires `/model opus` first** | ✅ **gate** |
+| 3. **Plan** — written, reviewable | Claude | **Opus**, delegated | `plan-architect` agent (Opus-pinned) | 👀 skim |
+| 4. **Build via TDD** | Claude (+ subagents) | **Sonnet** | `implementer` agent (Sonnet-pinned), `superpowers:test-driven-development` | — |
+| 5. **Review** — parallel passes | Subagents | **Opus** ×3, **Sonnet** ×1 | `code-reviewer`, `security-reviewer`, `agents-compliance-reviewer`, plus `migration-reviewer` for anything under `packages/db` | 👀 batched |
+| 6. **Verify against the running Docker stack** | Claude | **Sonnet** for the evidence, session model for the reading | `docker compose`, psql, browser | — |
+| 7. **Approve & merge** | Human | — | — | ✅ **gate** |
 
 The human owns **steps 2 and 7** only. Everything else Claude carries.
 
-### Steps 2 and 3 run on Opus, and they get there by different routes
+### Which model runs which step
 
-Scope and plan are the two places where a cheaper model costs the most: a bad plan
-is executed faithfully, and a bad scope decision survives the ADR that records it.
-Both steps therefore run on Opus. The session model for steps 1 and 4–6 is
-whatever the operator has set — Sonnet, in the normal case.
+Scope and plan are the two places where a cheap model costs the most: a bad plan
+is executed faithfully, and a bad scope decision survives the ADR that records
+it. The build is the opposite — it is the longest and most token-hungry step,
+and it is the one an approved plan has already de-risked.
+
+Until 2026-08-21 this doc assumed the operator's session ran Sonnet, so it named
+only the two steps that had to *climb* to Opus. The session now runs Opus. Read
+that old rule against this session and the entire build lands on the most
+expensive model available. The rule is therefore no longer "these two steps are
+special". It is:
+
+> **The model is a property of the work unit, not of the session.** Every step
+> names its model, and every dispatch carries an explicit `model:`.
+
+| Model | Gets | Why |
+|-------|------|-----|
+| **Opus** | Step 2 scope/ADR · step 3 plan · step 5 `code-reviewer`, `security-reviewer`, `migration-reviewer` · root-cause debugging that survived one pass | These either decide, or they gate the human's merge. A weak review does not save money — it moves the cost onto the owner's attention. |
+| **Sonnet** | Step 4 build and its tests · refactors · step 5 `agents-compliance-reviewer` · doc writing · step 6 evidence gathering | Well-specified work against an approved plan or a written checklist. |
+| **Haiku** | Step 1 pick · locating a file · grepping a symbol · reading a config · summarising one file | Mechanical and verifiable; a wrong answer is cheap to spot. |
+
+**Never let a dispatch inherit.** `Explore` and `general-purpose` declare no model
+of their own, so an unpinned fan-out runs on whatever the session is set to —
+which is now the *expensive* direction, and silently so. Pass `model:` on every
+`Agent` call. `subagent_type: "fork"` ignores the override and always runs the
+parent model, so never route build work through a fork.
 
 **A skill has no model of its own.** None of the installed `SKILL.md` files
-declares one, so an inline skill runs on whatever the session is set to. That is
-why the two rows above read differently:
+declares one, so an inline skill runs on whatever the session is set to. There
+are exactly two mechanisms for putting inline work on a different model, and
+each step below names which one it uses:
 
-- **Step 3 is delegated.** The `plan-architect` agent is pinned `model: opus` in
-  its own frontmatter, so the plan is written on Opus no matter what the session
-  runs. It is read-only and returns the plan text; the caller transcribes it. It
-  refuses to plan past the step-2 gate.
-- **Step 2 cannot be delegated.** Brainstorming is a dialogue with the human, and
-  the ADR is the gate artifact that comes out of that dialogue — a subagent
-  drafting it would invert the gate. So step 2 is enforced by refusal instead:
-  Claude states that Opus is required and stops until the operator runs
+- **Delegate to a pinned agent.** The agent's own frontmatter decides, whatever
+  the session runs. This is the durable mechanism — it survives the next
+  `/model` flip and needs nothing from the operator.
+- **Ask the operator to flip the session.** No infrastructure, but it spends the
+  bandwidth of the human this doc exists to protect. Use it only where
+  delegation is impossible, or does not pay (see the next subsection).
+
+Per step:
+
+- **Step 1 (Pick) — Haiku, delegated.** Reading `BACKLOG.md`, confirming the
+  `Depends` row and the ADR gate is a bounded lookup that returns a short
+  answer.
+- **Step 2 (Brainstorm + ADR) — Opus, inline, enforced by refusal.**
+  Brainstorming is a dialogue with the human, and the ADR is the gate artifact
+  that comes out of that dialogue — a subagent drafting it would invert the
+  gate. So Claude states that Opus is required and stops until the operator runs
   `/model opus`. It does not brainstorm or draft an ADR on a cheaper model.
+- **Step 3 (Plan) — Opus, delegated.** `plan-architect` is pinned `model: opus`
+  in its own frontmatter, is read-only, and returns the plan text for the caller
+  to transcribe. It refuses to plan past the step-2 gate.
+- **Step 4 (Build) — Sonnet.** Preferred mechanism: hand the unit to the
+  `implementer` agent, pinned `model: sonnet`. Fallback, where the unit is too
+  small or too entangled to hand off cold: ask the operator for `/model sonnet`
+  for the build stretch, and say when to flip back.
+- **Step 5 (Review) — split, and it never routes down.** `code-reviewer`,
+  `security-reviewer` and `migration-reviewer` stay pinned `model: opus`.
+  `agents-compliance-reviewer` is pinned `model: sonnet` because it matches a
+  diff against a written checklist. These four are what let the human trust a
+  diff they did not read line by line, so cheapening them defeats the delegation
+  they exist to enable.
+- **Step 6 (Verify) — Sonnet for the evidence, session model for the reading.**
+  Collecting container state, `psql` output and page reads is delegable.
+  Deciding what that output *means* is not.
+
+### Step 4 is delegated only when the unit pays for the cold start
+
+§3 already says subagents start **cold** and are the expensive path. That does
+not stop being true because the sub-model is cheaper. A cold Sonnet agent that
+re-derives context the parent already holds can cost more than staying inline,
+and it produces worse seams on tightly-coupled work.
+
+Delegate step 4 when **all** of these hold:
+
+- The unit is described by an approved step-3 plan, so the agent does not have
+  to re-derive intent.
+- It is self-contained in files no other in-flight unit touches.
+- It returns a **summary** — files changed, tests added, what failed — not a
+  transcript and not file dumps.
+
+Otherwise build inline and flip the session model instead. The serial-spine rule
+in §3 is unchanged: ⭐ enablers are still built hands-on, one at a time, whatever
+model is running.
 
 ### Step 6 is not optional, and it is not the test suite again
 
@@ -128,6 +199,13 @@ Only spawn them when the fan-out is *real* (2+ genuinely independent units).
 Splitting one tightly-coupled feature across agents costs more and produces
 worse seams. **Claude will not spawn subagents unless the work clearly warrants
 it or the human asks.**
+
+Two consequences of §2's routing rule land here. First, **pass `model:` on every
+spawn** — an agent with no pin inherits the session, so an unpinned fan-out on
+this session runs Opus by accident. Second, **a cheaper sub-model does not lower
+the bar for fanning out.** The cold-start cost is context, not rate; a Sonnet
+agent that has to re-read what the parent already holds is still the expensive
+path.
 
 ### Isolation: branches & worktrees (how parallel agents avoid collisions)
 
@@ -189,7 +267,44 @@ fanning subagents across the sibling dependents.
 
 ---
 
-## 6. Realistic cadence
+## 6. Token discipline
+
+§2 decides the *rate*. This section is about the *volume*, which is the larger
+lever, because volume multiplies whatever rate you are paying. Nothing here
+trades quality away — each item removes work that was redundant.
+
+1. **Query the graph before you read files.** This repository carries a
+   `.codegraph/` index. One `codegraph_explore` call returns the verbatim,
+   line-numbered source of the relevant symbols, the call paths between them and
+   the blast radius, replacing a grep → read → grep-again loop that costs far
+   more for a less complete answer. Its output is `Read`-equivalent: do not
+   re-open a file it already printed. This applies while *writing* code, not only
+   while answering questions about it.
+2. **Make subagents return conclusions, not evidence.** A subagent's own
+   transcript is not charged to the parent, but its final message is. Ask for the
+   verdict and the `file:line` anchors behind it. Never ask an agent to print a
+   file back.
+3. **Scope the reviewers to the diff.** Give the step-5 agents the base and head
+   refs so each runs one `git diff`. "Review the branch" invites four agents to
+   read the repository from scratch, in parallel, three of them on Opus.
+4. **Fan the review set out in one message.** Four agents dispatched together
+   share the wall clock and land in the human's single batched read. Dispatched
+   one at a time, each result re-enters the parent context on its own.
+5. **Start each cycle clean.** One feature's context has no value to the next
+   one, and carrying it forward re-sends it on every remaining turn. Clear
+   between items — the ADR, the plan and `BACKLOG.md` are the hand-off, and they
+   are on disk.
+6. **Do not verify an edit by re-reading it.** An `Edit` that returns success
+   wrote the change. This is separate from step 6, which reads the *running
+   system*, never the source.
+7. **Keep the Opus stretches short and deliberate.** Steps 2 and 3 are dialogue
+   and design, and they are worth their rate. The build that follows is not.
+   Routing step 4 down saves more than any prompt-level economy, because it
+   applies to every turn of the longest step.
+
+---
+
+## 7. Realistic cadence
 
 **One feature — or one small batch of parallel siblings — per cycle.** Not six
 tracks at once. The graph says what's eligible; the test suite lets agents move
@@ -198,15 +313,20 @@ the critical path, and merge approvals.
 
 ---
 
-## 7. Starting a cycle — the checklist
+## 8. Starting a cycle — the checklist
 
 ```
-[ ] 1. Confirm the next item is UNBLOCKED (check sequencing doc §2/§3).
-[ ] 2. Brainstorm → open an ADR (new-adr). Human approves scope + deps.
-[ ] 3. Claude writes the plan. Human skims.
-[ ] 4. TDD build. Fan out to subagents ONLY for independent siblings.
-[ ] 5. Run: agents-compliance-reviewer + security-reviewer + code review.
-[ ] 6. Human approves. Merge. Mirror into docs/roadmap.md. Next item.
+[ ] 1. Confirm the next item is UNBLOCKED (BACKLOG.md Depends + ADR gate). [Haiku, delegated]
+[ ] 2. Brainstorm -> open an ADR (new-adr). Human approves scope + deps.   [Opus, inline]
+[ ] 3. plan-architect writes the plan. Human skims.                        [Opus, delegated]
+[ ] 4. TDD build. Delegate to implementer, or flip to /model sonnet.       [Sonnet]
+       Fan out to worktrees ONLY for independent siblings.
+[ ] 5. code-reviewer + security-reviewer + agents-compliance-reviewer,
+       + migration-reviewer if the diff touches packages/db.
+       One message, scoped to the diff.                         [Opus x3, Sonnet x1]
+[ ] 6. Verify against the running stack. Record which layers were N/A.
+[ ] 7. Human approves. Merge. Mirror into docs/roadmap.md.
+       Clear the context, then the next item.
 ```
 
 **First cycle to run:** `F4.4` test runner (Phase 0, step 1). Start with its ADR.
