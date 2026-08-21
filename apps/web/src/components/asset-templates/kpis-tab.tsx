@@ -36,6 +36,7 @@ import type { AdminAssetTemplateDto, TemplateKpi } from "@bms/shared";
 import { CALC_DIALECT } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import { validateEditorFormula } from "../../lib/formula-editor-rules";
 import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
 import {
@@ -77,12 +78,12 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
   // reason to block the form — the row is still `"unvalidated"` and still valid.
   const [validationErrors, setValidationErrors] = useState<Record<number, string>>({});
 
-  // Keyed on the row id alone — see `details-tab.tsx`.
+  // Keyed on the row id and the lifecycle status — see `details-tab.tsx`.
   useEffect(() => {
     setRows(kpiRowsFrom(storedKpis(template)));
     setError(null);
     setValidationErrors({});
-  }, [template.id]);
+  }, [template.id, template.status]);
 
   const declaredPointKeys = template.points.map((point) => point.pointKey);
   const problems = kpiFormErrors(rows, declaredPointKeys);
@@ -113,7 +114,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
       setError(null);
       onSaved(next);
     },
-    onError: (cause: Error) => setError(cause.message),
+    onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
 
   function update(index: number, patch: Partial<TemplateKpiRow>) {

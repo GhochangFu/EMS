@@ -23,6 +23,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import {
   buildDetailsPatch,
@@ -46,10 +47,19 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
   const [form, setForm] = useState<TemplateDetailsForm>(() => detailsFormFrom(template));
   const [error, setError] = useState<string | null>(null);
 
-  // Reseed only when the page moves to a **different row** — "Edit this
-  // version" navigates to a new draft with this component still mounted, and
-  // without this the form would keep the old row's values while the header
-  // showed the new one.
+  // Reseed when the page moves to a **different row**, or when this row's
+  // **lifecycle status** changes.
+  //
+  // The id half: "Edit this version" navigates to a new draft with this
+  // component still mounted, and without it the form would keep the old row's
+  // values while the header showed the new one.
+  //
+  // The status half was added after the section 7 browser pass. A successful
+  // Publish makes this row read-only, and without a reseed the unsaved edits
+  // stayed on screen in disabled inputs, still reported dirty, on a version
+  // that can never accept a write — so every tab click raised "unsaved
+  // changes" with no way to resolve it. Status changes only on a deliberate
+  // lifecycle action, so this cannot fire on a background refetch.
   //
   // Deliberately **not** keyed on `template.updatedAt`. `main.tsx` builds a
   // bare `new QueryClient()`, so `refetchOnWindowFocus` is on and `staleTime`
@@ -62,7 +72,7 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
   useEffect(() => {
     setForm(detailsFormFrom(template));
     setError(null);
-  }, [template.id]);
+  }, [template.id, template.status]);
 
   const errors = detailsFormErrors(form);
   const patch = buildDetailsPatch(form, template);
@@ -94,7 +104,7 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
     },
     // The service's own sentence is the actionable one — a point key that went
     // inactive, a domain that is not in the vocabulary. Rendered verbatim.
-    onError: (cause: Error) => setError(cause.message),
+    onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
 
   // The shared key, not a fourth fetch of the same nine-row payload — the rules

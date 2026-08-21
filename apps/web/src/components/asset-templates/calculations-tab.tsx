@@ -23,6 +23,7 @@ import type { AdminAssetTemplateDto } from "@bms/shared";
 import { CALC_DIALECT, CALC_TRIGGERS } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import { validateEditorFormula } from "../../lib/formula-editor-rules";
 import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
 import {
@@ -60,12 +61,11 @@ export function CalculationsTab({
   const [rows, setRows] = useState<TemplatePointRow[]>(() => pointRowsFrom(template));
   const [error, setError] = useState<string | null>(null);
 
-  // Keyed on the row id alone — see `details-tab.tsx` for why a refetch must
-  // not replace an unsaved edit.
+  // Keyed on the row id and the lifecycle status — see `details-tab.tsx`.
   useEffect(() => {
     setRows(pointRowsFrom(template));
     setError(null);
-  }, [template.id]);
+  }, [template.id, template.status]);
 
   const saveM = useMutation({
     mutationFn: () => updateAdminAssetTemplate(template.id, { points: buildPointsPayload(rows) }),
@@ -73,7 +73,7 @@ export function CalculationsTab({
       setError(null);
       onSaved(next);
     },
-    onError: (cause: Error) => setError(cause.message),
+    onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
 
   // Every point, with its kind — `validateDerivedFormula` needs the siblings'

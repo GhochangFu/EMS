@@ -21,6 +21,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import { fetchAdminPointKeys } from "../../api/admin/point-keys";
 import {
   MAX_TEMPLATE_POINTS,
@@ -45,13 +46,12 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
   const [rows, setRows] = useState<TemplatePointRow[]>(() => pointRowsFrom(template));
   const [error, setError] = useState<string | null>(null);
 
-  // Keyed on the row id alone, for the reason `details-tab.tsx` records: a
-  // refetch on window focus or after a lifecycle action would otherwise discard
-  // an unsaved grid with no message.
+  // Keyed on the row id and the lifecycle status — see `details-tab.tsx` for
+  // both halves, and for why `updatedAt` is deliberately not in this list.
   useEffect(() => {
     setRows(pointRowsFrom(template));
     setError(null);
-  }, [template.id]);
+  }, [template.id, template.status]);
 
   const catalogQ = useQuery({
     queryKey: ["admin", "point-keys", "true", template.organizationId],
@@ -78,7 +78,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
     },
     // The service's own sentence — a key that went inactive between load and
     // save names itself here.
-    onError: (cause: Error) => setError(cause.message),
+    onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
 
   function update(index: number, patch: Partial<TemplatePointRow>) {

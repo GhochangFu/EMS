@@ -16,9 +16,17 @@
  *   Instantiate stays — a location admin deploys.
  * - **Organization scope.** Not derivable in the browser:
  *   `accessibleScopeSchema` carries no organization list. This case falls
- *   through to the API's 403 and its body is rendered verbatim. The service
- *   already writes the right sentence ("Organization is outside your access
- *   scope"), and `adminFetch` throws it unwrapped for exactly this reason.
+ *   through to the API's 403 and its message is rendered. The service already
+ *   writes the right sentence ("Organization is outside your access scope").
+ *
+ *   **This used to say `adminFetch` "throws it unwrapped", and that was
+ *   false.** It throws `new Error(text)` with the *whole* body, so the section
+ *   7 browser pass showed an author
+ *   `{"message":"A template with no points…","error":"Bad Request","statusCode":400}`
+ *   instead of the sentence. Every error surface on this screen now goes
+ *   through `apiErrorMessage`. The other admin pages still render the raw
+ *   envelope — fixing `adminFetch` itself would change 42 call sites and is a
+ *   decision to make on purpose, not as a side effect of this item.
  *
  * The third surface is not an authorisation failure at all: a row written
  * before ADR 0019 can be **read and not written back**, because
@@ -44,6 +52,7 @@ import {
   type HierarchySelection,
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import { AlarmsTab } from "../../components/asset-templates/alarms-tab";
 import { CalculationsTab } from "../../components/asset-templates/calculations-tab";
 import { DetailsTab } from "../../components/asset-templates/details-tab";
@@ -152,7 +161,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
     }
   }
 
-  const onActionError = (cause: Error) => setActionError(cause.message);
+  const onActionError = (cause: Error) => setActionError(apiErrorMessage(cause));
 
   const publishM = useMutation({
     mutationFn: () => publishAdminAssetTemplate(templateId ?? ""),
@@ -252,10 +261,17 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
       openTab(pending.tab);
       return;
     }
-    // The edit is deliberately discarded, so the page must stop reporting
-    // dirty before the action runs. Without this the publish below leaves the
-    // page permanently dirty on a version that can never accept a write.
-    setTabDirty(false);
+    // **`tabDirty` is deliberately NOT cleared here.** An earlier version did,
+    // reasoning that the author had accepted the discard — and that disarmed
+    // the guard for an action that then *failed*. Measured on the running
+    // stack: publishing a draft with no points is refused by the server with a
+    // 400, the edit is still on screen, but the page believed it was clean and
+    // the next tab click discarded it silently. That is the exact defect the
+    // guard exists to prevent, reintroduced by the guard's own confirm path.
+    //
+    // The open tab keeps reporting the truth instead. On a *successful*
+    // action the status changes, each tab's reseed effect refires, and the
+    // dirty flag clears because the form genuinely matches what is stored.
     setPending(null);
     runners[pending.action]();
   }
@@ -546,7 +562,7 @@ function InstantiateDialog({
       void queryClient.invalidateQueries({ queryKey: ["admin", "assets"] });
       onClose();
     },
-    onError: (cause: Error) => setError(cause.message),
+    onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
 
   // Both read the same helpers the payload uses, so the button cannot promise

@@ -31,6 +31,7 @@ import {
   fetchAdminAssetTemplates,
 } from "../../api/admin/asset-templates";
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
@@ -125,7 +126,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
     // residual case — right role, wrong organization — arrives here as
     // "Organization is outside your access scope", and that message is the
     // whole answer. Replacing it with "Could not create template" would hide it.
-    onError: (cause: Error) => setError(cause.message),
+    onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
 
   function submit(event: FormEvent) {

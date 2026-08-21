@@ -33,6 +33,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import type { AdminAssetTemplateDto, AutomationRuleOperator, TemplateAlarm } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import {
   ALARM_OPERATORS,
@@ -75,11 +76,11 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
   const [rows, setRows] = useState<TemplateAlarmRow[]>(() => alarmRowsFrom(storedAlarms(template)));
   const [error, setError] = useState<string | null>(null);
 
-  // Keyed on the row id alone — see `details-tab.tsx`.
+  // Keyed on the row id and the lifecycle status — see `details-tab.tsx`.
   useEffect(() => {
     setRows(alarmRowsFrom(storedAlarms(template)));
     setError(null);
-  }, [template.id]);
+  }, [template.id, template.status]);
 
   const vocabQ = useQuery({ queryKey: vocabulariesQueryKey, queryFn: fetchVocabularies });
   const vocabularies = {
@@ -118,7 +119,7 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
       setError(null);
       onSaved(next);
     },
-    onError: (cause: Error) => setError(cause.message),
+    onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
 
   function update(index: number, patch: Partial<TemplateAlarmRow>) {
