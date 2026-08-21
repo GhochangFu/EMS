@@ -51,9 +51,13 @@ Infer the mode from the request; ask only if genuinely ambiguous.
    `docs/BACKLOG.md` §5 lists the decision ADRs already known to be owed.
 3. Flip the item's Status to `🟡` (ADR/planned) or `🔵` (in progress) once work
    genuinely begins.
-4. Follow the operating model: plan → TDD → build. Fan out to subagents **only**
-   for independent, well-specified siblings that touch non-overlapping files,
-   each in its own worktree; never for ⭐ enablers.
+4. Follow the operating model: plan → TDD → build, and **route each step to its
+   own model** (`build-operating-model.md` §2) — the plan to `plan-architect`
+   (Opus-pinned), the build to `implementer` (Sonnet-pinned) whenever the unit is
+   plan-described and self-contained. Never let a spawned agent inherit the
+   session model: pass `model:` on every `Agent` call. Fan out to subagents
+   **only** for independent, well-specified siblings that touch non-overlapping
+   files, each in its own worktree; never for ⭐ enablers.
 
 ## Mode: done <ID>
 
