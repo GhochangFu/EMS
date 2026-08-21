@@ -15,6 +15,14 @@ const MAX_ROWS_PER_STATEMENT = 500;
 /** Postgres `unique_violation`. */
 const UNIQUE_VIOLATION = "23505";
 
+/** `bms.asset_points.source_data_key` is `varchar(128)`. `pointKey` alone is
+ * Zod-validated up to 128 chars (`pointKeyCode` in
+ * `asset-templates.schema.ts`) — the same limit, independently — so a
+ * synthesised `"computed:" + pointKey` (9-char prefix) overflows it once
+ * `pointKey` exceeds 119 chars, even though `pointKey` on its own was legal
+ * everywhere it was validated. */
+const SOURCE_DATA_KEY_MAX_LENGTH = 128;
+
 export interface CalcWriteInput {
   assetId: string;
   pointKey: string;
@@ -77,6 +85,22 @@ export class CalcWriteService {
       let assetPointsCreated = 0;
       const failedPairs = new Set<string>();
       for (const [key, representative] of pairs) {
+        const sourceDataKey = `computed:${representative.pointKey}`;
+        if (sourceDataKey.length > SOURCE_DATA_KEY_MAX_LENGTH) {
+          // A DB-level failure here would be Postgres 22001 ("string data
+          // right truncation"), not 23505 — the catch below only special-cases
+          // the unique-violation collision, so an uncaught 22001 would
+          // propagate out of this SAVEPOINT-isolated attempt, past the outer
+          // db.transaction, and abort every OTHER pair's write in this same
+          // batch too. Checked up front instead, so this is the same
+          // single-pair skip the collision case already is.
+          failedPairs.add(key);
+          this.logger.warn(
+            `calc write: synthesised source_data_key "${sourceDataKey}" (${sourceDataKey.length} chars) ` +
+              `exceeds the ${SOURCE_DATA_KEY_MAX_LENGTH}-char column limit for ${key}; skipping this value`,
+          );
+          continue;
+        }
         try {
           const inserted = await tx.transaction(async (tx2) => {
             const [created] = await tx2
@@ -84,7 +108,7 @@ export class CalcWriteService {
               .values({
                 assetId: representative.assetId,
                 pointKey: representative.pointKey,
-                sourceDataKey: `computed:${representative.pointKey}`,
+                sourceDataKey,
                 unit: null,
                 active: true,
                 rtuId: null,

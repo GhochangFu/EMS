@@ -7,6 +7,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import {
   assertFirstValueCreatesMappingWithComputedProvenance,
   assertNoAuditLogRowIsProduced,
+  assertOverlongPointKeySkipsOnlyThatPairNotTheBatch,
   assertRewritingTheSameInstantIsANoOp,
   assertSecondValueDoesNotCreateASecondMapping,
   cleanup,
@@ -61,5 +62,10 @@ describe.skipIf(!connectionString)("F2.4 — calc write service", () => {
   it("never produces an audit_log row", async () => {
     if (!pool) throw new Error("pool required");
     await assertNoAuditLogRowIsProduced(pool, fx);
+  });
+
+  it("skips only the pair whose synthesised source_data_key overflows the column, not the whole batch", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertOverlongPointKeySkipsOnlyThatPairNotTheBatch(pool, fx);
   });
 });

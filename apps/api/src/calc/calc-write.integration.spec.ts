@@ -153,6 +153,47 @@ export async function assertRewritingTheSameInstantIsANoOp(pool: pg.Pool, fx: Fi
   );
 }
 
+export async function assertOverlongPointKeySkipsOnlyThatPairNotTheBatch(
+  pool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const assetId = await seedAsset(db, fx, "05");
+  const svc = new CalcWriteService(db, pool, new MetricsService());
+
+  // "computed:" is 9 chars; asset_points.source_data_key is varchar(128), so
+  // any pointKey over 119 chars overflows it even though pointKey alone is
+  // valid up to 128 chars everywhere it is checked (pointKeyCode).
+  const overlongPointKey = "X".repeat(120);
+  const time = new Date();
+
+  const result = await svc.writeValues([
+    { assetId, pointKey: overlongPointKey, value: 1, time },
+    { assetId, pointKey: "CALCWRITE_E_OK", value: 2, time },
+  ]);
+
+  assert(
+    result.written === 1,
+    `the overlong pointKey must be skipped and the other pair must still write — expected 1 written, got ${result.written}`,
+  );
+  assert(
+    result.assetPointsCreated === 1,
+    `only the valid pair's mapping must be created — expected 1, got ${result.assetPointsCreated}`,
+  );
+
+  const overlongRows = await db
+    .select()
+    .from(assetPoints)
+    .where(and(eq(assetPoints.assetId, assetId), eq(assetPoints.pointKey, overlongPointKey)));
+  assert(overlongRows.length === 0, "the overlong pointKey must never get a mapping row");
+
+  const okRows = await db
+    .select()
+    .from(assetPoints)
+    .where(and(eq(assetPoints.assetId, assetId), eq(assetPoints.pointKey, "CALCWRITE_E_OK")));
+  assert(okRows.length === 1, "the valid pair's mapping must exist despite the other pair in the same batch failing");
+}
+
 export async function assertNoAuditLogRowIsProduced(pool: pg.Pool, fx: Fixtures): Promise<void> {
   const db = createDb(pool);
   const assetId = await seedAsset(db, fx, "04");
