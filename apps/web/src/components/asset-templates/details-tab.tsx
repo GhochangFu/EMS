@@ -37,9 +37,11 @@ type DetailsTabProps = {
   editable: boolean;
   /** Refetches the template after a successful save. */
   onSaved: (next: AdminAssetTemplateDto) => void;
+  /** Tells the page whether leaving this tab would discard an edit. */
+  onDirtyChange: (dirty: boolean) => void;
 };
 
-export function DetailsTab({ template, editable, onSaved }: DetailsTabProps) {
+export function DetailsTab({ template, editable, onSaved, onDirtyChange }: DetailsTabProps) {
   const [form, setForm] = useState<TemplateDetailsForm>(() => detailsFormFrom(template));
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +66,16 @@ export function DetailsTab({ template, editable, onSaved }: DetailsTabProps) {
   const errors = detailsFormErrors(form);
   const patch = buildDetailsPatch(form, template);
   const blocked = Object.keys(errors).length > 0;
+
+  // `buildDetailsPatch` returns `null` for a form that matches what is stored,
+  // so it is already the dirty signal — no second comparison to drift from it.
+  // The cleanup reports clean on unmount so a switch away cannot leave the
+  // page holding this tab's `true`.
+  const dirty = patch !== null;
+  useEffect(() => {
+    onDirtyChange(dirty);
+    return () => onDirtyChange(false);
+  }, [dirty, onDirtyChange]);
 
   const saveM = useMutation({
     mutationFn: () => {

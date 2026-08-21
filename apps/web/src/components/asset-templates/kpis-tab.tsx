@@ -58,6 +58,8 @@ type KpisTabProps = {
   template: AdminAssetTemplateDto;
   editable: boolean;
   onSaved: (next: AdminAssetTemplateDto) => void;
+  /** Tells the page whether leaving this tab would discard an edit. */
+  onDirtyChange: (dirty: boolean) => void;
 };
 
 /** The stored section, read from the loose `content` record. */
@@ -66,7 +68,7 @@ function storedKpis(template: AdminAssetTemplateDto): TemplateKpi[] | undefined 
   return Array.isArray(section) ? (section as TemplateKpi[]) : undefined;
 }
 
-export function KpisTab({ template, editable, onSaved }: KpisTabProps) {
+export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabProps) {
   const [rows, setRows] = useState<TemplateKpiRow[]>(() => kpiRowsFrom(storedKpis(template)));
   const [error, setError] = useState<string | null>(null);
   // Keyed by row index. A failed validation is a message about one field, not a
@@ -84,6 +86,14 @@ export function KpisTab({ template, editable, onSaved }: KpisTabProps) {
   const problems = kpiFormErrors(rows, declaredPointKeys);
   const blockedKeys = unwritableContentKeys(template.content);
   const changed = kpisHaveChanged(rows, storedKpis(template));
+
+  // The same comparison Save already uses, reported up so the page can guard a
+  // tab switch. The cleanup reports clean on unmount, so switching away cannot
+  // leave the page holding this tab's `true`.
+  useEffect(() => {
+    onDirtyChange(changed);
+    return () => onDirtyChange(false);
+  }, [changed, onDirtyChange]);
   const blocked = problems.length > 0 || blockedKeys.length > 0;
 
   const saveM = useMutation({

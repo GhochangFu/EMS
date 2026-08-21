@@ -37,9 +37,11 @@ type PointsTabProps = {
   template: AdminAssetTemplateDto;
   editable: boolean;
   onSaved: (next: AdminAssetTemplateDto) => void;
+  /** Tells the page whether leaving this tab would discard an edit. */
+  onDirtyChange: (dirty: boolean) => void;
 };
 
-export function PointsTab({ template, editable, onSaved }: PointsTabProps) {
+export function PointsTab({ template, editable, onSaved, onDirtyChange }: PointsTabProps) {
   const [rows, setRows] = useState<TemplatePointRow[]>(() => pointRowsFrom(template));
   const [error, setError] = useState<string | null>(null);
 
@@ -59,6 +61,14 @@ export function PointsTab({ template, editable, onSaved }: PointsTabProps) {
 
   const problems = pointGridErrors(rows);
   const changed = pointsHaveChanged(rows, template);
+
+  // The same comparison Save already uses, reported up so the page can guard a
+  // tab switch. The cleanup reports clean on unmount, so switching away cannot
+  // leave the page holding this tab's `true`.
+  useEffect(() => {
+    onDirtyChange(changed);
+    return () => onDirtyChange(false);
+  }, [changed, onDirtyChange]);
 
   const saveM = useMutation({
     mutationFn: () => updateAdminAssetTemplate(template.id, { points: buildPointsPayload(rows) }),

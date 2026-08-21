@@ -54,6 +54,7 @@ import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import { unwritableContentKeys } from "../../lib/template-content-merge";
+import { guardTabSwitch } from "../../lib/template-tab-guard";
 import { resolveTemplateTab, type TemplateTabId } from "../../lib/template-tabs";
 import {
   capabilities,
@@ -102,9 +103,35 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
   });
 
   const tab = resolveTemplateTab(searchParams.get("tab"));
-  function selectTab(next: TemplateTabId) {
+
+  // Set by whichever tab is open, through `onDirtyChange`. The page cannot
+  // work this out for itself — each tab owns its own form state, and that is
+  // the whole reason switching tabs used to discard it.
+  const [tabDirty, setTabDirty] = useState(false);
+  const [pendingTab, setPendingTab] = useState<TemplateTabId | null>(null);
+
+  function openTab(next: TemplateTabId) {
+    // The outgoing tab's dirty report belongs to a component that is about to
+    // unmount. Clearing it here stops the incoming tab inheriting a `true` it
+    // never set, which would prompt on the very next switch with nothing
+    // unsaved.
+    setTabDirty(false);
+    setPendingTab(null);
     setSearchParams({ tab: next }, { replace: true });
   }
+
+  function selectTab(next: TemplateTabId) {
+    const decision = guardTabSwitch(tab, next, tabDirty);
+    if (decision.allow) {
+      openTab(next);
+      return;
+    }
+    setPendingTab(next);
+  }
+
+  // Recomputed rather than stored, so the dialog cannot outlive the decision
+  // that opened it — a stale prompt naming the wrong tab is worse than none.
+  const pendingDecision = pendingTab ? guardTabSwitch(tab, pendingTab, tabDirty) : null;
 
   function afterChange(next: AdminAssetTemplateDto) {
     setActionError(null);
@@ -276,9 +303,44 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
             template={template}
             editable={lifecycle.editable}
             onSaved={afterChange}
+            onDirtyChange={setTabDirty}
           />
         </div>
       </SectionCard>
+
+      {pendingTab && pendingDecision && !pendingDecision.allow ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="tab-guard-title"
+            className="w-full max-w-md space-y-3 rounded bg-white p-4 shadow-lg"
+          >
+            <h2 id="tab-guard-title" className="text-sm font-semibold text-bms-ink">
+              Unsaved changes
+            </h2>
+            <p className="text-xs text-bms-muted">{pendingDecision.prompt}</p>
+            <div className="flex justify-end gap-2">
+              {/* Cancel first, and it is the plain-worded one. The destructive
+                  choice sits on the right and names what it destroys. */}
+              <button
+                type="button"
+                onClick={() => setPendingTab(null)}
+                className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+              >
+                {pendingDecision.cancelLabel}
+              </button>
+              <button
+                type="button"
+                onClick={() => openTab(pendingTab)}
+                className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white"
+              >
+                {pendingDecision.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {instantiateOpen ? (
         <InstantiateDialog
@@ -316,26 +378,68 @@ function TemplateTabBody({
   template,
   editable,
   onSaved,
+  onDirtyChange,
 }: {
   tab: TemplateTabId;
   template: AdminAssetTemplateDto;
   editable: boolean;
   onSaved: (next: AdminAssetTemplateDto) => void;
+  /**
+   * Reported by the open tab whenever its form stops matching what is stored.
+   * Required, not optional — a tab that forgot to report would silently lose
+   * edits again, and an optional prop makes that omission compile.
+   */
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   if (tab === "details") {
-    return <DetailsTab template={template} editable={editable} onSaved={onSaved} />;
+    return (
+      <DetailsTab
+        template={template}
+        editable={editable}
+        onSaved={onSaved}
+        onDirtyChange={onDirtyChange}
+      />
+    );
   }
   if (tab === "points") {
-    return <PointsTab template={template} editable={editable} onSaved={onSaved} />;
+    return (
+      <PointsTab
+        template={template}
+        editable={editable}
+        onSaved={onSaved}
+        onDirtyChange={onDirtyChange}
+      />
+    );
   }
   if (tab === "calculations") {
-    return <CalculationsTab template={template} editable={editable} onSaved={onSaved} />;
+    return (
+      <CalculationsTab
+        template={template}
+        editable={editable}
+        onSaved={onSaved}
+        onDirtyChange={onDirtyChange}
+      />
+    );
   }
   if (tab === "kpis") {
-    return <KpisTab template={template} editable={editable} onSaved={onSaved} />;
+    return (
+      <KpisTab
+        template={template}
+        editable={editable}
+        onSaved={onSaved}
+        onDirtyChange={onDirtyChange}
+      />
+    );
   }
   if (tab === "alarms") {
-    return <AlarmsTab template={template} editable={editable} onSaved={onSaved} />;
+    return (
+      <AlarmsTab
+        template={template}
+        editable={editable}
+        onSaved={onSaved}
+        onDirtyChange={onDirtyChange}
+      />
+    );
   }
   // Unreachable while `TemplateTabId` names five tabs. Adding a sixth without
   // an arm here is a type error on this line, naming the tab that has no

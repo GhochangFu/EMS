@@ -51,6 +51,8 @@ type AlarmsTabProps = {
   template: AdminAssetTemplateDto;
   editable: boolean;
   onSaved: (next: AdminAssetTemplateDto) => void;
+  /** Tells the page whether leaving this tab would discard an edit. */
+  onDirtyChange: (dirty: boolean) => void;
 };
 
 /**
@@ -68,7 +70,7 @@ function storedAlarms(template: AdminAssetTemplateDto): TemplateAlarm[] | undefi
   return Array.isArray(section) ? (section as TemplateAlarm[]) : undefined;
 }
 
-export function AlarmsTab({ template, editable, onSaved }: AlarmsTabProps) {
+export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: AlarmsTabProps) {
   const [rows, setRows] = useState<TemplateAlarmRow[]>(() => alarmRowsFrom(storedAlarms(template)));
   const [error, setError] = useState<string | null>(null);
 
@@ -88,6 +90,14 @@ export function AlarmsTab({ template, editable, onSaved }: AlarmsTabProps) {
   const declaredPointKeys = template.points.map((point) => point.pointKey);
   const blockedKeys = unwritableContentKeys(template.content);
   const changed = alarmsHaveChanged(rows, storedAlarms(template));
+
+  // The same comparison Save already uses, reported up so the page can guard a
+  // tab switch. The cleanup reports clean on unmount, so switching away cannot
+  // leave the page holding this tab's `true`.
+  useEffect(() => {
+    onDirtyChange(changed);
+    return () => onDirtyChange(false);
+  }, [changed, onDirtyChange]);
 
   // While the vocabularies are still loading every code looks retired, which
   // would paint a valid form red. The membership checks are meaningful only
