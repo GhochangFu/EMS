@@ -29,15 +29,15 @@
  */
 import {
   CALC_DIALECT,
-  CalcTokenizeError,
   formatCalcError,
-  tokenize,
   validateFormula,
   type CalcParseError,
   type TemplateKpi,
   type TemplatePointKind,
   type Token,
 } from "@bms/shared";
+
+import { clampOffset, safeTokenize, tokenRange } from "./calc-token-ranges";
 
 /**
  * One author-facing problem, positioned in the source text.
@@ -110,43 +110,6 @@ const UNDECLARED_KPI_REFERENCE_MESSAGE =
   "This KPI references a point that the template does not declare";
 
 /**
- * Tokenizes, or reports that the text is not tokenizable yet.
- *
- * `tokenize` throws `CalcTokenizeError` by design — a half-typed `{ref` is an
- * unterminated reference, which is the *normal* intermediate state of someone
- * typing. Every caller here is on a keystroke path, so the throw is caught and
- * turned into "no tokens", never propagated.
- */
-function safeTokenize(formula: string): Token[] | null {
-  try {
-    return tokenize(formula);
-  } catch (error) {
-    if (error instanceof CalcTokenizeError) {
-      return null;
-    }
-    throw error;
-  }
-}
-
-/** Character width of a token in the source text. */
-function tokenWidth(token: Token): number {
-  if (token.kind === "eof") {
-    // `eof` has `text: ""` and no extent. The range collapses to a point; it is
-    // Unit 5's linter that decides how to render a zero-width diagnostic, not
-    // this module — the choice is visual, and belongs where the view is.
-    return 0;
-  }
-  // A `ref` token's `text` excludes its braces (`tokenizer.ts:83–98`), so the
-  // two delimiters are added back. Every other kind stores its raw source slice.
-  return token.kind === "ref" ? token.text.length + 2 : token.text.length;
-}
-
-/** Clamps an offset into the formula's bounds. */
-function clampOffset(offset: number, formula: string): number {
-  return Math.min(Math.max(offset, 0), formula.length);
-}
-
-/**
  * Maps a parser position onto a source range.
  *
  * Two fallbacks, both to "from here to the end of the text": the formula did
@@ -156,13 +119,11 @@ function clampOffset(offset: number, formula: string): number {
  * the author cannot see.
  */
 function rangeAt(formula: string, position: number): { from: number; to: number } {
-  const from = clampOffset(position, formula);
-  const tokens = safeTokenize(formula);
-  const token = tokens?.find((candidate) => candidate.position === position);
+  const token = safeTokenize(formula).find((candidate) => candidate.position === position);
   if (!token) {
-    return { from, to: formula.length };
+    return { from: clampOffset(position, formula), to: formula.length };
   }
-  return { from, to: clampOffset(token.position + tokenWidth(token), formula) };
+  return tokenRange(formula, token);
 }
 
 /** Renders a parser error as a positioned diagnostic. */
@@ -172,7 +133,7 @@ function toDiagnostic(formula: string, error: CalcParseError): FormulaDiagnostic
 
 /** Every `ref` token in source order. */
 function refTokens(formula: string): Token[] {
-  return (safeTokenize(formula) ?? []).filter((token) => token.kind === "ref");
+  return safeTokenize(formula).filter((token) => token.kind === "ref");
 }
 
 /**
