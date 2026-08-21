@@ -54,6 +54,11 @@ import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import { unwritableContentKeys } from "../../lib/template-content-merge";
+import {
+  buildInstantiatePayload,
+  hasTarget,
+  namedCount,
+} from "../../lib/template-instantiate-form";
 import { guardTabSwitch } from "../../lib/template-tab-guard";
 import { resolveTemplateTab, type TemplateTabId } from "../../lib/template-tabs";
 import {
@@ -485,33 +490,16 @@ function InstantiateDialog({
 
   const instantiateM = useMutation({
     mutationFn: () => {
-      const assets = rows
-        .filter((row) => row.code.trim() !== "")
-        .map((row) => ({ code: row.code.trim(), name: row.name.trim() || row.code.trim() }));
-      // RTU wins when both pickers are set: an RTU already implies its
-      // location, so sending both would be the both-or-neither case the server
-      // rejects.
-      if (selection.rtuId) {
-        return instantiateFromAdminAssetTemplate(template.id, {
-          rtuId: selection.rtuId,
-          assets,
-        });
+      // Every rule — RTU-wins-over-location, dropping blank rows, and the
+      // name-falls-back-to-code fallback — lives in
+      // `lib/template-instantiate-form.ts` under test. Getting RTU-wins
+      // backwards builds assets under the wrong parent with no error at all,
+      // which is why it is not left inline here where nothing can reach it.
+      const payload = buildInstantiatePayload(selection, rows);
+      if (!payload.ok) {
+        return Promise.reject(new Error(payload.message));
       }
-      if (selection.locationId) {
-        return instantiateFromAdminAssetTemplate(template.id, {
-          locationId: selection.locationId,
-          assets,
-        });
-      }
-      // No target chosen. The button below is disabled in this state, so this
-      // is unreachable — but writing `locationId: selection.locationId ?? ""`
-      // to satisfy the type would build a request guaranteed to 400, and the
-      // author would read a message about a location that does not exist
-      // instead of the one thing they have to do. A refusal that says what to
-      // do is the honest branch.
-      return Promise.reject(
-        new Error("Choose a location or an RTU to build these assets in."),
-      );
+      return instantiateFromAdminAssetTemplate(template.id, payload.input);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "assets"] });
@@ -520,8 +508,11 @@ function InstantiateDialog({
     onError: (cause: Error) => setError(cause.message),
   });
 
-  const targetChosen = Boolean(selection.rtuId ?? selection.locationId);
-  const named = rows.filter((row) => row.code.trim() !== "").length;
+  // Both read the same helpers the payload uses, so the button cannot promise
+  // a count the body does not carry, and cannot enable itself for a target the
+  // builder would refuse.
+  const targetChosen = hasTarget(selection);
+  const named = namedCount(rows);
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
