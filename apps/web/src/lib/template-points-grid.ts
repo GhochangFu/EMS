@@ -119,12 +119,20 @@ export function blankPointRow(rows: readonly TemplatePointRow[]): TemplatePointR
  * would turn a kind change into a 400 the author cannot connect to the control
  * they touched.
  *
- * **measured → derived clears nothing, because there is nothing to clear** —
- * and deliberately seeds nothing either. A derived point requires `formula`,
- * `formulaDialect` and `calcTrigger`, and this tab has no controls for any of
- * them: ADR 0038 decision 4 puts the trigger policy on the Calculations tab and
- * decision 9 keeps it off the KPIs tab. Seeding `calcTrigger: "streaming"` here
- * would decide ADR 0037's write policy from a tab the ADR gives no say in it,
+ * **measured → derived clears `sourceDataKeyPattern` and seeds nothing.**
+ *
+ * The pattern goes because a derived value is computed, and the instantiation
+ * service says so in its own words: "only measured points become rows … a
+ * derived point is computed by the calc engine, and there is no honest
+ * `source_data_key` for it." `templatePointBodySchema` has no cross-check for
+ * this field, so a stale pattern is accepted and then ignored forever — dead
+ * data that reads as configuration.
+ *
+ * Nothing is seeded. A derived point requires `formula`, `formulaDialect` and
+ * `calcTrigger`, and this tab has no controls for any of them: ADR 0038
+ * decision 4 puts the trigger policy on the Calculations tab and decision 9
+ * keeps it off the KPIs tab. Seeding `calcTrigger: "streaming"` here would
+ * decide ADR 0037's write policy from a tab the ADR gives no say in it,
  * silently, in a field the author never sees. `pointGridErrors` names what is
  * owed instead.
  */
@@ -146,7 +154,7 @@ export function setPointKind(
       maxInputAgeSeconds: null,
     };
   }
-  return { ...row, kind };
+  return { ...row, kind, sourceDataKeyPattern: "" };
 }
 
 /** One problem, addressed to a row. `row: null` means the grid as a whole. */
@@ -261,7 +269,12 @@ export function brokenFormulaRefs(rows: readonly TemplatePointRow[]): PointGridP
         problems.push({
           row: index,
           field: "formula",
-          message: `This point's formula references "${ref}", which is no longer in this template.`,
+          // Says how to get unstuck. The formula lives on the Calculations tab,
+          // and leaving this tab to reach it discards the unsaved grid — so the
+          // fix available *here* is to put the key back.
+          message:
+            `This point's formula references "${ref}", which is no longer in this template. ` +
+            "Restore that point key, or change the formula on the Calculations tab.",
         });
       } else if (kind === "derived") {
         problems.push({

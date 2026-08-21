@@ -201,6 +201,7 @@ export function runKindChangeTests(): void {
   // the Calculations tab; a default chosen here would be ADR 0037's write
   // policy decided silently from a tab with no say in it.
   const plain = pointRowsFrom(template([point()]))[0];
+  assert(plain.sourceDataKeyPattern !== "", "the fixture starts with a source pattern");
   const promoted = setPointKind(plain, "derived");
   assert(promoted.kind === "derived", "the kind changes");
   assert(
@@ -208,6 +209,13 @@ export function runKindChangeTests(): void {
     `measured to derived must not seed a trigger — got ${promoted.calcTrigger}`,
   );
   assert(promoted.formula === null, "…and must not seed a formula");
+  // The instantiation service: "only measured points become rows … there is no
+  // honest source_data_key" for a derived one. The schema has no cross-check
+  // for this field, so a stale pattern is stored and ignored forever.
+  assert(
+    promoted.sourceDataKeyPattern === "",
+    `a derived point has no source key pattern — got ${JSON.stringify(promoted.sourceDataKeyPattern)}`,
+  );
 
   // Setting the kind it already has must not clear anything.
   const same = setPointKind(derived, "derived");
