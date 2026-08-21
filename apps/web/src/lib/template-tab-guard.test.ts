@@ -1,9 +1,12 @@
 import { describe, it } from "vitest";
 
 import {
+  runActionConsequenceTests,
+  runActionCoverageTests,
   runCleanTabTests,
   runDirtyTabTests,
   runLabelSourceTests,
+  runLifecycleGuardTests,
   runPromptContentTests,
   runSameTabTests,
 } from "./template-tab-guard.spec";
@@ -28,5 +31,17 @@ describe("template tab guard", () => {
 
   it("takes its labels from the tab registry", () => {
     runLabelSourceTests();
+  });
+
+  it("blocks every lifecycle action over an unsaved edit", () => {
+    runLifecycleGuardTests();
+  });
+
+  it("tells the author what each action does, and what Publish ships", () => {
+    runActionConsequenceTests();
+  });
+
+  it("covers every action the capability table offers", () => {
+    runActionCoverageTests();
   });
 });

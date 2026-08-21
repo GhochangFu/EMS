@@ -1,3 +1,4 @@
+import type { TemplateLifecycleAction } from "./template-lifecycle";
 import { TEMPLATE_TABS, type TemplateTabId } from "./template-tabs";
 
 /**
@@ -85,5 +86,63 @@ export function guardTabSwitch(
     prompt: `${templateTabLabel(current)} has unsaved changes. Leaving this tab discards them. Save first, or discard and continue to ${templateTabLabel(next)}.`,
     confirmLabel: `Discard and open ${templateTabLabel(next)}`,
     cancelLabel: `Stay on ${templateTabLabel(current)}`,
+  };
+}
+
+/**
+ * What each lifecycle action does to an unsaved edit.
+ *
+ * Keyed by the action union, so an action added to `TemplateLifecycleAction`
+ * fails to compile here rather than silently skipping the guard — which is the
+ * failure this whole function exists to correct.
+ */
+const ACTION_CONSEQUENCE: Record<TemplateLifecycleAction, string> = {
+  // The dangerous one, and not because the edit is lost. Publishing sends the
+  // **stored** version, so the screen afterwards shows configuration the
+  // server does not have, on a version that can never accept a write.
+  publish: "Publishing sends the stored version, not what is on screen, and a published version cannot be edited.",
+  delete: "Deleting this draft discards them along with it.",
+  archive: "Archiving makes this version read-only and the changes cannot then be saved.",
+  createDraft: "Starting a new draft moves the page to a different version and leaves these behind.",
+  instantiate: "Building assets uses the stored version, not what is on screen.",
+};
+
+const ACTION_VERB: Record<TemplateLifecycleAction, string> = {
+  publish: "publish",
+  delete: "delete the draft",
+  archive: "archive",
+  createDraft: "start a new draft",
+  instantiate: "build assets",
+};
+
+/**
+ * Decides whether a lifecycle action may proceed over an unsaved edit.
+ *
+ * `guardTabSwitch` closed the tab-switch route to silent edit loss and left
+ * this one open: the lifecycle buttons sit **above** the tabs, and on a draft —
+ * the only status where the tabs are editable — Publish and Delete are exactly
+ * the two actions offered. Neither consulted the dirty flag, so Publish would
+ * ship the stored configuration while the screen kept showing the author's
+ * unsaved one, with no message at all. That outcome is worse than the discard
+ * the tab guard fixed, because nothing on screen indicates it happened.
+ *
+ * Every action is guarded rather than only the two reachable today. An action
+ * is added to the union far more easily than this list is revisited, and the
+ * cost of guarding one that cannot be dirty is exactly nothing — `dirty` is
+ * false there, so the guard allows it.
+ */
+export function guardLifecycleAction(
+  action: TemplateLifecycleAction,
+  currentTab: TemplateTabId,
+  dirty: boolean,
+): TabSwitchDecision {
+  if (!dirty) {
+    return { allow: true };
+  }
+  return {
+    allow: false,
+    prompt: `${templateTabLabel(currentTab)} has unsaved changes. ${ACTION_CONSEQUENCE[action]}`,
+    confirmLabel: `Discard and ${ACTION_VERB[action]}`,
+    cancelLabel: "Go back and save",
   };
 }

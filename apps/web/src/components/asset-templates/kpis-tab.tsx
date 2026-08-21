@@ -37,6 +37,7 @@ import { CALC_DIALECT } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { validateEditorFormula } from "../../lib/formula-editor-rules";
+import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
 import {
   mergeTemplateContent,
   unwritableContentKeys,
@@ -53,6 +54,7 @@ import {
   type TemplateKpiRow,
 } from "../../lib/template-kpi-form";
 import { FormulaEditorLazy } from "./formula-editor-lazy";
+import { Field } from "./field";
 
 type KpisTabProps = {
   template: AdminAssetTemplateDto;
@@ -254,7 +256,9 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
                 kpiPointKeys={keys}
                 dialect={kpi.dialect}
                 value={kpi.expression}
-                readOnly={!editable}
+                // ADR 0038 decision 3, through the named rule rather than
+                // `!editable` — see the same line in `calculations-tab.tsx`.
+                readOnly={formulaFieldsAreReadOnly(template.status)}
                 ariaLabel={`Expression for ${kpi.code || "this KPI"}`}
                 onChange={(next) => update(index, { expression: next })}
               />
@@ -289,9 +293,18 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
               {editable ? (
                 <button
                   type="button"
-                  onClick={() =>
-                    setRows((current) => current.filter((_, position) => position !== index))
-                  }
+                  onClick={() => {
+                    setRows((current) => current.filter((_, position) => position !== index));
+                    // `validationErrors` is keyed by row **position**, so a
+                    // removal shifts every later row underneath its own
+                    // message: remove KPI 0 and the parse error it raised
+                    // reappears under the KPI that was KPI 1, which was never
+                    // validated. Cleared rather than reindexed — an error is a
+                    // statement about an expression at a moment, and after a
+                    // structural edit the honest state is "not validated",
+                    // which re-running Validate costs nothing to restore.
+                    setValidationErrors({});
+                  }}
                   className="rounded border border-red-200 px-3 py-1 text-[11px] font-semibold text-red-700"
                 >
                   Remove
@@ -368,24 +381,4 @@ function fieldClass(disabled: boolean, problem: string | undefined): string {
   return `w-full rounded border px-2 py-1.5 text-xs ${tone} ${
     disabled ? "bg-gray-50 text-bms-muted" : ""
   }`;
-}
-
-function Field({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block space-y-1">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
-        {label}
-      </span>
-      {children}
-      {error ? <span className="block text-[11px] text-red-700">{error}</span> : null}
-    </label>
-  );
 }

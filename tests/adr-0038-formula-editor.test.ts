@@ -111,10 +111,47 @@ describe("ADR 0038 — only the lazy editor module imports CodeMirror", () => {
     expect(files.map(([rel]) => rel)).toContain(allowed);
   });
 
+  // Every way a specifier can be named, not just the static one.
+  //
+  // This started as `from "…"` alone, which is the form the tree happens to
+  // use. That made the scan weaker than the guarantee it replaced: before
+  // Amendment 2 declared five `@codemirror/*` names, pnpm's isolated linker
+  // enforced the single-importer rule by accident, and any component can now
+  // reach them. `await import("@codemirror/view")` or `require(...)` in any
+  // file would have passed a `from`-only regex and landed CodeMirror in that
+  // component's chunk.
+  const CODEMIRROR_SPECIFIER = String.raw`["'](?:codemirror|@codemirror\/[^"']+)["']`;
+  const IMPORT_FORMS = [
+    new RegExp(String.raw`\bfrom\s+${CODEMIRROR_SPECIFIER}`),
+    new RegExp(String.raw`\bimport\s*\(\s*${CODEMIRROR_SPECIFIER}`),
+    new RegExp(String.raw`\brequire\s*\(\s*${CODEMIRROR_SPECIFIER}`),
+  ];
+
+  it("the scan recognises every import form, not only the one the tree uses", () => {
+    // Anti-vacuity for the regexes themselves. A scan that matched nothing
+    // would report zero offenders and read exactly like a clean tree.
+    const samples = [
+      'import { EditorView } from "@codemirror/view";',
+      'const m = await import("@codemirror/view");',
+      'const m = require("codemirror");',
+    ];
+    for (const sample of samples) {
+      expect(
+        IMPORT_FORMS.some((pattern) => pattern.test(sample)),
+        `the scan does not recognise: ${sample}`,
+      ).toBe(true);
+    }
+    // And it must not fire on a name that merely contains the word.
+    expect(
+      IMPORT_FORMS.some((pattern) => pattern.test('import x from "./codemirror-helpers";')),
+      "a local module whose name contains 'codemirror' is not the library",
+    ).toBe(false);
+  });
+
   it("no module outside the lazy editor imports codemirror or @codemirror/*", () => {
     const offenders = files
       .filter(([rel]) => rel !== allowed)
-      .filter(([, text]) => /\bfrom\s+["'](codemirror|@codemirror\/[^"']+)["']/.test(text))
+      .filter(([, text]) => IMPORT_FORMS.some((pattern) => pattern.test(text)))
       .map(([rel]) => rel);
     expect(
       offenders,

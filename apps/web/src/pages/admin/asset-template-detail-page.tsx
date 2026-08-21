@@ -59,7 +59,7 @@ import {
   hasTarget,
   namedCount,
 } from "../../lib/template-instantiate-form";
-import { guardTabSwitch } from "../../lib/template-tab-guard";
+import { guardLifecycleAction, guardTabSwitch } from "../../lib/template-tab-guard";
 import { resolveTemplateTab, type TemplateTabId } from "../../lib/template-tabs";
 import {
   capabilities,
@@ -113,7 +113,13 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
   // work this out for itself — each tab owns its own form state, and that is
   // the whole reason switching tabs used to discard it.
   const [tabDirty, setTabDirty] = useState(false);
-  const [pendingTab, setPendingTab] = useState<TemplateTabId | null>(null);
+
+  // One pending thing, not two. A tab switch and a lifecycle action raise the
+  // same dialog for the same reason, and two independent flags could both be
+  // set — which would render two overlays.
+  const [pending, setPending] = useState<
+    { kind: "tab"; tab: TemplateTabId } | { kind: "action"; action: TemplateLifecycleAction } | null
+  >(null);
 
   function openTab(next: TemplateTabId) {
     // The outgoing tab's dirty report belongs to a component that is about to
@@ -121,7 +127,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
     // never set, which would prompt on the very next switch with nothing
     // unsaved.
     setTabDirty(false);
-    setPendingTab(null);
+    setPending(null);
     setSearchParams({ tab: next }, { replace: true });
   }
 
@@ -131,12 +137,8 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
       openTab(next);
       return;
     }
-    setPendingTab(next);
+    setPending({ kind: "tab", tab: next });
   }
-
-  // Recomputed rather than stored, so the dialog cannot outlive the decision
-  // that opened it — a stale prompt naming the wrong tab is worse than none.
-  const pendingDecision = pendingTab ? guardTabSwitch(tab, pendingTab, tabDirty) : null;
 
   function afterChange(next: AdminAssetTemplateDto) {
     setActionError(null);
@@ -218,6 +220,45 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
     delete: () => deleteM.mutate(),
     instantiate: () => setInstantiateOpen(true),
   };
+
+  // These buttons sit **above** the tabs, and on a draft — the only status
+  // where the tabs are editable — Publish and Delete are exactly the two
+  // offered. Neither used to consult `tabDirty`, so Publish shipped the stored
+  // version while the screen kept showing the author's unsaved one, with no
+  // message. Unlike a discard, nothing on screen indicated it had happened.
+  function runAction(action: TemplateLifecycleAction) {
+    const decision = guardLifecycleAction(action, tab, tabDirty);
+    if (decision.allow) {
+      runners[action]();
+      return;
+    }
+    setPending({ kind: "action", action });
+  }
+
+  // Recomputed rather than stored, so the dialog cannot outlive the decision
+  // that opened it — a stale prompt naming the wrong tab or action is worse
+  // than none.
+  const pendingDecision = !pending
+    ? null
+    : pending.kind === "tab"
+      ? guardTabSwitch(tab, pending.tab, tabDirty)
+      : guardLifecycleAction(pending.action, tab, tabDirty);
+
+  function confirmPending() {
+    if (!pending) {
+      return;
+    }
+    if (pending.kind === "tab") {
+      openTab(pending.tab);
+      return;
+    }
+    // The edit is deliberately discarded, so the page must stop reporting
+    // dirty before the action runs. Without this the publish below leaves the
+    // page permanently dirty on a version that can never accept a write.
+    setTabDirty(false);
+    setPending(null);
+    runners[pending.action]();
+  }
   const busy =
     publishM.isPending || archiveM.isPending || draftM.isPending || deleteM.isPending;
 
@@ -251,7 +292,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                 key={action}
                 type="button"
                 disabled={busy}
-                onClick={runners[action]}
+                onClick={() => runAction(action)}
                 className={`rounded px-3 py-1.5 text-xs font-semibold disabled:opacity-60 ${
                   action === "delete"
                     ? "border border-red-200 text-red-700"
@@ -313,7 +354,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
         </div>
       </SectionCard>
 
-      {pendingTab && pendingDecision && !pendingDecision.allow ? (
+      {pending && pendingDecision && !pendingDecision.allow ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
           <div
             role="alertdialog"
@@ -330,14 +371,14 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                   choice sits on the right and names what it destroys. */}
               <button
                 type="button"
-                onClick={() => setPendingTab(null)}
+                onClick={() => setPending(null)}
                 className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
               >
                 {pendingDecision.cancelLabel}
               </button>
               <button
                 type="button"
-                onClick={() => openTab(pendingTab)}
+                onClick={confirmPending}
                 className="rounded bg-red-600 px-3 py-1.5 text-xs font-semibold text-white"
               >
                 {pendingDecision.confirmLabel}

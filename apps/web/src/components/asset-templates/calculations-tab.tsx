@@ -24,6 +24,7 @@ import { CALC_DIALECT, CALC_TRIGGERS } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { validateEditorFormula } from "../../lib/formula-editor-rules";
+import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
 import {
   CALC_INTERVAL_BOUNDS,
   INPUT_AGE_BOUNDS,
@@ -154,7 +155,12 @@ export function CalculationsTab({
                 points={siblings}
                 selfPointKey={row.pointKey}
                 value={row.formula ?? ""}
-                readOnly={!editable}
+                // ADR 0038 decision 3's one load-bearing line, expressed
+                // through the named rule rather than through `!editable`.
+                // Both are true today; only this one fails a test if the
+                // lifecycle table ever makes a status editable that must not
+                // carry an editable formula.
+                readOnly={formulaFieldsAreReadOnly(template.status)}
                 ariaLabel={`Formula for ${row.pointKey}`}
                 onChange={(next) =>
                   update(index, {
@@ -188,7 +194,11 @@ export function CalculationsTab({
                     setRows((current) =>
                       current.map((entry, position) =>
                         position === index
-                          ? setCalcTrigger(
+                          ? // `setCalcTrigger` maps a non-member — the
+                            // "Choose…" option's `""` — back to `null` rather
+                            // than storing it. The cast is what let `""`
+                            // through as a member before.
+                            setCalcTrigger(
                               entry,
                               event.target.value as (typeof CALC_TRIGGERS)[number],
                             )

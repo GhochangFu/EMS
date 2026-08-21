@@ -293,3 +293,81 @@ export function runUnwritableKeysAreClassifiedTests(): void {
   assert(Object.hasOwn(merged, "health"), "a reserved key is reported, not deleted");
   assert(Object.hasOwn(merged, "someFutureKey"), "an unknown key is reported, not deleted");
 }
+
+/**
+ * An inherited key is `unknown`, not `reserved`.
+ *
+ * `RESERVED_KEYS` is a plain object literal and `key` comes from
+ * `Object.keys(stored)`, where `stored` is `z.record(z.unknown())` — arbitrary
+ * JSON written before ADR 0019 tightened it. A bare `RESERVED_KEYS[key]`
+ * lookup walks the prototype chain, so a stored key named `toString` returned
+ * `Object.prototype.toString` — a function, therefore `!== undefined` — and
+ * the key was classified **reserved**, with the native function source
+ * interpolated into the sentence shown to the author:
+ *
+ *   "toString" is reserved for function toString() { [native code] } and is
+ *   not yet specified.
+ *
+ * The save was refused either way, so nothing unsafe shipped. The author was
+ * simply told nonsense about a key they could otherwise have been told to
+ * remove.
+ *
+ * The existing classification test covers `health` (reserved),
+ * `someFutureKey` (unknown) and `__proto__` (unsafe), and every one of them
+ * passes with the defect present — none of the three is an inherited name.
+ */
+export function runInheritedKeyTests(): void {
+  // `constructor` is deliberately absent: `UNSAFE_KEYS` catches it earlier, so
+  // it never reaches the reserved lookup and would prove nothing here.
+  const inherited = ["toString", "valueOf", "hasOwnProperty", "isPrototypeOf", "toLocaleString"];
+
+  // Anti-vacuity, and the point of the whole test: prove these names really do
+  // resolve through the prototype chain on a plain literal. If a future
+  // refactor made `RESERVED_KEYS` a null-prototype object, this guard would
+  // fail loudly rather than let the cases below pass for a new reason.
+  const probe: Record<string, string> = { health: "x" };
+  for (const name of inherited) {
+    assert(
+      (probe as Record<string, unknown>)[name] !== undefined,
+      `fixture guard: "${name}" must resolve through Object.prototype on a plain literal`,
+    );
+    assert(
+      !Object.prototype.hasOwnProperty.call(probe, name),
+      `fixture guard: "${name}" must not be an own key`,
+    );
+  }
+
+  const stored: Record<string, unknown> = { kpis: [] };
+  for (const name of inherited) {
+    stored[name] = { anything: true };
+  }
+
+  const problems = unwritableContentKeys(stored);
+  const byKey = new Map(problems.map((problem) => [problem.key, problem]));
+
+  for (const name of inherited) {
+    const problem = byKey.get(name);
+    assert(problem !== undefined, `"${name}" must be reported as a problem`);
+    assert(
+      problem?.reason === "unknown",
+      `"${name}" is an inherited name, not a reserved section — got ${problem?.reason}`,
+    );
+    // The message must never carry a function body. This is what the author
+    // actually saw.
+    assert(
+      problem?.message.includes("[native code]") !== true,
+      `"${name}" leaked a native function into its message: ${problem?.message}`,
+    );
+    assert(
+      problem?.message.includes("function ") !== true,
+      `"${name}" leaked a function into its message: ${problem?.message}`,
+    );
+  }
+
+  // The real reserved sections must still classify as reserved, or the fix
+  // could have been "call everything unknown".
+  const withReal = unwritableContentKeys({ health: {}, optimisation: {} });
+  const realByKey = new Map(withReal.map((problem) => [problem.key, problem]));
+  assert(realByKey.get("health")?.reason === "reserved", "health is still reserved");
+  assert(realByKey.get("optimisation")?.reason === "reserved", "optimisation is still reserved");
+}

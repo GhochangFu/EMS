@@ -46,6 +46,7 @@ import {
   type TemplateAlarmRow,
 } from "../../lib/template-alarm-form";
 import { mergeTemplateContent, unwritableContentKeys } from "../../lib/template-content-merge";
+import { Field } from "./field";
 
 type AlarmsTabProps = {
   template: AdminAssetTemplateDto;
@@ -399,24 +400,4 @@ function fieldClass(disabled: boolean, problem: string | undefined): string {
   return `w-full rounded border px-2 py-1.5 text-xs ${tone} ${
     disabled ? "bg-gray-50 text-bms-muted" : ""
   }`;
-}
-
-function Field({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block space-y-1">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
-        {label}
-      </span>
-      {children}
-      {error ? <span className="block text-[11px] text-red-700">{error}</span> : null}
-    </label>
-  );
 }

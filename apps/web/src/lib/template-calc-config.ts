@@ -1,4 +1,5 @@
 import {
+  CALC_TRIGGERS,
   DEFAULT_MAX_INPUT_AGE_SECONDS,
   MAX_CALC_INTERVAL_SECONDS,
   MAX_INPUT_AGE_SECONDS_BOUND,
@@ -69,6 +70,15 @@ export const IMPLIED_MAX_INPUT_AGE_SECONDS = DEFAULT_MAX_INPUT_AGE_SECONDS;
  * either trigger and the schema cross-checks it against neither.
  */
 export function setCalcTrigger(row: TemplatePointRow, trigger: CalcTrigger): TemplatePointRow {
+  // The second half of the `""` defect. The change handler casts
+  // `event.target.value`, so this can be called with the "Choose…" option's
+  // empty string despite the parameter type. Storing it would put a value in
+  // the row that `calcConfigErrors` must then defend against; mapping it back
+  // to `null` keeps the row honest — the author has chosen no trigger, which
+  // is exactly what `null` means here.
+  if (!isCalcTrigger(trigger)) {
+    return row.calcTrigger === null ? row : { ...row, calcTrigger: null };
+  }
   if (trigger === row.calcTrigger) {
     return row;
   }
@@ -97,7 +107,15 @@ export function calcConfigErrors(
     return problems;
   }
 
-  if (row.calcTrigger === null) {
+  // A **membership** test, not `=== null`. The trigger `<select>` carries an
+  // `<option value="">Choose…`, and re-picking it hands this module `""` — a
+  // value `tsc` never sees because the change handler casts
+  // `event.target.value` to `CalcTrigger`. Against `=== null` that reported no
+  // problem at all: the message vanished, Save enabled, and the request 400'd
+  // on `z.enum(CALC_TRIGGERS).nullish()`, which is the failure this module
+  // exists to prevent. Asking "is it one of the two?" is closed against every
+  // absent value rather than the one that was thought of.
+  if (!isCalcTrigger(row.calcTrigger)) {
     problems.push({
       row: index,
       field: "calcTrigger",
@@ -169,4 +187,18 @@ export function parseOptionalSeconds(raw: string): number | null {
 
 function inBounds(value: number, bounds: { min: number; max: number }): boolean {
   return Number.isInteger(value) && value >= bounds.min && value <= bounds.max;
+}
+
+/**
+ * Whether a value is one of the two real triggers.
+ *
+ * Exported so the `<select>`'s change handler can use it instead of casting.
+ * `event.target.value` is a `string`, and the cast to `CalcTrigger` that made
+ * it compile also let `""` — the "Choose…" option's value — through as though
+ * it were a member. Reading the union from `CALC_TRIGGERS` rather than listing
+ * the two names means a third trigger cannot be added upstream and silently
+ * fail this check.
+ */
+export function isCalcTrigger(value: unknown): value is CalcTrigger {
+  return typeof value === "string" && (CALC_TRIGGERS as readonly string[]).includes(value);
 }

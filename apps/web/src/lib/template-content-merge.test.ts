@@ -8,6 +8,7 @@ import {
   runEachSectionIsIndependentTests,
   runEmptySectionWritesAnArrayTests,
   runPreservesEveryOtherKeyTests,
+  runInheritedKeyTests,
   runUnwritableKeysAreClassifiedTests,
 } from "./template-content-merge.spec";
 
@@ -43,5 +44,9 @@ describe("template content merge", () => {
 
   it("classifies reserved, unknown and unsafe keys separately", () => {
     runUnwritableKeysAreClassifiedTests();
+  });
+
+  it("calls an inherited key unknown, and never shows a function to the author", () => {
+    runInheritedKeyTests();
   });
 });

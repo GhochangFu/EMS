@@ -11,8 +11,13 @@
  * **This module is pure and must stay pure.** It does not fetch live telemetry:
  * a formula being authored belongs to a template, and a template has no asset
  * until `F2.2` instantiates it, so there is no live reading to read. That is a
- * property no behavioural test can show, so `calc-preview.spec.ts` scans this
- * source for network symbols instead.
+ * property no behavioural test can show, so
+ * `tests/adr-0038-formula-editor.test.ts` scans this source for network
+ * symbols instead. **Not `calc-preview.spec.ts`**, which this line used to
+ * name: that file exercises the functions and holds no scan, so a reader who
+ * trusted it could delete the `tests/` file believing the guarantee was still
+ * covered. The scan lives under `tests/` because `apps/web`'s tsconfig carries
+ * no `node` types, so `node:fs` does not typecheck here.
  */
 import {
   evaluate,

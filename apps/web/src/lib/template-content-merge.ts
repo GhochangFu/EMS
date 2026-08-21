@@ -147,7 +147,20 @@ export function unwritableContentKeys(stored: StoredTemplateContent): Unwritable
       });
       continue;
     }
-    const owner = RESERVED_KEYS[key];
+    // `hasOwnProperty.call`, not `RESERVED_KEYS[key] !== undefined`. `key`
+    // comes from `Object.keys(stored)` where `stored` is `z.record(z.unknown())`
+    // — arbitrary JSON written before ADR 0019 tightened it — so a stored key
+    // named `toString`, `valueOf` or `hasOwnProperty` resolves through
+    // `Object.prototype` and a bare lookup returns a native function. That read
+    // as "reserved" and interpolated `function toString() { [native code] }`
+    // into the sentence shown to the author.
+    //
+    // The docblock above reasons carefully about `__proto__` as an *own*
+    // property in the copy loop; the same class arriving through this *lookup*
+    // was missed. Both halves now use an own-property test.
+    const owner = Object.prototype.hasOwnProperty.call(RESERVED_KEYS, key)
+      ? RESERVED_KEYS[key]
+      : undefined;
     if (owner !== undefined) {
       problems.push({
         key,

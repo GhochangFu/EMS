@@ -7,8 +7,18 @@
  * "clicking the open tab is not a navigation" and "a clean tab never prompts"
  * are asserted first and deliberately.
  */
+import { capabilities } from "./template-lifecycle";
+import type { TemplateLifecycleAction } from "./template-lifecycle";
 import { TEMPLATE_TABS, type TemplateTabId } from "./template-tabs";
-import { guardTabSwitch, templateTabLabel } from "./template-tab-guard";
+import { guardLifecycleAction, guardTabSwitch, templateTabLabel } from "./template-tab-guard";
+
+const ACTIONS: TemplateLifecycleAction[] = [
+  "publish",
+  "delete",
+  "archive",
+  "createDraft",
+  "instantiate",
+];
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -146,5 +156,109 @@ export function runLabelSourceTests(): void {
   assert(
     templateTabLabel("nope" as TemplateTabId) === "nope",
     "an unknown id must fall back to itself, never to undefined",
+  );
+}
+
+/**
+ * Every lifecycle action is guarded when a tab is dirty.
+ *
+ * The tab guard closed one route to silent edit loss and left this one open.
+ * On a draft — the only status where the tabs are editable — Publish and
+ * Delete sit above the tabs and neither consulted the dirty flag. Publish is
+ * the one that matters: it sends the **stored** version while the screen keeps
+ * showing the author's unsaved one, so unlike a discard, nothing on screen
+ * indicates what happened.
+ */
+export function runLifecycleGuardTests(): void {
+  for (const action of ACTIONS) {
+    const clean = guardLifecycleAction(action, "points", false);
+    assert(clean.allow, `${action} must proceed when nothing is unsaved`);
+
+    const dirty = guardLifecycleAction(action, "points", true);
+    assert(!dirty.allow, `${action} must not proceed over an unsaved edit`);
+    if (dirty.allow) {
+      continue;
+    }
+    assert(dirty.prompt.trim() !== "", `${action} needs a prompt`);
+    assert(dirty.confirmLabel.trim() !== "", `${action} needs a confirm label`);
+    assert(dirty.cancelLabel.trim() !== "", `${action} needs a cancel label`);
+    assert(
+      dirty.prompt.includes(templateTabLabel("points")),
+      `${action} must name the tab holding the edit, got "${dirty.prompt}"`,
+    );
+    assert(
+      /discard/i.test(dirty.confirmLabel),
+      `${action}'s confirm button must name the discard, got "${dirty.confirmLabel}"`,
+    );
+  }
+}
+
+/**
+ * Each action explains its own consequence, and Publish says the specific
+ * thing.
+ *
+ * One shared "you have unsaved changes" would be true and useless. Publish is
+ * not a discard: the version that ships is the stored one, and it can never be
+ * edited afterwards. An author who reads "changes will be lost" and accepts it
+ * has still not been told what will actually be published.
+ */
+export function runActionConsequenceTests(): void {
+  const prompts = new Map<TemplateLifecycleAction, string>();
+  for (const action of ACTIONS) {
+    const decision = guardLifecycleAction(action, "details", true);
+    assert(!decision.allow, `${action} must block`);
+    if (!decision.allow) {
+      prompts.set(action, decision.prompt);
+    }
+  }
+
+  // No two actions may share wording — that is what makes the prompt worth
+  // reading rather than something to click through.
+  assert(
+    new Set(prompts.values()).size === ACTIONS.length,
+    "each action must explain its own consequence, not share one message",
+  );
+
+  const publish = prompts.get("publish") ?? "";
+  assert(
+    /stored version/i.test(publish),
+    `Publish must say that the stored version ships, got "${publish}"`,
+  );
+  assert(
+    /cannot be edited/i.test(publish),
+    `Publish must say the result cannot be edited, got "${publish}"`,
+  );
+}
+
+/**
+ * Anti-vacuity, and the reason this list cannot quietly go stale.
+ *
+ * `ACTIONS` above is hand-written, so a sixth action added to
+ * `TemplateLifecycleAction` would be guarded by `guardLifecycleAction` — its
+ * `Record` would not compile without an entry — but would not be *tested*
+ * here. This ties the list to the capability table, which is the same source
+ * the page reads when it decides which buttons to render.
+ */
+export function runActionCoverageTests(): void {
+  const offered = new Set<TemplateLifecycleAction>();
+  for (const status of ["draft", "published", "archived"] as const) {
+    for (const action of capabilities(status).actions) {
+      offered.add(action);
+    }
+  }
+  assert(offered.size > 0, "the capability table offered no actions — this scan is broken");
+  for (const action of offered) {
+    assert(
+      ACTIONS.includes(action),
+      `${action} is offered by the capability table but is not covered by these tests`,
+    );
+  }
+
+  // The two that can actually be reached while a tab is dirty, named
+  // explicitly: `draft` is the only status with `editable: true`.
+  const draftActions = capabilities("draft").actions;
+  assert(
+    draftActions.includes("publish") && draftActions.includes("delete"),
+    `the editable status must still offer publish and delete, got ${draftActions.join(",")}`,
   );
 }

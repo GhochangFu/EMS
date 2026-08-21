@@ -30,6 +30,7 @@ import {
   detailsFormFrom,
   type TemplateDetailsForm,
 } from "../../lib/template-details-form";
+import { Field } from "./field";
 
 type DetailsTabProps = {
   template: AdminAssetTemplateDto;
@@ -211,27 +212,4 @@ function inputClass(disabled: boolean, error: string | undefined): string {
   const base = "w-full rounded border px-2 py-1.5 text-xs";
   const tone = error ? "border-red-300 bg-red-50" : "border-gray-200";
   return `${base} ${tone} ${disabled ? "bg-gray-50 text-bms-muted" : ""}`;
-}
-
-function Field({
-  label,
-  error,
-  hint,
-  children,
-}: {
-  label: string;
-  error?: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block space-y-1">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
-        {label}
-      </span>
-      {children}
-      {error ? <span className="block text-[11px] text-red-700">{error}</span> : null}
-      {!error && hint ? <span className="block text-[11px] text-bms-muted">{hint}</span> : null}
-    </label>
-  );
 }

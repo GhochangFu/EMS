@@ -11,6 +11,7 @@ import {
   MAX_CALC_INTERVAL_SECONDS,
   MAX_INPUT_AGE_SECONDS_BOUND,
   MIN_CALC_INTERVAL_SECONDS,
+  type CalcTrigger,
 } from "@bms/shared";
 
 import {
@@ -123,6 +124,39 @@ export function runIntervalOnlyWhenScheduledTests(): void {
 
   const noTrigger = calcConfigErrors(derived({ calcTrigger: null }), 0);
   assert(noTrigger.length === 1 && noTrigger[0].field === "calcTrigger", "a derived point needs a trigger");
+
+  // **The value the form can actually produce, which `null` alone never
+  // reached.** The trigger `<select>` renders `<option value="">Choose…` and
+  // casts `event.target.value` to `CalcTrigger`, so re-picking "Choose…" hands
+  // this module `""` — not `null`. Every guard here used to test `=== null`,
+  // so `""` reported no problem at all: the error message disappeared, Save
+  // enabled, and the request 400'd on `z.enum(CALC_TRIGGERS).nullish()`, which
+  // is the exact failure this module exists to prevent.
+  //
+  // A mutation of `=== null` still reddened the `null` case above, so the
+  // mutation run reported this module clean while the gap was open. The fix is
+  // to assert the **rule** — a derived point carries one of the two triggers —
+  // rather than the one absent value the old assertion pinned.
+  for (const absent of [null, "" as CalcTrigger, "hourly" as CalcTrigger]) {
+    const problems = calcConfigErrors(derived({ calcTrigger: absent }), 0);
+    assert(
+      problems.length === 1 && problems[0].field === "calcTrigger",
+      `a derived point whose trigger is ${JSON.stringify(absent)} must report a calcTrigger problem, got ${JSON.stringify(problems)}`,
+    );
+  }
+
+  // The two real members must still pass, or the rule above would be satisfied
+  // by a guard that simply refuses everything.
+  for (const trigger of CALC_TRIGGERS) {
+    const row =
+      trigger === "scheduled"
+        ? derived({ calcTrigger: trigger, calcIntervalSeconds: CALC_INTERVAL_BOUNDS.min })
+        : derived({ calcTrigger: trigger });
+    assert(
+      calcConfigErrors(row, 0).length === 0,
+      `"${trigger}" is a real trigger and must be accepted`,
+    );
+  }
 }
 
 /** The bounds are inclusive at both ends, and reject a fraction. */
@@ -195,6 +229,34 @@ export function runTriggerChangeTests(): void {
 
   const same = setCalcTrigger(scheduled, "scheduled");
   assert(same.calcIntervalSeconds === 300, "setting the trigger it already has changes nothing");
+
+  // **The setter's half of the `""` defect, which had no test until a mutation
+  // said so.** Deleting the non-member guard from `setCalcTrigger` left every
+  // assertion above green, because nothing here ever called it with a value
+  // outside the union — the parameter type says it cannot happen, and the
+  // `<select>`'s cast is exactly what makes it happen anyway.
+  //
+  // A non-member must land as `null`: the author has chosen no trigger, which
+  // is what `null` means. Storing `""` would put a value in the row that
+  // `calcConfigErrors` then has to defend against a second time.
+  for (const absent of ["", "hourly", "Streaming"]) {
+    const cleared = setCalcTrigger(
+      derived({ calcTrigger: "scheduled", calcIntervalSeconds: 300 }),
+      absent as CalcTrigger,
+    );
+    assert(
+      cleared.calcTrigger === null,
+      `setting the trigger to ${JSON.stringify(absent)} must clear it, got ${JSON.stringify(cleared.calcTrigger)}`,
+    );
+  }
+
+  // A row that already has no trigger is returned unchanged rather than
+  // rebuilt — the setter is called on every keystroke-adjacent render.
+  const already = derived({ calcTrigger: null });
+  assert(
+    setCalcTrigger(already, "" as CalcTrigger) === already,
+    "clearing an already-clear trigger must return the same row",
+  );
 }
 
 /** An emptied number box is "unset", not zero. */

@@ -315,9 +315,19 @@ export default defineConfig({
       // here — recorded rather than fixed, since fixing an unrelated
       // suite's fixture resolution is out of this item's scope.
       // Ratcheted by `F2.5` (template authoring UI, ADR 0038) from
-      // 49.9/45.3/50.6/50.0. Measured 2026-08-21 against the live database,
-      // all 128 files / 462 tests running and none skipped:
-      // 53.62 statements · 49.67 branches · 55.03 functions · 53.69 lines.
+      // 49.9/45.3/50.6/50.0. **Re-measured 2026-08-21 after the review round**,
+      // against the live database, all 130 files / 478 tests running and none
+      // skipped:
+      // 53.87 statements · 50.02 branches · 55.49 functions · 53.94 lines.
+      //
+      // The first measurement in this item was 53.62/49.67/55.03/53.69 at
+      // 128 files / 462 tests, and the thresholds were set to
+      // 53.3/49.3/54.7/53.4 against it. Three reviews then landed four defect
+      // fixes, each shipping the test that would have caught it (§4.6), and two
+      // further `lib/` modules — so both the numerator and the file count moved
+      // and the recorded figure went stale within the same item. Re-measured
+      // rather than left as a floor: a note asserting a figure the tree no
+      // longer has is the exact failure the `E8.3` entry above records.
       //
       // **The attribution is clean, and that was checked rather than assumed.**
       // `git rev-list --count $(git merge-base origin/main HEAD)..origin/main`
@@ -328,15 +338,16 @@ export default defineConfig({
       // `F4.37`/`F4.38` entries record this file getting attribution wrong
       // twice. There is no such drift here.
       //
-      // The rise is fifteen new `apps/web/src/lib/` modules, each shipped with
-      // its spec in its own commit — the calc-DSL editor rules
+      // The rise is **seventeen** new `apps/web/src/lib/` modules, each shipped
+      // with its spec in its own commit — the calc-DSL editor rules
       // (`calc-decorations`, `calc-preview`, `calc-token-ranges`,
-      // `formula-editor-rules`) and the eleven `template-*` form-rule modules
-      // behind the five authoring tabs. Branches lead again (+3.99 against
-      // +3.43 statements) for the reason the rules-split entry gives: these
-      // modules are almost entirely decision logic — kind switching, trigger
-      // policy, vocabulary closure, and the optional-key builders that decide
-      // between an absent key and a sent value.
+      // `formula-editor-rules`) and thirteen `template-*` form-rule modules
+      // behind the five authoring tabs, the unsaved-edit guard and the
+      // instantiate payload. Branches lead again (+4.34 against +3.68
+      // statements) for the reason the rules-split entry gives: these modules
+      // are almost entirely decision logic — kind switching, trigger policy,
+      // vocabulary closure, and the optional-key builders that decide between
+      // an absent key and a sent value.
       //
       // **Most of this item's volume is invisible to this gate.** Ten new
       // `.tsx` files landed alongside — the five tabs, the editor and its lazy
@@ -359,14 +370,17 @@ export default defineConfig({
       // `source_data_key` of 129 chars exceeding the 128-char column — so those
       // branches in `apps/api/src/calc/**` were reached from accumulated state
       // that `db:migrate` → `db:seed` may not reproduce. Two branches out of
-      // 3948 is ~0.05%, comfortably inside the 0.32–0.37 margin these
+      // 3974 is ~0.05%, comfortably inside the **0.32–0.39** margin these
       // thresholds leave, so it does not put CI at risk; it is recorded rather
-      // than assumed away.
+      // than assumed away. (An earlier version of this line said "0.32–0.37",
+      // which had omitted lines — the compliance review caught it. Stated
+      // because a margin quoted wrongly is how a gate gets trusted for the
+      // wrong reason.)
       thresholds: {
-        statements: 53.3,
-        branches: 49.3,
-        functions: 54.7,
-        lines: 53.4,
+        statements: 53.5,
+        branches: 49.7,
+        functions: 55.1,
+        lines: 53.6,
       },
     },
   },
