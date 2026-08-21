@@ -78,6 +78,10 @@ docs/status/backlog-dashboard.client.html
 # be mistaken for "nothing changed". See docs/status/README.md.
 docs/status/.published-fingerprint
 
+# Which board state the Stop hook last asked about, so a declined republish is
+# not re-asked every turn. See .claude/hooks/check-backlog-republish.mjs.
+docs/status/.republish-asked
+
 # F4.31 — `pnpm csv:formula-probe` writes these into the cwd for manual
 # opening in Excel / LibreOffice / Sheets. They are artifacts of a check, not
 # inputs to one: the script regenerates them from the real `csvTextCell`.

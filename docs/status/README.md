@@ -41,6 +41,20 @@ recurring jobs auto-expire after 7 days. Restart it with:
 The loop is a convenience, not the contract. The reliable path stays the same:
 regenerate and republish as the last step of each build cycle.
 
+### The Stop hook
+
+`.claude/hooks/check-backlog-republish.mjs` runs at the end of every turn in
+this repo and removes the need to remember any of the above. It regenerates the
+status JSON, compares its fingerprint against `.published-fingerprint`, and on a
+match exits silently. On a mismatch it renders the HTML and asks Claude to
+publish, quoting the url and the `--mark-published` follow-up.
+
+**A hook cannot publish.** The Artifact tool belongs to the model, not to a
+shell, so the guarantee is *regenerated always, republished when a session is
+running* — not unattended. `Stop` rather than an `Edit` matcher is deliberate: a
+merge, a fetch or a rebase moves a status with no tool touching `BACKLOG.md`,
+and that is exactly how the board went stale on 2026-08-21.
+
 Either way, republishing only rebuilds the page. Whether a reader sees the
 rebuild is decided by the **Shared version** control described under
 [Sharing it](#sharing-it) — not by the republish.
