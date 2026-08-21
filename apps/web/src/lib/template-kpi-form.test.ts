@@ -1,0 +1,42 @@
+import { describe, it } from "vitest";
+
+import {
+  runChangeDetectionTests,
+  runFormErrorTests,
+  runOptionalKeysAreOmittedTests,
+  runPointKeyDerivationTests,
+  runPointKeyResolutionTests,
+  runSeedTests,
+  runValidateActionTests,
+} from "./template-kpi-form.spec";
+
+/** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
+describe("template KPI form", () => {
+  it("omits an unset unit and direction rather than sending null", () => {
+    runOptionalKeysAreOmittedTests();
+  });
+
+  it("seeds from the stored section and starts a new KPI unvalidated", () => {
+    runSeedTests();
+  });
+
+  it("derives pointKeys once validated and keeps the manual list before", () => {
+    runPointKeyDerivationTests();
+  });
+
+  it("flips the dialect only when the expression validates", () => {
+    runValidateActionTests();
+  });
+
+  it("catches blank fields, duplicate codes and the section cap", () => {
+    runFormErrorTests();
+  });
+
+  it("refuses a KPI reading a point the template does not declare", () => {
+    runPointKeyResolutionTests();
+  });
+
+  it("treats a change as what would be sent", () => {
+    runChangeDetectionTests();
+  });
+});
