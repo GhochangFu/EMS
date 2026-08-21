@@ -111,9 +111,13 @@ describe("ADR 0037 — calc engine invariants", () => {
 
   it("CalcSchedulerService.onModuleInit still starts runSchedulerLoop", () => {
     const code = stripComments(readFileSync(join(calcDir, "calc-scheduler.service.ts"), "utf8"));
+    // Anchored to the call site ("void runSchedulerLoop(..."), not just the
+    // name — a bare /runSchedulerLoop\(/ also matches the exported function's
+    // own declaration ("export async function runSchedulerLoop("), so it
+    // would stay green even with the onModuleInit call site deleted.
     expect(
       code,
       "CalcSchedulerService must call runSchedulerLoop(...) in onModuleInit, or the scheduled host never runs",
-    ).toMatch(/runSchedulerLoop\(/);
+    ).toMatch(/void\s+runSchedulerLoop\(/);
   });
 });
