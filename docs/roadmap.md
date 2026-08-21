@@ -1703,6 +1703,81 @@ Process (`AGENTS.md` §10).
 - **Unblocks `F2.4`** (calc execution engine), which lists `F2.3` as its only
   dependency and is now eligible to start.
 
+### Calc execution engine — streaming + scheduled (`F2.4`, ADR 0037) — done
+
+- **Status:** merged 2026-08-21 (PR #116; the ADR alone had already merged
+  separately as PR #115).
+- **What it was.** `F2.3`/ADR 0036 froze `bms-calc-v1`'s grammar and parser
+  but built no evaluator, no trigger, and no write path — three things ADR
+  0036 named and explicitly declined to decide. `F2.4` builds all three.
+- **The evaluator.** `packages/shared/src/calc-dsl/evaluate.ts`, pure — no
+  clock, no I/O. Refuses a non-finite result **at the node that produced
+  it**, not only the expression's root (`min({A}*{B}, 5)` refuses at the
+  multiply, since a root-only check would let `min` silently absorb an
+  overflowed `Infinity` back down to a finite `5`), and normalises `-0` to
+  `0` everywhere, including a bare `{A}` reference. Required adding
+  `position: number` to `CalcUnary`/`CalcBinary`/`CalcCall` in the AST
+  (`CalcPointRef` already had one) — recorded as **ADR 0036 Amendment 1**
+  rather than silently applied, since decision 4 calls the AST a component
+  of a "frozen" package. What's actually frozen is the grammar (decision 1's
+  production rules), which this does not touch.
+- **Two trigger modes, per formula, never per engine.** `template_points`
+  gains three nullable columns (migration `0036`): `calc_trigger`
+  (`streaming`/`scheduled`), `calc_interval_seconds`, and
+  `max_input_age_seconds` (default 300s, deliberately loose). Streaming
+  mirrors `AlarmEngineService` — `hub.on("readings")`, a 60s-cached
+  definition loader, one `try`/`catch` per formula. Scheduled is one
+  self-scheduling `for (;;) { sweep; await sleep(...); }` loop — **never
+  `setInterval`**, the same shape `apps/ingest`'s `runPollLoop` already
+  uses, so no scheduling library and no §9.4 trigger.
+- **The write path is the engine's own**, `CalcWriteService` — not
+  `TelemetryWriteService`. No JWT (nothing to authorise), no
+  `MasterDataAuditService`/`bms.audit_log` row (auditing every
+  machine-generated sample would flood `F4.14`'s read API), computed
+  provenance (`source_kind: 'computed'`, `rtu_id: null`), and
+  `onConflictDoNothing`-only value writes — a recompute of the same instant
+  is a database no-op, never an overwrite. Re-entrancy is closed twice:
+  the streaming host's own input filter can never match the engine's own
+  output (ADR 0036 decision 7 forbids a derived point referencing another
+  derived point), and a same-instant recompute is a no-op regardless.
+- **Review found and fixed a High and several correctness gaps, across two
+  rounds.** First round (four agents in parallel): security found the
+  scheduled host's `lastRunMs` keyed on the bare `templatePointId`, so a
+  template instantiated on multiple assets let the first one processed each
+  sweep starve every other one sharing it, silently, forever — no counted
+  skip. Code review independently found the same line stored raw wall-clock
+  time rather than a bucketed one, which drifts under variable sweep cost;
+  a streaming double-evaluation bug when a batch carried fresh readings for
+  more than one of a formula's refs; and the evaluator's `ref` node
+  bypassing the finiteness gate every other node used. All fixed. **Second
+  round, against the fix commit itself**, found by mutation-testing the
+  fixes rather than reading them: the streaming double-eval regression test
+  didn't actually gate (it counted `writeValues` calls, which is 1 either
+  way, not values within the call); an invariant-test wiring check's regex
+  matched a function's own declaration as well as its real call site; and
+  the null-interval guard caught `null` but not `0` or a negative value,
+  both of which hit the identical NaN trap. Also fixed, migration-reviewer
+  found a latent bug (a synthesised `source_data_key` can overflow its own
+  column even though the point key alone is valid, aborting a whole write
+  batch instead of skipping one pair) — fixed with a pre-check.
+- **Verified live, not only in tests.** Rebuilt and recreated the `api`
+  container from the branch, then ran a fixture with two assets
+  instantiated from one template specifically to reproduce the fixed
+  cross-asset scheduler bug: both fired their scheduled derived value at
+  every 15s bucket across 3 consecutive ticks, correctly isolated. Fixture
+  cleaned up afterward.
+- **Not included, by this repo's own convention:** the `chore(agents):`
+  sweep is this document plus the AGENTS.md edits landing in the same
+  follow-up PR that flips `docs/BACKLOG.md`'s `F2.4` row to done — filed
+  after `F2.4`'s own PR merged, not bundled into the feature branch.
+- **Unblocks `F2.5`** (calc configuration UI) and `F2.6` (template calc-tags
+  wired into the engine, whose other dependency `F2.2` was already done) —
+  both now eligible to start. **Does not unblock `F2.8`** in practice
+  despite `Depends: F2.4` being satisfied: `bms-calc-v1` still has no asset
+  qualifier and no aggregate function, so `estimatePue()`'s cross-asset sum
+  stays inexpressible as a derived tag without an ADR 0036 amendment or a
+  site-level rollup asset — recorded on `F2.8`'s own `docs/BACKLOG.md` row.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
