@@ -71,16 +71,30 @@ export type TemplateKpiRow = {
   higherIsBetter: boolean | null;
 };
 
-/** Reads the stored `content.kpis`, tolerating a row shape this UI predates. */
+/**
+ * Reads the stored `content.kpis`.
+ *
+ * **Every field is treated as possibly absent, and the types here are a
+ * promise the data does not make.** `AdminAssetTemplateDto.content` is
+ * `z.record(z.unknown())`, because `F2.1` shipped the column behind that and a
+ * deployment may hold rows written before ADR 0019 tightened it. So a stored
+ * entry can be any object at all, and `[...kpi.pointKeys]` on one that lacks
+ * the field throws while **rendering** — `unwritableContentKeys` blocks the
+ * write, not the read, and a tab that crashes on open is worse than one that
+ * shows an incomplete row the author can repair.
+ */
 export function kpiRowsFrom(kpis: readonly TemplateKpi[] | undefined): TemplateKpiRow[] {
   return (kpis ?? []).map((kpi) => ({
-    code: kpi.code,
-    name: kpi.name,
-    unit: kpi.unit ?? "",
-    pointKeys: [...kpi.pointKeys],
-    expression: kpi.expression,
-    dialect: kpi.dialect,
-    higherIsBetter: kpi.higherIsBetter ?? null,
+    code: typeof kpi?.code === "string" ? kpi.code : "",
+    name: typeof kpi?.name === "string" ? kpi.name : "",
+    unit: typeof kpi?.unit === "string" ? kpi.unit : "",
+    pointKeys: Array.isArray(kpi?.pointKeys) ? [...kpi.pointKeys] : [],
+    expression: typeof kpi?.expression === "string" ? kpi.expression : "",
+    // Anything that is not the checked dialect reads as unvalidated, which is
+    // the safe direction: it suppresses the parser checks on a row this UI
+    // cannot vouch for, and leaves the Validate button as the way up.
+    dialect: kpi?.dialect === CALC_DIALECT ? CALC_DIALECT : "unvalidated",
+    higherIsBetter: typeof kpi?.higherIsBetter === "boolean" ? kpi.higherIsBetter : null,
   }));
 }
 

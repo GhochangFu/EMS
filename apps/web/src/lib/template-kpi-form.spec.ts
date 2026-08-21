@@ -101,6 +101,43 @@ export function runSeedTests(): void {
 }
 
 /**
+ * A malformed stored entry renders instead of throwing.
+ *
+ * `content` is `z.record(z.unknown())` on the read side, so a row written
+ * before ADR 0019 can hold anything. `[...kpi.pointKeys]` on an entry with no
+ * `pointKeys` throws while **rendering** — and `unwritableContentKeys` blocks
+ * the write, not the read, so nothing upstream stops that row reaching here.
+ */
+export function runMalformedStoredEntryTests(): void {
+  // Deliberately built as `unknown` and cast at the boundary, the way the tab
+  // does it, rather than typed into agreement with a shape the data may not
+  // have.
+  const junk = [
+    {},
+    { code: "A" },
+    { code: "B", pointKeys: "not-an-array", expression: 42, dialect: "sideways" },
+  ] as unknown as TemplateKpi[];
+
+  const rows = kpiRowsFrom(junk);
+  assert(rows.length === 3, "every stored entry produces a row");
+  assert(
+    rows.every((entry) => Array.isArray(entry.pointKeys)),
+    "a missing or non-array pointKeys reads as an empty list rather than throwing",
+  );
+  assert(rows.every((entry) => typeof entry.expression === "string"), "expression is always text");
+  assert(
+    rows.every((entry) => entry.dialect === "unvalidated"),
+    "an unrecognised dialect reads as unvalidated — the safe direction, which " +
+      "suppresses the parser checks on a row this UI cannot vouch for",
+  );
+  assert(rows[1].code === "A", "the fields that are present survive");
+
+  // And the rows are then reportable rather than silently broken.
+  const problems = kpiFormErrors(rows, DECLARED);
+  assert(problems.length > 0, "a malformed row is reported, not quietly accepted");
+}
+
+/**
  * `pointKeys` is derived once validated, manual before.
  *
  * The schema demands exact two-way correspondence under `bms-calc-v1`. A
@@ -264,6 +301,64 @@ export function runPointKeyResolutionTests(): void {
   assert(
     overCap.some((problem) => problem.field === "pointKeys"),
     "more than the cap is refused",
+  );
+}
+
+/**
+ * A validated KPI can never be saved broken, and never needs re-validating.
+ *
+ * The tab hides the Validate button once the dialect is `bms-calc-v1`, which
+ * would be a trap if a validated row could reach Save in a state the server
+ * refuses. It cannot, and the reason is worth pinning rather than re-deriving:
+ *
+ * - an **unparseable** expression derives no keys, so the `min(1)` check fires;
+ * - an **unknown reference** appears in the derived keys, so the resolution
+ *   check fires;
+ * - the **two-way correspondence** the schema demands cannot fail at all,
+ *   because the keys are computed from the expression rather than stored
+ *   beside it.
+ *
+ * So the live error and the save gate agree, and an author who breaks a
+ * validated expression fixes it in place and watches the error clear.
+ */
+export function runValidatedRowCannotSaveBrokenTests(): void {
+  const unparseable = kpiFormErrors(
+    [row({ dialect: CALC_DIALECT, expression: "{CHW_SUPPLY_T} +" })],
+    DECLARED,
+  );
+  assert(
+    unparseable.some((problem) => problem.field === "pointKeys"),
+    `an unparseable validated expression blocks the save — got ${JSON.stringify(unparseable)}`,
+  );
+
+  const unknown = kpiFormErrors([row({ dialect: CALC_DIALECT, expression: "{NOPE}" })], DECLARED);
+  assert(
+    unknown.some((problem) => problem.message.includes("NOPE")),
+    `an unknown reference blocks the save and names itself — got ${JSON.stringify(unknown)}`,
+  );
+
+  // The correspondence case: a stored array that disagrees with the expression
+  // is simply ignored, so there is nothing left to disagree about.
+  const mismatched = row({
+    dialect: CALC_DIALECT,
+    expression: "{FLOW}",
+    pointKeys: ["CHW_SUPPLY_T", "CHW_RETURN_T"],
+  });
+  assert(
+    kpiFormErrors([mismatched], DECLARED).length === 0,
+    `a stale stored array cannot break a validated row — got ${JSON.stringify(kpiFormErrors([mismatched], DECLARED))}`,
+  );
+  assert(
+    buildKpiPayload([mismatched])[0].pointKeys.join(",") === "FLOW",
+    "…because the payload carries what the expression reads",
+  );
+
+  // And it does not read as an unsaved edit on load, because both sides of the
+  // comparison derive the same way.
+  const stored = buildKpiPayload([mismatched]) as TemplateKpi[];
+  assert(
+    !kpisHaveChanged(kpiRowsFrom(stored), stored),
+    "a freshly loaded validated KPI reports no changes",
   );
 }
 
