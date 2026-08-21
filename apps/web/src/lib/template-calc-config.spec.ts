@@ -137,11 +137,31 @@ export function runBoundsCheckTests(): void {
   // `.int()` on the wire. A fractional interval would be a 400 naming a type.
   assert(at(30.5).length === 1, "a fractional interval is refused — the schema is .int()");
 
+  // The field **and** the message, for the reason the missing-interval case
+  // above records: two of this module's four checks report
+  // `calcIntervalSeconds`, and two report `maxInputAgeSeconds`. A check that
+  // reported the wrong one of its pair would pass every count assertion here.
+  const outOfRange = at(CALC_INTERVAL_BOUNDS.max + 1)[0];
+  assert(outOfRange.field === "calcIntervalSeconds", "reported against the interval");
+  // The **wording**, not the number. `MAX_CALC_INTERVAL_SECONDS` and
+  // `MAX_INPUT_AGE_SECONDS_BOUND` are both 86400, so quoting the bound would
+  // discriminate nothing — the two messages would be interchangeable to any
+  // assertion that only looked at the digits.
+  assert(
+    outOfRange.message.startsWith("An interval"),
+    `the interval message must name the interval — got ${outOfRange.message}`,
+  );
+
   const age = (value: number) => calcConfigErrors(derived({ maxInputAgeSeconds: value }), 0);
   assert(age(INPUT_AGE_BOUNDS.min).length === 0, "an age of one second is allowed");
   assert(age(INPUT_AGE_BOUNDS.max).length === 0, "the maximum age is allowed");
   assert(age(0).length === 1, "zero is not an age");
   assert(age(INPUT_AGE_BOUNDS.max + 1).length === 1, "above the bound is refused");
+  assert(age(0)[0].field === "maxInputAgeSeconds", "reported against the input age");
+  assert(
+    age(0)[0].message.includes("input age"),
+    `the input-age message must say what it is about — got ${age(0)[0].message}`,
+  );
   assert(
     calcConfigErrors(derived({ maxInputAgeSeconds: null }), 0).length === 0,
     "an unset age is valid — the engine applies its own default",
