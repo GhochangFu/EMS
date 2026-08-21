@@ -45,6 +45,7 @@ import {
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { DetailsTab } from "../../components/asset-templates/details-tab";
+import { PointsTab } from "../../components/asset-templates/points-tab";
 import { TemplateTabStrip } from "../../components/asset-templates/template-tab-strip";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
@@ -312,6 +313,9 @@ function TemplateTabBody({
 }) {
   if (tab === "details") {
     return <DetailsTab template={template} editable={editable} onSaved={onSaved} />;
+  }
+  if (tab === "points") {
+    return <PointsTab template={template} editable={editable} onSaved={onSaved} />;
   }
   return (
     <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
