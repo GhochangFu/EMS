@@ -78,6 +78,7 @@ import {
 import {
   canAuthorTemplates,
   canInstantiateTemplates,
+  templateFormsAreEditable,
 } from "../../lib/template-authoring-access";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -340,6 +341,17 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
         </p>
       ) : null}
 
+      {/* The other reason a tab renders read-only, and it needs its own
+          sentence. Without one, a location admin opening an editable draft
+          sees every field greyed with no explanation and no lifecycle button
+          either, which reads as a broken page rather than as a boundary. */}
+      {lifecycle.editable && !mayAuthor ? (
+        <p className="rounded border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+          This is a draft, but your role does not author templates. You can read it and build
+          assets from a published version. Ask a master-data administrator to change the model.
+        </p>
+      ) : null}
+
       {blockedKeys.length > 0 ? (
         <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
           <p className="font-semibold">
@@ -363,7 +375,19 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
           <TemplateTabBody
             tab={tab}
             template={template}
-            editable={lifecycle.editable}
+            // **Role AND status, not status alone.** `lifecycle.editable`
+            // answers "is this version frozen"; it says nothing about who is
+            // looking. Passing it alone rendered every authoring form fully
+            // editable for a `location_admin`: they could fill in a whole
+            // alarm set, press Save, and get a 403 — which `adminFetch` then
+            // treats as an auth failure and clears the session, so the work
+            // was lost and they were returned to the login screen. Measured
+            // on the running stack as `wc-admin@bms.local`, not reasoned about.
+            //
+            // ADR 0038 decision 10 says authoring is **role-hidden**. That was
+            // applied to the lifecycle buttons and not to the tab bodies, so
+            // half the decision shipped.
+            editable={templateFormsAreEditable(user.role, lifecycle.editable)}
             onSaved={afterChange}
             onDirtyChange={setTabDirty}
           />

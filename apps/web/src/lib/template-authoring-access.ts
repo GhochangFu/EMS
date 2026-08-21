@@ -64,3 +64,33 @@ export function canAuthorTemplates(role: UserRole): boolean {
 export function canInstantiateTemplates(role: UserRole): boolean {
   return isMasterDataAdmin(role);
 }
+
+/**
+ * Whether the authoring **forms** render editable.
+ *
+ * Two independent questions, and shipping only one of them was a real defect
+ * found in the browser as `wc-admin@bms.local` (`location_admin`):
+ *
+ * - **Is this version frozen?** `capabilities(status).editable` — false for
+ *   published and archived (ADR 0015).
+ * - **May this role author at all?** `canAuthorTemplates(role)` — false for
+ *   every role below master-data admin.
+ *
+ * The detail page asked only the first. The lifecycle buttons were correctly
+ * role-hidden, so the page *looked* right, while every field in all five tabs
+ * stayed editable on a draft. A location admin could author a complete alarm
+ * set, press Save, and receive a 403 — which `clearSessionOnAuthFailure`
+ * treats as an authentication failure, clearing the session. The work was
+ * lost and the user was returned to the login screen.
+ *
+ * ADR 0038 decision 10 says authoring is **role-hidden** and scope-refused.
+ * Hiding the buttons is half of it; a form that cannot be saved must not
+ * invite typing either.
+ *
+ * **This is not the authorization boundary.** The server enforces it at nine
+ * call sites through `assertCanAuthor`, and it must keep doing so — this is
+ * the UI declining to offer work it knows will be refused.
+ */
+export function templateFormsAreEditable(role: UserRole, versionIsEditable: boolean): boolean {
+  return versionIsEditable && canAuthorTemplates(role);
+}

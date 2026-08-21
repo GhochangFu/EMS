@@ -143,9 +143,18 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
         </p>
       ) : null}
 
-      <p className="rounded border border-gray-200 bg-gray-50 p-3 text-[11px] text-bms-muted">
+      {/* An instruction, not a disclaimer. This used to end "Nothing here
+          creates or edits a live automation rule" — true, and it still let a
+          reader who had just read it expect that saving here armed something.
+          A negative gives an author nothing to act on. Naming the next step
+          does, and an alarm screen that looks like it protects an asset class
+          while nothing watches is the one misreading here that has a
+          consequence. */}
+      <p className="rounded border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
         These are the thresholds this asset class ships with, and the knowledge behind each one.
-        They are stored on the template. Nothing here creates or edits a live automation rule.
+        They are stored on the template as a standard — <strong>nothing here watches a live asset
+        yet</strong>. To act on one of these, create the matching rule in the Rule Engine for each
+        asset. Saving this tab does not create, change or remove any automation rule.
       </p>
 
       {sectionProblems.map((problem) => (

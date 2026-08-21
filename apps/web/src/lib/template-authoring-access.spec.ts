@@ -8,7 +8,11 @@ import { accessibleScopeSchema, userRoleSchema } from "@bms/shared/contracts";
 import type { UserRole } from "@bms/shared";
 
 import * as access from "./template-authoring-access";
-import { canAuthorTemplates, canInstantiateTemplates } from "./template-authoring-access";
+import {
+  canAuthorTemplates,
+  canInstantiateTemplates,
+  templateFormsAreEditable,
+} from "./template-authoring-access";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -84,9 +88,71 @@ export function runNoOrganizationScopeHelperTests(): void {
     "an organization list in the scope contract would make the D10 residual case derivable",
   );
 
+  // Deliberately an exact list, so a new export cannot arrive without someone
+  // reading the paragraph above and deciding it is not an organization-scope
+  // guess. `templateFormsAreEditable` was added that way: it composes the role
+  // helper with the version's frozen state and answers nothing about
+  // organizations, which is the one question this module must never pretend to
+  // answer.
   const exported = Object.keys(access).sort();
   assert(
-    exported.join(",") === "canAuthorTemplates,canInstantiateTemplates",
-    `this module must export exactly the two role helpers — got ${exported.join(",")}`,
+    exported.join(",") ===
+      "canAuthorTemplates,canInstantiateTemplates,templateFormsAreEditable",
+    `this module must export exactly the three vetted helpers — got ${exported.join(",")}`,
+  );
+
+  // The rule that actually matters, asserted rather than left to the list:
+  // nothing here may name an organization.
+  for (const name of exported) {
+    assert(
+      !/organi[sz]ation/i.test(name),
+      `"${name}" claims to answer an organization question the browser cannot answer`,
+    );
+  }
+}
+
+/**
+ * The forms are editable only when **both** questions say yes.
+ *
+ * The defect this pins: the detail page asked only "is this version frozen?"
+ * and passed that straight to all five tabs, so a `location_admin` saw every
+ * authoring field editable on a draft. The lifecycle buttons were correctly
+ * hidden, which made the page look right while the forms were not.
+ *
+ * Asserted over every role in the union rather than the one that was found
+ * broken — the same omission would apply to any non-authoring role added
+ * later.
+ */
+export function runFormEditabilityTests(): void {
+  let checked = 0;
+  for (const role of ALL_ROLES) {
+    const mayAuthor = canAuthorTemplates(role);
+
+    // A frozen version is read-only for everyone, authors included.
+    assert(
+      !templateFormsAreEditable(role, false),
+      `a published or archived version must be read-only for ${role}`,
+    );
+
+    // An editable version follows the role, and nothing else.
+    assert(
+      templateFormsAreEditable(role, true) === mayAuthor,
+      `on a draft, ${role} must see editable forms only if it may author (mayAuthor=${mayAuthor})`,
+    );
+    checked += 1;
+  }
+
+  // Anti-vacuity: an empty role union would pass every assertion above by
+  // never running one.
+  assert(checked === ALL_ROLES.length && checked > 0, `checked ${checked} roles`);
+
+  // And the two halves must be genuinely independent — if every role could
+  // author, this rule would be indistinguishable from `versionIsEditable`
+  // alone, which is exactly the bug.
+  const authors = ALL_ROLES.filter((role) => canAuthorTemplates(role));
+  assert(authors.length > 0, "some role must be able to author, or the UI is unusable");
+  assert(
+    authors.length < ALL_ROLES.length,
+    "some role must NOT be able to author, or this rule cannot be distinguished from the status check",
   );
 }

@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runAuthoringRoleTests,
+  runFormEditabilityTests,
   runInstantiateRoleTests,
   runNoOrganizationScopeHelperTests,
 } from "./template-authoring-access.spec";
@@ -18,5 +19,9 @@ describe("template authoring access", () => {
 
   it("exports no organization-scope helper, because the client cannot answer it", () => {
     runNoOrganizationScopeHelperTests();
+  });
+
+  it("renders the authoring forms editable only for a role that may author", () => {
+    runFormEditabilityTests();
   });
 });
