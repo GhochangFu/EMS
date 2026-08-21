@@ -1656,8 +1656,9 @@ Process (`AGENTS.md` §10).
   with what "the current value of `{X}`" means (latest sample vs. rolling
   window) and null/stale-input/divide-by-zero handling.
 - **Parser lives in `packages/shared`, not `apps/api`.** Both the API
-  (write-time validation) and the future authoring UI (`F2.5`, live preview)
-  need the same grammar; a shared, hand-rolled parser avoids the duplication
+  (write-time validation) and the authoring UI (`F2.5`, live preview —
+  **shipped 2026-08-21, PR #120**) need the same grammar; a shared,
+  hand-rolled parser avoids the duplication
   ADR 0026 had to clean up for CSV escaping. No new npm dependency in any
   workspace — `eval`/`new Function`/`vm` are never used, checked by a source
   scan over the `calc-dsl` directory and independently confirmed by mutation
@@ -1770,13 +1771,89 @@ Process (`AGENTS.md` §10).
   sweep is this document plus the AGENTS.md edits landing in the same
   follow-up PR that flips `docs/BACKLOG.md`'s `F2.4` row to done — filed
   after `F2.4`'s own PR merged, not bundled into the feature branch.
-- **Unblocks `F2.5`** (calc configuration UI) and `F2.6` (template calc-tags
+- **Unblocks `F2.5`** — since re-scoped from "calc configuration UI" to the
+  full **template authoring UI** (ADR 0038), and **delivered 2026-08-21 in
+  PR #120** — and `F2.6` (template calc-tags
   wired into the engine, whose other dependency `F2.2` was already done) —
   both now eligible to start. **Does not unblock `F2.8`** in practice
   despite `Depends: F2.4` being satisfied: `bms-calc-v1` still has no asset
   qualifier and no aggregate function, so `estimatePue()`'s cross-asset sum
   stays inexpressible as a derived tag without an ADR 0036 amendment or a
   site-level rollup asset — recorded on `F2.8`'s own `docs/BACKLOG.md` row.
+
+### Template authoring UI + formula editor (`F2.5`, ADR 0038) — done
+
+- **Status:** merged 2026-08-21 (PR #120, 36 commits squashed as `9cdc410`;
+  the rulebook sweep followed as PR #121).
+- **What it was.** `F2.1` shipped the template schema, `F2.3` the formula
+  grammar and `F2.4` the engine that runs it — and none of the three had a
+  screen. There was **no template UI in `apps/web` at all**: no client, no
+  page, no reference. The row's old `4–5` estimate was sized against a host
+  page that did not exist, which is why ADR 0038 re-scoped it from a
+  calc-only editor to the full authoring surface at `16–20`.
+- **Five tabs, and the count is the decision.** Details · Points ·
+  Calculations · KPIs · Alarms, over one template *version*. The three closed
+  `content` sections — `health`, `optimisation`, `dashboards` — get no tab,
+  and that is held by a **source scan** rather than a type: a type cannot
+  stop a sixth entry being added, and a behavioural test reading the registry
+  would simply agree with whatever it found.
+- **One editor, two contexts.** A derived point's `formula` and a KPI's
+  `expression` share the `bms-calc-v1` parser, so they share a component —
+  but they share nothing else, so the rules are a discriminated union rather
+  than a flag. Trigger policy belongs to Calculations and never to KPIs: a
+  KPI is a read-time display value with no write path and no staleness
+  policy, so ADR 0037's fields do not apply to it.
+- **CodeMirror 6, and it never reaches a page that does not open it.**
+  Composed from `minimalSetup`, never `basicSetup` (Amendment 1), through a
+  single lazy module. **This is the first `React.lazy` boundary in an app
+  that statically imports every page.** Decision 7 owed a measurement and
+  gets one: the entry chunk contains **no CodeMirror at all**, the editor
+  sits in its own 341.42 kB chunk, and `@codemirror/search` tree-shakes out
+  of both. The scan has a positive control — swapping to `basicSetup` fires
+  all five markers and costs 47,033 bytes — so the zero is evidence rather
+  than a broken grep. Two traps are recorded with it: Vite mangles the
+  identifier names, so only string literals survive minification, and six
+  plausible markers are false positives that ship in `@codemirror/view`'s
+  `baseTheme` regardless of which extensions are enabled.
+- **Every rule lives in `apps/web/src/lib/` with a spec — eighteen modules.**
+  Not tidiness. `apps/web`'s Vitest project runs `environment: "node"` over
+  `src/**/*.test.ts`, so a `.tsx` is unreachable by every test in this
+  repository, and the coverage `include` stops at `src/lib/**`. Logic left in
+  a component is invisible to both gates.
+- **Section 7 earned its place.** A green suite is not a deployment, and the
+  browser pass found **four defects that all 483 tests could not reach**: a
+  tab switch discarding unsaved edits silently across all five tabs; the new
+  guard **disarming itself after a *failed* lifecycle action**, so the next
+  click discarded the edit with no dialog; every server message rendering as
+  its raw JSON envelope rather than the sentence; and the authoring forms
+  being offered to a role that cannot save them. Each is fixed with the test
+  that would have caught it.
+- **The role defect is the one worth remembering.** `editable` asked "is this
+  version frozen?" and never "who is looking?", so a `location_admin` saw all
+  five forms editable on a draft. The lifecycle buttons *were* correctly
+  hidden, so the page looked right — and pressing Save returned a correct 403
+  that `clearSessionOnAuthFailure` treats as a 401, clearing the session and
+  discarding the work. Found by the owner signing in as `wc-admin@bms.local`,
+  which is the one check the agent could not run. Half of decision 10 had
+  shipped.
+- **Coverage** ratcheted three times as those defects were found and fixed,
+  never lowered: 49.9/45.3/50.6/50.0 → **53.7/50.0/55.3/53.8**, measured at
+  54.04 · 50.32 · 55.61 · 54.11 with **131 files / 483 tests and none
+  skipped**. The gate was checked in both directions — raising statements to
+  99 confirms it exits 1 rather than passing silently.
+- **No API change, no migration, no seed** (decision 8), verified by filtering
+  the diff rather than asserted. Three reviewers — correctness, security and
+  AGENTS.md compliance — found **no Critical, High or Blocking** issue.
+- **Raised rather than smuggled in.** `F4.52`: a 403 clears the session,
+  shared across 42 `adminFetch` call sites, which also makes decision 10's
+  residual case impossible as written — the org-scope 403 cannot render
+  inline because the user is logged out first. `E2.4`: template alarms reach
+  no rule engine, deliberate per ADR 0019 §3 and verified in code here,
+  mitigated for now by turning the Alarms banner from a disclaimer into an
+  instruction.
+- **Still unverified:** the org-scope 403 in the browser. It needs a second
+  sign-in, and its inline-message half cannot pass until `F4.52` is settled.
+
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
