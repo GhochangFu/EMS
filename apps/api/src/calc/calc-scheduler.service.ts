@@ -94,13 +94,17 @@ export async function runScheduledSweep(
   const toWrite: CalcWriteInput[] = [];
 
   for (const def of scheduled) {
-    if (def.intervalSeconds === null) {
+    if (def.intervalSeconds === null || def.intervalSeconds <= 0) {
       // Unreachable via CalcDefinitionsService — toActiveDefinition
-      // guarantees a scheduled definition carries a non-null interval — but
-      // this function's own contract must not assume its caller. Falling
-      // through to bucketTimeMs(nowMs, 0) would divide by zero, store NaN in
-      // lastRunMs, and make isDue return false forever for this key: a
-      // silent, permanent stop rather than one counted skip (decision 9).
+      // guarantees a scheduled definition carries a positive interval
+      // (MIN_CALC_INTERVAL_SECONDS = 10) — but this function's own contract
+      // must not assume its caller. `null` or `0` would fall through to
+      // bucketTimeMs(nowMs, 0): divide by zero, store NaN in lastRunMs, and
+      // make isDue return false forever for this key — a silent, permanent
+      // stop rather than one counted skip (decision 9). A negative interval
+      // is the milder sibling: isDue becomes always-true and the formula
+      // fires every base tick against a negative bucket grid. All three are
+      // the same "this definition cannot be scheduled" case.
       deps.metrics.countCalcSkipped("missing_interval");
       continue;
     }

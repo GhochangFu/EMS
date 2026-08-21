@@ -195,9 +195,17 @@ export async function runCalcStreamingTests(): Promise<void> {
       reading({ assetId: "asset-1", pointKey: "TRIGGER", value: 3 }),
       reading({ assetId: "asset-1", pointKey: "SIBLING", value: 4 }),
     ]);
+    // evaluateStreamingBatch always makes exactly one writeValues call
+    // (win or lose the dedup) — the signal is how many values landed in
+    // THAT call, not how many calls happened. Under the bug both readings
+    // evaluate the same formula, producing 2 duplicate outcomes in the same
+    // batched call, so `writes.length === 1` alone can't tell the two
+    // outcomes apart.
+    assert(fakes.writes.length === 1, `expected exactly one writeValues call, got ${fakes.writes.length}`);
     assert(
-      fakes.writes.length === 1,
-      `a batch carrying readings for both of a formula's refs must write it exactly once, got ${fakes.writes.length}`,
+      fakes.writes[0]?.length === 1,
+      `a batch carrying readings for both of a formula's refs must evaluate it exactly once, got ` +
+        `${fakes.writes[0]?.length} value(s) in the batched write — 2 means it was double-evaluated`,
     );
     assert(
       fakes.writes[0]?.[0]?.value === 7,

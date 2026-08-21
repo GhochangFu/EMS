@@ -101,6 +101,41 @@ async function runSweepTests(): Promise<void> {
     );
   }
 
+  // ---- a null or non-positive interval is a counted skip, never a NaN trap ------
+  // (unreachable via CalcDefinitionsService today — toActiveDefinition guarantees
+  // a positive interval for a scheduled definition — but runScheduledSweep's own
+  // contract must not assume its caller: bucketTimeMs(nowMs, 0) is a division by
+  // zero that would poison lastRunMs with NaN and stop the formula permanently)
+
+  {
+    const nullInterval = def({
+      pointKey: "NULL_INTERVAL",
+      templatePointId: "tp-null",
+      formula: "{A}",
+      intervalSeconds: null,
+    });
+    const zeroInterval = def({
+      pointKey: "ZERO_INTERVAL",
+      templatePointId: "tp-zero",
+      formula: "{A}",
+      intervalSeconds: 0,
+    });
+    const negativeInterval = def({
+      pointKey: "NEGATIVE_INTERVAL",
+      templatePointId: "tp-negative",
+      formula: "{A}",
+      intervalSeconds: -5,
+    });
+    const samples = new Map([["asset-1:A", { value: 1, timeMs: 0 }]]);
+    const { deps, writes, skips } = buildSweepDeps([nullInterval, zeroInterval, negativeInterval], samples);
+    await runScheduledSweep(deps, new Map(), 0);
+    assert(writes.length === 0, `a definition with no usable interval must never write, got ${writes.length} writes`);
+    assert(
+      skips.filter((s) => s === "missing_interval").length === 3,
+      `all 3 definitions (null, 0, negative) must be counted as missing_interval skips, got skips: ${JSON.stringify(skips)}`,
+    );
+  }
+
   // ---- one formula's failure does not stop the sweep ----------------------------
 
   {
@@ -295,7 +330,7 @@ async function runLoopTests(): Promise<void> {
 
     assert(
       writes.length === 4,
-      "bucketed lastRunMs storage over a 1s-cost/1s-base-tick schedule against a 4s interval must produce " +
+      "bucketed lastRunMs storage over a 500ms-cost/1s-base-tick schedule against a 4s interval must produce " +
         `4 writes across 9 ticks, got ${writes.length} — 3 would mean lastRunMs is storing raw wall-clock ` +
         "time instead of the bucketed tick time",
     );
