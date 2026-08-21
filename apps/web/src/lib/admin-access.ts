@@ -48,6 +48,12 @@ export const masterDataTabs = [
   { label: "Locations", path: "/admin/locations" },
   { label: "RTUs", path: "/admin/rtus" },
   { label: "Assets", path: "/admin/assets" },
+  // ADR 0038 decision 10: deliberately **not** `catalogOnly`. A location admin
+  // cannot author a template but can instantiate one, and this page is the only
+  // route to Instantiate. Marking it `catalogOnly` would hide the page from the
+  // one role ADR 0015 §7 exists to serve. The authoring controls inside are
+  // hidden separately by `canAuthorTemplates`.
+  { label: "Asset Templates", path: "/admin/asset-templates" },
   { label: "Asset Points", path: "/admin/asset-points" },
   { label: "Manual Entry", path: "/admin/manual-readings" },
   { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },

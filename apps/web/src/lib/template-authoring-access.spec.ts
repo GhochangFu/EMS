@@ -8,11 +8,7 @@ import { accessibleScopeSchema, userRoleSchema } from "@bms/shared/contracts";
 import type { UserRole } from "@bms/shared";
 
 import * as access from "./template-authoring-access";
-import {
-  canAuthorTemplates,
-  canInstantiateTemplates,
-  canViewTemplates,
-} from "./template-authoring-access";
+import { canAuthorTemplates, canInstantiateTemplates } from "./template-authoring-access";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -64,17 +60,6 @@ export function runInstantiateRoleTests(): void {
   assert(authors !== allowed.join(","), "the two capabilities must not collapse into one");
 }
 
-/** Whoever holds either capability can open the page; nobody else can. */
-export function runViewRoleTests(): void {
-  for (const role of ALL_ROLES) {
-    const expected = canAuthorTemplates(role) || canInstantiateTemplates(role);
-    assert(canViewTemplates(role) === expected, `${role}: view must follow either capability`);
-  }
-  assert(canViewTemplates("location_admin"), "a location admin reaches the list to instantiate");
-  assert(!canViewTemplates("operator"), "a read-only role never reaches a write screen");
-  assert(!canViewTemplates("viewer"), "a read-only role never reaches a write screen");
-}
-
 /**
  * The organization-scope half stays absent, and stays absent for a reason.
  *
@@ -83,9 +68,10 @@ export function runViewRoleTests(): void {
  * 1. `accessibleScopeSchema` still carries no organization list, so the
  *    question is still not answerable in the browser. If someone adds one, this
  *    fires and tells them the client can now do this check for real.
- * 2. This module exports exactly three helpers. A fourth that claimed to answer
- *    "may this user manage this organization" would be guessing, and a guess
- *    that says no hides a control the API would have allowed.
+ * 2. This module exports exactly the two capability helpers. A third that
+ *    claimed to answer "may this user manage this organization" would be
+ *    guessing, and a guess that says no hides a control the API would have
+ *    allowed.
  */
 export function runNoOrganizationScopeHelperTests(): void {
   const scopeKeys = Object.keys(accessibleScopeSchema.shape).sort();
@@ -100,7 +86,7 @@ export function runNoOrganizationScopeHelperTests(): void {
 
   const exported = Object.keys(access).sort();
   assert(
-    exported.join(",") === "canAuthorTemplates,canInstantiateTemplates,canViewTemplates",
-    `this module must export exactly the three role helpers — got ${exported.join(",")}`,
+    exported.join(",") === "canAuthorTemplates,canInstantiateTemplates",
+    `this module must export exactly the two role helpers — got ${exported.join(",")}`,
   );
 }

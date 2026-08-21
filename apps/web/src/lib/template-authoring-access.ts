@@ -28,6 +28,16 @@
  * `template-authoring-access.spec.ts` asserts both halves of it: that the scope
  * contract still has no organization list, and that this module exports no
  * helper claiming to answer the question.
+ *
+ * ## Why there is no `canViewTemplates` either
+ *
+ * Unit 6 exported one. Unit 7 deleted it as dead on arrival: reaching the page
+ * at all is already gated twice — `AdminRoute` on `isMasterDataAdmin`, and
+ * `visibleMasterDataTabs`, which returns a non-`catalogOnly` tab to every role
+ * that reaches `MasterDataLayout`. `canAuthorTemplates(role) ||
+ * canInstantiateTemplates(role)` is `isMasterDataAdmin(role)` exactly, so the
+ * helper restated an existing gate with no caller — and the export-count
+ * assertion below would have kept it looking used.
  */
 import type { UserRole } from "@bms/shared";
 
@@ -53,14 +63,4 @@ export function canAuthorTemplates(role: UserRole): boolean {
  */
 export function canInstantiateTemplates(role: UserRole): boolean {
   return isMasterDataAdmin(role);
-}
-
-/**
- * Whether the role may open the templates page at all.
- *
- * Either capability is enough. A `location_admin` reaches the list to find
- * something to instantiate, and sees no authoring control once there.
- */
-export function canViewTemplates(role: UserRole): boolean {
-  return canAuthorTemplates(role) || canInstantiateTemplates(role);
 }

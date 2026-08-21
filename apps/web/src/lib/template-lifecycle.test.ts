@@ -4,6 +4,7 @@ import {
   runCapabilityTableTests,
   runEveryStatusIsCoveredTests,
   runFormulaReadOnlyInvariantTests,
+  runStatusToneTests,
 } from "./template-lifecycle.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -18,5 +19,9 @@ describe("template lifecycle", () => {
 
   it("never allows an editable formula field on a non-editable version", () => {
     runFormulaReadOnlyInvariantTests();
+  });
+
+  it("gives every status a distinct pill tone", () => {
+    runStatusToneTests();
   });
 });

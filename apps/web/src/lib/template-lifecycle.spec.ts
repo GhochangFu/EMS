@@ -10,7 +10,7 @@
 import { assetTemplateStatusSchema } from "@bms/shared/contracts";
 import type { AssetTemplateStatus } from "@bms/shared";
 
-import { capabilities, formulaFieldsAreReadOnly } from "./template-lifecycle";
+import { capabilities, formulaFieldsAreReadOnly, statusTone } from "./template-lifecycle";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -102,4 +102,26 @@ export function runFormulaReadOnlyInvariantTests(): void {
   assert(!formulaFieldsAreReadOnly("draft"), "a draft's formula fields accept input");
   assert(formulaFieldsAreReadOnly("published"), "ADR 0038 decision 3");
   assert(formulaFieldsAreReadOnly("archived"), "an archived formula field is read-only");
+}
+
+/**
+ * Every status gets a tone, and the three are distinct.
+ *
+ * A missing arm would return `undefined`, and `StatusPill` defaults to `ok` —
+ * so an archived version would render in the same green as a published one.
+ * That is `F4.43`'s failure exactly: an exhaustive mapping that quietly stopped
+ * being exhaustive.
+ */
+export function runStatusToneTests(): void {
+  const tones = ALL_STATUSES.map((status) => statusTone(status));
+  for (const [index, tone] of tones.entries()) {
+    assert(
+      tone !== undefined,
+      `${ALL_STATUSES[index]} has no tone, and StatusPill would fall back to green`,
+    );
+  }
+  assert(new Set(tones).size === ALL_STATUSES.length, "each status must read as a different tone");
+  assert(statusTone("published") === "ok", "a published version is the live one");
+  assert(statusTone("draft") === "info", "a draft is work in progress, not a warning");
+  assert(statusTone("archived") === "offline", "an archived version is out of the picker");
 }

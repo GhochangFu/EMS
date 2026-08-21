@@ -76,3 +76,22 @@ export function capabilities(status: AssetTemplateStatus): TemplateCapabilities 
 export function formulaFieldsAreReadOnly(status: AssetTemplateStatus): boolean {
   return !capabilities(status).editable;
 }
+
+/**
+ * The `StatusPill` tone for a lifecycle status.
+ *
+ * Here rather than in the two pages that render it, for the reason the module
+ * docblock gives: `lib/` is what the coverage gate reaches, and a mapping
+ * duplicated across a list page and a detail page is a mapping that will
+ * disagree with itself.
+ *
+ * `draft` is `info`, not `warning`. A draft is the normal state of work in
+ * progress, and amber is what the rest of this product uses for something that
+ * needs attention.
+ */
+export function statusTone(status: AssetTemplateStatus): "ok" | "info" | "offline" {
+  if (status === "published") {
+    return "ok";
+  }
+  return status === "draft" ? "info" : "offline";
+}
