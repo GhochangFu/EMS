@@ -1,5 +1,6 @@
 import { parseFormula } from "@bms/shared";
 
+import { defKey } from "./calc-batch";
 import type { CalcDefinition } from "./calc-definition";
 import type { CalcInputSample } from "./calc-inputs";
 import type { CalcWriteInput } from "./calc-write.service";
@@ -71,9 +72,33 @@ async function runSweepTests(): Promise<void> {
     const formula = def({ formula: "{A}", intervalSeconds: 60 });
     const samples = new Map([["asset-1:A", { value: 1, timeMs: 0 }]]);
     const { deps, writes } = buildSweepDeps([formula], samples);
-    const lastRunMs = new Map([[formula.templatePointId, 5000]]);
-    await runScheduledSweep(deps, lastRunMs, 5000 + 59_000);
+    const lastRunMs = new Map([[defKey(formula.assetId, formula.templatePointId), 0]]);
+    await runScheduledSweep(deps, lastRunMs, 59_000);
     assert(writes.length === 0, "a formula 59s into a 60s interval must not fire yet");
+  }
+
+  // ---- a template instantiated on two assets fires for both, not just one ------
+  // (the exact shape of the cross-asset starvation bug: two defs sharing one
+  // templatePointId, keyed wrong, would let the first one processed mark the
+  // second as "just ran" and starve it forever)
+
+  {
+    const onAssetOne = def({ assetId: "asset-1", templatePointId: "tp-shared", formula: "{A}" });
+    const onAssetTwo = def({ assetId: "asset-2", templatePointId: "tp-shared", formula: "{A}" });
+    const samples = new Map([
+      ["asset-1:A", { value: 1, timeMs: 0 }],
+      ["asset-2:A", { value: 2, timeMs: 0 }],
+    ]);
+    const { deps, writes } = buildSweepDeps([onAssetOne, onAssetTwo], samples);
+    await runScheduledSweep(deps, new Map(), 0);
+    // One writeValues call, batched with both assets' rows — writes.length
+    // counts calls, not values.
+    assert(writes.length === 1, `expected one batched writeValues call, got ${writes.length}`);
+    const writtenAssetIds = (writes[0] ?? []).map((w) => w.assetId).sort();
+    assert(
+      writtenAssetIds.length === 2 && writtenAssetIds[0] === "asset-1" && writtenAssetIds[1] === "asset-2",
+      `both assets sharing templatePointId "tp-shared" must fire on the same sweep, got ${JSON.stringify(writtenAssetIds)}`,
+    );
   }
 
   // ---- one formula's failure does not stop the sweep ----------------------------
@@ -207,6 +232,77 @@ async function runLoopTests(): Promise<void> {
     assert(
       writes[1]?.[0]?.time.getTime() === 30_000,
       `second write must bucket to t=30000 (3 ticks later), got ${writes[1]?.[0]?.time.getTime()}`,
+    );
+  }
+
+  // ---- bucketed lastRunMs storage self-corrects sweep-cost drift ----------------
+  // Each sweep costs 500ms (simulated inside getScheduledDefinitions) on top of a
+  // 1000ms base tick, so real tick spacing is 1500ms, not 1000ms — against a
+  // 4000ms interval, 9 ticks (nowMs 0, 1500, ..., 12000) land due at ticks
+  // 0, 3, 6, 8 under bucketed storage (times 0, 4000, 8000, 12000): 4 writes.
+  // Storing raw nowMs instead would re-arm from 4500 (not 4000) after tick 3
+  // and from 9000 (not 8000) after tick 6, missing tick 8's fire — 3 writes,
+  // not 4. This is the exact class of bug decision 8's idempotency and
+  // decision 9's "no skip is silent" guarantees exist to rule out.
+
+  {
+    const SWEEP_COST_MS = 500;
+    const BASE_TICK_MS = 1000;
+    const formula = def({ formula: "{A}", intervalSeconds: 4, templatePointId: "tp-drift" });
+    const samples = new Map([["asset-1:A", { value: 1, timeMs: 0 }]]);
+    const writes: CalcWriteInput[][] = [];
+    const nowRef = { value: 0 };
+    let sweepCount = 0;
+    const controller = new AbortController();
+
+    const deps: CalcSchedulerLoopDeps = {
+      definitions: {
+        getScheduledDefinitions: async () => {
+          nowRef.value += SWEEP_COST_MS;
+          sweepCount += 1;
+          if (sweepCount >= 9) {
+            controller.abort();
+          }
+          return [formula];
+        },
+      },
+      inputs: {
+        getLatestSamples: async (assetId, refs) => {
+          const map = new Map<string, CalcInputSample>();
+          for (const ref of refs) {
+            const sample = samples.get(`${assetId}:${ref}`);
+            if (sample) map.set(ref, sample);
+          }
+          return map;
+        },
+      },
+      writer: {
+        writeValues: async (values) => {
+          writes.push([...values]);
+          return { written: values.length, assetPointsCreated: 0 };
+        },
+      },
+      metrics: { countCalcSkipped: () => undefined },
+      logger: { warn: () => undefined },
+      sleep: async (ms) => {
+        nowRef.value += ms;
+      },
+      now: () => nowRef.value,
+      baseTickMs: BASE_TICK_MS,
+    };
+
+    await runSchedulerLoop(deps, new Map(), controller.signal);
+
+    assert(
+      writes.length === 4,
+      "bucketed lastRunMs storage over a 1s-cost/1s-base-tick schedule against a 4s interval must produce " +
+        `4 writes across 9 ticks, got ${writes.length} — 3 would mean lastRunMs is storing raw wall-clock ` +
+        "time instead of the bucketed tick time",
+    );
+    const times = writes.map((w) => w[0]?.time.getTime());
+    assert(
+      JSON.stringify(times) === JSON.stringify([0, 4000, 8000, 12000]),
+      `expected writes at bucket times [0, 4000, 8000, 12000], got ${JSON.stringify(times)}`,
     );
   }
 

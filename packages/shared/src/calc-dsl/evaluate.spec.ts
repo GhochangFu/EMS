@@ -97,6 +97,21 @@ export function runEvaluateTests(): void {
   expectValue("clamp({A}, 5, 10)", { A: 20 }, 10, "clamp above hi must clamp to hi");
   expectValue("clamp({A}, 5, 10)", { A: 7 }, 7, "clamp inside the range must pass through");
 
+  // ---- a bare ref is checked too, not only computed nodes -----------------------
+  // (a formula that is nothing but `{A}` must refuse a non-finite input the same
+  // way a computed node would — never return Infinity/NaN as if it were a value)
+
+  const bareRefInfinity = expectRefusal(
+    "{A}",
+    { A: Infinity },
+    "non_finite",
+    "a bare ref resolving to a non-finite input must refuse, not pass the value through",
+  );
+  if (!bareRefInfinity.ok) {
+    assert(bareRefInfinity.position === 0, `expected the ref's own position (0), got ${bareRefInfinity.position}`);
+  }
+  expectRefusal("{A}", { A: NaN }, "non_finite", "a bare ref resolving to NaN must refuse");
+
   // ---- missing input ------------------------------------------------------------
 
   const missing = expectRefusal("{A} + {B}", { A: 1 }, "missing_input", "a ref absent from inputs must refuse");

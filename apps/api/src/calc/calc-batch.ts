@@ -32,3 +32,22 @@ export function collapseLatest(readings: TelemetryReading[]): TelemetryReading[]
 export function filterToInputs(readings: TelemetryReading[], inputKeys: ReadonlySet<string>): TelemetryReading[] {
   return readings.filter((reading) => inputKeys.has(inputKey(reading.assetId, reading.pointKey)));
 }
+
+/**
+ * Composite key pinning one template point definition to the asset it
+ * applies to — never `templatePointId` alone, since one published template
+ * can be instantiated on many assets, and each asset's own formula instance
+ * must be tracked (the scheduler's `lastRunMs`) or evaluated (the streaming
+ * host's per-batch dedup) independently of every other asset sharing the
+ * same template point.
+ *
+ * Uses `|`, not `inputKey`'s `:` — both are `${assetId}${sep}${x}` over the
+ * same `assetId` namespace with different meanings (a template point id
+ * here, a catalog point key there); a distinct separator makes an
+ * accidental cross-use (a `defKey` string handed to code expecting an
+ * `inputKey`, or vice versa) fail a lookup loudly instead of silently
+ * resolving to some other pair's entry.
+ */
+export function defKey(assetId: string, templatePointId: string): string {
+  return `${assetId}|${templatePointId}`;
+}

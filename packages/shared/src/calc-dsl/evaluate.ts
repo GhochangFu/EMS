@@ -73,7 +73,12 @@ function evalNode(node: CalcExpr, inputs: ReadonlyMap<string, number>): CalcEval
       if (value === undefined) {
         return { ok: false, code: "missing_input", position: node.position };
       }
-      return { ok: true, value: normalizeZero(value) };
+      // Routed through the same finiteness gate as every other node
+      // (decision 9): today every real caller resolves refs from
+      // `point_values`, which migration 0031's finite-check constraint
+      // already keeps finite, so this is unreachable via the live write
+      // path — but the DSL evaluator is not allowed to assume its caller.
+      return finiteOrFail(value, node.position);
     }
 
     case "unary": {

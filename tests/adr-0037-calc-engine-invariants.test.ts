@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const calcDir = join(repoRoot, "apps/api/src/calc");
+const apiSrcDir = join(repoRoot, "apps/api/src");
 
 const files = readdirSync(calcDir)
   .filter((name) => name.endsWith(".ts") && !name.includes(".spec.") && !name.includes(".test."))
@@ -53,21 +54,66 @@ describe("ADR 0037 — calc engine invariants", () => {
    * through the human write path would silently reintroduce the flood, and
    * no behavioural test in the tree would catch that on its own.
    *
-   * Checks actual `import` statements and schema-qualified `bms.audit_log`
-   * references, not the bare word — `calc-write.service.ts`'s own doc
-   * comment names both while explaining why they are absent, and a raw
-   * substring scan would flag its own explanation.
+   * Checked directly against the comment-stripped `code` string, not by
+   * re-splitting into lines and matching only a line that itself starts with
+   * `import ` — this repo's own dominant style (see e.g.
+   * `calc-definition.ts`'s named-import block) wraps an import across
+   * several lines, and only the first of those starts with `import `, so a
+   * line-prefix check walks straight past every wrapped import undetected.
+   * `stripComments` already keeps this from flagging `calc-write.service.ts`'s
+   * own doc comment, which names both symbols while explaining why they are
+   * absent.
    */
-  it.each(files)("%s never imports MasterDataAuditService or writes bms.audit_log", (file) => {
-    const source = readFileSync(file, "utf8");
-    const code = stripComments(source);
-    const importLines = code.split("\n").filter((line) => line.trim().startsWith("import "));
+  it.each(files)("%s never imports MasterDataAuditService/TelemetryWriteService or writes bms.audit_log", (file) => {
+    const code = stripComments(readFileSync(file, "utf8"));
+    expect(code, `${file} must never import MasterDataAuditService — decision 10`).not.toContain(
+      "MasterDataAuditService",
+    );
     expect(
-      importLines.some((line) => line.includes("MasterDataAuditService")),
-      `${file} must never import MasterDataAuditService — decision 10`,
-    ).toBe(false);
+      code,
+      `${file} must never import TelemetryWriteService — its write path calls MasterDataAuditService, decision 10`,
+    ).not.toContain("TelemetryWriteService");
     expect(code, `${file} must never reference the bms.audit_log table — decision 10`).not.toContain(
       "bms.audit_log",
     );
+  });
+
+  /**
+   * Three one-line wiring points that a green test suite otherwise never
+   * touches: `CalcModule` in `app.module.ts`'s imports, `CalcStreamingService`
+   * actually subscribing to the readings hub, and `CalcSchedulerService`
+   * actually starting the sweep loop. Every calc unit test constructs its own
+   * deps directly (`CalcStreamingDeps`/`CalcSchedulerLoopDeps`), so deleting
+   * any one of these three lines would leave the rest of the suite green and
+   * ratcheted coverage met, while the calc engine silently never runs against
+   * the real API process. These are static string checks, not behavioural
+   * ones — the live-stack demo in `calc.module.ts`'s own doc comment is what
+   * proves the wiring genuinely works end to end; this only proves the wiring
+   * is still present in the source.
+   */
+  it("app.module.ts still imports CalcModule", () => {
+    const code = stripComments(readFileSync(join(apiSrcDir, "app.module.ts"), "utf8"));
+    expect(code, "app.module.ts must import CalcModule for the calc engine to start with the API process").toMatch(
+      /import\s*\{\s*CalcModule\s*\}\s*from\s*["']\.\/calc\/calc\.module["']/,
+    );
+    expect(code, "app.module.ts's @Module imports array must still list CalcModule").toMatch(
+      /imports:\s*\[[^\]]*\bCalcModule\b/,
+    );
+  });
+
+  it("CalcStreamingService.onModuleInit still subscribes to the readings hub", () => {
+    const code = stripComments(readFileSync(join(calcDir, "calc-streaming.service.ts"), "utf8"));
+    expect(
+      code,
+      'CalcStreamingService must call hub.on("readings", ...) in onModuleInit, or the streaming host never runs',
+    ).toMatch(/hub\.on\(\s*["']readings["']/);
+  });
+
+  it("CalcSchedulerService.onModuleInit still starts runSchedulerLoop", () => {
+    const code = stripComments(readFileSync(join(calcDir, "calc-scheduler.service.ts"), "utf8"));
+    expect(
+      code,
+      "CalcSchedulerService must call runSchedulerLoop(...) in onModuleInit, or the scheduled host never runs",
+    ).toMatch(/runSchedulerLoop\(/);
   });
 });

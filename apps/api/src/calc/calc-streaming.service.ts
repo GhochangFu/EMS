@@ -4,7 +4,7 @@ import type { TelemetryReading } from "@bms/shared";
 import { evaluate } from "@bms/shared";
 
 import { TelemetryBroadcastHub } from "../telemetry/telemetry-broadcast.hub";
-import { collapseLatest, filterToInputs } from "./calc-batch";
+import { collapseLatest, defKey, filterToInputs } from "./calc-batch";
 import type { CalcDefinition } from "./calc-definition";
 import { CalcDefinitionsService } from "./calc-definitions.service";
 import { classifyInput, newestTimeMs, type CalcInputSample } from "./calc-inputs";
@@ -69,6 +69,13 @@ async function evaluateOneStreamingFormula(
  * guard, not only an optimisation), then evaluate each matching formula in
  * its own `try`/`catch` so one formula's failure never costs the rest of
  * the batch (the `F4.36`/`F3.6` shape).
+ *
+ * A formula with more than one ref (e.g. `{A}+{B}`) can be returned by
+ * `getDefinitionsForInput` more than once in the same batch — once per
+ * matching reading, if the batch happens to carry fresh readings for both
+ * `A` and `B`. Every candidate `(assetId, def)` pair is collected into a map
+ * first, keyed on `defKey`, so each formula instance is evaluated at most
+ * once per batch regardless of how many of its refs the batch touched.
  */
 export async function evaluateStreamingBatch(
   deps: CalcStreamingDeps,
@@ -83,23 +90,28 @@ export async function evaluateStreamingBatch(
   const nowMs = Date.now();
   const toWrite: CalcWriteInput[] = [];
 
+  const toEvaluate = new Map<string, { assetId: string; def: CalcDefinition }>();
   for (const reading of relevant) {
     const defs = await deps.definitions.getDefinitionsForInput(reading.assetId, reading.pointKey);
     for (const def of defs) {
       if (def.trigger !== "streaming") {
         continue;
       }
-      try {
-        const outcome = await evaluateOneStreamingFormula(deps, def, reading.assetId, nowMs);
-        if (outcome) {
-          toWrite.push(outcome);
-        }
-      } catch (err) {
-        deps.logger.warn(
-          `calc streaming: formula "${def.pointKey}" on asset ${reading.assetId} failed; continuing the ` +
-            `batch: ${(err as Error)?.message ?? err}`,
-        );
+      toEvaluate.set(defKey(reading.assetId, def.templatePointId), { assetId: reading.assetId, def });
+    }
+  }
+
+  for (const { assetId, def } of toEvaluate.values()) {
+    try {
+      const outcome = await evaluateOneStreamingFormula(deps, def, assetId, nowMs);
+      if (outcome) {
+        toWrite.push(outcome);
       }
+    } catch (err) {
+      deps.logger.warn(
+        `calc streaming: formula "${def.pointKey}" on asset ${assetId} failed; continuing the ` +
+          `batch: ${(err as Error)?.message ?? err}`,
+      );
     }
   }
 

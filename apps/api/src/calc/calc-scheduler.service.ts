@@ -3,6 +3,7 @@ import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@ne
 import { evaluate } from "@bms/shared";
 
 import { sleep } from "../telemetry/sleep";
+import { defKey } from "./calc-batch";
 import type { CalcDefinition } from "./calc-definition";
 import { CalcDefinitionsService } from "./calc-definitions.service";
 import { classifyInput } from "./calc-inputs";
@@ -63,6 +64,26 @@ async function evaluateOneScheduledFormula(
  * state, threaded through rather than captured, so this function stays
  * testable without a live timer. **No cap on formulas per tick** (decision
  * 7): silently computing a subset would be a worse failure than being slow.
+ *
+ * The key is `(assetId, templatePointId)`, never `templatePointId` alone —
+ * one published template can be instantiated on many assets, and each is a
+ * separate formula instance with its own schedule. Keying on the bare
+ * template point id let the first asset processed in a sweep mark every
+ * other asset sharing that template point as "just ran", starving them
+ * forever with no counted skip.
+ *
+ * The stored value is the formula's own **bucketed** tick time
+ * (`bucketTimeMs`), not the raw `nowMs` the sweep happened to run at. Raw
+ * wall-clock storage re-arms relative to whatever instant the previous fire
+ * happened to land on; against variable sweep cost (each sweep nudges the
+ * next tick's `now()` a little later), that reference keeps sliding forward
+ * and a `lastRun + interval` check against it can go a whole extra tick
+ * without firing before it catches up. Bucketed storage re-arms against the
+ * fixed bucket grid instead, so it fires as soon as `nowMs` crosses into a
+ * bucket beyond the last one recorded — never later than raw storage would,
+ * and sometimes a tick earlier. `calc-scheduler.spec.ts`'s drift test proves
+ * the count: the same 9-tick, cost-per-tick schedule produces one more write
+ * under bucketed storage than it would under raw storage.
  */
 export async function runScheduledSweep(
   deps: CalcSchedulerDeps,
@@ -73,12 +94,22 @@ export async function runScheduledSweep(
   const toWrite: CalcWriteInput[] = [];
 
   for (const def of scheduled) {
-    const key = def.templatePointId;
-    const intervalSeconds = def.intervalSeconds ?? 0;
+    if (def.intervalSeconds === null) {
+      // Unreachable via CalcDefinitionsService — toActiveDefinition
+      // guarantees a scheduled definition carries a non-null interval — but
+      // this function's own contract must not assume its caller. Falling
+      // through to bucketTimeMs(nowMs, 0) would divide by zero, store NaN in
+      // lastRunMs, and make isDue return false forever for this key: a
+      // silent, permanent stop rather than one counted skip (decision 9).
+      deps.metrics.countCalcSkipped("missing_interval");
+      continue;
+    }
+    const key = defKey(def.assetId, def.templatePointId);
+    const intervalSeconds = def.intervalSeconds;
     if (!isDue({ intervalSeconds, lastRunMs: lastRunMs.get(key) ?? null, nowMs })) {
       continue;
     }
-    lastRunMs.set(key, nowMs);
+    lastRunMs.set(key, bucketTimeMs(nowMs, intervalSeconds));
     try {
       const outcome = await evaluateOneScheduledFormula(deps, def, nowMs);
       if (outcome) {

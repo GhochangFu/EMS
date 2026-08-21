@@ -155,8 +155,8 @@ export async function runCalcStreamingTests(): Promise<void> {
   // ---- one formula's failure does not stop the next formula in the same batch ---
 
   {
-    const throwing = def({ pointKey: "THROWS", formula: "{BAD}" });
-    const healthy = def({ pointKey: "HEALTHY", formula: "{TRIGGER} * 2" });
+    const throwing = def({ pointKey: "THROWS", formula: "{BAD}", templatePointId: "tp-throws" });
+    const healthy = def({ pointKey: "HEALTHY", formula: "{TRIGGER} * 2", templatePointId: "tp-healthy" });
     const inputKeys = new Set(["asset-1:TRIGGER"]);
     const definitionsByAssetPoint = new Map([["asset-1:TRIGGER", [throwing, healthy]]]);
     const now = Date.now();
@@ -172,6 +172,36 @@ export async function runCalcStreamingTests(): Promise<void> {
     assert(
       fakes.writes[0]?.[0]?.pointKey === "HEALTHY",
       "the surviving write must be the healthy formula's, not the throwing one's",
+    );
+  }
+
+  // ---- a formula with 2 refs, both fresh in the same batch, evaluates only once -
+
+  {
+    const formula = def({ formula: "{TRIGGER} + {SIBLING}" });
+    const inputKeys = new Set(["asset-1:TRIGGER", "asset-1:SIBLING"]);
+    const definitionsByAssetPoint = new Map([
+      ["asset-1:TRIGGER", [formula]],
+      ["asset-1:SIBLING", [formula]],
+    ]);
+    const now = Date.now();
+    const samples = new Map([
+      ["asset-1:TRIGGER", { value: 3, timeMs: now - 1000 }],
+      ["asset-1:SIBLING", { value: 4, timeMs: now - 2000 }],
+    ]);
+    const fakes = buildFakes(inputKeys, definitionsByAssetPoint, samples);
+
+    await evaluateStreamingBatch(fakes.deps, [
+      reading({ assetId: "asset-1", pointKey: "TRIGGER", value: 3 }),
+      reading({ assetId: "asset-1", pointKey: "SIBLING", value: 4 }),
+    ]);
+    assert(
+      fakes.writes.length === 1,
+      `a batch carrying readings for both of a formula's refs must write it exactly once, got ${fakes.writes.length}`,
+    );
+    assert(
+      fakes.writes[0]?.[0]?.value === 7,
+      `expected the single write to reflect the formula's own result (7), got ${fakes.writes[0]?.[0]?.value}`,
     );
   }
 

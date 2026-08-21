@@ -1,31 +1,35 @@
 import { MetricsService, type CalcRuntimeSkipReason } from "../observability/metrics.service";
-import type { CalcSkipReason } from "./calc-definition";
+
+/** Every `CalcSkipReason` (an unusable stored definition) plus the three
+ * runtime-only reasons (a usable definition skipped this evaluation), as a
+ * `Record<CalcRuntimeSkipReason, true>` rather than a plain literal array —
+ * a plain array typed as `CalcRuntimeSkipReason[]` compiles fine even when a
+ * reason is missing from it (the type only bounds the elements, it does not
+ * require all of them), so a 10th reason added to the union would pass this
+ * test with zero coverage. A `Record` keyed on the full union does not
+ * compile unless every member has an entry, so an added reason forces a
+ * build failure here until it is added below. */
+const ALL_REASONS_RECORD: Record<CalcRuntimeSkipReason, true> = {
+  not_derived: true,
+  no_formula: true,
+  bad_dialect: true,
+  unparseable_formula: true,
+  no_trigger: true,
+  missing_interval: true,
+  interval_on_streaming: true,
+  interval_out_of_range: true,
+  max_input_age_out_of_range: true,
+  missing_input: true,
+  stale_input: true,
+  non_finite: true,
+};
+const ALL_REASONS = Object.keys(ALL_REASONS_RECORD) as CalcRuntimeSkipReason[];
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
 }
-
-/** Every `CalcSkipReason` (an unusable stored definition) plus the three
- * runtime-only reasons (a usable definition skipped this evaluation) —
- * kept as a literal list here, deliberately not derived from the type, so a
- * reason added to `CalcSkipReason` without a matching entry here fails this
- * test rather than silently having no metrics coverage. */
-const ALL_REASONS: CalcRuntimeSkipReason[] = [
-  "not_derived",
-  "no_formula",
-  "bad_dialect",
-  "unparseable_formula",
-  "no_trigger",
-  "missing_interval",
-  "interval_on_streaming",
-  "interval_out_of_range",
-  "max_input_age_out_of_range",
-  "missing_input",
-  "stale_input",
-  "non_finite",
-] satisfies (CalcSkipReason | "missing_input" | "stale_input" | "non_finite")[];
 
 async function readMetricValue(metrics: MetricsService, name: string): Promise<string> {
   return metrics.registry.getSingleMetricAsString(name);

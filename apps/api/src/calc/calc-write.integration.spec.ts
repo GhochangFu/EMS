@@ -35,12 +35,12 @@ export async function cleanup(pool: pg.Pool): Promise<void> {
   );
   const assetIds = assetRows.map((r) => r.id);
   if (assetIds.length > 0) {
-    // Also time-bounded so Postgres can prune hypertable chunks — this
-    // suite's fixtures only ever write "now".
-    await pool.query(
-      `DELETE FROM telemetry.point_values WHERE time > now() - interval '1 day' AND asset_id = ANY($1::uuid[])`,
-      [assetIds],
-    );
+    // No time bound: the constant asset_id filter alone is already
+    // ADR 0024-compliant (SEGMENTBY, no subquery/join in the DELETE), and a
+    // fixture-owned time window would eventually drift out of a rolling
+    // "now() - interval" bound while the fixture's asset row still exists,
+    // orphaning the point_values row permanently once the parent is deleted.
+    await pool.query(`DELETE FROM telemetry.point_values WHERE asset_id = ANY($1::uuid[])`, [assetIds]);
   }
   await pool.query(
     `DELETE FROM bms.asset_points WHERE asset_id IN (SELECT id FROM bms.assets WHERE code LIKE $1)`,
