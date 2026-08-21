@@ -44,6 +44,7 @@ import {
   type HierarchySelection,
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { CalculationsTab } from "../../components/asset-templates/calculations-tab";
 import { DetailsTab } from "../../components/asset-templates/details-tab";
 import { PointsTab } from "../../components/asset-templates/points-tab";
 import { TemplateTabStrip } from "../../components/asset-templates/template-tab-strip";
@@ -316,6 +317,9 @@ function TemplateTabBody({
   }
   if (tab === "points") {
     return <PointsTab template={template} editable={editable} onSaved={onSaved} />;
+  }
+  if (tab === "calculations") {
+    return <CalculationsTab template={template} editable={editable} onSaved={onSaved} />;
   }
   return (
     <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
