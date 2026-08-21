@@ -44,17 +44,20 @@ export type TemplateCapabilities = {
  * (413); `archive` requires `published` (321); and
  * `asset-templates-instantiate.service.ts:128` requires `published`.
  *
- * **One deliberate divergence.** `createDraftFrom` (line 349) carries **no**
- * status guard, so the API would accept a new draft from an archived version.
- * ADR 0038 states "An `archived` version is read-only with no actions", so the
- * page does not offer it. The rule is a product choice, not a server
- * constraint, and it is written here rather than left implicit — otherwise the
- * next reader compares this table to the service and reads the gap as a defect.
+ * `createDraftFrom` (line 349) carries **no** status guard by design, so an
+ * archived version can be revived into a new draft. ADR 0038 Amendment 3 makes
+ * the page offer that: archiving a code line is otherwise irreversible through
+ * the UI, and archiving is a reversible product decision, not a deletion.
+ *
+ * **`createDraft` on an archived version does not make it editable.** The new
+ * draft is a different row at a higher version; this row stays read-only
+ * forever. `editable` and `actions` answer two different questions, which is
+ * why they are separate fields rather than one derived from the other.
  */
 const CAPABILITIES: Readonly<Record<AssetTemplateStatus, TemplateCapabilities>> = {
   draft: { editable: true, actions: ["publish", "delete"] },
   published: { editable: false, actions: ["createDraft", "instantiate", "archive"] },
-  archived: { editable: false, actions: [] },
+  archived: { editable: false, actions: ["createDraft"] },
 };
 
 /** What this status allows. */

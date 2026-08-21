@@ -50,8 +50,30 @@ export function runCapabilityTableTests(): void {
   const archived = capabilities("archived");
   assert(!archived.editable, "an archived version is never editable");
   assert(
-    archived.actions.length === 0,
-    `ADR 0038: an archived version has no actions — got ${archived.actions.join(",")}`,
+    archived.actions.join(",") === "createDraft",
+    `ADR 0038 Amendment 3: an archived version offers revival only — got ${archived.actions.join(
+      ",",
+    )}`,
+  );
+
+  // The two questions the module keeps apart. Reviving an archived version
+  // creates a **different** row at a higher version; this row stays read-only.
+  // A reader who collapsed `actions.length > 0` into "editable" would put an
+  // editable formula field on an archived template, which is the one thing
+  // decision 3 forbids.
+  assert(
+    !archived.editable && archived.actions.length > 0,
+    "an archived version has an action and is still not editable",
+  );
+
+  // Delete and Archive belong to exactly one status each. Offering Delete on an
+  // archived version would hit `assertDraft` and 409; offering Archive would
+  // hit the published-only guard.
+  assert(!archived.actions.includes("delete"), "only a draft can be deleted");
+  assert(!archived.actions.includes("archive"), "only a published version can be archived");
+  assert(
+    !archived.actions.includes("instantiate"),
+    "instantiate is published-only — an archived version is out of the picker",
   );
 }
 

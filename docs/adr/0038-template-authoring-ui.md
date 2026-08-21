@@ -133,6 +133,8 @@ action is **Edit this version**, which calls `POST /:id/draft` and navigates to
 the new draft — the same mental model as `createDraftFrom`'s docblock. A
 `published` version also offers **Instantiate** (`POST /:id/instantiate`,
 `F2.2`) and **Archive**. An `archived` version is read-only with no actions.
+**The "no actions" half was superseded by Amendment 3 — see below.** An
+`archived` version stays read-only, and offers **Revive as a new draft**.
 
 The page must never render an editable formula field on a published template.
 That is the single failure mode this decision exists to prevent.
@@ -571,3 +573,63 @@ no file in `apps/web/src` outside the lazy `formula-editor.tsx` imports
 weight, because five declared packages are five names an unrelated component
 could import without the resolver objecting. That invariant, not the manifest,
 is what keeps the editor in its lazy chunk.
+
+---
+
+## Amendment 3 — an archived version can be revived from the UI (2026-08-21)
+
+Found while building Unit 6 of the `F2.5` plan, by checking each entry of the
+lifecycle capability table against the service's own guards. Ruled by the
+repository owner the same day.
+
+**What was wrong.** Decision 3 ends: *"An `archived` version is read-only with
+no actions."* The read-only half is right and unchanged. The "no actions" half
+does not match the API, and the mismatch is not a server limitation — it is
+strictly narrower than what the server allows:
+
+| Action | Server guard | Source |
+|---|---|---|
+| `update` / `publish` / `deleteDraft` | `assertDraft` — draft only | `asset-templates.service.ts:198, 271, 413` |
+| `archive` | `status !== "published"` → 409 | `asset-templates.service.ts:321` |
+| `instantiate` | `status !== "published"` → 409 | `asset-templates-instantiate.service.ts:128` |
+| `createDraftFrom` | **no status guard** | `asset-templates.service.ts:349` |
+
+`createDraftFrom` reads the source row's points, takes `MAX(version)` for
+`(organizationId, code)`, and inserts a draft at the next version. Nothing in
+it depends on the source being published. That absence is deliberate — the same
+call is what "Edit this version" uses on a published row — and it means the API
+has always accepted reviving an archived version.
+
+Decision 3's own reasoning is why the UI should offer it. Archiving is
+described there and in `archive`'s docblock as removing a version from the
+"instantiate from" picker, not as deleting it: an instantiated asset owns its
+`asset_points` and keeps working untouched. That is a **reversible** product
+decision. But a page with no action on an archived row makes it irreversible
+through the only interface an author has — archive the last version of a code
+line and the model is unreachable, while the row, its points and its content
+all still exist. Nothing else in the product behaves that way.
+
+**What changed.** `capabilities("archived")` returns
+`{ editable: false, actions: ["createDraft"] }`.
+
+- **Read-only is untouched.** Decision 3's load-bearing sentence — *"The page
+  must never render an editable formula field on a published template"* — is
+  unaffected, and `formulaFieldsAreReadOnly("archived")` stays `true`.
+  `template-lifecycle.spec.ts` asserts both together: an archived version has
+  an action **and** is still not editable. Reviving produces a **different row**
+  at a higher version; the archived row stays frozen forever.
+- **Delete, Archive and Instantiate stay absent on an archived version.** Each
+  would hit a server guard listed above and return 409. `createDraft` is the
+  only one that would not, which is why it is the only one added.
+- **The role gate is unchanged.** `createDraftFrom` calls `assertCanAuthor`, so
+  a `location_admin` never sees this action — `canAuthorTemplates` already
+  hides it. Decision 10 needs no edit.
+- **The label is the tab shell's**, not this module's. `createDraft` on a
+  published version means "Edit this version"; on an archived one it means
+  "Revive as a new draft". Same call, two different things to say, and the
+  distinction belongs where the button is rendered (Unit 7).
+
+**What this does not decide.** Whether reviving should also un-archive the
+source row. It must not, and nothing here does: `archived_at` is a record of
+what happened, the source row keeps its status, and the new draft is a separate
+version that follows the ordinary draft lifecycle from there.
