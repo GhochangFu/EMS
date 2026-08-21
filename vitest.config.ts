@@ -350,6 +350,18 @@ export default defineConfig({
       //
       // `packages/shared/src/calc-dsl`'s widened re-export is coverage-neutral
       // here for the reason the `F2.4` entry gives: `include` covers `apps/*`.
+      //
+      // **Measured on a long-lived local database, not a freshly seeded one**,
+      // as every entry above was. Worth stating because this file already
+      // documents two local/CI divergences (`F4.33`, still open, and the
+      // `F4.34` note on compressed chunks). Two `CalcWriteService` warnings
+      // fired during the run — `refresh window too small`, and a synthesised
+      // `source_data_key` of 129 chars exceeding the 128-char column — so those
+      // branches in `apps/api/src/calc/**` were reached from accumulated state
+      // that `db:migrate` → `db:seed` may not reproduce. Two branches out of
+      // 3948 is ~0.05%, comfortably inside the 0.32–0.37 margin these
+      // thresholds leave, so it does not put CI at risk; it is recorded rather
+      // than assumed away.
       thresholds: {
         statements: 53.3,
         branches: 49.3,
