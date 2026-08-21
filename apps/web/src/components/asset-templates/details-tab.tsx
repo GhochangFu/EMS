@@ -43,14 +43,23 @@ export function DetailsTab({ template, editable, onSaved }: DetailsTabProps) {
   const [form, setForm] = useState<TemplateDetailsForm>(() => detailsFormFrom(template));
   const [error, setError] = useState<string | null>(null);
 
-  // Reseed when the row changes underneath — after a save, and after
-  // "Edit this version" navigates to a different template id with the same
-  // component mounted. Without this the form would keep showing the old row's
-  // values while the header showed the new one.
+  // Reseed only when the page moves to a **different row** — "Edit this
+  // version" navigates to a new draft with this component still mounted, and
+  // without this the form would keep the old row's values while the header
+  // showed the new one.
+  //
+  // Deliberately **not** keyed on `template.updatedAt`. `main.tsx` builds a
+  // bare `new QueryClient()`, so `refetchOnWindowFocus` is on and `staleTime`
+  // is 0, and `afterChange` invalidates `["admin", "asset-template"]` after
+  // every lifecycle action. Reseeding on a newer `updatedAt` would mean: type
+  // into Details, click Publish in the header, and watch the typed text vanish
+  // with no message. A save needs no reseed either — the form already holds
+  // what was sent, and `buildDetailsPatch` compares against the refreshed
+  // template, so Save disables itself.
   useEffect(() => {
     setForm(detailsFormFrom(template));
     setError(null);
-  }, [template.id, template.updatedAt]);
+  }, [template.id]);
 
   const errors = detailsFormErrors(form);
   const patch = buildDetailsPatch(form, template);
