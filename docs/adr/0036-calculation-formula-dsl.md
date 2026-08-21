@@ -200,3 +200,67 @@ parser. §9.4 is not triggered.
 - The brace-reference syntax (decision 2) is a small but real UX choice:
   `{POINT_KEY}` is more verbose than a bare identifier but never collides
   with an unusual `point_key` value, and needs no escaping rules.
+
+## Amendment 1 — `position` on `unary`/`binary`/`call` AST nodes (2026-08-21)
+
+Found while building `F2.4`'s evaluator (`packages/shared/src/calc-dsl/evaluate.ts`)
+against the frozen AST this ADR defines (decision 4: "Parser lives in
+`packages/shared`... no evaluator; see decision 7").
+
+**What changed.** `CalcUnary`, `CalcBinary` and `CalcCall`
+(`packages/shared/src/calc-dsl/ast.ts`) each gained a `position: number`
+field — the 0-based character offset of the node's own operator/function-name
+token. `CalcPointRef` already carried one (used since `F2.3` to point a
+`missing_reference`/`unknown_reference` parse error at the offending `{ref}`);
+`CalcNumber` carries none, since the tokenizer already rejects an overflowing
+literal at parse time, so a literal can never itself be the site of a later
+evaluation-time refusal. `parser.ts` was updated at all four construction
+sites (`parseExpression`'s `+`/`-` loop, `parseTerm`'s `*`/`/` loop, the
+unary-minus branch in `parseFactor`, and `parseCall`) to populate it.
+
+**Why.** ADR 0037 (`F2.4`, calc execution engine) decision 9 requires that
+`evaluate()` refuse a non-finite intermediate result **at the node that
+produced it**, not only at the expression's root — `min({A} * {B}, 5)` must
+refuse at the multiply, not let `min` silently absorb an overflowed `Infinity`
+back down to `5`. Reporting *which* node failed requires every non-leaf node
+to carry its own position, the same way `CalcPointRef` already did for
+`F2.3`'s "which `{ref}` is the problem" errors. Before this amendment, only
+`ref` had one; `unary`/`binary`/`call` did not, so `F2.4` had no way to
+express "the failure is at *this* subexpression" for anything but a bare
+reference.
+
+**Compatibility.** This is additive and non-optional, not a widening of an
+existing shape into an optional field — every construction site in
+`packages/shared/src/calc-dsl/parser.ts` was updated in the same change that
+added the field, so no `CalcExpr` value exists anywhere in the tree without
+one. `validateFormula`'s and `parseFormula`'s public signatures
+(`(expression, knownRefs) => ParseResult` / `(expression) => ParseResult`) are
+unchanged, the grammar in decision 1 is unchanged, and no formula that parsed
+before this amendment parses differently now — every existing `ParseResult`
+still resolves to the same `ok`/`errors`/`refs`, just with one more field
+present on three of the five `CalcExpr` variants. Nothing downstream that
+only reads `kind`, `pointKey`, `value`, `op`, `left`/`right`, `fn`, or `args`
+needs to change.
+
+**Forward consequence.** `F2.5`'s live formula-preview editor can use a
+non-root `position` to underline the specific failing sub-expression rather
+than only the whole formula — a materially better authoring experience than
+what decision-1's grammar alone could offer, and not something this amendment
+requires `F2.5` to build.
+
+**Why this is a recording, not a reopening.** What decision 4 calls "frozen"
+is the *grammar* — the production rules in decision 1, the reference syntax
+in decision 2, the function whitelist, the bounds in decision 8 — and none of
+those changed: the set of expressions this DSL accepts, and what each one
+means, is identical before and after this amendment. What changed is the
+AST's internal TypeScript shape, which decision 4 lists as a package
+component but never itself calls frozen. This amendment exists so that fact
+is written down rather than left implicit, following the precedent of
+ADR 0016 Amendment 1 (a `ZodType` signature widened, discovered while the
+first consumer was built against a "frozen" interface, recorded rather than
+silently applied).
+
+No `Depends`/scope change to `docs/BACKLOG.md` follows from this amendment —
+`F2.3`'s own row is unaffected, and `F2.4`, `F2.5`, `F2.6`, `F2.8` continue to
+inherit the same grammar decision 4's Consequences describes, now with one
+additional field available to build against.
