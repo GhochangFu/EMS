@@ -53,6 +53,15 @@ type AlarmsTabProps = {
   onSaved: (next: AdminAssetTemplateDto) => void;
 };
 
+/**
+ * The fields inside the collapsible philosophy block.
+ *
+ * Named here rather than checked inline so the `<details open>` condition and
+ * the summary badge cannot drift apart, and so a fifth philosophy field added
+ * to `alarmPhilosophySchema` is one edit rather than two.
+ */
+const PHILOSOPHY_FIELDS = ["cause", "impact", "action", "skill"];
+
 /** The stored section, read from the loose `content` record. */
 function storedAlarms(template: AdminAssetTemplateDto): TemplateAlarm[] | undefined {
   const section = template.content.alarms;
@@ -265,9 +274,16 @@ export function AlarmsTab({ template, editable, onSaved }: AlarmsTabProps) {
               </Field>
             </div>
 
-            <details className="mt-3">
+            {/* Forced open when it holds a problem. A collapsed block hiding
+                the only failing field leaves the author with a disabled Save,
+                a "fix the problems above" message, and nothing visible to fix
+                — which reads as the form being broken. */}
+            <details className="mt-3" open={rowProblems.some((problem) => PHILOSOPHY_FIELDS.includes(problem.field))}>
               <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
                 Alarm philosophy
+                {rowProblems.some((problem) => PHILOSOPHY_FIELDS.includes(problem.field)) ? (
+                  <span className="ml-2 font-normal text-red-700">needs attention</span>
+                ) : null}
               </summary>
               <div className="mt-2 grid gap-3 md:grid-cols-2">
                 <Field label="Likely cause" error={problemFor("cause")}>
