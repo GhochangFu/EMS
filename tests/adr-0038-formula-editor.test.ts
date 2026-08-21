@@ -23,9 +23,13 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
  * `tests/adr-0036-calc-dsl-no-eval.test.ts`, which this follows including its
  * guard against a scan that silently read nothing.
  *
- * Unit 8 extends this file with the other half of ADR 0038's static promise:
- * that `formula-editor.tsx` is the only module in the repository allowed to
- * import CodeMirror, which is what keeps the lazy chunk lazy.
+ * The other half of ADR 0038's static promise — that `formula-editor.tsx` is
+ * the only module in the repository allowed to import CodeMirror — is the
+ * second `describe` below. It was written here in Unit 5, with the split it
+ * guards, rather than waiting for the unit that planned it.
+ *
+ * ADR 0038's remaining source scan, the five-tab registry limit, is in
+ * `tests/adr-0038-template-authoring-ui.test.ts`.
  */
 describe("ADR 0038 — the formula preview never reaches the network", () => {
   const rel = "apps/web/src/lib/calc-preview.ts";
