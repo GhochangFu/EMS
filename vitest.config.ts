@@ -370,12 +370,18 @@ export default defineConfig({
       // `source_data_key` of 129 chars exceeding the 128-char column — so those
       // branches in `apps/api/src/calc/**` were reached from accumulated state
       // that `db:migrate` → `db:seed` may not reproduce. Two branches out of
-      // 3974 is ~0.05%, comfortably inside the **0.32–0.39** margin these
-      // thresholds leave, so it does not put CI at risk; it is recorded rather
-      // than assumed away. (An earlier version of this line said "0.32–0.37",
-      // which had omitted lines — the compliance review caught it. Stated
-      // because a margin quoted wrongly is how a gate gets trusted for the
-      // wrong reason.)
+      // 3974 is ~0.05%, comfortably inside the margin these thresholds leave.
+      // Per axis, against the figures above: statements 0.37, branches
+      // **0.32**, functions 0.39, lines 0.34 — so 0.32 is the binding one and
+      // 0.05 sits well inside it. Recorded rather than assumed away.
+      //
+      // The first version of this line quoted "0.32–0.37" against the earlier
+      // measurement, where the real per-axis margins were statements 0.32,
+      // branches 0.37, functions 0.33 and **lines 0.29**. The range had left
+      // out the tightest axis, so it overstated the headroom by claiming a
+      // floor the gate did not have. Every axis is now listed rather than
+      // summarised, because a range hides which constraint binds — and this
+      // note's whole job is to say how a number was obtained.
       thresholds: {
         statements: 53.5,
         branches: 49.7,
