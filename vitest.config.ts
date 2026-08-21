@@ -382,11 +382,35 @@ export default defineConfig({
       // floor the gate did not have. Every axis is now listed rather than
       // summarised, because a range hides which constraint binds — and this
       // note's whole job is to say how a number was obtained.
+      // **The unordered-fixture race has a second instance, found while
+      // measuring this.** `evaluate-enabled-rules.integration.spec.ts:57` does
+      // `select({id}).from(assets).limit(2)` with **no ORDER BY** — the same
+      // shape as `alarm-enrichment.integration.spec.ts`'s `firstSeededAssetId`
+      // recorded below — and failed with
+      // `automation_rules_asset_id_fkey` on one full parallel run, passing 2/2
+      // in isolation immediately after. Two files now share the defect, so it
+      // is a pattern rather than one bad fixture. Still not fixed here: it is
+      // `apps/api` rules-module code and unrelated to this item. CI will see
+      // it intermittently.
+      //
+      // **Re-measured a third time, at the branch tip, 2026-08-21.** The
+      // section 7 browser pass and the owner's `wc-admin` sign-in each found a
+      // defect after the second measurement, and both fixes shipped with the
+      // test that would have caught them — so the figure moved again. All 131
+      // files / 483 tests running and none skipped:
+      // 54.04 statements · 50.32 branches · 55.61 functions · 54.11 lines.
+      //
+      // Ratcheted 53.5/49.7/55.1/53.6 → 53.7/50.0/55.3/53.8. Per axis the
+      // margin is statements 0.34, branches 0.32, functions 0.31, lines 0.31.
+      // Banked rather than left: at the previous thresholds roughly 0.2 of
+      // this item's own gain was unprotected, and a regression could have
+      // given it back without tripping the gate — which is the exact failure
+      // the `F4.46` entry above records finding in `main`.
       thresholds: {
-        statements: 53.5,
-        branches: 49.7,
-        functions: 55.1,
-        lines: 53.6,
+        statements: 53.7,
+        branches: 50.0,
+        functions: 55.3,
+        lines: 53.8,
       },
     },
   },
