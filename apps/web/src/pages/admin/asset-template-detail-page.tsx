@@ -16,8 +16,27 @@
  *   Instantiate stays — a location admin deploys.
  * - **Organization scope.** Not derivable in the browser:
  *   `accessibleScopeSchema` carries no organization list. This case falls
- *   through to the API's 403 and its message is rendered. The service already
- *   writes the right sentence ("Organization is outside your access scope").
+ *   through to the API's 403.
+ *
+ *   **There are three sentences behind that 403, not one, and this docblock
+ *   used to name only the middle one.** They come from three different
+ *   guards in `asset-templates.service.ts`:
+ *
+ *   - **Reading** a template outside your scope — `getById`'s
+ *     `canManageOrganization` check — is *"Template is outside your access
+ *     scope"*. This is the residual case ADR 0038 decision 10 describes, and
+ *     it is the **only** one reachable here by opening a URL, because `list()`
+ *     filters to `writableOrganizationIds` and never offers the row.
+ *   - **Writing** anything outside your scope — `assertCanAuthor`'s
+ *     `canManageTemplate` check — is *"Organization is outside your access
+ *     scope"*. That is the sentence decision 10 quotes, and it is correct
+ *     **for a write**.
+ *   - A `location_admin` attempting to author is *"Location admins cannot
+ *     author asset templates"*, before organization scope is consulted at all.
+ *
+ *   Confirmed against the running stack on 2026-08-21 from both roles. Anyone
+ *   testing the read case against the documented wording would have looked
+ *   for a string that path never produces.
  *
  *   **This used to say `adminFetch` "throws it unwrapped", and that was
  *   false.** It throws `new Error(text)` with the *whole* body, so the section

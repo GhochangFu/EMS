@@ -21,8 +21,19 @@
  * the browser**. `accessibleScopeSchema` (`packages/shared/src/contracts/auth.ts`)
  * carries `kind`, `locations`, `assetGroups` and `assetIds`, and no
  * organization list, so the client cannot know which organizations a
- * `organization_admin` manages. That case falls through to the API's 403, whose
- * body ("Organization is outside your access scope") the detail page renders.
+ * `organization_admin` manages. That case falls through to the API's 403.
+ *
+ * **Which 403 depends on what was attempted, and this line used to name only
+ * one of them.** Reading a template outside your scope is *"Template is
+ * outside your access scope"* (`getById`); writing anything outside it is
+ * *"Organization is outside your access scope"* (`assertCanAuthor`), which is
+ * the sentence ADR 0038 decision 10 quotes and is correct for a write. See
+ * `asset-template-detail-page.tsx`'s docblock for all three.
+ *
+ * **And the detail page may not render either of them today.** `F4.52`:
+ * `clearSessionOnAuthFailure` treats 403 like 401 and clears the session, so
+ * the user is returned to the login screen before any message can show.
+ * Confirmed on the running stack from both roles on 2026-08-21.
  *
  * This is a deliberate gap, not an oversight, and
  * `template-authoring-access.spec.ts` asserts both halves of it: that the scope
