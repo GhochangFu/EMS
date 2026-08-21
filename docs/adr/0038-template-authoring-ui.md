@@ -488,3 +488,86 @@ outside the lazy `formula-editor.tsx` imports `codemirror` or
 `@codemirror/*`. A `@codemirror/search` symbol in the built output now means a
 genuine regression — someone reached for `basicSetup` — and not an inherent
 property of the dependency.
+
+## Amendment 2 — the meta-package exports three symbols, so five lines are declared (2026-08-21)
+
+Found at the start of `F2.5` Unit 5, before any editor code was written and
+before the manifest was touched. Ruled by the repository owner the same day.
+
+**What was wrong.** Decision 7 says "**One** dependency line in `apps/web`",
+and Amendment 1 repeated the claim: "`@codemirror/lint`,
+`@codemirror/autocomplete` and `@codemirror/commands` resolve through the
+meta-package's transitives exactly as decision 7 says." They do not. Two
+separate facts break it, and each was verified rather than reasoned about.
+
+*First*, the meta-package re-exports almost nothing. Read from the published
+declaration file of `codemirror@6.0.2` (`dist/index.d.ts`), its entire public
+surface is:
+
+```ts
+export { EditorView } from '@codemirror/view';
+export { basicSetup, minimalSetup };
+```
+
+There is no `linter`, no `Diagnostic`, no `ViewPlugin`, no `Decoration` and no
+`autocompletion`. Decision 6 needs the first two to place a parse error by its
+`position`; the highlighting `ViewPlugin` needs the next two; decision 7's own
+autocomplete justification needs the last. None of them can be reached through
+`codemirror`.
+
+*Second*, this repository has no `.npmrc` at any level, so pnpm 9 uses its
+default isolated linker: a package resolves only what it declares. Probed from
+`apps/web` with `import.meta.resolve`, against dependencies that are already
+in the tree:
+
+```
+RESOLVES     : echarts
+DOES NOT     : zrender              (ERR_MODULE_NOT_FOUND)   <- echarts' own dependency
+DOES NOT     : @react-leaflet/core  (ERR_MODULE_NOT_FOUND)   <- react-leaflet's own dependency
+RESOLVES     : leaflet
+```
+
+So "import it from `@codemirror/lint` and do not declare it" is unbuildable
+here, not merely untidy. Had this been discovered during implementation rather
+than before it, it would have read as a broken install.
+
+**What changed.** `apps/web` declares five lines, on ranges that match the
+meta-package's own:
+
+```json
+"@codemirror/autocomplete": "^6.0.0",
+"@codemirror/lint":         "^6.0.0",
+"@codemirror/state":        "^6.0.0",
+"@codemirror/view":         "^6.0.0",
+"codemirror":               "^6.0.2",
+```
+
+The ranges are matched deliberately. Decision 7 named the risk itself —
+"CodeMirror's packages must agree on `@codemirror/state`; two copies in one
+bundle fail at runtime" — and a range that differs from the meta-package's is
+exactly how a second copy arrives. `pnpm why @codemirror/state` is the check
+that it did not.
+
+**What decision 7 still holds.** Everything except the count:
+
+- The meta-package is still taken, and is still the co-versioning owner. It
+  pins all seven `@codemirror/*` packages at `^6.0.0`, so the five declared
+  lines and the two undeclared ones (`@codemirror/commands`,
+  `@codemirror/language`, reached only through `minimalSetup`) stay on one
+  resolution.
+- `minimalSetup` still comes from it, so Amendment 1 is unaffected.
+- The rejected alternative is still rejected. Q4 reversed a first draft that
+  dropped the meta-package and hand-picked a minimal set; that is **not** what
+  this amendment does. Dropping it now would mean declaring six packages
+  instead of five and hand-copying `minimalSetup`'s composition into the
+  repository, where it would have to be re-checked on every CodeMirror upgrade.
+- `@codemirror/search` is still never imported and still must tree-shake out.
+  Amendment 1's bundle check is unchanged, and this amendment does not weaken
+  it: `search` is one of the two packages that stay undeclared.
+
+**Consequence for verification.** The `F2.5` plan's Unit 8 static invariant —
+no file in `apps/web/src` outside the lazy `formula-editor.tsx` imports
+`codemirror` or `@codemirror/*` — was already owed. It now carries more
+weight, because five declared packages are five names an unrelated component
+could import without the resolver objecting. That invariant, not the manifest,
+is what keeps the editor in its lazy chunk.
