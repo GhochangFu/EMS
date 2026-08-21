@@ -44,6 +44,7 @@ import {
   type HierarchySelection,
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { DetailsTab } from "../../components/asset-templates/details-tab";
 import { TemplateTabStrip } from "../../components/asset-templates/template-tab-strip";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
@@ -266,7 +267,12 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
       <SectionCard>
         <TemplateTabStrip active={tab} onSelect={selectTab} />
         <div className="pt-3">
-          <TemplateTabBody tab={tab} />
+          <TemplateTabBody
+            tab={tab}
+            template={template}
+            editable={lifecycle.editable}
+            onSaved={afterChange}
+          />
         </div>
       </SectionCard>
 
@@ -282,14 +288,31 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
 }
 
 /**
- * The tab bodies land in Unit 9, one component per tab.
+ * Dispatches to one component per tab (Unit 9).
  *
- * A named placeholder rather than an empty div: the shell, the registry, the
- * routes and the lifecycle chrome are what Unit 7 delivers, and every later
- * unit hangs off them. Rendering nothing here would make the shell look broken
- * while it is in fact complete.
+ * **This function is the one file every sub-unit of Unit 9 must touch**, which
+ * is why it became a real dispatcher with the first tab rather than waiting for
+ * the last. The plan calls Unit 9 a fan-out point and says the five tabs are
+ * "disjoint by construction"; they are not, because all five arrive here. With
+ * the switch in place each remaining tab is one arm plus its own new file.
+ *
+ * The unbuilt arms keep the placeholder. Rendering nothing would make a
+ * finished shell look broken.
  */
-function TemplateTabBody({ tab }: { tab: TemplateTabId }) {
+function TemplateTabBody({
+  tab,
+  template,
+  editable,
+  onSaved,
+}: {
+  tab: TemplateTabId;
+  template: AdminAssetTemplateDto;
+  editable: boolean;
+  onSaved: (next: AdminAssetTemplateDto) => void;
+}) {
+  if (tab === "details") {
+    return <DetailsTab template={template} editable={editable} onSaved={onSaved} />;
+  }
   return (
     <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
       The {tab} editor is not wired up yet.
