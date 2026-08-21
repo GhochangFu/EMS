@@ -314,11 +314,47 @@ export default defineConfig({
       // above is the clean rerun. Pre-existing latent race, not introduced
       // here — recorded rather than fixed, since fixing an unrelated
       // suite's fixture resolution is out of this item's scope.
+      // Ratcheted by `F2.5` (template authoring UI, ADR 0038) from
+      // 49.9/45.3/50.6/50.0. Measured 2026-08-21 against the live database,
+      // all 128 files / 462 tests running and none skipped:
+      // 53.62 statements · 49.67 branches · 55.03 functions · 53.69 lines.
+      //
+      // **The attribution is clean, and that was checked rather than assumed.**
+      // `git rev-list --count $(git merge-base origin/main HEAD)..origin/main`
+      // is 0 — `origin/main` has not moved since this branch left it at
+      // `724efa9` — so the whole delta over the `F2.4` measurement
+      // (50.19/45.68/50.98/50.24) belongs to this item. The `F4.46` entry above
+      // records finding ~0.5 of unattributed drift sitting in its rise, and the
+      // `F4.37`/`F4.38` entries record this file getting attribution wrong
+      // twice. There is no such drift here.
+      //
+      // The rise is fifteen new `apps/web/src/lib/` modules, each shipped with
+      // its spec in its own commit — the calc-DSL editor rules
+      // (`calc-decorations`, `calc-preview`, `calc-token-ranges`,
+      // `formula-editor-rules`) and the eleven `template-*` form-rule modules
+      // behind the five authoring tabs. Branches lead again (+3.99 against
+      // +3.43 statements) for the reason the rules-split entry gives: these
+      // modules are almost entirely decision logic — kind switching, trigger
+      // policy, vocabulary closure, and the optional-key builders that decide
+      // between an absent key and a sent value.
+      //
+      // **Most of this item's volume is invisible to this gate.** Ten new
+      // `.tsx` files landed alongside — the five tabs, the editor and its lazy
+      // wrapper, the tab strip, and two pages — and `include` reaches
+      // `apps/web/src/lib/**` and nothing above it. That is deliberate and is
+      // why the logic was put in `lib/` in the first place: `apps/web`'s Vitest
+      // project runs `environment: "node"` over `src/**/*.test.ts`, so a `.tsx`
+      // is unreachable by any test in this repo. What those files promise is
+      // carried by the source scans in `tests/adr-0038-*.test.ts`, the same way
+      // ADR 0027's page-level guarantee is carried in `tests/repo-invariants`.
+      //
+      // `packages/shared/src/calc-dsl`'s widened re-export is coverage-neutral
+      // here for the reason the `F2.4` entry gives: `include` covers `apps/*`.
       thresholds: {
-        statements: 49.9,
-        branches: 45.3,
-        functions: 50.6,
-        lines: 50.0,
+        statements: 53.3,
+        branches: 49.3,
+        functions: 54.7,
+        lines: 53.4,
       },
     },
   },
