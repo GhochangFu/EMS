@@ -5,6 +5,7 @@ import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { AssetPointsAdminController } from "./asset-points/asset-points.controller";
 import { AssetPointsAdminService } from "./asset-points/asset-points.service";
 import { AssetTemplateInstantiationService } from "./asset-templates/asset-templates-instantiate.service";
+import { AssetTemplateMigrationService } from "./asset-templates/asset-templates-migrate.service";
 import { AssetTemplatesAdminController } from "./asset-templates/asset-templates.controller";
 import { AssetTemplatesAdminService } from "./asset-templates/asset-templates.service";
 import { AssetsAdminController } from "./assets/assets.controller";
@@ -66,6 +67,7 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     PointKeysAdminService,
     AssetTemplatesAdminService,
     AssetTemplateInstantiationService,
+    AssetTemplateMigrationService,
     AuditAdminService,
     TelemetryWriteService,
     TelemetryImportService,

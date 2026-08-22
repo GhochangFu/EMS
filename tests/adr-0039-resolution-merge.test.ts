@@ -6,6 +6,10 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const definitionsService = join(repoRoot, "apps/api/src/calc/calc-definitions.service.ts");
+const migrateService = join(
+  repoRoot,
+  "apps/api/src/admin/asset-templates/asset-templates-migrate.service.ts",
+);
 
 const BLOCK_COMMENT = new RegExp(["/", "\\*", "[\\s\\S]*?", "\\*", "/"].join(""), "g");
 const LINE_COMMENT = /\/\/.*$/gm;
@@ -131,5 +135,53 @@ describe("ADR 0039 — the calc resolution merge stays in the query", () => {
       "the asset_points join must not filter on active (D-2) — deactivating a telemetry " +
         "mapping must not silently stop a formula computing",
     ).not.toContain("assetPoints.active");
+  });
+});
+
+/**
+ * ADR 0039 decision 5 — "no backfill, and no marker on history".
+ *
+ * A migrated asset computes the new formula from the moment it migrates; values
+ * already stored under the old formula stay exactly as they are. The ADR
+ * records the resulting mid-series formula change as an **accepted** reporting
+ * hazard rather than a solved one, and this is the guard against someone
+ * later deciding to "fix" it.
+ *
+ * Asserted in source rather than only behaviourally because the honest
+ * behavioural test would write into `telemetry.point_values` — a hypertable
+ * feeding continuous aggregates, which AGENTS.md §4.4 records cannot be cleaned
+ * up by deleting the raw row. `asset-templates.migrate.integration.spec.ts`
+ * asserts the global row count is unchanged by an apply, which is the same
+ * claim without the write; this catches the case that suite cannot, since it
+ * skips without `DATABASE_URL`.
+ */
+describe("ADR 0039 decision 5 — a migration never touches history", () => {
+  const migrateSource = stripComments(readFileSync(migrateService, "utf8"));
+
+  it("found the migration service, so the scans below are not silently empty", () => {
+    expect(
+      migrateSource.length,
+      `${migrateService} is empty or unreadable — this suite proves nothing`,
+    ).toBeGreaterThan(500);
+    expect(migrateSource, "the service must still update the pin it exists to move").toContain(
+      "assets.templateId",
+    );
+  });
+
+  it("writes to no telemetry table and refreshes no aggregate", () => {
+    for (const forbidden of [
+      "pointValues",
+      "point_values",
+      "refreshAggregatesFrom",
+      "TelemetryWriteService",
+    ]) {
+      expect(
+        migrateSource,
+        `asset-templates-migrate.service.ts must never reference ${forbidden}. ADR 0039 ` +
+          "decision 5 accepts a series whose formula changed midway as a reporting hazard " +
+          "rather than backfilling or marking it, and a migration that quietly rewrote " +
+          "stored values would be unrecoverable.",
+      ).not.toContain(forbidden);
+    }
   });
 });
