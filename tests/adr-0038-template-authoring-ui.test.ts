@@ -183,3 +183,72 @@ describe("ADR 0038 decision 2 — the tab registry declares exactly five tabs", 
     ).toEqual(ids);
   });
 });
+
+/**
+ * ADR 0038 decision 10 — the residual 403 renders **the sentence**.
+ *
+ * D10 says the organization-scope case "falls through to the API's 403,
+ * rendered inline. The message the service already writes … is the right one."
+ *
+ * Two separate things had to be true for that, and only the first was:
+ *
+ * 1. The branch must run. It could not until `F4.52` — `adminFetch` saw the
+ *    403, `clearSessionOnAuthFailure` treated it as an authentication failure,
+ *    and the session was gone before React rendered anything.
+ * 2. It must show the message, not the envelope around it. `adminFetch` throws
+ *    `new Error(text)` with the **whole body**, so rendering `.message` raw put
+ *    `{"message":"…","error":"Forbidden","statusCode":403}` on screen. Measured
+ *    in the browser as `phe-admin@bms.local`, once the session survived long
+ *    enough to see it.
+ *
+ * This is a source-text invariant for the same reason the rest of this file
+ * is: the surface is `.tsx`, and `apps/web`'s Vitest project runs
+ * `environment: "node"` over `src/**` + `*.test.ts`, so no component test can
+ * reach it. Adding one needs `jsdom` and a §9.4 dependency ADR. Until then a
+ * text scan is what stands between this and a silent regression — the render
+ * fix shipped with no gate at all, which the `F4.52` correctness review proved
+ * by reverting the line and watching 312 tests stay green.
+ */
+describe("ADR 0038 decision 10 — the 403 renders the service's sentence", () => {
+  const rel = "apps/web/src/pages/admin/asset-template-detail-page.tsx";
+  const raw = readFileSync(join(repoRoot, rel), "utf8");
+  const source = stripComments(raw);
+
+  // The load-error branch only: `templateQ.isError` to the end of the `<p>`
+  // that renders it. Scoped so the tab-save handlers, which have always used
+  // `apiErrorMessage`, cannot satisfy an assertion about this branch.
+  const branchMatch = source.match(/if\s*\(templateQ\.isError[\s\S]*?<\/p>/);
+  const branch = branchMatch ? branchMatch[0] : "";
+
+  it("found the load-error branch, so the scans below read something", () => {
+    // Without this the two assertions pass over an empty string — the failure
+    // mode this whole file exists to prevent.
+    expect(
+      branchMatch,
+      `could not find the load-error branch in ${rel}. The scan is broken, not ` +
+        "necessarily the page: it expects `if (templateQ.isError` followed by the " +
+        "closing `</p>` of the message. Fix the regex or the branch — an empty " +
+        "scan must never read as compliance.",
+    ).not.toBeNull();
+  });
+
+  it("renders the message through apiErrorMessage, not the raw body", () => {
+    expect(
+      branch,
+      `${rel}'s load-error branch does not call apiErrorMessage. ADR 0038 D10 asks ` +
+        "for the sentence the service writes; adminFetch throws the whole response " +
+        "body, so rendering it directly shows " +
+        '{"message":"Template is outside your access scope","error":"Forbidden",' +
+        '"statusCode":403} to the author instead.',
+    ).toContain("apiErrorMessage");
+
+    // The specific revert this guards against — the shape the line had before
+    // `F4.52`, and the shape a future edit would most plausibly reintroduce.
+    expect(
+      branch,
+      `${rel}'s load-error branch reads .message off the error directly. That is ` +
+        "the whole JSON envelope, not the message. Pass the error to " +
+        "apiErrorMessage instead.",
+    ).not.toMatch(/templateQ\.error[^)]*\)?\s*\??\.\s*message/);
+  });
+});

@@ -33,6 +33,15 @@ export default defineConfig({
       // rather than a flattering subset. `apps/web` is scoped to `src/lib`
       // because everything above it is React components with no test story
       // yet — including them would report a number that says nothing.
+      //
+      // **That rationale no longer describes all of it** (`F4.52`).
+      // `apps/web/src/api/http.ts` is pure logic, not a component, and it now
+      // has `http.spec.ts` behind a `.test.ts` wrapper — the suite runs it
+      // (`apps/web/vitest.config.ts` includes `src/**/*.test.ts`), but this
+      // gate cannot see it. Do not widen `include` here as a tidy-up: adding a
+      // path moves the denominator and every threshold below is a measurement
+      // against the current one. Fold `apps/web/src/api/**/*.ts` in at the
+      // next deliberate ratchet, with a fresh measurement.
       include: [
         "apps/api/src/**/*.ts",
         "apps/web/src/lib/**/*.ts",
