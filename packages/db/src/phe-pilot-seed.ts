@@ -6,6 +6,7 @@ import type pg from "pg";
 
 import type { BmsDb } from "./client";
 import { getOrganizationId } from "./hierarchy-seed";
+import { ENABLED_SET_VERSION, resolveIngestEnabled } from "./ingest-enabled-set";
 import { assets, locations } from "./schema/bms-schema";
 
 type PheCatalogRow = {
@@ -182,7 +183,36 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       continue;
     }
 
-    const ingestEnabled = edgeRtuId === catalog.pilotEdgeRtuId;
+    // What the database already thinks, read before the upsert overwrites it.
+    // `ingest_enabled` stopped being the seed's to assert on every run at
+    // `F1.7`: the admin RTU screen writes this column, and re-asserting it here
+    // reverted an operator's decision on the next `pnpm db:seed` — which CI
+    // runs on every PR. `resolveIngestEnabled` owns the rule; see its comment.
+    const existingRtu = await pool.query<{
+      ingest_enabled: boolean;
+      enabled_set_version: string | null;
+    }>(
+      `SELECT ingest_enabled, meta->>'enabledSetVersion' AS enabled_set_version
+       FROM bms.rtus WHERE external_rtu_id = $1`,
+      [edgeRtuId],
+    );
+    const existingRow = existingRtu.rows[0];
+    const resolved = resolveIngestEnabled({
+      rtuCode: head.RTUCode,
+      existing:
+        existingRow === undefined
+          ? null
+          : {
+              ingestEnabled: existingRow.ingest_enabled,
+              enabledSetVersion: existingRow.enabled_set_version,
+            },
+    });
+    const ingestEnabled = resolved.ingestEnabled;
+    // Derived from the *resolved* value, not from the catalog's opinion, so the
+    // invariant the simulator depends on holds however the row got here: an
+    // RTU is `mqtt` on both `rtus.source_type` and its assets'
+    // `meta.telemetrySource`, or on neither. Split them and ingest and
+    // `apps/sim` write the same points.
     const sourceType = ingestEnabled ? "mqtt" : "catalog";
     const rtuCode = `RTU-${head.RTUCode}`;
 
@@ -218,7 +248,14 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
         head.StationCode,
         head.StationName,
         ingestEnabled,
-        JSON.stringify({ orgCode: catalog.org.orgCode, pilot: ingestEnabled }),
+        JSON.stringify({
+          orgCode: catalog.org.orgCode,
+          // `pilot` still means the ADR 0007 RTU specifically, not "ingesting".
+          // Nine RTUs ingest now; one of them is the pilot.
+          pilot: edgeRtuId === catalog.pilotEdgeRtuId,
+          // The stamp that makes this row the operator's from here on.
+          enabledSetVersion: ENABLED_SET_VERSION,
+        }),
       ],
     );
 
