@@ -1894,8 +1894,12 @@ Process (`AGENTS.md` §10).
   no rule engine, deliberate per ADR 0019 §3 and verified in code here,
   mitigated for now by turning the Alarms banner from a disclaimer into an
   instruction.
-- **Still unverified:** the org-scope 403 in the browser. It needs a second
-  sign-in, and its inline-message half cannot pass until `F4.52` is settled.
+- ~~**Still unverified:** the org-scope 403 in the browser.~~ **Verified
+  2026-08-22 by `F4.52`** (see that section below). Opening an out-of-scope
+  template by URL as `phe-admin@bms.local` now renders *"Template is outside
+  your access scope"* inline with the session intact. The blocker was not the
+  second sign-in but the session clear — and decision 10's residual case is
+  the **read** path, while D10's own text quotes the **write** path.
 
 ### Template version lifecycle (`F2.6`, ADR 0039) — done
 
@@ -1970,6 +1974,69 @@ Process (`AGENTS.md` §10).
   instantiated from the browser at all), new evidence appended to `F4.53`,
   and a comment-only correction to migration `0037`'s header that the
   drizzle hook correctly refuses to let an agent make.
+
+
+### A 403 keeps the session (`F4.52`, ADR 0038 D10) — done
+
+- **Status:** merged 2026-08-22 (PR #136, three commits squashed as
+  `952165b`). No ADR — no new dependency, no schema change, no §10
+  promotion; a defect fix inside merged `F2.5` / ADR 0038 scope.
+- **The defect.** `clearSessionOnAuthFailure` treated **403 exactly like
+  401** and cleared the session, so an authorization refusal logged the user
+  out of a valid session and discarded whatever they had typed. The two do
+  not mean the same thing: 401 is *we do not know who you are*, where
+  dropping the token is the repair; 403 is *we know exactly who you are and
+  you may not do this*, where the session is fine. Found during the `F2.5`
+  section 7 browser pass and confirmed from two roles — a refused **save**
+  as `wc-admin@bms.local`, and a refused **read** as `phe-admin@bms.local`
+  opening an out-of-scope template by URL.
+- **The ruling.** Option A: narrow the helper to 401 only, rather than
+  pushing the decision out to each of the 42 `adminFetch` call sites.
+- **Why the narrowing is safe, checked before any code was written.** No 403
+  in this API becomes a success by signing in again. `JwtAuthGuard` is the
+  only `CanActivate` in the app and throws `UnauthorizedException` for a
+  missing, malformed, expired or unverifiable token in both the local and
+  the OIDC path; there is no global guard and no exception filter that could
+  remap a status. **One 403 carries no principal at all** — `audit.service.ts`
+  refuses a valid token whose subject matches no `users` row — and it argues
+  *for* the change, because re-authentication cannot provision an account and
+  clearing the session there would loop the login. That case is why the first
+  docblock wording ("every 403 is an authorization decision about a known
+  user") was wrong and was narrowed.
+- **It made ADR 0038 decision 10 reachable, then had to finish the job.** D10
+  says the organization-scope case "falls through to the API's 403, rendered
+  inline". The renderer was always there; the session clear was what stopped
+  it running. Making the path reachable exposed a second defect nobody could
+  previously see — the branch rendered the whole body,
+  `{"message":"…","error":"Forbidden","statusCode":403}`, not the sentence.
+  D10 asks for the message, so that belonged to this item rather than a
+  follow-up. **D10 is now true as written, with no amendment owed** — though
+  the two halves were verified by different routes: D10's text quotes the
+  *write* path, while what was measured in the browser is the *read* path.
+- **What the reviews caught, and both were real.** Three reviewers returned no
+  Blocking, Critical or High finding. They did find that the premise the whole
+  fix rests on was **prose in a docblock**, and that the render fix **shipped
+  with no gate at all** — proved by reverting the line and watching 312 tests
+  stay green. Both are now mutation-proved gates:
+  `tests/f4.52-auth-failure-status.test.ts` (the guard throws no
+  `ForbiddenException`, and no global guard or filter can remap a status) and
+  a D10 scan in `tests/adr-0038-template-authoring-ui.test.ts` scoped to the
+  load-error branch so the tab handlers cannot satisfy it.
+- **Verified:** `pnpm typecheck` and `typecheck:tests` clean, **145 files /
+  586 tests with none skipped**, coverage 56.73 · 52.97 · 58.75 · 56.71
+  against thresholds 53.7/50.0/55.3/53.8. Both directions were run against
+  the **rebuilt container**, with the served bundle checked for `===403`
+  after each rebuild rather than assumed.
+- **Known cost, accepted.** The API authorizes on the *database* role while
+  the UI gates on the role claim stored at login, so a mid-session downgrade
+  now leaves a stale menu until the token expires. The old behaviour resynced
+  it only by destroying a valid session on every ordinary refusal.
+- **Three things raised rather than smuggled in:** `F4.63` (the `QueryClient`
+  default `retry: 3` makes a 403 cost four requests and ~40s before the
+  message renders), two sibling render sites still showing a raw envelope
+  (`asset-templates-page.tsx:192`, `alarm-details-panel.tsx:205` — neither
+  newly reachable), and a pre-existing 403 body that interpolates an
+  out-of-scope asset code (`asset-templates-migrate.service.ts:393`).
 
 
 ### Phase 6 — Premium visuals (~3 weeks)
