@@ -154,9 +154,6 @@ export class AssetPointCalcOverrideService {
 
     // Q-A of this unit: the synthesised key is checked before the transaction,
     // like every other fallible decision, so an over-long point key is a named
-    // error rather than a rolled-back insert.
-    // Q-A of this unit: the synthesised key is checked before the transaction,
-    // like every other fallible decision, so an over-long point key is a named
     // error rather than a rolled-back insert. It is non-null exactly when this
     // call creates the row, which is what lets the insert below use it with no
     // fallback — a bare `pointKey` is not the `computed:` format that
