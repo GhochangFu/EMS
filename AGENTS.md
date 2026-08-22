@@ -51,7 +51,10 @@
 > `measured` removal, re-key or domain change, plus per-asset calc overrides
 > resolved as `coalesce(asset_points.<col>, template_points.<col>)` per column
 > (**ADR 0039**, amending ADR 0015's identity invariant and ADR 0037
-> decision 4, `F2.6`).
+> decision 4, `F2.6`), and the **MQTT fleet** — ADR 0007 decision 4's one-RTU
+> limit superseded by five RTUs *measured* publishing readable values, with
+> `bms.rtus.ingest_enabled` asserted once by the seed and owned by the operator
+> thereafter (**ADR 0007 Amendment 1**, `F1.7`).
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
@@ -112,9 +115,11 @@ Key` catalog with scoped `admin`, `organization_admin`, and `location_admin`
 roles and CRUD screens under `/admin/*`. The **scoped AI onboarding wizard**
 (ADR 0011) adds an admin-only conversational ingestion flow backed by OpenAI
 chat completions with a deterministic rule-based fallback. The **PHE MQTT
-real-ingestion pilot** (ADR 0007, 0012) added `apps/ingest`, a single-RTU MQTT
-TLS subscriber for West Bengal PHE pump houses, plus AES-256-GCM encrypted RTU
-connection credentials. These promotions are partial and scoped: general
+real-ingestion pilot** (ADR 0007, 0012) added `apps/ingest`, an MQTT TLS
+subscriber for West Bengal PHE pump houses, plus AES-256-GCM encrypted RTU
+connection credentials. **ADR 0007 Amendment 1 (accepted 2026-08-22, `F1.7`)
+superseded decision 4's one-RTU limit: live ingest now covers five of the twelve
+catalogued RTUs**, measured rather than chosen. These promotions are partial and scoped: general
 site-wide AI copilot, EMQX, and non-MQTT protocol adapters remain out of scope.
 
 ---
@@ -163,9 +168,16 @@ The current planning direction is:
    with `admin`, `organization_admin`, and `location_admin` roles. Org-level
    read RBAC and hard deletes remain out of scope (deactivate/reactivate only).
 17. Treat the **PHE MQTT real-ingestion pilot** (ADR 0007, 0012) as in scope
-   for the single pilot RTU only via `apps/ingest`. EMQX and non-MQTT protocol
-   adapters remain deferred; the simulator stays the source for all other
-   assets.
+   via `apps/ingest` for **the five RTUs named in
+   `packages/db/src/ingest-enabled-set.ts`** — ADR 0007 Amendment 1 (2026-08-22,
+   `F1.7`) superseded the one-RTU limit. **Widening that set is an owner
+   decision, not an agent's**: it is a measurement about pump houses, and
+   enabling a station that does not publish a readable value takes its assets
+   from simulated to dead, because decision 5 makes `apps/sim` skip anything
+   marked `telemetrySource='mqtt'`. Re-measure with
+   `apps/ingest/scripts/fleet-probe.mjs` before proposing a change. EMQX and
+   non-MQTT protocol adapters remain deferred; the simulator stays the source
+   for all other assets.
 
 The completed prototype screens are:
 
@@ -201,7 +213,7 @@ entry **D-0001**.
 | Telemetry aggregates | Four hierarchical continuous aggregates over `telemetry.point_values` — `point_values_1m` ← raw, `_5m` ← `_1m`, `_1h` ← `_5m`, `_1d` ← `_1h` (**ADR 0023**, `F4.1`, migration `0027`). **There is no `avg_value` column at any level and there must never be one**: `avg` does not compose, and building an hourly figure as `avg(avg_value)` over minute buckets was wrong in **151 of 169** buckets on real pilot data because samples per minute range 1–60. Store `sum_value`/`sample_count`/`min_value`/`max_value`; divide at read time. A total-level test does **not** catch the error — summed over the window both forms agree. **`timescaledb.materialized_only = false` is set explicitly on all four**, which on 2.29.1 is the *opposite* of the default: leave it and every live view's right edge silently disappears. Real-time aggregation has been deprecated upstream since 2.13, which is why the compose image is **pinned**. Reads go through `apps/api/src/telemetry/point-aggregates.ts`, never inline SQL — **all seven rollup reads are converted** (**ADR 0025**, `F4.28`): four in `dashboard.service.ts` (`loadTrend`, `energySummary`, `energySourceMix`, `energyTopConsumers`) and three in `reports.service.ts`. The raw reads in `map.service.ts`, `telemetry.service.ts` and `rules.service.ts` stay on raw **by decision** — they serve individual samples, which is what a hypertable is good at. **Level choice comes from `levelForRange`, never an inline ternary**, and it is keyed on how far *back* a range reaches, never on its duration: a duration-keyed selector sends a 24-hour range dated three years ago to `_1m`, which is dropped at 735 days and reads as **empty**. `end` plays no part — it is routinely in the future, both because `reports.service.ts` sets it to `endDate T23:59:59.999Z` and because the MQTT ingest writes ahead of `now()`. **Two guarantees here are static tests, not behavioural ones, and that is deliberate**: no behavioural test can catch a read reverting to `date_trunc` over raw, because every parity test compares against the raw query it replaced and a revert compares that query with itself (measured: a fully reverted `loadTrend` leaves the suite green); and no test can catch a missing `bucketHours` factor while every converted level makes it `1`. Both live in `tests/repo-invariants.test.ts` and `tests/adr-0025-level-selector.test.ts`. Backfill is `pnpm db:refresh-aggregates`, **not** a migration: `refresh_continuous_aggregate()` cannot run in a transaction and Drizzle's migrator wraps the run in one. **Compression and retention (ADR 0024, `F4.2`, migration `0028`):** raw compresses at 7 d and drops at **730 d**; `_1m`/`_5m` compress at 7 d and drop at **735 d**; `_1h`/`_1d` are **never dropped and not compressed** — after raw's 730 days they are the only record, at hourly resolution. The 735-vs-730 gap is an invariant, not rounding: `retention(aggregate)` must be **strictly greater** than its source's, because dropping an aggregate's old chunks leaves the watermark high, so that range reads as **empty** while raw still holds the rows — and **no refresh rebuilds it**. `pnpm db:refresh-aggregates` is therefore lower-bounded at **each level's own source's** oldest surviving chunk, never at raw's for all four: only `_1m` reads raw, and using raw's floor for the levels above it deletes `_1h`/`_1d` whenever raw's retention runs ahead of `_1m`'s |
 | Migrations   | Drizzle ORM for tables; raw SQL for the Timescale hypertable **and its four continuous aggregates** (ADR 0016 predates them; ADR 0023 adds them). Drizzle cannot manage a continuous aggregate: it is `relkind = 'v'`, and declaring one with `.table()` makes `pnpm db:generate` emit `CREATE TABLE` for it. They are declared `.view().existing()` in `packages/db/src/schema/telemetry-schema.ts` so generate leaves them alone — verified by running it. Their **compression and retention policies** are raw SQL too (`0028`, ADR 0024) and *can* live in a migration: the `ALTER … SET (timescaledb.compress …)` and both `add_*_policy()` functions are transaction-safe, verified by `BEGIN`/`ROLLBACK` leaving zero jobs. Use `add_compression_policy`, **not** `add_columnstore_policy` — the newer name is a *procedure* needing `CALL`, which is not what drizzle emits. `0028` also opens with `SET LOCAL lock_timeout` and **resets it before ending**: the compress `ALTER` takes an ACCESS EXCLUSIVE lock on `point_values`, and drizzle wraps **the whole run** in one transaction, so an unreset `SET LOCAL` reaches every later migration in that run |
 | Simulator    | Node script in `apps/sim` generating fake meter + sensor values |
-| Real ingestion | `apps/ingest` MQTT TLS subscriber for the PHE pilot; writes `telemetry.point_values` and `pg_notify('bms_telemetry', …)` like the simulator (ADR 0007). One pilot RTU only; no EMQX. **One entry point since the ADR 0016 §6 strangler migration finished**: `pnpm start` → `node dist/main.js` is the adapter host, and it is what compose and the pilot run. Commit 3 cut the *deployment* over on 2026-08-06; **commit 4 on 2026-08-14 deleted `src/index.js`**, removed the compose `command:` override and the `start:host` script, so there is no longer a legacy path one line away — reverting means reverting the commit. The host needs a build before it runs and does **not** fall back to JavaScript if you skip it; the image compiles before `CMD`. **`pg_notify` is unconditional and `INGEST_NOTIFY` no longer exists** — do not add it back to `docker-compose.yml`, which a repo invariant now fails on: it would do nothing, because the flag is gone from the code. If dashboards are dead while ingest is healthy, the cause is downstream, not a missing compose line; watch `written=` on the health body, since `notify=on` there is a literal and reports intent rather than delivery. **The downstream half was `F4.34` and it is fixed (2026-08-14, PR #33)** — the API's `LISTEN` now reconnects rather than dying, so the check is `bms_api_telemetry_listener_connected` on the API's `/metrics`: ingest `written=` climbing with that gauge at 0 localises the fault to the API side in one step. See [`docs/ingest-host.md`](./docs/ingest-host.md) |
+| Real ingestion | `apps/ingest` MQTT TLS subscriber for the PHE pilot; writes `telemetry.point_values` and `pg_notify('bms_telemetry', …)` like the simulator (ADR 0007). **Five RTUs since ADR 0007 Amendment 1** (2026-08-22, `F1.7`) — the set is `packages/db/src/ingest-enabled-set.ts`, measured not chosen, and the seed asserts it **once** then leaves `ingest_enabled` to the operator, stamping `rtus.meta.enabledSetVersion` to record that it did. **Enabling or disabling an RTU needs an ingest restart**: the reload swaps point mappings only, and MQTT groups a whole broker into one endpoint, so the "new endpoint" warning cannot fire for a device change — the host logs `endpoint device set changed; restart required to apply` instead. A payload is accepted only on the topic its device is bound to, so a station cannot publish another's `dev_id`. No EMQX. **One entry point since the ADR 0016 §6 strangler migration finished**: `pnpm start` → `node dist/main.js` is the adapter host, and it is what compose and the pilot run. Commit 3 cut the *deployment* over on 2026-08-06; **commit 4 on 2026-08-14 deleted `src/index.js`**, removed the compose `command:` override and the `start:host` script, so there is no longer a legacy path one line away — reverting means reverting the commit. The host needs a build before it runs and does **not** fall back to JavaScript if you skip it; the image compiles before `CMD`. **`pg_notify` is unconditional and `INGEST_NOTIFY` no longer exists** — do not add it back to `docker-compose.yml`, which a repo invariant now fails on: it would do nothing, because the flag is gone from the code. If dashboards are dead while ingest is healthy, the cause is downstream, not a missing compose line; watch `written=` on the health body, since `notify=on` there is a literal and reports intent rather than delivery. **The downstream half was `F4.34` and it is fixed (2026-08-14, PR #33)** — the API's `LISTEN` now reconnects rather than dying, so the check is `bms_api_telemetry_listener_connected` on the API's `/metrics`: ingest `written=` climbing with that gauge at 0 localises the fault to the API side in one step. See [`docs/ingest-host.md`](./docs/ingest-host.md) |
 | Master data  | Organization → Location → RTU → Asset → Point-key catalog + `/admin/*` CRUD with `admin`/`organization_admin`/`location_admin` roles (ADR 0008–0010). **ADR 0018** separates the axes: an asset must have a `location_id` (`NOT NULL`) and need not have an `rtu_id` (nullable); telemetry provenance binds at `asset_points.source_kind` (`measured`/`manual`/`computed`/`unmapped`), not at the asset |
 | Asset templates | `bms.asset_templates` + `bms.template_points`, where a row **is** a version and `assets.template_id` pins it (ADR 0015). Published versions are immutable; editing one creates the next draft. `POST /admin/asset-templates/:id/instantiate` builds assets from a published version — target is `rtuId` **xor** `locationId`. A `template_points.kind = 'derived'` point is still re-validated against the active catalog, but **instantiation** never creates an `asset_points` row for it. Since `F2.4` and `F2.6` two other paths do, both writing the same synthesised `computed:<pointKey>` from one shared formatter: `CalcWriteService` on the point's first computed value, and the ADR 0039 override endpoint, which creates the row **eagerly** because waiting for a first value is circular when the override may be the very thing that lets one be produced. **A version is no longer a one-way pin**: `POST /admin/asset-templates/:id/migrate` moves an asset between published versions of the same code, previewed and audited (ADR 0039) — see *Template versions & overrides* below |
 | Template content | `asset_templates.content` carries the `E1.7` overlay under **ADR 0019**, tiered by whether a consumer exists on `main`. **Bound** (`alarms`, `maintenance`) import their vocabularies from `rules.schema.ts` / `maintenance.schema.ts` — never restate them. **Since `F4.45` two of them are no longer enums**: `alarms[].category` is a *code* into `bms.rule_categories` (ADR 0031 A1) and, since **ADR 0032**, `alarms[].severity` is a code into `bms.alarm_severities`. The schema bounds their shape only; the check that each names a live value lives in `AssetTemplatesAdminService.assertTemplateAlarmVocabularies`, called on create, update **and publish** — publish was added by ADR 0032 and is not optional, because it used to get the check for free from the enums and a pre-ADR row could otherwise be published carrying an alarm the rule engine cannot run. **That method deliberately does not call `assertRuleCategory`/`assertAlarmSeverity`**: those echo the rejected code back, which is right for a value a caller just typed and wrong over *stored* content, where pre-ADR rows hold arbitrary JSON and the echo becomes a disclosure channel. `operator` is still an enum and still bound the way this row describes. The guard was **relocated, not dropped** — a template is an authoring surface, so a category that does not exist is a defect authored now and found whenever template alarms become rules. **`alarms.philosophy.skill` joined the Bound list under ADR 0034** (`E2.1`) — not via the enum-to-code route `category`/`severity` took, since `skill` was plain free text rather than a `z.enum`, but the same destination: a code into `bms.alarm_skills`, checked by a third non-echoing branch of the same `assertTemplateAlarmVocabularies` call. `cause`/`impact`/`action` stay ordinary free text, as they always were. The other three enrichment fields named by `E2.1` — affected assets, energy/water/production impact, ETR — are properties of a *live alarm instance*, not an asset class; ADR 0034 records that no `automation_rules` row links back to the `TemplateAlarm` it may have come from, so a template cannot carry them, permanently, not merely until a consumer exists. **Anchored** (`kpis`, `dashboards`) check point-key references. `kpis.expression` is **no longer always opaque**: `dialect` widened from a locked `"unvalidated"` literal to `z.enum(["unvalidated", "bms-calc-v1"])` (**ADR 0036**, `F2.3`), and `"bms-calc-v1"` triggers real parsing — grammar, whitelisted functions, and a `{pointKey}` cross-check against `pointKeys` — through the parser in `packages/shared/src/calc-dsl/` (see the *Calc DSL* row below). Existing `"unvalidated"` rows keep validating as bounded strings, unchanged; nothing forces a re-save. A dashboard view still carries *ordered point keys only* until `F3.1` defines the widget vocabulary. **Reserved** (`health`, `optimisation`) are **rejected**, each naming its blocking item. Every referenced point key must be one the template declares — checked on create, update and publish, because `content` and `points` are patched independently and a points patch can orphan content the request never mentioned. `POST :id/draft` is deliberately **exempt**: it byte-copies stored content, and validating it would strand a pre-ADR template behind its own immutable published version. Nothing converts this into a running rule or a maintenance row; it is the authoring surface only |
@@ -334,7 +346,7 @@ bms/
 │   │                            controller, wired via CalcModule with no
 │   │                            HTTP surface of its own. See §2 *Calc engine*
 │   ├── sim/                   ← telemetry simulator (Node script)
-│   └── ingest/                ← PHE MQTT TLS subscriber (ADR 0007), one pilot RTU.
+│   └── ingest/                ← PHE MQTT TLS subscriber (ADR 0007), five RTUs.
 │                                ONE entry point since §6 commit 4 (2026-08-14):
 │                                src/host/ + src/adapters/ + src/main.ts →
 │                                dist/main.js, run by `pnpm start`. src/index.js
@@ -1082,9 +1094,24 @@ sidebar; keep scoped visibility and active-state behaviour consistent with
 These are intentionally deferred. Do not implement them yet:
 
 - Multi-tenancy, row-level security (org-level read RBAC still deferred)
+- **Clamping a device timestamp at ingest, and widening the enabled RTU set.**
+  `F1.7` left both open on purpose. `parsePayload` takes the envelope's `ts`
+  verbatim and nothing bounds it; measured 2026-08-22, the twelve PHE devices
+  span **−3:02:36 to +34:31** against the server, and all five *enabled* ones
+  run ahead — so each reads online for as long as its clock leads after it dies.
+  `F4.37` closed the sink-side half and named `F1.7` as where the ingest-side
+  clamp belongs, then called the trade a **product call**: clamping forward only,
+  substituting receive time past a bound, and recording both times are three
+  different answers with different costs, and choosing is the owner's under §10
+  (see `F4.57`). Likewise the four RTUs held out of the set are held for measured
+  reasons — two with dark meters (`F4.58`), two whose rows land outside every
+  dashboard window — and enabling one takes its assets from simulated to dead.
+  Re-measure with `apps/ingest/scripts/fleet-probe.mjs`; do not widen the set
+  unprompted.
 - MFA / SSO / AD federation
 - Real protocol adapters for BACnet, Modbus, SNMP, OPC-UA, REST polling, DCS.
-  The **MQTT PHE ingest pilot is promoted for one RTU** (ADR 0007), and **ADR
+  The **MQTT PHE ingest pilot is promoted for five RTUs** (ADR 0007 as amended
+  2026-08-22), and **ADR
   0016 is promoted in full, §6 commit 4 included** (2026-08-14): the
   `IngestAdapter` interface, the host that supervises it, and the MQTT adapter
   ported onto it are all on `main`, and the legacy entry point is deleted.
@@ -1229,8 +1256,9 @@ force-changeover, sensor calibration/test execution, real-ingestion rules,
 scheduler/job queues, and complex node graph builders remain out of scope
 until their specific sprint is promoted. General site-wide AI Copilot /
 chatbot remains deferred, but the scoped admin onboarding wizard (ADR 0011),
-the hierarchical master-data admin (ADR 0008–0010), and the single-RTU PHE
-MQTT ingest pilot (ADR 0007, 0012) are promoted and in scope.
+the hierarchical master-data admin (ADR 0008–0010), and the PHE MQTT ingest
+pilot (ADR 0007, 0012 — five RTUs since Amendment 1) are promoted and in
+scope.
 
 **Also promoted since, and in scope now** — the SOW-driven backlog
 (`docs/BACKLOG.md`) delivered against `docs/build-operating-model.md`:
@@ -1303,7 +1331,8 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
 No protocol broker yet. Just Postgres, Redis for realtime fan-out,
 Keycloak for local/pilot OIDC, optional observability services, Node, and
 Docker Compose for reproducible development. Phase 2 is **no longer paused**:
-the single-RTU PHE MQTT pilot ships in `apps/ingest` (ADR 0007, 0012), and
+the PHE MQTT pilot ships in `apps/ingest` (ADR 0007, 0012) across five RTUs,
+and
 ADR 0016 froze the adapter interface and — §6 complete through commit 4 — shipped
 the host that runs it with MQTT ported onto it, as the sole entry point. What remains gated is each *further
 protocol implementation*, per §2 and §6 — not Phase 2 as a whole. Phase 5 Sprint A used the existing API and
