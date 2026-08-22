@@ -410,9 +410,11 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
             // looking. Passing it alone rendered every authoring form fully
             // editable for a `location_admin`: they could fill in a whole
             // alarm set, press Save, and get a 403 — which `adminFetch` then
-            // treats as an auth failure and clears the session, so the work
+            // treated as an auth failure and cleared the session, so the work
             // was lost and they were returned to the login screen. Measured
             // on the running stack as `wc-admin@bms.local`, not reasoned about.
+            // `F4.52` stopped the logout; this gate is what stops the wasted
+            // work, and both are needed.
             //
             // ADR 0038 decision 10 says authoring is **role-hidden**. That was
             // applied to the lifecycle buttons and not to the tab bodies, so

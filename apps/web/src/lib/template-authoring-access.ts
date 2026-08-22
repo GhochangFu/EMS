@@ -30,10 +30,12 @@
  * the sentence ADR 0038 decision 10 quotes and is correct for a write. See
  * `asset-template-detail-page.tsx`'s docblock for all three.
  *
- * **And the detail page may not render either of them today.** `F4.52`:
- * `clearSessionOnAuthFailure` treats 403 like 401 and clears the session, so
- * the user is returned to the login screen before any message can show.
- * Confirmed on the running stack from both roles on 2026-08-21.
+ * **The detail page renders them since `F4.52`.** Until then
+ * `clearSessionOnAuthFailure` treated 403 like 401 and cleared the session, so
+ * the user was returned to the login screen before any message could show —
+ * confirmed on the running stack from both roles on 2026-08-21. It now clears
+ * on 401 only, which is what makes D10's fall-through reachable rather than
+ * merely intended.
  *
  * This is a deliberate gap, not an oversight, and
  * `template-authoring-access.spec.ts` asserts both halves of it: that the scope
@@ -90,9 +92,10 @@ export function canInstantiateTemplates(role: UserRole): boolean {
  * The detail page asked only the first. The lifecycle buttons were correctly
  * role-hidden, so the page *looked* right, while every field in all five tabs
  * stayed editable on a draft. A location admin could author a complete alarm
- * set, press Save, and receive a 403 — which `clearSessionOnAuthFailure`
- * treats as an authentication failure, clearing the session. The work was
- * lost and the user was returned to the login screen.
+ * set, press Save, and receive a 403 — which `clearSessionOnAuthFailure` then
+ * treated as an authentication failure, clearing the session. The work was
+ * lost and the user was returned to the login screen. `F4.52` fixed that
+ * second half; this module is still what stops the first.
  *
  * ADR 0038 decision 10 says authoring is **role-hidden** and scope-refused.
  * Hiding the buttons is half of it; a form that cannot be saved must not
