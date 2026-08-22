@@ -36,6 +36,9 @@ sensor, `DataKey` mapping) lives in `TeleCash_Wallet_1` on Azure SQL.
 
 ## Amendment 1 — decision 4 is superseded by a measured five (2026-08-22)
 
+**Status: Accepted — 2026-08-22.** Ruled by the repository owner at the §10
+gate, after the four-agent review round that produced the held-back set below.
+
 Written at the `F1.7` gate. It supersedes decision 4's one-RTU limit, and
 records the ownership rule that limit's removal forced. The two are one act:
 the second exists only because of the first.
