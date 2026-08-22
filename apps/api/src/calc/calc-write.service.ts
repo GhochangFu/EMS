@@ -8,20 +8,13 @@ import type { BmsDb } from "@bms/db";
 import { DRIZZLE, POOL_TOKEN } from "../database/database.tokens";
 import { MetricsService } from "../observability/metrics.service";
 import { chunkForNotify, type NotifyReading } from "../admin/telemetry-entry/notify-chunk";
+import { SOURCE_DATA_KEY_MAX_LENGTH, computedSourceDataKey } from "./computed-source-data-key";
 
 /** Same batching as `TelemetryWriteService` — mirrors the ingest normaliser. */
 const MAX_ROWS_PER_STATEMENT = 500;
 
 /** Postgres `unique_violation`. */
 const UNIQUE_VIOLATION = "23505";
-
-/** `bms.asset_points.source_data_key` is `varchar(128)`. `pointKey` alone is
- * Zod-validated up to 128 chars (`pointKeyCode` in
- * `asset-templates.schema.ts`) — the same limit, independently — so a
- * synthesised `"computed:" + pointKey` (9-char prefix) overflows it once
- * `pointKey` exceeds 119 chars, even though `pointKey` on its own was legal
- * everywhere it was validated. */
-const SOURCE_DATA_KEY_MAX_LENGTH = 128;
 
 export interface CalcWriteInput {
   assetId: string;
@@ -85,8 +78,13 @@ export class CalcWriteService {
       let assetPointsCreated = 0;
       const failedPairs = new Set<string>();
       for (const [key, representative] of pairs) {
-        const sourceDataKey = `computed:${representative.pointKey}`;
-        if (sourceDataKey.length > SOURCE_DATA_KEY_MAX_LENGTH) {
+        // The format is shared with the override endpoint (ADR 0039 decision
+        // 7's second creator of this row) — only the format. The insert below
+        // stays here, because this path wants "create if missing, count
+        // creations" under its own SAVEPOINT while the override path wants the
+        // row back to update it.
+        const formatted = computedSourceDataKey(representative.pointKey);
+        if (!formatted.ok) {
           // A DB-level failure here would be Postgres 22001 ("string data
           // right truncation"), not 23505 — the catch below only special-cases
           // the unique-violation collision, so an uncaught 22001 would
@@ -96,11 +94,12 @@ export class CalcWriteService {
           // single-pair skip the collision case already is.
           failedPairs.add(key);
           this.logger.warn(
-            `calc write: synthesised source_data_key "${sourceDataKey}" (${sourceDataKey.length} chars) ` +
-              `exceeds the ${SOURCE_DATA_KEY_MAX_LENGTH}-char column limit for ${key}; skipping this value`,
+            `calc write: synthesised source_data_key for ${key} is ${formatted.length} chars, ` +
+              `which exceeds the ${SOURCE_DATA_KEY_MAX_LENGTH}-char column limit; skipping this value`,
           );
           continue;
         }
+        const sourceDataKey = formatted.sourceDataKey;
         try {
           const inserted = await tx.transaction(async (tx2) => {
             const [created] = await tx2
