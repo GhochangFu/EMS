@@ -8,44 +8,81 @@
  * `tests/f1.7-ingest-enabled-set.test.ts` with no database at all.
  */
 
+import { createHash } from "node:crypto";
+
 /**
- * The nine RTUs measured publishing on 2026-08-22.
+ * The five RTUs enabled for live ingest, measured 2026-08-22.
  *
- * **Measured, not chosen.** A read-only probe of all twelve topics in
+ * **Two filters, applied in order.** A read-only probe of all twelve topics in
  * `phe-catalog.json` ran for 600 s — ten publish cycles at the fleet's ~60 s
- * cadence — and these nine sent 9–10 messages each while three sent nothing in
- * any cycle. The full record is `docs/f1.7-fleet-probe.md`.
+ * cadence. Nine sent 9–10 messages each and three sent nothing in any cycle.
+ * Of those nine, four are held back for the reasons below. The full record is
+ * `docs/f1.7-fleet-probe.md`.
  *
- * The three silent ones are deliberately absent, and that is not caution for
- * its own sake: the seed sets `meta.telemetrySource = 'mqtt'` on an enabled
- * RTU's assets, and `apps/sim` skips exactly those. Enabling a station that
- * does not publish therefore takes its 88 points from simulated to **dead**,
- * which is worse than leaving it on catalog data.
+ * **The criterion is one sentence: an enabled RTU must be better than the
+ * simulator it replaces.** Enabling an RTU sets `meta.telemetrySource = 'mqtt'`
+ * on its assets and `apps/sim` skips exactly those (ADR 0007 decision 5), so a
+ * station that cannot deliver a readable value goes from simulated to **dead**.
+ *
+ * **Silent — 3.** Nothing on the wire in any of ten cycles:
+ * `861736076133666` Banchukamari I, `861736076133757` Banchukamari II,
+ * `861736076133609` Bilsi II.
+ *
+ * **Publishing but not readable — 4.** These pass the first filter and fail the
+ * criterion, which the first draft of this list missed:
+ *
+ * - `861736076081915` Salkumarhat I and `861736076128260` Salkumarhat II —
+ *   publish all 27 keys, but 17 carry no reading (`null`, `""` or non-numeric),
+ *   and those 17 are the whole Modbus register block. They land 5 of 21 points,
+ *   and the missing block includes `s09_r01` → `kw`, which is what
+ *   `dashboard.service.ts` counts for `sites_online`. Tracked as `F4.55`.
+ * - `861736076128211` Mora Nodir Kuthi II (clock −3:02:36) and
+ *   `861736076128245` Bhutnirghat II (−0:21:34) — publish fine, but their rows
+ *   land outside every dashboard recency window, so the tiles read offline
+ *   whatever the plant is doing. Tracked as `F4.54`.
+ *
+ * **Re-enabling them is one `UPDATE` and no code change**, because the seed
+ * defers to the operator once a row is stamped. `F4.54`'s ingest-side clamp
+ * would fix the second pair; the first pair needs a field visit.
  *
  * Re-measure before editing this list. `apps/ingest/scripts/fleet-probe.mjs`
- * repeats the run.
+ * repeats the run, and reports `absent=` per topic so the second filter is
+ * visible rather than inferred.
  */
 export const F1_7_ENABLED_RTU_CODES: readonly string[] = [
   "868019069263896", // Lotapata I
   "861736076080040", // Lotapata II
   "861736076128187", // Mora Nodir Kuthi I
-  "861736076128211", // Mora Nodir Kuthi II
   "861736076116638", // Bilsi I
   "861736076104923", // Bhutnirghat I — the ADR 0007 pilot
-  "861736076128245", // Bhutnirghat II
-  "861736076081915", // Salkumarhat I
-  "861736076128260", // Salkumarhat II
 ];
+
+/**
+ * A short digest of the set above, so the two cannot drift apart.
+ *
+ * **Derived, not written.** The stamp is the only thing that makes an
+ * already-seeded database adopt a *changed* set, so a stamp that can stay still
+ * while the set moves is the one failure this mechanism must not have. A
+ * hand-edited literal has exactly that failure, and it is not theoretical: the
+ * review of the first draft proved it by swapping one IMEI for another and
+ * watching all 125 tests stay green, which would have left every seeded
+ * database on the old set with nothing saying so.
+ *
+ * Sorted before hashing so a reordering — which is not a change of set — does
+ * not force a needless re-adoption.
+ */
+function digestOfSet(codes: readonly string[]): string {
+  return createHash("sha256").update([...codes].sort().join(",")).digest("hex").slice(0, 8);
+}
 
 /**
  * Stamped into `bms.rtus.meta` once the set above has been applied to a row.
  *
- * **Carries the measurement date, so changing the set changes the stamp.** A
- * constant like `"v1"` would make adoption a one-time event for all time: a
- * later set would never reach an already-seeded database, and the fleet would
- * stay as it was with nothing saying so.
+ * Carries the measurement date for a human and the digest for correctness: the
+ * date says when someone last looked, the digest guarantees the stamp moves
+ * whenever the set does.
  */
-export const ENABLED_SET_VERSION = "f1.7-2026-08-22";
+export const ENABLED_SET_VERSION = `f1.7-2026-08-22-${digestOfSet(F1_7_ENABLED_RTU_CODES)}`;
 
 /** What the database already holds for one RTU, or `null` if the seed is inserting it. */
 export type ExistingRtuEnabledState = {
