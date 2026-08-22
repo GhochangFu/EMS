@@ -1773,9 +1773,10 @@ Process (`AGENTS.md` §10).
   after `F2.4`'s own PR merged, not bundled into the feature branch.
 - **Unblocks `F2.5`** — since re-scoped from "calc configuration UI" to the
   full **template authoring UI** (ADR 0038), and **delivered 2026-08-21 in
-  PR #120** — and `F2.6` (template calc-tags
-  wired into the engine, whose other dependency `F2.2` was already done) —
-  both now eligible to start. **Does not unblock `F2.8`** in practice
+  PR #120** — and `F2.6` (whose other dependency `F2.2` was already done),
+  since re-scoped from "template calc-tags wired into the engine" to the
+  **template version lifecycle** (ADR 0039) and **delivered 2026-08-22 in
+  PR #130** — both now done. **Does not unblock `F2.8`** in practice
   despite `Depends: F2.4` being satisfied: `bms-calc-v1` still has no asset
   qualifier and no aggregate function, so `estimatePue()`'s cross-asset sum
   stays inexpressible as a derived tag without an ADR 0036 amendment or a
@@ -1853,6 +1854,80 @@ Process (`AGENTS.md` §10).
   instruction.
 - **Still unverified:** the org-scope 403 in the browser. It needs a second
   sign-in, and its inline-message half cannot pass until `F4.52` is settled.
+
+### Template version lifecycle (`F2.6`, ADR 0039) — done
+
+- **Status:** merged 2026-08-22 (PR #130, 18 commits squashed as `9f56e46`;
+  the rulebook sweep followed as PR #131).
+- **What it was, and what the row's old title got wrong.** The row said
+  "template calc-tags wired into the calc engine" — work `F2.4` had already
+  shipped, since ADR 0037 put the calc columns on `template_points` and the
+  engine resolved them at runtime. Nothing was left to wire. What actually
+  remained is what ADR 0037 *Consequences* and ADR 0038 *Not in this ADR*
+  both hand over in the same words: **how a new version's formula changes
+  reach assets already built from the old one**. `F2.5` shipped the surface
+  that creates version N+1 and nothing consumed it — an author could publish
+  an edit and it reached no asset, by construction.
+- **Two mechanisms, deliberately separate.** *Migration* re-pins
+  `assets.template_id` between published versions of the same code:
+  explicit, previewed as a version delta, audited. Not follow-the-latest,
+  which is far less code but lets a publish silently change what a live
+  plant computes. *Overrides* let one asset depart from its version on one
+  point, in five nullable columns on `asset_points`.
+- **It refuses rather than reconciles.** A delta that removes or re-keys a
+  `measured` point is refused by name — that `asset_points` row is physical
+  wiring `apps/ingest` and the rule engine read, and no automatic
+  reconciliation of it is honest. So are a required measured addition whose
+  pattern needs a token beyond `{asset_code}` (instantiation takes the rest
+  per request and never stores them), a domain change, and a measured
+  addition onto a point key the asset already has a row for. **No backfill,
+  and no marker on history** — a series whose formula changed midway is an
+  accepted, recorded hazard.
+- **The asymmetry that made it tractable.** `template_points.kind` splits
+  the problem. `measured` points become physical `asset_points` rows, so
+  reaching them means touching live ingest wiring. `derived` points are not
+  instantiated at all — their formula is read at evaluation time from the
+  pinned version, so **re-pinning is the whole mechanism**.
+- **The highest-risk line, and why a test scans for it.** Resolution is
+  `coalesce(asset_points.<col>, template_points.<col>)`, per column,
+  asset-first, over a LEFT JOIN. Every way of getting it wrong computes a
+  wrong number *silently*: an INNER join drops every derived point with no
+  `asset_points` row — the normal state; a reversed coalesce makes every
+  override inert; a whole-row coalesce lets one override blank four
+  inherited values. None throws, and every calc unit test constructs its
+  dependencies directly, so reverting the query to a template-only `SELECT`
+  leaves the whole suite green. `tests/adr-0039-resolution-merge.test.ts`
+  scans the source for it, and the nine-case matrix was mutation-tested
+  column by column.
+- **What review caught.** Four reviewers found five real defects. The
+  sharpest: an override formula could reference a **derived** point,
+  including itself — the template authoring path forbids exactly that, and
+  this endpoint is a second author for the same engine. On a `scheduled`
+  trigger it compounds every interval until non-finite, because the
+  scheduler stamps a fresh wall-clock bucket each tick so
+  `ON CONFLICT DO NOTHING` never dedupes the series. Also: a raw 23505
+  inside the transaction of a service whose contract is that every fallible
+  decision precedes it; a read-then-insert race that turned a first computed
+  value into a 500; a `computed` row that could be re-keyed from the mapping
+  surface; and a join missing its `source_kind` filter — behaviour-neutral
+  today, which is exactly why nothing caught it.
+- **The `.tsx` gap was closed by hand.** `apps/web`'s Vitest project runs
+  `environment: "node"` and the coverage `include` stops at `src/lib/**`, so
+  a component is unreachable by every test in this repository. Both surfaces
+  were therefore driven against the running stack, and the wiring that no
+  test can see — query keys, invalidation, disabled reasons — was verified
+  by clicking it.
+- **Not included, by this repo's own convention:** the `chore(agents):`
+  sweep is AGENTS.md (PR #131) and this document plus the `docs/BACKLOG.md`
+  flip, filed after the feature PR merged rather than bundled into it.
+- **Five follow-ups raised rather than smuggled in:** `F4.54` (the seed
+  sweeps transient test assets into asset groups, making them permanently
+  undeletable), `F4.55` (the `F4.1` aggregate teardown deadlocks against its
+  own refresh policy and wedges the database), `F4.56` (the instantiate
+  dialog collects no `sourceDataKeyVars`, so a tokenised pattern cannot be
+  instantiated from the browser at all), new evidence appended to `F4.53`,
+  and a comment-only correction to migration `0037`'s header that the
+  drizzle hook correctly refuses to let an agent make.
 
 
 ### Phase 6 — Premium visuals (~3 weeks)
