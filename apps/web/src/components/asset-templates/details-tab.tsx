@@ -61,9 +61,10 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
   // changes" with no way to resolve it. Status changes only on a deliberate
   // lifecycle action, so this cannot fire on a background refetch.
   //
-  // Deliberately **not** keyed on `template.updatedAt`. `main.tsx` builds a
-  // bare `new QueryClient()`, so `refetchOnWindowFocus` is on and `staleTime`
-  // is 0, and `afterChange` invalidates `["admin", "asset-template"]` after
+  // Deliberately **not** keyed on `template.updatedAt`. `main.tsx` sets only
+  // `defaultOptions.queries.retry` (`F4.63`), so `refetchOnWindowFocus` is
+  // still on and `staleTime` is still 0, and `afterChange` invalidates
+  // `["admin", "asset-template"]` after
   // every lifecycle action. Reseeding on a newer `updatedAt` would mean: type
   // into Details, click Publish in the header, and watch the typed text vanish
   // with no message. A save needs no reseed either — the form already holds
