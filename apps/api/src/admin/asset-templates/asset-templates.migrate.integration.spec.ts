@@ -49,32 +49,57 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
+/**
+ * Asserts both the exception **class** and the message.
+ *
+ * The class matters as much as the text and is easy to get silently wrong: a
+ * service throwing `BadRequestException` where `ConflictException` was
+ * specified passes every message-only assertion, and `U8`'s UI branches on 409
+ * versus 400. `HttpException.getStatus()` is checked rather than `instanceof`,
+ * because the status is what the client actually sees.
+ */
 async function expectRejection(
   run: () => Promise<unknown>,
   match: RegExp,
   what: string,
+  expectedStatus?: number,
 ): Promise<void> {
   let message: string | null = null;
+  let status: number | null = null;
   try {
     await run();
   } catch (err) {
-    // Nest's HttpException carries the useful text in `response`, which for an
-    // object payload is where the refusal list lives too.
+    const getStatus = (err as { getStatus?: () => number } | null)?.getStatus;
+    status = typeof getStatus === "function" ? getStatus.call(err) : null;
+    // Nest's HttpException carries the useful text in `response`. Prefer its
+    // `message` field over JSON.stringify of the whole object: stringifying
+    // escapes the embedded quotes, so a regex naming a quoted asset code stops
+    // matching for a reason that has nothing to do with the behaviour.
     const response = (err as { response?: unknown } | null)?.response;
+    const nested = (response as { message?: unknown } | null)?.message;
     message =
       typeof response === "string"
         ? response
-        : response !== undefined && response !== null
-          ? JSON.stringify(response)
-          : err instanceof Error
-            ? err.message
-            : String(err);
+        : typeof nested === "string"
+          ? nested
+          : response !== undefined && response !== null
+            ? JSON.stringify(response)
+            : err instanceof Error
+              ? err.message
+              : String(err);
   }
   assert(message !== null, `${what}: expected a rejection, but the call succeeded`);
   assert(
     match.test(message ?? ""),
     `${what}: rejected with "${message}", which does not match ${match}`,
   );
+  if (expectedStatus !== undefined) {
+    assert(
+      status === expectedStatus,
+      `${what}: expected HTTP ${expectedStatus}, got ${String(status)}. The message was ` +
+        `right, so this is the wrong exception class with the right words in it.`,
+    );
+  }
 }
 
 export async function cleanup(pool: pg.Pool): Promise<void> {
@@ -101,6 +126,8 @@ export async function cleanup(pool: pg.Pool): Promise<void> {
 type PointSpec = {
   pointKey: string;
   kind?: string;
+  /** The template's unit *override*; null/absent means "use the catalog unit". */
+  unit?: string | null;
   sourceDataKeyPattern?: string | null;
   required?: boolean;
   formula?: string | null;
@@ -143,6 +170,7 @@ async function seedVersion(
           ? `SITE/{asset_code}/${point.pointKey}`
           : point.sourceDataKeyPattern,
       required: point.required ?? true,
+      unit: point.unit ?? null,
       formula: point.formula ?? null,
       formulaDialect: point.formula ? "bms-calc-v1" : null,
       calcTrigger: point.calcTrigger ?? (point.formula ? "streaming" : null),
@@ -190,14 +218,23 @@ async function pinnedVersion(pool: pg.Pool, assetId: string): Promise<number | n
 async function pointRows(
   pool: pg.Pool,
   assetId: string,
-): Promise<{ point_key: string; source_data_key: string; source_kind: string; rtu_id: string | null }[]> {
+): Promise<
+  {
+    point_key: string;
+    source_data_key: string;
+    source_kind: string;
+    rtu_id: string | null;
+    unit: string | null;
+  }[]
+> {
   const { rows } = await pool.query<{
     point_key: string;
     source_data_key: string;
     source_kind: string;
     rtu_id: string | null;
+    unit: string | null;
   }>(
-    `SELECT point_key, source_data_key, source_kind, rtu_id FROM bms.asset_points
+    `SELECT point_key, source_data_key, source_kind, rtu_id, unit FROM bms.asset_points
       WHERE asset_id = $1 ORDER BY point_key`,
     [assetId],
   );
@@ -301,7 +338,12 @@ export async function assertApplyMovesOnlySelectedAssets(
   const v1 = await seedVersion(db, fx, { version: 1, points: [{ pointKey: "KW" }] });
   const v2 = await seedVersion(db, fx, {
     version: 2,
-    points: [{ pointKey: "KW" }, { pointKey: "VOLTS" }],
+    // The added point carries a unit OVERRIDE. Without it this case cannot tell
+    // `point.unit ?? catalogUnit ?? null` from `catalogUnit ?? null`, and the
+    // second is what an early version of this service did — giving the same
+    // point on the same template two different units depending on whether the
+    // asset was instantiated or migrated.
+    points: [{ pointKey: "KW" }, { pointKey: "VOLTS", unit: "kV-override" }],
   });
   const moved = await seedAsset(db, fx, "MOVED", v1);
   const untouched = await seedAsset(db, fx, "UNTOUCHED", v1);
@@ -329,6 +371,12 @@ export async function assertApplyMovesOnlySelectedAssets(
   assert(
     rows[0]?.source_kind === "unmapped" && rows[0]?.rtu_id === null,
     `source_kind must agree with rtu_id, got ${String(rows[0]?.source_kind)}/${String(rows[0]?.rtu_id)}`,
+  );
+  assert(
+    rows[0]?.unit === "kV-override",
+    `the template's unit override must reach the row, got ${String(rows[0]?.unit)}. ` +
+      "Decision 4 says these rows are created by the same path instantiation uses, and " +
+      "AssetTemplateInstantiationService.planAsset resolves point.unit ?? catalogUnit ?? null.",
   );
   assert(
     (await pointRows(pool, untouched)).length === 0,
@@ -387,6 +435,7 @@ export async function assertMeasuredRemovalRefusesAndWritesNothing(
     () => svc.migrate(fx.adminJwt, v2, { assetIds: [a, b] }),
     /VOLTS/,
     "apply on a measured removal",
+    409,
   );
   assert((await pinnedVersion(pool, a)) === 1, "asset A must not have moved");
   assert((await pinnedVersion(pool, b)) === 1, "asset B must not have moved");
@@ -424,6 +473,7 @@ export async function assertMeasuredReKeyRefuses(
     () => svc.migrate(fx.adminJwt, v2, { assetIds: [assetId] }),
     /KW/,
     "apply on a measured re-key",
+    409,
   );
   assert((await pinnedVersion(pool, assetId)) === 1, "nothing must have moved");
 }
@@ -473,6 +523,7 @@ export async function assertUnresolvablePatternRefusesRequiredAndSkipsOptional(
       () => svc.migrate(fx.adminJwt, v2, { assetIds: [assetId] }),
       /PANEL_A/,
       "apply with an unresolvable required addition",
+      409,
     );
     assert((await pinnedVersion(pool, assetId)) === 1, "nothing must have moved");
     assert((await pointRows(pool, assetId)).length === 0, "no partial rows may exist");
@@ -527,6 +578,7 @@ export async function assertDomainChangeRefuses(
     () => svc.migrate(fx.adminJwt, v2, { assetIds: [assetId] }),
     /hvac/,
     "apply across a domain change",
+    409,
   );
   assert((await pinnedVersion(pool, assetId)) === 1, "nothing must have moved");
 }
@@ -555,11 +607,13 @@ export async function assertTargetVersionIsValidated(
     () => svc.previewMigration(fx.adminJwt, draft, { assetIds: [assetId] }),
     /published/,
     "migrating onto a draft",
+    409,
   );
   await expectRejection(
     () => svc.previewMigration(fx.adminJwt, otherCode, { assetIds: [assetId] }),
     /SAME template code|different piece of equipment/,
     "migrating onto a different template code",
+    400,
   );
   assert((await pinnedVersion(pool, assetId)) === 1, "nothing must have moved");
 }
@@ -581,10 +635,14 @@ export async function assertOutOfScopeAssetIsRefused(
   // In another location of the same org — outside a location-scoped grant.
   const outOfScope = await seedAsset(db, fx, "SCOPE-OUT", v1, { locationId: fx.otherLocationId });
 
+  // Deliberately specific. "access scope" alone also matches the
+  // canManageOrganization refusal that runs FIRST, so a loose regex would pass
+  // without ever reaching the per-asset check this case exists to prove.
   await expectRejection(
     () => svc.migrate(fx.locationAdminJwt, v2, { assetIds: [inScope, outOfScope] }),
-    /access scope/,
+    new RegExp(`Asset "${TEST_ASSET_PREFIX}SCOPE-OUT" is outside your access scope`),
     "migrating an asset outside the caller's scope",
+    403,
   );
   assert(
     (await pinnedVersion(pool, inScope)) === 1,
@@ -672,5 +730,6 @@ export async function assertUnpinnedAssetIsRejected(
     () => svc.previewMigration(fx.adminJwt, v2, { assetIds: [assetId] }),
     /created by hand|nothing to migrate from/,
     "migrating a hand-created asset",
+    400,
   );
 }

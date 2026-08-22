@@ -15,6 +15,7 @@ function measured(pointKey: string, overrides: Partial<StoredTemplatePoint> = {}
   return {
     pointKey,
     kind: "measured",
+    unit: null,
     sourceDataKeyPattern: `SITE/{asset_code}/${pointKey}`,
     required: true,
     formula: null,
@@ -30,6 +31,7 @@ function derived(pointKey: string, overrides: Partial<StoredTemplatePoint> = {})
   return {
     pointKey,
     kind: "derived",
+    unit: null,
     sourceDataKeyPattern: null,
     required: true,
     formula: "{A} + {B}",
@@ -142,6 +144,10 @@ export function assertMeasuredAdditionDoesNotRefuse(): void {
   assert(
     delta.measuredAdded[0]?.sourceDataKeyPattern === "SITE/{asset_code}/CURRENT",
     "the addition must carry the pattern the row will be built from",
+  );
+  assert(
+    delta.measuredAdded[0]?.unit === null,
+    "the addition must carry the template's unit override — null here means 'use the catalog'",
   );
   assert(delta.refusals.length === 0, "a measured addition migrates freely (decision 4)");
 }

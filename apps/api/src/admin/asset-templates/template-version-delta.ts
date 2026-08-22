@@ -43,6 +43,8 @@ export interface StoredTemplatePoint {
   kind: string;
   sourceDataKeyPattern: string | null;
   required: boolean;
+  /** The template's unit *override*; null means "use the catalog unit". */
+  unit: string | null;
   formula: string | null;
   formulaDialect: string | null;
   calcTrigger: string | null;
@@ -202,6 +204,7 @@ export function computeTemplateVersionDelta(
         pointKey,
         sourceDataKeyPattern: after.sourceDataKeyPattern,
         required: after.required,
+        unit: after.unit,
       });
     }
   }

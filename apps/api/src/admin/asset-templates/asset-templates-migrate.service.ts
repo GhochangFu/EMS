@@ -449,7 +449,13 @@ export class AssetTemplateMigrationService {
             newPoints.push({
               pointKey: addition.pointKey,
               sourceDataKey: resolved.sourceDataKey,
-              unit: catalogUnits.get(addition.pointKey) ?? null,
+              // Exactly `AssetTemplateInstantiationService.planAsset`'s
+              // resolution: the template's unit is an OVERRIDE, and null means
+              // "use the catalog's". Decision 4 says these rows are created by
+              // the same path instantiation uses, and a migrated row carrying
+              // the catalog unit where an instantiated one carries the override
+              // is the same point rendering two different units.
+              unit: addition.unit ?? catalogUnits.get(addition.pointKey) ?? null,
             });
             continue;
           }
@@ -522,6 +528,7 @@ export class AssetTemplateMigrationService {
       kind: row.kind,
       sourceDataKeyPattern: row.sourceDataKeyPattern,
       required: row.required,
+      unit: row.unit,
       formula: row.formula,
       formulaDialect: row.formulaDialect,
       calcTrigger: row.calcTrigger,

@@ -412,11 +412,23 @@ export const templateMigrationRefusalDtoSchema = z.object({
   message: z.string(),
 });
 
-/** A measured point the target version adds; migration creates its `asset_points` row. */
+/**
+ * A measured point the target version adds; migration creates its
+ * `asset_points` row.
+ *
+ * `unit` is the template's *override*, not the catalog's unit — null means
+ * "use the catalog's", exactly as `adminTemplatePointDtoSchema.unit` does. It
+ * is carried here because decision 4 says these rows are created "by the same
+ * path instantiation uses", and instantiation resolves
+ * `point.unit ?? catalogUnit ?? null`. Dropping it would give the same point on
+ * the same template two different units depending on whether the asset was
+ * instantiated or migrated.
+ */
 export const templateMeasuredAdditionDtoSchema = z.object({
   pointKey: z.string(),
   sourceDataKeyPattern: z.string().nullable(),
   required: z.boolean(),
+  unit: z.string().nullable(),
 });
 
 /** A measured point the target version drops, or whose source pattern moved. */
