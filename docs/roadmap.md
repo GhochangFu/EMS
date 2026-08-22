@@ -1897,7 +1897,8 @@ Process (`AGENTS.md` §10).
 - ~~**Still unverified:** the org-scope 403 in the browser.~~ **Verified
   2026-08-22 by `F4.52`** (see that section below). Opening an out-of-scope
   template by URL as `phe-admin@bms.local` now renders *"Template is outside
-  your access scope"* inline with the session intact. The blocker was not the
+  your access scope"* inline with the session intact — and since `F4.63`
+  (2026-08-23) it does so after **one** request rather than four. The blocker was not the
   second sign-in but the session clear — and decision 10's residual case is
   the **read** path, while D10's own text quotes the **write** path.
 
@@ -2031,13 +2032,63 @@ Process (`AGENTS.md` §10).
   the UI gates on the role claim stored at login, so a mid-session downgrade
   now leaves a stale menu until the token expires. The old behaviour resynced
   it only by destroying a valid session on every ordinary refusal.
-- **Three things raised rather than smuggled in:** `F4.63` (the `QueryClient`
-  default `retry: 3` makes a 403 cost four requests and ~40s before the
-  message renders), two sibling render sites still showing a raw envelope
+- **Three things raised rather than smuggled in** — two of them now closed.
+  `F4.63` (the `QueryClient` default `retry: 3` made a 403 cost four requests
+  and ~40s before the message rendered) — **done 2026-08-23**, see below.
+  `F4.64` (a 403 body interpolated an out-of-scope asset code,
+  `asset-templates-migrate.service.ts:393`) — **done 2026-08-23**, see below.
+  Still open: two sibling render sites showing a raw envelope
   (`asset-templates-page.tsx:192`, `alarm-details-panel.tsx:205` — neither
-  newly reachable), and a pre-existing 403 body that interpolates an
-  out-of-scope asset code (`asset-templates-migrate.service.ts:393`).
+  newly reachable, so neither was folded in).
 
+
+### A refusal costs one request (`F4.63`) — done
+
+**2026-08-23, PRs #141, #142, #143.** `main.tsx` built a bare `new
+QueryClient()`, so every query took the library default `retry: 3`. An
+out-of-scope template read cost **four** 403s and ~40s of "Loading…" before the
+refusal rendered. Invisible before `F4.52` — the first 403 ended the flow at
+`/login`.
+
+- **`ApiError` at the one `adminFetch` throw site.** The row called this the
+  42-call-site chokepoint `F4.52` declined to touch; it is not. That declined a
+  *breaking* change, and a subclass whose `message` is byte-identical breaks
+  none of them. Owner ruled it on that basis, and ruled no ADR.
+- **The predicate is conservative by ruling.** Only an `ApiError` with a 4xx
+  other than 408/429 stops retrying. The ~20 clients that throw a statusless
+  `Error` — `alarms.ts`, `dashboard.ts`, `energy-dashboard.ts`, `locations.ts`,
+  `assets.ts` — behave exactly as before. The tidier rule would have changed
+  every dashboard query for a defect measured on one admin path.
+- **The retry budget was read, not assumed.** `failureCount` is `0` on the
+  first failure (`query-core@5.100.5` `retryer.js`: read at line 89, incremented
+  at line 94). The spec helper modelled it 1-based first; the library settled it.
+- **Measured in the browser, same account and route as the defect.** As
+  `phe-admin@bms.local`, after hard-reloading until DOM and server agreed on
+  `index-Cs6Mz63G.js`: **exactly one 403**, message in under 3s, still one after
+  13s. The session survived, so `F4.52` holds too.
+- **Three gates, all mutation-proved**, because the predicate's own spec is a
+  tautology — deleting `defaultOptions` restores the defect and leaves it green.
+  The request-count gate's mutant reproduces the defect exactly: *"got 4"*.
+
+### A refusal counts, it does not name (`F4.64`) — done
+
+**2026-08-23, PR #140.** `asset-templates-migrate.service.ts` refused an
+out-of-scope asset by naming its code — the human-readable identifier of a row
+the caller was being told they may not touch. Low severity (the ids are
+caller-supplied UUIDs, so no enumeration path); the argument was consistency,
+since `asset-templates-instantiate.service.ts` already collapses the same
+information to a count and explains its own withholding.
+
+- **Owner ruled (b), count rather than name** — and the row's claim that both
+  fixes were one line was wrong: counting means the loop cannot short-circuit.
+- **Review caught a latency claim and it was fixed in the code.** Losing the
+  short-circuit is not free — `canManageAsset` costs three lookups per call and
+  batches reach 200. Resolving `writableLocationIds` **once** and filtering in
+  memory is one query instead of N, fewer than before on both paths.
+- **The gate already existed** — the spec asserted the code *is* in the
+  message. A second out-of-scope asset makes the count a count, and a
+  `forbidden` regex catches what a positive match cannot: a body that satisfies
+  the sentence and names the assets anyway.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
