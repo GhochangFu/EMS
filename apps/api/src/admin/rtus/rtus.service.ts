@@ -163,7 +163,21 @@ export class RtusAdminService {
         stationName:
           body.stationName !== undefined ? body.stationName : existing.stationName,
         ingestEnabled: body.ingestEnabled ?? existing.ingestEnabled,
-        meta: body.meta !== undefined ? body.meta : existing.meta,
+        // Merged, not replaced. A PATCH carrying `meta` used to swap the whole
+        // object, and `bms.rtus.meta` is a shared bag holding keys this caller
+        // knows nothing about. One of them is load-bearing: `F1.7` stamps
+        // `enabledSetVersion` there, and the seed reads it to decide whether
+        // `ingest_enabled` still belongs to the operator. Dropping the key on an
+        // unrelated `meta` write therefore handed the column back to the seed,
+        // which then reverted the operator's own switch on the next
+        // `pnpm db:seed` — the exact defect `F1.7` closed, re-entering through
+        // the API that owns the column. Unreachable from the current admin
+        // screen, which never sends `meta`; that is a coupling across two
+        // packages with nothing enforcing it, not a design.
+        meta:
+          body.meta !== undefined
+            ? { ...(existing.meta ?? {}), ...body.meta }
+            : existing.meta,
       })
       .where(eq(rtus.id, id));
 

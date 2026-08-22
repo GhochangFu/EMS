@@ -216,6 +216,48 @@ describe("F1.7 seed ownership across two passes", () => {
     );
   }, 120_000);
 
+  it("keeps meta keys it does not own", async () => {
+    if (!pool) throw new Error("pool not initialised");
+    // The seed's upsert used to carry `meta = EXCLUDED.meta`, which deleted
+    // every key it had not written — on each of the two passes above, and on
+    // every PR, since CI seeds. The admin RTU API accepts arbitrary `meta`, so
+    // this is reachable, and it takes `enabledSetVersion` with it: lose the
+    // stamp and the next seed hands `ingest_enabled` back to itself.
+    await pool.query(
+      `UPDATE bms.rtus SET meta = COALESCE(meta,'{}'::jsonb) || '{"operatorNote":"do not clobber"}'::jsonb
+        WHERE rtu_code = $1`,
+      [ENABLED_RTU],
+    );
+
+    await reseed();
+
+    const res = await pool.query<{ note: string | null; stamp: string | null; org: string | null }>(
+      `SELECT meta->>'operatorNote' AS note,
+              meta->>'enabledSetVersion' AS stamp,
+              meta->>'orgCode' AS org
+         FROM bms.rtus WHERE rtu_code = $1`,
+      [ENABLED_RTU],
+    );
+    const row = res.rows[0];
+    if (row === undefined) throw new Error(`no bms.rtus row for ${ENABLED_RTU}`);
+
+    assert(
+      row.note === "do not clobber",
+      `the seed must not delete a meta key it does not own, got "${row.note}"`,
+    );
+    // And it still writes its own, or the merge has traded one bug for another.
+    assert(
+      row.stamp === ENABLED_SET_VERSION,
+      `the seed must still write its own keys; stamp was "${row.stamp}"`,
+    );
+    assert(row.org === "PHEWB", `orgCode must survive the merge, got "${row.org}"`);
+
+    await pool.query(
+      `UPDATE bms.rtus SET meta = meta - 'operatorNote' WHERE rtu_code = $1`,
+      [ENABLED_RTU],
+    );
+  }, 120_000);
+
   it("puts every catalog RTU on one side of the mqtt invariant", async () => {
     if (!pool) throw new Error("pool not initialised");
     // Not a restatement of the unit test: this asserts the database agrees with

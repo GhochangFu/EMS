@@ -1,6 +1,5 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { and, eq } from "drizzle-orm";
 import type pg from "pg";
@@ -102,18 +101,34 @@ function unitLabel(unitCode: string | null): string | null {
 }
 
 /**
- * Resolved from this module, not from `process.cwd()`.
+ * Where the catalog might be, tried in order.
  *
- * The catalog sits beside this file, so where the *process* was started is not
- * information about where the data is. `resolve(process.cwd(), "src/…")` only
- * worked because `pnpm db:seed` runs with `packages/db` as its working
- * directory; every other caller got `ENOENT` on a path assembled from its own
- * cwd. `F1.7`'s two-pass seed test is the first such caller, and is what found
- * it.
+ * `resolve(process.cwd(), "src/phe-catalog.json")` alone only worked because
+ * `pnpm db:seed` happens to run with `packages/db` as its working directory.
+ * Every other caller got `ENOENT` on a path assembled from its own cwd, and
+ * `F1.7`'s two-pass seed test is the first other caller.
+ *
+ * **Resolving from the module would be the better fix and is not available
+ * here.** `import.meta.url` is a `TS1470` error because `tsconfig.build.json`
+ * emits CommonJS, and `__dirname` does not exist when Vitest loads this file as
+ * ESM — so naming the candidates is the one thing that works in both. Caught by
+ * `tsc` and not by the suite: the runner and the build disagree about the module
+ * format, so a green test proved nothing about the shipped output.
  */
+const CATALOG_CANDIDATES = ["src/phe-catalog.json", "packages/db/src/phe-catalog.json"];
+
 function loadCatalog(): PheCatalogFile {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const raw = readFileSync(resolve(here, "phe-catalog.json"), "utf8");
+  const path = CATALOG_CANDIDATES.map((c) => resolve(process.cwd(), c)).find((p) =>
+    existsSync(p),
+  );
+  if (path === undefined) {
+    // Loud and specific: an empty catalog would seed zero RTUs and read as "the
+    // fleet is gone" rather than "the file was not found".
+    throw new Error(
+      `phe-catalog.json not found from ${process.cwd()}; tried ${CATALOG_CANDIDATES.join(", ")}`,
+    );
+  }
+  const raw = readFileSync(path, "utf8");
   return JSON.parse(raw) as PheCatalogFile;
 }
 
@@ -228,6 +243,15 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
     const sourceType = ingestEnabled ? "mqtt" : "catalog";
     const rtuCode = `RTU-${head.RTUCode}`;
 
+    // `meta` is merged rather than replaced on conflict. It is a shared bag —
+    // the admin RTU API accepts arbitrary keys — so `meta = EXCLUDED.meta`
+    // deleted whatever an operator or another process had put there, on every
+    // `pnpm db:seed`, which CI runs on every PR. That was survivable while the
+    // seed was the only writer. It stopped being survivable at `F1.7`, because
+    // `enabledSetVersion` now lives in this column and decides who owns
+    // `ingest_enabled`: lose the key and the next seed reverts the operator.
+    // The `||` idiom is `hierarchy-seed.ts`'s. Merging makes a *removed* key
+    // sticky, which costs nothing here — all three keys are rewritten every run.
     const rtuRes = await pool.query<{ id: string }>(
       `
       INSERT INTO bms.rtus (
@@ -246,7 +270,8 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
         station_code = EXCLUDED.station_code,
         station_name = EXCLUDED.station_name,
         ingest_enabled = EXCLUDED.ingest_enabled,
-        meta = EXCLUDED.meta
+        -- Merged, not replaced: see the note above this query.
+        meta = COALESCE(bms.rtus.meta, '{}'::jsonb) || EXCLUDED.meta
       RETURNING id
       `,
       [
