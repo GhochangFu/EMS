@@ -76,6 +76,15 @@ export const adminAssetDtoSchema = z.object({
   rtuDisplayName: z.string().nullable(),
   domain: z.string(),
   active: z.boolean(),
+  // `F2.6` (ADR 0039 decision 8): which template *version* this asset is pinned
+  // to. Added because the Versions view is defined as "listing which assets sit
+  // on which version", and no other response says it — a migration UI without
+  // this can only offer every asset and let the server refuse, teaching the
+  // operator by 400. All three are null for a hand-created asset, which is
+  // every seeded one.
+  templateId: z.string().nullable(),
+  templateCode: z.string().nullable(),
+  templateVersion: z.number().nullable(),
   meta: z.record(z.unknown()).nullable(),
   createdAt: z.string(),
 });

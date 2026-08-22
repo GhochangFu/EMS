@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
 
-import { assetPoints, assets, locations, organizations, rtus } from "@bms/db";
+import { assetPoints, assetTemplates, assets, locations, organizations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AdminAssetDto, AdminAssetSummaryDto, JwtPayload } from "@bms/shared";
 
@@ -62,11 +62,16 @@ export class AssetsAdminService {
         locationName: locations.name,
         organizationCode: organizations.code,
         rtuDisplayName: rtus.displayName,
+        templateCode: assetTemplates.code,
+        templateVersion: assetTemplates.version,
       })
       .from(assets)
       .leftJoin(locations, eq(assets.locationId, locations.id))
       .leftJoin(organizations, eq(locations.organizationId, organizations.id))
       .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+      // LEFT: assets.templateId is nullable and every seeded asset is
+      // hand-created, so an inner join here would empty the list (F2.6).
+      .leftJoin(assetTemplates, eq(assets.templateId, assetTemplates.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(asc(assets.code));
 
@@ -278,11 +283,16 @@ export class AssetsAdminService {
         locationName: locations.name,
         organizationCode: organizations.code,
         rtuDisplayName: rtus.displayName,
+        templateCode: assetTemplates.code,
+        templateVersion: assetTemplates.version,
       })
       .from(assets)
       .leftJoin(locations, eq(assets.locationId, locations.id))
       .leftJoin(organizations, eq(locations.organizationId, organizations.id))
       .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+      // LEFT, for the same reason `list` uses one: a hand-created asset has no
+      // pin, and an inner join would make it unreadable after a write.
+      .leftJoin(assetTemplates, eq(assets.templateId, assetTemplates.id))
       .where(eq(assets.id, id))
       .limit(1);
     if (!row) {
@@ -296,6 +306,8 @@ export class AssetsAdminService {
     locationName: string | null;
     organizationCode: string | null;
     rtuDisplayName: string | null;
+    templateCode: string | null;
+    templateVersion: number | null;
   }): AdminAssetDto {
     const asset = row.asset;
     return {
@@ -310,6 +322,9 @@ export class AssetsAdminService {
       rtuDisplayName: row.rtuDisplayName,
       domain: asset.domain,
       active: asset.active,
+      templateId: asset.templateId,
+      templateCode: row.templateCode,
+      templateVersion: row.templateVersion,
       meta: (asset.meta as Record<string, unknown> | null) ?? null,
       createdAt: asset.createdAt.toISOString(),
     };
