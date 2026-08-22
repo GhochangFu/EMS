@@ -27,6 +27,17 @@ import type { AssetPointCalcOverrideFields } from "@bms/shared";
  * numbers `templatePointBodySchema` enforces, because the merged result has to
  * satisfy exactly what the engine would have required of the template.
  */
+/**
+ * The `:pointKey` path parameter.
+ *
+ * Bounded the way `bms.asset_points.point_key` is. The service already refuses
+ * any key the pinned version does not declare, so this changes no outcome for a
+ * legitimate call — it moves an over-long key from a 404 ("the version does not
+ * declare it") to a 400, which is what actually went wrong, and it matches the
+ * repo's convention of parsing path parameters (AGENTS.md §4.3).
+ */
+export const calcPointKeyParamSchema = z.string().min(1).max(128);
+
 export const assetPointCalcOverrideBodySchema = z.object({
   formula: z.string().min(1).max(MAX_FORMULA_LENGTH).nullable(),
   formulaDialect: z.literal(CALC_DIALECT).nullable(),

@@ -22,6 +22,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
 import { DRIZZLE } from "../../database/database.tokens";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { MigrateAssetsBody } from "./asset-templates-migrate.schema";
@@ -81,14 +82,36 @@ type TemplateRow = typeof assetTemplates.$inferSelect;
  */
 const MAX_POINT_ROWS = 8_000;
 
+/**
+ * Ceiling on refusals carried in a plan, a preview or an error body.
+ *
+ * `assetIds` is capped at 200 and a version at 500 points, and the
+ * `unresolvable_source_data_key` and `point_key_already_mapped` refusals are
+ * pushed per asset *per point* — so one `migration-preview`, which writes
+ * nothing and audits nothing and is therefore freely repeatable, could otherwise
+ * materialise ~100,000 objects each carrying a paragraph. `MAX_POINT_ROWS`
+ * cannot catch it: that is checked in `migrate` only, after `buildPlan` has
+ * already built the arrays.
+ *
+ * The whole migration is refused if there is a single refusal, so an operator
+ * needs a readable sample and the total, not every sentence.
+ */
+const MAX_REPORTED_REFUSALS = 50;
+
 /** Only `{asset_code}` survives into a migration — see Q-A above. */
 const MIGRATION_RESOLVABLE_VAR = "asset_code";
 
 /** `{token}` in a `source_data_key_pattern`. */
 const PATTERN_TOKEN = /\{([a-zA-Z0-9_]+)\}/g;
 
-/** `bms.asset_points.source_data_key` is `varchar(128)`. */
-const SOURCE_DATA_KEY_MAX = 128;
+/**
+ * `bms.asset_points.source_data_key` is `varchar(128)`.
+ *
+ * Imported rather than restated. `U4` of this feature extracted the constant on
+ * the "two creators must not drift" argument, and this service is a third
+ * creator of the same rows.
+ */
+const SOURCE_DATA_KEY_MAX = SOURCE_DATA_KEY_MAX_LENGTH;
 
 /** One selected asset, with the version it is pinned to and what it needs. */
 type PlannedAsset = {
@@ -104,7 +127,9 @@ type MigrationPlan = {
   target: TemplateRow;
   planned: PlannedAsset[];
   deltas: TemplateVersionDeltaDto[];
+  /** Capped at `MAX_REPORTED_REFUSALS`; `refusalCount` is the true total. */
   refusals: TemplateMigrationRefusalDto[];
+  refusalCount: number;
   fromVersions: number[];
 };
 
@@ -147,11 +172,26 @@ export class AssetTemplateMigrationService {
       .orderBy(desc(assetTemplates.version));
 
     const ids = versions.map((v) => v.id);
-    const assetCounts = await this.db
-      .select({ templateId: assets.templateId, total: count() })
-      .from(assets)
-      .where(inArray(assets.templateId, ids))
-      .groupBy(assets.templateId);
+
+    // Scoped to what this caller can act on. A `location_admin` passes
+    // `canManageOrganization` — their org is derived from their locations — so
+    // an unscoped count would report the whole estate while `buildPlan` refuses
+    // every asset outside their locations. Decision 8 defines this view as
+    // "which assets sit on which version"; for this caller that is their own
+    // assets, and a number they cannot act on is worse than no number.
+    const writableIds = await this.accessControl.writableLocationIds(jwt);
+    const assetScope =
+      writableIds === null
+        ? inArray(assets.templateId, ids)
+        : and(inArray(assets.templateId, ids), inArray(assets.locationId, writableIds));
+    const assetCounts =
+      writableIds !== null && writableIds.length === 0
+        ? []
+        : await this.db
+            .select({ templateId: assets.templateId, total: count() })
+            .from(assets)
+            .where(assetScope)
+            .groupBy(assets.templateId);
     const pointCounts = await this.db
       .select({ templateId: templatePoints.templateId, total: count() })
       .from(templatePoints)
@@ -199,11 +239,14 @@ export class AssetTemplateMigrationService {
     const plan = await this.buildPlan(jwt, targetId, body);
 
     if (plan.refusals.length > 0) {
+      const hidden = plan.refusalCount - plan.refusals.length;
       throw new ConflictException({
         message:
           "This migration is refused. Nothing was written. " +
-          plan.refusals.map((r) => r.message).join(" "),
+          plan.refusals.map((r) => r.message).join(" ") +
+          (hidden > 0 ? ` (${hidden} further refusals not shown.)` : ""),
         refusals: plan.refusals,
+        refusalCount: plan.refusalCount,
       });
     }
 
@@ -281,7 +324,9 @@ export class AssetTemplateMigrationService {
       assets: plan.planned.map((a) => a.dto),
       deltas: plan.deltas,
       refusals: plan.refusals,
-      canApply: plan.refusals.length === 0,
+      // The true total, not the capped list — a preview that showed 50 of 300
+      // refusals and then said `canApply` must never disagree with `migrate`.
+      canApply: plan.refusalCount === 0,
     };
   }
 
@@ -383,7 +428,17 @@ export class AssetTemplateMigrationService {
     const targetPoints = await this.loadPoints(target.id);
     const catalogUnits = await this.catalogUnits(target.organizationId, targetPoints);
 
+    // Bounded collector — see `MAX_REPORTED_REFUSALS`. The count keeps rising
+    // after the list stops, so "is this migration refused" and "how badly" stay
+    // true regardless of the cap.
     const refusals: TemplateMigrationRefusalDto[] = [];
+    let refusalCount = 0;
+    const refuse = (refusal: TemplateMigrationRefusalDto): void => {
+      refusalCount += 1;
+      if (refusals.length < MAX_REPORTED_REFUSALS) {
+        refusals.push(refusal);
+      }
+    };
     const deltas: TemplateVersionDeltaDto[] = [];
     const planned: PlannedAsset[] = [];
 
@@ -405,7 +460,7 @@ export class AssetTemplateMigrationService {
       // Q-B, before the delta: a domain change is about the whole version, not
       // about any one point, so it refuses regardless of what the points say.
       if (source.domain !== target.domain) {
-        refusals.push({
+        refuse({
           reason: "domain_changed",
           pointKey: null,
           assetCount: group.length,
@@ -425,7 +480,7 @@ export class AssetTemplateMigrationService {
         assetCount: group.length,
       });
       deltas.push(delta);
-      refusals.push(...delta.refusals);
+      for (const refusal of delta.refusals) refuse(refusal);
 
       for (const asset of group) {
         const newPoints: PlannedAsset["newPoints"] = [];
@@ -435,7 +490,7 @@ export class AssetTemplateMigrationService {
           const resolved = this.resolveSourceDataKey(addition.sourceDataKeyPattern, asset.code);
           if (resolved.ok) {
             if (resolved.sourceDataKey.length > SOURCE_DATA_KEY_MAX) {
-              refusals.push({
+              refuse({
                 reason: "unresolvable_source_data_key",
                 pointKey: addition.pointKey,
                 assetCount: 1,
@@ -464,7 +519,7 @@ export class AssetTemplateMigrationService {
             // Q-A. Refused before the transaction opens, naming everything the
             // operator needs to act: which point, which asset, and which tokens
             // migration cannot supply.
-            refusals.push({
+            refuse({
               reason: "unresolvable_source_data_key",
               pointKey: addition.pointKey,
               assetCount: 1,
@@ -540,7 +595,7 @@ export class AssetTemplateMigrationService {
           if (sourceKind === undefined) {
             continue;
           }
-          refusals.push({
+          refuse({
             reason: "point_key_already_mapped",
             pointKey: point.pointKey,
             assetCount: 1,
@@ -565,6 +620,7 @@ export class AssetTemplateMigrationService {
       planned,
       deltas,
       refusals,
+      refusalCount,
       fromVersions: [...new Set(planned.map((a) => a.dto.fromVersion))].sort((a, b) => a - b),
     };
   }

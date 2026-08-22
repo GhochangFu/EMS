@@ -17,7 +17,10 @@ import type { JwtPayload } from "@bms/shared";
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema } from "../admin.schema";
-import { assetPointCalcOverrideBodySchema } from "./asset-point-calc-override.schema";
+import {
+  assetPointCalcOverrideBodySchema,
+  calcPointKeyParamSchema,
+} from "./asset-point-calc-override.schema";
 import { AssetPointCalcOverrideService } from "./asset-point-calc-override.service";
 
 /**
@@ -62,7 +65,7 @@ export class AssetPointCalcOverrideController {
       return await this.service.setOverride(
         user,
         idParamSchema.parse(assetId),
-        pointKey,
+        calcPointKeyParamSchema.parse(pointKey),
         assetPointCalcOverrideBodySchema.parse(body),
       );
     } catch (err) {
@@ -81,6 +84,20 @@ export class AssetPointCalcOverrideController {
     @Param("pointKey") pointKey: string,
     @CurrentUser() user: JwtPayload,
   ) {
-    return this.service.clearOverride(user, idParamSchema.parse(assetId), pointKey);
+    try {
+      return await this.service.clearOverride(
+        user,
+        idParamSchema.parse(assetId),
+        calcPointKeyParamSchema.parse(pointKey),
+      );
+    } catch (err) {
+      // Matches `set` above. Without it a malformed path parameter throws a
+      // ZodError past the filter and surfaces as a 500, which would make this
+      // route worse than the unparsed version it replaced.
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
   }
 }

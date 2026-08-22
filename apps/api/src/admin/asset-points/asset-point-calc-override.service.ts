@@ -259,6 +259,17 @@ export class AssetPointCalcOverrideService {
     }
 
     await this.db.transaction(async (tx) => {
+      // Read inside the transaction, before nulling. Decision 9 asks the audit
+      // to record "the columns changed", and `CALC_COLUMNS` is the columns this
+      // endpoint *can* change — usually a superset. Recording all five on a row
+      // that only overrode the interval makes the audit say a formula was
+      // removed when none was set, and it never records prior values, so
+      // nothing downstream can tell the difference.
+      const [before] = await tx
+        .select()
+        .from(assetPoints)
+        .where(eq(assetPoints.id, rowId))
+        .limit(1);
       await tx
         .update(assetPoints)
         .set({
@@ -275,7 +286,11 @@ export class AssetPointCalcOverrideService {
           action: "master.asset_point.override_clear",
           entityType: "asset_point",
           entityId: rowId,
-          payload: { assetId, pointKey, columns: CALC_COLUMNS },
+          payload: {
+            assetId,
+            pointKey,
+            columns: before ? changedColumns(toFields(before)) : [],
+          },
         },
         tx,
       );
