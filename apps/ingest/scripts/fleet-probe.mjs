@@ -95,7 +95,7 @@ for (const row of catalog.rows) {
   }
 }
 
-/** topic -> {messages, firstAt, lastAt, devIds:Set, keys:Set, envelopeExtras:Set} */
+/** topic -> {messages, firstAt, lastAt, devIds:Set, keys:Set, absentKeys:Set, envelopeExtras:Set} */
 const seen = new Map();
 for (const topic of fleet.keys()) {
   seen.set(topic, {
@@ -104,9 +104,27 @@ for (const topic of fleet.keys()) {
     lastAt: null,
     devIds: new Set(),
     keys: new Set(),
+    absentKeys: new Set(),
     topLevel: new Set(),
     malformed: 0,
   });
+}
+
+/**
+ * True when a published key carries no reading.
+ *
+ * These are the three cases `samplesFromPayload` skips, so a key counted here
+ * is a key that reaches the adapter and produces nothing. **Whether a value is
+ * absent is not the value** — this returns a verdict, never the reading, and
+ * §9.6 holds.
+ *
+ * The first three probe runs counted key *names* per topic and never asked
+ * this, which is why both Salkumarhat stations read as publishing normally
+ * while sixteen of their twenty-one mapped points had no row: the RTU publishes
+ * its Modbus register keys empty when the meter behind it does not answer.
+ */
+function isAbsentReading(value) {
+  return value === null || value === undefined || value === "" || !Number.isFinite(Number(value));
 }
 
 const ENVELOPE = new Set(["dev_id", "ts", "values"]);
@@ -174,7 +192,10 @@ client.on("message", (topic, payload) => {
     }
     const values = body.values;
     if (values !== null && typeof values === "object") {
-      for (const k of Object.keys(values)) rec.keys.add(k);
+      for (const [k, v] of Object.entries(values)) {
+        rec.keys.add(k);
+        if (isAbsentReading(v)) rec.absentKeys.add(k);
+      }
     }
   } catch {
     rec.malformed += 1;
@@ -217,10 +238,16 @@ function report() {
         `msgs=${String(rec.messages).padStart(4)}`,
         `dev_id=${safe([...rec.devIds].join(",")) || "-"}${mismatch ? "  <-- MISMATCH vs rtu_code" : ""}`,
         `values_keys=${rec.keys.size}`,
+        `absent=${rec.absentKeys.size}`,
         rec.topLevel.size ? `top_level=${safe([...rec.topLevel].join(","), 80)}` : "",
         rec.malformed ? `malformed=${rec.malformed}` : "",
       ].join(" "),
     );
+    // Named, not just counted: which keys are dark is what tells a failed field
+    // device from a wrong mapping, and that is the whole point of measuring it.
+    if (rec.absentKeys.size > 0) {
+      console.log(`         absent: ${[...rec.absentKeys].sort().map((k) => safe(k, 24)).join(" ")}`);
+    }
   }
 
   console.log(`\n===== SILENT: ${silent.length} / ${fleet.size} =====`);
