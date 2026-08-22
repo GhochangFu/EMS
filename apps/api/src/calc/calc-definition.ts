@@ -45,10 +45,22 @@ export interface CalcDefinition {
   maxInputAgeSeconds: number;
 }
 
-/** The subset of a `template_points` row `toActiveDefinition` needs, joined
- * with the asset it applies to — decoupled from the Drizzle row shape so this
- * stays a pure function the caller (`CalcDefinitionsService`, task 7) adapts
- * a query result into. */
+/**
+ * The subset of a **merged** calc row `toActiveDefinition` needs, joined with
+ * the asset it applies to — decoupled from the Drizzle row shape so this stays
+ * a pure function the caller (`CalcDefinitionsService`) adapts a query result
+ * into.
+ *
+ * Since ADR 0039 decision 6 the five calc fields are no longer read straight
+ * off `template_points`: each arrives as
+ * `coalesce(asset_points.<col>, template_points.<col>)`, so this row describes
+ * *what the engine will use for this asset*, not what the template declares.
+ * The shape and every skip reason below are unchanged by that — the merge
+ * happens entirely in the caller's SQL, and a row whose merged values are
+ * unusable is the same counted skip a template-only row was. `kind` is the
+ * exception and is never merged: an asset cannot make a measured point
+ * derived, so `not_derived` still fires on the template's own value.
+ */
 export interface TemplatePointCalcRow {
   templatePointId: string;
   assetId: string;

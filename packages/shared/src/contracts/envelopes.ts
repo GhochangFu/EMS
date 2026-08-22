@@ -25,6 +25,12 @@ import {
   adminOrganizationDtoSchema,
   adminPointKeyDtoSchema,
   adminRtuDtoSchema,
+  assetPointCalcConfigDtoSchema,
+  templateMigrationAssetDtoSchema,
+  templateMigrationRefusalDtoSchema,
+  templateMigrationSkippedPointDtoSchema,
+  templateVersionDeltaDtoSchema,
+  templateVersionSummaryDtoSchema,
 } from "./admin";
 import {
   alarmListItemSchema,
@@ -83,6 +89,63 @@ export const assetTemplatesListResponseSchema = itemsOf(adminAssetTemplateSummar
  * the delete failed — and the contract should say so rather than accept it.
  */
 export const templateDraftDeletedResponseSchema = z.object({ deleted: z.literal(true) });
+
+/**
+ * `F2.6` template version lifecycle (ADR 0039).
+ *
+ * These sit here rather than in `admin.ts` where the step-3 plan listed them,
+ * because this module is where every response envelope in the package already
+ * lives — `admin.ts` holds no `…ResponseSchema` at all. Splitting the rule
+ * "row DTOs in `admin.ts`, envelopes in `envelopes.ts`" for four new routes
+ * would leave the next reader guessing which file to look in. The DTOs
+ * themselves are in `admin.ts` as the plan says.
+ */
+export const assetPointCalcConfigListResponseSchema = itemsOf(assetPointCalcConfigDtoSchema);
+export const templateVersionsListResponseSchema = itemsOf(templateVersionSummaryDtoSchema);
+
+/**
+ * `POST /admin/asset-templates/:id/migration-preview` — decision 2's "no blind
+ * apply". Writes nothing.
+ *
+ * `deltas` is an **array**, one per distinct source version, because the
+ * selection is a set of asset ids and nothing stops those assets sitting on
+ * different versions of the same code. Returning a single delta would force the
+ * server to pick a source version and quietly misreport the others.
+ *
+ * `canApply` is the server's verdict, not the client's to compute:
+ * `apply` re-runs this preview and refuses if it is not clean, so a client that
+ * derived its own answer from `refusals` would be a second implementation of a
+ * decision that only the server's copy is trusted with.
+ */
+export const templateMigrationPreviewResponseSchema = z.object({
+  templateCode: z.string(),
+  toVersionId: z.string(),
+  toVersion: z.number(),
+  assets: z.array(templateMigrationAssetDtoSchema),
+  deltas: z.array(templateVersionDeltaDtoSchema),
+  refusals: z.array(templateMigrationRefusalDtoSchema),
+  canApply: z.boolean(),
+});
+
+/**
+ * `POST /admin/asset-templates/:id/migrate` — decision 1's explicit, audited
+ * act.
+ *
+ * `migratedAssetIds` is echoed rather than assumed from the request: the caller
+ * asked for a set, and scope filtering or an already-on-target asset can make
+ * the answer smaller. `pointsCreated` counts the measured additions decision 4
+ * wires up.
+ */
+export const templateMigrationResultResponseSchema = z.object({
+  templateCode: z.string(),
+  toVersionId: z.string(),
+  toVersion: z.number(),
+  fromVersions: z.array(z.number()),
+  migratedAssetIds: z.array(z.string()),
+  assetCount: z.number(),
+  pointsCreated: z.number(),
+  skippedPoints: z.array(templateMigrationSkippedPointDtoSchema),
+});
 
 // --- operations -------------------------------------------------------------
 

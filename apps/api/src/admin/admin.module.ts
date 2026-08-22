@@ -2,9 +2,12 @@ import { Module } from "@nestjs/common";
 
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
+import { AssetPointCalcOverrideController } from "./asset-points/asset-point-calc-override.controller";
+import { AssetPointCalcOverrideService } from "./asset-points/asset-point-calc-override.service";
 import { AssetPointsAdminController } from "./asset-points/asset-points.controller";
 import { AssetPointsAdminService } from "./asset-points/asset-points.service";
 import { AssetTemplateInstantiationService } from "./asset-templates/asset-templates-instantiate.service";
+import { AssetTemplateMigrationService } from "./asset-templates/asset-templates-migrate.service";
 import { AssetTemplatesAdminController } from "./asset-templates/asset-templates.controller";
 import { AssetTemplatesAdminService } from "./asset-templates/asset-templates.service";
 import { AssetsAdminController } from "./assets/assets.controller";
@@ -41,6 +44,7 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     RtusAdminController,
     AssetsAdminController,
     AssetPointsAdminController,
+    AssetPointCalcOverrideController,
     PointKeysAdminController,
     AssetTemplatesAdminController,
     AuditAdminController,
@@ -63,9 +67,11 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     RtusAdminService,
     AssetsAdminService,
     AssetPointsAdminService,
+    AssetPointCalcOverrideService,
     PointKeysAdminService,
     AssetTemplatesAdminService,
     AssetTemplateInstantiationService,
+    AssetTemplateMigrationService,
     AuditAdminService,
     TelemetryWriteService,
     TelemetryImportService,

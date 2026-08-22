@@ -18,6 +18,9 @@ import {
   assetInstantiationResultDtoSchema,
   assetTemplatesListResponseSchema,
   templateDraftDeletedResponseSchema,
+  templateMigrationPreviewResponseSchema,
+  templateMigrationResultResponseSchema,
+  templateVersionsListResponseSchema,
 } from "@bms/shared/contracts";
 import type {
   AdminAssetTemplateDto,
@@ -27,12 +30,21 @@ import type {
   CalcDialect,
   CalcTrigger,
   TemplateDraftDeletedResponse,
+  TemplateMigrationPreviewResponse,
+  TemplateMigrationResultResponse,
   TemplatePointKind,
+  TemplateVersionsListResponse,
 } from "@bms/shared";
 
 import { adminFetch } from "./client";
 
-export type { AssetTemplatesListResponse, TemplateDraftDeletedResponse };
+export type {
+  AssetTemplatesListResponse,
+  TemplateDraftDeletedResponse,
+  TemplateMigrationPreviewResponse,
+  TemplateMigrationResultResponse,
+  TemplateVersionsListResponse,
+};
 
 /**
  * One point in a create or update body.
@@ -218,4 +230,56 @@ export async function deleteAdminAssetTemplateDraft(
   return adminFetch(`/admin/asset-templates/${id}`, templateDraftDeletedResponseSchema, {
     method: "DELETE",
   });
+}
+
+/**
+ * `F2.6` — every version of this template's code (ADR 0039 decision 8).
+ *
+ * `id` is any version of the code; the route resolves the code from it and
+ * returns the whole family, newest first, with the asset count that says which
+ * of them is still in service.
+ */
+export async function fetchAdminAssetTemplateVersions(
+  id: string,
+): Promise<TemplateVersionsListResponse> {
+  return adminFetch(`/admin/asset-templates/${id}/versions`, templateVersionsListResponseSchema);
+}
+
+/**
+ * Decision 2 — "no blind apply". Writes nothing.
+ *
+ * `targetVersionId` is the version being migrated **to**; the source version is
+ * read per asset by the server, so a selection spanning several versions of one
+ * code is handled rather than assumed away.
+ *
+ * `POST` and not `GET` because the selection is a body. A long list of asset
+ * ids in a query string would also be the wrong place for them.
+ */
+export async function previewAdminAssetTemplateMigration(
+  targetVersionId: string,
+  assetIds: string[],
+): Promise<TemplateMigrationPreviewResponse> {
+  return adminFetch(
+    `/admin/asset-templates/${targetVersionId}/migration-preview`,
+    templateMigrationPreviewResponseSchema,
+    { method: "POST", headers: jsonHeaders, body: JSON.stringify({ assetIds }) },
+  );
+}
+
+/**
+ * Decision 1 — the explicit, audited act.
+ *
+ * The preview is **not** echoed back. The server re-runs it and refuses if it is
+ * not clean, so sending one would offer a second opinion it must then decide
+ * whether to believe.
+ */
+export async function migrateAdminAssetTemplateAssets(
+  targetVersionId: string,
+  assetIds: string[],
+): Promise<TemplateMigrationResultResponse> {
+  return adminFetch(
+    `/admin/asset-templates/${targetVersionId}/migrate`,
+    templateMigrationResultResponseSchema,
+    { method: "POST", headers: jsonHeaders, body: JSON.stringify({ assetIds }) },
+  );
 }

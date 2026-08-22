@@ -24,6 +24,7 @@ import { AdminRoute } from "./components/admin-route";
 import { AdminHubPage } from "./pages/admin/admin-hub-page";
 import { AssetPointsAdminPage } from "./pages/admin/asset-points-page";
 import { AssetTemplateDetailPage } from "./pages/admin/asset-template-detail-page";
+import { AssetTemplateVersionsPage } from "./pages/admin/asset-template-versions-page";
 import { AssetTemplatesAdminPage } from "./pages/admin/asset-templates-page";
 import { AssetsAdminPage } from "./pages/admin/assets-page";
 import { LocationsAdminPage } from "./pages/admin/locations-page";
@@ -405,6 +406,18 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <AssetTemplateDetailPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/asset-templates/:templateId/versions"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <AssetTemplateVersionsPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

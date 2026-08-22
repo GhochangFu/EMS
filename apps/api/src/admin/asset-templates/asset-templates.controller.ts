@@ -26,6 +26,8 @@ import {
   updateAssetTemplateBodySchema,
 } from "./asset-templates.schema";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
+import { migrateAssetsBodySchema } from "./asset-templates-migrate.schema";
+import { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 
 @Controller("admin/asset-templates")
@@ -34,6 +36,7 @@ export class AssetTemplatesAdminController {
   constructor(
     private readonly service: AssetTemplatesAdminService,
     private readonly instantiation: AssetTemplateInstantiationService,
+    private readonly migration: AssetTemplateMigrationService,
   ) {}
 
   @Get()
@@ -116,6 +119,70 @@ export class AssetTemplatesAdminController {
         user,
         idParamSchema.parse(id),
         instantiateAssetsBodySchema.parse(body),
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F2.6` — every version of this template's code, with how much of the
+   * estate sits on each (ADR 0039 decision 8).
+   */
+  @Get(":id/versions")
+  async listVersions(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    return this.migration.listVersions(user, idParamSchema.parse(id));
+  }
+
+  /**
+   * `F2.6` — decision 2's "no blind apply". `:id` is the **target** version.
+   *
+   * `POST` rather than `GET` because the asset selection is a body, not a
+   * query; `200` rather than `201` because it writes nothing at all.
+   */
+  @Post(":id/migration-preview")
+  @HttpCode(HttpStatus.OK)
+  async previewMigration(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      return await this.migration.previewMigration(
+        user,
+        idParamSchema.parse(id),
+        migrateAssetsBodySchema.parse(body),
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F2.6` — decision 1's explicit, audited act. `:id` is the **target** version.
+   *
+   * `200` rather than `201`, unlike `instantiate`: this may create
+   * `asset_points` rows, but its subject is a state change on assets that
+   * already exist.
+   */
+  @Post(":id/migrate")
+  @HttpCode(HttpStatus.OK)
+  async migrate(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      return await this.migration.migrate(
+        user,
+        idParamSchema.parse(id),
+        migrateAssetsBodySchema.parse(body),
       );
     } catch (err) {
       if (err instanceof ZodError) {
