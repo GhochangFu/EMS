@@ -333,8 +333,49 @@ export async function runSupervisorTests(): Promise<void> {
       "an unbound deviceKey must not add an RTU to health",
     );
 
+
     await stopSupervisor(supervisor, fake);
     assert(scripted.disconnects >= 1, "stop() disconnects the adapter");
+  }
+
+  // ---- `F1.7`: an omitted `deviceKey` on a MULTI-device endpoint credits nobody
+
+  {
+    // The normaliser refuses this sample as `ambiguousDevice` rather than
+    // guessing. Liveness has to agree: crediting `bindings[0]` would keep a
+    // dead first RTU reading fresh for ever, off a sample whose rows were
+    // never written. Asserted on a supervisor that has seen nothing else, so
+    // it holds without a clock — the fake scheduler's `now` is a constant, and
+    // a before/after timestamp comparison here proves nothing.
+    const scripted = makeScriptedAdapter("push");
+    const fake = makeFakeScheduler();
+    const supervisor = createSupervisor({
+      factory: makeFactory([scripted]),
+      plan: makePlan(),
+      logger: silentLogger,
+      scheduler: fake.scheduler,
+      random: () => 0.5,
+      writeSamples: async () => {},
+    });
+
+    supervisor.start();
+    await nextTick();
+    scripted.finishConnect();
+    await nextTick();
+
+    scripted.emit([{ sourceKey: "flow", value: 5 }]);
+    await fake.flush();
+
+    const devices = supervisor.health().devices;
+    assert(devices.length === 2, "the endpoint still serves both RTUs");
+    assert(
+      devices.every((d) => d.lastSampleAt === undefined),
+      `an ambiguous sample must credit neither RTU, got ${JSON.stringify(
+        devices.map((d) => [d.rtuCode, d.lastSampleAt ?? null]),
+      )}`,
+    );
+
+    await stopSupervisor(supervisor, fake);
   }
 
   // ---- `F1.7`: a sole-device endpoint may omit `deviceKey` ----------------

@@ -123,6 +123,15 @@ stale rtu=861736076133666 endpoint=phe.thinkiot.co.in:8883 lastSample=never
   broker is fine, the station is not, and restarting the connection would not
   fix it. `silentFor=` is omitted for an RTU that has never published at all:
   that is a mapping error rather than a silence.
+- **The device list is fixed at start-up. Enabling or disabling an RTU needs a
+  host restart.** The reload loop refreshes point mappings only; a supervisor's
+  bindings are never replaced (see *Reloads* below). A newly enabled RTU is
+  therefore absent from `rtus=`, absent from the `stale` accounting, and its
+  messages are discarded — with no warning, because the endpoint key already
+  existed. A newly *disabled* one keeps its place and eventually reports
+  `stale`, degrading a host that is behaving correctly. This predates `F1.7`,
+  but `F1.7` promotes that list from an enumeration into the input of the
+  `ok`/`degraded` verdict, so the restart matters more than it did.
 - `skipped` lines name every RTU left out and why (`no-adapter`,
   `unsupported-protocol`, `missing-rtu-code`, `invalid-connection-config`, …),
   so a gateway that never appears is visible without reading the log.

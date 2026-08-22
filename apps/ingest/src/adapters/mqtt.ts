@@ -250,8 +250,24 @@ export function createMqttAdapter(
 
   /** `devId → sourceKeys`, so a message is routed without rescanning bindings. */
   const sourceKeysByDevice = new Map<string, readonly string[]>();
+  /**
+   * `topic → the devIds bound to it`, so a payload may only speak for the topic
+   * it arrived on (`F1.7`).
+   *
+   * **`dev_id` is the payload's own claim, and nothing else vouched for it.**
+   * Routing on it alone lets anyone with publish rights on the broker write
+   * another station's telemetry — and, since `F1.7` keys liveness per device,
+   * refresh that station's `lastSampleAt` so its outage never raises `stale`.
+   * One message would both falsify the data and silence the alarm meant to
+   * catch it. The topic is what the broker's own ACL governs, so it is the
+   * half worth trusting.
+   *
+   * A `Set` rather than one id: a topic may legitimately serve several devices,
+   * which is the case `subscribe()`'s de-duplication exists for.
+   */
+  const deviceKeysByTopic = new Map<string, ReadonlySet<string>>();
 
-  function handleMessage(_topic: string, payload: Buffer): void {
+  function handleMessage(topic: string, payload: Buffer): void {
     // Rule 8 (§5): nothing is emitted before `subscribe()` resolves or after
     // `disconnect()` is called.
     if (emit === null || closed) {
@@ -284,6 +300,18 @@ export function createMqttAdapter(
       return;
     }
 
+    // The device is bound *somewhere* — but is it bound to THIS topic? A bound
+    // id arriving on another device's topic is impersonation, not a routing
+    // quirk, so it is logged rather than dropped quietly. Never echo the
+    // payload: the ids are routing, the values are not (AGENTS.md §9.6).
+    if (deviceKeysByTopic.get(topic)?.has(parsed.devId) !== true) {
+      context?.logger.warn("mqtt payload rejected: device is not bound to this topic", {
+        topic,
+        devId: parsed.devId,
+      });
+      return;
+    }
+
     const samples = samplesFromPayload(parsed, sourceKeys);
     if (samples.length === 0) {
       return;
@@ -299,8 +327,15 @@ export function createMqttAdapter(
       context = ctx;
       closed = false;
       sourceKeysByDevice.clear();
+      deviceKeysByTopic.clear();
       for (const binding of ctx.bindings) {
         sourceKeysByDevice.set(binding.deviceKey, binding.sourceKeys);
+        const bound = deviceKeysByTopic.get(binding.device.topic);
+        if (bound === undefined) {
+          deviceKeysByTopic.set(binding.device.topic, new Set([binding.deviceKey]));
+        } else {
+          (bound as Set<string>).add(binding.deviceKey);
+        }
       }
 
       const url = `mqtts://${ctx.config.host}:${ctx.config.port}`;

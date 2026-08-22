@@ -21,7 +21,24 @@ import mqtt from "mqtt";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../../..");
-const WINDOW_SECONDS = Number(process.argv[2] ?? "120");
+
+/**
+ * The listen window, validated rather than coerced.
+ *
+ * `Number("10m")` is `NaN`, Node clamps a `NaN` timer to 1 ms, and the report
+ * would print a full all-silent table before the client had even connected —
+ * a typo rendered as "the whole fleet is dead". This script is the evidence
+ * base for `docs/f1.7-fleet-probe.md`, so a non-measurement must never be
+ * mistakable for a measurement. Capped so a stray argument cannot hold an
+ * authenticated session open against the client's broker indefinitely.
+ */
+const MAX_WINDOW_SECONDS = 3600;
+const rawWindow = process.argv[2] ?? "120";
+if (!/^\d+$/.test(rawWindow) || Number(rawWindow) < 1 || Number(rawWindow) > MAX_WINDOW_SECONDS) {
+  console.error(`window must be a whole number of seconds, 1..${MAX_WINDOW_SECONDS}; got "${rawWindow}"`);
+  process.exit(1);
+}
+const WINDOW_SECONDS = Number(rawWindow);
 
 /**
  * Minimal `.env` reader — avoids a second dependency for three keys.
@@ -40,7 +57,14 @@ function readEnvFile(path) {
   for (const line of text.split(/\r?\n/)) {
     const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
     if (!m) continue;
-    out[m[1]] = m[2].trim().replace(/^["'](.*)["']$/, "$1");
+    let value = m[2].trim();
+    // A quoted value keeps everything inside matching quotes; an unquoted one
+    // ends at a ` #` comment. Taking the rest of the line unconditionally folds
+    // `MQTT_PASSWORD=s3cret # pilot` into the secret, and the resulting auth
+    // failure names no cause.
+    const quoted = /^(["'])(.*)\1$/.exec(value);
+    value = quoted ? quoted[2] : value.replace(/\s+#.*$/, "").trim();
+    out[m[1]] = value;
   }
   return out;
 }
@@ -87,6 +111,23 @@ for (const topic of fleet.keys()) {
 
 const ENVELOPE = new Set(["dev_id", "ts", "values"]);
 
+/**
+ * Every wire-supplied string is scrubbed before it reaches the terminal.
+ *
+ * `dev_id` and the key names come from broker payloads, and this output is
+ * transcribed into `docs/f1.7-fleet-probe.md` as evidence. A device publishing
+ * ANSI escapes or a carriage return could otherwise overwrite or forge lines
+ * of that evidence. Length-capped for the same reason — one device must not be
+ * able to bury the other eleven.
+ */
+function safe(text, max = 40) {
+  const cleaned = String(text).replace(/[^\x20-\x7E]/g, "?");
+  return cleaned.length > max ? `${cleaned.slice(0, max)}…` : cleaned;
+}
+
+/** True once the broker has actually accepted the connection. */
+let connected = false;
+
 // The username is a credential (§9.6) and never reaches the output — the
 // broker address is what identifies the run.
 console.log(`connecting to mqtts://${host}:${port}`);
@@ -100,10 +141,11 @@ const client = mqtt.connect(`mqtts://${host}:${port}`, {
 });
 
 client.on("connect", () => {
+  connected = true;
   console.log("connected; subscribing\n");
   for (const topic of fleet.keys()) {
     client.subscribe(topic, { qos: 0 }, (err) => {
-      if (err) console.error(`  SUBSCRIBE FAILED ${topic}: ${err.message}`);
+      if (err) console.error(`  SUBSCRIBE FAILED ${safe(topic, 60)}: ${err.message}`);
     });
   }
 });
@@ -111,7 +153,11 @@ client.on("connect", () => {
 client.on("error", (err) => {
   console.error(`connection error: ${err.message}`);
   process.exitCode = 1;
+  clearTimeout(deadline);
   client.end(true);
+  // Deliberately no report: a run that never connected has measured nothing,
+  // and printing the all-silent table here is how "we could not reach the
+  // broker" becomes "the fleet is dead" in someone's notes.
 });
 
 client.on("message", (topic, payload) => {
@@ -135,12 +181,24 @@ client.on("message", (topic, payload) => {
   }
 });
 
-setTimeout(() => {
+const deadline = setTimeout(() => {
   client.end(true);
   report();
 }, WINDOW_SECONDS * 1000);
 
 function report() {
+  // A hung connect raises neither `connect` nor `error` with reconnect off, so
+  // the window simply elapses. Without this the table prints identically to a
+  // real run and exits 0 — a firewalled host indistinguishable from a dead
+  // fleet, in the document this output becomes.
+  if (!connected) {
+    console.error(
+      `\nNO MEASUREMENT: never connected to ${host}:${port} within ${WINDOW_SECONDS}s.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const publishing = [];
   const silent = [];
   for (const [topic, meta] of fleet) {
@@ -157,9 +215,9 @@ function report() {
         meta.rtuCode,
         meta.name.padEnd(22),
         `msgs=${String(rec.messages).padStart(4)}`,
-        `dev_id=${[...rec.devIds].join(",") || "-"}${mismatch ? "  <-- MISMATCH vs rtu_code" : ""}`,
+        `dev_id=${safe([...rec.devIds].join(",")) || "-"}${mismatch ? "  <-- MISMATCH vs rtu_code" : ""}`,
         `values_keys=${rec.keys.size}`,
-        rec.topLevel.size ? `top_level=${[...rec.topLevel].join(",")}` : "",
+        rec.topLevel.size ? `top_level=${safe([...rec.topLevel].join(","), 80)}` : "",
         rec.malformed ? `malformed=${rec.malformed}` : "",
       ].join(" "),
     );
@@ -173,5 +231,5 @@ function report() {
   const allKeys = new Set();
   for (const { rec } of publishing) for (const k of rec.keys) allKeys.add(k);
   console.log(`\ndistinct values keys across fleet: ${allKeys.size}`);
-  console.log([...allKeys].sort().join(" "));
+  console.log([...allKeys].sort().map((k) => safe(k, 24)).join(" "));
 }

@@ -228,7 +228,14 @@ services:
     # `INGEST_NOTIFY` is gone for the same reason: the host always notifies, so
     # no compose line is load-bearing for keeping the dashboards alive any more.
     ports:
-      - "9102:9102"
+      # Loopback only. The health body is plain text with no authentication,
+      # and since `F1.7` it names every enabled RTU, when each last reported
+      # and which are silent — remote unattended water stations, and a
+      # targeting signal rather than a status page. Nothing machine-reads it
+      # off-host: the service has no `healthcheck:`, no API or web caller
+      # scrapes it, and `infra/observability/` does not know this port. Every
+      # operator workflow in `docs/ingest-host.md` runs on the host itself.
+      - "127.0.0.1:9102:9102"
     depends_on:
       postgres:
         condition: service_healthy

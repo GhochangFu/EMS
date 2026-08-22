@@ -3,7 +3,11 @@ import { describe, it } from "vitest";
 import { runAdapterContractTests } from "../adapter/adapter-contract.spec.js";
 import { lookupAdapter } from "../adapter/registry.js";
 import { mqttAdapterFactory } from "./mqtt.js";
-import { mqttContractFixtures, runMqttAdapterTests } from "./mqtt.spec.js";
+import {
+  mqttContractFixtures,
+  runMqttAdapterTests,
+  runTopicAttributionTests,
+} from "./mqtt.spec.js";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014).
@@ -27,5 +31,9 @@ describe("mqtt adapter", () => {
 
   it("parses ThinkIoT payloads exactly as index.js does", async () => {
     await runMqttAdapterTests();
+  });
+
+  it("refuses a payload claiming a device not bound to its topic", async () => {
+    await runTopicAttributionTests();
   });
 });

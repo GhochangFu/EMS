@@ -109,7 +109,10 @@ export function runHostConfigTests(): void {
 
   // ---- numeric parsing is strict ------------------------------------------
 
-  for (const bad of ["0", "-1", "abc", "80.5"]) {
+  // `1e21` and `0x493e0` are the ones `Number.isInteger` waves through. They
+  // matter most for `INGEST_STALE_AFTER_MS`: a silently-accepted 1e21 ms window
+  // means no RTU is ever stale and the alarm is off with nothing said.
+  for (const bad of ["0", "-1", "abc", "80.5", "1e21", "0x493e0", "3e5", " 12 34"]) {
     expectThrow(
       () => readHostConfig({ ...BASE, INGEST_HOST_HEALTH_PORT: bad }),
       `port "${bad}" must be rejected — a typo that silently falls back to the ` +
@@ -140,11 +143,18 @@ export function runHostConfigTests(): void {
     "the staleness default applies when the variable is unset",
   );
   // Measured, not chosen: the nine live PHE RTUs publish every ~60 s (probe,
-  // 2026-08-22, 600 s window, 9–10 messages each). Five minutes is five missed
-  // cycles — a single dropped message can never raise a stale RTU.
+  // 2026-08-22, 600 s window, 9–10 messages each — `docs/f1.7-fleet-probe.md`).
+  //
+  // **Stated as its own constant, not as a multiple of `DEFAULT_RELOAD_MS`.**
+  // The reload interval is how often point mappings are refreshed; it happens
+  // to be 60_000 too, and pinning to it made this assertion mean nothing it
+  // said: widening the reload for an unrelated reason would go red citing
+  // publish cycles, and a fleet that slowed to five-minute publishing would
+  // stay green while the window became one missed cycle instead of five.
+  const MEASURED_PUBLISH_INTERVAL_MS = 60_000;
   assert(
-    DEFAULT_STALE_AFTER_MS >= 5 * DEFAULT_RELOAD_MS,
-    "the staleness window must clear several publish cycles, or one lost message reads as a dead RTU",
+    DEFAULT_STALE_AFTER_MS >= 5 * MEASURED_PUBLISH_INTERVAL_MS,
+    "the staleness window must clear five publish cycles, or one lost message reads as a dead RTU",
   );
   assert(
     readHostConfig({ ...BASE, INGEST_STALE_AFTER_MS: "900000" }).staleAfterMs === 900_000,

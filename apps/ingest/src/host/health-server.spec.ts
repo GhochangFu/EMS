@@ -281,6 +281,13 @@ export function runDeviceStalenessTests(): void {
       body.includes("stale rtu=RTU-1 endpoint=phe.thinkiot.co.in:8883 lastSample=never"),
       `a device with no sample renders \`never\`, not \`undefined\`:\n${body}`,
     );
+    // Asserted as an ending, because `includes` above passes with a trailing
+    // `silentFor=` appended — and there is no duration to report when there
+    // has never been a sample to measure from.
+    assert(
+      body.includes("lastSample=never\n"),
+      `silentFor must be omitted when nothing has ever arrived:\n${body}`,
+    );
   }
 
   // ---- but not before the host has been up long enough to hear it ---------
@@ -330,19 +337,46 @@ export function runDeviceStalenessTests(): void {
   // ---- silence is reported as a duration an operator can act on -----------
 
   {
+    // 12:00:15 — after `STARTED_AT`, so the duration is measured from the
+    // sample itself, and 315 s before `NOW`, so it is past the 300 s window.
     const body = renderHealth(
       snapshot({
         endpoints: [
           endpoint({
-            devices: [device("RTU-1", { lastSampleAt: new Date(NOW.getTime() - 754_000) })],
+            devices: [
+              device("RTU-1", { lastSampleAt: new Date("2026-08-05T12:00:15.000Z") }),
+            ],
           }),
         ],
       }),
       NOW,
     );
     assert(
-      body.includes("silentFor=754s"),
+      body.includes("silentFor=315s"),
       `how long a device has been silent is what says whether to go and look:\n${body}`,
+    );
+  }
+
+  // ---- the duration never contradicts the verdict beside it ---------------
+
+  {
+    // A sample older than the host's own start: the stale decision floors on
+    // `startedAt`, so the duration must too. Reporting `silentFor=86400s` next
+    // to a host that has been up 330 s would say the RTU was watched and silent
+    // all day, when in truth nothing was watching.
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [device("RTU-1", { lastSampleAt: new Date(STARTED_AT.getTime() - 86_400_000) })],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    assert(
+      body.includes("silentFor=330s"),
+      `silence is measured from startup when the last sample predates it:\n${body}`,
     );
   }
 
@@ -376,6 +410,38 @@ export function runDeviceStalenessTests(): void {
     assert(
       body.includes("rtus=2") && body.includes("rtus=RTU-1|RTU-2"),
       `the existing counts and enumeration survive the richer device shape:\n${body}`,
+    );
+  }
+
+  // ---- nothing reaches the body that was not deliberately rendered --------
+
+  {
+    // `renderHealth`'s own doc comment claimed "the assertion that no credential
+    // can appear in it" and no such assertion existed — found by the F1.7
+    // security review. There is no reachable secret in `HealthSnapshot` today,
+    // so this is a regression guard, not a leak fix: the next field added to
+    // `SupervisorHealth` will not get that review, and this body is served
+    // unauthenticated.
+    const SENTINEL = "SENTINEL-MUST-NOT-APPEAR";
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          {
+            ...endpoint({ devices: [device("RTU-1", { deviceKey: SENTINEL })] }),
+            // Every free-form string a supervisor could carry, poisoned.
+            detail: SENTINEL,
+          },
+        ],
+        skipped: [{ rtuId: SENTINEL, rtuCode: "RTU-7", reason: "no-adapter" }],
+      }),
+      NOW,
+    );
+    // `deviceKey` is routing, not operator-facing; `detail` and `rtuId` are
+    // internal. None of the three is rendered, and each is a plausible place a
+    // future connection string or credential fragment would arrive.
+    assert(
+      !body.includes(SENTINEL),
+      `only deliberately rendered fields may reach the body:\n${body}`,
     );
   }
 }

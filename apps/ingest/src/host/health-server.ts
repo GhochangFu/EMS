@@ -112,10 +112,20 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
   // The endpoint line says the broker is fine; these say which stations behind
   // it have stopped talking, which is a different question and a different fix.
   for (const device of stale) {
+    // The same clock the stale decision used — `max(lastSampleAt, startedAt)`.
+    // Deriving this one from `lastSampleAt` alone would let the two disagree,
+    // and a duration that contradicts the verdict beside it is worse than none.
     const silentForSeconds =
       device.lastSampleAt === undefined
         ? undefined
-        : Math.max(0, Math.round((now.getTime() - device.lastSampleAt.getTime()) / 1000));
+        : Math.max(
+            0,
+            Math.round(
+              (now.getTime() -
+                Math.max(device.lastSampleAt.getTime(), snapshot.startedAt.getTime())) /
+                1000,
+            ),
+          );
     lines.push(
       `stale rtu=${device.rtuCode} endpoint=${device.endpointKey} ` +
         `lastSample=${device.lastSampleAt?.toISOString() ?? "never"}` +

@@ -69,6 +69,14 @@ function positiveInt(raw: string | undefined, fallback: number, name: string): n
   if (raw === undefined || raw.trim() === "") {
     return fallback;
   }
+  // Plain decimal digits only. `Number()` alone accepts `1e21` and `0x493e0`,
+  // both of which are integers, so `INGEST_STALE_AFTER_MS=1e21` would start
+  // cleanly and disable the staleness alarm for ever with no error and no log
+  // line. A parser that fails open is worse the more the value matters, and
+  // this one now gates a monitoring control rather than only a port.
+  if (!/^\d+$/.test(raw.trim())) {
+    throw new Error(`${name} must be a positive integer, got "${raw}"`);
+  }
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) {
     // Loud, not silent: a typo'd port that quietly falls back to the default is
