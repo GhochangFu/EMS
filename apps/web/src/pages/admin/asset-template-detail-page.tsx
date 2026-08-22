@@ -217,13 +217,25 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
   }
 
   if (templateQ.isError || !templateQ.data) {
-    // The 403 half of decision 10 lands here. The body is rendered verbatim
-    // because the service's own sentence is the actionable one.
+    // The 403 half of decision 10 lands here, and D10 asks for **the message**
+    // the service writes — not the envelope around it. `adminFetch` throws
+    // `new Error(text)` with the whole body, so rendering `.message` raw put
+    // `{"message":"Template is outside your access scope","error":"Forbidden",
+    // "statusCode":403}` on screen. `apiErrorMessage` unwraps it, exactly as
+    // the five tab save paths already do.
+    //
+    // This was invisible until `F4.52`: the branch could not run, because a
+    // 403 cleared the session and returned the user to /login before any
+    // message could render. Measured as `phe-admin@bms.local` opening an
+    // out-of-scope template by URL, which is the only route to it — `list()`
+    // filters to `writableOrganizationIds` and never offers the row.
     return (
       <MasterDataLayout user={user}>
         <SectionCard title="Asset template">
           <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-            {(templateQ.error as Error | null)?.message ?? "This template could not be loaded."}
+            {templateQ.error
+              ? apiErrorMessage(templateQ.error)
+              : "This template could not be loaded."}
           </p>
           <Link
             to="/admin/asset-templates"
