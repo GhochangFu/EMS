@@ -11,6 +11,7 @@ import {
   assertFullOverrideTakesNothingFromTemplate,
   assertInactiveRowStillResolves,
   assertMeasuredPointIsNeverActivatedByAnOverride,
+  assertNonComputedRowOverridesNothing,
   assertNoRowInheritsEverything,
   assertOverrideDoesNotLeakBetweenAssets,
   cleanup,
@@ -96,5 +97,10 @@ describe.skipIf(!connectionString)("F2.6 — calc resolution merge", () => {
   it("case 8 — a measured template point is never activated by an override", async () => {
     if (!pool) throw new Error("pool required");
     await assertMeasuredPointIsNeverActivatedByAnOverride(pool, fx);
+  });
+
+  it("case 9 — a row whose source_kind is not computed overrides nothing", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertNonComputedRowOverridesNothing(pool, fx);
   });
 });

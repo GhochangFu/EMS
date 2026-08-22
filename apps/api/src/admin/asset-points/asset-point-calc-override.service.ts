@@ -155,12 +155,22 @@ export class AssetPointCalcOverrideService {
     // Q-A of this unit: the synthesised key is checked before the transaction,
     // like every other fallible decision, so an over-long point key is a named
     // error rather than a rolled-back insert.
-    const formatted = computedSourceDataKey(pointKey);
-    if (ctx.existingRowId === null && !formatted.ok) {
-      throw new BadRequestException(
-        `Point key "${pointKey}" is too long: its synthesised source_data_key would be ` +
-          `${formatted.length} characters, over the column limit.`,
-      );
+    // Q-A of this unit: the synthesised key is checked before the transaction,
+    // like every other fallible decision, so an over-long point key is a named
+    // error rather than a rolled-back insert. It is non-null exactly when this
+    // call creates the row, which is what lets the insert below use it with no
+    // fallback — a bare `pointKey` is not the `computed:` format that
+    // `computed-source-data-key.ts` exists to keep single.
+    let newSourceDataKey: string | null = null;
+    if (ctx.existingRowId === null) {
+      const formatted = computedSourceDataKey(pointKey);
+      if (!formatted.ok) {
+        throw new BadRequestException(
+          `Point key "${pointKey}" is too long: its synthesised source_data_key would be ` +
+            `${formatted.length} characters, over the column limit.`,
+        );
+      }
+      newSourceDataKey = formatted.sourceDataKey;
     }
 
     await this.db.transaction(async (tx) => {
@@ -168,20 +178,48 @@ export class AssetPointCalcOverrideService {
       if (rowId !== null) {
         await tx.update(assetPoints).set(values).where(eq(assetPoints.id, rowId));
       } else {
-        const [created] = await tx
+        if (newSourceDataKey === null) {
+          throw new Error(
+            "setOverride: no source_data_key was prepared for a new asset_points row",
+          );
+        }
+        // `resolveWritableContext` read the existing row *outside* this
+        // transaction, and two other writers create the same
+        // `(asset_id, point_key)`: `CalcWriteService` on the point's first
+        // computed value, and a concurrent override call. Either can land in
+        // that window, and `asset_points_asset_id_point_key_unique` would turn
+        // it into a raw 23505 — a 500 where an operator asked for an override.
+        //
+        // `setWhere` carries the refusal `resolveWritableContext` already
+        // makes: a row that is not `computed` is telemetry wiring, so the
+        // update is skipped, nothing comes back, and the 409 below says so.
+        // Merging into it would attach a formula to ingest wiring.
+        const [written] = await tx
           .insert(assetPoints)
           .values({
             assetId,
             pointKey,
-            sourceDataKey: formatted.ok ? formatted.sourceDataKey : pointKey,
+            sourceDataKey: newSourceDataKey,
             sourceKind: "computed",
             rtuId: null,
             active: true,
             unit: null,
             ...values,
           })
+          .onConflictDoUpdate({
+            target: [assetPoints.assetId, assetPoints.pointKey],
+            set: values,
+            setWhere: eq(assetPoints.sourceKind, "computed"),
+          })
           .returning({ id: assetPoints.id });
-        rowId = created.id;
+        if (!written) {
+          throw new ConflictException(
+            `Point "${pointKey}" on this asset gained an asset_points row that is not a ` +
+              "computed point while this override was being applied. Nothing was written. " +
+              "Remove the telemetry mapping first, or use a different point key.",
+          );
+        }
+        rowId = written.id;
       }
 
       // The open `tx` — `MasterDataAuditService.write`'s docblock requires it
@@ -311,7 +349,22 @@ export class AssetPointCalcOverrideService {
 
     return {
       template: toFields(point),
-      declaredPointKeys: points.map((p) => p.pointKey),
+      // **Measured only**, matching `assetTemplatePointsBodySchema`'s
+      // sibling-scoped rule: "a derived formula may only reference measured
+      // points". This endpoint is a second author for the same engine, so it
+      // must refuse what the first one refuses.
+      //
+      // Passing every declared key would let an override reference another
+      // derived point, or itself. `CalcSchedulerService` stamps a fresh
+      // wall-clock bucket on every tick, so `ON CONFLICT DO NOTHING` never
+      // dedupes a self-referential series: `{SELF} * 2` compounds each
+      // interval until it is non-finite, and `{M} + {SELF}` accumulates
+      // without bound. It also breaks the invariant `getInputKeys()` rests on
+      // (ADR 0037 decision 11) — a derived point is never a formula input.
+      //
+      // The overridden point is excluded by construction: the check above
+      // already established that it is `derived`.
+      declaredPointKeys: points.filter((p) => p.kind === "measured").map((p) => p.pointKey),
       existingRowId: existing?.id ?? null,
     };
   }

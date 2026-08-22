@@ -410,6 +410,22 @@ export const templateMigrationRefusalReasonSchema = z.enum([
   "unresolvable_source_data_key",
   /** Q-B — the target version declares a different plant domain. */
   "domain_changed",
+  /**
+   * The asset already has an `asset_points` row for a point key the target
+   * version adds as measured.
+   *
+   * Three things create that row and none of them knows about the others: a
+   * hand-made mapping, `CalcWriteService` on a derived point's first computed
+   * value, and — since ADR 0039 decision 7 — the calc override endpoint. So a
+   * version that turns a derived point into a measured one collides with a row
+   * the operator never thinks of as a mapping.
+   *
+   * Refused rather than merged: the existing row may be `computed` wiring for a
+   * formula, and quietly turning it into telemetry wiring (or leaving it in
+   * place and reporting the point as created) is the "wrong number, quietly"
+   * class this feature is built to avoid.
+   */
+  "point_key_already_mapped",
 ]);
 
 export const templateMigrationRefusalDtoSchema = z.object({

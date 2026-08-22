@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -140,6 +141,21 @@ export class AssetPointsAdminService {
     }
 
     const nextPointKey = body.pointKey ?? existing.pointKey;
+    if (nextPointKey !== existing.pointKey && existing.sourceKind === "computed") {
+      // A `computed` row is calc configuration, not a telemetry mapping: it
+      // carries the ADR 0039 override columns and its `source_data_key` is the
+      // synthesised `computed:<pointKey>`. Re-keying it does one of two silent
+      // things — the calc resolution join stops matching and the override goes
+      // inert while still stored, or the key lands on another derived point and
+      // the old formula override starts applying to a different measurement.
+      // Both are the "wrong number, quietly" failure this surface exists to
+      // avoid, so the key is fixed for the life of the row.
+      throw new ConflictException(
+        `Point "${existing.pointKey}" is a computed point: its asset_points row holds calc ` +
+          "configuration rather than telemetry wiring, so its point key cannot be changed. " +
+          "Clear the calc override to remove the row, then map the new key.",
+      );
+    }
     const catalog = await this.resolveCatalogPointKey(existing.assetId, nextPointKey);
 
     await this.db

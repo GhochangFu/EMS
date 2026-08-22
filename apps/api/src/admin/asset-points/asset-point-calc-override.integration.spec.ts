@@ -4,8 +4,11 @@ import { assetPoints, assetTemplates, assets, createDb, templatePoints } from "@
 import type { BmsDb } from "@bms/db";
 import { assetPointCalcConfigListResponseSchema } from "@bms/shared";
 
+import { AccessControlService } from "../../auth/access-control.service";
 import type { Fixtures } from "../asset-templates/asset-templates.instantiate.integration.spec";
+import { MasterDataAuditService } from "../master-data-audit.service";
 import type { AssetPointCalcOverrideService } from "./asset-point-calc-override.service";
+import { AssetPointsAdminService } from "./asset-points.service";
 
 /**
  * `F2.6` U7 — per-asset calc overrides against a real database
@@ -474,5 +477,116 @@ export async function assertReadReportsTheTriple(
   assert(
     updated?.effective.maxInputAgeSeconds === 600,
     "and an un-overridden column must still show the template's value as effective",
+  );
+}
+
+/**
+ * An override formula may reference measured points only — the same rule
+ * `assetTemplatePointsBodySchema` applies to a template author.
+ *
+ * This endpoint is a second author for the same engine, so a rule enforced in
+ * one path and not the other is not a style difference. A self-reference is the
+ * sharpest case: `CalcSchedulerService` stamps a fresh wall-clock bucket every
+ * tick, so `ON CONFLICT DO NOTHING` never dedupes the series and the value
+ * compounds each interval until it is non-finite. `{SELF} * 2` needs no unusual
+ * configuration to run away — the 10-second floor against the 300-second
+ * default input age keeps the previous value "fresh" on every sweep.
+ *
+ * It also breaks the invariant `CalcDefinitionsService.getInputKeys()` rests on
+ * (ADR 0037 decision 11): a derived point is never a formula input.
+ */
+export async function assertFormulaCannotReferenceADerivedPoint(
+  pool: pg.Pool,
+  fx: Fixtures,
+  svc: AssetPointCalcOverrideService,
+): Promise<void> {
+  const db = createDb(pool);
+  const { assetId } = await seed(db, fx, "09");
+
+  await expectRejection(
+    () =>
+      svc.setOverride(fx.adminJwt, assetId, DERIVED_KEY, {
+        ...NOTHING,
+        formula: `{${DERIVED_KEY}} * 2`,
+        formulaDialect: "bms-calc-v1",
+      }),
+    // Matched on the rule, not on the offending ref: `formatCalcError`
+    // deliberately never echoes a fragment of the input back.
+    /unknown point/,
+    "an override formula that references the derived point itself",
+    400,
+  );
+
+  assert(
+    (await rowFor(pool, assetId, DERIVED_KEY)) === undefined,
+    "and nothing may be written — a refused override must not leave the eager row behind",
+  );
+
+  // Anti-vacuity: the same call with a measured reference must succeed, so the
+  // rejection above is the ref rule and not a broken fixture.
+  await svc.setOverride(fx.adminJwt, assetId, DERIVED_KEY, {
+    ...NOTHING,
+    formula: `{${MEASURED_KEY}} * 3`,
+    formulaDialect: "bms-calc-v1",
+  });
+  const row = await rowFor(pool, assetId, DERIVED_KEY);
+  assert(
+    row?.formula === `{${MEASURED_KEY}} * 3`,
+    `a measured reference must still be accepted, got ${String(row?.formula)}`,
+  );
+}
+
+/**
+ * The row this endpoint creates cannot be re-keyed from the mapping surface.
+ *
+ * `AssetPointsAdminService.list` does not filter `source_kind`, so a `computed`
+ * row is visible and PATCH-able beside real mappings. Changing its `point_key`
+ * does one of two silent things: the calc resolution join stops matching and
+ * the override goes inert while still stored, or the key lands on another
+ * derived point and the old formula override starts applying to a different
+ * measurement. Neither throws. Both compute a wrong number and keep going.
+ */
+export async function assertComputedRowCannotBeReKeyed(
+  pool: pg.Pool,
+  fx: Fixtures,
+  svc: AssetPointCalcOverrideService,
+): Promise<void> {
+  const db = createDb(pool);
+  const { assetId } = await seed(db, fx, "10");
+  const mappingSvc = new AssetPointsAdminService(
+    db,
+    new AccessControlService(db),
+    new MasterDataAuditService(db),
+  );
+
+  await svc.setOverride(fx.adminJwt, assetId, DERIVED_KEY, {
+    ...NOTHING,
+    calcIntervalSeconds: 45,
+  });
+  const created = await rowFor(pool, assetId, DERIVED_KEY);
+  assert(created !== undefined, "the override row must exist — this test is otherwise vacuous");
+
+  await expectRejection(
+    () => mappingSvc.update(fx.adminJwt, created?.id ?? "", { pointKey: MEASURED_KEY }),
+    /computed/,
+    "re-keying a computed row from the mapping surface",
+    409,
+  );
+
+  const after = await rowFor(pool, assetId, DERIVED_KEY);
+  assert(
+    after?.calc_interval_seconds === 45,
+    `the row must be untouched, got ${JSON.stringify(after)}`,
+  );
+
+  // Anti-vacuity: the refusal is keyed on the point key *changing*, not on the
+  // row being computed. An update that leaves the key alone must get past this
+  // guard and fail further down instead — here on the catalog lookup, because a
+  // template's derived key is not an organisation catalog point key.
+  await expectRejection(
+    () => mappingSvc.update(fx.adminJwt, created?.id ?? "", { sensorCode: "F26-SENSOR" }),
+    /catalog/,
+    "an update that does not change the point key",
+    400,
   );
 }

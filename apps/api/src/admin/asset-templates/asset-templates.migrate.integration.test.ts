@@ -13,6 +13,7 @@ import {
   assertApplyMovesOnlySelectedAssets,
   assertDerivedChangesMigrateFreely,
   assertDomainChangeRefuses,
+  assertExistingRowRefusesAMeasuredAddition,
   assertMeasuredReKeyRefuses,
   assertMeasuredRemovalRefusesAndWritesNothing,
   assertOutOfScopeAssetIsRefused,
@@ -133,5 +134,10 @@ describe.skipIf(!connectionString)("F2.6 — template version migration", () => 
   it("rejects a hand-created asset that is pinned to no version", async () => {
     if (!pool) throw new Error("pool required");
     await assertUnpinnedAssetIsRejected(pool, svc, fx);
+  });
+
+  it("refuses a measured addition onto a point key the asset already has a row for", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertExistingRowRefusesAMeasuredAddition(pool, svc, fx);
   });
 });

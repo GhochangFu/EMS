@@ -15,6 +15,8 @@ import {
   assertD1IsEnforcedOnTheWritePath,
   assertOnlyDeclaredDerivedPointsAreOverridable,
   assertOutOfScopeAssetIsRefused,
+  assertComputedRowCannotBeReKeyed,
+  assertFormulaCannotReferenceADerivedPoint,
   assertReadReportsTheTriple,
   assertSetCreatesTheRowEagerly,
   assertSetUpdatesAnExistingRowInPlace,
@@ -105,5 +107,15 @@ describe.skipIf(!connectionString)("F2.6 — asset point calc overrides", () => 
   it("reports template, override and effective as three distinct values", async () => {
     if (!pool) throw new Error("pool required");
     await assertReadReportsTheTriple(pool, svc, fx);
+  });
+
+  it("refuses an override formula that references a derived point", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertFormulaCannotReferenceADerivedPoint(pool, fx, svc);
+  });
+
+  it("refuses to re-key a computed row from the mapping surface", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertComputedRowCannotBeReKeyed(pool, fx, svc);
   });
 });

@@ -147,14 +147,18 @@ async function writeOverrideRow(
   db: BmsDb,
   assetId: string,
   override: Partial<CalcValues>,
-  extra: { active?: boolean; pointKey?: string } = {},
+  extra: { active?: boolean; pointKey?: string; sourceKind?: "computed" | "unmapped" } = {},
 ): Promise<void> {
   const pointKey = extra.pointKey ?? DERIVED_KEY;
+  const sourceKind = extra.sourceKind ?? "computed";
   await db.insert(assetPoints).values({
     assetId,
     pointKey,
-    sourceDataKey: `computed:${pointKey}`,
-    sourceKind: "computed",
+    // `unmapped` keeps `asset_points_source_ref_check` satisfied with a NULL
+    // rtu_id, which is what an operator-made mapping on an un-wired point looks
+    // like.
+    sourceDataKey: sourceKind === "computed" ? `computed:${pointKey}` : `PLANT/${pointKey}`,
+    sourceKind,
     rtuId: null,
     active: extra.active ?? true,
     formula: override.formula ?? null,
@@ -497,5 +501,50 @@ export async function assertMeasuredPointIsNeverActivatedByAnOverride(
   assert(
     defs.some((d) => d.pointKey === DERIVED_KEY),
     "the derived point must still resolve — this assertion is otherwise vacuous",
+  );
+}
+
+/**
+ * Case 9 — a row whose `source_kind` is not `computed` overrides nothing.
+ *
+ * `AssetPointsAdminService.create` resolves a point key against the
+ * `point_keys` catalog alone and has no template awareness, so an operator can
+ * map an `unmapped` row onto a key the pinned version declares `derived`. That
+ * row is telemetry wiring, and the five calc columns are not its to set.
+ *
+ * The fixture writes calc columns onto it anyway, which nothing in production
+ * does today — and that is the point. Without the `source_kind` filter in the
+ * join the merge would happily resolve a formula out of a telemetry mapping,
+ * and no other test in this file would notice, because every legitimate row is
+ * `computed`.
+ */
+export async function assertNonComputedRowOverridesNothing(
+  pool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const { assetId, measuredKey } = await seedVersion(db, fx, 1, "09");
+  await writeOverrideRow(
+    db,
+    assetId,
+    { calcIntervalSeconds: 45, maxInputAgeSeconds: 30 },
+    { sourceKind: "unmapped" },
+  );
+
+  const def = await loadDerived(db, assetId, measuredKey);
+  assert(
+    def !== undefined,
+    "the derived point must still resolve from its template — this assertion is otherwise " +
+      "vacuous, because a missing definition would satisfy every check below",
+  );
+  assert(
+    def?.intervalSeconds === 120,
+    `an unmapped row must not override the template's interval, got ${String(
+      def?.intervalSeconds,
+    )} — 45 means the join resolved calc configuration out of a telemetry mapping`,
+  );
+  assert(
+    def?.maxInputAgeSeconds === 600,
+    `and must not override maxInputAge, got ${String(def?.maxInputAgeSeconds)}`,
   );
 }

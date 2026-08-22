@@ -496,6 +496,70 @@ export class AssetTemplateMigrationService {
       }
     }
 
+    // Decision 4 creates each measured addition's `asset_points` row, and three
+    // unrelated paths may already have created one for the same
+    // `(asset_id, point_key)`: a hand-made mapping, `CalcWriteService` on a
+    // derived point's first computed value, and — since decision 7 — the calc
+    // override endpoint. A version that turns a derived point measured collides
+    // with a row the operator does not think of as a mapping at all.
+    //
+    // `asset_points_asset_id_point_key_unique` would raise 23505 *inside* the
+    // transaction: nothing is written, but the operator gets a driver error
+    // naming no point and no asset, from a service whose own contract is that
+    // every fallible decision is made before the transaction opens. So the
+    // collision is read here and refused by name.
+    //
+    // Refused rather than merged. `onConflictDoNothing` would report the point
+    // as created while leaving a `computed` row standing in for physical
+    // wiring, which is exactly the quiet wrongness this feature exists to stop.
+    const creatingAssetIds = planned.filter((a) => a.newPoints.length > 0).map((a) => a.dto.assetId);
+    if (creatingAssetIds.length > 0) {
+      const existingRows = await this.db
+        .select({
+          assetId: assetPoints.assetId,
+          pointKey: assetPoints.pointKey,
+          sourceKind: assetPoints.sourceKind,
+        })
+        .from(assetPoints)
+        .where(inArray(assetPoints.assetId, creatingAssetIds));
+
+      const existingByAsset = new Map<string, Map<string, string>>();
+      for (const row of existingRows) {
+        const forAsset = existingByAsset.get(row.assetId) ?? new Map<string, string>();
+        forAsset.set(row.pointKey, row.sourceKind);
+        existingByAsset.set(row.assetId, forAsset);
+      }
+
+      for (const asset of planned) {
+        const forAsset = existingByAsset.get(asset.dto.assetId);
+        if (!forAsset) {
+          continue;
+        }
+        for (const point of asset.newPoints) {
+          const sourceKind = forAsset.get(point.pointKey);
+          if (sourceKind === undefined) {
+            continue;
+          }
+          refusals.push({
+            reason: "point_key_already_mapped",
+            pointKey: point.pointKey,
+            assetCount: 1,
+            message:
+              `Asset "${asset.dto.assetCode}": version ${target.version} adds ` +
+              `"${point.pointKey}" as a measured point, but this asset already has an ` +
+              `asset_points row for that key with source_kind "${sourceKind}". ` +
+              (sourceKind === "computed"
+                ? "That row is calc configuration, and reusing it as telemetry wiring would " +
+                  "repoint a formula onto ingest values. "
+                : "That row is a telemetry mapping, and it may resolve to a different source " +
+                  "than the new version's pattern. ") +
+              "Remove or re-key the existing row first, or rebuild this asset from the new " +
+              "version.",
+          });
+        }
+      }
+    }
+
     return {
       target,
       planned,

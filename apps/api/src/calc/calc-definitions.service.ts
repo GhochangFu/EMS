@@ -80,13 +80,30 @@ export class CalcDefinitionsService {
       // ADR 0039 decision 6. LEFT, on `(asset_id, point_key)` — the pair
       // `asset_points_asset_id_point_key_unique` covers, so this matches at
       // most one row per derived point and cannot fan the result out.
-      // `active` is not filtered: D-2 — deactivating a
-      // telemetry *mapping* must not silently stop a formula, and an override
-      // row created by the override endpoint is calc configuration rather
-      // than wiring.
+      //
+      // `source_kind` **is** filtered, and `active` is **not**, for two
+      // different reasons that are easy to confuse:
+      //
+      // - `active` is not filtered: D-2 — deactivating a telemetry *mapping*
+      //   must not silently stop a formula, and an override row created by the
+      //   override endpoint is calc configuration rather than wiring.
+      // - `source_kind` is filtered because the calc columns belong only to a
+      //   `computed` row. `AssetPointsAdminService.create` resolves a point key
+      //   against the `point_keys` catalog alone and has no template awareness,
+      //   so an operator can map a `measured`/`unmapped` row onto a key the
+      //   pinned template declares `derived`. Such a row carries NULL across
+      //   all five columns today, so omitting the filter happens to give the
+      //   same answer — but only by accident, and the accident is one write
+      //   away from resolving a formula out of a telemetry mapping. The filter
+      //   makes the join say what it means instead of relying on an invariant
+      //   no constraint enforces.
       .leftJoin(
         assetPoints,
-        and(eq(assetPoints.assetId, assets.id), eq(assetPoints.pointKey, templatePoints.pointKey)),
+        and(
+          eq(assetPoints.assetId, assets.id),
+          eq(assetPoints.pointKey, templatePoints.pointKey),
+          eq(assetPoints.sourceKind, "computed"),
+        ),
       )
       .where(eq(templatePoints.kind, "derived"));
 

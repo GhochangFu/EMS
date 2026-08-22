@@ -1,6 +1,6 @@
 import type pg from "pg";
 
-import { assetTemplates, assets, createDb, templatePoints } from "@bms/db";
+import { assetPoints, assetTemplates, assets, createDb, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import {
   templateMigrationPreviewResponseSchema,
@@ -723,11 +723,94 @@ export async function assertReMigrationIsANoOp(
   assert(second.assetCount === 0, "an asset already on the target version is not migrated again");
   assert(
     (await pointRows(pool, assetId)).length === 1,
-    "and no duplicate asset_points row is created — the unique constraint would have thrown",
+    "and no duplicate asset_points row is created. Note what this does NOT cover: the " +
+      "asset is filtered out by `toMigrate` before any insert runs, so the unique " +
+      "constraint is never exercised here. The collision path is " +
+      "`assertExistingRowRefusesAMeasuredAddition`.",
   );
   assert(
     (await auditRows(pool, v2)).length === 1,
     "a no-op migration must not write a second audit row claiming a migration occurred",
+  );
+}
+
+/**
+ * A measured addition onto a point key the asset already has a row for is
+ * refused by name, before the transaction.
+ *
+ * Three unrelated paths create an `asset_points` row and none knows about the
+ * others: a hand-made mapping, `CalcWriteService` on a derived point's first
+ * computed value, and the ADR 0039 decision 7 override endpoint. So a version
+ * that turns a derived point into a measured one — "we fitted a real meter" —
+ * collides with a row the operator does not think of as a mapping at all.
+ *
+ * Without the check in `buildPlan` this is a raw 23505 inside the transaction:
+ * nothing is written, but the operator gets a driver error naming no point and
+ * no asset, from a service whose contract is that every fallible decision is
+ * made first.
+ */
+export async function assertExistingRowRefusesAMeasuredAddition(
+  pool: pg.Pool,
+  svc: AssetTemplateMigrationService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const v1 = await seedVersion(db, fx, {
+    version: 1,
+    points: [
+      { pointKey: "KW" },
+      { pointKey: "KWH", kind: "derived", sourceDataKeyPattern: null, formula: "{KW} * 2" },
+    ],
+  });
+  const v2 = await seedVersion(db, fx, {
+    version: 2,
+    points: [{ pointKey: "KW" }, { pointKey: "KWH" }],
+  });
+  const assetId = await seedAsset(db, fx, "COLLIDE", v1);
+
+  // Exactly what the override endpoint leaves behind, and what `CalcWriteService`
+  // writes on the point's first computed value.
+  await db.insert(assetPoints).values({
+    assetId,
+    pointKey: "KWH",
+    sourceDataKey: "computed:KWH",
+    sourceKind: "computed",
+    rtuId: null,
+    active: true,
+    calcIntervalSeconds: 45,
+  });
+
+  const preview = await svc.previewMigration(fx.adminJwt, v2, { assetIds: [assetId] });
+  const refusal = preview.refusals.find((r) => r.reason === "point_key_already_mapped");
+  assert(
+    refusal !== undefined,
+    `expected a point_key_already_mapped refusal, got ${JSON.stringify(preview.refusals)}`,
+  );
+  assert(refusal?.pointKey === "KWH", `the refusal must name the point, got ${String(refusal?.pointKey)}`);
+  assert(
+    refusal?.message.includes("COLLIDE") === true,
+    `and the asset, got: ${String(refusal?.message)}`,
+  );
+  assert(
+    refusal?.message.includes("computed") === true,
+    "and must say what the existing row is, so the operator knows an override is in the way",
+  );
+  assert(preview.canApply === false, "a refusal must make the server's verdict false");
+
+  await expectRejection(
+    () => svc.migrate(fx.adminJwt, v2, { assetIds: [assetId] }),
+    /point_key_already_mapped|already has an asset_points row/,
+    "applying a migration whose measured addition collides with an existing row",
+    409,
+  );
+  assert(
+    (await pinnedVersion(pool, assetId)) === 1,
+    "and the asset must stay on its old pin — nothing was written",
+  );
+  const rows = await pointRows(pool, assetId);
+  assert(
+    rows.length === 1 && rows[0]?.source_kind === "computed",
+    `the existing row must be untouched, got ${JSON.stringify(rows)}`,
   );
 }
 

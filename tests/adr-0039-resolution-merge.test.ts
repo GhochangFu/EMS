@@ -79,6 +79,19 @@ describe("ADR 0039 — the calc resolution merge stays in the query", () => {
       "the join condition must include assetPoints.pointKey — without it one asset's " +
         "override leaks to every asset on the same template version",
     ).toContain("eq(assetPoints.pointKey, templatePoints.pointKey)");
+
+    // The calc columns belong only to a `computed` row. `AssetPointsAdminService
+    // .create` resolves a point key against the `point_keys` catalog alone and
+    // has no template awareness, so an operator can map a `measured`/`unmapped`
+    // row onto a key the pinned version declares `derived`. Such a row carries
+    // NULL across all five columns today, so dropping this filter still gives
+    // the same answer — which is exactly why nothing else catches its removal.
+    expect(
+      source,
+      "the join condition must include assetPoints.sourceKind === 'computed' — a row that " +
+        "is not computed is telemetry wiring, and resolving a formula out of it is the " +
+        "wrong-number-quietly failure ADR 0039 exists to prevent",
+    ).toContain('eq(assetPoints.sourceKind, "computed")');
   });
 
   /**
