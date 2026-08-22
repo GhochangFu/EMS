@@ -541,3 +541,76 @@ The content itself lives on the version row, which is immutable once published.
 
 The limits table omitted **20 point references per KPI**, which §5 already
 specified as `pointKeys: string[](1..20)`. Documenting, not deciding.
+
+---
+
+## Amendment 2 — `thresholdValue` becomes conditional (B7: setpoints are per-site) — PROPOSED
+
+**Status: Proposed — drafted 2026-08-22, awaiting the owner's gate.** Unlike
+Amendment 1, which recorded hardening already reviewed into the
+implementation, this amendment is a **contract change** and nothing may be
+built against it until it is Accepted. It is the prerequisite for ADR 0040
+(`E5.1` provisional authoring) decision 4.
+
+*Note on numbering: the 2026-08-17 clarification annex and two 2026-08-22
+client documents refer to this change as "Amendment 1" — written before
+noticing Amendment 1 above already existed. This is that change, renumbered.*
+
+### Context
+
+§3 requires `thresholdValue: number` on every template alarm. That was correct
+against the assumption it encoded: that a template alarm is a proto-rule, and
+the rule engine's `condition` needs a number.
+
+The client's position — stated in `B7` of the 2026-08-17 clarification set,
+unanswered since, and now adopted as our working position (Part 1 of
+`docs/ion-exchange-response-form-2026-08-22.md`, on ISA-18.2 grounds) — is that
+**limit values are set per site at commissioning**. A template can know *which*
+parameter alarms and *what it means*; it cannot honestly know the number.
+Under the current contract the water pack (`E5.1`, authored from
+`docs/e5.1-derived-taglist-v1.md`, whose alarm rows deliberately carry meanings
+and no numbers) cannot be authored without inventing placeholder thresholds —
+which is precisely the class of guessing this ADR exists to prevent.
+
+### Decision
+
+1. **`thresholdValue` and `operator` become a paired optional group** in §3's
+   alarm entry: both present, or both absent. One without the other is
+   rejected by a `superRefine` whose message says so. An operator with no
+   number (or a number with no comparator) is not a philosophy — it is half a
+   rule, and half a rule is an authoring error.
+2. **Semantics of the absent pair:** the entry is an **alarm philosophy row** —
+   parameter, meaning (`message`), `severity`, `category`, `philosophy` —
+   the ISA-18.2 rationalization record for the asset class. With the pair
+   present, the entry is (as today) a site-independent proto-rule.
+3. **Everything else in §3 is unchanged**: `code`, `pointKey`, `severity`,
+   `message` stay required; the reference check (§6), the vocabularies bound
+   to the rules engine, and the limits (§7) are untouched. No DDL — `content`
+   is `jsonb`.
+4. **`E2.4` (seeding rules on instantiate) must skip pair-absent entries** —
+   or, better, surface them at commissioning as "set the site value now"
+   prompts. That choice belongs to `E2.4`'s own ADR (per §3's original
+   disclaimer); this amendment only requires that seeding **never invents a
+   number** for a pair-absent row.
+5. **Surface changes owed in the feature PR:** the content schema in
+   `apps/api/src/admin/asset-templates/asset-templates.schema.ts`; the `F2.5`
+   Alarms tab, whose form currently requires the threshold field
+   (`apps/web/src/components/asset-templates/alarms-tab.tsx`) and must allow
+   the pair to be empty together — with copy saying "value set per site at
+   commissioning", not an empty box.
+
+### Consequences
+
+- `E5.1` packs become authorable with honest content: meanings now, numbers at
+  commissioning — and if `B7`'s answer eventually says "standard setpoints
+  exist", filling the pair in a v2 is additive, while the reverse (deleting
+  invented numbers already seeded into live rules) would not have been.
+- A consumer can no longer assume every template alarm is runnable. The pair's
+  presence is the discriminator, and `E2.4` inherits the rule in decision 4.
+
+### Open question for the gate
+
+Whether decision 1's pairing is right, or `operator` should stay required
+(reading "gt" with no number as still-useful philosophy). Drafted as paired
+because a comparator without a value adds nothing ISA-18.2 rationalization
+needs — the `message` carries the meaning.
