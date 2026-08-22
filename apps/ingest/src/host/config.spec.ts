@@ -129,6 +129,46 @@ export function runHostConfigTests(): void {
     );
   }
 
+  // ---- and a magnitude the digit check waves through ----------------------
+
+  // The `/^\d+$/` guard above closed `1e21` and left the plain-decimal door
+  // open, which is the same failure in different clothes. Measured before
+  // fixing: `100000000000000000000` passes the regex, passes `Number.isInteger`
+  // and is > 0 — so the staleness alarm switched off for ever with no error and
+  // no log line, which is exactly what the digit check was added to prevent.
+  for (const huge of ["100000000000000000000", "99999999999999999999999"]) {
+    expectThrow(
+      () => readHostConfig({ ...BASE, INGEST_STALE_AFTER_MS: huge }),
+      `staleness window "${huge}" is not a safe integer and must be rejected — ` +
+        `an accepted one means no RTU is ever stale`,
+    );
+  }
+
+  // `setInterval` clamps anything over 2^31-1 to **1 ms** and carries on with a
+  // `TimeoutOverflowWarning`. Measured: a delay of 100000000000 fired twice in
+  // 25 ms. So a typo meant to slow the reload down instead turns the four-table
+  // binding query into a ~1 ms loop against the Postgres the API also reads.
+  expectThrow(
+    () => readHostConfig({ ...BASE, INGEST_RELOAD_MS: "100000000000" }),
+    "a reload interval above 2^31-1 must be rejected — Node clamps it to 1 ms " +
+      "and the binding query becomes a hot loop",
+  );
+  assert(
+    readHostConfig({ ...BASE, INGEST_RELOAD_MS: String(2 ** 31 - 1) }).reloadMs === 2 ** 31 - 1,
+    "the largest delay setInterval honours is still accepted — the bound is a ceiling, not a fence",
+  );
+
+  // A port is not a timer. 65535 is the constraint, and 65536 must not pass
+  // merely because it is a small safe integer.
+  expectThrow(
+    () => readHostConfig({ ...BASE, INGEST_HOST_HEALTH_PORT: "65536" }),
+    "a port above 65535 must be rejected",
+  );
+  assert(
+    readHostConfig({ ...BASE, INGEST_HOST_HEALTH_PORT: "65535" }).healthPort === 65535,
+    "the highest valid port is accepted",
+  );
+
   assert(readHostConfig({ ...BASE }).reloadMs === DEFAULT_RELOAD_MS, "the reload default is 60 s");
   assert(DEFAULT_RELOAD_MS === 60_000, "the ADR 0007 pilot reloaded every 60 s; the host matches it");
   assert(

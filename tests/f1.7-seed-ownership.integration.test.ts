@@ -1,5 +1,3 @@
-import pg from "pg";
-
 import { afterAll, beforeAll, describe, it } from "vitest";
 
 // Relative, not `@bms/db`: the workspace package is a dependency of `apps/*`,
@@ -56,7 +54,13 @@ const ENABLED_RTU = "861736076104923"; // Bhutnirghat I — the ADR 0007 pilot
 /** Held out of the set, so the seed would switch it OFF if it still owned the column. */
 const HELD_BACK_RTU = "861736076128245"; // Bhutnirghat II — clock -0:21:34 (F4.54)
 
-let pool: pg.Pool | undefined;
+// Derived, not imported from `pg`: that package is a dependency of `apps/api`
+// and `packages/db`, and pnpm does not hoist it to the root, so a `pg` type
+// import fails `typecheck:tests` (which type-checks this file from the repo
+// root with no tsconfig). The gate's return type is the same thing.
+type IntegrationPool = Awaited<ReturnType<typeof openIntegrationPool>>;
+
+let pool: IntegrationPool | undefined;
 let db: ReturnType<typeof createDb> | undefined;
 
 type RtuState = {
@@ -98,8 +102,8 @@ async function reseed(): Promise<void> {
 
 describe("F1.7 seed ownership across two passes", () => {
   beforeAll(async () => {
-    pool = await openIntegrationPool(connectionString);
-    db = createDb(connectionString);
+    pool = await openIntegrationPool(connectionString, "F1.7");
+    db = createDb(pool);
     // Clear the stamp first, so pass one *adopts* rather than deferring.
     //
     // Without this the suite is not hermetic, and the failure is subtle enough
@@ -155,8 +159,11 @@ describe("F1.7 seed ownership across two passes", () => {
       `its assets must leave telemetrySource='mqtt', got ${after.mqtt_assets} still on mqtt`,
     );
 
+    // Restored with a plain UPDATE, not a re-seed. Each seed rewrites twelve
+    // RTUs, forty-eight assets and their points, and this file runs beside the
+    // API integration suite — eight of them made a neighbouring 5 s test time
+    // out. The next case reads state directly, so a seed here buys nothing.
     await operatorSets(ENABLED_RTU, true);
-    await reseed();
   }, 120_000);
 
   it("does not disable what an operator enabled", async () => {
@@ -187,7 +194,6 @@ describe("F1.7 seed ownership across two passes", () => {
     );
 
     await operatorSets(HELD_BACK_RTU, false);
-    await reseed();
   }, 120_000);
 
   it("adopts the set again once the stamp is gone", async () => {

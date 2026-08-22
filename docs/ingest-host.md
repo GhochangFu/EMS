@@ -288,6 +288,18 @@ decides whether a fix belongs to `F1.7`/`F1.10` or to this host.
   `new endpoint requires a restart to serve` when it sees one. Reconciling the
   endpoint set is a second state machine on top of the supervisor's, and half
   of one is worse than none.
+- **Enabling or disabling an RTU on an endpoint that is already running also
+  needs a restart, and now says so.** A supervisor's `plan.bindings` is captured
+  at construction and never replaced, so the reload swaps the point index and
+  nothing else. Writes for a disabled RTU *do* stop within one cycle, because the
+  refreshed index no longer holds its `deviceKey` — but the adapter stays
+  subscribed, the health roster keeps listing it, and it keeps reading as not
+  stale: three signals that disagree. Enabling one is worse, since it is absent
+  from `rtus=`, absent from the stale accounting, and its messages are discarded.
+  MQTT groups a whole broker into **one** endpoint, so the `new endpoint` warning
+  above can never fire for this case. The reload therefore logs
+  `endpoint device set changed; restart required to apply` with the added and
+  removed device keys. That names the gap rather than closing it.
 - **A device's clock is trusted without check.** Where the payload carries a
   timestamp it becomes the row's `time`, so telemetry inherits whatever the
   device believes. Measured on the pilot RTU on 2026-08-06: **~34 minutes

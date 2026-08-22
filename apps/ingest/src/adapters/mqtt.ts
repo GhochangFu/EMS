@@ -264,8 +264,13 @@ export function createMqttAdapter(
    *
    * A `Set` rather than one id: a topic may legitimately serve several devices,
    * which is the case `subscribe()`'s de-duplication exists for.
+   *
+   * Mutable `Set` internally because `connect()` builds it incrementally; the
+   * previous `ReadonlySet` declaration only held by casting the readonly away at
+   * the one place that added to it, which is a guarantee that guards nothing.
+   * Reads go through `has()`, so nothing outside this closure can mutate it.
    */
-  const deviceKeysByTopic = new Map<string, ReadonlySet<string>>();
+  const deviceKeysByTopic = new Map<string, Set<string>>();
 
   function handleMessage(topic: string, payload: Buffer): void {
     // Rule 8 (§5): nothing is emitted before `subscribe()` resolves or after
@@ -334,7 +339,7 @@ export function createMqttAdapter(
         if (bound === undefined) {
           deviceKeysByTopic.set(binding.device.topic, new Set([binding.deviceKey]));
         } else {
-          (bound as Set<string>).add(binding.deviceKey);
+          bound.add(binding.deviceKey);
         }
       }
 

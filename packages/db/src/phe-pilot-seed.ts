@@ -197,6 +197,8 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
 
   const rtuIds = [...new Set(catalog.rows.map((r) => r.EdgeRTUId))];
   const rtuIdByExternal = new Map<number, string>();
+  /** `rtu_code` → why `ingest_enabled` ended up where it did, summarised below. */
+  const reasons = new Map<string, string>();
 
   for (const edgeRtuId of rtuIds) {
     const rtuRows = catalog.rows.filter((r) => r.EdgeRTUId === edgeRtuId);
@@ -235,6 +237,17 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
             },
     });
     const ingestEnabled = resolved.ingestEnabled;
+    // Logged because `ResolveIngestEnabledResult.reason` promises it — "so the
+    // seed can log it and an operator can tell an adoption from an override
+    // without reading this file" — and until now nothing did, which is the same
+    // class of untrue docblock this branch already fixed once in `renderHealth`.
+    //
+    // It is also the missing signal. The review reverted this whole mechanism
+    // and every test stayed green; with this line, a reverted seed prints no
+    // `reason` at all and the CI log says so. `operator` on a run nobody
+    // expected is the other thing worth seeing — it means the database is
+    // holding a decision the catalog does not know about.
+    reasons.set(head.RTUCode, resolved.reason);
     // Derived from the *resolved* value, not from the catalog's opinion, so the
     // invariant the simulator depends on holds however the row got here: an
     // RTU is `mqtt` on both `rtus.source_type` and its assets'
@@ -404,4 +417,30 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       }
     }
   }
+
+  reportIngestEnabledReasons(reasons);
+}
+
+/**
+ * One line saying who decided `ingest_enabled` for each RTU, and why.
+ *
+ * `stderr` via `console.error`, matching `migrate.ts`, `seed.ts` and
+ * `refresh-aggregates.ts` — §4.5 reserves `console.log` for the Pino logger and
+ * these CLI scripts have no Nest container to resolve one from.
+ *
+ * **`operator` is the interesting word.** It means the database is holding a
+ * decision this catalog does not know about, which is correct and invisible
+ * until something prints it. `adopted` on a run nobody expected means the stamp
+ * went missing — see the `meta` merge above for how that used to happen.
+ */
+function reportIngestEnabledReasons(reasons: ReadonlyMap<string, string>): void {
+  const byReason = new Map<string, number>();
+  for (const reason of reasons.values()) {
+    byReason.set(reason, (byReason.get(reason) ?? 0) + 1);
+  }
+  const summary = [...byReason.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([reason, count]) => `${reason}=${count}`)
+    .join(" ");
+  console.error(`phe ingest_enabled: ${summary || "no rtus"} (set ${ENABLED_SET_VERSION})`);
 }

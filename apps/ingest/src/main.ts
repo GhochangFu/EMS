@@ -96,6 +96,21 @@ async function main(): Promise<void> {
    */
   const pointIndexes = new Map<string, PointIndex>();
   const supervisors = new Map<string, Supervisor>();
+  /**
+   * The devices each running supervisor was built with, so the reload can tell
+   * when the database no longer agrees.
+   *
+   * A supervisor's `plan.bindings` is captured at construction and never
+   * replaced — the reload swaps `pointIndexes` and nothing else. So enabling or
+   * disabling an RTU on an endpoint that is *already running* changes nothing
+   * about the connection: the adapter stays subscribed, the health page keeps
+   * listing the old roster, and only the point index moves. That was invisible
+   * while each PHE RTU had its own endpoint. It stopped being invisible at
+   * `F1.7`, where MQTT groups the whole broker into one endpoint, so the
+   * "new endpoint requires a restart" warning below can never fire for a device
+   * change. Tracked here purely to say so.
+   */
+  const servedDevices = new Map<string, ReadonlySet<string>>();
   let skipped: readonly SkippedBinding[] = [];
   const startedAt = new Date();
 
@@ -118,6 +133,7 @@ async function main(): Promise<void> {
     }
     const key = endpointGroupKey(plan.protocol, plan.endpointKey);
     pointIndexes.set(key, plan.pointIndex);
+    servedDevices.set(key, new Set(plan.bindings.map((binding) => binding.deviceKey)));
     // Exactly one binding is the case in which `SourceSample.deviceKey` may be
     // omitted; with several, an omitted key is ambiguous and the normaliser
     // counts it rather than guessing.
@@ -180,6 +196,32 @@ async function main(): Promise<void> {
           seen.add(key);
           if (pointIndexes.has(key)) {
             pointIndexes.set(key, plan.pointIndex);
+            // A device added to or removed from an endpoint that is already
+            // running does NOT take effect, and until now nothing said so.
+            // Writes for a removed RTU do stop within one cycle, because the
+            // refreshed index no longer holds its `deviceKey` — but the adapter
+            // stays subscribed, `accept()` keeps refreshing that device's
+            // `lastSampleAt`, and `health()` keeps building its roster from the
+            // supervisor's original bindings. So the operator sees the RTU still
+            // listed, still not stale, and no telemetry: three signals that
+            // disagree. Enabling one is worse — it is absent from `rtus=`,
+            // absent from the stale accounting, and its messages are discarded.
+            // Reconciling a live endpoint is a second state machine on top of
+            // the supervisor's, which ADR 0016 declined; naming the gap costs
+            // nothing and is what the operator actually needs.
+            const running = servedDevices.get(key);
+            const wanted = new Set(plan.bindings.map((binding) => binding.deviceKey));
+            const added = [...wanted].filter((d) => running?.has(d) !== true);
+            const removed = [...(running ?? [])].filter((d) => !wanted.has(d));
+            if (added.length > 0 || removed.length > 0) {
+              logger.warn("endpoint device set changed; restart required to apply", {
+                endpointKey: plan.endpointKey,
+                protocol: plan.protocol,
+                added,
+                removed,
+                servingCount: running?.size ?? 0,
+              });
+            }
           } else {
             logger.warn("new endpoint requires a restart to serve", {
               endpointKey: plan.endpointKey,
