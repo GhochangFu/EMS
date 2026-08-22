@@ -5,10 +5,13 @@ import { Link, useParams } from "react-router-dom";
 import type { AdminAssetPointDto, MasterDataActiveFilter } from "@bms/shared";
 
 import {
+  clearAdminAssetPointCalcOverride,
   createAdminAssetPoint,
   deactivateAdminAssetPoint,
+  fetchAdminAssetCalcPoints,
   fetchAdminAssetPoints,
   reactivateAdminAssetPoint,
+  setAdminAssetPointCalcOverride,
   updateAdminAssetPoint,
 } from "../../api/admin/asset-points";
 import { fetchAdminAssetSummary } from "../../api/admin/assets";
@@ -20,7 +23,16 @@ import {
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
+import { PointCalcOverridePanel } from "../../components/assets/point-calc-override-panel";
 import { SectionCard } from "../../components/section-card";
+import { apiErrorMessage } from "../../lib/api-error-message";
+import {
+  draftFromConfig,
+  draftToBody,
+  hasAnyOverride,
+  EMPTY_DRAFT,
+  type OverrideDraft,
+} from "../../lib/asset-point-calc-override";
 import { StatusPill } from "../../components/status-pill";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -65,6 +77,48 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
   }, [assetId, assetSummaryQ.data]);
 
   const catalogOrgId = assetSummaryQ.data?.organizationId ?? selection.organizationId;
+
+  // ---- F2.6: per-asset calc overrides (ADR 0039 decisions 6-8) -------------
+  //
+  // Scoped to a single asset on purpose. `assetId` comes from the route, so
+  // this section only appears on the asset drill-down — an override is a
+  // property of one asset's point, and the unfiltered mapping list has no
+  // asset to attach it to.
+  const [openPointKey, setOpenPointKey] = useState<string | null>(null);
+  const [draft, setDraft] = useState<OverrideDraft>(EMPTY_DRAFT);
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+
+  const calcPointsQ = useQuery({
+    queryKey: ["admin", "asset-calc-points", assetId],
+    queryFn: () => fetchAdminAssetCalcPoints(assetId ?? ""),
+    enabled: Boolean(assetId),
+  });
+  const calcPoints = calcPointsQ.data?.items ?? [];
+
+  function afterOverride() {
+    setOpenPointKey(null);
+    setDraft(EMPTY_DRAFT);
+    setOverrideError(null);
+    void queryClient.invalidateQueries({ queryKey: ["admin", "asset-calc-points"] });
+    // The eager create (decision 7) adds an `asset_points` row, so the mapping
+    // table above is stale too.
+    void queryClient.invalidateQueries({ queryKey: ["admin", "asset-points"] });
+  }
+
+  const setOverrideM = useMutation({
+    mutationFn: (pointKey: string) =>
+      setAdminAssetPointCalcOverride(assetId ?? "", pointKey, draftToBody(draft)),
+    onSuccess: afterOverride,
+    onError: (cause: Error) => setOverrideError(apiErrorMessage(cause)),
+  });
+
+  const clearOverrideM = useMutation({
+    mutationFn: (pointKey: string) => clearAdminAssetPointCalcOverride(assetId ?? "", pointKey),
+    onSuccess: afterOverride,
+    onError: (cause: Error) => setOverrideError(apiErrorMessage(cause)),
+  });
+
+  const overrideBusy = setOverrideM.isPending || clearOverrideM.isPending;
 
   const catalogQ = useQuery({
     queryKey: ["admin", "point-keys", "true", catalogOrgId],
@@ -237,6 +291,77 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
           </tbody>
         </table>
       </SectionCard>
+
+      {/* `F2.6` (ADR 0039 decision 8): overrides live on the asset, per point.
+          Only rendered on the asset drill-down — an override belongs to one
+          asset's point, and the unfiltered mapping list has no asset to attach
+          it to. Derived points only; the API lists no others, because a
+          measured point has no calc configuration to override. */}
+      {assetId && calcPoints.length > 0 ? (
+        <SectionCard title="Calculated points" bodyClassName="p-3 space-y-3">
+          <p className="text-xs text-bms-muted">
+            These points are computed from this asset&apos;s template. An override changes one
+            setting for this asset only; everything left empty keeps following the template.
+          </p>
+          {overrideError ? <p className="text-xs text-red-700">{overrideError}</p> : null}
+          {calcPoints.map((config) =>
+            openPointKey === config.pointKey ? (
+              <PointCalcOverridePanel
+                key={config.pointKey}
+                config={config}
+                draft={draft}
+                busy={overrideBusy}
+                onDraftChange={setDraft}
+                onSave={() => setOverrideM.mutate(config.pointKey)}
+                onClear={() => clearOverrideM.mutate(config.pointKey)}
+                onCancel={() => {
+                  setOpenPointKey(null);
+                  setOverrideError(null);
+                }}
+              />
+            ) : (
+              <div
+                key={config.pointKey}
+                className="flex flex-wrap items-center justify-between gap-2 rounded border border-gray-200 px-3 py-2"
+              >
+                <span className="text-sm">
+                  {config.label ?? config.pointKey}{" "}
+                  <span className="font-mono text-xs text-bms-muted">{config.pointKey}</span>
+                </span>
+                <span className="flex items-center gap-3 text-xs text-bms-muted">
+                  <span>
+                    {config.effective.calcTrigger ?? "no trigger"}
+                    {config.effective.calcIntervalSeconds === null
+                      ? ""
+                      : ` · every ${config.effective.calcIntervalSeconds}s`}
+                  </span>
+                  {hasAnyOverride(config) ? (
+                    <span className="rounded bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">
+                      overridden
+                    </span>
+                  ) : (
+                    <span>following the template</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Seeded from the override, never from the template —
+                      // seeding from the template would silently convert an
+                      // inherited column into an override on the next save.
+                      setDraft(draftFromConfig(config));
+                      setOpenPointKey(config.pointKey);
+                      setOverrideError(null);
+                    }}
+                    className="rounded border border-gray-200 px-3 py-1 font-semibold text-bms-ink"
+                  >
+                    {hasAnyOverride(config) ? "Edit override" : "Override"}
+                  </button>
+                </span>
+              </div>
+            ),
+          )}
+        </SectionCard>
+      ) : null}
 
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
