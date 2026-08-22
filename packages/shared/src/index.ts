@@ -291,6 +291,8 @@ export type TemplateMeasuredChangeDto = z.infer<typeof A.templateMeasuredChangeD
 /** Which of the five calc fields moved between two versions. */
 export type TemplateCalcField = z.infer<typeof A.templateCalcFieldSchema>;
 export type TemplateDerivedChangeDto = z.infer<typeof A.templateDerivedChangeDtoSchema>;
+export type TemplateDerivedAdditionDto = z.infer<typeof A.templateDerivedAdditionDtoSchema>;
+export type TemplateDerivedRemovalDto = z.infer<typeof A.templateDerivedRemovalDtoSchema>;
 /** Keyed on `point_key` throughout, never on `template_points.id` (D-4). */
 export type TemplateVersionDeltaDto = z.infer<typeof A.templateVersionDeltaDtoSchema>;
 export type TemplateMigrationAssetDto = z.infer<typeof A.templateMigrationAssetDtoSchema>;

@@ -466,14 +466,24 @@ export const templateDerivedChangeDtoSchema = z.object({
  * other, so `measured -> derived` refuses — it destroys physical wiring that
  * `apps/ingest` and the rule engine read.
  */
+export const templateDerivedAdditionDtoSchema = z.object({
+  pointKey: z.string(),
+  to: assetPointCalcOverrideFieldsSchema,
+});
+
+export const templateDerivedRemovalDtoSchema = z.object({
+  pointKey: z.string(),
+  from: assetPointCalcOverrideFieldsSchema,
+});
+
 export const templateVersionDeltaDtoSchema = z.object({
   fromVersion: z.number(),
   toVersion: z.number(),
   measuredAdded: z.array(templateMeasuredAdditionDtoSchema),
   measuredRemoved: z.array(templateMeasuredChangeDtoSchema),
   measuredReKeyed: z.array(templateMeasuredChangeDtoSchema),
-  derivedAdded: z.array(z.object({ pointKey: z.string(), to: assetPointCalcOverrideFieldsSchema })),
-  derivedRemoved: z.array(z.object({ pointKey: z.string(), from: assetPointCalcOverrideFieldsSchema })),
+  derivedAdded: z.array(templateDerivedAdditionDtoSchema),
+  derivedRemoved: z.array(templateDerivedRemovalDtoSchema),
   derivedChanged: z.array(templateDerivedChangeDtoSchema),
   refusals: z.array(templateMigrationRefusalDtoSchema),
 });
