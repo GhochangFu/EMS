@@ -323,6 +323,17 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
             >
               All templates
             </Link>
+            {/* `F2.6` (ADR 0039 decision 8). In the page chrome, not a sixth
+                tab: ADR 0038 names exactly five and `tests/adr-0038-template-
+                authoring-ui.test.ts` keeps it that way (D-3). Migration is also
+                not authoring — it acts on assets, and the five tabs are all
+                about this template's own shape. */}
+            <Link
+              to={`/admin/asset-templates/${template.id}/versions`}
+              className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+            >
+              Versions &amp; migration
+            </Link>
             {actions.map((action) => (
               <button
                 key={action}

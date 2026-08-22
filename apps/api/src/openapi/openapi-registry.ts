@@ -1,9 +1,11 @@
 import type { ZodTypeAny } from "zod";
 
+import { assetPointCalcOverrideBodySchema } from "../admin/asset-points/asset-point-calc-override.schema";
 import {
   createAssetPointBodySchema,
   updateAssetPointBodySchema,
 } from "../admin/asset-points/asset-points.schema";
+import { migrateAssetsBodySchema } from "../admin/asset-templates/asset-templates-migrate.schema";
 import {
   createAssetTemplateBodySchema,
   instantiateAssetsBodySchema,
@@ -101,6 +103,7 @@ import {
 export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AlarmsController_acknowledge: alarmAckBodySchema,
   AlarmsController_upsertEnrichment: alarmEnrichmentUpsertBodySchema,
+  AssetPointCalcOverrideController_set: assetPointCalcOverrideBodySchema,
   AssetPointsAdminController_create: createAssetPointBodySchema,
   AssetPointsAdminController_update: updateAssetPointBodySchema,
   AssetsAdminController_create: createAssetBodySchema,
@@ -108,6 +111,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AssetTemplatesAdminController_create: createAssetTemplateBodySchema,
   AssetTemplatesAdminController_instantiate: instantiateAssetsBodySchema,
   AssetTemplatesAdminController_list: templateStatusQuerySchema,
+  AssetTemplatesAdminController_migrate: migrateAssetsBodySchema,
+  AssetTemplatesAdminController_previewMigration: migrateAssetsBodySchema,
   AssetTemplatesAdminController_update: updateAssetTemplateBodySchema,
   AuditAdminController_export: auditExportQuerySchema,
   AuditAdminController_list: auditListQuerySchema,

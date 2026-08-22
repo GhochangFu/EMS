@@ -76,6 +76,15 @@ export const adminAssetDtoSchema = z.object({
   rtuDisplayName: z.string().nullable(),
   domain: z.string(),
   active: z.boolean(),
+  // `F2.6` (ADR 0039 decision 8): which template *version* this asset is pinned
+  // to. Added because the Versions view is defined as "listing which assets sit
+  // on which version", and no other response says it — a migration UI without
+  // this can only offer every asset and let the server refuse, teaching the
+  // operator by 400. All three are null for a hand-created asset, which is
+  // every seeded one.
+  templateId: z.string().nullable(),
+  templateCode: z.string().nullable(),
+  templateVersion: z.number().nullable(),
   meta: z.record(z.unknown()).nullable(),
   createdAt: z.string(),
 });
@@ -316,3 +325,225 @@ export type ExpectedMatchesAssetInstantiationSourceKind = AssertAssignable<
   "measured" | "unmapped",
   z.infer<typeof assetInstantiationResultDtoSchema>["sourceKind"]
 >;
+
+// --- F2.6: template version lifecycle (ADR 0039) ----------------------------
+
+/**
+ * The five calc columns, as one shape used in three roles.
+ *
+ * ADR 0039 decision 6 makes resolution `coalesce(asset_points.<col>,
+ * template_points.<col>)` per column, so "what the template says", "what this
+ * asset overrides" and "what the engine will actually use" are the *same five
+ * fields* read three ways. One schema, not three near-identical ones: a fourth
+ * column added later must reach all three or the merge stops being total.
+ *
+ * Every field is nullable in every role. In the override role `null` means
+ * "inherit"; in the template role it means the template never set one; in the
+ * effective role it means neither did.
+ *
+ * No numeric bounds here, deliberately, matching
+ * `adminTemplatePointDtoSchema`: this is a read-side DTO over stored rows, and
+ * a read schema that rejects a row the database holds is a schema that lies
+ * about the estate. The bounds are enforced on the write side, in `apps/api`,
+ * from `MIN_CALC_INTERVAL_SECONDS` / `MAX_CALC_INTERVAL_SECONDS` /
+ * `MAX_INPUT_AGE_SECONDS_BOUND`.
+ */
+export const assetPointCalcOverrideFieldsSchema = z.object({
+  formula: z.string().nullable(),
+  formulaDialect: z.literal(CALC_DIALECT).nullable(),
+  calcTrigger: z.enum(CALC_TRIGGERS).nullable(),
+  calcIntervalSeconds: z.number().nullable(),
+  maxInputAgeSeconds: z.number().nullable(),
+});
+
+/**
+ * One derived point of one asset, as the asset detail page shows it (ADR 0039
+ * decision 8): what the pinned template version declares, what this asset
+ * overrides, and what the engine resolves.
+ *
+ * `assetPointId` is `null` when no `asset_points` row exists yet — the normal
+ * state for a derived point that has neither been overridden nor produced a
+ * first value (ADR 0037), and the reason this DTO is keyed on `pointKey`
+ * rather than on a row id that may not exist.
+ */
+export const assetPointCalcConfigDtoSchema = z.object({
+  pointKey: z.string(),
+  /** The `template_points` row this resolves against, on the version pinned now. */
+  templatePointId: z.string(),
+  label: z.string().nullable(),
+  unit: z.string().nullable(),
+  assetPointId: z.string().nullable(),
+  template: assetPointCalcOverrideFieldsSchema,
+  override: assetPointCalcOverrideFieldsSchema,
+  effective: assetPointCalcOverrideFieldsSchema,
+});
+
+/**
+ * One version of a template code, for the Versions view `F2.5`'s detail page
+ * gains (ADR 0039 decision 8).
+ *
+ * `assetCount` is what makes the view worth having: it says how much of the
+ * estate is still on this version, which is the question a migration answers.
+ */
+export const templateVersionSummaryDtoSchema = z.object({
+  id: z.string(),
+  version: z.number(),
+  status: assetTemplateStatusSchema,
+  publishedAt: z.string().nullable(),
+  assetCount: z.number(),
+  pointCount: z.number(),
+});
+
+/**
+ * Why a migration cannot proceed.
+ *
+ * `pointKey` is nullable because not every refusal is about a point — a target
+ * version whose `domain` differs from the source's refuses the whole migration
+ * (Q-B, ruled 2026-08-22) and names two domain codes instead.
+ */
+export const templateMigrationRefusalReasonSchema = z.enum([
+  /** Decision 3 — a measured point present in the source version is gone from the target. */
+  "measured_removed",
+  /** Decision 3 — a measured point's `source_data_key_pattern` changed. */
+  "measured_rekeyed",
+  /** Q-A — a required measured addition's pattern uses a token beyond `asset_code`. */
+  "unresolvable_source_data_key",
+  /** Q-B — the target version declares a different plant domain. */
+  "domain_changed",
+  /**
+   * The asset already has an `asset_points` row for a point key the target
+   * version adds as measured.
+   *
+   * Three things create that row and none of them knows about the others: a
+   * hand-made mapping, `CalcWriteService` on a derived point's first computed
+   * value, and — since ADR 0039 decision 7 — the calc override endpoint. So a
+   * version that turns a derived point into a measured one collides with a row
+   * the operator never thinks of as a mapping.
+   *
+   * Refused rather than merged: the existing row may be `computed` wiring for a
+   * formula, and quietly turning it into telemetry wiring (or leaving it in
+   * place and reporting the point as created) is the "wrong number, quietly"
+   * class this feature is built to avoid.
+   */
+  "point_key_already_mapped",
+]);
+
+export const templateMigrationRefusalDtoSchema = z.object({
+  reason: templateMigrationRefusalReasonSchema,
+  pointKey: z.string().nullable(),
+  /** How many of the selected assets this refusal affects. */
+  assetCount: z.number(),
+  /** Human-readable and specific — it names the point, the codes or the tokens. */
+  message: z.string(),
+});
+
+/**
+ * A measured point the target version adds; migration creates its
+ * `asset_points` row.
+ *
+ * `unit` is the template's *override*, not the catalog's unit — null means
+ * "use the catalog's", exactly as `adminTemplatePointDtoSchema.unit` does. It
+ * is carried here because decision 4 says these rows are created "by the same
+ * path instantiation uses", and instantiation resolves
+ * `point.unit ?? catalogUnit ?? null`. Dropping it would give the same point on
+ * the same template two different units depending on whether the asset was
+ * instantiated or migrated.
+ */
+export const templateMeasuredAdditionDtoSchema = z.object({
+  pointKey: z.string(),
+  sourceDataKeyPattern: z.string().nullable(),
+  required: z.boolean(),
+  unit: z.string().nullable(),
+});
+
+/** A measured point the target version drops, or whose source pattern moved. */
+export const templateMeasuredChangeDtoSchema = z.object({
+  pointKey: z.string(),
+  fromSourceDataKeyPattern: z.string().nullable(),
+  toSourceDataKeyPattern: z.string().nullable(),
+});
+
+/** Which of the five calc fields moved between the two versions. */
+export const templateCalcFieldSchema = z.enum([
+  "formula",
+  "formulaDialect",
+  "calcTrigger",
+  "calcIntervalSeconds",
+  "maxInputAgeSeconds",
+]);
+
+/**
+ * A derived point whose calc configuration differs between the two versions.
+ *
+ * `changedFields` is carried alongside `from`/`to` rather than left for the
+ * reader to diff: "formula unchanged, interval 60 → 300" and "both changed" are
+ * different decisions for whoever confirms the migration, and a UI that
+ * recomputed the comparison would be a second implementation of it.
+ */
+export const templateDerivedChangeDtoSchema = z.object({
+  pointKey: z.string(),
+  changedFields: z.array(templateCalcFieldSchema),
+  from: assetPointCalcOverrideFieldsSchema,
+  to: assetPointCalcOverrideFieldsSchema,
+});
+
+/**
+ * The delta between two versions of one template code (ADR 0039 decision 2).
+ *
+ * **Keyed on `point_key` throughout, never on `template_points.id`** (D-4).
+ * Every version is a distinct row set, so two versions with identical point
+ * keys have entirely different ids — an id-keyed diff would report every point
+ * as removed and re-added, and decision 3 would then refuse every migration
+ * that ever existed.
+ *
+ * Measured and derived are separated because ADR 0039 decision 3 treats them
+ * differently and not symmetrically: a measured removal or re-key refuses the
+ * migration, while derived changes in any combination migrate freely. A point
+ * that flips `kind` is reported as a removal on one side and an addition on the
+ * other, so `measured -> derived` refuses — it destroys physical wiring that
+ * `apps/ingest` and the rule engine read.
+ */
+export const templateDerivedAdditionDtoSchema = z.object({
+  pointKey: z.string(),
+  to: assetPointCalcOverrideFieldsSchema,
+});
+
+export const templateDerivedRemovalDtoSchema = z.object({
+  pointKey: z.string(),
+  from: assetPointCalcOverrideFieldsSchema,
+});
+
+export const templateVersionDeltaDtoSchema = z.object({
+  fromVersion: z.number(),
+  toVersion: z.number(),
+  measuredAdded: z.array(templateMeasuredAdditionDtoSchema),
+  measuredRemoved: z.array(templateMeasuredChangeDtoSchema),
+  measuredReKeyed: z.array(templateMeasuredChangeDtoSchema),
+  derivedAdded: z.array(templateDerivedAdditionDtoSchema),
+  derivedRemoved: z.array(templateDerivedRemovalDtoSchema),
+  derivedChanged: z.array(templateDerivedChangeDtoSchema),
+  refusals: z.array(templateMigrationRefusalDtoSchema),
+});
+
+/** One asset in a migration selection, with the version it is pinned to now. */
+export const templateMigrationAssetDtoSchema = z.object({
+  assetId: z.string(),
+  assetCode: z.string(),
+  assetName: z.string(),
+  fromVersionId: z.string(),
+  fromVersion: z.number(),
+});
+
+/**
+ * A measured addition that produced no `asset_points` row.
+ *
+ * Only ever an *optional* point: Q-A (ruled 2026-08-22) refuses the whole
+ * migration when a **required** addition's pattern does not resolve. Reported
+ * for the same reason `instantiatedAssetDto.skippedPoints` is — "12 points in,
+ * 10 rows out" is otherwise indistinguishable from a bug.
+ */
+export const templateMigrationSkippedPointDtoSchema = z.object({
+  assetId: z.string(),
+  assetCode: z.string(),
+  pointKey: z.string(),
+});

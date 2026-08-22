@@ -99,10 +99,10 @@ describe("F1.7 ingest-enabled set", () => {
       ["861736076133666", "Banchukamari I — silent in all ten probe cycles"],
       ["861736076133757", "Banchukamari II — silent in all ten probe cycles"],
       ["861736076133609", "Bilsi II — silent in all ten probe cycles"],
-      ["861736076081915", "Salkumarhat I — 17 of 27 keys carry no reading (F4.55)"],
-      ["861736076128260", "Salkumarhat II — 17 of 27 keys carry no reading (F4.55)"],
-      ["861736076128211", "Mora Nodir Kuthi II — clock -3:02:36, never in a window (F4.54)"],
-      ["861736076128245", "Bhutnirghat II — clock -0:21:34, never in a window (F4.54)"],
+      ["861736076081915", "Salkumarhat I — 17 of 27 keys carry no reading (F4.58)"],
+      ["861736076128260", "Salkumarhat II — 17 of 27 keys carry no reading (F4.58)"],
+      ["861736076128211", "Mora Nodir Kuthi II — clock -3:02:36, never in a window (F4.57)"],
+      ["861736076128245", "Bhutnirghat II — clock -0:21:34, never in a window (F4.57)"],
     ];
     for (const [code, why] of heldBack) {
       assert(

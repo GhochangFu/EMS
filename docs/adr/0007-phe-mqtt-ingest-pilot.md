@@ -86,10 +86,10 @@ first draft of this amendment missed them:
 - **Salkumarhat I and Salkumarhat II** publish all 27 keys, but 17 carry no
   reading and those 17 are the entire Modbus register block — 5 of 21 points
   land, and the missing block includes `s09_r01` → `kw`, which is exactly what
-  `sites_online` counts. Their meters are dark. Tracked as `F4.55`.
+  `sites_online` counts. Their meters are dark. Tracked as `F4.58`.
 - **Mora Nodir Kuthi II** (clock −3:02:36) and **Bhutnirghat II** (−0:21:34)
   publish correctly, but their rows land outside every dashboard recency window,
-  so the tiles read offline whatever the plant is doing. Tracked as `F4.54`.
+  so the tiles read offline whatever the plant is doing. Tracked as `F4.57`.
 
 Holding these four back is the criterion applied consistently; enabling them
 would have put four sites on a control-room view that reads them wrong, which is
@@ -123,10 +123,10 @@ Named so they are not read as settled by it:
 - **Device clock skew.** Timestamps come from the device and are unbounded;
   measured 2026-08-22 across nine devices spanning **−3:02:36 to +34:31**.
   `F4.37` — closed — names `F1.7` as where an ingest-side clamp belongs and
-  calls the trade a product call. Tracked as `F4.54`; still open.
+  calls the trade a product call. Tracked as `F4.57`; still open.
 - **Two stations' meters are dark.** Salkumarhat I and II publish all 27 keys but
   17 carry no reading, so they land 5 of 21 points. A field condition, correctly
-  handled and reported nowhere. Tracked as `F4.55`.
+  handled and reported nowhere. Tracked as `F4.58`.
 - **The dashboard consequence of both.** `sites_online` reads a 20 s window and
   the map 25 s. This is **why** the four are held back rather than a residual of
   enabling them — but the five that are enabled all run 8 to 34 minutes ahead,

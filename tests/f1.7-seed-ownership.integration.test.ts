@@ -52,7 +52,7 @@ function assert(condition: boolean, message: string): void {
 /** In the enabled set, so the seed would switch it ON if it still owned the column. */
 const ENABLED_RTU = "861736076104923"; // Bhutnirghat I — the ADR 0007 pilot
 /** Held out of the set, so the seed would switch it OFF if it still owned the column. */
-const HELD_BACK_RTU = "861736076128245"; // Bhutnirghat II — clock -0:21:34 (F4.54)
+const HELD_BACK_RTU = "861736076128245"; // Bhutnirghat II — clock -0:21:34 (F4.57)
 
 // Derived, not imported from `pg`: that package is a dependency of `apps/api`
 // and `packages/db`, and pnpm does not hoist it to the root, so a `pg` type
@@ -199,7 +199,7 @@ describe("F1.7 seed ownership across two passes", () => {
   it("adopts the set again once the stamp is gone", async () => {
     // Two things at once. It proves the adoption path still works on a database
     // that predates the stamp — without which a changed set would never reach an
-    // already-seeded fleet — and it demonstrates `F4.56`'s hole from the other
+    // already-seeded fleet — and it demonstrates `F4.59`'s hole from the other
     // side: `rtus.meta` is writable through the admin API, and the durability
     // asserted above lasts exactly as long as this key does.
     await operatorSets(ENABLED_RTU, false);

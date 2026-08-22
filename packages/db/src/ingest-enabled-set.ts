@@ -35,14 +35,14 @@ import { createHash } from "node:crypto";
  *   publish all 27 keys, but 17 carry no reading (`null`, `""` or non-numeric),
  *   and those 17 are the whole Modbus register block. They land 5 of 21 points,
  *   and the missing block includes `s09_r01` → `kw`, which is what
- *   `dashboard.service.ts` counts for `sites_online`. Tracked as `F4.55`.
+ *   `dashboard.service.ts` counts for `sites_online`. Tracked as `F4.58`.
  * - `861736076128211` Mora Nodir Kuthi II (clock −3:02:36) and
  *   `861736076128245` Bhutnirghat II (−0:21:34) — publish fine, but their rows
  *   land outside every dashboard recency window, so the tiles read offline
- *   whatever the plant is doing. Tracked as `F4.54`.
+ *   whatever the plant is doing. Tracked as `F4.57`.
  *
  * **Re-enabling them is one `UPDATE` and no code change**, because the seed
- * defers to the operator once a row is stamped. `F4.54`'s ingest-side clamp
+ * defers to the operator once a row is stamped. `F4.57`'s ingest-side clamp
  * would fix the second pair; the first pair needs a field visit.
  *
  * Re-measure before editing this list. `apps/ingest/scripts/fleet-probe.mjs`
