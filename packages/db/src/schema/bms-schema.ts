@@ -263,6 +263,25 @@ export const assetPoints = bmsSchema.table("asset_points", {
   sensorCode: varchar("sensor_code", { length: 64 }),
   unit: varchar("unit", { length: 32 }),
   active: boolean("active").notNull().default(true),
+  // ADR 0039 decisions 6 and 7: this asset's override of the calc config its
+  // pinned template version declares, mirroring `templatePoints` column for
+  // column. NULL means "inherit", which is what every row written before
+  // migration 0037 already did implicitly — hence five nullable columns rather
+  // than one jsonb blob, so a partial override restates one field, not a point.
+  // Resolution is `coalesce(assetPoints.<col>, templatePoints.<col>)` per
+  // column. Only a `sourceKind = 'computed'` row ever carries a value here.
+  //
+  // No DB CHECK, and *not* for migrations 0035/0036's reason — this table does
+  // carry CHECKs. The trigger/interval invariants constrain the **resolved**
+  // value, which depends on the template version `assets.templateId` pins, so a
+  // row-level CHECK cannot see it. Enforced in apps/api's Zod layer, which
+  // validates the merge and names the inherited value it conflicts with; see
+  // migration 0037's header.
+  formula: text("formula"),
+  formulaDialect: varchar("formula_dialect", { length: 32 }),
+  calcTrigger: varchar("calc_trigger", { length: 16 }),
+  calcIntervalSeconds: integer("calc_interval_seconds"),
+  maxInputAgeSeconds: integer("max_input_age_seconds"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -318,8 +337,12 @@ export const pointKeys = bmsSchema.table("point_keys", {
  * at this row, so the pin and the version can never disagree. Published rows
  * are immutable except `status -> archived`: editing one creates a new draft at
  * `max(version) + 1`. That is not ceremony — instantiated `asset_points` are
- * physical wiring that `apps/ingest` and the rule engine read, so a template
- * edit must never reach assets already built from it.
+ * physical wiring that `apps/ingest` and the rule engine read.
+ *
+ * So a template *edit* never reaches assets already built from it, and a
+ * published version stays immutable. An asset's pin changes only through the
+ * explicit, previewed and audited migration ADR 0039 defines — never as a side
+ * effect of publishing a new version.
  */
 export const assetTemplates = bmsSchema.table("asset_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -381,7 +404,7 @@ export const templatePoints = bmsSchema.table("template_points", {
   // already what resolveCatalogPointKey returns as the fallback.
   unit: varchar("unit", { length: 32 }),
   // measured | derived. Load-bearing for F2.2: a derived point is computed by
-  // the calc engine (F2.6), so instantiation must not emit an asset_points row
+  // the calc engine (F2.4), so instantiation must not emit an asset_points row
   // for it — asset_points.source_data_key is NOT NULL and there is no honest
   // source key for a computed tag.
   kind: varchar("kind", { length: 32 }).notNull().default("measured"),
