@@ -1,5 +1,5 @@
 import { renderHealth, type HealthSnapshot } from "./health-server.js";
-import type { SupervisorHealth } from "./supervisor.js";
+import type { DeviceHealth, SupervisorHealth } from "./supervisor.js";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -9,20 +9,29 @@ function assert(condition: boolean, message: string): void {
 
 const STARTED_AT = new Date("2026-08-05T12:00:00.000Z");
 const NOW = new Date("2026-08-05T12:05:30.000Z");
+/** 30 s before `NOW` — inside any sane staleness window. */
+const FRESH = new Date("2026-08-05T12:05:00.000Z");
+
+/** Five minutes, matching `DEFAULT_STALE_AFTER_MS`. */
+const STALE_AFTER_MS = 300_000;
+
+function device(rtuCode: string, overrides: Partial<DeviceHealth> = {}): DeviceHealth {
+  return { rtuCode, deviceKey: rtuCode, lastSampleAt: FRESH, ...overrides };
+}
 
 function endpoint(overrides: Partial<SupervisorHealth> = {}): SupervisorHealth {
   return {
     protocol: "mqtt",
     endpointKey: "phe.thinkiot.co.in:8883",
     state: "connected",
-    devices: ["RTU-1", "RTU-2"],
+    devices: [device("RTU-1"), device("RTU-2")],
     restarts: 0,
     consecutivePollFailures: 0,
     queueDepth: 0,
     droppedSamples: 0,
     writeFailures: 0,
     samplesWritten: 42,
-    lastSampleAt: new Date("2026-08-05T12:05:00.000Z"),
+    lastSampleAt: FRESH,
     ...overrides,
   };
 }
@@ -32,6 +41,7 @@ function snapshot(overrides: Partial<HealthSnapshot> = {}): HealthSnapshot {
     endpoints: [endpoint()],
     skipped: [],
     startedAt: STARTED_AT,
+    staleAfterMs: STALE_AFTER_MS,
     ...overrides,
   };
 }
@@ -76,7 +86,7 @@ export function runHealthRenderTests(): void {
             protocol: "modbus_tcp",
             endpointKey: "10.0.0.5:502",
             state: "degraded",
-            devices: ["RTU-9"],
+            devices: [device("RTU-9")],
             consecutivePollFailures: 3,
             restarts: 2,
           }),
@@ -159,4 +169,213 @@ export function runHealthRenderTests(): void {
     assert(body.includes("uptime=0s"), "uptime is clamped at zero");
   }
 
+}
+
+/**
+ * Per-device staleness (`F1.7`).
+ *
+ * **The defect this closes is invisible at one RTU and unavoidable at nine.**
+ * `endpointKey` is `${host}:${port}` (`mqtt.ts`), so every PHE RTU shares one
+ * connection, one supervisor and — before this — one `lastSampleAt` set
+ * unkeyed on any sample from any device. Eight RTUs could stop publishing while
+ * the ninth kept the endpoint's timestamp fresh, and the body still read `ok`.
+ *
+ * Measured on the live broker on 2026-08-22: nine of twelve PHE RTUs publish,
+ * every 50–75 s. Three are silent. Nothing in the health body said so.
+ */
+export function runDeviceStalenessTests(): void {
+  // ---- staleness is per device, not per endpoint --------------------------
+
+  {
+    // The failure the whole item exists for: one live device, one silent one,
+    // on a connection that is genuinely connected.
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [
+              device("861736076104923"),
+              device("861736076133666", {
+                lastSampleAt: new Date(NOW.getTime() - STALE_AFTER_MS - 1),
+              }),
+            ],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    assert(
+      body.includes("stale=1"),
+      `a silent device must be counted in the summary:\n${body}`,
+    );
+    assert(
+      body.includes("stale rtu=861736076133666"),
+      `the silent device must be named, not merely counted:\n${body}`,
+    );
+    assert(
+      !body.includes("stale rtu=861736076104923"),
+      `the device that is still publishing must not be reported stale:\n${body}`,
+    );
+  }
+
+  // ---- the connection stays `connected`; silence is not a connection fault -
+
+  {
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [device("RTU-1", { lastSampleAt: new Date(NOW.getTime() - 900_000) })],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    // A broker we are connected to, serving a device that stopped publishing,
+    // is not a disconnected endpoint. Overloading `state` would make an
+    // operator restart a healthy connection to fix a dead RTU.
+    assert(
+      body.includes("state=connected"),
+      `a stale device must not rewrite the endpoint state:\n${body}`,
+    );
+    // But the host as a whole is not `ok` while a mapped RTU is silent —
+    // reporting `ok` is what let three silent PHE RTUs go unnoticed.
+    assert(
+      body.startsWith("ingest-host degraded "),
+      `a stale device degrades the summary:\n${body}`,
+    );
+  }
+
+  // ---- exactly at the threshold is not yet stale --------------------------
+
+  {
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [device("RTU-1", { lastSampleAt: new Date(NOW.getTime() - STALE_AFTER_MS) })],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    // Strictly greater, so a device publishing exactly on the boundary does not
+    // flap between stale and fresh on every scrape.
+    assert(body.includes("stale=0"), `the boundary is not stale:\n${body}`);
+    assert(body.startsWith("ingest-host ok "), `the boundary does not degrade:\n${body}`);
+  }
+
+  // ---- a device that has never published ----------------------------------
+
+  {
+    const body = renderHealth(
+      snapshot({
+        endpoints: [endpoint({ devices: [device("RTU-1", { lastSampleAt: undefined })] })],
+      }),
+      NOW,
+    );
+    // `ingest_enabled` on an RTU that has never once published is the mistake
+    // this endpoint has to make visible — it is a mapping error, not a silence.
+    assert(body.includes("stale=1"), `never having published counts as stale:\n${body}`);
+    assert(
+      body.includes("stale rtu=RTU-1 endpoint=phe.thinkiot.co.in:8883 lastSample=never"),
+      `a device with no sample renders \`never\`, not \`undefined\`:\n${body}`,
+    );
+  }
+
+  // ---- but not before the host has been up long enough to hear it ---------
+
+  {
+    // The regression this guards: with silence measured from the epoch, a host
+    // that has just started reports every enabled RTU stale until each one
+    // publishes — nine false alarms, on every restart, for a whole 60 s cycle.
+    // An alarm that fires on every deploy is one an operator stops reading.
+    const justStarted = new Date(STARTED_AT.getTime() + STALE_AFTER_MS - 1_000);
+    const body = renderHealth(
+      snapshot({
+        endpoints: [endpoint({ devices: [device("RTU-1", { lastSampleAt: undefined })] })],
+      }),
+      justStarted,
+    );
+    assert(
+      body.includes("stale=0"),
+      `an RTU cannot be stale before the window has elapsed since startup:\n${body}`,
+    );
+    assert(body.startsWith("ingest-host ok "), `a cold start is not degraded:\n${body}`);
+  }
+
+  // ---- a sample older than the host's own start still counts from startup --
+
+  {
+    // A restart does not make yesterday's sample fresh, but nor does it make a
+    // device stale that simply has not had a chance to publish yet.
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [
+              device("RTU-1", { lastSampleAt: new Date(STARTED_AT.getTime() - 86_400_000) }),
+            ],
+          }),
+        ],
+      }),
+      new Date(STARTED_AT.getTime() + 1_000),
+    );
+    assert(
+      body.includes("stale=0"),
+      `one second after startup nothing is stale, whatever its last sample:\n${body}`,
+    );
+  }
+
+  // ---- silence is reported as a duration an operator can act on -----------
+
+  {
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [device("RTU-1", { lastSampleAt: new Date(NOW.getTime() - 754_000) })],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    assert(
+      body.includes("silentFor=754s"),
+      `how long a device has been silent is what says whether to go and look:\n${body}`,
+    );
+  }
+
+  // ---- the count spans endpoints ------------------------------------------
+
+  {
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({ devices: [device("RTU-1", { lastSampleAt: undefined })] }),
+          endpoint({
+            protocol: "modbus_tcp",
+            endpointKey: "10.0.0.5:502",
+            devices: [device("RTU-9", { lastSampleAt: undefined })],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    assert(body.includes("stale=2"), `the summary counts stale devices host-wide:\n${body}`);
+    assert(
+      body.includes("stale rtu=RTU-9 endpoint=10.0.0.5:502"),
+      `a stale device names the endpoint it sits on:\n${body}`,
+    );
+  }
+
+  // ---- the RTU count still sums devices -----------------------------------
+
+  {
+    const body = renderHealth(snapshot(), NOW);
+    assert(
+      body.includes("rtus=2") && body.includes("rtus=RTU-1|RTU-2"),
+      `the existing counts and enumeration survive the richer device shape:\n${body}`,
+    );
+  }
 }

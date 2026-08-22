@@ -160,6 +160,7 @@ async function main(): Promise<void> {
     endpoints: [...supervisors.values()].map((supervisor) => supervisor.health()),
     skipped,
     startedAt,
+    staleAfterMs: hostConfig.staleAfterMs,
   }));
 
   logger.info("ingest host started", {

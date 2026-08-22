@@ -32,6 +32,17 @@ export type HostConfig = {
    */
   readonly reloadMs: number;
   /**
+   * How long one RTU may publish nothing before health calls it stale (`F1.7`).
+   *
+   * **Five minutes because the fleet was measured, not guessed.** The nine live
+   * PHE RTUs publish every 50–75 s (probe, 2026-08-22), so five minutes is
+   * four-to-six missed cycles — long enough that a single dropped message never
+   * raises it, short enough that a station down overnight is not discovered the
+   * next morning. A protocol that polls far slower than MQTT pushes will want
+   * its own value, which is why this is configuration rather than a constant.
+   */
+  readonly staleAfterMs: number;
+  /**
    * MQTT-only connection defaults taken from the environment.
    *
    * `MQTT_TLS_REJECT_UNAUTHORIZED` is honoured because the ADR 0007 pilot
@@ -52,6 +63,7 @@ export type HostConfig = {
  */
 export const DEFAULT_HEALTH_PORT: number = 9103;
 export const DEFAULT_RELOAD_MS: number = 60_000;
+export const DEFAULT_STALE_AFTER_MS: number = 300_000;
 
 function positiveInt(raw: string | undefined, fallback: number, name: string): number {
   if (raw === undefined || raw.trim() === "") {
@@ -93,6 +105,11 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
     databaseUrl,
     healthPort: positiveInt(env.INGEST_HOST_HEALTH_PORT, DEFAULT_HEALTH_PORT, "INGEST_HOST_HEALTH_PORT"),
     reloadMs: positiveInt(env.INGEST_RELOAD_MS, DEFAULT_RELOAD_MS, "INGEST_RELOAD_MS"),
+    staleAfterMs: positiveInt(
+      env.INGEST_STALE_AFTER_MS,
+      DEFAULT_STALE_AFTER_MS,
+      "INGEST_STALE_AFTER_MS",
+    ),
     mqttConnectionDefaults: {
       // The ADR 0007 pilot tested `!== "false"`, so anything other than the exact
       // string "false" leaves verification on. Transcribed rather than

@@ -52,6 +52,7 @@ still the only working credential path (ADR 0016 Amendment 3).
 | `DATABASE_URL` | — | Required. |
 | `INGEST_HOST_HEALTH_PORT` | `9103` | **Compose sets it to `9102`**, which is the port it publishes. The default is 9103 rather than 9102 for a historical reason: the ADR 0007 entry point bound 9102 as `INGEST_METRICS_PORT` and §6 commit 3 needed both processes up at once. That entry point is gone, but the separate default is kept so two hosts side by side still need only one variable set. |
 | `INGEST_RELOAD_MS` | `60000` | How often point mappings are refreshed. Matches what the ADR 0007 pilot did. |
+| `INGEST_STALE_AFTER_MS` | `300000` | Silence longer than this marks one RTU `stale` on the health endpoint (`F1.7`). Five minutes because the fleet was measured, not guessed: the nine live PHE RTUs publish every ~60 s (probe, 2026-08-22, 600 s window), so this is five missed cycles — a single dropped message can never raise it. Widen it for a protocol that polls far more slowly than MQTT pushes. |
 | `MQTT_HOST` / `MQTT_PORT` / `MQTT_USERNAME` / `MQTT_PASSWORD` | pilot-era | MQTT **only**, resolved by the host through the unmodified `src/rtu-config.js`. No new adapter gets an environment fallback. |
 | `MQTT_TLS_REJECT_UNAUTHORIZED` | on | Only the exact string `false` disables TLS verification, as in the ADR 0007 pilot. |
 | `CREDENTIAL_ENCRYPTION_KEY` | — | ADR 0012. Without it, encrypted per-RTU credentials are simply not read. |
@@ -107,12 +108,21 @@ Plain text, on `INGEST_HOST_HEALTH_PORT`. No metrics library — `prom-client`
 is deferred to `F1.10` / `F3.16` (ADR 0016 §Dependencies).
 
 ```
-ingest-host degraded endpoints=1 rtus=1 skipped=0 notify=on uptime=39s
-endpoint protocol=mqtt key=phe.thinkiot.co.in:8883 state=disconnected rtus=861736076104923 restarts=1 pollFailures=0 queue=0 dropped=0 written=0 writeFailures=0 lastSample=never
+ingest-host degraded endpoints=1 rtus=3 stale=1 skipped=0 notify=on uptime=39s
+endpoint protocol=mqtt key=phe.thinkiot.co.in:8883 state=connected rtus=861736076104923|861736076128245|861736076133666 restarts=1 pollFailures=0 queue=0 dropped=0 written=812 writeFailures=0 lastSample=2026-08-22T09:41:07.000Z
+stale rtu=861736076133666 endpoint=phe.thinkiot.co.in:8883 lastSample=never
 ```
 
 - One `endpoint` line per supervised connection. `rtus=` enumerates the devices
   that genuinely share it and would fail together — the blast radius.
+- **One `stale` line per RTU that has stopped publishing** (`F1.7`). An
+  endpoint's own `lastSample=` is the *connection's* liveness, and MQTT groups
+  every RTU on a broker into one connection, so one talkative station kept that
+  timestamp fresh for a fleet that had gone quiet. `stale=` counts them
+  host-wide and degrades the host, while the endpoint stays `connected` — the
+  broker is fine, the station is not, and restarting the connection would not
+  fix it. `silentFor=` is omitted for an RTU that has never published at all:
+  that is a mapping error rather than a silence.
 - `skipped` lines name every RTU left out and why (`no-adapter`,
   `unsupported-protocol`, `missing-rtu-code`, `invalid-connection-config`, …),
   so a gateway that never appears is visible without reading the log.

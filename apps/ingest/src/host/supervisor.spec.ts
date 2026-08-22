@@ -193,6 +193,16 @@ function makePlan(): EndpointPlan {
   };
 }
 
+/** An endpoint serving exactly one device — the case that may omit `deviceKey`. */
+function makeSoleDevicePlan(): EndpointPlan {
+  return {
+    ...makePlan(),
+    bindings: [
+      { rtuId: "id-1", rtuCode: "RTU-1", deviceKey: "RTU-1", device: {}, sourceKeys: ["flow"] },
+    ],
+  };
+}
+
 function makeFactory(instances: ScriptedAdapter[]): IngestAdapterFactory {
   let index = 0;
   return {
@@ -237,8 +247,8 @@ async function stopSupervisor(
   await stopping;
 }
 
-function sample(value: number): SourceSample {
-  return { sourceKey: "flow", value, deviceKey: "RTU-1" };
+function sample(value: number, deviceKey = "RTU-1"): SourceSample {
+  return { sourceKey: "flow", value, deviceKey };
 }
 
 /** Per-endpoint supervision, ADR 0016 §5. */
@@ -281,12 +291,85 @@ export async function runSupervisorTests(): Promise<void> {
     assert(supervisor.health().samplesWritten === 2, "the written count is reported");
     assert(supervisor.health().lastSampleAt !== undefined, "lastSampleAt is stamped — F3.16 reads it");
     assert(
-      supervisor.health().devices.join(",") === "RTU-1,RTU-2",
+      supervisor.health().devices.map((d) => d.rtuCode).join(",") === "RTU-1,RTU-2",
       "health enumerates the RTUs that share this connection (§5)",
+    );
+
+    // ---- `F1.7`: liveness is attributed per RTU, not per batch -------------
+    //
+    // Both samples above carry `deviceKey: "RTU-1"`. The endpoint's own
+    // `lastSampleAt` is therefore fresh — and RTU-2, which shares the
+    // connection and has published nothing, must NOT inherit that freshness.
+    // Before this, one talkative RTU kept the only timestamp there was, and a
+    // whole silent fleet behind it read as healthy.
+    {
+      const devices = supervisor.health().devices;
+      const rtu1 = devices.find((d) => d.rtuCode === "RTU-1");
+      const rtu2 = devices.find((d) => d.rtuCode === "RTU-2");
+      assert(rtu1?.lastSampleAt !== undefined, "the RTU that published is stamped");
+      assert(
+        rtu2?.lastSampleAt === undefined,
+        "an RTU that published nothing must not inherit its neighbour's timestamp",
+      );
+      // An RTU that has never published still has to appear, or health cannot
+      // tell "silent" from "not configured".
+      assert(devices.length === 2, "every bound RTU appears in health, silent or not");
+    }
+
+    scripted.emit([sample(3, "RTU-2")]);
+    await fake.flush();
+    assert(
+      supervisor.health().devices.find((d) => d.rtuCode === "RTU-2")?.lastSampleAt !== undefined,
+      "an RTU is stamped as soon as it publishes for itself",
+    );
+
+    // A sample for a device this endpoint has no binding for is dropped from
+    // the liveness map, not recorded — otherwise a stray `dev_id` on a shared
+    // topic would invent an RTU health reports on for ever.
+    scripted.emit([sample(4, "RTU-UNBOUND")]);
+    await fake.flush();
+    assert(
+      supervisor.health().devices.length === 2,
+      "an unbound deviceKey must not add an RTU to health",
     );
 
     await stopSupervisor(supervisor, fake);
     assert(scripted.disconnects >= 1, "stop() disconnects the adapter");
+  }
+
+  // ---- `F1.7`: a sole-device endpoint may omit `deviceKey` ----------------
+
+  {
+    // `SourceSample.deviceKey` is "required when the instance has more than one
+    // binding; omit when it has exactly one". Every polling adapter with one
+    // gateway takes that option. If liveness ignored the omission, those
+    // endpoints would write rows perfectly well and report stale for ever —
+    // the same false alarm as the false all-clear, in the other direction.
+    const scripted = makeScriptedAdapter("push");
+    const fake = makeFakeScheduler();
+    const supervisor = createSupervisor({
+      factory: makeFactory([scripted]),
+      plan: makeSoleDevicePlan(),
+      logger: silentLogger,
+      scheduler: fake.scheduler,
+      random: () => 0.5,
+      writeSamples: async () => {},
+    });
+
+    supervisor.start();
+    await nextTick();
+    scripted.finishConnect();
+    await nextTick();
+
+    scripted.emit([{ sourceKey: "flow", value: 1 }]);
+    await fake.flush();
+
+    assert(
+      supervisor.health().devices[0]?.lastSampleAt !== undefined,
+      "a sample with no deviceKey credits the endpoint's only binding",
+    );
+
+    await stopSupervisor(supervisor, fake);
   }
 
   // ---- connect timeout, then backoff --------------------------------------

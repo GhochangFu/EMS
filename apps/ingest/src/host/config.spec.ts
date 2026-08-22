@@ -1,6 +1,7 @@
 import {
   DEFAULT_HEALTH_PORT,
   DEFAULT_RELOAD_MS,
+  DEFAULT_STALE_AFTER_MS,
   readHostConfig,
 } from "./config.js";
 
@@ -118,6 +119,11 @@ export function runHostConfigTests(): void {
       () => readHostConfig({ ...BASE, INGEST_RELOAD_MS: bad }),
       `reload interval "${bad}" must be rejected`,
     );
+    expectThrow(
+      () => readHostConfig({ ...BASE, INGEST_STALE_AFTER_MS: bad }),
+      `staleness window "${bad}" must be rejected — a window that silently ` +
+        `falls back to the default is a fleet reported healthy on the wrong rule`,
+    );
   }
 
   assert(readHostConfig({ ...BASE }).reloadMs === DEFAULT_RELOAD_MS, "the reload default is 60 s");
@@ -125,6 +131,24 @@ export function runHostConfigTests(): void {
   assert(
     readHostConfig({ ...BASE, INGEST_RELOAD_MS: "5000" }).reloadMs === 5_000,
     "the reload interval is overridable",
+  );
+
+  // ---- the staleness window (`F1.7`) ---------------------------------------
+
+  assert(
+    readHostConfig({ ...BASE }).staleAfterMs === DEFAULT_STALE_AFTER_MS,
+    "the staleness default applies when the variable is unset",
+  );
+  // Measured, not chosen: the nine live PHE RTUs publish every ~60 s (probe,
+  // 2026-08-22, 600 s window, 9–10 messages each). Five minutes is five missed
+  // cycles — a single dropped message can never raise a stale RTU.
+  assert(
+    DEFAULT_STALE_AFTER_MS >= 5 * DEFAULT_RELOAD_MS,
+    "the staleness window must clear several publish cycles, or one lost message reads as a dead RTU",
+  );
+  assert(
+    readHostConfig({ ...BASE, INGEST_STALE_AFTER_MS: "900000" }).staleAfterMs === 900_000,
+    "a slower protocol can widen the window",
   );
 
   // ---- DATABASE_URL is required -------------------------------------------
