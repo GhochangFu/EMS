@@ -156,6 +156,22 @@ Completing slot 12 reaches the **Foundry demo**: a water plant onboarded from a
 rich template by the agent, with health scores, pre-threshold anomaly alerts,
 and enriched alarms.
 
+### The IONSiTE NEXUS reply landed and unblocked almost nothing (2026-08-22)
+
+Ion Exchange replied to the 2026-08-17 clarification set with a renaming mail
+and a 15-row feature sheet (`docs/IonSiTE Nexus Features.xlsx`) — not with the
+response form: no owner, no target date, no C/X column, so C21e (single point
+of contact) and C21f (next review date) are still empty. Of the 33 form rows,
+**4 moved, 1 is contradicted, 28 are unchanged.** A1 (tag list) and A4
+(protocols) got nothing, so **`E5.1` stays blocked and the adapter fan-out
+stays unordered.** What did move: **A2 partially** ("AI algos can be IEIL
+scope; REST API enabled" — the §5 ML-stack ADR is now draftable), **A5
+partially** (phase 1 is cloud + edge), **B15 superseded** (the client supplied
+the health-score formula), and the sheet implies a **five-level roll-up
+hierarchy** our schema only partly carries. The full mapping, the seven new
+rows (`F1.12`–`F1.14`, `F2.9`, `F2.10`, `F3.32`, `F3.33`) and the two new §5
+ADR rows are in **§8**.
+
 ### F1.1 landed and opened the adapter fan-out (2026-08-14, PR #30)
 
 Re-derived from the `Depends` column, not read off the slot table. **Nine of the
@@ -371,11 +387,14 @@ single shared file). `F3.8` needs a dependency ADR before build.
 | E5.4 | ⬜ | Water-quality & flow instrumentation ingestion (analysers, flow/pressure/level/vibration) | P1 | 3–4 | 1 | F1.1 |
 | F3.15 | ⬜ | Device / asset / RTU CRUD APIs (beyond admin/onboarding) | P1 | 4–6 | 1 | — |
 | F3.16 | ⬜ | Device health / last-seen / heartbeat | P1 | 3–4 | 2 | F1.x |
-| E7.2 | ⬜ | Edge gateway runtime: extended buffering, offline ops, store-and-forward sync | P1 | 8–12 | 4 | F1.1, F1.10 |
+| E7.2 | ⬜ | Edge gateway runtime: extended buffering, offline ops, store-and-forward sync. **2026-08-22: the reply mail names "EDGE (hardware / software)" a deliverable and sheet row 1 names store-and-forward — the software half is now client-stated scope, not our inference (§8). Edge *hardware* stays out of this backlog per §6.** | P1 | 8–12 | 4 | F1.1, F1.10 |
 | E6.1 | ⬜ | IEC 60870 adapter | P2 | 8–10 | 5 | F1.1 |
 | F1.11 | ⬜ | Formalise ingest normaliser as only `telemetry.*` writer | P2 | 2 | 5 | — |
 | F3.17 | ⬜ | OTA firmware module | P3 | 10+ | 5 | — |
 | F3.18 | ⬜ | X.509 device certificate management | P2 | — | 5 | — |
+| F1.12 | ⬜ | **sFTP / scheduled file-transfer ingestion** — created 2026-08-22 by the §8 comparison (sheet row 3). `F1.9` ✅ covers interactive CSV/Excel upload; this is the unattended half: a poller that collects files from an sFTP drop on a schedule and feeds the same import pipeline. Reuses `F1.9`'s parser and shared write path; the new scope is the scheduler, the remote-source config (credentials — the ADR 0012 pattern) and failure/retry visibility. | P2 | 3–4 | — | F1.9 |
+| F1.13 | ⬜ | **eLogBook functions** — created 2026-08-22 by the §8 comparison (sheet row 3). Named by the client with no definition; plausibly shift logs / operator round readings over `F1.8`'s manual-entry path, but sizing it now would be invention. **Stub — needs a client definition before it can be scoped.** | P3 | — | — | F1.8 |
+| F1.14 | ⬜ | **DeviceNet adapter** — created 2026-08-22 by the §8 comparison (sheet row 1). **Not in SOW §10**; its first appearance anywhere is the feature sheet. **Parked on the A4 answer** exactly as `F1.2`–`F1.6` are — and DeviceNet is a CIP fieldbus that typically needs a hardware interface, so it may turn out to be edge-gateway scope (`E7.2`) rather than a software adapter at all. Do not size before A4 names the device landscape. | P3 | — | — | F1.1 |
 
 ### Track B — Data Model, Templates & Calculations *(critical path)*
 
@@ -388,11 +407,13 @@ single shared file). `F3.8` needs a dependency ADR before build.
 | **E1.7** | ✅ | Template content model extension: KPIs, alarm philosophies, class-level maintenance plans, dashboard point ordering (Ion Exchange overlay surface). **ADR 0019, PR #9.** Tiered by whether a consumer exists — `health` (E1.1) and `optimisation` (E1.6) are *rejected*, not accepted untyped; `dashboards` carries ordering only until `F3.1`. Each reopens as its consumer lands. | P0 | 3–4 | 1 | F2.1 |
 | F2.5 | ✅ | **Template authoring UI + formula editor** (was "Calculation configuration UI") — **[ADR 0038](./adr/0038-template-authoring-ui.md) Accepted 2026-08-21**, eight questions ruled by the owner in two rounds the same day. Re-scoped from a calc-only editor to the **full template authoring surface**: there is no template UI in `apps/web` at all (no client, no page, no reference), so the old `4–5` was sized against a host page that does not exist — effort revised to **16–20**, which knowingly moves wave 2. Two routes, a detail page of **exactly five tabs** (Details · Points · Calculations · KPIs · Alarms) — deliberately **no `health`, `optimisation` or `dashboards` tab**, so the three content sections AGENTS.md §6 keeps closed cannot arrive by accident. Owns **both** authored-formula surfaces (`template_points.formula` *and* `kpis[].expression`) behind one `<FormulaEditor>` with two validation contexts; live preview imports `evaluate()` from `@bms/shared` because ADR 0037 requires one implementation. Highlighting reuses the existing `tokenize()` (no Lezer grammar) which widens the `packages/shared` calc-dsl export. Takes **`codemirror` ^6 in `apps/web` (§9.4, MIT)** as the meta-package — `lint` places parse errors by `position`, `autocomplete` completes `{pointKey}`, `commands` is undo; `search` is unused and must tree-shake, which the bundle measurement checks. Introduces the **first `React.lazy` boundary** in a web app that statically imports every page. An `"unvalidated"` KPI upgrades by **opt-in only**, never by save (ADR 0036's promise). Authoring actions **hide on role, fail on organization scope** — which is what keeps "no API change, no migration" true. **DONE 2026-08-21 — PR #120**, 36 commits, squashed as `9cdc410`; the rulebook sweep is PR #121. Verified: `pnpm typecheck` and `typecheck:tests` clean, **131 files / 483 tests with none skipped**, coverage 54.04 · 50.32 · 55.61 · 54.11 against thresholds ratcheted three times to 53.7/50.0/55.3/53.8 — and the gate was checked in both directions, raising statements to 99 to confirm it exits 1. **Decision 7's bundle claim is now a measurement**: the entry chunk contains no CodeMirror at all and `@codemirror/search` tree-shakes out of both chunks, with a positive control (swapping to `basicSetup` fires all five markers and costs 47,033 bytes) so the zero is evidence rather than a broken scan. Section 7 ran against the running stack with the served asset hash checked against the fresh build — decision 3 was tested by **typing into a published formula field**, not by looking at it; decision 9 was exercised in all three directions including the one that matters, that saving Alarms does not reject a still-unvalidated KPI. **Section 7 earned its place: four defects were found there that all 483 tests could not reach**, because the surface is `.tsx` and `apps/web`'s Vitest project cannot see one — a tab switch discarding unsaved edits, the guard disarming itself after a *failed* action, every server message rendering as raw JSON, and the authoring forms being offered to a `location_admin` who then lost the work to a 403. The last was found by the owner signing in as `wc-admin@bms.local`, which is the one check this agent cannot run. All four are fixed with the test that would have caught each. Three reviewers found **no Critical, High or Blocking** finding. **Two follow-ups raised rather than smuggled in**: `F4.52` (a 403 clears the session, which also makes decision 10's residual case impossible as written) and `E2.4` (template alarms reach no rule engine — deliberate per ADR 0019 §3, mitigated here by turning the Alarms banner from a disclaimer into an instruction). **Still unverified**: the org-scope 403 in the browser, which needs a second sign-in and cannot fully pass until `F4.52` is settled. | P0 | 16–20 | 2 | F2.4 |
 | F2.6 | ⬜ | Template calc-tags wired into calc engine | P0 | 3–4 | 2 | F2.2, F2.4 |
-| F2.7 | ⬜ | Tag-mapping bulk editor + Excel mapping sheet | P1 | 4–5 | 2 | F2.1 |
-| F2.8 | ⬜ | Replace hardcoded PUE SQL with user-defined derived tags. **⚠ `Depends` is satisfied (`F2.4` is done) but this is not actually startable yet — a grammar decision found at `F2.4`'s ADR gate (ADR 0037 decision 2) still blocks it.** `bms-calc-v1` references carry no asset qualifier and the grammar has no aggregate function, so a formula computes from measured points on *its own asset*. `estimatePue()` runs on a figure SQL already summed **across** assets, so PUE is still not expressible as a derived tag now that `F2.4` has landed. Unblocking it needs **either** an ADR 0036 amendment (asset-qualified references, or aggregates — which drags in cross-asset dependency ordering and cycle detection) **or** a site-level asset carrying facility totals as ordinary measured points, which then needs something to produce them. ADR 0037 deliberately chose neither: picking one would invent this row's scope on its behalf. | P1 | incl. | 2 | F2.4 |
-| **E5.1** | ⬜ | Water-treatment domain pack: catalogs + templates for STP/ETP/RO/UF/softeners/DM/cooling water/dosing/potable. **⚠ Blocked on a client answer, which `Depends` cannot express** — both dependencies are `✅` since 2026-08-05, so every re-derivation calls this eligible. A five-question mail to Ion Exchange is unanswered as of 2026-08-09 — verbatim text and what each answer decides in [`docs/e5.1-client-questions.md`](./e5.1-client-questions.md): (1) are RO / cooling water / STP / softener the right four to start with, (2) **the tag list from one real plant** — P&ID, I/O schedule or SCADA/PLC export, redacted is fine; the priority ask, (3) are alarm setpoints per-site or standardised, (4) discharge route for effluent/sewage, since CPCB Schedule VI limits differ by route (BOD 30 mg/L inland vs 350 mg/L to sewer), (5) Ion Exchange's internal product names. Its ADR is unwritten and **this row deliberately no longer names a number** — `0020` is reserved for the E8.1 encryption-at-rest retro (§5 below and ADR 0019 §"Numbering, also settled"), and `0021` was taken by F4.14's audit read API on 2026-08-09, `0022` by E8.3, `0023` by F4.1 and `0024` by F4.2. **It has now been wrong three times** — it said `0022` while `0022`–`0024` were taken, then `0025`, which `F4.28` took on 2026-08-10. A derived value in prose cannot stay correct, so the fix applied here is to stop deriving it: take the next free number from `docs/adr/` when the ADR is actually written, and do not record a reservation in this row. **Q3 may reopen ADR 0019:** `alarms[].thresholdValue` is a *required* `number`, so "setpoints are per-site" cannot be authored without placeholder values — that is an Amendment 1, human-gated. **The client's own reference dashboards move two of the five questions — see §7.4 (2026-08-16).** Short form: they give **STP and ETP** dedicated nav entries and full process trains while reducing softener/RO to a single node, which suggests **ETP belongs in the first set and is missing from our drafted four** (narrows Q1); and they name unit operations with parameters and units — DO mg/L, MLSS mg/L, TSS mg/L, Chlorine mg/L, pH, Turbidity NTU, Flow KL/hr, tank level % — which is a usable starting vocabulary but **not** the plant tag export Q2 asked for, since it carries no naming convention, no I/O schedule and no indication of which instruments are actually fitted. Q3–Q5 are untouched: the pages show *breached values*, which says which parameters are alarmed and not what the limits are. **This does not unblock the row** — but a reply narrowed to **Q2 alone** would now be enough to start. **A broader, SOW-wide clarification set (A1–C22, 22 items across three urgency tiers) was prepared for a 2026-08-17 meeting** — [`docs/ion-exchange-clarifications-2026-08-17.md`](./ion-exchange-clarifications-2026-08-17.md). Its own A1/A3/B7/B8/C17 restate this row's five questions against the SOW; A2 (who authors template content and who supplies the AI models) and A3 (first plant/customer/site) both bear on this row too, beyond the original five. Answer status of that broader set is not yet recorded in this file. | P0 | 6–8 | 2 | F2.1, E1.7 |
-| E5.2 | ⬜ | Mechanical/utility domain pack: pumps, compressors, motors, chillers, cooling towers, AHUs, boilers | P1 | 4–6 | 2 | F2.1, E1.7 |
-| E5.3 | ⬜ | Facility/smart-building domain pack: lighting, fire, access, occupancy, parking, IAQ, BAS | P2 | 6–8 | 5 | F2.1, E1.7 |
+| F2.7 | ⬜ | Tag-mapping bulk editor + Excel mapping sheet. **2026-08-22: sheet row 2 is this row's acceptance detail — units, scaling, engineering ranges, quality flags, parent/child hierarchy (→ `F2.10`) and bulk mapping/import (§8).** | P1 | 4–5 | 2 | F2.1 |
+| F2.8 | ⬜ | Replace hardcoded PUE SQL with user-defined derived tags. **⚠ `Depends` is satisfied (`F2.4` is done) but this is not actually startable yet — a grammar decision found at `F2.4`'s ADR gate (ADR 0037 decision 2) still blocks it.** `bms-calc-v1` references carry no asset qualifier and the grammar has no aggregate function, so a formula computes from measured points on *its own asset*. `estimatePue()` runs on a figure SQL already summed **across** assets, so PUE is still not expressible as a derived tag now that `F2.4` has landed. Unblocking it needs **either** an ADR 0036 amendment (asset-qualified references, or aggregates — which drags in cross-asset dependency ordering and cycle detection) **or** a site-level asset carrying facility totals as ordinary measured points, which then needs something to produce them. ADR 0037 deliberately chose neither: picking one would invent this row's scope on its behalf. **2026-08-22: sheet row 6 lands client demand on exactly this fork — the aggregate path now has its own row, `F2.9`, which carries the ADR 0036 amendment decision (§8).** | P1 | incl. | 2 | F2.4 |
+| **E5.1** | ⬜ | Water-treatment domain pack: catalogs + templates for STP/ETP/RO/UF/softeners/DM/cooling water/dosing/potable. **⚠ Blocked on a client answer, which `Depends` cannot express** — both dependencies are `✅` since 2026-08-05, so every re-derivation calls this eligible. A five-question mail to Ion Exchange is unanswered as of 2026-08-09 — verbatim text and what each answer decides in [`docs/e5.1-client-questions.md`](./e5.1-client-questions.md): (1) are RO / cooling water / STP / softener the right four to start with, (2) **the tag list from one real plant** — P&ID, I/O schedule or SCADA/PLC export, redacted is fine; the priority ask, (3) are alarm setpoints per-site or standardised, (4) discharge route for effluent/sewage, since CPCB Schedule VI limits differ by route (BOD 30 mg/L inland vs 350 mg/L to sewer), (5) Ion Exchange's internal product names. Its ADR is unwritten and **this row deliberately no longer names a number** — `0020` is reserved for the E8.1 encryption-at-rest retro (§5 below and ADR 0019 §"Numbering, also settled"), and `0021` was taken by F4.14's audit read API on 2026-08-09, `0022` by E8.3, `0023` by F4.1 and `0024` by F4.2. **It has now been wrong three times** — it said `0022` while `0022`–`0024` were taken, then `0025`, which `F4.28` took on 2026-08-10. A derived value in prose cannot stay correct, so the fix applied here is to stop deriving it: take the next free number from `docs/adr/` when the ADR is actually written, and do not record a reservation in this row. **Q3 may reopen ADR 0019:** `alarms[].thresholdValue` is a *required* `number`, so "setpoints are per-site" cannot be authored without placeholder values — that is an Amendment 1, human-gated. **The client's own reference dashboards move two of the five questions — see §7.4 (2026-08-16).** Short form: they give **STP and ETP** dedicated nav entries and full process trains while reducing softener/RO to a single node, which suggests **ETP belongs in the first set and is missing from our drafted four** (narrows Q1); and they name unit operations with parameters and units — DO mg/L, MLSS mg/L, TSS mg/L, Chlorine mg/L, pH, Turbidity NTU, Flow KL/hr, tank level % — which is a usable starting vocabulary but **not** the plant tag export Q2 asked for, since it carries no naming convention, no I/O schedule and no indication of which instruments are actually fitted. Q3–Q5 are untouched: the pages show *breached values*, which says which parameters are alarmed and not what the limits are. **This does not unblock the row** — but a reply narrowed to **Q2 alone** would now be enough to start. **A broader, SOW-wide clarification set (A1–C22, 22 items across three urgency tiers) was prepared for a 2026-08-17 meeting** — [`docs/ion-exchange-clarifications-2026-08-17.md`](./ion-exchange-clarifications-2026-08-17.md). Its own A1/A3/B7/B8/C17 restate this row's five questions against the SOW; A2 (who authors template content and who supplies the AI models) and A3 (first plant/customer/site) both bear on this row too, beyond the original five. Answer status of that broader set is not yet recorded in this file. **2026-08-22 (§8): the IONSiTE NEXUS reply and feature sheet answered neither A1 nor A3 — still blocked. One composition tension is now on record: the sheet's own water list (row 4) names WTP, cooling tower, reuse, wastewater and distribution, and never mentions RO or softeners — two of the drafted four. Hold the composition until A1/A3 land; and the asset-tree half of `F2.10` must be settled in this row's ADR before authoring (a plant: one asset, or a train of unit assets?).** | P0 | 6–8 | 2 | F2.1, E1.7 |
+| E5.2 | ⬜ | Mechanical/utility domain pack: pumps, compressors, motors, chillers, cooling towers, AHUs, boilers. **2026-08-22: sheet row 4 names chillers, compressors and HVAC explicitly (plus chiller-health analytics) and the mail's framing is building-wide — priority pressure up (§8).** | P1 | 4–6 | 2 | F2.1, E1.7 |
+| E5.3 | ⬜ | Facility/smart-building domain pack: lighting, fire, access, occupancy, parking, IAQ, BAS **— 2026-08-22: hotels, data centres and townships are in the sheet's use-case header; noted, wave unchanged (§8)** | P2 | 6–8 | 5 | F2.1, E1.7 |
+| F2.9 | ⬜ | **Cross-asset aggregation & balance calculations (`bms-calc-v2`)** — created 2026-08-22 by the §8 comparison (sheet row 6: "aggregations, balances, efficiency calculations"). This is the fork ADR 0037 decision 2 recorded and `F2.8`'s row deliberately left open: `bms-calc-v1` references carry no asset qualifier and the grammar has no aggregate functions. The sheet turns that open fork into stated client demand. **🔒 needs an ADR 0036 amendment first** — asset-qualified references or aggregates, which drags in cross-asset dependency ordering and cycle detection. Resolving this also unblocks `F2.8`. | P1 | 4–6 | — | F2.4, ADR |
+| F2.10 | ⬜ | **Hierarchy extension: campus/township tier + asset parent/child** — created 2026-08-22 by the §8 comparison (sheet rows 2 and 12). The client's roll-up ladder is asset → subsystem → building/site → campus/township → enterprise; the shipped shape is `Organization → Location → Asset → Point` (ADR 0008), so three of the five levels exist. The two gaps are different sizes: **(1)** a tier above `locations` — cheap, one nullable parent edge or a location group; **(2)** **parent/child between assets — expensive**: `assets.location_id` is the column every scoped authorization check filters on (ADR 0018), so a containment tree touches scope expansion, `F4.16` and `F2.2` instantiation. `asset_groups` already exist per location and are the natural "subsystem" candidate. **⚠ re-opens ADR 0008's shape; ADR first (§5)** — and the asset-tree half must be decided in the `E5.1` ADR before pack authoring (a plant: one asset, or a train of unit assets?). `E1.3`'s roll-up must be written level-agnostic so tiers arrive as data, not code. | P1 | 4–8 | — | ADR |
 
 ### Track C — Dashboards, Storage & Reporting
 
@@ -410,6 +431,8 @@ single shared file). `F3.8` needs a dependency ADR before build.
 | F3.29 | ⬜ | **Shell chrome parity: persistent site selector, alarm-count badge, user role subtitle** — created 2026-08-16 by the §7 comparison; **wave unset**, gated by the §5 *Domain-first navigation IA* decision it shares a surface with. The reference scopes the entire application to one site from a **top-bar selector**; we scope per page and offer organisation filter pills *inside* the dashboard body, so there is no app-wide "which site am I looking at" control. The header also carries an alarm bell with a live count badge and identifies the user by **role** ("Admin · Operations Manager") rather than name alone. Small individually; grouped because they are one surface (`app-shell.tsx`) and would otherwise be three near-identical rows. | P2 | 2–3 | — | — |
 | F3.30 | ⬜ | **System Status and Data Quality indicators** — created 2026-08-16 by the §7 comparison. The **genuinely new concept** in the reference: its sidebar footer carries "All Systems Operational" and **"Data Quality 98.6% Good"**, neither of which has any analogue here. **This is closer than it looks** — `F4.37`, `F4.38` and `F4.39` all exist because pages were rendering stale or non-measured values as live plant readings, and each built a freshness check to stop it. A Data Quality score is those checks surfaced as a number instead of suppressed at the point of render. Worth deciding what it measures before building: telemetry freshness per asset, ingest gap coverage, or unmapped-tag ratio are three different numbers and the reference does not say which. Relevant on the running deployment today, where the executive dashboard reads **1 / 17 sites online** with most location cards showing *NO LIVE TELEMETRY* — a state the platform currently expresses only card by card. | P2 | 2–3 | — | — |
 | F3.31 | ⬜ | **Operator-facing Assets browser** — created 2026-08-16 by the §7 comparison. The reference carries **Assets** in its primary navigation, beside Alarms and Work Orders. Ours exists only as `/admin/assets` under *Administration*, reached through `MasterDataLayout` and gated by the master-data role predicates — it is a **master-data editor**, not a browsing view for an operator who wants to find an asset and see its state. Scope question this row must settle before it is sized: whether this is a new read-only route or a scoped view of the existing one, and how it relates to `F3.2`'s per-asset-type default dashboards, which would be the natural thing to open from it. | P2 | 3–4 | — | F3.2 |
+| F3.32 | ⬜ | **Plant / network mimic builder** — created 2026-08-22 by the §8 comparison (sheet row 10). `F3.28` is parity with a *fixed* reference layout; this is the client asking for *configurable* process-line diagrams and plant/network mimics with live values, asset status, alarms and KPI overlays — an editor, not a page. The live-SVG schematic machinery (`/cr-overview`, the hidden `/sld` — `F4.47`) is the existing substrate. Scope question to settle before sizing: config-driven composition of existing widgets, or a drawing surface — the latter is a much larger product. | P2 | 6–10 | — | F3.1 |
+| F3.33 | ⬜ | **IONSiTE NEXUS display-layer rebrand** — created 2026-08-22 by the client mail: *"I am referring to the product as IONSiTE NEXUS (water-energy nexus)"*. The ADR 0013 pattern applies — display layer only, internal identifiers keep their names. Touches the header/co-branding surface `F3.29` and `C22b` already own, plus reports. **⚠ ADR first (§5)**: whether IONSiTE NEXUS replaces or co-presents with TRINETRA on screen is a commercial question, and C22b (brand assets) is still unanswered. | P2 | 1–2 | — | ADR |
 
 ### Track D — Alarms, Rules, Notifications & Commanding
 
@@ -446,7 +469,7 @@ single shared file). `F3.8` needs a dependency ADR before build.
 | ID | Status | Feature | P | Effort | Wave | Depends |
 |----|--------|---------|---|--------|------|---------|
 | E3.1 | ⬜ | Work-order depth: maintenance checklists, root-cause documentation, closure approval, richer audit. **§7 adds two things this row does not name.** (1) **SLA is a first-class field, expressed in elapsed time** — the reference cards read `SLA 30 mins` and `SLA 1h`, and SLA is a column in its open-work-order table; nothing in the current module carries one. (2) The alarm→WO path is presented as a **five-step stepper** (Alarm Triggered → Work Order Created → Assigned → In Progress → Completed), i.e. the lifecycle is shown to the operator, not just stored. WO ids are domain-prefixed (`WO #ELEC-…`, `WO #WATER-…`, `WO #STP-…`). | P1 | 4–6 | 1 | *(module exists)* |
-| F3.20 | ⬜ | Mobile PWA / responsive ops app — **P2→P1 (SOW §6 requires mobile execution)** | P1 | 16+ | 2 | — |
+| F3.20 | ⬜ | Mobile PWA / responsive ops app — **P2→P1 (SOW §6 requires mobile execution)**. **2026-08-22: sheet row 14 widens the ask — approvals and field/manual data entry on mobile, not only dashboards and alerts (§8).** | P1 | 16+ | 2 | — |
 | E3.2 | ⬜ | Mobile work execution + photographic evidence | P1 | 6–8 | 3 | E3.1, F3.3, F3.20 |
 | E3.3 | ⬜ | CMMS/EAM integration connector | P2 | 4–6 | 4 | E3.1, F4.20 |
 | E3.4 | ⬜ | Alarm enrichment → work order link: surface root cause, corrective actions, skill and ETR (`E2.1`) when a work order is created from an alarm. **Genuinely unplanned, not merely unscheduled** — traced 2026-08-19 while reviewing `E2.1`'s affected-asset picker, on the owner's own observation: `startWorkOrder` (`alarms-page.tsx`) passes only `alarmId`/`assetId`/a generated title/the raw alarm `message` as `description`; `bms.work_orders` carries no root-cause/corrective-action/skill/ETR column, only the `alarmId` link back to the alarm. Searched `docs/BACKLOG.md`, `docs/roadmap.md` and every ADR — no existing plan names this. **Overlaps `E3.1`'s "root-cause documentation" phrase, and is narrower and more concrete than it** — `E3.1` is checklists/SLA/closure-approval/stepper breadth; this is specifically whether and how the enrichment data an alarm may already carry reaches the ticket. **Design question this row must settle before sizing**: copy the enrichment fields into the work order at creation time (a frozen snapshot, survives the alarm's enrichment changing later) vs. a live reference the ticket reads through (`alarmId` already exists for this) — the two carry different schema and staleness implications, and only the owner can rule which is wanted. Not yet scheduled into a wave (`—`), matching `F3.28`–`F3.31`'s precedent for an item found rather than planned. | P2 | 2–3 | — | E2.1 |
@@ -456,9 +479,9 @@ single shared file). `F3.8` needs a dependency ADR before build.
 
 | ID | Status | Feature | P | Effort | Wave | Depends |
 |----|--------|---------|---|--------|------|---------|
-| **E1.1** | ⬜ | ML serving foundation: model runtime (batch+streaming scoring), feature extraction from aggregates, model registry ⭐ — **ADR first (stack choice)** | P1 | 8–12 | 2 | F4.1, F1.x, ADR |
+| **E1.1** | ⬜ | ML serving foundation: model runtime (batch+streaming scoring), feature extraction from aggregates, model registry ⭐ — **ADR first (stack choice)**. **2026-08-22: A2 partially answered — sheet row 9 reads "AI algos can be IEIL scope; REST API enabled". That tilts this row toward a plug-in / serving surface rather than a model factory, and the §5 ML-stack ADR is now draftable. The one open input is call direction: do we call their hosted model over REST, or do they pull our aggregates and push scores back? "Can be" is a hedge, not a commitment — the ADR should carry both readings until A2 closes (§8).** | P1 | 8–12 | 2 | F4.1, F1.x, ADR |
 | E1.2 | ⬜ | Multi-variate anomaly detection (pre-threshold, per asset class) | P1 | 8–10 | 3 | E1.1 |
-| E1.3 | ⬜ | Asset Health Score — asset → plant → enterprise rollups. **§7 pins the enterprise rollup's shape**: a donut over **five named buckets** — Excellent / Good / Fair / Poor / Critical — with count *and* share per bucket against a total asset count (the reference reads 265 assets: 112 / 86 / 42 / 17 / 8). So the score is banded, not just continuous, and the band names are the client's. The per-**class** strip ("MCCs 4 · 1 Critical") is a different rollup and sits in `F3.28`. | P1 | 6–8 | 3 | E1.1, E1.7 |
+| E1.3 | ⬜ | Asset Health Score — asset → plant → enterprise rollups. **§7 pins the enterprise rollup's shape**: a donut over **five named buckets** — Excellent / Good / Fair / Poor / Critical — with count *and* share per bucket against a total asset count (the reference reads 265 assets: 112 / 86 / 42 / 17 / 8). So the score is banded, not just continuous, and the band names are the client's. The per-**class** strip ("MCCs 4 · 1 Critical") is a different rollup and sits in `F3.28`. **2026-08-22: the client supplied the formula (sheet row 12) — tag-level goodness = data points in safe range / total data points, rolled up with user-configurable weights, topped by bad-actor identification. Telemetry-only at go-live is thereby confirmed and B15's three source questions dissolve; the SOW §4.3 five-input score becomes a later phase, so effort here goes *down*. Build the roll-up level-agnostic — the ladder may gain tiers via `F2.10` (§8).** | P1 | 6–8 | 3 | E1.1, E1.7 |
 | E1.4 | ⬜ | Predictive forecasting: energy/water/chemical/utility demand | P1 | 6–8 | 3 | E1.1 |
 | E1.5 | ⬜ | Asset degradation + Remaining Useful Life + maintenance-schedule forecasts | P2 | 8–10 | 5 | E1.3, E3.1 |
 | E1.6 | ⬜ | Optimisation advisories with quantified ₹/kWh/kL/CO₂ benefits | P2 | 10–14 | 5 | E1.2, E1.4, F2.4 |
@@ -519,7 +542,7 @@ single shared file). `F3.8` needs a dependency ADR before build.
 | F4.21 | ⬜ | RFC 7807 error envelope + correlation id + idempotency keys | P1 | 3–4 | 4 | — |
 | F4.25 | ⬜ | SLO instrumentation (API p95<250ms, alarm p99<2s, command p99<3s) | P2 | 3 | 4 | — |
 | F4.27 | ⬜ | Kubernetes prod deploy + HA (PG replica, Redis Sentinel) | P1 | 8–12 | 4 | — |
-| E7.1 | ⬜ | **Multi-tenant architecture** — ⚠ re-opens superseded decision; **ADR first** | P1 | 10–14 | 4 | ADR, F4.16 |
+| E7.1 | ⬜ | **Multi-tenant architecture** — ⚠ re-opens superseded decision; **ADR first**. **2026-08-22: the reply mail is the second client artifact demanding a "cloud-based multi-tenant web portal"; the tenant boundary (A6 — end customer vs. business unit) is still unanswered. ADR urgency up — it can frame both tenant models without the answer (§8).** | P1 | 10–14 | 4 | ADR, F4.16 |
 | E7.3 | ⬜ | On-prem/hybrid packaging + disaster-recovery runbooks | P1 | 6–8 | 4 | F4.27 |
 | F4.3 | ⬜ | Raw-message archive + ingest dead-letter diagnostics | P2 | 3 | 5 | — |
 | F4.18 | ⬜ | mTLS for inter-service traffic | P2 | — | 5 | — |
@@ -654,8 +677,10 @@ flowchart LR
 
 | ADR needed | Blocks | Question |
 |------------|--------|----------|
-| Multi-tenancy re-open | E7.1, informs F4.16 | SOW §11 vs. superseded decision — one platform, tenant model? |
-| ML stack | all E1.x | Runtime (Python svc / Node / external), registry, serving path. |
+| Multi-tenancy re-open | E7.1, informs F4.16 | SOW §11 vs. superseded decision — one platform, tenant model? **2026-08-22: the reply mail re-affirms "multi-tenant web portal"; A6 (what a tenant *is*) still open. Urgency up (§8).** |
+| ML stack | all E1.x | Runtime (Python svc / Node / external), registry, serving path. **2026-08-22: A2 partially answered — "AI algos can be IEIL scope; REST API enabled" makes client-models-over-REST the working shape, so this ADR is now draftable. Open input: call direction (§8, `E1.1` row).** |
+| **Hierarchy extension** ⚠ | F2.10, informs E1.3 / E5.1 / F4.16 / F2.2 | **Open — human decision, raised 2026-08-22 by the §8 comparison.** Campus/township tier above `locations` (cheap) and asset parent/child (expensive — every scope check filters on `assets.location_id`, ADR 0018). Amends ADR 0008's shape. The asset-tree half belongs in the `E5.1` ADR; the campus half can wait for the client's C22a site list. |
+| **IONSiTE NEXUS rebrand** | F3.33 | **Open — needs commercial input.** The 2026-08-22 mail renames the product; the ADR 0013 pattern applies (display layer only). Replace or co-present with TRINETRA? C22b (brand assets) is unanswered. |
 | ~~Product positioning~~ | — | **Resolved by ADR 0013 (2026-08-04):** this repo forked to the TRINETRA Enterprise EMS line for Ion Exchange (India) Ltd.; display-layer rebrand only, Eskom-era internals retained. Eskom line continues from the external backup, if at all. |
 | ~~Test runner + libs~~ | ~~F4.4~~ | **Resolved by ADR 0014 (2026-08-04):** Vitest + `@vitest/coverage-v8`, projects-per-app, coverage as a ratchet. |
 | **Encryption-at-rest boundary** ⚠ | E8.1 (already merged) | **Open — human decision.** E8.1 landed with no ADR while every sibling in its wave got one, yet it made two architectural calls: *volume encryption is permanently outside this repo's scope* (deployer/platform action) and *fail closed on an unset key*. Options: write a retro `0020-encryption-at-rest-boundary.md` (`0018` is the source-axis ADR and **`0019` was taken by the E1.7 content model on 2026-08-05**; `0020` is the next free number — check `docs/adr/` again before writing, this reservation has now gone stale twice), or record an explicit documented exemption in the E8.1 row. Raised by the E8.1 compliance review. **Scope note:** the deferred item is *volume/full-disk/KMS* encryption only — object-storage bucket encryption is `F3.3` and encrypted backups are `E8.2`, both live backlog scope. A promotion sweep briefly widened this to all three; corrected before merge. |
@@ -817,6 +842,14 @@ Sensor, gateway and edge **hardware supply** (meters, transmitters, analysers,
 dosing equipment) is delivery/procurement scope — visible in project planning,
 **not** in this software backlog.
 
+**2026-08-22 update:** the reply mail states *"Deliverables will include EDGE
+(hardware / software)"*. Read narrowly, that moves the **edge gateway box**
+into the deliverable — and only that. Field instrumentation supply (the
+fifteen §8 instrument types, response-form `C20`) remains unconfirmed and must
+not be conceded by analogy; the client named the gateway, not the instruments.
+Edge *software* is `E7.2`; edge hardware selection stays procurement scope and
+stays out of this backlog.
+
 ---
 
 ## 7. Client reference layouts (SOW pp. 9–10)
@@ -957,3 +990,107 @@ precisely because it is easy to overread:
 
 **None of this unblocks `E5.1`, and it must not be used to argue that it does.**
 It does mean a reply narrowed to **Q2 alone** would now be enough to start.
+
+---
+
+## 8. The IONSiTE NEXUS reply and feature sheet (2026-08-22)
+
+**What arrived.** A mail renaming the product **IONSiTE NEXUS** ("water-energy
+nexus" — an "Integrated Building, Energy, Water & Utility Management
+Platform"), plus a 15-row feature sheet
+(`docs/IonSiTE Nexus Features.xlsx`). The mail asks for an
+immediate / 3-month / 6-month delivery split, a four-layer architecture
+(Data Connect – Data Management – Analytics/AI Library – Visualization), and
+names the deliverables as "EDGE (hardware / software) and cloud-based
+multi-tenant web portal".
+
+**What it is not: an answer to the response form.** The form
+([`ion-exchange-response-form-2026-08-17.csv`](./ion-exchange-response-form-2026-08-17.csv))
+came back with no C/X column, no answer text, **no owner and no target date**
+— C21e (named single point of contact) and C21f (next review date) are still
+empty, so there is still nobody to chase and no date to chase them by. Of its
+33 rows: **4 moved, 1 is contradicted, 28 are unchanged.** In particular the
+two we marked *take first* — **A1** (one real tag list) and **A4** (protocols,
+makes, models, firmware) — got nothing, and A4 got *wider*: the sheet adds
+DeviceNet, which is in no SOW clause.
+
+> **This section carries no Status column and no status glyphs, on purpose** —
+> same rule as §7, for the same reason (§1's header records the `F4.14`
+> two-places drift). Status stays in the track rows. This is a mapping.
+
+### 8.1 The four answers that moved, and the one contradiction
+
+| Form row | What the reply says | Where it landed |
+|---|---|---|
+| **A2** (partial) | Sheet row 9: "AI algos can be IEIL scope; REST API enabled"; row 7 expects a *built-in* KPI library from us; row 11 demands self-service configuration for non-programmers. Confirms the assumed overlay boundary: we ship the first pack and the authoring surface, they configure on top. Open: "can be" is a hedge, and the REST call's *direction* is unstated. | `E1.1` row note · §5 ML-stack ADR row |
+| **A5** (partial) | Phase 1 is **cloud + edge** — not on-premise, not hybrid. Operator, network path, authoriser, VPN and device-access date all still open. | `E7.2` row note · §6 update |
+| **B15** (superseded) | Sheet row 12 supplies the health formula: points-in-safe-range / total points at tag level, weighted roll-up, bad-actor list. Telemetry-only at go-live confirmed; B15's three source questions dissolve. **New conflict: SOW §4.3 names five input classes, the sheet names one** — recorded as phasing on `E1.3`, not silently resolved. | `E1.3` row note |
+| **C22a** (implied) | The roll-up ladder is five levels: asset → subsystem → building/site → campus/township → enterprise. Our form stated four. Three of five exist in the schema. | **`F2.10`** (new, ADR-gated) |
+| **C20** (contradicted — narrowly) | "Deliverables will include EDGE (hardware / software)" contradicts our supply-side assumption **for the edge gateway only**. Instrument supply (fifteen §8 types) was *not* conceded and must not be read as if it were. | §6 update |
+
+### 8.2 Sheet row → existing row
+
+Most of the sheet is **already on the board**. As in §7.2, these rows gain
+acceptance detail, not scope; the dated detail sits in each row itself.
+
+| # | Sheet feature | Row(s) |
+|---|---|---|
+| 1 | IoT & field connectivity, edge store-and-forward | `F1.1` ✅ (framework) · `F1.2`–`F1.6` (blocked on A4) · `F1.7` · `F1.10` · `E7.2` — **DeviceNet is new → `F1.14`** |
+| 2 | Tag mapping & contextualization, parent/child, bulk import | `F2.7` · `F2.1` ✅ / `F2.2` ✅ — **parent/child is new → `F2.10`** |
+| 3 | Multi-source ingestion (files, manual, offline) | `F1.8` ✅ · `F1.9` ✅ — **sFTP/scheduled is new → `F1.12`; eLogBook is new → `F1.13`** |
+| 4 | Unified energy & water view, chiller health | `E5.1` (blocked) · `E5.2` · `E4.3` · `E1.3` |
+| 5 | Configurable dashboards | `F3.1` · `F3.2` |
+| 6 | Derived formulas, aggregations, balances | `F2.3` ✅ · `F2.4` ✅ · `F2.6` · `F2.8` — **cross-asset aggregates → `F2.9`** |
+| 7 | Built-in KPI library | `E1.7` ✅ (the home) · `E5.x` packs (the content) |
+| 8 | Alerts: threshold, rule, anomaly, escalation, distribution | `F3.6` ✅ · `F3.7` · `F3.8` · `F3.10` · `E1.2` — B9/B11 still unanswered |
+| 9 | Asset model & AI/ML analytics, REST-enabled | `E1.1`–`E1.6` — see 8.1/A2 |
+| 10 | Plant / utility mimics, process line diagrams | `F3.28` (fixed parity) — **configurable builder is new → `F3.32`** |
+| 11 | Self-service configuration for non-programmers | `F2.5` ✅ (bar raised: "non-programmers" is now client language) · `F3.1` · `F2.7` |
+| 12 | Health score & five-level roll-up, bad actors | `E1.3` (formula supplied) — **ladder → `F2.10`** |
+| 13 | SSO, RBAC, site/asset-level access | shipped scoping + `F4.13` · `F4.16` · B13 still unanswered |
+| 14 | Web & mobile, approvals, field entry | `F3.20` (widened) · `E3.2` |
+| 15 | Optional ESG module | `E4.1` · `E4.2` · `E4.3` — the client's own "optional" |
+
+The same caveat as §7.3: the mapping was made by one pass over a prose-heavy
+board — each "new" claim means *no row was found*, not *no row exists*.
+
+### 8.3 New rows created by this comparison
+
+`F1.12` (sFTP/scheduled ingestion) · `F1.13` (eLogBook — stub) · `F1.14`
+(DeviceNet — parked on A4) · `F2.9` (cross-asset calc, 🔒 ADR 0036 amendment)
+· `F2.10` (hierarchy extension, ⚠ ADR, amends ADR 0008's shape) · `F3.32`
+(mimic builder) · `F3.33` (IONSiTE NEXUS rebrand, ⚠ ADR). §5 gains two rows
+(hierarchy extension, rebrand) and two dated notes (multi-tenancy, ML stack).
+
+**Board markers.** All seven new rows carry Wave `—`, the `F3.28`–`F3.31`
+convention for rows created by a comparison rather than scheduled into a wave.
+**The §1 WAVE lines gain nothing, §3 gains nothing, §1b gains nothing** — no
+new row is dispatch-ready: three are ADR-gated, two are parked on unanswered
+client questions (A4, a definition), and the two that are technically eligible
+(`F1.12`, `F3.32`) should not jump the queue ahead of scheduled P0/P1 work
+without the owner deciding so.
+
+### 8.4 What is deliberately *not* rows
+
+- **The four-layer architecture document** and the **immediate/3/6-month
+  split** are client deliverables, not features. The §1 wave plan *is* the
+  3/6-month answer — it needs a client-facing translation document, not new
+  rows.
+- **Edge and instrument hardware** — §6 owns the boundary; see its 2026-08-22
+  update.
+- **The reply mail itself** — drafting it is delivery work. It should
+  re-attach the response form, mark the four moved rows, put the sheet's
+  additions into the form's `NEW-x` rows so they acquire owners and dates, and
+  re-ask A1/A4 plus C21e/C21f (contact and review date), which the reply
+  ignored.
+
+### 8.5 What to take next (owner-gated, in order)
+
+1. **Draft the §5 ML-stack ADR** — A2's partial answer was its stated
+   prerequisite; carry both call-direction readings.
+2. **Draft the multi-tenancy re-open ADR** — second client artifact demanding
+   it; frame both tenant models, decide after A6.
+3. **Reply to the client** per 8.4 — the form re-ask costs little and is the
+   only path to an owner and a date.
+4. **Hold `E5.1` composition** until A1/A3; the WTP/RO tension is on its row.
+5. Everything else stays in wave order; no status moved in this update.
