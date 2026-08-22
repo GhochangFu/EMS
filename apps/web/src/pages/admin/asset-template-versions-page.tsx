@@ -37,6 +37,7 @@ import { StatusPill } from "../../components/status-pill";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { statusTone } from "../../lib/template-lifecycle";
 import {
+  assetsInServiceLabel,
   deltaLines,
   isMigrationTarget,
   migrateActionState,
@@ -147,7 +148,7 @@ export function AssetTemplateVersionsPage({ user }: Props) {
         subtitle={
           <span>
             {versions.length} version{versions.length === 1 ? "" : "s"} ·{" "}
-            {versions.reduce((sum, version) => sum + version.assetCount, 0)} assets in service
+            {assetsInServiceLabel(versions)}
           </span>
         }
         actions={

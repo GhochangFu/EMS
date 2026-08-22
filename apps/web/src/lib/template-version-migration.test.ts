@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runAssetsInServiceLabelTests,
   runCandidateTests,
   runCanApplyIsTheServersVerdictTests,
   runDeltaLineTests,
@@ -48,5 +49,9 @@ describe("F2.6 — template version migration view rules", () => {
 
   it("offers only assets pinned to a version of this template code", () => {
     runCandidateTests();
+  });
+
+  it("pluralises the estate count in the page header", () => {
+    runAssetsInServiceLabelTests();
   });
 });

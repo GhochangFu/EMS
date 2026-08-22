@@ -207,6 +207,19 @@ export function isMigrationTarget(version: TemplateVersionSummaryDto): boolean {
   return version.status === "published";
 }
 
+/**
+ * How the page header counts the estate across every version.
+ *
+ * Here rather than inline for the reason the bug it fixes shows: the header
+ * hand-rolled `{n} assets in service` and read "1 assets in service" beside a
+ * row that `versionSummaryLabel` correctly rendered as "1 asset". Two
+ * pluralisation rules for the same noun on the same screen is one too many.
+ */
+export function assetsInServiceLabel(versions: readonly TemplateVersionSummaryDto[]): string {
+  const total = versions.reduce((sum, version) => sum + version.assetCount, 0);
+  return `${total} asset${total === 1 ? "" : "s"} in service`;
+}
+
 /** The subset of an asset list this view may offer, and nothing else. */
 export type MigrationCandidate = Pick<
   AdminAssetDto,

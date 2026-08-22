@@ -5,6 +5,7 @@ import type {
 } from "@bms/shared";
 
 import {
+  assetsInServiceLabel,
   deltaLines,
   isMigrationTarget,
   migrateActionState,
@@ -287,6 +288,34 @@ export function runVersionLabelTests(): void {
     versionSummaryLabel({ ...base, assetCount: 12 }) === "v4 · published · 12 assets",
     "plural above one",
   );
+}
+
+/**
+ * The header counts the estate across every version, and pluralises.
+ *
+ * Regression: the header hand-rolled `${n} assets in service` and rendered
+ * "1 assets in service" beside a row `versionSummaryLabel` correctly rendered
+ * as "1 asset". Two pluralisation rules for one noun on one screen.
+ */
+export function runAssetsInServiceLabelTests(): void {
+  const v = (assetCount: number, id: string): TemplateVersionSummaryDto => ({
+    id,
+    version: 1,
+    status: "published",
+    publishedAt: null,
+    assetCount,
+    pointCount: 3,
+  });
+
+  assert(
+    assetsInServiceLabel([v(1, "a"), v(0, "b")]) === "1 asset in service",
+    `singular at one, got ${assetsInServiceLabel([v(1, "a"), v(0, "b")])}`,
+  );
+  assert(
+    assetsInServiceLabel([v(1, "a"), v(2, "b")]) === "3 assets in service",
+    "the total is summed across versions, and pluralises above one",
+  );
+  assert(assetsInServiceLabel([]) === "0 assets in service", "zero is plural");
 }
 
 /** Only assets pinned to some version of THIS template code may be offered. */
