@@ -300,6 +300,44 @@ export async function assertVersionsListIsNewestFirstWithCounts(
   assert(mine[0]?.status === "published", "status must be carried through");
 }
 
+/**
+ * The asset count is what this caller can act on, not the whole organisation.
+ *
+ * A `location_admin` passes `canManageOrganization` — their org is derived from
+ * their locations — so an unscoped count reports an estate `buildPlan` then
+ * refuses asset by asset. Decision 8 defines the view as "which assets sit on
+ * which version"; a number the reader cannot act on is worse than no number.
+ */
+export async function assertVersionCountsAreScopedToTheCaller(
+  pool: pg.Pool,
+  svc: AssetTemplateMigrationService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const v1 = await seedVersion(db, fx, { version: 1, points: [{ pointKey: "KW" }] });
+
+  // One in the location admin's own location, two in a location they cannot
+  // manage. A global admin must still see all three.
+  await seedAsset(db, fx, "SCOPE-MINE", v1, { locationId: fx.rtuLocationId });
+  await seedAsset(db, fx, "SCOPE-OTHER1", v1, { locationId: fx.otherLocationId });
+  await seedAsset(db, fx, "SCOPE-OTHER2", v1, { locationId: fx.otherLocationId });
+
+  const asAdmin = await svc.listVersions(fx.adminJwt, v1);
+  const adminRow = asAdmin.items.find((item) => item.id === v1);
+  assert(
+    adminRow?.assetCount === 3,
+    `a global admin must see every asset, got ${String(adminRow?.assetCount)} — this ` +
+      "assertion is what keeps the scoped one below from passing on an empty fixture",
+  );
+
+  const asLocationAdmin = await svc.listVersions(fx.locationAdminJwt, v1);
+  const scopedRow = asLocationAdmin.items.find((item) => item.id === v1);
+  assert(
+    scopedRow?.assetCount === 1,
+    `a location-scoped admin must see only their own, got ${String(scopedRow?.assetCount)}`,
+  );
+}
+
 /** Preview returns the delta and writes nothing at all. */
 export async function assertPreviewWritesNothing(
   pool: pg.Pool,

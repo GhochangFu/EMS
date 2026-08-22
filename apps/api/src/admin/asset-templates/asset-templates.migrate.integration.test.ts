@@ -14,6 +14,7 @@ import {
   assertDerivedChangesMigrateFreely,
   assertDomainChangeRefuses,
   assertExistingRowRefusesAMeasuredAddition,
+  assertVersionCountsAreScopedToTheCaller,
   assertMeasuredReKeyRefuses,
   assertMeasuredRemovalRefusesAndWritesNothing,
   assertOutOfScopeAssetIsRefused,
@@ -139,5 +140,10 @@ describe.skipIf(!connectionString)("F2.6 — template version migration", () => 
   it("refuses a measured addition onto a point key the asset already has a row for", async () => {
     if (!pool) throw new Error("pool required");
     await assertExistingRowRefusesAMeasuredAddition(pool, svc, fx);
+  });
+
+  it("scopes the per-version asset count to the caller's own locations", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertVersionCountsAreScopedToTheCaller(pool, svc, fx);
   });
 });
