@@ -62,8 +62,7 @@ function assert(condition: boolean, message: string): void {
  * specified passes every message-only assertion, and `U8`'s UI branches on 409
  * versus 400. `HttpException.getStatus()` is checked rather than `instanceof`,
  * because the status is what the client actually sees.
- */
-/**
+ *
  * `forbidden` is the `F4.64` half: a refusal is also a disclosure surface, and
  * asserting only what a message *says* cannot catch what it additionally
  * reveals. A positive match on "2 assets in this batch" still passes over a

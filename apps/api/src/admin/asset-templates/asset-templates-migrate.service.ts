@@ -375,6 +375,9 @@ export class AssetTemplateMigrationService {
         name: assets.name,
         rtuId: assets.rtuId,
         templateId: assets.templateId,
+        // `F4.64` — the access check filters on this in memory rather than
+        // asking the database once per asset. Free: this row is already read.
+        locationId: assets.locationId,
       })
       .from(assets)
       .where(inArray(assets.id, body.assetIds));
@@ -390,22 +393,34 @@ export class AssetTemplateMigrationService {
     // `F4.64` — count the refusals, do not name them. This used to throw on the
     // first one with `Asset "${asset.code}"` in the body, which handed the
     // caller the human-readable code of a row it was simultaneously telling
-    // them they may not touch. The sibling service already answers this the
-    // other way: `asset-templates-instantiate.service.ts` names the codes its
-    // caller can see and collapses the rest to a count, so the divergence was
-    // this file's, not a missing decision.
+    // them they may not touch. `asset-templates-instantiate.service.ts` already
+    // answered this the other way — it names the codes its caller can see and
+    // collapses the rest to a count — so the divergence was this file's, not a
+    // missing decision.
     //
-    // Counting is why the loop no longer short-circuits: every asset is checked
-    // before the throw. The batch is bounded by `body.assetIds`, which is
-    // already validated and small, and the whole batch is refused either way —
-    // so the extra checks cost nothing a caller can observe except a truthful
-    // number.
-    let refused = 0;
-    for (const asset of selected) {
-      if (!(await this.accessControl.canManageAsset(jwt, asset.id))) {
-        refused += 1;
-      }
-    }
+    // **The scope resolution is borrowed from that service too, and it is not
+    // cosmetic.** Counting means no short-circuit, and the per-asset
+    // `canManageAsset` this replaced issues a `users` lookup plus an `assets`
+    // lookup plus a `writableLocationIds` resolution *each time*. `assetIds` is
+    // capped at 200, so a refused 200-asset batch would have gone from stopping
+    // at the first refusal to ~200 sequential round trips — the naming fix
+    // would have bought a latency regression on the refusal path. Resolving the
+    // writable set **once** and filtering in memory is instead strictly fewer
+    // queries than before, on the success path as well.
+    //
+    // Equivalent to `canManageAsset` by construction, not by resemblance: that
+    // method returns true for `admin` before it ever reads the asset (hence the
+    // `null` short-circuit here, which must come first), and otherwise resolves
+    // the asset's `location_id` and asks `writableLocationIds` whether it is in
+    // the set. An asset with no location is refused there and is refused here.
+    const writableLocationIds = await this.accessControl.writableLocationIds(jwt);
+    const refused =
+      writableLocationIds === null
+        ? 0
+        : selected.filter(
+            (asset) =>
+              asset.locationId === null || !writableLocationIds.includes(asset.locationId),
+          ).length;
     if (refused > 0) {
       const noun = refused === 1 ? "asset" : "assets";
       const verb = refused === 1 ? "is" : "are";
