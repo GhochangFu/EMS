@@ -21,12 +21,36 @@ export function withAuth(init: RequestInit = {}): RequestInit {
  * who you are and you may not do this*, where the session is fine and the
  * caller's own error handling is what should run.
  *
- * The narrowing is only safe because no authentication failure in this API
- * arrives as a 403. `JwtAuthGuard` throws `UnauthorizedException` for a
+ * The narrowing is safe because **no 403 in this API is repairable by
+ * re-authentication** — that, not "every 403 concerns a known user", is the
+ * load-bearing property. `JwtAuthGuard` throws `UnauthorizedException` for a
  * missing, malformed, expired or unverifiable token in both the local and the
- * OIDC path, so every 403 is an authorization decision about a known user —
- * `ForbiddenException` is thrown nowhere else. Keep that true: a 403 raised for
- * a token problem would leave the user on a screen that never recovers.
+ * OIDC path, and it is the only `CanActivate` in the app: there is no global
+ * guard or exception filter that could remap a status. So no token problem
+ * reaches the client as a 403, and **no 403 becomes a success by signing in
+ * again** — which is the precise claim, and narrower than "re-authentication
+ * changes nothing". One thing it does change: the API authorizes on the *database*
+ * role while this app gates its UI on the role claim stored at login, so a
+ * mid-session downgrade now leaves the UI offering buttons every call refuses
+ * until the token expires. Previously the first 403 forced a re-login and
+ * resynced it by accident. That is a known cost of this change, not an
+ * oversight — and it is a stale *menu*, where the old behaviour destroyed a
+ * valid session on every ordinary refusal.
+ *
+ * `tests/f4.52-auth-failure-status.test.ts` asserts the guard half of this,
+ * because a property a docblock merely asserts is the failure this repository
+ * keeps hitting.
+ *
+ * The sharper wording is owed to one real counterexample, kept here because it
+ * is the strongest case *for* the change rather than against it:
+ * `audit.service.ts` refuses a valid, verified token whose subject matches no
+ * `users` row ("this token matches no user"). That is a 403 with no principal —
+ * and clearing the session there would send the user to a login screen that
+ * cannot help, because signing in again does not provision an account. A
+ * login loop is worse than a sentence on screen.
+ *
+ * Keep the property true. A 403 that *were* repairable by re-authentication
+ * would leave the user on a screen that never recovers.
  *
  * This is what makes ADR 0038 decision 10 reachable. It says the
  * organization-scope case "falls through to the API's 403, rendered inline";

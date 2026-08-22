@@ -87,3 +87,8 @@ docs/status/.republish-asked
 # inputs to one: the script regenerates them from the real `csvTextCell`.
 csv-formula-probe.csv
 csv-formula-probe-bom.csv
+
+# Serena language-server workspace config. Generated per machine by the MCP
+# server, not an input to the build — it was swept into a fix commit once
+# because it sat untracked at the repo root.
+.serena/

@@ -26,6 +26,25 @@ export function runNestEnvelopeTests(): void {
   for (const leak of ["statusCode", '"message"', "Bad Request"]) {
     assert(!shown.includes(leak), `the envelope leaked "${leak}" into the message: ${shown}`);
   }
+
+  // `F4.52`. The 403 envelope, character for character as the running stack
+  // returned it to `phe-admin@bms.local` opening an out-of-scope template by
+  // URL. This is the body ADR 0038 decision 10 depends on, and it is the case
+  // that decides whether the author reads the sentence or the word "Forbidden":
+  // `error` is a plausible-looking fallback, so a rewrite that preferred it
+  // would still produce something readable and still be wrong.
+  const forbidden = apiErrorMessage(
+    new Error(
+      '{"message":"Template is outside your access scope","error":"Forbidden","statusCode":403}',
+    ),
+  );
+  assert(
+    forbidden === "Template is outside your access scope",
+    `D10's residual case must render the service's sentence, got "${forbidden}"`,
+  );
+  for (const leak of ["Forbidden", "statusCode", "403"]) {
+    assert(!forbidden.includes(leak), `the 403 envelope leaked "${leak}": ${forbidden}`);
+  }
 }
 
 /** A Zod array message keeps every sentence, not just the first. */

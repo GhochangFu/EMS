@@ -30,12 +30,14 @@ function response(status: number): Response {
  * know exactly who you are and you may not do this* — the session is valid and
  * destroying it fixes nothing.
  *
- * This narrowing is only safe because no authentication failure in this API
- * arrives as a 403: `JwtAuthGuard` throws `UnauthorizedException` for a
- * missing, malformed, expired or unverifiable token in both the local and the
- * OIDC path, so every 403 comes from an authorization decision about a known
- * user. Were that not so, keeping the session would strand a user on a screen
- * that never recovers.
+ * This narrowing is safe because no 403 in this API is repairable by
+ * re-authentication: `JwtAuthGuard` is the only `CanActivate` in the app and
+ * throws `UnauthorizedException` for a missing, malformed, expired or
+ * unverifiable token in both the local and the OIDC path, and no global guard
+ * or exception filter can remap a status. Were a 403 ever repairable by
+ * signing in again, keeping the session would strand a user on a screen that
+ * never recovers. See `http.ts` for the one 403 that carries no principal and
+ * why it argues for this behaviour rather than against it.
  */
 export function runAuthFailureTests(): void {
   signIn();
