@@ -277,33 +277,65 @@ export async function assertEachColumnOverridesIndependently(
     assert(def?.intervalSeconds === 120, "interval must stay inherited");
   }
 
-  // formulaDialect alone — the same literal, so the definition stays usable.
+  // formulaDialect alone. There is exactly one legal dialect, so overriding it
+  // with the same literal would assert nothing — the observable difference has
+  // to come from the *template* side being unusable. A template row with
+  // `formula_dialect: null` is the pre-F2.3 shape `toActiveDefinition` skips as
+  // `bad_dialect`, and an override that supplies the dialect makes the point
+  // resolve. Nothing but an asset-first coalesce on this column can produce
+  // that.
   {
     await runCleanup(pool);
-    const { assetId, measuredKey } = await seedVersion(db, fx, 1, "03D");
+    const { assetId, measuredKey } = await seedVersion(db, fx, 1, "03D", {
+      formulaDialect: null,
+    });
+
+    const beforeSvc = new CalcDefinitionsService(db, new MetricsService());
+    const before = (await beforeSvc.getDefinitionsForInput(assetId, measuredKey)).find(
+      (d) => d.pointKey === DERIVED_KEY,
+    );
+    assert(
+      before === undefined,
+      "fixture check: a null template formula_dialect must skip as bad_dialect, or the " +
+        "override assertion below proves nothing",
+    );
+
     await writeOverrideRow(db, assetId, { formulaDialect: "bms-calc-v1" });
     const def = await loadDerived(db, assetId, measuredKey);
-    assert(def !== undefined, "overriding formulaDialect with the same dialect must stay usable");
+    assert(
+      def !== undefined,
+      "overriding formulaDialect alone must make the point resolve — the dialect must " +
+        "come from the asset when the template has none",
+    );
     assert(def?.intervalSeconds === 120, "interval must stay inherited");
+    assert(def?.maxInputAgeSeconds === 600, "maxInputAge must stay inherited");
   }
 
-  // calcTrigger alone — to streaming, which also drops the interval. Overriding
-  // the trigger without the interval is exactly D-1's rejected write; the
-  // engine's own view of it is `interval_on_streaming` if the interval is still
-  // inherited, so this fixture overrides both to assert the merged pair.
+  // calcTrigger. The template says streaming with no interval; the override
+  // says scheduled with an interval. Two columns move rather than one, and
+  // that is not a compromise — it is the only combination the engine accepts,
+  // because `scheduled` without an interval is the `missing_interval` skip and
+  // an interval on `streaming` is `interval_on_streaming` (D-1 rejects both on
+  // the write side in U7). The column is still proved asset-first: the
+  // template's own value is `streaming`, so a reversed coalesce yields
+  // streaming and this fails.
   {
     await runCleanup(pool);
     const { assetId, measuredKey } = await seedVersion(db, fx, 1, "03E", {
       calcTrigger: "streaming",
       calcIntervalSeconds: null,
     });
-    await writeOverrideRow(db, assetId, {});
+    await writeOverrideRow(db, assetId, { calcTrigger: "scheduled", calcIntervalSeconds: 60 });
     const def = await loadDerived(db, assetId, measuredKey);
     assert(
-      def?.trigger === "streaming",
-      `expected inherited trigger streaming, got ${String(def?.trigger)}`,
+      def?.trigger === "scheduled",
+      `overriding calcTrigger must win over the template's streaming, got ${String(def?.trigger)}`,
     );
-    assert(def?.intervalSeconds === null, "a streaming definition must carry no interval");
+    assert(def?.intervalSeconds === 60, `expected interval 60, got ${String(def?.intervalSeconds)}`);
+    assert(
+      def?.maxInputAgeSeconds === 600,
+      `maxInputAge must stay inherited, got ${String(def?.maxInputAgeSeconds)}`,
+    );
   }
 }
 
@@ -430,6 +462,13 @@ export async function assertInactiveRowStillResolves(pool: pg.Pool, fx: Fixtures
  * writing calc columns onto an `asset_points` row would let an asset
  * unilaterally turn a physical measured tag into a computed one, and the row
  * ingest writes into would start being overwritten by a formula.
+ *
+ * The fixture is deliberately a row that cannot arise in production: U7 rejects
+ * an override on a measured template point, so nothing legitimate writes calc
+ * columns onto this pair. That is the point — this asserts the SQL is safe on
+ * its own, independent of the validation layer above it. A guard that only
+ * holds while a Zod schema elsewhere keeps working is not a guard on the hot
+ * path.
  */
 export async function assertMeasuredPointIsNeverActivatedByAnOverride(
   pool: pg.Pool,
