@@ -387,12 +387,31 @@ export class AssetTemplateMigrationService {
       );
     }
 
+    // `F4.64` — count the refusals, do not name them. This used to throw on the
+    // first one with `Asset "${asset.code}"` in the body, which handed the
+    // caller the human-readable code of a row it was simultaneously telling
+    // them they may not touch. The sibling service already answers this the
+    // other way: `asset-templates-instantiate.service.ts` names the codes its
+    // caller can see and collapses the rest to a count, so the divergence was
+    // this file's, not a missing decision.
+    //
+    // Counting is why the loop no longer short-circuits: every asset is checked
+    // before the throw. The batch is bounded by `body.assetIds`, which is
+    // already validated and small, and the whole batch is refused either way —
+    // so the extra checks cost nothing a caller can observe except a truthful
+    // number.
+    let refused = 0;
     for (const asset of selected) {
       if (!(await this.accessControl.canManageAsset(jwt, asset.id))) {
-        throw new ForbiddenException(
-          `Asset "${asset.code}" is outside your access scope. Nothing was written.`,
-        );
+        refused += 1;
       }
+    }
+    if (refused > 0) {
+      const noun = refused === 1 ? "asset" : "assets";
+      const verb = refused === 1 ? "is" : "are";
+      throw new ForbiddenException(
+        `${refused} ${noun} in this batch ${verb} outside your access scope. Nothing was written.`,
+      );
     }
 
     const unpinned = selected.filter((a) => a.templateId === null);
