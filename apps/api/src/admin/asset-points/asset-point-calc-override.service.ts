@@ -128,6 +128,17 @@ export class AssetPointCalcOverrideService {
   ): Promise<AssetPointCalcConfigDto> {
     const ctx = await this.resolveWritableContext(jwt, assetId, pointKey);
 
+    // An all-null body says "override nothing", which is what DELETE means.
+    // Accepting it would create a row that overrides nothing and write an audit
+    // row saying a set happened while naming no column — decision 9's payload
+    // carries "the columns changed", and an empty list is not an answer.
+    if (changedColumns(body).length === 0) {
+      throw new BadRequestException(
+        "This override sets no column: every field is null, and null means \"inherit\". " +
+          "To remove an existing override use DELETE on this same path.",
+      );
+    }
+
     const problems = validateMergedCalcOverride(body, ctx.template, ctx.declaredPointKeys);
     if (problems.length > 0) {
       throw new BadRequestException(problems.join(" "));

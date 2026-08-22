@@ -2,6 +2,7 @@ import type pg from "pg";
 
 import { assetPoints, assetTemplates, assets, createDb, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import { assetPointCalcConfigListResponseSchema } from "@bms/shared";
 
 import type { Fixtures } from "../asset-templates/asset-templates.instantiate.integration.spec";
 import type { AssetPointCalcOverrideService } from "./asset-point-calc-override.service";
@@ -443,7 +444,10 @@ export async function assertReadReportsTheTriple(
   const db = createDb(pool);
   const { assetId } = await seed(db, fx, "READ");
 
-  const before = await svc.listCalcPoints(fx.adminJwt, assetId);
+  // Parsed through the contract U2 declared, not merely typed against it.
+  const before = assetPointCalcConfigListResponseSchema.parse(
+    await svc.listCalcPoints(fx.adminJwt, assetId),
+  );
   assert(before.items.length === 1, `only the derived point is listed, got ${before.items.length}`);
   const item = before.items[0];
   assert(item?.pointKey === DERIVED_KEY, "the measured point must not appear — it has no calc config");
@@ -456,7 +460,9 @@ export async function assertReadReportsTheTriple(
 
   await svc.setOverride(fx.adminJwt, assetId, DERIVED_KEY, { ...NOTHING, calcIntervalSeconds: 45 });
 
-  const after = await svc.listCalcPoints(fx.adminJwt, assetId);
+  const after = assetPointCalcConfigListResponseSchema.parse(
+    await svc.listCalcPoints(fx.adminJwt, assetId),
+  );
   const updated = after.items[0];
   assert(updated?.assetPointId !== null, "assetPointId is set once the row exists");
   assert(

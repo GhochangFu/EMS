@@ -2,6 +2,11 @@ import type pg from "pg";
 
 import { assetTemplates, assets, createDb, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import {
+  templateMigrationPreviewResponseSchema,
+  templateMigrationResultResponseSchema,
+  templateVersionsListResponseSchema,
+} from "@bms/shared";
 
 import type { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
 import type { Fixtures } from "./asset-templates.instantiate.integration.spec";
@@ -270,7 +275,13 @@ export async function assertVersionsListIsNewestFirstWithCounts(
   await seedAsset(db, fx, "V1B", v1);
   await seedAsset(db, fx, "V2A", v2);
 
-  const result = await svc.listVersions(fx.adminJwt, v1);
+  // Parsed through the contract, not merely typed against it. `listVersions`
+  // casts `status` with `as` and formats `publishedAt` by hand, and a missing
+  // or misnamed field would otherwise surface in U8, where `adminFetch`
+  // requires a schema — far from the cause.
+  const result = templateVersionsListResponseSchema.parse(
+    await svc.listVersions(fx.adminJwt, v1),
+  );
   const mine = result.items.filter((item) => item.id === v1 || item.id === v2);
   assert(mine.length === 2, `expected both versions, got ${mine.length}`);
   assert(
@@ -303,7 +314,9 @@ export async function assertPreviewWritesNothing(
   });
   const assetId = await seedAsset(db, fx, "PREVIEW", v1);
 
-  const preview = await svc.previewMigration(fx.adminJwt, v2, { assetIds: [assetId] });
+  const preview = templateMigrationPreviewResponseSchema.parse(
+    await svc.previewMigration(fx.adminJwt, v2, { assetIds: [assetId] }),
+  );
 
   assert(preview.canApply, `a clean addition-only delta must be applicable: ${JSON.stringify(preview.refusals)}`);
   assert(preview.deltas.length === 1, `expected 1 delta, got ${preview.deltas.length}`);
@@ -348,7 +361,9 @@ export async function assertApplyMovesOnlySelectedAssets(
   const moved = await seedAsset(db, fx, "MOVED", v1);
   const untouched = await seedAsset(db, fx, "UNTOUCHED", v1);
 
-  const result = await svc.migrate(fx.adminJwt, v2, { assetIds: [moved] });
+  const result = templateMigrationResultResponseSchema.parse(
+    await svc.migrate(fx.adminJwt, v2, { assetIds: [moved] }),
+  );
 
   assert((await pinnedVersion(pool, moved)) === 2, "the selected asset must be pinned to v2");
   assert(
