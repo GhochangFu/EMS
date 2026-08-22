@@ -750,6 +750,48 @@ Process (`AGENTS.md` §10).
   (§9.10)~~ ✅ **cleared** — §2 gained a *Template content* row, and §6 gained
   the two deferral bullets covering what ADR 0019 deliberately left closed.
 
+### MQTT ingest beyond one RTU (F1.7) — five of twelve, measured
+- **Status:** ✅ **2026-08-22** on `feat/F1.7-mqtt-fleet`, eight commits.
+  **Not merged** — the PR is not open and merge approval is the owner's gate.
+  **ADR 0007 Amendment 1 accepted 2026-08-22** at the §10 gate, superseding
+  decision 4's "one pilot RTU only".
+- **Delivered:** per-RTU liveness on the health endpoint (a device that has
+  never published is listed, not omitted); payload-to-topic binding, closing an
+  impersonation path where one message both falsified a station's telemetry and
+  silenced its outage alarm; a seed that asserts the enabled set **once**,
+  stamps `meta.enabledSetVersion`, then defers to the operator in both
+  directions; a read-only fleet probe that reports which keys arrive **empty**,
+  not merely which arrive.
+- **The set is five, not nine, and that is the substance of the item.** A 600 s
+  probe found nine of twelve publishing. Four of those nine then failed a second
+  filter: Salkumarhat I/II send all 27 keys with **17 carrying no reading** (the
+  Modbus block, including the `kw` the dashboard counts), and Mora Nodir Kuthi
+  II / Bhutnirghat II run **−3:02:36** and **−0:21:34** behind, so their rows
+  land outside every recency window. Enabling an RTU makes `apps/sim` skip its
+  assets, so a station that cannot deliver a readable value goes from simulated
+  to **dead** — worse than leaving it on catalog data.
+- **What this cost to learn:** an early diagnostic bounded on `now() -
+  15 minutes` reported two *healthy* stations as writing nothing at all. They
+  were the two lagging by more than fifteen minutes. Any dashboard doing the
+  same omits them the same way — recorded as `F4.57`.
+- **Two false greens, both found by review and killed by mutation:** the entire
+  seed mechanism could be reverted verbatim with 145 tests still green, and the
+  enabled set could change without the version stamp moving. Closed by a
+  **two-pass** seed integration test (one pass cannot reach the branches that
+  matter, because CI seeds a fresh database once) and by deriving the stamp from
+  a digest of the set *and* pinning the five by name.
+- **Verified:** 133 files / 495 tests serially, exit 0; live at `rtus=5
+  stale=0`, all five writing and all seven held-back writing zero; API checked
+  at query level (OIDC mode blocks local login), `apps/web` N/A.
+- **Unblocks:** nothing directly — no row lists `F1.7` as a whole-token
+  dependency. `F3.16` and `E1.1` carry the `F1.x` wildcard, and `F3.16` overlaps
+  the two rows below.
+- **Owed:** the `F4.37` ingest-side clamp, **owner-gated** — holding four RTUs
+  back closed the never-online half, but all five enabled stations run **+8:11
+  to +34:31 ahead**, so each still reads online for as long as its clock leads
+  after it dies. Plus the AGENTS.md §6 sweep in its own `chore(agents):` PR
+  (§9.10), and seven new rows: `F1.15`, `F4.57`–`F4.62`.
+
 ### Ingest adapter framework (F1.1) — strangler migration complete
 - **Status:** ADR 0016 §6 **commits 2 and 3 landed** (PR #13, then PR #19 on
   2026-08-06), and **commit 4 followed on 2026-08-14** — see below.
