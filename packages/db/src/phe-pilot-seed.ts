@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { and, eq } from "drizzle-orm";
@@ -6,6 +6,7 @@ import type pg from "pg";
 
 import type { BmsDb } from "./client";
 import { getOrganizationId } from "./hierarchy-seed";
+import { ENABLED_SET_VERSION, resolveIngestEnabled } from "./ingest-enabled-set";
 import { assets, locations } from "./schema/bms-schema";
 
 type PheCatalogRow = {
@@ -99,8 +100,35 @@ function unitLabel(unitCode: string | null): string | null {
   return unitCode;
 }
 
+/**
+ * Where the catalog might be, tried in order.
+ *
+ * `resolve(process.cwd(), "src/phe-catalog.json")` alone only worked because
+ * `pnpm db:seed` happens to run with `packages/db` as its working directory.
+ * Every other caller got `ENOENT` on a path assembled from its own cwd, and
+ * `F1.7`'s two-pass seed test is the first other caller.
+ *
+ * **Resolving from the module would be the better fix and is not available
+ * here.** `import.meta.url` is a `TS1470` error because `tsconfig.build.json`
+ * emits CommonJS, and `__dirname` does not exist when Vitest loads this file as
+ * ESM — so naming the candidates is the one thing that works in both. Caught by
+ * `tsc` and not by the suite: the runner and the build disagree about the module
+ * format, so a green test proved nothing about the shipped output.
+ */
+const CATALOG_CANDIDATES = ["src/phe-catalog.json", "packages/db/src/phe-catalog.json"];
+
 function loadCatalog(): PheCatalogFile {
-  const raw = readFileSync(resolve(process.cwd(), "src/phe-catalog.json"), "utf8");
+  const path = CATALOG_CANDIDATES.map((c) => resolve(process.cwd(), c)).find((p) =>
+    existsSync(p),
+  );
+  if (path === undefined) {
+    // Loud and specific: an empty catalog would seed zero RTUs and read as "the
+    // fleet is gone" rather than "the file was not found".
+    throw new Error(
+      `phe-catalog.json not found from ${process.cwd()}; tried ${CATALOG_CANDIDATES.join(", ")}`,
+    );
+  }
+  const raw = readFileSync(path, "utf8");
   return JSON.parse(raw) as PheCatalogFile;
 }
 
@@ -169,6 +197,8 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
 
   const rtuIds = [...new Set(catalog.rows.map((r) => r.EdgeRTUId))];
   const rtuIdByExternal = new Map<number, string>();
+  /** `rtu_code` → why `ingest_enabled` ended up where it did, summarised below. */
+  const reasons = new Map<string, string>();
 
   for (const edgeRtuId of rtuIds) {
     const rtuRows = catalog.rows.filter((r) => r.EdgeRTUId === edgeRtuId);
@@ -182,10 +212,59 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       continue;
     }
 
-    const ingestEnabled = edgeRtuId === catalog.pilotEdgeRtuId;
+    // What the database already thinks, read before the upsert overwrites it.
+    // `ingest_enabled` stopped being the seed's to assert on every run at
+    // `F1.7`: the admin RTU screen writes this column, and re-asserting it here
+    // reverted an operator's decision on the next `pnpm db:seed` — which CI
+    // runs on every PR. `resolveIngestEnabled` owns the rule; see its comment.
+    const existingRtu = await pool.query<{
+      ingest_enabled: boolean;
+      enabled_set_version: string | null;
+    }>(
+      `SELECT ingest_enabled, meta->>'enabledSetVersion' AS enabled_set_version
+       FROM bms.rtus WHERE external_rtu_id = $1`,
+      [edgeRtuId],
+    );
+    const existingRow = existingRtu.rows[0];
+    const resolved = resolveIngestEnabled({
+      rtuCode: head.RTUCode,
+      existing:
+        existingRow === undefined
+          ? null
+          : {
+              ingestEnabled: existingRow.ingest_enabled,
+              enabledSetVersion: existingRow.enabled_set_version,
+            },
+    });
+    const ingestEnabled = resolved.ingestEnabled;
+    // Logged because `ResolveIngestEnabledResult.reason` promises it — "so the
+    // seed can log it and an operator can tell an adoption from an override
+    // without reading this file" — and until now nothing did, which is the same
+    // class of untrue docblock this branch already fixed once in `renderHealth`.
+    //
+    // It is also the missing signal. The review reverted this whole mechanism
+    // and every test stayed green; with this line, a reverted seed prints no
+    // `reason` at all and the CI log says so. `operator` on a run nobody
+    // expected is the other thing worth seeing — it means the database is
+    // holding a decision the catalog does not know about.
+    reasons.set(head.RTUCode, resolved.reason);
+    // Derived from the *resolved* value, not from the catalog's opinion, so the
+    // invariant the simulator depends on holds however the row got here: an
+    // RTU is `mqtt` on both `rtus.source_type` and its assets'
+    // `meta.telemetrySource`, or on neither. Split them and ingest and
+    // `apps/sim` write the same points.
     const sourceType = ingestEnabled ? "mqtt" : "catalog";
     const rtuCode = `RTU-${head.RTUCode}`;
 
+    // `meta` is merged rather than replaced on conflict. It is a shared bag —
+    // the admin RTU API accepts arbitrary keys — so `meta = EXCLUDED.meta`
+    // deleted whatever an operator or another process had put there, on every
+    // `pnpm db:seed`, which CI runs on every PR. That was survivable while the
+    // seed was the only writer. It stopped being survivable at `F1.7`, because
+    // `enabledSetVersion` now lives in this column and decides who owns
+    // `ingest_enabled`: lose the key and the next seed reverts the operator.
+    // The `||` idiom is `hierarchy-seed.ts`'s. Merging makes a *removed* key
+    // sticky, which costs nothing here — all three keys are rewritten every run.
     const rtuRes = await pool.query<{ id: string }>(
       `
       INSERT INTO bms.rtus (
@@ -204,7 +283,8 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
         station_code = EXCLUDED.station_code,
         station_name = EXCLUDED.station_name,
         ingest_enabled = EXCLUDED.ingest_enabled,
-        meta = EXCLUDED.meta
+        -- Merged, not replaced: see the note above this query.
+        meta = COALESCE(bms.rtus.meta, '{}'::jsonb) || EXCLUDED.meta
       RETURNING id
       `,
       [
@@ -218,7 +298,14 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
         head.StationCode,
         head.StationName,
         ingestEnabled,
-        JSON.stringify({ orgCode: catalog.org.orgCode, pilot: ingestEnabled }),
+        JSON.stringify({
+          orgCode: catalog.org.orgCode,
+          // `pilot` still means the ADR 0007 RTU specifically, not "ingesting".
+          // Nine RTUs ingest now; one of them is the pilot.
+          pilot: edgeRtuId === catalog.pilotEdgeRtuId,
+          // The stamp that makes this row the operator's from here on.
+          enabledSetVersion: ENABLED_SET_VERSION,
+        }),
       ],
     );
 
@@ -330,4 +417,30 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       }
     }
   }
+
+  reportIngestEnabledReasons(reasons);
+}
+
+/**
+ * One line saying who decided `ingest_enabled` for each RTU, and why.
+ *
+ * `stderr` via `console.error`, matching `migrate.ts`, `seed.ts` and
+ * `refresh-aggregates.ts` — §4.5 reserves `console.log` for the Pino logger and
+ * these CLI scripts have no Nest container to resolve one from.
+ *
+ * **`operator` is the interesting word.** It means the database is holding a
+ * decision this catalog does not know about, which is correct and invisible
+ * until something prints it. `adopted` on a run nobody expected means the stamp
+ * went missing — see the `meta` merge above for how that used to happen.
+ */
+function reportIngestEnabledReasons(reasons: ReadonlyMap<string, string>): void {
+  const byReason = new Map<string, number>();
+  for (const reason of reasons.values()) {
+    byReason.set(reason, (byReason.get(reason) ?? 0) + 1);
+  }
+  const summary = [...byReason.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([reason, count]) => `${reason}=${count}`)
+    .join(" ");
+  console.error(`phe ingest_enabled: ${summary || "no rtus"} (set ${ENABLED_SET_VERSION})`);
 }

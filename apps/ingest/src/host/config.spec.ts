@@ -1,6 +1,7 @@
 import {
   DEFAULT_HEALTH_PORT,
   DEFAULT_RELOAD_MS,
+  DEFAULT_STALE_AFTER_MS,
   readHostConfig,
 } from "./config.js";
 
@@ -108,7 +109,10 @@ export function runHostConfigTests(): void {
 
   // ---- numeric parsing is strict ------------------------------------------
 
-  for (const bad of ["0", "-1", "abc", "80.5"]) {
+  // `1e21` and `0x493e0` are the ones `Number.isInteger` waves through. They
+  // matter most for `INGEST_STALE_AFTER_MS`: a silently-accepted 1e21 ms window
+  // means no RTU is ever stale and the alarm is off with nothing said.
+  for (const bad of ["0", "-1", "abc", "80.5", "1e21", "0x493e0", "3e5", " 12 34"]) {
     expectThrow(
       () => readHostConfig({ ...BASE, INGEST_HOST_HEALTH_PORT: bad }),
       `port "${bad}" must be rejected — a typo that silently falls back to the ` +
@@ -118,13 +122,83 @@ export function runHostConfigTests(): void {
       () => readHostConfig({ ...BASE, INGEST_RELOAD_MS: bad }),
       `reload interval "${bad}" must be rejected`,
     );
+    expectThrow(
+      () => readHostConfig({ ...BASE, INGEST_STALE_AFTER_MS: bad }),
+      `staleness window "${bad}" must be rejected — a window that silently ` +
+        `falls back to the default is a fleet reported healthy on the wrong rule`,
+    );
   }
+
+  // ---- and a magnitude the digit check waves through ----------------------
+
+  // The `/^\d+$/` guard above closed `1e21` and left the plain-decimal door
+  // open, which is the same failure in different clothes. Measured before
+  // fixing: `100000000000000000000` passes the regex, passes `Number.isInteger`
+  // and is > 0 — so the staleness alarm switched off for ever with no error and
+  // no log line, which is exactly what the digit check was added to prevent.
+  for (const huge of ["100000000000000000000", "99999999999999999999999"]) {
+    expectThrow(
+      () => readHostConfig({ ...BASE, INGEST_STALE_AFTER_MS: huge }),
+      `staleness window "${huge}" is not a safe integer and must be rejected — ` +
+        `an accepted one means no RTU is ever stale`,
+    );
+  }
+
+  // `setInterval` clamps anything over 2^31-1 to **1 ms** and carries on with a
+  // `TimeoutOverflowWarning`. Measured: a delay of 100000000000 fired twice in
+  // 25 ms. So a typo meant to slow the reload down instead turns the four-table
+  // binding query into a ~1 ms loop against the Postgres the API also reads.
+  expectThrow(
+    () => readHostConfig({ ...BASE, INGEST_RELOAD_MS: "100000000000" }),
+    "a reload interval above 2^31-1 must be rejected — Node clamps it to 1 ms " +
+      "and the binding query becomes a hot loop",
+  );
+  assert(
+    readHostConfig({ ...BASE, INGEST_RELOAD_MS: String(2 ** 31 - 1) }).reloadMs === 2 ** 31 - 1,
+    "the largest delay setInterval honours is still accepted — the bound is a ceiling, not a fence",
+  );
+
+  // A port is not a timer. 65535 is the constraint, and 65536 must not pass
+  // merely because it is a small safe integer.
+  expectThrow(
+    () => readHostConfig({ ...BASE, INGEST_HOST_HEALTH_PORT: "65536" }),
+    "a port above 65535 must be rejected",
+  );
+  assert(
+    readHostConfig({ ...BASE, INGEST_HOST_HEALTH_PORT: "65535" }).healthPort === 65535,
+    "the highest valid port is accepted",
+  );
 
   assert(readHostConfig({ ...BASE }).reloadMs === DEFAULT_RELOAD_MS, "the reload default is 60 s");
   assert(DEFAULT_RELOAD_MS === 60_000, "the ADR 0007 pilot reloaded every 60 s; the host matches it");
   assert(
     readHostConfig({ ...BASE, INGEST_RELOAD_MS: "5000" }).reloadMs === 5_000,
     "the reload interval is overridable",
+  );
+
+  // ---- the staleness window (`F1.7`) ---------------------------------------
+
+  assert(
+    readHostConfig({ ...BASE }).staleAfterMs === DEFAULT_STALE_AFTER_MS,
+    "the staleness default applies when the variable is unset",
+  );
+  // Measured, not chosen: the nine live PHE RTUs publish every ~60 s (probe,
+  // 2026-08-22, 600 s window, 9–10 messages each — `docs/f1.7-fleet-probe.md`).
+  //
+  // **Stated as its own constant, not as a multiple of `DEFAULT_RELOAD_MS`.**
+  // The reload interval is how often point mappings are refreshed; it happens
+  // to be 60_000 too, and pinning to it made this assertion mean nothing it
+  // said: widening the reload for an unrelated reason would go red citing
+  // publish cycles, and a fleet that slowed to five-minute publishing would
+  // stay green while the window became one missed cycle instead of five.
+  const MEASURED_PUBLISH_INTERVAL_MS = 60_000;
+  assert(
+    DEFAULT_STALE_AFTER_MS >= 5 * MEASURED_PUBLISH_INTERVAL_MS,
+    "the staleness window must clear five publish cycles, or one lost message reads as a dead RTU",
+  );
+  assert(
+    readHostConfig({ ...BASE, INGEST_STALE_AFTER_MS: "900000" }).staleAfterMs === 900_000,
+    "a slower protocol can widen the window",
   );
 
   // ---- DATABASE_URL is required -------------------------------------------

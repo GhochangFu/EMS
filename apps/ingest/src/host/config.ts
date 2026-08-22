@@ -32,6 +32,17 @@ export type HostConfig = {
    */
   readonly reloadMs: number;
   /**
+   * How long one RTU may publish nothing before health calls it stale (`F1.7`).
+   *
+   * **Five minutes because the fleet was measured, not guessed.** The nine live
+   * PHE RTUs publish every 50–75 s (probe, 2026-08-22), so five minutes is
+   * four-to-six missed cycles — long enough that a single dropped message never
+   * raises it, short enough that a station down overnight is not discovered the
+   * next morning. A protocol that polls far slower than MQTT pushes will want
+   * its own value, which is why this is configuration rather than a constant.
+   */
+  readonly staleAfterMs: number;
+  /**
    * MQTT-only connection defaults taken from the environment.
    *
    * `MQTT_TLS_REJECT_UNAUTHORIZED` is honoured because the ADR 0007 pilot
@@ -52,16 +63,50 @@ export type HostConfig = {
  */
 export const DEFAULT_HEALTH_PORT: number = 9103;
 export const DEFAULT_RELOAD_MS: number = 60_000;
+export const DEFAULT_STALE_AFTER_MS: number = 300_000;
 
-function positiveInt(raw: string | undefined, fallback: number, name: string): number {
+/**
+ * The largest delay `setInterval` honours.
+ *
+ * Node clamps anything above a 32-bit signed integer to **1 ms** and prints a
+ * `TimeoutOverflowWarning` — measured: a delay of `100000000000` fired twice in
+ * 25 ms. For `INGEST_RELOAD_MS` that turns the four-table binding query into a
+ * ~1 ms loop against the pilot Postgres the API also reads, so a typo meant to
+ * slow the reload down speeds it up without bound.
+ */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+function positiveInt(
+  raw: string | undefined,
+  fallback: number,
+  name: string,
+  max: number,
+): number {
   if (raw === undefined || raw.trim() === "") {
     return fallback;
+  }
+  // Plain decimal digits only. `Number()` alone accepts `1e21` and `0x493e0`,
+  // both of which are integers, so `INGEST_STALE_AFTER_MS=1e21` would start
+  // cleanly and disable the staleness alarm for ever with no error and no log
+  // line. A parser that fails open is worse the more the value matters, and
+  // this one now gates a monitoring control rather than only a port.
+  if (!/^\d+$/.test(raw.trim())) {
+    throw new Error(`${name} must be a positive integer, got "${raw}"`);
   }
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) {
     // Loud, not silent: a typo'd port that quietly falls back to the default is
     // how two processes end up fighting over 9102.
     throw new Error(`${name} must be a positive integer, got "${raw}"`);
+  }
+  // The digits check closed `1e21` and left the plain-decimal door open, which
+  // is the same failure in different clothes: `INGEST_STALE_AFTER_MS` at 1e20
+  // passes every test above, is not a safe integer, and switches the staleness
+  // alarm off for ever in silence. Each caller states its own ceiling, because
+  // "positive integer" is not the constraint — a port has 65535, a timer has
+  // 2^31-1, and neither is a fact about integers.
+  if (!Number.isSafeInteger(value) || value > max) {
+    throw new Error(`${name} must be between 1 and ${max}, got "${raw}"`);
   }
   return value;
 }
@@ -91,8 +136,24 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   // otherwise would credit it with a guarantee it does not carry.
   return {
     databaseUrl,
-    healthPort: positiveInt(env.INGEST_HOST_HEALTH_PORT, DEFAULT_HEALTH_PORT, "INGEST_HOST_HEALTH_PORT"),
-    reloadMs: positiveInt(env.INGEST_RELOAD_MS, DEFAULT_RELOAD_MS, "INGEST_RELOAD_MS"),
+    healthPort: positiveInt(
+      env.INGEST_HOST_HEALTH_PORT,
+      DEFAULT_HEALTH_PORT,
+      "INGEST_HOST_HEALTH_PORT",
+      65535,
+    ),
+    reloadMs: positiveInt(
+      env.INGEST_RELOAD_MS,
+      DEFAULT_RELOAD_MS,
+      "INGEST_RELOAD_MS",
+      MAX_TIMER_MS,
+    ),
+    staleAfterMs: positiveInt(
+      env.INGEST_STALE_AFTER_MS,
+      DEFAULT_STALE_AFTER_MS,
+      "INGEST_STALE_AFTER_MS",
+      MAX_TIMER_MS,
+    ),
     mqttConnectionDefaults: {
       // The ADR 0007 pilot tested `!== "false"`, so anything other than the exact
       // string "false" leaves verification on. Transcribed rather than

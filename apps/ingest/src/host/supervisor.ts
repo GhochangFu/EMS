@@ -92,15 +92,33 @@ export const DEFAULT_TIMINGS: SupervisorTimings = {
   queueCapacity: DEFAULT_QUEUE_CAPACITY,
 };
 
+/**
+ * One RTU's own liveness, tracked separately from the connection's (`F1.7`).
+ *
+ * **An endpoint's `lastSampleAt` cannot answer "is this RTU alive".** MQTT's
+ * `endpointKey` is `${host}:${port}`, so the whole PHE fleet shares one
+ * connection and one supervisor; any sample from any RTU refreshed the
+ * endpoint's timestamp. That was true and harmless while one RTU was enabled,
+ * and false the moment a second was. Keyed on `deviceKey` because that is what
+ * `SourceSample` carries — `rtuCode` is what an operator reads.
+ */
+export type DeviceHealth = {
+  readonly rtuCode: string;
+  readonly deviceKey: string;
+  /** Absent means this RTU has produced nothing since the host started. */
+  readonly lastSampleAt?: Date;
+};
+
 /** Operator-facing state for one endpoint — what `F3.16` consumes. */
 export type SupervisorHealth = {
   readonly protocol: IngestProtocol;
   readonly endpointKey: string;
   readonly state: "connected" | "degraded" | "disconnected";
   readonly detail?: string;
+  /** The most recent sample from *any* device here — connection liveness, not RTU liveness. */
   readonly lastSampleAt?: Date;
   /** The RTUs that genuinely share this connection and would fail together (§5). */
-  readonly devices: readonly string[];
+  readonly devices: readonly DeviceHealth[];
   readonly restarts: number;
   readonly consecutivePollFailures: number;
   readonly queueDepth: number;
@@ -196,7 +214,14 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
   /** The adapter instance currently supervised, and the controller that aborts it. */
   let current: { adapter: IngestAdapter; controller: AbortController } | null = null;
 
-  const devices = plan.bindings.map((binding) => binding.rtuCode);
+  /** `deviceKey → rtuCode`, so a sample is attributed without rescanning bindings. */
+  const rtuCodeByDeviceKey = new Map(
+    plan.bindings.map((binding) => [binding.deviceKey, binding.rtuCode] as const),
+  );
+  /** `deviceKey → the last time this RTU produced anything` (`F1.7`). */
+  const lastSampleByDeviceKey = new Map<string, Date>();
+  /** The endpoint's only binding, if it has exactly one — see `accept()`. */
+  const soleDeviceKey = plan.bindings.length === 1 ? plan.bindings[0]?.deviceKey : undefined;
 
   function accept(samples: readonly SourceSample[], controller: AbortController): void {
     // Defence in depth: an adapter must not emit after `disconnect()` (§5 rule
@@ -210,7 +235,28 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
       return;
     }
     queue.push(samples);
-    lastSampleAt = scheduler.now();
+    const now = scheduler.now();
+    lastSampleAt = now;
+    // Attributed per device, not per batch. An adapter may emit one device's
+    // readings or several in a single call, and only the devices actually
+    // present are refreshed — crediting the whole batch to every bound RTU
+    // would reinstate the very blindness this replaces.
+    for (const sample of samples) {
+      // `deviceKey` is optional and "omit when it has exactly one" binding
+      // (`SourceSample`), so the same `soleDeviceKey` rule the normaliser
+      // applies has to apply here. Without it a single-device endpoint — every
+      // Modbus gateway — would record no liveness at all and read stale for
+      // ever while writing rows perfectly well.
+      const deviceKey = sample.deviceKey ?? soleDeviceKey;
+      // A sample for a `deviceKey` this supervisor has no binding for is
+      // ignored rather than recorded: the map is keyed to the plan, so an
+      // unknown key would create an RTU that health then reports on for ever.
+      // An omitted key on a multi-device endpoint is ambiguous, and the
+      // normaliser drops that sample too rather than guessing.
+      if (deviceKey !== undefined && rtuCodeByDeviceKey.has(deviceKey)) {
+        lastSampleByDeviceKey.set(deviceKey, now);
+      }
+    }
   }
 
   async function safeDisconnect(adapter: IngestAdapter): Promise<void> {
@@ -315,7 +361,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         logger.info("endpoint connected", {
           endpointKey: plan.endpointKey,
           protocol: plan.protocol,
-          devices: devices.length,
+          devices: plan.bindings.length,
         });
 
         if (adapter.mode === "push") {
@@ -440,7 +486,17 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         state,
         ...(detail === undefined ? {} : { detail }),
         ...(lastSampleAt === undefined ? {} : { lastSampleAt }),
-        devices,
+        // Built from the plan rather than from the sample map, so an RTU that
+        // has never published still appears. A device that is simply absent
+        // from health is indistinguishable from one that is fine.
+        devices: plan.bindings.map((binding) => {
+          const seen = lastSampleByDeviceKey.get(binding.deviceKey);
+          return {
+            rtuCode: binding.rtuCode,
+            deviceKey: binding.deviceKey,
+            ...(seen === undefined ? {} : { lastSampleAt: seen }),
+          };
+        }),
         restarts,
         consecutivePollFailures,
         queueDepth: queue.depth,

@@ -1,3 +1,5 @@
+import type { SourceSample } from "@bms/shared/ingest";
+
 import type {
   AdapterContractFixtures,
   AdapterUnderTest,
@@ -448,5 +450,193 @@ export async function runMqttAdapterTests(): Promise<void> {
     // The connection survives it.
     broker.fireMessage("t", JSON.stringify({ dev_id: "R", values: { flow: 9 } }));
     assert(received.length === 1, "the next good message must still be delivered");
+  }
+}
+
+/**
+ * A payload may only speak for the topic it arrived on (`F1.7`, security M1).
+ *
+ * **`dev_id` is attacker-supplied.** It is the payload's own claim about which
+ * device sent it, and routing on it alone means anyone with publish rights on
+ * the broker can write another station's telemetry — and, once `F1.7` keys
+ * liveness per device, refresh that station's `lastSampleAt` so its outage
+ * never raises `stale`. The same message falsifies the data and silences the
+ * alarm that exists to notice.
+ *
+ * The topic is the one thing the broker's own ACL governs, so a payload is
+ * bound to it. Verified harmless against the real fleet before shipping: the
+ * 600 s probe on 2026-08-22 found nine of nine `dev_id`s equal to their
+ * topic's IMEI, so this rejects nothing that legitimately arrives today.
+ */
+export async function runTopicAttributionTests(): Promise<void> {
+  // ---- a device may not speak for another device's topic ------------------
+
+  {
+    const broker = makeFakeBroker();
+    const adapter = createMqttAdapter(broker.transport);
+    const controller = new AbortController();
+    const connecting = adapter.connect({
+      protocol: "mqtt",
+      endpointKey: "phe.thinkiot.co.in:8883",
+      config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true },
+      credentials: {},
+      bindings: [
+        {
+          rtuId: "id-a",
+          rtuCode: "RTU-A",
+          deviceKey: "RTU-A",
+          device: { topic: "a/b/A" },
+          sourceKeys: ["flow"],
+        },
+        {
+          rtuId: "id-b",
+          rtuCode: "RTU-B",
+          deviceKey: "RTU-B",
+          device: { topic: "a/b/B" },
+          sourceKeys: ["flow"],
+        },
+      ],
+      logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+      signal: controller.signal,
+    });
+    broker.fireConnect();
+    await connecting;
+
+    const received: SourceSample[] = [];
+    await adapter.subscribe((samples) => received.push(...samples));
+
+    // The impersonation: A's topic carrying B's identity.
+    broker.fireMessage("a/b/A", JSON.stringify({ dev_id: "RTU-B", values: { flow: 1 } }));
+    assert(
+      received.length === 0,
+      `a payload claiming another device's id on this topic must be dropped, got ${received.length}`,
+    );
+
+    // The honest case on the same topic still works, so the check is a
+    // constraint on identity rather than on the topic.
+    broker.fireMessage("a/b/A", JSON.stringify({ dev_id: "RTU-A", values: { flow: 2 } }));
+    assert(received.length === 1, "the topic's own device is still delivered");
+    assert(received[0]?.deviceKey === "RTU-A", "the sample is attributed to the topic's device");
+
+    // And B on B's own topic.
+    broker.fireMessage("a/b/B", JSON.stringify({ dev_id: "RTU-B", values: { flow: 3 } }));
+    assert(received.length === 2, "each device is delivered on its own topic");
+
+    await adapter.disconnect();
+  }
+
+  // ---- a topic genuinely shared by two devices still routes both ----------
+
+  {
+    // `subscribe()` de-duplicates topics precisely because the endpoint/device
+    // split allows this. Binding a payload to its topic must not break it: on a
+    // shared topic, either bound device is legitimate.
+    const broker = makeFakeBroker();
+    const adapter = createMqttAdapter(broker.transport);
+    const controller = new AbortController();
+    const connecting = adapter.connect({
+      protocol: "mqtt",
+      endpointKey: "phe.thinkiot.co.in:8883",
+      config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true },
+      credentials: {},
+      bindings: [
+        {
+          rtuId: "id-1",
+          rtuCode: "RTU-1",
+          deviceKey: "RTU-1",
+          device: { topic: "shared/topic" },
+          sourceKeys: ["flow"],
+        },
+        {
+          rtuId: "id-2",
+          rtuCode: "RTU-2",
+          deviceKey: "RTU-2",
+          device: { topic: "shared/topic" },
+          sourceKeys: ["flow"],
+        },
+      ],
+      logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+      signal: controller.signal,
+    });
+    broker.fireConnect();
+    await connecting;
+
+    const received: SourceSample[] = [];
+    await adapter.subscribe((samples) => received.push(...samples));
+
+    broker.fireMessage("shared/topic", JSON.stringify({ dev_id: "RTU-1", values: { flow: 1 } }));
+    broker.fireMessage("shared/topic", JSON.stringify({ dev_id: "RTU-2", values: { flow: 2 } }));
+    assert(received.length === 2, `both devices on a shared topic must route, got ${received.length}`);
+
+    // A third identity on that same shared topic is still refused.
+    broker.fireMessage("shared/topic", JSON.stringify({ dev_id: "RTU-3", values: { flow: 3 } }));
+    assert(received.length === 2, "an unbound device on a shared topic is still refused");
+
+    await adapter.disconnect();
+  }
+
+  // ---- the refusal is logged, without echoing the payload -----------------
+
+  {
+    const broker = makeFakeBroker();
+    const adapter = createMqttAdapter(broker.transport);
+    const controller = new AbortController();
+    const warnings: string[] = [];
+    const connecting = adapter.connect({
+      protocol: "mqtt",
+      endpointKey: "phe.thinkiot.co.in:8883",
+      config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true },
+      credentials: {},
+      bindings: [
+        {
+          rtuId: "id-a",
+          rtuCode: "RTU-A",
+          deviceKey: "RTU-A",
+          device: { topic: "a/b/A" },
+          sourceKeys: ["flow"],
+        },
+        {
+          rtuId: "id-b",
+          rtuCode: "RTU-B",
+          deviceKey: "RTU-B",
+          device: { topic: "a/b/B" },
+          sourceKeys: ["flow"],
+        },
+      ],
+      logger: {
+        info: () => undefined,
+        warn: (message, fields) => warnings.push(`${message} ${JSON.stringify(fields ?? {})}`),
+        error: () => undefined,
+      },
+      signal: controller.signal,
+    });
+    broker.fireConnect();
+    await connecting;
+    await adapter.subscribe(() => undefined);
+
+    // A *bound* device on the wrong topic. An id bound nowhere returns at the
+    // earlier unbound-device guard, which is ordinary on a shared topic and
+    // stays quiet; being bound elsewhere is what makes this impersonation.
+    broker.fireMessage("a/b/A", JSON.stringify({ dev_id: "RTU-B", values: { flow: 42.5 } }));
+    // Silence here would make the control undetectable in operation: an
+    // impersonation attempt is the one thing an operator must be able to see.
+    assert(
+      warnings.some((w) => w.includes("topic")),
+      `a refused attribution must be logged, got ${JSON.stringify(warnings)}`,
+    );
+    assert(
+      !warnings.some((w) => w.includes("42.5")),
+      "the log must not echo a reading value (AGENTS.md §9.6)",
+    );
+
+    // The unbound case stays quiet, so a shared topic does not spam the log.
+    const before = warnings.length;
+    broker.fireMessage("a/b/A", JSON.stringify({ dev_id: "RTU-NOBODY", values: { flow: 1 } }));
+    assert(
+      warnings.length === before,
+      "a device bound nowhere is ordinary on a shared topic and must not warn",
+    );
+
+    await adapter.disconnect();
   }
 }
