@@ -40,6 +40,7 @@ import {
   deltaLines,
   isMigrationTarget,
   migrateActionState,
+  migrationCandidates,
   partitionSelection,
   refusalMessages,
   sourceVersionsInPreview,
@@ -77,11 +78,7 @@ export function AssetTemplateVersionsPage({ user }: Props) {
   });
 
   const versions = versionsQ.data?.items ?? [];
-  const versionIds = new Set(versions.map((version) => version.id));
-
-  // Only assets pinned to some version of THIS code can be migrated; the API
-  // refuses anything else, and offering them would teach the operator by 400.
-  const candidates = (assetsQ.data?.items ?? []).filter((asset) => asset.templateId !== null && versionIds.has(asset.templateId));
+  const candidates = migrationCandidates(assetsQ.data?.items ?? [], versions);
 
   // A new selection or target invalidates the preview it was computed from.
   // Leaving a stale one on screen is how a migration gets applied against a
@@ -163,9 +160,8 @@ export function AssetTemplateVersionsPage({ user }: Props) {
         }
       />
 
-      <SectionCard>
-        <h2 className="text-sm font-semibold">Versions</h2>
-        <ul className="mt-2 divide-y divide-gray-100">
+      <SectionCard title="Versions">
+        <ul className="divide-y divide-gray-100">
           {versions.map((version) => (
             <li key={version.id} className="flex items-center justify-between gap-3 py-2">
               <span className="flex items-center gap-2 text-sm">
@@ -198,12 +194,11 @@ export function AssetTemplateVersionsPage({ user }: Props) {
       </SectionCard>
 
       {targetId ? (
-        <SectionCard>
-          <h2 className="text-sm font-semibold">Assets to migrate</h2>
-          <p className="mt-1 text-xs text-bms-muted">
-            Assets already on this version are excluded by the server and reported below.
-          </p>
-          <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto">
+        <SectionCard
+          title="Assets to migrate"
+          subtitle="Assets already on this version are excluded by the server and reported below."
+        >
+          <ul className="max-h-64 space-y-1 overflow-y-auto">
             {candidates.map((asset) => (
               <li key={asset.id}>
                 <label className="flex items-center gap-2 text-sm">
@@ -269,20 +264,24 @@ export function AssetTemplateVersionsPage({ user }: Props) {
       ) : null}
 
       {preview ? (
-        <SectionCard>
-          <h2 className="text-sm font-semibold">
-            Preview · to v{preview.toVersion}
-            {spanned.length > 1 ? ` · from v${spanned.join(", v")}` : spanned.length === 1 ? ` · from v${spanned[0]}` : ""}
-          </h2>
-          <p className="mt-1 text-xs text-bms-muted">
-            {split.willMigrate.length} will migrate
-            {split.alreadyOnTarget.length > 0
+        <SectionCard
+          title={
+            `Preview · to v${preview.toVersion}` +
+            (spanned.length > 1
+              ? ` · from v${spanned.join(", v")}`
+              : spanned.length === 1
+                ? ` · from v${spanned[0]}`
+                : "")
+          }
+          subtitle={
+            `${split.willMigrate.length} will migrate` +
+            (split.alreadyOnTarget.length > 0
               ? ` · ${split.alreadyOnTarget.length} already on this version`
-              : ""}
-          </p>
-
+              : "")
+          }
+        >
           {refusals.length > 0 ? (
-            <div className="mt-3 rounded border border-red-200 bg-red-50 p-3">
+            <div className="rounded border border-red-200 bg-red-50 p-3">
               <p className="text-xs font-semibold text-red-800">
                 This migration is refused. Nothing will be written.
               </p>
@@ -290,8 +289,14 @@ export function AssetTemplateVersionsPage({ user }: Props) {
                 {/* Verbatim from the API — it names the point key, the asset
                     code, the unresolved tokens or the two domain codes, and a
                     client-side sentence per reason would lose all of it. */}
+                {/* `index` unconditionally: `buildPlan` pushes one refusal per
+                    asset per point, so several entries legitimately share the
+                    same reason and point key. Keying on the pair collides and
+                    lets React show one asset's sentence in another's place. */}
                 {refusals.map((refusal, index) => (
-                  <li key={`${refusal.reason}-${refusal.pointKey ?? index}`}>{refusal.message}</li>
+                  <li key={`${index}-${refusal.reason}-${refusal.pointKey ?? ""}`}>
+                    {refusal.message}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -319,15 +324,13 @@ export function AssetTemplateVersionsPage({ user }: Props) {
       ) : null}
 
       {result ? (
-        <SectionCard>
-          <h2 className="text-sm font-semibold">
-            Migrated {result.assetCount} asset{result.assetCount === 1 ? "" : "s"} to v
-            {result.toVersion}
-          </h2>
-          <p className="mt-1 text-xs text-bms-muted">
-            {result.pointsCreated} telemetry point{result.pointsCreated === 1 ? "" : "s"} created.
-            Stored values are unchanged — a migration never recomputes history.
-          </p>
+        <SectionCard
+          title={`Migrated ${result.assetCount} asset${result.assetCount === 1 ? "" : "s"} to v${result.toVersion}`}
+          subtitle={
+            `${result.pointsCreated} telemetry point${result.pointsCreated === 1 ? "" : "s"} ` +
+            "created. Stored values are unchanged — a migration never recomputes history."
+          }
+        >
           {result.skippedPoints.length > 0 ? (
             <ul className="mt-2 list-disc pl-4 text-xs text-bms-muted">
               {/* Reported rather than silent: "2 points added, 1 row created"

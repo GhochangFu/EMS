@@ -19,6 +19,7 @@ import {
   canClear,
   canSubmit,
   draftProblems,
+  type ColumnOrigin,
   type OverrideDraft,
 } from "../../lib/asset-point-calc-override";
 
@@ -32,7 +33,9 @@ type Props = {
   onCancel: () => void;
 };
 
-const ORIGIN_LABEL: Record<string, string> = {
+// Keyed on the union, not on `string`: a fourth origin added to `ColumnOrigin`
+// must fail the build here rather than render an empty Source cell.
+const ORIGIN_LABEL: Record<ColumnOrigin, string> = {
   overridden: "overridden here",
   inherited: "from the template",
   unset: "not set",

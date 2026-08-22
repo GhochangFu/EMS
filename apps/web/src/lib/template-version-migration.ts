@@ -1,4 +1,5 @@
 import type {
+  AdminAssetDto,
   TemplateMigrationPreviewResponse,
   TemplateMigrationRefusalDto,
   TemplateVersionDeltaDto,
@@ -204,6 +205,35 @@ export function deltaLines(delta: TemplateVersionDeltaDto): DeltaLine[] {
 /** Whether a version can be a migration target at all — decision 1. */
 export function isMigrationTarget(version: TemplateVersionSummaryDto): boolean {
   return version.status === "published";
+}
+
+/** The subset of an asset list this view may offer, and nothing else. */
+export type MigrationCandidate = Pick<
+  AdminAssetDto,
+  "id" | "code" | "name" | "templateId" | "templateVersion"
+>;
+
+/**
+ * Which assets the picker may offer.
+ *
+ * Two exclusions, both of which the API also enforces — offering an excluded
+ * asset would teach the operator by 400:
+ *
+ * - a hand-created asset is pinned to no version, so there is nothing to
+ *   migrate *from*;
+ * - an asset pinned to a different template code is different equipment, not an
+ *   older description of this one.
+ *
+ * Here rather than in the page because it decides what an operator is allowed
+ * to act on, which is the same kind of decision as `isMigrationTarget` — and
+ * `apps/web`'s coverage gate reaches `src/lib/**` and nothing above it.
+ */
+export function migrationCandidates<T extends MigrationCandidate>(
+  assets: readonly T[],
+  versions: readonly TemplateVersionSummaryDto[],
+): T[] {
+  const versionIds = new Set(versions.map((version) => version.id));
+  return assets.filter((asset) => asset.templateId !== null && versionIds.has(asset.templateId));
 }
 
 /**

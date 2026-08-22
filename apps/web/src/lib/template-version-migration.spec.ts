@@ -8,6 +8,7 @@ import {
   deltaLines,
   isMigrationTarget,
   migrateActionState,
+  migrationCandidates,
   partitionSelection,
   refusalMessages,
   sourceVersionsInPreview,
@@ -285,5 +286,39 @@ export function runVersionLabelTests(): void {
   assert(
     versionSummaryLabel({ ...base, assetCount: 12 }) === "v4 · published · 12 assets",
     "plural above one",
+  );
+}
+
+/** Only assets pinned to some version of THIS template code may be offered. */
+export function runCandidateTests(): void {
+  const versions: TemplateVersionSummaryDto[] = [
+    { id: "v1", version: 1, status: "archived", publishedAt: null, assetCount: 1, pointCount: 2 },
+    { id: "v2", version: 2, status: "published", publishedAt: null, assetCount: 1, pointCount: 2 },
+  ];
+  const assets = [
+    { id: "a", code: "A", name: "On v1", templateId: "v1", templateVersion: 1 },
+    { id: "b", code: "B", name: "On v2", templateId: "v2", templateVersion: 2 },
+    { id: "c", code: "C", name: "Hand-made", templateId: null, templateVersion: null },
+    { id: "d", code: "D", name: "Other template", templateId: "other", templateVersion: 7 },
+  ];
+
+  const offered = migrationCandidates(assets, versions).map((asset) => asset.id);
+  assert(
+    offered.join(",") === "a,b",
+    `only assets on a version of this code may be offered, got ${offered.join(",")}`,
+  );
+  assert(
+    !offered.includes("c"),
+    "a hand-created asset is pinned to nothing, so there is no version to migrate FROM — " +
+      "offering it teaches the operator by 400",
+  );
+  assert(
+    !offered.includes("d"),
+    "an asset on a different template code is different equipment, not an older description " +
+      "of this one — the API refuses it and the picker must not offer it",
+  );
+  assert(
+    migrationCandidates([], versions).length === 0 && migrationCandidates(assets, []).length === 0,
+    "an empty list either side yields nothing",
   );
 }

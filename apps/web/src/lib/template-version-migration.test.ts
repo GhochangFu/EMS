@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runCandidateTests,
   runCanApplyIsTheServersVerdictTests,
   runDeltaLineTests,
   runMigrateActionStateTests,
@@ -43,5 +44,9 @@ describe("F2.6 — template version migration view rules", () => {
 
   it("says whether a version is still in service", () => {
     runVersionLabelTests();
+  });
+
+  it("offers only assets pinned to a version of this template code", () => {
+    runCandidateTests();
   });
 });
