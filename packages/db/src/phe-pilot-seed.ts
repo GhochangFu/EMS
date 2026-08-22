@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { and, eq } from "drizzle-orm";
 import type pg from "pg";
@@ -100,8 +101,19 @@ function unitLabel(unitCode: string | null): string | null {
   return unitCode;
 }
 
+/**
+ * Resolved from this module, not from `process.cwd()`.
+ *
+ * The catalog sits beside this file, so where the *process* was started is not
+ * information about where the data is. `resolve(process.cwd(), "src/…")` only
+ * worked because `pnpm db:seed` runs with `packages/db` as its working
+ * directory; every other caller got `ENOENT` on a path assembled from its own
+ * cwd. `F1.7`'s two-pass seed test is the first such caller, and is what found
+ * it.
+ */
 function loadCatalog(): PheCatalogFile {
-  const raw = readFileSync(resolve(process.cwd(), "src/phe-catalog.json"), "utf8");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const raw = readFileSync(resolve(here, "phe-catalog.json"), "utf8");
   return JSON.parse(raw) as PheCatalogFile;
 }
 
