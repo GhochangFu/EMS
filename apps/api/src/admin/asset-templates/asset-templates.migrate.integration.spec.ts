@@ -62,12 +62,18 @@ function assert(condition: boolean, message: string): void {
  * specified passes every message-only assertion, and `U8`'s UI branches on 409
  * versus 400. `HttpException.getStatus()` is checked rather than `instanceof`,
  * because the status is what the client actually sees.
+ *
+ * `forbidden` is the `F4.64` half: a refusal is also a disclosure surface, and
+ * asserting only what a message *says* cannot catch what it additionally
+ * reveals. A positive match on "2 assets in this batch" still passes over a
+ * body that names all of them, so the negative is the assertion that gates.
  */
 async function expectRejection(
   run: () => Promise<unknown>,
   match: RegExp,
   what: string,
   expectedStatus?: number,
+  forbidden?: RegExp,
 ): Promise<void> {
   let message: string | null = null;
   let status: number | null = null;
@@ -103,6 +109,13 @@ async function expectRejection(
       status === expectedStatus,
       `${what}: expected HTTP ${expectedStatus}, got ${String(status)}. The message was ` +
         `right, so this is the wrong exception class with the right words in it.`,
+    );
+  }
+  if (forbidden !== undefined) {
+    assert(
+      !forbidden.test(message ?? ""),
+      `${what}: rejected with "${message}", which leaks ${forbidden}. A refusal must not ` +
+        `name what the caller may not see (F4.64).`,
     );
   }
 }
@@ -687,21 +700,33 @@ export async function assertOutOfScopeAssetIsRefused(
   const inScope = await seedAsset(db, fx, "SCOPE-IN", v1, { locationId: fx.rtuLocationId });
   // In another location of the same org — outside a location-scoped grant.
   const outOfScope = await seedAsset(db, fx, "SCOPE-OUT", v1, { locationId: fx.otherLocationId });
+  // A second one, so the count in the message has to be counted. With one
+  // out-of-scope asset "1" is indistinguishable from a hardcoded literal, and
+  // a refusal that short-circuits on the first would also report "1" — this
+  // asset is what separates the two (`F4.64`).
+  const outOfScope2 = await seedAsset(db, fx, "SCOPE-OUT-2", v1, {
+    locationId: fx.otherLocationId,
+  });
 
   // Deliberately specific. "access scope" alone also matches the
   // canManageOrganization refusal that runs FIRST, so a loose regex would pass
   // without ever reaching the per-asset check this case exists to prove.
   await expectRejection(
-    () => svc.migrate(fx.locationAdminJwt, v2, { assetIds: [inScope, outOfScope] }),
-    new RegExp(`Asset "${TEST_ASSET_PREFIX}SCOPE-OUT" is outside your access scope`),
-    "migrating an asset outside the caller's scope",
+    () => svc.migrate(fx.locationAdminJwt, v2, { assetIds: [inScope, outOfScope, outOfScope2] }),
+    /2 assets in this batch are outside your access scope/,
+    "migrating assets outside the caller's scope",
     403,
+    // `F4.64`. The body used to interpolate `asset.code`, naming a row the
+    // caller is being told they may not touch. No fixture code may appear —
+    // not the refused ones, and not the in-scope one either.
+    new RegExp(TEST_ASSET_PREFIX),
   );
   assert(
     (await pinnedVersion(pool, inScope)) === 1,
     "the in-scope asset must not move either — the batch is refused as a whole",
   );
   assert((await pinnedVersion(pool, outOfScope)) === 1, "the out-of-scope asset must not move");
+  assert((await pinnedVersion(pool, outOfScope2)) === 1, "the second one must not move either");
   assert((await auditRows(pool, v2)).length === 0, "nothing was written, so nothing was audited");
 }
 
