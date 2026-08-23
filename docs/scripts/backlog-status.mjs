@@ -61,14 +61,11 @@ const GATES = [
       "Held for a scope decision on which industrial protocols to implement, and on the libraries each one needs.",
     source: "BACKLOG.md §1b 'F1.1 landed and opened the adapter fan-out'",
   },
-  {
-    ids: ["F3.8"],
-    kind: "adr",
-    reason: "Notification transport is a new dependency — needs a §9.4 dependency ADR.",
-    clientReason:
-      "Held for a decision on the notification transport (email / webhook provider).",
-    source: "BACKLOG.md §1b slot 2",
-  },
+  // F3.8's §9.4 dependency gate was here until 2026-08-23. ADR 0041 answered
+  // it — `nodemailer` into `apps/api` and a Mailpit Compose service, Accepted
+  // by the owner the same day — so the citation above ("needs a §9.4
+  // dependency ADR") stopped being true and the entry is deleted rather than
+  // left to rot, per this list's own rule.
   {
     ids: ["E1.1"],
     kind: "adr",

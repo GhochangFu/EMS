@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgSchema,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -759,6 +760,78 @@ export const ruleExecutions = bmsSchema.table("rule_executions", {
   observedValue: doublePrecision("observed_value"),
   message: text("message"),
   trace: jsonb("trace"),
+});
+
+/**
+ * F3.8 notifications (ADR 0041) — mirrors migration
+ * `0038_notification_channels.sql`. The migration is the source of truth; this
+ * is the typed view of it. Read that file for why the kind vocabulary is a
+ * table while the delivery status is a CHECK, and why no rule is ever deleted.
+ */
+export const notificationChannelKinds = bmsSchema.table("notification_channel_kinds", {
+  code: varchar("code", { length: 64 }).primaryKey(),
+  label: varchar("label", { length: 128 }).notNull(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const notificationChannels = bmsSchema.table("notification_channels", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: varchar("code", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 128 }).notNull(),
+  kind: varchar("kind", { length: 64 })
+    .notNull()
+    .references(() => notificationChannelKinds.code),
+  // Never secret. The webhook HMAC secret is in the three columns below,
+  // encrypted by `CredentialCryptoService` (ADR 0012) — `config` is returned by
+  // the API and appears in logs, so nothing sensitive may live in it (§9.6).
+  config: jsonb("config").notNull().default({}),
+  secretCiphertext: bytea("secret_ciphertext"),
+  secretIv: bytea("secret_iv"),
+  // Nullable, unlike `rtuConnectionConfigs.keyVersion` which defaults to 1.
+  // There every row has credentials; here an email channel has none, and a key
+  // version on a row with no ciphertext would name a key that was never used.
+  secretKeyVersion: integer("secret_key_version"),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Which channels a rule notifies. Configuration, so it cascades with the rule. */
+export const ruleNotifications = bmsSchema.table(
+  "rule_notifications",
+  {
+    ruleId: uuid("rule_id")
+      .notNull()
+      .references(() => automationRules.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id")
+      .notNull()
+      .references(() => notificationChannels.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.ruleId, table.channelId] })],
+);
+
+/**
+ * One row per dispatch attempt, including every skip. History, not
+ * configuration: nothing cascades into it. The two indexes the migration
+ * creates — `(channel_id, attempted_at DESC)` and the partial one on
+ * `dedupe_key` — are not mirrored here, following `alarmSeverities`; the
+ * migration owns them.
+ */
+export const notificationDeliveries = bmsSchema.table("notification_deliveries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ruleId: uuid("rule_id").references(() => automationRules.id),
+  alarmId: uuid("alarm_id").references(() => alarms.id),
+  channelId: uuid("channel_id")
+    .notNull()
+    .references(() => notificationChannels.id),
+  // Closed set, enforced by `notification_deliveries_status_check`:
+  // sent · failed · skipped_unconfigured · skipped_deduped · skipped_rate_limited.
+  status: varchar("status", { length: 32 }).notNull(),
+  dedupeKey: varchar("dedupe_key", { length: 255 }),
+  attemptedAt: timestamp("attempted_at", { withTimezone: true }).notNull().defaultNow(),
+  error: text("error"),
 });
 
 export const auditLog = bmsSchema.table("audit_log", {

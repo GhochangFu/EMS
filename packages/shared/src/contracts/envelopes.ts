@@ -51,6 +51,12 @@ import {
   energySourceMixPointSchema,
   energyTopConsumerSchema,
 } from "./operations";
+import {
+  notificationChannelDtoSchema,
+  notificationDeliveryDtoSchema,
+  notificationReadinessDtoSchema,
+  notificationTestResultSchema,
+} from "./notifications";
 
 /** `{ items: T[] }` — the shape every master-data list route returns. */
 const itemsOf = <S extends z.ZodTypeAny>(item: S) => z.object({ items: z.array(item) });
@@ -208,3 +214,54 @@ export const assetPickerRowSchema = z.object({
 });
 
 export const assetPickerResponseSchema = z.array(assetPickerRowSchema);
+
+// --- notifications (`F3.8`, ADR 0041) ---------------------------------------
+//
+// Channels, deliveries and readiness all return the bare `{ items }` shape.
+// That follows `ruleExecutionsResponseSchema` above rather than the alarm
+// cursor shape, which is what ADR 0041 decision 4 asks for ("the same
+// pagination shape `listExecutions` uses"): `RulesService.listExecutions`
+// returns `{ items }` with a `limit` and no cursor, and the deliveries view is
+// the same kind of read — a bounded recent-history list, not an infinite scroll.
+export const notificationChannelsListResponseSchema = itemsOf(notificationChannelDtoSchema);
+export const notificationDeliveriesResponseSchema = itemsOf(notificationDeliveryDtoSchema);
+export const notificationReadinessResponseSchema = itemsOf(notificationReadinessDtoSchema);
+
+// Not wrapped: a test is one dispatch, so the result is one object. `itemsOf`
+// here would make every caller unwrap a single-element array to ask "did it
+// send?".
+export const notificationTestResultResponseSchema = notificationTestResultSchema;
+
+// The three write routes. `POST /channels` and `PATCH /channels/:id` return the
+// row they wrote, so they share the DTO — a separate schema per verb would be
+// two descriptions of one shape.
+//
+// Added in the same unit as the routes rather than when `apps/web` needs them.
+// The header of this file records what happens otherwise: `adminFetch` requires
+// a schema argument, so a route without one cannot be called from the client at
+// all, and the gap surfaces as a blocked UI commit rather than as a missing
+// contract.
+export const notificationChannelResponseSchema = notificationChannelDtoSchema;
+
+/**
+ * `DELETE /notifications/channels/:id`.
+ *
+ * `z.literal(true)`, following `templateDraftDeletedResponseSchema` above and
+ * for the same reason: the route deletes the channel or throws — 404 when it
+ * does not exist, and Postgres refuses one that history still references — so
+ * it has no `false` to return.
+ */
+export const notificationChannelDeletedResponseSchema = z.object({
+  deleted: z.literal(true),
+});
+
+/**
+ * `GET` and `PUT /rules/:id/notifications` — plan D1.
+ *
+ * The same shape both ways round, because PUT replaces the whole set and
+ * answers with what the set now is. A caller can therefore treat the response
+ * as the new state rather than re-reading it.
+ */
+export const ruleNotificationsResponseSchema = z.object({
+  channelIds: z.array(z.string()),
+});

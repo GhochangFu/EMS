@@ -12,6 +12,7 @@ import { HealthModule } from "./health/health.module";
 import { pinoHttpOptions } from "./logger.options";
 import { MaintenanceModule } from "./maintenance/maintenance.module";
 import { MapModule } from "./map/map.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 import { ObservabilityModule } from "./observability/observability.module";
 import { ReportsModule } from "./reports/reports.module";
 import { RulesModule } from "./rules/rules.module";
@@ -38,6 +39,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     ReportsModule,
     MapModule,
     VocabulariesModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

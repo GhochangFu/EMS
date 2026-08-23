@@ -577,6 +577,24 @@ export class RulesService {
     return rows.filter((row) => row.assetId !== null && assetIds.includes(row.assetId));
   }
 
+  /**
+   * Throws unless the caller may act on this rule (`F3.8`, AGENTS.md §4.7).
+   *
+   * The public door onto the private check below, added because the
+   * notification-join routes live in this controller but write through
+   * `ChannelsService`. Without it those routes had a role check and NO scope
+   * check, so a location-scoped admin could attach a channel they own to any
+   * rule in any other location and quietly redirect its alarms. Found by the
+   * F3.8 compliance review.
+   *
+   * It reuses `getRuleRow` and `assertAssetInScope` rather than restating
+   * either: a second copy of "is this rule mine" is how the two drift.
+   */
+  async assertRuleInScope(ruleId: string, assetIds?: string[] | null): Promise<void> {
+    const row = await this.getRuleRow(ruleId);
+    this.assertAssetInScope(row.assetId, assetIds);
+  }
+
   private assertAssetInScope(assetId: string | null, assetIds?: string[] | null): void {
     if (assetIds === null || assetIds === undefined) {
       return;

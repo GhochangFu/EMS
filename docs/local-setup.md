@@ -310,6 +310,21 @@ docker compose --profile realtime-smoke up -d --build api api-replica
 pnpm --filter web smoke:realtime
 ```
 
+To watch notification email (`F3.8`, ADR 0041), start the Mailpit catcher in its
+own profile:
+
+```bash
+docker compose --profile mail up -d
+```
+
+Mailpit listens for SMTP on `localhost:1025` and serves the inbox at
+`http://localhost:8025`. Point the API at it from **your own** environment —
+`SMTP_HOST=localhost`, `SMTP_PORT=1025` — because `docker-compose.yml` sets no
+`SMTP_HOST` and a repo invariant (`tests/adr-0041-notification-invariants.test.ts`)
+fails the build if one appears there. With no host configured, email channels
+record `skipped_unconfigured` deliveries and the rules page shows a readiness
+banner; that is the intended behaviour, not a fault.
+
 ---
 
 ## 12. Cursor IDE on WSL

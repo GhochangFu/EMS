@@ -21,6 +21,7 @@ export const CSS = `
   --accent:#B45309; --accent-ink:#8A3E06; --accent-wash:#F6E9DA;
   --lamp-done:#3F6B4A; --lamp-done-wash:#E2EBE1;
   --lamp-active:#1D5B84; --lamp-active-wash:#DDE9F1;
+  --lamp-planned:#5B4B8A; --lamp-planned-wash:#E6E2F0;
   --lamp-ready:#7A6A16; --lamp-ready-wash:#EFEBD6;
   --lamp-gated:#9A3D22; --lamp-gated-wash:#F3E1DA;
   --lamp-idle:#6B736B; --lamp-idle-wash:#E7E9E4;
@@ -37,6 +38,7 @@ export const CSS = `
     --accent:#E08A3C; --accent-ink:#F0A863; --accent-wash:#2E2318;
     --lamp-done:#79B189; --lamp-done-wash:#1D2A21;
     --lamp-active:#6FAFD8; --lamp-active-wash:#17242E;
+    --lamp-planned:#A08FD0; --lamp-planned-wash:#231E30;
     --lamp-ready:#CFBB63; --lamp-ready-wash:#282415;
     --lamp-gated:#E0876A; --lamp-gated-wash:#2E1E18;
     --lamp-idle:#8B938E; --lamp-idle-wash:#22262A;
@@ -51,6 +53,7 @@ export const CSS = `
   --accent:#E08A3C; --accent-ink:#F0A863; --accent-wash:#2E2318;
   --lamp-done:#79B189; --lamp-done-wash:#1D2A21;
   --lamp-active:#6FAFD8; --lamp-active-wash:#17242E;
+  --lamp-planned:#A08FD0; --lamp-planned-wash:#231E30;
   --lamp-ready:#CFBB63; --lamp-ready-wash:#282415;
   --lamp-gated:#E0876A; --lamp-gated-wash:#2E1E18;
   --lamp-idle:#8B938E; --lamp-idle-wash:#22262A;
@@ -234,6 +237,7 @@ section{display:flex; flex-direction:column; gap:12px}
 
 .lamp-done{--lamp:var(--lamp-done); --lamp-wash:var(--lamp-done-wash)}
 .lamp-active{--lamp:var(--lamp-active); --lamp-wash:var(--lamp-active-wash)}
+.lamp-planned{--lamp:var(--lamp-planned); --lamp-wash:var(--lamp-planned-wash)}
 .lamp-ready{--lamp:var(--lamp-ready); --lamp-wash:var(--lamp-ready-wash)}
 .lamp-gated{--lamp:var(--lamp-gated); --lamp-wash:var(--lamp-gated-wash)}
 .lamp-idle{--lamp:var(--lamp-idle); --lamp-wash:var(--lamp-idle-wash)}

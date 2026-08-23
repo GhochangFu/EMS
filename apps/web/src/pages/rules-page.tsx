@@ -1,3 +1,4 @@
+import { NotificationReadinessBanner } from "../components/notification-readiness-banner";
 import { RulesPanel } from "../components/rules-panel";
 import { PageHeader } from "../components/page-header";
 import { StatusPill } from "../components/status-pill";
@@ -26,6 +27,14 @@ export function RulesPage({ user }: RulesPageProps) {
           subtitle="IF-THEN logic · threshold checks · time-window traces"
           actions={<StatusPill label="Rule Builder" />}
         />
+
+        {/*
+          `F3.8` (ADR 0041 decisions 5 and 10). Here, on the rules surface,
+          because the person writing a `notify` rule is the person who must
+          learn that no transport is configured — and they may never open an
+          admin screen. It renders nothing when everything is configured.
+        */}
+        <NotificationReadinessBanner />
 
         <RulesPanel />
       </div>

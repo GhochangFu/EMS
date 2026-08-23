@@ -58,6 +58,14 @@ export const masterDataTabs = [
   { label: "Manual Entry", path: "/admin/manual-readings" },
   { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
   { label: "Import Telemetry", path: "/admin/telemetry/import" },
+  // `F3.8` (ADR 0041 decision 10). `globalAdminOnly`, NOT `catalogOnly`: the
+  // two are different questions and the second would be wrong here.
+  // `catalogOnly` means "may write the point-key catalog", which includes
+  // `organization_admin` — but every channel route is gated on
+  // `assertAdminRole`, so an org admin following this tab would meet a 403. A
+  // tab that leads to a refusal is worse than no tab.
+  { label: "Notifications", path: "/admin/notification-channels", globalAdminOnly: true },
+  { label: "Deliveries", path: "/admin/notification-deliveries", globalAdminOnly: true },
 ] as const;
 
 /** Returns tabs visible for the given role. */
@@ -65,6 +73,9 @@ export function visibleMasterDataTabs(role: UserRole) {
   return masterDataTabs.filter((tab) => {
     if ("catalogOnly" in tab && tab.catalogOnly) {
       return canWritePointKeys(role);
+    }
+    if ("globalAdminOnly" in tab && tab.globalAdminOnly) {
+      return isGlobalAdmin(role);
     }
     return true;
   });

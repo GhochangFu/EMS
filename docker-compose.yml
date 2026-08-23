@@ -292,6 +292,26 @@ services:
       - prometheus
       - loki
 
+  # Mail catcher for `F3.8` notifications (ADR 0041 decision 12). Its OWN
+  # profile, deliberately not `core`.
+  #
+  # Nothing here sets `SMTP_HOST` on the api service, and nothing may: a
+  # default pointing at this container would mean a deployment that forgot to
+  # configure SMTP delivers every alarm into a test catcher, silently, while
+  # the readiness route reports "configured". Decision 5's whole point is that
+  # an unconfigured transport is visible. `tests/adr-0041-notification-
+  # invariants.test.ts` fails the build if a default appears here.
+  #
+  # To watch a message arrive: `docker compose --profile mail up -d`, then set
+  # SMTP_HOST=localhost and SMTP_PORT=1025 in YOUR OWN environment — the inbox
+  # is at http://localhost:8025.
+  mailpit:
+    profiles: ["mail"]
+    image: axllent/mailpit:v1.21
+    ports:
+      - "8025:8025" # web inbox
+      - "1025:1025" # SMTP
+
 volumes:
   bms-postgres-data:
   bms-prometheus-data:

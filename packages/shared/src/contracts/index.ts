@@ -25,6 +25,7 @@ export * from "./auth";
 export * from "./dashboard";
 export * from "./envelopes";
 export type * from "./schema-types";
+export * from "./notifications";
 export * from "./onboarding";
 export * from "./operations";
 export * from "./telemetry-entry";
