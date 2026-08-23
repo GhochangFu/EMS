@@ -99,7 +99,29 @@ describe.skipIf(!connectionString)("F3.8 notification schema", () => {
     const kinds = await pool.query<{ code: string }>(
       `SELECT code FROM bms.notification_channel_kinds ORDER BY code`,
     );
-    expect(kinds.rows.map((r) => r.code)).toEqual(["email", "webhook"]);
+    // Containment, not equality. The first draft asserted
+    // `toEqual(["email", "webhook"])`, which contradicts the migration's own
+    // premise: the vocabulary is OPEN, and F3.9 adds `sms` as a row with no
+    // schema change. That assertion would have turned red on the day the
+    // feature it was written to support arrived.
+    expect(kinds.rows.map((r) => r.code)).toEqual(
+      expect.arrayContaining(["email", "webhook"]),
+    );
+  });
+
+  it("refuses a half-written secret (all three columns or none)", async () => {
+    if (!pool) throw new Error("pool not initialised");
+    // The comment claimed the three columns are "read together or not at all";
+    // nothing enforced it, so a row with ciphertext and no key version was
+    // representable and would be undecryptable in a way nothing detects until a
+    // send fails.
+    await expect(
+      pool.query(
+        `INSERT INTO bms.notification_channels (code, name, kind, secret_ciphertext)
+         VALUES ($1, 'half a secret', 'webhook', '\\x00'::bytea)`,
+        [`${TEST_CHANNEL_CODE}-half`],
+      ),
+    ).rejects.toThrow(/notification_channels_secret_complete_check/);
   });
 
   it("refuses a delivery status outside the five (plan D3)", async () => {

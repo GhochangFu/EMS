@@ -51,6 +51,15 @@
 -- header did exactly that and failed with `syntax error at or near "`"` at
 -- position 1 — the remainder of the sentence, parsed as SQL.
 --
+-- **A note for whoever writes a later migration that deletes alarms or rules.**
+-- `0014_remove_smoc_pretoria_north.sql` and `0021_remove_onboarding_demo_
+-- locations.sql` both `DELETE FROM bms.alarms` and `DELETE FROM
+-- bms.automation_rules`. After this file, a migration of that shape fails with
+-- SQLSTATE 23503 against `notification_deliveries.alarm_id` and `.rule_id`,
+-- because history must outlive configuration. Clear the ledger rows first, and
+-- know that `rule_notifications` rows go silently with the rule through the
+-- CASCADE below.
+--
 -- **This migration seeds only `notification_channel_kinds`, deliberately.**
 -- `pnpm db:migrate` runs BEFORE `pnpm db:seed`, so a migration that joins
 -- `bms.assets` or `bms.automation_rules` is a silent no-op on a fresh database
@@ -111,7 +120,16 @@ CREATE TABLE IF NOT EXISTS bms.notification_channels (
   secret_key_version integer,
   enabled boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  -- The three secret columns are read together or not at all, and this makes
+  -- that structural rather than a promise in a comment. `ChannelsService`
+  -- writes all three or nulls all three; a row with ciphertext and no key
+  -- version would be undecryptable in a way nothing detects until a send fails.
+  CONSTRAINT notification_channels_secret_complete_check
+    CHECK (
+      (secret_ciphertext IS NULL) = (secret_iv IS NULL)
+      AND (secret_ciphertext IS NULL) = (secret_key_version IS NULL)
+    )
 );
 
 -- 3. The join. A rule notifies zero or more channels; a channel serves zero or
@@ -136,8 +154,14 @@ CREATE TABLE IF NOT EXISTS bms.rule_notifications (
 --    exists. `channel_id` is NOT NULL — an attempt with no destination is not
 --    an attempt.
 --
---    `dedupe_key` is what decision 7's transition dedupe reads back. It is
---    nullable because a skip that never reached the dedupe check has none.
+--    `dedupe_key` is FORENSIC, not functional, and the first draft of this
+--    comment said otherwise. Decision 7's dedupe keys on
+--    `AlarmRaiseResult.raised` — the signal `alarms_open_per_rule_uidx` already
+--    produces — so `NotificationsService` writes this column and reads it
+--    never. It stays because decision 4 lists it as part of the ledger row and
+--    because `F3.10` (escalation) is a plausible reader; there is deliberately
+--    NO index on it, since an index with no reader costs a write on every row
+--    and buys nothing. Whoever gives it a reader adds the index with it.
 CREATE TABLE IF NOT EXISTS bms.notification_deliveries (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   rule_id uuid,
@@ -152,18 +176,25 @@ CREATE TABLE IF NOT EXISTS bms.notification_deliveries (
                       'skipped_deduped','skipped_rate_limited'))
 );
 
--- 5. The two reads this table serves.
+-- 5. The two reads this table actually serves. Both were checked against the
+--    code that issues them rather than against the design intent.
 --
---    The rate-limit check (decision 7) asks "how many deliveries on this
---    channel since now() - 1 hour", so it wants (channel_id, attempted_at
---    DESC). The dedupe check asks for one key, and only rows that have one —
---    hence the partial index, which stays small because most rows are sends.
+--    The rate-limit check (decision 7) asks "how many rows on this channel with
+--    status = 'sent' since now() - 1 hour" — `sent` only, so that a noisy hour
+--    cannot fill the ceiling with its own refusals. `(channel_id,
+--    attempted_at DESC)` serves it; the status filter is applied after.
 CREATE INDEX IF NOT EXISTS notification_deliveries_channel_time_idx
   ON bms.notification_deliveries (channel_id, attempted_at DESC);
 
-CREATE INDEX IF NOT EXISTS notification_deliveries_dedupe_idx
-  ON bms.notification_deliveries (dedupe_key)
-  WHERE dedupe_key IS NOT NULL;
+--    The deliveries view asks "the most recent N attempts across ALL channels"
+--    (`ChannelsService.listDeliveries` with no filter, which is the default the
+--    admin screen loads). The index above cannot serve that: it leads on
+--    `channel_id`, so an unfiltered read scans the whole ledger and sorts.
+--    Harmless today, because the table is empty until `F3.7` wires dispatch —
+--    after which one row lands per rule per channel per sweep. Added now, while
+--    it is free.
+CREATE INDEX IF NOT EXISTS notification_deliveries_time_idx
+  ON bms.notification_deliveries (attempted_at DESC);
 
 -- 6. Foreign keys, each behind its own guard so the file re-runs clean.
 DO $$
