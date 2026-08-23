@@ -72,3 +72,13 @@ export function buildConfig(env: NodeJS.ProcessEnv): NotificationsConfig {
 }
 
 export const notificationsConfig: NotificationsConfig = buildConfig(process.env);
+
+/**
+ * Nest injection token for {@link notificationsConfig}.
+ *
+ * A token rather than a constructor default: Nest reflects on constructor
+ * parameter types, sees `Object` for a plain type alias, and refuses to start
+ * because it cannot find a provider for it. A default value does not help — the
+ * reflection happens either way.
+ */
+export const NOTIFICATIONS_CONFIG = Symbol("NOTIFICATIONS_CONFIG");

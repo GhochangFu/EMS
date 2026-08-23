@@ -1,8 +1,11 @@
 import { Module } from "@nestjs/common";
 
 import { CredentialCryptoService } from "../security/credential-crypto.service";
+import { ChannelsService } from "./channels.service";
 import { EmailTransport } from "./email.transport";
 import { LogTransport } from "./log.transport";
+import { NOTIFICATIONS_CONFIG, notificationsConfig } from "./notifications.config";
+import { NotificationsService } from "./notifications.service";
 import { WebhookTransport } from "./webhook.transport";
 
 /**
@@ -23,6 +26,9 @@ import { WebhookTransport } from "./webhook.transport";
 @Module({
   providers: [
     CredentialCryptoService,
+    ChannelsService,
+    NotificationsService,
+    { provide: NOTIFICATIONS_CONFIG, useValue: notificationsConfig },
     LogTransport,
     // A factory, not the bare class. `WebhookTransport`'s constructor takes an
     // injectable-deps object with a default — which the tests use to stub
@@ -35,6 +41,6 @@ import { WebhookTransport } from "./webhook.transport";
     // unconfigured deployment constructs no SMTP client at all.
     { provide: EmailTransport, useFactory: () => new EmailTransport() },
   ],
-  exports: [LogTransport, WebhookTransport, EmailTransport],
+  exports: [NotificationsService, ChannelsService],
 })
 export class NotificationsModule {}
