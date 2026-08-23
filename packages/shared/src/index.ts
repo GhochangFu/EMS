@@ -28,6 +28,7 @@ import type * as A from "./contracts/admin";
 import type * as Au from "./contracts/auth";
 import type * as D from "./contracts/dashboard";
 import type * as E from "./contracts/envelopes";
+import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
 import type * as Te from "./contracts/telemetry-entry";
@@ -378,6 +379,32 @@ export type RuleExecutionsResponse = z.infer<typeof E.ruleExecutionsResponseSche
 export type RuleBuilderCatalogResponse = z.infer<typeof E.ruleBuilderCatalogResponseSchema>;
 /** `GET /api/v1/assets` — the asset picker's row (was `AssetRow` in `apps/web`). */
 export type AssetPickerRow = z.infer<typeof E.assetPickerRowSchema>;
+
+// ---------------------------------------------------------------------------
+// Notifications (`F3.8`, ADR 0041)
+// ---------------------------------------------------------------------------
+/** The five outcomes of one dispatch attempt, three of them skips. */
+export type NotificationDeliveryStatus = z.infer<typeof N.notificationDeliveryStatusSchema>;
+/** A configured destination. Carries `hasSecret`, never a secret (§9.6). */
+export type NotificationChannelDto = z.infer<typeof N.notificationChannelDtoSchema>;
+/** One row of the delivery ledger — every attempt, including every skip. */
+export type NotificationDeliveryDto = z.infer<typeof N.notificationDeliveryDtoSchema>;
+/** Whether a transport can send at all, per kind. */
+export type NotificationReadinessDto = z.infer<typeof N.notificationReadinessDtoSchema>;
+/** The outcome of `POST /notifications/channels/:id/test`. */
+export type NotificationTestResult = z.infer<typeof N.notificationTestResultSchema>;
+export type NotificationChannelsListResponse = z.infer<
+  typeof E.notificationChannelsListResponseSchema
+>;
+export type NotificationDeliveriesResponse = z.infer<
+  typeof E.notificationDeliveriesResponseSchema
+>;
+export type NotificationReadinessResponse = z.infer<
+  typeof E.notificationReadinessResponseSchema
+>;
+export type NotificationTestResultResponse = z.infer<
+  typeof E.notificationTestResultResponseSchema
+>;
 
 // ---------------------------------------------------------------------------
 // Re-exported sibling modules

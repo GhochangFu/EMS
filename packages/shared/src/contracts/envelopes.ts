@@ -51,6 +51,12 @@ import {
   energySourceMixPointSchema,
   energyTopConsumerSchema,
 } from "./operations";
+import {
+  notificationChannelDtoSchema,
+  notificationDeliveryDtoSchema,
+  notificationReadinessDtoSchema,
+  notificationTestResultSchema,
+} from "./notifications";
 
 /** `{ items: T[] }` — the shape every master-data list route returns. */
 const itemsOf = <S extends z.ZodTypeAny>(item: S) => z.object({ items: z.array(item) });
@@ -208,3 +214,20 @@ export const assetPickerRowSchema = z.object({
 });
 
 export const assetPickerResponseSchema = z.array(assetPickerRowSchema);
+
+// --- notifications (`F3.8`, ADR 0041) ---------------------------------------
+//
+// Channels, deliveries and readiness all return the bare `{ items }` shape.
+// That follows `ruleExecutionsResponseSchema` above rather than the alarm
+// cursor shape, which is what ADR 0041 decision 4 asks for ("the same
+// pagination shape `listExecutions` uses"): `RulesService.listExecutions`
+// returns `{ items }` with a `limit` and no cursor, and the deliveries view is
+// the same kind of read — a bounded recent-history list, not an infinite scroll.
+export const notificationChannelsListResponseSchema = itemsOf(notificationChannelDtoSchema);
+export const notificationDeliveriesResponseSchema = itemsOf(notificationDeliveryDtoSchema);
+export const notificationReadinessResponseSchema = itemsOf(notificationReadinessDtoSchema);
+
+// Not wrapped: a test is one dispatch, so the result is one object. `itemsOf`
+// here would make every caller unwrap a single-element array to ask "did it
+// send?".
+export const notificationTestResultResponseSchema = notificationTestResultSchema;
