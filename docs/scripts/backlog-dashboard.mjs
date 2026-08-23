@@ -73,7 +73,21 @@ const stateOf = (it) => {
   if (it.status === "done") return { label: "Done", cls: "lamp-done", key: "done" };
   if (it.status === "dropped") return { label: "Dropped", cls: "lamp-idle", key: "waiting" };
   if (it.gate) return { label: it.gate.kind === "client" ? "Awaiting client" : "Needs ADR", cls: "lamp-gated", key: "held" };
-  if (it.status === "planned") return { label: "Planned", cls: "lamp-active", key: "flight" };
+  // `planned` (🟡) gets its OWN key, not `flight`.
+  //
+  // It shared `flight` until 2026-08-23, which made every aggregate keyed on
+  // `stateKey` — the wave lanes, the legend, the state chips — count an
+  // ADR-stage row as active work. Wave 0 read "In flight: 2" (F3.8 and E8.1)
+  // while `check-backlog-republish.mjs` and this file's OWN header card and
+  // "In flight now" section all read 1, because those three go straight to
+  // `data.inProgress`, which is derived from live git branches.
+  //
+  // E8.1 is what made it matter: no branch, waiting on an unanswered Ion
+  // Exchange question, and rendered to anyone reading the shared board as work
+  // in progress. `backlog-status.mjs` states the intent this restores —
+  // planned "means an ADR is in flight or the item shipped only in part, which
+  // is not the same as 'pick this up'".
+  if (it.status === "planned") return { label: "Planned", cls: "lamp-planned", key: "planned" };
   if (it.readyToStart) return { label: "Ready", cls: "lamp-ready", key: "ready" };
   return { label: "Waiting", cls: "lamp-idle", key: "waiting" };
 };
@@ -81,6 +95,7 @@ const stateOf = (it) => {
 const STATE_KEYS = [
   { key: "done", label: "Done", token: "--lamp-done" },
   { key: "flight", label: "In flight", token: "--lamp-active" },
+  { key: "planned", label: "Planned", token: "--lamp-planned" },
   { key: "ready", label: "Ready", token: "--lamp-ready" },
   { key: "held", label: "Held", token: "--lamp-gated" },
   { key: "waiting", label: "Waiting", token: "--lamp-idle" },
