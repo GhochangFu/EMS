@@ -100,9 +100,9 @@ async function reseed(): Promise<void> {
   await seedPheCatalog(db, pool);
 }
 
-describe("F1.7 seed ownership across two passes", () => {
+describe.skipIf(!connectionString)("F1.7 seed ownership across two passes", () => {
   beforeAll(async () => {
-    pool = await openIntegrationPool(connectionString, "F1.7");
+    pool = await openIntegrationPool(connectionString as string, "F1.7");
     db = createDb(pool);
     // Clear the stamp first, so pass one *adopts* rather than deferring.
     //
