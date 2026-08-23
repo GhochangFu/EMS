@@ -1,12 +1,13 @@
 import { and, eq, is, TransactionRollbackError } from "drizzle-orm";
 
-import { alarms, assets, automationRules, pointValues, ruleExecutions } from "@bms/db";
+import { alarms, automationRules, pointValues, ruleExecutions } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { AlarmRaiser } from "../alarms/alarm-raise.service";
 import type { AlarmsGateway } from "../alarms/alarms.gateway";
 import { RulesService } from "./rules.service";
+import { createFixtureAssets } from "../testing/integration-fixtures";
 import type { VocabulariesService } from "../vocabularies/vocabularies.service";
 
 /**
@@ -18,6 +19,12 @@ import type { VocabulariesService } from "../vocabularies/vocabularies.service";
  * `alarms_rule_id_fk` `NO ACTION` FK (migration 0032) means a test rule
  * cannot be deleted ahead of the alarm it raised, and a transaction already
  * orders that correctly by never committing either.
+ *
+ * Fixture assets are built inside that transaction rather than read off the
+ * seed with `SELECT id FROM bms.assets LIMIT 2` — the read this file used to do
+ * was recorded as a race in `vitest.config.ts` at `F2.5`, having failed once
+ * with `automation_rules_asset_id_fkey` on a full parallel run. See
+ * `../testing/integration-fixtures.ts`.
  */
 
 function assert(condition: boolean, message: string): void {
@@ -51,14 +58,6 @@ async function withRollback(
       throw err;
     }
   });
-}
-
-async function twoSeededAssetIds(db: BmsDb): Promise<[string, string]> {
-  const rows = await db.select({ id: assets.id }).from(assets).limit(2);
-  if (rows.length < 2 || !rows[0] || !rows[1]) {
-    throw new Error("need at least 2 seeded assets — run pnpm db:seed first");
-  }
-  return [rows[0].id, rows[1].id];
 }
 
 async function insertMatchingFixture(
@@ -104,7 +103,7 @@ async function insertMatchingFixture(
  */
 export async function assertRaisesUnscopedButReturnsScoped(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const [assetA, assetB] = await twoSeededAssetIds(tx);
+    const [assetA, assetB] = await createFixtureAssets(tx, 2, "F36T5");
     const a = await insertMatchingFixture(tx, assetA, "a");
     const b = await insertMatchingFixture(tx, assetB, "b");
 
@@ -186,7 +185,7 @@ export async function assertRaisesUnscopedButReturnsScoped(db: BmsDb): Promise<v
  */
 export async function assertStaleSampleMatchesButDoesNotRaise(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const [assetId] = await twoSeededAssetIds(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "F36T5");
     const staleTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 1 day old
     const { ruleId } = await insertMatchingFixture(tx, assetId, "stale", staleTime);
 

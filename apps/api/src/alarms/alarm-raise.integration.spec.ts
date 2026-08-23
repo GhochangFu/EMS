@@ -1,11 +1,12 @@
 import { and, eq, is, isNull, TransactionRollbackError } from "drizzle-orm";
 
-import { alarms, alarmSeverities, assets, automationRules, ruleExecutions } from "@bms/db";
+import { alarms, alarmSeverities, automationRules, ruleExecutions } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import type { AlarmRaiseRule } from "./alarm-raise.service";
 import { AlarmRaiser } from "./alarm-raise.service";
 import type { AlarmsGateway } from "./alarms.gateway";
+import { createFixtureAssets } from "../testing/integration-fixtures";
 
 /**
  * `F3.6` — `AlarmRaiser` against a real database.
@@ -19,6 +20,10 @@ import type { AlarmsGateway } from "./alarms.gateway";
  * callback throws (`ROLLBACK` first, `throw error` after) — `tx.rollback()`'s
  * `TransactionRollbackError` is the one exception that means success here, so
  * it is the only one swallowed.
+ *
+ * The fixture asset is built inside that transaction rather than read off the
+ * seed with `SELECT id FROM bms.assets LIMIT 1`, which was flaky under a full
+ * parallel run — see `../testing/integration-fixtures.ts` for the mechanism.
  *
  * The gateway is a minimal stub (`broadcastCreated` only) rather than a real
  * `AlarmsGateway` — matching how `access-control.integration.test.ts`
@@ -35,14 +40,6 @@ function assert(condition: boolean, message: string): void {
 
 function stubGateway(): AlarmsGateway {
   return { broadcastCreated: () => undefined } as unknown as AlarmsGateway;
-}
-
-async function firstSeededAssetId(db: BmsDb): Promise<string> {
-  const [asset] = await db.select({ id: assets.id }).from(assets).limit(1);
-  if (!asset) {
-    throw new Error("no seeded asset available to attach a test rule to — run pnpm db:seed first");
-  }
-  return asset.id;
 }
 
 async function insertTestRule(
@@ -108,7 +105,7 @@ async function withRollback(
  */
 export async function assertRaisesDedupesAndTracesOnlyOnRaise(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "F36");
     const rule = await insertTestRule(tx, {
       code: "F36_TEST_RAISE_DEDUPE",
       pointKey: "f36_test_dedupe_point",
@@ -174,7 +171,7 @@ export async function assertPreservesSeededSeverity(db: BmsDb): Promise<void> {
       .values({ code: "high", label: "High", tone: "warning", rank: 25 })
       .onConflictDoNothing();
 
-    const assetId = await firstSeededAssetId(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "F36");
     const rule = await insertTestRule(tx, {
       code: "F36_TEST_RAISE_HIGH_SEVERITY",
       pointKey: "f36_test_high_point",
