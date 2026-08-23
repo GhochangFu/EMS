@@ -97,6 +97,20 @@ docker compose --profile realtime-smoke up -d --build api api-replica
 pnpm --filter web smoke:realtime
 ```
 
+To watch notification email locally (`F3.8`, ADR 0041), start the Mailpit
+catcher and point the API at it **from your own environment**:
+
+```bash
+docker compose --profile mail up -d
+```
+
+Then set `SMTP_HOST=localhost` and `SMTP_PORT=1025` in your shell or `.env`, and
+read the inbox at `http://localhost:8025`. The compose file deliberately sets no
+`SMTP_HOST` on the `api` service: with none set, every email channel records a
+`skipped_unconfigured` delivery and the rules page shows a readiness banner —
+which is what an unconfigured deployment should do, instead of quietly posting
+alarms into a catcher.
+
 To start the optional Sprint D observability stack alongside the core app:
 
 ```bash

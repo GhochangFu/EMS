@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { CredentialCryptoService } from "../security/credential-crypto.service";
+import { EmailTransport } from "./email.transport";
 import { LogTransport } from "./log.transport";
 import { WebhookTransport } from "./webhook.transport";
 
@@ -29,7 +30,11 @@ import { WebhookTransport } from "./webhook.transport";
     // as `Object`, fail to resolve a provider for it, and refuse to start.
     // The factory says "construct it with its defaults" in one line.
     { provide: WebhookTransport, useFactory: () => new WebhookTransport() },
+    // Same reason, and one more: EmailTransport builds its nodemailer
+    // transporter in the constructor ONLY when `SMTP_HOST` is set, so an
+    // unconfigured deployment constructs no SMTP client at all.
+    { provide: EmailTransport, useFactory: () => new EmailTransport() },
   ],
-  exports: [LogTransport, WebhookTransport],
+  exports: [LogTransport, WebhookTransport, EmailTransport],
 })
 export class NotificationsModule {}
