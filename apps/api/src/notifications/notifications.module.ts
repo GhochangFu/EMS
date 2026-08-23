@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { LogTransport } from "./log.transport";
+import { WebhookTransport } from "./webhook.transport";
 
 /**
  * `F3.8` notifications (ADR 0041).
@@ -19,7 +20,16 @@ import { LogTransport } from "./log.transport";
  * providers are wired before anything depends on them.
  */
 @Module({
-  providers: [CredentialCryptoService, LogTransport],
-  exports: [LogTransport],
+  providers: [
+    CredentialCryptoService,
+    LogTransport,
+    // A factory, not the bare class. `WebhookTransport`'s constructor takes an
+    // injectable-deps object with a default — which the tests use to stub
+    // `fetch` and the resolver — and Nest's reflection would see the parameter
+    // as `Object`, fail to resolve a provider for it, and refuse to start.
+    // The factory says "construct it with its defaults" in one line.
+    { provide: WebhookTransport, useFactory: () => new WebhookTransport() },
+  ],
+  exports: [LogTransport, WebhookTransport],
 })
 export class NotificationsModule {}
