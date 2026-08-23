@@ -65,6 +65,7 @@ export const masterDataTabs = [
   // `assertAdminRole`, so an org admin following this tab would meet a 403. A
   // tab that leads to a refusal is worse than no tab.
   { label: "Notifications", path: "/admin/notification-channels", globalAdminOnly: true },
+  { label: "Deliveries", path: "/admin/notification-deliveries", globalAdminOnly: true },
 ] as const;
 
 /** Returns tabs visible for the given role. */

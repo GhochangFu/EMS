@@ -80,6 +80,7 @@ export function runAssetTemplateTabTests(): void {
         // purpose, so adding a tab fails here until the expectation is updated
         // deliberately — which is what happened.
         "/admin/notification-channels",
+        "/admin/notification-deliveries",
       ].join(" "),
     `master data tabs changed — got ${masterDataTabs.map((tab) => tab.path).join(" ")}`,
   );
@@ -94,7 +95,7 @@ export function runAssetTemplateTabTests(): void {
     // `F3.8` added the Notifications tab, visible to the global admin only —
     // every channel route is gated on `assertAdminRole`, so showing it to the
     // other two would lead them to a 403.
-    const expected = role === "admin" ? 10 : role === "organization_admin" ? 9 : 8;
+    const expected = role === "admin" ? 11 : role === "organization_admin" ? 9 : 8;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
