@@ -194,6 +194,14 @@ export async function runWebhookGuardTests(): Promise<void> {
       `a hostname whose AAAA record is ${address}`,
     );
   }
+  // The compatible-form boundary. `::` and `::1` are handled by the IPv6 branch
+  // by name; `::2` through `::ffff` fall to the IPv4 branch as `0.0.0.x`, which
+  // `a === 0` blocks as "this network". Asserted directly because that outcome
+  // follows from two rules meeting rather than from either one saying so.
+  for (const url of ["https://[::2]/hook", "https://[::ff]/hook"]) {
+    await refuses(url, {}, /private|loopback|link-local/i, `${url} — the ::x compatible range`);
+  }
+
   // A genuinely public address in mapped form is still allowed — the fix must
   // classify by the embedded IPv4, not refuse every mapped address.
   await allows(
