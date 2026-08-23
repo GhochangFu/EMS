@@ -2090,6 +2090,53 @@ information to a count and explains its own withholding.
   `forbidden` regex catches what a positive match cannot: a body that satisfies
   the sentence and names the assets anyway.
 
+### Email + webhook notifications (`F3.8`, ADR 0041 + ADR 0042) — done
+
+**2026-08-23, PR #147, merged as `c79b770`.** The last open ⭐ enabler in slot
+2, and the thing `F3.7`, `F3.9` and `F3.10` were all waiting on: rules have
+stored a `notify` action since `F3.6` with nothing on the other end of it.
+Nine plan units, all four §4.6 layers, one migration adding four tables.
+
+- **Inline and fire-and-forget, deliberately.** Decision 1 rejected a queue and
+  Redis for this row. The load-bearing consequence is that `dispatch()` never
+  rejects: a transport failure becomes a `failed` delivery row rather than an
+  exception thrown back into the alarm path that raised it.
+- **A delivery row for every attempt, including the ones that send nothing.**
+  Three of the five statuses are skips. "No notification arrived" and "no
+  notification was attempted" are different answers to an operator, and only
+  the ledger can distinguish them.
+- **The owner ruled against deferring the UI**, so the channel screen, the
+  deliveries view and the readiness banner shipped inside the row — an item
+  closed with its browser layer marked N/A is not closed. Effort moved `4–6` →
+  `7–9` to pay for it.
+- **The review gates found four defects the build did not.** An IPv4-mapped
+  IPv6 bypass of the webhook egress guard, where the existing tests asserted the
+  dotted form `new URL()` never produces and were exercising an unreachable
+  branch; both `/rules/:id/notifications` routes missing the §4.7 scope check,
+  so a location-scoped admin could redirect or silence another site's alarms;
+  the channel admin gate reading the role from the token rather than
+  `bms.users`; and no audit row for channel writes. Each fix has a test that
+  fails without it.
+- **CI found a fifth, and it could not have been found locally.** ADR 0042 named
+  `jsdom` without a version; pnpm took `30.0.1`, which needs Node ≥ 22 through
+  `undici@8`. This repository ships **Node 20** — both CI jobs and all four
+  Dockerfiles. The build machine runs Node 24, so the local suite reported 636
+  passing while CI could not start the two component workers at all. Pinned to
+  `jsdom@^29.1.1`, whose `undici@7` guards the call rather than merely declaring
+  a floor.
+- **A version in one package did not bound the workspace.** `vitest` lists
+  `jsdom` as an optional peer and `autoInstallPeers` gave the *root* importer
+  the newest one regardless — and the root is the `vitest` CI runs. The
+  resolution survived `install`, `dedupe`, `--force` and deleting
+  `pnpm-lock.yaml` outright, because it was never stale. Only a root
+  `pnpm.overrides` entry moved it. ADR 0042 Amendment 1 records it so the next
+  bump does not rediscover it.
+- **Left open on purpose:** the kind vocabulary is a lookup table, but the admin
+  UI hardcodes two `<option>`s and the transport lookup is a `switch`, so `sms`
+  needs no DDL and does need code — that is `F3.9`. **Raised, not fixed:** no
+  `package.json` in the repository declares `engines`, which is the general
+  defect behind the jsdom failure.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
