@@ -4,6 +4,7 @@ import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { ChannelsService } from "./channels.service";
 import { EmailTransport } from "./email.transport";
 import { LogTransport } from "./log.transport";
+import { NotificationsController } from "./notifications.controller";
 import { NOTIFICATIONS_CONFIG, notificationsConfig } from "./notifications.config";
 import { NotificationsService } from "./notifications.service";
 import { WebhookTransport } from "./webhook.transport";
@@ -24,6 +25,7 @@ import { WebhookTransport } from "./webhook.transport";
  * providers are wired before anything depends on them.
  */
 @Module({
+  controllers: [NotificationsController],
   providers: [
     CredentialCryptoService,
     ChannelsService,

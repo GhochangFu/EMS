@@ -1,12 +1,28 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
-import { notificationChannels, ruleNotifications } from "@bms/db";
+import {
+  automationRules,
+  notificationChannels,
+  notificationDeliveries,
+  ruleNotifications,
+} from "@bms/db";
+import type {
+  NotificationChannelDto,
+  NotificationDeliveryDto,
+  NotificationReadinessDto,
+} from "@bms/shared";
 
 import { DRIZZLE } from "../database/database.tokens";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import type { NotificationChannelRow } from "./notification-transport";
+import type { NotificationsConfig } from "./notifications.config";
+import type {
+  CreateNotificationChannelBody,
+  ListDeliveriesQuery,
+  UpdateNotificationChannelBody,
+} from "./notifications.schema";
 
 /**
  * `F3.8` — reading channels, and the **only** place a channel secret is
@@ -42,6 +58,229 @@ export class ChannelsService {
     @Inject(DRIZZLE) private readonly db: BmsDb,
     private readonly crypto: CredentialCryptoService,
   ) {}
+
+  /** Every channel, newest configuration first, as the admin screen shows them. */
+  async list(): Promise<NotificationChannelDto[]> {
+    const rows = await this.db
+      .select()
+      .from(notificationChannels)
+      .orderBy(notificationChannels.code);
+    return rows.map((row) => toDto(row));
+  }
+
+  /** One channel as the transports see it, or `null` when it does not exist. */
+  async loadById(id: string): Promise<NotificationChannelRow | null> {
+    const rows = await this.db
+      .select()
+      .from(notificationChannels)
+      .where(eq(notificationChannels.id, id))
+      .limit(1);
+    const row = rows[0];
+    return row === undefined ? null : this.toChannelRow(row);
+  }
+
+  async create(body: CreateNotificationChannelBody): Promise<NotificationChannelDto> {
+    const secret = this.encryptSecret(body.secret ?? null);
+    const rows = await this.db
+      .insert(notificationChannels)
+      .values({
+        code: body.code,
+        name: body.name,
+        kind: body.kind,
+        config: body.config,
+        enabled: body.enabled,
+        ...secret,
+      })
+      .returning();
+    const row = rows[0];
+    if (row === undefined) throw new Error("channel insert returned no row");
+    return toDto(row);
+  }
+
+  /**
+   * Applies a PATCH.
+   *
+   * Three intentions stay distinct: omitting `secret` keeps the stored one,
+   * `null` clears all three columns, and a string replaces it. A single
+   * optional string could not express "clear it".
+   */
+  async update(
+    id: string,
+    body: UpdateNotificationChannelBody,
+  ): Promise<NotificationChannelDto | null> {
+    const values: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.name !== undefined) values.name = body.name;
+    if (body.kind !== undefined) values.kind = body.kind;
+    if (body.config !== undefined) values.config = body.config;
+    if (body.enabled !== undefined) values.enabled = body.enabled;
+    if (body.secret !== undefined) Object.assign(values, this.encryptSecret(body.secret));
+
+    const rows = await this.db
+      .update(notificationChannels)
+      .set(values)
+      .where(eq(notificationChannels.id, id))
+      .returning();
+    const row = rows[0];
+    return row === undefined ? null : toDto(row);
+  }
+
+  /**
+   * Deletes a channel.
+   *
+   * The foreign keys decide what happens next, and they are not symmetrical:
+   * `rule_notifications` rows go with the rule, not with the channel, so a
+   * channel still joined to a rule cannot be deleted until it is detached, and
+   * a channel with delivery history cannot be deleted at all. Both refusals are
+   * Postgres's, and both are deliberate — history must outlive configuration
+   * (migration 0038).
+   */
+  async remove(id: string): Promise<boolean> {
+    const rows = await this.db
+      .delete(notificationChannels)
+      .where(eq(notificationChannels.id, id))
+      .returning({ id: notificationChannels.id });
+    return rows.length > 0;
+  }
+
+  /** Recent delivery attempts, newest first — the same bounded shape as executions. */
+  async listDeliveries(query: ListDeliveriesQuery): Promise<{ items: NotificationDeliveryDto[] }> {
+    const filters = [
+      query.channelId === undefined
+        ? undefined
+        : eq(notificationDeliveries.channelId, query.channelId),
+      query.ruleId === undefined ? undefined : eq(notificationDeliveries.ruleId, query.ruleId),
+    ].filter((f): f is NonNullable<typeof f> => f !== undefined);
+
+    const rows = await this.db
+      .select({
+        id: notificationDeliveries.id,
+        ruleId: notificationDeliveries.ruleId,
+        ruleCode: automationRules.code,
+        alarmId: notificationDeliveries.alarmId,
+        channelId: notificationDeliveries.channelId,
+        channelCode: notificationChannels.code,
+        status: notificationDeliveries.status,
+        attemptedAt: notificationDeliveries.attemptedAt,
+        error: notificationDeliveries.error,
+      })
+      .from(notificationDeliveries)
+      .innerJoin(
+        notificationChannels,
+        eq(notificationDeliveries.channelId, notificationChannels.id),
+      )
+      // LEFT, not INNER: rule_id is nullable — a send test has no rule.
+      .leftJoin(automationRules, eq(notificationDeliveries.ruleId, automationRules.id))
+      .where(filters.length === 0 ? undefined : and(...filters))
+      .orderBy(desc(notificationDeliveries.attemptedAt))
+      .limit(query.limit);
+
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        ruleId: row.ruleId,
+        ruleCode: row.ruleCode,
+        alarmId: row.alarmId,
+        channelId: row.channelId,
+        channelCode: row.channelCode,
+        status: row.status as NotificationDeliveryDto["status"],
+        attemptedAt: row.attemptedAt.toISOString(),
+        error: row.error,
+      })),
+    };
+  }
+
+  /**
+   * Whether each kind can actually send (decision 5).
+   *
+   * Authenticated but not admin-only, and this is what makes that safe: one
+   * boolean and one sentence per kind, with no host, no port and no credential
+   * in either. A location-scoped operator editing a rule marked `notify` is
+   * exactly the person who must learn that nothing is configured.
+   */
+  readiness(config: NotificationsConfig): NotificationReadinessDto[] {
+    const keyReady = CredentialCryptoService.isConfigured();
+    return [
+      {
+        kind: "email",
+        configured: config.smtp !== null,
+        detail:
+          config.smtp === null
+            ? "SMTP_HOST is not set, so email notifications are recorded as skipped."
+            : "SMTP is configured.",
+      },
+      {
+        kind: "webhook",
+        configured: true,
+        detail: keyReady
+          ? "Webhooks send over https to public addresses only."
+          : "CREDENTIAL_ENCRYPTION_KEY is not set, so a webhook channel with a stored secret " +
+            "cannot be signed and is recorded as skipped.",
+      },
+    ];
+  }
+
+  /**
+   * Replaces the set of channels a rule notifies (plan D1).
+   *
+   * **The whole set, not a delta.** A join is a set, and "these are the
+   * channels" survives a lost or repeated request in a way "add this one" does
+   * not. Delete-then-insert inside one transaction, so a rule is never left
+   * notifying nobody because the second statement failed.
+   *
+   * Returns `null` when the rule does not exist, so the caller can answer 404
+   * rather than letting a foreign-key violation surface as a 500.
+   *
+   * This lives here rather than in `RulesService` for a mundane reason worth
+   * recording: that file is at 953 lines against the AGENTS.md §4.5 cap of
+   * 1000, and the join is notification state, not rule state. `RulesModule`
+   * imports `NotificationsModule`, which imports nothing from rules — checked,
+   * not assumed.
+   */
+  async setRuleChannels(ruleId: string, channelIds: string[]): Promise<string[] | null> {
+    const rule = await this.db
+      .select({ id: automationRules.id })
+      .from(automationRules)
+      .where(eq(automationRules.id, ruleId))
+      .limit(1);
+    if (rule.length === 0) return null;
+
+    const unique = [...new Set(channelIds)];
+    await this.db.transaction(async (tx) => {
+      await tx.delete(ruleNotifications).where(eq(ruleNotifications.ruleId, ruleId));
+      if (unique.length > 0) {
+        await tx
+          .insert(ruleNotifications)
+          .values(unique.map((channelId) => ({ ruleId, channelId })));
+      }
+    });
+    return unique;
+  }
+
+  /** The channel ids a rule currently notifies. */
+  async ruleChannelIds(ruleId: string): Promise<string[]> {
+    const rows = await this.db
+      .select({ channelId: ruleNotifications.channelId })
+      .from(ruleNotifications)
+      .where(eq(ruleNotifications.ruleId, ruleId));
+    return rows.map((row) => row.channelId);
+  }
+
+  /** `{ secret }` encrypted, or all three columns cleared. */
+  private encryptSecret(secret: string | null): {
+    secretCiphertext: Buffer | null;
+    secretIv: Buffer | null;
+    secretKeyVersion: number | null;
+  } {
+    if (secret === null) {
+      return { secretCiphertext: null, secretIv: null, secretKeyVersion: null };
+    }
+    const payload = this.crypto.encrypt({ [SECRET_FIELD]: secret });
+    return {
+      secretCiphertext: payload.ciphertext,
+      secretIv: payload.iv,
+      secretKeyVersion: payload.keyVersion,
+    };
+  }
 
   /** The enabled channels joined to a rule, in channel-code order. */
   async loadForRule(ruleId: string): Promise<NotificationChannelRow[]> {
@@ -115,4 +354,35 @@ export class ChannelsService {
       return { ...base, secret: null, secretState: "unreadable" };
     }
   }
+}
+
+/**
+ * A stored row as the API returns it.
+ *
+ * `hasSecret`, never the secret — not the plaintext, not the ciphertext, not
+ * the key version (§9.6, ADR 0041 decision 8). The boolean is the whole of what
+ * the admin screen needs to render "secret set".
+ */
+function toDto(row: {
+  id: string;
+  code: string;
+  name: string;
+  kind: string;
+  config: unknown;
+  enabled: boolean;
+  secretCiphertext: Buffer | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): NotificationChannelDto {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    kind: row.kind,
+    config: (row.config ?? {}) as Record<string, unknown>,
+    enabled: row.enabled,
+    hasSecret: row.secretCiphertext !== null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }

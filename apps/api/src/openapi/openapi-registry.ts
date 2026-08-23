@@ -43,6 +43,12 @@ import {
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
 import { manualReadingsBodySchema } from "../admin/telemetry-entry/manual-readings.schema";
+import {
+  createNotificationChannelBodySchema,
+  listDeliveriesQuerySchema,
+  setRuleNotificationsBodySchema,
+  updateNotificationChannelBodySchema,
+} from "../notifications/notifications.schema";
 import { alarmAckBodySchema } from "../alarms/ack.schema";
 import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { loginBodySchema } from "../auth/login.schema";
@@ -125,6 +131,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   MaintenanceController_listSchedules: listMaintenanceQuerySchema,
   MaintenanceController_updateSchedule: updateMaintenanceScheduleBodySchema,
   ManualReadingsController_create: manualReadingsBodySchema,
+  NotificationsController_createChannel: createNotificationChannelBodySchema,
+  NotificationsController_listDeliveries: listDeliveriesQuerySchema,
+  NotificationsController_updateChannel: updateNotificationChannelBodySchema,
   OnboardingController_chat: chatBodySchema,
   OnboardingController_createSession: createSessionBodySchema,
   OnboardingController_patchDraft: patchDraftBodySchema,
@@ -145,6 +154,7 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   RulesController_previewRule: rulePreviewBodySchema,
   RulesController_publishRule: ruleLifecycleBodySchema,
   RulesController_setEnabled: ruleToggleBodySchema,
+  RulesController_setRuleNotifications: setRuleNotificationsBodySchema,
   RulesController_updateRule: ruleUpdateBodySchema,
   WorkOrdersController_close: closeWorkOrderBodySchema,
   WorkOrdersController_create: createWorkOrderBodySchema,

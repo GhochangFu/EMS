@@ -6,8 +6,10 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  NotFoundException,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -16,6 +18,8 @@ import { ZodError, z } from "zod";
 import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
+import { ChannelsService } from "../notifications/channels.service";
+import { setRuleNotificationsBodySchema } from "../notifications/notifications.schema";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import {
@@ -36,7 +40,47 @@ export class RulesController {
   constructor(
     private readonly rules: RulesService,
     private readonly accessControl: AccessControlService,
+    private readonly channels: ChannelsService,
   ) {}
+
+  /**
+   * The channels this rule notifies (`F3.8`, ADR 0041, plan D1).
+   *
+   * Readable by anyone who may read the rule: which channels are attached is
+   * configuration, not a credential, and the channel list itself is admin-only
+   * elsewhere.
+   */
+  @Get(":id/notifications")
+  async listRuleNotifications(@Param("id") id: string) {
+    const ruleId = idParamSchema.parse(id);
+    return { channelIds: await this.channels.ruleChannelIds(ruleId) };
+  }
+
+  /**
+   * Replaces the whole set. PUT, not POST: this is idempotent, and a repeated
+   * request must leave the same set rather than a longer one.
+   */
+  @Put(":id/notifications")
+  @HttpCode(HttpStatus.OK)
+  async setRuleNotifications(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
+    try {
+      const ruleId = idParamSchema.parse(id);
+      const dto = setRuleNotificationsBodySchema.parse(body);
+      const channelIds = await this.channels.setRuleChannels(ruleId, dto.channelIds);
+      if (channelIds === null) throw new NotFoundException("Rule not found");
+      return { channelIds };
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
 
   @Get()
   async listRules(@CurrentUser() user: JwtPayload) {

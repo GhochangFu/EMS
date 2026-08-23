@@ -17,7 +17,8 @@ type Pool = {
   query: <R>(text: string, values?: unknown[]) => Promise<{ rows: R[] }>;
 };
 
-type Db = ConstructorParameters<typeof NotificationsService>[0];
+type Deps = ConstructorParameters<typeof NotificationsService>;
+type Db = Deps[0];
 
 const CHANNEL_CODE = "f3-8-storm-control";
 
@@ -53,9 +54,11 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
   const service = new NotificationsService(
     db,
     channels,
-    transport, // stand-in, unused here
-    transport, // email, unused here
-    transport,
+    // The three transport slots take concrete classes; this suite is about the
+    // service's own decisions, so one fake stands in for all three.
+    transport as unknown as Deps[2], // stand-in, unused here
+    transport as unknown as Deps[3], // email, unused here
+    transport as unknown as Deps[4],
     buildConfig({ NOTIFY_RATE_LIMIT_PER_HOUR: "1000" }),
   );
 
@@ -140,9 +143,9 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
     const limited = new NotificationsService(
       db,
       channels,
-      transport,
-      transport,
-      transport,
+      transport as unknown as Deps[2],
+      transport as unknown as Deps[3],
+      transport as unknown as Deps[4],
       buildConfig({ NOTIFY_RATE_LIMIT_PER_HOUR: "1" }),
     );
     await limited.dispatch({

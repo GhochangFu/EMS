@@ -191,11 +191,63 @@ export class NotificationsService {
     return (rows[0]?.count ?? 0) >= this.config.ratePerHour;
   }
 
+  /**
+   * Sends one message through a channel's real transport and records it like
+   * any other attempt.
+   *
+   * This is the cheapest way to make U4's egress rules visible to whoever
+   * configures a webhook: the refusal an operator would otherwise meet at 3am,
+   * met at configuration time instead.
+   *
+   * Subject to the hourly ceiling — a test is a real send and must not be a way
+   * around it — but **not** to the transition dedupe, which has no meaning
+   * here: there is no alarm and nothing transitioned.
+   */
+  async sendTest(channel: NotificationChannelRow): Promise<{
+    status: DeliveryResult["status"];
+    error: string | null;
+  }> {
+    let overLimit: boolean;
+    try {
+      overLimit = await this.isOverHourlyLimit(channel.id);
+    } catch (err) {
+      this.logger.warn(`rate-limit check failed for channel=${channel.code}: ${reasonOf(err)}`);
+      return this.record({ ruleId: null, alarmId: null }, channel, null, {
+        status: "failed",
+        error: "rate-limit check failed",
+      });
+    }
+    if (overLimit) {
+      return this.record({ ruleId: null, alarmId: null }, channel, null, {
+        status: "skipped_rate_limited",
+        error: null,
+      });
+    }
+
+    const transport = this.transportFor(channel.kind);
+    let result: DeliveryResult;
+    try {
+      result = await transport.send({
+        subject: `TRINETRA test notification (${channel.code})`,
+        body:
+          "This is a test notification from TRINETRA. If you are reading it, this channel works.",
+        ruleId: null,
+        ruleCode: null,
+        alarmId: null,
+        severity: null,
+        channel,
+      });
+    } catch (err) {
+      result = { status: "failed", error: `transport threw: ${reasonOf(err)}` };
+    }
+    return this.record({ ruleId: null, alarmId: null }, channel, null, result);
+  }
+
   /** Writes the ledger row and returns the result unchanged. */
   private async record(
-    input: DispatchInput,
+    input: { ruleId: string | null; alarmId: string | null },
     channel: NotificationChannelRow,
-    dedupeKey: string,
+    dedupeKey: string | null,
     result: DeliveryResult,
   ): Promise<DeliveryResult> {
     try {
