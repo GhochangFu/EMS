@@ -1,14 +1,12 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
-import { eq, is, sql, TransactionRollbackError } from "drizzle-orm";
+import { asc, eq, is, TransactionRollbackError } from "drizzle-orm";
 
 import {
   alarmAffectedAssets,
   alarmEnrichments,
   alarmSkills,
   alarms,
-  assets,
   automationRules,
-  locations,
   pointValues,
   users,
 } from "@bms/db";
@@ -17,6 +15,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
+import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 
 /**
@@ -30,6 +29,13 @@ import { VocabulariesService } from "../vocabularies/vocabularies.service";
  * implementation re-throws whatever the callback throws (`ROLLBACK` first,
  * `throw error` after) — `tx.rollback()`'s `TransactionRollbackError` is the
  * one exception that means success here, so it is the only one swallowed.
+ *
+ * **Fixture assets are built inside that transaction, not read off the seed.**
+ * This suite used to resolve them with `SELECT id FROM bms.assets LIMIT 1`,
+ * which made it flaky under a full parallel run — the read wins whichever row
+ * another suite most recently inserted, and that suite then deletes it. The
+ * mechanism, the measurement and why `ORDER BY` is not the fix are in
+ * `../testing/integration-fixtures.ts`.
  */
 
 function assert(condition: boolean, message: string): void {
@@ -38,29 +44,18 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-async function firstSeededAssetId(db: BmsDb): Promise<string> {
-  const [asset] = await db.select({ id: assets.id }).from(assets).limit(1);
-  if (!asset) {
-    throw new Error("no seeded asset available — run pnpm db:seed first");
-  }
-  return asset.id;
-}
-
-async function organizationIdForAsset(db: BmsDb, assetId: string): Promise<string> {
-  const [row] = await db
-    .select({ organizationId: locations.organizationId })
-    .from(assets)
-    .innerJoin(locations, eq(assets.locationId, locations.id))
-    .where(eq(assets.id, assetId))
-    .limit(1);
-  if (!row) {
-    throw new Error(`no location/organization found for asset ${assetId}`);
-  }
-  return row.organizationId;
-}
-
+/**
+ * The actor every upsert records. `bms.users` is read, not built in-transaction,
+ * because no spec in `apps/api` writes to it — so unlike `bms.assets` (see
+ * `../testing/integration-fixtures.ts`) nothing can delete this row mid-test.
+ * `ORDER BY id` makes the choice deterministic rather than heap-order.
+ */
 async function firstSeededUser(db: BmsDb): Promise<Pick<JwtPayload, "sub" | "email">> {
-  const [user] = await db.select({ id: users.id, email: users.email }).from(users).limit(1);
+  const [user] = await db
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .orderBy(asc(users.id))
+    .limit(1);
   if (!user) {
     throw new Error("no seeded user available — run pnpm db:seed first");
   }
@@ -98,32 +93,6 @@ async function insertTestAlarm(db: BmsDb, assetId: string, code: string): Promis
     throw new Error(`failed to insert test alarm ${code}`);
   }
   return alarm.id;
-}
-
-/** A second seeded asset, distinct from `firstSeededAssetId`, for out-of-scope cases. */
-async function secondSeededAssetId(db: BmsDb, excludeId: string): Promise<string> {
-  const [asset] = await db
-    .select({ id: assets.id })
-    .from(assets)
-    .where(sql`${assets.id} != ${excludeId}`)
-    .limit(1);
-  if (!asset) {
-    throw new Error("need at least two seeded assets — run pnpm db:seed first");
-  }
-  return asset.id;
-}
-
-/** A third seeded asset, distinct from both given ids. */
-async function thirdSeededAssetId(db: BmsDb, excludeIds: [string, string]): Promise<string> {
-  const [asset] = await db
-    .select({ id: assets.id })
-    .from(assets)
-    .where(sql`${assets.id} NOT IN (${excludeIds[0]}, ${excludeIds[1]})`)
-    .limit(1);
-  if (!asset) {
-    throw new Error("need at least three seeded assets — run pnpm db:seed first");
-  }
-  return asset.id;
 }
 
 /** An alarm with no linked rule — a historical alarm, or one raised outside the rule engine. */
@@ -187,7 +156,7 @@ function pgErrorCode(err: unknown): string | undefined {
 /** `bms.alarm_enrichments.alarm_id` is UNIQUE — one enrichment per alarm. */
 export async function assertOneEnrichmentPerAlarm(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_ONE_ENRICHMENT");
 
     await tx.insert(alarmEnrichments).values({ alarmId, rootCause: "first" });
@@ -210,7 +179,7 @@ export async function assertOneEnrichmentPerAlarm(db: BmsDb): Promise<void> {
 /** `bms.alarm_affected_assets` — `UNIQUE (enrichment_id, asset_id)`. */
 export async function assertAffectedAssetPairUnique(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_AFFECTED_UNIQUE");
     const [enrichment] = await tx
       .insert(alarmEnrichments)
@@ -240,7 +209,7 @@ export async function assertAffectedAssetPairUnique(db: BmsDb): Promise<void> {
 /** `bms.alarm_enrichments.skill_code` rejects a code `bms.alarm_skills` does not declare. */
 export async function assertUndeclaredSkillRejected(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UNDECLARED_SKILL");
 
     let code: string | undefined;
@@ -265,7 +234,7 @@ export async function assertUndeclaredSkillRejected(db: BmsDb): Promise<void> {
 /** An alarm with a linked threshold rule returns the value-vs-threshold pairing. */
 export async function assertDetailsReturnsThresholdPairing(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_DETAILS_THRESHOLD");
     await tx.insert(pointValues).values({
       time: new Date("2026-08-19T10:00:00Z"),
@@ -298,8 +267,13 @@ export async function assertDetailsReturnsThresholdPairing(db: BmsDb): Promise<v
  */
 export async function assertDetailsReturnsOrganizationId(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
-    const expectedOrgId = await organizationIdForAsset(tx, assetId);
+    // The expectation comes from the fixture's own location rather than from a
+    // join back through the asset, so the assertion does not restate the query
+    // it is checking — and the location is passed in, so the two cannot resolve
+    // to different rows.
+    const location = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E21", location);
+    const expectedOrgId = location.organizationId;
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_DETAILS_ORG");
 
     const details = await new AlarmDetailsService(tx).get(alarmId, null);
@@ -315,7 +289,7 @@ export async function assertDetailsReturnsOrganizationId(db: BmsDb): Promise<voi
 /** An alarm with no linked rule returns nulls for the pairing, not a failure. */
 export async function assertDetailsOmitsPairingWhenNoRule(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarmWithoutRule(tx, assetId, "E21_TEST_DETAILS_NO_RULE");
 
     const details = await new AlarmDetailsService(tx).get(alarmId, null);
@@ -337,8 +311,7 @@ export async function assertDetailsOmitsPairingWhenNoRule(db: BmsDb): Promise<vo
  */
 export async function assertDetailsScopedByAssetIds(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
-    const otherAssetId = await secondSeededAssetId(tx, assetId);
+    const [assetId, otherAssetId] = await createFixtureAssets(tx, 2, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_DETAILS_SCOPE");
 
     let notFound = false;
@@ -356,7 +329,7 @@ export async function assertDetailsScopedByAssetIds(db: BmsDb): Promise<void> {
 /** An empty assetIds array (zero-asset scope) raises not-found without querying. */
 export async function assertDetailsEmptyScopeThrows(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_DETAILS_EMPTY_SCOPE");
 
     let notFound = false;
@@ -374,8 +347,7 @@ export async function assertDetailsEmptyScopeThrows(db: BmsDb): Promise<void> {
 /** Affected assets come back when in scope; an out-of-scope one is filtered, not leaked. */
 export async function assertDetailsFiltersAffectedAssetsByScope(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
-    const inScopeAffected = await secondSeededAssetId(tx, assetId);
+    const [assetId, inScopeAffected] = await createFixtureAssets(tx, 2, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_DETAILS_AFFECTED_SCOPE");
     const [enrichment] = await tx
       .insert(alarmEnrichments)
@@ -407,7 +379,7 @@ export async function assertDetailsFiltersAffectedAssetsByScope(db: BmsDb): Prom
 /** A first upsert creates the row; a second overwrites it — one row, not two. */
 export async function assertEnrichmentUpsertCreatesThenUpdates(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_CREATE_UPDATE");
     const actor = await firstSeededUser(tx);
     const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
@@ -432,7 +404,7 @@ export async function assertEnrichmentUpsertCreatesThenUpdates(db: BmsDb): Promi
 /** `created_at` survives an update; `updated_at`/`updated_by` are (re)written. */
 export async function assertEnrichmentUpsertTimestampsBehaveOnUpdate(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_TIMESTAMPS");
     const actor = await firstSeededUser(tx);
     const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
@@ -474,7 +446,7 @@ export async function assertEnrichmentUpsertTimestampsBehaveOnUpdate(db: BmsDb):
 /** An unknown skillCode is a 400 from `assertAlarmSkill`, not a 500 from the foreign key. */
 export async function assertEnrichmentUpsertRejectsUnknownSkill(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_BAD_SKILL");
     const actor = await firstSeededUser(tx);
     const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
@@ -498,8 +470,7 @@ export async function assertEnrichmentUpsertRejectsUnknownSkill(db: BmsDb): Prom
  */
 export async function assertEnrichmentUpsertRejectsOutOfScopeAffectedAsset(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
-    const outOfScopeAsset = await secondSeededAssetId(tx, assetId);
+    const [assetId, outOfScopeAsset] = await createFixtureAssets(tx, 2, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_SCOPE_AFFECTED");
     const actor = await firstSeededUser(tx);
     const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
@@ -525,8 +496,7 @@ export async function assertEnrichmentUpsertRejectsOutOfScopeAffectedAsset(db: B
 /** `affectedAssetIds` is a set: replacing it drops the ids no longer listed. */
 export async function assertEnrichmentUpsertReplacesAffectedAssetSet(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
-    const otherAsset = await secondSeededAssetId(tx, assetId);
+    const [assetId, otherAsset] = await createFixtureAssets(tx, 2, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_REPLACE_AFFECTED");
     const actor = await firstSeededUser(tx);
     const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
@@ -557,8 +527,7 @@ export async function assertEnrichmentUpsertReplacesAffectedAssetSet(db: BmsDb):
 /** An alarm outside the caller's scope raises not-found, matching `AlarmDetailsService.get`. */
 export async function assertEnrichmentUpsertScopedByAssetIds(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
-    const otherAssetId = await secondSeededAssetId(tx, assetId);
+    const [assetId, otherAssetId] = await createFixtureAssets(tx, 2, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_SCOPE_ALARM");
     const actor = await firstSeededUser(tx);
     const svc = new AlarmEnrichmentService(tx, new VocabulariesService(tx));
@@ -584,9 +553,7 @@ export async function assertEnrichmentUpsertScopedByAssetIds(db: BmsDb): Promise
  */
 export async function assertEnrichmentUpsertDeleteScopedToCallerAccess(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const assetId = await firstSeededAssetId(tx);
-    const inScopeAffected = await secondSeededAssetId(tx, assetId);
-    const outOfScopeAffected = await thirdSeededAssetId(tx, [assetId, inScopeAffected]);
+    const [assetId, inScopeAffected, outOfScopeAffected] = await createFixtureAssets(tx, 3, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_DELETE_SCOPE");
     const actor = await firstSeededUser(tx);
     const callerScope = [assetId, inScopeAffected];
