@@ -405,6 +405,15 @@ export type NotificationReadinessResponse = z.infer<
 export type NotificationTestResultResponse = z.infer<
   typeof E.notificationTestResultResponseSchema
 >;
+/** `POST /notifications/channels` and `PATCH /notifications/channels/:id`. */
+export type NotificationChannelResponse = z.infer<
+  typeof E.notificationChannelResponseSchema
+>;
+export type NotificationChannelDeletedResponse = z.infer<
+  typeof E.notificationChannelDeletedResponseSchema
+>;
+/** `GET` and `PUT /rules/:id/notifications` (plan D1). */
+export type RuleNotificationsResponse = z.infer<typeof E.ruleNotificationsResponseSchema>;
 
 // ---------------------------------------------------------------------------
 // Re-exported sibling modules

@@ -71,9 +71,8 @@ function controllerWith(options: {
     update: () => Promise.resolve(dto),
     remove: () => Promise.resolve(true),
     listDeliveries: () => Promise.resolve({ items: [] }),
-    readiness: (config: ReturnType<typeof buildConfig>) => [
-      { kind: "email", configured: config.smtp !== null, detail: "…" },
-    ],
+    readiness: (config: ReturnType<typeof buildConfig>) =>
+      Promise.resolve([{ kind: "email", configured: config.smtp !== null, detail: "…" }]),
     ...options.channels,
   } as unknown as Ctor[0];
 
@@ -143,10 +142,10 @@ export async function runNotificationsControllerTests(): Promise<void> {
     // editing a rule marked `notify` is who must see that nothing is
     // configured. Deliberately asserted, because "tighten it for consistency"
     // is the obvious-looking change that breaks the banner.
-    const readiness = controller.readiness();
+    const readiness = await controller.readiness();
     assert(readiness.items.length > 0, "readiness must answer for a non-admin");
     assert(
-      readiness.items.every((item) => !JSON.stringify(item).includes("SMTP_PASSWORD")),
+      readiness.items.every((item: unknown) => !JSON.stringify(item).includes("SMTP_PASSWORD")),
       "readiness must disclose no credential",
     );
   }

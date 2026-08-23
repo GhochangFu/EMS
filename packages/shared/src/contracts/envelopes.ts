@@ -231,3 +231,37 @@ export const notificationReadinessResponseSchema = itemsOf(notificationReadiness
 // here would make every caller unwrap a single-element array to ask "did it
 // send?".
 export const notificationTestResultResponseSchema = notificationTestResultSchema;
+
+// The three write routes. `POST /channels` and `PATCH /channels/:id` return the
+// row they wrote, so they share the DTO — a separate schema per verb would be
+// two descriptions of one shape.
+//
+// Added in the same unit as the routes rather than when `apps/web` needs them.
+// The header of this file records what happens otherwise: `adminFetch` requires
+// a schema argument, so a route without one cannot be called from the client at
+// all, and the gap surfaces as a blocked UI commit rather than as a missing
+// contract.
+export const notificationChannelResponseSchema = notificationChannelDtoSchema;
+
+/**
+ * `DELETE /notifications/channels/:id`.
+ *
+ * `z.literal(true)`, following `templateDraftDeletedResponseSchema` above and
+ * for the same reason: the route deletes the channel or throws — 404 when it
+ * does not exist, and Postgres refuses one that history still references — so
+ * it has no `false` to return.
+ */
+export const notificationChannelDeletedResponseSchema = z.object({
+  deleted: z.literal(true),
+});
+
+/**
+ * `GET` and `PUT /rules/:id/notifications` — plan D1.
+ *
+ * The same shape both ways round, because PUT replaces the whole set and
+ * answers with what the set now is. A caller can therefore treat the response
+ * as the new state rather than re-reading it.
+ */
+export const ruleNotificationsResponseSchema = z.object({
+  channelIds: z.array(z.string()),
+});

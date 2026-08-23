@@ -126,8 +126,8 @@ export class NotificationsController {
 
   /** Authenticated, not admin-only — see the class comment. */
   @Get("readiness")
-  readiness() {
-    return { items: this.channels.readiness(this.config) };
+  async readiness() {
+    return { items: await this.channels.readiness(this.config) };
   }
 }
 

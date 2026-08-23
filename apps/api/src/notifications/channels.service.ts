@@ -1,5 +1,11 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+} from "@nestjs/common";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 import {
@@ -50,6 +56,42 @@ import type {
 /** The shape the ciphertext holds. `CredentialCryptoService` stores objects. */
 const SECRET_FIELD = "secret";
 
+const sqlCount = sql<number>`count(*)::int`;
+
+/** Postgres SQLSTATEs this service can produce and must not answer with a 500. */
+const UNIQUE_VIOLATION = "23505";
+const FOREIGN_KEY_VIOLATION = "23503";
+
+/**
+ * Turns the two constraint violations a channel write can raise into the
+ * answers they are.
+ *
+ * Without this, `POST` with a code that already exists — the first mistake
+ * anyone makes on the admin screen — is a 500, and so is a `kind` the
+ * vocabulary does not declare. The schema comment says the foreign key
+ * "refuses an undeclared kind at write time with a clear database error", and
+ * that is only true if something translates it.
+ *
+ * The message names the field, never the constraint internals: a client should
+ * be told "that code is taken", not the index name.
+ */
+async function translateConstraintErrors<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    const code = (err as { code?: string } | null)?.code;
+    if (code === UNIQUE_VIOLATION) {
+      throw new ConflictException("A notification channel with that code already exists");
+    }
+    if (code === FOREIGN_KEY_VIOLATION) {
+      throw new BadRequestException(
+        "Unknown channel kind — it must be a code declared in bms.notification_channel_kinds",
+      );
+    }
+    throw err;
+  }
+}
+
 @Injectable()
 export class ChannelsService {
   private readonly logger = new Logger(ChannelsService.name);
@@ -81,17 +123,19 @@ export class ChannelsService {
 
   async create(body: CreateNotificationChannelBody): Promise<NotificationChannelDto> {
     const secret = this.encryptSecret(body.secret ?? null);
-    const rows = await this.db
-      .insert(notificationChannels)
-      .values({
-        code: body.code,
-        name: body.name,
-        kind: body.kind,
-        config: body.config,
-        enabled: body.enabled,
-        ...secret,
-      })
-      .returning();
+    const rows = await translateConstraintErrors(() =>
+      this.db
+        .insert(notificationChannels)
+        .values({
+          code: body.code,
+          name: body.name,
+          kind: body.kind,
+          config: body.config,
+          enabled: body.enabled,
+          ...secret,
+        })
+        .returning(),
+    );
     const row = rows[0];
     if (row === undefined) throw new Error("channel insert returned no row");
     return toDto(row);
@@ -115,11 +159,13 @@ export class ChannelsService {
     if (body.enabled !== undefined) values.enabled = body.enabled;
     if (body.secret !== undefined) Object.assign(values, this.encryptSecret(body.secret));
 
-    const rows = await this.db
-      .update(notificationChannels)
-      .set(values)
-      .where(eq(notificationChannels.id, id))
-      .returning();
+    const rows = await translateConstraintErrors(() =>
+      this.db
+        .update(notificationChannels)
+        .set(values)
+        .where(eq(notificationChannels.id, id))
+        .returning(),
+    );
     const row = rows[0];
     return row === undefined ? null : toDto(row);
   }
@@ -196,9 +242,34 @@ export class ChannelsService {
    * boolean and one sentence per kind, with no host, no port and no credential
    * in either. A location-scoped operator editing a rule marked `notify` is
    * exactly the person who must learn that nothing is configured.
+   *
+   * **`configured` and `detail` never disagree.** The first draft reported
+   * webhook as `configured: true` while the sentence said
+   * `CREDENTIAL_ENCRYPTION_KEY` was missing — and decision 5 ties readiness to
+   * "the same visible-when-absent treatment E8.4 specifies for an unconfigured
+   * CREDENTIAL_ENCRYPTION_KEY", so a banner keyed on the boolean would have
+   * shown nothing while every secret-bearing webhook channel skipped. The
+   * boolean now costs one COUNT: webhooks are ready unless a channel actually
+   * stores a secret that cannot be read. A deployment with no signed webhook
+   * is genuinely unaffected by a missing key, and says so.
    */
-  readiness(config: NotificationsConfig): NotificationReadinessDto[] {
+  async readiness(config: NotificationsConfig): Promise<NotificationReadinessDto[]> {
     const keyReady = CredentialCryptoService.isConfigured();
+    let secretBearingChannels = 0;
+    if (!keyReady) {
+      const rows = await this.db
+        .select({ count: sqlCount })
+        .from(notificationChannels)
+        .where(
+          and(
+            eq(notificationChannels.enabled, true),
+            isNotNull(notificationChannels.secretCiphertext),
+          ),
+        );
+      secretBearingChannels = rows[0]?.count ?? 0;
+    }
+    const webhooksReady = keyReady || secretBearingChannels === 0;
+
     return [
       {
         kind: "email",
@@ -210,11 +281,11 @@ export class ChannelsService {
       },
       {
         kind: "webhook",
-        configured: true,
-        detail: keyReady
+        configured: webhooksReady,
+        detail: webhooksReady
           ? "Webhooks send over https to public addresses only."
-          : "CREDENTIAL_ENCRYPTION_KEY is not set, so a webhook channel with a stored secret " +
-            "cannot be signed and is recorded as skipped.",
+          : `CREDENTIAL_ENCRYPTION_KEY is not set, so ${secretBearingChannels} webhook ` +
+            "channel(s) with a stored secret cannot be signed and are recorded as skipped.",
       },
     ];
   }
