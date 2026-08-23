@@ -117,3 +117,75 @@ scope, and it changes no product behaviour.
 - AGENTS.md §4.6's browser verification is unchanged and still required. A
   jsdom render is not a browser: it has no layout, no real network and no CSS.
   It proves the text is there, not that anyone can see it.
+
+## Amendment 1 — `jsdom` is pinned to `^29`, and why the major matters
+
+**2026-08-23, ruled by the owner the same day, while `F3.8` was in review.**
+
+Decision 1 named four packages and no versions. The first install took the
+newest `jsdom`, `30.0.1`, and CI turned red on the two files this ADR exists to
+enable — not on an assertion, but because the worker could not start at all:
+
+```
+Caused by: TypeError: webidl.util.markAsUncloneable is not a function
+  ❯ node_modules/.pnpm/undici@8.10.0/…/cachestorage.js:20:17
+  ❯ node_modules/.pnpm/jsdom@30.0.1/node_modules/jsdom/lib/api.js:12:33
+```
+
+`jsdom@30` declares `engines.node` as `^22.22.2 || ^24.15.0 || >=26.0.0` and
+depends on `undici@^8.9.0`. `undici@8` destructures `markAsUncloneable` from
+`node:worker_threads` at module load, and that export does not exist before
+Node 22. **This repository runs Node 20**: `.github/workflows/ci.yml` pins
+`node-version: 20` in both jobs, and `apps/api`, `apps/web`, `apps/sim` and
+`apps/ingest` all build `FROM node:20`.
+
+**`jsdom` is therefore pinned to `^29.1.1`**, the newest major whose
+`engines.node` (`^20.19.0 || ^22.13.0 || >=24.0.0`) admits Node 20. Its
+`undici@^7.25.0` cannot resolve to `undici@8`, and `undici@7` **guards** the
+call rather than merely declaring a floor:
+
+```js
+webidl.util.markAsUncloneable = runtimeFeatures.has('markAsUncloneable')
+  ? require('node:worker_threads').markAsUncloneable
+  : () => {}
+```
+
+`undici@8` deleted that guard. So the fix rests on the code, not on a version
+range anyone can widen by accident.
+
+**The version in `apps/web/package.json` was not enough, and that is the part
+worth remembering.** The root `package.json` declares no `jsdom`; `vitest`
+lists it as an *optional peer*, and this workspace sets
+`autoInstallPeers: true`, so pnpm auto-installed the **newest** `jsdom` for the
+root importer — `30.0.1` again, regardless of what `apps/web` asked for. CI
+runs `vitest` from the root, so the root's copy is the one that loads. The
+resolution survived `pnpm install`, `pnpm dedupe`, `pnpm install --force` and a
+full regeneration of `pnpm-lock.yaml`, because it was never stale: it was
+correct for a workspace that had not constrained it.
+
+The constraint therefore lives in the **root** `package.json`:
+
+```json
+"pnpm": { "overrides": { "jsdom": "^29.1.1" } }
+```
+
+`overrides` reaches auto-installed peers; a dependency line in one package does
+not. After it, `jsdom@30` appears nowhere in the lockfile.
+
+Four things this records for the next reader:
+
+1. **The Node floor is a constraint on this ADR's dependencies, not a detail.**
+   A future bump of any of the four packages must be checked against Node 20
+   until the images move. The images are what production runs; a test-only
+   dependency is not a reason to move them.
+2. **`engines` is declared by no `package.json` in this repository**, so pnpm
+   installed a Node-22-only package into a Node-20 project and said nothing.
+   That gap is repo-wide, predates this ADR and is not fixed here.
+3. **A green local run did not catch it and could not have.** The build machine
+   is on Node 24, where `jsdom@30` works. CI is the only Node 20 available, so
+   CI is where this class of defect surfaces — which is an argument for reading
+   CI rather than trusting a local pass, not against the local run.
+4. **A version in one package does not bound the workspace.** With
+   `autoInstallPeers`, an optional peer any package declares can be resolved
+   independently, at the newest version, for an importer that never asked for
+   it. `overrides` is the only place a floor of this kind holds.
