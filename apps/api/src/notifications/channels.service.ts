@@ -75,7 +75,21 @@ const FOREIGN_KEY_VIOLATION = "23503";
  * The message names the field, never the constraint internals: a client should
  * be told "that code is taken", not the index name.
  */
-async function translateConstraintErrors<T>(run: () => Promise<T>): Promise<T> {
+async function translateConstraintErrors<T>(
+  run: () => Promise<T>,
+  /**
+   * What a foreign-key violation means for THIS operation.
+   *
+   * On a write it is always an undeclared `kind`. On a delete it is the
+   * opposite direction — a row that still references the channel — and the two
+   * need different sentences, because the actions they imply are different:
+   * fix the kind, versus disable the channel instead of deleting it.
+   */
+  onForeignKey: () => Error = () =>
+    new BadRequestException(
+      "Unknown channel kind — it must be a code declared in bms.notification_channel_kinds",
+    ),
+): Promise<T> {
   try {
     return await run();
   } catch (err) {
@@ -84,9 +98,7 @@ async function translateConstraintErrors<T>(run: () => Promise<T>): Promise<T> {
       throw new ConflictException("A notification channel with that code already exists");
     }
     if (code === FOREIGN_KEY_VIOLATION) {
-      throw new BadRequestException(
-        "Unknown channel kind — it must be a code declared in bms.notification_channel_kinds",
-      );
+      throw onForeignKey();
     }
     throw err;
   }
@@ -178,13 +190,27 @@ export class ChannelsService {
    * channel still joined to a rule cannot be deleted until it is detached, and
    * a channel with delivery history cannot be deleted at all. Both refusals are
    * Postgres's, and both are deliberate — history must outlive configuration
-   * (migration 0038).
+   * (migration 0038) — so both are translated into a 409 that says what to do
+   * instead, rather than a 500 that says nothing.
    */
   async remove(id: string): Promise<boolean> {
-    const rows = await this.db
-      .delete(notificationChannels)
-      .where(eq(notificationChannels.id, id))
-      .returning({ id: notificationChannels.id });
+    const rows = await translateConstraintErrors(
+      () =>
+        this.db
+          .delete(notificationChannels)
+          .where(eq(notificationChannels.id, id))
+          .returning({ id: notificationChannels.id }),
+      // Found by clicking Delete in the browser: sending one test writes a
+      // ledger row, and from then on the channel cannot be deleted. That
+      // refusal is the design — history outlives configuration — but it
+      // surfaced as "Internal server error", which tells an operator nothing
+      // and looks like a fault in the screen.
+      () =>
+        new ConflictException(
+          "This channel has delivery history and cannot be deleted. Disable it instead — " +
+            "the ledger must keep the attempts it already recorded.",
+        ),
+    );
     return rows.length > 0;
   }
 

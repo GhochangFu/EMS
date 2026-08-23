@@ -30,6 +30,7 @@ import { AssetsAdminPage } from "./pages/admin/assets-page";
 import { LocationsAdminPage } from "./pages/admin/locations-page";
 import { ManualReadingsPage } from "./pages/admin/manual-readings-page";
 import { OrganizationsAdminPage } from "./pages/admin/organizations-page";
+import { NotificationChannelsPage } from "./pages/admin/notification-channels-page";
 import { OnboardingChatPage } from "./pages/admin/onboarding-chat-page";
 import { PointKeysAdminPage } from "./pages/admin/point-keys-page";
 import { RtusAdminPage } from "./pages/admin/rtus-page";
@@ -346,6 +347,18 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <AssetsAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/notification-channels"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <NotificationChannelsPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

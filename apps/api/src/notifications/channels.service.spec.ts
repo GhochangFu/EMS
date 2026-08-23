@@ -19,6 +19,7 @@ function dbRejecting(code: string): Ctor[0] {
     update: () => ({
       set: () => ({ where: () => ({ returning: () => Promise.reject(failure) }) }),
     }),
+    delete: () => ({ where: () => ({ returning: () => Promise.reject(failure) }) }),
   } as unknown as Ctor[0];
 }
 
@@ -88,6 +89,19 @@ export async function runChannelsServiceTests(): Promise<void> {
       () => unknownKind.update("33333333-3333-3333-3333-333333333333", { kind: "pigeon" }),
       (e) => e instanceof BadRequestException,
       "a PATCH to an undeclared kind",
+    );
+
+    // Deleting a channel the ledger still references is the same SQLSTATE
+    // pointing the other way, and it needs a different sentence: the fix is to
+    // disable the channel, not to correct a field. Found by clicking Delete in
+    // the browser after a send test, where it read "Internal server error".
+    await rejectsWith(
+      () => unknownKind.remove("33333333-3333-3333-3333-333333333333"),
+      (e) =>
+        e instanceof ConflictException &&
+        /delivery history/i.test((e as Error).message) &&
+        /disable/i.test((e as Error).message),
+      "deleting a channel that has delivery history",
     );
 
     // Anything else still surfaces as itself — this translates two states, it

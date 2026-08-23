@@ -76,6 +76,10 @@ export function runAssetTemplateTabTests(): void {
         "/admin/manual-readings",
         "/admin/point-keys",
         "/admin/telemetry/import",
+        // `F3.8` (ADR 0041 decision 10). This list is asserted whole on
+        // purpose, so adding a tab fails here until the expectation is updated
+        // deliberately — which is what happened.
+        "/admin/notification-channels",
       ].join(" "),
     `master data tabs changed — got ${masterDataTabs.map((tab) => tab.path).join(" ")}`,
   );
@@ -87,15 +91,24 @@ export function runAssetTemplateTabTests(): void {
   for (const role of ["admin", "organization_admin", "location_admin"] as const) {
     const paths = visibleMasterDataTabs(role).map((tab) => tab.path);
     assert(paths.includes(TEMPLATES), `${role} must see the Asset Templates tab`);
+    // `F3.8` added the Notifications tab, visible to the global admin only —
+    // every channel route is gated on `assertAdminRole`, so showing it to the
+    // other two would lead them to a 403.
+    const expected = role === "admin" ? 10 : role === "organization_admin" ? 9 : 8;
     assert(
-      paths.length === (role === "location_admin" ? 8 : 9),
-      `${role} sees the wrong number of tabs — got ${paths.length}`,
+      paths.length === expected,
+      `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
+    );
+    assert(
+      paths.includes("/admin/notification-channels") === (role === "admin"),
+      `only the global admin may see the Notifications tab — ${role} saw ${paths.join(",")}`,
     );
   }
 
-  // The one role-dependent tab is still Point Keys, and it is still the only
-  // one. If Asset Templates ever became catalogOnly this would fail, which is
-  // the failure this test exists for.
+  // Point Keys is still the only `catalogOnly` tab. If Asset Templates ever
+  // became catalogOnly this would fail, which is the failure this test exists
+  // for — `F3.8`'s Notifications tab uses `globalAdminOnly`, a different gate,
+  // and is asserted separately above.
   const hidden = masterDataTabs
     .filter((tab) => "catalogOnly" in tab && tab.catalogOnly)
     .map((tab) => tab.path);
