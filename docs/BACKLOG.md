@@ -140,7 +140,7 @@ still safe in parallel.
 | Slot | Run in parallel | Tracks | Notes |
 |------|-----------------|--------|-------|
 | ~~**1**~~ **CLOSED** | ~~**F4.4** ⭐~~ ✅ · ~~F4.11~~ ✅ · ~~F4.12~~ ✅ · E8.1 🟡 | F | **F4.4** (ADR 0014, PR #1) — Vitest + coverage gate + `db:seed` run on every PR, so delegating to agents is safe from here. **F4.11 + F4.12** (ADR 0017, PR #2) — F4.11 shipped for operator *and* viewer once the write matrix gated the 16 mutating endpoints in rules/alarms/work-orders/maintenance, which carried `JwtAuthGuard` and no role check. **E8.1 partial** (🟡) — software scope only; the row's volume/object-storage/backup surface is deliberately *not* built, see [`docs/security/encryption-at-rest.md`](./security/encryption-at-rest.md). Its review raised **E8.3** and **E8.4** as new scope. |
-| **2** *(part)* | ~~**F2.1** ⭐~~ ✅ · ~~F4.10~~ ✅ · ~~**F1.1** ⭐~~ ✅ · **F3.8** ⭐ | B · F · A · D | **F2.1** (ADR 0015, PR #5) released the migration lock and opened the critical path — `E1.7`, `F2.2` and `F2.7` unblock. **F4.10** (PR #4) was pulled forward from wave 1: it was the only P0 in the unblocked set, and ADR 0017 names it as where the write matrix gets its end-to-end proof. `F1.1` and `F3.8` remain; `F3.8` still needs a §9.4 dependency ADR. |
+| **2** *(part)* | ~~**F2.1** ⭐~~ ✅ · ~~F4.10~~ ✅ · ~~**F1.1** ⭐~~ ✅ · **F3.8** ⭐ | B · F · A · D | **F2.1** (ADR 0015, PR #5) released the migration lock and opened the critical path — `E1.7`, `F2.2` and `F2.7` unblock. **F4.10** (PR #4) was pulled forward from wave 1: it was the only P0 in the unblocked set, and ADR 0017 names it as where the write matrix gets its end-to-end proof. `F1.1` and `F3.8` remain; `F3.8` started 2026-08-23 once [ADR 0041](./adr/0041-notification-service.md) answered its §9.4 dependency gate. |
 | **3** | ~~**F2.3** ⭐~~ ✅ · ~~**F4.1** ⭐~~ ✅ · **F3.3** ⭐ | B · F · C | Second enabler batch. **F2.3 done 2026-08-20** (ADR 0036, PR #113) — continues track B (same owner as F2.1). **F4.1 done 2026-08-10** (ADR 0023, PR #21) — it was the only one of the three that needed no other item first. `F3.3` remains. |
 | **4** *(part)* | F1.2 · ~~F2.2~~ ✅ · ~~F3.6~~ ✅ | A · B · D | First dependents unlock: Modbus (needs F1.1), template instantiation (needs F2.1), alarm-engine unification (independent). **F2.2** (ADR 0015 Amendment 1, PR #7) was pulled forward from this slot the moment `F2.1` landed — it is P0, needs no DDL, and a template nobody can instantiate is a schema rather than a feature. **F3.6 done 2026-08-19** (ADR 0033, PR #99 + follow-up PR #100). `F1.2` still waits on `F1.1`. |
 | **5** *(part)* | F1.3 · ~~**E1.7**~~ ✅ · F3.7 | A · B · D | **E1.7** (ADR 0019, PR #9) was pulled forward the moment `F2.1` landed — P0 critical path, no DDL, and it is the last thing between `main` and `E5.1`. It unblocks all three domain packs. F3.7 still needs F3.8. |
@@ -351,7 +351,8 @@ Eskom-era `locations.type` union. That ADR is unblocked on its design question
 Slot 2 (`F1.1` ⭐ · `F2.1` ⭐ · `F3.8` ⭐) remains the recommended next batch —
 these are the enablers that unblock the most downstream work. `F2.1` holds the
 migration lock (one migration-bearing job at a time; the drizzle journal is a
-single shared file). `F3.8` needs a dependency ADR before build.
+single shared file). `F3.8`'s §9.4 dependency ADR is answered — [ADR 0041](./adr/0041-notification-service.md),
+Accepted 2026-08-23 — and the item is in flight.
 
 **How to use this**
 
