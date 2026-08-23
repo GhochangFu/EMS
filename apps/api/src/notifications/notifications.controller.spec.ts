@@ -81,7 +81,13 @@ function controllerWith(options: {
     ...options.notifications,
   } as unknown as Ctor[1];
 
+  // The controller resolves the DATABASE user before checking the role, so the
+  // fake must too: reading `user.role` off the token would let a demoted admin
+  // keep channel administration for the life of the token (F3.8 security
+  // review). `requireMasterDataUser` is what every other assertAdminRole caller
+  // in the repository goes through.
   const accessControl = {
+    requireMasterDataUser: (jwt: { role?: string }) => Promise.resolve({ role: jwt.role }),
     assertAdminRole: (role: string) => {
       if (role !== "admin") throw new ForbiddenException("admin only");
     },

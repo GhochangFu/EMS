@@ -52,18 +52,38 @@ export class NotificationsController {
     @Inject(NOTIFICATIONS_CONFIG) private readonly config: NotificationsConfig,
   ) {}
 
+  /**
+   * The admin gate for every channel and ledger route.
+   *
+   * **The role comes from `bms.users`, not from the token.** `assertAdminRole`
+   * takes a role, and passing `user.role` off the `JwtPayload` reads the wrong
+   * authority: `access-control.service.ts` records that a token outlives a
+   * demotion by up to `JWT_TTL` (8h), and that in OIDC mode `roleFromClaims`
+   * falls back to `viewer` when realm roles are missing. So a demoted admin
+   * kept channel administration — creating webhook targets, sending tests,
+   * reading the whole ledger — for the rest of the token's life. Every other
+   * `assertAdminRole` caller in this repository resolves the database user
+   * first (`organizations.service.ts:81`); this one now does too.
+   *
+   * Found by the `F3.8` security review.
+   */
+  private async assertAdmin(jwt: JwtPayload): Promise<void> {
+    const user = await this.accessControl.requireMasterDataUser(jwt);
+    this.accessControl.assertAdminRole(user.role);
+  }
+
   @Get("channels")
   async listChannels(@CurrentUser() user: JwtPayload) {
-    this.accessControl.assertAdminRole(user.role);
+    await this.assertAdmin(user);
     return { items: await this.channels.list() };
   }
 
   @Post("channels")
   @HttpCode(HttpStatus.CREATED)
   async createChannel(@CurrentUser() user: JwtPayload, @Body() body: unknown) {
-    this.accessControl.assertAdminRole(user.role);
+    await this.assertAdmin(user);
     const dto = parse(createNotificationChannelBodySchema, body);
-    return this.channels.create(dto);
+    return this.channels.create(dto, user);
   }
 
   @Patch("channels/:id")
@@ -72,10 +92,10 @@ export class NotificationsController {
     @Param("id") id: string,
     @Body() body: unknown,
   ) {
-    this.accessControl.assertAdminRole(user.role);
+    await this.assertAdmin(user);
     const channelId = parse(idParamSchema, id);
     const dto = parse(updateNotificationChannelBodySchema, body);
-    const updated = await this.channels.update(channelId, dto);
+    const updated = await this.channels.update(channelId, dto, user);
     if (updated === null) throw new NotFoundException("Notification channel not found");
     return updated;
   }
@@ -83,9 +103,9 @@ export class NotificationsController {
   @Delete("channels/:id")
   @HttpCode(HttpStatus.OK)
   async deleteChannel(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
-    this.accessControl.assertAdminRole(user.role);
+    await this.assertAdmin(user);
     const channelId = parse(idParamSchema, id);
-    const removed = await this.channels.remove(channelId);
+    const removed = await this.channels.remove(channelId, user);
     if (!removed) throw new NotFoundException("Notification channel not found");
     return { deleted: true as const };
   }
@@ -100,7 +120,7 @@ export class NotificationsController {
   @Post("channels/:id/test")
   @HttpCode(HttpStatus.OK)
   async testChannel(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
-    this.accessControl.assertAdminRole(user.role);
+    await this.assertAdmin(user);
     const channelId = parse(idParamSchema, id);
     const channel = await this.channels.loadById(channelId);
     if (channel === null) throw new NotFoundException("Notification channel not found");
@@ -120,7 +140,7 @@ export class NotificationsController {
 
   @Get("deliveries")
   async listDeliveries(@CurrentUser() user: JwtPayload, @Query() query: unknown) {
-    this.accessControl.assertAdminRole(user.role);
+    await this.assertAdmin(user);
     return this.channels.listDeliveries(parse(listDeliveriesQuerySchema, query));
   }
 

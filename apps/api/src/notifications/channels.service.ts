@@ -5,16 +5,19 @@ import {
   Injectable,
   Logger,
 } from "@nestjs/common";
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, or, sql } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 import {
+  auditLog,
   automationRules,
   notificationChannels,
   notificationDeliveries,
   ruleNotifications,
+  users,
 } from "@bms/db";
 import type {
+  JwtPayload,
   NotificationChannelDto,
   NotificationDeliveryDto,
   NotificationReadinessDto,
@@ -133,7 +136,10 @@ export class ChannelsService {
     return row === undefined ? null : this.toChannelRow(row);
   }
 
-  async create(body: CreateNotificationChannelBody): Promise<NotificationChannelDto> {
+  async create(
+    body: CreateNotificationChannelBody,
+    actor: Pick<JwtPayload, "sub" | "email">,
+  ): Promise<NotificationChannelDto> {
     const secret = this.encryptSecret(body.secret ?? null);
     const rows = await translateConstraintErrors(() =>
       this.db
@@ -150,6 +156,12 @@ export class ChannelsService {
     );
     const row = rows[0];
     if (row === undefined) throw new Error("channel insert returned no row");
+    await this.audit(actor, "notification_channel_create", row.id, {
+      code: row.code,
+      kind: row.kind,
+      hasSecret: row.secretCiphertext !== null,
+      enabled: row.enabled,
+    });
     return toDto(row);
   }
 
@@ -163,6 +175,7 @@ export class ChannelsService {
   async update(
     id: string,
     body: UpdateNotificationChannelBody,
+    actor: Pick<JwtPayload, "sub" | "email">,
   ): Promise<NotificationChannelDto | null> {
     const values: Record<string, unknown> = { updatedAt: new Date() };
     if (body.name !== undefined) values.name = body.name;
@@ -179,7 +192,16 @@ export class ChannelsService {
         .returning(),
     );
     const row = rows[0];
-    return row === undefined ? null : toDto(row);
+    if (row === undefined) return null;
+    await this.audit(actor, "notification_channel_update", row.id, {
+      code: row.code,
+      // Which FIELDS changed, never their values — `secret` is one of them.
+      changed: Object.keys(body).sort(),
+      secretRotated: body.secret !== undefined && body.secret !== null,
+      secretCleared: body.secret === null,
+      enabled: row.enabled,
+    });
+    return toDto(row);
   }
 
   /**
@@ -193,7 +215,7 @@ export class ChannelsService {
    * (migration 0038) — so both are translated into a 409 that says what to do
    * instead, rather than a 500 that says nothing.
    */
-  async remove(id: string): Promise<boolean> {
+  async remove(id: string, actor: Pick<JwtPayload, "sub" | "email">): Promise<boolean> {
     const rows = await translateConstraintErrors(
       () =>
         this.db
@@ -211,7 +233,9 @@ export class ChannelsService {
             "the ledger must keep the attempts it already recorded.",
         ),
     );
-    return rows.length > 0;
+    if (rows.length === 0) return false;
+    await this.audit(actor, "notification_channel_delete", id, {});
+    return true;
   }
 
   /** Recent delivery attempts, newest first — the same bounded shape as executions. */
@@ -333,7 +357,11 @@ export class ChannelsService {
    * imports `NotificationsModule`, which imports nothing from rules — checked,
    * not assumed.
    */
-  async setRuleChannels(ruleId: string, channelIds: string[]): Promise<string[] | null> {
+  async setRuleChannels(
+    ruleId: string,
+    channelIds: string[],
+    actor: Pick<JwtPayload, "sub" | "email">,
+  ): Promise<string[] | null> {
     const rule = await this.db
       .select({ id: automationRules.id })
       .from(automationRules)
@@ -350,6 +378,13 @@ export class ChannelsService {
           .values(unique.map((channelId) => ({ ruleId, channelId })));
       }
     });
+    await this.audit(actor, "rule_notifications_set", ruleId, {
+      ruleId,
+      channelIds: unique,
+      // The interesting case: emptying the set silences a rule, and without a
+      // row that change is invisible once the rule simply stops notifying.
+      cleared: unique.length === 0,
+    });
     return unique;
   }
 
@@ -360,6 +395,45 @@ export class ChannelsService {
       .from(ruleNotifications)
       .where(eq(ruleNotifications.ruleId, ruleId));
     return rows.map((row) => row.channelId);
+  }
+
+  /**
+   * Writes one `bms.audit_log` row for a notification change.
+   *
+   * **Audits the action, never the request body.** `bms.audit_log.payload` is
+   * returned verbatim by `GET /admin/audit`, and
+   * `createNotificationChannelBodySchema` carries a `secret` field — so
+   * spreading the body here, the obvious shortcut, would put a plaintext
+   * webhook HMAC key in front of every auditor. That is ADR 0021 decision 6's
+   * standing obligation, and it is the reason this takes named fields.
+   *
+   * Deciding who is told about an alarm is a configuration change of the same
+   * class as editing the rule itself, and `rules.service.ts` audits six such
+   * paths. Before this, creating a channel, rotating its secret, deleting it,
+   * or emptying a rule's channel set left no trace at all — so silencing a
+   * site's notifications was unattributable. Found by the `F3.8` security
+   * review.
+   */
+  private async audit(
+    actor: Pick<JwtPayload, "sub" | "email">,
+    action: string,
+    entityId: string | null,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const [actorRow] = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
+      .limit(1);
+
+    await this.db.insert(auditLog).values({
+      actorId: actorRow?.id ?? null,
+      action,
+      entityType: "notification_channel",
+      entityId,
+      reason: null,
+      payload: { ...payload, oidcSubject: actor.sub, actorEmail: actor.email },
+    });
   }
 
   /** `{ secret }` encrypted, or all three columns cleared. */

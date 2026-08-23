@@ -30,6 +30,9 @@ function dbCounting(count: number): Ctor[0] {
   } as unknown as Ctor[0];
 }
 
+/** The actor every audited write now takes. */
+const ACTOR = { sub: "u1", email: "admin@bms.local" };
+
 const crypto = {
   encrypt: () => ({ ciphertext: Buffer.from("x"), iv: Buffer.from("y"), keyVersion: 1 }),
 } as unknown as Ctor[1];
@@ -67,7 +70,7 @@ export async function runChannelsServiceTests(): Promise<void> {
           kind: "email",
           config: {},
           enabled: true,
-        }),
+        }, ACTOR),
       (e) => e instanceof ConflictException,
       "a duplicate channel code",
     );
@@ -81,12 +84,12 @@ export async function runChannelsServiceTests(): Promise<void> {
           kind: "carrier-pigeon",
           config: {},
           enabled: true,
-        }),
+        }, ACTOR),
       (e) => e instanceof BadRequestException,
       "a kind the vocabulary does not declare",
     );
     await rejectsWith(
-      () => unknownKind.update("33333333-3333-3333-3333-333333333333", { kind: "pigeon" }),
+      () => unknownKind.update("33333333-3333-3333-3333-333333333333", { kind: "pigeon" }, ACTOR),
       (e) => e instanceof BadRequestException,
       "a PATCH to an undeclared kind",
     );
@@ -96,7 +99,7 @@ export async function runChannelsServiceTests(): Promise<void> {
     // disable the channel, not to correct a field. Found by clicking Delete in
     // the browser after a send test, where it read "Internal server error".
     await rejectsWith(
-      () => unknownKind.remove("33333333-3333-3333-3333-333333333333"),
+      () => unknownKind.remove("33333333-3333-3333-3333-333333333333", ACTOR),
       (e) =>
         e instanceof ConflictException &&
         /delivery history/i.test((e as Error).message) &&
@@ -115,7 +118,7 @@ export async function runChannelsServiceTests(): Promise<void> {
           kind: "email",
           config: {},
           enabled: true,
-        }),
+        }, ACTOR),
       (e) => !(e instanceof ConflictException) && !(e instanceof BadRequestException),
       "a serialisation failure",
     );

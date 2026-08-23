@@ -58,6 +58,40 @@ function ipv6Hextets(address: string): number[] | null {
 }
 
 /**
+ * The IPv4 inside an IPv4-mapped or IPv4-compatible IPv6 address, in dotted
+ * form — or `null` when there is none.
+ *
+ * **This exists because the dotted form is not what arrives.** `new URL()`
+ * re-serialises `[::ffff:127.0.0.1]` to `[::ffff:7f00:1]` before any of this
+ * code sees it, so a regex over the dotted text matched a string production
+ * could never produce, while `::ffff:7f00:1` fell through every IPv6 range
+ * test and was ALLOWED — loopback, the whole Compose network and the cloud
+ * metadata address with it. The unit tests passed throughout, because they
+ * called the classifier with the dotted string directly.
+ *
+ * So the detection is numeric, on the expanded hextets, where the notation
+ * cannot hide it: the first five hextets zero, and the sixth either `ffff`
+ * (mapped, RFC 4291 §2.5.5.2) or `0` (the deprecated compatible form). The
+ * embedded IPv4 is then classified by the IPv4 rules, so a mapped PUBLIC
+ * address still passes — refusing every mapped address would be a different
+ * bug.
+ *
+ * Found by the `F3.8` security review.
+ */
+function embeddedIpv4(address: string): string | null {
+  const hextets = ipv6Hextets(address);
+  if (hextets === null) return null;
+  const [h0 = 0, h1 = 0, h2 = 0, h3 = 0, h4 = 0, h5 = 0, h6 = 0, h7 = 0] = hextets;
+  if (h0 !== 0 || h1 !== 0 || h2 !== 0 || h3 !== 0 || h4 !== 0) return null;
+  if (h5 !== 0xffff && h5 !== 0) return null;
+  // `::` and `::1` are their own cases in the IPv6 branch; treating them as
+  // "embedded 0.0.0.0/0.0.0.1" would work but would report them under the
+  // wrong rule.
+  if (h5 === 0 && h6 === 0 && (h7 === 0 || h7 === 1)) return null;
+  return [h6 >> 8, h6 & 0xff, h7 >> 8, h7 & 0xff].join(".");
+}
+
+/**
  * `true` for any address a notification must not be sent to: loopback, the
  * RFC 1918 ranges, carrier-grade NAT, link-local (which includes the cloud
  * metadata address `169.254.169.254`), unique-local IPv6, the unspecified
@@ -69,9 +103,10 @@ function ipv6Hextets(address: string): number[] | null {
 export function isBlockedAddress(address: string): boolean {
   const trimmed = address.trim().toLowerCase();
 
-  // IPv4-mapped and IPv4-compatible IPv6 → compare as IPv4.
+  // IPv4-mapped and IPv4-compatible IPv6 in DOTTED form (`::ffff:127.0.0.1`),
+  // which is what a resolver can hand back.
   const mapped = /^(?:::ffff:|::)(\d{1,3}(?:\.\d{1,3}){3})$/.exec(trimmed);
-  const candidate = mapped?.[1] ?? trimmed;
+  const candidate = mapped?.[1] ?? embeddedIpv4(trimmed) ?? trimmed;
 
   if (isIP(candidate) === 4) {
     const octets = candidate.split(".").map((o) => Number.parseInt(o, 10));

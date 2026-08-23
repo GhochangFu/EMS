@@ -164,6 +164,44 @@ export async function runWebhookGuardTests(): Promise<void> {
     "a resolver answering with something that is not an address",
   );
 
+  // --- IPv4-mapped IPv6, through a URL ------------------------------------
+  //
+  // These go through `assertWebhookTargetAllowed`, NOT through
+  // `isBlockedAddress`, and that distinction is the whole finding. The
+  // classifier cases at the bottom of this file assert the DOTTED form
+  // (`::ffff:127.0.0.1`), which is a string a URL can never deliver: the WHATWG
+  // parser rewrites it to hex hextets (`::ffff:7f00:1`) before the guard sees
+  // it. So the unit cases proved a branch that is unreachable in production
+  // while the reachable one allowed loopback and the whole Compose network.
+  //
+  // Found by the F3.8 security review, reproduced here first as a failing test.
+  for (const [url, what] of [
+    ["https://[::ffff:7f00:1]/hook", "127.0.0.1 in hex mapped form"],
+    ["https://[::ffff:127.0.0.1]/hook", "127.0.0.1 in dotted mapped form (URL rewrites it)"],
+    ["https://[::ffff:ac12:7]/api", "172.18.0.7 — a Compose service address"],
+    ["https://[::ffff:a00:1]/hook", "10.0.0.1 mapped"],
+    ["https://[::ffff:a9fe:a9fe]/latest/meta-data", "169.254.169.254 mapped — cloud metadata"],
+    ["https://[::0:7f00:1]/hook", "127.0.0.1 in IPv4-compatible form"],
+  ] as const) {
+    await refuses(url, {}, /private|loopback|link-local/i, `${what} as a URL literal`);
+  }
+  // And the same shape arriving from DNS, which needs no suspicious URL at all.
+  for (const address of ["::ffff:7f00:1", "::ffff:ac12:7", "::ffff:a9fe:a9fe"]) {
+    await refuses(
+      "https://hooks.evil.example/x",
+      { resolve: resolvesTo(address) },
+      /private|loopback|link-local/i,
+      `a hostname whose AAAA record is ${address}`,
+    );
+  }
+  // A genuinely public address in mapped form is still allowed — the fix must
+  // classify by the embedded IPv4, not refuse every mapped address.
+  await allows(
+    "https://hooks.example.com/x",
+    { resolve: resolvesTo("::ffff:5db8:d822") },
+    "93.184.216.34 in mapped form is public and must pass",
+  );
+
   // --- the message says the host, never the URL ----------------------------
   //
   // A Slack or Teams webhook URL is a bearer credential in its entirety, and
