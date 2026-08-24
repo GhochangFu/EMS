@@ -8,6 +8,14 @@ drafting, then decisions 8 and 9 and the three sub-rulings inside decision 5
 after this document derived them. **All five open questions ruled as
 recommended, none against** — see *Questions resolved at the §10 gate*.
 
+**Amended 2026-08-24** at the start of `F4.16`, before any implementation code —
+see [Amendment 1](#amendment-1-2026-08-24--decision-8-needs-a-third-role-and-question-5s-placement-was-written-against-the-old-order)
+at the end. Decision 8 gains a third role, `bms_auth`, and a third pool, because
+neither `bms_tenant` nor `bms_fleet` can serve the pre-tenant read that chooses
+between them. Question 5's **placement** is corrected — the `password_hash`
+revoke lands in `F4.16` with the grant matrix, not in `E7.1`. Its substance and
+decisions 1–7 and 9–13 are unchanged.
+
 One decision changed between the owner's ruling and this draft. Decision 6 was
 ruled as `asset_id NOT NULL`; drafting found that `time_window` rules
 legitimately carry no asset, the finding was put back to the owner, and the
@@ -364,7 +372,8 @@ Two things the gate confirmed rather than changed:
   softened to name what is now in scope and what stays deferred (per-org SMTP,
   white-label, business-unit tenancy, `telemetry.*` RLS).
 - **`AGENTS.md` §2 / status line** — a *Tenancy* row naming
-  `bms.organizations` as the tenant, the `bms_tenant`/`bms_fleet` role split,
+  `bms.organizations` as the tenant, the
+  `bms_tenant`/`bms_fleet`/`bms_auth` role split (Amendment 1),
   and the `SET LOCAL` rule from decision 10.
 - **`AGENTS.md` §4** — a rule that a tenant-scoped read runs inside a
   transaction, and that no new `bms.*` table ships without
@@ -373,3 +382,149 @@ Two things the gate confirmed rather than changed:
 - **`docs/BACKLOG.md`** — the `E7.1` note still reads *"the tenant boundary (A6)
   is still unanswered"*. Replace it with a pointer to this ADR.
 - None of these edits belongs in the `E7.1` feature commit (§9.10).
+
+## Amendment 1 (2026-08-24) — decision 8 needs a third role, and question 5's placement was written against the old order
+
+Raised at the start of `F4.16`, **before any implementation code**. Decision 8
+names two roles; neither of them can serve the read that chooses between them.
+
+### The problem is row visibility on `bms.users`, not the `password_hash` column
+
+Decision 5 revokes the column from `bms_tenant`, and the Consequences section
+says the login path "needs a role that still holds the column". That understates
+it in two ways.
+
+**Login is pre-authentication.** Decision 10 requires every tenant-scoped read to
+run inside a transaction that has issued
+`SET LOCAL app.current_organization = $1`. At login there is no organization to
+set — the caller has supplied an email and a password and nothing else. So
+`bms_tenant` cannot read the row **at all**, with or without the column grant,
+and no policy formulation fixes it. A policy keyed on the user's own id does not
+help either: the lookup is by email and no principal is established yet.
+
+**Pool selection needs the same read.** Decision 12 rules that the API resolves
+the pool "from the database user record, not from the JWT claim".
+`jwtPayloadSchema` (`packages/shared/src/contracts/auth.ts:20`) carries `sub`,
+`email`, `name` and `role` — and no organization. The role claim is not
+authority either, for the reason recorded at
+`apps/api/src/auth/access-control.service.ts:100`: a token outlives a demotion by
+up to `JWT_TTL`, and in OIDC mode `roleFromClaims` falls back to `viewer` when
+realm roles are missing. **Every authenticated request therefore needs one
+privileged read of `bms.users` before either tenant pool can serve it** — for the
+role that picks the pool and the home `organization_id` that goes into
+`SET LOCAL`. This is a hot path, not a login-only concession.
+
+### Decision 8 is amended: three roles and three pools, not two
+
+A third role **`bms_auth`** is created in the same migration as the other two. It
+owns nothing, and it holds:
+
+- `SELECT (id, email, password_hash, display_name, role, organization_id,
+  last_login_at)` on `bms.users`;
+- `UPDATE (last_login_at)` on `bms.users`;
+- a `bms.users` policy `USING (true)` **for `bms_auth` only** — the table carries
+  `FORCE ROW LEVEL SECURITY`, so an explicit permissive policy is required
+  rather than an absent one;
+- **nothing in `telemetry.*` at all**, and **not** the `BYPASSRLS` attribute. The
+  exemption is scoped by table name and to `SELECT`; it is not a role attribute,
+  which is what still separates this from reusing `bms_fleet`. A test asserts the
+  reachable set directly rather than trusting the intent.
+
+**Until `E7.1`, `bms_auth` reaches four tables, not one, and that is a real
+widening this amendment states rather than hides.** The bootstrap must find the
+home organization before any tenant is set, and `bms.users.organization_id` is
+`E7.1`'s work. So in `F4.16` the role also holds `SELECT` on
+`bms.user_organization_access`, `bms.user_location_access` and `bms.locations`,
+plus a read-only `auth_bootstrap_read` policy on the two of those that are
+policied. The consequence is that `bms_auth` can read every location row in every
+tenant. **`E7.1` removes all three grants and both policies** when the column
+replaces the walk, and the assertion narrows to `bms.users` alone. If `E7.1`
+lands without that removal, this amendment's least-privilege claim is false and
+the review should say so.
+
+`DATABASE_URL` splits **three** ways — `DATABASE_URL_AUTH`,
+`DATABASE_URL_TENANT`, `DATABASE_URL_FLEET` — and
+`apps/api/src/database/database.module.ts` provides three pools and three Drizzle
+clients.
+
+Exactly two call sites use the auth pool: `AuthService.login`, and the
+request-scoped identity bootstrap that replaces the front half of
+`AccessControlService.resolveDbUser`. Everything after the bootstrap runs on the
+tenant or the fleet pool.
+
+Three alternatives were considered and rejected.
+
+- **Reuse `bms_fleet` for the bootstrap.** It runs the pre-authentication path
+  with fleet-wide grants on every tenant table and with `BYPASSRLS`, before any
+  credential is verified, and it leaves `password_hash` readable on the pool
+  ordinary `admin` traffic already uses. It is not a cheaper `bms_auth`; it is a
+  different risk posture, and it is the one the Consequences section already
+  calls this ADR's highest risk.
+- **A `SECURITY DEFINER` function owned by `bms_app`, executable by
+  `bms_tenant`.** It avoids the third connection string, but it leaves
+  `bms_tenant` able to obtain a password hash by calling the function. That
+  narrows the surface decision 5 wanted closed rather than closing it.
+- **`SET ROLE` on one shared pool**, reconsidered here and rejected again for the
+  reason given at the §10 gate — it puts escalation one statement inside the
+  transaction decision 10 already opens.
+
+### `FORCE ROW LEVEL SECURITY` lands in `E7.1`, not in `F4.16`
+
+Decision 8 says every tenant table is created with `ENABLE` **and** `FORCE`.
+`F4.16` lands `ENABLE` only. Ruled at the same gate, and recorded here so the
+absent `FORCE` reads as a decision rather than an oversight.
+
+`FORCE` binds the **table owner**, and `bms_app` is the owner that runs
+`pnpm db:seed`. The seed inserts into four of the five tables `F4.16` policies,
+in bulk arrays that span organizations, so `FORCE` would require splitting it
+into per-organization transactions — work the `8–12` does not carry, inside the
+item whose job is the role split.
+
+Nothing `F4.16` claims is weakened by the deferral. RLS constrains `bms_tenant`
+and `bms_auth` **regardless of `FORCE`**, because neither is the owner, and every
+test in the item runs on those two pools. `FORCE` exists to stop a *future*
+owner-role connection silently defeating a policy — a concern that belongs with
+the full table set. It therefore lands in `E7.1`, together with the seed
+restructuring it requires.
+
+**The ADR 0023 and 0024 background jobs are not affected either way.** Verified
+rather than assumed: no continuous aggregate, compression policy or retention
+policy references any `bms.*` table, so `FORCE` on `bms.*` cannot collide with a
+refresh running under the owner.
+
+### Question 5 is amended in placement, not in substance
+
+Question 5 ruled that the `password_hash` revoke lands "inside `E7.1`, in the
+same migration that writes the grant matrix". Decision 4 moved the grant matrix
+into `F4.16`, and the two statements cannot both hold. **The revoke lands in
+`F4.16`, with the grant matrix.**
+
+The revoke does not depend on `bms.users` having `organization_id`; it depends
+only on `bms_tenant` existing. `F4.16` can therefore both make it and prove it.
+`E7.1` still owns the `organization_id` column on `bms.users` and the policy that
+reads it.
+
+### Consequences of this amendment
+
+- **The bootstrap read is on every authenticated request.** It is one query keyed
+  on `id` or `email`, returning role and home organization. Caching it would
+  re-introduce the demotion drift the F3.8 review corrected, so it is not cached
+  in phase 1, and the auth pool is sized for request rate rather than login rate.
+- **An unprovisioned principal has no home organization, and therefore no pool.**
+  The bootstrap fails closed rather than defaulting. ADR 0021 Amendment 1 already
+  rejects an OIDC `admin` claim with no `bms.users` row for `/admin/*`; decision
+  12's pool selection must not re-open it by resolving that principal to
+  `bms_fleet`. A test covers it.
+- **Six services resolve the actor with their own lookup** — `admin/audit`,
+  `admin/master-data-audit`, `admin/asset-templates`, `alarms`,
+  `alarm-enrichment` and `maintenance` each run
+  `select id from bms.users where id = ? or email = ?`. Under the tenant pool
+  these succeed while the actor's home organization equals the current one, and
+  **fail for an Ion Exchange `admin` operating inside a customer organization**,
+  whose home organization differs. That actor runs on `bms_fleet`, which bypasses
+  the policy — but the combination is a test case in `F4.16`, not an assumption.
+- **The deployment gains a fourth Postgres role** alongside the owner:
+  `bms_app`, `bms_tenant`, `bms_fleet`, `bms_auth`. `docker-compose.yml` gains
+  one more connection string, for `api` and `api-replica` only. `migrate`,
+  `pnpm db:seed`, `apps/sim` and `apps/ingest` are unchanged and stay on
+  `bms_app`.
