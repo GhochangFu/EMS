@@ -56,6 +56,15 @@ pre-existing defect this change unmasked: `refresh_continuous_aggregate`
 requires ownership, and the API has held none since `F4.16`. It adds decision 7
 and a sixth role, `bms_rollup`. Decisions 1–6 are untouched.
 
+**Amended a third time by the closing reviews** —
+[Amendment 3](#amendment-3-2026-08-24--the-bms_rollup-grant-was-inheriting-and-decision-4s-job-claim-was-stale).
+It changes no decision and corrects two statements this document made that were
+false. One was a **live security hole**: Amendment 2's `GRANT bms_rollup` was an
+*inheriting* grant, so the API's pool roles held the aggregate owner's rights on
+every statement rather than only inside `SET ROLE` — `bms_tenant` could drop a
+rollup outright. Read Amendment 3 before trusting Amendment 2's residual-risk
+paragraph or decision 4's `bgw_job` paragraph.
+
 ## Context
 
 ### `FORCE ROW LEVEL SECURITY` is a no-op against the owner this repo actually runs
@@ -566,3 +575,97 @@ the edit, which is the rule working as intended rather than an inconvenience.
 `refreshAggregatesFrom`, and the `LOGIN` finding above — none of it in the plan,
 all of it downstream of one defect that only became visible once the owner
 stopped being a superuser.
+
+## Amendment 3 (2026-08-24) — the `bms_rollup` grant was inheriting, and decision 4's job claim was stale
+
+**Both findings come from the closing reviews, and both were confirmed against the
+running database before this was written.** Neither changes a decision; they
+correct two statements this document made that were false, one of which was a
+live security hole.
+
+### 1. `GRANT bms_rollup TO ...` inherits by default, so Amendment 2's containment argument did not hold
+
+Amendment 2 says the pool roles "can now assume" `bms_rollup`, which reads as
+though `SET ROLE` were the boundary. It was not. PostgreSQL defaults an omitted
+`INHERIT` clause to the *member's* own `rolinherit`, and `bms_owner`,
+`bms_tenant` and `bms_fleet` are all `rolinherit = t`. Ownership checks —
+TimescaleDB's `must be owner of continuous aggregate` included — resolve through
+`has_privs_of_role`, which is inheritance-aware.
+
+So the plain grant handed the aggregate owner's rights to **every statement of
+every connection**, not to a `SET ROLE` window. Measured:
+
+```
+-- as bms_tenant, the API's main write pool, with no SET ROLE at all:
+DROP MATERIALIZED VIEW telemetry.point_values_1d;   -- succeeded
+```
+
+Any SQL-injection or unsafe dynamic-SQL path on `TENANT_POOL` reached it, and
+`add_retention_policy` on the eight ADR 0023/0024 policy jobs was reachable the
+same way.
+
+**The residual-risk paragraph in Amendment 2 also understated the reach, and is
+corrected here.** It argued the risk was "bounded next to the `DELETE`
+`bms_tenant` already holds on every table". That argument does not survive
+contact with the detail: `DELETE` is row-scoped and, on the five tables this very
+item puts `FORCE ROW LEVEL SECURITY` on, organization-filtered. `DROP`,
+`TRUNCATE` and `add_retention_policy` are none of those things — they destroy
+**every organization's** rollups in one statement. And per ADR 0024 the `_1h` and
+`_1d` aggregates are never dropped and never compressed while raw
+`point_values` drops at 730 days, so beyond that horizon they are the *only*
+copy of the telemetry.
+
+**Fixed in migration `0044` and in `roles.ts`:**
+`GRANT ... WITH INHERIT FALSE, SET TRUE`. The rights now exist only inside the
+explicit `SET ROLE` that `withRollupRole` issues, which is what Amendment 2's
+argument required all along. Verified both directions afterwards — the three
+escalation paths refuse, and the refresh still works:
+
+```
+pg_has_role('bms_tenant','bms_rollup','USAGE')  = f   -- no ambient rights
+pg_has_role('bms_tenant','bms_rollup','MEMBER') = t   -- SET ROLE still works
+DROP MATERIALIZED VIEW ...        -> must be owner of continuous aggregate
+add_retention_policy(...)         -> must be owner of hypertable
+SET ROLE bms_rollup; CALL refresh_continuous_aggregate(...)  -> CALL
+```
+
+`0044` asserts the property in SQL as well, raising if any member row still
+carries `inherit_option`, because a silent regression here re-opens the hole and
+nothing else in the chain would notice.
+
+**One consequence worth stating plainly.** `pnpm db:refresh-aggregates` had no
+`SET ROLE` and worked anyway — *purely through the inheritance described above*.
+Its green CI step was therefore evidence of the hole rather than of health.
+`refresh-aggregates.ts` `main()` now takes the role explicitly; without that
+change, `INHERIT FALSE` would break the CLI.
+
+### 2. Decision 4's `bgw_job.owner` claim was falsified by Amendment 1's own mechanism
+
+Decision 4 states that `_timescaledb_config.bgw_job.owner` is a data column that
+`REASSIGN OWNED` does not rewrite, so ADR 0024's policies "keep running as
+`bms_app` … That is benign: `bms_app` is still a superuser."
+
+Amendment 1 replaced `REASSIGN OWNED` with `ALTER TABLE … OWNER TO`, which
+**does** rewrite that column — and decision 4's verification text was never
+re-derived against the new mechanism. Measured after `0041`–`0044`: ten of the
+twelve jobs moved off `bms_app`. Only TimescaleDB's own internal telemetry and
+job-stat-history jobs remain on it.
+
+| jobs | policy | owner now |
+|---|---|---|
+| 1000–1003 | continuous-aggregate refresh | `bms_rollup` |
+| 1004, 1005 | compression + retention on raw `telemetry.point_values` | `bms_owner` |
+| 1006–1009 | compression + retention on the `_1m`/`_5m` materialization hypertables | `bms_rollup` |
+
+**This makes `bms_owner`'s `LOGIN` load-bearing for the ADR 0024 policies, not
+only for the seed, simulator and ingest connections.** TimescaleDB's background
+workers connect *as the job owner*, so a deployment that provisions `bms_owner`
+without `LOGIN` loses raw compression and the 730-day retention with nothing but
+a generic `failed to execute job` in `job_errors` — the real message reaches the
+server log alone. That is the same failure Amendment 2 documents for
+`bms_rollup`, and it now applies to two roles.
+
+All ten were exercised under their new owners through the scheduler rather than
+assumed: the four refresh policies and, after an explicit `alter_job(id,
+next_start => now())`, jobs 1004–1009 — every one `last_run_status = Success`,
+`total_failures = 0`.

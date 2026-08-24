@@ -333,13 +333,25 @@ remain inventory-only and do not emit simulator telemetry.
 For a lab you can keep defaults temporarily. For anything public, change
 these before first boot:
 
-- `POSTGRES_PASSWORD` (the `bms_app` owner role)
+- `POSTGRES_PASSWORD` (the `bms_app` **provisioning superuser** — since
+  ADR 0045 it no longer owns the schemas and runs nothing but `db:roles` and
+  `db:migrate`)
+- `BMS_OWNER_PASSWORD` (the `bms_owner` schema owner, ADR 0045 — it runs
+  `db:seed`, `apps/sim` and `apps/ingest`. **Leaving this at the committed
+  default is the worst of the five to miss**: it is the role that owns both
+  schemas)
 - `BMS_AUTH_PASSWORD`, `BMS_TENANT_PASSWORD`, `BMS_FLEET_PASSWORD` (the three
   non-owner roles the API itself connects as, ADR 0043 — set by
-  `pnpm --filter @bms/db roles`, which the `migrate` service already runs
-  after `db:migrate`/`db:seed`)
-- all `DATABASE_URL`/`DATABASE_URL_AUTH`/`DATABASE_URL_TENANT`/
-  `DATABASE_URL_FLEET` values that include one of the four passwords above
+  `pnpm --filter @bms/db roles`, which the `migrate` service runs **before**
+  `db:migrate`/`db:seed` since ADR 0045 decision 6)
+- all `DATABASE_URL`/`DATABASE_URL_SUPERUSER`/`DATABASE_URL_AUTH`/
+  `DATABASE_URL_TENANT`/`DATABASE_URL_FLEET` values that include one of the
+  five passwords above. `DATABASE_URL` names `bms_owner` and
+  `DATABASE_URL_SUPERUSER` names `bms_app`; **`db:migrate` refuses to start if
+  `DATABASE_URL_SUPERUSER` is unset**, so a fresh pilot volume will not
+  provision without it
+- `bms_rollup` needs nothing here. It owns the four continuous aggregates, is
+  reached only via `SET ROLE`, and deliberately has no password
 - `JWT_SECRET`
 - `KEYCLOAK_ADMIN_PASSWORD`
 - Grafana admin password if using observability
@@ -347,9 +359,10 @@ these before first boot:
 Reference: [`env-inventory.md`](./env-inventory.md).
 
 Beginner warning: if you change a database password in one place but not
-the matching `DATABASE_URL`/`DATABASE_URL_AUTH`/`DATABASE_URL_TENANT`/
-`DATABASE_URL_FLEET` value, the API and migration containers will fail to
-connect. Changing `BMS_AUTH_PASSWORD`/`BMS_TENANT_PASSWORD`/
+the matching `DATABASE_URL`/`DATABASE_URL_SUPERUSER`/`DATABASE_URL_AUTH`/
+`DATABASE_URL_TENANT`/`DATABASE_URL_FLEET` value, the API and migration
+containers will fail to connect. Changing `BMS_OWNER_PASSWORD`/
+`BMS_AUTH_PASSWORD`/`BMS_TENANT_PASSWORD`/
 `BMS_FLEET_PASSWORD` alone does nothing on an already-provisioned volume —
 `pnpm --filter @bms/db roles` must be re-run for the new value to take
 effect (see `docs/security/encryption-at-rest.md` §4.3).

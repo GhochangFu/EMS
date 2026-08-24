@@ -38,7 +38,14 @@ const SET_TENANT_SQL = "select set_config('app.current_organization', $1, true)"
  * module header.
  */
 export function createSeedPool(connectionString: string): pg.Pool {
-  return new pg.Pool({ connectionString, max: 1 });
+  // `idleTimeoutMillis: 0` disables the idle reaper, and it is not a tuning
+  // choice. `withOrganization` releases the single client back to the pool
+  // between every `pool.query`, so with pg's 10 s default the reaper can destroy
+  // and replace the backend *mid-transaction* — after which the remaining
+  // statements run outside it, with no tenant GUC, and `max: 1` does nothing to
+  // stop that. Mostly loud when it happens (a `WITH CHECK` insert is rejected,
+  // or the verifier's counts read 0), but "mostly" is not a guarantee.
+  return new pg.Pool({ connectionString, max: 1, idleTimeoutMillis: 0 });
 }
 
 /** Narrow structural view of the parts of `pg.Pool` this module uses. */

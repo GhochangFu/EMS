@@ -44,7 +44,7 @@ function asRole(url: string, role: string, password: string): string {
 describe.skipIf(!connectionString)(
   "F4.16 — AccessControlService against real, non-owner roles",
   () => {
-    let ownerPool: pg.Pool;
+    let fleetFixturePool: pg.Pool;
     let authPool: pg.Pool;
     let tenantPool: pg.Pool;
     let fleetPool: pg.Pool;
@@ -53,7 +53,7 @@ describe.skipIf(!connectionString)(
 
     beforeAll(async () => {
       const url = connectionString as string;
-      ownerPool = await openIntegrationPool(url, "F4.16");
+      fleetFixturePool = await openIntegrationPool(url, "F4.16");
       authPool = await openIntegrationPool(
         process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
         "F4.16",
@@ -72,7 +72,7 @@ describe.skipIf(!connectionString)(
         createDb(fleetPool),
       );
 
-      const { rows } = await ownerPool.query<{ count: string }>(
+      const { rows } = await fleetFixturePool.query<{ count: string }>(
         "select count(*)::text as count from bms.locations where active = true",
       );
       activeLocationCount = Number(rows[0]?.count ?? 0);
@@ -80,7 +80,7 @@ describe.skipIf(!connectionString)(
 
     afterAll(async () => {
       await Promise.all([
-        ownerPool?.end(),
+        fleetFixturePool?.end(),
         authPool?.end(),
         tenantPool?.end(),
         fleetPool?.end(),

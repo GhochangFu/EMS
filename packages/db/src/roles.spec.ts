@@ -120,6 +120,15 @@ export function assertTheRollupRoleIsTheOnlyOneGranted(): void {
   expect(sql).toContain("GRANT bms_rollup TO bms_owner, bms_tenant, bms_fleet");
   expect(sql).not.toMatch(/GRANT bms_owner TO/);
   expect(sql).not.toMatch(/GRANT bms_fleet TO/);
+
+  // `WITH INHERIT FALSE, SET TRUE` is the entire containment boundary, and its
+  // absence is silent: PostgreSQL defaults an omitted INHERIT clause to the
+  // member's own `rolinherit`, which is `t` here. Without the clause the pool
+  // roles hold the aggregate owner's rights *ambiently*, on every statement,
+  // and `bms_tenant` can DROP a rollup with no `SET ROLE` at all — measured on
+  // a running database, not inferred. `SET TRUE` is the half that keeps
+  // `withRollupRole` working, so both are pinned.
+  expect(sql).toMatch(/GRANT bms_rollup TO [^\n]*WITH INHERIT FALSE, SET TRUE/);
 }
 
 /**

@@ -107,13 +107,24 @@ $$`,
   // `bms_owner` for `pnpm db:refresh-aggregates`, `bms_tenant` and `bms_fleet`
   // for the post-commit refresh in `TelemetryWriteService`/`CalcWriteService`.
   //
-  // This is a role membership, not a schema privilege, which is why it lives
-  // here rather than in a migration: it is the narrowest thing that works.
-  // Granting `bms_owner` instead would have handed the API full DDL over both
-  // schemas. The residual risk is stated rather than hidden — a role that can
-  // refresh an aggregate can also drop it — and it is bounded next to the
-  // DELETE `bms_tenant` already holds on every table.
-  "GRANT bms_rollup TO bms_owner, bms_tenant, bms_fleet",
+  // **`WITH INHERIT FALSE, SET TRUE` is the whole security boundary, and a
+  // plain `GRANT` silently does not have it.** PostgreSQL defaults an omitted
+  // `INHERIT` clause to the member's own `rolinherit`, which is `t` for all
+  // three — so a plain grant gives them the aggregate owner's rights *ambiently,
+  // on every statement of every connection*, not only between `SET ROLE` and
+  // `RESET ROLE`. Measured on the running stack before this clause was added:
+  // `bms_tenant` could execute `DROP MATERIALIZED VIEW telemetry.point_values_1d`
+  // with no `SET ROLE` at all. Any SQL-injection or unsafe dynamic-SQL path on
+  // `TENANT_POOL` would have reached it.
+  //
+  // With `INHERIT FALSE` the rights exist only inside an explicit `SET ROLE`
+  // (`withRollupRole` in `refresh-aggregates.ts`), which is what
+  // ADR 0045 Amendment 2's containment argument actually requires.
+  // `pg_has_role('bms_tenant','bms_rollup','USAGE')` must read `f` and
+  // `...,'MEMBER')` must read `t`; `roles.spec.ts` pins both halves.
+  //
+  // `admin_option` stays off, so the API cannot re-grant the role onward.
+  "GRANT bms_rollup TO bms_owner, bms_tenant, bms_fleet WITH INHERIT FALSE, SET TRUE",
 ];
 
 /**
