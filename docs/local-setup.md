@@ -140,9 +140,16 @@ sudo pg_ctlcluster 16 main restart
 
 ## 7. Create the BMS database and user
 
+`bms_app` needs `SUPERUSER`, not just ownership. ADR 0043's migration `0039`
+creates the `bms_tenant`/`bms_fleet`/`bms_auth` roles under `bms_app`, and
+Postgres only lets a role grant `CREATEROLE`-gated actions and `BYPASSRLS`
+when it already holds them itself — `CREATEROLE` alone is not enough for
+`BYPASSRLS`. Docker's official Postgres image makes its `POSTGRES_USER` a
+superuser for the same reason; this matches that here.
+
 ```bash
 sudo -u postgres psql <<'SQL'
-CREATE ROLE bms_app WITH LOGIN PASSWORD 'bms_app_dev';
+CREATE ROLE bms_app WITH LOGIN SUPERUSER PASSWORD 'bms_app_dev';
 CREATE DATABASE bms OWNER bms_app;
 \c bms
 CREATE EXTENSION IF NOT EXISTS timescaledb;
@@ -188,7 +195,26 @@ cd bms
 Create `apps/api/.env` (do not commit):
 
 ```env
+# The owner connection. `db:migrate`, `db:seed` and `db:roles` (see step 10)
+# read this — nothing else does. Keep it here even though the API itself no
+# longer connects as the owner: all three scripts load this same file.
 DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms
+
+# ADR 0043 decision 8. The API always connects as one of these three
+# non-owner roles, never as bms_app — an owner bypasses row-level security,
+# so there is deliberately no fallback to DATABASE_URL if one is missing.
+DATABASE_URL_AUTH=postgres://bms_auth:bms_auth_dev@localhost:5432/bms
+DATABASE_URL_TENANT=postgres://bms_tenant:bms_tenant_dev@localhost:5432/bms
+DATABASE_URL_FLEET=postgres://bms_fleet:bms_fleet_dev@localhost:5432/bms
+
+# Read only by `pnpm db:roles` (step 10), to set LOGIN + a password on the
+# three roles above. Migration 0039 creates them NOLOGIN with no password
+# committed anywhere, so the API cannot connect as any of them until this
+# has run once against this database.
+BMS_AUTH_PASSWORD=bms_auth_dev
+BMS_TENANT_PASSWORD=bms_tenant_dev
+BMS_FLEET_PASSWORD=bms_fleet_dev
+
 JWT_SECRET=change-me-in-prototype
 JWT_TTL=8h
 AUTH_MODE=local
@@ -225,14 +251,34 @@ SIM_METRICS_PORT=9101
 ```bash
 pnpm install
 
-pnpm db:migrate    # Drizzle migrations + Timescale hypertable creation
-pnpm db:seed       # demo users, assets, locations, scopes, alarms, map markers
+pnpm db:migrate                 # Drizzle migrations + Timescale hypertable creation
+pnpm db:seed                    # demo users, assets, locations, scopes, alarms, map markers
+pnpm --filter @bms/db roles     # ADR 0043: enable LOGIN + set a password on bms_tenant/bms_fleet/bms_auth
 
 # Three terminals (or use a tmux/zellij split)
 pnpm --filter api dev    # NestJS on :4000
 pnpm --filter web dev    # Vite on :5173
 pnpm --filter sim start  # telemetry simulator
 ```
+
+`pnpm --filter @bms/db roles` must run once after every `pnpm db:migrate` —
+migration `0039` creates `bms_tenant`/`bms_fleet`/`bms_auth` as `NOLOGIN` with
+no password, and the API cannot start until all three can log in. It is safe
+to re-run; it only resets the three passwords from `apps/api/.env`. The three
+roles exist for ADR 0043's row-level-security split: `bms_tenant` sees rows in
+the caller's own organization, `bms_fleet` bypasses row-level security for
+reads that already carry their own scope filter (global-admin and
+multi-organization views), and `bms_auth` reads the small, unscoped set of
+tables login and permission checks need before an organization is even known.
+`DATABASE_URL` still names `bms_app`, the schema owner, and stays what
+`db:migrate`, `db:seed`, `apps/sim` and `apps/ingest` connect as — none of
+them evaluate row-level security policies, so the owner connection is correct
+for them.
+
+A managed Postgres deployment (not this local setup) needs a DBA to run
+migration `0039`: `CREATE ROLE` needs `CREATEROLE` and `ALTER ROLE ...
+BYPASSRLS` needs `SUPERUSER`, and most managed offerings do not grant an
+application role either by default.
 
 Open `http://localhost:5173` in your Windows browser. Seeded local users:
 `admin@bms.local`, `wc-admin@bms.local`, and `wc-hvac-admin@bms.local`
@@ -285,6 +331,14 @@ docker compose --profile core --profile sim --profile observability up --build
 # Stop Docker services.
 docker compose down
 ```
+
+The `migrate` service runs `pnpm --filter @bms/db roles` after `db:migrate`/
+`db:seed` on every invocation, so `bms_tenant`/`bms_fleet`/`bms_auth` can
+already log in by the time `api` starts — no separate step needed here
+(compare step 10's native path, where that step is manual). `api` and
+`api-replica` connect using `DATABASE_URL_AUTH`/`_TENANT`/`_FLEET`; `migrate`,
+`sim` and `ingest` keep the owner `DATABASE_URL`, per ADR 0043 decision 8.
+
 Open `http://localhost:5173`. Compose uses Keycloak/OIDC by default:
 click **Sign in with Keycloak** and use `admin@bms.local` / `admin123`.
 The Keycloak admin console is available at `http://localhost:8080` with

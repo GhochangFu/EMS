@@ -34,6 +34,13 @@ jobs:
 
     env:
       DATABASE_URL: postgres://bms_app:bms_app_dev@localhost:5432/bms
+      # ADR 0043 decision 8. Match docker-compose.yml's dev passwords exactly —
+      # tenant-context.integration.test.ts and access-control-rls.integration.test.ts
+      # fall back to deriving DATABASE_URL_{AUTH,TENANT,FLEET} from DATABASE_URL
+      # with these same credentials when the explicit vars are unset.
+      BMS_AUTH_PASSWORD: bms_auth_dev
+      BMS_TENANT_PASSWORD: bms_tenant_dev
+      BMS_FLEET_PASSWORD: bms_fleet_dev
 
     steps:
       - name: Checkout
@@ -87,6 +94,13 @@ jobs:
 
       - name: Validate migrations
         run: pnpm db:migrate
+
+      # ADR 0043 decision 8 (F4.16). Without this, bms_tenant/bms_fleet/bms_auth
+      # stay NOLOGIN and both real-role RLS suites below skip_if — a green run
+      # would prove nothing about row-level security, only that the suites
+      # correctly declined to run.
+      - name: Set role passwords for the RLS-role test suites
+        run: pnpm --filter @bms/db roles
 
       # Seeding is the only check that proves the migration journal is complete:
       # drizzle silently skips any .sql file missing from meta/_journal.json, so

@@ -79,9 +79,17 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     working_dir: /app
-    command: sh -c "pnpm db:migrate && pnpm db:seed"
+    # ADR 0043 decision 8: `db:roles` must run once after every migrate, since
+    # migration 0039 grants `bms_tenant`/`bms_fleet` DML by default on future
+    # tables but a fresh role still starts `NOLOGIN` until this sets its
+    # password. `migrate` stays on the owner connection (`DATABASE_URL`) —
+    # only `CREATE ROLE`/`ALTER ROLE ... PASSWORD` need that privilege.
+    command: sh -c "pnpm db:migrate && pnpm db:seed && pnpm --filter @bms/db roles"
     environment:
       DATABASE_URL: postgres://bms_app:bms_app_dev@postgres:5432/bms
+      BMS_TENANT_PASSWORD: bms_tenant_dev
+      BMS_FLEET_PASSWORD: bms_fleet_dev
+      BMS_AUTH_PASSWORD: bms_auth_dev
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,7 +100,14 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     environment:
-      DATABASE_URL: postgres://bms_app:bms_app_dev@postgres:5432/bms
+      # ADR 0043 decision 8: the API runs on the three non-owner roles, not
+      # the schema owner. `DATABASE_URL` (bms_app) is deliberately absent here
+      # — every RLS-adjacent call site chooses one of these three pools on
+      # purpose (F4.16 Task 6.6), and an owner fallback would silently
+      # bypass that.
+      DATABASE_URL_AUTH: postgres://bms_auth:bms_auth_dev@postgres:5432/bms
+      DATABASE_URL_TENANT: postgres://bms_tenant:bms_tenant_dev@postgres:5432/bms
+      DATABASE_URL_FLEET: postgres://bms_fleet:bms_fleet_dev@postgres:5432/bms
       JWT_SECRET: change-me-in-compose
       JWT_TTL: 8h
       PORT: 4000
@@ -143,7 +158,10 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     environment:
-      DATABASE_URL: postgres://bms_app:bms_app_dev@postgres:5432/bms
+      # ADR 0043 decision 8 — matches `api`'s pool split above.
+      DATABASE_URL_AUTH: postgres://bms_auth:bms_auth_dev@postgres:5432/bms
+      DATABASE_URL_TENANT: postgres://bms_tenant:bms_tenant_dev@postgres:5432/bms
+      DATABASE_URL_FLEET: postgres://bms_fleet:bms_fleet_dev@postgres:5432/bms
       JWT_SECRET: change-me-in-compose
       JWT_TTL: 8h
       PORT: 4001
