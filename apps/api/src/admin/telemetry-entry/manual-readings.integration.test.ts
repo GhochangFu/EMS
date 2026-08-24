@@ -38,7 +38,7 @@ describe.skipIf(!connectionString)("ManualReadingsController", () => {
     await cleanup(created);
 
     const db = createDb(created);
-    const access = new AccessControlService(db);
+    const access = new AccessControlService(db, db, db);
     const audit = new MasterDataAuditService(db);
     const svc = new TelemetryWriteService(db, created, access, audit);
     controller = new ManualReadingsController(svc);

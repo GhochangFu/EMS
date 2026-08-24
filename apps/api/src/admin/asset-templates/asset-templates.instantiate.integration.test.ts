@@ -69,7 +69,7 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
     pool = created;
 
     const db = createDb(created);
-    const access = new AccessControlService(db);
+    const access = new AccessControlService(db, db, db);
     const audit = new MasterDataAuditService(db);
     const vocabularies = new VocabulariesService(db);
     const instantiation = new AssetTemplateInstantiationService(db, access, audit);
