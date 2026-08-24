@@ -6,6 +6,7 @@ import {
   assertTenantDoesNotLeakAcrossPooledRequests,
   assertTenantSeesOnlyItsOwnLocations,
   assertTenantWithoutContextSeesNothing,
+  assertWithTenantScopesAndDoesNotLeak,
 } from "./tenant-context.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 
@@ -84,5 +85,13 @@ describe.skipIf(!connectionString)("F4.16 — tenant context", () => {
 
   it("shows every organization to bms_fleet", async () => {
     await assertFleetSeesEveryOrganization(fleetPool, organizationIds);
+  });
+
+  it("scopes through withTenant and leaves nothing set afterwards", async () => {
+    await assertWithTenantScopesAndDoesNotLeak(
+      tenantPool,
+      organizationIds[0],
+      organizationIds[1],
+    );
   });
 });

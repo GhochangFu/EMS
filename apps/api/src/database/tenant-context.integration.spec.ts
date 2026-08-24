@@ -1,6 +1,9 @@
 import pg from "pg";
 import { expect } from "vitest";
 
+import { withTenant } from "./tenant-context";
+import { createDb, locations } from "@bms/db";
+
 /**
  * `F4.16` / ADR 0043 decisions 8 and 10. Every assertion runs on a **tenant**
  * pool — a query that passed as the owner proves nothing, because an owner
@@ -102,4 +105,31 @@ export async function assertFleetSeesEveryOrganization(
     "select distinct organization_id from bms.locations",
   );
   expect(rows.map((r) => r.organization_id).sort()).toEqual([...organizationIds].sort());
+}
+
+/**
+ * `withTenant` must produce exactly what a hand-written transaction produces —
+ * and must not leak the setting past its own transaction, which is what
+ * `SET LOCAL` buys over `SET`.
+ */
+export async function assertWithTenantScopesAndDoesNotLeak(
+  tenantPool: pg.Pool,
+  firstOrganizationId: string,
+  secondOrganizationId: string,
+): Promise<void> {
+  const db = createDb(tenantPool);
+  const first = await withTenant(db, firstOrganizationId, (tx) =>
+    tx.select({ organizationId: locations.organizationId }).from(locations),
+  );
+  expect(new Set(first.map((r) => r.organizationId))).toEqual(new Set([firstOrganizationId]));
+
+  const second = await withTenant(db, secondOrganizationId, (tx) =>
+    tx.select({ organizationId: locations.organizationId }).from(locations),
+  );
+  expect(new Set(second.map((r) => r.organizationId))).toEqual(new Set([secondOrganizationId]));
+
+  // Outside any withTenant call the GUC is unset again, so an unwrapped read
+  // sees nothing rather than the last tenant's rows.
+  const unwrapped = await db.select({ organizationId: locations.organizationId }).from(locations);
+  expect(unwrapped).toEqual([]);
 }
