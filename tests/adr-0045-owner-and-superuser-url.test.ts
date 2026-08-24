@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -46,11 +46,36 @@ describe("ADR 0045 — DATABASE_URL_SUPERUSER never reaches the API", () => {
     expect(carrying).toEqual(["migrate"]);
   });
 
-  it("is named by no file under apps/api/src", () => {
+  /**
+   * One file may name it: the integration-test gate, which hands the string to
+   * the single suite that needs `SET LOCAL ROLE` (`role-grants`). The exemption
+   * is by exact path rather than by a `testing/` glob, so a second one cannot
+   * appear without this list changing and a reviewer seeing it.
+   */
+  const SUPERUSER_URL_EXEMPT = "apps/api/src/testing/integration-db-gate.ts";
+
+  it("is named by no file under apps/api/src except the integration-test gate", () => {
     const offenders = walk(join(repoRoot, "apps", "api", "src"))
       .filter((f) => f.endsWith(".ts") || f.endsWith(".tsx"))
-      .filter((f) => readFileSync(f, "utf8").includes("DATABASE_URL_SUPERUSER"));
-    expect(offenders).toEqual([]);
+      .filter((f) => readFileSync(f, "utf8").includes("DATABASE_URL_SUPERUSER"))
+      .map((f) => relative(repoRoot, f).split(sep).join("/"));
+    expect(offenders).toEqual([SUPERUSER_URL_EXEMPT]);
+  });
+
+  /**
+   * What keeps the exemption above honest. The gate is a test helper, so nothing
+   * that ships may reach it — if a runtime module imported it, the exemption
+   * would have quietly become a route for the superuser string into the running
+   * API, which is the exact thing the first assertion exists to prevent.
+   */
+  it("nothing outside a test file imports the integration-test gate", () => {
+    const importers = walk(join(repoRoot, "apps", "api", "src"))
+      .filter((f) => f.endsWith(".ts") || f.endsWith(".tsx"))
+      .filter((f) => !/\.(test|spec)\.tsx?$/.test(f))
+      .filter((f) => relative(repoRoot, f).split(sep).join("/") !== SUPERUSER_URL_EXEMPT)
+      .filter((f) => /from\s+["'][^"']*integration-db-gate["']/.test(readFileSync(f, "utf8")))
+      .map((f) => relative(repoRoot, f).split(sep).join("/"));
+    expect(importers).toEqual([]);
   });
 });
 
