@@ -80,7 +80,7 @@ export function assertProvisioningDemandsTheSuperuserUrl(): void {
  */
 export function assertProvisioningCreatesEveryNonBootstrapRole(): void {
   const sql = ROLE_PROVISIONING_SQL.join("\n");
-  for (const role of ["bms_owner", "bms_tenant", "bms_fleet", "bms_auth"]) {
+  for (const role of ["bms_owner", "bms_tenant", "bms_fleet", "bms_auth", "bms_rollup"]) {
     expect(sql).toContain(`CREATE ROLE ${role} NOLOGIN`);
   }
   // `bms_app` is created by initdb from `POSTGRES_USER` and is a pinned role
@@ -97,10 +97,62 @@ export function assertProvisioningCreatesEveryNonBootstrapRole(): void {
 export function assertOnlyTheFleetRoleBypassesRowLevelSecurity(): void {
   const sql = ROLE_PROVISIONING_SQL.join("\n");
   expect(sql).toContain("ALTER ROLE bms_fleet BYPASSRLS");
-  for (const role of ["bms_owner", "bms_tenant", "bms_auth"]) {
+  for (const role of ["bms_owner", "bms_tenant", "bms_auth", "bms_rollup"]) {
     expect(sql).toContain(`ALTER ROLE ${role} NOBYPASSRLS`);
   }
   expect(sql).not.toContain("ALTER ROLE bms_owner BYPASSRLS");
+}
+
+/**
+ * `E7.1a`. `bms_rollup` owns the four ADR 0023 continuous aggregates and nothing
+ * else, and `refresh_continuous_aggregate` needs *ownership* — no GRANT
+ * substitutes. Three roles must be able to become it: `bms_owner` for
+ * `pnpm db:refresh-aggregates`, and `bms_tenant`/`bms_fleet` for the post-commit
+ * refresh in `TelemetryWriteService` and `CalcWriteService`.
+ *
+ * The negative half is the load-bearing one. Granting `bms_owner` to the pool
+ * roles would also make the refresh work, and would hand the API full DDL over
+ * both schemas — undoing the separation this whole item builds, while every test
+ * stayed green.
+ */
+export function assertTheRollupRoleIsTheOnlyOneGranted(): void {
+  const sql = ROLE_PROVISIONING_SQL.join("\n");
+  expect(sql).toContain("GRANT bms_rollup TO bms_owner, bms_tenant, bms_fleet");
+  expect(sql).not.toMatch(/GRANT bms_owner TO/);
+  expect(sql).not.toMatch(/GRANT bms_fleet TO/);
+}
+
+/**
+ * TimescaleDB's background workers connect **as the job owner**, so once the
+ * four ADR 0023 refresh policies and the aggregates' compression and retention
+ * jobs follow the aggregates to `bms_rollup`, the role needs `LOGIN` or every
+ * one of them dies with `FATAL: role "bms_rollup" is not permitted to log in`.
+ *
+ * Measured rather than predicted, and this is why it is pinned: the failure is
+ * invisible where you would look for it. `timescaledb_information.job_errors`
+ * records only "failed to execute job", and the real message appears solely in
+ * the server log. It is the exact quiet failure ADR 0045 names — a retention
+ * policy that stops running looks like nothing at all for days.
+ *
+ * The negative half matters as much: `bms_rollup` must have **no password**, and
+ * must stay out of `ROLE_ENV`. A background worker authenticates through none,
+ * and under `scram-sha-256` a network client cannot authenticate as a role that
+ * has none — so the attribute buys the scheduler its connection and an attacker
+ * nothing. Giving it a password would quietly turn it into a reachable account
+ * that can drop every rollup.
+ */
+export function assertTheRollupRoleCanRunBackgroundJobsButNotLogInRemotely(): void {
+  const sql = ROLE_PROVISIONING_SQL.join("\n");
+  expect(sql).toContain("ALTER ROLE bms_rollup LOGIN");
+  expect(sql).not.toMatch(/bms_rollup[^\n]*PASSWORD/i);
+
+  const roles = buildRolePasswordStatements({
+    BMS_OWNER_PASSWORD: "o",
+    BMS_TENANT_PASSWORD: "t",
+    BMS_FLEET_PASSWORD: "f",
+    BMS_AUTH_PASSWORD: "a",
+  }).map((r) => r.role);
+  expect(roles).not.toContain("bms_rollup");
 }
 
 /**
@@ -109,7 +161,20 @@ export function assertOnlyTheFleetRoleBypassesRowLevelSecurity(): void {
  */
 export function assertProvisioningTouchesNoSchemaObject(): void {
   const sql = ROLE_PROVISIONING_SQL.join("\n");
-  for (const forbidden of ["GRANT", "REVOKE", "bms.", "telemetry.", "CREATE SCHEMA"]) {
+  // A role-membership `GRANT <role> TO <role>` is permitted and is checked by
+  // `assertTheRollupRoleIsTheOnlyOneGranted`. What must not appear is anything
+  // scoped to a schema or a relation — on a fresh database neither `bms` nor
+  // `telemetry` exists yet when this runs.
+  for (const forbidden of [
+    "REVOKE",
+    "bms.",
+    "telemetry.",
+    "CREATE SCHEMA",
+    "ON SCHEMA",
+    "ON TABLE",
+    "ON ALL",
+    "DEFAULT PRIVILEGES",
+  ]) {
     expect(sql).not.toContain(forbidden);
   }
 }

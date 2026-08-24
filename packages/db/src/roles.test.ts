@@ -9,6 +9,8 @@ import {
   assertProvisioningTouchesNoSchemaObject,
   assertRefusesAnEmptyPassword,
   assertTheOwnerIsProvisionedFirst,
+  assertTheRollupRoleCanRunBackgroundJobsButNotLogInRemotely,
+  assertTheRollupRoleIsTheOnlyOneGranted,
 } from "./roles.spec";
 
 describe("F4.16 — role password wiring", () => {
@@ -40,6 +42,14 @@ describe("E7.1a / ADR 0045 — db:roles is the provisioning identity", () => {
 
   it("gives BYPASSRLS to bms_fleet alone", () => {
     assertOnlyTheFleetRoleBypassesRowLevelSecurity();
+  });
+
+  it("grants bms_rollup membership, and never bms_owner, to the pool roles", () => {
+    assertTheRollupRoleIsTheOnlyOneGranted();
+  });
+
+  it("gives bms_rollup LOGIN for the background workers, and no password", () => {
+    assertTheRollupRoleCanRunBackgroundJobsButNotLogInRemotely();
   });
 
   it("touches no schema object, since it now runs before the first migration", () => {

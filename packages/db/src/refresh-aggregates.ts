@@ -117,7 +117,7 @@ const RETRY_DELAY_MS = 3_000;
  * by construction: policy runs are short and bounded by their own `start_offset`.
  */
 export async function refreshLevel(
-  client: pg.Pool | pg.Client,
+  client: pg.Pool | pg.Client | pg.PoolClient,
   view: string,
   from: Date | null,
   to: Date | null = null,
@@ -226,15 +226,73 @@ const REFRESH_MARGIN_MS: Readonly<Record<(typeof LEVELS)[number]["view"], number
  * green build.
  */
 export async function refreshAggregatesFrom(
-  client: pg.Pool | pg.Client,
+  client: pg.Pool | pg.Client | pg.PoolClient,
   from: Date,
   to: Date = new Date(),
 ): Promise<void> {
-  for (const { view } of LEVELS) {
-    const margin = REFRESH_MARGIN_MS[view];
-    const widenedFrom = new Date(from.getTime() - margin);
-    const widenedTo = new Date(Math.min(to.getTime() + margin, Date.now()));
-    await refreshLevel(client, view, widenedFrom, widenedTo);
+  await withRollupRole(client, async (target) => {
+    for (const { view } of LEVELS) {
+      const margin = REFRESH_MARGIN_MS[view];
+      const widenedFrom = new Date(from.getTime() - margin);
+      const widenedTo = new Date(Math.min(to.getTime() + margin, Date.now()));
+      await refreshLevel(target, view, widenedFrom, widenedTo);
+    }
+  });
+}
+
+/**
+ * `E7.1a` / ADR 0045 — runs `work` with `bms_rollup` as the current role.
+ *
+ * `refresh_continuous_aggregate` requires **ownership** of the aggregate, and
+ * since ADR 0045 the API's pools are `bms_tenant`/`bms_fleet`, which own
+ * nothing. Before this, every call from `TelemetryWriteService` and
+ * `CalcWriteService` failed with `must be owner of continuous aggregate` and was
+ * swallowed as a warning — silently, and since `F4.16` moved the API off the
+ * owner connection. Its integration test passed only because the test pool was
+ * the `bms_app` superuser.
+ *
+ * That is a data-correctness defect rather than a latency one, which is why it
+ * is fixed rather than filed: the refresh policies carry bounded
+ * `start_offset`s (3 h / 12 h / 3 days / 30 days), and real-time aggregation
+ * covers only data not yet materialised — so a reading written outside its
+ * level's window is **permanently absent** from that rollup, with nothing but a
+ * `WARN` to say so.
+ *
+ * `bms_rollup` owns the four continuous aggregates and nothing else.
+ * `bms_owner`, `bms_tenant` and `bms_fleet` are members of it, so each can
+ * assume it for exactly this.
+ *
+ * **`SET ROLE`, not `SET LOCAL ROLE`, and that is forced.**
+ * `refresh_continuous_aggregate` cannot run inside a transaction block, so
+ * there is no transaction for a `LOCAL` setting to be scoped to. The role is
+ * therefore reset in a `finally` on the same connection — and the connection is
+ * checked out explicitly for the same reason, so a pooled connection can never
+ * be handed back to another caller still carrying the role.
+ */
+async function withRollupRole(
+  client: pg.Pool | pg.Client | pg.PoolClient,
+  work: (target: pg.PoolClient | pg.Client) => Promise<void>,
+): Promise<void> {
+  const isPool = typeof (client as pg.Pool).connect === "function" && "idleCount" in client;
+  const target = isPool ? await (client as pg.Pool).connect() : (client as pg.Client);
+  try {
+    await target.query("SET ROLE bms_rollup");
+    await work(target);
+  } finally {
+    // Best effort, and deliberately not rethrowing: a failed RESET must not mask
+    // the real error from `work`. The connection is released either way, and a
+    // released connection carrying a role is exactly what the explicit checkout
+    // above exists to prevent — so on a failed reset, destroy it rather than
+    // return it to the pool.
+    let reset = true;
+    try {
+      await target.query("RESET ROLE");
+    } catch {
+      reset = false;
+    }
+    if (isPool) {
+      (target as pg.PoolClient).release(reset ? undefined : new Error("RESET ROLE failed"));
+    }
   }
 }
 

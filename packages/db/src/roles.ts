@@ -67,6 +67,9 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bms_auth') THEN
     CREATE ROLE bms_auth NOLOGIN;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'bms_rollup') THEN
+    CREATE ROLE bms_rollup NOLOGIN;
+  END IF;
 END
 $$`,
   // ADR 0043 decision 12: the fleet bypass is a role attribute, not a policy
@@ -78,6 +81,39 @@ $$`,
   "ALTER ROLE bms_owner NOBYPASSRLS",
   "ALTER ROLE bms_tenant NOBYPASSRLS",
   "ALTER ROLE bms_auth NOBYPASSRLS",
+  "ALTER ROLE bms_rollup NOBYPASSRLS",
+  // **`LOGIN`, and with no password — both halves are deliberate.**
+  //
+  // TimescaleDB's background workers connect *as the job owner*, and the four
+  // ADR 0023 refresh policies plus the aggregates' own compression and retention
+  // jobs follow the aggregates to `bms_rollup`. Without `LOGIN` every one of them
+  // dies with
+  //   FATAL: role "bms_rollup" is not permitted to log in
+  // and `timescaledb_information.job_errors` records only the generic "failed to
+  // execute job" — measured, not predicted. That is the exact quiet failure ADR
+  // 0045 names: a retention policy that stops running looks like nothing at all
+  // for days.
+  //
+  // No password is set, and `bms_rollup` is deliberately absent from `ROLE_ENV`.
+  // A background worker authenticates through none, while a network client under
+  // `scram-sha-256` cannot authenticate as a role that has no password at all.
+  // So the attribute buys the scheduler its connection and buys an attacker
+  // nothing.
+  "ALTER ROLE bms_rollup LOGIN",
+  // `E7.1a`. `bms_rollup` owns the four ADR 0023 continuous aggregates and
+  // nothing else. `refresh_continuous_aggregate` requires *ownership*, and no
+  // GRANT substitutes for it, so a caller that must refresh has to be able to
+  // become the owner — the three roles below are the ones that must:
+  // `bms_owner` for `pnpm db:refresh-aggregates`, `bms_tenant` and `bms_fleet`
+  // for the post-commit refresh in `TelemetryWriteService`/`CalcWriteService`.
+  //
+  // This is a role membership, not a schema privilege, which is why it lives
+  // here rather than in a migration: it is the narrowest thing that works.
+  // Granting `bms_owner` instead would have handed the API full DDL over both
+  // schemas. The residual risk is stated rather than hidden — a role that can
+  // refresh an aggregate can also drop it — and it is bounded next to the
+  // DELETE `bms_tenant` already holds on every table.
+  "GRANT bms_rollup TO bms_owner, bms_tenant, bms_fleet",
 ];
 
 /**
