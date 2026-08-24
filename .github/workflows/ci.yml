@@ -35,9 +35,10 @@ jobs:
     env:
       DATABASE_URL: postgres://bms_app:bms_app_dev@localhost:5432/bms
       # ADR 0043 decision 8. Match docker-compose.yml's dev passwords exactly —
-      # tenant-context.integration.test.ts and access-control-rls.integration.test.ts
-      # fall back to deriving DATABASE_URL_{AUTH,TENANT,FLEET} from DATABASE_URL
-      # with these same credentials when the explicit vars are unset.
+      # access-control-rls.integration.test.ts falls back to deriving all three
+      # of DATABASE_URL_{AUTH,TENANT,FLEET} from DATABASE_URL with these same
+      # credentials when the explicit vars are unset; tenant-context.integration.
+      # test.ts only needs the _TENANT/_FLEET pair, for the same reason.
       BMS_AUTH_PASSWORD: bms_auth_dev
       BMS_TENANT_PASSWORD: bms_tenant_dev
       BMS_FLEET_PASSWORD: bms_fleet_dev

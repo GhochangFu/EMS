@@ -275,10 +275,27 @@ tables login and permission checks need before an organization is even known.
 them evaluate row-level security policies, so the owner connection is correct
 for them.
 
-A managed Postgres deployment (not this local setup) needs a DBA to run
-migration `0039`: `CREATE ROLE` needs `CREATEROLE` and `ALTER ROLE ...
-BYPASSRLS` needs `SUPERUSER`, and most managed offerings do not grant an
-application role either by default.
+A managed Postgres deployment (not this local setup) cannot run migration
+`0039` as written: `CREATE ROLE` needs `CREATEROLE` and `ALTER ROLE ...
+BYPASSRLS` needs `SUPERUSER`, and offerings like RDS/Aurora and Cloud SQL grant
+neither `BYPASSRLS` nor real superuser to any customer-facing role, DBA-owned
+or not — this is not merely gated behind asking a DBA, it is unrunnable there
+without first dropping the `BYPASSRLS` line and relying on `FORCE ROW LEVEL
+SECURITY` plus ordinary grants instead. Nothing in this repo targets a managed
+Postgres provider today, so this is a note for future operational planning,
+not a solved path.
+
+**Upgrading an existing native install** (already ran an older version of §7
+before this migration existed): `bms_app` was created plain `LOGIN`, not
+`SUPERUSER`, and migration `0039` will fail on `CREATE ROLE`/`ALTER ROLE ...
+BYPASSRLS` until you run, as the `postgres` superuser:
+
+```bash
+sudo -u postgres psql -c "ALTER ROLE bms_app SUPERUSER;"
+```
+
+Compose and CI are unaffected — the official Postgres/TimescaleDB image
+already makes its `POSTGRES_USER` a superuser.
 
 Open `http://localhost:5173` in your Windows browser. Seeded local users:
 `admin@bms.local`, `wc-admin@bms.local`, and `wc-hvac-admin@bms.local`
