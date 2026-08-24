@@ -101,6 +101,30 @@ const MAX_ATTEMPTS = 5;
 const RETRY_DELAY_MS = 3_000;
 
 /**
+ * The retry budget for the **post-commit refresh on an API request**, which is a
+ * different situation from the CLI backfill and must not share its numbers.
+ *
+ * `withRollupRole` checks out one connection and holds it for the whole
+ * four-level loop, because the `SET ROLE` has to stay in scope. `TENANT_POOL` is
+ * the pool every authenticated tenant read and write uses and it is pg's default
+ * `max: 10` (`apps/api/src/database/database.module.ts`). At the CLI's budget a
+ * single write that meets a concurrent scheduled policy would pin one of those
+ * ten connections for 4 levels x 4 sleeps x 3 s — roughly 48 s — and ten such
+ * writes would exhaust the pool and queue every other tenant request behind
+ * them. `55P03` conflicts are ordinary here: the four policies run every
+ * 1/5/30/60 minutes.
+ *
+ * One short retry absorbs the common brief overlap; beyond that the caller's
+ * `catch` logs a warning and the next scheduled policy run does the work. That
+ * is the right trade on a request path — the rows are already committed, and
+ * ADR 0023's real-time aggregation keeps them visible meanwhile.
+ *
+ * `main()` keeps the generous budget: it holds its own dedicated connection, and
+ * an operator repairing the aggregates would rather wait than re-run.
+ */
+const REQUEST_PATH_RETRY = { attempts: 2, delayMs: 1_000 } as const;
+
+/**
  * Refreshes one level, retrying a concurrent-refresh conflict.
  *
  * Found by rehearsing this script on 2026-08-10 rather than by reasoning about
@@ -117,12 +141,17 @@ const RETRY_DELAY_MS = 3_000;
  * by construction: policy runs are short and bounded by their own `start_offset`.
  */
 export async function refreshLevel(
-  client: pg.Pool | pg.Client,
+  client: pg.Pool | pg.Client | pg.PoolClient,
   view: string,
   from: Date | null,
   to: Date | null = null,
+  retry: { attempts: number; delayMs: number } = {
+    attempts: MAX_ATTEMPTS,
+    delayMs: RETRY_DELAY_MS,
+  },
 ): Promise<void> {
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+  const { attempts: MAX, delayMs: DELAY } = retry;
+  for (let attempt = 1; attempt <= MAX; attempt += 1) {
     try {
       // Lower-bounded at the level's own source floor, capped at `now()` — see
       // `sourceFloor` and the loop in `main`. `to` is `null` for every call
@@ -136,14 +165,14 @@ export async function refreshLevel(
       return;
     } catch (err: unknown) {
       const code = (err as { code?: string } | null)?.code;
-      if (code !== CONCURRENT_REFRESH || attempt === MAX_ATTEMPTS) {
+      if (code !== CONCURRENT_REFRESH || attempt === MAX) {
         throw err;
       }
       report(
         `[F4.1] ${view}: a scheduled policy is refreshing the same window; ` +
-          `retrying in ${RETRY_DELAY_MS / 1000}s (attempt ${attempt}/${MAX_ATTEMPTS})`,
+          `retrying in ${DELAY / 1000}s (attempt ${attempt}/${MAX})`,
       );
-      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      await new Promise((resolve) => setTimeout(resolve, DELAY));
     }
   }
 }
@@ -226,15 +255,82 @@ const REFRESH_MARGIN_MS: Readonly<Record<(typeof LEVELS)[number]["view"], number
  * green build.
  */
 export async function refreshAggregatesFrom(
-  client: pg.Pool | pg.Client,
+  client: pg.Pool | pg.Client | pg.PoolClient,
   from: Date,
   to: Date = new Date(),
 ): Promise<void> {
-  for (const { view } of LEVELS) {
-    const margin = REFRESH_MARGIN_MS[view];
-    const widenedFrom = new Date(from.getTime() - margin);
-    const widenedTo = new Date(Math.min(to.getTime() + margin, Date.now()));
-    await refreshLevel(client, view, widenedFrom, widenedTo);
+  await withRollupRole(client, async (target) => {
+    for (const { view } of LEVELS) {
+      const margin = REFRESH_MARGIN_MS[view];
+      const widenedFrom = new Date(from.getTime() - margin);
+      const widenedTo = new Date(Math.min(to.getTime() + margin, Date.now()));
+      await refreshLevel(target, view, widenedFrom, widenedTo, REQUEST_PATH_RETRY);
+    }
+  });
+}
+
+/**
+ * `E7.1a` / ADR 0045 — runs `work` with `bms_rollup` as the current role.
+ *
+ * `refresh_continuous_aggregate` requires **ownership** of the aggregate, and
+ * since ADR 0045 the API's pools are `bms_tenant`/`bms_fleet`, which own
+ * nothing. Before this, every call from `TelemetryWriteService` and
+ * `CalcWriteService` failed with `must be owner of continuous aggregate` and was
+ * swallowed as a warning — silently, and since `F4.16` moved the API off the
+ * owner connection. Its integration test passed only because the test pool was
+ * the `bms_app` superuser.
+ *
+ * That is a data-correctness defect rather than a latency one, which is why it
+ * is fixed rather than filed: the refresh policies carry bounded
+ * `start_offset`s (3 h / 12 h / 3 days / 30 days), and real-time aggregation
+ * covers only data not yet materialised — so a reading written outside its
+ * level's window is **permanently absent** from that rollup, with nothing but a
+ * `WARN` to say so.
+ *
+ * `bms_rollup` owns the four continuous aggregates and nothing else.
+ * `bms_owner`, `bms_tenant` and `bms_fleet` are members of it, so each can
+ * assume it for exactly this.
+ *
+ * **`SET ROLE`, not `SET LOCAL ROLE`, and that is forced.**
+ * `refresh_continuous_aggregate` cannot run inside a transaction block, so
+ * there is no transaction for a `LOCAL` setting to be scoped to. The role is
+ * therefore reset in a `finally` on the same connection — and the connection is
+ * checked out explicitly for the same reason, so a pooled connection can never
+ * be handed back to another caller still carrying the role.
+ */
+async function withRollupRole(
+  client: pg.Pool | pg.Client | pg.PoolClient,
+  work: (target: pg.PoolClient | pg.Client) => Promise<void>,
+): Promise<void> {
+  const isPool = typeof (client as pg.Pool).connect === "function" && "idleCount" in client;
+  const target = isPool ? await (client as pg.Pool).connect() : (client as pg.Client);
+  try {
+    await target.query("SET ROLE bms_rollup");
+    await work(target);
+  } finally {
+    // A failed RESET must not mask the real error from `work`, so this does not
+    // rethrow when it owns the connection — it destroys it instead. A released
+    // connection still carrying `bms_rollup` is exactly what the explicit
+    // checkout above exists to prevent.
+    let reset = true;
+    try {
+      await target.query("RESET ROLE");
+    } catch {
+      reset = false;
+    }
+    if (isPool) {
+      (target as pg.PoolClient).release(reset ? undefined : new Error("RESET ROLE failed"));
+    } else if (!reset) {
+      // The caller owns this connection, so this function cannot destroy it —
+      // and staying silent would hand back a session still carrying the role.
+      // No caller passes a borrowed `PoolClient` today; the signature admits
+      // one, so this is the branch that stops the next one being a defect.
+      throw new Error(
+        "RESET ROLE failed on a caller-owned connection: it is still running as " +
+          "bms_rollup. Discard this connection rather than reusing it (ADR 0045 " +
+          "Amendment 2).",
+      );
+    }
   }
 }
 
@@ -325,6 +421,17 @@ async function main(): Promise<void> {
   // means contention worth failing on.
   await client.query("SET statement_timeout = '30min'");
   await client.query("SET lock_timeout = '30s'");
+
+  // `E7.1a` / ADR 0045 Amendment 2. `bms_owner` does not own the continuous
+  // aggregates — `bms_rollup` does — and since the membership is granted `WITH
+  // INHERIT FALSE`, holding it is not enough: the role must be taken explicitly.
+  //
+  // Before that clause was added this line was unnecessary and its absence was
+  // *evidence of the defect*: this script refreshed successfully as `bms_owner`
+  // with no `SET ROLE`, which is only possible when the grant inherits — the
+  // same inheritance that let `bms_tenant` drop a rollup from the API's pool.
+  // A green CI backfill step was therefore proof of the hole, not of health.
+  await client.query("SET ROLE bms_rollup");
 
   try {
     // Fail loudly on an unmigrated database rather than reporting "nothing to

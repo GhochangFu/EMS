@@ -70,20 +70,49 @@ export function integrationDbVerdict(env: {
  * `refuse`, which is deliberately an import-time failure: a `describe` that never
  * registers is indistinguishable from one that passed.
  *
+ * ## `E7.1a` / ADR 0045 — why the returned string names `bms_fleet` by default
+ *
+ * `DATABASE_URL` used to name `bms_app`, a superuser, so a fixture pool built
+ * from it saw every row in every organization. Since ADR 0045 it names
+ * `bms_owner`, which `FORCE ROW LEVEL SECURITY` binds — and a fixture pool with
+ * no `app.current_organization` set now sees **nothing** on the five tables
+ * migration `0040` protects.
+ *
+ * Integration fixtures are cross-organization reads by their nature: one suite
+ * looks up `wc-admin@bms.local`'s ESKOM grant and `phe-admin@bms.local`'s PHEWB
+ * grant in the same `beforeAll`. Under
+ * [ADR 0043 Amendment 3](../../../../docs/adr/0043-multi-tenant-architecture.md)
+ * that is a `fleetDb` read, and it needs a named reason — **this paragraph is
+ * that reason, stated once at the one seam all 34 suites pass through** rather
+ * than 34 times.
+ *
+ * This does *not* weaken the row-level-security coverage. The suites that
+ * actually test RLS — `locations.rls`, `point-keys.rls`, `tenant-context`,
+ * `access-control-rls` and `role-grants` — each build their own role pools with
+ * `asRole` and are unaffected by what this returns. What `E7.1a` adds on top is
+ * `bms-owner-rls.integration.*`, which asserts the negative directly.
+ *
  * @param item backlog id, e.g. `"F4.28"` — prefixes both messages
  * @param label what the suite covers, e.g. `"aggregate read conversion tests"`
  * @param because why a green run without a database asserts nothing. Suite-
  *   specific and load-bearing: it is what tells whoever broke the pipeline which
  *   guarantee just stopped being checked. Name the behaviours, not the feature.
+ * @param connection which role the returned string names. `"fleet"` (the
+ *   default) is the fixture connection described above. `"superuser"` is for the
+ *   one suite that issues `SET LOCAL ROLE`, which needs the superuser attribute
+ *   or role membership — `bms_owner` has neither, on purpose. `"owner"` is for a
+ *   suite that means to be bound by `FORCE`.
  */
 export function requireIntegrationDb({
   item,
   label,
   because,
+  connection = "fleet",
 }: {
   item: string;
   label: string;
   because: string;
+  connection?: "fleet" | "owner" | "superuser";
 }): string | undefined {
   const verdict = integrationDbVerdict(process.env);
 
@@ -106,7 +135,39 @@ export function requireIntegrationDb({
     return undefined;
   }
 
-  return verdict.connectionString;
+  return resolveIntegrationRoleUrl(verdict.connectionString, connection, process.env);
+}
+
+/**
+ * Re-points a connection string at the role a suite actually needs.
+ *
+ * Prefers an explicitly-set `DATABASE_URL_FLEET` / `DATABASE_URL_SUPERUSER`
+ * over deriving one, so a deployment whose roles are named or credentialed
+ * differently is not second-guessed. The derivation is the same one
+ * `asRole` performs for the real-role RLS suites, and it exists so a developer
+ * sets one variable rather than four.
+ */
+export function resolveIntegrationRoleUrl(
+  connectionString: string,
+  connection: "fleet" | "owner" | "superuser",
+  env: Record<string, string | undefined>,
+): string {
+  if (connection === "owner") {
+    return connectionString;
+  }
+  const explicit =
+    connection === "fleet" ? env.DATABASE_URL_FLEET : env.DATABASE_URL_SUPERUSER;
+  if (explicit) {
+    return explicit;
+  }
+  const [role, password] =
+    connection === "fleet"
+      ? ["bms_fleet", env.BMS_FLEET_PASSWORD ?? "bms_fleet_dev"]
+      : ["bms_app", "bms_app_dev"];
+  const parsed = new URL(connectionString);
+  parsed.username = role;
+  parsed.password = password;
+  return parsed.toString();
 }
 
 /**
