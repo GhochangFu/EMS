@@ -10,6 +10,7 @@ import {
 } from "@bms/shared";
 
 import { getOrganizationId } from "./hierarchy-seed";
+import { withOrganization } from "./seed-tenant";
 
 type PointKeySeed = {
   code: string;
@@ -93,7 +94,20 @@ const PHE_CATALOG: PointKeySeed[] = [
   ...keysForDomain(HVAC_POINT_KEYS, "hvac"),
 ];
 
-/** Seeds org-scoped point key catalog rows for demo organizations. */
+/**
+ * Seeds org-scoped point key catalog rows for demo organizations.
+ *
+ * `E7.1a`: `bms.point_keys` is one of the five tables that carry
+ * `FORCE ROW LEVEL SECURITY`, and this is the one seed module that writes to
+ * both organizations in a single call. It therefore sets its own tenant context
+ * around each catalog rather than taking one from `seed.ts` — the loop already
+ * had the per-organization shape, so the transaction boundary lands on it.
+ *
+ * The `organization_id` bind parameter stays, and it is not redundant: it makes
+ * the row's tenant explicit at the insert site, and the policy's `WITH CHECK`
+ * then rejects any mismatch between it and the surrounding context rather than
+ * letting the two drift.
+ */
 export async function seedPointKeyCatalog(pool: pg.Pool): Promise<void> {
   const eskomOrgId = await getOrganizationId(pool, "ESKOM");
   const phewbOrgId = await getOrganizationId(pool, "PHEWB");
@@ -102,20 +116,22 @@ export async function seedPointKeyCatalog(pool: pg.Pool): Promise<void> {
     [eskomOrgId, ESKOM_CATALOG],
     [phewbOrgId, PHE_CATALOG],
   ] as const) {
-    for (const row of catalog) {
-      await pool.query(
-        `
-        INSERT INTO bms.point_keys (
-          organization_id, code, name, domain, unit, active
-        )
-        VALUES ($1, $2, $3, $4, $5, true)
-        ON CONFLICT (organization_id, code) DO UPDATE SET
-          name = EXCLUDED.name,
-          domain = EXCLUDED.domain,
-          unit = EXCLUDED.unit
-        `,
-        [organizationId, row.code, row.name, row.domain, row.unit],
-      );
-    }
+    await withOrganization(pool, organizationId, async () => {
+      for (const row of catalog) {
+        await pool.query(
+          `
+          INSERT INTO bms.point_keys (
+            organization_id, code, name, domain, unit, active
+          )
+          VALUES ($1, $2, $3, $4, $5, true)
+          ON CONFLICT (organization_id, code) DO UPDATE SET
+            name = EXCLUDED.name,
+            domain = EXCLUDED.domain,
+            unit = EXCLUDED.unit
+          `,
+          [organizationId, row.code, row.name, row.domain, row.unit],
+        );
+      }
+    });
   }
 }
