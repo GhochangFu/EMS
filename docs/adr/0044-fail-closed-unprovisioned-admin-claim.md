@@ -43,19 +43,35 @@ thing constraining the claim. ADR 0021 Amendment 1 named this exact shape:
 *"deleting someone's `bms.users` row would have escalated them to global admin
 rather than revoking them."*
 
-**Traced precisely before deciding the fix's shape.**
+**Traced precisely before deciding the fix's shape, on both surfaces a role
+can reach.** On the master-data surface,
 `writableOrganizationIds`/`writableLocationIds`
 (`access-control.service.ts:153-195`) return `null` — the unrestricted
 sentinel every caller trusts — **only** inside the `role === "admin"` branch.
 Every other role's authorization walks a grant table keyed by user id:
 `organization_admin` via `directOrganizationIds`, `location_admin` via
-`userLocationAccess`, and `operator`/`viewer` via `access-scope.ts`'s
-four-source precedence walk. An unprovisioned principal's fabricated
-`id`/`email` matches no grant row regardless of claimed role, so those three
-paths already return `[]`/`"none"` today, not unrestricted access.
+`userLocationAccess`, and `operator`/`viewer`/`asset_group_admin` via
+`access-scope.ts`'s four-source precedence walk. An unprovisioned principal's
+fabricated `id`/`email` matches no grant row regardless of claimed role, so
+those paths already return `[]`/`"none"` today, not unrestricted access.
 `canManageOrganization`/`canManagePointKey`/`canManageTemplate` were checked
 the same way: each returns `true` unconditionally only inside its own
-`role === "admin"` branch. **Only a claimed `admin` with no row escalates.**
+`role === "admin"` branch.
+
+On the separate ADR 0017 operations-write surface (`alarms`, `rules`,
+`maintenance`, `work-orders`), `asset_group_admin` is admitted for **both**
+write classes alongside `admin`/`organization_admin`/`location_admin`
+(`operations-write.ts:23-31`) — a permission level `writableOrganizationIds`
+does not gate at all. That surface is closed by a different mechanism, not by
+this decision's `null`-sentinel argument: `readableAssetIds` for
+`asset_group_admin` never returns `null`, only an empty array, because
+`readScopeSourcesForRole` routes it through the same grant-table walk — and
+every consumer (`alarms.service.ts`, `maintenance.service.ts`,
+`work-orders.service.ts`, `rules.service.ts`) denies on that empty array.
+Confirmed for an unprovisioned `asset_group_admin` claim specifically, not
+assumed from the pattern. **Only a claimed `admin` with no row escalates,
+across both surfaces — and only via the `null`-sentinel path this decision
+closes.**
 
 **The fallback is load-bearing for a second, legitimate reason, and that use
 must survive.** `assertUngrantedRolesFailClosed` in the same spec file depends

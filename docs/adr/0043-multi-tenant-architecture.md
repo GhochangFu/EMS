@@ -18,9 +18,10 @@ decisions 1–7 and 9–13 are unchanged.
 
 **Amended again 2026-08-24**, closing `F4.16` — see
 [Amendment 2](#amendment-2-2026-08-24--three-claims-corrected-after-implementation-closing-f416)
-at the end. Three claims this document made about what the implementation
-would do did not match what shipped; all three are corrected there. No
-decision changes. The one behavioural fix from the same review —
+at the end. Two claims this document made about what the implementation would
+do did not match what shipped, corrected there; decision 12 is also amended —
+the fleet-pool bypass was ruled for `admin` only and shipped for every
+master-data role. The one behavioural fix from the same review —
 `resolveDbUser` now refuses an unprovisioned `admin` claim — is
 [ADR 0044](0044-fail-closed-unprovisioned-admin-claim.md), not this ADR.
 
@@ -540,10 +541,13 @@ reads it.
 ## Amendment 2 (2026-08-24) — three claims corrected after implementation, closing `F4.16`
 
 Raised by `F4.16`'s closing review (four independent agents) and confirmed
-against the shipped code, not assumed. All three are documentation
-corrections — nothing here changes a decision; §*What changed in code* records
-the one behaviour change, made under [ADR 0044](0044-fail-closed-unprovisioned-admin-claim.md)
-rather than this ADR, and cross-referenced from here for completeness.
+against the shipped code, not assumed. Two are documentation corrections; the
+third **amends decision 12** to state what shipped rather than what was
+originally ruled — flagged as such rather than folded in as a correction,
+because narrowing a decision's guarantee is a decision, not a typo. §*What
+changed in code* records the one behaviour change, made under
+[ADR 0044](0044-fail-closed-unprovisioned-admin-claim.md) rather than this
+ADR, and cross-referenced from here for completeness.
 
 ### The "exactly two call sites" claim (line 450 as originally written) was never true
 
@@ -577,7 +581,7 @@ written to close it, decided while closing `F4.16`.** See that ADR for why the
 fix refuses only an unprovisioned `admin` claim and leaves every other role's
 fallback untouched — the reasoning does not belong in two documents.
 
-### Decision 12's "must never resolve to `bms_fleet`" is narrower than what shipped, and the narrowing is intentional
+### Decision 12 is amended: the fleet bypass extends to every master-data role, not only `admin`
 
 Decision 12, verbatim: *"`admin` sees the whole fleet, and it does so by
 connecting as `bms_fleet`... A customer `organization_admin` must never
@@ -608,11 +612,13 @@ connection. RLS backstops **writes** — `withTenant` sets the tenant GUC before
 every insert/update on the five tables, so a `WHERE` clause bug there fails
 the write outright rather than writing to the wrong tenant. It does not
 backstop these reads: a `WHERE` clause bug here returns the wrong rows with no
-database-level catch, same as pre-`F4.16`. **Corrected: decision 12's "must
-never resolve to `bms_fleet`" holds for the literal pool-selection design it
-described, which was never built; the design that was built intentionally
-extends `bms_fleet` reads to every master-data role, and its correctness rests
-on `AccessControlService`, not on row-level security.** Tightening this —
+database-level catch, same as pre-`F4.16`. **Decision 12 is amended: the
+fleet-pool bypass is not restricted to `admin`.** It extends to every
+master-data role's reads on the five RLS-bearing tables, by design, and the
+isolation guarantee for those reads rests on `AccessControlService`'s filter,
+not on row-level security — the original "must never resolve to `bms_fleet`"
+guarantee holds only for the literal pool-selection design decision 12
+described, which was never built. Tightening this —
 routing scoped reads through per-request `withTenant` connections instead — is
 listed as a real option in `F4.16`'s closing review and left open, since it
 cannot represent a multi-organization `organization_admin` without additional

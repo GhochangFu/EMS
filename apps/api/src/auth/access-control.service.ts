@@ -282,11 +282,16 @@ export class AccessControlService {
    * "admin"` branch; every other role's authorization walks a grant table
    * keyed by user id, and an unprovisioned principal's fabricated `id`/`email`
    * matches no grant row regardless of claimed role — so `organization_admin`
-   * and `location_admin` already resolve to `[]`, and `operator`/`viewer`
-   * already resolve to `"none"`, with no change needed here. Refusing those
-   * too would also remove the one thing that lets a freshly-federated
-   * `operator`/`viewer` principal reach the app, with a correctly empty scope,
-   * before a local row exists for them — see `assertUngrantedRolesFailClosed`.
+   * and `location_admin` already resolve to `[]`, and `operator`/`viewer`/
+   * `asset_group_admin` already resolve to `"none"`, with no change needed
+   * here. (`asset_group_admin` is also admitted to the separate ADR 0017
+   * operations-write surface — `operations-write.ts` — which this `null`
+   * sentinel does not gate at all; that surface is closed the same way,
+   * because `readableAssetIds` for it never returns `null` either. See
+   * ADR 0044.) Refusing the non-admin fallback too would also remove the one
+   * thing that lets a freshly-federated `operator`/`viewer` principal reach
+   * the app, with a correctly empty scope, before a local row exists for
+   * them — see `assertUngrantedRolesFailClosed`.
    */
   private async resolveDbUser(jwt: JwtPayload): Promise<DbUser> {
     const [row] = await this.authDb
