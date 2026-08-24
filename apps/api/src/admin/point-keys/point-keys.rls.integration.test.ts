@@ -1,5 +1,5 @@
 import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { createDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
@@ -9,11 +9,17 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
 import { PointKeysAdminService } from "./point-keys.service";
+import {
+  assertPolicyRefusesMismatchedOrg,
+  assertRefusesOutOfScopeOrganization,
+  assertWriteLifecycleSurvivesRealRls,
+} from "./point-keys.rls.integration.spec";
 
 /**
- * `F4.16` Task 8 — the write-path coverage `point-keys.service.ts` had none
- * of. See `locations.rls.integration.test.ts` for the full rationale; this is
- * the same shape against the other zero-coverage RLS write path.
+ * `F4.16` Task 8 — Vitest entry point. Assertions live in the sibling `.spec`
+ * (ADR 0014); this file owns the database lifecycle. See
+ * `locations.rls.integration.test.ts` for the full rationale; this is the
+ * same shape against the other zero-coverage RLS write path.
  */
 const connectionString = requireIntegrationDb({
   item: "F4.16",
@@ -39,7 +45,8 @@ describe.skipIf(!connectionString)("F4.16 — PointKeysAdminService under real R
   let fleetPool: pg.Pool;
   let svc: PointKeysAdminService;
   let organizationId: string;
-  let createdId: string | undefined;
+  let secondOrganizationId: string;
+  const createdIds: string[] = [];
 
   const jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL);
 
@@ -74,6 +81,15 @@ describe.skipIf(!connectionString)("F4.16 — PointKeysAdminService under real R
     }
     organizationId = rows[0].id;
 
+    const { rows: others } = await ownerPool.query<{ id: string }>(
+      "SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1",
+      [organizationId],
+    );
+    if (!others[0]) {
+      throw new Error("F4.16: need a second organization to prove cross-org refusal.");
+    }
+    secondOrganizationId = others[0].id;
+
     const tenantDb = createDb(tenantPool);
     const fleetDb = createDb(fleetPool);
     svc = new PointKeysAdminService(
@@ -85,60 +101,29 @@ describe.skipIf(!connectionString)("F4.16 — PointKeysAdminService under real R
   });
 
   afterAll(async () => {
-    if (createdId) {
-      await ownerPool.query("DELETE FROM bms.point_keys WHERE id = $1", [createdId]);
+    if (createdIds.length > 0) {
+      await ownerPool.query("DELETE FROM bms.point_keys WHERE id = ANY($1)", [createdIds]);
     }
     await Promise.all([ownerPool.end(), authPool.end(), tenantPool.end(), fleetPool.end()]);
   });
 
   it("creates, reads, updates, deactivates and reactivates a point key under real RLS", async () => {
-    const created = await svc.create(jwt, {
-      organizationId,
-      code: `f4.16-rls-${Date.now()}`,
-      name: "F4.16 RLS write-path check",
-    });
-    createdId = created.id;
-    expect(created.organizationId).toBe(organizationId);
-    expect(created.active).toBe(true);
-
-    // Written on the tenant connection under a real SET LOCAL — if withTenant
-    // were silently missing, this insert would fail here with a row-level
-    // security policy violation rather than merely being unscoped.
-    const [ownerRow] = (
-      await ownerPool.query<{ organization_id: string }>(
-        "SELECT organization_id FROM bms.point_keys WHERE id = $1",
-        [createdId],
-      )
-    ).rows;
-    expect(ownerRow?.organization_id).toBe(organizationId);
-
-    const fetched = await svc.getById(jwt, created.id);
-    expect(fetched.name).toBe("F4.16 RLS write-path check");
-
-    const updated = await svc.update(jwt, created.id, { name: "F4.16 RLS write-path renamed" });
-    expect(updated.name).toBe("F4.16 RLS write-path renamed");
-
-    const deactivated = await svc.deactivate(jwt, created.id);
-    expect(deactivated.active).toBe(false);
-
-    const reactivated = await svc.reactivate(jwt, created.id);
-    expect(reactivated.active).toBe(true);
+    const id = await assertWriteLifecycleSurvivesRealRls(
+      { svc, ownerPool, organizationId },
+      jwt,
+    );
+    createdIds.push(id);
   });
 
   it("refuses an organization_admin creating a point key outside their granted organization", async () => {
-    const { rows } = await ownerPool.query<{ id: string }>(
-      "SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1",
-      [organizationId],
+    await assertRefusesOutOfScopeOrganization({ svc, ownerPool, organizationId }, jwt);
+  });
+
+  it("refuses a write whose row claims a different organization than SET LOCAL names (WITH CHECK)", async () => {
+    await assertPolicyRefusesMismatchedOrg(
+      createDb(tenantPool),
+      organizationId,
+      secondOrganizationId,
     );
-    if (!rows[0]) {
-      throw new Error("F4.16: need a second organization to prove cross-org refusal.");
-    }
-    await expect(
-      svc.create(jwt, {
-        organizationId: rows[0].id,
-        code: `f4.16-rls-deny-${Date.now()}`,
-        name: "must never be created",
-      }),
-    ).rejects.toThrow(/access scope/i);
   });
 });
