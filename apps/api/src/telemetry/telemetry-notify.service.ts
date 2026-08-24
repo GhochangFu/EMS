@@ -8,6 +8,7 @@ import { Client } from "pg";
 
 import type { TelemetryReading } from "@bms/shared";
 
+import { DATABASE_URL_AUTH_ENV_VAR } from "../database/database-urls";
 import { MetricsService } from "../observability/metrics.service";
 import { sleep } from "./sleep";
 import { TelemetryBroadcastHub } from "./telemetry-broadcast.hub";
@@ -93,7 +94,7 @@ export class TelemetryNotifyService implements OnModuleInit, OnModuleDestroy {
     // service (a copy-paste mistake, a debugging line) fails loudly against
     // `bms_auth`'s four-table grant instead of silently succeeding with full
     // access.
-    const url = process.env.DATABASE_URL_AUTH;
+    const url = process.env[DATABASE_URL_AUTH_ENV_VAR];
     if (!url) {
       this.logger.warn("DATABASE_URL_AUTH missing; telemetry NOTIFY listener disabled");
       this.metrics.setTelemetryListenerConnected(false);

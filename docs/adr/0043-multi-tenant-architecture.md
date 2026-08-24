@@ -17,11 +17,11 @@ revoke lands in `F4.16` with the grant matrix, not in `E7.1`. Its substance and
 decisions 1–7 and 9–13 are unchanged.
 
 **Amended again 2026-08-24**, closing `F4.16` — see
-[Amendment 2](#amendment-2-2026-08-24--three-claims-corrected-after-implementation-closing-f416)
-at the end. Two claims this document made about what the implementation would
-do did not match what shipped, corrected there; decision 12 is also amended —
-the fleet-pool bypass was ruled for `admin` only and shipped for every
-master-data role. The one behavioural fix from the same review —
+[Amendment 2](#amendment-2-2026-08-24--four-claims-corrected-after-implementation-closing-f416)
+at the end. Three claims this document made about what the implementation
+would do did not match what shipped, corrected there; decision 12 is also
+amended — the fleet-pool bypass was ruled for `admin` only and shipped for
+every master-data role. The one behavioural fix from the same review —
 `resolveDbUser` now refuses an unprovisioned `admin` claim — is
 [ADR 0044](0044-fail-closed-unprovisioned-admin-claim.md), not this ADR.
 
@@ -428,12 +428,19 @@ role that picks the pool and the home `organization_id` that goes into
 A third role **`bms_auth`** is created in the same migration as the other two. It
 owns nothing, and it holds:
 
-- `SELECT (id, email, password_hash, display_name, role, organization_id,
-  last_login_at)` on `bms.users`;
+- `SELECT (id, email, password_hash, display_name, role, oidc_subject,
+  last_login_at, created_at)` on `bms.users` — corrected in Amendment 2 from an
+  earlier, wrong version of this bullet that named a `organization_id` column
+  `bms.users` does not yet have and omitted `oidc_subject`/`created_at`, which
+  it does have;
 - `UPDATE (last_login_at)` on `bms.users`;
-- a `bms.users` policy `USING (true)` **for `bms_auth` only** — the table carries
-  `FORCE ROW LEVEL SECURITY`, so an explicit permissive policy is required
-  rather than an absent one;
+- **no policy at all, because `bms.users` carries no row-level security —
+  corrected in Amendment 2** from an earlier, wrong version of this bullet
+  that invented a `USING (true)` policy and a `FORCE ROW LEVEL SECURITY`
+  clause neither migration `0039` nor `0040` contains. `bms_auth`'s access to
+  `bms.users` is the column-level grant above, nothing more; RLS in this item
+  covers only the five tables decision 10 names, and `bms.users` is not one
+  of them (it has no `organization_id` column yet — see the next paragraph);
 - **nothing in `telemetry.*` at all**, and **not** the `BYPASSRLS` attribute. The
   exemption is scoped by table name and to `SELECT`; it is not a role attribute,
   which is what still separates this from reusing `bms_fleet`. A test asserts the
@@ -501,6 +508,26 @@ rather than assumed: no continuous aggregate, compression policy or retention
 policy references any `bms.*` table, so `FORCE` on `bms.*` cannot collide with a
 refresh running under the owner.
 
+**Flagged for `E7.1` by `F4.16`'s closing review (security-reviewer and
+agents-compliance-reviewer independently, same finding): the stated purpose
+of `FORCE` above is already contradicted by this ADR's own Context** (*"a
+superuser bypasses it even then"*). `bms_app` — the owner `FORCE` is meant to
+constrain — is required to be a real Postgres superuser everywhere this repo
+runs it: Docker's official image already makes `POSTGRES_USER` a superuser
+(compose, CI), and `docs/local-setup.md`'s native/WSL instructions now create
+it `WITH ... SUPERUSER` explicitly, because migration `0039`'s
+`ALTER ROLE bms_fleet BYPASSRLS` needs the granting role to already hold that
+attribute or be superuser. `FORCE` does not bind a superuser. So `E7.1`
+adding `FORCE` as planned will not actually stop `bms_app` from silently
+defeating a policy — the one scenario this section says `FORCE` exists for.
+**Not fixed here**, deliberately: `F4.16` runs no query as a table owner that
+`FORCE` would need to catch (`db:seed`'s bulk inserts run before any tenant
+GUC matters), so nothing this item claims is weakened. `E7.1` needs either a
+non-superuser path for `bms_app` (a real change to how this repo's roles are
+provisioned) or an explicit acknowledgment that `FORCE` is decorative against
+the owner connection — a design question for that item's own ADR work, not a
+one-line fix here.
+
 ### Question 5 is amended in placement, not in substance
 
 Question 5 ruled that the `password_hash` revoke lands "inside `E7.1`, in the
@@ -538,16 +565,17 @@ reads it.
   `pnpm db:seed`, `apps/sim` and `apps/ingest` are unchanged and stay on
   `bms_app`.
 
-## Amendment 2 (2026-08-24) — three claims corrected after implementation, closing `F4.16`
+## Amendment 2 (2026-08-24) — four claims corrected after implementation, closing `F4.16`
 
-Raised by `F4.16`'s closing review (four independent agents) and confirmed
-against the shipped code, not assumed. Two are documentation corrections; the
-third **amends decision 12** to state what shipped rather than what was
-originally ruled — flagged as such rather than folded in as a correction,
-because narrowing a decision's guarantee is a decision, not a typo. §*What
-changed in code* records the one behaviour change, made under
-[ADR 0044](0044-fail-closed-unprovisioned-admin-claim.md) rather than this
-ADR, and cross-referenced from here for completeness.
+Raised by `F4.16`'s closing review (four independent agents, across two
+rounds — the fourth caught by a full-branch pass after the first three had
+already landed) and confirmed against the shipped code, not assumed. Three
+are documentation corrections; one **amends decision 12** to state what
+shipped rather than what was originally ruled — flagged as such rather than
+folded in as a correction, because narrowing a decision's guarantee is a
+decision, not a typo. §*What changed in code* records the one behaviour
+change, made under [ADR 0044](0044-fail-closed-unprovisioned-admin-claim.md)
+rather than this ADR, and cross-referenced from here for completeness.
 
 ### The "exactly two call sites" claim (line 450 as originally written) was never true
 
@@ -623,6 +651,27 @@ routing scoped reads through per-request `withTenant` connections instead — is
 listed as a real option in `F4.16`'s closing review and left open, since it
 cannot represent a multi-organization `organization_admin` without additional
 design work beyond what `F4.16` scoped.
+
+### Amendment 1's `bms.users` bullet named a policy and a column that do not exist
+
+Found by a fourth review pass, after the other three corrections above had
+already landed — Amendment 1's own text (§*Decision 8 is amended*, the
+`bms_auth` grant list) claimed `bms_auth` reaches `bms.users` partly through
+*"a `bms.users` policy `USING (true)` for `bms_auth` only"*, justified by
+`bms.users` carrying `FORCE ROW LEVEL SECURITY`. Neither migration `0039` nor
+`0040` creates any policy on `bms.users`, and `0040` — the migration that
+actually enables row-level security — does not include `bms.users` among its
+five tables at all (`locations`, `user_organization_access`, `point_keys`,
+`asset_templates`, `onboarding_sessions`; `bms.users` has no `organization_id`
+column yet, which is the whole reason this amendment's next paragraph walks
+grant tables instead of setting one). `bms_auth`'s reach into `bms.users` is
+entirely the column-level `GRANT` above — no RLS mechanism is involved for
+that table at all. The same bullet's column list was also wrong: it named
+`organization_id`, which does not exist on `bms.users` (the next paragraph
+says so explicitly), and omitted `oidc_subject`/`created_at`, which the actual
+grant includes. Both corrected in place above, in Amendment 1's own text
+rather than only here, so a reader of that section alone sees the accurate
+grant rather than tracking down this amendment first.
 
 ### What changed in code, for completeness
 

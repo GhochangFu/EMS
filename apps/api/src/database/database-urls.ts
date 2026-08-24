@@ -14,8 +14,16 @@ export interface DatabaseUrls {
   readonly fleet: string;
 }
 
+/**
+ * Exported so a second reader of `DATABASE_URL_AUTH` — `telemetry-notify.
+ * service.ts` builds its own long-lived `pg.Client` rather than going through
+ * `AUTH_POOL`, so it cannot take the pool by injection — names the same
+ * constant instead of a second string literal that could drift from this one.
+ */
+export const DATABASE_URL_AUTH_ENV_VAR = "DATABASE_URL_AUTH";
+
 const REQUIRED = [
-  ["auth", "DATABASE_URL_AUTH"],
+  ["auth", DATABASE_URL_AUTH_ENV_VAR],
   ["tenant", "DATABASE_URL_TENANT"],
   ["fleet", "DATABASE_URL_FLEET"],
 ] as const;

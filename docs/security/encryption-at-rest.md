@@ -229,31 +229,42 @@ README**, and must not survive into a pilot or production deployment:
 
 | Setting | Committed default | Action |
 |---------|-------------------|--------|
-| `POSTGRES_PASSWORD` | `bms_app_dev` | Change — see the caveat below |
+| `POSTGRES_PASSWORD` | `bms_app_dev` | Change — see the caveat below. Owner role; `migrate`/`db:seed`/`apps/sim`/`apps/ingest` connect as this. |
+| `BMS_AUTH_PASSWORD` | `bms_auth_dev` | Change — same caveat, `bms_auth` (ADR 0043). The API's identity/grant-resolution connection. |
+| `BMS_TENANT_PASSWORD` | `bms_tenant_dev` | Change — same caveat, `bms_tenant`. The API's row-level-security-scoped connection. |
+| `BMS_FLEET_PASSWORD` | `bms_fleet_dev` | Change — same caveat, `bms_fleet`. The API's `BYPASSRLS` connection for fleet-wide reads. |
 | `JWT_SECRET` | `change-me-in-compose` | Change (or run OIDC-only) |
 | `KEYCLOAK_ADMIN_PASSWORD` | `admin` | Change |
 | Grafana admin | `admin` / `admin` | Change |
 | Seeded demo users | `admin123` | Remove or disable outside demos |
 
-> **Postgres password caveat — read before changing it.** Postgres applies
-> `POSTGRES_PASSWORD` **only during first-time `initdb`**. Setting it against a
-> volume that already contains a database has no effect on the stored role
-> password, and the stack then fails authentication in a way that looks like an
-> application bug. On an existing volume, change it with
-> `ALTER ROLE bms_app WITH PASSWORD '…'` **and** update every `DATABASE_URL` in
-> the same change. This is why `docker-compose.yml` still hard-codes the dev
-> default rather than parameterising it — a silent, confusing break was judged
-> worse than an obvious dev-only constant.
+> **Postgres password caveat — read before changing it, for all four roles
+> above.** Postgres applies `POSTGRES_PASSWORD` **only during first-time
+> `initdb`**, and `pnpm --filter @bms/db roles` (which reads
+> `BMS_AUTH_PASSWORD`/`BMS_TENANT_PASSWORD`/`BMS_FLEET_PASSWORD`) only sets a
+> role's password when it runs — neither reapplies retroactively to an
+> existing volume/role on its own. Setting a new value against a volume that
+> already has these roles provisioned has no effect on the stored password,
+> and the stack then fails authentication in a way that looks like an
+> application bug. On an existing volume, change the owner with
+> `ALTER ROLE bms_app WITH PASSWORD '…'`, change the other three by re-running
+> `pnpm --filter @bms/db roles` with the new `BMS_*_PASSWORD` values set, and
+> update every `DATABASE_URL`/`DATABASE_URL_AUTH`/`DATABASE_URL_TENANT`/
+> `DATABASE_URL_FLEET` in the same change. This is why `docker-compose.yml`
+> still hard-codes the dev defaults rather than parameterising them — a
+> silent, confusing break was judged worse than an obvious dev-only constant.
 
 ### 4.4 Protect connections in transit
 
 Not at-rest, but it is the other half of any real assessment and it is
 currently unset:
 
-- `DATABASE_URL` uses plain `postgres://` with no `sslmode`. On a single host
-  the traffic never leaves the Docker bridge network; **the moment Postgres is
-  on another host, add `?sslmode=verify-full`** and give the server a
-  certificate. Do not use `sslmode=require` alone — it encrypts without
+- Every `DATABASE_URL*` variable (the owner `DATABASE_URL` and the API's
+  `DATABASE_URL_AUTH`/`_TENANT`/`_FLEET`, ADR 0043) uses plain `postgres://`
+  with no `sslmode`. On a single host the traffic never leaves the Docker
+  bridge network; **the moment Postgres is on another host, add
+  `?sslmode=verify-full`** on all four connection strings and give the server
+  a certificate. Do not use `sslmode=require` alone — it encrypts without
   authenticating the server.
 - MQTT ingest already uses TLS on port 8883 (ADR 0007), and verifies the
   broker certificate by default. `MQTT_TLS_REJECT_UNAUTHORIZED=false` disables

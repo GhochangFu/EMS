@@ -15,7 +15,9 @@ provide.
 
 | Variable | Required | Default / compose value | Purpose |
 |----------|----------|-------------------------|---------|
-| `DATABASE_URL` | Yes | `postgres://bms_app:bms_app_dev@postgres:5432/bms` | Postgres/TimescaleDB connection string. |
+| `DATABASE_URL_AUTH` | Yes | `postgres://bms_auth:bms_auth_dev@postgres:5432/bms` | Postgres connection as `bms_auth` (ADR 0043 decision 8) — identity/grant-resolution reads only, no `BYPASSRLS`. The API deliberately never connects as the owner (`bms_app`); `DATABASE_URL` is not read by `api`/`api-replica` at all. |
+| `DATABASE_URL_TENANT` | Yes | `postgres://bms_tenant:bms_tenant_dev@postgres:5432/bms` | Postgres connection as `bms_tenant` — row-level-security-scoped reads and writes inside a `withTenant` transaction. |
+| `DATABASE_URL_FLEET` | Yes | `postgres://bms_fleet:bms_fleet_dev@postgres:5432/bms` | Postgres connection as `bms_fleet` — `BYPASSRLS`, for reads that already carry their own scope filter (global-admin and multi-organization views). |
 | `JWT_SECRET` | Local auth only | `change-me-in-compose` | Local JWT signing secret for native WSL fallback and non-OIDC smoke checks. |
 | `JWT_TTL` | Local auth only | `8h` | Local JWT lifetime. |
 | `AUTH_MODE` | No | `oidc` in compose, `local` in native `.env.example` | Selects local JWT auth or Keycloak/OIDC bearer-token validation. `AUTH_MODE=local` does **not** override a configured `OIDC_ISSUER`. |
@@ -104,5 +106,8 @@ These services run only with the `observability` compose profile.
 | Variable | Required | Default / compose value | Purpose |
 |----------|----------|-------------------------|---------|
 | `POSTGRES_DB` | Yes | `bms` | Database name created by the TimescaleDB image. |
-| `POSTGRES_USER` | Yes | `bms_app` | Application database role. |
-| `POSTGRES_PASSWORD` | Yes | `bms_app_dev` | Local development password only. |
+| `POSTGRES_USER` | Yes | `bms_app` | Database **owner** role — `migrate`, `db:seed`, `apps/sim` and `apps/ingest` connect as this. Since ADR 0043 decision 8 the API itself never does; see the API section's `DATABASE_URL_AUTH`/`_TENANT`/`_FLEET` and `BMS_AUTH_PASSWORD`/`BMS_TENANT_PASSWORD`/`BMS_FLEET_PASSWORD` below. |
+| `POSTGRES_PASSWORD` | Yes | `bms_app_dev` | Local development password only, for the owner role above. |
+| `BMS_AUTH_PASSWORD` | Yes (`migrate` only) | `bms_auth_dev` | Sets `LOGIN` + this password on `bms_auth` (`pnpm --filter @bms/db roles`, run by the `migrate` service after `db:migrate`/`db:seed`). Local development password only. |
+| `BMS_TENANT_PASSWORD` | Yes (`migrate` only) | `bms_tenant_dev` | Same, for `bms_tenant`. Local development password only. |
+| `BMS_FLEET_PASSWORD` | Yes (`migrate` only) | `bms_fleet_dev` | Same, for `bms_fleet`. Local development password only. |

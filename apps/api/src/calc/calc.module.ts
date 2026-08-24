@@ -8,10 +8,10 @@ import { CalcStreamingService } from "./calc-streaming.service";
 import { CalcWriteService } from "./calc-write.service";
 
 /**
- * The `F2.4` calc execution engine (ADR 0037). `DRIZZLE`/`POOL_TOKEN`
- * (`DatabaseModule`) and `MetricsService` (`ObservabilityModule`) are both
- * `@Global()`, so only `TelemetryModule` needs importing here, for
- * `TelemetryBroadcastHub`.
+ * The `F2.4` calc execution engine (ADR 0037). `DatabaseModule`'s tokens
+ * (`AUTH_DRIZZLE`/`TENANT_DRIZZLE`/`FLEET_DRIZZLE` since ADR 0043) and
+ * `MetricsService` (`ObservabilityModule`) are both `@Global()`, so only
+ * `TelemetryModule` needs importing here, for `TelemetryBroadcastHub`.
  *
  * No controller — this module exposes no HTTP route; both hosts start with
  * the API process via their own `onModuleInit`. Nothing outside this module

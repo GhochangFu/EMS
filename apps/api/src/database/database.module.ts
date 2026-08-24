@@ -18,8 +18,14 @@ const urls = (): ReturnType<typeof resolveDatabaseUrls> => resolveDatabaseUrls(p
 @Module({
   providers: [
     {
+      // ADR 0043 Amendment 1 sized this for login rate and shipped max: 4;
+      // Task 6.5 then put every authenticated request's grant resolution
+      // (resolveDbUser, writableOrganizationIds, writableLocationIds, ...) on
+      // this same pool, making it the hot path Amendment 1's own Consequences
+      // section already says it is. Matches TENANT_POOL/FLEET_POOL's pg
+      // default (10) instead of a stale, narrower number.
       provide: AUTH_POOL,
-      useFactory: (): pg.Pool => new pg.Pool({ connectionString: urls().auth, max: 4 }),
+      useFactory: (): pg.Pool => new pg.Pool({ connectionString: urls().auth }),
     },
     {
       provide: TENANT_POOL,

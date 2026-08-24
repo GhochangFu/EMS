@@ -35,9 +35,33 @@ function walk(dir: string, out: string[] = []): string[] {
  * it at one of the three named URLs instead (`tests/repo-invariants.test.ts` is
  * the model for this file; kept separate rather than added there because that
  * file sits at AGENTS.md §4.5's 1000-line cap).
+ *
+ * **Matches every shape, not just dot-access.** AGENTS.md §4.4 records that an
+ * identically-shaped guard for `INGEST_NOTIFY` (`F1.1`) missed
+ * `env["INGEST_NOTIFY"]`, `const { INGEST_NOTIFY } = env` and a `getEnv(...)`
+ * helper before a compliance review caught them — three ways to read the same
+ * variable that read perfectly naturally and a dot-access-only regex cannot
+ * see. Comments are stripped first, matching that precedent, so this file's
+ * own prose above does not trip its own check.
  */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
 describe("ADR 0043 — no runtime file reads process.env.DATABASE_URL directly", () => {
   it("only database-urls.ts may name process.env.DATABASE_URL", () => {
+    // Dot access (`process.env.DATABASE_URL`), bracket access
+    // (`process.env["DATABASE_URL"]` / `env['DATABASE_URL']`), and
+    // destructuring (`const { DATABASE_URL } = process.env`) all read the
+    // same variable. `\b...\b` does not match inside `DATABASE_URL_AUTH` /
+    // `_TENANT` / `_FLEET` — both neighbouring characters are word
+    // characters, so no boundary falls between them — which is what keeps
+    // this scoped to the bare name.
+    const patterns = [
+      /\benv\s*(?:\.\s*DATABASE_URL\b|\[\s*["']DATABASE_URL["']\s*\])/,
+      /\{\s*DATABASE_URL\s*\}\s*=\s*process\.env\b/,
+    ];
+
     const offenders = walk(join(repoRoot, "apps", "api", "src"))
       .filter((f) => /\.(ts|tsx)$/.test(f))
       .filter((f) => !/\.(spec|test)\.(ts|tsx)$/.test(f))
@@ -47,7 +71,10 @@ describe("ADR 0043 — no runtime file reads process.env.DATABASE_URL directly",
       // from it — repo-invariants.test.ts's "no runtime file imports a
       // test-only helper" check is what enforces that half.
       .filter((f) => !/[/\\]testing[/\\]/.test(f))
-      .filter((f) => /process\.env\.DATABASE_URL\b/.test(readFileSync(f, "utf8")))
+      .filter((f) => {
+        const src = stripComments(readFileSync(f, "utf8"));
+        return patterns.some((p) => p.test(src));
+      })
       .map((f) => relative(repoRoot, f).replace(/\\/g, "/"));
 
     expect(
