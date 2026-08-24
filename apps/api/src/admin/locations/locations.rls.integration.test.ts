@@ -97,8 +97,9 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
   });
 
   afterAll(async () => {
-    // Direct owner-connection cleanup, matching this branch's live-verification
-    // convention: RLS is what is under test, not the teardown path.
+    // Defensive fallback only — the happy-path test below deletes its own row
+    // immediately. A no-op DELETE on an already-gone id is harmless, so this
+    // only matters if that test threw before reaching its own cleanup.
     if (createdIds.length > 0) {
       await ownerPool.query("DELETE FROM bms.locations WHERE id = ANY($1)", [createdIds]);
     }
@@ -111,6 +112,14 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
       jwt,
     );
     createdIds.push(id);
+    // Deleted here, not deferred to afterAll: the lifecycle ends with the row
+    // active=true, and this suite's other two `it`s (plus every other
+    // integration suite Vitest runs concurrently against the same shared
+    // database) can otherwise observe it — access-control-rls.integration.
+    // test.ts's global-admin active-location count did exactly that once,
+    // 17 instead of 16, a transient off-by-one from this row's window being
+    // the whole file's duration rather than just this test's.
+    await ownerPool.query("DELETE FROM bms.locations WHERE id = $1", [id]);
   });
 
   it("refuses an organization_admin creating a location outside their granted organization", async () => {

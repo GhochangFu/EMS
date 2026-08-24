@@ -101,6 +101,9 @@ describe.skipIf(!connectionString)("F4.16 — PointKeysAdminService under real R
   });
 
   afterAll(async () => {
+    // Defensive fallback only — the happy-path test below deletes its own row
+    // immediately. A no-op DELETE on an already-gone id is harmless, so this
+    // only matters if that test threw before reaching its own cleanup.
     if (createdIds.length > 0) {
       await ownerPool.query("DELETE FROM bms.point_keys WHERE id = ANY($1)", [createdIds]);
     }
@@ -113,6 +116,11 @@ describe.skipIf(!connectionString)("F4.16 — PointKeysAdminService under real R
       jwt,
     );
     createdIds.push(id);
+    // Deleted here, not deferred to afterAll — see locations.rls.integration.
+    // test.ts's identical comment for why: this row ends active=true and
+    // would otherwise stay visible to concurrently-running integration
+    // suites for the whole file's duration instead of just this test's.
+    await ownerPool.query("DELETE FROM bms.point_keys WHERE id = $1", [id]);
   });
 
   it("refuses an organization_admin creating a point key outside their granted organization", async () => {
