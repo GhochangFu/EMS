@@ -84,14 +84,18 @@ export class TelemetryNotifyService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     // ADR 0043 decision 8 (F4.16): the API no longer holds an owner
-    // (`DATABASE_URL`) connection at all. `LISTEN`/`NOTIFY` is not a table
-    // read — `bms_telemetry` payloads carry the reading data themselves, so
-    // this issues no query row-level security could apply to — which makes
-    // the fleet role (already used for connections that need no per-request
-    // tenant context) the right one, not a compromise.
-    const url = process.env.DATABASE_URL_FLEET;
+    // (`DATABASE_URL`) connection at all. `LISTEN`/`NOTIFY` needs no schema or
+    // table grant — a channel name is not a schema object — so this reaches
+    // for the LEAST privileged of the three roles, not the most convenient
+    // one: `bms_auth` is `NOBYPASSRLS` with narrow, named grants on four
+    // tables, versus `bms_fleet`'s `BYPASSRLS` and full DML on every `bms.*`
+    // and `telemetry.*` table. A future accidental query added to this
+    // service (a copy-paste mistake, a debugging line) fails loudly against
+    // `bms_auth`'s four-table grant instead of silently succeeding with full
+    // access.
+    const url = process.env.DATABASE_URL_AUTH;
     if (!url) {
-      this.logger.warn("DATABASE_URL_FLEET missing; telemetry NOTIFY listener disabled");
+      this.logger.warn("DATABASE_URL_AUTH missing; telemetry NOTIFY listener disabled");
       this.metrics.setTelemetryListenerConnected(false);
       return;
     }
