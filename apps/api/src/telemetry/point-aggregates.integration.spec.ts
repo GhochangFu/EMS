@@ -69,6 +69,45 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
+/**
+ * Refreshes one of the **production** aggregates as `bms_rollup`.
+ *
+ * `E7.1a` / ADR 0045 Amendment 3. The four shipped aggregates are owned by
+ * `bms_rollup`, and its membership is granted `WITH INHERIT FALSE` — so holding
+ * it is not enough, the role has to be taken. Without this a refresh from the
+ * owner pool fails with `must be owner of continuous aggregate`.
+ *
+ * The **probe** aggregates this suite creates are deliberately *not* routed
+ * through here: they are created by, and therefore owned by, this pool's own
+ * connection, and `bms_rollup` does not own them.
+ *
+ * `SET ROLE`, not `SET LOCAL ROLE`, because `refresh_continuous_aggregate`
+ * cannot run inside a transaction — hence the explicit checkout and the reset in
+ * a `finally`, so a pooled connection is never handed back carrying the role.
+ */
+async function refreshProductionAggregate(
+  pool: pg.Pool,
+  view: string,
+  from: string,
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("SET ROLE bms_rollup");
+    await client.query(
+      `CALL refresh_continuous_aggregate('${view}', $1::timestamptz, now())`,
+      [from],
+    );
+  } finally {
+    let reset = true;
+    try {
+      await client.query("RESET ROLE");
+    } catch {
+      reset = false;
+    }
+    client.release(reset ? undefined : new Error("RESET ROLE failed"));
+  }
+}
+
 export type Fixtures = { assetId: string; sampleCounts: number[] };
 
 /**
@@ -674,9 +713,10 @@ export async function assertEnergySummaryMatchesRaw(
   ]) {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
-        await pool.query(
-          `CALL refresh_continuous_aggregate('${view}', $1::timestamptz, now())`,
-          [new Date(base - 3_600_000).toISOString()],
+        await refreshProductionAggregate(
+          pool,
+          view,
+          new Date(base - 3_600_000).toISOString(),
         );
         break;
       } catch (err: unknown) {
@@ -810,9 +850,10 @@ export async function assertEnergySummaryMatchesRaw(
       "telemetry.point_values_1h",
     ]) {
       try {
-        await pool.query(
-          `CALL refresh_continuous_aggregate('${view}', $1::timestamptz, now())`,
-          [new Date(base - 3_600_000).toISOString()],
+        await refreshProductionAggregate(
+          pool,
+          view,
+          new Date(base - 3_600_000).toISOString(),
         );
       } catch (err: unknown) {
         // Never rethrow from `finally` — it would replace a real assertion failure
