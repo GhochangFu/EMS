@@ -49,6 +49,13 @@ are substituted and one Context claim is retracted. Read the amendment before
 the Decision section — decisions 3 and 4 are stated there in their superseded
 form.
 
+**Amended a second time during implementation** —
+[Amendment 2](#amendment-2-2026-08-24--a-sixth-role-bms_rollup-owns-the-continuous-aggregates),
+ruled 2026-08-24 after verifying decision 4 against the running stack exposed a
+pre-existing defect this change unmasked: `refresh_continuous_aggregate`
+requires ownership, and the API has held none since `F4.16`. It adds decision 7
+and a sixth role, `bms_rollup`. Decisions 1–6 are untouched.
+
 ## Context
 
 ### `FORCE ROW LEVEL SECURITY` is a no-op against the owner this repo actually runs
@@ -283,8 +290,10 @@ Per §10.1 these land **after `E7.1a`**, not with this ADR, and **not** batched
 with the still-owed ADR 0043 or ADR 0033 sweeps.
 
 - **AGENTS.md §2** — the deployment/roles description names `bms_app` as the
-  application owner. It becomes five roles with `bms_owner` as the owner and
-  `bms_app` as provisioning-only.
+  application owner. It becomes ~~five~~ **six** roles (Amendment 2 adds
+  `bms_rollup`) with `bms_owner` as the owner and `bms_app` as
+  provisioning-only. Name what `bms_rollup` is for, and that `bms_tenant` and
+  `bms_fleet` can assume it — that is the one privilege widening in this ADR.
 - **AGENTS.md §4** — one new rule: a new migration is authored for `bms_owner`
   and must not require `SUPERUSER`. Anything that does belongs in `db:roles`.
 - **`docs/local-setup.md`** — `:143`, `:152` and `:279-294` all instruct the
@@ -464,3 +473,96 @@ cleanup that becomes a silent no-op and a cross-organization verifier that must
 be redesigned rather than wrapped; and five API integration fixture suites
 build their pool from the owner `DATABASE_URL` against `bms.asset_templates`
 and `bms.locations`, a surface the booked figure did not carry at all.
+
+*Superseded by [Amendment 2](#amendment-2-2026-08-24--a-sixth-role-bms_rollup-owns-the-continuous-aggregates): `7–9` → `9–11`.*
+
+## Amendment 2 (2026-08-24) — a sixth role, `bms_rollup`, owns the continuous aggregates
+
+**Ruled by the repository owner on 2026-08-24, during `E7.1a`'s implementation**,
+after verifying decision 4 against the running stack exposed a **pre-existing
+defect that this ADR's own change unmasked**. Adds decision 7. Decisions 1–6 and
+Amendment 1 are untouched.
+
+### The defect, and why it is fixed here rather than filed
+
+`refresh_continuous_aggregate` requires **ownership** of the aggregate, and no
+`GRANT` substitutes for it. Since `F4.16` (ADR 0043 decision 8) the API connects
+as `bms_tenant`/`bms_fleet`, which own nothing — so the post-commit refresh in
+`TelemetryWriteService` (`:430`) and `CalcWriteService` (`:194`) has been failing
+with
+
+```
+ERROR:  must be owner of continuous aggregate "point_values_1m"
+```
+
+and being swallowed as a `WARN` ever since. Its integration test passed only
+because the test pool was the `bms_app` superuser; `E7.1a` exposed it by making
+that pool non-superuser. It was put to the owner as a candidate for its own
+backlog row, and the owner ruled it into this item.
+
+**It is a correctness defect, not a latency one, and that was measured rather
+than argued.** The refresh policies carry bounded `start_offset`s — 3 h, 12 h,
+3 days, 30 days — and real-time aggregation (`materialized_only = false`) covers
+only data not yet materialised. A reading written outside its level's window is
+therefore *permanently* absent from that rollup. A backdated import is the
+ordinary way to reach that state.
+
+### 7. `bms_rollup` owns the four aggregates and nothing else
+
+Two mechanisms were tried and rejected before this one, both on evidence:
+
+- ***Rejected: a `SECURITY DEFINER` wrapper owned by `bms_owner`.*** It does not
+  exist as an option. TimescaleDB refuses:
+  `refresh_continuous_aggregate() cannot be executed from a function`.
+- ***Rejected: `GRANT bms_owner TO bms_tenant, bms_fleet`.*** Verified to work,
+  and far too wide — `bms_owner` owns both entire schemas, so it hands the API
+  full DDL and undoes the separation this ADR exists to build.
+
+**Ruled:** a sixth role, `bms_rollup`, owns the four ADR 0023 continuous
+aggregates and nothing else. `pnpm db:roles` creates it and grants membership to
+`bms_owner` (for `pnpm db:refresh-aggregates`), `bms_tenant` and `bms_fleet` (for
+the post-commit refresh). `refreshAggregatesFrom` checks out one connection and
+issues `SET ROLE bms_rollup` … `RESET ROLE`.
+
+**`SET ROLE`, not `SET LOCAL ROLE`, and that is forced rather than chosen.**
+`refresh_continuous_aggregate` cannot run inside a transaction block, so there is
+no transaction for a `LOCAL` setting to be scoped to. The connection is therefore
+checked out explicitly and reset in a `finally`, and a connection whose reset
+fails is destroyed rather than returned to the pool — a pooled connection handed
+back still carrying a role is the defect ADR 0043 decision 10 exists to prevent.
+
+**`bms_rollup` holds `LOGIN` and no password. Both halves are load-bearing, and
+the first was found by measurement, not by reasoning.** TimescaleDB's background
+workers connect *as the job owner*, and the four refresh policies plus the
+aggregates' own compression and retention jobs follow the aggregates to this
+role. Without `LOGIN` every one of them dies with
+`FATAL: role "bms_rollup" is not permitted to log in` — and
+`timescaledb_information.job_errors` records only the generic
+*"failed to execute job"*, so **the real message appears solely in the server
+log**. That is precisely the quiet failure decision 4 warns about: a retention
+policy that stops running looks like nothing at all for days. It was caught
+because the verification step queried the jobs instead of assuming them.
+
+No password is set and the role is deliberately absent from `roles.ts`'s
+`ROLE_ENV`: a background worker authenticates through none, while under
+`scram-sha-256` a network client cannot authenticate as a role that has none. The
+attribute buys the scheduler its connection and buys an attacker nothing.
+
+**Residual risk, stated rather than hidden:** a role that can refresh an
+aggregate can also drop it, and `bms_tenant`/`bms_fleet` can now assume it. That
+is bounded next to the `DELETE` those roles already hold on every table in both
+schemas (`0039`), and it is much narrower than the rejected `bms_owner` grant —
+but it is a real widening of the API's reach and a reviewer should see it named.
+
+### Migration `0042`, not an edit to `0041`
+
+`0041` was already committed, so the ownership move lands in a new file under
+AGENTS.md §4's forward-only rule. The repository's own pre-commit hook refused
+the edit, which is the rule working as intended rather than an inconvenience.
+
+### Effort
+
+`E7.1a` moves **`7–9` → `9–11`**. Decision 7 is a role, a migration, a change to
+`refreshAggregatesFrom`, and the `LOGIN` finding above — none of it in the plan,
+all of it downstream of one defect that only became visible once the owner
+stopped being a superuser.
