@@ -13,10 +13,14 @@
 //     records that a prefix match reports `E7.2` (which needs `F1.10`) as
 //     unblocked by `F1.1`. Reproducing that bug ships a wrong "next" list.
 //  3. Eligible != startable. A dependency-clear item can still be gated on an
-//     ADR (AGENTS.md §6/§10) or on a client answer. Those gates are not in any
-//     column, so they are declared below with a source citation.
+//     ADR (AGENTS.md §6/§10) or on a client answer. A *numbered* ADR gate is
+//     the one kind a column can express, and `Depends` does — `adrStatus()`
+//     resolves it against `docs/adr/`, where Accepted means the ruling is made.
+//     Every other gate — a bare `ADR` naming a record nobody has written yet,
+//     an AGENTS.md §6 deferral, a client answer — is in no column, so it is
+//     declared below with a source citation.
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -24,6 +28,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BACKLOG = join(repoRoot, "docs", "BACKLOG.md");
+const ADR_DIR = join(repoRoot, "docs", "adr");
 const OUT = join(repoRoot, "docs", "status", "backlog-status.json");
 
 const EXPECTED_HEADER = ["ID", "Status", "Feature", "P", "Effort", "Wave", "Depends"];
@@ -35,6 +40,20 @@ const STATUS = {
   "✅": { key: "done", label: "Done" },
   "⛔": { key: "dropped", label: "Dropped" },
 };
+
+// A `Depends` cell usually carries the target's status glyph — `F4.16 ✅`. The
+// glyph is the board asserting something *about* the target; it is not part of
+// the id, and `byId` is keyed by the bare id from the row's first cell. Left in
+// place it makes a satisfied dependency read as unknown, which pins
+// `readyToStart` false AND drops the reverse `unlocks` edge — `F4.16` listed
+// nothing it unlocks until 2026-08-24 purely because `E7.1` spells it
+// `F4.16 ✅`. Built from STATUS so the glyph vocabulary is declared once;
+// U+FE0F is the variation selector an editor may append to an emoji, written
+// as an escape rather than as itself so it is visible in a diff.
+const DEP_GLYPH_RE = new RegExp(`(?:${Object.keys(STATUS).join("|")})\\uFE0F?`, "gu");
+
+/** Strip status glyphs from one `Depends` entry, leaving the bare token. */
+const stripDepGlyphs = (dep) => dep.replace(DEP_GLYPH_RE, "").replace(/\s+/g, " ").trim();
 
 // Constraints on STARTING an item that no `Depends` cell can express.
 // Every entry cites where in the repo the constraint is written down; if the
@@ -76,16 +95,18 @@ const GATES = [
       "Held for a decision on the machine-learning stack — runtime, model registry and serving path.",
     source: "BACKLOG.md §1b slot 9 · §5 ADR queue",
   },
-  {
-    ids: ["E7.1", "F4.16"],
-    kind: "adr",
-    reason:
-      "Multi-tenancy and row-level security were decided against; SOW §11 " +
-      "re-opens the question. Requires an ADR before it counts as pending at all.",
-    clientReason:
-      "Held for a decision on the multi-tenancy model, which the SOW re-opens.",
-    source: "AGENTS.md §6 · BACKLOG.md §4 · §5 ADR queue",
-  },
+  // The E7.1 / F4.16 multi-tenancy gate was here until 2026-08-24. ADR 0043
+  // answered it — Accepted the same day, F4.16 landed the RLS substrate and
+  // shipped, and E7.1 split into E7.1a–E7.1d at the §10 gate with E7.1a's own
+  // ADR 0045 already Accepted. So the citation above ("Requires an ADR before
+  // it counts as pending at all") stopped being true, and the entry is deleted
+  // rather than left to rot, per this list's own rule. It was not harmless
+  // while it sat here: `gatedItems` does not test `dependencyClear`, so the
+  // client-facing page carried "Held for a decision on the multi-tenancy model"
+  // against E7.1 while E7.1a was in flight. E7.1's own row says "Do not
+  // implement against this row" — that is a routing instruction to the four
+  // child rows, not a decision the board is waiting on, so it is not a gate.
+  //
   // Named individually in AGENTS.md §6's deferred list. Dependency-clear on the
   // board, and "do not implement them yet" in the rulebook — §10 promotion first.
   {
@@ -315,7 +336,11 @@ function parseBacklog(md) {
         ? []
         : dependsRaw
             .split(/[,·]/)
-            .map((d) => d.trim())
+            // Strip here, not in `resolveEligibility`: the reverse `unlocks`
+            // edges are built from `item.depends` in a second loop, and a strip
+            // done only at the point of resolution would silently miss them.
+            // `dependsRaw` keeps the cell verbatim for display.
+            .map((d) => stripDepGlyphs(d))
             .filter(Boolean);
 
     items.push({
@@ -346,6 +371,72 @@ function parseBacklog(md) {
   return items;
 }
 
+/**
+ * `docs/adr/NNNN-*.md`, indexed by ADR number with the leading zeros dropped so
+ * `ADR 43` and `ADR 0043` reach the same record. Built once, lazily.
+ */
+let adrIndex = null;
+function adrFileFor(number) {
+  if (adrIndex === null) {
+    adrIndex = new Map();
+    try {
+      for (const name of readdirSync(ADR_DIR)) {
+        const m = name.match(/^(\d{3,4})-.*\.md$/);
+        if (m) adrIndex.set(String(Number(m[1])), join(ADR_DIR, name));
+      }
+    } catch (err) {
+      warn(`could not read docs/adr/ — every ADR dependency stays unknown (${err.message})`);
+    }
+  }
+  return adrIndex.get(String(Number(number))) ?? null;
+}
+
+/** First alphabetic word of a Status value, lower-cased. */
+const statusWord = (s) => stripMd(s).match(/[A-Za-z]+/)?.[0].toLowerCase() ?? null;
+
+/**
+ * The declared status of one ADR, or `null` when it cannot be read.
+ *
+ * Two forms exist in `docs/adr/`: an inline `Status: accepted` (0001, 0002) and
+ * a `## Status` heading whose first non-empty line carries the word, usually
+ * bolded and followed by a date and prose ("**Accepted** — 2026-08-24, by the
+ * repository owner"). Both patterns are anchored to the start of a line —
+ * unanchored, they match "status line" in ADR 0043's prose and "statuses" in
+ * ADR 0021's, and would read a decision out of a sentence.
+ *
+ * A number with no file, or a file with no readable Status, returns `null` and
+ * warns. The caller keeps those unknown: unresolvable is never ready.
+ */
+const adrStatusCache = new Map();
+function adrStatus(number) {
+  const key = String(Number(number));
+  if (adrStatusCache.has(key)) return adrStatusCache.get(key);
+
+  let status = null;
+  const file = adrFileFor(number);
+  if (!file) {
+    warn(`a Depends cell names ADR ${number}, which docs/adr/ does not have — kept unknown`);
+  } else {
+    const lines = readFileSync(file, "utf8").split(/\r?\n/);
+    for (let i = 0; i < lines.length; i += 1) {
+      const inline = lines[i].match(/^\s*(?:\*\*)?Status(?:\*\*)?\s*:\s*(\S.*)$/i);
+      if (inline) {
+        status = statusWord(inline[1]);
+        break;
+      }
+      if (/^#{1,6}\s*(?:\*\*)?Status(?:\*\*)?\s*$/i.test(lines[i].trim())) {
+        const next = lines.slice(i + 1).find((l) => l.trim() !== "");
+        status = next ? statusWord(next) : null;
+        break;
+      }
+    }
+    if (!status) warn(`ADR ${number} has no readable Status line — kept unknown`);
+  }
+
+  adrStatusCache.set(key, status);
+  return status;
+}
+
 /** Whole-token dependency resolution. Never a prefix match — see rule 2. */
 function resolveEligibility(items) {
   const byId = new Map(items.map((it) => [it.id, it]));
@@ -363,6 +454,17 @@ function resolveEligibility(items) {
       // `F1.x` style wildcards are deliberate prose in the board, not an id.
       if (/^[FE]\d+\.x$/i.test(dep)) {
         unknown.push(dep);
+        continue;
+      }
+      // A numbered ADR gate is a real, checkable dependency: the record states
+      // its own status, and Accepted means the ruling has been made. A bare
+      // `ADR` with no number is not checkable — it names a decision nobody has
+      // written down yet — so it falls through to `byId` and stays unknown.
+      const adr = dep.match(/^ADR\s+0*(\d{1,4})$/i);
+      if (adr) {
+        const status = adrStatus(adr[1]);
+        if (status === "accepted") continue;
+        (status === null ? unknown : unmet).push(dep);
         continue;
       }
       const target = byId.get(dep);
