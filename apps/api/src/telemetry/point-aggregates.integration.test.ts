@@ -11,6 +11,7 @@ import {
   assertBucketsExist,
   assertCoarseRollupFromFinerLevel,
   assertEnergySummaryMatchesRaw,
+  assertEveryShippedAggregateIsOwnedByTheRollupRole,
   assertNaiveFormWouldFail,
   assertProbeMatchesRaw,
   assertProductionShapeMatchesProbe,
@@ -88,6 +89,15 @@ describe.skipIf(!connectionString)("F4.1 — telemetry continuous aggregates", (
 
   it("has refresh policies that have not failed", async () => {
     await assertRefreshPoliciesHaveNotFailed(pool as pg.Pool);
+  });
+
+  // E7.1a / ADR 0045 Amendment 2. Guards against a *future* continuous
+  // aggregate reintroducing the defect this item fixed: migrations run under
+  // SET ROLE bms_owner, so a new view would be owned by bms_owner and the API's
+  // refresh would fail on it, swallowed as a WARN. Ownership is not a privilege,
+  // so ALTER DEFAULT PRIVILEGES cannot make it inherit.
+  it("gives every shipped aggregate to bms_rollup, readable by the pool roles", async () => {
+    await assertEveryShippedAggregateIsOwnedByTheRollupRole(pool as pg.Pool);
   });
 
   it("keeps the production aggregate shape identical to the probe's", async () => {
