@@ -37,6 +37,13 @@ const connectionString = requireIntegrationDb({
     "they are the only check that bms_tenant cannot select password_hash and that " +
     "bms_auth reaches no table beyond the four identity tables. Without them the " +
     "migration's REVOKE can be a no-op and nothing says so.",
+  // `E7.1a` / ADR 0045. The runtime denials use `SET LOCAL ROLE`, which requires
+  // the superuser attribute or membership in the target role. `bms_owner` — what
+  // `DATABASE_URL` names since ADR 0045 — has neither, and giving it membership
+  // would let the owner `SET ROLE bms_fleet` and inherit BYPASSRLS, defeating the
+  // FORCE this item exists to make binding. So this one suite asks for the
+  // provisioning superuser by name.
+  connection: "superuser",
 });
 
 describe.skipIf(!connectionString)("F4.16 — role grant matrix", () => {

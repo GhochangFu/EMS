@@ -69,6 +69,45 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
+/**
+ * Refreshes one of the **production** aggregates as `bms_rollup`.
+ *
+ * `E7.1a` / ADR 0045 Amendment 3. The four shipped aggregates are owned by
+ * `bms_rollup`, and its membership is granted `WITH INHERIT FALSE` — so holding
+ * it is not enough, the role has to be taken. Without this a refresh from the
+ * owner pool fails with `must be owner of continuous aggregate`.
+ *
+ * The **probe** aggregates this suite creates are deliberately *not* routed
+ * through here: they are created by, and therefore owned by, this pool's own
+ * connection, and `bms_rollup` does not own them.
+ *
+ * `SET ROLE`, not `SET LOCAL ROLE`, because `refresh_continuous_aggregate`
+ * cannot run inside a transaction — hence the explicit checkout and the reset in
+ * a `finally`, so a pooled connection is never handed back carrying the role.
+ */
+async function refreshProductionAggregate(
+  pool: pg.Pool,
+  view: string,
+  from: string,
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("SET ROLE bms_rollup");
+    await client.query(
+      `CALL refresh_continuous_aggregate('${view}', $1::timestamptz, now())`,
+      [from],
+    );
+  } finally {
+    let reset = true;
+    try {
+      await client.query("RESET ROLE");
+    } catch {
+      reset = false;
+    }
+    client.release(reset ? undefined : new Error("RESET ROLE failed"));
+  }
+}
+
 export type Fixtures = { assetId: string; sampleCounts: number[] };
 
 /**
@@ -674,9 +713,10 @@ export async function assertEnergySummaryMatchesRaw(
   ]) {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       try {
-        await pool.query(
-          `CALL refresh_continuous_aggregate('${view}', $1::timestamptz, now())`,
-          [new Date(base - 3_600_000).toISOString()],
+        await refreshProductionAggregate(
+          pool,
+          view,
+          new Date(base - 3_600_000).toISOString(),
         );
         break;
       } catch (err: unknown) {
@@ -810,9 +850,10 @@ export async function assertEnergySummaryMatchesRaw(
       "telemetry.point_values_1h",
     ]) {
       try {
-        await pool.query(
-          `CALL refresh_continuous_aggregate('${view}', $1::timestamptz, now())`,
-          [new Date(base - 3_600_000).toISOString()],
+        await refreshProductionAggregate(
+          pool,
+          view,
+          new Date(base - 3_600_000).toISOString(),
         );
       } catch (err: unknown) {
         // Never rethrow from `finally` — it would replace a real assertion failure
@@ -829,4 +870,72 @@ export async function assertEnergySummaryMatchesRaw(
       }
     }
   }
+}
+
+/**
+ * `E7.1a` / ADR 0045 Amendment 2 — every shipped continuous aggregate is owned
+ * by `bms_rollup`, and every one is readable by the pool roles.
+ *
+ * **This exists because nothing else stops the defect coming back.** Migration
+ * `0042` re-owned the four aggregates that existed when it was written. But
+ * Amendment 1 makes every later migration run under `SET ROLE bms_owner`, so a
+ * continuous aggregate added in `E7.1b` or after is owned by `bms_owner` — and
+ * the API's post-commit refresh fails on it with `must be owner of continuous
+ * aggregate`, swallowed as a `WARN`, exactly as it did from `F4.16` until this
+ * item. On a six-month delay, and against a single new view rather than all
+ * four, which is harder to notice.
+ *
+ * `ALTER DEFAULT PRIVILEGES` cannot close this the way it closes the table case:
+ * ownership is not a privilege, and nothing makes it inherit.
+ *
+ * The probe views this suite and `aggregate-retention` create are excluded by
+ * name. They are owned by whichever connection created them, they are dropped
+ * again, and they are not what ships.
+ */
+export async function assertEveryShippedAggregateIsOwnedByTheRollupRole(
+  pool: pg.Pool,
+): Promise<void> {
+  const { rows } = await pool.query<{
+    view_name: string;
+    owner: string;
+    tenant_select: boolean;
+    fleet_select: boolean;
+  }>(`
+    SELECT a.view_name,
+           pg_get_userbyid(c.relowner) AS owner,
+           has_table_privilege('bms_tenant', c.oid, 'SELECT') AS tenant_select,
+           has_table_privilege('bms_fleet',  c.oid, 'SELECT') AS fleet_select
+      FROM timescaledb_information.continuous_aggregates a
+      JOIN pg_class c ON c.relname = a.view_name
+      JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = a.view_schema
+     WHERE a.view_name NOT LIKE 'f4%probe%'
+     ORDER BY a.view_name
+  `);
+
+  // Zero rows would make every assertion below vacuously true, which is the one
+  // way this check could pass while proving nothing.
+  assert(
+    rows.length > 0,
+    "no shipped continuous aggregates found — this check would pass vacuously",
+  );
+
+  const wrongOwner = rows.filter((r) => r.owner !== "bms_rollup").map((r) => r.view_name);
+  assert(
+    wrongOwner.length === 0,
+    `continuous aggregates not owned by bms_rollup: ${wrongOwner.join(", ")}. ` +
+      "A migration authored after ADR 0045 runs under SET ROLE bms_owner, so a new " +
+      "aggregate is owned by bms_owner and the API's post-commit refresh fails on it " +
+      "with `must be owner of continuous aggregate` — swallowed as a WARN. Add an " +
+      "ALTER MATERIALIZED VIEW ... OWNER TO bms_rollup for it, as migration 0042 does.",
+  );
+
+  const unreadable = rows
+    .filter((r) => !r.tenant_select || !r.fleet_select)
+    .map((r) => r.view_name);
+  assert(
+    unreadable.length === 0,
+    `continuous aggregates the API's pool roles cannot read: ${unreadable.join(", ")}. ` +
+      "Changing an aggregate's owner does not carry its grants; 0042 re-grants SELECT " +
+      "to bms_tenant and bms_fleet for exactly this reason.",
+  );
 }

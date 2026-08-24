@@ -168,6 +168,17 @@ export async function enforceHierarchyNotNull(pool: pg.Pool): Promise<void> {
   if (Number(assetOrphans.rows[0]?.n ?? "0") > 0) {
     throw new Error("Cannot enforce NOT NULL: assets without location_id remain");
   }
+  // `E7.1a`: this pre-check is now **vacuous, and deliberately kept.** Since
+  // ADR 0045 the seed runs as `bms_owner` under `FORCE ROW LEVEL SECURITY`, and
+  // a row with `organization_id IS NULL` matches no tenant policy under any
+  // `app.current_organization` — so this count reads 0 whether or not an orphan
+  // exists, and no tenant context can rescue it.
+  //
+  // What is lost is the friendly message, not the guarantee: RLS filters DML,
+  // it does not filter constraint validation, so the `SET NOT NULL` below still
+  // scans every row and still fails loudly on a real orphan. Do not "fix" this
+  // by widening the role or by deleting the check — the first defeats the
+  // point of the item and the second removes the place this note lives.
   const locOrphans = await pool.query<{ n: string }>(`
     SELECT COUNT(*)::text AS n FROM bms.locations WHERE organization_id IS NULL
   `);
@@ -192,7 +203,16 @@ export async function enforceHierarchyNotNull(pool: pg.Pool): Promise<void> {
   `);
 }
 
-/** Removes legacy PHE locations that used one RTU per location slug. */
+/**
+ * Removes legacy PHE locations that used one RTU per location slug.
+ *
+ * **Must run inside a PHEWB tenant context** (`seed.ts` supplies one). All five
+ * statements below join or target `bms.locations`, which carries `FORCE ROW
+ * LEVEL SECURITY` since `E7.1a`. Without a context the role sees no location
+ * rows, so every `DELETE` matches nothing, deletes nothing, and reports success
+ * — the legacy rows would survive with no error anywhere. This is the one place
+ * in the seed where a missing tenant context fails silently rather than loudly.
+ */
 export async function cleanupLegacyPheRtuLocations(pool: pg.Pool): Promise<void> {
   await pool.query(`
     DELETE FROM bms.user_location_access ula

@@ -79,14 +79,24 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     working_dir: /app
-    # ADR 0043 decision 8: `db:roles` must run once after every migrate, since
-    # migration 0039 grants `bms_tenant`/`bms_fleet` DML by default on future
-    # tables but a fresh role still starts `NOLOGIN` until this sets its
-    # password. `migrate` stays on the owner connection (`DATABASE_URL`) —
-    # only `CREATE ROLE`/`ALTER ROLE ... PASSWORD` need that privilege.
-    command: sh -c "pnpm db:migrate && pnpm db:seed && pnpm --filter @bms/db roles"
+    # ADR 0045 decision 6 (E7.1a): `db:roles` runs **first**, not last. It was
+    # last under ADR 0043 decision 8, when it only set passwords on roles that
+    # migration 0039 had already created. It now creates every role and sets
+    # `BYPASSRLS`, so the migrations that grant privileges to those roles cannot
+    # run until it has.
+    #
+    # Two connections, and the split is the point of ADR 0045. `db:roles` and
+    # `db:migrate` run as `bms_app` via `DATABASE_URL_SUPERUSER`, because
+    # `CREATE EXTENSION timescaledb` and `ALTER ROLE ... BYPASSRLS` are
+    # superuser-only and migration 0039:33 is replayed whole on a fresh
+    # database. `db:seed` runs as `bms_owner` via `DATABASE_URL`, which is not a
+    # superuser — so `FORCE ROW LEVEL SECURITY` binds it and it must set
+    # `app.current_organization` per organization to write anything.
+    command: sh -c "pnpm --filter @bms/db roles && pnpm db:migrate && pnpm db:seed"
     environment:
-      DATABASE_URL: postgres://bms_app:bms_app_dev@postgres:5432/bms
+      DATABASE_URL: postgres://bms_owner:bms_owner_dev@postgres:5432/bms
+      DATABASE_URL_SUPERUSER: postgres://bms_app:bms_app_dev@postgres:5432/bms
+      BMS_OWNER_PASSWORD: bms_owner_dev
       BMS_TENANT_PASSWORD: bms_tenant_dev
       BMS_FLEET_PASSWORD: bms_fleet_dev
       BMS_AUTH_PASSWORD: bms_auth_dev
@@ -202,7 +212,11 @@ services:
       context: .
       dockerfile: apps/sim/Dockerfile
     environment:
-      DATABASE_URL: postgres://bms_app:bms_app_dev@postgres:5432/bms
+      # ADR 0045 decision 3: value change only. The simulator writes
+      # `telemetry.point_values` and reads `bms.assets`/`bms.asset_points`, none
+      # of which carry a tenant policy in `E7.1a` — so `bms_owner` needs no
+      # tenant context here. `E7.1b` extends the policy set and revisits this.
+      DATABASE_URL: postgres://bms_owner:bms_owner_dev@postgres:5432/bms
       SIM_RATE_HZ: 0.2
       SIM_ASSET_COUNT: all
       SIM_SITE_NAMES: RSMOC Western Cape,CSMOC Gauteng,RSMOC KwaZulu-Natal
@@ -223,7 +237,13 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgres://bms_app:bms_app_dev@postgres:5432/bms
+      # ADR 0045 decision 3: value change only. The ingest worker writes
+      # `telemetry.point_values` and reads `bms.rtus`,
+      # `bms.rtu_connection_configs`, `bms.protocol_catalog`, `bms.assets` and
+      # `bms.asset_points` — none of the five tables `E7.1a` puts `FORCE ROW
+      # LEVEL SECURITY` on, verified rather than assumed. `E7.1b` extends the
+      # policy set and revisits this.
+      DATABASE_URL: postgres://bms_owner:bms_owner_dev@postgres:5432/bms
       MQTT_HOST: phe.thinkiot.co.in
       MQTT_PORT: 8883
       # The pilot's only working credential path. `bms.rtu_connection_configs` is

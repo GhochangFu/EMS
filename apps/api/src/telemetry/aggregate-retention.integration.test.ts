@@ -52,6 +52,12 @@ const connectionString = requireIntegrationDb({
     "destroys them, are TimescaleDB behaviours. A green run without them asserts nothing, " +
     "and CI cannot catch the regression any other way: db:seed inserts zero telemetry rows, " +
     "so pnpm db:refresh-aggregates is a no-op there whether or not it is still bounded.",
+  // `E7.1a` / ADR 0045. This suite creates a probe hypertable and attaches
+  // compression and retention policies in `telemetry`, which needs CREATE on the
+  // schema and ownership of the table. Since ADR 0045 that is `bms_owner`, and
+  // the default fixture connection (`bms_fleet`) has neither — it holds DML
+  // grants, not ownership.
+  connection: "owner",
 });
 
 describe.skipIf(!connectionString)("F4.2 — telemetry compression and retention", () => {
