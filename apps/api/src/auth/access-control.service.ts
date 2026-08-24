@@ -274,10 +274,19 @@ export class AccessControlService {
   /**
    * Resolves the caller against `bms.users` on the auth pool.
    *
-   * The row-absent fallback to the JWT claim is unchanged by `F4.16` — it is
-   * ADR 0021 Amendment 1's pinned, deliberately-visible behaviour, tracked
-   * against its own ADR (`docs/BACKLOG.md`), not something this item's role
-   * split is licensed to alter as a side effect.
+   * ADR 0044: the row-absent fallback to the JWT claim now refuses a claimed
+   * `admin` outright, rather than trusting the claim. Every other claimed role
+   * still falls back to the claim — this is deliberate, not an oversight left
+   * over from the `admin` fix. `writableOrganizationIds`/`writableLocationIds`
+   * return the unrestricted `null` sentinel only inside their `role ===
+   * "admin"` branch; every other role's authorization walks a grant table
+   * keyed by user id, and an unprovisioned principal's fabricated `id`/`email`
+   * matches no grant row regardless of claimed role — so `organization_admin`
+   * and `location_admin` already resolve to `[]`, and `operator`/`viewer`
+   * already resolve to `"none"`, with no change needed here. Refusing those
+   * too would also remove the one thing that lets a freshly-federated
+   * `operator`/`viewer` principal reach the app, with a correctly empty scope,
+   * before a local row exists for them — see `assertUngrantedRolesFailClosed`.
    */
   private async resolveDbUser(jwt: JwtPayload): Promise<DbUser> {
     const [row] = await this.authDb
@@ -298,6 +307,12 @@ export class AccessControlService {
         displayName: row.displayName,
         role: row.role as UserRole,
       };
+    }
+
+    if (jwt.role === "admin") {
+      throw new ForbiddenException(
+        "This token claims the admin role but matches no provisioned account",
+      );
     }
 
     return {

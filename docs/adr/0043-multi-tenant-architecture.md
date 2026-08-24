@@ -10,11 +10,19 @@ recommended, none against** — see *Questions resolved at the §10 gate*.
 
 **Amended 2026-08-24** at the start of `F4.16`, before any implementation code —
 see [Amendment 1](#amendment-1-2026-08-24--decision-8-needs-a-third-role-and-question-5s-placement-was-written-against-the-old-order)
-at the end. Decision 8 gains a third role, `bms_auth`, and a third pool, because
+below. Decision 8 gains a third role, `bms_auth`, and a third pool, because
 neither `bms_tenant` nor `bms_fleet` can serve the pre-tenant read that chooses
 between them. Question 5's **placement** is corrected — the `password_hash`
 revoke lands in `F4.16` with the grant matrix, not in `E7.1`. Its substance and
 decisions 1–7 and 9–13 are unchanged.
+
+**Amended again 2026-08-24**, closing `F4.16` — see
+[Amendment 2](#amendment-2-2026-08-24--three-claims-corrected-after-implementation-closing-f416)
+at the end. Three claims this document made about what the implementation
+would do did not match what shipped; all three are corrected there. No
+decision changes. The one behavioural fix from the same review —
+`resolveDbUser` now refuses an unprovisioned `admin` claim — is
+[ADR 0044](0044-fail-closed-unprovisioned-admin-claim.md), not this ADR.
 
 One decision changed between the owner's ruling and this draft. Decision 6 was
 ruled as `asset_id NOT NULL`; drafting found that `time_window` rules
@@ -528,3 +536,93 @@ reads it.
   one more connection string, for `api` and `api-replica` only. `migrate`,
   `pnpm db:seed`, `apps/sim` and `apps/ingest` are unchanged and stay on
   `bms_app`.
+
+## Amendment 2 (2026-08-24) — three claims corrected after implementation, closing `F4.16`
+
+Raised by `F4.16`'s closing review (four independent agents) and confirmed
+against the shipped code, not assumed. All three are documentation
+corrections — nothing here changes a decision; §*What changed in code* records
+the one behaviour change, made under [ADR 0044](0044-fail-closed-unprovisioned-admin-claim.md)
+rather than this ADR, and cross-referenced from here for completeness.
+
+### The "exactly two call sites" claim (line 450 as originally written) was never true
+
+*"Exactly two call sites use the auth pool: `AuthService.login`, and the
+request-scoped identity bootstrap that replaces the front half of
+`AccessControlService.resolveDbUser`."* No such bootstrap module was ever
+built into the request path — `apps/api/src/auth/identity-bootstrap.ts`
+(`readIdentity`/`selectPool`) had zero production callers from the day it was
+written until it was deleted by ADR 0044. `resolveDbUser` was never replaced;
+Task 6.5 gave `AccessControlService` a three-pool constructor and left its own
+logic in place. Counted directly instead: `AuthService.login` plus
+`AccessControlService`'s own `authDb` reads —
+`resolveDbUser`, `directOrganizationIds`, `locationDerivedOrganizationIds`, and
+the `writableLocationIds`/`writableOrganizationIds` bodies that call them —
+call the auth pool from inside the service, not from a separate bootstrap.
+**Corrected: the auth pool is read from `AuthService.login` and from within
+`AccessControlService` itself; there is no third module in between.**
+
+### The unprovisioned-principal claim (lines 513–517) described dead code as the fix
+
+*"ADR 0021 Amendment 1 already rejects an OIDC `admin` claim with no
+`bms.users` row for `/admin/*`; decision 12's pool selection must not re-open
+it... A test covers it."* Both halves were wrong. ADR 0021 Amendment 1 says the
+opposite of "for `/admin/*`" in its own text — *"The fallback itself is
+unchanged and out of scope here. It is pre-existing, affects all of
+`/admin/*`... belonging to its own ADR."* — it closed exactly one endpoint
+(audit read), not the surface this amendment claimed. And "a test covers it"
+named `identity-bootstrap.spec.ts`, testing the same never-wired `selectPool`.
+**Corrected: this was open until [ADR 0044](0044-fail-closed-unprovisioned-admin-claim.md),
+written to close it, decided while closing `F4.16`.** See that ADR for why the
+fix refuses only an unprovisioned `admin` claim and leaves every other role's
+fallback untouched — the reasoning does not belong in two documents.
+
+### Decision 12's "must never resolve to `bms_fleet`" is narrower than what shipped, and the narrowing is intentional
+
+Decision 12, verbatim: *"`admin` sees the whole fleet, and it does so by
+connecting as `bms_fleet`... A customer `organization_admin` must never
+resolve to `bms_fleet`, and a test proves it."* Read as written, this rules
+out an `organization_admin`/`location_admin` connection ever touching the
+fleet pool. What shipped is narrower in guarantee, wider in usage: roughly
+thirteen services — `LocationsAdminService`, `PointKeysAdminService`,
+`AssetTemplatesAdminService` and its instantiate/migrate siblings,
+`AssetsAdminService` (admin and public), `RtusAdminService`,
+`AssetPointsAdminService`, the `onboarding` module, `DashboardService`,
+`MapService` and `AlarmDetailsService` — read the five RLS-bearing tables via
+`fleetDb` for **every** master-data role, `organization_admin` and
+`location_admin` included, not only `admin`. This was a human-authorized
+decision during `F4.16` (documented in
+`docs/superpowers/plans/2026-08-24-f4.16-tenant-role-split.md`'s Task 6.6):
+three of the five RLS tables (`point_keys`, `asset_templates`,
+`onboarding_sessions`) carry no `bms_auth` grant and no single organization a
+`withTenant` connection could be scoped to for a multi-organization admin, so
+reads route through `fleetDb` trusting the `WHERE` filter
+`writableOrganizationIds`/`writableLocationIds` already computes — the same
+"bypass, then trust an already-computed grant" shape `AccessControlService`
+itself uses for its `bms_auth` reads.
+
+**The isolation guarantee this produces is real but is not RLS.** Every read
+on these thirteen services rests on `AccessControlService`'s filter being
+correct, exactly as it did before `F4.16` when everything ran on the owner
+connection. RLS backstops **writes** — `withTenant` sets the tenant GUC before
+every insert/update on the five tables, so a `WHERE` clause bug there fails
+the write outright rather than writing to the wrong tenant. It does not
+backstop these reads: a `WHERE` clause bug here returns the wrong rows with no
+database-level catch, same as pre-`F4.16`. **Corrected: decision 12's "must
+never resolve to `bms_fleet`" holds for the literal pool-selection design it
+described, which was never built; the design that was built intentionally
+extends `bms_fleet` reads to every master-data role, and its correctness rests
+on `AccessControlService`, not on row-level security.** Tightening this —
+routing scoped reads through per-request `withTenant` connections instead — is
+listed as a real option in `F4.16`'s closing review and left open, since it
+cannot represent a multi-organization `organization_admin` without additional
+design work beyond what `F4.16` scoped.
+
+### What changed in code, for completeness
+
+The one behavioural fix from this closing review —
+`AccessControlService.resolveDbUser` now refuses an unprovisioned `admin`
+claim instead of trusting it — is [ADR 0044](0044-fail-closed-unprovisioned-admin-claim.md)'s
+decision, not this amendment's. It is recorded there because it is a decision
+about identity resolution with its own future amendments, separable from this
+ADR's tenant/RLS pool-split decisions.

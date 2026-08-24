@@ -119,7 +119,7 @@ describe.skipIf(!connectionString)("F4.10 — access control against a real data
     await assertDbRoleBeatsJwtClaim(svc);
   });
 
-  it("pins what an unprovisioned token gets — deleting a user row does not revoke it", async () => {
+  it("refuses an unprovisioned admin claim, leaves other roles' fallback alone (ADR 0044)", async () => {
     await assertUnprovisionedTokenBehaviour(svc);
   });
 
