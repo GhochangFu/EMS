@@ -879,18 +879,24 @@ checks in order: a matching **`bms.users` row must exist**, and only then must
 `writableOrganizationIds` be `null`.
 
 **The first check is not redundant — Amendment 1 exists because it was
-missing.** `resolveDbUser` deliberately falls back to the JWT claim when no row
-matches, so in OIDC mode (what compose and the pilot run) an *unprovisioned*
-Keycloak principal holding realm role `admin` resolves to `role: "admin"` and a
-`null`, unrestricted scope. Every other `/admin/*` endpoint constrains that with
-a second scope check; on audit read the `null` **is** the whole control. Without
-the provisioning check the endpoint served the entire log — every organisation,
-every verbatim `payload`, every actor email — to anyone the IdP called an admin,
-and deleting a user's row would have **escalated** them rather than revoked
-them. Reproduced against a real database before the fix. **The fallback itself
-is unchanged**: pre-existing, affecting all of `/admin/*`, and recorded against
-`F4.10` in `docs/BACKLOG.md` as owing its own ADR. If you add an endpoint whose
-only control is an unrestricted scope, it has this problem too.
+missing.** Before ADR 0044, `resolveDbUser` deliberately fell back to the JWT
+claim when no row matched, so in OIDC mode (what compose and the pilot run) an
+*unprovisioned* Keycloak principal holding realm role `admin` resolved to
+`role: "admin"` and a `null`, unrestricted scope. Every other `/admin/*`
+endpoint constrains that with a second scope check; on audit read the `null`
+**is** the whole control. Without the provisioning check the endpoint served
+the entire log — every organisation, every verbatim `payload`, every actor
+email — to anyone the IdP called an admin, and deleting a user's row would
+have **escalated** them rather than revoked them. Reproduced against a real
+database before the fix. **ADR 0044 (2026-08-24) closed the `admin` branch
+specifically**: `resolveDbUser` now refuses an unprovisioned `admin` claim
+outright (`ForbiddenException`), so this endpoint's own control gap is gone.
+Every other role's claim-fallback is unchanged, on purpose —
+`organization_admin`/`location_admin`/`operator`/`viewer`/`asset_group_admin`
+all already fail closed via a grant-table lookup keyed by user id, never the
+unrestricted `null` sentinel. If you add an endpoint whose only control is an
+unrestricted scope for a non-`admin` role, check that role's fallback
+behaviour before trusting it.
 
 **Onboarding** (ADR 0022, `E8.3`) — a **fourth** gate. Every onboarding entry
 point requires role `admin` or `organization_admin` **plus**
