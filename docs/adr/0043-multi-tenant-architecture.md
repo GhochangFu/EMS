@@ -25,6 +25,16 @@ every master-data role. The one behavioural fix from the same review —
 `resolveDbUser` now refuses an unprovisioned `admin` claim — is
 [ADR 0044](0044-fail-closed-unprovisioned-admin-claim.md), not this ADR.
 
+**Amended a third time 2026-08-24**, at the start of `E7.1` and before any
+implementation code — see
+[Amendment 3](#amendment-3-2026-08-24--the-read-path-is-hybrid-by-table-ruled-at-the-e71-gate).
+It settles the read-path question Amendment 2 left open: reads are **hybrid by
+table**, `withTenant` is the default, and a `fleetDb` read needs a named reason
+at the call site. The other half of `E7.1`'s ADR work — making
+`FORCE ROW LEVEL SECURITY` bind by giving the schema a non-superuser owner — is
+[ADR 0045](0045-non-superuser-table-owner.md), a separate ADR for the same
+reason ADR 0044 was separate.
+
 One decision changed between the owner's ruling and this draft. Decision 6 was
 ruled as `asset_id NOT NULL`; drafting found that `time_window` rules
 legitimately carry no asset, the finding was put back to the owner, and the
@@ -681,3 +691,117 @@ claim instead of trusting it — is [ADR 0044](0044-fail-closed-unprovisioned-ad
 decision, not this amendment's. It is recorded there because it is a decision
 about identity resolution with its own future amendments, separable from this
 ADR's tenant/RLS pool-split decisions.
+
+## Amendment 3 (2026-08-24) — the read path is hybrid by table, ruled at the `E7.1` gate
+
+Ruled by the repository owner at the start of `E7.1`, before any
+implementation code, together with [ADR 0045](0045-non-superuser-table-owner.md).
+This amendment settles the question [Amendment 2](#decision-12-is-amended-the-fleet-bypass-extends-to-every-master-data-role-not-only-admin)
+left open; ADR 0045 settles the other half. Decisions 1–11 and 13 are
+untouched.
+
+### What was left open
+
+Amendment 2 recorded that roughly thirteen services read the five RLS-bearing
+tables through `fleetDb` — the `BYPASSRLS` pool — for **every** master-data
+role, not only `admin`, and that the isolation guarantee for those reads
+therefore rests on `AccessControlService`'s `WHERE` filter rather than on
+row-level security. It named the remedy — *"routing scoped reads through
+per-request `withTenant` connections instead"* — and left it open, *"since it
+cannot represent a multi-organization `organization_admin` without additional
+design work beyond what `F4.16` scoped."*
+
+`E7.1` cannot leave it open. Decision 5 adds `organization_id` and a policy to
+roughly fourteen more tables. Applied without a ruling, the `F4.16` precedent
+would extend the read bypass across the whole tenant schema by default, and
+decision 4's *"a forgotten `.where()` must return an empty set"* would hold for
+writes only — on nineteen tables instead of five.
+
+### The blocker was measured, and it is smaller than Amendment 2 assumed
+
+**One** `bms.user_organization_access` row is seeded
+(`packages/db/src/demo-users-seed.ts:208`, the PHE organization admin against
+`PHEWB`), and it is the only insert of that table outside tests anywhere in
+`packages/db/src` or `apps/api/src`. **No actor in this repository holds more
+than one organization today.** The multi-organization `organization_admin` that
+Amendment 2 named as the blocker is a shape the schema permits and the
+deployment does not yet contain.
+
+That does not make it safe to ignore — `writableOrganizationIds` returns a list
+precisely because the shape is reachable — but it does mean the constraint can
+be **stated and enforced** rather than designed around.
+
+### The ruling
+
+**Reads are hybrid by table, and `withTenant` is the default.**
+
+1. **A tenant-data table's reads run inside `withTenant`.** Where a table holds
+   one tenant's operational records — alarms, rule executions, work orders,
+   maintenance rows, notification channels and their delivery ledger,
+   automation rules, the audit log — the read opens a transaction, issues
+   `SET LOCAL app.current_organization`, and lets the policy of decision 5 be
+   the backstop for reads exactly as it already is for writes. This is the
+   default, and it needs no justification in the diff.
+
+2. **A read may use `fleetDb` only with a named reason recorded at the call
+   site.** The reason must say what makes a single tenant GUC insufficient for
+   that specific read — a genuinely fleet-wide `admin` view under decision 12,
+   or a master-data surface that resolves across organizations. "It is how
+   `F4.16` did it" is not a reason. The five tables `F4.16` already routes this
+   way keep their present behaviour and inherit this requirement: each gains
+   the comment it does not have today.
+
+3. **A multi-organization actor falls back to `fleetDb` at run time.** If
+   `writableOrganizationIds` returns more than one organization on a path
+   classified `withTenant` by (1), the read uses the fleet pool and trusts the
+   `WHERE` filter — the same shape Amendment 2 describes for the five
+   master-data tables. Nothing fails for a user, and no path needs a
+   multi-organization design it does not have.
+
+   Looping one transaction per organization was considered and rejected: it
+   turns one query into N and the fleet dashboard of decision 12 is the caller
+   that would pay it.
+
+   **Ruled against the drafting recommendation, and recorded that way on
+   purpose.** Drafting recommended refusing the request instead, on the ground
+   that a silent fallback is indistinguishable from the `WHERE`-clause bug
+   decision 4 exists to catch — the same fail-closed instinct
+   [ADR 0044](0044-fail-closed-unprovisioned-admin-claim.md) applied to
+   identity resolution. The owner ruled for the fallback, and that ruling
+   stands. A later reader should not mistake this for the conservative default;
+   it is a deliberate availability-over-strictness choice, and the consequence
+   is stated below.
+
+   **A test still pins it.** Not a refusal test — a test that asserts a
+   two-organization actor on a `withTenant` path resolves to `fleetDb` and
+   returns exactly the rows its filter allows. The behaviour must be visible in
+   the suite even though it does not fail, so that a future change to it is a
+   decision rather than a drift.
+
+### Consequences
+
+- **Decision 12's original guarantee is restored for tenant data read by a
+  single-organization actor, and for nothing else.** *"A customer
+  `organization_admin` must never resolve to `bms_fleet`"* holds on every table
+  ruled by (1) **for an actor holding one organization** — which, per the
+  measurement above, is every actor this deployment currently contains. It does
+  **not** hold for a multi-organization actor, by the ruling in (3). On the
+  master-data tables Amendment 2 describes, the bypass remains unchanged, now
+  with a written reason per call site instead of an undocumented convention.
+- **The residual risk is named rather than left implicit.** For a
+  multi-organization actor, isolation on tenant tables rests entirely on
+  `AccessControlService`'s `WHERE` filter, with no database-level catch — the
+  pre-`F4.16` position, for that actor, on those reads. RLS backstops writes on
+  every table regardless, and reads for every single-organization actor.
+  Tightening this means revisiting (3), and it is the first thing to revisit if
+  a real multi-organization operator appears.
+- **The per-table classification is real work and the `14–20` does not carry
+  it.** Roughly nineteen tables must each be placed, and each `fleetDb` read
+  must earn its comment. This is why `E7.1` was split into four items at the
+  same gate; the classification lands with `E7.1b`.
+- **`telemetry.*` is unaffected.** Decision 9 stands: no column, no policy, and
+  isolation from `readableAssetIds`. This amendment is about `bms.*` only.
+- **Read paths that cannot be wrapped in a transaction must be found, not
+  assumed absent.** Decision 10 already forbids them on tenant tables. `E7.1b`
+  verifies the claim against the streaming and dashboard paths rather than
+  inheriting it.

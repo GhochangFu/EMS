@@ -430,8 +430,22 @@ const istFormat = new Intl.DateTimeFormat("en-GB", {
   hour12: false,
 });
 
-const ID_RE = /\b([FE]\d+\.\d+)\b/g;
-const idsIn = (s) => [...new Set([...(s ?? "").matchAll(ID_RE)].map((m) => m[1].toUpperCase()))];
+// The trailing `[a-z]?` is load-bearing, added 2026-08-24 when `E7.1` split into
+// `E7.1a`–`E7.1d` at the ADR 0045 gate. Without it this pattern matched neither
+// the child ids in a `Depends` cell nor a `feat/E7.1a-...` branch name — and it
+// failed by matching *nothing* rather than by matching the parent, because the
+// `\b` after `\d+` cannot fall between `1` and `a`. That is the silent shape
+// §2's `E7.2` note already warns about: a whole-token miss reads as "no branch
+// in flight", not as an error. Keep the suffix optional and keep it inside the
+// capture group.
+const ID_RE = /\b([FE]\d+\.\d+[a-z]?)\b/g;
+// `byId` is keyed by the literal id in the row's first cell, and `note()`
+// returns early on a miss — so a case mismatch here disappears silently rather
+// than warning. Uppercase the track letter as before, then put a split-suffix
+// back to lower case so `feat/E7.1a-...` resolves to the `E7.1a` row instead of
+// looking up a non-existent `E7.1A`. Ids without a suffix are unaffected.
+const normalizeId = (raw) => raw.toUpperCase().replace(/([A-Z])$/, (c) => c.toLowerCase());
+const idsIn = (s) => [...new Set([...(s ?? "").matchAll(ID_RE)].map((m) => normalizeId(m[1])))];
 
 /**
  * "In progress" is DERIVED, not a board status — no row is 🔵. The signal is
