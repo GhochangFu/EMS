@@ -281,6 +281,13 @@
       "when": 1787533200000,
       "tag": "0040_rls_on_org_bearing_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1787536800000,
+      "tag": "0041_bms_owner_and_force_rls",
+      "breakpoints": true
     }
   ]
 }
