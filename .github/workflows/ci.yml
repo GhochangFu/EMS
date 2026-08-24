@@ -33,12 +33,20 @@ jobs:
           --health-retries 10
 
     env:
-      DATABASE_URL: postgres://bms_app:bms_app_dev@localhost:5432/bms
+      # ADR 0045 decision 3 (E7.1a). `DATABASE_URL` names `bms_owner`, the
+      # non-superuser schema owner that `FORCE ROW LEVEL SECURITY` binds;
+      # `DATABASE_URL_SUPERUSER` carries the `bms_app` connection and reaches
+      # only `db:roles` and `db:migrate`.
+      DATABASE_URL: postgres://bms_owner:bms_owner_dev@localhost:5432/bms
+      DATABASE_URL_SUPERUSER: postgres://bms_app:bms_app_dev@localhost:5432/bms
       # ADR 0043 decision 8. Match docker-compose.yml's dev passwords exactly —
       # access-control-rls.integration.test.ts falls back to deriving all three
       # of DATABASE_URL_{AUTH,TENANT,FLEET} from DATABASE_URL with these same
       # credentials when the explicit vars are unset; tenant-context.integration.
-      # test.ts only needs the _TENANT/_FLEET pair, for the same reason.
+      # test.ts only needs the _TENANT/_FLEET pair, for the same reason. That
+      # derivation replaces the user and password generically, so it survives
+      # DATABASE_URL changing owner above.
+      BMS_OWNER_PASSWORD: bms_owner_dev
       BMS_AUTH_PASSWORD: bms_auth_dev
       BMS_TENANT_PASSWORD: bms_tenant_dev
       BMS_FLEET_PASSWORD: bms_fleet_dev
@@ -93,15 +101,19 @@ jobs:
             psql -U bms_app -d bms \
             -c "CREATE EXTENSION IF NOT EXISTS timescaledb; CREATE SCHEMA IF NOT EXISTS bms AUTHORIZATION bms_app; CREATE SCHEMA IF NOT EXISTS telemetry AUTHORIZATION bms_app;"
 
-      - name: Validate migrations
-        run: pnpm db:migrate
-
       # ADR 0043 decision 8 (F4.16). Without this, bms_tenant/bms_fleet/bms_auth
       # stay NOLOGIN and both real-role RLS suites below skip_if — a green run
       # would prove nothing about row-level security, only that the suites
       # correctly declined to run.
-      - name: Set role passwords for the RLS-role test suites
+      #
+      # ADR 0045 decision 6 (E7.1a) moved this **ahead of** `db:migrate`, where
+      # it used to sit after. It now creates the roles rather than only setting
+      # their passwords, and `db:migrate` connects as one of them.
+      - name: Provision database roles
         run: pnpm --filter @bms/db roles
+
+      - name: Validate migrations
+        run: pnpm db:migrate
 
       # Seeding is the only check that proves the migration journal is complete:
       # drizzle silently skips any .sql file missing from meta/_journal.json, so
