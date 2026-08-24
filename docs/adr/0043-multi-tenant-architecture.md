@@ -425,9 +425,22 @@ owns nothing, and it holds:
 - a `bms.users` policy `USING (true)` **for `bms_auth` only** — the table carries
   `FORCE ROW LEVEL SECURITY`, so an explicit permissive policy is required
   rather than an absent one;
-- **no grant on any other table** in `bms.*` or `telemetry.*`, and **not** the
-  `BYPASSRLS` attribute. `bms_auth` reaches one table because it was granted one
-  table, and a test asserts that directly rather than trusting the intent.
+- **nothing in `telemetry.*` at all**, and **not** the `BYPASSRLS` attribute. The
+  exemption is scoped by table name and to `SELECT`; it is not a role attribute,
+  which is what still separates this from reusing `bms_fleet`. A test asserts the
+  reachable set directly rather than trusting the intent.
+
+**Until `E7.1`, `bms_auth` reaches four tables, not one, and that is a real
+widening this amendment states rather than hides.** The bootstrap must find the
+home organization before any tenant is set, and `bms.users.organization_id` is
+`E7.1`'s work. So in `F4.16` the role also holds `SELECT` on
+`bms.user_organization_access`, `bms.user_location_access` and `bms.locations`,
+plus a read-only `auth_bootstrap_read` policy on the two of those that are
+policied. The consequence is that `bms_auth` can read every location row in every
+tenant. **`E7.1` removes all three grants and both policies** when the column
+replaces the walk, and the assertion narrows to `bms.users` alone. If `E7.1`
+lands without that removal, this amendment's least-privilege claim is false and
+the review should say so.
 
 `DATABASE_URL` splits **three** ways — `DATABASE_URL_AUTH`,
 `DATABASE_URL_TENANT`, `DATABASE_URL_FLEET` — and
@@ -454,6 +467,30 @@ Three alternatives were considered and rejected.
 - **`SET ROLE` on one shared pool**, reconsidered here and rejected again for the
   reason given at the §10 gate — it puts escalation one statement inside the
   transaction decision 10 already opens.
+
+### `FORCE ROW LEVEL SECURITY` lands in `E7.1`, not in `F4.16`
+
+Decision 8 says every tenant table is created with `ENABLE` **and** `FORCE`.
+`F4.16` lands `ENABLE` only. Ruled at the same gate, and recorded here so the
+absent `FORCE` reads as a decision rather than an oversight.
+
+`FORCE` binds the **table owner**, and `bms_app` is the owner that runs
+`pnpm db:seed`. The seed inserts into four of the five tables `F4.16` policies,
+in bulk arrays that span organizations, so `FORCE` would require splitting it
+into per-organization transactions — work the `8–12` does not carry, inside the
+item whose job is the role split.
+
+Nothing `F4.16` claims is weakened by the deferral. RLS constrains `bms_tenant`
+and `bms_auth` **regardless of `FORCE`**, because neither is the owner, and every
+test in the item runs on those two pools. `FORCE` exists to stop a *future*
+owner-role connection silently defeating a policy — a concern that belongs with
+the full table set. It therefore lands in `E7.1`, together with the seed
+restructuring it requires.
+
+**The ADR 0023 and 0024 background jobs are not affected either way.** Verified
+rather than assumed: no continuous aggregate, compression policy or retention
+policy references any `bms.*` table, so `FORCE` on `bms.*` cannot collide with a
+refresh running under the owner.
 
 ### Question 5 is amended in placement, not in substance
 
