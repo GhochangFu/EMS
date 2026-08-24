@@ -79,6 +79,35 @@ describe("ADR 0045 — DATABASE_URL_SUPERUSER never reaches the API", () => {
   });
 });
 
+describe("ADR 0045 decision 3 — every committed .env.example names the owner", () => {
+  /**
+   * Added by the ADR 0045 promotion sweep, because nothing gated this and the
+   * sweep's own reviews found three files that had drifted.
+   *
+   * `DATABASE_URL` is the **owner** connection after ADR 0045. A committed
+   * example that still names `bms_app` hands a developer a superuser for
+   * `db:seed`, `apps/sim` and `apps/ingest` — unbound by `FORCE ROW LEVEL
+   * SECURITY`, which is the one thing `E7.1a` exists to make bind. The two
+   * existing guards cannot catch it: `adr-0043-database-url-guard.test.ts`
+   * scopes to non-test `.ts` under `apps/api/src`, and the assertions above
+   * read `docker-compose.yml` and migrations. Nothing read an `.env.example`.
+   *
+   * Deliberately not a substring check for "bms_app": `apps/api/.env.example`
+   * must keep naming it, on `DATABASE_URL_SUPERUSER`. The role that matters is
+   * the one on `DATABASE_URL`, so that is what this pins.
+   */
+  it.each([
+    "apps/api/.env.example",
+    "apps/sim/.env.example",
+    "apps/ingest/.env.example",
+  ])("%s sets DATABASE_URL to bms_owner", (relPath) => {
+    const text = readFileSync(join(repoRoot, relPath), "utf8");
+    const line = text.split(/\r?\n/).find((l) => l.startsWith("DATABASE_URL="));
+    expect(line, `${relPath} has no DATABASE_URL= line`).toBeDefined();
+    expect(line).toMatch(/^DATABASE_URL=postgres:\/\/bms_owner:/);
+  });
+});
+
 describe("ADR 0045 decision 6 — a migration that takes the owner role gives it back", () => {
   /**
    * ADR 0045 Amendment 1 put the `SET ROLE bms_owner` inside each migration

@@ -18,16 +18,17 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
  * `F4.16` — Vitest entry point. Assertions live in the sibling `.spec`
  * (ADR 0014); this file owns the database lifecycle.
  *
- * The connection is made as the migration role (`bms_app`, the owner), not as
- * any of the three roles under test. That is deliberate: the roles are `NOLOGIN`
- * until `pnpm db:roles` runs, and the suite must pass on a database that has had
- * `db:migrate` and nothing else. The runtime denials use `SET LOCAL ROLE`, which
+ * The connection is made as the provisioning superuser (`bms_app`, via the
+ * gate's `connection: "superuser"` — since ADR 0045 it is no longer the schema
+ * owner), rather than as one of the three roles under test. That is deliberate:
+ * those roles are `NOLOGIN` until `pnpm db:roles` runs, and the suite must pass
+ * on a database that has had `db:migrate` and nothing else. The runtime denials use `SET LOCAL ROLE`, which
  * needs no password and no `LOGIN` attribute.
  *
  * Run it locally against your own stack (docker-compose.override.yml remaps the
  * published port to 5433; 5432 is the committed default):
  *
- *   DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5433/bms pnpm --filter api test role-grants
+ *   DATABASE_URL=postgres://bms_owner:bms_owner_dev@localhost:5433/bms pnpm --filter api test role-grants
  */
 
 const connectionString = requireIntegrationDb({

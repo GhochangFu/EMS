@@ -73,7 +73,12 @@ pnpm monorepo (`apps/*`, `packages/*`):
 
 ```bash
 pnpm install                       # postinstall builds @bms/shared and @bms/db
-pnpm db:migrate && pnpm db:seed    # set up / seed the database
+
+# ADR 0045: `roles` runs FIRST — it creates the five database roles, and the
+# migrations grant privileges to them. `roles` and `migrate` connect as
+# DATABASE_URL_SUPERUSER; `seed` connects as DATABASE_URL (= bms_owner, not a
+# superuser, so FORCE ROW LEVEL SECURITY binds it).
+pnpm --filter @bms/db roles && pnpm db:migrate && pnpm db:seed
 
 # Dev (three processes):
 pnpm --filter api dev              # NestJS on :4000

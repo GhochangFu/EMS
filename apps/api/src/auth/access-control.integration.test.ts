@@ -49,7 +49,7 @@ import {
  * Run it locally against your own stack (docker-compose.override.yml may remap
  * the port; 5432 is the committed default):
  *
- *   DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms pnpm test
+ *   DATABASE_URL=postgres://bms_owner:bms_owner_dev@localhost:5432/bms pnpm test
  *
  * `AccessControlService` is constructed with `new`, not through a Nest testing
  * module — its dependencies are three drizzle handles (`F4.16` / ADR 0043:
@@ -57,11 +57,12 @@ import {
  * would otherwise trip AGENTS.md §9.4 and need its own ADR before a single test
  * could run.
  *
- * All three arguments below are the **same** owner-backed connection. This
+ * All three arguments below are the **same** connection — since `E7.1a` that is
+ * the gate's default `"fleet"` role, `bms_fleet`, which holds `BYPASSRLS`. This
  * suite proves query correctness (which rows a role's grants produce), not row
- * level security itself — the owner bypasses RLS regardless of which of the
- * three pools a query nominally runs through, so passing one real connection
- * three times exercises the exact same SQL this suite always ran. The RLS
+ * level security itself — `BYPASSRLS` applies regardless of which of the three
+ * pools a query nominally runs through, so passing one real connection three
+ * times exercises the exact same SQL this suite always ran. The RLS
  * enforcement claim — that a real `bms_tenant`/`bms_auth` connection with no
  * privileged grant actually gets refused or scoped — is proved separately in
  * `access-control-rls.integration.test.ts`, which is the one that needs three

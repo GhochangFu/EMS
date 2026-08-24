@@ -229,7 +229,8 @@ README**, and must not survive into a pilot or production deployment:
 
 | Setting | Committed default | Action |
 |---------|-------------------|--------|
-| `POSTGRES_PASSWORD` | `bms_app_dev` | Change — see the caveat below. Owner role; `migrate`/`db:seed`/`apps/sim`/`apps/ingest` connect as this. |
+| `POSTGRES_PASSWORD` | `bms_app_dev` | Change — see the caveat below. Since ADR 0045 this is the **provisioning superuser** `bms_app`, not the schema owner: it is read only by `pnpm --filter @bms/db roles` and `pnpm db:migrate`, through `DATABASE_URL_SUPERUSER`. |
+| `BMS_OWNER_PASSWORD` | `bms_owner_dev` | Change — same caveat, `bms_owner` (ADR 0045). **The worst of the five to miss.** It is the schema owner, and `db:seed`/`apps/sim`/`apps/ingest` connect as it — a published default here is a writable connection to every table. |
 | `BMS_AUTH_PASSWORD` | `bms_auth_dev` | Change — same caveat, `bms_auth` (ADR 0043). The API's identity/grant-resolution connection. |
 | `BMS_TENANT_PASSWORD` | `bms_tenant_dev` | Change — same caveat, `bms_tenant`. The API's row-level-security-scoped connection. |
 | `BMS_FLEET_PASSWORD` | `bms_fleet_dev` | Change — same caveat, `bms_fleet`. The API's `BYPASSRLS` connection for fleet-wide reads. |
@@ -238,21 +239,28 @@ README**, and must not survive into a pilot or production deployment:
 | Grafana admin | `admin` / `admin` | Change |
 | Seeded demo users | `admin123` | Remove or disable outside demos |
 
-> **Postgres password caveat — read before changing it, for all four roles
+> **Postgres password caveat — read before changing it, for all five roles
 > above.** Postgres applies `POSTGRES_PASSWORD` **only during first-time
 > `initdb`**, and `pnpm --filter @bms/db roles` (which reads
-> `BMS_AUTH_PASSWORD`/`BMS_TENANT_PASSWORD`/`BMS_FLEET_PASSWORD`) only sets a
-> role's password when it runs — neither reapplies retroactively to an
-> existing volume/role on its own. Setting a new value against a volume that
-> already has these roles provisioned has no effect on the stored password,
-> and the stack then fails authentication in a way that looks like an
-> application bug. On an existing volume, change the owner with
-> `ALTER ROLE bms_app WITH PASSWORD '…'`, change the other three by re-running
-> `pnpm --filter @bms/db roles` with the new `BMS_*_PASSWORD` values set, and
-> update every `DATABASE_URL`/`DATABASE_URL_AUTH`/`DATABASE_URL_TENANT`/
-> `DATABASE_URL_FLEET` in the same change. This is why `docker-compose.yml`
-> still hard-codes the dev defaults rather than parameterising them — a
-> silent, confusing break was judged worse than an obvious dev-only constant.
+> `BMS_OWNER_PASSWORD`/`BMS_AUTH_PASSWORD`/`BMS_TENANT_PASSWORD`/
+> `BMS_FLEET_PASSWORD`) only sets a role's password when it runs — neither
+> reapplies retroactively to an existing volume/role on its own. Setting a new
+> value against a volume that already has these roles provisioned has no effect
+> on the stored password, and the stack then fails authentication in a way that
+> looks like an application bug. On an existing volume, change the provisioning
+> superuser with `ALTER ROLE bms_app WITH PASSWORD '…'`, change the other four
+> by re-running `pnpm --filter @bms/db roles` with the new `BMS_*_PASSWORD`
+> values set, and update every `DATABASE_URL`/`DATABASE_URL_SUPERUSER`/
+> `DATABASE_URL_AUTH`/`DATABASE_URL_TENANT`/`DATABASE_URL_FLEET` in the same
+> change. This is why `docker-compose.yml` still hard-codes the dev defaults
+> rather than parameterising them — a silent, confusing break was judged worse
+> than an obvious dev-only constant.
+>
+> **A sixth role, `bms_rollup`, is deliberately absent from this table.** It
+> owns the four continuous aggregates, holds `LOGIN` with **no password**, and
+> is reached by `SET ROLE` rather than by connecting. Under `scram-sha-256` a
+> network client cannot authenticate as a role that has no password at all, so
+> there is nothing here to rotate — do not "fix" it by giving it one.
 
 ### 4.4 Protect connections in transit
 
