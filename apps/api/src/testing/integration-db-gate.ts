@@ -129,7 +129,12 @@ export function requireIntegrationDb({
     process.stderr.write(
       `\n[${item}] Skipping ${label}: DATABASE_URL is not set.\n` +
         "        Coverage thresholds assume these ran — expect the gate to fail.\n" +
-        "        DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5432/bms pnpm test:coverage\n" +
+        // `bms_owner`, not `bms_app`. Since ADR 0045 this variable is the
+        // *owner* connection and `connection: "owner"` hands it through
+        // verbatim, so a superuser here is unbound by FORCE ROW LEVEL SECURITY
+        // and the owner-side fixture suites pass vacuously. The hint has to
+        // name the role the suites are written against.
+        "        DATABASE_URL=postgres://bms_owner:bms_owner_dev@localhost:5432/bms pnpm test:coverage\n" +
         "        (5432 is the committed compose port; docker-compose.override.yml may remap it)\n\n",
     );
     return undefined;

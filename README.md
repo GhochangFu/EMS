@@ -45,7 +45,10 @@ cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
 
 pnpm install
-pnpm db:migrate && pnpm db:seed
+
+# `roles` first, then migrate, then seed (ADR 0045): `roles` creates the five
+# database roles and the migrations grant privileges to them.
+pnpm --filter @bms/db roles && pnpm db:migrate && pnpm db:seed
 
 # In three terminals:
 pnpm --filter api dev    # NestJS on :4000

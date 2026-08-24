@@ -15,7 +15,7 @@ provide.
 
 | Variable | Required | Default / compose value | Purpose |
 |----------|----------|-------------------------|---------|
-| `DATABASE_URL_AUTH` | Yes | `postgres://bms_auth:bms_auth_dev@postgres:5432/bms` | Postgres connection as `bms_auth` (ADR 0043 decision 8) — identity/grant-resolution reads only, no `BYPASSRLS`. The API deliberately never connects as the owner (`bms_app`); `DATABASE_URL` is not read by `api`/`api-replica` at all. |
+| `DATABASE_URL_AUTH` | Yes | `postgres://bms_auth:bms_auth_dev@postgres:5432/bms` | Postgres connection as `bms_auth` (ADR 0043 decision 8) — identity/grant-resolution reads only, no `BYPASSRLS`. The API deliberately never connects as the owner (`bms_owner`) or as the provisioning superuser (`bms_app`); neither `DATABASE_URL` nor `DATABASE_URL_SUPERUSER` is read by `api`/`api-replica` at all. |
 | `DATABASE_URL_TENANT` | Yes | `postgres://bms_tenant:bms_tenant_dev@postgres:5432/bms` | Postgres connection as `bms_tenant` — row-level-security-scoped reads and writes inside a `withTenant` transaction. |
 | `DATABASE_URL_FLEET` | Yes | `postgres://bms_fleet:bms_fleet_dev@postgres:5432/bms` | Postgres connection as `bms_fleet` — `BYPASSRLS`, for reads that already carry their own scope filter (global-admin and multi-organization views). |
 | `JWT_SECRET` | Local auth only | `change-me-in-compose` | Local JWT signing secret for native WSL fallback and non-OIDC smoke checks. |
@@ -63,7 +63,7 @@ re-login during demos.
 
 | Variable | Required | Default / compose value | Purpose |
 |----------|----------|-------------------------|---------|
-| `DATABASE_URL` | Yes | `postgres://bms_app:bms_app_dev@postgres:5432/bms` | Postgres/TimescaleDB connection string. |
+| `DATABASE_URL` | Yes | `postgres://bms_owner:bms_owner_dev@postgres:5432/bms` | Postgres/TimescaleDB connection string, as `bms_owner` — the non-superuser schema owner (ADR 0045). Not `bms_app`: a superuser here is unbound by `FORCE ROW LEVEL SECURITY`. |
 | `SIM_RATE_HZ` | No | `0.2` in compose | Simulator write frequency. |
 | `SIM_ASSET_COUNT` | No | `all` in Compose | Maximum seeded assets loaded by the simulator; use `all` for full coverage or a number to cap rows ordered by asset code. |
 | `SIM_SITE_NAMES` | No | `RSMOC Western Cape,CSMOC Gauteng,RSMOC KwaZulu-Natal` in compose | Optional comma-separated seeded site names to limit simulator telemetry to selected demo locations. Assets with `meta.telemetryEnabled=false` are excluded even when their site is listed. |
@@ -76,7 +76,7 @@ gitignored root `.env` via `env_file`.
 
 | Variable | Required | Default / compose value | Purpose |
 |----------|----------|-------------------------|---------|
-| `DATABASE_URL` | Yes | `postgres://bms_app:bms_app_dev@postgres:5432/bms` | Postgres/TimescaleDB connection string. |
+| `DATABASE_URL` | Yes | `postgres://bms_owner:bms_owner_dev@postgres:5432/bms` | Postgres/TimescaleDB connection string, as `bms_owner` — the non-superuser schema owner (ADR 0045). Not `bms_app`: a superuser here is unbound by `FORCE ROW LEVEL SECURITY`. |
 | `MQTT_HOST` | Yes | `phe.thinkiot.co.in` in compose | Pilot MQTT broker hostname. **Also read by the API** — `onboarding-chat.service.ts:444` uses it as the default host when the wizard creates an MQTT RTU. |
 | `MQTT_PORT` | Yes | `8883` in compose | MQTT TLS port. **Also read by the API** (`onboarding-chat.service.ts:445`). |
 | `MQTT_USERNAME` | **Secret** | unset (from `.env`) | Broker username. Never commit. |
@@ -106,8 +106,11 @@ These services run only with the `observability` compose profile.
 | Variable | Required | Default / compose value | Purpose |
 |----------|----------|-------------------------|---------|
 | `POSTGRES_DB` | Yes | `bms` | Database name created by the TimescaleDB image. |
-| `POSTGRES_USER` | Yes | `bms_app` | Database **owner** role — `migrate`, `db:seed`, `apps/sim` and `apps/ingest` connect as this. Since ADR 0043 decision 8 the API itself never does; see the API section's `DATABASE_URL_AUTH`/`_TENANT`/`_FLEET` and `BMS_AUTH_PASSWORD`/`BMS_TENANT_PASSWORD`/`BMS_FLEET_PASSWORD` below. |
-| `POSTGRES_PASSWORD` | Yes | `bms_app_dev` | Local development password only, for the owner role above. |
-| `BMS_AUTH_PASSWORD` | Yes (`migrate` only) | `bms_auth_dev` | Sets `LOGIN` + this password on `bms_auth` (`pnpm --filter @bms/db roles`, run by the `migrate` service after `db:migrate`/`db:seed`). Local development password only. |
+| `POSTGRES_USER` | Yes | `bms_app` | The initdb bootstrap **superuser**, and since ADR 0045 a **provisioning identity only** — not the schema owner. It exists for `CREATE EXTENSION timescaledb`, `CREATE ROLE`, `ALTER ROLE … BYPASSRLS`, and replaying migration `0039:33` on a fresh database. `bms_owner` owns the schemas; see `DATABASE_URL_SUPERUSER` below and the API section's `DATABASE_URL`. Never give this string to the API — a superuser is unbound by `FORCE ROW LEVEL SECURITY` and would see every tenant's rows with nothing failing to say so. |
+| `POSTGRES_PASSWORD` | Yes | `bms_app_dev` | Local development password only, for the bootstrap superuser above. |
+| `DATABASE_URL_SUPERUSER` | Yes (`migrate` only) | `postgres://bms_app:bms_app_dev@postgres:5432/bms` | The `bms_app` connection (ADR 0045 decision 3). Read by exactly two commands, `pnpm --filter @bms/db roles` and `pnpm db:migrate`, and carried by exactly one compose service, `migrate`. `tests/adr-0045-owner-and-superuser-url.test.ts` fails if a second service or any `apps/api/src` file outside the integration-test gate acquires it. |
+| `BMS_OWNER_PASSWORD` | Yes (`migrate` only) | `bms_owner_dev` | Sets `LOGIN` + this password on `bms_owner`, the non-superuser schema owner. `db:roles` refuses to run without it, and `DATABASE_URL` would then fail to authenticate. Local development password only. |
+| `BMS_AUTH_PASSWORD` | Yes (`migrate` only) | `bms_auth_dev` | Sets `LOGIN` + this password on `bms_auth` (`pnpm --filter @bms/db roles`, which since ADR 0045 decision 6 runs **before** `db:migrate`/`db:seed` — it creates the roles the migrations then grant to). Local development password only. |
 | `BMS_TENANT_PASSWORD` | Yes (`migrate` only) | `bms_tenant_dev` | Same, for `bms_tenant`. Local development password only. |
 | `BMS_FLEET_PASSWORD` | Yes (`migrate` only) | `bms_fleet_dev` | Same, for `bms_fleet`. Local development password only. |
+| *(no variable)* | — | — | `bms_rollup` deliberately has **no** password entry. It owns the four continuous aggregates, is reached by `SET ROLE` rather than connected to, and holds `LOGIN` with no password so that only TimescaleDB's background workers can use it (ADR 0045 Amendment 2). |
