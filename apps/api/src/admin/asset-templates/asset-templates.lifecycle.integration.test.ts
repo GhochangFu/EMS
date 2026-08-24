@@ -33,6 +33,7 @@ import {
   openIntegrationPool,
   requireIntegrationDb,
 } from "../../testing/integration-db-gate";
+import { asRole } from "../../testing/role-urls";
 
 /**
  * `F2.1` — Vitest entry point for the ADR 0015 lifecycle. Assertions live in
@@ -61,27 +62,49 @@ const connectionString = requireIntegrationDb({
   label: "asset-template lifecycle tests",
   because:
     "the version-bump rule, the one-draft-per-code index and published-row immutability are " +
-    "database behaviours, so a green run without them asserts nothing.",
+    "database behaviours, so a green run without them asserts nothing. Constructing the " +
+    "service with real bms_tenant/bms_fleet connections (ADR 0043, not the owner for both " +
+    "pools) is also the only proof that withTenant actually enforces row-level security on " +
+    "this service's writes rather than passing because the owner bypasses it regardless.",
 });
 
 describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", () => {
   let pool: pg.Pool | undefined;
+  let authPool: pg.Pool | undefined;
+  let tenantPool: pg.Pool | undefined;
+  let fleetPool: pg.Pool | undefined;
   let svc: AssetTemplatesAdminService;
   let fx: Fixtures;
   let v1: AdminAssetTemplateDto;
 
   beforeAll(async () => {
-    const created = await openIntegrationPool(connectionString as string, "F2.1");
+    const url = connectionString as string;
+    const created = await openIntegrationPool(url, "F2.1");
     pool = created;
-
-    const db = createDb(created);
-    svc = new AssetTemplatesAdminService(
-      db,
-      db,
-      new AccessControlService(db, db, db),
-      new MasterDataAuditService(db),
-      new VocabulariesService(db),
+    authPool = await openIntegrationPool(
+      process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
+      "F2.1",
     );
+    tenantPool = await openIntegrationPool(
+      process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
+      "F2.1",
+    );
+    fleetPool = await openIntegrationPool(
+      process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
+      "F2.1",
+    );
+
+    const tenantDb = createDb(tenantPool);
+    const fleetDb = createDb(fleetPool);
+    svc = new AssetTemplatesAdminService(
+      fleetDb,
+      tenantDb,
+      new AccessControlService(createDb(authPool), tenantDb, fleetDb),
+      new MasterDataAuditService(tenantDb),
+      new VocabulariesService(tenantDb),
+    );
+    // Fixtures are cross-organization by design and set up on the owner
+    // connection on purpose — seeding is not the behaviour under test.
     fx = await loadFixtures(created);
     // Before as well as after: a crashed previous run must not fail this one.
     await cleanup(created);
@@ -90,8 +113,8 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
   afterAll(async () => {
     if (pool) {
       await cleanup(pool);
-      await pool.end();
     }
+    await Promise.all([pool?.end(), authPool?.end(), tenantPool?.end(), fleetPool?.end()]);
   });
 
   it("creates version 1 as a draft, points in sort order", async () => {

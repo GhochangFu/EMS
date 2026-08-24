@@ -6,6 +6,7 @@ import { createDb } from "@bms/db";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
+import { asRole } from "../../testing/role-urls";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
 import { loadFixtures, type Fixtures } from "./asset-templates.instantiate.integration.spec";
@@ -39,24 +40,46 @@ const connectionString = requireIntegrationDb({
     "the refusal guarantees are guarantees about rows that must NOT exist afterwards — " +
     "assets.template_id unmoved, no partial asset_points, no audit row claiming a " +
     "migration occurred. Partial migration is the worst outcome this feature can produce " +
-    "and no pure test can observe it.",
+    "and no pure test can observe it. Constructing the service with real bms_tenant/" +
+    "bms_fleet connections (ADR 0043, not the owner for both pools) is also the only " +
+    "proof that withTenant enforces row-level security on the migration write path.",
 });
 
 describe.skipIf(!connectionString)("F2.6 — template version migration", () => {
   let pool: pg.Pool | undefined;
+  let authPool: pg.Pool | undefined;
+  let tenantPool: pg.Pool | undefined;
+  let fleetPool: pg.Pool | undefined;
   let svc: AssetTemplateMigrationService;
   let fx: Fixtures;
 
   beforeAll(async () => {
-    const created = await openIntegrationPool(connectionString as string, "F2.6");
+    const url = connectionString as string;
+    const created = await openIntegrationPool(url, "F2.6");
     pool = created;
-    const db = createDb(created);
-    svc = new AssetTemplateMigrationService(
-      db,
-      db,
-      new AccessControlService(db, db, db),
-      new MasterDataAuditService(db),
+    authPool = await openIntegrationPool(
+      process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
+      "F2.6",
     );
+    tenantPool = await openIntegrationPool(
+      process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
+      "F2.6",
+    );
+    fleetPool = await openIntegrationPool(
+      process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
+      "F2.6",
+    );
+
+    const tenantDb = createDb(tenantPool);
+    const fleetDb = createDb(fleetPool);
+    svc = new AssetTemplateMigrationService(
+      fleetDb,
+      tenantDb,
+      new AccessControlService(createDb(authPool), tenantDb, fleetDb),
+      new MasterDataAuditService(tenantDb),
+    );
+    // Fixtures are cross-organization by design and set up on the owner
+    // connection on purpose — seeding is not the behaviour under test.
     fx = await loadFixtures(created);
     await cleanup(created);
   });
@@ -64,8 +87,8 @@ describe.skipIf(!connectionString)("F2.6 — template version migration", () => 
   afterAll(async () => {
     if (pool) {
       await cleanup(pool);
-      await pool.end();
     }
+    await Promise.all([pool?.end(), authPool?.end(), tenantPool?.end(), fleetPool?.end()]);
   });
 
   // Each case seeds at (org, TEST_TEMPLATE_CODE, version) —

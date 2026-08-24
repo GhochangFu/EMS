@@ -33,6 +33,7 @@ import {
   openIntegrationPool,
   requireIntegrationDb,
 } from "../../testing/integration-db-gate";
+import { asRole } from "../../testing/role-urls";
 
 /**
  * `F2.2` — Vitest entry point for template instantiation. Assertions live in
@@ -55,31 +56,52 @@ const connectionString = requireIntegrationDb({
     "the rollback guarantees, the asset_points_source_ref_check agreement between rtu_id " +
     "and source_kind, and the ADR 0015 Amendment 1B access split are all database " +
     "behaviours. A green run without them asserts nothing about the one outcome this " +
-    "feature must never produce.",
+    "feature must never produce. Constructing every service with real bms_tenant/bms_fleet " +
+    "connections (ADR 0043, not the owner for both pools) is also the only proof that " +
+    "withTenant enforces row-level security on the instantiation write path.",
 });
 
 describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () => {
   let pool: pg.Pool | undefined;
+  let authPool: pg.Pool | undefined;
+  let tenantPool: pg.Pool | undefined;
+  let fleetPool: pg.Pool | undefined;
   let svc: Services;
   let fx: Fixtures;
   let template: AdminAssetTemplateDto;
 
   beforeAll(async () => {
-    const created = await openIntegrationPool(connectionString as string, "F2.2");
+    const url = connectionString as string;
+    const created = await openIntegrationPool(url, "F2.2");
     pool = created;
+    authPool = await openIntegrationPool(
+      process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
+      "F2.2",
+    );
+    tenantPool = await openIntegrationPool(
+      process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
+      "F2.2",
+    );
+    fleetPool = await openIntegrationPool(
+      process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
+      "F2.2",
+    );
 
-    const db = createDb(created);
-    const access = new AccessControlService(db, db, db);
-    const audit = new MasterDataAuditService(db);
-    const vocabularies = new VocabulariesService(db);
-    const instantiation = new AssetTemplateInstantiationService(db, db, access, audit);
+    const tenantDb = createDb(tenantPool);
+    const fleetDb = createDb(fleetPool);
+    const access = new AccessControlService(createDb(authPool), tenantDb, fleetDb);
+    const audit = new MasterDataAuditService(tenantDb);
+    const vocabularies = new VocabulariesService(tenantDb);
+    const instantiation = new AssetTemplateInstantiationService(fleetDb, tenantDb, access, audit);
     svc = {
-      templates: new AssetTemplatesAdminService(db, db, access, audit, vocabularies),
+      templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
       // Parse through the real schema so these cases exercise the controller's
       // path, transform included — not a hand-built post-transform shape.
       instantiate: (jwt, templateId, body) =>
         instantiation.instantiate(jwt, templateId, instantiateAssetsBodySchema.parse(body)),
     };
+    // Fixtures are cross-organization by design and set up on the owner
+    // connection on purpose — seeding is not the behaviour under test.
     fx = await loadFixtures(created);
     // Before as well as after: a crashed previous run must not fail this one.
     await cleanup(created);
@@ -89,8 +111,8 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
   afterAll(async () => {
     if (pool) {
       await cleanup(pool);
-      await pool.end();
     }
+    await Promise.all([pool?.end(), authPool?.end(), tenantPool?.end(), fleetPool?.end()]);
   });
 
   it("builds measured points carrying the RTU, and never the derived point", async () => {
