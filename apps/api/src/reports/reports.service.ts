@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 
 import type { EnergyReportPreview, EnergyReportTemplate } from "@bms/shared";
 
-import { POOL_TOKEN } from "../database/database.tokens";
+import { TENANT_POOL } from "../database/database.tokens";
 import {
   aggregateRelation,
   avgExpr,
@@ -28,7 +28,7 @@ const energyTemplate: EnergyReportTemplate = {
 
 @Injectable()
 export class ReportsService {
-  constructor(@Inject(POOL_TOKEN) private readonly pool: Pool) {}
+  constructor(@Inject(TENANT_POOL) private readonly pool: Pool) {}
 
   /** Builds the Sprint E Energy Consumption report preview. */
   async energyPreview(

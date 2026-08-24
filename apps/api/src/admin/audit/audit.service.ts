@@ -8,7 +8,7 @@ import type { BmsDb } from "@bms/db";
 import type { AuditLogListResponse, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { DRIZZLE } from "../../database/database.tokens";
+import { TENANT_DRIZZLE } from "../../database/database.tokens";
 import { MAX_EXPORT_ROWS, assertWithinExportCap } from "./audit.limits";
 import type { AuditExportQuery, AuditListQuery } from "./audit.schema";
 import { toCsv, toSheetRows } from "./audit.serialise";
@@ -29,7 +29,7 @@ export type AuditExportFile = {
 @Injectable()
 export class AuditAdminService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly accessControl: AccessControlService,
   ) {}
 

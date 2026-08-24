@@ -16,7 +16,7 @@ import {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { DRIZZLE, POOL_TOKEN } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE, TENANT_POOL } from "../../database/database.tokens";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { resolveCatalogPointKey } from "../asset-points/resolve-catalog-point-key";
 import { RAW_RETENTION_DAYS } from "../../telemetry/point-aggregates";
@@ -128,8 +128,9 @@ export class TelemetryWriteService {
   private readonly logger = new Logger(TelemetryWriteService.name);
 
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
-    @Inject(POOL_TOKEN) private readonly pool: pg.Pool,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_POOL) private readonly pool: pg.Pool,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
   ) {}
@@ -501,7 +502,7 @@ export class TelemetryWriteService {
       };
     }
 
-    const catalog = await resolveCatalogPointKey(this.db, data.assetId, data.pointKey);
+    const catalog = await resolveCatalogPointKey(this.fleetDb, data.assetId, data.pointKey);
     if (!catalog.ok) {
       return { ok: false, field: "pointKey", reason: catalog.reason };
     }

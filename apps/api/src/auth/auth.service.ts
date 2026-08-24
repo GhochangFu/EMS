@@ -7,14 +7,17 @@ import type { JwtPayload, LoginResponse, UserRole } from "@bms/shared";
 import { users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { AUTH_DRIZZLE } from "../database/database.tokens";
 import { isLocalLoginEnabled } from "./auth-mode";
 import type { LoginBody } from "./login.schema";
 
 @Injectable()
 export class AuthService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    // F4.16 / ADR 0043 Amendment 1: login is pre-authentication, so there is no
+    // organization to SET LOCAL and bms_tenant cannot read the row at all. The
+    // auth pool is the only one whose role holds password_hash.
+    @Inject(AUTH_DRIZZLE) private readonly db: BmsDb,
     private readonly jwt: JwtService,
   ) {}
 

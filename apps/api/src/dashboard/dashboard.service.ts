@@ -6,7 +6,7 @@ import {
 import type { Pool } from "pg";
 import type { LocationDashboardDto, LocationKpiSummary } from "@bms/shared";
 
-import { POOL_TOKEN } from "../database/database.tokens";
+import { FLEET_POOL } from "../database/database.tokens";
 import {
   aggregateRelation,
   avgExpr,
@@ -17,9 +17,15 @@ import {
 type LocationDashboardAssetRow = LocationDashboardDto["assets"]["items"][number];
 type LocationDashboardTelemetrySample = LocationDashboardAssetRow["telemetry"][number];
 
+/**
+ * `F4.16` / ADR 0043 — every query here is read-only and several join
+ * `bms.locations` (RLS since migration `0040`), so this whole service runs on
+ * `fleetPool`. Every caller already passes a `locationIds`/`assetIds` scope
+ * it trusts — this is a pool change, not a new authorization surface.
+ */
 @Injectable()
 export class DashboardService {
-  constructor(@Inject(POOL_TOKEN) private readonly pool: Pool) {}
+  constructor(@Inject(FLEET_POOL) private readonly pool: Pool) {}
 
   /** Returns location KPI cards for the current access scope. */
   async locationKpis(opts?: {

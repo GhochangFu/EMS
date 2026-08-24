@@ -1,0 +1,90 @@
+import pg from "pg";
+import { afterAll, beforeAll, describe, it } from "vitest";
+
+import {
+  assertAuthCanReadPasswordHash,
+  assertAuthReachesOnlyIdentityTables,
+  assertFleetCannotReadPasswordHash,
+  assertFleetIsDeniedPasswordHashAtRuntime,
+  assertNoRoleCanInsertOrDeleteUsers,
+  assertRolesExist,
+  assertTenantCannotReadPasswordHash,
+  assertTenantIsDeniedPasswordHashAtRuntime,
+  assertTenantReachesTelemetry,
+} from "./role-grants.integration.spec";
+import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+
+/**
+ * `F4.16` — Vitest entry point. Assertions live in the sibling `.spec`
+ * (ADR 0014); this file owns the database lifecycle.
+ *
+ * The connection is made as the migration role (`bms_app`, the owner), not as
+ * any of the three roles under test. That is deliberate: the roles are `NOLOGIN`
+ * until `pnpm db:roles` runs, and the suite must pass on a database that has had
+ * `db:migrate` and nothing else. The runtime denials use `SET LOCAL ROLE`, which
+ * needs no password and no `LOGIN` attribute.
+ *
+ * Run it locally against your own stack (docker-compose.override.yml remaps the
+ * published port to 5433; 5432 is the committed default):
+ *
+ *   DATABASE_URL=postgres://bms_app:bms_app_dev@localhost:5433/bms pnpm --filter api test role-grants
+ */
+
+const connectionString = requireIntegrationDb({
+  item: "F4.16",
+  label: "role grant-matrix tests",
+  because:
+    "they are the only check that bms_tenant cannot select password_hash and that " +
+    "bms_auth reaches no table beyond the four identity tables. Without them the " +
+    "migration's REVOKE can be a no-op and nothing says so.",
+});
+
+describe.skipIf(!connectionString)("F4.16 — role grant matrix", () => {
+  let pool: pg.Pool | undefined;
+
+  beforeAll(async () => {
+    pool = await openIntegrationPool(connectionString as string, "F4.16");
+  });
+
+  afterAll(async () => {
+    await pool?.end();
+  });
+
+  it("creates the three roles, and only bms_fleet bypasses RLS", async () => {
+    await assertRolesExist(pool as pg.Pool);
+  });
+
+  it("withholds password_hash from bms_tenant", async () => {
+    await assertTenantCannotReadPasswordHash(pool as pg.Pool);
+  });
+
+  it("withholds password_hash from bms_fleet as well", async () => {
+    await assertFleetCannotReadPasswordHash(pool as pg.Pool);
+  });
+
+  it("keeps password_hash readable by bms_auth", async () => {
+    await assertAuthCanReadPasswordHash(pool as pg.Pool);
+  });
+
+  it("lets no pool role insert or delete a bms.users row", async () => {
+    await assertNoRoleCanInsertOrDeleteUsers(pool as pg.Pool);
+  });
+
+  it("grants bms_auth nothing beyond the four identity tables", async () => {
+    await assertAuthReachesOnlyIdentityTables(pool as pg.Pool);
+  });
+
+  describe("the server refuses the query, not merely the catalogue entry", () => {
+    it("denies bms_tenant a select of password_hash while allowing the row", async () => {
+      await assertTenantIsDeniedPasswordHashAtRuntime(pool as pg.Pool);
+    });
+
+    it("denies bms_fleet the same column despite BYPASSRLS", async () => {
+      await assertFleetIsDeniedPasswordHashAtRuntime(pool as pg.Pool);
+    });
+  });
+
+  it("reaches the hypertable and a continuous aggregate as bms_tenant", async () => {
+    await assertTenantReachesTelemetry(pool as pg.Pool);
+  });
+});

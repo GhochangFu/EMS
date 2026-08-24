@@ -13,7 +13,7 @@ import {
 import type { BmsDb } from "@bms/db";
 import type { AlarmDetailsResponse, AutomationRuleOperator } from "@bms/shared";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE } from "../database/database.tokens";
 
 /**
  * `GET /api/v1/alarms/:id/details` (ADR 0034 decision 5).
@@ -22,10 +22,15 @@ import { DRIZZLE } from "../database/database.tokens";
  * that file is pagination and acknowledgement, this is a read composing five
  * tables, and the two share no state. Computed at read time — nothing here
  * is stored beyond the alarm/asset/rule/enrichment rows themselves.
+ *
+ * `F4.16` / ADR 0043 — the main query joins `locations` (RLS since migration
+ * `0040`), so this whole read-only service runs on `fleetDb`. Every caller
+ * already passes an `assetIds` scope it trusts (`AlarmsService.list` does the
+ * same), so this is a pool change, not a new authorization surface.
  */
 @Injectable()
 export class AlarmDetailsService {
-  constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
+  constructor(@Inject(FLEET_DRIZZLE) private readonly db: BmsDb) {}
 
   /**
    * Scoped by `assetIds` the same way `AlarmsService.list`/`acknowledge` are.

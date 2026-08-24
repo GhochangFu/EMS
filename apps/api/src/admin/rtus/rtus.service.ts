@@ -12,14 +12,23 @@ import type { BmsDb } from "@bms/db";
 import type { AdminRtuDto, AdminRtuSummaryDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
 
+/**
+ * `F4.16` / ADR 0043 — `rtus` carries no policy, so every write below runs on
+ * `tenantDb` unchanged. Reads that join `locations` (RLS since migration
+ * `0040`) run on `fleetDb` instead, trusting the scope filter this service
+ * already applies via `writableLocationIds`/`canManageLocation` — the same
+ * "bypass, then trust an already-computed grant" shape `AccessControlService`
+ * uses for its own `bms_auth` reads.
+ */
 @Injectable()
 export class RtusAdminService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
   ) {}
@@ -50,7 +59,7 @@ export class RtusAdminService {
       conditions.push(eq(rtus.active, false));
     }
 
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({
         rtu: rtus,
         locationName: locations.name,
@@ -68,7 +77,7 @@ export class RtusAdminService {
   /** Returns one RTU summary when in scope. */
   async getById(jwt: JwtPayload, id: string): Promise<AdminRtuSummaryDto> {
     await this.accessControl.requireMasterDataUser(jwt);
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         rtu: rtus,
         locationName: locations.name,
@@ -104,7 +113,7 @@ export class RtusAdminService {
       throw new ForbiddenException("Location is outside your access scope");
     }
 
-    const [created] = await this.db
+    const [created] = await this.tenantDb
       .insert(rtus)
       .values({
         locationId: body.locationId,
@@ -135,7 +144,7 @@ export class RtusAdminService {
 
   /** Updates an RTU in scope. */
   async update(jwt: JwtPayload, id: string, body: UpdateRtuBody): Promise<AdminRtuDto> {
-    const [existing] = await this.db
+    const [existing] = await this.tenantDb
       .select()
       .from(rtus)
       .where(eq(rtus.id, id))
@@ -147,7 +156,7 @@ export class RtusAdminService {
       throw new ForbiddenException("RTU is outside your access scope");
     }
 
-    await this.db
+    await this.tenantDb
       .update(rtus)
       .set({
         code: body.code ?? existing.code,
@@ -193,7 +202,7 @@ export class RtusAdminService {
 
   /** Deactivates an RTU when no active assets remain. */
   async deactivate(jwt: JwtPayload, id: string): Promise<AdminRtuDto> {
-    const [existing] = await this.db
+    const [existing] = await this.tenantDb
       .select()
       .from(rtus)
       .where(eq(rtus.id, id))
@@ -205,7 +214,7 @@ export class RtusAdminService {
       throw new ForbiddenException("RTU is outside your access scope");
     }
 
-    const [activeAsset] = await this.db
+    const [activeAsset] = await this.tenantDb
       .select({ count: sql<number>`count(*)::int` })
       .from(assets)
       .where(and(eq(assets.rtuId, id), eq(assets.active, true)))
@@ -214,7 +223,7 @@ export class RtusAdminService {
       throw new ConflictException("Cannot deactivate RTU with active assets");
     }
 
-    await this.db.update(rtus).set({ active: false }).where(eq(rtus.id, id));
+    await this.tenantDb.update(rtus).set({ active: false }).where(eq(rtus.id, id));
     await this.audit.write({
       actor: jwt,
       action: "master.rtu.deactivate",
@@ -226,7 +235,7 @@ export class RtusAdminService {
 
   /** Reactivates an RTU. */
   async reactivate(jwt: JwtPayload, id: string): Promise<AdminRtuDto> {
-    const [existing] = await this.db
+    const [existing] = await this.tenantDb
       .select()
       .from(rtus)
       .where(eq(rtus.id, id))
@@ -238,7 +247,7 @@ export class RtusAdminService {
       throw new ForbiddenException("RTU is outside your access scope");
     }
 
-    await this.db.update(rtus).set({ active: true }).where(eq(rtus.id, id));
+    await this.tenantDb.update(rtus).set({ active: true }).where(eq(rtus.id, id));
     await this.audit.write({
       actor: jwt,
       action: "master.rtu.reactivate",
@@ -249,7 +258,7 @@ export class RtusAdminService {
   }
 
   private async fetchRow(id: string): Promise<AdminRtuDto> {
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         rtu: rtus,
         locationName: locations.name,

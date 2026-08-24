@@ -9,7 +9,7 @@ import { alarms, assets, auditLog, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AlarmListItem, JwtPayload } from "@bms/shared";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { AlarmsGateway } from "./alarms.gateway";
 
 function encodeCursor(raisedAt: Date, id: string): string {
@@ -29,7 +29,7 @@ function decodeCursor(raw: string): { raisedAt: Date; id: string } {
 @Injectable()
 export class AlarmsService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly gateway: AlarmsGateway,
   ) {}
 

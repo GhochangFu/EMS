@@ -8,6 +8,7 @@ import { Client } from "pg";
 
 import type { TelemetryReading } from "@bms/shared";
 
+import { DATABASE_URL_AUTH_ENV_VAR } from "../database/database-urls";
 import { MetricsService } from "../observability/metrics.service";
 import { sleep } from "./sleep";
 import { TelemetryBroadcastHub } from "./telemetry-broadcast.hub";
@@ -83,9 +84,19 @@ export class TelemetryNotifyService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    const url = process.env.DATABASE_URL;
+    // ADR 0043 decision 8 (F4.16): the API no longer holds an owner
+    // (`DATABASE_URL`) connection at all. `LISTEN`/`NOTIFY` needs no schema or
+    // table grant — a channel name is not a schema object — so this reaches
+    // for the LEAST privileged of the three roles, not the most convenient
+    // one: `bms_auth` is `NOBYPASSRLS` with narrow, named grants on four
+    // tables, versus `bms_fleet`'s `BYPASSRLS` and full DML on every `bms.*`
+    // and `telemetry.*` table. A future accidental query added to this
+    // service (a copy-paste mistake, a debugging line) fails loudly against
+    // `bms_auth`'s four-table grant instead of silently succeeding with full
+    // access.
+    const url = process.env[DATABASE_URL_AUTH_ENV_VAR];
     if (!url) {
-      this.logger.warn("DATABASE_URL missing; telemetry NOTIFY listener disabled");
+      this.logger.warn("DATABASE_URL_AUTH missing; telemetry NOTIFY listener disabled");
       this.metrics.setTelemetryListenerConnected(false);
       return;
     }

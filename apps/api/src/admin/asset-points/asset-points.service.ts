@@ -13,15 +13,24 @@ import type { BmsDb } from "@bms/db";
 import type { AdminAssetPointDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreateAssetPointBody, UpdateAssetPointBody } from "./asset-points.schema";
 import { resolveCatalogPointKey } from "./resolve-catalog-point-key";
 
+/**
+ * `F4.16` / ADR 0043 — `asset_points`/`assets` carry no policy, so every
+ * write runs on `tenantDb` unchanged. `list`/`fetchRow` join `locations`
+ * (RLS since migration `0040`) and run on `fleetDb` instead, trusting the
+ * scope filter already applied via `writableLocationIds`/`canManageAsset` —
+ * the same "bypass, then trust an already-computed grant" shape
+ * `AccessControlService` uses for its own `bms_auth` reads.
+ */
 @Injectable()
 export class AssetPointsAdminService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
   ) {}
@@ -59,7 +68,7 @@ export class AssetPointsAdminService {
       conditions.push(eq(assetPoints.active, false));
     }
 
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({
         point: assetPoints,
         assetCode: assets.code,
@@ -91,14 +100,14 @@ export class AssetPointsAdminService {
     // a point mapped through this endpoint is fed by whatever feeds its asset.
     // With no gateway the honest record is `unmapped`, not `manual`: nobody
     // claimed this point is hand-entered, only that no source is known yet.
-    const [ownerAsset] = await this.db
+    const [ownerAsset] = await this.tenantDb
       .select({ rtuId: assets.rtuId })
       .from(assets)
       .where(eq(assets.id, body.assetId))
       .limit(1);
     const sourceRtuId = ownerAsset?.rtuId ?? null;
 
-    const [created] = await this.db
+    const [created] = await this.tenantDb
       .insert(assetPoints)
       .values({
         assetId: body.assetId,
@@ -128,7 +137,7 @@ export class AssetPointsAdminService {
     id: string,
     body: UpdateAssetPointBody,
   ): Promise<AdminAssetPointDto> {
-    const [existing] = await this.db
+    const [existing] = await this.tenantDb
       .select()
       .from(assetPoints)
       .where(eq(assetPoints.id, id))
@@ -158,7 +167,7 @@ export class AssetPointsAdminService {
     }
     const catalog = await this.resolveCatalogPointKey(existing.assetId, nextPointKey);
 
-    await this.db
+    await this.tenantDb
       .update(assetPoints)
       .set({
         pointKey: nextPointKey,
@@ -180,7 +189,7 @@ export class AssetPointsAdminService {
 
   /** Deactivates an asset point mapping. */
   async deactivate(jwt: JwtPayload, id: string): Promise<AdminAssetPointDto> {
-    const [existing] = await this.db
+    const [existing] = await this.tenantDb
       .select()
       .from(assetPoints)
       .where(eq(assetPoints.id, id))
@@ -192,7 +201,7 @@ export class AssetPointsAdminService {
       throw new ForbiddenException("Asset point is outside your access scope");
     }
 
-    await this.db.update(assetPoints).set({ active: false }).where(eq(assetPoints.id, id));
+    await this.tenantDb.update(assetPoints).set({ active: false }).where(eq(assetPoints.id, id));
     await this.audit.write({
       actor: jwt,
       action: "master.asset_point.deactivate",
@@ -204,7 +213,7 @@ export class AssetPointsAdminService {
 
   /** Reactivates an asset point mapping. */
   async reactivate(jwt: JwtPayload, id: string): Promise<AdminAssetPointDto> {
-    const [existing] = await this.db
+    const [existing] = await this.tenantDb
       .select()
       .from(assetPoints)
       .where(eq(assetPoints.id, id))
@@ -216,7 +225,7 @@ export class AssetPointsAdminService {
       throw new ForbiddenException("Asset point is outside your access scope");
     }
 
-    await this.db.update(assetPoints).set({ active: true }).where(eq(assetPoints.id, id));
+    await this.tenantDb.update(assetPoints).set({ active: true }).where(eq(assetPoints.id, id));
     await this.audit.write({
       actor: jwt,
       action: "master.asset_point.reactivate",
@@ -236,7 +245,7 @@ export class AssetPointsAdminService {
     assetId: string,
     pointKey: string,
   ): Promise<{ unit: string | null }> {
-    const result = await resolveCatalogPointKey(this.db, assetId, pointKey);
+    const result = await resolveCatalogPointKey(this.fleetDb, assetId, pointKey);
     if (!result.ok) {
       throw new BadRequestException(result.reason);
     }
@@ -244,7 +253,7 @@ export class AssetPointsAdminService {
   }
 
   private async fetchRow(id: string): Promise<AdminAssetPointDto> {
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         point: assetPoints,
         assetCode: assets.code,

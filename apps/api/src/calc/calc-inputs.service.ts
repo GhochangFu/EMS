@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 
 import { MAX_INPUT_AGE_SECONDS_BOUND } from "@bms/shared";
 
-import { POOL_TOKEN } from "../database/database.tokens";
+import { TENANT_POOL } from "../database/database.tokens";
 import type { CalcInputSample } from "./calc-inputs";
 
 /**
@@ -28,7 +28,7 @@ const INPUT_READ_BOUND_SECONDS = MAX_INPUT_AGE_SECONDS_BOUND * 7;
  */
 @Injectable()
 export class CalcInputsService {
-  constructor(@Inject(POOL_TOKEN) private readonly pool: Pool) {}
+  constructor(@Inject(TENANT_POOL) private readonly pool: Pool) {}
 
   async getLatestSamples(assetId: string, pointKeys: string[]): Promise<Map<string, CalcInputSample>> {
     const map = new Map<string, CalcInputSample>();

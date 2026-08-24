@@ -4,7 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { assetPoints, assets, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { MetricsService } from "../observability/metrics.service";
 import { inputKey } from "./calc-batch";
 import { toActiveDefinition, type CalcDefinition } from "./calc-definition";
@@ -47,7 +47,7 @@ export class CalcDefinitionsService {
   private cacheLoadedAt = 0;
 
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly metrics: MetricsService,
   ) {}
 

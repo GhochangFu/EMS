@@ -19,7 +19,7 @@ import type {
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { computedSourceDataKey } from "../../calc/computed-source-data-key";
-import { DRIZZLE } from "../../database/database.tokens";
+import { TENANT_DRIZZLE } from "../../database/database.tokens";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   validateMergedCalcOverride,
@@ -60,7 +60,7 @@ import {
 @Injectable()
 export class AssetPointCalcOverrideService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
   ) {}

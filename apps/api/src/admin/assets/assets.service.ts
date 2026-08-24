@@ -12,15 +12,25 @@ import type { BmsDb } from "@bms/db";
 import type { AdminAssetDto, AdminAssetSummaryDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreateAssetBody, UpdateAssetBody } from "./assets.schema";
 
+/**
+ * `F4.16` / ADR 0043 — `assets` and `asset_points` carry no policy, so every
+ * write below runs on `tenantDb` unchanged. Reads that join `locations`
+ * (`ENABLE ROW LEVEL SECURITY`, migration `0040`) run on `fleetDb` instead:
+ * this service already filters by `writableLocationIds`/`canManageAsset`
+ * before returning a row, the same "bypass, then trust an already-computed
+ * grant" shape `AccessControlService` uses for its own `bms_auth` reads — see
+ * that service's class doc for why this is not a new hazard.
+ */
 @Injectable()
 export class AssetsAdminService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
     private readonly vocabularies: VocabulariesService,
@@ -56,7 +66,7 @@ export class AssetsAdminService {
       conditions.push(eq(assets.active, false));
     }
 
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({
         asset: assets,
         locationName: locations.name,
@@ -84,7 +94,7 @@ export class AssetsAdminService {
     if (!(await this.accessControl.canManageAsset(jwt, id))) {
       throw new ForbiddenException("Asset is outside your access scope");
     }
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         asset: assets,
         locationName: locations.name,
@@ -126,7 +136,7 @@ export class AssetsAdminService {
     // `assets_domain_fk` and return a 500 where the enum used to give a 400.
     await this.vocabularies.assertAssetDomain(body.domain);
 
-    const [created] = await this.db
+    const [created] = await this.tenantDb
       .insert(assets)
       .values({
         code: body.code,
@@ -152,7 +162,7 @@ export class AssetsAdminService {
 
   /** Updates an asset in scope. */
   async update(jwt: JwtPayload, id: string, body: UpdateAssetBody): Promise<AdminAssetDto> {
-    const [existing] = await this.db
+    const [existing] = await this.tenantDb
       .select()
       .from(assets)
       .where(eq(assets.id, id))
@@ -191,7 +201,7 @@ export class AssetsAdminService {
       await this.vocabularies.assertAssetDomain(body.domain);
     }
 
-    await this.db
+    await this.tenantDb
       .update(assets)
       .set({
         code: body.code ?? existing.code,
@@ -220,7 +230,7 @@ export class AssetsAdminService {
       throw new ForbiddenException("Asset is outside your access scope");
     }
 
-    await this.db.transaction(async (tx) => {
+    await this.tenantDb.transaction(async (tx) => {
       await tx.update(assets).set({ active: false }).where(eq(assets.id, id));
       await tx.update(assetPoints).set({ active: false }).where(eq(assetPoints.assetId, id));
     });
@@ -240,7 +250,7 @@ export class AssetsAdminService {
       throw new ForbiddenException("Asset is outside your access scope");
     }
 
-    await this.db.update(assets).set({ active: true }).where(eq(assets.id, id));
+    await this.tenantDb.update(assets).set({ active: true }).where(eq(assets.id, id));
     await this.audit.write({
       actor: jwt,
       action: "master.asset.reactivate",
@@ -263,7 +273,7 @@ export class AssetsAdminService {
     if (!rtuId) {
       return;
     }
-    const [rtu] = await this.db
+    const [rtu] = await this.tenantDb
       .select({ locationId: rtus.locationId })
       .from(rtus)
       .where(eq(rtus.id, rtuId))
@@ -277,7 +287,7 @@ export class AssetsAdminService {
   }
 
   private async fetchRow(id: string): Promise<AdminAssetDto> {
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         asset: assets,
         locationName: locations.name,

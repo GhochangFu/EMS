@@ -23,7 +23,7 @@ import type {
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { MigrateAssetsBody } from "./asset-templates-migrate.schema";
 import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./template-version-delta";
@@ -133,10 +133,19 @@ type MigrationPlan = {
   fromVersions: number[];
 };
 
+/**
+ * `F4.16` / ADR 0043 — `asset_templates` and `point_keys` carry `ENABLE ROW
+ * LEVEL SECURITY` (migration `0040`); reads against them run on `fleetDb`,
+ * trusting the scope filter this service already applies via
+ * `writableLocationIds`/`canManageOrganization`. `migrate()`'s write
+ * transaction touches only `assets.template_id` and `asset_points`, neither
+ * policied, so it stays a plain `tenantDb.transaction()` — no `withTenant`.
+ */
 @Injectable()
 export class AssetTemplateMigrationService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
   ) {}
@@ -155,7 +164,7 @@ export class AssetTemplateMigrationService {
       throw new ForbiddenException("Template is outside your access scope");
     }
 
-    const versions = await this.db
+    const versions = await this.fleetDb
       .select({
         id: assetTemplates.id,
         version: assetTemplates.version,
@@ -187,12 +196,12 @@ export class AssetTemplateMigrationService {
     const assetCounts =
       writableIds !== null && writableIds.length === 0
         ? []
-        : await this.db
+        : await this.tenantDb
             .select({ templateId: assets.templateId, total: count() })
             .from(assets)
             .where(assetScope)
             .groupBy(assets.templateId);
-    const pointCounts = await this.db
+    const pointCounts = await this.tenantDb
       .select({ templateId: templatePoints.templateId, total: count() })
       .from(templatePoints)
       .where(inArray(templatePoints.templateId, ids))
@@ -266,7 +275,7 @@ export class AssetTemplateMigrationService {
       return this.toResult(plan, 0);
     }
 
-    await this.db.transaction(async (tx) => {
+    await this.tenantDb.transaction(async (tx) => {
       await tx.update(assets).set({ templateId: plan.target.id }).where(inArray(assets.id, assetIds));
 
       const rows = plan.planned.flatMap((a) =>
@@ -368,7 +377,7 @@ export class AssetTemplateMigrationService {
       );
     }
 
-    const selected = await this.db
+    const selected = await this.tenantDb
       .select({
         id: assets.id,
         code: assets.code,
@@ -438,7 +447,7 @@ export class AssetTemplateMigrationService {
     }
 
     const sourceIds = [...new Set(selected.map((a) => a.templateId as string))];
-    const sources = await this.db
+    const sources = await this.fleetDb
       .select()
       .from(assetTemplates)
       .where(inArray(assetTemplates.id, sourceIds));
@@ -603,7 +612,7 @@ export class AssetTemplateMigrationService {
     // wiring, which is exactly the quiet wrongness this feature exists to stop.
     const creatingAssetIds = planned.filter((a) => a.newPoints.length > 0).map((a) => a.dto.assetId);
     if (creatingAssetIds.length > 0) {
-      const existingRows = await this.db
+      const existingRows = await this.tenantDb
         .select({
           assetId: assetPoints.assetId,
           pointKey: assetPoints.pointKey,
@@ -660,7 +669,7 @@ export class AssetTemplateMigrationService {
   }
 
   private async fetchTemplate(id: string): Promise<TemplateRow> {
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select()
       .from(assetTemplates)
       .where(eq(assetTemplates.id, id))
@@ -672,7 +681,7 @@ export class AssetTemplateMigrationService {
   }
 
   private async loadPoints(templateId: string): Promise<StoredTemplatePoint[]> {
-    const rows = await this.db
+    const rows = await this.tenantDb
       .select()
       .from(templatePoints)
       .where(eq(templatePoints.templateId, templateId))
@@ -709,7 +718,7 @@ export class AssetTemplateMigrationService {
     if (codes.length === 0) {
       return new Map();
     }
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({ code: pointKeys.code, unit: pointKeys.unit })
       .from(pointKeys)
       .where(and(eq(pointKeys.organizationId, organizationId), inArray(pointKeys.code, codes)));

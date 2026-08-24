@@ -470,41 +470,45 @@ export async function assertDbRoleBeatsJwtClaim(svc: AccessControlService): Prom
 
 /**
  * Pins what happens when the token names a user this database has never heard
- * of — **today's behaviour, which is not obviously the right one.**
+ * of — **ADR 0044's decision, not the pre-0044 behaviour this test used to
+ * pin.**
  *
- * `resolveDbUser` falls back to the claim when neither `sub` nor `email`
- * matches. That fallback is load-bearing: it is what lets the operator/viewer
+ * `resolveDbUser` still falls back to the claim when neither `sub` nor
+ * `email` matches, for every role except `admin`. That fallback is
+ * load-bearing for a real reason: it is what lets the operator/viewer
  * fail-closed checks above run without seeding those roles, and what lets a
- * freshly federated OIDC principal reach the app before a local row exists.
+ * freshly federated OIDC principal reach the app — with a correctly empty
+ * scope — before a local row exists.
  *
- * But it also means an `admin` claim for an unprovisioned email resolves to
- * unrestricted access, so deleting a `bms.users` row does not revoke a token —
- * it *restores* whatever role the token claims, until `JWT_TTL` expires
- * (default 8h). Not client-forgeable: the guard verifies RS256, issuer and
- * audience, and local mode signs the DB role. Still, "deprovision by deleting
- * the row" is the obvious admin action and it does the opposite of what it
- * looks like.
- *
- * This asserts the current behaviour rather than the desired one, deliberately.
- * Changing it is a security decision with an ADR attached, not a drive-by edit,
- * and until then the property should at least be *visible* instead of latent.
- * When it changes, this test fails and points at the decision.
+ * An `admin` claim for an unprovisioned email is different: `writableXIds`
+ * returns the unrestricted `null` sentinel only inside the `admin` branch, so
+ * that one claim alone turned "no row" into "everything" — meaning deleting a
+ * `bms.users` row did not revoke a token, it *restored* whatever role the
+ * token claimed, until `JWT_TTL` expires (default 8h). Not client-forgeable:
+ * the guard verifies RS256, issuer and audience, and local mode signs the DB
+ * role. Still, "deprovision by deleting the row" is the obvious admin action
+ * and it did the opposite of what it looks like. ADR 0044 closes exactly this
+ * one branch and leaves every other role's fallback untouched — see that ADR
+ * for why a blanket refusal was rejected.
  */
 export async function assertUnprovisionedTokenBehaviour(
   svc: AccessControlService,
 ): Promise<void> {
   const ghost = jwtFor("deprovisioned-admin@integration.invalid", "admin");
-  const { user, scope } = await svc.currentUser(ghost);
+  await expectForbidden(
+    () => svc.currentUser(ghost),
+    "an unprovisioned admin token must be refused (ADR 0044), not resolved to a global scope",
+  );
 
-  if (user.role !== "admin" || scope.kind !== "global") {
+  // The non-admin half of the same fallback must still work — ADR 0044 closes
+  // only the admin branch, on purpose.
+  const nonAdminGhost = jwtFor("unprovisioned-viewer@integration.invalid", "viewer");
+  const { user, scope } = await svc.currentUser(nonAdminGhost);
+  if (user.role !== "viewer" || scope.kind !== "none") {
     throw new Error(
-      "an unprovisioned admin token no longer resolves to a global scope. If that " +
-        "was intentional, this is the test to update — and the change needs an ADR, " +
-        "because the operator/viewer fail-closed checks rely on the same fallback.",
+      `an unprovisioned viewer token: expected role "viewer" and scope "none", got role ` +
+        `"${user.role}" and scope "${scope.kind}" — ADR 0044 did not intend to touch this path`,
     );
-  }
-  if ((await svc.readableAssetIds(ghost)) !== null) {
-    throw new Error("unprovisioned admin readableAssetIds changed shape; see above");
   }
 }
 

@@ -4,11 +4,18 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { assets, locations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE } from "../database/database.tokens";
 
+/**
+ * `F4.16` / ADR 0043 — this query joins `locations` (`ENABLE ROW LEVEL
+ * SECURITY`, migration `0040`), so it runs on `fleetDb`. `listAll`'s two
+ * callers already scope by `assetIds`/`organizationId` before or after this
+ * read; there is no caller-widening here, only a change of which pool serves
+ * an unchanged, already-scoped query.
+ */
 @Injectable()
 export class AssetsService {
-  constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
+  constructor(@Inject(FLEET_DRIZZLE) private readonly db: BmsDb) {}
 
   /**
    * Returns assets ordered by site and code, optionally narrowed to one

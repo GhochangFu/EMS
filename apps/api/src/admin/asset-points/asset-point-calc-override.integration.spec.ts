@@ -555,7 +555,8 @@ export async function assertComputedRowCannotBeReKeyed(
   const { assetId } = await seed(db, fx, "10");
   const mappingSvc = new AssetPointsAdminService(
     db,
-    new AccessControlService(db),
+    db,
+    new AccessControlService(db, db, db),
     new MasterDataAuditService(db),
   );
 

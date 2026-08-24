@@ -17,6 +17,7 @@ export default defineConfig({
       "apps/web",
       "apps/ingest",
       "packages/shared",
+      "packages/db",
       {
         test: {
           name: "repo",

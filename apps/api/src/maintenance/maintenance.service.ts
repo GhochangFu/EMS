@@ -26,7 +26,7 @@ import type {
   WorkOrderStatus,
 } from "@bms/shared";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 import type {
   ConvertMaintenanceBody,
   CreateMaintenanceScheduleBody,
@@ -36,7 +36,7 @@ import type {
 
 @Injectable()
 export class MaintenanceService {
-  constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
+  constructor(@Inject(TENANT_DRIZZLE) private readonly db: BmsDb) {}
 
   private mapWorkOrderRow(r: {
     id: string;

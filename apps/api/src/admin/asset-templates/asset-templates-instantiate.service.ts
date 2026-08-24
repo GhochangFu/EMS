@@ -22,7 +22,7 @@ import type { BmsDb } from "@bms/db";
 import type { AssetInstantiationResultDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type {
   InstantiateAssetBody,
@@ -86,10 +86,21 @@ type AssetPlan = {
   skippedPoints: string[];
 };
 
+/**
+ * `F4.16` / ADR 0043 — `asset_templates`, `locations` and `point_keys` carry
+ * `ENABLE ROW LEVEL SECURITY` (migration `0040`); the reads against them here
+ * (`fetchTemplate`, `resolveTarget`, `assertCatalogActive`) run on `fleetDb`,
+ * trusting the scope filter this service already applies via
+ * `canManageOrganization`/`canManageLocation`. The write transaction inserts
+ * only into `assets` and `asset_points`, neither of which carry a policy, so
+ * it stays a plain `tenantDb.transaction()` — no `withTenant` is needed
+ * because RLS is not in play for either table.
+ */
 @Injectable()
 export class AssetTemplateInstantiationService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
   ) {}
@@ -146,7 +157,7 @@ export class AssetTemplateInstantiationService {
       throw new ForbiddenException("Target location is outside your access scope");
     }
 
-    const points = await this.db
+    const points = await this.tenantDb
       .select()
       .from(templatePoints)
       .where(eq(templatePoints.templateId, templateId))
@@ -169,7 +180,7 @@ export class AssetTemplateInstantiationService {
     const plans = body.assets.map((entry) => this.planAsset(entry, measured, catalogUnits));
 
     const sourceKind = target.rtuId ? "measured" : "unmapped";
-    const created = await this.db
+    const created = await this.tenantDb
       .transaction(async (tx) => {
         const inserted = await tx
           .insert(assets)
@@ -263,7 +274,7 @@ export class AssetTemplateInstantiationService {
   }
 
   private async fetchTemplate(id: string): Promise<TemplateRow> {
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({ template: assetTemplates })
       .from(assetTemplates)
       .innerJoin(organizations, eq(assetTemplates.organizationId, organizations.id))
@@ -284,7 +295,7 @@ export class AssetTemplateInstantiationService {
    */
   private async resolveTarget(target: InstantiationTargetInput): Promise<InstantiationTarget> {
     if (target.kind === "rtu") {
-      const [row] = await this.db
+      const [row] = await this.fleetDb
         .select({
           locationId: locations.id,
           locationName: locations.name,
@@ -313,7 +324,7 @@ export class AssetTemplateInstantiationService {
       };
     }
 
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         locationId: locations.id,
         locationName: locations.name,
@@ -354,7 +365,7 @@ export class AssetTemplateInstantiationService {
     template: TemplateRow,
   ): Promise<Map<string, string | null>> {
     const codes = [...new Set(points.map((point) => point.pointKey))];
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({ code: pointKeys.code, unit: pointKeys.unit })
       .from(pointKeys)
       .where(
@@ -409,7 +420,7 @@ export class AssetTemplateInstantiationService {
     entries: InstantiateAssetBody[],
   ): Promise<void> {
     const codes = entries.map((entry) => entry.code);
-    const taken = await this.db
+    const taken = await this.tenantDb
       .select({ code: assets.code, locationId: assets.locationId })
       .from(assets)
       .where(inArray(assets.code, codes));

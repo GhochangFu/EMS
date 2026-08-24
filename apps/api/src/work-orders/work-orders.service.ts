@@ -15,7 +15,7 @@ import type {
   WorkOrderStatus,
 } from "@bms/shared";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 import type {
   CloseWorkOrderBody,
   CreateWorkOrderBody,
@@ -27,7 +27,7 @@ const terminalStatuses = new Set<WorkOrderStatus>(["closed"]);
 
 @Injectable()
 export class WorkOrdersService {
-  constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
+  constructor(@Inject(TENANT_DRIZZLE) private readonly db: BmsDb) {}
 
   private mapRow(r: {
     id: string;

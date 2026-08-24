@@ -19,7 +19,7 @@ import type {
   UserRole,
 } from "@bms/shared";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { AUTH_DRIZZLE, FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import {
   noAccessScope,
   type ReadScopeSource,
@@ -39,9 +39,40 @@ type DbUser = {
   role: UserRole;
 };
 
+/**
+ * `F4.16` / ADR 0043 — three pools, not one.
+ *
+ * `locations` and `user_organization_access` carry `ENABLE ROW LEVEL SECURITY`
+ * (decision 10), and `bms_tenant`/`bms_fleet` only see rows for the organization
+ * named by `SET LOCAL app.current_organization` — which this service cannot set
+ * until it already knows the organization, and knowing it is this service's job.
+ *
+ * Rather than resolve that circularity with a `withTenant` transaction per
+ * candidate organization (correct, but only needed where `bms_auth` cannot
+ * already read the table), this service uses the grant Amendment 1 already put
+ * in place for exactly this shape of read: `bms_auth` holds an unqualified
+ * `SELECT` on `locations` and `user_organization_access`, via the
+ * `auth_bootstrap_read` policy, specifically because the bootstrap needs to find
+ * the organization before any tenant context exists. Every method below that
+ * queries those two tables uses `authDb`, filtered by ids this service already
+ * trusts (a grant row's own organization id, never a caller-supplied one) — the
+ * same defense-in-depth those two tables already gave up **is not weakened
+ * further** by this service also relying on it for authorization, not just
+ * login. `E7.1` removes the grant and the policy; this file's `authDb` reads
+ * come out in the same change (see the ADR's own removal note).
+ *
+ * `assets`, `asset_groups`, `asset_group_members` and `user_asset_group_access`
+ * carry no policy yet and are not granted to `bms_auth`, so those queries run on
+ * `tenantDb` (or `fleetDb` for a global admin) exactly as before — RLS is not in
+ * play for them either way, so no `withTenant` wrapping is needed there either.
+ */
 @Injectable()
 export class AccessControlService {
-  constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
+  constructor(
+    @Inject(AUTH_DRIZZLE) private readonly authDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+  ) {}
 
   /** Returns the app user and DB-backed accessible scope for the JWT subject. */
   async currentUser(jwt: JwtPayload): Promise<CurrentUserResponse> {
@@ -126,18 +157,9 @@ export class AccessControlService {
       return null;
     }
     if (user.role === "organization_admin") {
-      const rows = await this.db
-        .select({ id: userOrganizationAccess.organizationId })
-        .from(userOrganizationAccess)
-        .where(eq(userOrganizationAccess.userId, user.id));
-      return rows.map((row) => row.id);
+      return this.directOrganizationIds(user.id);
     }
-    const locationRows = await this.db
-      .select({ organizationId: locations.organizationId })
-      .from(userLocationAccess)
-      .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
-      .where(eq(userLocationAccess.userId, user.id));
-    return [...new Set(locationRows.map((row) => row.organizationId))];
+    return this.locationDerivedOrganizationIds(user.id);
   }
 
   /** Whether the user may read or manage the given organization. */
@@ -154,17 +176,17 @@ export class AccessControlService {
       return null;
     }
     if (user.role === "organization_admin") {
-      const orgIds = await this.writableOrganizationIds(jwt);
-      if (orgIds === null || orgIds.length === 0) {
-        return orgIds ?? [];
+      const orgIds = await this.directOrganizationIds(user.id);
+      if (orgIds.length === 0) {
+        return [];
       }
-      const rows = await this.db
+      const rows = await this.authDb
         .select({ id: locations.id })
         .from(locations)
         .where(inArray(locations.organizationId, orgIds));
       return rows.map((row) => row.id);
     }
-    const rows = await this.db
+    const rows = await this.authDb
       .select({ id: locations.id })
       .from(userLocationAccess)
       .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
@@ -231,7 +253,7 @@ export class AccessControlService {
     if (user.role === "admin") {
       return true;
     }
-    const [row] = await this.db
+    const [row] = await this.tenantDb
       .select({ locationId: assets.locationId })
       .from(assets)
       .where(eq(assets.id, assetId))
@@ -249,8 +271,30 @@ export class AccessControlService {
     return user;
   }
 
+  /**
+   * Resolves the caller against `bms.users` on the auth pool.
+   *
+   * ADR 0044: the row-absent fallback to the JWT claim now refuses a claimed
+   * `admin` outright, rather than trusting the claim. Every other claimed role
+   * still falls back to the claim — this is deliberate, not an oversight left
+   * over from the `admin` fix. `writableOrganizationIds`/`writableLocationIds`
+   * return the unrestricted `null` sentinel only inside their `role ===
+   * "admin"` branch; every other role's authorization walks a grant table
+   * keyed by user id, and an unprovisioned principal's fabricated `id`/`email`
+   * matches no grant row regardless of claimed role — so `organization_admin`
+   * and `location_admin` already resolve to `[]`, and `operator`/`viewer`/
+   * `asset_group_admin` already resolve to `"none"`, with no change needed
+   * here. (`asset_group_admin` is also admitted to the separate ADR 0017
+   * operations-write surface — `operations-write.ts` — which this `null`
+   * sentinel does not gate at all; that surface is closed the same way,
+   * because `readableAssetIds` for it never returns `null` either. See
+   * ADR 0044.) Refusing the non-admin fallback too would also remove the one
+   * thing that lets a freshly-federated `operator`/`viewer` principal reach
+   * the app, with a correctly empty scope, before a local row exists for
+   * them — see `assertUngrantedRolesFailClosed`.
+   */
   private async resolveDbUser(jwt: JwtPayload): Promise<DbUser> {
-    const [row] = await this.db
+    const [row] = await this.authDb
       .select({
         id: users.id,
         email: users.email,
@@ -270,12 +314,37 @@ export class AccessControlService {
       };
     }
 
+    if (jwt.role === "admin") {
+      throw new ForbiddenException(
+        "This token claims the admin role but matches no provisioned account",
+      );
+    }
+
     return {
       id: jwt.sub,
       email: jwt.email,
       displayName: jwt.name,
       role: jwt.role,
     };
+  }
+
+  /** Organization ids from this user's direct `user_organization_access` grants. */
+  private async directOrganizationIds(userId: string): Promise<string[]> {
+    const rows = await this.authDb
+      .select({ id: userOrganizationAccess.organizationId })
+      .from(userOrganizationAccess)
+      .where(eq(userOrganizationAccess.userId, userId));
+    return rows.map((row) => row.id);
+  }
+
+  /** Organization ids implied by this user's `user_location_access` grants. */
+  private async locationDerivedOrganizationIds(userId: string): Promise<string[]> {
+    const rows = await this.authDb
+      .select({ id: locations.organizationId })
+      .from(userLocationAccess)
+      .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
+      .where(eq(userLocationAccess.userId, userId));
+    return [...new Set(rows.map((row) => row.id))];
   }
 
   /**
@@ -301,7 +370,7 @@ export class AccessControlService {
   ): Promise<AccessibleScope> {
     if (source === "global") {
       const [locationRows, assetRows] = await Promise.all([
-        this.db
+        this.fleetDb
           .select({
             id: locations.id,
             code: locations.code,
@@ -313,7 +382,7 @@ export class AccessControlService {
           .from(locations)
           .where(eq(locations.active, true))
           .orderBy(asc(locations.name)),
-        this.db.select({ id: assets.id }).from(assets),
+        this.fleetDb.select({ id: assets.id }).from(assets),
       ]);
       return {
         kind: "global",
@@ -327,14 +396,10 @@ export class AccessControlService {
     }
 
     if (source === "organization") {
-      const orgIds = await this.db
-        .select({ organizationId: userOrganizationAccess.organizationId })
-        .from(userOrganizationAccess)
-        .where(eq(userOrganizationAccess.userId, user.id));
-      const organizationIds = orgIds.map((row) => row.organizationId);
+      const organizationIds = await this.directOrganizationIds(user.id);
       const locationRows =
         organizationIds.length > 0
-          ? await this.db
+          ? await this.authDb
               .select({
                 id: locations.id,
                 code: locations.code,
@@ -355,7 +420,7 @@ export class AccessControlService {
       const locationIds = locationRows.map((row) => row.id);
       const assetRows =
         locationIds.length > 0
-          ? await this.db
+          ? await this.tenantDb
               .select({ id: assets.id })
               .from(assets)
               .where(inArray(assets.locationId, locationIds))
@@ -372,7 +437,7 @@ export class AccessControlService {
     }
 
     if (source === "location") {
-      const locationRows = await this.db
+      const locationRows = await this.authDb
         .select({
           id: locations.id,
           code: locations.code,
@@ -393,7 +458,7 @@ export class AccessControlService {
       const locationIds = locationRows.map((row) => row.id);
       const assetRows =
         locationIds.length > 0
-          ? await this.db
+          ? await this.tenantDb
               .select({ id: assets.id })
               .from(assets)
               .where(inArray(assets.locationId, locationIds))
@@ -410,54 +475,67 @@ export class AccessControlService {
     }
 
     if (source === "asset_group") {
-      const groupRows = await this.db
+      // assetGroups/userAssetGroupAccess are not policied and not granted to
+      // bms_auth, so they run on the tenant pool. locations is both, so it is
+      // queried separately on the auth pool rather than joined in — the original
+      // single joined query cannot run unmodified on either pool alone.
+      const groupRows = await this.tenantDb
         .select({
           id: assetGroups.id,
           locationId: assetGroups.locationId,
           code: assetGroups.code,
           name: assetGroups.name,
-          locationCode: locations.code,
-          locationSlug: locations.slug,
-          locationName: locations.name,
-          locationType: locations.type,
-          province: locations.province,
         })
         .from(userAssetGroupAccess)
         .innerJoin(assetGroups, eq(userAssetGroupAccess.assetGroupId, assetGroups.id))
-        .innerJoin(locations, eq(assetGroups.locationId, locations.id))
-        .where(
-          and(
-            eq(userAssetGroupAccess.userId, user.id),
-            eq(locations.active, true),
-          ),
-        )
-        .orderBy(asc(locations.name), asc(assetGroups.name));
-      const groupIds = groupRows.map((row) => row.id);
+        .where(eq(userAssetGroupAccess.userId, user.id));
+
+      const locationIds = [...new Set(groupRows.map((row) => row.locationId))];
+      const locationRows =
+        locationIds.length > 0
+          ? await this.authDb
+              .select({
+                id: locations.id,
+                code: locations.code,
+                slug: locations.slug,
+                name: locations.name,
+                type: locations.type,
+                province: locations.province,
+              })
+              .from(locations)
+              .where(and(inArray(locations.id, locationIds), eq(locations.active, true)))
+          : [];
+      const locationById = new Map(
+        locationRows.map((row) => [
+          row.id,
+          { ...row, type: row.type as AccessibleScope["locations"][number]["type"] },
+        ]),
+      );
+
+      // Matches the original INNER JOIN + `active = true` filter: a group whose
+      // location is inactive (or, in principle, gone) drops out here.
+      const activeGroupRows = groupRows
+        .filter((row) => locationById.has(row.locationId))
+        .sort((a, b) => {
+          const nameA = locationById.get(a.locationId)?.name ?? "";
+          const nameB = locationById.get(b.locationId)?.name ?? "";
+          return nameA === nameB ? a.name.localeCompare(b.name) : nameA.localeCompare(nameB);
+        });
+
+      const groupIds = activeGroupRows.map((row) => row.id);
       const assetRows =
         groupIds.length > 0
-          ? await this.db
+          ? await this.tenantDb
               .select({ id: assets.id })
               .from(assetGroupMembers)
               .innerJoin(assets, eq(assetGroupMembers.assetId, assets.id))
               .where(inArray(assetGroupMembers.assetGroupId, groupIds))
           : [];
-      const locationById = new Map(
-        groupRows.map((row) => [
-          row.locationId,
-          {
-            id: row.locationId,
-            code: row.locationCode,
-            slug: row.locationSlug,
-            name: row.locationName,
-            type: row.locationType as AccessibleScope["locations"][number]["type"],
-            province: row.province,
-          },
-        ]),
-      );
+
       return {
         kind: "asset_group",
         locations: [...locationById.values()],
-        assetGroups: groupRows.map((row) => ({
+        assetGroups: activeGroupRows.map((row) => ({
           id: row.id,
           locationId: row.locationId,
           code: row.code,

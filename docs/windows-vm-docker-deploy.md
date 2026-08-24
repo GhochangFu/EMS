@@ -333,17 +333,26 @@ remain inventory-only and do not emit simulator telemetry.
 For a lab you can keep defaults temporarily. For anything public, change
 these before first boot:
 
-- `POSTGRES_PASSWORD`
-- all `DATABASE_URL` values that include the Postgres password
+- `POSTGRES_PASSWORD` (the `bms_app` owner role)
+- `BMS_AUTH_PASSWORD`, `BMS_TENANT_PASSWORD`, `BMS_FLEET_PASSWORD` (the three
+  non-owner roles the API itself connects as, ADR 0043 — set by
+  `pnpm --filter @bms/db roles`, which the `migrate` service already runs
+  after `db:migrate`/`db:seed`)
+- all `DATABASE_URL`/`DATABASE_URL_AUTH`/`DATABASE_URL_TENANT`/
+  `DATABASE_URL_FLEET` values that include one of the four passwords above
 - `JWT_SECRET`
 - `KEYCLOAK_ADMIN_PASSWORD`
 - Grafana admin password if using observability
 
 Reference: [`env-inventory.md`](./env-inventory.md).
 
-Beginner warning: if you change the database password in one place but
-not the matching `DATABASE_URL` values, the API and migration containers
-will fail to connect.
+Beginner warning: if you change a database password in one place but not
+the matching `DATABASE_URL`/`DATABASE_URL_AUTH`/`DATABASE_URL_TENANT`/
+`DATABASE_URL_FLEET` value, the API and migration containers will fail to
+connect. Changing `BMS_AUTH_PASSWORD`/`BMS_TENANT_PASSWORD`/
+`BMS_FLEET_PASSWORD` alone does nothing on an already-provisioned volume —
+`pnpm --filter @bms/db roles` must be re-run for the new value to take
+effect (see `docs/security/encryption-at-rest.md` §4.3).
 
 ---
 
