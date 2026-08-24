@@ -50,6 +50,11 @@ const connectionString = requireIntegrationDb({
     "continuous aggregates, the real-time branch, the sum/count composition and the " +
     "refresh-policy offsets are all TimescaleDB behaviours, so a green run without them " +
     "asserts nothing.",
+  // `E7.1a` / ADR 0045. This suite creates probe continuous aggregates in
+  // `telemetry`, which needs CREATE on the schema and ownership of the source
+  // hypertable. Since ADR 0045 that is `bms_owner`, and the default fixture
+  // connection (`bms_fleet`) has neither — it holds DML grants, not ownership.
+  connection: "owner",
 });
 
 describe.skipIf(!connectionString)("F4.1 — telemetry continuous aggregates", () => {
