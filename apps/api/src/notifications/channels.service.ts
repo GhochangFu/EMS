@@ -23,7 +23,7 @@ import type {
   NotificationReadinessDto,
 } from "@bms/shared";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import type { NotificationChannelRow } from "./notification-transport";
 import type { NotificationsConfig } from "./notifications.config";
@@ -112,7 +112,7 @@ export class ChannelsService {
   private readonly logger = new Logger(ChannelsService.name);
 
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly crypto: CredentialCryptoService,
   ) {}
 

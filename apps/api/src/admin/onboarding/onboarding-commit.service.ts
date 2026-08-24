@@ -25,7 +25,8 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
@@ -43,11 +44,21 @@ function protocolToSourceType(protocol: string): "mqtt" | "simulator" | "catalog
   return "catalog";
 }
 
-/** Persists onboarding draft as master-data rows in one transaction. */
+/**
+ * Persists onboarding draft as master-data rows in one transaction.
+ *
+ * `F4.16` / ADR 0043 — `onboarding_sessions`, `locations` and `point_keys`
+ * carry `ENABLE ROW LEVEL SECURITY` (migration `0040`). The initial session
+ * read runs on `fleetDb`: the organization is not yet known at that point (it
+ * comes FROM the row). Once known, the entire write transaction below runs
+ * inside `withTenant(tenantDb, session.organizationId, …)` — every row it
+ * writes, policied or not, belongs to that one organization.
+ */
 @Injectable()
 export class OnboardingCommitService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
     private readonly validateService: OnboardingValidateService,
@@ -61,7 +72,7 @@ export class OnboardingCommitService {
       throw new ForbiddenException("Onboarding requires admin or organization_admin role");
     }
 
-    const [session] = await this.db
+    const [session] = await this.fleetDb
       .select()
       .from(onboardingSessions)
       .where(eq(onboardingSessions.id, sessionId))
@@ -98,7 +109,7 @@ export class OnboardingCommitService {
       await this.vocabularies.assertAssetDomain(assetDraft.domain);
     }
 
-    return this.db.transaction(async (tx) => {
+    return withTenant(this.tenantDb, session.organizationId, async (tx) => {
       const loc = draft.location!;
       const [locationRow] = await tx
         .insert(locations)

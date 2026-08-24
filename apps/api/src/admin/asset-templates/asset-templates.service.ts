@@ -22,7 +22,8 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
@@ -46,10 +47,22 @@ import type {
 type TemplateRow = typeof assetTemplates.$inferSelect;
 type PointRow = typeof templatePoints.$inferSelect;
 
+/**
+ * `F4.16` / ADR 0043 — `asset_templates` carries `ENABLE ROW LEVEL SECURITY`
+ * (migration `0040`); `point_keys` does too. Reads run on `fleetDb`, trusting
+ * the scope filter this service already applies via
+ * `writableOrganizationIds`/`canManageOrganization` — the same "bypass, then
+ * trust an already-computed grant" shape `AccessControlService` uses for its
+ * own `bms_auth` reads. `template_points` and `users` carry no policy and
+ * stay on `tenantDb` unchanged. Every write to `asset_templates` runs inside
+ * `withTenant(tenantDb, organizationId, …)`; the id is always known before
+ * the write (from the request body, or from a fetched template row).
+ */
 @Injectable()
 export class AssetTemplatesAdminService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
     private readonly vocabularies: VocabulariesService,
@@ -82,7 +95,7 @@ export class AssetTemplatesAdminService {
       conditions.push(eq(assetTemplates.status, status));
     }
 
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({
         template: assetTemplates,
         organizationCode: organizations.code,
@@ -139,7 +152,7 @@ export class AssetTemplatesAdminService {
     }
     const createdBy = await this.resolveCreatedBy(jwt);
 
-    const created = await this.db.transaction(async (tx) => {
+    const created = await withTenant(this.tenantDb, body.organizationId, async (tx) => {
       const [{ maxVersion }] = await tx
         .select({ maxVersion: sql<number | null>`MAX(${assetTemplates.version})` })
         .from(assetTemplates)
@@ -212,7 +225,7 @@ export class AssetTemplatesAdminService {
       this.assertContentRefsResolve(body.content, body.points ?? (await this.loadPoints(id)));
     }
 
-    await this.db.transaction(async (tx) => {
+    await withTenant(this.tenantDb, template.organizationId, async (tx) => {
       await tx
         .update(assetTemplates)
         .set({
@@ -291,10 +304,12 @@ export class AssetTemplatesAdminService {
     await this.assertTemplateAlarmVocabularies(storedContent);
 
     const now = new Date();
-    await this.db
-      .update(assetTemplates)
-      .set({ status: "published", publishedAt: now, updatedAt: now })
-      .where(eq(assetTemplates.id, id));
+    await withTenant(this.tenantDb, template.organizationId, (tx) =>
+      tx
+        .update(assetTemplates)
+        .set({ status: "published", publishedAt: now, updatedAt: now })
+        .where(eq(assetTemplates.id, id)),
+    );
 
     await this.audit.write({
       actor: jwt,
@@ -325,10 +340,12 @@ export class AssetTemplatesAdminService {
     }
 
     const now = new Date();
-    await this.db
-      .update(assetTemplates)
-      .set({ status: "archived", archivedAt: now, updatedAt: now })
-      .where(eq(assetTemplates.id, id));
+    await withTenant(this.tenantDb, template.organizationId, (tx) =>
+      tx
+        .update(assetTemplates)
+        .set({ status: "archived", archivedAt: now, updatedAt: now })
+        .where(eq(assetTemplates.id, id)),
+    );
 
     await this.audit.write({
       actor: jwt,
@@ -350,14 +367,14 @@ export class AssetTemplatesAdminService {
     const { template } = await this.fetchRow(id);
     await this.assertCanAuthor(jwt, template.organizationId);
 
-    const source = await this.db
+    const source = await this.tenantDb
       .select()
       .from(templatePoints)
       .where(eq(templatePoints.templateId, id))
       .orderBy(asc(templatePoints.sortOrder));
     const createdBy = await this.resolveCreatedBy(jwt);
 
-    const draft = await this.db.transaction(async (tx) => {
+    const draft = await withTenant(this.tenantDb, template.organizationId, async (tx) => {
       const [{ maxVersion }] = await tx
         .select({ maxVersion: sql<number | null>`MAX(${assetTemplates.version})` })
         .from(assetTemplates)
@@ -413,7 +430,9 @@ export class AssetTemplatesAdminService {
     this.assertDraft(template, "deleted");
 
     // template_points cascade on the FK.
-    await this.db.delete(assetTemplates).where(eq(assetTemplates.id, id));
+    await withTenant(this.tenantDb, template.organizationId, (tx) =>
+      tx.delete(assetTemplates).where(eq(assetTemplates.id, id)),
+    );
 
     await this.audit.write({
       actor: jwt,
@@ -436,7 +455,7 @@ export class AssetTemplatesAdminService {
    * is why the column is nullable.
    */
   private async resolveCreatedBy(jwt: JwtPayload): Promise<string | null> {
-    const [row] = await this.db
+    const [row] = await this.tenantDb
       .select({ id: users.id })
       .from(users)
       .where(or(eq(users.id, jwt.sub), eq(users.email, jwt.email)))
@@ -480,7 +499,7 @@ export class AssetTemplatesAdminService {
       return;
     }
     const codes = [...new Set(points.map((point) => point.pointKey))];
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({ code: pointKeys.code })
       .from(pointKeys)
       .where(
@@ -502,7 +521,7 @@ export class AssetTemplatesAdminService {
 
   /** A template's stored point set, ordered as `replacePoints` wrote it. */
   private async loadPoints(templateId: string): Promise<PointRow[]> {
-    return this.db
+    return this.tenantDb
       .select()
       .from(templatePoints)
       .where(eq(templatePoints.templateId, templateId))
@@ -727,7 +746,7 @@ export class AssetTemplatesAdminService {
     organizationCode: string;
     organizationName: string;
   }> {
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         template: assetTemplates,
         organizationCode: organizations.code,
@@ -748,7 +767,7 @@ export class AssetTemplatesAdminService {
     organizationCode: string,
     organizationName: string,
   ): Promise<AdminAssetTemplateDto> {
-    const points = await this.db
+    const points = await this.tenantDb
       .select()
       .from(templatePoints)
       .where(eq(templatePoints.templateId, template.id))

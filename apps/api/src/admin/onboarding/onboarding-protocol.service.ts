@@ -10,7 +10,7 @@ import {
 import type { BmsDb } from "@bms/db";
 import type { OnboardingProtocol } from "@bms/shared";
 
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 
 export type ProtocolCatalogEntry = {
   code: OnboardingProtocol;
@@ -33,15 +33,27 @@ export type ProtocolContext = {
   orgExamples: OrgProtocolExample[];
 };
 
-/** Loads protocol catalog and org-scoped RTU examples for onboarding chat. */
+/**
+ * Loads protocol catalog and org-scoped RTU examples for onboarding chat.
+ *
+ * `F4.16` / ADR 0043 — `protocol_catalog` carries no policy, so `listCatalog`
+ * stays on `tenantDb`. `getContextForOrganization` joins `locations` (RLS
+ * since migration `0040`) and runs on `fleetDb` instead; `organizationId` is
+ * always a value the caller has already been authorized against upstream in
+ * `OnboardingService`, so this is a pool change, not a new authorization
+ * surface.
+ */
 @Injectable()
 export class OnboardingProtocolService {
-  constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
+  constructor(
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
+  ) {}
 
   /** Returns catalog rows ordered for display. */
   async listCatalog(): Promise<ProtocolCatalogEntry[]> {
     try {
-      const rows = await this.db
+      const rows = await this.tenantDb
         .select()
         .from(protocolCatalog)
         .orderBy(asc(protocolCatalog.sortOrder));
@@ -60,7 +72,7 @@ export class OnboardingProtocolService {
   /** Returns catalog plus live examples from RTUs in the organization. */
   async getContextForOrganization(organizationId: string): Promise<ProtocolContext> {
     const catalog = await this.listCatalog();
-    const orgExamples = await this.db
+    const orgExamples = await this.fleetDb
       .select({
         protocol: rtuConnectionConfigs.protocol,
         rtuCode: rtus.code,

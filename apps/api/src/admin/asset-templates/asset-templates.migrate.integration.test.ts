@@ -53,6 +53,7 @@ describe.skipIf(!connectionString)("F2.6 — template version migration", () => 
     const db = createDb(created);
     svc = new AssetTemplateMigrationService(
       db,
+      db,
       new AccessControlService(db, db, db),
       new MasterDataAuditService(db),
     );

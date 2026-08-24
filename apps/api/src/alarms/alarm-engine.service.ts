@@ -5,7 +5,7 @@ import { automationRules } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AutomationRuleOperator, TelemetryReading } from "@bms/shared";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { alarmMessageFieldsFromCondition } from "../rules/alarm-message";
 import { compare } from "../rules/rule-evaluation";
 import { TelemetryBroadcastHub } from "../telemetry/telemetry-broadcast.hub";
@@ -37,7 +37,7 @@ export class AlarmEngineService implements OnModuleInit {
 
   constructor(
     private readonly hub: TelemetryBroadcastHub,
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly raiser: AlarmRaiser,
   ) {}
 

@@ -5,7 +5,7 @@ import type pg from "pg";
 import { assetPoints, pointValues, refreshAggregatesFrom } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
-import { DRIZZLE, POOL_TOKEN } from "../database/database.tokens";
+import { TENANT_DRIZZLE, TENANT_POOL } from "../database/database.tokens";
 import { MetricsService } from "../observability/metrics.service";
 import { chunkForNotify, type NotifyReading } from "../admin/telemetry-entry/notify-chunk";
 import { SOURCE_DATA_KEY_MAX_LENGTH, computedSourceDataKey } from "./computed-source-data-key";
@@ -57,8 +57,8 @@ export class CalcWriteService {
   private readonly logger = new Logger(CalcWriteService.name);
 
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
-    @Inject(POOL_TOKEN) private readonly pool: pg.Pool,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    @Inject(TENANT_POOL) private readonly pool: pg.Pool,
     private readonly metrics: MetricsService,
   ) {}
 

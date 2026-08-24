@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { alarms, assets, ruleExecutions } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 import type { AlarmMessageRule } from "../rules/alarm-message";
 import { composeAlarmMessage } from "../rules/alarm-message";
 import { defaultAlarmSeverity } from "../rules/alarm-severity-default";
@@ -122,7 +122,7 @@ export type AlarmRaiseResult = {
 @Injectable()
 export class AlarmRaiser {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly gateway: AlarmsGateway,
   ) {}
 

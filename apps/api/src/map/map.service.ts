@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 
 import type { MapSiteDto, MapSiteLive } from "@bms/shared";
 
-import { POOL_TOKEN } from "../database/database.tokens";
+import { FLEET_POOL } from "../database/database.tokens";
 
 type LocRow = {
   id: string;
@@ -28,9 +28,15 @@ function isOperationalLocation(kind: string): boolean {
   return kind === "smoc_campus" || kind === "rsmoc" || kind === "csmoc";
 }
 
+/**
+ * `F4.16` / ADR 0043 — read-only, and its `LEFT JOIN bms.locations` (RLS since
+ * migration `0040`) means this pool must be `fleetPool` — `map_locations`
+ * itself carries no organization column to filter on, so a tenant connection
+ * could not serve this query even scoped.
+ */
 @Injectable()
 export class MapService {
-  constructor(@Inject(POOL_TOKEN) private readonly pool: Pool) {}
+  constructor(@Inject(FLEET_POOL) private readonly pool: Pool) {}
 
   /** All visible map locations with per-site live health derived from alarms + telemetry freshness. */
   async sitesLive(opts?: {

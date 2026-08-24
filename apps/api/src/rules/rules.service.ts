@@ -31,7 +31,7 @@ import {
   isSampleFreshEnoughToRaise,
   shouldRaise,
 } from "../alarms/alarm-raise.service";
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { alarmMessageFieldsFromCondition } from "./alarm-message";
 // The three modules extracted for AGENTS.md §4.5 (1000-line cap). Each holds
@@ -58,7 +58,7 @@ import type { EvaluationResult, RuleDraftValues, RuleRow } from "./rules.types";
 @Injectable()
 export class RulesService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly vocabularies: VocabulariesService,
     private readonly alarmRaiser: AlarmRaiser,
   ) {}

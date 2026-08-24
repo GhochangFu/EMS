@@ -4,7 +4,7 @@ import { asc, eq } from "drizzle-orm";
 import { pointKeys } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE } from "../../database/database.tokens";
 
 export type OrgPointKeySummary = {
   code: string;
@@ -13,10 +13,18 @@ export type OrgPointKeySummary = {
   domain: string | null;
 };
 
-/** Loads organization catalog data for onboarding chat. */
+/**
+ * Loads organization catalog data for onboarding chat.
+ *
+ * `F4.16` / ADR 0043 — `point_keys` carries `ENABLE ROW LEVEL SECURITY`
+ * (migration `0040`), so this read runs on `fleetDb`. `organizationId` is
+ * always a value the caller has already been authorized against (session or
+ * request-scoped, checked upstream in `OnboardingService`), so this is a
+ * pool change, not a new authorization surface.
+ */
 @Injectable()
 export class OnboardingCatalogService {
-  constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
+  constructor(@Inject(FLEET_DRIZZLE) private readonly db: BmsDb) {}
 
   /** Returns active point keys for an organization. */
   async listPointKeys(organizationId: string): Promise<OrgPointKeySummary[]> {

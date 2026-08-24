@@ -11,14 +11,25 @@ import type { BmsDb } from "@bms/db";
 import type { AdminPointKeyDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreatePointKeyBody, UpdatePointKeyBody } from "./point-keys.schema";
 
+/**
+ * `F4.16` / ADR 0043 — `point_keys` carries `ENABLE ROW LEVEL SECURITY`
+ * (migration `0040`). Reads run on `fleetDb`, trusting the scope filter this
+ * service already applies via `writableOrganizationIds`/`canManageOrganization`
+ * — the same "bypass, then trust an already-computed grant" shape
+ * `AccessControlService` uses for its own `bms_auth` reads. Writes run inside
+ * `withTenant(tenantDb, organizationId, …)`; the id is always known before
+ * the write (from the request body, or from `fetchRow`'s own DTO).
+ */
 @Injectable()
 export class PointKeysAdminService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
   ) {}
@@ -49,7 +60,7 @@ export class PointKeysAdminService {
       conditions.push(eq(pointKeys.active, false));
     }
 
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({
         pointKey: pointKeys,
         organizationCode: organizations.code,
@@ -83,18 +94,21 @@ export class PointKeysAdminService {
       throw new ForbiddenException("Organization is outside your access scope");
     }
 
-    const [created] = await this.db
-      .insert(pointKeys)
-      .values({
-        organizationId: body.organizationId,
-        code: body.code,
-        name: body.name,
-        domain: body.domain ?? null,
-        unit: body.unit ?? null,
-        description: body.description ?? null,
-        active: true,
-      })
-      .returning();
+    const created = await withTenant(this.tenantDb, body.organizationId, (tx) =>
+      tx
+        .insert(pointKeys)
+        .values({
+          organizationId: body.organizationId,
+          code: body.code,
+          name: body.name,
+          domain: body.domain ?? null,
+          unit: body.unit ?? null,
+          description: body.description ?? null,
+          active: true,
+        })
+        .returning()
+        .then(([row]) => row),
+    );
 
     await this.audit.write({
       actor: jwt,
@@ -122,16 +136,18 @@ export class PointKeysAdminService {
       throw new ForbiddenException("Point key is outside your access scope");
     }
 
-    await this.db
-      .update(pointKeys)
-      .set({
-        name: body.name ?? existing.name,
-        domain: body.domain !== undefined ? body.domain : existing.domain,
-        unit: body.unit !== undefined ? body.unit : existing.unit,
-        description:
-          body.description !== undefined ? body.description : existing.description,
-      })
-      .where(eq(pointKeys.id, id));
+    await withTenant(this.tenantDb, existing.organizationId, (tx) =>
+      tx
+        .update(pointKeys)
+        .set({
+          name: body.name ?? existing.name,
+          domain: body.domain !== undefined ? body.domain : existing.domain,
+          unit: body.unit !== undefined ? body.unit : existing.unit,
+          description:
+            body.description !== undefined ? body.description : existing.description,
+        })
+        .where(eq(pointKeys.id, id)),
+    );
 
     await this.audit.write({
       actor: jwt,
@@ -155,7 +171,9 @@ export class PointKeysAdminService {
       throw new ForbiddenException("Point key is outside your access scope");
     }
 
-    await this.db.update(pointKeys).set({ active: false }).where(eq(pointKeys.id, id));
+    await withTenant(this.tenantDb, existing.organizationId, (tx) =>
+      tx.update(pointKeys).set({ active: false }).where(eq(pointKeys.id, id)),
+    );
     await this.audit.write({
       actor: jwt,
       action: "master.point_key.deactivate",
@@ -177,7 +195,9 @@ export class PointKeysAdminService {
       throw new ForbiddenException("Point key is outside your access scope");
     }
 
-    await this.db.update(pointKeys).set({ active: true }).where(eq(pointKeys.id, id));
+    await withTenant(this.tenantDb, existing.organizationId, (tx) =>
+      tx.update(pointKeys).set({ active: true }).where(eq(pointKeys.id, id)),
+    );
     await this.audit.write({
       actor: jwt,
       action: "master.point_key.reactivate",
@@ -188,7 +208,7 @@ export class PointKeysAdminService {
   }
 
   private async fetchRow(id: string): Promise<AdminPointKeyDto> {
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         pointKey: pointKeys,
         organizationCode: organizations.code,

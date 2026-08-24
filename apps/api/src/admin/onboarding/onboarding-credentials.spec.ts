@@ -18,7 +18,10 @@ type Role = "admin" | "organization_admin" | "location_admin" | "operator";
 /**
  * Minimal Drizzle stand-in. `select` and `update` each return a chainable whose
  * terminal call shifts the next queued result, so a test states exactly what
- * the database would answer and in what order.
+ * the database would answer and in what order. `transaction` just runs the
+ * callback against this same object — `withTenant`'s `SET LOCAL` is real-RLS
+ * plumbing this unit test has no policy to enforce, so `execute` is a no-op
+ * that does not consume the queue.
  */
 function fakeDb(results: unknown[][]) {
   const queue = [...results];
@@ -33,11 +36,14 @@ function fakeDb(results: unknown[][]) {
     where: () => updateChain,
     returning: () => Promise.resolve(next()),
   };
-  return {
+  const db = {
     select: () => selectChain,
     update: () => updateChain,
     insert: () => updateChain,
-  } as never;
+    execute: () => Promise.resolve(undefined),
+    transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(db),
+  };
+  return db as never;
 }
 
 function fakeAccessControl(role: Role, canManage = true) {
@@ -71,8 +77,10 @@ function buildService(opts: {
       return opts.mergeDraft ? opts.mergeDraft(...args) : SESSION_ROW.draft;
     },
   } as never;
+  const db = fakeDb(opts.results ?? [[SESSION_ROW]]);
   const service = new OnboardingService(
-    fakeDb(opts.results ?? [[SESSION_ROW]]),
+    db,
+    db,
     fakeAccessControl(opts.role ?? "admin", opts.canManage ?? true),
     chatService,
     {} as never,

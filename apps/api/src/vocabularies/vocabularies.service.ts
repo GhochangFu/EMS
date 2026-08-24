@@ -11,7 +11,7 @@ import type {
   VocabulariesResponse,
 } from "@bms/shared";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 
 /**
  * Four open vocabularies — rule concerns and plant domains (ADR 0031
@@ -35,7 +35,7 @@ import { DRIZZLE } from "../database/database.tokens";
  */
 @Injectable()
 export class VocabulariesService {
-  constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
+  constructor(@Inject(TENANT_DRIZZLE) private readonly db: BmsDb) {}
 
   /**
    * Both axes in one response.

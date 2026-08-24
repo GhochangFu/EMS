@@ -77,6 +77,7 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
     const db = createDb(created);
     svc = new AssetTemplatesAdminService(
       db,
+      db,
       new AccessControlService(db, db, db),
       new MasterDataAuditService(db),
       new VocabulariesService(db),

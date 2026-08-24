@@ -5,11 +5,11 @@ import { pointValues } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { decodePointRefParam, type TelemetryReading } from "@bms/shared";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 
 @Injectable()
 export class TelemetryService {
-  constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
+  constructor(@Inject(TENANT_DRIZZLE) private readonly db: BmsDb) {}
 
   /**
    * Returns recent samples for one logical point (`assetId::pointKey`).

@@ -4,7 +4,7 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import type { BmsDb } from "@bms/db";
 import { notificationDeliveries } from "@bms/db";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { ChannelsService } from "./channels.service";
 import { buildDedupeKey } from "./dedupe-key";
 import { EmailTransport } from "./email.transport";
@@ -56,7 +56,7 @@ export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly channels: ChannelsService,
     private readonly logTransport: LogTransport,
     private readonly emailTransport: EmailTransport,

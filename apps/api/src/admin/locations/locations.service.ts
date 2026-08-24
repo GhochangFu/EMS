@@ -12,14 +12,27 @@ import type { BmsDb } from "@bms/db";
 import type { AdminLocationDto, AdminLocationSummaryDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreateLocationBody, UpdateLocationBody } from "./locations.schema";
 
+/**
+ * `F4.16` / ADR 0043 — `locations` carries `ENABLE ROW LEVEL SECURITY`
+ * (migration `0040`). Reads run on `fleetDb`, trusting the scope filter this
+ * service already applies via `writableLocationIds`/`canManageLocation` — the
+ * same "bypass, then trust an already-computed grant" shape
+ * `AccessControlService` uses for its own `bms_auth` reads. Writes run inside
+ * `withTenant(tenantDb, organizationId, …)`, which sets the RLS GUC to the
+ * row's own organization before insert/update — the id is always known
+ * before the write (from the request body, or from a fleet read already
+ * authorized by `canManageLocation`).
+ */
 @Injectable()
 export class LocationsAdminService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
   ) {}
@@ -48,7 +61,7 @@ export class LocationsAdminService {
       conditions.push(eq(locations.active, false));
     }
 
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({
         location: locations,
         organizationCode: organizations.code,
@@ -68,7 +81,7 @@ export class LocationsAdminService {
     if (!(await this.accessControl.canManageLocation(jwt, id))) {
       throw new ForbiddenException("Location is outside your access scope");
     }
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         location: locations,
         organizationCode: organizations.code,
@@ -101,22 +114,25 @@ export class LocationsAdminService {
       throw new ForbiddenException("Organization is outside your access scope");
     }
 
-    const [created] = await this.db
-      .insert(locations)
-      .values({
-        organizationId: body.organizationId,
-        code: body.code,
-        slug: body.slug,
-        name: body.name,
-        type: body.type,
-        province: body.province ?? null,
-        capital: body.capital ?? null,
-        latitude: body.latitude,
-        longitude: body.longitude,
-        meta: body.meta ?? null,
-        active: true,
-      })
-      .returning();
+    const created = await withTenant(this.tenantDb, body.organizationId, (tx) =>
+      tx
+        .insert(locations)
+        .values({
+          organizationId: body.organizationId,
+          code: body.code,
+          slug: body.slug,
+          name: body.name,
+          type: body.type,
+          province: body.province ?? null,
+          capital: body.capital ?? null,
+          latitude: body.latitude,
+          longitude: body.longitude,
+          meta: body.meta ?? null,
+          active: true,
+        })
+        .returning()
+        .then(([row]) => row),
+    );
 
     const row = await this.fetchRow(created.id);
     await this.audit.write({
@@ -140,7 +156,7 @@ export class LocationsAdminService {
       throw new ForbiddenException("Location is outside your access scope");
     }
 
-    const [existing] = await this.db
+    const [existing] = await this.fleetDb
       .select()
       .from(locations)
       .where(eq(locations.id, id))
@@ -149,21 +165,23 @@ export class LocationsAdminService {
       throw new NotFoundException("Location not found");
     }
 
-    await this.db
-      .update(locations)
-      .set({
-        code: body.code ?? existing.code,
-        slug: body.slug ?? existing.slug,
-        name: body.name ?? existing.name,
-        type: body.type ?? existing.type,
-        province: body.province !== undefined ? body.province : existing.province,
-        capital: body.capital !== undefined ? body.capital : existing.capital,
-        latitude: body.latitude ?? existing.latitude,
-        longitude: body.longitude ?? existing.longitude,
-        meta: body.meta !== undefined ? body.meta : existing.meta,
-        updatedAt: new Date(),
-      })
-      .where(eq(locations.id, id));
+    await withTenant(this.tenantDb, existing.organizationId, (tx) =>
+      tx
+        .update(locations)
+        .set({
+          code: body.code ?? existing.code,
+          slug: body.slug ?? existing.slug,
+          name: body.name ?? existing.name,
+          type: body.type ?? existing.type,
+          province: body.province !== undefined ? body.province : existing.province,
+          capital: body.capital !== undefined ? body.capital : existing.capital,
+          latitude: body.latitude ?? existing.latitude,
+          longitude: body.longitude ?? existing.longitude,
+          meta: body.meta !== undefined ? body.meta : existing.meta,
+          updatedAt: new Date(),
+        })
+        .where(eq(locations.id, id)),
+    );
 
     await this.audit.write({
       actor: jwt,
@@ -181,12 +199,21 @@ export class LocationsAdminService {
       throw new ForbiddenException("Location is outside your access scope");
     }
 
-    const [activeRtu] = await this.db
+    const [existing] = await this.fleetDb
+      .select({ organizationId: locations.organizationId })
+      .from(locations)
+      .where(eq(locations.id, id))
+      .limit(1);
+    if (!existing) {
+      throw new NotFoundException("Location not found");
+    }
+
+    const [activeRtu] = await this.tenantDb
       .select({ count: sql<number>`count(*)::int` })
       .from(rtus)
       .where(and(eq(rtus.locationId, id), eq(rtus.active, true)))
       .limit(1);
-    const [activeAsset] = await this.db
+    const [activeAsset] = await this.tenantDb
       .select({ count: sql<number>`count(*)::int` })
       .from(assets)
       .where(and(eq(assets.locationId, id), eq(assets.active, true)))
@@ -195,10 +222,12 @@ export class LocationsAdminService {
       throw new ConflictException("Cannot deactivate location with active RTUs or assets");
     }
 
-    await this.db
-      .update(locations)
-      .set({ active: false, updatedAt: new Date() })
-      .where(eq(locations.id, id));
+    await withTenant(this.tenantDb, existing.organizationId, (tx) =>
+      tx
+        .update(locations)
+        .set({ active: false, updatedAt: new Date() })
+        .where(eq(locations.id, id)),
+    );
 
     await this.audit.write({
       actor: jwt,
@@ -215,10 +244,21 @@ export class LocationsAdminService {
       throw new ForbiddenException("Location is outside your access scope");
     }
 
-    await this.db
-      .update(locations)
-      .set({ active: true, updatedAt: new Date() })
-      .where(eq(locations.id, id));
+    const [existing] = await this.fleetDb
+      .select({ organizationId: locations.organizationId })
+      .from(locations)
+      .where(eq(locations.id, id))
+      .limit(1);
+    if (!existing) {
+      throw new NotFoundException("Location not found");
+    }
+
+    await withTenant(this.tenantDb, existing.organizationId, (tx) =>
+      tx
+        .update(locations)
+        .set({ active: true, updatedAt: new Date() })
+        .where(eq(locations.id, id)),
+    );
 
     await this.audit.write({
       actor: jwt,
@@ -230,7 +270,7 @@ export class LocationsAdminService {
   }
 
   private async fetchRow(id: string): Promise<AdminLocationDto> {
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         location: locations,
         organizationCode: organizations.code,

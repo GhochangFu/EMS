@@ -12,17 +12,25 @@ import type { BmsDb } from "@bms/db";
 import type { AdminOrganizationDto, AdminOrganizationSummaryDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type {
   CreateOrganizationBody,
   UpdateOrganizationBody,
 } from "./organizations.schema";
 
+/**
+ * `F4.16` / ADR 0043 — `organizations` itself carries no policy, so every
+ * read/write against it stays on `tenantDb`. `deactivate`'s active-locations
+ * check queries `locations` (RLS since migration `0040`) and runs on
+ * `fleetDb` instead — a global admin's own gate (`assertAdminRole`) already
+ * ran before this method does anything, so there is no scope to preserve.
+ */
 @Injectable()
 export class OrganizationsAdminService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
   ) {}
@@ -48,7 +56,7 @@ export class OrganizationsAdminService {
       conditions.push(inArray(organizations.id, writableOrgIds));
     }
 
-    const rows = await this.db
+    const rows = await this.tenantDb
       .select()
       .from(organizations)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
@@ -65,7 +73,7 @@ export class OrganizationsAdminService {
     if (!(await this.accessControl.canManageOrganization(jwt, id))) {
       throw new ForbiddenException("Organization is outside your access scope");
     }
-    const [row] = await this.db
+    const [row] = await this.tenantDb
       .select()
       .from(organizations)
       .where(eq(organizations.id, id))
@@ -81,7 +89,7 @@ export class OrganizationsAdminService {
     const user = await this.accessControl.requireMasterDataUser(jwt);
     this.accessControl.assertAdminRole(user.role);
 
-    const [created] = await this.db
+    const [created] = await this.tenantDb
       .insert(organizations)
       .values({
         code: body.code,
@@ -111,7 +119,7 @@ export class OrganizationsAdminService {
     const user = await this.accessControl.requireMasterDataUser(jwt);
     this.accessControl.assertAdminRole(user.role);
 
-    const [existing] = await this.db
+    const [existing] = await this.tenantDb
       .select()
       .from(organizations)
       .where(eq(organizations.id, id))
@@ -120,7 +128,7 @@ export class OrganizationsAdminService {
       throw new NotFoundException("Organization not found");
     }
 
-    const [updated] = await this.db
+    const [updated] = await this.tenantDb
       .update(organizations)
       .set({
         name: body.name ?? existing.name,
@@ -145,7 +153,7 @@ export class OrganizationsAdminService {
     const user = await this.accessControl.requireMasterDataUser(jwt);
     this.accessControl.assertAdminRole(user.role);
 
-    const [existing] = await this.db
+    const [existing] = await this.tenantDb
       .select()
       .from(organizations)
       .where(eq(organizations.id, id))
@@ -154,7 +162,7 @@ export class OrganizationsAdminService {
       throw new NotFoundException("Organization not found");
     }
 
-    const [activeChild] = await this.db
+    const [activeChild] = await this.fleetDb
       .select({ count: sql<number>`count(*)::int` })
       .from(locations)
       .where(and(eq(locations.organizationId, id), eq(locations.active, true)))
@@ -163,7 +171,7 @@ export class OrganizationsAdminService {
       throw new ConflictException("Cannot deactivate organization with active locations");
     }
 
-    const [updated] = await this.db
+    const [updated] = await this.tenantDb
       .update(organizations)
       .set({ active: false })
       .where(eq(organizations.id, id))
@@ -184,7 +192,7 @@ export class OrganizationsAdminService {
     const user = await this.accessControl.requireMasterDataUser(jwt);
     this.accessControl.assertAdminRole(user.role);
 
-    const [updated] = await this.db
+    const [updated] = await this.tenantDb
       .update(organizations)
       .set({ active: true })
       .where(eq(organizations.id, id))

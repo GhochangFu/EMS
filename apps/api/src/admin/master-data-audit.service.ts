@@ -5,7 +5,7 @@ import { auditLog, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 
 type AuditInput = {
   actor: Pick<JwtPayload, "sub" | "email">;
@@ -19,7 +19,7 @@ type AuditInput = {
 /** Writes audit rows for master-data mutations. */
 @Injectable()
 export class MasterDataAuditService {
-  constructor(@Inject(DRIZZLE) private readonly db: BmsDb) {}
+  constructor(@Inject(TENANT_DRIZZLE) private readonly db: BmsDb) {}
 
   /**
    * Persists a master-data audit log entry.

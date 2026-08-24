@@ -22,7 +22,8 @@ import type {
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
-import { DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
@@ -33,11 +34,23 @@ import { redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
-/** Orchestrates onboarding session lifecycle. */
+/**
+ * Orchestrates onboarding session lifecycle.
+ *
+ * `F4.16` / ADR 0043 — `onboarding_sessions` carries `ENABLE ROW LEVEL
+ * SECURITY` (migration `0040`). `loadSession`'s initial by-id read runs on
+ * `fleetDb`: the organization is not yet known at that point (it comes FROM
+ * the row), so there is no id to scope a tenant transaction to until after
+ * this read — `assertOnboardingAccess` authorizes the caller against it
+ * immediately afterward, same as before. Every write below runs inside
+ * `withTenant(tenantDb, session.organizationId, …)` once that id is known.
+ * `organizations` carries no policy and stays on `tenantDb` throughout.
+ */
 @Injectable()
 export class OnboardingService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly chatService: OnboardingChatService,
     private readonly validateService: OnboardingValidateService,
@@ -53,7 +66,7 @@ export class OnboardingService {
   ): Promise<OnboardingChatResponseDto> {
     await this.assertOnboardingAccess(jwt, organizationId);
 
-    const [org] = await this.db
+    const [org] = await this.tenantDb
       .select()
       .from(organizations)
       .where(eq(organizations.id, organizationId))
@@ -65,16 +78,19 @@ export class OnboardingService {
     const opening = this.chatService.openingMessage(org.name);
     const assistantMsg = this.chatService.createMessage("assistant", opening.assistantMessage);
 
-    const [session] = await this.db
-      .insert(onboardingSessions)
-      .values({
-        organizationId,
-        status: "draft",
-        currentPhase: opening.currentPhase,
-        draft: {},
-        messages: [assistantMsg],
-      })
-      .returning();
+    const session = await withTenant(this.tenantDb, organizationId, (tx) =>
+      tx
+        .insert(onboardingSessions)
+        .values({
+          organizationId,
+          status: "draft",
+          currentPhase: opening.currentPhase,
+          draft: {},
+          messages: [assistantMsg],
+        })
+        .returning()
+        .then(([row]) => row),
+    );
 
     return {
       assistantMessage: opening.assistantMessage,
@@ -88,7 +104,7 @@ export class OnboardingService {
   async getSession(jwt: JwtPayload, sessionId: string): Promise<OnboardingSessionDto> {
     // Decision 3's gate now lives in `loadSession` — see the note there.
     const session = await this.loadSession(jwt, sessionId);
-    const [org] = await this.db
+    const [org] = await this.tenantDb
       .select({ code: organizations.code, name: organizations.name })
       .from(organizations)
       .where(eq(organizations.id, session.organizationId))
@@ -151,13 +167,16 @@ export class OnboardingService {
       credentials: body.credentials,
     });
 
-    const [updated] = await this.db
-      .update(onboardingSessions)
-      .set({ draft: mergedDraft, updatedAt: sql`now()` })
-      .where(eq(onboardingSessions.id, sessionId))
-      .returning();
+    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
+      tx
+        .update(onboardingSessions)
+        .set({ draft: mergedDraft, updatedAt: sql`now()` })
+        .where(eq(onboardingSessions.id, sessionId))
+        .returning()
+        .then(([row]) => row),
+    );
 
-    const [org] = await this.db
+    const [org] = await this.tenantDb
       .select({ code: organizations.code, name: organizations.name })
       .from(organizations)
       .where(eq(organizations.id, session.organizationId))
@@ -182,7 +201,7 @@ export class OnboardingService {
     // normal chat response rather than a 400 keeps the wizard usable — the
     // user is told where the credentials field is instead of hitting an error.
     if (looksLikeCredential(message)) {
-      const [orgRefused] = await this.db
+      const [orgRefused] = await this.tenantDb
         .select({ code: organizations.code, name: organizations.name })
         .from(organizations)
         .where(eq(organizations.id, session.organizationId))
@@ -203,7 +222,7 @@ export class OnboardingService {
 
     const draft = session.draft as OnboardingDraft;
     const phase = session.currentPhase as OnboardingPhase;
-    const [org] = await this.db
+    const [org] = await this.tenantDb
       .select({ name: organizations.name })
       .from(organizations)
       .where(eq(organizations.id, session.organizationId))
@@ -234,18 +253,21 @@ export class OnboardingService {
       assistantMsg,
     ];
 
-    const [updated] = await this.db
-      .update(onboardingSessions)
-      .set({
-        draft: mergedDraft,
-        currentPhase: turn.currentPhase,
-        messages,
-        updatedAt: sql`now()`,
-      })
-      .where(eq(onboardingSessions.id, sessionId))
-      .returning();
+    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
+      tx
+        .update(onboardingSessions)
+        .set({
+          draft: mergedDraft,
+          currentPhase: turn.currentPhase,
+          messages,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(onboardingSessions.id, sessionId))
+        .returning()
+        .then(([row]) => row),
+    );
 
-    const [orgFull] = await this.db
+    const [orgFull] = await this.tenantDb
       .select({ code: organizations.code, name: organizations.name })
       .from(organizations)
       .where(eq(organizations.id, session.organizationId))
@@ -276,17 +298,20 @@ export class OnboardingService {
     const merged = this.chatService.mergeDraft(session.draft, draft);
     const phase = this.validateService.inferPhase(merged);
 
-    const [updated] = await this.db
-      .update(onboardingSessions)
-      .set({
-        draft: merged,
-        currentPhase: phase,
-        updatedAt: sql`now()`,
-      })
-      .where(eq(onboardingSessions.id, sessionId))
-      .returning();
+    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
+      tx
+        .update(onboardingSessions)
+        .set({
+          draft: merged,
+          currentPhase: phase,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(onboardingSessions.id, sessionId))
+        .returning()
+        .then(([row]) => row),
+    );
 
-    const [org] = await this.db
+    const [org] = await this.tenantDb
       .select({ code: organizations.code, name: organizations.name })
       .from(organizations)
       .where(eq(organizations.id, session.organizationId))
@@ -370,18 +395,21 @@ export class OnboardingService {
       assistantMsg,
     ];
 
-    const [updated] = await this.db
-      .update(onboardingSessions)
-      .set({
-        draft: mergedDraft,
-        currentPhase: phase,
-        messages,
-        updatedAt: sql`now()`,
-      })
-      .where(eq(onboardingSessions.id, sessionId))
-      .returning();
+    const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
+      tx
+        .update(onboardingSessions)
+        .set({
+          draft: mergedDraft,
+          currentPhase: phase,
+          messages,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(onboardingSessions.id, sessionId))
+        .returning()
+        .then(([row]) => row),
+    );
 
-    const [orgFull] = await this.db
+    const [orgFull] = await this.tenantDb
       .select({ code: organizations.code, name: organizations.name })
       .from(organizations)
       .where(eq(organizations.id, session.organizationId))
@@ -411,7 +439,7 @@ export class OnboardingService {
    */
   private async loadSession(jwt: JwtPayload, sessionId: string) {
     await this.accessControl.requireMasterDataUser(jwt);
-    const [session] = await this.db
+    const [session] = await this.fleetDb
       .select()
       .from(onboardingSessions)
       .where(eq(onboardingSessions.id, sessionId))

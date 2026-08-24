@@ -72,9 +72,9 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
     const access = new AccessControlService(db, db, db);
     const audit = new MasterDataAuditService(db);
     const vocabularies = new VocabulariesService(db);
-    const instantiation = new AssetTemplateInstantiationService(db, access, audit);
+    const instantiation = new AssetTemplateInstantiationService(db, db, access, audit);
     svc = {
-      templates: new AssetTemplatesAdminService(db, access, audit, vocabularies),
+      templates: new AssetTemplatesAdminService(db, db, access, audit, vocabularies),
       // Parse through the real schema so these cases exercise the controller's
       // path, transform included — not a hand-built post-transform shape.
       instantiate: (jwt, templateId, body) =>

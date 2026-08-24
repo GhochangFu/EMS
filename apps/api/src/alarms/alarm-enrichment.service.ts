@@ -5,7 +5,7 @@ import { alarmAffectedAssets, alarmEnrichments, alarms, auditLog, users } from "
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
-import { DRIZZLE } from "../database/database.tokens";
+import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import type { AlarmEnrichmentUpsertBody } from "./enrichment.schema";
 
@@ -28,7 +28,7 @@ import type { AlarmEnrichmentUpsertBody } from "./enrichment.schema";
 @Injectable()
 export class AlarmEnrichmentService {
   constructor(
-    @Inject(DRIZZLE) private readonly db: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly vocabularies: VocabulariesService,
   ) {}
 
