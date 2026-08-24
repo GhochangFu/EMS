@@ -131,9 +131,11 @@ export function requireIntegrationDb({
         "        Coverage thresholds assume these ran — expect the gate to fail.\n" +
         // `bms_owner`, not `bms_app`. Since ADR 0045 this variable is the
         // *owner* connection and `connection: "owner"` hands it through
-        // verbatim, so a superuser here is unbound by FORCE ROW LEVEL SECURITY
-        // and the owner-side fixture suites pass vacuously. The hint has to
-        // name the role the suites are written against.
+        // verbatim, so a `bms_app` value here reaches the owner suites as a
+        // superuser — `bms-owner-rls` then fails on its `rolname` assertion,
+        // naming the wrong cause, while `point-aggregates` and
+        // `aggregate-retention` run against a role the repo no longer uses.
+        // The hint has to name the role the suites are written against.
         "        DATABASE_URL=postgres://bms_owner:bms_owner_dev@localhost:5432/bms pnpm test:coverage\n" +
         "        (5432 is the committed compose port; docker-compose.override.yml may remap it)\n\n",
     );

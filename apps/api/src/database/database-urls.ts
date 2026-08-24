@@ -2,11 +2,14 @@
  * `F4.16` / ADR 0043 decision 8 + Amendment 1 — `DATABASE_URL` splits three
  * ways, and there is deliberately **no fallback**.
  *
- * `DATABASE_URL` names `bms_app`, the database owner, and an owner bypasses row
- * level security on any table that is not FORCE. Silently falling back to it
- * would leave the API running with RLS disabled while every test still passed —
- * exactly the "theatre" decision 8 exists to prevent. So a missing variable is a
- * startup failure that names all of them at once.
+ * `DATABASE_URL` names the schema owner — `bms_owner` since ADR 0045, `bms_app`
+ * before it — and an owner is unfiltered on every table that is not `FORCE`.
+ * ADR 0045 narrowed that but did not close it: `0041` puts `FORCE` on the five
+ * `0040` tables only, so on the rest the owner still reads across tenants.
+ * Silently falling back to it would leave the API running with RLS effectively
+ * off while every test still passed — exactly the "theatre" decision 8 exists to
+ * prevent. So a missing variable is a startup failure that names all of them at
+ * once.
  */
 export interface DatabaseUrls {
   readonly auth: string;
@@ -32,8 +35,8 @@ export function resolveDatabaseUrls(env: Record<string, string | undefined>): Da
   const missing = REQUIRED.filter(([, envVar]) => !env[envVar]).map(([, envVar]) => envVar);
   if (missing.length > 0) {
     throw new Error(
-      `F4.16: ${missing.join(", ")} required. DATABASE_URL names the database owner, ` +
-        "which bypasses row-level security, so it is not a fallback for any of these.",
+      `F4.16: ${missing.join(", ")} required. DATABASE_URL names the schema owner, ` +
+        "which is not policy-filtered on every table, so it is not a fallback for any of these.",
     );
   }
   return {
