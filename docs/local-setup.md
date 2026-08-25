@@ -290,6 +290,11 @@ pnpm --filter web dev    # Vite on :5173
 pnpm --filter sim start  # telemetry simulator
 ```
 
+`pnpm install` also runs `pnpm hooks:install`, which points git at the
+committed `.githooks/` directory. See §10a below — if you skip `pnpm install`
+and run the services some other way, the commit-time rule checks are not
+installed.
+
 **`pnpm --filter @bms/db roles` runs *first*, before `db:migrate`.** It ran
 last under ADR 0043, when it only set passwords on roles migration `0039` had
 already created. Since ADR 0045 it creates every role the stack needs and sets
@@ -372,6 +377,57 @@ degraded within the refetch window.
 **Electrical SLD** (`/sld`): single-line diagram with live kW, flow animation, and breaker-based fault colouring; click equipment for a read-only detail drawer.
 
 **CRAC schematic** (`/crac`): four precision cooling units with live air/CHW/fan telemetry and animated loop (stop sim to see stale/offline).
+
+---
+
+## 10a. The git pre-commit hook
+
+`pnpm install` runs `pnpm hooks:install`, which is one line:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`core.hooksPath` is per-clone configuration and cannot be committed, which is
+why an install step exists at all. It lives in the shared `.git/config`, so one
+install also covers every linked worktree. It is a no-op outside a git checkout
+— a Docker build context has no `.git`, and the install must not fail there.
+
+**What it checks, on every commit.** Four AGENTS.md rules, over the *staged*
+tree:
+
+| Check | Blocks when |
+|---|---|
+| committed migration edit | a `packages/db/drizzle/*.sql` already in `HEAD` is modified, renamed or deleted |
+| dependency ADR gate (§9.4) | a dependency specifier is added and **no** `docs/adr/*.md` is staged in the same commit |
+| drizzle journal | a staged `.sql` has no journal entry, a journal entry has no `.sql`, or `when` does not strictly increase |
+| style hygiene (§4.1/§4.5) | an **added** line of a staged `.ts`/`.tsx` carries `console.log`, an `any` type or an emoji — or the file crosses the 1000-line cap |
+
+Style hygiene reads added lines only. Scanning whole files would make every
+pre-existing violation in a legacy module block every commit that touches it,
+and a gate everybody bypasses is worse than no gate.
+
+**This is a backstop, not a relocation.** The same four rules are already
+enforced by the Claude Code hooks in `.claude/settings.json`, and two of those
+are `PreToolUse` *deny* — they stop a bad edit before the file is written, which
+is strictly better than catching it at commit time. Those hooks stay. This one
+exists because they match `Edit|Write|MultiEdit`, so they see nothing when a
+file is written by a `Bash` heredoc, by `sed`, or by an external agent running
+in its own process. Every one of those paths still reaches `main` through a
+commit.
+
+The two entry points share their predicates (`scripts/checks/`) rather than
+each carrying a copy, so a rule cannot be weakened on one path while the other
+still passes. `tests/pre-commit-gate.test.ts` drives both.
+
+**The override belongs to the person, not to an agent:**
+
+```bash
+git commit --no-verify
+```
+
+A check that throws prints a warning and is skipped; the other three still run.
+A crash degrades the gate visibly rather than disabling it silently.
 
 ---
 

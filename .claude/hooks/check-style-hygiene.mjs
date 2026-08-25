@@ -8,7 +8,11 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 
-const MAX_LINES = 1000;
+// Shared with `.githooks/pre-commit.mjs`. Both callers check ADDED text only;
+// only the way that text is obtained differs (the new_string of an edit here,
+// the `+` lines of a staged diff there).
+import { isStyleCheckedSource } from '../../scripts/checks/paths.mjs';
+import { lineCapViolation, styleViolations } from '../../scripts/checks/style-hygiene.mjs';
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -31,16 +35,6 @@ function newText(tool, input) {
   return '';
 }
 
-// Best-effort removal of comments and string/template literals so matches are code, not prose.
-function stripNonCode(s) {
-  return String(s || '')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/\/\/[^\n]*/g, ' ')
-    .replace(/`(?:\\.|[^`\\])*`/g, ' ')
-    .replace(/"(?:\\.|[^"\\])*"/g, ' ')
-    .replace(/'(?:\\.|[^'\\])*'/g, ' ');
-}
-
 (async () => {
   try {
     const data = JSON.parse((await readStdin()) || '{}');
@@ -48,31 +42,14 @@ function stripNonCode(s) {
     const input = data.tool_input || {};
     const file = input.file_path || '';
 
-    if (!/\.tsx?$/.test(file)) process.exit(0);
-    if (/[\\/](node_modules|dist|build)[\\/]/.test(file)) process.exit(0);
+    if (!isStyleCheckedSource(file)) process.exit(0);
 
-    const added = newText(tool, input);
-    const code = stripNonCode(added);
-    const violations = [];
-
-    if (/\bconsole\.(log|debug|info)\s*\(/.test(code)) {
-      violations.push('console.log/debug/info — use the shared Pino logger (§4.5).');
-    }
-    if (/(:\s*any\b|\bas\s+any\b|<any>|\bany\[\]|Array<any>|Record<[^>]*\bany\b[^>]*>)/.test(code)) {
-      violations.push('`any` type — use `unknown` and narrow (§4.1).');
-    }
-    if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/u.test(added)) {
-      violations.push('emoji in code — not allowed unless explicitly requested (§4.5).');
-    }
+    const violations = styleViolations(newText(tool, input));
 
     try {
       if (file && existsSync(file)) {
-        const lines = readFileSync(file, 'utf8').split(/\r?\n/).length;
-        if (lines > MAX_LINES) {
-          violations.push(
-            `file is ${lines} lines — max ${MAX_LINES} lines per file this phase (§4.5).`
-          );
-        }
+        const cap = lineCapViolation(readFileSync(file, 'utf8').split(/\r?\n/).length);
+        if (cap) violations.push(cap);
       }
     } catch {
       /* ignore line-count failure */

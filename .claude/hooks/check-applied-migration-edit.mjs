@@ -29,6 +29,10 @@
 import { execFileSync } from 'node:child_process';
 import { dirname } from 'node:path';
 
+// Shared with `.githooks/pre-commit.mjs`, which enforces the same rule at
+// commit time for writes this hook never sees.
+import { isDrizzleMigration } from '../../scripts/checks/paths.mjs';
+
 function readStdin() {
   return new Promise((resolve) => {
     let raw = '';
@@ -38,11 +42,6 @@ function readStdin() {
     const t = setTimeout(() => resolve(raw), 2000);
     if (typeof t.unref === 'function') t.unref();
   });
-}
-
-function isDrizzleMigration(file) {
-  const norm = String(file || '').replace(/\\/g, '/');
-  return /\/packages\/db\/drizzle\/[^/]+\.sql$/i.test(norm);
 }
 
 // True when git already tracks the file (i.e. it has been committed/shipped).
