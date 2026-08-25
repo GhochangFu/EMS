@@ -267,8 +267,17 @@ bms/
 │   └── workflows/             ← GitHub Actions CI
 ├── .claude/
 │   ├── agents/                ← review subagents (security, migration, compliance)
-│   ├── hooks/                 ← guards, incl. the drizzle journal check
+│   ├── hooks/                 ← tool-time guards on Edit/Write/MultiEdit (§9.11)
 │   └── skills/                ← repo workflows (new-adr, backlog-cycle, verify)
+├── .githooks/                 ← commit-time backstop for the same rules (§9.11);
+│                                installed by `pnpm hooks:install`, which
+│                                postinstall runs — core.hooksPath is per-clone
+│                                configuration and cannot be committed
+├── scripts/
+│   └── checks/                ← the predicates BOTH hook entry points import.
+│                                Not under .claude/: a non-Claude caller uses
+│                                them, and a second copy could be weakened on
+│                                one path while the other still passed (§9.11)
 ├── tests/                     ← repo-wide invariants; see the §4.6 carve-out
 │                                repo-invariants.test.ts is the general file;
 │                                repo-invariants-provenance.test.ts holds
@@ -759,6 +768,11 @@ Do not add top-level folders without updating this section.
 - Max **1000 lines per file** in the current phase.
 - No `console.log` in committed code; use the shared logger (Pino).
 - No emoji in code or commits unless explicitly requested.
+- **These four are machine-checked twice** — as a Claude tool guard and again at
+  commit time (§9.11). Both read **added lines only**, never the whole file, so
+  a pre-existing violation in a legacy module never blocks a commit that merely
+  touches it. The 1000-line cap is the exception and is read whole-file: a file
+  only crosses it because of the edit in hand.
 
 ### 4.6 Testing (ADR 0014)
 - **Runner: Vitest.** `pnpm test` runs everything; `pnpm test:coverage` is what
@@ -1380,8 +1394,17 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
 1. Windows 11 + WSL2 + Ubuntu 22.04.
 2. Inside Ubuntu: install Node 20, pnpm 9, Postgres 16, TimescaleDB.
 3. Clone repo into the WSL filesystem (not `/mnt/c/...`).
-4. `pnpm install`.
-5. `pnpm db:migrate && pnpm db:seed`.
+4. `pnpm install` — which also runs `pnpm hooks:install`, pointing git at
+   `.githooks/` (§9.11). `core.hooksPath` is per-clone configuration and
+   cannot be committed, so **every checkout needs this once** or the
+   commit-time rule checks are simply absent.
+5. `pnpm --filter @bms/db roles && pnpm db:migrate && pnpm db:seed` —
+   **`roles` runs FIRST.** Since **ADR 0045** it creates the five database
+   roles, and the migrations grant privileges to them, so `db:migrate` on a
+   fresh database dies at `0041` with `role "bms_owner" does not exist` if it
+   runs first. `roles` and `migrate` connect as `DATABASE_URL_SUPERUSER`;
+   `seed` connects as `DATABASE_URL`, which names `bms_owner` — a
+   non-superuser, so `FORCE ROW LEVEL SECURITY` binds it.
 6. Three native terminals:
    - `pnpm --filter api dev`
    - `pnpm --filter web dev`
@@ -1432,6 +1455,51 @@ new scope-sensitive features.
 8. Do not bypass the audit middleware.
 9. Do not mass-rename or mass-format unrelated code.
 10. Update this file only via a PR prefixed `chore(agents): ...`.
+11. **Four of these rules are machine-enforced at two points. Never disable
+    either, and never route a write around one.**
+
+    | Rule | Where it is written |
+    |---|---|
+    | a committed `packages/db/drizzle/*.sql` is never edited | §4.4, forward-only |
+    | a dependency needs an ADR | §9.4 above, promotion §10 |
+    | the drizzle journal stays consistent with its `.sql` files | §4.4 |
+    | style hygiene on added lines | §4.5 |
+
+    **Point 1 — `.claude/hooks/`, wired in `.claude/settings.json`.** Two are
+    `PreToolUse` **deny**, so they stop the edit *before* the file is written;
+    two are `PostToolUse` and feed the violation back mid-turn to self-correct.
+    This point is strictly better than the second, because nothing is on disk
+    yet and nothing has been built on top of the bad edit.
+
+    **Point 2 — `.githooks/pre-commit`.** The same four rules over the staged
+    tree. It exists because point 1 matches `Edit|Write|MultiEdit` — Claude's
+    own file-writing tools — and therefore sees **nothing** when a file is
+    written any other way. Two such paths already exist: a `Bash` heredoc or
+    `sed` (the matcher does not list `Bash`), and any external agent invoked as
+    a tool, which writes through its own process. Every one of them still
+    reaches `main` through a commit.
+
+    **It is a backstop, not a relocation.** Do not "simplify" this by deleting
+    the `.claude/` half; that trades an early block for a late one.
+
+    Two pass conditions differ between the points **on purpose**, because the
+    two stages know different things:
+    - The dependency gate at commit time passes when a `docs/adr/*.md` is
+      staged in the same commit. The tool-time hook cannot see a future commit,
+      so it blocks outright.
+    - The journal check at commit time reads the **index**, not the working
+      tree. Staging a `.sql` without its journal entry is exactly the
+      commit-time mistake, and a working-tree read would miss it.
+
+    The predicates live in `scripts/checks/` and are imported by both, so a
+    rule cannot be weakened on one path while the other still passes.
+    `tests/pre-commit-gate.test.ts` drives both entry points.
+
+    **`git commit --no-verify` is the human's, never an agent's.** This is the
+    same line the two `deny` hooks already carry: an agent that finds its
+    commit blocked fixes the cause. A check that throws warns loudly and is
+    skipped while the other three still run, so a crash degrades the gate
+    visibly rather than disabling it silently.
 
 ---
 
