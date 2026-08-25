@@ -1,0 +1,17 @@
+#!/bin/sh
+# Shim only. The checks live in pre-commit.mjs next to this file.
+#
+# Installed by pointing git at this directory:
+#   git config core.hooksPath .githooks
+# which `pnpm hooks:install` and the postinstall step both do for you.
+#
+# core.hooksPath is stored in the shared .git/config, so one install also
+# covers every linked worktree.
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: node is not on PATH - AGENTS.md rule checks were SKIPPED." >&2
+  exit 0
+fi
+
+root=$(git rev-parse --show-toplevel) || exit 0
+exec node "$root/.githooks/pre-commit.mjs"

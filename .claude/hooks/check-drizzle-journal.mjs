@@ -20,7 +20,14 @@
 // Fails OPEN on any error: a broken hook must never block the workflow.
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { join } from 'node:path';
+
+// Shared with `.githooks/pre-commit.mjs`. This invariant is byte-identical at
+// both entry points - only the VIEW differs. This hook passes the working tree,
+// because that is what the agent just edited; the pre-commit hook passes the
+// staged tree, because that is what the commit will contain.
+import { journalProblems } from '../../scripts/checks/drizzle-journal.mjs';
+import { drizzleDirFor } from '../../scripts/checks/paths.mjs';
 
 function readStdin() {
   return new Promise((resolve) => {
@@ -33,14 +40,6 @@ function readStdin() {
   });
 }
 
-// Returns the drizzle migrations dir for an edited path, or '' when unrelated.
-function drizzleDirFor(file) {
-  const norm = String(file || '').replace(/\\/g, '/');
-  if (!/\/packages\/db\/drizzle\//.test(norm)) return '';
-  const idx = norm.indexOf('/packages/db/drizzle/');
-  return norm.slice(0, idx + '/packages/db/drizzle'.length).split('/').join(sep);
-}
-
 (async () => {
   try {
     const data = JSON.parse((await readStdin()) || '{}');
@@ -51,46 +50,14 @@ function drizzleDirFor(file) {
     const journalPath = join(dir, 'meta', '_journal.json');
     if (!existsSync(journalPath)) process.exit(0);
 
-    const journal = JSON.parse(readFileSync(journalPath, 'utf8'));
-    const entries = Array.isArray(journal.entries) ? journal.entries : [];
-
-    const tags = entries.map((e) => String((e && e.tag) || ''));
-    const files = readdirSync(dir)
+    const sqlTags = readdirSync(dir)
       .filter((f) => f.toLowerCase().endsWith('.sql'))
       .map((f) => f.slice(0, -4));
 
-    const problems = [];
-
-    const tagSet = new Set(tags);
-    const unjournaled = files.filter((f) => !tagSet.has(f));
-    if (unjournaled.length > 0) {
-      problems.push(
-        'Migration files with NO journal entry (drizzle will silently skip these):\n' +
-          unjournaled.map((f) => `  - ${f}.sql`).join('\n')
-      );
-    }
-
-    const fileSet = new Set(files);
-    const orphanTags = tags.filter((t) => !fileSet.has(t));
-    if (orphanTags.length > 0) {
-      problems.push(
-        'Journal entries with NO .sql file (migrate will fail to read them):\n' +
-          orphanTags.map((t) => `  - ${t}`).join('\n')
-      );
-    }
-
-    const whens = entries.map((e) => Number((e && e.when) || 0));
-    for (let i = 1; i < whens.length; i += 1) {
-      if (whens[i] <= whens[i - 1]) {
-        problems.push(
-          `Journal 'when' is not strictly increasing at entry ${i} ` +
-            `(${tags[i - 1] || '?'} = ${whens[i - 1]} -> ${tags[i] || '?'} = ${whens[i]}). ` +
-            'Drizzle applies only migrations newer than the newest applied one, ' +
-            'so an out-of-order entry can never apply to an existing database.'
-        );
-        break;
-      }
-    }
+    const problems = journalProblems({
+      journalText: readFileSync(journalPath, 'utf8'),
+      sqlTags,
+    });
 
     if (problems.length === 0) process.exit(0);
 

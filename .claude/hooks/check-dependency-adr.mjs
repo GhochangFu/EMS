@@ -10,6 +10,11 @@
 //
 // Fails OPEN on any error — a broken hook must never block the workflow.
 
+// Shared with `.githooks/pre-commit.mjs`. The SPEC regex IS the check, so a
+// second copy could be weakened on one path while the other still passed.
+import { addedSpecLines, specLines } from '../../scripts/checks/dependency-spec.mjs';
+import { isPackageJson } from '../../scripts/checks/paths.mjs';
+
 function readStdin() {
   return new Promise((resolve) => {
     let raw = '';
@@ -19,22 +24,6 @@ function readStdin() {
     const t = setTimeout(() => resolve(raw), 2000);
     if (typeof t.unref === 'function') t.unref();
   });
-}
-
-function isPackageJson(file) {
-  const f = file || '';
-  return /(^|[\\/])package\.json$/.test(f) && !/[\\/]node_modules[\\/]/.test(f);
-}
-
-// A JSON line that looks like "<name>": "<version-or-source-spec>".
-const SPEC =
-  /"[^"]+"\s*:\s*"(?:\^|~|>=|<=|>|<|\d|\*|workspace:|npm:|file:|link:|git\+|https?:|github:)/;
-
-function specLines(text) {
-  return String(text || '')
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => SPEC.test(l));
 }
 
 (async () => {
@@ -47,12 +36,10 @@ function specLines(text) {
 
     let added = [];
     if (tool === 'Edit') {
-      const before = new Set(specLines(input.old_string));
-      added = specLines(input.new_string).filter((l) => !before.has(l));
+      added = addedSpecLines(input.old_string, input.new_string);
     } else if (tool === 'MultiEdit' && Array.isArray(input.edits)) {
       for (const e of input.edits) {
-        const before = new Set(specLines(e && e.old_string));
-        added.push(...specLines(e && e.new_string).filter((l) => !before.has(l)));
+        added.push(...addedSpecLines(e && e.old_string, e && e.new_string));
       }
     } else if (tool === 'Write') {
       // Whole-file write: no reliable diff, so flag present specifiers.
