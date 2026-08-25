@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type pg from "pg";
 
 import type { AdminAssetTemplateDto, JwtPayload } from "@bms/shared";
@@ -19,13 +21,51 @@ import type { AssetTemplatesAdminService } from "./asset-templates.service";
  * practice — ADR 0015 exists because getting the shape wrong is expensive.
  *
  * These tests **write**, unlike `F4.10`'s read-only scope suite, so everything
- * they create carries `TEST_CODE` and is deleted before and after the run.
- * Cleaning up first as well as last means a crashed run does not poison the next
- * one — the shared local database is the developer's own.
+ * they create carries `TEST_CODE` — which is unique per run — and is deleted
+ * afterwards. A crashed run cannot poison the next one, because the next run
+ * writes under a different code; what it leaves behind is swept by age instead
+ * (`sweepStaleRuns`). The shared local database is the developer's own, and may
+ * have a second instance of this very file running on it.
  */
 
-/** All rows this suite creates carry this code, and only this code is deleted. */
-export const TEST_CODE = "F21-LIFECYCLE-TEST";
+/**
+ * The family every run of this suite writes under. Never used as a code on its
+ * own, and never the target of a `DELETE` a running suite issues — see
+ * {@link TEST_CODE}.
+ */
+export const TEST_CODE_FAMILY = "F21-LIFECYCLE-TEST";
+
+/**
+ * All rows *this run* creates carry this code, and only this code is deleted.
+ *
+ * **The suffix is the fix for a real flake, not decoration.** Until 2026-08-24
+ * this was the constant `"F21-LIFECYCLE-TEST"`, and `cleanup` deleted
+ * `LIKE 'F21-LIFECYCLE-TEST%'` in `beforeAll` *and* `afterAll`. Two instances of
+ * this file against one database therefore destroyed each other's committed
+ * rows, and the failures blamed the assertions rather than the collision:
+ *
+ * - `ConflictException: … already has an open draft` — the other run's draft;
+ * - `expected 2 points, got 0` — the other run's `cleanup` landing between
+ *   `create`'s two reads (`fetchRow` on `fleetDb`, `withPoints` on `tenantDb`
+ *   are separate statements on separate pools, so a cascade delete in the gap
+ *   reads as "row found, no points" rather than as "not found");
+ * - `a second draft for the same code: expected a rejection, but the call
+ *   succeeded` — the partial unique index had nothing left to collide with;
+ * - and, downstream of any of those, `TypeError: Cannot read properties of
+ *   undefined (reading 'id')` from the stages that consume an earlier stage's
+ *   output.
+ *
+ * Reproduced deterministically by running this file twice at once, which is not
+ * exotic: two worktrees share one compose Postgres, `pnpm test:watch` in one
+ * terminal overlaps `pnpm test` in another, and a hung worker from a previous
+ * run outlives the run that spawned it.
+ *
+ * A per-run code is the same remedy `apps/api/src/testing/integration-fixtures.ts`
+ * records for `bms.assets`, stated for a *committed* fixture rather than a
+ * transaction-local one: the only property that closes the race is not sharing
+ * the row. Ordering or retrying would narrow the window and leave it open.
+ */
+export const TEST_CODE = `${TEST_CODE_FAMILY}-${randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
 
 export type Fixtures = {
   organizationId: string;
@@ -60,14 +100,57 @@ async function expectRejection(
 }
 
 /**
- * Deletes only this suite's rows. `template_points` cascade on the FK.
+ * Deletes only **this run's** rows. `template_points` cascade on the FK.
  *
- * Prefix match, not equality: several cases author under `${TEST_CODE}-…` and a
- * run that crashes between creating one and deleting it would otherwise leave a
- * row that fails the *next* run's one-draft-per-code index.
+ * Prefix match, not equality: seven cases author under `${TEST_CODE}-…`
+ * (`-BADKEY`, `-EMPTY`, `-FORBIDDEN`, `-CONTENT`, `-BADSKILL`, `-ORPHANCREATE`,
+ * `-LEGACY`), and a case that throws between creating one and deleting it would
+ * otherwise leave a row behind.
+ *
+ * The prefix is `TEST_CODE`, never `TEST_CODE_FAMILY`. Widening it back to the
+ * family is the 2026-08-24 flake — this statement runs in `afterAll` while
+ * another instance of the same file may be mid-run, and a family-wide `DELETE`
+ * takes that run's rows with it. See {@link TEST_CODE}.
  */
 export async function cleanup(pool: pg.Pool): Promise<void> {
   await pool.query(`DELETE FROM bms.asset_templates WHERE code LIKE $1`, [`${TEST_CODE}%`]);
+}
+
+/**
+ * Removes rows left by *older* runs of this suite, so a developer database does
+ * not accumulate one dead family member per crashed run.
+ *
+ * Bounded by age, which is the *only* thing that keeps it safe: a concurrent
+ * instance's rows are minutes old at most (a full `pnpm test:coverage` is ~2.5
+ * minutes here), so an hour-old row cannot belong to a run still in flight.
+ * Without the bound this is the cross-instance `DELETE` that {@link TEST_CODE}
+ * exists to remove, in its worst form — family-wide, in `beforeAll`, at any age.
+ * `tests/integration-fixture-isolation.test.ts` mutation-tests that exact edit.
+ *
+ * This run's own code needs no exclusion. The statement runs in `beforeAll`
+ * before this run has written anything, and the age bound excludes rows that are
+ * seconds old either way.
+ *
+ * Non-fatal, unlike {@link cleanup}: with per-run codes a stale row can no
+ * longer collide with anything this run writes, so failing `beforeAll` over
+ * one — for instance because an old fixture template is pinned by an
+ * `bms.assets` row and the FK refuses — would turn hygiene into a red suite.
+ * It says so on stderr instead.
+ */
+export async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
+  try {
+    await pool.query(
+      `DELETE FROM bms.asset_templates
+        WHERE code LIKE $1 AND created_at < now() - interval '1 hour'`,
+      [`${TEST_CODE_FAMILY}%`],
+    );
+  } catch (err) {
+    process.stderr.write(
+      `[F2.1] could not sweep stale ${TEST_CODE_FAMILY} rows: ` +
+        `${err instanceof Error ? err.message : String(err)}\n` +
+        "        Harmless for this run — fixture codes are per-run — but the rows will stay.\n",
+    );
+  }
 }
 
 /** Resolves an organization with at least two active point keys. */
@@ -199,7 +282,18 @@ export async function assertCalcFieldsSurviveUpdateRoundTrip(
 export async function assertOnlyOneDraftPerCode(
   svc: AssetTemplatesAdminService,
   fx: Fixtures,
+  openDraft: AdminAssetTemplateDto,
 ): Promise<void> {
+  // The rival create can only be *refused* if the first draft is there to
+  // collide with. Without this the case reads as its own failure — "expected a
+  // rejection, but the call succeeded" — when the real fault is upstream, which
+  // is one of the four signatures the 2026-08-24 flake produced.
+  assert(
+    openDraft.code === TEST_CODE && openDraft.status === "draft",
+    `this case needs the open v${openDraft.version} draft from the first stage, got ` +
+      `"${openDraft.code}" at status "${openDraft.status}" — read that stage's failure`,
+  );
+
   await expectRejection(
     () =>
       svc.create(fx.adminJwt, {
