@@ -128,8 +128,11 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
       new MasterDataAuditService(tenantDb),
       new VocabulariesService(tenantDb),
     );
-    // Fixtures are cross-organization by design and set up on the owner
-    // connection on purpose — seeding is not the behaviour under test.
+    // Fixtures are cross-organization by design and read on the `bms_fleet`
+    // connection on purpose — seeding is not the behaviour under test. (That
+    // is what `requireIntegrationDb` returns by default since ADR 0045; this
+    // comment used to say "the owner connection", which stopped being true
+    // when `E7.1a` made `bms_owner` a non-superuser bound by `FORCE`.)
     fx = await loadFixtures(created);
     // Rows from an *older* run, which this run's own code can no longer
     // collide with — see `sweepStaleRuns`. Non-fatal on purpose: it is
