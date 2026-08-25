@@ -27,6 +27,7 @@ import {
   assertVersionBumpCopiesPoints,
   cleanup,
   loadFixtures,
+  sweepStaleRuns,
   type Fixtures,
 } from "./asset-templates.lifecycle.integration.spec";
 import {
@@ -47,9 +48,12 @@ import { asRole } from "../../testing/role-urls";
  * nor a plain source file (which would ship in the Nest build and land in the
  * coverage denominator). Worth doing once a third integration suite exists.
  *
- * Unlike `F4.10`, these tests write. Everything they create carries the code
- * `F21-LIFECYCLE-TEST` and is deleted before and after the run, so a crashed
- * run cannot poison the next one on a shared local database.
+ * Unlike `F4.10`, these tests write. Everything they create carries `TEST_CODE`,
+ * which is `F21-LIFECYCLE-TEST-` plus a per-run suffix, and only that code is
+ * deleted afterwards. The suffix is what makes a second instance of this file on
+ * the same database harmless rather than mutually destructive — the 2026-08-24
+ * flake, whose mechanism and reproduction are recorded on `TEST_CODE` in the
+ * sibling `.spec`. Rows from older runs are swept by age in `beforeAll`.
  *
  * The tests run in sequence and share state: each stage is the previous stage's
  * output. That is the point — a version lifecycle is only meaningful as a
@@ -68,6 +72,27 @@ const connectionString = requireIntegrationDb({
     "this service's writes rather than passing because the owner bypasses it regardless.",
 });
 
+/**
+ * The stages below share state on purpose, so a stage whose input never
+ * arrived must say *that* rather than dereference `undefined`.
+ *
+ * Without this the first real failure is followed by
+ * `TypeError: Cannot read properties of undefined (reading 'id')` from every
+ * later stage, and those are what a reader sees first — they carry no cause,
+ * point at the wrong line, and are the reason the 2026-08-24 report of this
+ * suite's flake named two innocent assertions and not the one that broke.
+ */
+function stageOutput<T>(value: T | undefined, produced: string): T {
+  if (value === undefined) {
+    throw new Error(
+      `this stage needs the ${produced}, which was never produced: an earlier stage in ` +
+        "this file failed. Read that failure — the stages share state by design (see the " +
+        "file header), so this one could not run.",
+    );
+  }
+  return value;
+}
+
 describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", () => {
   let pool: pg.Pool | undefined;
   let authPool: pg.Pool | undefined;
@@ -75,7 +100,7 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
   let fleetPool: pg.Pool | undefined;
   let svc: AssetTemplatesAdminService;
   let fx: Fixtures;
-  let v1: AdminAssetTemplateDto;
+  let v1: AdminAssetTemplateDto | undefined;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -103,11 +128,16 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
       new MasterDataAuditService(tenantDb),
       new VocabulariesService(tenantDb),
     );
-    // Fixtures are cross-organization by design and set up on the owner
-    // connection on purpose — seeding is not the behaviour under test.
+    // Fixtures are cross-organization by design and read on the `bms_fleet`
+    // connection on purpose — seeding is not the behaviour under test. (That
+    // is what `requireIntegrationDb` returns by default since ADR 0045; this
+    // comment used to say "the owner connection", which stopped being true
+    // when `E7.1a` made `bms_owner` a non-superuser bound by `FORCE`.)
     fx = await loadFixtures(created);
-    // Before as well as after: a crashed previous run must not fail this one.
-    await cleanup(created);
+    // Rows from an *older* run, which this run's own code can no longer
+    // collide with — see `sweepStaleRuns`. Non-fatal on purpose: it is
+    // hygiene, not a precondition.
+    await sweepStaleRuns(created);
   });
 
   afterAll(async () => {
@@ -123,11 +153,11 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
   });
 
   it("round-trips ADR 0037 calc fields through a PATCH that echoes them back (F2.4)", async () => {
-    await assertCalcFieldsSurviveUpdateRoundTrip(svc, fx, v1);
+    await assertCalcFieldsSurviveUpdateRoundTrip(svc, fx, stageOutput(v1, "version 1 draft"));
   });
 
   it("permits exactly one open draft per (organization, code)", async () => {
-    await assertOnlyOneDraftPerCode(svc, fx);
+    await assertOnlyOneDraftPerCode(svc, fx, stageOutput(v1, "version 1 draft"));
   });
 
   it("rejects point keys absent from the org's active catalog, naming them", async () => {
@@ -135,15 +165,15 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
   });
 
   it("freezes a published version against edit, re-publish and delete", async () => {
-    await assertPublishFreezes(svc, fx, v1.id);
+    await assertPublishFreezes(svc, fx, stageOutput(v1, "version 1 draft").id);
   });
 
   it("bumps to version 2 with points copied, and leaves version 1 untouched", async () => {
-    await assertVersionBumpCopiesPoints(svc, fx, v1.id);
+    await assertVersionBumpCopiesPoints(svc, fx, stageOutput(v1, "version 1 draft").id);
   });
 
   it("archives only published versions", async () => {
-    await assertArchiveRules(svc, fx, v1.id);
+    await assertArchiveRules(svc, fx, stageOutput(v1, "version 1 draft").id);
   });
 
   it("saves an empty draft but refuses to publish it", async () => {
@@ -157,7 +187,7 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
   // `E1.7` / ADR 0019. Same fixtures and same cleanup as the lifecycle above,
   // rather than a fourth copy of this file's DATABASE_URL gate.
   describe("E1.7 — template content model", () => {
-    let contentDraft: AdminAssetTemplateDto;
+    let contentDraft: AdminAssetTemplateDto | undefined;
 
     it("round-trips content through jsonb with its ordering intact", async () => {
       contentDraft = await assertContentRoundTrips(svc, fx);
@@ -173,11 +203,19 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
     });
 
     it("resolves a content-only patch against the stored point set", async () => {
-      await assertContentPatchResolvesAgainstStoredPoints(svc, fx, contentDraft.id);
+      await assertContentPatchResolvesAgainstStoredPoints(
+        svc,
+        fx,
+        stageOutput(contentDraft, "content draft").id,
+      );
     });
 
     it("lets a points patch orphan content, then refuses to publish it", async () => {
-      await assertOrphanedRefsAreCaughtAtPublish(svc, fx, contentDraft.id);
+      await assertOrphanedRefsAreCaughtAtPublish(
+        svc,
+        fx,
+        stageOutput(contentDraft, "content draft").id,
+      );
     });
 
     it("blocks publish on pre-ADR content but still permits the draft fork", async () => {
