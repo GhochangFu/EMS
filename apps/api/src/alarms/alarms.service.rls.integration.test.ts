@@ -209,7 +209,7 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
     await assertAlarmListScopedByAssetIds(ctx);
   });
 
-  it("returns both orgs' alarms for a two-organization actor on one read (decision 3)", async () => {
+  it("returns both orgs' alarms, and only those, for a two-organization actor (decision 3)", async () => {
     await assertAlarmListReturnsBothOrgsForTwoOrgActor(ctx);
   });
 

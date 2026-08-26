@@ -135,6 +135,31 @@ export async function assertWorkOrderListReturnsBothOrgsForTwoOrgActor(
   expect(ids, "org B's work order is returned on the same read (fleet fallback)").toContain(
     ctx.foreignWorkOrderId,
   );
+  // Exactly the rows the filter allows (ADR 0043 ruling 3): the fleet path has no
+  // GUC, so the assetIds WHERE is the ONLY isolation control, and the seed carries
+  // work orders on other assets that dropping it would surface.
+  expect(
+    both.items.every((i) => [ctx.assetId, ctx.foreignAssetId].includes(i.assetId)),
+    "the fleet read returns no work order outside the passed assetIds",
+  ).toBe(true);
+}
+
+/**
+ * The single-organization tenant path (decision 1) actually returns the caller's
+ * own row — not a silently-empty list — and excludes the other org's, under the
+ * org GUC and the assetIds filter both.
+ */
+export async function assertSingleOrgWorkOrderListReturnsOwnRow(
+  ctx: WorkOrdersRlsFixtures,
+): Promise<void> {
+  const own = await ctx.svc.list({ limit: 100, assetIds: [ctx.assetId] });
+  const ids = own.items.map((i) => i.id);
+  expect(ids, "the single-org tenant read returns the caller's own work order").toContain(
+    ctx.inScopeWorkOrderId,
+  );
+  expect(ids, "the single-org read excludes the other org's work order").not.toContain(
+    ctx.foreignWorkOrderId,
+  );
 }
 
 /**

@@ -13,6 +13,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import { WorkOrdersService } from "./work-orders.service";
 import {
+  assertSingleOrgWorkOrderListReturnsOwnRow,
   assertSingleOrgWorkOrderListRunsOnTenantTransaction,
   assertWorkOrderListReturnsBothOrgsForTwoOrgActor,
   assertWorkOrderWritesStampOrgUnderRealRls,
@@ -304,7 +305,11 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
     await assertWorkOrderWritesStampOrgUnderRealRls(ctx, actor);
   });
 
-  it("returns both orgs' work orders for a two-organization actor on one read (decision 3)", async () => {
+  it("returns only the caller's own-org work order on the single-org tenant path", async () => {
+    await assertSingleOrgWorkOrderListReturnsOwnRow(ctx);
+  });
+
+  it("returns both orgs' work orders, and only those, for a two-organization actor (decision 3)", async () => {
     await assertWorkOrderListReturnsBothOrgsForTwoOrgActor(ctx);
   });
 

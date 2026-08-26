@@ -122,6 +122,13 @@ export async function assertAlarmListReturnsBothOrgsForTwoOrgActor(
   expect(ids, "org B's alarm is returned on the same read (fleet fallback)").toContain(
     foreignAlarmId,
   );
+  // Exactly the rows the filter allows (ADR 0043 ruling 3): the fleet path has no
+  // GUC, so the assetIds WHERE is the ONLY isolation control. The seed carries
+  // alarms on other assets, so dropping that WHERE would surface them here.
+  expect(
+    both.items.every((i) => [inScopeAssetId, foreignAssetId].includes(i.assetId)),
+    "the fleet read returns no alarm outside the passed assetIds",
+  ).toBe(true);
 }
 
 /**

@@ -50,6 +50,16 @@ export type RulesRlsFixtures = {
   inScopeRuleId: string;
   /** A seeded rule on `foreignAssetId` (org B) — likewise. */
   foreignRuleId: string;
+  /** A seeded execution of `inScopeRuleId` (org A) — the listExecutions reads. */
+  inScopeExecutionId: string;
+  /** A seeded execution of `foreignRuleId` (org B) — likewise. */
+  foreignExecutionId: string;
+  /**
+   * A seeded execution on a THIRD asset in org A that the reads never pass. It is
+   * the outside row that gates the `assetIds` SQL WHERE — there are no seeded
+   * executions to serve as one, so without a decoy the exclusion is vacuous.
+   */
+  decoyExecutionId: string;
 };
 
 function thresholdDraft(ctx: RulesRlsFixtures, code: string): RuleDraftBody {
@@ -177,6 +187,84 @@ export async function assertRuleListReturnsBothOrgsForTwoOrgActor(
   expect(ids, "org B's rule is returned on the same read (fleet fallback)").toContain(
     ctx.foreignRuleId,
   );
+  // Exactly the rows the filter allows (ADR 0043 ruling 3). On the fleet path the
+  // isolation control is `filterRuleRowsByAssetIds`, not a SQL WHERE; the seed's
+  // 337 rules on other assets would surface here if that post-filter were dropped.
+  expect(
+    both.items.every((i) => [ctx.assetId, ctx.foreignAssetId].includes(i.assetId)),
+    "the fleet read returns no rule outside the passed assetIds",
+  ).toBe(true);
+}
+
+/**
+ * The single-organization tenant path (decision 1) actually returns the caller's
+ * own rule — not a silently-empty list — and excludes the other org's, under the
+ * org GUC and the assetIds post-filter both.
+ */
+export async function assertSingleOrgRuleListReturnsOwnRow(
+  ctx: RulesRlsFixtures,
+): Promise<void> {
+  const own = await ctx.service.listRules([ctx.assetId]);
+  const ids = own.items.map((i) => i.id);
+  expect(ids, "the single-org tenant read returns the caller's own rule").toContain(
+    ctx.inScopeRuleId,
+  );
+  expect(ids, "the single-org read excludes the other org's rule").not.toContain(
+    ctx.foreignRuleId,
+  );
+}
+
+/**
+ * `listExecutions` mirrors `listRules`: decision 3 returns both orgs' executions
+ * on one fleet read behind the `assetIds` SQL WHERE; the single-org path returns
+ * only the caller's own under `withTenant`; and the fleet read returns nothing
+ * outside the passed assetIds.
+ */
+export async function assertRuleExecutionListReturnsBothOrgsForTwoOrgActor(
+  ctx: RulesRlsFixtures,
+): Promise<void> {
+  const both = await ctx.service.listExecutions({ limit: 200 }, [ctx.assetId, ctx.foreignAssetId]);
+  const ids = both.items.map((i) => i.id);
+  expect(ids, "org A's execution is returned on the two-org path").toContain(ctx.inScopeExecutionId);
+  expect(ids, "org B's execution is returned on the same read (fleet fallback)").toContain(
+    ctx.foreignExecutionId,
+  );
+  // The fleet path has no GUC, so the `automationRules.assetId IN assetIds` WHERE
+  // is the ONLY isolation control. The decoy's rule is on an asset never passed,
+  // so dropping that WHERE would surface it here (ADR 0043 ruling 3).
+  expect(
+    ids,
+    "an execution whose rule's asset is outside the passed assetIds is excluded",
+  ).not.toContain(ctx.decoyExecutionId);
+}
+
+export async function assertSingleOrgRuleExecutionListReturnsOwnRow(
+  ctx: RulesRlsFixtures,
+): Promise<void> {
+  const own = await ctx.service.listExecutions({ limit: 200 }, [ctx.assetId]);
+  const ids = own.items.map((i) => i.id);
+  expect(ids, "the single-org tenant read returns the caller's own execution").toContain(
+    ctx.inScopeExecutionId,
+  );
+  expect(ids, "the single-org read excludes the other org's execution").not.toContain(
+    ctx.foreignExecutionId,
+  );
+  // The decoy is in org A too, so the org GUC alone would not exclude it — the
+  // assetIds WHERE must, even on the tenant path.
+  expect(ids, "the single-org read excludes an in-org asset outside the scope").not.toContain(
+    ctx.decoyExecutionId,
+  );
+}
+
+export async function assertSingleOrgRuleExecutionListRunsOnTenantTransaction(
+  ctx: RulesRlsFixtures,
+): Promise<void> {
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  await svc.listExecutions({ limit: 200 }, [ctx.assetId]);
+  expect(tenant.transactions(), "a single-org listExecutions opens one tenant transaction").toBe(1);
+  expect(fleet.transactions(), "a single-org listExecutions opens no fleet transaction").toBe(0);
 }
 
 /**

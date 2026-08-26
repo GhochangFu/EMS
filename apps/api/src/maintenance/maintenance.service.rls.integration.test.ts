@@ -13,6 +13,7 @@ import {
   assertCreateStampsOrgAndActorUnderRealRls,
   assertDeactivateFlipsScheduleAndTemplateUnderRealRls,
   assertMaintenanceListReturnsBothOrgsForTwoOrgActor,
+  assertSingleOrgMaintenanceListReturnsOwnRow,
   assertSingleOrgMaintenanceListRunsOnTenantTransaction,
   type MaintenanceRlsFixtures,
 } from "./maintenance.service.rls.integration.spec";
@@ -257,7 +258,11 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
     await assertConvertStampsAndAdvancesUnderRealRls(ctx);
   });
 
-  it("returns both orgs' schedules for a two-organization actor on one read (decision 3)", async () => {
+  it("returns only the caller's own-org schedule on the single-org tenant path", async () => {
+    await assertSingleOrgMaintenanceListReturnsOwnRow(ctx);
+  });
+
+  it("returns both orgs' schedules, and only those, for a two-organization actor (decision 3)", async () => {
     await assertMaintenanceListReturnsBothOrgsForTwoOrgActor(ctx);
   });
 

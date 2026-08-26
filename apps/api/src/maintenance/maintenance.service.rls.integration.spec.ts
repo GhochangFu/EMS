@@ -249,6 +249,30 @@ export async function assertMaintenanceListReturnsBothOrgsForTwoOrgActor(
   expect(ids, "org B's schedule is returned on the same read (fleet fallback)").toContain(
     ctx.foreignScheduleId,
   );
+  // Exactly the rows the filter allows (ADR 0043 ruling 3): the fleet path has no
+  // GUC, so the assetIds WHERE is the ONLY isolation control, and the seed carries
+  // schedules on other assets that dropping it would surface.
+  expect(
+    both.items.every((i) => [ctx.assetId, ctx.foreignAssetId].includes(i.assetId)),
+    "the fleet read returns no schedule outside the passed assetIds",
+  ).toBe(true);
+}
+
+/**
+ * The single-organization tenant path (decision 1) actually returns the caller's
+ * own schedule — not a silently-empty list — and excludes the other org's.
+ */
+export async function assertSingleOrgMaintenanceListReturnsOwnRow(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const own = await ctx.service.list(READ_QUERY, [ctx.assetId]);
+  const ids = own.items.map((i) => i.id);
+  expect(ids, "the single-org tenant read returns the caller's own schedule").toContain(
+    ctx.inScopeScheduleId,
+  );
+  expect(ids, "the single-org read excludes the other org's schedule").not.toContain(
+    ctx.foreignScheduleId,
+  );
 }
 
 /**
