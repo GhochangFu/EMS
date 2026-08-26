@@ -15,7 +15,8 @@ import type {
   WorkOrderStatus,
 } from "@bms/shared";
 
-import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { withTenant } from "../database/tenant-context";
 import type {
   CloseWorkOrderBody,
   CreateWorkOrderBody,
@@ -25,9 +26,31 @@ import type {
 
 const terminalStatuses = new Set<WorkOrderStatus>(["closed"]);
 
+/**
+ * `E7.1b` (ADR 0043 §5) — `work_orders` gained an `organization_id` column
+ * (migration `0046`, org = `asset_id → assets.org`) and a `tenant_isolation`
+ * policy + `FORCE` in `0047`. Reads run on `fleetDb` behind the caller's
+ * writable-asset scope — the `assetIds` filter is the isolation control
+ * (Amendment 3) — and writes run inside `withTenant(db, org, …)`, org derived
+ * from the asset on create and from the row's own column on update/reorder.
+ *
+ * `resolveActorId` reads `bms.users`, which is a pre-tenant identity lookup, so
+ * it runs on `fleetDb`: after `0047`'s NULL-tolerant `users` policy a scoped
+ * actor's row is invisible to the bare tenant pool (no `current_org`), which
+ * would silently drop the audit actor.
+ *
+ * A Kanban reorder is single-organization by construction — one board shows one
+ * org's assets — so a batch that resolves to more than one organization is a
+ * malformed request, refused rather than split across tenant transactions. The
+ * `audit_log` rows carry no `organization_id` this item (ruling 5, deferred to
+ * E7.1c); their inserts pass the NULL-tolerant `WITH CHECK` under any GUC.
+ */
 @Injectable()
 export class WorkOrdersService {
-  constructor(@Inject(TENANT_DRIZZLE) private readonly db: BmsDb) {}
+  constructor(
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+  ) {}
 
   private mapRow(r: {
     id: string;
@@ -71,10 +94,15 @@ export class WorkOrdersService {
     };
   }
 
+  /**
+   * Resolves the acting user's row id. `bms.users` is a pre-tenant identity
+   * table (Amendment 4 territory), so this reads on `fleetDb` — it must resolve
+   * the actor regardless of any tenant GUC.
+   */
   private async resolveActorId(
     actor: Pick<JwtPayload, "sub" | "email">,
   ): Promise<string | null> {
-    const [actorRow] = await this.db
+    const [actorRow] = await this.fleetDb
       .select({ id: users.id })
       .from(users)
       .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
@@ -82,11 +110,51 @@ export class WorkOrdersService {
     return actorRow?.id ?? null;
   }
 
+  /**
+   * The organization a single work order belongs to, read on `fleetDb` behind
+   * the caller's writable-asset scope. Null org means the `0046` backfill has
+   * not run for the row — refused rather than written with a NULL tenant.
+   */
+  private async resolveWorkOrderOrg(
+    id: string,
+    assetIds?: string[] | null,
+  ): Promise<string> {
+    const [row] = await this.fleetDb
+      .select({ organizationId: workOrders.organizationId })
+      .from(workOrders)
+      .where(
+        and(
+          eq(workOrders.id, id),
+          ...(assetIds ? [inArray(workOrders.assetId, assetIds)] : []),
+        ),
+      )
+      .limit(1);
+    if (!row?.organizationId) {
+      throw new BadRequestException(
+        "Work order has no organization; run the 0046 backfill",
+      );
+    }
+    return row.organizationId;
+  }
+
+  /** The one organization a batch shares, or a refusal if it spans zero or many. */
+  private assertSingleOrg(orgs: (string | null)[], op: string): string {
+    if (orgs.length === 0 || orgs.some((org) => !org)) {
+      throw new BadRequestException(
+        "Work order has no organization; run the 0046 backfill",
+      );
+    }
+    if (new Set(orgs).size !== 1) {
+      throw new BadRequestException(`A ${op} must stay within a single organization`);
+    }
+    return orgs[0] as string;
+  }
+
   private async getById(
     id: string,
     assetIds?: string[] | null,
   ): Promise<WorkOrderListItem> {
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         id: workOrders.id,
         assetId: workOrders.assetId,
@@ -131,7 +199,7 @@ export class WorkOrdersService {
     if (opts.assetIds && opts.assetIds.length === 0) {
       return { items: [] };
     }
-    const base = this.db
+    const base = this.fleetDb
       .select({
         id: workOrders.id,
         assetId: workOrders.assetId,
@@ -184,55 +252,68 @@ export class WorkOrdersService {
     if (assetIds && !assetIds.includes(dto.assetId)) {
       throw new NotFoundException("Asset not found or outside your access scope");
     }
-    const [asset] = await this.db
-      .select({ id: assets.id })
+    const [asset] = await this.fleetDb
+      .select({ id: assets.id, organizationId: assets.organizationId })
       .from(assets)
       .where(eq(assets.id, dto.assetId))
       .limit(1);
     if (!asset) {
       throw new NotFoundException("Asset not found");
     }
-
-    if (dto.alarmId) {
-      const [alarm] = await this.db
-        .select({ id: alarms.id, assetId: alarms.assetId })
-        .from(alarms)
-        .where(eq(alarms.id, dto.alarmId))
-        .limit(1);
-      if (!alarm) {
-        throw new NotFoundException("Alarm not found");
-      }
-      if (alarm.assetId !== dto.assetId) {
-        throw new BadRequestException(
-          "Alarm does not belong to the selected asset",
-        );
-      }
+    if (!asset.organizationId) {
+      throw new BadRequestException(
+        "Asset has no organization; run the 0046 backfill",
+      );
     }
+    const organizationId = asset.organizationId;
 
     const actorId = await this.resolveActorId(actor);
-    const [created] = await this.db
-      .insert(workOrders)
-      .values({
-        assetId: dto.assetId,
-        alarmId: dto.alarmId,
-        title: dto.title,
-        description: dto.description,
-        status: dto.assignedTo ? "assigned" : "open",
-        priority: dto.priority,
-        assignedTo: dto.assignedTo,
-        createdBy: actorId,
-        dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
-      })
-      .returning({ id: workOrders.id });
-    if (!created) {
-      throw new BadRequestException("Could not create work order");
-    }
+    const createdId = await withTenant(this.db, organizationId, async (tx) => {
+      // The alarm consistency read runs inside the tenant GUC: a foreign-org
+      // alarm reads as absent under the policy, so it cannot be attached and its
+      // existence is not disclosed.
+      if (dto.alarmId) {
+        const [alarm] = await tx
+          .select({ id: alarms.id, assetId: alarms.assetId })
+          .from(alarms)
+          .where(eq(alarms.id, dto.alarmId))
+          .limit(1);
+        if (!alarm) {
+          throw new NotFoundException("Alarm not found");
+        }
+        if (alarm.assetId !== dto.assetId) {
+          throw new BadRequestException(
+            "Alarm does not belong to the selected asset",
+          );
+        }
+      }
+
+      const [created] = await tx
+        .insert(workOrders)
+        .values({
+          organizationId,
+          assetId: dto.assetId,
+          alarmId: dto.alarmId,
+          title: dto.title,
+          description: dto.description,
+          status: dto.assignedTo ? "assigned" : "open",
+          priority: dto.priority,
+          assignedTo: dto.assignedTo,
+          createdBy: actorId,
+          dueAt: dto.dueAt ? new Date(dto.dueAt) : null,
+        })
+        .returning({ id: workOrders.id });
+      if (!created) {
+        throw new BadRequestException("Could not create work order");
+      }
+      return created.id;
+    });
 
     await this.db.insert(auditLog).values({
       actorId,
       action: "work_order_create",
       entityType: "work_order",
-      entityId: created.id,
+      entityId: createdId,
       reason: "Work order created",
       payload: {
         assetId: dto.assetId,
@@ -242,7 +323,7 @@ export class WorkOrdersService {
       },
     });
 
-    return this.getById(created.id, assetIds);
+    return this.getById(createdId, assetIds);
   }
 
   /** Updates a work order status and records the state change in audit log. */
@@ -257,9 +338,10 @@ export class WorkOrdersService {
       throw new BadRequestException("Closed work orders cannot be updated");
     }
 
+    const organizationId = await this.resolveWorkOrderOrg(id, assetIds);
     const now = new Date();
     const actorId = await this.resolveActorId(actor);
-    await this.db.transaction(async (tx) => {
+    await withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(workOrders)
         .set({
@@ -321,8 +403,12 @@ export class WorkOrdersService {
       throw new BadRequestException("Duplicate work order ids in reorder request");
     }
 
-    const currentRows = await this.db
-      .select({ id: workOrders.id, status: workOrders.status })
+    const currentRows = await this.fleetDb
+      .select({
+        id: workOrders.id,
+        status: workOrders.status,
+        organizationId: workOrders.organizationId,
+      })
       .from(workOrders)
       .where(
         and(
@@ -333,6 +419,10 @@ export class WorkOrdersService {
     if (currentRows.length !== ids.length) {
       throw new NotFoundException("One or more work orders were not found");
     }
+    const organizationId = this.assertSingleOrg(
+      currentRows.map((row) => row.organizationId),
+      "reorder",
+    );
 
     const currentById = new Map(
       currentRows.map((row) => [row.id, row.status as WorkOrderStatus]),
@@ -352,7 +442,7 @@ export class WorkOrdersService {
 
     const now = new Date();
     const actorId = await this.resolveActorId(actor);
-    await this.db.transaction(async (tx) => {
+    await withTenant(this.db, organizationId, async (tx) => {
       for (const item of dto.items) {
         const currentStatus = currentById.get(item.id);
         await tx
