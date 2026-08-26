@@ -137,6 +137,12 @@ async function seed(
       code: `${TEST_ASSET_PREFIX}${suffix}`,
       name: `Override Fixture Asset ${suffix}`,
       siteName: "Fixture Site",
+      // `E7.1b`: `otherLocationId` lives in `organizationId` (same org, per the
+      // Fixtures contract), so this keeps `assets.organization_id` consistent
+      // with its location. `AssetPointCalcOverrideService` now derives the
+      // `withTenant` org from this column; a NULL here would make every
+      // `setOverride` in this suite a 400.
+      organizationId: fx.organizationId,
       locationId: opts.locationId ?? fx.otherLocationId,
       domain: "electrical",
       templateId: template.id,
