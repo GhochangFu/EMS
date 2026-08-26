@@ -158,11 +158,14 @@ export async function loadFixtures(pool: pg.Pool, prefix: string = TEST_ASSET_PR
   }
 
   const freshCode = `${prefix}${Date.now()}`;
+  // E7.1b: stamp organization_id, exactly as `AssetsAdminService.create` does
+  // since 0046 — a fixture that inserts an asset directly must carry the org, or
+  // an auto-provisioned mapping derived from it inherits a NULL org.
   const { rows: assetRows } = await pool.query<{ id: string }>(
-    `INSERT INTO bms.assets (code, name, site_name, location_id, rtu_id, domain, active)
-     VALUES ($1, 'F1.8/F1.9 write-path fixture', 'Fixture Site', $2, NULL, 'water', true)
+    `INSERT INTO bms.assets (code, name, site_name, location_id, rtu_id, domain, active, organization_id)
+     VALUES ($1, 'F1.8/F1.9 write-path fixture', 'Fixture Site', $2, NULL, 'water', true, $3)
      RETURNING id`,
-    [freshCode, grant.location_id],
+    [freshCode, grant.location_id, grant.organization_id],
   );
   const freshAssetId = assetRows[0]?.id;
   if (!freshAssetId) {
@@ -213,9 +216,10 @@ async function fetchAssetPoint(
   rtu_id: string | null;
   unit: string | null;
   active: boolean;
+  organization_id: string | null;
 } | null> {
   const { rows } = await pool.query(
-    `SELECT source_kind, rtu_id, unit, active FROM bms.asset_points
+    `SELECT source_kind, rtu_id, unit, active, organization_id FROM bms.asset_points
       WHERE asset_id = $1 AND point_key = $2`,
     [assetId, pointKey],
   );
@@ -308,6 +312,13 @@ export async function runTelemetryWriteServiceTests(
   assert(
     createdMapping?.rtu_id === null,
     "created mapping must carry rtu_id=NULL — nobody claimed a gateway",
+  );
+  // E7.1b: the auto-provisioned mapping carries the asset's org. Nullable with
+  // no default, so this is NULL — and the assertion fails — without the stamping.
+  assert(
+    createdMapping?.organization_id === fx.freshAssetOrganizationId,
+    `an auto-provisioned mapping must be stamped with the asset's org ` +
+      `(${fx.freshAssetOrganizationId}), got ${createdMapping?.organization_id}`,
   );
   const writtenValue = await fetchPointValue(pool, fx.freshAssetId, fx.freshAssetPointKey.code, freshTime);
   assert(writtenValue !== null, "the reading must exist in telemetry.point_values");
@@ -411,12 +422,14 @@ export async function runTelemetryWriteServiceTests(
   );
 
   // ---- a source_data_key collision isolates only the rows that need it -----
-  // (Postgres SAVEPOINT behaviour of a nested `tx.transaction()` call — the
-  // one piece of the rewrite that rests on inferred rather than observed
-  // behaviour. If the nested transaction does not actually emit
-  // SAVEPOINT/ROLLBACK TO SAVEPOINT, the 23505 poisons the whole outer
-  // transaction and the next statement fails with 25P02, losing the entire
-  // batch — this test exists to catch exactly that.)
+  // Since E7.1b the mapping creation runs on `fleetDb` before the value
+  // transaction, each pair its own independent statement — so a 23505
+  // source_data_key collision on one pair rejects only the rows that needed it,
+  // without touching the others or the later value writes. (Before E7.1b this
+  // rested on a nested `tx.transaction()` SAVEPOINT; the guarantee is the same,
+  // the mechanism is now statement independence rather than sub-transaction
+  // rollback.) This test catches a regression that would let one collision lose
+  // the whole batch.
 
   const [victimKey, plantedKey, safeKey] = fx.spareOrgPointKeys;
   await pool.query(

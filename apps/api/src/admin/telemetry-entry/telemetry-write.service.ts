@@ -79,10 +79,13 @@ type AcceptedRow = {
   row: TelemetryEntryRow;
   unit: string | null;
   mappingNeeded: boolean;
+  // E7.1b: the asset's org, resolved in `validateRow`. Stamped onto an
+  // auto-provisioned `asset_points` mapping (a policied table since 0046).
+  organizationId: string | null;
 };
 
 type ValidateRowResult =
-  | { ok: true; unit: string | null; mappingNeeded: boolean }
+  | { ok: true; unit: string | null; mappingNeeded: boolean; organizationId: string | null }
   | { ok: false; field: string | null; reason: string };
 
 function sortByParsedTime(times: readonly string[]): string[] {
@@ -105,11 +108,14 @@ function sortByParsedTime(times: readonly string[]): string[] {
  * that is already `measured` keeps its provenance. Absent, a mapping is
  * created on demand with the requested `sourceKind` and `rtuId: null` — ADR
  * 0018 made `unmapped`/`manual` points first-class exactly so a reading can
- * exist before a gateway does. Mapping creation happens inside the same
- * transaction as the value writes, each wrapped in its own nested
- * transaction (Postgres `SAVEPOINT`) so a `source_data_key` collision against
- * an unrelated existing mapping rejects only the rows that needed it, rather
- * than aborting the whole batch.
+ * exist before a gateway does. Since E7.1b (ADR 0043 §5) `asset_points` is a
+ * policied tenant table, and this mapping creation is a machine action with no
+ * tenant actor, so it runs on `fleetDb` (BYPASSRLS) and stamps the asset's org
+ * — **before** the value transaction, not inside it. Each insert is its own
+ * statement, so a `source_data_key` collision against an unrelated existing
+ * mapping rejects only the rows that needed it rather than aborting the batch;
+ * a committed mapping that a later value rollback strands is inert and reused by
+ * the retry (`onConflictDoNothing` makes it idempotent).
  *
  * **`pg_notify`s only the rows recent enough to matter live** — see
  * `NOTIFY_LIVE_WINDOW_MS`. A bulk historical import's readings are, by
@@ -155,7 +161,13 @@ export class TelemetryWriteService {
         rejected.push({ rowNumber, field: outcome.field, reason: outcome.reason });
         continue;
       }
-      validated.push({ rowNumber, row, unit: outcome.unit, mappingNeeded: outcome.mappingNeeded });
+      validated.push({
+        rowNumber,
+        row,
+        unit: outcome.unit,
+        mappingNeeded: outcome.mappingNeeded,
+        organizationId: outcome.organizationId,
+      });
     }
 
     // In-batch duplicates: first occurrence wins, later ones are reported
@@ -219,70 +231,84 @@ export class TelemetryWriteService {
 
     const batchId = randomUUID();
 
-    const { written, assetPointsCreated, writtenRows } = await this.db.transaction(async (tx) => {
-      // ---- mapping creation, savepoint-isolated per (assetId, pointKey) ----
+    // ---- mapping creation, on fleetDb, BEFORE the value transaction (E7.1b) --
+    //
+    // `asset_points` gained a nullable `organization_id` in `0046` and a
+    // `tenant_isolation` policy + `FORCE` in `0047`. Auto-provisioning a mapping
+    // is a machine action with no tenant actor — the same shape as the
+    // notification ledger — so it runs on `fleetDb` (BYPASSRLS) and stamps the
+    // org `validateRow` derived from the asset, rather than opening a `withTenant`
+    // GUC that would prove nothing here (the GUC and the stamped value would come
+    // from the same asset row).
+    //
+    // This moves the mapping insert OUTSIDE the value transaction: a committed
+    // mapping now survives a rolled-back value batch. That is tolerable and NOT
+    // the "partial instantiation is worse than failure" hazard these paths
+    // guard — `onConflictDoNothing` on `(assetId, pointKey)` makes a re-create
+    // idempotent, and an orphan mapping with no values is inert and reused by the
+    // retry. Each insert is its own `fleetDb` statement, so a `source_data_key`
+    // collision rejects only the rows that needed that pair, exactly as the
+    // per-`SAVEPOINT` form did.
 
-      const pairsNeeded = new Map<string, AcceptedRow>();
-      for (const a of accepted) {
-        if (a.mappingNeeded) {
-          pairsNeeded.set(`${a.row.assetId}|${a.row.pointKey}`, a);
+    const pairsNeeded = new Map<string, AcceptedRow>();
+    for (const a of accepted) {
+      if (a.mappingNeeded) {
+        pairsNeeded.set(`${a.row.assetId}|${a.row.pointKey}`, a);
+      }
+    }
+
+    let assetPointsCreated = 0;
+    const failedMappingRows = new Set<number>();
+    for (const [, representative] of pairsNeeded) {
+      try {
+        // ON CONFLICT DO NOTHING + re-read is not needed here: two concurrent
+        // requests each issue their own insert, so Postgres itself serialises
+        // the conflicting ones.
+        const [created] = await this.fleetDb
+          .insert(assetPoints)
+          .values({
+            assetId: representative.row.assetId,
+            organizationId: representative.organizationId,
+            pointKey: representative.row.pointKey,
+            sourceDataKey: `${input.sourceKind}:${representative.row.pointKey}`,
+            unit: representative.unit,
+            active: true,
+            rtuId: null,
+            sourceKind: input.sourceKind,
+          })
+          .onConflictDoNothing({ target: [assetPoints.assetId, assetPoints.pointKey] })
+          .returning({ id: assetPoints.id });
+        if (created !== undefined) {
+          assetPointsCreated += 1;
+        }
+      } catch (err: unknown) {
+        const code = (err as { code?: string } | null)?.code;
+        if (code !== UNIQUE_VIOLATION) {
+          throw err;
+        }
+        // The synthesised source_data_key collided with an unrelated existing
+        // mapping's — not the (assetId, pointKey) ON CONFLICT target. This one
+        // `fleetDb` statement rolled back; every row that needed this pair is
+        // rejected, and every other pair proceeds. Compared directly against
+        // `representative`'s own fields, not a re-split `pairKey` string —
+        // `pointKey` has no character restriction, so a code containing the join
+        // delimiter would otherwise misattribute this.
+        for (const a of accepted) {
+          if (a.row.assetId === representative.row.assetId && a.row.pointKey === representative.row.pointKey) {
+            failedMappingRows.add(a.rowNumber);
+          }
         }
       }
+    }
+    for (const rowNumber of failedMappingRows) {
+      rejected.push({
+        rowNumber,
+        field: "pointKey",
+        reason: "Could not create a mapping for this point: its source data key collides with an existing one",
+      });
+    }
 
-      let assetPointsCreated = 0;
-      const failedMappingRows = new Set<number>();
-      for (const [, representative] of pairsNeeded) {
-        try {
-          // ON CONFLICT DO NOTHING + re-read is not needed here: two
-          // concurrent requests each open their own outer transaction, so
-          // Postgres itself serialises the conflicting inserts.
-          const inserted = await tx.transaction(async (tx2) => {
-            const [created] = await tx2
-              .insert(assetPoints)
-              .values({
-                assetId: representative.row.assetId,
-                pointKey: representative.row.pointKey,
-                sourceDataKey: `${input.sourceKind}:${representative.row.pointKey}`,
-                unit: representative.unit,
-                active: true,
-                rtuId: null,
-                sourceKind: input.sourceKind,
-              })
-              .onConflictDoNothing({ target: [assetPoints.assetId, assetPoints.pointKey] })
-              .returning({ id: assetPoints.id });
-            return created;
-          });
-          if (inserted !== undefined) {
-            assetPointsCreated += 1;
-          }
-        } catch (err: unknown) {
-          const code = (err as { code?: string } | null)?.code;
-          if (code !== UNIQUE_VIOLATION) {
-            throw err;
-          }
-          // The synthesised source_data_key collided with an unrelated
-          // existing mapping's — not the (assetId, pointKey) ON CONFLICT
-          // target. The nested transaction's SAVEPOINT rolled back this one
-          // attempt only; every row that needed this pair is rejected, and
-          // every other pair's mapping creation proceeds. Compared directly
-          // against `representative`'s own fields, not a re-split `pairKey`
-          // string — `pointKey` has no character restriction, so a code
-          // containing the join delimiter would otherwise misattribute this.
-          for (const a of accepted) {
-            if (a.row.assetId === representative.row.assetId && a.row.pointKey === representative.row.pointKey) {
-              failedMappingRows.add(a.rowNumber);
-            }
-          }
-        }
-      }
-      for (const rowNumber of failedMappingRows) {
-        rejected.push({
-          rowNumber,
-          field: "pointKey",
-          reason: "Could not create a mapping for this point: its source data key collides with an existing one",
-        });
-      }
-
+    const { written, writtenRows } = await this.db.transaction(async (tx) => {
       // ---- value writes, chunked ----
 
       const toWrite = accepted.filter((a) => !failedMappingRows.has(a.rowNumber));
@@ -419,7 +445,7 @@ export class TelemetryWriteService {
         );
       }
 
-      return { written: writtenRows.length, assetPointsCreated, writtenRows };
+      return { written: writtenRows.length, writtenRows };
     });
 
     if (writtenRows.length > 0) {
@@ -452,11 +478,12 @@ export class TelemetryWriteService {
   }
 
   /**
-   * Validates and resolves one row. Never writes — mapping creation happens
-   * inside `writeReadings`'s transaction, so a still-open validation pass
-   * cannot leave a mapping behind for a row the rest of the batch rejects.
-   * Never throws for an ordinary rejection — only a rejected outcome or an
-   * accepted one, so the caller can keep validating the rest of the batch.
+   * Validates and resolves one row. Never writes — mapping creation is a
+   * separate `writeReadings` phase, so a still-open validation pass cannot leave
+   * a mapping behind for a row the rest of the batch rejects. Resolves the
+   * asset's org here (on `fleetDb`) so an auto-provisioned mapping can be
+   * stamped. Never throws for an ordinary rejection — only a rejected outcome or
+   * an accepted one, so the caller can keep validating the rest of the batch.
    */
   private async validateRow(jwt: JwtPayload, row: TelemetryEntryRow): Promise<ValidateRowResult> {
     const parsed = telemetryEntryRowSchema.safeParse(row);
@@ -476,8 +503,12 @@ export class TelemetryWriteService {
     // `canManageAsset` returns `true` unconditionally for an `admin` role
     // without checking existence, so it alone would let a nonexistent
     // assetId reach the FK-constrained inserts below.
-    const [assetRow] = await this.db
-      .select({ id: assets.id })
+    // E7.1b: `assets` read on `fleetDb` — a `FORCE`d tenant table in `0047`,
+    // where a `tenantDb` read with no GUC would see zero rows and reject every
+    // row as "not found". `canManageAsset` below is the isolation control. The
+    // org comes back here so the auto-provision can stamp it.
+    const [assetRow] = await this.fleetDb
+      .select({ id: assets.id, organizationId: assets.organizationId })
       .from(assets)
       .where(eq(assets.id, data.assetId))
       .limit(1);
@@ -507,7 +538,10 @@ export class TelemetryWriteService {
       return { ok: false, field: "pointKey", reason: catalog.reason };
     }
 
-    const [existingMapping] = await this.db
+    // E7.1b: `asset_points` read on `fleetDb` too — same `0047` FORCE reasoning.
+    // A zero-row read here would make every point look unmapped and drive a
+    // re-create that then collides.
+    const [existingMapping] = await this.fleetDb
       .select({ id: assetPoints.id, active: assetPoints.active, unit: assetPoints.unit })
       .from(assetPoints)
       .where(and(eq(assetPoints.assetId, data.assetId), eq(assetPoints.pointKey, data.pointKey)))
@@ -533,9 +567,19 @@ export class TelemetryWriteService {
       if (!existingMapping.active) {
         return { ok: false, field: "pointKey", reason: "Point mapping is inactive" };
       }
-      return { ok: true, unit: resolvedUnit, mappingNeeded: false };
+      return {
+        ok: true,
+        unit: resolvedUnit,
+        mappingNeeded: false,
+        organizationId: assetRow.organizationId,
+      };
     }
 
-    return { ok: true, unit: resolvedUnit, mappingNeeded: true };
+    return {
+      ok: true,
+      unit: resolvedUnit,
+      mappingNeeded: true,
+      organizationId: assetRow.organizationId,
+    };
   }
 }
