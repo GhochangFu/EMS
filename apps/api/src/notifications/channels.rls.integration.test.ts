@@ -11,6 +11,7 @@ import { asRole } from "../testing/role-urls";
 import {
   assertNullOrgChannelIsolatedFromTenant,
   assertRuleNotificationsJunctionKeysOnRuleOrg,
+  assertTenantCanCreateButNotSeeNullOrgChannel,
 } from "./channels.rls.integration.spec";
 
 /**
@@ -46,6 +47,8 @@ const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
 const RUN = randomUUID().replace(/-/g, "").slice(0, 12);
 const CHANNEL_CODE = `E71B-NCH-${RUN}`;
 const RULE_CODE = `E71B-NRULE-${RUN}`;
+// The channel a tenant plants directly (self-cleaning in its assertion).
+const TENANT_CREATED_CODE = `E71B-NCHTC-${RUN}`;
 
 describe.skipIf(!connectionString)("E7.1b — notification channel + junction isolation under real RLS", () => {
   let ownerPool: pg.Pool;
@@ -56,6 +59,7 @@ describe.skipIf(!connectionString)("E7.1b — notification channel + junction is
   let otherOrgId = "";
   let channelId = "";
   let ruleId = "";
+  let channelKind = "";
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -97,6 +101,7 @@ describe.skipIf(!connectionString)("E7.1b — notification channel + junction is
     if (!kind.rows[0]) {
       throw new Error("E7.1b: no active notification_channel_kind — run pnpm db:seed.");
     }
+    channelKind = kind.rows[0].code;
 
     const category = await ownerPool.query<{ code: string }>(
       "SELECT code FROM bms.rule_categories LIMIT 1",
@@ -138,6 +143,11 @@ describe.skipIf(!connectionString)("E7.1b — notification channel + junction is
       if (channelId) {
         await ownerPool.query("DELETE FROM bms.notification_channels WHERE id = $1", [channelId]);
       }
+      // Defensive: the tenant-created channel self-cleans in its assertion, but
+      // clear it here too in case that assertion threw before reaching cleanup.
+      await ownerPool.query("DELETE FROM bms.notification_channels WHERE code = $1", [
+        TENANT_CREATED_CODE,
+      ]);
     }
     await Promise.all([ownerPool, tenantPool].filter(Boolean).map((p) => p.end()));
   });
@@ -153,6 +163,16 @@ describe.skipIf(!connectionString)("E7.1b — notification channel + junction is
       ruleOrgId,
       otherOrgId,
       channelId,
+    );
+  });
+
+  it("lets a tenant create a NULL-org channel it then cannot see (partial write-containment)", async () => {
+    await assertTenantCanCreateButNotSeeNullOrgChannel(
+      tenantDb,
+      fleetDb,
+      ruleOrgId,
+      TENANT_CREATED_CODE,
+      channelKind,
     );
   });
 });

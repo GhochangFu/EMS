@@ -15,7 +15,8 @@ import { withTenant } from "../database/tenant-context";
  * That unit moved every `notification_channels` / `notification_deliveries`
  * read **and** write onto `fleetDb` (BYPASSRLS) *because* a NULL-org channel
  * row — which every E7.1b channel is, org population is E7.1c decision 7 — is
- * invisible and unmodifiable from the tenant pool under `FORCE`. But `0047` did
+ * invisible from the tenant pool under `FORCE`, and an existing one is
+ * unmodifiable there (write-containment is partial — see the create case). But `0047` did
  * not exist yet, so a `fleetDb` CRUD test passed identically before and after
  * the policy landed and proved nothing (plan lines 266-269, 436-445). Now that
  * `0047` is in, this file discriminates: the same reads/writes behave one way
@@ -30,16 +31,23 @@ import { withTenant } from "../database/tenant-context";
  */
 
 /**
- * A NULL-org `notification_channels` row is invisible AND unmodifiable to any
- * single-tenant GUC, and fully visible AND modifiable via `bms_fleet`.
+ * An EXISTING (fleet-written) NULL-org `notification_channels` row is invisible
+ * to any single-tenant GUC and cannot be UPDATEd or DELETEd by a tenant, and is
+ * fully visible AND modifiable via `bms_fleet`.
  *
  * The `0047` policy on the four nullable-org tables keeps `USING` strict
  * (`organization_id = current_org`, so `NULL = <org>` is never true) while
- * relaxing only `WITH CHECK` to admit a NULL-org insert. So a NULL-org row:
+ * relaxing only `WITH CHECK` to admit a NULL-org insert. So an existing NULL-org
+ * row:
  *   - never satisfies `USING` under any GUC → invisible to `SELECT`, and an
  *     `UPDATE`/`DELETE` matches zero rows **without erroring** (the silent
  *     no-op `FORCE` produces, not a raised policy violation);
  *   - is reached only through BYPASSRLS.
+ *
+ * This is read-and-modify containment of the EXISTING row, not full write
+ * containment: the relaxed `WITH CHECK` also lets a tenant CREATE a fresh
+ * NULL-org channel (see `assertTenantCanCreateButNotSeeNullOrgChannel`), which
+ * is a separate, partial-containment fact.
  *
  * Before `0047` this same sequence passed on the tenant pool too (no policy),
  * so the discriminating assertions are the tenant-side zeros.
@@ -91,6 +99,59 @@ export async function assertNullOrgChannelIsolatedFromTenant(
     sql`UPDATE bms.notification_channels SET name = 'fleet may reach this' WHERE id = ${channelId}`,
   );
   expect(fleetUpdated.rowCount).toBe(1);
+}
+
+/**
+ * A tenant CAN create a NULL-org channel — the `0047` WITH CHECK admits
+ * `organization_id IS NULL` regardless of the GUC — which is then invisible to
+ * that same tenant (strict USING) and lives only in the fleet-managed global
+ * channel namespace. Write-containment is therefore PARTIAL in E7.1b: a tenant
+ * cannot read or modify existing NULL-org channels, but can blindly create new
+ * ones it cannot see.
+ *
+ * This is a transitional posture. Channels stay NULL-org and fleet-managed until
+ * E7.1c (decision 7) gives them an org, a `SET NOT NULL`, and moves the write to
+ * `withTenant`; that is when the create direction closes. Whether `bms_tenant`
+ * should hold INSERT on `notification_channels` at all before then is a DB-role
+ * containment question for the owner (revoke the grant, or role-scope the
+ * `WITH CHECK` NULL disjunct `TO bms_fleet`) — the exposure is bounded to
+ * namespace pollution / self-exfiltration: the `rule_notifications` junction
+ * keys on the RULE's org (proven below), so a tenant cannot wire another org's
+ * rule to a channel it planted, and a victim org cannot see a NULL-org channel
+ * to wire one.
+ *
+ * The INSERT must NOT use RETURNING — RETURNING reads the new row back under the
+ * strict USING, which a NULL-org row fails, raising a policy error that would
+ * mask the fact that the write itself is admitted.
+ */
+export async function assertTenantCanCreateButNotSeeNullOrgChannel(
+  tenantDb: BmsDb,
+  fleetDb: BmsDb,
+  tenantOrgId: string,
+  code: string,
+  kind: string,
+): Promise<void> {
+  await withTenant(tenantDb, tenantOrgId, async (tx) => {
+    // Plain INSERT (no RETURNING): admitted by `organization_id IS NULL`.
+    await tx.execute(
+      sql`INSERT INTO bms.notification_channels (code, name, kind, enabled)
+          VALUES (${code}, 'E7.1b tenant-created null-org', ${kind}, true)`,
+    );
+    // ...but immediately invisible to its own creator under the strict USING.
+    const seen = await tx.execute(
+      sql`SELECT id FROM bms.notification_channels WHERE code = ${code}`,
+    );
+    expect(seen.rows).toHaveLength(0);
+  });
+
+  // It really landed — visible only in the fleet-managed namespace.
+  const onFleet = await fleetDb.execute(
+    sql`SELECT id FROM bms.notification_channels WHERE code = ${code}`,
+  );
+  expect(onFleet.rows).toHaveLength(1);
+
+  // Clean up the tenant-planted row on the fleet pool.
+  await fleetDb.execute(sql`DELETE FROM bms.notification_channels WHERE code = ${code}`);
 }
 
 /**

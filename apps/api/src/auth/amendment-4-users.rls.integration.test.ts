@@ -20,9 +20,14 @@ import {
  * `bms_auth`/`bms_tenant`/`bms_fleet` trio. No fixtures are written; the seeded
  * rows already carry the two org shapes the proof needs.
  *
- * This is Amendment 4's "test first": a global admin's row is invisible under
- * any tenant, visible via fleet, and still readable by auth for login; a scoped
- * user's row is org-stamped and tenant-isolated.
+ * This covers the READ half of Amendment 4 on `bms.users` — `tenant_isolation`
+ * (a global admin's row is invisible under any tenant, visible via fleet) and
+ * `auth_bootstrap_read` (still readable by auth for login) — plus that a scoped
+ * user's row is org-stamped and tenant-isolated. It does NOT exercise the write
+ * policy `auth_bootstrap_write` (UPDATE `USING (true) WITH CHECK (true)`, so
+ * login can stamp any user's `last_login_at`); that policy is row-unrestricted
+ * and its only containment is the `UPDATE (last_login_at)` column grant, pinned
+ * by `role-grants.integration.spec`'s `assertAuthCanUpdateOnlyLastLogin`.
  */
 const connectionString = requireIntegrationDb({
   item: "E7.1b",

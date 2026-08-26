@@ -126,6 +126,26 @@ export async function assertAuthReachesOnlyIdentityTables(pool: pg.Pool): Promis
 }
 
 /**
+ * `E7.1b` / ADR 0043 Amendment 4 — `bms_auth`'s only write on `bms.users` is
+ * `UPDATE (last_login_at)` (0039:113). That column grant is the SOLE containment
+ * for `0047`'s `auth_bootstrap_write` policy, which is row-unrestricted
+ * (`USING (true) WITH CHECK (true)`) so `AuthService.login` can stamp any user's
+ * `last_login_at` before any tenant context exists. Asserted positively (exactly
+ * that one column, nothing more), so a future migration widening `bms_auth`'s
+ * UPDATE columns — which would let it rewrite `role` / `email` /
+ * `organization_id` on any user row fleet-wide — fails here rather than silently.
+ */
+export async function assertAuthCanUpdateOnlyLastLogin(pool: pg.Pool): Promise<void> {
+  const { rows } = await pool.query<{ column_name: string }>(
+    `select column_name from information_schema.column_privileges
+      where grantee = 'bms_auth' and table_schema = 'bms'
+        and table_name = 'users' and privilege_type = 'UPDATE'
+      order by column_name`,
+  );
+  expect(rows.map((r) => r.column_name)).toEqual(["last_login_at"]);
+}
+
+/**
  * The catalogue says the column grant is absent; this says the server refuses
  * the query. They are different claims, and only the second one is the control.
  */

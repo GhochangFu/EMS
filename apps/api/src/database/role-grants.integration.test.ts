@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import {
   assertAuthCanReadPasswordHash,
+  assertAuthCanUpdateOnlyLastLogin,
   assertAuthReachesOnlyIdentityTables,
   assertFleetCannotReadPasswordHash,
   assertFleetIsDeniedPasswordHashAtRuntime,
@@ -80,6 +81,10 @@ describe.skipIf(!connectionString)("F4.16 — role grant matrix", () => {
 
   it("grants bms_auth nothing beyond the four identity tables", async () => {
     await assertAuthReachesOnlyIdentityTables(pool as pg.Pool);
+  });
+
+  it("lets bms_auth update only last_login_at on bms.users (auth_bootstrap_write containment)", async () => {
+    await assertAuthCanUpdateOnlyLastLogin(pool as pg.Pool);
   });
 
   describe("the server refuses the query, not merely the catalogue entry", () => {
