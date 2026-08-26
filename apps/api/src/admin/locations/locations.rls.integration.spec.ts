@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 import pg from "pg";
 
-import { locations } from "@bms/db";
+import { assets, createDb, locations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
@@ -106,6 +106,71 @@ export async function assertRefusesOutOfScopeOrganization(
       longitude: 0,
     }),
   ).rejects.toThrow(/access scope/i);
+}
+
+/**
+ * The deactivate guard counts active RTUs and assets to refuse deactivating a
+ * location that still has either. `E7.1b` moved those two counts inside
+ * `withTenant(existing.organizationId, …)`: on the bare tenant pool with no
+ * `SET LOCAL`, the 0047 FORCE policy on `assets`/`rtus` returns 0, the guard
+ * never fires, and a location with live assets is deactivated anyway. The
+ * existing lifecycle test deactivates an *empty* location, so it passes with the
+ * guard blind; this seeds an active asset and proves the guard sees it.
+ */
+export async function assertDeactivateGuardSeesActiveAssetsUnderRls(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { svc, tenantPool, ownerPool, organizationId } = ctx;
+
+  const { rows: domRows } = await ownerPool.query<{ code: string }>(
+    "SELECT code FROM bms.asset_domains WHERE active = true LIMIT 1",
+  );
+  if (!domRows[0]) {
+    throw new Error("E7.1b: no active asset_domain — run pnpm db:seed.");
+  }
+  const domain = domRows[0].code;
+
+  const suffix = Date.now();
+  const location = await svc.create(jwt, {
+    organizationId,
+    code: `E71B-LOC-GUARD-${suffix}`,
+    slug: `e71b-loc-guard-${suffix}`,
+    name: "E7.1b deactivate-guard location",
+    type: "rsmoc",
+    latitude: 0,
+    longitude: 0,
+  });
+
+  const tenantDb = createDb(tenantPool);
+  let assetId = "";
+  try {
+    await withTenant(tenantDb, organizationId, async (tx) => {
+      const [asset] = await tx
+        .insert(assets)
+        .values({
+          organizationId,
+          code: `E71B-AS-GUARD-${suffix}`,
+          name: "E7.1b deactivate-guard asset",
+          siteName: "E7.1b Site",
+          locationId: location.id,
+          domain,
+          active: true,
+        })
+        .returning({ id: assets.id });
+      assetId = asset.id;
+    });
+
+    await expect(
+      svc.deactivate(jwt, location.id),
+      "a location with an active asset must not deactivate — the guard counts inside the org GUC",
+    ).rejects.toThrow(/active RTUs or assets/i);
+  } finally {
+    if (assetId) {
+      await ownerPool.query("DELETE FROM bms.assets WHERE id = $1", [assetId]);
+    }
+    await ownerPool.query("DELETE FROM bms.locations WHERE id = $1", [location.id]);
+  }
 }
 
 /**

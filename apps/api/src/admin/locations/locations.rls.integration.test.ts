@@ -10,6 +10,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../../testing/integra
 import { asRole } from "../../testing/role-urls";
 import { LocationsAdminService } from "./locations.service";
 import {
+  assertDeactivateGuardSeesActiveAssetsUnderRls,
   assertPolicyRefusesMismatchedOrg,
   assertRefusesOutOfScopeOrganization,
   assertWriteLifecycleSurvivesRealRls,
@@ -134,6 +135,13 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
       createDb(tenantPool),
       organizationId,
       secondOrganizationId,
+    );
+  });
+
+  it("refuses to deactivate a location that still has an active asset (guard counts under the org GUC)", async () => {
+    await assertDeactivateGuardSeesActiveAssetsUnderRls(
+      { svc, tenantPool, ownerPool, organizationId },
+      jwt,
     );
   });
 });
