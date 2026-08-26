@@ -39,6 +39,8 @@ const SCOPED_ADMIN_EMAIL = "phe-admin@bms.local";
 // by id, so randomUUID here avoids collision across concurrent runs.
 const RUN = randomUUID().replace(/-/g, "").slice(0, 12);
 const ACTOR_EMAIL = `e71b-multiorg-${RUN}@bms.local`;
+const REP_ASSET_A_CODE = `E71B-MOA-${RUN}`;
+const REP_ASSET_B_CODE = `E71B-MOB-${RUN}`;
 
 describe.skipIf(!connectionString)("E7.1b — multi-org actor scope under real RLS", () => {
   let ownerPool: pg.Pool;
@@ -48,6 +50,8 @@ describe.skipIf(!connectionString)("E7.1b — multi-org actor scope under real R
   let orgAId = "";
   let orgBId = "";
   let userId = "";
+  let repAssetAId = "";
+  let repAssetBId = "";
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -105,12 +109,46 @@ describe.skipIf(!connectionString)("E7.1b — multi-org actor scope under real R
       `INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES ($1, $2), ($1, $3)`,
       [userId, orgAId, orgBId],
     );
+
+    // One committed asset per org, in a seeded active location of that org, as
+    // the union's representatives. This run owns them, so no concurrent suite
+    // can add or remove them — unlike a min-UUID pick over the shared seeded set.
+    const dom = await superPool.query<{ code: string }>(
+      "SELECT code FROM bms.asset_domains WHERE active = true LIMIT 1",
+    );
+    if (!dom.rows[0]) {
+      throw new Error("E7.1b: no active asset_domain — run pnpm db:seed.");
+    }
+    const domain = dom.rows[0].code;
+
+    const repAsset = async (orgId: string, code: string): Promise<string> => {
+      const loc = await superPool.query<{ id: string }>(
+        "SELECT id FROM bms.locations WHERE organization_id = $1 AND active = true LIMIT 1",
+        [orgId],
+      );
+      if (!loc.rows[0]) {
+        throw new Error(`E7.1b: organization ${orgId} has no active location — run pnpm db:seed.`);
+      }
+      const asset = await superPool.query<{ id: string }>(
+        `INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain, active)
+           VALUES ($1, $2, $3, 'E7.1b multi-org site', $4, $5, true) RETURNING id`,
+        [orgId, code, "E7.1b multi-org representative", loc.rows[0].id, domain],
+      );
+      return asset.rows[0]!.id;
+    };
+    repAssetAId = await repAsset(orgAId, REP_ASSET_A_CODE);
+    repAssetBId = await repAsset(orgBId, REP_ASSET_B_CODE);
   });
 
   afterAll(async () => {
-    if (superPool && userId) {
-      await superPool.query("DELETE FROM bms.user_organization_access WHERE user_id = $1", [userId]);
-      await superPool.query("DELETE FROM bms.users WHERE id = $1", [userId]);
+    if (superPool) {
+      for (const id of [repAssetAId, repAssetBId].filter(Boolean)) {
+        await superPool.query("DELETE FROM bms.assets WHERE id = $1", [id]);
+      }
+      if (userId) {
+        await superPool.query("DELETE FROM bms.user_organization_access WHERE user_id = $1", [userId]);
+        await superPool.query("DELETE FROM bms.users WHERE id = $1", [userId]);
+      }
     }
     await Promise.all([ownerPool, authPool, superPool].filter(Boolean).map((p) => p.end()));
   });
@@ -118,10 +156,9 @@ describe.skipIf(!connectionString)("E7.1b — multi-org actor scope under real R
   it("scopes a two-org actor to the bounded union of both orgs, not the global null", async () => {
     await assertTwoOrgActorScopeIsBoundedUnion(
       svc,
-      ownerPool,
       jwtFor(ACTOR_EMAIL, "organization_admin"),
-      orgAId,
-      orgBId,
+      repAssetAId,
+      repAssetBId,
     );
   });
 });

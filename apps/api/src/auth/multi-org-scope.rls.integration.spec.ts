@@ -1,5 +1,4 @@
 import { expect } from "vitest";
-import pg from "pg";
 
 import type { JwtPayload } from "@bms/shared";
 
@@ -24,54 +23,36 @@ import type { AccessControlService } from "./access-control.service";
  */
 
 /**
- * The two-org actor's read scope is the UNION of both orgs (a representative
- * seeded asset from each is in scope), is an explicit bounded list, and its
- * `kind` is not `"global"`.
+ * The two-org actor's read scope is the UNION of both orgs: a fixture asset
+ * placed in each org's active location is in scope.
  *
- * Deliberately NOT an exact count over `bms.assets`: that table is shared, and
- * concurrent integration suites add and drop per-run fixture assets in these
- * same seeded orgs, so any global-total assertion over it is a race (F4.65 /
- * F4.66 — the anti-pattern the plan names). The union is proven by a stable
- * representative from each org instead — a seeded asset in an active location,
- * chosen deterministically (`ORDER BY id`), which no concurrent suite deletes.
+ * `repAssetAId` / `repAssetBId` are THIS run's own committed assets (the
+ * `.test.ts` sibling creates one per org), so no concurrent suite can add or
+ * remove them — the union is proven without any global-total over `bms.assets`,
+ * which is shared and mutated by other suites (the F4.65 / F4.66 anti-pattern),
+ * and without the residual race a min-`ORDER BY id` seeded pick would carry.
  */
 export async function assertTwoOrgActorScopeIsBoundedUnion(
   svc: AccessControlService,
-  fleetPool: pg.Pool,
   jwt: JwtPayload,
-  orgAId: string,
-  orgBId: string,
+  repAssetAId: string,
+  repAssetBId: string,
 ): Promise<void> {
-  const representativeAsset = async (orgId: string): Promise<string | null> => {
-    const { rows } = await fleetPool.query<{ id: string }>(
-      `SELECT a.id FROM bms.assets a
-         JOIN bms.locations l ON a.location_id = l.id
-        WHERE l.organization_id = $1 AND l.active = true
-        ORDER BY a.id LIMIT 1`,
-      [orgId],
-    );
-    return rows[0]?.id ?? null;
-  };
-  const repA = await representativeAsset(orgAId);
-  const repB = await representativeAsset(orgBId);
-  // Both orgs must actually contribute a seeded asset, or the union is vacuous.
-  expect(repA).not.toBeNull();
-  expect(repB).not.toBeNull();
-
   const { scope } = await svc.currentUser(jwt);
-  // Not the global bypass — a two-org actor is scoped, not fleet-wide.
+
+  // Sanity controls, NOT the union discriminator: an `organization_admin` role
+  // never resolves to the global bypass (`scopeFromSource("organization")` never
+  // returns kind "global", and `readableAssetIds` is null only for role
+  // "admin"), so these confirm the fixture actor resolved as a scoped non-admin.
+  // They cannot catch a union bug — the two representatives below do.
   expect(scope.kind).not.toBe("global");
-
-  const got = new Set(scope.assetIds);
-  // The union is of BOTH orgs: a representative from each is present. A single
-  // grant silently winning would drop one of these — stable under concurrent
-  // fixtures, unlike an exact total.
-  expect(got.has(repA as string)).toBe(true);
-  expect(got.has(repB as string)).toBe(true);
-
-  // readableAssetIds is an explicit bounded list, NOT the global admin's null
-  // "everything" scope — the discriminator between a scoped multi-org actor and
-  // a fleet-wide admin.
   const readable = await svc.readableAssetIds(jwt);
   expect(readable).not.toBeNull();
+
+  // The discriminator: this run's own asset in EACH org's active location is in
+  // scope, so the scope is the union of both grants. A collapse to one org drops
+  // one representative. Airtight under parallelism — these ids are this run's.
+  const got = new Set(scope.assetIds);
+  expect(got.has(repAssetAId)).toBe(true);
+  expect(got.has(repAssetBId)).toBe(true);
 }
