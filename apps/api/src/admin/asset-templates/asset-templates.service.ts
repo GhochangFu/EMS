@@ -53,8 +53,22 @@ type PointRow = typeof templatePoints.$inferSelect;
  * the scope filter this service already applies via
  * `writableOrganizationIds`/`canManageOrganization` — the same "bypass, then
  * trust an already-computed grant" shape `AccessControlService` uses for its
- * own `bms_auth` reads. `template_points` and `users` carry no policy and
- * stay on `tenantDb` unchanged. Every write to `asset_templates` runs inside
+ * own `bms_auth` reads.
+ *
+ * **E7.1b (ADR 0043 §5).** `template_points` is now a tenant table too: it
+ * gained a nullable `organization_id` in migration `0046` and gets a
+ * `tenant_isolation` policy + `FORCE` in `0047`, with its org resolving via
+ * `template_id → asset_templates` (an already org-scoped parent). So:
+ *   - every `template_points` **write** stamps `organization_id` = the parent
+ *     template's org, inside the `withTenant(tenantDb, organizationId, …)` block
+ *     the write already runs in (`replacePoints` takes the org for this reason);
+ *   - every `template_points` **read** moves to `fleetDb`, behind the same
+ *     already-computed grant the `asset_templates` reads trust — under `0047`'s
+ *     `FORCE` a `tenantDb` read with no GUC would see zero rows.
+ * `users` is likewise policied in `0047` (Amendment 4, a pre-tenant identity
+ * table), so `resolveCreatedBy` reads it on `fleetDb`.
+ *
+ * Every write to `asset_templates` runs inside
  * `withTenant(tenantDb, organizationId, …)`; the id is always known before
  * the write (from the request body, or from a fetched template row).
  */
@@ -179,7 +193,7 @@ export class AssetTemplatesAdminService {
         })
         .returning();
 
-      await this.replacePoints(tx, row.id, body.points);
+      await this.replacePoints(tx, row.id, body.organizationId, body.points);
       return row;
     }).catch((err: unknown) => {
       throw this.translateDraftConflict(err, body.code);
@@ -240,7 +254,7 @@ export class AssetTemplatesAdminService {
         .where(eq(assetTemplates.id, id));
 
       if (body.points) {
-        await this.replacePoints(tx, id, body.points);
+        await this.replacePoints(tx, id, template.organizationId, body.points);
       }
     });
 
@@ -367,7 +381,10 @@ export class AssetTemplatesAdminService {
     const { template } = await this.fetchRow(id);
     await this.assertCanAuthor(jwt, template.organizationId);
 
-    const source = await this.tenantDb
+    // E7.1b: `template_points` read on `fleetDb` (see the class doc). The source
+    // rows carry the parent's org already; `replacePoints` re-stamps them onto
+    // the new draft's org below, which is identical for a fork.
+    const source = await this.fleetDb
       .select()
       .from(templatePoints)
       .where(eq(templatePoints.templateId, id))
@@ -401,7 +418,7 @@ export class AssetTemplatesAdminService {
         })
         .returning();
 
-      await this.replacePoints(tx, row.id, source);
+      await this.replacePoints(tx, row.id, template.organizationId, source);
       return row;
     }).catch((err: unknown) => {
       throw this.translateDraftConflict(err, template.code);
@@ -453,9 +470,15 @@ export class AssetTemplatesAdminService {
    * users the pilot authenticates. `MasterDataAuditService.write` already
    * resolves by id-or-email and falls back to null; this does the same, which
    * is why the column is nullable.
+   *
+   * E7.1b Amendment 4: read on `fleetDb`. `bms.users` gains a `FORCE`d policy in
+   * `0047`, and the author is often a scoped actor whose own row would fail a
+   * tenant-pool read here — dropping `created_by` silently to null. The identity
+   * lookup is a pre-tenant read, so it bypasses, exactly as `resolveActorId`
+   * does in `WorkOrdersService`/`MaintenanceService`.
    */
   private async resolveCreatedBy(jwt: JwtPayload): Promise<string | null> {
-    const [row] = await this.tenantDb
+    const [row] = await this.fleetDb
       .select({ id: users.id })
       .from(users)
       .where(or(eq(users.id, jwt.sub), eq(users.email, jwt.email)))
@@ -519,9 +542,15 @@ export class AssetTemplatesAdminService {
     }
   }
 
-  /** A template's stored point set, ordered as `replacePoints` wrote it. */
+  /**
+   * A template's stored point set, ordered as `replacePoints` wrote it.
+   *
+   * E7.1b: read on `fleetDb`. Under `0047`'s `FORCE` a `tenantDb` read with no
+   * GUC would see zero rows — and `publish` reads this to reject "no points",
+   * so the failure would be a loud but wrong rejection.
+   */
   private async loadPoints(templateId: string): Promise<PointRow[]> {
-    return this.tenantDb
+    return this.fleetDb
       .select()
       .from(templatePoints)
       .where(eq(templatePoints.templateId, templateId))
@@ -698,6 +727,12 @@ export class AssetTemplatesAdminService {
   private async replacePoints(
     tx: Parameters<Parameters<BmsDb["transaction"]>[0]>[0],
     templateId: string,
+    // E7.1b: the parent template's org, stamped onto every point row. Always the
+    // org this call's `withTenant` block set as the GUC, so `0047`'s WITH CHECK
+    // accepts the insert; without it the insert fails once `template_points` is
+    // policied. The delete needs no org — it is keyed by `template_id`, and post
+    // -0047 the policy's USING clause scopes it to this org anyway.
+    organizationId: string,
     points: (TemplatePointBody | PointRow)[],
   ): Promise<void> {
     await tx.delete(templatePoints).where(eq(templatePoints.templateId, templateId));
@@ -707,6 +742,7 @@ export class AssetTemplatesAdminService {
     await tx.insert(templatePoints).values(
       points.map((point, index) => ({
         templateId,
+        organizationId,
         pointKey: point.pointKey,
         label: point.label ?? null,
         unit: point.unit ?? null,
@@ -767,7 +803,11 @@ export class AssetTemplatesAdminService {
     organizationCode: string,
     organizationName: string,
   ): Promise<AdminAssetTemplateDto> {
-    const points = await this.tenantDb
+    // E7.1b: read on `fleetDb`. This backs the DTO every mutation returns, so
+    // under `0047`'s `FORCE` a `tenantDb` read with no GUC would make create,
+    // update, publish, archive and createDraftFrom all return `points: []` with
+    // no error — the one misclassified read whose failure has no surface.
+    const points = await this.fleetDb
       .select()
       .from(templatePoints)
       .where(eq(templatePoints.templateId, template.id))

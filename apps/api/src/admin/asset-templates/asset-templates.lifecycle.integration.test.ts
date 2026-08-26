@@ -23,6 +23,7 @@ import {
   assertOrphanedRefsAreCaughtAtPublish,
   assertPointKeyCatalogIsEnforced,
   assertPublishFreezes,
+  assertTemplatePointsCarryOrganization,
   assertUnknownSkillRejectedOnCreate,
   assertVersionBumpCopiesPoints,
   cleanup,
@@ -182,6 +183,13 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
 
   it("excludes location admins from authoring (ADR 0015 §7)", async () => {
     await assertLocationAdminCannotAuthor(svc, fx);
+  });
+
+  it("stamps template_points.organization_id and keeps it through replace and fork (E7.1b)", async () => {
+    if (!pool) {
+      throw new Error("pool is required for the tenant-stamping case");
+    }
+    await assertTemplatePointsCarryOrganization(svc, pool, fx);
   });
 
   // `E1.7` / ADR 0019. Same fixtures and same cleanup as the lifecycle above,

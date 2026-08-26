@@ -137,9 +137,18 @@ type MigrationPlan = {
  * `F4.16` / ADR 0043 — `asset_templates` and `point_keys` carry `ENABLE ROW
  * LEVEL SECURITY` (migration `0040`); reads against them run on `fleetDb`,
  * trusting the scope filter this service already applies via
- * `writableLocationIds`/`canManageOrganization`. `migrate()`'s write
- * transaction touches only `assets.template_id` and `asset_points`, neither
- * policied, so it stays a plain `tenantDb.transaction()` — no `withTenant`.
+ * `writableLocationIds`/`canManageOrganization`. E7.1b adds the two
+ * `template_points` reads (the version-list point count and `loadPoints`) to
+ * that fleetDb set — it becomes a `FORCE`d tenant table in `0047`.
+ *
+ * **Open gap, tracked — the write path and the `assets` reads are NOT yet
+ * tenant-safe.** `assets` and `asset_points` both gained `organization_id` in
+ * `0046` and get a policy + `FORCE` in `0047`. `migrate()`'s write transaction
+ * still runs as a plain `tenantDb.transaction()` and does not stamp org, and
+ * the `assets` count/selection reads here still run on `tenantDb`. Reclassifying
+ * those reads and wrapping the write is owned by the master-data-writers sweep
+ * unit (assets/rtus/asset-points), which lands before `0047`. This comment is
+ * the marker that the gap is known, not a claim that it is closed.
  */
 @Injectable()
 export class AssetTemplateMigrationService {
@@ -201,7 +210,10 @@ export class AssetTemplateMigrationService {
             .from(assets)
             .where(assetScope)
             .groupBy(assets.templateId);
-    const pointCounts = await this.tenantDb
+    // E7.1b: `template_points` read on `fleetDb` — a `FORCE`d tenant table in
+    // `0047`. (The `assets` count above stays on `tenantDb` pending the
+    // master-data-writers unit; see the class doc.)
+    const pointCounts = await this.fleetDb
       .select({ templateId: templatePoints.templateId, total: count() })
       .from(templatePoints)
       .where(inArray(templatePoints.templateId, ids))
@@ -681,7 +693,10 @@ export class AssetTemplateMigrationService {
   }
 
   private async loadPoints(templateId: string): Promise<StoredTemplatePoint[]> {
-    const rows = await this.tenantDb
+    // E7.1b: `template_points` read on `fleetDb` — a `FORCE`d tenant table in
+    // `0047`. The delta this feeds decides what to migrate; a silent zero-point
+    // read would compute an empty delta and migrate nothing.
+    const rows = await this.fleetDb
       .select()
       .from(templatePoints)
       .where(eq(templatePoints.templateId, templateId))

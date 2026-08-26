@@ -46,9 +46,9 @@ export const TEST_CODE_FAMILY = "F21-LIFECYCLE-TEST";
  *
  * - `ConflictException: … already has an open draft` — the other run's draft;
  * - `expected 2 points, got 0` — the other run's `cleanup` landing between
- *   `create`'s two reads (`fetchRow` on `fleetDb`, `withPoints` on `tenantDb`
- *   are separate statements on separate pools, so a cascade delete in the gap
- *   reads as "row found, no points" rather than as "not found");
+ *   `create`'s two reads (`fetchRow` and `withPoints` are separate statements —
+ *   both on `fleetDb` since E7.1b — so a cascade delete in the gap reads as
+ *   "row found, no points" rather than as "not found");
  * - `a second draft for the same code: expected a rejection, but the call
  *   succeeded` — the partial unique index had nothing left to collide with;
  * - and, downstream of any of those, `TypeError: Cannot read properties of
@@ -483,6 +483,86 @@ export async function assertLocationAdminCannotAuthor(
       svc.list(fx.locationAdminJwt, "00000000-0000-4000-8000-0000000000aa"),
     /outside your access scope/i,
     "listing templates for an organization the caller has no grant on",
+  );
+}
+
+/**
+ * `E7.1b` / ADR 0043 §5 — every `template_points` row carries its parent
+ * template's `organization_id`, and the point set survives a delete-then-insert
+ * replace and a version fork with that stamp intact.
+ *
+ * **This is the one assertion the stamping cannot pass without.** The column is
+ * nullable today and `0047` does not exist yet, so a suite that only checked
+ * "create succeeded" or "N rows exist" would pass whether or not the insert
+ * stamps org — vacuous, the §4.6 shape `code-reviewer` flags. So it reads the
+ * literal `organization_id` back through the pool and asserts it *equals* the
+ * template's org: NULL today, the org after the fix.
+ *
+ * It also asserts the returned DTO's `points.length` at each step, not just the
+ * row count. `withPoints` moved to `fleetDb` for `0047`; that read backs every
+ * mutation's response and is the one whose post-`0047` failure has no error
+ * surface — a create that returns `points: []` with a 200. Only the DTO length
+ * catches it.
+ *
+ * Runs on `bms_tenant`/`bms_fleet` (the `.test.ts` constructs the service that
+ * way), so the writes actually pass through the pools `withTenant` binds.
+ */
+export async function assertTemplatePointsCarryOrganization(
+  svc: AssetTemplatesAdminService,
+  pool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const code = `${TEST_CODE}-TENANT`;
+
+  async function storedPointOrgs(templateId: string): Promise<(string | null)[]> {
+    const { rows } = await pool.query<{ organization_id: string | null }>(
+      `SELECT organization_id FROM bms.template_points WHERE template_id = $1`,
+      [templateId],
+    );
+    return rows.map((row) => row.organization_id);
+  }
+
+  // create: two points, both stamped with the template's org.
+  const created = await svc.create(fx.adminJwt, {
+    organizationId: fx.organizationId,
+    code,
+    name: "Tenant stamping",
+    assetType: "test_rig",
+    domain: "water",
+    points: [
+      { pointKey: fx.pointKeys[0], kind: "measured", required: true, sortOrder: 0 },
+      { pointKey: fx.pointKeys[1], kind: "measured", required: true, sortOrder: 1 },
+    ],
+  });
+  assert(created.points.length === 2, `create must return 2 points, got ${created.points.length}`);
+  const afterCreate = await storedPointOrgs(created.id);
+  assert(
+    afterCreate.length === 2 && afterCreate.every((org) => org === fx.organizationId),
+    `every template_points row must carry the template's org (${fx.organizationId}); ` +
+      `got ${JSON.stringify(afterCreate)} — the create insert is not stamping organization_id`,
+  );
+
+  // update to one point: the delete-then-insert replace leaves exactly one row,
+  // still stamped. Proves the round trip and the update path's stamping at once.
+  const patched = await svc.update(fx.adminJwt, created.id, {
+    points: [{ pointKey: fx.pointKeys[0], kind: "measured", required: true, sortOrder: 0 }],
+  });
+  assert(patched.points.length === 1, `update must return 1 point, got ${patched.points.length}`);
+  const afterUpdate = await storedPointOrgs(created.id);
+  assert(
+    afterUpdate.length === 1 && afterUpdate[0] === fx.organizationId,
+    `replacePoints must leave exactly one row stamped with the org; got ${JSON.stringify(afterUpdate)}`,
+  );
+
+  // fork a published version: createDraftFrom reads the source points on fleetDb
+  // and re-stamps them onto the new draft's org.
+  await svc.publish(fx.adminJwt, created.id);
+  const forked = await svc.createDraftFrom(fx.adminJwt, created.id);
+  assert(forked.points.length === 1, `the fork must copy 1 point, got ${forked.points.length}`);
+  const afterFork = await storedPointOrgs(forked.id);
+  assert(
+    afterFork.length === 1 && afterFork[0] === fx.organizationId,
+    `forked template_points must carry the org too; got ${JSON.stringify(afterFork)}`,
   );
 }
 

@@ -91,10 +91,18 @@ type AssetPlan = {
  * `ENABLE ROW LEVEL SECURITY` (migration `0040`); the reads against them here
  * (`fetchTemplate`, `resolveTarget`, `assertCatalogActive`) run on `fleetDb`,
  * trusting the scope filter this service already applies via
- * `canManageOrganization`/`canManageLocation`. The write transaction inserts
- * only into `assets` and `asset_points`, neither of which carry a policy, so
- * it stays a plain `tenantDb.transaction()` — no `withTenant` is needed
- * because RLS is not in play for either table.
+ * `canManageOrganization`/`canManageLocation`. E7.1b adds the
+ * `template_points` read to that fleetDb set for the same reason — it becomes a
+ * `FORCE`d tenant table in `0047`.
+ *
+ * **Open gap, tracked — the write path is NOT yet tenant-safe.** `assets` and
+ * `asset_points` both gained `organization_id` in `0046` and get a
+ * `tenant_isolation` policy + `FORCE` in `0047`; the write transaction below
+ * still runs as a plain `tenantDb.transaction()` and does not stamp
+ * `organization_id`. Wrapping it in `withTenant` and stamping both tables is
+ * owned by the master-data-writers sweep unit (assets/rtus/asset-points), which
+ * lands before `0047`. Until then this comment is the marker that the gap is
+ * known, not a claim that it is closed.
  */
 @Injectable()
 export class AssetTemplateInstantiationService {
@@ -157,7 +165,10 @@ export class AssetTemplateInstantiationService {
       throw new ForbiddenException("Target location is outside your access scope");
     }
 
-    const points = await this.tenantDb
+    // E7.1b: `template_points` read on `fleetDb` — a `FORCE`d tenant table in
+    // `0047`, where a `tenantDb` read with no GUC would see zero points and this
+    // would reject a valid template as having none.
+    const points = await this.fleetDb
       .select()
       .from(templatePoints)
       .where(eq(templatePoints.templateId, templateId))
