@@ -433,9 +433,9 @@ export async function runTelemetryWriteServiceTests(
 
   const [victimKey, plantedKey, safeKey] = fx.spareOrgPointKeys;
   await pool.query(
-    `INSERT INTO bms.asset_points (asset_id, point_key, source_data_key, source_kind, rtu_id, unit, active)
-     VALUES ($1, $2, $3, 'manual', NULL, $4, true)`,
-    [fx.freshAssetId, plantedKey.code, `manual:${victimKey.code}`, plantedKey.unit],
+    `INSERT INTO bms.asset_points (asset_id, point_key, source_data_key, source_kind, rtu_id, unit, active, organization_id)
+     VALUES ($1, $2, $3, 'manual', NULL, $4, true, $5)`,
+    [fx.freshAssetId, plantedKey.code, `manual:${victimKey.code}`, plantedKey.unit, fx.freshAssetOrganizationId],
   );
   const victimTime = new Date().toISOString();
   const safeTime = new Date().toISOString();

@@ -205,6 +205,7 @@ export class OnboardingCommitService {
 
         await tx.insert(rtuConnectionConfigs).values({
           rtuId: rtuRow.id,
+          organizationId: session.organizationId,
           protocol: rtuDraft.protocol,
           config,
           credentialsCiphertext,

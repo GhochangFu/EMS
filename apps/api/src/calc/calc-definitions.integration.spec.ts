@@ -56,8 +56,15 @@ async function seedTemplate(
     .returning({ id: assetTemplates.id });
 
   await db.insert(templatePoints).values([
-    { templateId: template.id, pointKey: measuredKey, kind: "measured", sortOrder: 0 },
     {
+      organizationId: fx.organizationId,
+      templateId: template.id,
+      pointKey: measuredKey,
+      kind: "measured",
+      sortOrder: 0,
+    },
+    {
+      organizationId: fx.organizationId,
       templateId: template.id,
       pointKey: "CALCDEF_VALID_STREAMING",
       kind: "derived",
@@ -67,6 +74,7 @@ async function seedTemplate(
       sortOrder: 1,
     },
     {
+      organizationId: fx.organizationId,
       templateId: template.id,
       pointKey: "CALCDEF_VALID_SCHEDULED",
       kind: "derived",
@@ -80,6 +88,7 @@ async function seedTemplate(
       // Every existing derived row is exactly this shape until an author
       // sets calc_trigger under F2.4 — the case the loader must not assume a
       // default trigger for.
+      organizationId: fx.organizationId,
       templateId: template.id,
       pointKey: "CALCDEF_NO_TRIGGER",
       kind: "derived",
@@ -93,6 +102,7 @@ async function seedTemplate(
   const [asset] = await db
     .insert(assets)
     .values({
+      organizationId: fx.organizationId,
       code: `${TEST_ASSET_PREFIX}01`,
       name: "Calc Definitions Fixture Asset",
       siteName: "Fixture Site",
@@ -119,6 +129,7 @@ export async function assertHandCreatedAssetContributesNothing(
   const [handCreated] = await db
     .insert(assets)
     .values({
+      organizationId: fx.organizationId,
       code: `${TEST_ASSET_PREFIX}HANDCREATED`,
       name: "Hand-created, no template",
       siteName: "Fixture Site",

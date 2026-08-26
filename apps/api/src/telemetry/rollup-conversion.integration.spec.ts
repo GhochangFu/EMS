@@ -292,10 +292,15 @@ export async function createProbes(pool: pg.Pool): Promise<Probes> {
     throw new Error("F4.28 probes need at least one row in bms.locations");
   }
 
+  // `organization_id` is stamped from the probe's own location (ADR-0047's
+  // tenant NOT NULL) rather than threaded as a separate fixture value: this
+  // asset's org must agree with its location's, or the location-scoped RLS
+  // policies this suite does not otherwise exercise would be contradicted.
   const { rows: created } = await pool.query<{ id: string; code: string }>(
-    `INSERT INTO bms.assets (code, name, site_name, domain, location_id)
-     SELECT c, c, 'F4.28 probe site', 'electrical', $2::uuid
+    `INSERT INTO bms.assets (code, name, site_name, domain, location_id, organization_id)
+     SELECT c, c, 'F4.28 probe site', 'electrical', $2::uuid, l.organization_id
      FROM unnest($1::text[]) AS x(c)
+     JOIN bms.locations l ON l.id = $2::uuid
      RETURNING id, code`,
     [[PLAIN_CODE, SOLAR_CODE], locationId],
   );

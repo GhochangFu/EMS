@@ -122,13 +122,21 @@ async function seed(
 
   await db.insert(templatePoints).values([
     {
+      organizationId: fx.organizationId,
       templateId: template.id,
       pointKey: MEASURED_KEY,
       kind: "measured",
       sourceDataKeyPattern: "SITE/{asset_code}/M",
       sortOrder: 0,
     },
-    { templateId: template.id, pointKey: DERIVED_KEY, kind: "derived", sortOrder: 1, ...TEMPLATE_CALC },
+    {
+      organizationId: fx.organizationId,
+      templateId: template.id,
+      pointKey: DERIVED_KEY,
+      kind: "derived",
+      sortOrder: 1,
+      ...TEMPLATE_CALC,
+    },
   ]);
 
   const [asset] = await db
@@ -263,6 +271,7 @@ export async function assertSetUpdatesAnExistingRowInPlace(
 
   // The row CalcWriteService would have created on a first computed value.
   await db.insert(assetPoints).values({
+    organizationId: fx.organizationId,
     assetId,
     pointKey: DERIVED_KEY,
     sourceDataKey: `computed:${DERIVED_KEY}`,
@@ -402,6 +411,7 @@ export async function assertAnExistingMappingRowIsNeverOverridden(
   // hand-created point, or from a template that used to declare this key as
   // measured.
   await db.insert(assetPoints).values({
+    organizationId: fx.organizationId,
     assetId,
     pointKey: DERIVED_KEY,
     sourceDataKey: "REAL/TAG/FROM/RTU",

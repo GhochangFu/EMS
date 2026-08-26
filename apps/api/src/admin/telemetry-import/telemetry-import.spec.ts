@@ -121,10 +121,10 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
 
   const freshCode = `${TEST_ASSET_PREFIX}${Date.now()}`;
   const { rows: assetRows } = await pool.query<{ id: string }>(
-    `INSERT INTO bms.assets (code, name, site_name, location_id, rtu_id, domain, active)
-     VALUES ($1, 'F1.9 import-path fixture', 'Fixture Site', $2, NULL, 'water', true)
+    `INSERT INTO bms.assets (code, name, site_name, location_id, rtu_id, domain, active, organization_id)
+     VALUES ($1, 'F1.9 import-path fixture', 'Fixture Site', $2, NULL, 'water', true, $3)
      RETURNING id`,
-    [freshCode, grant.location_id],
+    [freshCode, grant.location_id, grant.organization_id],
   );
   const freshAssetId = assetRows[0]?.id;
   if (!freshAssetId) {
@@ -458,9 +458,9 @@ export async function runTelemetryImportServiceTests(
   let sourceRefRejected = false;
   try {
     await pool.query(
-      `INSERT INTO bms.asset_points (asset_id, point_key, source_data_key, source_kind, rtu_id)
-       VALUES ($1, 'f19-import-check-probe', 'f19-import-check-probe', 'measured', NULL)`,
-      [fx.freshAssetId],
+      `INSERT INTO bms.asset_points (asset_id, point_key, source_data_key, source_kind, rtu_id, organization_id)
+       VALUES ($1, 'f19-import-check-probe', 'f19-import-check-probe', 'measured', NULL, $2)`,
+      [fx.freshAssetId, fx.freshAssetOrganizationId],
     );
   } catch (err) {
     sourceRefRejected =

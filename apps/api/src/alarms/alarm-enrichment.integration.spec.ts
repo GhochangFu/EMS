@@ -175,12 +175,13 @@ export async function assertOneEnrichmentPerAlarm(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
     const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_ONE_ENRICHMENT");
+    const organizationId = await orgOfAsset(tx, assetId);
 
-    await tx.insert(alarmEnrichments).values({ alarmId, rootCause: "first" });
+    await tx.insert(alarmEnrichments).values({ alarmId, organizationId, rootCause: "first" });
 
     let code: string | undefined;
     try {
-      await tx.insert(alarmEnrichments).values({ alarmId, rootCause: "second" });
+      await tx.insert(alarmEnrichments).values({ alarmId, organizationId, rootCause: "second" });
     } catch (err) {
       code = pgErrorCode(err);
     }
@@ -198,9 +199,10 @@ export async function assertAffectedAssetPairUnique(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
     const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_AFFECTED_UNIQUE");
+    const organizationId = await orgOfAsset(tx, assetId);
     const [enrichment] = await tx
       .insert(alarmEnrichments)
-      .values({ alarmId })
+      .values({ alarmId, organizationId })
       .returning({ id: alarmEnrichments.id });
     if (!enrichment) {
       throw new Error("failed to insert test enrichment");
@@ -228,10 +230,11 @@ export async function assertUndeclaredSkillRejected(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
     const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UNDECLARED_SKILL");
+    const organizationId = await orgOfAsset(tx, assetId);
 
     let code: string | undefined;
     try {
-      await tx.insert(alarmEnrichments).values({ alarmId, skillCode: "not_a_real_skill" });
+      await tx.insert(alarmEnrichments).values({ alarmId, organizationId, skillCode: "not_a_real_skill" });
     } catch (err) {
       code = pgErrorCode(err);
     }
@@ -366,9 +369,10 @@ export async function assertDetailsFiltersAffectedAssetsByScope(db: BmsDb): Prom
   await withRollback(db, async (tx) => {
     const [assetId, inScopeAffected] = await createFixtureAssets(tx, 2, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_DETAILS_AFFECTED_SCOPE");
+    const organizationId = await orgOfAsset(tx, assetId);
     const [enrichment] = await tx
       .insert(alarmEnrichments)
-      .values({ alarmId, rootCause: "test" })
+      .values({ alarmId, organizationId, rootCause: "test" })
       .returning({ id: alarmEnrichments.id });
     if (!enrichment) {
       throw new Error("failed to insert test enrichment");
@@ -572,6 +576,7 @@ export async function assertEnrichmentUpsertDeleteScopedToCallerAccess(db: BmsDb
   await withRollback(db, async (tx) => {
     const [assetId, inScopeAffected, outOfScopeAffected] = await createFixtureAssets(tx, 3, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_DELETE_SCOPE");
+    const organizationId = await orgOfAsset(tx, assetId);
     const actor = await firstSeededUser(tx);
     const callerScope = [assetId, inScopeAffected];
     const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx));
@@ -581,7 +586,7 @@ export async function assertEnrichmentUpsertDeleteScopedToCallerAccess(db: BmsDb
     // admin write (assetIds === null) legitimately could.
     const [enrichment] = await tx
       .insert(alarmEnrichments)
-      .values({ alarmId })
+      .values({ alarmId, organizationId })
       .returning({ id: alarmEnrichments.id });
     if (!enrichment) {
       throw new Error("failed to insert test enrichment");

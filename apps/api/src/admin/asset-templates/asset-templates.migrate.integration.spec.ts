@@ -180,6 +180,7 @@ async function seedVersion(
 
   await db.insert(templatePoints).values(
     opts.points.map((point, index) => ({
+      organizationId: fx.organizationId,
       templateId: template.id,
       pointKey: point.pointKey,
       kind: point.kind ?? "measured",
@@ -210,6 +211,7 @@ async function seedAsset(
   const [asset] = await db
     .insert(assets)
     .values({
+      organizationId: fx.organizationId,
       code: `${TEST_ASSET_PREFIX}${suffix}`,
       name: `Migrate Fixture Asset ${suffix}`,
       siteName: "Fixture Site",
@@ -843,6 +845,7 @@ export async function assertExistingRowRefusesAMeasuredAddition(
   // Exactly what the override endpoint leaves behind, and what `CalcWriteService`
   // writes on the point's first computed value.
   await db.insert(assetPoints).values({
+    organizationId: fx.organizationId,
     assetId,
     pointKey: "KWH",
     sourceDataKey: "computed:KWH",
