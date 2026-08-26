@@ -76,8 +76,10 @@ export const locations = bmsSchema.table("locations", {
 /** RTU / gateway under a location (PHE EdgeRTU or Eskom domain simulator). */
 export const rtus = bmsSchema.table("rtus", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b (ADR 0043 §5): nullable until migration 0047's SET NOT NULL.
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  // E7.1b (ADR 0043 §5): NOT NULL — migration 0047 applied the SET NOT NULL.
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   locationId: uuid("location_id")
     .notNull()
     .references(() => locations.id),
@@ -188,8 +190,10 @@ export const alarmSeverities = bmsSchema.table("alarm_severities", {
 
 export const assets = bmsSchema.table("assets", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b (ADR 0043 §5): nullable until migration 0047's SET NOT NULL.
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  // E7.1b (ADR 0043 §5): NOT NULL — migration 0047 applied the SET NOT NULL.
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   code: varchar("code", { length: 64 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   siteName: varchar("site_name", { length: 255 }).notNull(),
@@ -232,8 +236,10 @@ export const assets = bmsSchema.table("assets", {
 
 export const assetGroups = bmsSchema.table("asset_groups", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b (ADR 0043 §5): nullable until migration 0047's SET NOT NULL.
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  // E7.1b (ADR 0043 §5): NOT NULL — migration 0047 applied the SET NOT NULL.
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   locationId: uuid("location_id")
     .notNull()
     .references(() => locations.id),
@@ -261,8 +267,10 @@ export const assetGroupMembers = bmsSchema.table("asset_group_members", {
 /** Registered telemetry points per asset (source DataKey → BMS point_key). */
 export const assetPoints = bmsSchema.table("asset_points", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b (ADR 0043 §5): nullable until migration 0047's SET NOT NULL.
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  // E7.1b (ADR 0043 §5): NOT NULL — migration 0047 applied the SET NOT NULL.
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   assetId: uuid("asset_id")
     .notNull()
     .references(() => assets.id),
@@ -409,9 +417,11 @@ export const assetTemplates = bmsSchema.table("asset_templates", {
  */
 export const templatePoints = bmsSchema.table("template_points", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b: audit-added tenant table (decision 5 "at minimum"). Nullable until
+  // E7.1b: audit-added tenant table (decision 5 "at minimum"). NOT NULL as of
   // 0047; org resolves via template_id -> asset_templates (already org-scoped).
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   templateId: uuid("template_id")
     .notNull()
     .references(() => assetTemplates.id, { onDelete: "cascade" }),
@@ -483,8 +493,10 @@ export const rtuConnectionConfigs = bmsSchema.table("rtu_connection_configs", {
   id: uuid("id").primaryKey().defaultRandom(),
   // E7.1b: audit-added tenant table (decision 5 "at minimum"). Holds encrypted
   // RTU credentials — leaving it unpoliced is the exact cross-org read RLS
-  // closes. Nullable until 0047; org resolves via rtu_id -> rtus.
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  // closes. NOT NULL as of 0047; org resolves via rtu_id -> rtus.
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   rtuId: uuid("rtu_id")
     .notNull()
     .unique()
@@ -517,8 +529,10 @@ export const userAssetGroupAccess = bmsSchema.table("user_asset_group_access", {
 
 export const alarms = bmsSchema.table("alarms", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b (ADR 0043 §5): nullable until migration 0047's SET NOT NULL.
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  // E7.1b (ADR 0043 §5): NOT NULL — migration 0047 applied the SET NOT NULL.
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   assetId: uuid("asset_id")
     .notNull()
     .references(() => assets.id),
@@ -582,9 +596,11 @@ export const alarmSkills = bmsSchema.table("alarm_skills", {
  */
 export const alarmEnrichments = bmsSchema.table("alarm_enrichments", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b: audit-added tenant table (decision 5 "at minimum"). Nullable until
+  // E7.1b: audit-added tenant table (decision 5 "at minimum"). NOT NULL as of
   // 0047; org resolves via alarm_id -> alarms.
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   alarmId: uuid("alarm_id")
     .notNull()
     .unique()
@@ -629,8 +645,10 @@ export const alarmAffectedAssets = bmsSchema.table(
 
 export const workOrders = bmsSchema.table("work_orders", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b (ADR 0043 §5): nullable until migration 0047's SET NOT NULL.
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  // E7.1b (ADR 0043 §5): NOT NULL — migration 0047 applied the SET NOT NULL.
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   assetId: uuid("asset_id")
     .notNull()
     .references(() => assets.id),
@@ -655,9 +673,11 @@ export const workOrders = bmsSchema.table("work_orders", {
 
 export const workOrderTasks = bmsSchema.table("work_order_tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b: audit-added tenant table (decision 5 "at minimum"). Nullable until
+  // E7.1b: audit-added tenant table (decision 5 "at minimum"). NOT NULL as of
   // 0047; org resolves via work_order_id -> work_orders.
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   workOrderId: uuid("work_order_id")
     .notNull()
     .references(() => workOrders.id),
@@ -674,9 +694,11 @@ export const maintenanceTaskTemplates = bmsSchema.table(
   "maintenance_task_templates",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // E7.1b: audit-added tenant table (decision 5 "at minimum"). Nullable until
+    // E7.1b: audit-added tenant table (decision 5 "at minimum"). NOT NULL as of
     // 0047; org resolves via asset_id -> assets.
-    organizationId: uuid("organization_id").references(() => organizations.id),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
     assetId: uuid("asset_id")
       .notNull()
       .references(() => assets.id),
@@ -702,9 +724,11 @@ export const maintenanceTaskTemplates = bmsSchema.table(
 
 export const maintenanceSchedules = bmsSchema.table("maintenance_schedules", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b (ADR 0043 §5): nullable until 0047. No asset_id — org resolves via
+  // E7.1b (ADR 0043 §5): NOT NULL as of 0047. No asset_id — org resolves via
   // template_id -> maintenance_task_templates.asset_id -> assets (see 0046).
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   templateId: uuid("template_id")
     .notNull()
     .references(() => maintenanceTaskTemplates.id),
@@ -722,8 +746,10 @@ export const maintenanceSchedules = bmsSchema.table("maintenance_schedules", {
 
 export const maintenanceHistory = bmsSchema.table("maintenance_history", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b (ADR 0043 §5): nullable until migration 0047's SET NOT NULL.
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  // E7.1b (ADR 0043 §5): NOT NULL — migration 0047 applied the SET NOT NULL.
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   templateId: uuid("template_id")
     .notNull()
     .references(() => maintenanceTaskTemplates.id),
@@ -747,7 +773,9 @@ export const automationRules = bmsSchema.table("automation_rules", {
   // E7.1b (ADR 0043 §5/§6): nullable until migration 0047's SET NOT NULL.
   // Derived on write — asset for threshold rules, actor's tenant context for
   // time_window (a time_window create with no resolvable org returns 4xx).
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   code: varchar("code", { length: 64 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -791,8 +819,10 @@ export const automationRules = bmsSchema.table("automation_rules", {
 
 export const ruleExecutions = bmsSchema.table("rule_executions", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b (ADR 0043 §5): nullable until migration 0047's SET NOT NULL.
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  // E7.1b (ADR 0043 §5): NOT NULL — migration 0047 applied the SET NOT NULL.
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   ruleId: uuid("rule_id")
     .notNull()
     .references(() => automationRules.id),

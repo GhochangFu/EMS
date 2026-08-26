@@ -270,9 +270,10 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       INSERT INTO bms.rtus (
         location_id, code, display_name, source_type,
         external_rtu_id, rtu_code, mqtt_topic,
-        station_code, station_name, ingest_enabled, meta
+        station_code, station_name, ingest_enabled, meta,
+        organization_id
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)
       ON CONFLICT (external_rtu_id) WHERE external_rtu_id IS NOT NULL DO UPDATE SET
         location_id = EXCLUDED.location_id,
         code = EXCLUDED.code,
@@ -283,6 +284,7 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
         station_code = EXCLUDED.station_code,
         station_name = EXCLUDED.station_name,
         ingest_enabled = EXCLUDED.ingest_enabled,
+        organization_id = EXCLUDED.organization_id,
         -- Merged, not replaced: see the note above this query.
         meta = COALESCE(bms.rtus.meta, '{}'::jsonb) || EXCLUDED.meta
       RETURNING id
@@ -306,6 +308,7 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
           // The stamp that makes this row the operator's from here on.
           enabledSetVersion: ENABLED_SET_VERSION,
         }),
+        phewbOrgId,
       ],
     );
 
@@ -347,6 +350,7 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       }
 
       const assetValues = {
+        organizationId: phewbOrgId,
         code,
         name: deviceHead.DeviceDisplayName || deviceHead.DeviceName,
         siteName: head.StationName,
@@ -398,11 +402,11 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
           -- asset_points_source_ref_check rejects a 'measured' row without one.
           INSERT INTO bms.asset_points (
             asset_id, point_key, source_data_key, sensor_code, unit, active,
-            rtu_id, source_kind
+            rtu_id, source_kind, organization_id
           )
           VALUES (
             $1, $2, $3, $4, $5, true,
-            (SELECT rtu_id FROM bms.assets WHERE id = $1), 'measured'
+            (SELECT rtu_id FROM bms.assets WHERE id = $1), 'measured', $6
           )
           ON CONFLICT (asset_id, point_key) DO UPDATE SET
             source_data_key = EXCLUDED.source_data_key,
@@ -410,9 +414,10 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
             unit = EXCLUDED.unit,
             active = true,
             rtu_id = EXCLUDED.rtu_id,
-            source_kind = EXCLUDED.source_kind
+            source_kind = EXCLUDED.source_kind,
+            organization_id = EXCLUDED.organization_id
           `,
-          [assetId, pointKey, sensor.DataKey, sensor.SensorCode, unitLabel(sensor.UnitCode)],
+          [assetId, pointKey, sensor.DataKey, sensor.SensorCode, unitLabel(sensor.UnitCode), phewbOrgId],
         );
       }
     }

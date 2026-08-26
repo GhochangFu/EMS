@@ -21,8 +21,21 @@ export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
 /**
  * Derives one asset group per domain per location and re-points membership.
  * Runs after the location backfill so a moved asset leaves its old group first.
+ *
+ * **`E7.1b` / ADR 0043 decisions 5 + 6.** `0047` gives `bms.asset_groups` a
+ * NOT-NULL `organization_id` with `tenant_isolation` + `FORCE`, and the
+ * `asset_group_members` junction a policy keyed on both parents' org. This ran
+ * once across every organization before; it now runs once *per* organization,
+ * inside that org's `withOrganization` context (`seed.ts`), so the `assets` read
+ * returns only this org's rows and the group/member writes satisfy the policy.
+ * `organizationId` is stamped on every group and equals the current context —
+ * safe because a group is derived per `(domain, location)` and a location
+ * belongs to exactly one org, so the group's org is its location's org.
  */
-export async function seedAssetGroups(pool: pg.Pool): Promise<void> {
+export async function seedAssetGroups(
+  pool: pg.Pool,
+  organizationId: string,
+): Promise<void> {
   await pool.query(`
     DELETE FROM bms.asset_group_members AS agm
     USING bms.asset_groups AS ag,
@@ -64,11 +77,12 @@ export async function seedAssetGroups(pool: pg.Pool): Promise<void> {
           : groupCode[0]!.toUpperCase() + groupCode.slice(1);
     const group = await pool.query<{ id: string }>(
       `
-      INSERT INTO bms.asset_groups (location_id, code, name, description)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO bms.asset_groups (location_id, code, name, description, organization_id)
+      VALUES ($1, $2, $3, $4, $5)
       ON CONFLICT (location_id, code) DO UPDATE
       SET name = EXCLUDED.name,
-          description = EXCLUDED.description
+          description = EXCLUDED.description,
+          organization_id = EXCLUDED.organization_id
       RETURNING id
       `,
       [
@@ -76,6 +90,7 @@ export async function seedAssetGroups(pool: pg.Pool): Promise<void> {
         groupCode,
         groupName,
         "Seeded operational asset group for scoped access demos.",
+        organizationId,
       ],
     );
     const groupId = group.rows[0]?.id;

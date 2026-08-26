@@ -10,8 +10,16 @@ import { assets, automationRules, locations, organizations } from "./schema/bms-
  * same select/update/insert sequence inline, which is now `upsertRuleByCode`.
  */
 
-/** Everything an automation rule row carries except its code. */
-type AutomationRuleValues = Omit<typeof automationRules.$inferInsert, "code">;
+/**
+ * Everything an automation rule row carries except its code and its
+ * organization. `E7.1b`: `organizationId` is threaded to the seeders separately
+ * (every rule here is ESKOM's) and stamped by `upsertRuleByCode`, so callers do
+ * not repeat it on each rule literal.
+ */
+type AutomationRuleValues = Omit<
+  typeof automationRules.$inferInsert,
+  "code" | "organizationId"
+>;
 
 /**
  * Upserts one rule by code. The lookup reads the whole table on every call
@@ -21,6 +29,7 @@ type AutomationRuleValues = Omit<typeof automationRules.$inferInsert, "code">;
  */
 async function upsertRuleByCode(
   db: BmsDb,
+  organizationId: string,
   code: string,
   values: AutomationRuleValues,
 ): Promise<void> {
@@ -38,7 +47,7 @@ async function upsertRuleByCode(
       .where(eq(automationRules.id, existingRule.id));
     return;
   }
-  await db.insert(automationRules).values({ code, ...values });
+  await db.insert(automationRules).values({ code, organizationId, ...values });
 }
 
 const CR_BREAKER_RULES = [
@@ -218,6 +227,7 @@ const CR_ENVIRONMENT_RULES = [
 async function seedDemoRules(
   db: BmsDb,
   assetRows: readonly SeededAsset[],
+  organizationId: string,
 ): Promise<void> {
   const existingRules = await db
     .select({ id: automationRules.id })
@@ -232,6 +242,7 @@ async function seedDemoRules(
   const pvAsset = assetRows.find((row) => row.code === "PV-INV-01") ?? assetRows[0];
   await db.insert(automationRules).values([
     {
+      organizationId,
       code: "demand_ceiling_notify",
       name: "Energy demand ceiling notification",
       description: "IF current demand is above 115 kW THEN notify Energy Manager.",
@@ -246,6 +257,7 @@ async function seedDemoRules(
       action: { type: "notify", target: "Energy Manager" },
     },
     {
+      organizationId,
       code: "crac_supply_temp_high",
       name: "CRAC supply temperature watch",
       description:
@@ -261,6 +273,7 @@ async function seedDemoRules(
       action: { type: "notify", target: "Cooling operations" },
     },
     {
+      organizationId,
       code: "weekday_energy_review",
       name: "Weekday energy review window",
       description:
@@ -283,6 +296,7 @@ async function seedDemoRules(
 async function seedCrBreakerRules(
   db: BmsDb,
   assetRows: readonly SeededAsset[],
+  organizationId: string,
 ): Promise<void> {
   for (const [assetCode, feederName] of CR_BREAKER_RULES) {
     const breakerAsset = assetRows.find((row) => row.code === assetCode);
@@ -294,7 +308,7 @@ async function seedCrBreakerRules(
       assetCode === "CR-Q9"
         ? "CR_Q9_VW_PDU_B_CURRENT_WARNING"
         : `${assetCode.replace("-", "_")}_CURRENT_WARNING`;
-    await upsertRuleByCode(db, ruleCode, {
+    await upsertRuleByCode(db, organizationId, ruleCode, {
       name: `CR ${breakerNumber} current warning`,
       description: `IF ${breakerNumber} current is above 3 A THEN flag the ${feederName}.`,
       category: "operations",
@@ -314,13 +328,14 @@ async function seedCrBreakerRules(
 async function seedCrPduRules(
   db: BmsDb,
   assetRows: readonly SeededAsset[],
+  organizationId: string,
 ): Promise<void> {
   for (const [assetCode, pduName] of CR_PDU_RULES) {
     const pduAsset = assetRows.find((row) => row.code === assetCode);
     if (!pduAsset) {
       continue;
     }
-    await upsertRuleByCode(db, `${assetCode.replaceAll("-", "_")}_UTIL_WARNING`, {
+    await upsertRuleByCode(db, organizationId, `${assetCode.replaceAll("-", "_")}_UTIL_WARNING`, {
       name: `${pduName} utilisation warning`,
       description: `IF ${pduName} utilisation is above 85% THEN flag rack power capacity.`,
       category: "operations",
@@ -340,6 +355,7 @@ async function seedCrPduRules(
 async function seedCrBatteryRules(
   db: BmsDb,
   assetRows: readonly SeededAsset[],
+  organizationId: string,
 ): Promise<void> {
   for (const batteryRule of CR_BATTERY_RULES) {
     const batteryAsset = assetRows.find(
@@ -348,7 +364,7 @@ async function seedCrBatteryRules(
     if (!batteryAsset) {
       continue;
     }
-    await upsertRuleByCode(db, batteryRule.code, {
+    await upsertRuleByCode(db, organizationId, batteryRule.code, {
       name: batteryRule.name,
       description: batteryRule.description,
       category: "operations",
@@ -368,13 +384,14 @@ async function seedCrBatteryRules(
 async function seedCrHvacRules(
   db: BmsDb,
   assetRows: readonly SeededAsset[],
+  organizationId: string,
 ): Promise<void> {
   for (const hvacRule of CR_HVAC_RULES) {
     const hvacAsset = assetRows.find((row) => row.code === hvacRule.assetCode);
     if (!hvacAsset) {
       continue;
     }
-    await upsertRuleByCode(db, hvacRule.code, {
+    await upsertRuleByCode(db, organizationId, hvacRule.code, {
       name: hvacRule.name,
       description: hvacRule.description,
       category: "operations",
@@ -394,6 +411,7 @@ async function seedCrHvacRules(
 async function seedCrEnvironmentRules(
   db: BmsDb,
   assetRows: readonly SeededAsset[],
+  organizationId: string,
 ): Promise<void> {
   for (const environmentRule of CR_ENVIRONMENT_RULES) {
     const environmentAsset = assetRows.find(
@@ -402,7 +420,7 @@ async function seedCrEnvironmentRules(
     if (!environmentAsset) {
       continue;
     }
-    await upsertRuleByCode(db, environmentRule.code, {
+    await upsertRuleByCode(db, organizationId, environmentRule.code, {
       name: environmentRule.name,
       description: environmentRule.description,
       category: "operations",
@@ -534,7 +552,10 @@ function conditionKey(
  * `seedAutomationRules`. `seed.ts` therefore calls this function a second
  * time, on its own, once every ESKOM electrical asset actually exists.
  */
-export async function seedEskomLadderRules(db: BmsDb): Promise<void> {
+export async function seedEskomLadderRules(
+  db: BmsDb,
+  organizationId: string,
+): Promise<void> {
   const electricalAssets = await db
     .select({ id: assets.id, code: assets.code, name: assets.name })
     .from(assets)
@@ -577,6 +598,7 @@ export async function seedEskomLadderRules(db: BmsDb): Promise<void> {
       }
       await upsertRuleByCode(
         db,
+        organizationId,
         `ESKOM_${asset.code.replaceAll("-", "_")}_${rule.suffix}`,
         {
           name: `${asset.name} ${rule.nameSuffix}`,
@@ -611,11 +633,12 @@ export async function seedEskomLadderRules(db: BmsDb): Promise<void> {
 export async function seedAutomationRules(
   db: BmsDb,
   assetRows: readonly SeededAsset[],
+  organizationId: string,
 ): Promise<void> {
-  await seedDemoRules(db, assetRows);
-  await seedCrBreakerRules(db, assetRows);
-  await seedCrPduRules(db, assetRows);
-  await seedCrBatteryRules(db, assetRows);
-  await seedCrHvacRules(db, assetRows);
-  await seedCrEnvironmentRules(db, assetRows);
+  await seedDemoRules(db, assetRows, organizationId);
+  await seedCrBreakerRules(db, assetRows, organizationId);
+  await seedCrPduRules(db, assetRows, organizationId);
+  await seedCrBatteryRules(db, assetRows, organizationId);
+  await seedCrHvacRules(db, assetRows, organizationId);
+  await seedCrEnvironmentRules(db, assetRows, organizationId);
 }

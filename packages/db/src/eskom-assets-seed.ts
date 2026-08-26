@@ -330,6 +330,7 @@ export async function seedEskomAssets(
   db: BmsDb,
   pool: pg.Pool,
   catalog: readonly EskomAssetSpec[],
+  organizationId: string,
 ): Promise<SeededAsset[]> {
   const assetRows: SeededAsset[] = [];
   for (const a of catalog) {
@@ -361,6 +362,7 @@ export async function seedEskomAssets(
           domain: a.domain,
           locationId,
           rtuId,
+          organizationId,
           meta: "meta" in a ? a.meta : { telemetrySource: "simulator" },
         })
         .where(eq(assets.id, row[0].id));
@@ -376,6 +378,7 @@ export async function seedEskomAssets(
         domain: a.domain,
         locationId,
         rtuId,
+        organizationId,
         meta: "meta" in a ? a.meta : { telemetrySource: "simulator" },
       })
       .returning({ id: assets.id, code: assets.code });

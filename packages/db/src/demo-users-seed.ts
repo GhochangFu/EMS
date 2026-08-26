@@ -18,6 +18,18 @@ import {
  * the AGENTS.md §4.5 1000-line cap. Pure move: one user per read-scope source,
  * which is what `apps/api/src/auth/access-control.integration.spec.ts` asserts
  * against — the emails and roles here are that suite's fixture contract.
+ *
+ * **`E7.1b` / ADR 0043 decision 5 + Amendment 4.** All three exported functions
+ * seed org-less `bms.users` rows and their grants, and `seed.ts` runs them on the
+ * superuser connection rather than the `FORCE`-bound `bms_owner` seed pool. See
+ * `resolveSeedSuperuserUrl` in `seed-tenant.ts`: under `0047`'s strict `USING`,
+ * `bms_owner` cannot see or `RETURNING`-insert an org-less user row, and the pool
+ * roles have no `INSERT` on `bms.users` at all. The logins stay org-less this
+ * item — nothing on the request path reads `users.organization_id` yet
+ * (`AccessControlService` resolves scope from the grant tables on `fleetDb`), so
+ * a home org is `E7.1c`'s to populate, not this one's. `adminId` is still usable
+ * as an FK from `bms_owner`-pool inserts (alarms, work orders): a foreign-key
+ * check is not row-level-security-filtered.
  */
 
 const SCOPED_USERS = [
@@ -68,8 +80,23 @@ export async function ensureAdminUser(db: BmsDb): Promise<string> {
 /**
  * Creates the location- and asset-group-scoped demo logins and grants each the
  * one scope its role is meant to demonstrate.
+ *
+ * **`E7.1b`: this runs on the superuser connection** (`seed.ts`), not the
+ * `bms_owner` seed pool. The logins are org-less identity rows and `0047` makes
+ * `bms.users` `FORCE`-bound, so `bms_owner` can neither see them (a re-seed's
+ * existence check would read empty and duplicate-key) nor `INSERT ... RETURNING`
+ * one. `organizationId` is passed only to re-add the scoping the tenant policy
+ * used to give the `locations` lookup for free — a `BYPASSRLS`/superuser read no
+ * longer filters by org, so the Western Cape lookup names its org explicitly
+ * rather than trusting a policy this connection bypasses. The grants it writes,
+ * `user_location_access` and `user_asset_group_access`, carry no policy today, so
+ * BYPASSRLS is transparent for them; were either ever policied, this path would
+ * silently bypass it and would need revisiting.
  */
-export async function seedScopedDemoUsers(db: BmsDb): Promise<void> {
+export async function seedScopedDemoUsers(
+  db: BmsDb,
+  organizationId: string,
+): Promise<void> {
   const scopedUserIds = new Map<string, string>();
   for (const scopedUser of SCOPED_USERS) {
     const existingScopedUser = await db
@@ -105,7 +132,12 @@ export async function seedScopedDemoUsers(db: BmsDb): Promise<void> {
   const [westernCape] = await db
     .select({ id: locations.id })
     .from(locations)
-    .where(eq(locations.slug, "rsmoc-western-cape"))
+    .where(
+      and(
+        eq(locations.slug, "rsmoc-western-cape"),
+        eq(locations.organizationId, organizationId),
+      ),
+    )
     .limit(1);
   const wcAdminId = scopedUserIds.get("wc-admin@bms.local");
   if (westernCape && wcAdminId) {

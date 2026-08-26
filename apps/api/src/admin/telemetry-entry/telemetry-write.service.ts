@@ -80,12 +80,14 @@ type AcceptedRow = {
   unit: string | null;
   mappingNeeded: boolean;
   // E7.1b: the asset's org, resolved in `validateRow`. Stamped onto an
-  // auto-provisioned `asset_points` mapping (a policied table since 0046).
-  organizationId: string | null;
+  // auto-provisioned `asset_points` mapping (NOT NULL + policied since 0047).
+  // Non-null because `assets.organization_id` is NOT NULL as of 0047, so the
+  // `validateRow` select that reads it can never hand back a null here.
+  organizationId: string;
 };
 
 type ValidateRowResult =
-  | { ok: true; unit: string | null; mappingNeeded: boolean; organizationId: string | null }
+  | { ok: true; unit: string | null; mappingNeeded: boolean; organizationId: string }
   | { ok: false; field: string | null; reason: string };
 
 function sortByParsedTime(times: readonly string[]): string[] {

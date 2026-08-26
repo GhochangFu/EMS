@@ -65,15 +65,17 @@ export async function ensureEskomDomainRtus(db: BmsDb, pool: pg.Pool): Promise<v
       await pool.query(
         `
         INSERT INTO bms.rtus (
-          location_id, code, display_name, source_type, domain, ingest_enabled, meta
+          location_id, code, display_name, source_type, domain, ingest_enabled, meta,
+          organization_id
         )
-        VALUES ($1, $2, $3, 'simulator', $4, false, '{"synthetic":true}'::jsonb)
+        VALUES ($1, $2, $3, 'simulator', $4, false, '{"synthetic":true}'::jsonb, $5)
         ON CONFLICT (location_id, code) DO UPDATE SET
           display_name = EXCLUDED.display_name,
           source_type = EXCLUDED.source_type,
-          domain = EXCLUDED.domain
+          domain = EXCLUDED.domain,
+          organization_id = EXCLUDED.organization_id
         `,
-        [loc.id, code, displayName, domain],
+        [loc.id, code, displayName, domain, eskomOrgId],
       );
     }
   }
@@ -162,6 +164,12 @@ export async function assignEskomAssetRtus(pool: pg.Pool): Promise<void> {
  * A migration is not the last word on schema here; this is. Do not re-add it.
  */
 export async function enforceHierarchyNotNull(pool: pg.Pool): Promise<void> {
+  // `E7.1b`: this asset pre-check joined the vacuous-but-kept set below. `0047`
+  // gave `bms.assets` its own `tenant_isolation` + `FORCE`, so as `bms_owner`
+  // with no `app.current_organization` this count reads 0 whether or not an
+  // orphan exists — exactly as the `bms.locations` check already did since
+  // `E7.1a`. The `SET NOT NULL` on `location_id` below still scans every row and
+  // still fails loudly on a real orphan; only the friendly message is lost.
   const assetOrphans = await pool.query<{ n: string }>(`
     SELECT COUNT(*)::text AS n FROM bms.assets WHERE location_id IS NULL
   `);

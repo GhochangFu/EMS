@@ -23,6 +23,7 @@ export async function seedDemoAlarms(
   db: BmsDb,
   assetRows: readonly SeededAsset[],
   adminId: string,
+  organizationId: string,
 ): Promise<void> {
   const firstAssetId = assetRows[0]?.id;
   if (!firstAssetId) {
@@ -34,6 +35,7 @@ export async function seedDemoAlarms(
     const day = DAY_MS;
     await db.insert(alarms).values([
       {
+        organizationId,
         assetId: firstAssetId,
         severity: "warning",
         message: "Voltage imbalance >2% sustained 5 min (historical seed)",
@@ -42,12 +44,14 @@ export async function seedDemoAlarms(
         acknowledgedBy: adminId,
       },
       {
+        organizationId,
         assetId: firstAssetId,
         severity: "info",
         message: "Maintenance window scheduled — breaker inspection",
         raisedAt: new Date(Date.now() - 1 * day),
       },
       {
+        organizationId,
         assetId: assetRows[1]?.id ?? firstAssetId,
         severity: "critical",
         message: "UPS battery test failed — replace string B (historical seed)",
@@ -64,6 +68,7 @@ export async function seedDemoWorkOrders(
   db: BmsDb,
   assetRows: readonly SeededAsset[],
   adminId: string,
+  organizationId: string,
 ): Promise<void> {
   const existingWorkOrders = await db
     .select({ id: workOrders.id })
@@ -83,6 +88,7 @@ export async function seedDemoWorkOrders(
       .insert(workOrders)
       .values([
         {
+          organizationId,
           assetId: alarmSeed?.assetId ?? upsAsset.id,
           alarmId: alarmSeed?.id,
           title: "Investigate alarm follow-up",
@@ -94,6 +100,7 @@ export async function seedDemoWorkOrders(
           dueAt: new Date(Date.now() + 2 * DAY_MS),
         },
         {
+          organizationId,
           assetId: cracAsset.id,
           title: "Inspect CRAC condensate drain",
           description:
@@ -109,11 +116,13 @@ export async function seedDemoWorkOrders(
 
     const taskRows = insertedWorkOrders.flatMap((workOrder, index) => [
       {
+        organizationId,
         workOrderId: workOrder.id,
         title: index === 0 ? "Review alarm history" : "Inspect equipment locally",
         sortOrder: 1,
       },
       {
+        organizationId,
         workOrderId: workOrder.id,
         title: index === 0 ? "Record corrective action" : "Record inspection notes",
         sortOrder: 2,
@@ -133,6 +142,7 @@ export async function seedDemoWorkOrders(
 export async function seedMaintenancePlans(
   db: BmsDb,
   assetRows: readonly SeededAsset[],
+  organizationId: string,
 ): Promise<void> {
   const existingMaintenance = await db
     .select({ id: maintenanceTaskTemplates.id })
@@ -149,6 +159,7 @@ export async function seedMaintenancePlans(
       .insert(maintenanceTaskTemplates)
       .values([
         {
+          organizationId,
           assetId: upsAsset.id,
           title: "UPS battery string inspection",
           description:
@@ -160,6 +171,7 @@ export async function seedMaintenancePlans(
           estimatedMinutes: 90,
         },
         {
+          organizationId,
           assetId: cracAsset.id,
           title: "CRAC filter and condensate check",
           description:
@@ -172,6 +184,7 @@ export async function seedMaintenancePlans(
           estimatedMinutes: 60,
         },
         {
+          organizationId,
           assetId: pvAsset.id,
           title: "PV inverter thermal inspection",
           description:
@@ -190,6 +203,7 @@ export async function seedMaintenancePlans(
       });
 
     const scheduleRows = insertedTemplates.map((template, index) => ({
+      organizationId,
       templateId: template.id,
       intervalDays: index === 0 ? 30 : index === 1 ? 14 : 60,
       nextDueAt:

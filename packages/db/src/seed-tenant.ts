@@ -34,6 +34,50 @@ import pg from "pg";
 const SET_TENANT_SQL = "select set_config('app.current_organization', $1, true)";
 
 /**
+ * Resolves the superuser (`bms_app`) connection string the seed uses for the
+ * three identity functions (`ensureAdminUser`, `seedScopedDemoUsers`,
+ * `seedPheOrganizationAdmin`).
+ *
+ * **`E7.1b` / ADR 0043 decision 5 + Amendment 4.** `0047` gives `bms.users`
+ * `FORCE ROW LEVEL SECURITY` with a strict `USING`, and every seeded login is
+ * org-less (the global `admin` is global by design; the scoped demo logins carry
+ * no home org until `E7.1c` populates one). Under `FORCE`, `bms_owner` — the
+ * seed's own role since ADR 0045 — cannot *see* an org-less row (`org = NULL` is
+ * never true) and cannot `INSERT ... RETURNING` one either: `RETURNING` applies
+ * the same `USING` predicate to the row it hands back, so an org-less insert
+ * fails with `42501` even on an empty database. `ON CONFLICT DO UPDATE` fails the
+ * same way. The pool roles are worse still — `0043` decision 5 revokes
+ * `INSERT`/`DELETE` on `bms.users` from every one of them, so `bms_fleet`'s
+ * `BYPASSRLS` cannot write here.
+ *
+ * The one role that can both see and write org-less identity rows is the
+ * superuser, which is also what the seed ran as *entirely* before ADR 0045. So
+ * identity seeding retains it, and only identity seeding: the tenant-scoped bulk
+ * still runs on the `FORCE`-bound `bms_owner`, so the boundary that `E7.1a` put
+ * the seed behind is unweakened for every table a tenant actually owns.
+ *
+ * Prefers an explicitly-set `DATABASE_URL_SUPERUSER` (what CI and
+ * `pnpm --filter @bms/db roles` already export) over deriving one, so a
+ * deployment whose superuser is named or credentialed differently is not
+ * second-guessed. The derivation is the same swap `integration-db-gate.ts`
+ * performs for the RLS suites, and exists so a developer running `pnpm db:seed`
+ * by hand sets one variable rather than two.
+ */
+export function resolveSeedSuperuserUrl(
+  databaseUrl: string,
+  env: Record<string, string | undefined>,
+): string {
+  const explicit = env.DATABASE_URL_SUPERUSER;
+  if (explicit) {
+    return explicit;
+  }
+  const parsed = new URL(databaseUrl);
+  parsed.username = "bms_app";
+  parsed.password = "bms_app_dev";
+  return parsed.toString();
+}
+
+/**
  * The seed's pool. `max: 1` is load-bearing, not a performance choice — see the
  * module header.
  */

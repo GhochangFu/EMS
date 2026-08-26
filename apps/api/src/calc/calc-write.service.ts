@@ -127,12 +127,26 @@ export class CalcWriteService {
         continue;
       }
       const sourceDataKey = formatted.sourceDataKey;
+      // E7.1b: `asset_points.organization_id` is NOT NULL since 0047. The org
+      // comes from the asset row read above; `.get` is undefined only if the
+      // asset does not exist, in which case the FK on `asset_id` would reject the
+      // insert anyway. Skip the pair like the source_data_key case rather than
+      // pass a null into the NOT NULL column.
+      const organizationId = orgByAsset.get(representative.assetId);
+      if (organizationId === undefined) {
+        failedPairs.add(key);
+        this.logger.warn(
+          `calc write: asset ${representative.assetId} has no organization row; ` +
+            `skipping ${key}`,
+        );
+        continue;
+      }
       try {
         const [created] = await this.fleetDb
           .insert(assetPoints)
           .values({
             assetId: representative.assetId,
-            organizationId: orgByAsset.get(representative.assetId) ?? null,
+            organizationId,
             pointKey: representative.pointKey,
             sourceDataKey,
             unit: null,
