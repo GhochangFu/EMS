@@ -122,7 +122,7 @@ describe.skipIf(!connectionString)("E7.1b — AssetsAdminService under real RLS"
       fleetDb,
       tenantDb,
       new AccessControlService(createDb(authPool), fleetDb),
-      new MasterDataAuditService(tenantDb),
+      new MasterDataAuditService(tenantDb, fleetDb),
       new VocabulariesService(fleetDb),
     );
   });

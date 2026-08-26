@@ -563,7 +563,7 @@ export async function assertComputedRowCannotBeReKeyed(
     db,
     db,
     new AccessControlService(db, db),
-    new MasterDataAuditService(db),
+    new MasterDataAuditService(db, db),
   );
 
   await svc.setOverride(fx.adminJwt, assetId, DERIVED_KEY, {

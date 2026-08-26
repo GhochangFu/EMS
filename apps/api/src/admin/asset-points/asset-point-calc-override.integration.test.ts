@@ -51,7 +51,7 @@ describe.skipIf(!connectionString)("F2.6 — asset point calc overrides", () => 
       db,
       db,
       new AccessControlService(db, db),
-      new MasterDataAuditService(db),
+      new MasterDataAuditService(db, db),
     );
     fx = await loadFixtures(created);
     await cleanup(created);

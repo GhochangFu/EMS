@@ -8,7 +8,7 @@ import type { BmsDb } from "@bms/db";
 import type { AuditLogListResponse, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { TENANT_DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE } from "../../database/database.tokens";
 import { MAX_EXPORT_ROWS, assertWithinExportCap } from "./audit.limits";
 import type { AuditExportQuery, AuditListQuery } from "./audit.schema";
 import { toCsv, toSheetRows } from "./audit.serialise";
@@ -22,14 +22,25 @@ export type AuditExportFile = {
 };
 
 /**
- * Reads `bms.audit_log` (ADR 0021). Global admin only — the table has no
- * tenancy column, so §4.7's scope predicates cannot be applied to it and
- * scoped reads are deferred to their own ADR.
+ * Reads `bms.audit_log` (ADR 0021). Global admin only.
+ *
+ * Every read runs on `fleetDb` (`bms_fleet`, BYPASSRLS). `audit_log` gains an
+ * `organization_id` in `0046` and a NULL-tolerant `tenant_isolation` policy +
+ * FORCE in `0047`, but every E7.1b audit row is written org-less (population is
+ * E7.1c), so under `bms_tenant` with no `app.current_organization` the whole
+ * table is invisible: `organization_id = current_org` is `NULL = NULL`, never
+ * true, so `count`/`selectRows` would return zero. This reader is global-admin-
+ * only and must see across every organization anyway, which is exactly the
+ * fleet pool's job (Amendment 3). The `requireGlobalAdmin` provisioned-user
+ * probe reads the same pool for the same reason — an `admin` row is itself
+ * NULL-org and so invisible to a no-GUC tenant read. The earlier "no tenancy
+ * column" note is retired: the column exists as of `0046`; it is simply unset
+ * this item.
  */
 @Injectable()
 export class AuditAdminService {
   constructor(
-    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly accessControl: AccessControlService,
   ) {}
 
@@ -97,7 +108,7 @@ export class AuditAdminService {
    * recorded against `F4.10` in `docs/BACKLOG.md` and belongs to its own ADR.
    */
   private async requireGlobalAdmin(jwt: JwtPayload): Promise<void> {
-    const [provisioned] = await this.db
+    const [provisioned] = await this.fleetDb
       .select({ id: users.id })
       .from(users)
       .where(or(eq(users.id, jwt.sub), eq(users.email, jwt.email)))
@@ -139,7 +150,7 @@ export class AuditAdminService {
   }
 
   private async count(where: SQL | undefined): Promise<number> {
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({ value: sql<number>`count(*)::int` })
       .from(auditLog)
       .where(where);
@@ -151,7 +162,7 @@ export class AuditAdminService {
     limit: number,
     offset: number,
   ): Promise<AuditRow[]> {
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({
         id: auditLog.id,
         createdAt: auditLog.createdAt,

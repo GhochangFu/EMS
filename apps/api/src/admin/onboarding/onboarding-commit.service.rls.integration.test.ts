@@ -174,7 +174,7 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
         fleetDb,
         tenantDb,
         new AccessControlService(authDb, fleetDb),
-        new MasterDataAuditService(tenantDb),
+        new MasterDataAuditService(tenantDb, fleetDb),
         new OnboardingValidateService(),
         new VocabulariesService(fleetDb),
       ),

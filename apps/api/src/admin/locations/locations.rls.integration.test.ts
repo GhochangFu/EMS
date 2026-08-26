@@ -92,7 +92,7 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
       createDb(fleetPool),
       createDb(tenantPool),
       new AccessControlService(createDb(authPool), createDb(fleetPool)),
-      new MasterDataAuditService(createDb(tenantPool)),
+      new MasterDataAuditService(createDb(tenantPool), createDb(fleetPool)),
     );
   });
 

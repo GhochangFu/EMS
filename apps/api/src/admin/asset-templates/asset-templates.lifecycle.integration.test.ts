@@ -126,7 +126,7 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
       fleetDb,
       tenantDb,
       new AccessControlService(createDb(authPool), fleetDb),
-      new MasterDataAuditService(tenantDb),
+      new MasterDataAuditService(tenantDb, fleetDb),
       new VocabulariesService(tenantDb),
     );
     // Fixtures are cross-organization by design and read on the `bms_fleet`

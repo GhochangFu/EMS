@@ -41,7 +41,7 @@ describe.skipIf(!connectionString)("TelemetryWriteService", () => {
 
     const db = createDb(created);
     const access = new AccessControlService(db, db);
-    const audit = new MasterDataAuditService(db);
+    const audit = new MasterDataAuditService(db, db);
     svc = new TelemetryWriteService(db, db, created, access, audit);
     fx = await loadFixtures(created);
   }, 60_000);

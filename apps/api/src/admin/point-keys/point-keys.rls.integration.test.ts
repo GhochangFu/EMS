@@ -96,7 +96,7 @@ describe.skipIf(!connectionString)("F4.16 — PointKeysAdminService under real R
       fleetDb,
       tenantDb,
       new AccessControlService(createDb(authPool), fleetDb),
-      new MasterDataAuditService(tenantDb),
+      new MasterDataAuditService(tenantDb, fleetDb),
     );
   });
 
