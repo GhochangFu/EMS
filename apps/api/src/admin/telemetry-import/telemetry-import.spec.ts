@@ -197,6 +197,39 @@ async function countPointValuesForAsset(pool: pg.Pool, assetId: string): Promise
 }
 
 /**
+ * `E7.1b` regression guard. `TelemetryImportService` resolves `asset_code`/
+ * `asset_id` on `fleetDb`; the fix moved that read off `TENANT_DRIZZLE`
+ * (a master-data importer's `writableLocationIds` can span organizations —
+ * ADR 0043 Amendment 3). Had it stayed on the bare tenant pool, the 0047 FORCE
+ * policy on `assets` would return nothing with no GUC set, so every row would
+ * reject "asset not found" and the whole CSV import would be silently broken
+ * for every caller. A tenant-pool-backed service must reject a code that
+ * resolves fine on fleet — proving the read has to be on fleet.
+ */
+export async function assertImportGoesDarkOnBareTenantPool(
+  tenantBackedSvc: TelemetryImportService,
+  fx: Fixtures,
+): Promise<void> {
+  const buffer = buildWorkbookBuffer([
+    HEADER,
+    [fx.freshAssetCode, fx.freshAssetPointKey.code, 1, fx.freshAssetPointKey.unit ?? "", new Date().toISOString()],
+  ]);
+  const preview = await tenantBackedSvc.preview(fx.adminJwt, buffer, {
+    sourceKind: "unmapped",
+    conflictPolicy: "reject",
+  });
+  assert(
+    preview.acceptedCount === 0 && preview.rejectedCount === 1,
+    `on a bare tenant pool the asset-resolution read returns nothing, so a resolvable code must still ` +
+      `reject "asset not found" — got ${JSON.stringify(preview)}`,
+  );
+  assert(
+    preview.rejected[0]?.reason === "Asset not found or outside your access scope",
+    `the tenant-dark rejection must be the non-disclosure message, got "${preview.rejected[0]?.reason}"`,
+  );
+}
+
+/**
  * Drives `TelemetryImportService` and checks every outcome by **independent
  * SQL through the pool** — the same discipline `telemetry-write.spec.ts`
  * uses for the shared write path this composes.
