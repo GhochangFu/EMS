@@ -58,6 +58,11 @@ async function seedAsset(db: BmsDb, fx: Fixtures, suffix: string): Promise<strin
       siteName: "Fixture Site",
       locationId: fx.otherLocationId,
       domain: "electrical",
+      // E7.1b: stamp the org, as AssetsAdminService.create does since 0046 —
+      // otherwise an auto-provisioned mapping derived from this asset inherits a
+      // NULL org. otherLocationId is in fx.organizationId (the instantiate spec
+      // pairs them).
+      organizationId: fx.organizationId,
     })
     .returning({ id: assets.id });
   return asset.id;
@@ -81,7 +86,10 @@ export async function assertFirstValueCreatesMappingWithComputedProvenance(
 ): Promise<void> {
   const db = createDb(pool);
   const assetId = await seedAsset(db, fx, "01");
-  const svc = new CalcWriteService(db, pool, new MetricsService());
+  // E7.1b: CalcWriteService takes (tenantDb, fleetDb, pool, metrics). The
+  // auto-provision runs on fleetDb; this suite drives it on the one owner pool,
+  // so the same db serves both pool slots.
+  const svc = new CalcWriteService(db, db, pool, new MetricsService());
 
   const result = await svc.writeValues([{ assetId, pointKey: "CALCWRITE_A", value: 42, time: new Date() }]);
   assert(result.written === 1, `expected 1 value written, got ${result.written}`);
@@ -98,6 +106,13 @@ export async function assertFirstValueCreatesMappingWithComputedProvenance(
     mapping.sourceDataKey === "computed:CALCWRITE_A",
     `expected sourceDataKey "computed:CALCWRITE_A", got "${mapping.sourceDataKey}"`,
   );
+  // E7.1b: the auto-provisioned mapping is stamped with the asset's org.
+  // Nullable with no default, so this is NULL — and fails — without the stamping.
+  assert(
+    mapping.organizationId === fx.organizationId,
+    `an auto-provisioned computed mapping must carry the asset's org (${fx.organizationId}), ` +
+      `got ${mapping.organizationId}`,
+  );
 }
 
 export async function assertSecondValueDoesNotCreateASecondMapping(
@@ -106,7 +121,10 @@ export async function assertSecondValueDoesNotCreateASecondMapping(
 ): Promise<void> {
   const db = createDb(pool);
   const assetId = await seedAsset(db, fx, "02");
-  const svc = new CalcWriteService(db, pool, new MetricsService());
+  // E7.1b: CalcWriteService takes (tenantDb, fleetDb, pool, metrics). The
+  // auto-provision runs on fleetDb; this suite drives it on the one owner pool,
+  // so the same db serves both pool slots.
+  const svc = new CalcWriteService(db, db, pool, new MetricsService());
 
   const first = await svc.writeValues([{ assetId, pointKey: "CALCWRITE_B", value: 1, time: new Date() }]);
   assert(first.assetPointsCreated === 1, "the first value must create the mapping");
@@ -129,7 +147,10 @@ export async function assertSecondValueDoesNotCreateASecondMapping(
 export async function assertRewritingTheSameInstantIsANoOp(pool: pg.Pool, fx: Fixtures): Promise<void> {
   const db = createDb(pool);
   const assetId = await seedAsset(db, fx, "03");
-  const svc = new CalcWriteService(db, pool, new MetricsService());
+  // E7.1b: CalcWriteService takes (tenantDb, fleetDb, pool, metrics). The
+  // auto-provision runs on fleetDb; this suite drives it on the one owner pool,
+  // so the same db serves both pool slots.
+  const svc = new CalcWriteService(db, db, pool, new MetricsService());
   const time = new Date("2026-08-20T12:00:00.000Z");
 
   const first = await svc.writeValues([{ assetId, pointKey: "CALCWRITE_C", value: 5, time }]);
@@ -159,7 +180,10 @@ export async function assertOverlongPointKeySkipsOnlyThatPairNotTheBatch(
 ): Promise<void> {
   const db = createDb(pool);
   const assetId = await seedAsset(db, fx, "05");
-  const svc = new CalcWriteService(db, pool, new MetricsService());
+  // E7.1b: CalcWriteService takes (tenantDb, fleetDb, pool, metrics). The
+  // auto-provision runs on fleetDb; this suite drives it on the one owner pool,
+  // so the same db serves both pool slots.
+  const svc = new CalcWriteService(db, db, pool, new MetricsService());
 
   // "computed:" is 9 chars; asset_points.source_data_key is varchar(128), so
   // any pointKey over 119 chars overflows it even though pointKey alone is
@@ -197,7 +221,10 @@ export async function assertOverlongPointKeySkipsOnlyThatPairNotTheBatch(
 export async function assertNoAuditLogRowIsProduced(pool: pg.Pool, fx: Fixtures): Promise<void> {
   const db = createDb(pool);
   const assetId = await seedAsset(db, fx, "04");
-  const svc = new CalcWriteService(db, pool, new MetricsService());
+  // E7.1b: CalcWriteService takes (tenantDb, fleetDb, pool, metrics). The
+  // auto-provision runs on fleetDb; this suite drives it on the one owner pool,
+  // so the same db serves both pool slots.
+  const svc = new CalcWriteService(db, db, pool, new MetricsService());
 
   const before = await countAuditLogForAsset(pool, assetId);
   await svc.writeValues([
