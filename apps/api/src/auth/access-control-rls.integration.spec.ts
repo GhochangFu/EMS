@@ -88,6 +88,15 @@ export async function assertOrganizationAdminStillIsolatedUnderRealRls(
 
   expect(globalScope.locations.length).toBeGreaterThan(scope.locations.length);
 
+  // Positive control (E7.1b Task 5). Without it this assertion passes vacuously
+  // if the org-admin's scope collapses to empty: an empty scope trivially
+  // satisfies the foreign negative below, since it manages nothing — including
+  // the foreign location. Proving the org-admin CAN manage one of its OWN
+  // locations makes an empty scope red here, not silently green.
+  expect(scope.locations.length).toBeGreaterThan(0);
+  const ownLocationId = scope.locations[0]?.id as string;
+  expect(await svc.canManageLocation(jwt, ownLocationId)).toBe(true);
+
   const otherLocationIds = globalScope.locations
     .map((location) => location.id)
     .filter((id) => !scope.locations.some((granted) => granted.id === id));
