@@ -61,6 +61,8 @@ function selectChain(rows: unknown[]): Chain {
 }
 
 function validator(rows: unknown[] = []): ValidateAccess {
+  // E7.1b: `validateRuleDraft`'s reads (the code scan, `assertCompatiblePoint`)
+  // moved to `fleetDb`, so the same thenable stands in for both pools here.
   const db = { select: () => selectChain(rows) } as unknown as BmsDb;
   // Both vocabularies are data — categories under ADR 0031 Amendment 1,
   // severities under ADR 0032 — and live in `bms.rule_categories` and
@@ -73,7 +75,7 @@ function validator(rows: unknown[] = []): ValidateAccess {
   // `validateRuleDraft` never raises — F3.6's addition to the constructor,
   // untouched by anything this file exercises.
   const alarmRaiser = {} as unknown as AlarmRaiser;
-  return new RulesService(db, vocabularies, alarmRaiser) as unknown as ValidateAccess;
+  return new RulesService(db, db, vocabularies, alarmRaiser) as unknown as ValidateAccess;
 }
 
 const HVAC_ASSET = [{ code: "AHU-1", domain: "hvac" }];

@@ -7,7 +7,7 @@ import type { JwtPayload } from "@bms/shared";
 import { AlarmRaiser } from "../alarms/alarm-raise.service";
 import type { AlarmsGateway } from "../alarms/alarms.gateway";
 import { RulesService } from "./rules.service";
-import { createFixtureAssets } from "../testing/integration-fixtures";
+import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
 import type { VocabulariesService } from "../vocabularies/vocabularies.service";
 
 /**
@@ -64,6 +64,7 @@ async function insertMatchingFixture(
   db: BmsDb,
   assetId: string,
   suffix: string,
+  organizationId: string,
   sampleTime: Date = new Date(),
 ): Promise<{ ruleId: string }> {
   const pointKey = `f36_task5_test_point_${suffix}`;
@@ -78,6 +79,9 @@ async function insertMatchingFixture(
   const [rule] = await db
     .insert(automationRules)
     .values({
+      // E7.1b: stamp the rule's org so `evaluateEnabledRules` resolves a real
+      // tenant GUC rather than skipping the rule as un-orgd.
+      organizationId,
       code: `F36_TASK5_TEST_${suffix.toUpperCase()}`,
       name: `F3.6 task 5 integration test — ${suffix}`,
       category: "safety",
@@ -103,11 +107,14 @@ async function insertMatchingFixture(
  */
 export async function assertRaisesUnscopedButReturnsScoped(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const [assetA, assetB] = await createFixtureAssets(tx, 2, "F36T5");
-    const a = await insertMatchingFixture(tx, assetA, "a");
-    const b = await insertMatchingFixture(tx, assetB, "b");
+    const loc = await fixtureLocation(tx);
+    const [assetA, assetB] = await createFixtureAssets(tx, 2, "F36T5", loc);
+    const a = await insertMatchingFixture(tx, assetA, "a", loc.organizationId);
+    const b = await insertMatchingFixture(tx, assetB, "b", loc.organizationId);
 
-    const service = new RulesService(tx, stubVocabularies(), new AlarmRaiser(tx, stubGateway()));
+    // E7.1b: both pools are the same transaction, so fleetDb reads see the
+    // uncommitted fixtures (the AlarmEnrichmentService pattern).
+    const service = new RulesService(tx, tx, stubVocabularies(), new AlarmRaiser(tx, stubGateway()));
 
     const { items } = await service.evaluateEnabledRules(ACTOR, [assetA]);
 
@@ -185,11 +192,12 @@ export async function assertRaisesUnscopedButReturnsScoped(db: BmsDb): Promise<v
  */
 export async function assertStaleSampleMatchesButDoesNotRaise(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const [assetId] = await createFixtureAssets(tx, 1, "F36T5");
+    const loc = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "F36T5", loc);
     const staleTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 1 day old
-    const { ruleId } = await insertMatchingFixture(tx, assetId, "stale", staleTime);
+    const { ruleId } = await insertMatchingFixture(tx, assetId, "stale", loc.organizationId, staleTime);
 
-    const service = new RulesService(tx, stubVocabularies(), new AlarmRaiser(tx, stubGateway()));
+    const service = new RulesService(tx, tx, stubVocabularies(), new AlarmRaiser(tx, stubGateway()));
     await service.evaluateEnabledRules(ACTOR, [assetId]);
 
     const openAlarms = await tx
