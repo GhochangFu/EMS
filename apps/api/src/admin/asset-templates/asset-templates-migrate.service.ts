@@ -138,18 +138,19 @@ type MigrationPlan = {
  * `F4.16` / ADR 0043 — `asset_templates` and `point_keys` carry `ENABLE ROW
  * LEVEL SECURITY` (migration `0040`); reads against them run on `fleetDb`,
  * trusting the scope filter this service already applies via
- * `writableLocationIds`/`canManageOrganization`. E7.1b adds the two
- * `template_points` reads (the version-list point count and `loadPoints`) to
- * that fleetDb set — it becomes a `FORCE`d tenant table in `0047`.
+ * `writableLocationIds`/`canManageOrganization`.
  *
- * **Open gap, tracked — the write path and the `assets` reads are NOT yet
- * tenant-safe.** `assets` and `asset_points` both gained `organization_id` in
- * `0046` and get a policy + `FORCE` in `0047`. `migrate()`'s write transaction
- * still runs as a plain `tenantDb.transaction()` and does not stamp org, and
- * the `assets` count/selection reads here still run on `tenantDb`. Reclassifying
- * those reads and wrapping the write is owned by the master-data-writers sweep
- * unit (assets/rtus/asset-points), which lands before `0047`. This comment is
- * the marker that the gap is known, not a claim that it is closed.
+ * **E7.1b.** `assets`, `asset_points` and `template_points` all became policied
+ * tenant tables (`0046` column, `0047` policy + `FORCE`). Every read of them
+ * here runs on `fleetDb` — the two `template_points` reads (version-list point
+ * count, `loadPoints`) and the `assets`/`asset_points` reads (version-list asset
+ * count, the selected-asset load, the existing-points delta read) — trusting the
+ * same already-computed writable-scope grant. `migrate()`'s write transaction
+ * runs inside `withTenant(target.org)`, stamps `organization_id` on the new
+ * points, and refuses (rolling back) if the `assets.template_id` UPDATE matches
+ * fewer rows than were selected — under `FORCE` a policy-failing UPDATE is a
+ * silent zero-row no-op, and a partial migration is this file's stated
+ * worse-than-failure outcome.
  */
 @Injectable()
 export class AssetTemplateMigrationService {
@@ -203,10 +204,14 @@ export class AssetTemplateMigrationService {
       writableIds === null
         ? inArray(assets.templateId, ids)
         : and(inArray(assets.templateId, ids), inArray(assets.locationId, writableIds));
+    // E7.1b: `assets` read on `fleetDb` — a `FORCE`d tenant table in `0047`
+    // where a `tenantDb` read with no GUC sees zero rows. `assetScope` already
+    // filters by the caller's `writableIds`, so the grant is the isolation
+    // control (Amendment 3).
     const assetCounts =
       writableIds !== null && writableIds.length === 0
         ? []
-        : await this.tenantDb
+        : await this.fleetDb
             .select({ templateId: assets.templateId, total: count() })
             .from(assets)
             .where(assetScope)
@@ -412,7 +417,10 @@ export class AssetTemplateMigrationService {
       );
     }
 
-    const selected = await this.tenantDb
+    // E7.1b: `assets` read on `fleetDb` — FORCEd in 0047; a tenantDb read with
+    // no GUC would see zero rows and report every selected id as nonexistent.
+    // The writable-scope filter below (F4.64) is the isolation control.
+    const selected = await this.fleetDb
       .select({
         id: assets.id,
         code: assets.code,
@@ -647,7 +655,10 @@ export class AssetTemplateMigrationService {
     // wiring, which is exactly the quiet wrongness this feature exists to stop.
     const creatingAssetIds = planned.filter((a) => a.newPoints.length > 0).map((a) => a.dto.assetId);
     if (creatingAssetIds.length > 0) {
-      const existingRows = await this.tenantDb
+      // E7.1b: `asset_points` read on `fleetDb` — FORCEd in 0047; a zero-row
+      // tenantDb read would make every point look new and plan duplicate
+      // inserts. `creatingAssetIds` are the already-scoped selected assets.
+      const existingRows = await this.fleetDb
         .select({
           assetId: assetPoints.assetId,
           pointKey: assetPoints.pointKey,
