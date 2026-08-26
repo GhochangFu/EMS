@@ -26,7 +26,8 @@ import type {
   WorkOrderStatus,
 } from "@bms/shared";
 
-import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { withTenant } from "../database/tenant-context";
 import type {
   ConvertMaintenanceBody,
   CreateMaintenanceScheduleBody,
@@ -34,9 +35,31 @@ import type {
   UpdateMaintenanceScheduleBody,
 } from "./maintenance.schema";
 
+/**
+ * `E7.1b` (ADR 0043 §5) — the four maintenance write tables
+ * (`maintenance_task_templates`, `maintenance_schedules`, `maintenance_history`
+ * and `work_orders`) each gained an `organization_id` column (migration `0046`)
+ * and get a `tenant_isolation` policy + `FORCE` in `0047`. Reads run on
+ * `fleetDb` behind the caller's writable-asset scope — the `assetIds` filter is
+ * the isolation control (Amendment 3) — and writes run inside
+ * `withTenant(db, org, …)`.
+ *
+ * The org derives from the asset on create and from the schedule row's own
+ * column on update/convert. Under `FORCE`, an UPDATE whose row fails the policy
+ * `USING` clause affects zero rows *without erroring*, so a divergent or NULL
+ * org would silently no-op the template flip or the `next_due_at` advance and
+ * still return 200. `resolveScheduleOrg` reads both the schedule's and its
+ * template's org and refuses on NULL-or-divergent, turning that silent state
+ * corruption into a 4xx. The `audit_log` rows carry no `organization_id` this
+ * item (ruling 5, deferred to E7.1c); their inserts pass the NULL-tolerant
+ * `WITH CHECK` under the tenant GUC.
+ */
 @Injectable()
 export class MaintenanceService {
-  constructor(@Inject(TENANT_DRIZZLE) private readonly db: BmsDb) {}
+  constructor(
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+  ) {}
 
   private mapWorkOrderRow(r: {
     id: string;
@@ -131,10 +154,16 @@ export class MaintenanceService {
     };
   }
 
+  /**
+   * Resolves the acting user's row id. `bms.users` is a pre-tenant identity
+   * table (Amendment 4 territory), so this reads on `fleetDb`: after `0047`'s
+   * NULL-tolerant `users` policy a scoped actor's row is invisible to the bare
+   * tenant pool (no `current_org`), which would silently drop the audit actor.
+   */
   private async resolveActorId(
     actor: Pick<JwtPayload, "sub" | "email">,
   ): Promise<string | null> {
-    const [actorRow] = await this.db
+    const [actorRow] = await this.fleetDb
       .select({ id: users.id })
       .from(users)
       .where(eq(users.id, actor.sub))
@@ -142,7 +171,7 @@ export class MaintenanceService {
     if (actorRow) {
       return actorRow.id;
     }
-    const [emailRow] = await this.db
+    const [emailRow] = await this.fleetDb
       .select({ id: users.id })
       .from(users)
       .where(eq(users.email, actor.email))
@@ -150,13 +179,70 @@ export class MaintenanceService {
     return emailRow?.id ?? null;
   }
 
+  /**
+   * The one organization a schedule and its template both belong to. Read on
+   * `fleetDb` behind the caller's writable-asset scope. A NULL on either side or
+   * a divergence means the `0046` backfill did not resolve the row — refused
+   * with a 4xx rather than silently no-op'ing an UPDATE under `FORCE`.
+   */
+  private assertResolvedOrg(
+    scheduleOrg: string | null,
+    templateOrg: string | null,
+  ): string {
+    if (!scheduleOrg || !templateOrg) {
+      throw new BadRequestException(
+        "Maintenance schedule has no organization; run the 0046 backfill",
+      );
+    }
+    if (scheduleOrg !== templateOrg) {
+      throw new BadRequestException(
+        "Maintenance schedule and its template disagree on organization",
+      );
+    }
+    return scheduleOrg;
+  }
+
+  private async resolveScheduleOrg(
+    id: string,
+    assetIds?: string[] | null,
+  ): Promise<string> {
+    const [row] = await this.fleetDb
+      .select({
+        scheduleOrg: maintenanceSchedules.organizationId,
+        templateOrg: maintenanceTaskTemplates.organizationId,
+      })
+      .from(maintenanceSchedules)
+      .innerJoin(
+        maintenanceTaskTemplates,
+        eq(maintenanceSchedules.templateId, maintenanceTaskTemplates.id),
+      )
+      .where(
+        and(
+          eq(maintenanceSchedules.id, id),
+          ...(assetIds ? [inArray(maintenanceTaskTemplates.assetId, assetIds)] : []),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      throw new NotFoundException("Maintenance schedule not found");
+    }
+    return this.assertResolvedOrg(row.scheduleOrg, row.templateOrg);
+  }
+
+  /**
+   * Maps each schedule to its open work order, if any. Reads on `fleetDb`
+   * across organizations by design: this is the duplicate-work-order guard for
+   * `convertToWorkOrder`, so on the bare tenant pool (no `current_org`) it would
+   * see zero rows and stop guarding. Behind the caller's `assetIds` scope in
+   * every caller; on `fleetDb` it can only over-refuse, never leak.
+   */
   private async getActiveWorkOrdersBySchedule(
     scheduleIds: string[],
   ): Promise<Map<string, string>> {
     if (scheduleIds.length === 0) {
       return new Map();
     }
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({
         scheduleId: maintenanceHistory.scheduleId,
         workOrderId: maintenanceHistory.workOrderId,
@@ -206,7 +292,7 @@ export class MaintenanceService {
     if (query.priority !== "all") {
       filters.push(eq(maintenanceTaskTemplates.priority, query.priority));
     }
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({
         id: maintenanceSchedules.id,
         templateId: maintenanceSchedules.templateId,
@@ -263,21 +349,28 @@ export class MaintenanceService {
     if (assetIds && !assetIds.includes(dto.assetId)) {
       throw new NotFoundException("Asset not found or outside your access scope");
     }
-    const [asset] = await this.db
-      .select({ id: assets.id })
+    const [asset] = await this.fleetDb
+      .select({ id: assets.id, organizationId: assets.organizationId })
       .from(assets)
       .where(eq(assets.id, dto.assetId))
       .limit(1);
     if (!asset) {
       throw new NotFoundException("Asset not found");
     }
+    if (!asset.organizationId) {
+      throw new BadRequestException(
+        "Asset has no organization; run the 0046 backfill",
+      );
+    }
+    const organizationId = asset.organizationId;
 
     const actorId = await this.resolveActorId(actor);
     const firstDueAt = new Date(dto.firstDueAt);
-    const [created] = await this.db.transaction(async (tx) => {
+    const createdId = await withTenant(this.db, organizationId, async (tx) => {
       const [template] = await tx
         .insert(maintenanceTaskTemplates)
         .values({
+          organizationId,
           assetId: dto.assetId,
           title: dto.title,
           description: dto.description,
@@ -299,6 +392,7 @@ export class MaintenanceService {
       const [schedule] = await tx
         .insert(maintenanceSchedules)
         .values({
+          organizationId,
           templateId: template.id,
           intervalDays: dto.intervalDays,
           nextDueAt: firstDueAt,
@@ -326,17 +420,17 @@ export class MaintenanceService {
         },
       });
 
-      return [schedule];
+      return schedule.id;
     });
 
-    return this.getScheduleItem(created.id, assetIds);
+    return this.getScheduleItem(createdId, assetIds);
   }
 
   private async getScheduleItem(
     id: string,
     assetIds?: string[] | null,
   ): Promise<MaintenanceScheduleItem> {
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         id: maintenanceSchedules.id,
         templateId: maintenanceSchedules.templateId,
@@ -387,9 +481,10 @@ export class MaintenanceService {
     assetIds?: string[] | null,
   ): Promise<MaintenanceScheduleItem> {
     const existing = await this.getScheduleItem(id, assetIds);
+    const organizationId = await this.resolveScheduleOrg(id, assetIds);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
-    await this.db.transaction(async (tx) => {
+    await withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(maintenanceSchedules)
         .set({ active: dto.active, updatedAt: now })
@@ -431,12 +526,14 @@ export class MaintenanceService {
     if (assetIds && assetIds.length === 0) {
       throw new NotFoundException("Maintenance schedule not found");
     }
-    const [schedule] = await this.db
+    const [schedule] = await this.fleetDb
       .select({
         id: maintenanceSchedules.id,
         templateId: maintenanceSchedules.templateId,
         intervalDays: maintenanceSchedules.intervalDays,
         nextDueAt: maintenanceSchedules.nextDueAt,
+        scheduleOrg: maintenanceSchedules.organizationId,
+        templateOrg: maintenanceTaskTemplates.organizationId,
         assetId: maintenanceTaskTemplates.assetId,
         title: maintenanceTaskTemplates.title,
         description: maintenanceTaskTemplates.description,
@@ -459,6 +556,10 @@ export class MaintenanceService {
     if (!schedule) {
       throw new NotFoundException("Maintenance schedule not found");
     }
+    const organizationId = this.assertResolvedOrg(
+      schedule.scheduleOrg,
+      schedule.templateOrg,
+    );
 
     const active = await this.getActiveWorkOrdersBySchedule([scheduleId]);
     if (active.has(scheduleId)) {
@@ -475,10 +576,11 @@ export class MaintenanceService {
       nextDueBase.getTime() + schedule.intervalDays * 24 * 60 * 60 * 1000,
     );
 
-    const [created] = await this.db.transaction(async (tx) => {
+    const createdWorkOrderId = await withTenant(this.db, organizationId, async (tx) => {
       const [workOrder] = await tx
         .insert(workOrders)
         .values({
+          organizationId,
           assetId: schedule.assetId,
           title: `Maintenance: ${schedule.title}`,
           description:
@@ -495,6 +597,7 @@ export class MaintenanceService {
       }
 
       await tx.insert(maintenanceHistory).values({
+        organizationId,
         templateId: schedule.templateId,
         scheduleId,
         assetId: schedule.assetId,
@@ -524,10 +627,10 @@ export class MaintenanceService {
         },
       });
 
-      return [workOrder];
+      return workOrder.id;
     });
 
-    const workOrder = await this.getWorkOrder(created.id, assetIds);
+    const workOrder = await this.getWorkOrder(createdWorkOrderId, assetIds);
     return { workOrder };
   }
 
@@ -535,7 +638,7 @@ export class MaintenanceService {
     id: string,
     assetIds?: string[] | null,
   ): Promise<WorkOrderListItem> {
-    const [row] = await this.db
+    const [row] = await this.fleetDb
       .select({
         id: workOrders.id,
         assetId: workOrders.assetId,
