@@ -33,6 +33,23 @@ const connectionString = requireIntegrationDb({
     "bounded list, not the global admin's null scope. The owner connection cannot tell these apart.",
 });
 
+// Identity rows (bms.users + user_organization_access) can only be seeded by the
+// provisioning superuser under FORCE (bms_fleet has BYPASSRLS but no INSERT on
+// them since Amendment 4, and bms_owner is FORCE-bound with no GUC). Resolve that
+// connection through the gate's `connection: "superuser"` — the ONE sanctioned
+// path. ADR 0045's `adr-0045-owner-and-superuser-url` invariant forbids the API
+// from naming the superuser connection env var anywhere except the gate itself,
+// so this file must reach it only through `requireIntegrationDb`.
+const superuserConnectionString = requireIntegrationDb({
+  item: "E7.1b",
+  label: "multi-org fixture identity rows under FORCE",
+  because:
+    "The two-org actor is a bms.users row + two user_organization_access grants, which only the " +
+    "superuser can insert under FORCE. Setup and teardown alone use it; every assertion runs on " +
+    "bms_auth / bms_fleet.",
+  connection: "superuser",
+});
+
 const SCOPED_ADMIN_EMAIL = "phe-admin@bms.local";
 
 // Per-run identity for the created actor. bms.users.email is UNIQUE; cleanup is
@@ -60,15 +77,9 @@ describe.skipIf(!connectionString)("E7.1b — multi-org actor scope under real R
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "E7.1b",
     );
-    // bms_fleet has BYPASSRLS but no INSERT on bms.users / user_organization_access
-    // (Amendment 4 narrowed it to reads), and bms_owner is FORCE-bound with no GUC,
-    // so neither can create the identity fixture. Only the superuser can — the
-    // established pattern for seeding identity rows under FORCE. Fixture setup and
-    // teardown alone use it; every assertion runs on bms_auth / bms_fleet.
-    superPool = await openIntegrationPool(
-      process.env.DATABASE_URL_SUPERUSER ?? asRole(url, "bms_app", "bms_app_dev"),
-      "E7.1b",
-    );
+    // The superuser connection (see superuserConnectionString above) — the only
+    // role that can seed the identity fixture under FORCE.
+    superPool = await openIntegrationPool(superuserConnectionString as string, "E7.1b");
     svc = new AccessControlService(createDb(authPool), createDb(ownerPool));
 
     // orgB = the scoped admin's org; orgA = any other seeded org. Both carry
