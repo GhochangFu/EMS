@@ -6,7 +6,6 @@ import {
   alarmEnrichments,
   alarmSkills,
   alarms,
-  assets,
   automationRules,
   pointValues,
   users,
@@ -63,19 +62,8 @@ async function firstSeededUser(db: BmsDb): Promise<Pick<JwtPayload, "sub" | "ema
   return { sub: user.id, email: user.email };
 }
 
-/** The fixture asset's org (createFixtureAssets stamps it), so the alarm the
- * enrichment upsert derives its tenant from carries a real organization_id. */
-async function orgOfAsset(db: BmsDb, assetId: string): Promise<string | null> {
-  const [row] = await db
-    .select({ organizationId: assets.organizationId })
-    .from(assets)
-    .where(eq(assets.id, assetId))
-    .limit(1);
-  return row?.organizationId ?? null;
-}
-
 async function insertTestAlarm(db: BmsDb, assetId: string, code: string): Promise<string> {
-  const organizationId = await orgOfAsset(db, assetId);
+  const { organizationId } = await fixtureLocation(db);
   const [rule] = await db
     .insert(automationRules)
     .values({
@@ -112,7 +100,7 @@ async function insertTestAlarm(db: BmsDb, assetId: string, code: string): Promis
 
 /** An alarm with no linked rule — a historical alarm, or one raised outside the rule engine. */
 async function insertTestAlarmWithoutRule(db: BmsDb, assetId: string, code: string): Promise<string> {
-  const organizationId = await orgOfAsset(db, assetId);
+  const { organizationId } = await fixtureLocation(db);
   const [alarm] = await db
     .insert(alarms)
     .values({
@@ -175,7 +163,7 @@ export async function assertOneEnrichmentPerAlarm(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
     const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_ONE_ENRICHMENT");
-    const organizationId = await orgOfAsset(tx, assetId);
+    const { organizationId } = await fixtureLocation(tx);
 
     await tx.insert(alarmEnrichments).values({ alarmId, organizationId, rootCause: "first" });
 
@@ -199,7 +187,7 @@ export async function assertAffectedAssetPairUnique(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
     const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_AFFECTED_UNIQUE");
-    const organizationId = await orgOfAsset(tx, assetId);
+    const { organizationId } = await fixtureLocation(tx);
     const [enrichment] = await tx
       .insert(alarmEnrichments)
       .values({ alarmId, organizationId })
@@ -230,7 +218,7 @@ export async function assertUndeclaredSkillRejected(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
     const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UNDECLARED_SKILL");
-    const organizationId = await orgOfAsset(tx, assetId);
+    const { organizationId } = await fixtureLocation(tx);
 
     let code: string | undefined;
     try {
@@ -369,7 +357,7 @@ export async function assertDetailsFiltersAffectedAssetsByScope(db: BmsDb): Prom
   await withRollback(db, async (tx) => {
     const [assetId, inScopeAffected] = await createFixtureAssets(tx, 2, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_DETAILS_AFFECTED_SCOPE");
-    const organizationId = await orgOfAsset(tx, assetId);
+    const { organizationId } = await fixtureLocation(tx);
     const [enrichment] = await tx
       .insert(alarmEnrichments)
       .values({ alarmId, organizationId, rootCause: "test" })
@@ -576,7 +564,7 @@ export async function assertEnrichmentUpsertDeleteScopedToCallerAccess(db: BmsDb
   await withRollback(db, async (tx) => {
     const [assetId, inScopeAffected, outOfScopeAffected] = await createFixtureAssets(tx, 3, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_DELETE_SCOPE");
-    const organizationId = await orgOfAsset(tx, assetId);
+    const { organizationId } = await fixtureLocation(tx);
     const actor = await firstSeededUser(tx);
     const callerScope = [assetId, inScopeAffected];
     const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx));

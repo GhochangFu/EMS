@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
@@ -43,12 +45,20 @@ const connectionString = requireIntegrationDb({
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
 const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000005";
 
-const RUN = Date.now();
-const ASSET_PREFIX = "E71B-AP-";
-const TEMPLATE_CODE = `${ASSET_PREFIX}TPL-${RUN}`;
-const HAND_ASSET_CODE = `${ASSET_PREFIX}MAP-${RUN}`;
-const TEMPLATED_ASSET_CODE = `${ASSET_PREFIX}TAS-${RUN}`;
-const CATALOG_CODE = `E71B_AP_CAT_${RUN}`;
+// Per-run fixture prefixes (F4.65). afterAll cleans up with `DELETE ... WHERE
+// code LIKE`, and it runs on the fleet (BYPASSRLS) pool the gate hands back —
+// which sees every organization's rows — so a family-wide sweep would reap a
+// concurrent instance's committed fixtures, not just this run's. Each swept
+// prefix carries a per-run `randomUUID()` in its own declaration, because the
+// isolation invariant (tests/integration-fixture-isolation.test.ts) reads that
+// declaration literally to decide the sweep is run-unique.
+const ASSET_PREFIX = `E71B-AP-${randomUUID().replace(/-/g, "").slice(0, 12)}-`;
+const CATALOG_CODE = `E71B_AP_${randomUUID().replace(/-/g, "").slice(0, 12)}_CAT`;
+const TEMPLATE_CODE = `${ASSET_PREFIX}TPL`;
+const HAND_ASSET_CODE = `${ASSET_PREFIX}MAP`;
+const TEMPLATED_ASSET_CODE = `${ASSET_PREFIX}TAS`;
+// template_points.point_key, not point_keys rows: no FK/CHECK, and they cascade
+// with the template, so they need no per-run token or sweep of their own.
 const MEASURED_KEY = "E71B_AP_M";
 const DERIVED_KEY = "E71B_AP_D";
 
@@ -243,7 +253,7 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
       await ownerPool.query(`DELETE FROM bms.asset_templates WHERE code LIKE $1`, [
         `${ASSET_PREFIX}%`,
       ]);
-      await ownerPool.query(`DELETE FROM bms.point_keys WHERE code LIKE $1`, ["E71B_AP_%"]);
+      await ownerPool.query(`DELETE FROM bms.point_keys WHERE code LIKE $1`, [`${CATALOG_CODE}%`]);
     }
     await Promise.all(
       [ownerPool, authPool, tenantPool, fleetPool].filter(Boolean).map((p) => p.end()),

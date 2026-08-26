@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 import { sql } from "drizzle-orm";
@@ -35,12 +37,64 @@ const connectionString = requireIntegrationDb({
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
 const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000007";
 
-const RUN = Date.now();
+// Per-run fixture prefix (F4.65). afterAll cleans up with `DELETE ... WHERE code
+// LIKE` on the fleet (BYPASSRLS) pool the gate hands back, which sees every
+// organization's rows — so a family-wide sweep would reap a concurrent
+// instance's committed location and asset. randomUUID() sits in PREFIX's own
+// declaration because the isolation invariant
+// (tests/integration-fixture-isolation.test.ts) reads it literally.
+const WO_FAMILY = "E71B-WO-";
+const PREFIX = `${WO_FAMILY}${randomUUID().replace(/-/g, "").slice(0, 12)}-`;
 const SUITE_START = new Date();
-const PREFIX = "E71B-WO-";
-const LOCATION_CODE = `${PREFIX}LOC-${RUN}`;
-const LOCATION_SLUG = `e71b-wo-loc-${RUN}`;
-const ASSET_CODE = `${PREFIX}AS-${RUN}`;
+const LOCATION_CODE = `${PREFIX}LOC`;
+// slug is lowercase-hyphen and UNIQUE; derive it from PREFIX so it is per-run too.
+const LOCATION_SLUG = `${PREFIX.toLowerCase()}loc`;
+const ASSET_CODE = `${PREFIX}AS`;
+
+/**
+ * Reaps rows a *killed* earlier run of this suite committed but never cleaned.
+ *
+ * The per-run sweeps in afterAll narrow to this run's PREFIX, so they cannot see
+ * a crashed run's rows — and unlike the other two E7.1b RLS suites, a leaked row
+ * here matters: `db:seed`'s `verifyHierarchySeed` counts PHEWB locations, so one
+ * stale `E71B-WO` location turns the seed red (the `F4.16` shape).
+ *
+ * Bounded by `created_at`, which is the only thing that keeps it safe: a
+ * concurrent instance's rows are seconds old, so a half-hour-old row cannot
+ * belong to a run still in flight. Child-first, because the FKs into `assets`
+ * and `locations` are NO ACTION, not CASCADE — every DELETE age-bounds its own
+ * target, including the `work_orders` one through its asset subquery, so none can
+ * reach a live instance. Non-fatal: a row an FK still pins is a later run's
+ * hygiene, not this run's failure — per-run codes mean it cannot collide with
+ * anything this run writes.
+ */
+async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
+  const staleFamily = `${WO_FAMILY}%`;
+  try {
+    await pool.query(
+      `DELETE FROM bms.work_orders
+        WHERE asset_id IN (
+          SELECT id FROM bms.assets
+           WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'
+        )`,
+      [staleFamily],
+    );
+    await pool.query(
+      `DELETE FROM bms.assets WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`,
+      [staleFamily],
+    );
+    await pool.query(
+      `DELETE FROM bms.locations WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`,
+      [staleFamily],
+    );
+  } catch (err) {
+    process.stderr.write(
+      `[E7.1b] could not sweep stale ${WO_FAMILY} rows: ` +
+        `${err instanceof Error ? err.message : String(err)}\n` +
+        "        Harmless for this run — fixture codes are per-run — but the rows stay.\n",
+    );
+  }
+}
 
 describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under real RLS", () => {
   let ownerPool: pg.Pool;
@@ -70,6 +124,10 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
       "E7.1b",
     );
+
+    // Clear rows a crashed earlier run left behind before this run writes its own
+    // (a stale E71B-WO location would fail db:seed's PHEWB-location count).
+    await sweepStaleRuns(ownerPool);
 
     const org = await ownerPool.query<{ id: string }>(
       `SELECT uoa.organization_id AS id

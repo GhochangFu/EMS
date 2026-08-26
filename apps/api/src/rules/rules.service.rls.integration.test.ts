@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
@@ -41,8 +43,13 @@ const connectionString = requireIntegrationDb({
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
 const GLOBAL_ADMIN_EMAIL = "admin@bms.local";
 
-const RUN = Date.now();
-const PREFIX = "E71B-RULE-";
+// Per-run fixture prefix (F4.65). afterAll cleans up automation_rules with
+// `DELETE ... WHERE code LIKE` on the fleet (BYPASSRLS) pool the gate hands
+// back, which sees every organization's rows — so a family-wide sweep would
+// reap a concurrent instance's rules. randomUUID() sits in PREFIX's own
+// declaration because the isolation invariant
+// (tests/integration-fixture-isolation.test.ts) reads it literally.
+const PREFIX = `E71B-RULE-${randomUUID().replace(/-/g, "").slice(0, 12)}-`;
 
 function stubGateway(): AlarmsGateway {
   return { broadcastCreated: () => undefined } as unknown as AlarmsGateway;
@@ -99,7 +106,7 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
     // no GUC is needed to insert one. The createDraft under test is what must run
     // under a real bms_tenant connection.
     const fleetDb = createDb(ownerPool);
-    const code = `${PREFIX}ASSET-${RUN}`;
+    const code = `${PREFIX}ASSET`;
     const [asset] = await fleetDb
       .insert(assets)
       .values({
@@ -158,14 +165,14 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
   });
 
   it("stamps automation_rules.org from the asset and resolves a non-NULL audit actor", async () => {
-    await assertCreateStampsOrgAndActorUnderRealRls(ctx, `${PREFIX}CREATE-${RUN}`);
+    await assertCreateStampsOrgAndActorUnderRealRls(ctx, `${PREFIX}CREATE`);
   });
 
   it("refuses a global admin's asset-less time_window create (ruling 4), writing nothing", async () => {
-    await assertAssetlessTimeWindowRefusedForAdmin(ctx, `${PREFIX}ADMINTW-${RUN}`);
+    await assertAssetlessTimeWindowRefusedForAdmin(ctx, `${PREFIX}ADMINTW`);
   });
 
   it("404s a scoped actor's asset-less time_window create before org resolution", async () => {
-    await assertAssetlessTimeWindowRefusedForScoped(ctx, `${PREFIX}SCOPEDTW-${RUN}`);
+    await assertAssetlessTimeWindowRefusedForScoped(ctx, `${PREFIX}SCOPEDTW`);
   });
 });
