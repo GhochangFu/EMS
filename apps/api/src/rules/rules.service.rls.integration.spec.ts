@@ -3,8 +3,10 @@ import { expect } from "vitest";
 import pg from "pg";
 
 import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
+import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
+import { countingDb } from "../testing/counting-db";
 import type { RulesService } from "./rules.service";
 import type { RuleDraftBody } from "./rules.schema";
 
@@ -24,6 +26,12 @@ import type { RuleDraftBody } from "./rules.schema";
  */
 export type RulesRlsFixtures = {
   service: RulesService;
+  /** The real `bms_tenant` handle — for building a counting-wrapped service. */
+  tenantDb: BmsDb;
+  /** The real `bms_fleet` handle — for building a counting-wrapped service. */
+  fleetDb: BmsDb;
+  /** Rebuilds the service with swapped db handles (the counter probe). */
+  makeService: (tenantDb: BmsDb, fleetDb: BmsDb) => RulesService;
   /** A `bms_fleet` (BYPASSRLS) pool, for the verification reads only. */
   ownerPool: pg.Pool;
   organizationId: string;
@@ -36,6 +44,12 @@ export type RulesRlsFixtures = {
   adminActor: Pick<JwtPayload, "sub" | "email">;
   /** Rule ids the assertions create, for the lifecycle file to clean up. */
   createdRuleIds: string[];
+  /** An asset in a second organization, outside the single-org caller's scope. */
+  foreignAssetId: string;
+  /** A seeded rule on `assetId` (org A) — the two-org read must include it. */
+  inScopeRuleId: string;
+  /** A seeded rule on `foreignAssetId` (org B) — likewise. */
+  foreignRuleId: string;
 };
 
 function thresholdDraft(ctx: RulesRlsFixtures, code: string): RuleDraftBody {
@@ -147,4 +161,38 @@ export async function assertAssetlessTimeWindowRefusedForScoped(
     [code],
   );
   expect(rows.rows.length, "a 404'd create writes no automation_rules row").toBe(0);
+}
+
+/**
+ * Decision 3: one `listRules` whose `assetIds` span two organizations returns
+ * BOTH orgs' rules — the run-time fleet fallback resolves across organizations. A
+ * `withTenant(one org)` regression would drop the other org's rows.
+ */
+export async function assertRuleListReturnsBothOrgsForTwoOrgActor(
+  ctx: RulesRlsFixtures,
+): Promise<void> {
+  const both = await ctx.service.listRules([ctx.assetId, ctx.foreignAssetId]);
+  const ids = both.items.map((i) => i.id);
+  expect(ids, "org A's rule is returned on the two-org path").toContain(ctx.inScopeRuleId);
+  expect(ids, "org B's rule is returned on the same read (fleet fallback)").toContain(
+    ctx.foreignRuleId,
+  );
+}
+
+/**
+ * The mechanism seam: a single-organization `listRules` opens exactly one
+ * **tenant** transaction (`withReadScope` → `withTenant`; `selectRuleRows` runs
+ * inside it) and zero fleet transactions (org resolution uses `fleetDb.select`,
+ * not `.transaction`). A revert of `listRules` to a bare `fleetDb` read drops the
+ * tenant count to zero.
+ */
+export async function assertSingleOrgRuleListRunsOnTenantTransaction(
+  ctx: RulesRlsFixtures,
+): Promise<void> {
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  await svc.listRules([ctx.assetId]);
+  expect(tenant.transactions(), "a single-org listRules opens one tenant transaction").toBe(1);
+  expect(fleet.transactions(), "a single-org listRules opens no fleet transaction").toBe(0);
 }

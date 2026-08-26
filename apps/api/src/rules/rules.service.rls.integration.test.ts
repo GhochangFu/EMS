@@ -3,10 +3,13 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
-import { assets, createDb } from "@bms/db";
+import { assets, automationRules, createDb } from "@bms/db";
+import type { BmsDb } from "@bms/db";
+import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 
 import { AlarmRaiser } from "../alarms/alarm-raise.service";
 import type { AlarmsGateway } from "../alarms/alarms.gateway";
+import { withTenant } from "../database/tenant-context";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
@@ -16,6 +19,8 @@ import {
   assertAssetlessTimeWindowRefusedForAdmin,
   assertAssetlessTimeWindowRefusedForScoped,
   assertCreateStampsOrgAndActorUnderRealRls,
+  assertRuleListReturnsBothOrgsForTwoOrgActor,
+  assertSingleOrgRuleListRunsOnTenantTransaction,
   type RulesRlsFixtures,
 } from "./rules.service.rls.integration.spec";
 
@@ -61,6 +66,7 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
   let ctx: RulesRlsFixtures;
   const createdRuleIds: string[] = [];
   let assetId: string;
+  let foreignAssetId = "";
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -124,13 +130,82 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
     // never empty, so [0] always exists — so assertCompatiblePoint passes.
     const pointKey = pointKeysForAsset(domain, code)[0] as string;
 
+    const tenantDb = createDb(tenantPool);
+
+    // Seeds a disabled draft rule on an asset, under that org's GUC so the FORCE
+    // WITH CHECK passes. Returns the rule id.
+    const seedRule = async (orgId: string, aId: string, ruleCode: string): Promise<string> =>
+      withTenant(tenantDb, orgId, async (tx) => {
+        const [row] = await tx
+          .insert(automationRules)
+          .values({
+            organizationId: orgId,
+            code: ruleCode,
+            name: `E7.1b read-path rule ${ruleCode}`,
+            description: null,
+            category: DEFAULT_RULE_CATEGORY_CODE,
+            ruleType: "threshold",
+            source: "operator_rule",
+            enabled: false,
+            assetId: aId,
+            pointKey: "PWR",
+            operator: "gt",
+            thresholdValue: 1,
+            severity: null,
+            condition: { window: "latest" },
+            action: { type: "trace_only", target: "Operations" },
+            lifecycleStatus: "draft",
+            publishedAt: null,
+            archivedAt: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .returning({ id: automationRules.id });
+        createdRuleIds.push(row.id);
+        return row.id;
+      });
+
+    const inScopeRuleId = await seedRule(organizationId, assetId, `${PREFIX}READA`);
+
+    // A second organization for the decision-3 two-org read. Reuse its seeded
+    // active location; seed a foreign asset + rule under its GUC.
+    const orgB = await ownerPool.query<{ id: string }>(
+      "SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1",
+      [organizationId],
+    );
+    if (!orgB.rows[0]) {
+      throw new Error("E7.1b: need a second seeded organization for the two-org read proof.");
+    }
+    const foreignOrgId = orgB.rows[0].id;
+    const foreignLoc = await ownerPool.query<{ id: string }>(
+      "SELECT id FROM bms.locations WHERE organization_id = $1 AND active = true LIMIT 1",
+      [foreignOrgId],
+    );
+    if (!foreignLoc.rows[0]) {
+      throw new Error(`E7.1b: org ${foreignOrgId} has no active location — run pnpm db:seed.`);
+    }
+    const [foreignAsset] = await fleetDb
+      .insert(assets)
+      .values({
+        organizationId: foreignOrgId,
+        code: `${PREFIX}ASSETB`,
+        name: "E7.1b rules RLS asset B",
+        siteName: "E7.1b Site",
+        locationId: foreignLoc.rows[0].id,
+        domain,
+        active: true,
+      })
+      .returning({ id: assets.id });
+    foreignAssetId = foreignAsset.id;
+    const foreignRuleId = await seedRule(foreignOrgId, foreignAssetId, `${PREFIX}READB`);
+
+    const makeService = (t: BmsDb, f: BmsDb): RulesService =>
+      new RulesService(t, f, new VocabulariesService(f), new AlarmRaiser(t, stubGateway()));
     ctx = {
-      service: new RulesService(
-        createDb(tenantPool),
-        fleetDb,
-        new VocabulariesService(fleetDb),
-        new AlarmRaiser(createDb(tenantPool), stubGateway()),
-      ),
+      service: makeService(tenantDb, fleetDb),
+      tenantDb,
+      fleetDb,
+      makeService,
       ownerPool,
       organizationId,
       assetId,
@@ -144,6 +219,9 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
         email: GLOBAL_ADMIN_EMAIL,
       },
       createdRuleIds,
+      foreignAssetId,
+      inScopeRuleId,
+      foreignRuleId,
     };
   });
 
@@ -157,8 +235,9 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
         await ownerPool.query(`DELETE FROM bms.automation_rules WHERE id = ANY($1)`, [createdRuleIds]);
       }
       await ownerPool.query(`DELETE FROM bms.automation_rules WHERE code LIKE $1`, [`${PREFIX}%`]);
-      if (assetId) {
-        await ownerPool.query(`DELETE FROM bms.assets WHERE id = $1`, [assetId]);
+      const assetIdsToDelete = [assetId, foreignAssetId].filter(Boolean);
+      if (assetIdsToDelete.length > 0) {
+        await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1)`, [assetIdsToDelete]);
       }
     }
     await Promise.all([ownerPool, tenantPool].filter(Boolean).map((p) => p.end()));
@@ -174,5 +253,13 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
 
   it("404s a scoped actor's asset-less time_window create before org resolution", async () => {
     await assertAssetlessTimeWindowRefusedForScoped(ctx, `${PREFIX}SCOPEDTW`);
+  });
+
+  it("returns both orgs' rules for a two-organization actor on one read (decision 3)", async () => {
+    await assertRuleListReturnsBothOrgsForTwoOrgActor(ctx);
+  });
+
+  it("runs a single-org listRules on the tenant pool (one tenant transaction, no fleet)", async () => {
+    await assertSingleOrgRuleListRunsOnTenantTransaction(ctx);
   });
 });

@@ -1,33 +1,39 @@
 import { expect } from "vitest";
 import pg from "pg";
 
+import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
+import { countingDb } from "../testing/counting-db";
 import type { AlarmsService } from "./alarms.service";
 
 /**
- * `E7.1b` — the read-path isolation proof `AlarmsService` never had. The service
- * routes its `list`/`resolveAlarmOrg` reads onto `fleetDb` and trusts the
- * caller's `assetIds` `WHERE` filter as the isolation control (ADR 0043
- * Amendment 3 decision 3 — `readableAssetIds` is a cross-org union, so a single
- * tenant GUC cannot serve the read and the per-org loop was rejected). That
- * control was asserted by a comment and by nothing else: `codegraph` reported
- * `AlarmsService` with no covering tests, while `work-orders`/`maintenance`
- * each carry their own `.rls.integration` pair.
+ * `E7.1b` (ADR 0043 decisions 1+3) — the read-path isolation proof
+ * `AlarmsService` never had. `list` reads `alarms` (a decision-1 table) through
+ * `withReadScope`: a single-organization actor is served inside `withTenant`
+ * (the 0047 FORCE policy scopes the read — decision 1), an admin or
+ * multi-organization actor falls back to `fleetDb` at run time (decisions 2/3),
+ * where the `assetIds` `WHERE` filter is the isolation control. That routing was
+ * asserted by a comment and by nothing else before this pair.
  *
- * Three things this proves against real, non-owner roles that the owner
+ * Four things this proves against real, non-owner roles that the owner
  * connection would pass regardless:
  *
- *  1. `assertAlarmListScopedByAssetIds` — the `assetIds` filter, not a GUC, is
- *     what isolates: a caller scoped to org A's asset sees org A's alarm and not
- *     org B's, and the SAME fleet read scoped to org B's asset returns org B's
- *     alarm — the cross-org resolution a single-org GUC could not do.
- *  2. `assertAlarmListGoesDarkOnBareTenantPool` — why the read must be on fleet:
- *     on the bare tenant pool with no `SET LOCAL`, the 0047 FORCE policy returns
- *     zero rows, so the list would be silently empty for every caller. This is a
- *     necessity proof; the `@Inject` token itself is gated by
- *     `database/fleet-read-wiring.test.ts` (this file injects its pools).
- *  3. `assertAcknowledgeRefusesForeignAlarmButAllowsInScope` — `resolveAlarmOrg`
+ *  1. `assertAlarmListScopedByAssetIds` — a single-org caller scoped to org A's
+ *     asset sees org A's alarm and not org B's; the same read scoped to org B's
+ *     asset returns org B's alarm. Each runs under its own org's GUC.
+ *  2. `assertAlarmListReturnsBothOrgsForTwoOrgActor` — decision 3: ONE list call
+ *     whose `assetIds` span two organizations returns BOTH orgs' alarms. A
+ *     wrongful `withTenant(one org)` would silently drop the other org's rows —
+ *     which is why the per-org loop was rejected and the fallback is fleet.
+ *  3. `assertSingleOrgListRunsOnTenantTransaction` — the mechanism seam: a
+ *     single-org list opens exactly one **tenant** transaction and zero fleet
+ *     transactions (`withReadScope` → `withTenant`; org resolution uses
+ *     `fleetDb.select`, not `.transaction`). A revert to `this.fleetDb.select`
+ *     in `list` drops the tenant count to zero. This is what gates the read pool
+ *     — `database/fleet-read-wiring.test.ts` no longer does, now that `list`
+ *     injects both tokens.
+ *  4. `assertAcknowledgeRefusesForeignAlarmButAllowsInScope` — `resolveAlarmOrg`
  *     refuses a foreign alarm behind the caller's scope with the same
  *     non-disclosure wording a nonexistent id gets, and the in-scope
  *     acknowledge runs under org A's GUC, resolves the actor on `fleetDb`
@@ -36,6 +42,12 @@ import type { AlarmsService } from "./alarms.service";
 export type AlarmsRlsFixtures = {
   /** Fleet-backed service: `db` = `bms_tenant`, `fleetDb` = `bms_fleet`. */
   svc: AlarmsService;
+  /** The real `bms_tenant` handle — for building a counting-wrapped service. */
+  tenantDb: BmsDb;
+  /** The real `bms_fleet` handle — for building a counting-wrapped service. */
+  fleetDb: BmsDb;
+  /** Rebuilds the service under test with swapped db handles (counter probe). */
+  makeService: (tenantDb: BmsDb, fleetDb: BmsDb) => AlarmsService;
   /** `bms_fleet` (BYPASSRLS) — verification reads that must span both orgs. */
   ownerPool: pg.Pool;
   /** Org A — the acting user's organization. */
@@ -95,25 +107,39 @@ export async function assertAlarmListScopedByAssetIds(ctx: AlarmsRlsFixtures): P
 }
 
 /**
- * Why the read must be on fleet. Had `list` stayed on the bare tenant pool (no
- * `SET LOCAL app.current_organization`), the 0047 FORCE policy on
- * `alarms`/`assets` would return zero rows and the alarm list would be silently
- * empty for every caller — the "engine goes dark" failure the `fleetDb` routing
- * prevents. A tenant-pool-backed service must see nothing here.
- *
- * This is a necessity proof, not a wiring guard: it injects its own pools, so it
- * cannot catch a revert of the `@Inject(FLEET_DRIZZLE)` token — that is gated by
- * `database/fleet-read-wiring.test.ts`.
+ * Decision 3: a single list call whose `assetIds` span two organizations returns
+ * BOTH orgs' alarms — the run-time fleet fallback resolves across organizations.
+ * The mandated test: a `withTenant(one org)` regression would drop the other
+ * org's rows, so this fails exactly when the multi-org fallback is wrong.
  */
-export async function assertAlarmListGoesDarkOnBareTenantPool(
-  tenantBackedSvc: AlarmsService,
-  inScopeAssetId: string,
+export async function assertAlarmListReturnsBothOrgsForTwoOrgActor(
+  ctx: AlarmsRlsFixtures,
 ): Promise<void> {
-  const dark = await tenantBackedSvc.list({ limit: 100, assetIds: [inScopeAssetId] });
-  expect(
-    dark.items,
-    "a bare tenant pool with no GUC sees no alarms under 0047 FORCE",
-  ).toHaveLength(0);
+  const { svc, inScopeAssetId, inScopeAlarmId, foreignAssetId, foreignAlarmId } = ctx;
+  const both = await svc.list({ limit: 100, assetIds: [inScopeAssetId, foreignAssetId] });
+  const ids = both.items.map((i) => i.id);
+  expect(ids, "org A's alarm is returned on the two-org path").toContain(inScopeAlarmId);
+  expect(ids, "org B's alarm is returned on the same read (fleet fallback)").toContain(
+    foreignAlarmId,
+  );
+}
+
+/**
+ * The mechanism seam. A single-organization list runs through `withReadScope` →
+ * `withTenant`, so it opens exactly one **tenant** transaction and zero fleet
+ * transactions (org resolution uses `fleetDb.select`, not `.transaction`). A
+ * revert of `list` back to `this.fleetDb.select(...)` drops the tenant count to
+ * zero — this is what now gates the read pool.
+ */
+export async function assertSingleOrgListRunsOnTenantTransaction(
+  ctx: AlarmsRlsFixtures,
+): Promise<void> {
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  await svc.list({ limit: 100, assetIds: [ctx.inScopeAssetId] });
+  expect(tenant.transactions(), "a single-org list opens one tenant transaction").toBe(1);
+  expect(fleet.transactions(), "a single-org list opens no fleet transaction").toBe(0);
 }
 
 /**

@@ -27,7 +27,8 @@ import type {
 } from "@bms/shared";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
-import { withTenant } from "../database/tenant-context";
+import { withTenant, type BmsTx } from "../database/tenant-context";
+import { withReadScope } from "../database/tenant-read-scope";
 import type {
   ConvertMaintenanceBody,
   CreateMaintenanceScheduleBody,
@@ -36,12 +37,14 @@ import type {
 } from "./maintenance.schema";
 
 /**
- * `E7.1b` (ADR 0043 §5) — the four maintenance write tables
+ * `E7.1b` (ADR 0043 §5, decisions 1+3) — the four maintenance write tables
  * (`maintenance_task_templates`, `maintenance_schedules`, `maintenance_history`
  * and `work_orders`) each gained an `organization_id` column (migration `0046`)
- * and get a `tenant_isolation` policy + `FORCE` in `0047`. Reads run on
- * `fleetDb` behind the caller's writable-asset scope — the `assetIds` filter is
- * the isolation control (Amendment 3) — and writes run inside
+ * and get a `tenant_isolation` policy + `FORCE` in `0047`. The user-facing `list`
+ * reads through `withReadScope`: a single-organization actor is served inside
+ * `withTenant` (decision 1, the RLS backstop), an admin or multi-organization
+ * actor falls back to `fleetDb` at run time (decisions 2/3), where the
+ * `assetIds` filter is the isolation control. Writes run inside
  * `withTenant(db, org, …)`.
  *
  * The org derives from the asset on create and from the schedule row's own
@@ -53,6 +56,12 @@ import type {
  * corruption into a 4xx. The `audit_log` rows carry no `organization_id` this
  * item (ruling 5, deferred to E7.1c); their inserts pass the NULL-tolerant
  * `WITH CHECK` under the tenant GUC.
+ *
+ * The write-path reads stay on `fleetDb`: `resolveScheduleOrg` and
+ * `convertToWorkOrder`'s pre-check resolve the org before the GUC exists.
+ * Residual (tracked for a later fold into the write transaction): the private
+ * `getScheduleItem`/`getWorkOrder` post-write read-backs read on `fleetDb` behind
+ * `assetIds`, so a single-org write's read-back still touches fleet.
  */
 @Injectable()
 export class MaintenanceService {
@@ -230,19 +239,24 @@ export class MaintenanceService {
   }
 
   /**
-   * Maps each schedule to its open work order, if any. Reads on `fleetDb`
-   * across organizations by design: this is the duplicate-work-order guard for
-   * `convertToWorkOrder`, so on the bare tenant pool (no `current_org`) it would
-   * see zero rows and stop guarding. Behind the caller's `assetIds` scope in
-   * every caller; on `fleetDb` it can only over-refuse, never leak.
+   * Maps each schedule to its open work order, if any, on the passed handle. It
+   * has two modes since E7.1b: `list` passes its `withReadScope` transaction, so
+   * a single-organization caller's guard read runs under the org GUC alongside
+   * the list itself (decision 1); the write-path callers (`convertToWorkOrder`'s
+   * duplicate guard, `getScheduleItem`'s read-back) wrap a bare
+   * `fleetDb.transaction`, so they read cross-organization — the duplicate guard
+   * must, or on a GUC-less pool it would see zero rows and stop guarding. Behind
+   * the caller's `assetIds` scope in every caller; on `fleetDb` it can only
+   * over-refuse, never leak.
    */
   private async getActiveWorkOrdersBySchedule(
     scheduleIds: string[],
+    db: BmsTx,
   ): Promise<Map<string, string>> {
     if (scheduleIds.length === 0) {
       return new Map();
     }
-    const rows = await this.fleetDb
+    const rows = await db
       .select({
         scheduleId: maintenanceHistory.scheduleId,
         workOrderId: maintenanceHistory.workOrderId,
@@ -272,72 +286,76 @@ export class MaintenanceService {
     query: ListMaintenanceQuery,
     assetIds?: string[] | null,
   ): Promise<{ items: MaintenanceScheduleItem[] }> {
-    if (assetIds && assetIds.length === 0) {
-      return { items: [] };
-    }
     const horizon = new Date(Date.now() + query.horizonDays * 24 * 60 * 60 * 1000);
-    const filters = [
-      eq(maintenanceSchedules.active, true),
-      eq(maintenanceTaskTemplates.active, true),
-    ];
-    if (assetIds) {
-      filters.push(inArray(maintenanceTaskTemplates.assetId, assetIds));
-    }
-    if (query.assetId) {
-      filters.push(eq(maintenanceTaskTemplates.assetId, query.assetId));
-    }
-    if (query.category) {
-      filters.push(eq(maintenanceTaskTemplates.category, query.category));
-    }
-    if (query.priority !== "all") {
-      filters.push(eq(maintenanceTaskTemplates.priority, query.priority));
-    }
-    const rows = await this.fleetDb
-      .select({
-        id: maintenanceSchedules.id,
-        templateId: maintenanceSchedules.templateId,
-        assetId: maintenanceTaskTemplates.assetId,
-        title: maintenanceTaskTemplates.title,
-        description: maintenanceTaskTemplates.description,
-        category: maintenanceTaskTemplates.category,
-        generationMode: maintenanceTaskTemplates.generationMode,
-        ownerTeam: maintenanceTaskTemplates.ownerTeam,
-        vendorName: maintenanceTaskTemplates.vendorName,
-        complianceRef: maintenanceTaskTemplates.complianceRef,
-        triggerSummary: maintenanceTaskTemplates.triggerSummary,
-        safetyCritical: maintenanceTaskTemplates.safetyCritical,
-        priority: maintenanceTaskTemplates.priority,
-        estimatedMinutes: maintenanceTaskTemplates.estimatedMinutes,
-        intervalDays: maintenanceSchedules.intervalDays,
-        nextDueAt: maintenanceSchedules.nextDueAt,
-        lastCompletedAt: maintenanceSchedules.lastCompletedAt,
-        assetCode: assets.code,
-        assetName: assets.name,
-        siteName: assets.siteName,
-      })
-      .from(maintenanceSchedules)
-      .innerJoin(
-        maintenanceTaskTemplates,
-        eq(maintenanceSchedules.templateId, maintenanceTaskTemplates.id),
-      )
-      .innerJoin(assets, eq(maintenanceTaskTemplates.assetId, assets.id))
-      .where(and(...filters))
-      .orderBy(asc(maintenanceSchedules.nextDueAt), asc(assets.code))
-      .limit(100);
-    const activeBySchedule = await this.getActiveWorkOrdersBySchedule(
-      rows.map((row) => row.id),
+    return withReadScope(
+      this.db,
+      this.fleetDb,
+      assetIds,
+      () => ({ items: [] }),
+      async (tx) => {
+        const filters = [
+          eq(maintenanceSchedules.active, true),
+          eq(maintenanceTaskTemplates.active, true),
+        ];
+        if (assetIds) {
+          filters.push(inArray(maintenanceTaskTemplates.assetId, assetIds));
+        }
+        if (query.assetId) {
+          filters.push(eq(maintenanceTaskTemplates.assetId, query.assetId));
+        }
+        if (query.category) {
+          filters.push(eq(maintenanceTaskTemplates.category, query.category));
+        }
+        if (query.priority !== "all") {
+          filters.push(eq(maintenanceTaskTemplates.priority, query.priority));
+        }
+        const rows = await tx
+          .select({
+            id: maintenanceSchedules.id,
+            templateId: maintenanceSchedules.templateId,
+            assetId: maintenanceTaskTemplates.assetId,
+            title: maintenanceTaskTemplates.title,
+            description: maintenanceTaskTemplates.description,
+            category: maintenanceTaskTemplates.category,
+            generationMode: maintenanceTaskTemplates.generationMode,
+            ownerTeam: maintenanceTaskTemplates.ownerTeam,
+            vendorName: maintenanceTaskTemplates.vendorName,
+            complianceRef: maintenanceTaskTemplates.complianceRef,
+            triggerSummary: maintenanceTaskTemplates.triggerSummary,
+            safetyCritical: maintenanceTaskTemplates.safetyCritical,
+            priority: maintenanceTaskTemplates.priority,
+            estimatedMinutes: maintenanceTaskTemplates.estimatedMinutes,
+            intervalDays: maintenanceSchedules.intervalDays,
+            nextDueAt: maintenanceSchedules.nextDueAt,
+            lastCompletedAt: maintenanceSchedules.lastCompletedAt,
+            assetCode: assets.code,
+            assetName: assets.name,
+            siteName: assets.siteName,
+          })
+          .from(maintenanceSchedules)
+          .innerJoin(
+            maintenanceTaskTemplates,
+            eq(maintenanceSchedules.templateId, maintenanceTaskTemplates.id),
+          )
+          .innerJoin(assets, eq(maintenanceTaskTemplates.assetId, assets.id))
+          .where(and(...filters))
+          .orderBy(asc(maintenanceSchedules.nextDueAt), asc(assets.code))
+          .limit(100);
+        const activeBySchedule = await this.getActiveWorkOrdersBySchedule(
+          rows.map((row) => row.id),
+          tx,
+        );
+        return {
+          items: rows
+            .filter((row) => {
+              const dueState = row.nextDueAt.getTime() < Date.now() ? "overdue" : "upcoming";
+              const dueMatch = query.dueState === "all" || dueState === query.dueState;
+              return dueMatch && row.nextDueAt <= horizon;
+            })
+            .map((row) => this.mapScheduleRow(row, activeBySchedule.get(row.id) ?? null)),
+        };
+      },
     );
-    return {
-      items: rows
-        .filter((row) => {
-          const dueState = row.nextDueAt.getTime() < Date.now() ? "overdue" : "upcoming";
-          const dueMatch = query.dueState === "all" || dueState === query.dueState;
-          return dueMatch && row.nextDueAt <= horizon;
-        })
-        .map((row) =>
-          this.mapScheduleRow(row, activeBySchedule.get(row.id) ?? null),
-        ),
-    };
   }
 
   /** Creates a maintenance template with its first recurring schedule. */
@@ -469,7 +487,11 @@ export class MaintenanceService {
     if (!row) {
       throw new NotFoundException("Maintenance schedule not found");
     }
-    const active = await this.getActiveWorkOrdersBySchedule([id]);
+    // Post-write read-back: the duplicate guard reads cross-org on a bare fleet
+    // transaction (getActiveWorkOrdersBySchedule is BmsTx-only since E7.1b).
+    const active = await this.fleetDb.transaction((tx) =>
+      this.getActiveWorkOrdersBySchedule([id], tx),
+    );
     return this.mapScheduleRow(row, active.get(id) ?? null);
   }
 
@@ -561,7 +583,11 @@ export class MaintenanceService {
       schedule.templateOrg,
     );
 
-    const active = await this.getActiveWorkOrdersBySchedule([scheduleId]);
+    // Write-path duplicate guard: reads cross-org on a bare fleet transaction so
+    // a foreign-org open work order still blocks a second one for this schedule.
+    const active = await this.fleetDb.transaction((tx) =>
+      this.getActiveWorkOrdersBySchedule([scheduleId], tx),
+    );
     if (active.has(scheduleId)) {
       throw new BadRequestException(
         "This maintenance item already has an active work order",

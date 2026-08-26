@@ -4,7 +4,8 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 import { sql } from "drizzle-orm";
 
-import { assets, createDb, locations } from "@bms/db";
+import { assets, createDb, locations, workOrders } from "@bms/db";
+import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { withTenant } from "../database/tenant-context";
@@ -12,6 +13,8 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import { WorkOrdersService } from "./work-orders.service";
 import {
+  assertSingleOrgWorkOrderListRunsOnTenantTransaction,
+  assertWorkOrderListReturnsBothOrgsForTwoOrgActor,
   assertWorkOrderWritesStampOrgUnderRealRls,
   type WorkOrdersRlsFixtures,
 } from "./work-orders.service.rls.integration.spec";
@@ -199,12 +202,77 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
       assetId = asset.id;
     });
 
+    // A second organization for the decision-3 two-org read. Reuse its seeded
+    // active location — creating one here would trip db:seed's PHEWB count (the
+    // seed-breaker the sweepStaleRuns comment describes).
+    const orgB = await ownerPool.query<{ id: string }>(
+      "SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1",
+      [organizationId],
+    );
+    if (!orgB.rows[0]) {
+      throw new Error("E7.1b: need a second seeded organization for the two-org read proof.");
+    }
+    const foreignOrgId = orgB.rows[0].id;
+    const foreignLoc = await ownerPool.query<{ id: string }>(
+      "SELECT id FROM bms.locations WHERE organization_id = $1 AND active = true LIMIT 1",
+      [foreignOrgId],
+    );
+    if (!foreignLoc.rows[0]) {
+      throw new Error(`E7.1b: org ${foreignOrgId} has no active location — run pnpm db:seed.`);
+    }
+
+    // One work order in org A and one in org B, each seeded under its own GUC so
+    // the FORCE WITH CHECK passes. The two-org list must return both.
+    let foreignAssetId = "";
+    let inScopeWorkOrderId = "";
+    let foreignWorkOrderId = "";
+    await withTenant(tenantDb, organizationId, async (tx) => {
+      const [wo] = await tx
+        .insert(workOrders)
+        .values({ organizationId, assetId, title: "E7.1b WO A", status: "open", priority: "medium" })
+        .returning({ id: workOrders.id });
+      inScopeWorkOrderId = wo.id;
+    });
+    await withTenant(tenantDb, foreignOrgId, async (tx) => {
+      const [asset] = await tx
+        .insert(assets)
+        .values({
+          organizationId: foreignOrgId,
+          code: `${PREFIX}BS`,
+          name: "E7.1b WO Asset B",
+          siteName: "E7.1b Site",
+          locationId: foreignLoc.rows[0].id,
+          domain,
+          active: true,
+        })
+        .returning({ id: assets.id });
+      foreignAssetId = asset.id;
+      const [wo] = await tx
+        .insert(workOrders)
+        .values({
+          organizationId: foreignOrgId,
+          assetId: asset.id,
+          title: "E7.1b WO B",
+          status: "open",
+          priority: "medium",
+        })
+        .returning({ id: workOrders.id });
+      foreignWorkOrderId = wo.id;
+    });
+
+    const makeService = (t: BmsDb, f: BmsDb): WorkOrdersService => new WorkOrdersService(f, t);
     ctx = {
-      svc: new WorkOrdersService(fleetDb, tenantDb),
+      svc: makeService(tenantDb, fleetDb),
+      tenantDb,
+      fleetDb,
+      makeService,
       ownerPool,
       organizationId,
       assetId,
       actorUserId,
+      foreignAssetId,
+      inScopeWorkOrderId,
+      foreignWorkOrderId,
     };
   });
 
@@ -234,5 +302,13 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
 
   it("stamps the asset's org on create, resolves the actor, and preserves org on update/reorder", async () => {
     await assertWorkOrderWritesStampOrgUnderRealRls(ctx, actor);
+  });
+
+  it("returns both orgs' work orders for a two-organization actor on one read (decision 3)", async () => {
+    await assertWorkOrderListReturnsBothOrgsForTwoOrgActor(ctx);
+  });
+
+  it("runs a single-org list on the tenant pool (one tenant transaction, no fleet)", async () => {
+    await assertSingleOrgWorkOrderListRunsOnTenantTransaction(ctx);
   });
 });

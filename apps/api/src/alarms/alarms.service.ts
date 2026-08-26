@@ -12,6 +12,7 @@ import type { AlarmListItem, JwtPayload } from "@bms/shared";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
+import { withReadScope } from "../database/tenant-read-scope";
 import { AlarmsGateway } from "./alarms.gateway";
 
 function encodeCursor(raisedAt: Date, id: string): string {
@@ -32,13 +33,16 @@ function decodeCursor(raw: string): { raisedAt: Date; id: string } {
 export class AlarmsService {
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
-    // E7.1b: `readableAssetIds` resolves to a cross-organization union for a
-    // multi-org actor, so a single tenant GUC cannot serve these reads — ADR
-    // 0043 Amendment 3 decision 3 routes exactly that case to fleetDb and
-    // rejects the per-org loop (the keyset `(raised_at, id)` cursor could not
-    // survive one). The `assetIds` `WHERE` filter is the isolation control the
-    // amendment trusts; the actor/identity read is pre-tenant (Amendment 4).
-    // Both run on fleetDb.
+    // E7.1b (ADR 0043 decisions 1+3): `list` reads `alarms` — a decision-1
+    // tenant-data table — through `withReadScope`. A single-organization actor
+    // is served inside `withTenant`, so the 0047 FORCE policy scopes the read
+    // (decision 1, the RLS backstop); an admin or multi-organization actor falls
+    // back to `fleetDb` at run time (decisions 2/3), where the `assetIds` WHERE
+    // filter is the isolation control and the keyset `(raised_at, id)` cursor
+    // survives — the per-org loop was considered and rejected. `resolveAlarmOrg`
+    // (write-path org resolution for `acknowledge`) and the pre-tenant actor
+    // read stay on `fleetDb`; the acknowledge read-back already runs inside the
+    // write's tenant transaction.
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly gateway: AlarmsGateway,
   ) {}
@@ -111,68 +115,70 @@ export class AlarmsService {
   }): Promise<{ items: AlarmListItem[]; nextCursor: string | null }> {
     const limit = Math.min(100, Math.max(1, opts.limit));
     const cursor = opts.cursor;
-    if (opts.assetIds && opts.assetIds.length === 0) {
-      return { items: [], nextCursor: null };
-    }
     const filters = opts.assetIds ? [inArray(alarms.assetId, opts.assetIds)] : [];
 
-    const base = this.fleetDb
-      .select({
-        id: alarms.id,
-        assetId: alarms.assetId,
-        ruleKey: alarms.ruleKey,
-        ruleId: alarms.ruleId,
-        severity: alarms.severity,
-        message: alarms.message,
-        raisedAt: alarms.raisedAt,
-        acknowledgedAt: alarms.acknowledgedAt,
-        acknowledgedBy: alarms.acknowledgedBy,
-        assetCode: assets.code,
-        assetName: assets.name,
-        siteName: assets.siteName,
-      })
-      .from(alarms)
-      .innerJoin(assets, eq(alarms.assetId, assets.id));
+    return withReadScope(
+      this.db,
+      this.fleetDb,
+      opts.assetIds,
+      () => ({ items: [], nextCursor: null }),
+      async (tx) => {
+        const base = tx
+          .select({
+            id: alarms.id,
+            assetId: alarms.assetId,
+            ruleKey: alarms.ruleKey,
+            ruleId: alarms.ruleId,
+            severity: alarms.severity,
+            message: alarms.message,
+            raisedAt: alarms.raisedAt,
+            acknowledgedAt: alarms.acknowledgedAt,
+            acknowledgedBy: alarms.acknowledgedBy,
+            assetCode: assets.code,
+            assetName: assets.name,
+            siteName: assets.siteName,
+          })
+          .from(alarms)
+          .innerJoin(assets, eq(alarms.assetId, assets.id));
 
-    const c = cursor ? decodeCursor(cursor) : null;
-    const cursorFilter = c
-      ? or(
-          lt(alarms.raisedAt, c.raisedAt),
-          and(eq(alarms.raisedAt, c.raisedAt), lt(alarms.id, c.id)),
-        )
-      : undefined;
-    const whereFilter =
-      cursorFilter && filters.length > 0
-        ? and(...filters, cursorFilter)
-        : cursorFilter
-          ? cursorFilter
-          : filters.length > 0
-            ? and(...filters)
-            : undefined;
-    const rows = await (c
-      ? base
-          .where(whereFilter)
-          .orderBy(desc(alarms.raisedAt), desc(alarms.id))
-          .limit(limit + 1)
-      : whereFilter
-        ? base
-            .where(whereFilter)
-            .orderBy(desc(alarms.raisedAt), desc(alarms.id))
-            .limit(limit + 1)
-        : base.orderBy(desc(alarms.raisedAt), desc(alarms.id)).limit(limit + 1));
+        const c = cursor ? decodeCursor(cursor) : null;
+        const cursorFilter = c
+          ? or(
+              lt(alarms.raisedAt, c.raisedAt),
+              and(eq(alarms.raisedAt, c.raisedAt), lt(alarms.id, c.id)),
+            )
+          : undefined;
+        const whereFilter =
+          cursorFilter && filters.length > 0
+            ? and(...filters, cursorFilter)
+            : cursorFilter
+              ? cursorFilter
+              : filters.length > 0
+                ? and(...filters)
+                : undefined;
+        const rows = await (c
+          ? base
+              .where(whereFilter)
+              .orderBy(desc(alarms.raisedAt), desc(alarms.id))
+              .limit(limit + 1)
+          : whereFilter
+            ? base
+                .where(whereFilter)
+                .orderBy(desc(alarms.raisedAt), desc(alarms.id))
+                .limit(limit + 1)
+            : base.orderBy(desc(alarms.raisedAt), desc(alarms.id)).limit(limit + 1));
 
-    const hasMore = rows.length > limit;
-    const page = hasMore ? rows.slice(0, limit) : rows;
-    const last = page[page.length - 1];
-    const nextCursor =
-      hasMore && last
-        ? encodeCursor(last.raisedAt, last.id)
-        : null;
+        const hasMore = rows.length > limit;
+        const page = hasMore ? rows.slice(0, limit) : rows;
+        const last = page[page.length - 1];
+        const nextCursor = hasMore && last ? encodeCursor(last.raisedAt, last.id) : null;
 
-    return {
-      items: page.map((r) => this.mapRow(r)),
-      nextCursor,
-    };
+        return {
+          items: page.map((r) => this.mapRow(r)),
+          nextCursor,
+        };
+      },
+    );
   }
 
   /**

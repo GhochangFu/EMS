@@ -17,6 +17,7 @@ import type {
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
+import { withReadScope } from "../database/tenant-read-scope";
 import type {
   CloseWorkOrderBody,
   CreateWorkOrderBody,
@@ -27,17 +28,24 @@ import type {
 const terminalStatuses = new Set<WorkOrderStatus>(["closed"]);
 
 /**
- * `E7.1b` (ADR 0043 §5) — `work_orders` gained an `organization_id` column
- * (migration `0046`, org = `asset_id → assets.org`) and a `tenant_isolation`
- * policy + `FORCE` in `0047`. Reads run on `fleetDb` behind the caller's
- * writable-asset scope — the `assetIds` filter is the isolation control
- * (Amendment 3) — and writes run inside `withTenant(db, org, …)`, org derived
- * from the asset on create and from the row's own column on update/reorder.
+ * `E7.1b` (ADR 0043 §5, decisions 1+3) — `work_orders` gained an
+ * `organization_id` column (migration `0046`, org = `asset_id → assets.org`) and
+ * a `tenant_isolation` policy + `FORCE` in `0047`. The user-facing `list` reads
+ * through `withReadScope`: a single-organization actor is served inside
+ * `withTenant` (decision 1, the RLS backstop); an admin or multi-organization
+ * actor falls back to `fleetDb` at run time (decisions 2/3), where the
+ * `assetIds` filter is the isolation control. Writes run inside
+ * `withTenant(db, org, …)`, org derived from the asset on create and from the
+ * row's own column on update/reorder.
  *
- * `resolveActorId` reads `bms.users`, which is a pre-tenant identity lookup, so
- * it runs on `fleetDb`: after `0047`'s NULL-tolerant `users` policy a scoped
- * actor's row is invisible to the bare tenant pool (no `current_org`), which
- * would silently drop the audit actor.
+ * The write-path reads stay on `fleetDb`: `resolveWorkOrderOrg` and `reorder`'s
+ * pre-check resolve the org before any GUC exists, and `resolveActorId` reads
+ * the pre-tenant `bms.users` identity — after `0047`'s NULL-tolerant `users`
+ * policy a scoped actor's row is invisible to a bare tenant pool (no
+ * `current_org`), which would silently drop the audit actor. Residual (tracked
+ * for a later fold into the write transaction): the private `getById` post-write
+ * read-back reads `work_orders` on `fleetDb` behind `assetIds`, so a single-org
+ * write's read-back still touches fleet.
  *
  * A Kanban reorder is single-organization by construction — one board shows one
  * org's assets — so a batch that resolves to more than one organization is a
@@ -196,51 +204,56 @@ export class WorkOrdersService {
     assetIds?: string[] | null;
   }): Promise<{ items: WorkOrderListItem[] }> {
     const limit = Math.min(100, Math.max(1, opts.limit));
-    if (opts.assetIds && opts.assetIds.length === 0) {
-      return { items: [] };
-    }
-    const base = this.fleetDb
-      .select({
-        id: workOrders.id,
-        assetId: workOrders.assetId,
-        alarmId: workOrders.alarmId,
-        title: workOrders.title,
-        description: workOrders.description,
-        status: workOrders.status,
-        priority: workOrders.priority,
-        sortOrder: workOrders.sortOrder,
-        assignedTo: workOrders.assignedTo,
-        createdBy: workOrders.createdBy,
-        dueAt: workOrders.dueAt,
-        resolvedAt: workOrders.resolvedAt,
-        closedAt: workOrders.closedAt,
-        createdAt: workOrders.createdAt,
-        updatedAt: workOrders.updatedAt,
-        assetCode: assets.code,
-        assetName: assets.name,
-        siteName: assets.siteName,
-      })
-      .from(workOrders)
-      .innerJoin(assets, eq(workOrders.assetId, assets.id));
-    const rows = await (opts.assetIds
-      ? base
-          .where(inArray(workOrders.assetId, opts.assetIds))
-          .orderBy(
-            asc(workOrders.status),
-            asc(workOrders.sortOrder),
-            desc(workOrders.createdAt),
-            desc(workOrders.id),
-          )
-          .limit(limit)
-      : base
-      .orderBy(
-        asc(workOrders.status),
-        asc(workOrders.sortOrder),
-        desc(workOrders.createdAt),
-        desc(workOrders.id),
-      )
-          .limit(limit));
-    return { items: rows.map((row) => this.mapRow(row)) };
+    return withReadScope(
+      this.db,
+      this.fleetDb,
+      opts.assetIds,
+      () => ({ items: [] }),
+      async (tx) => {
+        const base = tx
+          .select({
+            id: workOrders.id,
+            assetId: workOrders.assetId,
+            alarmId: workOrders.alarmId,
+            title: workOrders.title,
+            description: workOrders.description,
+            status: workOrders.status,
+            priority: workOrders.priority,
+            sortOrder: workOrders.sortOrder,
+            assignedTo: workOrders.assignedTo,
+            createdBy: workOrders.createdBy,
+            dueAt: workOrders.dueAt,
+            resolvedAt: workOrders.resolvedAt,
+            closedAt: workOrders.closedAt,
+            createdAt: workOrders.createdAt,
+            updatedAt: workOrders.updatedAt,
+            assetCode: assets.code,
+            assetName: assets.name,
+            siteName: assets.siteName,
+          })
+          .from(workOrders)
+          .innerJoin(assets, eq(workOrders.assetId, assets.id));
+        const rows = await (opts.assetIds
+          ? base
+              .where(inArray(workOrders.assetId, opts.assetIds))
+              .orderBy(
+                asc(workOrders.status),
+                asc(workOrders.sortOrder),
+                desc(workOrders.createdAt),
+                desc(workOrders.id),
+              )
+              .limit(limit)
+          : base
+              .orderBy(
+                asc(workOrders.status),
+                asc(workOrders.sortOrder),
+                desc(workOrders.createdAt),
+                desc(workOrders.id),
+              )
+              .limit(limit));
+        return { items: rows.map((row) => this.mapRow(row)) };
+      },
+    );
   }
 
   /** Creates a work order linked to an asset and optionally an alarm. */

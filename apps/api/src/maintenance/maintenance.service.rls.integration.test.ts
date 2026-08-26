@@ -1,8 +1,10 @@
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
-import { assets, createDb } from "@bms/db";
+import { assets, createDb, maintenanceSchedules, maintenanceTaskTemplates } from "@bms/db";
+import type { BmsDb } from "@bms/db";
 
+import { withTenant } from "../database/tenant-context";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import { MaintenanceService } from "./maintenance.service";
@@ -10,6 +12,8 @@ import {
   assertConvertStampsAndAdvancesUnderRealRls,
   assertCreateStampsOrgAndActorUnderRealRls,
   assertDeactivateFlipsScheduleAndTemplateUnderRealRls,
+  assertMaintenanceListReturnsBothOrgsForTwoOrgActor,
+  assertSingleOrgMaintenanceListRunsOnTenantTransaction,
   type MaintenanceRlsFixtures,
 } from "./maintenance.service.rls.integration.spec";
 
@@ -45,6 +49,7 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
   const createdTemplateIds: string[] = [];
   const createdWorkOrderIds: string[] = [];
   let assetId: string;
+  let foreignAssetId = "";
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -104,8 +109,84 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
       .returning({ id: assets.id });
     assetId = asset.id;
 
+    const tenantDb = createDb(tenantPool);
+
+    // Seeds a template + a future-due active schedule on an asset, under that
+    // org's GUC so the FORCE WITH CHECK passes. Returns the schedule id.
+    const seedSchedule = async (orgId: string, aId: string): Promise<string> =>
+      withTenant(tenantDb, orgId, async (tx) => {
+        const [tpl] = await tx
+          .insert(maintenanceTaskTemplates)
+          .values({
+            organizationId: orgId,
+            assetId: aId,
+            title: "E7.1b read-path schedule",
+            description: null,
+            category: "preventive",
+            generationMode: "calendar",
+            ownerTeam: null,
+            vendorName: null,
+            complianceRef: null,
+            triggerSummary: null,
+            safetyCritical: false,
+            priority: "medium",
+            estimatedMinutes: 60,
+          })
+          .returning({ id: maintenanceTaskTemplates.id });
+        createdTemplateIds.push(tpl.id);
+        const [sch] = await tx
+          .insert(maintenanceSchedules)
+          .values({
+            organizationId: orgId,
+            templateId: tpl.id,
+            intervalDays: 7,
+            nextDueAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000),
+          })
+          .returning({ id: maintenanceSchedules.id });
+        createdScheduleIds.push(sch.id);
+        return sch.id;
+      });
+
+    const inScopeScheduleId = await seedSchedule(organizationId, assetId);
+
+    // A second organization for the decision-3 two-org read. Reuse its seeded
+    // active location; seed a foreign asset + schedule under its GUC.
+    const orgB = await ownerPool.query<{ id: string }>(
+      "SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1",
+      [organizationId],
+    );
+    if (!orgB.rows[0]) {
+      throw new Error("E7.1b: need a second seeded organization for the two-org read proof.");
+    }
+    const foreignOrgId = orgB.rows[0].id;
+    const foreignLoc = await ownerPool.query<{ id: string }>(
+      "SELECT id FROM bms.locations WHERE organization_id = $1 AND active = true LIMIT 1",
+      [foreignOrgId],
+    );
+    if (!foreignLoc.rows[0]) {
+      throw new Error(`E7.1b: org ${foreignOrgId} has no active location — run pnpm db:seed.`);
+    }
+    const [foreignAsset] = await fleetDb
+      .insert(assets)
+      .values({
+        organizationId: foreignOrgId,
+        code: `${PREFIX}ASSET-B-${RUN}`,
+        name: "E7.1b maintenance RLS asset B",
+        siteName: "E7.1b Site",
+        locationId: foreignLoc.rows[0].id,
+        domain,
+        active: true,
+      })
+      .returning({ id: assets.id });
+    foreignAssetId = foreignAsset.id;
+    const foreignScheduleId = await seedSchedule(foreignOrgId, foreignAssetId);
+
+    const makeService = (t: BmsDb, f: BmsDb): MaintenanceService => new MaintenanceService(f, t);
     ctx = {
-      service: new MaintenanceService(fleetDb, createDb(tenantPool)),
+      service: makeService(tenantDb, fleetDb),
+      tenantDb,
+      fleetDb,
+      makeService,
       ownerPool,
       organizationId,
       assetId,
@@ -116,6 +197,9 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
       createdScheduleIds,
       createdTemplateIds,
       createdWorkOrderIds,
+      foreignAssetId,
+      inScopeScheduleId,
+      foreignScheduleId,
     };
   });
 
@@ -153,8 +237,9 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
           [createdTemplateIds],
         );
       }
-      if (assetId) {
-        await ownerPool.query(`DELETE FROM bms.assets WHERE id = $1`, [assetId]);
+      const assetIdsToDelete = [assetId, foreignAssetId].filter(Boolean);
+      if (assetIdsToDelete.length > 0) {
+        await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1)`, [assetIdsToDelete]);
       }
     }
     await Promise.all([ownerPool, tenantPool].filter(Boolean).map((p) => p.end()));
@@ -170,5 +255,13 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
 
   it("stamps the work order + history and advances next_due_at on convert", async () => {
     await assertConvertStampsAndAdvancesUnderRealRls(ctx);
+  });
+
+  it("returns both orgs' schedules for a two-organization actor on one read (decision 3)", async () => {
+    await assertMaintenanceListReturnsBothOrgsForTwoOrgActor(ctx);
+  });
+
+  it("runs a single-org list on the tenant pool (one tenant transaction, no fleet)", async () => {
+    await assertSingleOrgMaintenanceListRunsOnTenantTransaction(ctx);
   });
 });

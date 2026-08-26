@@ -33,6 +33,7 @@ import {
 } from "../alarms/alarm-raise.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
+import { withReadScope } from "../database/tenant-read-scope";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { alarmMessageFieldsFromCondition } from "./alarm-message";
 // The three modules extracted for AGENTS.md §4.5 (1000-line cap). Each holds
@@ -45,6 +46,7 @@ import {
   type LatestSampleLoader,
 } from "./rule-evaluation";
 import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
+import { filterRuleRowsByAssetIds, selectRuleRows } from "./rule-reads";
 import { pointKeysForAsset } from "./rule-points";
 import { batchedLatestPointValues, latestPointValue } from "./rule-samples";
 import type {
@@ -63,11 +65,18 @@ export class RulesService {
 
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
-    // E7.1b (ADR 0043): rule reads are cross-org system reads (the evaluate-now
-    // sweep, the global code scan) or caller-scoped reads behind `assetIds`
-    // (Amendment 3), plus a pre-tenant actor read — all on `fleetDb`
-    // (BYPASSRLS). Writes run inside `withTenant(org)`. `rule_notifications`
-    // stays in `ChannelsService` and belongs to the notifications unit.
+    // E7.1b (ADR 0043 decisions 1+3): the user-facing `listRules` and
+    // `listExecutions` read `automation_rules`/`rule_executions` — decision-1
+    // tables — through `withReadScope`: a single-organization actor inside
+    // `withTenant` (the 0047 FORCE policy scopes the read — decision 1), an admin
+    // or multi-organization actor on `fleetDb` (decisions 2/3), where the
+    // caller's `assetIds` is the isolation control. `evaluateEnabledRules` is a
+    // deliberately cross-org system sweep (ADR 0033 decision 2); the code scan,
+    // the pre-write asset lookup and the pre-tenant actor read stay on `fleetDb`;
+    // `getBuilderCatalog` reads `assets` (master data, not a decision-1 table).
+    // Writes run inside `withTenant(org)`. Residual (tracked for a later fold):
+    // the `getRuleRow` post-write read-back reads on `fleetDb`.
+    // `rule_notifications` stays in `ChannelsService`.
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly vocabularies: VocabulariesService,
     private readonly alarmRaiser: AlarmRaiser,
@@ -75,8 +84,16 @@ export class RulesService {
 
   /** Lists Sprint D automation rules with optional asset context. */
   async listRules(assetIds?: string[] | null): Promise<{ items: RuleListItem[] }> {
-    const rows = this.filterRuleRows(await this.ruleRows(), assetIds);
-    return { items: rows.map((row) => mapRuleRow(row)) };
+    return withReadScope(
+      this.db,
+      this.fleetDb,
+      assetIds,
+      () => ({ items: [] }),
+      async (tx) => {
+        const rows = filterRuleRowsByAssetIds(await selectRuleRows(tx), assetIds);
+        return { items: rows.map((row) => mapRuleRow(row)) };
+      },
+    );
   }
 
   /** Lists assets and supported telemetry points for the guided rule builder. */
@@ -406,46 +423,50 @@ export class RulesService {
     query: ListRuleExecutionsQuery,
     assetIds?: string[] | null,
   ): Promise<{ items: RuleExecutionItem[] }> {
-    if (assetIds && assetIds.length === 0) {
-      return { items: [] };
-    }
-    // fleetDb: the caller's `assetIds` (the WHERE below) is the isolation control.
-    const base = this.fleetDb
-      .select({
-        id: ruleExecutions.id,
-        ruleId: ruleExecutions.ruleId,
-        ruleCode: automationRules.code,
-        ruleName: automationRules.name,
-        evaluatedAt: ruleExecutions.evaluatedAt,
-        status: ruleExecutions.status,
-        matched: ruleExecutions.matched,
-        observedValue: ruleExecutions.observedValue,
-        message: ruleExecutions.message,
-        trace: ruleExecutions.trace,
-      })
-      .from(ruleExecutions)
-      .innerJoin(automationRules, eq(ruleExecutions.ruleId, automationRules.id));
-    const rows = await (assetIds
-      ? base
-          .where(inArray(automationRules.assetId, assetIds))
-          .orderBy(desc(ruleExecutions.evaluatedAt))
-          .limit(query.limit)
-      : base.orderBy(desc(ruleExecutions.evaluatedAt)).limit(query.limit));
+    return withReadScope(
+      this.db,
+      this.fleetDb,
+      assetIds,
+      () => ({ items: [] }),
+      async (tx) => {
+        const base = tx
+          .select({
+            id: ruleExecutions.id,
+            ruleId: ruleExecutions.ruleId,
+            ruleCode: automationRules.code,
+            ruleName: automationRules.name,
+            evaluatedAt: ruleExecutions.evaluatedAt,
+            status: ruleExecutions.status,
+            matched: ruleExecutions.matched,
+            observedValue: ruleExecutions.observedValue,
+            message: ruleExecutions.message,
+            trace: ruleExecutions.trace,
+          })
+          .from(ruleExecutions)
+          .innerJoin(automationRules, eq(ruleExecutions.ruleId, automationRules.id));
+        const rows = await (assetIds
+          ? base
+              .where(inArray(automationRules.assetId, assetIds))
+              .orderBy(desc(ruleExecutions.evaluatedAt))
+              .limit(query.limit)
+          : base.orderBy(desc(ruleExecutions.evaluatedAt)).limit(query.limit));
 
-    return {
-      items: rows.map((row) => ({
-        id: row.id,
-        ruleId: row.ruleId,
-        ruleCode: row.ruleCode,
-        ruleName: row.ruleName,
-        evaluatedAt: row.evaluatedAt.toISOString(),
-        status: row.status as RuleExecutionStatus,
-        matched: row.matched,
-        observedValue: row.observedValue,
-        message: row.message,
-        trace: asTrace(row.trace),
-      })),
-    };
+        return {
+          items: rows.map((row) => ({
+            id: row.id,
+            ruleId: row.ruleId,
+            ruleCode: row.ruleCode,
+            ruleName: row.ruleName,
+            evaluatedAt: row.evaluatedAt.toISOString(),
+            status: row.status as RuleExecutionStatus,
+            matched: row.matched,
+            observedValue: row.observedValue,
+            message: row.message,
+            trace: asTrace(row.trace),
+          })),
+        };
+      },
+    );
   }
 
   /** Toggles a rule and writes a lightweight audit row. */
@@ -503,10 +524,13 @@ export class RulesService {
     actor: Pick<JwtPayload, "sub" | "email">,
     assetIds?: string[] | null,
   ): Promise<{ items: RuleExecutionItem[] }> {
-    const allRows = (await this.ruleRows()).filter(
+    // Decision 2 (ADR 0033): the sweep reads every tenant's rules on a bare
+    // fleet transaction (BYPASSRLS), cross-org by design; only the returned trace
+    // list is scoped to the caller's assetIds.
+    const allRows = (await this.fleetDb.transaction((tx) => selectRuleRows(tx))).filter(
       (row) => row.enabled && row.lifecycleStatus === "published",
     );
-    const scopedIds = new Set(this.filterRuleRows(allRows, assetIds).map((row) => row.id));
+    const scopedIds = new Set(filterRuleRowsByAssetIds(allRows, assetIds).map((row) => row.id));
     const items: RuleExecutionItem[] = [];
 
     // Decision 2 makes this evaluate every enabled+published rule regardless
@@ -641,13 +665,6 @@ export class RulesService {
     return { items };
   }
 
-  private filterRuleRows(rows: RuleRow[], assetIds?: string[] | null): RuleRow[] {
-    if (assetIds === null || assetIds === undefined) {
-      return rows;
-    }
-    return rows.filter((row) => row.assetId !== null && assetIds.includes(row.assetId));
-  }
-
   /**
    * Throws unless the caller may act on this rule (`F3.8`, AGENTS.md §4.7).
    *
@@ -675,52 +692,12 @@ export class RulesService {
     }
   }
 
-  private async ruleRows(): Promise<RuleRow[]> {
-    // fleetDb (BYPASSRLS), deliberately cross-org: the evaluate-now sweep reads
-    // every tenant's rules (ADR 0033 decision 2), and `listRules`'s isolation
-    // control is the `filterRuleRows` post-filter, not a WHERE here.
-    return this.fleetDb
-      .select({
-        id: automationRules.id,
-        code: automationRules.code,
-        name: automationRules.name,
-        description: automationRules.description,
-        category: automationRules.category,
-        ruleType: automationRules.ruleType,
-        source: automationRules.source,
-        enabled: automationRules.enabled,
-        // E7.1b: the rule's own org and its asset's org, both off the leftJoin.
-        organizationId: automationRules.organizationId,
-        assetOrganizationId: assets.organizationId,
-        assetId: automationRules.assetId,
-        assetCode: assets.code,
-        assetName: assets.name,
-        siteName: assets.siteName,
-        // ADR 0031's second axis. It rides the LEFT JOIN that was already here
-        // for `assetCode`/`assetName`/`siteName` — no extra query, no extra
-        // round trip, and null exactly when the rule targets no asset.
-        assetDomain: assets.domain,
-        pointKey: automationRules.pointKey,
-        operator: automationRules.operator,
-        thresholdValue: automationRules.thresholdValue,
-        severity: automationRules.severity,
-        condition: automationRules.condition,
-        action: automationRules.action,
-        lastEvaluatedAt: automationRules.lastEvaluatedAt,
-        lifecycleStatus: automationRules.lifecycleStatus,
-        publishedAt: automationRules.publishedAt,
-        archivedAt: automationRules.archivedAt,
-        duplicatedFromRuleId: automationRules.duplicatedFromRuleId,
-        createdAt: automationRules.createdAt,
-        updatedAt: automationRules.updatedAt,
-      })
-      .from(automationRules)
-      .leftJoin(assets, eq(automationRules.assetId, assets.id))
-      .orderBy(desc(automationRules.enabled), automationRules.category, automationRules.name);
-  }
-
   private async getRuleRow(id: string): Promise<RuleRow> {
-    const [row] = (await this.ruleRows()).filter((item) => item.id === id);
+    // Write-path resolver read-back: reads every tenant's rules on a bare fleet
+    // transaction (BYPASSRLS) and filters by id in memory. Residual — tracked for
+    // a later fold into the write's own tenant transaction (E7.1b).
+    const rows = await this.fleetDb.transaction((tx) => selectRuleRows(tx));
+    const [row] = rows.filter((item) => item.id === id);
     if (!row) {
       throw new NotFoundException("Rule not found");
     }

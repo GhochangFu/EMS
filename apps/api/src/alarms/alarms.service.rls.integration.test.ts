@@ -4,6 +4,7 @@ import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { alarms, assets, createDb } from "@bms/db";
+import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { withTenant } from "../database/tenant-context";
@@ -13,8 +14,9 @@ import { AlarmsService } from "./alarms.service";
 import type { AlarmsGateway } from "./alarms.gateway";
 import {
   assertAcknowledgeRefusesForeignAlarmButAllowsInScope,
-  assertAlarmListGoesDarkOnBareTenantPool,
+  assertAlarmListReturnsBothOrgsForTwoOrgActor,
   assertAlarmListScopedByAssetIds,
+  assertSingleOrgListRunsOnTenantTransaction,
   type AlarmsRlsFixtures,
 } from "./alarms.service.rls.integration.spec";
 
@@ -59,7 +61,6 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
   let fleetPool: pg.Pool;
   let tenantPool: pg.Pool;
   let ctx: AlarmsRlsFixtures;
-  let tenantBackedSvc: AlarmsService;
 
   const actor: Pick<JwtPayload, "sub" | "email"> = {
     sub: SYNTHETIC_SUB,
@@ -168,8 +169,14 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
     const inScope = await seed(orgAId, `${PREFIX}A`);
     const foreign = await seed(orgBId, `${PREFIX}B`);
 
+    const fleetDb = createDb(fleetPool);
+    const makeService = (t: BmsDb, f: BmsDb): AlarmsService =>
+      new AlarmsService(t, f, gatewayStub);
     ctx = {
-      svc: new AlarmsService(tenantDb, createDb(fleetPool), gatewayStub),
+      svc: makeService(tenantDb, fleetDb),
+      tenantDb,
+      fleetDb,
+      makeService,
       ownerPool: fleetPool,
       organizationId: orgAId,
       inScopeAssetId: inScope.assetId,
@@ -178,8 +185,6 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
       foreignAlarmId: foreign.alarmId,
       actorUserId,
     };
-    // Pre-fix wiring: fleetDb = the bare tenant pool. Used only by the dark guard.
-    tenantBackedSvc = new AlarmsService(tenantDb, tenantDb, gatewayStub);
   });
 
   afterAll(async () => {
@@ -200,12 +205,16 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
     await Promise.all([fleetPool, tenantPool].filter(Boolean).map((p) => p.end()));
   });
 
-  it("lists the caller's own-org alarm and resolves the other org's alarm behind its own assetIds", async () => {
+  it("lists each org's own alarm behind its own assetIds, under that org's GUC", async () => {
     await assertAlarmListScopedByAssetIds(ctx);
   });
 
-  it("returns nothing on a bare tenant pool with no GUC — proves the read must be on fleet", async () => {
-    await assertAlarmListGoesDarkOnBareTenantPool(tenantBackedSvc, ctx.inScopeAssetId);
+  it("returns both orgs' alarms for a two-organization actor on one read (decision 3)", async () => {
+    await assertAlarmListReturnsBothOrgsForTwoOrgActor(ctx);
+  });
+
+  it("runs a single-org list on the tenant pool (one tenant transaction, no fleet)", async () => {
+    await assertSingleOrgListRunsOnTenantTransaction(ctx);
   });
 
   it("refuses acknowledging a foreign alarm and acknowledges an in-scope one under the org GUC", async () => {

@@ -1,10 +1,13 @@
 import { expect } from "vitest";
 import pg from "pg";
 
+import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
+import { countingDb } from "../testing/counting-db";
 import type {
   CreateMaintenanceScheduleBody,
+  ListMaintenanceQuery,
   UpdateMaintenanceScheduleBody,
 } from "./maintenance.schema";
 import type { MaintenanceService } from "./maintenance.service";
@@ -28,6 +31,12 @@ import type { MaintenanceService } from "./maintenance.service";
  */
 export type MaintenanceRlsFixtures = {
   service: MaintenanceService;
+  /** The real `bms_tenant` handle — for building a counting-wrapped service. */
+  tenantDb: BmsDb;
+  /** The real `bms_fleet` handle — for building a counting-wrapped service. */
+  fleetDb: BmsDb;
+  /** Rebuilds the service with swapped db handles (the counter probe). */
+  makeService: (tenantDb: BmsDb, fleetDb: BmsDb) => MaintenanceService;
   /** A `bms_fleet` (BYPASSRLS) pool, for the verification reads only. */
   ownerPool: pg.Pool;
   organizationId: string;
@@ -39,7 +48,16 @@ export type MaintenanceRlsFixtures = {
   createdScheduleIds: string[];
   createdTemplateIds: string[];
   createdWorkOrderIds: string[];
+  /** An asset in a second organization, outside the single-org caller's scope. */
+  foreignAssetId: string;
+  /** A seeded schedule on `assetId` (org A) — the two-org read must include it. */
+  inScopeScheduleId: string;
+  /** A seeded schedule on `foreignAssetId` (org B) — likewise. */
+  foreignScheduleId: string;
 };
+
+/** A wide, filter-open read so both future-due seeded schedules are in range. */
+const READ_QUERY = { dueState: "all", priority: "all", horizonDays: 120 } as ListMaintenanceQuery;
 
 const INTERVAL_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -215,4 +233,38 @@ export async function assertConvertStampsAndAdvancesUnderRealRls(
   expect(advancedDue, "next_due_at moved forward by exactly interval_days").toBe(
     originalDue + INTERVAL_DAYS * DAY_MS,
   );
+}
+
+/**
+ * Decision 3: one `list` whose `assetIds` span two organizations returns BOTH
+ * orgs' schedules — the run-time fleet fallback resolves across organizations. A
+ * `withTenant(one org)` regression would drop the other org's rows.
+ */
+export async function assertMaintenanceListReturnsBothOrgsForTwoOrgActor(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const both = await ctx.service.list(READ_QUERY, [ctx.assetId, ctx.foreignAssetId]);
+  const ids = both.items.map((i) => i.id);
+  expect(ids, "org A's schedule is returned on the two-org path").toContain(ctx.inScopeScheduleId);
+  expect(ids, "org B's schedule is returned on the same read (fleet fallback)").toContain(
+    ctx.foreignScheduleId,
+  );
+}
+
+/**
+ * The mechanism seam: a single-organization `list` opens exactly one **tenant**
+ * transaction (`withReadScope` → `withTenant`; the `getActiveWorkOrdersBySchedule`
+ * guard runs inside that same transaction, not a new one) and zero fleet
+ * transactions. A revert to `this.fleetDb.select` in `list` drops the tenant
+ * count to zero.
+ */
+export async function assertSingleOrgMaintenanceListRunsOnTenantTransaction(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  await svc.list(READ_QUERY, [ctx.assetId]);
+  expect(tenant.transactions(), "a single-org list opens one tenant transaction").toBe(1);
+  expect(fleet.transactions(), "a single-org list opens no fleet transaction").toBe(0);
 }
