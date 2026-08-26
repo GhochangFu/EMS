@@ -32,9 +32,13 @@ function decodeCursor(raw: string): { raisedAt: Date; id: string } {
 export class AlarmsService {
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
-    // E7.1b: alarm reads are scoped by the caller's assetIds (Amendment 3, the
-    // assetIds filter is the isolation control) and the actor/identity read is
-    // pre-tenant, so both run on fleetDb.
+    // E7.1b: `readableAssetIds` resolves to a cross-organization union for a
+    // multi-org actor, so a single tenant GUC cannot serve these reads — ADR
+    // 0043 Amendment 3 decision 3 routes exactly that case to fleetDb and
+    // rejects the per-org loop (the keyset `(raised_at, id)` cursor could not
+    // survive one). The `assetIds` `WHERE` filter is the isolation control the
+    // amendment trusts; the actor/identity read is pre-tenant (Amendment 4).
+    // Both run on fleetDb.
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly gateway: AlarmsGateway,
   ) {}

@@ -18,11 +18,14 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreateLocationBody, UpdateLocationBody } from "./locations.schema";
 
 /**
- * `F4.16` / ADR 0043 — `locations` carries `ENABLE ROW LEVEL SECURITY`
- * (migration `0040`). Reads run on `fleetDb`, trusting the scope filter this
- * service already applies via `writableLocationIds`/`canManageLocation` — the
- * same "bypass, then trust an already-computed grant" shape
- * `AccessControlService` uses for its own `bms_auth` reads. Writes run inside
+ * `F4.16` / ADR 0043 — `locations` is one of the five tables `F4.16` routes on
+ * `fleetDb` (migration `0040`); Amendment 3 decision 2 grandfathers that
+ * behaviour and asks only for the reason this comment now records. Reads run on
+ * `fleetDb` because `writableLocationIds`/`canManageLocation` resolve to a
+ * cross-organization union for a multi-org master-data admin — a single tenant
+ * GUC cannot serve them, and decision 3 routes that case to the fleet pool
+ * rather than looping one transaction per organization. The `WHERE` filter is
+ * the isolation control the amendment trusts. Writes run inside
  * `withTenant(tenantDb, organizationId, …)`, which sets the RLS GUC to the
  * row's own organization before insert/update — the id is always known
  * before the write (from the request body, or from a fleet read already

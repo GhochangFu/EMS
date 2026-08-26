@@ -45,11 +45,13 @@ type ResolvedRow = { readonly rowNumber: number; readonly row: TelemetryEntryRow
 export class TelemetryImportService {
   constructor(
     // E7.1b: the asset-resolution read (code/id -> locationId) touches `assets`,
-    // FORCE-policied as of 0047. On the tenant pool with no GUC it returns zero
-    // rows, so every import row fails "asset not found" and the CSV import is
-    // fully broken. `writableLocationIds` below is the isolation control
-    // (Amendment 2/3), the same pattern `telemetry-write.service.ts` uses, so
-    // this reads on fleetDb (BYPASSRLS).
+    // FORCE-policied as of 0047. A master-data importer's `writableLocationIds`
+    // can span organizations, so a single tenant GUC cannot resolve every row's
+    // asset — ADR 0043 Amendment 3 decision 3 routes this cross-org case to
+    // fleetDb and rejects the per-org loop. `writableLocationIds` below is the
+    // isolation control (Amendment 2/3) the amendment trusts. On the bare tenant
+    // pool with no GUC the lookup returns zero rows and every import row wrongly
+    // fails "asset not found".
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly writeService: TelemetryWriteService,
