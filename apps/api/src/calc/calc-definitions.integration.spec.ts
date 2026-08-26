@@ -192,6 +192,45 @@ export async function assertLoaderResolvesValidRowsAndSkipsInvalidOnes(
   );
 }
 
+/**
+ * `E7.1b` regression guard. `CalcDefinitionsService` reads the cross-org calc
+ * cache on `fleetDb`; the fix moved it off `TENANT_DRIZZLE` (ADR 0043
+ * Amendment 3 — a system cache with no JWT and no org context). Had it stayed on
+ * the bare tenant pool, the 0047 FORCE policy on
+ * `assets`/`template_points`/`asset_points` would return nothing with no GUC set,
+ * and the engine would compute no derived telemetry at all — a silent, total
+ * outage no unit test constructing its own rows would catch. A fleet-backed
+ * loader resolves the seeded formula; a tenant-pool-backed one resolves nothing.
+ */
+export async function assertLoaderGoesDarkOnBareTenantPool(
+  fleetPool: pg.Pool,
+  tenantPool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const fleetDb = createDb(fleetPool);
+  const { assetId } = await seedTemplate(fleetDb, fx);
+  const measuredKey = fx.pointKeys[0].code;
+
+  const fleetSvc = new CalcDefinitionsService(fleetDb, new MetricsService());
+  const onFleet = await fleetSvc.getDefinitionsForInput(assetId, measuredKey);
+  assert(
+    onFleet.some((def) => def.pointKey === "CALCDEF_VALID_STREAMING"),
+    "the fleet-backed loader must resolve the seeded derived formula (positive control)",
+  );
+
+  const tenantSvc = new CalcDefinitionsService(createDb(tenantPool), new MetricsService());
+  const onTenant = await tenantSvc.getDefinitionsForInput(assetId, measuredKey);
+  assert(
+    onTenant.length === 0,
+    `a bare tenant pool must resolve no calc definitions under 0047 FORCE, got ${onTenant.length}`,
+  );
+  const scheduled = await tenantSvc.getScheduledDefinitions();
+  assert(
+    !scheduled.some((def) => def.pointKey === "CALCDEF_VALID_SCHEDULED"),
+    "a bare tenant pool must schedule no derived formulas",
+  );
+}
+
 export async function assertCacheIsNotReReadWithinTtl(pool: pg.Pool, fx: Fixtures): Promise<void> {
   const db = createDb(pool);
   const { assetId } = await seedTemplate(db, fx);
