@@ -13,18 +13,28 @@ import type { AdminAssetDto, AdminAssetSummaryDto, JwtPayload } from "@bms/share
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant, type BmsTx } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreateAssetBody, UpdateAssetBody } from "./assets.schema";
 
 /**
- * `F4.16` / ADR 0043 — `assets` and `asset_points` carry no policy, so every
- * write below runs on `tenantDb` unchanged. Reads that join `locations`
- * (`ENABLE ROW LEVEL SECURITY`, migration `0040`) run on `fleetDb` instead:
- * this service already filters by `writableLocationIds`/`canManageAsset`
- * before returning a row, the same "bypass, then trust an already-computed
- * grant" shape `AccessControlService` uses for its own `bms_auth` reads — see
- * that service's class doc for why this is not a new hazard.
+ * `F4.16` / `E7.1b` / ADR 0043 — `assets` (and `asset_points`) gain
+ * `organization_id` + a `tenant_isolation` policy + `FORCE` in migration `0047`.
+ *
+ * Reads run on `fleetDb`, trusting the `writableLocationIds`/`canManageAsset`
+ * scope filter this service already applies before returning a row — the same
+ * "bypass, then trust an already-computed grant" shape `AccessControlService`
+ * uses (Amendment 2/3). Writes run inside `withTenant(tenantDb, organizationId,
+ * …)`: the organization is derived from the asset's location (`create`/relocate)
+ * or the asset's own row (`deactivate`/`reactivate`) **before** the write, and
+ * an asset cannot cross organizations (`update` refuses a destination in another
+ * org — the RLS `USING`/`WITH CHECK` pair cannot span two orgs under one
+ * `SET LOCAL`, so the move would otherwise be a silent zero-row no-op post-0047).
+ * The RTU consistency read stays **inside** the tenant GUC, never on `fleetDb`:
+ * a valid gateway shares the asset's location and org, so the tenant context
+ * sees it, while a foreign RTU reads as absent rather than as an existence
+ * oracle across tenants.
  */
 @Injectable()
 export class AssetsAdminService {
@@ -130,25 +140,32 @@ export class AssetsAdminService {
     if (!(await this.accessControl.canManageLocation(jwt, body.locationId))) {
       throw new ForbiddenException("Location is outside your access scope");
     }
-    await this.assertRtuLocation(body.rtuId, body.locationId);
     // ADR 0031 Amendment 1 — the plant vocabulary is data, so the request
     // schema can only check shape. Without this the code would reach
     // `assets_domain_fk` and return a 500 where the enum used to give a 400.
     await this.vocabularies.assertAssetDomain(body.domain);
+    // Resolve the org from the location BEFORE the write, so the RTU check and
+    // the insert both run under the tenant GUC (E7.1b).
+    const organizationId = await this.resolveLocationOrg(body.locationId);
 
-    const [created] = await this.tenantDb
-      .insert(assets)
-      .values({
-        code: body.code,
-        name: body.name,
-        siteName: body.siteName,
-        locationId: body.locationId,
-        rtuId: body.rtuId ?? null,
-        domain: body.domain,
-        meta: body.meta ?? null,
-        active: true,
-      })
-      .returning();
+    const created = await withTenant(this.tenantDb, organizationId, async (tx) => {
+      await this.assertRtuLocation(body.rtuId, body.locationId, tx);
+      const [row] = await tx
+        .insert(assets)
+        .values({
+          code: body.code,
+          name: body.name,
+          siteName: body.siteName,
+          locationId: body.locationId,
+          rtuId: body.rtuId ?? null,
+          domain: body.domain,
+          organizationId,
+          meta: body.meta ?? null,
+          active: true,
+        })
+        .returning();
+      return row;
+    });
 
     await this.audit.write({
       actor: jwt,
@@ -162,7 +179,10 @@ export class AssetsAdminService {
 
   /** Updates an asset in scope. */
   async update(jwt: JwtPayload, id: string, body: UpdateAssetBody): Promise<AdminAssetDto> {
-    const [existing] = await this.tenantDb
+    // fleetDb read (Amendment 2/3): `assets` gains a policy in 0047, and this
+    // read precedes any tenant context; the `canManageAsset` gate below is the
+    // isolation control.
+    const [existing] = await this.fleetDb
       .select()
       .from(assets)
       .where(eq(assets.id, id))
@@ -192,7 +212,6 @@ export class AssetsAdminService {
     if (body.locationId && !(await this.accessControl.canManageLocation(jwt, nextLocationId))) {
       throw new ForbiddenException("Location is outside your access scope");
     }
-    await this.assertRtuLocation(nextRtuId, nextLocationId);
     // Only when the caller supplies one: `updateAssetBodySchema` is a partial,
     // and re-checking `existing.domain` would make a rename fail on an asset
     // whose domain was retired — punishing an edit for something it did not
@@ -201,18 +220,35 @@ export class AssetsAdminService {
       await this.vocabularies.assertAssetDomain(body.domain);
     }
 
-    await this.tenantDb
-      .update(assets)
-      .set({
-        code: body.code ?? existing.code,
-        name: body.name ?? existing.name,
-        siteName: body.siteName ?? existing.siteName,
-        locationId: nextLocationId,
-        rtuId: nextRtuId,
-        domain: body.domain ?? existing.domain,
-        meta: body.meta !== undefined ? body.meta : existing.meta,
-      })
-      .where(eq(assets.id, id));
+    const organizationId = await this.resolveLocationOrg(nextLocationId);
+    // An asset cannot move to a location in another organization. Post-0047 the
+    // UPDATE's `USING` (old org) and `WITH CHECK` (new org) cannot both hold
+    // under one `SET LOCAL`, so a cross-org relocation would update zero rows
+    // and still return a success DTO from `fetchRow`. Refuse it outright.
+    // (`existing.organizationId` is only null on a pre-0046 row that dodged the
+    // backfill; there the update simply fills the column in.)
+    if (existing.organizationId && organizationId !== existing.organizationId) {
+      throw new BadRequestException(
+        "An asset cannot be moved to a location in another organization",
+      );
+    }
+
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
+      await this.assertRtuLocation(nextRtuId, nextLocationId, tx);
+      await tx
+        .update(assets)
+        .set({
+          code: body.code ?? existing.code,
+          name: body.name ?? existing.name,
+          siteName: body.siteName ?? existing.siteName,
+          locationId: nextLocationId,
+          rtuId: nextRtuId,
+          domain: body.domain ?? existing.domain,
+          organizationId,
+          meta: body.meta !== undefined ? body.meta : existing.meta,
+        })
+        .where(eq(assets.id, id));
+    });
 
     await this.audit.write({
       actor: jwt,
@@ -230,7 +266,8 @@ export class AssetsAdminService {
       throw new ForbiddenException("Asset is outside your access scope");
     }
 
-    await this.tenantDb.transaction(async (tx) => {
+    const organizationId = await this.resolveAssetOrg(id);
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
       await tx.update(assets).set({ active: false }).where(eq(assets.id, id));
       await tx.update(assetPoints).set({ active: false }).where(eq(assetPoints.assetId, id));
     });
@@ -250,7 +287,10 @@ export class AssetsAdminService {
       throw new ForbiddenException("Asset is outside your access scope");
     }
 
-    await this.tenantDb.update(assets).set({ active: true }).where(eq(assets.id, id));
+    const organizationId = await this.resolveAssetOrg(id);
+    await withTenant(this.tenantDb, organizationId, (tx) =>
+      tx.update(assets).set({ active: true }).where(eq(assets.id, id)),
+    );
     await this.audit.write({
       actor: jwt,
       action: "master.asset.reactivate",
@@ -269,11 +309,15 @@ export class AssetsAdminService {
   private async assertRtuLocation(
     rtuId: string | null | undefined,
     locationId: string,
+    tx: BmsTx,
   ): Promise<void> {
     if (!rtuId) {
       return;
     }
-    const [rtu] = await this.tenantDb
+    // Read inside the caller's tenant GUC (never fleetDb): a valid gateway
+    // shares this location, hence this org, so the tenant context sees it; a
+    // foreign RTU reads as absent below rather than as a cross-tenant oracle.
+    const [rtu] = await tx
       .select({ locationId: rtus.locationId })
       .from(rtus)
       .where(eq(rtus.id, rtuId))
@@ -284,6 +328,46 @@ export class AssetsAdminService {
     if (rtu.locationId !== locationId) {
       throw new BadRequestException("RTU must belong to the selected location");
     }
+  }
+
+  /**
+   * Resolves a location's organization on `fleetDb` before a write opens its
+   * tenant context. `locations` carries a policy (`0040`); the caller has
+   * already passed `canManageLocation` for this id, which is the isolation
+   * control.
+   */
+  private async resolveLocationOrg(locationId: string): Promise<string> {
+    const [row] = await this.fleetDb
+      .select({ organizationId: locations.organizationId })
+      .from(locations)
+      .where(eq(locations.id, locationId))
+      .limit(1);
+    if (!row) {
+      throw new NotFoundException("Location not found");
+    }
+    return row.organizationId;
+  }
+
+  /**
+   * Resolves an asset's own organization on `fleetDb` for `deactivate`/
+   * `reactivate`, which need the tenant GUC but change no tenant-bearing field.
+   * The caller has already passed `canManageAsset`. A null column would only
+   * survive from a pre-0046 row; treat it as unresolvable rather than open a
+   * `withTenant(null)`.
+   */
+  private async resolveAssetOrg(id: string): Promise<string> {
+    const [row] = await this.fleetDb
+      .select({ organizationId: assets.organizationId })
+      .from(assets)
+      .where(eq(assets.id, id))
+      .limit(1);
+    if (!row) {
+      throw new NotFoundException("Asset not found");
+    }
+    if (!row.organizationId) {
+      throw new BadRequestException("Asset has no organization; run the 0046 backfill");
+    }
+    return row.organizationId;
   }
 
   private async fetchRow(id: string): Promise<AdminAssetDto> {
