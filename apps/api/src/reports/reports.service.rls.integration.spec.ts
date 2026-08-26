@@ -1,0 +1,364 @@
+import { refreshAggregatesFrom } from "@bms/db";
+import type pg from "pg";
+
+import type { EnergyReportQuery } from "./reports.schema";
+import { ReportsService } from "./reports.service";
+
+/**
+ * `E7.1b` — why the energy report must read on the fleet (BYPASSRLS) pool.
+ *
+ * `ReportsService` moved from `TENANT_POOL` to `FLEET_POOL` (commit `5b314db`,
+ * ADR 0043 Amendment 3). The report has two reads that touch `bms.assets`, which
+ * migration `0047` gave `organization_id` + a `tenant_isolation` policy +
+ * `FORCE`:
+ *
+ * - `energyTopConsumers` — `INNER JOIN bms.assets a ON a.id = v.asset_id`.
+ * - `energySourceTotals` — the `solar_ids` CTE, `SELECT id FROM bms.assets WHERE
+ *   code ILIKE 'PV%'`.
+ *
+ * On a bare tenant pool with no `app.current_organization` GUC, the FORCE policy
+ * returns **zero** rows from `bms.assets` for every caller — so the inner join
+ * empties `topConsumers`, and `solar_ids` empties, which misattributes all solar
+ * generation to grid. The report's telemetry aggregate (`aggregateRelation`) is
+ * unpoliced, so `summary.totalKwh` stays non-zero. That asymmetry is the whole
+ * client-visible harm the constructor comment claims, and it is what this proves.
+ *
+ * ## Why this needs a telemetry fixture, and why it refreshes production
+ *
+ * Both diverging reads join telemetry to `bms.assets`, so with **no** telemetry
+ * both pools return all-zero output and the divergence is invisible — the same
+ * "the fixture is the point" trap `F4.1`/`F4.2` document. `db:seed` writes zero
+ * `telemetry.point_values` rows, so this suite must create its own, and it reads
+ * the shipped `aggregateRelation(level)` → `telemetry.point_values_1h`, not a
+ * probe view: pointing the service at a throwaway cagg would prove a probe
+ * relation diverges, not the one that ships.
+ *
+ * Freshly inserted rows sit behind `_1h`'s watermark, so the fixture is
+ * materialised by refreshing `_1m`/`_5m`/`_1h`. **This is the watermark-safe
+ * refresh, not the hazard `point-aggregates.integration.spec.ts:11-33`
+ * describes.** That hazard was a window *derived from the aggregate's own
+ * watermark and padded two days past it*, which ratchets the watermark forward
+ * forever. Here the window ends at `now()`, so no watermark moves past the
+ * present — the identical licence `assertEnergySummaryMatchesRaw` runs under, and
+ * what `_1m`'s own scheduled policy (`[now-3h, now-1min]`) does every minute.
+ *
+ * ## The cleanup is load-bearing, because `point_key = 'kw'` is shared
+ *
+ * The report hard-codes `point_key = 'kw'`, which is exactly what the live
+ * simulator writes, so this suite **cannot** fence its rows off with a distinct
+ * marker key the way `F4.1` uses `TEST_POINT_KEY`, and a range-shaped
+ * `DELETE ... WHERE ... AND time >= $2` would delete real simulator rows in the
+ * window. So every insert uses `ON CONFLICT DO NOTHING RETURNING`, capturing only
+ * the `(time, asset_id)` pairs this suite actually created; cleanup deletes
+ * exactly those and re-refreshes the aggregates — leaving no orphan aggregate
+ * rows (the self-poisoning failure `assertEnergySummaryMatchesRaw`'s finally
+ * block exists to prevent). A refresh that throws during setup cleans up before
+ * rethrowing, so the guarantee holds even when `beforeAll` fails.
+ *
+ * The delete is issued **per asset**, with `asset_id` and `point_key` as constant
+ * equality filters and the exact timestamps in `time = ANY(...)`. `asset_id` and
+ * `point_key` are `0028` SEGMENTBY columns, and only a constant filter on them
+ * prunes compressed batches — a `USING`/subquery join would force TimescaleDB to
+ * decompress every batch (`tuple decompression limit exceeded`). That is the
+ * `tests/adr-0024-retention-bounds.test.ts` invariant, and it is why this is not
+ * a single `DELETE ... USING unnest(pairs)`.
+ *
+ * ## What this proves, and what it does not
+ *
+ * A **necessity** proof: the read has to be on fleet for the report to work.
+ * Each assertion constructs `ReportsService` with an explicit pool, so none of
+ * them gates the `@Inject(FLEET_POOL)` token — reverting the decorator to
+ * `TENANT_POOL` leaves these green. That token is gated by
+ * `database/fleet-read-wiring.test.ts`; this suite is the behavioural half.
+ */
+
+/** Point key the report hard-codes; shared with the live simulator (see header). */
+const POINT_KEY = "kw";
+
+/** Two hours of minute-level readings, uneven per minute so buckets are non-trivial. */
+const FIXTURE_MINUTES = 120;
+const SAMPLES_PER_MINUTE = [1, 5, 17, 40] as const;
+
+/**
+ * A distinctive fractional-second offset that lowers the chance of a fixture
+ * timestamp colliding with an existing row. It is only a belt: measured against a
+ * live database, other writers do land on `.137` occasionally, so this is **not**
+ * a uniqueness guarantee. The guarantee is the `RETURNING`-captured cleanup — it
+ * removes only the `(time, asset_id)` pairs this insert actually created, so a
+ * pre-existing row sharing a timestamp is never inserted over and never deleted.
+ */
+const SUBSECOND_MS = 137;
+
+function assert(condition: boolean, message: string): void {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+export interface EnergyRlsFixture {
+  /** A `PV%`-coded asset (solar), resolved from the seed as fleet. */
+  readonly pvAssetId: string;
+  /** A non-`PV%` asset in the **same** organization, so one GUC makes both visible. */
+  readonly otherAssetId: string;
+  /** The organization both fixture assets belong to. */
+  readonly organizationId: string;
+  /** The date-range the report is asked for; brackets the recent fixture window. */
+  readonly query: EnergyReportQuery;
+  /** Exactly the rows this suite inserted, for precise cleanup. */
+  readonly insertedTimes: string[];
+  readonly insertedAssets: string[];
+  /**
+   * The lower bound both the setup and the cleanup refresh use — one bucket before
+   * the fixture. Carried as a constant rather than re-derived from `insertedTimes`,
+   * whose `RETURNING` order SQL does not guarantee: a cleanup refresh that started
+   * later than the earliest fixture bucket would leave that bucket un-recomputed
+   * (an orphan aggregate row), the self-poisoning `assertEnergySummaryMatchesRaw`
+   * guards against.
+   */
+  readonly refreshFromIso: string;
+}
+
+/** The two fixture assets scoped into every `energyPreview` call. */
+function scopedAssetIds(fx: EnergyRlsFixture): string[] {
+  return [fx.pvAssetId, fx.otherAssetId];
+}
+
+/**
+ * Resolves the two fixture assets and materialises `kw` telemetry for both.
+ *
+ * Assets are read as **fleet** (BYPASSRLS): the seed's `PV-INV-01` and a same-org
+ * sibling. Resolving them from the database rather than hard-coding a code means
+ * a seed rename fails loudly here instead of silently selecting nothing.
+ *
+ * The refresh is `@bms/db`'s `refreshAggregatesFrom` — the same shared helper the
+ * `CalcWriteService`/`TelemetryWriteService` write paths use — rather than a
+ * hand-rolled one: it takes the role (`bms_rollup`) itself, refreshes every level
+ * finest-first, caps the window at `now()` (watermark-safe), and applies the
+ * `REFRESH_MARGIN_MS` a bare `refresh_continuous_aggregate(view, from, now())`
+ * needs to not silently skip a boundary bucket.
+ */
+export async function setUpEnergyFixture(
+  ownerPool: pg.Pool,
+  fleetPool: pg.Pool,
+): Promise<EnergyRlsFixture> {
+  const { rows: pvRows } = await fleetPool.query<{ id: string; organization_id: string | null }>(
+    `SELECT id, organization_id FROM bms.assets WHERE code ILIKE 'PV%' ORDER BY code LIMIT 1`,
+  );
+  const pv = pvRows[0];
+  assert(
+    pv !== undefined && typeof pv.organization_id === "string",
+    "E7.1b energy RLS fixture needs a seeded PV% asset with an organization_id; run `pnpm db:seed`",
+  );
+  const organizationId = pv.organization_id as string;
+
+  const { rows: otherRows } = await fleetPool.query<{ id: string }>(
+    `SELECT id FROM bms.assets
+      WHERE organization_id = $1 AND code NOT ILIKE 'PV%'
+      ORDER BY code LIMIT 1`,
+    [organizationId],
+  );
+  const other = otherRows[0];
+  assert(
+    other !== undefined,
+    "E7.1b energy RLS fixture needs a second non-PV asset in the PV asset's organization",
+  );
+
+  // Recent, uneven, distinct sub-second timestamps. `base` is far enough inside
+  // today's window that a two-date range brackets it regardless of the hour.
+  const base = Date.now() - 3 * 3_600_000;
+  const times: string[] = [];
+  const assetsArr: string[] = [];
+  const values: number[] = [];
+  const fixtureAssets: { id: string; magnitude: number }[] = [
+    { id: pv.id, magnitude: 40 },
+    { id: other.id, magnitude: 55 },
+  ];
+  for (const { id, magnitude } of fixtureAssets) {
+    for (let minute = 0; minute < FIXTURE_MINUTES; minute += 1) {
+      const n = SAMPLES_PER_MINUTE[minute % SAMPLES_PER_MINUTE.length] ?? 1;
+      for (let s = 0; s < n; s += 1) {
+        times.push(new Date(base + minute * 60_000 + s * 1_000 + SUBSECOND_MS).toISOString());
+        assetsArr.push(id);
+        values.push(magnitude + minute * 0.25 + s * 0.1);
+      }
+    }
+  }
+
+  // `RETURNING` so only rows this insert actually created are captured — a
+  // pre-existing simulator row at the same key is left untouched and, crucially,
+  // is never scheduled for deletion.
+  const inserted = await ownerPool.query<{ time: string; asset_id: string }>(
+    `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
+     SELECT t, a::uuid, $3, v, 'kW'
+     FROM unnest($1::timestamptz[], $2::uuid[], $4::float8[]) AS x(t, a, v)
+     ON CONFLICT DO NOTHING
+     RETURNING time::text AS time, asset_id::text AS asset_id`,
+    [times, assetsArr, POINT_KEY, values],
+  );
+  assert(
+    inserted.rows.length > 0,
+    "E7.1b energy RLS fixture inserted no telemetry rows — the window collided entirely with " +
+      "existing data, so nothing this suite owns landed and cleanup would have nothing to remove",
+  );
+
+  const refreshFromIso = new Date(base - 3_600_000).toISOString();
+  const fx: EnergyRlsFixture = {
+    pvAssetId: pv.id,
+    otherAssetId: other.id,
+    organizationId,
+    query: { startDate: refreshFromIso.slice(0, 10), endDate: new Date().toISOString().slice(0, 10) },
+    insertedTimes: inserted.rows.map((r) => r.time),
+    insertedAssets: inserted.rows.map((r) => r.asset_id),
+    refreshFromIso,
+  };
+
+  // The insert is already committed, so if the refresh throws (e.g. `55P03`
+  // exhausts its retries) the harness's `fx`-guarded `afterAll` would never see
+  // this fixture and the rows would orphan. Clean up here before rethrowing, so
+  // the "leaves nothing behind" guarantee holds even on a failed setup.
+  try {
+    await refreshAggregatesFrom(ownerPool, new Date(refreshFromIso));
+  } catch (err) {
+    await cleanupEnergyFixture(ownerPool, fx);
+    throw err;
+  }
+
+  return fx;
+}
+
+/**
+ * Deletes exactly the rows {@link setUpEnergyFixture} inserted and re-refreshes,
+ * so neither raw telemetry nor an orphan aggregate bucket outlives the run.
+ * Never throws from a cleanup path — a `finally` caller must not have a real
+ * assertion failure replaced by a teardown error — but warns, because leftover
+ * orphans would fail an unrelated suite later.
+ */
+export async function cleanupEnergyFixture(
+  ownerPool: pg.Pool,
+  fx: EnergyRlsFixture,
+): Promise<void> {
+  if (fx.insertedTimes.length === 0) {
+    return;
+  }
+  try {
+    // Per asset: `asset_id`/`point_key` constant so the delete prunes compressed
+    // batches rather than decompressing every one (the `0028` SEGMENTBY rule the
+    // adr-0024-retention-bounds invariant enforces), with the exact captured
+    // timestamps in `time = ANY(...)` so only this suite's rows are removed.
+    const timesByAsset = new Map<string, string[]>();
+    for (let i = 0; i < fx.insertedAssets.length; i += 1) {
+      const assetId = fx.insertedAssets[i] as string;
+      const list = timesByAsset.get(assetId) ?? [];
+      list.push(fx.insertedTimes[i] as string);
+      timesByAsset.set(assetId, list);
+    }
+    for (const [assetId, times] of timesByAsset) {
+      await ownerPool.query(
+        `DELETE FROM telemetry.point_values
+         WHERE asset_id = $1 AND point_key = $2 AND time = ANY($3::timestamptz[])`,
+        [assetId, POINT_KEY, times],
+      );
+    }
+    // Re-materialise from the same lower bound, so the buckets that held fixture
+    // rows are recomputed from a now-empty raw range and no orphan aggregate row
+    // survives (ADR 0024 fact 7). The DELETE ran first, so even if this refresh
+    // fails the raw rows are already gone.
+    await refreshAggregatesFrom(ownerPool, new Date(fx.refreshFromIso));
+  } catch (err: unknown) {
+    process.stderr.write(
+      `\n[E7.1b] WARNING: energy RLS fixture cleanup failed: ` +
+        `${err instanceof Error ? err.message : String(err)}\n` +
+        "        Leftover kw rows / orphan aggregate buckets may remain. Repair with:\n" +
+        "        pnpm db:refresh-aggregates\n\n",
+    );
+  }
+}
+
+/**
+ * **Positive control on the shipped path.** On the fleet pool the report resolves
+ * fully: both scoped assets appear in `topConsumers`, and the PV asset's
+ * generation is attributed to solar rather than grid.
+ */
+export async function assertReportResolvesOnFleet(
+  fleetPool: pg.Pool,
+  fx: EnergyRlsFixture,
+): Promise<void> {
+  const svc = new ReportsService(fleetPool);
+  const preview = await svc.energyPreview(fx.query, scopedAssetIds(fx));
+
+  assert(
+    preview.summary.totalKwh > 0,
+    `fleet: summary.totalKwh must be > 0 for the fixture, got ${preview.summary.totalKwh}`,
+  );
+  assert(
+    preview.topConsumers.some((c) => c.assetId === fx.pvAssetId),
+    "fleet: the PV fixture asset must appear in topConsumers",
+  );
+  assert(
+    preview.topConsumers.some((c) => c.assetId === fx.otherAssetId),
+    "fleet: the non-PV fixture asset must appear in topConsumers",
+  );
+  assert(
+    preview.sourceTotals.solarKwh > 0,
+    `fleet: PV generation must be attributed to solar, got solarKwh=${preview.sourceTotals.solarKwh}`,
+  );
+}
+
+/**
+ * **The divergence.** On a bare tenant pool the `bms.assets` reads go dark under
+ * `0047` FORCE, so `topConsumers` is empty and solar is misattributed to grid —
+ * while the unpoliced telemetry aggregate keeps `totalKwh` non-zero. That last
+ * assertion is not decoration: it rules out "the fixture never landed" and
+ * "this pool cannot read the cagg" as the reason `topConsumers` is empty.
+ */
+export async function assertReportGoesDarkOnBareTenant(
+  bareTenantPool: pg.Pool,
+  fx: EnergyRlsFixture,
+): Promise<void> {
+  const svc = new ReportsService(bareTenantPool);
+  const preview = await svc.energyPreview(fx.query, scopedAssetIds(fx));
+
+  assert(
+    preview.topConsumers.length === 0,
+    `bare tenant: topConsumers must be empty under 0047 FORCE with no GUC, got ` +
+      `${preview.topConsumers.length}`,
+  );
+  assert(
+    preview.summary.totalKwh > 0,
+    `bare tenant: the unpoliced telemetry aggregate must still return totalKwh > 0 — otherwise ` +
+      `the empty topConsumers proves nothing about RLS. Got ${preview.summary.totalKwh}`,
+  );
+  assert(
+    preview.sourceTotals.solarKwh === 0,
+    `bare tenant: solar must be misattributed to grid (solar_ids goes dark), got ` +
+      `solarKwh=${preview.sourceTotals.solarKwh}`,
+  );
+}
+
+/**
+ * **Pins the cause to the missing GUC.** The same tenant role, now carrying
+ * `app.current_organization` for the fixture org, resolves the report again.
+ * This is what turns "empty on the bare pool" into "empty *because* no GUC under
+ * FORCE" rather than any incidental defect in the fixture or the pool.
+ */
+export async function assertReportResolvesWithOrgGuc(
+  gucTenantPool: pg.Pool,
+  fx: EnergyRlsFixture,
+): Promise<void> {
+  const svc = new ReportsService(gucTenantPool);
+  const preview = await svc.energyPreview(fx.query, scopedAssetIds(fx));
+
+  assert(
+    preview.topConsumers.some((c) => c.assetId === fx.pvAssetId),
+    "tenant + org GUC: the PV fixture asset must reappear in topConsumers once the GUC is set",
+  );
+  assert(
+    preview.topConsumers.some((c) => c.assetId === fx.otherAssetId),
+    "tenant + org GUC: the non-PV fixture asset must reappear in topConsumers once the GUC is set",
+  );
+  assert(
+    preview.sourceTotals.solarKwh > 0,
+    `tenant + org GUC: solar must be attributed again once the GUC is set, got ` +
+      `solarKwh=${preview.sourceTotals.solarKwh}`,
+  );
+}
