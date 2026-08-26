@@ -556,7 +556,7 @@ export async function assertComputedRowCannotBeReKeyed(
   const mappingSvc = new AssetPointsAdminService(
     db,
     db,
-    new AccessControlService(db, db, db),
+    new AccessControlService(db, db),
     new MasterDataAuditService(db),
   );
 

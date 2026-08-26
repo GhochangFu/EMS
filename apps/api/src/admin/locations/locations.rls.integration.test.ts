@@ -91,7 +91,7 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
     svc = new LocationsAdminService(
       createDb(fleetPool),
       createDb(tenantPool),
-      new AccessControlService(createDb(authPool), createDb(tenantPool), createDb(fleetPool)),
+      new AccessControlService(createDb(authPool), createDb(fleetPool)),
       new MasterDataAuditService(createDb(tenantPool)),
     );
   });

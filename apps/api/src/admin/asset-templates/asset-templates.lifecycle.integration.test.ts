@@ -124,7 +124,7 @@ describe.skipIf(!connectionString)("F2.1 — asset template version lifecycle", 
     svc = new AssetTemplatesAdminService(
       fleetDb,
       tenantDb,
-      new AccessControlService(createDb(authPool), tenantDb, fleetDb),
+      new AccessControlService(createDb(authPool), fleetDb),
       new MasterDataAuditService(tenantDb),
       new VocabulariesService(tenantDb),
     );

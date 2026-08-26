@@ -41,7 +41,7 @@ describe.skipIf(!connectionString)("TelemetryImportService", () => {
     await cleanup(created);
 
     const db = createDb(created);
-    const access = new AccessControlService(db, db, db);
+    const access = new AccessControlService(db, db);
     const audit = new MasterDataAuditService(db);
     const writeService = new TelemetryWriteService(db, db, created, access, audit);
     svc = new TelemetryImportService(db, access, writeService);

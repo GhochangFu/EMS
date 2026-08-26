@@ -40,6 +40,10 @@ export async function assertOrganizationAdminScopeSurvivesRealRls(
   const { scope } = await svc.currentUser(jwt);
   expect(scope.kind).toBe("location");
   expect(scope.locations.length).toBeGreaterThan(0);
+  // E7.1b: proves the organization-source assets read resolves under real roles
+  // via fleetDb (0 rows if it were still on the tenant pool with no GUC once
+  // 0047 policies `assets`).
+  expect(scope.assetIds.length).toBeGreaterThan(0);
 
   const writableOrgs = await svc.writableOrganizationIds(jwt);
   expect(writableOrgs).not.toBeNull();

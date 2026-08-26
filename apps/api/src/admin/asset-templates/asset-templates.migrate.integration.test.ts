@@ -75,7 +75,7 @@ describe.skipIf(!connectionString)("F2.6 — template version migration", () => 
     svc = new AssetTemplateMigrationService(
       fleetDb,
       tenantDb,
-      new AccessControlService(createDb(authPool), tenantDb, fleetDb),
+      new AccessControlService(createDb(authPool), fleetDb),
       new MasterDataAuditService(tenantDb),
     );
     // Fixtures are cross-organization by design and set up on the owner
