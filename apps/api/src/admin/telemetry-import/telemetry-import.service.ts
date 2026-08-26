@@ -13,7 +13,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { TENANT_DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE } from "../../database/database.tokens";
 import { TelemetryWriteService } from "../telemetry-entry/telemetry-write.service";
 import { type ImportRowRejection, type ParsedImportRow, parseWorkbook } from "./telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES, type TelemetryImportOptions } from "./telemetry-import.schema";
@@ -44,7 +44,13 @@ type ResolvedRow = { readonly rowNumber: number; readonly row: TelemetryEntryRow
 @Injectable()
 export class TelemetryImportService {
   constructor(
-    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    // E7.1b: the asset-resolution read (code/id -> locationId) touches `assets`,
+    // FORCE-policied as of 0047. On the tenant pool with no GUC it returns zero
+    // rows, so every import row fails "asset not found" and the CSV import is
+    // fully broken. `writableLocationIds` below is the isolation control
+    // (Amendment 2/3), the same pattern `telemetry-write.service.ts` uses, so
+    // this reads on fleetDb (BYPASSRLS).
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly writeService: TelemetryWriteService,
   ) {}
@@ -178,7 +184,7 @@ export class TelemetryImportService {
       const conditions = [];
       if (codes.length > 0) conditions.push(inArray(assets.code, codes));
       if (ids.length > 0) conditions.push(inArray(assets.id, ids));
-      const found = await this.db
+      const found = await this.fleetDb
         .select({ id: assets.id, code: assets.code, locationId: assets.locationId })
         .from(assets)
         .where(or(...conditions));

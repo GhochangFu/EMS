@@ -4,7 +4,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { assetPoints, assets, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
-import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE } from "../database/database.tokens";
 import { MetricsService } from "../observability/metrics.service";
 import { inputKey } from "./calc-batch";
 import { toActiveDefinition, type CalcDefinition } from "./calc-definition";
@@ -47,7 +47,12 @@ export class CalcDefinitionsService {
   private cacheLoadedAt = 0;
 
   constructor(
-    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    // E7.1b: like `AlarmEngineService`, this is a cross-organization system cache
+    // — every derived point from every tenant, with no JWT and no org context.
+    // That is a fleetDb read (Amendment 2/3); on the tenant pool the 0047 policy
+    // on `assets`/`template_points`/`asset_points` would return nothing and the
+    // calc engine would produce no computed telemetry at all.
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly metrics: MetricsService,
   ) {}
 
@@ -59,7 +64,7 @@ export class CalcDefinitionsService {
   }
 
   private async reload(): Promise<void> {
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({
         templatePointId: templatePoints.id,
         assetId: assets.id,

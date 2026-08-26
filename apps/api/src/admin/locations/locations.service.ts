@@ -208,16 +208,28 @@ export class LocationsAdminService {
       throw new NotFoundException("Location not found");
     }
 
-    const [activeRtu] = await this.tenantDb
-      .select({ count: sql<number>`count(*)::int` })
-      .from(rtus)
-      .where(and(eq(rtus.locationId, id), eq(rtus.active, true)))
-      .limit(1);
-    const [activeAsset] = await this.tenantDb
-      .select({ count: sql<number>`count(*)::int` })
-      .from(assets)
-      .where(and(eq(assets.locationId, id), eq(assets.active, true)))
-      .limit(1);
+    // E7.1b: `rtus` and `assets` are FORCE-policied as of 0047, so these guard
+    // counts must run inside the location's org GUC — on the bare tenant pool
+    // with no `SET LOCAL` they return 0 and the guard never fires, deactivating a
+    // location that still has active RTUs or assets. `rtus.service.deactivate`
+    // counts inside its own GUC for the same reason; this matches it.
+    const { activeRtu, activeAsset } = await withTenant(
+      this.tenantDb,
+      existing.organizationId,
+      async (tx) => {
+        const [activeRtu] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(rtus)
+          .where(and(eq(rtus.locationId, id), eq(rtus.active, true)))
+          .limit(1);
+        const [activeAsset] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(assets)
+          .where(and(eq(assets.locationId, id), eq(assets.active, true)))
+          .limit(1);
+        return { activeRtu, activeAsset };
+      },
+    );
     if ((activeRtu?.count ?? 0) > 0 || (activeAsset?.count ?? 0) > 0) {
       throw new ConflictException("Cannot deactivate location with active RTUs or assets");
     }
