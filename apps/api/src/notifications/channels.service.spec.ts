@@ -35,7 +35,16 @@ const ACTOR = { sub: "u1", email: "admin@bms.local" };
 
 const crypto = {
   encrypt: () => ({ ciphertext: Buffer.from("x"), iv: Buffer.from("y"), keyVersion: 1 }),
-} as unknown as Ctor[1];
+} as unknown as Ctor[2];
+
+/**
+ * `E7.1b`: `ChannelsService` now takes `(fleetDb, tenantDb, crypto)`. Every path
+ * these tests exercise (create/update/remove/readiness) runs on `fleetDb`, so
+ * the one mock serves both pool slots.
+ */
+function makeChannels(db: Ctor[0]): ChannelsService {
+  return new ChannelsService(db, db, crypto);
+}
 
 async function rejectsWith(
   run: () => Promise<unknown>,
@@ -61,7 +70,7 @@ export async function runChannelsServiceTests(): Promise<void> {
   // anyone makes on the admin screen, and an undeclared kind is the second.
   // Untranslated, both are 500s.
   {
-    const duplicate = new ChannelsService(dbRejecting("23505"), crypto);
+    const duplicate = makeChannels(dbRejecting("23505"));
     await rejectsWith(
       () =>
         duplicate.create({
@@ -75,7 +84,7 @@ export async function runChannelsServiceTests(): Promise<void> {
       "a duplicate channel code",
     );
 
-    const unknownKind = new ChannelsService(dbRejecting("23503"), crypto);
+    const unknownKind = makeChannels(dbRejecting("23503"));
     await rejectsWith(
       () =>
         unknownKind.create({
@@ -109,7 +118,7 @@ export async function runChannelsServiceTests(): Promise<void> {
 
     // Anything else still surfaces as itself — this translates two states, it
     // does not swallow errors.
-    const other = new ChannelsService(dbRejecting("40001"), crypto);
+    const other = makeChannels(dbRejecting("40001"));
     await rejectsWith(
       () =>
         other.create({
@@ -135,7 +144,7 @@ export async function runChannelsServiceTests(): Promise<void> {
     try {
       delete process.env.CREDENTIAL_ENCRYPTION_KEY;
 
-      const withSecrets = new ChannelsService(dbCounting(2), crypto);
+      const withSecrets = makeChannels(dbCounting(2));
       const blocked = await withSecrets.readiness(buildConfig({ SMTP_HOST: "mailpit" }));
       const webhook = blocked.find((item) => item.kind === "webhook");
       assert(
@@ -149,7 +158,7 @@ export async function runChannelsServiceTests(): Promise<void> {
 
       // No signed webhook anywhere: a missing key genuinely does not affect
       // this deployment, and readiness says so rather than crying wolf.
-      const noSecrets = new ChannelsService(dbCounting(0), crypto);
+      const noSecrets = makeChannels(dbCounting(0));
       const fine = await noSecrets.readiness(buildConfig({ SMTP_HOST: "mailpit" }));
       assert(
         fine.find((item) => item.kind === "webhook")?.configured === true,
