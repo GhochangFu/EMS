@@ -24,6 +24,7 @@ import type {
 import { AccessControlService } from "../../auth/access-control.service";
 import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { MigrateAssetsBody } from "./asset-templates-migrate.schema";
 import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./template-version-delta";
@@ -287,12 +288,34 @@ export class AssetTemplateMigrationService {
       return this.toResult(plan, 0);
     }
 
-    await this.tenantDb.transaction(async (tx) => {
-      await tx.update(assets).set({ templateId: plan.target.id }).where(inArray(assets.id, assetIds));
+    // E7.1b: `assets` and `asset_points` are policied tenant tables since 0046.
+    // Every selected asset is same-org as the target — the version-identity
+    // check in `buildPlan` refuses a source template in another org, and
+    // instantiation never places an asset outside its template's org — so the
+    // write runs inside `withTenant(target.org)` and stamps that org onto every
+    // new point row.
+    await withTenant(this.tenantDb, plan.target.organizationId, async (tx) => {
+      const updated = await tx
+        .update(assets)
+        .set({ templateId: plan.target.id })
+        .where(inArray(assets.id, assetIds))
+        .returning({ id: assets.id });
+      // Under 0047's FORCE, an UPDATE whose row fails the tenant policy affects
+      // zero rows WITHOUT erroring. A short count therefore means a selected
+      // asset is not in the target org — a silent partial migration, which this
+      // file's header names the outcome worse than failure. Turn it into a loud
+      // rollback rather than a 200 that pinned only some of the batch.
+      if (updated.length !== assetIds.length) {
+        throw new ConflictException(
+          `Migration matched ${updated.length} of ${assetIds.length} selected assets under the ` +
+            `target organization's tenant boundary; the rest are outside it. Nothing was written.`,
+        );
+      }
 
       const rows = plan.planned.flatMap((a) =>
         a.newPoints.map((point) => ({
           assetId: a.dto.assetId,
+          organizationId: plan.target.organizationId,
           pointKey: point.pointKey,
           sourceDataKey: point.sourceDataKey,
           unit: point.unit,

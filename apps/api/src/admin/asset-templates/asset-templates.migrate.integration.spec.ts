@@ -243,6 +243,7 @@ async function pointRows(
     source_kind: string;
     rtu_id: string | null;
     unit: string | null;
+    organization_id: string | null;
   }[]
 > {
   const { rows } = await pool.query<{
@@ -251,8 +252,9 @@ async function pointRows(
     source_kind: string;
     rtu_id: string | null;
     unit: string | null;
+    organization_id: string | null;
   }>(
-    `SELECT point_key, source_data_key, source_kind, rtu_id, unit FROM bms.asset_points
+    `SELECT point_key, source_data_key, source_kind, rtu_id, unit, organization_id FROM bms.asset_points
       WHERE asset_id = $1 ORDER BY point_key`,
     [assetId],
   );
@@ -443,6 +445,13 @@ export async function assertApplyMovesOnlySelectedAssets(
     `the template's unit override must reach the row, got ${String(rows[0]?.unit)}. ` +
       "Decision 4 says these rows are created by the same path instantiation uses, and " +
       "AssetTemplateInstantiationService.planAsset resolves point.unit ?? catalogUnit ?? null.",
+  );
+  // E7.1b: the migration write runs inside withTenant(target.org) and stamps the
+  // new point with that org. Nullable, no default — NULL, and this fails,
+  // without the stamp.
+  assert(
+    rows[0]?.organization_id === fx.organizationId,
+    `the migrated point must carry the target's org (${fx.organizationId}), got ${String(rows[0]?.organization_id)}`,
   );
   assert(
     (await pointRows(pool, untouched)).length === 0,

@@ -23,6 +23,7 @@ import type { AssetInstantiationResultDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type {
   InstantiateAssetBody,
@@ -191,8 +192,11 @@ export class AssetTemplateInstantiationService {
     const plans = body.assets.map((entry) => this.planAsset(entry, measured, catalogUnits));
 
     const sourceKind = target.rtuId ? "measured" : "unmapped";
-    const created = await this.tenantDb
-      .transaction(async (tx) => {
+    // E7.1b: `assets` and `asset_points` are policied tenant tables since 0046.
+    // The whole batch is one org — `resolveTarget` already refuses a target in a
+    // different org than the template (above) — so the write runs inside
+    // `withTenant(template.org)` and stamps that org onto every row.
+    const created = await withTenant(this.tenantDb, template.organizationId, async (tx) => {
         const inserted = await tx
           .insert(assets)
           .values(
@@ -204,6 +208,7 @@ export class AssetTemplateInstantiationService {
               rtuId: target.rtuId,
               domain: template.domain,
               templateId: template.id,
+              organizationId: template.organizationId,
               active: true,
             })),
           )
@@ -218,6 +223,7 @@ export class AssetTemplateInstantiationService {
           }
           return plan.points.map((point) => ({
             assetId,
+            organizationId: template.organizationId,
             pointKey: point.pointKey,
             sourceDataKey: point.sourceDataKey,
             unit: point.unit,
