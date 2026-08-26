@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 
-import { automationRules } from "@bms/db";
+import { assets, automationRules } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AutomationRuleOperator, TelemetryReading } from "@bms/shared";
 
-import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE } from "../database/database.tokens";
 import { alarmMessageFieldsFromCondition } from "../rules/alarm-message";
 import { compare } from "../rules/rule-evaluation";
 import { TelemetryBroadcastHub } from "../telemetry/telemetry-broadcast.hub";
@@ -14,6 +14,8 @@ import { AlarmRaiser } from "./alarm-raise.service";
 
 type CachedThresholdRule = AlarmRaiseRule & {
   assetId: string;
+  /** The rule's asset's org — the tenant `AlarmRaiser.raise` files the alarm under. */
+  assetOrganizationId: string;
   operator: AutomationRuleOperator;
   thresholdValue: number;
 };
@@ -37,7 +39,11 @@ export class AlarmEngineService implements OnModuleInit {
 
   constructor(
     private readonly hub: TelemetryBroadcastHub,
-    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    // E7.1b: the cache is a cross-organization system read — every published
+    // threshold rule, from every tenant, with no JWT. That is a fleetDb read
+    // (Amendment 2/3); on the tenant pool the 0047 policy would return nothing
+    // and the engine would raise no alarms at all.
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly raiser: AlarmRaiser,
   ) {}
 
@@ -62,7 +68,7 @@ export class AlarmEngineService implements OnModuleInit {
     if (Date.now() - this.cacheLoadedAt < CACHE_TTL_MS) {
       return;
     }
-    const ruleRows = await this.db
+    const ruleRows = await this.fleetDb
       .select({
         id: automationRules.id,
         assetId: automationRules.assetId,
@@ -73,8 +79,14 @@ export class AlarmEngineService implements OnModuleInit {
         thresholdValue: automationRules.thresholdValue,
         severity: automationRules.severity,
         condition: automationRules.condition,
+        // The rule's own org (rule_executions source) and its asset's org
+        // (alarms source + the raise GUC). AlarmRaiser refuses the raise if they
+        // disagree, so both travel with the cached rule.
+        organizationId: automationRules.organizationId,
+        assetOrganizationId: assets.organizationId,
       })
       .from(automationRules)
+      .innerJoin(assets, eq(automationRules.assetId, assets.id))
       .where(
         and(
           eq(automationRules.enabled, true),
@@ -92,14 +104,23 @@ export class AlarmEngineService implements OnModuleInit {
           pointKey: string;
           operator: string;
           thresholdValue: number;
+          assetOrganizationId: string;
         } =>
-          Boolean(row.assetId && row.pointKey && row.operator && row.thresholdValue !== null),
+          Boolean(
+            row.assetId &&
+              row.pointKey &&
+              row.operator &&
+              row.thresholdValue !== null &&
+              row.assetOrganizationId,
+          ),
       )
       .map((row) => {
         const { alarmMessage, unit } = alarmMessageFieldsFromCondition(row.condition);
         return {
           id: row.id,
           assetId: row.assetId,
+          assetOrganizationId: row.assetOrganizationId,
+          organizationId: row.organizationId,
           pointKey: row.pointKey,
           code: row.code,
           name: row.name,
@@ -135,7 +156,7 @@ export class AlarmEngineService implements OnModuleInit {
         // by F3.6 from ~88 to 337+ seeded rules and up to three writes per
         // raise instead of two.
         try {
-          await this.raiser.raise(r.assetId, rule, r.value);
+          await this.raiser.raise(r.assetId, rule.assetOrganizationId, rule, r.value);
         } catch (err) {
           this.logger.warn(
             { err, assetId: r.assetId, ruleId: rule.id },

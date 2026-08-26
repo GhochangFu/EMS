@@ -500,21 +500,38 @@ export class RulesService {
         const sample = await sampleLookup(row.assetId, row.pointKey);
         if (sample && isSampleFreshEnoughToRaise(sample.time, new Date())) {
           const { alarmMessage, unit } = alarmMessageFieldsFromCondition(row.condition);
-          const raised = await this.alarmRaiser.raise(
-            row.assetId,
-            {
-              id: row.id,
-              code: row.code,
-              name: row.name,
-              pointKey: row.pointKey,
-              severity: row.severity,
-              alarmMessage,
-              unit,
-            },
-            result.observedValue,
-            { recordTrace: false },
-          );
-          raisedAlarmId = raised.alarmId;
+          // E7.1b: raise needs the asset's org (the tenant GUC + alarms.org) and
+          // the rule's own org (rule_executions.org). Read here transitionally on
+          // the tenant pool — the rules read layer moves to fleetDb in its own
+          // unit; AlarmRaiser refuses the raise if the two disagree.
+          const [orgRow] = await this.db
+            .select({
+              ruleOrg: automationRules.organizationId,
+              assetOrg: assets.organizationId,
+            })
+            .from(automationRules)
+            .innerJoin(assets, eq(automationRules.assetId, assets.id))
+            .where(eq(automationRules.id, row.id))
+            .limit(1);
+          if (orgRow?.assetOrg) {
+            const raised = await this.alarmRaiser.raise(
+              row.assetId,
+              orgRow.assetOrg,
+              {
+                id: row.id,
+                code: row.code,
+                name: row.name,
+                pointKey: row.pointKey,
+                severity: row.severity,
+                organizationId: orgRow.ruleOrg,
+                alarmMessage,
+                unit,
+              },
+              result.observedValue,
+              { recordTrace: false },
+            );
+            raisedAlarmId = raised.alarmId;
+          }
         }
       }
 

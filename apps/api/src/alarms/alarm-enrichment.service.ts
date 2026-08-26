@@ -5,7 +5,8 @@ import { alarmAffectedAssets, alarmEnrichments, alarms, auditLog, users } from "
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
-import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { withTenant } from "../database/tenant-context";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import type { AlarmEnrichmentUpsertBody } from "./enrichment.schema";
 
@@ -29,8 +30,34 @@ import type { AlarmEnrichmentUpsertBody } from "./enrichment.schema";
 export class AlarmEnrichmentService {
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    // E7.1b: the alarm scope read (behind assetIds, the isolation control) and
+    // the actor identity read are both pre-tenant, so they run on fleetDb; the
+    // write is then wrapped in the alarm's org.
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly vocabularies: VocabulariesService,
   ) {}
+
+  /**
+   * The organization the alarm belongs to (`alarms.organization_id`), read on
+   * fleetDb behind the caller's scope. `alarm_enrichments` and the junction it
+   * writes all belong to it, so the whole upsert runs inside this org's GUC.
+   */
+  private async resolveAlarmOrg(alarmId: string, assetIds: string[] | null): Promise<string> {
+    const [row] = await this.fleetDb
+      .select({ organizationId: alarms.organizationId })
+      .from(alarms)
+      .where(
+        and(eq(alarms.id, alarmId), ...(assetIds ? [inArray(alarms.assetId, assetIds)] : [])),
+      )
+      .limit(1);
+    if (!row) {
+      throw new NotFoundException("Alarm not found or outside your access scope");
+    }
+    if (!row.organizationId) {
+      throw new BadRequestException("Alarm has no organization; run the 0046 backfill");
+    }
+    return row.organizationId;
+  }
 
   async upsert(
     alarmId: string,
@@ -58,25 +85,16 @@ export class AlarmEnrichmentService {
       }
     }
 
-    await this.db.transaction(async (tx) => {
-      const [alarmRow] = await tx
-        .select({ id: alarms.id })
-        .from(alarms)
-        .where(
-          and(eq(alarms.id, alarmId), ...(assetIds ? [inArray(alarms.assetId, assetIds)] : [])),
-        )
-        .limit(1);
-      if (!alarmRow) {
-        throw new NotFoundException("Alarm not found or outside your access scope");
-      }
+    const organizationId = await this.resolveAlarmOrg(alarmId, assetIds);
 
-      const [actorRow] = await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
-        .limit(1);
-      const dbActorId = actorRow?.id ?? null;
+    const [actorRow] = await this.fleetDb
+      .select({ id: users.id })
+      .from(users)
+      .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
+      .limit(1);
+    const dbActorId = actorRow?.id ?? null;
 
+    await withTenant(this.db, organizationId, async (tx) => {
       const fields: Partial<typeof alarmEnrichments.$inferInsert> = {};
       if (body.rootCause !== undefined) fields.rootCause = body.rootCause;
       if (body.impact !== undefined) fields.impact = body.impact;
@@ -89,7 +107,7 @@ export class AlarmEnrichmentService {
 
       const [enrichment] = await tx
         .insert(alarmEnrichments)
-        .values({ alarmId, updatedBy: dbActorId, ...fields })
+        .values({ alarmId, organizationId, updatedBy: dbActorId, ...fields })
         .onConflictDoUpdate({
           target: alarmEnrichments.alarmId,
           set: { updatedBy: dbActorId, updatedAt: new Date(), ...fields },

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Inject,
   Injectable,
   NotFoundException,
@@ -9,7 +10,8 @@ import { alarms, assets, auditLog, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AlarmListItem, JwtPayload } from "@bms/shared";
 
-import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { withTenant } from "../database/tenant-context";
 import { AlarmsGateway } from "./alarms.gateway";
 
 function encodeCursor(raisedAt: Date, id: string): string {
@@ -30,8 +32,40 @@ function decodeCursor(raw: string): { raisedAt: Date; id: string } {
 export class AlarmsService {
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    // E7.1b: alarm reads are scoped by the caller's assetIds (Amendment 3, the
+    // assetIds filter is the isolation control) and the actor/identity read is
+    // pre-tenant, so both run on fleetDb.
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly gateway: AlarmsGateway,
   ) {}
+
+  /**
+   * The organization an alarm belongs to (`alarms.organization_id`, 0046 =
+   * `asset_id → assets.org`), read on fleetDb behind the caller's scope. The
+   * `acknowledge` write is wrapped in this org's GUC.
+   */
+  private async resolveAlarmOrg(
+    alarmId: string,
+    assetIds?: string[] | null,
+  ): Promise<string> {
+    const [row] = await this.fleetDb
+      .select({ organizationId: alarms.organizationId })
+      .from(alarms)
+      .where(
+        and(
+          eq(alarms.id, alarmId),
+          ...(assetIds ? [inArray(alarms.assetId, assetIds)] : []),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      throw new NotFoundException("Alarm not found or outside your access scope");
+    }
+    if (!row.organizationId) {
+      throw new BadRequestException("Alarm has no organization; run the 0046 backfill");
+    }
+    return row.organizationId;
+  }
 
   private mapRow(r: {
     id: string;
@@ -78,7 +112,7 @@ export class AlarmsService {
     }
     const filters = opts.assetIds ? [inArray(alarms.assetId, opts.assetIds)] : [];
 
-    const base = this.db
+    const base = this.fleetDb
       .select({
         id: alarms.id,
         assetId: alarms.assetId,
@@ -149,14 +183,16 @@ export class AlarmsService {
     if (assetIds && assetIds.length === 0) {
       throw new NotFoundException("Alarm not found or outside your access scope");
     }
-    const [actorRow] = await this.db
+    const [actorRow] = await this.fleetDb
       .select({ id: users.id })
       .from(users)
       .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
       .limit(1);
     const dbActorId = actorRow?.id ?? null;
 
-    return this.db.transaction(async (tx) => {
+    const organizationId = await this.resolveAlarmOrg(alarmId, assetIds);
+
+    return withTenant(this.db, organizationId, async (tx) => {
       const updated = await tx
         .update(alarms)
         .set({
