@@ -22,10 +22,11 @@ import type { AlarmsService } from "./alarms.service";
  *     what isolates: a caller scoped to org A's asset sees org A's alarm and not
  *     org B's, and the SAME fleet read scoped to org B's asset returns org B's
  *     alarm — the cross-org resolution a single-org GUC could not do.
- *  2. `assertAlarmListGoesDarkOnBareTenantPool` — the regression guard for the
- *     E7.1b fix: on the bare tenant pool with no `SET LOCAL`, the 0047 FORCE
- *     policy returns zero rows, so the list would be silently empty for every
- *     caller. A tenant-pool-backed service must see nothing here.
+ *  2. `assertAlarmListGoesDarkOnBareTenantPool` — why the read must be on fleet:
+ *     on the bare tenant pool with no `SET LOCAL`, the 0047 FORCE policy returns
+ *     zero rows, so the list would be silently empty for every caller. This is a
+ *     necessity proof; the `@Inject` token itself is gated by
+ *     `database/fleet-read-wiring.test.ts` (this file injects its pools).
  *  3. `assertAcknowledgeRefusesForeignAlarmButAllowsInScope` — `resolveAlarmOrg`
  *     refuses a foreign alarm behind the caller's scope with the same
  *     non-disclosure wording a nonexistent id gets, and the in-scope
@@ -94,11 +95,15 @@ export async function assertAlarmListScopedByAssetIds(ctx: AlarmsRlsFixtures): P
 }
 
 /**
- * The regression guard for the E7.1b fix. Had `list` stayed on the bare tenant
- * pool (no `SET LOCAL app.current_organization`), the 0047 FORCE policy on
+ * Why the read must be on fleet. Had `list` stayed on the bare tenant pool (no
+ * `SET LOCAL app.current_organization`), the 0047 FORCE policy on
  * `alarms`/`assets` would return zero rows and the alarm list would be silently
- * empty for every caller — the exact "engine goes dark" failure the `fleetDb`
- * routing prevents. A tenant-pool-backed service must see nothing here.
+ * empty for every caller — the "engine goes dark" failure the `fleetDb` routing
+ * prevents. A tenant-pool-backed service must see nothing here.
+ *
+ * This is a necessity proof, not a wiring guard: it injects its own pools, so it
+ * cannot catch a revert of the `@Inject(FLEET_DRIZZLE)` token — that is gated by
+ * `database/fleet-read-wiring.test.ts`.
  */
 export async function assertAlarmListGoesDarkOnBareTenantPool(
   tenantBackedSvc: AlarmsService,

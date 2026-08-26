@@ -193,14 +193,17 @@ export async function assertLoaderResolvesValidRowsAndSkipsInvalidOnes(
 }
 
 /**
- * `E7.1b` regression guard. `CalcDefinitionsService` reads the cross-org calc
- * cache on `fleetDb`; the fix moved it off `TENANT_DRIZZLE` (ADR 0043
- * Amendment 3 — a system cache with no JWT and no org context). Had it stayed on
- * the bare tenant pool, the 0047 FORCE policy on
+ * `E7.1b` — why the calc cache read must be on fleet. `CalcDefinitionsService`
+ * reads the cross-org cache on `fleetDb`; the fix moved it off `TENANT_DRIZZLE`
+ * (ADR 0043 Amendment 3 — a system cache with no JWT and no org context). Had it
+ * stayed on the bare tenant pool, the 0047 FORCE policy on
  * `assets`/`template_points`/`asset_points` would return nothing with no GUC set,
- * and the engine would compute no derived telemetry at all — a silent, total
- * outage no unit test constructing its own rows would catch. A fleet-backed
- * loader resolves the seeded formula; a tenant-pool-backed one resolves nothing.
+ * and the engine would compute no derived telemetry at all. A fleet-backed loader
+ * resolves the seeded formula; a tenant-pool-backed one resolves nothing.
+ *
+ * A necessity proof, not a wiring guard: it constructs the service with explicit
+ * pools, so the `@Inject(FLEET_DRIZZLE)` token itself is gated by
+ * `database/fleet-read-wiring.test.ts`, not here.
  */
 export async function assertLoaderGoesDarkOnBareTenantPool(
   fleetPool: pg.Pool,

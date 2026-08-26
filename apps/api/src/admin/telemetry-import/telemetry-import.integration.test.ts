@@ -86,7 +86,7 @@ describe.skipIf(!connectionString)("TelemetryImportService", () => {
     30_000,
   );
 
-  it("rejects every row on a bare tenant pool (the fleetDb-routing regression guard)", async () => {
+  it("rejects every row on a bare tenant pool — proves the read must be on fleet", async () => {
     await assertImportGoesDarkOnBareTenantPool(tenantBackedSvc, fx);
   }, 30_000);
 });

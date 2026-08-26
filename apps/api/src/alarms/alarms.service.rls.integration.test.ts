@@ -204,7 +204,7 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
     await assertAlarmListScopedByAssetIds(ctx);
   });
 
-  it("returns nothing on a bare tenant pool with no GUC (the fleetDb-routing regression guard)", async () => {
+  it("returns nothing on a bare tenant pool with no GUC — proves the read must be on fleet", async () => {
     await assertAlarmListGoesDarkOnBareTenantPool(tenantBackedSvc, ctx.inScopeAssetId);
   });
 

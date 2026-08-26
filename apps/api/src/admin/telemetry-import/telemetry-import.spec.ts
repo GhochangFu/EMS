@@ -197,14 +197,18 @@ async function countPointValuesForAsset(pool: pg.Pool, assetId: string): Promise
 }
 
 /**
- * `E7.1b` regression guard. `TelemetryImportService` resolves `asset_code`/
- * `asset_id` on `fleetDb`; the fix moved that read off `TENANT_DRIZZLE`
- * (a master-data importer's `writableLocationIds` can span organizations —
- * ADR 0043 Amendment 3). Had it stayed on the bare tenant pool, the 0047 FORCE
- * policy on `assets` would return nothing with no GUC set, so every row would
- * reject "asset not found" and the whole CSV import would be silently broken
- * for every caller. A tenant-pool-backed service must reject a code that
- * resolves fine on fleet — proving the read has to be on fleet.
+ * `E7.1b` — why the asset-resolution read must be on fleet.
+ * `TelemetryImportService` resolves `asset_code`/`asset_id` on `fleetDb`; the fix
+ * moved that read off `TENANT_DRIZZLE` (a master-data importer's
+ * `writableLocationIds` can span organizations — ADR 0043 Amendment 3). Had it
+ * stayed on the bare tenant pool, the 0047 FORCE policy on `assets` would return
+ * nothing with no GUC set, so every row would reject "asset not found" and the
+ * whole CSV import would be silently broken for every caller. A tenant-pool-
+ * backed service must reject a code that resolves fine on fleet.
+ *
+ * A necessity proof, not a wiring guard: it constructs the service with an
+ * explicit pool, so the `@Inject(FLEET_DRIZZLE)` token is gated by
+ * `database/fleet-read-wiring.test.ts`, not here.
  */
 export async function assertImportGoesDarkOnBareTenantPool(
   tenantBackedSvc: TelemetryImportService,

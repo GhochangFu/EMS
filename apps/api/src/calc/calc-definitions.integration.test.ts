@@ -78,7 +78,7 @@ describe.skipIf(!connectionString)("F2.4 — calc definition loader", () => {
     await assertCacheIsNotReReadWithinTtl(pool, fx);
   });
 
-  it("resolves nothing on a bare tenant pool (the fleetDb-routing regression guard)", async () => {
+  it("resolves nothing on a bare tenant pool — proves the read must be on fleet", async () => {
     if (!pool || !tenantPool) throw new Error("pools required");
     await assertLoaderGoesDarkOnBareTenantPool(pool, tenantPool, fx);
   });
