@@ -53,6 +53,14 @@ function protocolToSourceType(protocol: string): "mqtt" | "simulator" | "catalog
  * comes FROM the row). Once known, the entire write transaction below runs
  * inside `withTenant(tenantDb, session.organizationId, …)` — every row it
  * writes, policied or not, belongs to that one organization.
+ *
+ * `E7.1b` (ADR 0043 §5) — `rtus`, `assets` and `asset_points` gained an
+ * `organization_id` column (migration `0046`) and get a `tenant_isolation`
+ * policy + `FORCE` in `0047`. Their inserts here now stamp that column with
+ * `session.organizationId`, the same org the transaction's GUC is set to, so
+ * the `WITH CHECK` passes once the policy lands. `locations` and `point_keys`
+ * already stamped it at F4.16; the audit rows defer `organization_id` to
+ * E7.1c (ruling 5).
  */
 @Injectable()
 export class OnboardingCommitService {
@@ -168,6 +176,7 @@ export class OnboardingCommitService {
         const [rtuRow] = await tx
           .insert(rtus)
           .values({
+            organizationId: session.organizationId,
             locationId: locationRow.id,
             code: rtuDraft.code,
             displayName: rtuDraft.displayName,
@@ -217,6 +226,7 @@ export class OnboardingCommitService {
         const [assetRow] = await tx
           .insert(assets)
           .values({
+            organizationId: session.organizationId,
             code: assetDraft.code,
             name: assetDraft.name,
             siteName: assetDraft.siteName,
@@ -244,6 +254,7 @@ export class OnboardingCommitService {
         const [apRow] = await tx
           .insert(assetPoints)
           .values({
+            organizationId: session.organizationId,
             assetId,
             pointKey: ap.pointKey,
             sourceDataKey: ap.sourceDataKey,
