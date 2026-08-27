@@ -6,9 +6,9 @@ import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
-import { countingDb } from "../testing/counting-db";
+import { countingDb, countingDbMethod } from "../testing/counting-db";
 import type { RulesService } from "./rules.service";
-import type { RuleDraftBody } from "./rules.schema";
+import type { RuleDraftBody, RulePreviewBody } from "./rules.schema";
 
 /**
  * `E7.1b` — the org-stamping and ruling-4 proof for `RulesService.createDraft`
@@ -98,6 +98,15 @@ function timeWindowDraft(code: string): RuleDraftBody {
  * A threshold `createDraft` under a real `bms_tenant` connection stamps
  * `automation_rules.organization_id` from the asset, and its audit row resolves
  * a non-NULL actor id from the pre-tenant `fleetDb` identity read.
+ *
+ * `E7.1c` (item D) — also asserts `audit_log.organization_id` on the same row.
+ * `insertRuleAuditLog` folds into `createDraft`'s own `withTenant` transaction
+ * (via `tx`, `rule-audit.ts`), so `countingDb`'s `.transaction()` counter
+ * cannot see this land: folding an insert into an ALREADY-OPEN transaction
+ * opens no new one, and `assertCreateDraftReadsBackOnTenantTransaction` below
+ * already pins that count at 1 both before and after this stamp existed. The
+ * only way to prove the value landed is to read it back, which is what this
+ * does.
  */
 export async function assertCreateStampsOrgAndActorUnderRealRls(
   ctx: RulesRlsFixtures,
@@ -118,8 +127,8 @@ export async function assertCreateStampsOrgAndActorUnderRealRls(
     ctx.organizationId,
   );
 
-  const audit = await ctx.ownerPool.query<{ actor_id: string | null }>(
-    `SELECT actor_id FROM bms.audit_log
+  const audit = await ctx.ownerPool.query<{ actor_id: string | null; organization_id: string | null }>(
+    `SELECT actor_id, organization_id FROM bms.audit_log
       WHERE entity_type = 'automation_rule' AND entity_id = $1 AND action = 'rule_draft_create'`,
     [created.id],
   );
@@ -128,6 +137,10 @@ export async function assertCreateStampsOrgAndActorUnderRealRls(
     audit.rows[0]?.actor_id,
     "the actor resolved on fleetDb, so audit_log.actor_id is not NULL",
   ).not.toBeNull();
+  expect(
+    audit.rows[0]?.organization_id,
+    "E7.1c item D: the audit row carries the SAME org as the rule it describes",
+  ).toBe(ctx.organizationId);
 }
 
 /**
@@ -155,6 +168,49 @@ export async function assertCreateDraftReadsBackOnTenantTransaction(
     fleet.transactions(),
     "the folded read-back opens no fleet transaction (org/actor/code use fleet.select)",
   ).toBe(0);
+}
+
+/**
+ * `E7.1c` (item D) — `previewRule` is the (b)-classified audit site: a
+ * genuinely org-less write (a preview may evaluate an unsaved draft), routed
+ * to `fleetDb` with `organizationId: null` rather than the default tenant
+ * pool. `countingDb`'s own `.transaction()` counter cannot see this either
+ * way — `previewRule` opens no transaction on any pool, tenant or fleet, so
+ * that counter reads `0`/`0` regardless of which pool the insert actually
+ * reached. `countingDbMethod(db, "insert")` counts the `.insert(...)` call
+ * itself instead, which is the seam that actually discriminates: a revert to
+ * the funnel's old `this.db` default would move this insert onto the tenant
+ * pool and this assertion would flip.
+ */
+export async function assertPreviewAuditIsNullOrgOnFleetPool(
+  ctx: RulesRlsFixtures,
+  code: string,
+): Promise<void> {
+  const tenant = countingDbMethod(ctx.tenantDb, "insert");
+  const fleet = countingDbMethod(ctx.fleetDb, "insert");
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  const dto: RulePreviewBody = { ...thresholdDraft(ctx, code), id: undefined };
+
+  await svc.previewRule(dto, ctx.scopedActor, [ctx.assetId]);
+
+  expect(fleet.calls(), "previewRule's audit write reaches fleetDb, not the tenant pool").toBe(1);
+  expect(tenant.calls(), "no insert of any kind touches the tenant pool for a preview").toBe(0);
+
+  // `validateRuleDraft` uppercases `code` before it reaches the audit payload
+  // (`rules.service.ts`: `dto.code?.trim().toUpperCase()`) — match that, or a
+  // mixed-case `code` here (this file's own `PREFIX` embeds a lowercase
+  // random-hex segment) finds zero rows and asserts nothing.
+  const audit = await ctx.ownerPool.query<{ organization_id: string | null }>(
+    `SELECT organization_id FROM bms.audit_log
+      WHERE action = 'rule_preview' AND payload->>'code' = $1
+      ORDER BY created_at DESC LIMIT 1`,
+    [code.toUpperCase()],
+  );
+  expect(audit.rows.length, "previewRule wrote one audit row").toBe(1);
+  expect(
+    audit.rows[0]?.organization_id,
+    "a preview has no org to attribute — decision 5's platform-event NULL",
+  ).toBeNull();
 }
 
 /**

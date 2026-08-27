@@ -20,6 +20,7 @@ import {
   assertAssetlessTimeWindowRefusedForScoped,
   assertCreateDraftReadsBackOnTenantTransaction,
   assertCreateStampsOrgAndActorUnderRealRls,
+  assertPreviewAuditIsNullOrgOnFleetPool,
   assertPublishRuleReadsBackInTenantTransaction,
   assertRuleExecutionListReturnsBothOrgsForTwoOrgActor,
   assertRuleListReturnsBothOrgsForTwoOrgActor,
@@ -308,6 +309,10 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
 
   it("folds the createDraft read-back into the write's tenant transaction (E7.1c)", async () => {
     await assertCreateDraftReadsBackOnTenantTransaction(ctx, `${PREFIX}READBACK`);
+  });
+
+  it("routes previewRule's audit write to fleetDb with a NULL org (E7.1c item D)", async () => {
+    await assertPreviewAuditIsNullOrgOnFleetPool(ctx, `${PREFIX}PREVIEW`);
   });
 
   it("folds the updateRule read-back into the write's tenant transaction (E7.1c)", async () => {
