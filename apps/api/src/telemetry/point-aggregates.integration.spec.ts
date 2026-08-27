@@ -1,5 +1,6 @@
 import type pg from "pg";
 
+import { resolveSeededAssetByCode } from "../testing/integration-fixtures";
 import { avgExpr, bucketHours, type AggregateLevel } from "./point-aggregates";
 
 /**
@@ -68,6 +69,35 @@ function assert(condition: boolean, message: string): void {
     throw new Error(message);
   }
 }
+
+/**
+ * The one seeded asset both fixtures below hang off, **by exact code**.
+ *
+ * Both used to resolve `SELECT id FROM bms.assets ORDER BY code LIMIT 1` —
+ * whatever currently sorts first rather than a named row. Measured on a seeded
+ * developer database, 2026-08-27: that is `CH-CRAC-101`, asset
+ * `1d4c1fd0-0ede-4ede-a74a-ed5dd9998b69`, which is **also** the row
+ * `reports.service.rls.integration.spec.ts` names as its `GRID_ASSET_CODE` — and
+ * both suites write `point_key = 'kw'` onto it in an overlapping recent window.
+ * The pair failed on its first run together, the neighbour's rows landing between
+ * this suite's raw reference query and its call to the service:
+ * `energySummary("7d").totalKwh is 267.28, the equivalent raw query says 264.9`,
+ * under a message that blames the `level`/`kwhFactor` pairing instead. The full
+ * mechanism is in `tests/integration-fixture-isolation.test.ts`.
+ *
+ * **An exact code is necessary and not sufficient**: pinning `CH-CRAC-101` closes
+ * the positional defect and leaves the sharing one exactly where it was. This
+ * code is seeded by `packages/db/src/eskom-assets-seed.ts`, is **neither** row
+ * `reports.service.rls` claims (`PV-INV-01`, `CH-CRAC-101`), is **not** `PV%` —
+ * the dashboard and report split solar with `code ILIKE 'PV%'` — and is `hvac`,
+ * which is load-bearing: `apps/sim` emits `cooling_kw` for HVAC assets and `kw`
+ * only for electrical ones, so the range-shaped cleanup in
+ * {@link assertEnergySummaryMatchesRaw} cannot reach a simulator row here.
+ *
+ * A seed rename makes {@link resolveSeededAssetByCode} fail by name. Rename this
+ * constant to match — do **not** widen it back to a positional read.
+ */
+const FIXTURE_ASSET_CODE = "CH-CRAC-102";
 
 /**
  * Refreshes one of the **production** aggregates as `bms_rollup`.
@@ -179,41 +209,11 @@ export async function cleanup(pool: pg.Pool): Promise<void> {
  * trivially and hide a column swapped for another.
  */
 export async function seedReadings(pool: pg.Pool): Promise<Fixtures> {
-  // E7.1b: `bms.assets` carries a `tenant_isolation` policy + FORCE as of `0047`,
-  // and this suite's pool is the FORCE-bound owner (it needs the owner to
-  // `SET ROLE bms_rollup` for the production-aggregate refresh). With no tenant
-  // GUC the owner sees no asset, so resolve one under each organization's context
-  // in turn — `bms.organizations` is not policied, so it can be enumerated
-  // directly. The suite only needs a single asset id to hang readings off, and
-  // `telemetry.point_values` is not policied, so the inserts below need no
-  // tenant context.
-  const client = await pool.connect();
-  let assetId: string | undefined;
-  try {
-    const { rows: orgs } = await client.query<{ id: string }>(
-      `SELECT id FROM bms.organizations ORDER BY id`,
-    );
-    for (const { id: orgId } of orgs) {
-      await client.query(`SELECT set_config('app.current_organization', $1, false)`, [orgId]);
-      const { rows } = await client.query<{ id: string }>(
-        `SELECT id FROM bms.assets ORDER BY code LIMIT 1`,
-      );
-      if (rows[0]) {
-        assetId = rows[0].id;
-        break;
-      }
-    }
-  } finally {
-    await client
-      .query(`SELECT set_config('app.current_organization', '', false)`)
-      .catch(() => undefined);
-    client.release();
-  }
-  // An `if`/`throw` rather than `assert(...)` so TypeScript narrows `assetId`
-  // from `string | undefined` to `string` for the reads and insert below.
-  if (assetId === undefined) {
-    throw new Error("F4.1 fixture needs at least one row in bms.assets; run `pnpm db:seed` first");
-  }
+  // Named, not positional — see {@link FIXTURE_ASSET_CODE}. The rows written here
+  // carry TEST_POINT_KEY, which no other suite uses, so this half of the sharing
+  // was harmless; it is resolved the same way because the *resolution* is the
+  // defect, and leaving one positional read behind would leave the class open.
+  const assetId = await resolveSeededAssetByCode(pool, FIXTURE_ASSET_CODE);
 
   // Uneven on purpose, and cycled so different minutes inside the same hour get
   // different weights — that is what makes an average of averages diverge.
@@ -692,34 +692,13 @@ export async function assertEnergySummaryMatchesRaw(
     assetIds: string[] | null,
   ) => Promise<{ totalKwh: number; peakKw: number }>,
 ): Promise<void> {
-  // E7.1b: `bms.assets` is FORCE-policied as of `0047` and this is the owner
-  // pool, so resolve an asset under each organization's tenant context in turn
-  // (`bms.organizations` is not policied). See `seedReadings` for the full note.
-  const client = await pool.connect();
-  let assetId: string | undefined;
-  try {
-    const { rows: orgs } = await client.query<{ id: string }>(
-      `SELECT id FROM bms.organizations ORDER BY id`,
-    );
-    for (const { id: orgId } of orgs) {
-      await client.query(`SELECT set_config('app.current_organization', $1, false)`, [orgId]);
-      const { rows } = await client.query<{ id: string }>(
-        `SELECT id FROM bms.assets ORDER BY code LIMIT 1`,
-      );
-      if (rows[0]) {
-        assetId = rows[0].id;
-        break;
-      }
-    }
-  } finally {
-    await client
-      .query(`SELECT set_config('app.current_organization', '', false)`)
-      .catch(() => undefined);
-    client.release();
-  }
-  if (typeof assetId !== "string") {
-    throw new Error("energySummary check needs at least one row in bms.assets");
-  }
+  // **The read this whole function turned on.** It resolved `ORDER BY code
+  // LIMIT 1`, which is `CH-CRAC-101` — the row `reports.service.rls` also writes
+  // `kw` to — so the two suites' inserts interleaved between the raw reference
+  // query below and the `energySummary` call it is compared against. See
+  // {@link FIXTURE_ASSET_CODE} for the measurement and for why the fix is a
+  // *different* seeded code rather than only an exact one.
+  const assetId = await resolveSeededAssetByCode(pool, FIXTURE_ASSET_CODE);
 
   // Recent, uneven, and inside a 24 h window. `kw` is the point key the method
   // hard-codes.

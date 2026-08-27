@@ -1,21 +1,21 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-const skipDirs = new Set(["node_modules", "dist", "build", "coverage", ".git"]);
-
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    if (skipDirs.has(entry)) continue;
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) walk(full, out);
-    else out.push(full);
-  }
-  return out;
-}
+// The source scan the reading rules share. It lived in this file until a second
+// reading rule needed it; it is a module now so both use one scanner rather than
+// two that can drift apart, and so this file stays under the AGENTS.md §4.5
+// length limit. `tests/support/` holds no `.test.ts`, so Vitest does not collect
+// it, and it is typechecked as an import of this file.
+import {
+  READS_ASSETS_TABLE,
+  repoRoot,
+  specsReadingAssets,
+  stringLiterals,
+  walk,
+  withoutComments,
+} from "./support/source-scan";
 
 /**
  * The 2026-08-23 `alarm-enrichment.integration.test.ts` flake, stated as the
@@ -463,8 +463,6 @@ describe("committed fixture prefixes are per-run", () => {
  * `the literal scan bounds each window at its own delimiter` below.
  */
 describe("fixture assets are resolved by exact code, not by pattern", () => {
-  /** Stateless membership test — is there a `bms.assets` read in this file at all. */
-  const READS_ASSETS_TABLE = /\bFROM\s+bms\.assets\b/;
   /**
    * A **literal** code pattern — `code LIKE 'X%'`, not `code LIKE $1`.
    *
@@ -482,88 +480,6 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
    */
   const ID_SCOPED = /\bid\s*(?:=|IN)\s*(?:ANY\s*\(|\(|\$)/i;
 
-  /**
-   * Prose about the rule is not the rule being broken — this file and the two
-   * suites involved all quote the offending query in their header comments.
-   * Line-keyed, matching the first rule above; a comment that opens mid-line
-   * after code is not a shape this repo writes.
-   */
-  function withoutComments(source: string): string {
-    return source
-      .split(/\r?\n/)
-      .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
-      .join("\n");
-  }
-
-  /**
-   * Every string literal in `source`, of all three JavaScript delimiters.
-   *
-   * **Scanned rather than matched by one regex, and that is the fix for three
-   * separate defects the `F4.67` review measured in the first draft:**
-   *
-   * 1. It read backtick literals only. Six live sites in this tree write a
-   *    `bms.assets` read as a double-quoted string, so the identical defect in
-   *    that spelling scored **zero** offenders — a mutation that survived the
-   *    rule outright.
-   * 2. Its window was capped at 600 characters either side of `FROM
-   *    bms.assets`, and an over-long literal produced no match and was reported
-   *    as **clean** rather than as unanalysable. `rollup-conversion`'s own CTE
-   *    already sits at ~70% of that cap.
-   * 3. `` /`[^`]*…`/ `` happily spans from one literal's closing delimiter,
-   *    through raw source, to the next literal's opening one — so both the
-   *    offender text and the {@link ID_SCOPED} exemption could be computed over
-   *    arbitrary code. Demonstrated on `locations.rls.integration.spec.ts`.
-   *
-   * A literal is bounded by its own delimiter, so there is no window to size and
-   * no way to run past the close. Escapes are honoured; an unterminated `'`/`"`
-   * ends at the newline, as it does in the language.
-   *
-   * **What this still cannot see**, kept next to the code rather than only in
-   * the header: a `${...}` interpolation containing a nested backtick literal
-   * ends the outer window early, and a query assembled by concatenation or held
-   * in a `.sql` file never appears as one literal at all.
-   */
-  function stringLiterals(source: string): string[] {
-    const out: string[] = [];
-    const delimiters = new Set(['"', "'", "`"]);
-    let i = 0;
-    while (i < source.length) {
-      const quote = source[i] as string;
-      if (!delimiters.has(quote)) {
-        i += 1;
-        continue;
-      }
-      let j = i + 1;
-      let closed = false;
-      while (j < source.length) {
-        const ch = source[j];
-        if (ch === "\\") {
-          j += 2;
-          continue;
-        }
-        if (ch === quote) {
-          closed = true;
-          break;
-        }
-        // Only a template literal may span lines; a newline inside `'`/`"` means
-        // the delimiter was not a string opener at all (an apostrophe in prose
-        // that survived comment-stripping, say), so give up on it rather than
-        // swallowing the rest of the file looking for a partner.
-        if (quote !== "`" && ch === "\n") {
-          break;
-        }
-        j += 1;
-      }
-      if (closed) {
-        out.push(source.slice(i, j + 1));
-        i = j + 1;
-      } else {
-        i += 1;
-      }
-    }
-    return out;
-  }
-
   /** Every `bms.assets` query in `source` that resolves a row by code pattern. */
   function patternReads(source: string): string[] {
     return stringLiterals(withoutComments(source)).filter(
@@ -572,41 +488,6 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
         LITERAL_CODE_PATTERN.test(statement) &&
         !ID_SCOPED.test(statement),
     );
-  }
-
-  /**
-   * The files the rule covers: `.spec` / `.integration.test` suites, **and the
-   * shared fixture helpers under `src/testing/`**.
-   *
-   * The helpers are in scope because `apps/api/src/testing/integration-fixtures.ts`
-   * is this repo's named home for fixture resolution — moving a resolver there is
-   * a plausible refactor, and without this the rule would go quiet with no test
-   * failing to say so.
-   *
-   * `tests/` is deliberately NOT a root, which is the same reason the two rules
-   * above give: this file quotes the forbidden query in its own mutation strings,
-   * so scanning `tests/` would make the rule flag itself and need a
-   * self-exemption — a hole worth more than it closes.
-   * `tests/f1.7-seed-ownership.integration.test.ts` reads `bms.assets` and is
-   * therefore unscanned; it holds no pattern read today.
-   */
-  function specsReadingAssets(): string[] {
-    return ["apps", "packages"]
-      .flatMap((root) => {
-        try {
-          return walk(join(repoRoot, root));
-        } catch {
-          return [];
-        }
-      })
-      .filter(
-        (f) =>
-          /(\.spec|\.integration\.test)\.tsx?$/.test(f) ||
-          /[\\/]src[\\/]testing[\\/][^\\/]+\.tsx?$/.test(f),
-      )
-      .filter((f) => READS_ASSETS_TABLE.test(withoutComments(readFileSync(f, "utf8"))))
-      .map((f) => relative(repoRoot, f).replace(/\\/g, "/"))
-      .sort();
   }
 
   it("no spec resolves a bms.assets row by a literal code pattern", () => {
@@ -729,5 +610,377 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
     // apostrophe in surviving prose cannot swallow the rest of the file.
     expect(stringLiterals("`line one\nline two`")).toEqual(["`line one\nline two`"]);
     expect(stringLiterals("it's fine\nconst x = 1;")).toEqual([]);
+  });
+});
+
+/**
+ * The 2026-08-27 `point-aggregates.integration.test.ts` failure — the **third**
+ * reading defect, and the one that proves the rule above is narrower than the
+ * sentence people quote about it.
+ *
+ * `point-aggregates.integration.spec.ts` resolved its fixture asset twice with
+ * `SELECT id FROM bms.assets ORDER BY code LIMIT 1`. That is `F4.67`'s mechanism
+ * with the `WHERE` clause **removed**, so it is strictly wider — `F4.67` could
+ * only adopt a foreign `PV%` row, this could adopt whatever sorted first in the
+ * whole table — and it was invisible to both rules already here:
+ *
+ * - the rollback rule filters its candidates to specs containing `tx.rollback()`,
+ *   and this file contains none;
+ * - the `F4.67` rule looks for a literal code *pattern* (`code ILIKE 'PV%'`), and
+ *   this query has no code predicate at all.
+ *
+ * **It did not need a foreign fixture to fail.** Measured on a seeded developer
+ * database: the first organization by `id` is `ESKOM` and its lowest code is
+ * `CH-CRAC-101` — `1d4c1fd0-0ede-4ede-a74a-ed5dd9998b69` — which is the row
+ * `reports.service.rls.integration.spec.ts` names as `GRID_ASSET_CODE`. Both
+ * suites write `point_key = 'kw'` onto it in an overlapping recent window, so the
+ * two contended on one *seeded* row with no transient fixture in play. Running
+ * the pair in one Vitest invocation failed on the first attempt with
+ * `energySummary("7d").totalKwh is 267.28, the equivalent raw query says 264.9`,
+ * a message that blames the `level`/`kwhFactor` pairing instead. That half is
+ * `no two suites claim the same asset code` below; this rule is the resolution
+ * shape, and neither one alone would have caught the failure.
+ *
+ * **No `tx.rollback()` filter here, deliberately.** The rollback rule gates
+ * *eligibility to read*: a suite that never commits may not take a row off the
+ * seed at all, because that row belongs to no transaction of its own. That is a
+ * property of the isolation style, so keying on the marker is right there. This
+ * rule gates *resolution shape*, which is isolation-independent — a
+ * committed-fixture suite resolving positionally adopts a neighbour's row exactly
+ * as a rollback one does, and `point-aggregates` (zero `tx.rollback()`) is the
+ * proof. Applying the filter here would have reproduced the gap this rule exists
+ * to close. The population is {@link specsReadingAssets}, unfiltered.
+ *
+ * **What this does not catch.** Everything the `F4.67` rule cannot see, for the
+ * same reasons and with the same scanner: a query built by concatenation or held
+ * in a `.sql` file is never one literal, and Drizzle's builder form
+ * (`db.select().from(assets).limit(1)`) is not SQL text at all — that last one is
+ * `F4.53`'s spelling, so this rule does **not** close `F4.53`. The exemption list
+ * is keyed by file, so a *new* positional read inside an already-listed file
+ * passes; that is the same trade `NOT_YET_PER_RUN` makes.
+ */
+describe("fixture assets are resolved by name, not by position", () => {
+  /** `LIMIT` is the positional tell. `ORDER BY` narrows the race, it does not close it. */
+  const POSITIONAL = /\bLIMIT\b/i;
+  /** A named row. `code = $1`, `code = ANY($1)` and `code IN (...)` all resolve one thing. */
+  const EXACT_CODE = /\bcode\s*(?:=|IN\s*\()/i;
+  /** An id-scoped read cannot adopt a foreign row whatever else it says. */
+  const ID_SCOPED = /\bid\s*(?:=|IN)\s*(?:ANY\s*\(|\(|\$)/i;
+
+  /**
+   * Specs holding a positional `bms.assets` read that this change does not fix.
+   *
+   * Six statements across four files, measured by running {@link positionalReads}
+   * over the tree. They are the same class and each is a live hazard, but they
+   * belong to the open `F4.53` family rather than to this fix, and converting one
+   * means choosing a named row for that suite — a judgement per file, not a
+   * sweep. Listing them keeps the rule enforcing today instead of waiting for
+   * that work, and `the exemption list only gets shorter` stops the list growing.
+   *
+   * - `resolve-catalog-point-key.spec.ts` — `WHERE l.active = true ORDER BY
+   *   a.code LIMIT 1`.
+   * - `telemetry-write.spec.ts`, `telemetry-import.spec.ts` — "an asset in some
+   *   other organization", `ORDER BY a.code LIMIT 1`.
+   * - `access-control.integration.spec.ts` — three reads (`rtu_id IS NULL
+   *   LIMIT 5`, and two access-scoped `LIMIT 1`s). This is also `F4.66`'s file,
+   *   and for the same underlying reason: it asserts against whatever the table
+   *   happens to hold rather than against rows it named.
+   */
+  const POSITIONAL_NOT_YET_NAMED: readonly string[] = [
+    "apps/api/src/admin/asset-points/resolve-catalog-point-key.spec.ts",
+    "apps/api/src/admin/telemetry-entry/telemetry-write.spec.ts",
+    "apps/api/src/admin/telemetry-import/telemetry-import.spec.ts",
+    "apps/api/src/auth/access-control.integration.spec.ts",
+  ];
+
+  /** Every `bms.assets` query in `source` that resolves a row by position. */
+  function positionalReads(source: string): string[] {
+    return stringLiterals(withoutComments(source)).filter(
+      (statement) =>
+        READS_ASSETS_TABLE.test(statement) &&
+        POSITIONAL.test(statement) &&
+        !EXACT_CODE.test(statement) &&
+        !ID_SCOPED.test(statement),
+    );
+  }
+
+  function specsWithPositionalReads(): string[] {
+    return specsReadingAssets().filter(
+      (rel) => positionalReads(readFileSync(join(repoRoot, rel), "utf8")).length > 0,
+    );
+  }
+
+  it("no spec resolves a bms.assets row by position", () => {
+    const specs = specsReadingAssets();
+
+    // The floor every rule in this file carries: an empty offender list must mean
+    // "scanned and clean", not "the walk broke". 26 files as of this commit,
+    // measured by running the function.
+    expect(
+      specs.length,
+      "no spec with a FROM bms.assets query was found. Either the walk or READS_ASSETS_TABLE " +
+        "is broken, and the offender list below would mean nothing.",
+    ).toBeGreaterThanOrEqual(20);
+
+    const offenders = specs
+      .filter((rel) => !POSITIONAL_NOT_YET_NAMED.includes(rel))
+      .flatMap((rel) =>
+        positionalReads(readFileSync(join(repoRoot, rel), "utf8")).map(
+          (statement) => `${rel} — ${statement.replace(/\s+/g, " ")}`,
+        ),
+      );
+
+    expect(
+      offenders,
+      `a spec resolves a bms.assets row by position:\n${offenders.join("\n")}\n\n` +
+        "Name the row instead — FIXTURE_ASSET_CODE in " +
+        "apps/api/src/telemetry/point-aggregates.integration.spec.ts, resolved by " +
+        "resolveSeededAssetByCode() in apps/api/src/testing/integration-fixtures.ts. A " +
+        "positional read returns whatever currently sorts first, which is another suite's " +
+        "committed fixture as often as it is the seed, and `ORDER BY` only narrows that.",
+    ).toEqual([]);
+  });
+
+  it("the exemption list only gets shorter", () => {
+    const specs = specsWithPositionalReads();
+
+    // A path that no longer holds a positional read is an exemption nobody needs,
+    // and a typo would silently exempt nothing while looking like it exempts
+    // something. Both directions, the same ratchet `NOT_YET_PER_RUN` uses.
+    const stale = POSITIONAL_NOT_YET_NAMED.filter((rel) => !specs.includes(rel));
+    expect(
+      stale,
+      `these exemptions no longer name a spec with a positional bms.assets read:\n${stale.join("\n")}`,
+    ).toEqual([]);
+
+    expect(
+      POSITIONAL_NOT_YET_NAMED.length,
+      "the exemption list grew. A new fixture read must name its row from the start.",
+    ).toBeLessThanOrEqual(4);
+  });
+
+  it("the analysis kills the mutation it exists to catch", () => {
+    // The defect, verbatim, as it stood at both call sites before 2026-08-27.
+    const defect = "await client.query(`SELECT id FROM bms.assets ORDER BY code LIMIT 1`);";
+    expect(positionalReads(defect)).toHaveLength(1);
+
+    // Unordered — `F4.53`'s raw-SQL spelling. The same rule, and the reason it is
+    // stated as "by position" rather than "ordered".
+    expect(positionalReads("await pool.query(`SELECT id FROM bms.assets LIMIT 2`);")).toHaveLength(
+      1,
+    );
+
+    // The fix must pass, or the mutations above prove nothing. Both the exact-code
+    // read itself and the constant handed to the shared resolver.
+    const fixed = "await client.query(`SELECT id FROM bms.assets WHERE code = $1`, [code]);";
+    expect(positionalReads(fixed)).toEqual([]);
+    expect(
+      positionalReads("const fx = await resolveSeededAssetByCode(pool, FIXTURE_ASSET_CODE);"),
+    ).toEqual([]);
+
+    // An exact-code read that still carries `LIMIT 1` is named, not positional —
+    // there the `LIMIT` is belt-and-braces, not the resolution.
+    expect(
+      positionalReads("`SELECT id FROM bms.assets WHERE code = $1 ORDER BY code LIMIT 1`"),
+    ).toEqual([]);
+
+    // `F4.67`'s pattern read is the other rule's business. It has no exact code,
+    // so this one flags it too, and that overlap is intended: the two rules fail
+    // independently and neither relies on the other still existing.
+    expect(
+      positionalReads("`SELECT id FROM bms.assets WHERE code ILIKE 'PV%' ORDER BY code LIMIT 1`"),
+    ).toHaveLength(1);
+
+    // Id-scoped: cannot adopt a foreign row whatever it sorts by.
+    expect(
+      positionalReads("`SELECT id FROM bms.assets WHERE id = ANY($1::uuid[]) LIMIT 1`"),
+    ).toEqual([]);
+
+    // **A parameter-bound pattern PLUS a `LIMIT` is an offender here, and that
+    // diverges from the `F4.67` rule on purpose.** There a `code LIKE $1` is
+    // exempt because it is how every own-prefix *cleanup* is written, and a
+    // cleanup acts on the whole matching set — which row sorts first is
+    // irrelevant to it. A `LIMIT` turns the same predicate into a pick of one,
+    // and a pattern cannot name which. No read of this shape exists in the tree
+    // today; flagging it is fail-closed, and the fix is to name the row.
+    expect(
+      positionalReads("`SELECT id FROM bms.assets WHERE code LIKE $1 LIMIT 1`"),
+    ).toHaveLength(1);
+    // The cleanup itself, with no `LIMIT`, stays clean.
+    expect(positionalReads("`DELETE FROM bms.assets WHERE code LIKE $1`")).toEqual([]);
+
+    // Quoting the defect in a docstring is not committing it.
+    expect(
+      positionalReads(" * it used to read `SELECT id FROM bms.assets ORDER BY code LIMIT 1`."),
+    ).toEqual([]);
+  });
+});
+
+/**
+ * The other half of the 2026-08-27 `point-aggregates` failure, and the half the
+ * shape rules cannot see.
+ *
+ * `point-aggregates.integration.spec.ts` and
+ * `reports.service.rls.integration.spec.ts` both resolved `CH-CRAC-101` and both
+ * wrote `point_key = 'kw'` onto it in an overlapping recent window. Once the
+ * first is converted to an exact code, **both suites satisfy every rule above** —
+ * neither reads by pattern, neither reads by position — and the collision is
+ * untouched. A rule that would have missed the defect it shipped with is not a
+ * gate (AGENTS.md §4.6), so the invariant is stated directly: two suites must not
+ * name the same asset.
+ *
+ * Sharing a row is the same defect the whole file is about, one level up. Whose
+ * row it is decides who may write to it and who may delete it, and a seeded row
+ * has no owner — so two suites that both claim one have no protocol between them
+ * at all. `createFixtureAssets()` closes this for the rollback suites by giving
+ * each its own row; a per-run prefix closes it for the committed-fixture suites.
+ * A suite that must read a *seeded* row — because a continuous aggregate cannot
+ * see uncommitted data — has neither escape, so the only thing left is for the
+ * claims to be disjoint.
+ *
+ * **The claim is read from the code, not declared in a list**, so it cannot drift
+ * from what the suite actually does. Two shapes count as claiming a code: an
+ * exact-code `bms.assets` read with the constant in its parameters, and a call to
+ * `resolveSeededAssetByCode()` — the shared resolver, which is where the read
+ * itself lives once a suite uses it.
+ *
+ * **What this does not catch.** A constant imported from another module resolves
+ * to nothing here (only same-file `const NAME = "..."` declarations are traced),
+ * so a shared code routed through an import reads as unclaimed — fail-open, and
+ * the reason no suite should export a seeded fixture code. Two suites *reading*
+ * one row with neither writing to it would be flagged although it is harmless;
+ * that is fail-closed and none exists today. And a code assembled at run time is
+ * not a literal, so it is invisible, exactly as in the rules above.
+ */
+describe("no two suites claim the same asset code", () => {
+  /** An exact-code read. The pattern forms are the other rules' business. */
+  const EXACT_CODE_READ = /\bcode\s*(?:=|IN\s*\()/i;
+  /** The shared resolver in `apps/api/src/testing/integration-fixtures.ts`. */
+  const RESOLVER_CALL = /resolveSeededAssetByCode\s*\(([^)]{0,200})\)/g;
+  /** `const NAME = "LITERAL";` — the declaration, in this file, of a claimed code. */
+  const CONST_STRING = /\bconst\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(["'])((?:\\.|(?!\2).)*)\2/g;
+  /** How far past a read's SQL literal its parameter array can reasonably run. */
+  const ARGUMENT_WINDOW = 300;
+
+  /** Every asset code `source` names as its own fixture. */
+  function assetCodeClaims(source: string): string[] {
+    const src = withoutComments(source);
+    const consts = new Map<string, string>();
+    for (const m of src.matchAll(CONST_STRING)) {
+      consts.set(m[1] as string, m[3] as string);
+    }
+
+    const claimed = new Set<string>();
+    const collect = (text: string): void => {
+      for (const id of text.matchAll(/\b[A-Za-z_$][\w$]*\b/g)) {
+        const value = consts.get(id[0]);
+        if (value !== undefined) claimed.add(value);
+      }
+    };
+
+    // The literals come back in source order, so a moving cursor gives each one
+    // its exact position without searching the whole file for a duplicate text.
+    let cursor = 0;
+    for (const literal of stringLiterals(src)) {
+      const at = src.indexOf(literal, cursor);
+      cursor = at + literal.length;
+      if (!READS_ASSETS_TABLE.test(literal) || !EXACT_CODE_READ.test(literal)) continue;
+      collect(src.slice(cursor, cursor + ARGUMENT_WINDOW));
+    }
+    for (const call of src.matchAll(RESOLVER_CALL)) {
+      collect(call[1] as string);
+    }
+    return [...claimed];
+  }
+
+  function claimsByFile(): Map<string, string[]> {
+    const out = new Map<string, string[]>();
+    for (const root of ["apps", "packages"]) {
+      for (const file of walk(join(repoRoot, root))) {
+        if (!/(\.spec|\.integration\.test)\.tsx?$/.test(file)) continue;
+        const claims = assetCodeClaims(readFileSync(file, "utf8"));
+        if (claims.length > 0) {
+          out.set(relative(repoRoot, file).replace(/\\/g, "/"), claims.sort());
+        }
+      }
+    }
+    return out;
+  }
+
+  it("every asset code is claimed by at most one spec", () => {
+    const claims = claimsByFile();
+
+    // The floor the other rules carry: no collision must mean "scanned and
+    // disjoint", not "extracted nothing". Four files claim codes as of this
+    // commit, measured by running the function.
+    expect(
+      claims.size,
+      "no spec was found claiming an asset code. Either the walk, the read pattern or the " +
+        "constant tracing is broken, and the empty collision list below would mean nothing.",
+    ).toBeGreaterThanOrEqual(3);
+
+    const owners = new Map<string, string[]>();
+    for (const [rel, codes] of claims) {
+      for (const code of codes) {
+        owners.set(code, [...(owners.get(code) ?? []), rel]);
+      }
+    }
+    const shared = [...owners]
+      .filter(([, files]) => files.length > 1)
+      .map(([code, files]) => `${code} — ${files.join(", ")}`);
+
+    expect(
+      shared,
+      `these asset codes are claimed by more than one spec:\n${shared.join("\n")}\n\n` +
+        "Give one of them a different seeded row. A seeded asset has no owner, so two suites " +
+        "that name it have no protocol about who writes to it or when — which is how " +
+        "point-aggregates and reports.service.rls came to write `point_key = 'kw'` onto " +
+        "CH-CRAC-101 at the same time. The codes already taken are listed by this test's " +
+        "own scan; pick one nothing holds.",
+    ).toEqual([]);
+  });
+
+  it("the analysis kills the mutation it exists to catch", () => {
+    // The defect: `point-aggregates` naming the row `reports.service.rls` holds.
+    // Both spellings, because the two suites write the read differently.
+    const reports =
+      'const GRID_ASSET_CODE = "CH-CRAC-101";\n' +
+      "await fleet.query(`SELECT id FROM bms.assets WHERE code = ANY($1::text[])`, " +
+      "[[SOLAR_ASSET_CODE, GRID_ASSET_CODE]]);";
+    const viaResolver =
+      'const FIXTURE_ASSET_CODE = "CH-CRAC-101";\n' +
+      "const assetId = await resolveSeededAssetByCode(pool, FIXTURE_ASSET_CODE);";
+    expect(assetCodeClaims(reports)).toContain("CH-CRAC-101");
+    expect(assetCodeClaims(viaResolver)).toContain("CH-CRAC-101");
+
+    // The fix: a different seeded row, so the two sets no longer meet.
+    const fixed =
+      'const FIXTURE_ASSET_CODE = "CH-CRAC-102";\n' +
+      "const assetId = await resolveSeededAssetByCode(pool, FIXTURE_ASSET_CODE);";
+    expect(assetCodeClaims(fixed)).toEqual(["CH-CRAC-102"]);
+
+    // An inline read whose code is bound from a parameter the file does not
+    // declare claims nothing — the fail-open case the docstring names.
+    expect(
+      assetCodeClaims("await pool.query(`SELECT id FROM bms.assets WHERE code = $1`, [code]);"),
+    ).toEqual([]);
+
+    // Prose quoting a code is not claiming it.
+    expect(
+      assetCodeClaims(
+        ' * it used to resolve `CH-CRAC-101` here.\n' +
+          'const OTHER = "CH-CRAC-101";\n' +
+          "await pool.query(`SELECT id FROM bms.locations WHERE code = $1`, [OTHER]);",
+      ),
+    ).toEqual([]);
+
+    // A pattern read is the `F4.67` rule's business, not this one's: it names no
+    // row, so there is nothing to collide on.
+    expect(
+      assetCodeClaims(
+        'const P = "PV%";\n' +
+          "await pool.query(`SELECT id FROM bms.assets WHERE code ILIKE $1 ORDER BY code LIMIT 1`, [P]);",
+      ),
+    ).toEqual([]);
   });
 });
