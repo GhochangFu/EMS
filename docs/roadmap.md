@@ -2137,6 +2137,73 @@ Nine plan units, all four §4.6 layers, one migration adding four tables.
   `package.json` in the repository declares `engines`, which is the general
   defect behind the jsdom failure.
 
+### Non-superuser table owner — makes `FORCE ROW LEVEL SECURITY` bind (`F4.16`, ADR 0043 decision 8 + ADR 0044) — done
+
+**2026-08-24, PR #151.** `bms_app` (the database owner) stopped being the
+API's runtime role — `bms_tenant` (policy-filtered) and `bms_fleet`
+(`BYPASSRLS`, for reads a scope filter already covers) took over, split by a
+`DATABASE_URL_TENANT`/`DATABASE_URL_FLEET` pair and a second `pg.Pool` in
+`DatabaseModule`. Amendment 1 added a third role, `bms_auth`, for the
+pre-tenant identity read login needs before an organization is known — there
+is no `SET LOCAL` target during authentication — and moved the
+`password_hash` revoke from `bms_tenant` into this migration rather than
+leaving it for `E7.1`.
+
+- **The closing review found and fixed a pre-existing fail-open gap** in
+  `resolveDbUser`: an unprovisioned `admin` JWT claim resolved to unrestricted
+  access rather than refusing. Closed as its own ADR, **ADR 0044**, because the
+  fix reaches every `/admin/*` endpoint, not only this one.
+- **Real-role RLS coverage was added for `locations`/`point_keys`**, both
+  previously zero-coverage against a non-owner role.
+- **Unblocked `E7.1`** — ADR 0043 decision 4 makes this a hard prerequisite:
+  RLS without a non-owner connection role is theatre, since an owner bypasses
+  every policy regardless of `FORCE`.
+
+Mirrored into: AGENTS.md status line and §2 *Database roles* row (the role
+inventory only — see the section below for the tenancy semantics this
+migration made possible but did not itself add).
+
+### Multi-tenant architecture — RLS, role split and org scoping (`E7.1a`–`E7.1c`, ADR 0043) — done
+
+**2026-08-24 through 2026-08-27, PRs #155/#162/#166/#169.** ADR 0043 and its
+five amendments, plus ADR 0044 and ADR 0045. Split into four children at the
+§10 gate because the counted write blast radius (~65 sites across the
+decision-5 tables) and ADR 0045's owner-role work did not fit the original
+`14–20` estimate. `E7.1d` — the admin UI split between org-scoped and
+fleet-wide — is still open.
+
+- **`E7.1a`** (ADR 0045, PR #155) gave the schema a non-superuser owner,
+  `bms_owner`, so `FORCE ROW LEVEL SECURITY` — a no-op under the superuser
+  `bms_app` — actually binds, plus a sixth role `bms_rollup` for the four
+  continuous aggregates, which `refresh_continuous_aggregate` requires
+  ownership for and no `GRANT` can substitute.
+- **`E7.1b`** (PR #162) added `organization_id NOT NULL` and a
+  `tenant_isolation` policy to the decision-5 table set (migrations
+  `0046`/`0047`), wrapped the ~65 write sites in `withTenant`, and conformed
+  the five decision-1 list reads (`alarms`, `work-orders`, `maintenance`,
+  `rules.listRules`/`listExecutions`) to Amendment 3's hybrid read rule —
+  `withTenant` by default, `fleetDb` with a named reason. Amendment 4 gave
+  `bms.users` a nullable home organization for the global admin.
+- **`E7.1c`** (PR #166 slice 1, PR #169 slice 2, squash `1586c48`) closed the
+  post-write read-back residual `E7.1b` deferred, moved
+  `notification_channels`/`automation_rules` identity to
+  `(organization_id, code)`, added `AccessControlService.canManageNotificationChannel`
+  (AGENTS.md §4.7's fifth gate), and — Amendment 5 — role-scoped the
+  `NULL`-organization `WITH CHECK` branch `TO bms_fleet` on the four tables
+  that carried it, closing a defect where a plain `bms_tenant` `INSERT` of a
+  NULL-org row succeeded although `RETURNING` made it look refused. Suites at
+  merge: api 358/358, repo 320/320, web 202/202, both typechecks exit 0. Four
+  reviews found no Critical, no High; two false greens and two real defects
+  (a rule wirable to a foreign org's channel; the read gate wider than the
+  write gate) were fixed.
+- **`telemetry.*` is untouched throughout** (decision 9) — no column, no
+  policy; isolation stays `readableAssetIds`, by design.
+
+Mirrored into: AGENTS.md status line, §2 *Tenancy* row (new) and *Secrets*
+row, §4.3/§4.4, §4.7's fifth gate, and §6 (narrowed, not deleted — per-org
+SMTP relays, white-label branding, a `platform_admin` rung and `telemetry.*`
+RLS all stay deferred).
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
