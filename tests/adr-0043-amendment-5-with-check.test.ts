@@ -20,17 +20,22 @@ const drizzleDir = join(repoRoot, "packages", "db", "drizzle");
  *
  * Amendment 5's ruling, restated as the shape this file checks: the `0047`
  * `tenant_isolation` policy's `organization_id IS NULL` disjunct is split out
- * of the shared `WITH CHECK` and narrowed `TO bms_fleet` on `bms.users` and
- * `bms.notification_channels` (a second, fleet-only permissive policy ORs
- * against the strict one), removed outright on `bms.notification_deliveries`
- * (which also gains `SET NOT NULL`), and `USING` is untouched on all three —
- * that last part is the whole of the ruling, so it gets its own assertion,
- * bounded with `[^;]*` exactly as the existing file does so a regex cannot
- * borrow a neighbouring statement's clause.
+ * of the shared `WITH CHECK` and narrowed `TO bms_fleet` on `bms.users`,
+ * `bms.notification_channels` and `bms.audit_log` (a second, fleet-only
+ * permissive policy ORs against the strict one), removed outright on
+ * `bms.notification_deliveries` (which also gains `SET NOT NULL`), and
+ * `USING` is untouched on all four — that last part is the whole of the
+ * ruling, so it gets its own assertion, bounded with `[^;]*` exactly as the
+ * existing file does so a regex cannot borrow a neighbouring statement's
+ * clause.
  *
- * `bms.audit_log` is deliberately left out of this file's scope (assertion 5
- * below) — Amendment 5's Blocker 2 (plan §2) leaves "one PR or two" open, and
- * the owner has not yet ruled which migration carries `audit_log`'s clause.
+ * **`bms.audit_log` is in scope here.** The owner ruled Blocker 2 (plan §2)
+ * on 2026-08-27 as "all four tables, one `0048`, one PR" — the two-PR split
+ * was offered and rejected, so Amendment 5's "one class with one migration"
+ * governs. This file previously asserted `audit_log` ABSENT from `0048`
+ * under that rejected shape; that assertion was inverted, and what stands in
+ * its place guards the opposite mistake — see the `audit_log` describe block
+ * at the foot of the file.
  */
 
 const migration0048 = (() => {
@@ -39,7 +44,6 @@ const migration0048 = (() => {
   return readFileSync(join(drizzleDir, name), "utf8");
 })();
 
-/** The two tables where the NULL branch narrows `TO bms_fleet` rather than disappearing. */
 /**
  * The three tables that KEEP a legitimate NULL organization and therefore keep
  * the disjunct, role-scoped `TO bms_fleet`. Amendment 5's per-table table:
