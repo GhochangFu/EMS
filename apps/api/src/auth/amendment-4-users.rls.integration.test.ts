@@ -51,9 +51,7 @@ describe.skipIf(!connectionString)("E7.1b — bms.users Amendment 4 policies und
   let fleetDb: BmsDb;
   let authDb: BmsDb;
   let adminUserId = "";
-  let scopedUserId = "";
-  let homeOrgId = "";
-  let otherOrgId = "";
+  let anyOrgId = "";
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -70,6 +68,10 @@ describe.skipIf(!connectionString)("E7.1b — bms.users Amendment 4 policies und
     tenantDb = createDb(tenantPool);
     authDb = createDb(authPool);
 
+    // Only the global-admin case's prerequisites belong here — its `it` must not
+    // be taken down by the scoped-user fixture, which each other `it` resolves
+    // for itself. A populated GUC (any real org) is enough to prove the NULL-org
+    // row is invisible under a tenant.
     const admin = await ownerPool.query<{ id: string }>(
       "SELECT id FROM bms.users WHERE email = $1 LIMIT 1",
       [GLOBAL_ADMIN_EMAIL],
@@ -79,6 +81,29 @@ describe.skipIf(!connectionString)("E7.1b — bms.users Amendment 4 policies und
     }
     adminUserId = admin.rows[0].id;
 
+    const anyOrg = await ownerPool.query<{ id: string }>(
+      "SELECT id FROM bms.organizations LIMIT 1",
+    );
+    if (!anyOrg.rows[0]) {
+      throw new Error("E7.1b: need at least one organization to prove tenant invisibility.");
+    }
+    anyOrgId = anyOrg.rows[0].id;
+  });
+
+  afterAll(async () => {
+    await Promise.all([ownerPool, tenantPool, authPool].filter(Boolean).map((p) => p.end()));
+  });
+
+  /**
+   * Resolves the scoped-user fixture for the cases that need it. Kept out of
+   * `beforeAll` on purpose: an org-less scoped user is a seed defect that must
+   * fail *this* case, not silently take down the global-admin proof above.
+   */
+  async function resolveScopedUserFixture(): Promise<{
+    scopedUserId: string;
+    homeOrgId: string;
+    otherOrgId: string;
+  }> {
     const scoped = await ownerPool.query<{ id: string; organization_id: string | null }>(
       "SELECT id, organization_id FROM bms.users WHERE email = $1 LIMIT 1",
       [SCOPED_ADMIN_EMAIL],
@@ -88,11 +113,11 @@ describe.skipIf(!connectionString)("E7.1b — bms.users Amendment 4 policies und
     }
     if (!scoped.rows[0].organization_id) {
       throw new Error(
-        `E7.1b: ${SCOPED_ADMIN_EMAIL}.organization_id is NULL — the 0046 backfill did not stamp it.`,
+        `E7.1b: ${SCOPED_ADMIN_EMAIL}.organization_id is NULL — the seed did not stamp its home org ` +
+          "(ADR 0043 Amendment 4: every tenant-scoped user carries a home organization).",
       );
     }
-    scopedUserId = scoped.rows[0].id;
-    homeOrgId = scoped.rows[0].organization_id;
+    const homeOrgId = scoped.rows[0].organization_id;
 
     const other = await ownerPool.query<{ id: string }>(
       "SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1",
@@ -101,12 +126,8 @@ describe.skipIf(!connectionString)("E7.1b — bms.users Amendment 4 policies und
     if (!other.rows[0]) {
       throw new Error("E7.1b: need a second organization to prove the scoped user is org-isolated.");
     }
-    otherOrgId = other.rows[0].id;
-  });
-
-  afterAll(async () => {
-    await Promise.all([ownerPool, tenantPool, authPool].filter(Boolean).map((p) => p.end()));
-  });
+    return { scopedUserId: scoped.rows[0].id, homeOrgId, otherOrgId: other.rows[0].id };
+  }
 
   it("hides the global admin's NULL-org row from tenants, keeps it readable by auth and fleet", async () => {
     await assertGlobalAdminUserIsNullOrgTenantInvisibleAuthReadable(
@@ -114,11 +135,12 @@ describe.skipIf(!connectionString)("E7.1b — bms.users Amendment 4 policies und
       fleetDb,
       authDb,
       adminUserId,
-      homeOrgId,
+      anyOrgId,
     );
   });
 
   it("makes a scoped user visible only under its own org, still readable by auth", async () => {
+    const { scopedUserId, homeOrgId, otherOrgId } = await resolveScopedUserFixture();
     await assertScopedUserVisibleOnlyUnderOwnOrg(
       tenantDb,
       fleetDb,

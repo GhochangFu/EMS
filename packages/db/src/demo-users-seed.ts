@@ -19,17 +19,22 @@ import {
  * which is what `apps/api/src/auth/access-control.integration.spec.ts` asserts
  * against — the emails and roles here are that suite's fixture contract.
  *
- * **`E7.1b` / ADR 0043 decision 5 + Amendment 4.** All three exported functions
- * seed org-less `bms.users` rows and their grants, and `seed.ts` runs them on the
- * superuser connection rather than the `FORCE`-bound `bms_owner` seed pool. See
- * `resolveSeedSuperuserUrl` in `seed-tenant.ts`: under `0047`'s strict `USING`,
- * `bms_owner` cannot see or `RETURNING`-insert an org-less user row, and the pool
- * roles have no `INSERT` on `bms.users` at all. The logins stay org-less this
- * item — nothing on the request path reads `users.organization_id` yet
- * (`AccessControlService` resolves scope from the grant tables on `fleetDb`), so
- * a home org is `E7.1c`'s to populate, not this one's. `adminId` is still usable
- * as an FK from `bms_owner`-pool inserts (alarms, work orders): a foreign-key
- * check is not row-level-security-filtered.
+ * **`E7.1b` / ADR 0043 decision 5 + Amendment 4.** `seed.ts` runs all three
+ * exported functions on the superuser connection rather than the `FORCE`-bound
+ * `bms_owner` seed pool. See `resolveSeedSuperuserUrl` in `seed-tenant.ts`: under
+ * `0047`'s strict `USING`, `bms_owner` cannot see or `RETURNING`-insert the
+ * global `admin`'s NULL-org row, and the pool roles have no `INSERT` on
+ * `bms.users` at all.
+ *
+ * Per Amendment 4 every tenant-scoped user carries a home `organization_id`
+ * (`phe-admin` → PHEWB; `wc-admin`/`wc-hvac-admin` → the Western Cape org),
+ * matching what migration `0046`'s backfill resolves from each user's grants on a
+ * pre-existing database. The seed stamps it on insert because `0046` runs before
+ * the seed and so backfills an empty table — the seed is the only place a
+ * fresh-database row gets its home. Only the global `admin` (a fleet actor,
+ * decision 2) is org-less — a NULL home, invisible to every tenant GUC. `adminId`
+ * is still usable as an FK from `bms_owner`-pool inserts (alarms, work orders): a
+ * foreign-key check is not row-level-security-filtered.
  */
 
 const SCOPED_USERS = [
@@ -82,13 +87,15 @@ export async function ensureAdminUser(db: BmsDb): Promise<string> {
  * one scope its role is meant to demonstrate.
  *
  * **`E7.1b`: this runs on the superuser connection** (`seed.ts`), not the
- * `bms_owner` seed pool. The logins are org-less identity rows and `0047` makes
- * `bms.users` `FORCE`-bound, so `bms_owner` can neither see them (a re-seed's
- * existence check would read empty and duplicate-key) nor `INSERT ... RETURNING`
- * one. `organizationId` is passed only to re-add the scoping the tenant policy
- * used to give the `locations` lookup for free — a `BYPASSRLS`/superuser read no
- * longer filters by org, so the Western Cape lookup names its org explicitly
- * rather than trusting a policy this connection bypasses. The grants it writes,
+ * `bms_owner` seed pool. `0047` makes `bms.users` `FORCE`-bound, so `bms_owner`
+ * can neither see these rows (a re-seed's existence check would read empty and
+ * duplicate-key) nor `INSERT ... RETURNING` one. `organizationId` is the Western
+ * Cape org: it stamps each scoped user's home org (Amendment 4 — `wc-admin`
+ * resolves there through `user_location_access`, `wc-hvac-admin` through its
+ * asset group's location) and scopes the `locations` lookup, which a
+ * `BYPASSRLS`/superuser read no longer filters by org, so it names its org
+ * explicitly rather than trusting a policy this connection bypasses. The grants
+ * it writes,
  * `user_location_access` and `user_asset_group_access`, carry no policy today, so
  * BYPASSRLS is transparent for them; were either ever policied, this path would
  * silently bypass it and would need revisiting.
@@ -110,6 +117,7 @@ export async function seedScopedDemoUsers(
         .set({
           displayName: scopedUser.displayName,
           role: scopedUser.role,
+          organizationId,
         })
         .where(eq(users.id, existingScopedUser[0].id));
       scopedUserIds.set(scopedUser.email, existingScopedUser[0].id);
@@ -122,6 +130,7 @@ export async function seedScopedDemoUsers(
         passwordHash: await bcrypt.hash(scopedUser.password, 10),
         displayName: scopedUser.displayName,
         role: scopedUser.role,
+        organizationId,
       })
       .returning({ id: users.id });
     if (createdScopedUser) {
@@ -213,6 +222,7 @@ export async function seedPheOrganizationAdmin(
         passwordHash: await bcrypt.hash("admin123", 10),
         displayName: "PHE Organization Admin",
         role: "organization_admin",
+        organizationId: phewbOrgId,
       })
       .returning({ id: users.id });
     pheAdminId = createdPheAdmin?.id;
@@ -222,6 +232,7 @@ export async function seedPheOrganizationAdmin(
       .set({
         displayName: "PHE Organization Admin",
         role: "organization_admin",
+        organizationId: phewbOrgId,
       })
       .where(eq(users.id, pheAdminId));
   }
