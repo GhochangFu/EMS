@@ -236,6 +236,136 @@ export async function assertConvertStampsAndAdvancesUnderRealRls(
 }
 
 /**
+ * `E7.1c` — `createSchedule`'s post-write `getScheduleItem` read-back is folded
+ * into the write's own `withTenant` transaction, so a single-org create opens
+ * exactly one tenant transaction and zero fleet transactions. The read-back's
+ * active-work-order guard (`getActiveWorkOrdersBySchedule`) is a display field,
+ * not the cross-org duplicate guard, so it runs correctly under the write's org
+ * GUC. Before E7.1c that guard ran on its own `fleetDb.transaction` — a revert
+ * restores that one fleet transaction, so `fleet.transactions() === 0` is the
+ * discriminating assertion.
+ */
+export async function assertCreateScheduleReadsBackInTenantTransaction(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  const item = await svc.createSchedule(
+    scheduleDraft(ctx, "E7.1c create read-back", 3),
+    ctx.scopedActor,
+    [ctx.assetId],
+  );
+  ctx.createdScheduleIds.push(item.id);
+  ctx.createdTemplateIds.push(item.templateId);
+  expect(
+    tenant.transactions(),
+    "createSchedule writes and reads back in one tenant transaction",
+  ).toBe(1);
+  expect(
+    fleet.transactions(),
+    "the folded read-back (incl. the active-WO guard) opens no fleet transaction",
+  ).toBe(0);
+}
+
+/**
+ * `E7.1c` — `updateSchedule`'s post-write read-back is folded into the write's
+ * `withTenant`, so a single-org update opens exactly one tenant transaction; the
+ * pre-write existence read (`getScheduleItem`) is the only fleet transaction.
+ * Before E7.1c the post-write `getScheduleItem` added a second fleet transaction
+ * (its own `getActiveWorkOrdersBySchedule`), so this pins the fleet 2→1 drop.
+ */
+export async function assertUpdateScheduleReadsBackInTenantTransaction(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const { id } = await createSchedule(ctx, "E7.1c update read-back count", 3);
+
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  await svc.updateSchedule(id, { active: false, reason: "E7.1c count" }, ctx.scopedActor, [
+    ctx.assetId,
+  ]);
+  expect(
+    tenant.transactions(),
+    "updateSchedule writes and reads back in one tenant transaction",
+  ).toBe(1);
+  expect(
+    fleet.transactions(),
+    "only the pre-write existence read runs on fleet",
+  ).toBe(1);
+}
+
+/**
+ * `E7.1c` — the read-back's active-work-order display field resolves under the
+ * tenant GUC. `getActiveWorkOrdersBySchedule` joins `maintenance_history ⋈
+ * work_orders`, both `FORCE`-policied since `0047`; a silently-empty result under
+ * RLS would drop `activeWorkOrderId` — a wrong-but-200. A fresh schedule has no
+ * active work order, so the join is only really exercised over a converted one:
+ * convert to create the open work order + history, then read the schedule back
+ * via `updateSchedule` (its `readScheduleItem` runs under the write's org GUC) and
+ * assert the open work order still resolves.
+ */
+export async function assertReadBackResolvesActiveWorkOrderUnderTenantGuc(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const { id } = await createSchedule(ctx, "E7.1c active-WO read-back", 3);
+  const { workOrder } = await ctx.service.convertToWorkOrder(
+    id,
+    { notes: "E7.1c active-WO" },
+    ctx.scopedActor,
+    [ctx.assetId],
+  );
+  ctx.createdWorkOrderIds.push(workOrder.id);
+
+  const updated = await ctx.service.updateSchedule(
+    id,
+    { active: false, reason: "E7.1c active-WO" },
+    ctx.scopedActor,
+    [ctx.assetId],
+  );
+  expect(
+    updated.activeWorkOrderId,
+    "the read-back resolves the open work order across maintenance_history ⋈ work_orders under the tenant GUC",
+  ).toBe(workOrder.id);
+}
+
+/**
+ * `E7.1c` — `convertToWorkOrder`'s post-write `getWorkOrder` read-back runs on
+ * the **tenant** pool. Unlike `getScheduleItem`, `getWorkOrder` is a plain
+ * `fleetDb.select` with no `fleetDb.transaction` for `countingDb` to see a fold
+ * through, so the read-back runs in its own second tenant transaction — a
+ * single-org convert opens two tenant transactions (the write, then the
+ * read-back). The cross-org duplicate guard stays on `fleetDb`: exactly one
+ * fleet transaction, before the write. A revert of the read-back to
+ * `this.fleetDb.select` drops the tenant count to one.
+ */
+export async function assertConvertReadsBackOnTenantTransaction(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const created = await createSchedule(ctx, "E7.1c convert read-back", 3);
+
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  const { workOrder } = await svc.convertToWorkOrder(
+    created.id,
+    { notes: "E7.1c convert read-back" },
+    ctx.scopedActor,
+    [ctx.assetId],
+  );
+  ctx.createdWorkOrderIds.push(workOrder.id);
+  expect(
+    tenant.transactions(),
+    "convert writes then reads the work order back, both on the tenant pool",
+  ).toBe(2);
+  expect(
+    fleet.transactions(),
+    "only the cross-org duplicate guard runs on fleet, before the write",
+  ).toBe(1);
+}
+
+/**
  * Decision 3: one `list` whose `assetIds` span two organizations returns BOTH
  * orgs' schedules — the run-time fleet fallback resolves across organizations. A
  * `withTenant(one org)` regression would drop the other org's rows.

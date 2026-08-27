@@ -9,12 +9,16 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import { MaintenanceService } from "./maintenance.service";
 import {
+  assertConvertReadsBackOnTenantTransaction,
   assertConvertStampsAndAdvancesUnderRealRls,
+  assertCreateScheduleReadsBackInTenantTransaction,
   assertCreateStampsOrgAndActorUnderRealRls,
   assertDeactivateFlipsScheduleAndTemplateUnderRealRls,
   assertMaintenanceListReturnsBothOrgsForTwoOrgActor,
+  assertReadBackResolvesActiveWorkOrderUnderTenantGuc,
   assertSingleOrgMaintenanceListReturnsOwnRow,
   assertSingleOrgMaintenanceListRunsOnTenantTransaction,
+  assertUpdateScheduleReadsBackInTenantTransaction,
   type MaintenanceRlsFixtures,
 } from "./maintenance.service.rls.integration.spec";
 
@@ -256,6 +260,22 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
 
   it("stamps the work order + history and advances next_due_at on convert", async () => {
     await assertConvertStampsAndAdvancesUnderRealRls(ctx);
+  });
+
+  it("folds the createSchedule read-back into the write's tenant transaction (E7.1c)", async () => {
+    await assertCreateScheduleReadsBackInTenantTransaction(ctx);
+  });
+
+  it("reads the convert work order back on the tenant pool (E7.1c)", async () => {
+    await assertConvertReadsBackOnTenantTransaction(ctx);
+  });
+
+  it("folds the updateSchedule read-back into the write's tenant transaction (E7.1c)", async () => {
+    await assertUpdateScheduleReadsBackInTenantTransaction(ctx);
+  });
+
+  it("resolves the active work order in the read-back under the tenant GUC (E7.1c)", async () => {
+    await assertReadBackResolvesActiveWorkOrderUnderTenantGuc(ctx);
   });
 
   it("returns only the caller's own-org schedule on the single-org tenant path", async () => {

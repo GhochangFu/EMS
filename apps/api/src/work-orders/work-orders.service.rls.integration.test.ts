@@ -13,8 +13,11 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import { WorkOrdersService } from "./work-orders.service";
 import {
+  assertReorderReadsBackInOneTenantTransaction,
   assertSingleOrgWorkOrderListReturnsOwnRow,
   assertSingleOrgWorkOrderListRunsOnTenantTransaction,
+  assertUpdateStatusReadsBackOnTenantTransaction,
+  assertWorkOrderCreateReadsBackOnTenantTransaction,
   assertWorkOrderListReturnsBothOrgsForTwoOrgActor,
   assertWorkOrderWritesStampOrgUnderRealRls,
   type WorkOrdersRlsFixtures,
@@ -315,5 +318,17 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
 
   it("runs a single-org list on the tenant pool (one tenant transaction, no fleet)", async () => {
     await assertSingleOrgWorkOrderListRunsOnTenantTransaction(ctx);
+  });
+
+  it("routes the create read-back through the tenant pool (E7.1c)", async () => {
+    await assertWorkOrderCreateReadsBackOnTenantTransaction(ctx, actor);
+  });
+
+  it("reads back a reorder batch in one shared tenant transaction (E7.1c)", async () => {
+    await assertReorderReadsBackInOneTenantTransaction(ctx, actor);
+  });
+
+  it("reads the updateStatus mutation back on the tenant pool (E7.1c)", async () => {
+    await assertUpdateStatusReadsBackOnTenantTransaction(ctx, actor);
   });
 });

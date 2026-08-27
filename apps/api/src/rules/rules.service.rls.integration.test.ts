@@ -18,13 +18,16 @@ import { RulesService } from "./rules.service";
 import {
   assertAssetlessTimeWindowRefusedForAdmin,
   assertAssetlessTimeWindowRefusedForScoped,
+  assertCreateDraftReadsBackOnTenantTransaction,
   assertCreateStampsOrgAndActorUnderRealRls,
+  assertPublishRuleReadsBackInTenantTransaction,
   assertRuleExecutionListReturnsBothOrgsForTwoOrgActor,
   assertRuleListReturnsBothOrgsForTwoOrgActor,
   assertSingleOrgRuleExecutionListReturnsOwnRow,
   assertSingleOrgRuleExecutionListRunsOnTenantTransaction,
   assertSingleOrgRuleListReturnsOwnRow,
   assertSingleOrgRuleListRunsOnTenantTransaction,
+  assertUpdateRuleReadsBackInTenantTransaction,
   type RulesRlsFixtures,
 } from "./rules.service.rls.integration.spec";
 
@@ -301,6 +304,18 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
 
   it("refuses a global admin's asset-less time_window create (ruling 4), writing nothing", async () => {
     await assertAssetlessTimeWindowRefusedForAdmin(ctx, `${PREFIX}ADMINTW`);
+  });
+
+  it("folds the createDraft read-back into the write's tenant transaction (E7.1c)", async () => {
+    await assertCreateDraftReadsBackOnTenantTransaction(ctx, `${PREFIX}READBACK`);
+  });
+
+  it("folds the updateRule read-back into the write's tenant transaction (E7.1c)", async () => {
+    await assertUpdateRuleReadsBackInTenantTransaction(ctx, `${PREFIX}UPDRB`);
+  });
+
+  it("folds the publishRule (writeLifecycleUpdate) read-back into the write's tenant transaction (E7.1c)", async () => {
+    await assertPublishRuleReadsBackInTenantTransaction(ctx, `${PREFIX}PUBRB`);
   });
 
   it("404s a scoped actor's asset-less time_window create before org resolution", async () => {
