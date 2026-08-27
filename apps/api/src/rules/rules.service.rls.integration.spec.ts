@@ -191,7 +191,9 @@ export async function assertRuleListReturnsBothOrgsForTwoOrgActor(
   // isolation control is `filterRuleRowsByAssetIds`, not a SQL WHERE; the seed's
   // 337 rules on other assets would surface here if that post-filter were dropped.
   expect(
-    both.items.every((i) => [ctx.assetId, ctx.foreignAssetId].includes(i.assetId)),
+    both.items.every(
+      (i) => i.assetId !== null && [ctx.assetId, ctx.foreignAssetId].includes(i.assetId),
+    ),
     "the fleet read returns no rule outside the passed assetIds",
   ).toBe(true);
 }
