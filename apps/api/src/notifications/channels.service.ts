@@ -151,7 +151,7 @@ const ORGANIZATION_ID_FK = "notification_channels_organization_id_fkey";
  * Channel` would ever return `true` for — `admin` or `organization_admin` —
  * rather than merely on `isMasterDataRole`. Ruled 2026-08-27, after two
  * reviewers found the gap independently: `writableOrganizationIds` resolves a
- * `location_admin`/`asset_group_admin` to a real, non-empty set (through
+ * `location_admin` to a real, non-empty set (through
  * `locationDerivedOrganizationIds`, the whole home organization), so a read
  * gated on it alone would disclose channel `config` and delivery/error
  * metadata that `loadById` then refuses with a 403 on the very same row —
@@ -159,6 +159,9 @@ const ORGANIZATION_ID_FK = "notification_channels_organization_id_fkey";
  * `[]` from both reads, not a redacted or location-scoped view: `config`
  * cannot be redacted without losing the reason a read exists at all, and a
  * channel carries no location dimension to scope the second option to.
+ * (`asset_group_admin` never reaches this fork at all — `isMasterDataRole`,
+ * `access-scope.ts`, does not include it, so `requireMasterDataUser` above
+ * refuses it with a 403 before either read runs.)
  *
  * The one exception is `setRuleChannels`: the `rule_notifications` junction's
  * tenant parent is the rule, which **does** carry a non-NULL org, and its route
@@ -193,10 +196,12 @@ export class ChannelsService {
    * gives it its own picker.
    *
    * **The read gate is the write gate (ruling, 2026-08-27).** A
-   * `location_admin`/`asset_group_admin` gets `[]` unconditionally — never a
+   * `location_admin` gets `[]` unconditionally — never a
    * `writableOrganizationIds`-filtered list — because `canManageNotification
-   * Channel` returns `false` for both roles regardless of organization; the
-   * class comment above has the incident this closes.
+   * Channel` returns `false` for it regardless of organization; the class
+   * comment above has the incident this closes. (`asset_group_admin` never
+   * reaches this method's body: `requireMasterDataUser` above already
+   * refuses it with a 403.)
    */
   async list(jwt: JwtPayload): Promise<NotificationChannelDto[]> {
     const user = await this.accessControl.requireMasterDataUser(jwt);
@@ -467,8 +472,9 @@ export class ChannelsService {
    * reason about the way `list()` has one for channels.
    *
    * **The read gate is the write gate (ruling, 2026-08-27).** Same as
-   * `list()`: a `location_admin`/`asset_group_admin` gets `{ items: [] }`
-   * unconditionally, not a `writableOrganizationIds`-filtered read.
+   * `list()`: a `location_admin` gets `{ items: [] }` unconditionally, not a
+   * `writableOrganizationIds`-filtered read. (`asset_group_admin` is refused
+   * earlier still, by `requireMasterDataUser`'s `isMasterDataRole` check.)
    */
   async listDeliveries(
     jwt: JwtPayload,
