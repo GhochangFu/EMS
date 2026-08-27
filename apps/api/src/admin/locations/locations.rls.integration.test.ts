@@ -63,21 +63,27 @@ const GUARD_ASSET_FAMILY = "E71B-AS-GUARD-%";
  * timestamp, so a leftover cannot collide with anything this run writes.
  */
 async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
-  const STALE = "created_at < now() - interval '30 minutes'";
   try {
-    await pool.query(`DELETE FROM bms.assets WHERE code LIKE $1 AND ${STALE}`, [
-      GUARD_ASSET_FAMILY,
-    ]);
+    await pool.query(
+      `DELETE FROM bms.assets WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`,
+      [GUARD_ASSET_FAMILY],
+    );
     for (const family of LOCATION_FAMILIES) {
       // Audit rows first: they carry the location's id, and dropping the
       // location without them leaves an entity_id pointing at nothing.
       await pool.query(
         `DELETE FROM bms.audit_log
           WHERE entity_type = 'location'
-            AND entity_id IN (SELECT id FROM bms.locations WHERE code LIKE $1 AND ${STALE})`,
+            AND entity_id IN (
+              SELECT id FROM bms.locations
+               WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'
+            )`,
         [family],
       );
-      await pool.query(`DELETE FROM bms.locations WHERE code LIKE $1 AND ${STALE}`, [family]);
+      await pool.query(
+        `DELETE FROM bms.locations WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`,
+        [family],
+      );
     }
   } catch (err) {
     process.stderr.write(
