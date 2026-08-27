@@ -47,12 +47,16 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
     },
   };
 
-  // E7.1b: ChannelsService takes (fleetDb, tenantDb, crypto). This suite drives
-  // dispatch, whose channel/delivery reads and writes all run on fleetDb, so the
-  // one real db serves both pool slots.
-  const channels = new ChannelsService(db, db, {
-    decrypt: () => ({}),
-  } as unknown as ConstructorParameters<typeof ChannelsService>[2]);
+  // E7.1c: ChannelsService takes (fleetDb, tenantDb, crypto, accessControl).
+  // This suite drives dispatch, which only ever reaches loadForRule — a plain
+  // fleetDb join that never touches accessControl — so the fourth slot is an
+  // unused stand-in, not a real gate.
+  const channels = new ChannelsService(
+    db,
+    db,
+    { decrypt: () => ({}) } as unknown as ConstructorParameters<typeof ChannelsService>[2],
+    {} as unknown as ConstructorParameters<typeof ChannelsService>[3],
+  );
 
   const service = new NotificationsService(
     db,
@@ -77,8 +81,11 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
   assert(channelId !== undefined, "the test channel was not created");
 
   try {
-    const rules = await pool.query<{ id: string; code: string }>(
-      `SELECT id, code FROM bms.automation_rules WHERE enabled = true`,
+    // E7.1c: organization_id too — DispatchInput.organizationId is NOT NULL
+    // (0048), and its only source for a dispatch is the rule's own org
+    // (automationRules.organizationId has been NOT NULL since 0047).
+    const rules = await pool.query<{ id: string; code: string; organization_id: string }>(
+      `SELECT id, code, organization_id FROM bms.automation_rules WHERE enabled = true`,
     );
     assert(
       rules.rows.length > 0,
@@ -101,6 +108,7 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       await service.dispatch({
         ruleId: rule.id,
         ruleCode: rule.code,
+        organizationId: rule.organization_id,
         alarmId: null,
         severity: "warning",
         message: "unchanged",
@@ -128,6 +136,7 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
     await service.dispatch({
       ruleId: first.id,
       ruleCode: first.code,
+      organizationId: first.organization_id,
       alarmId: null,
       severity: "critical",
       message: "a real transition",
@@ -154,6 +163,7 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
     await limited.dispatch({
       ruleId: first.id,
       ruleCode: first.code,
+      organizationId: first.organization_id,
       alarmId: null,
       severity: "critical",
       message: "one too many",

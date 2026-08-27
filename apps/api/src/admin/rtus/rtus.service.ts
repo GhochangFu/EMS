@@ -120,8 +120,8 @@ export class RtusAdminService {
     }
     const organizationId = await this.resolveLocationOrg(body.locationId);
 
-    const created = await withTenant(this.tenantDb, organizationId, (tx) =>
-      tx
+    const created = await withTenant(this.tenantDb, organizationId, async (tx) => {
+      const [row] = await tx
         .insert(rtus)
         .values({
           locationId: body.locationId,
@@ -139,17 +139,24 @@ export class RtusAdminService {
           meta: body.meta ?? null,
           active: true,
         })
-        .returning()
-        .then(([row]) => row),
-    );
+        .returning();
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.rtu.create",
-      entityType: "rtu",
-      entityId: created.id,
-      payload: body,
+      // E7.1c (item D): folded into this transaction so the stamped
+      // organizationId matches the GUC the strict WITH CHECK now demands.
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.rtu.create",
+          entityType: "rtu",
+          entityId: row.id,
+          organizationId,
+          payload: body,
+        },
+        tx,
+      );
+      return row;
     });
+
     return this.fetchRow(created.id);
   }
 
@@ -171,8 +178,8 @@ export class RtusAdminService {
 
     const organizationId =
       existing.organizationId ?? (await this.resolveLocationOrg(existing.locationId));
-    await withTenant(this.tenantDb, organizationId, (tx) =>
-      tx
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
+      await tx
         .update(rtus)
         .set({
         code: body.code ?? existing.code,
@@ -205,15 +212,19 @@ export class RtusAdminService {
             : existing.meta,
         organizationId,
       })
-        .where(eq(rtus.id, id)),
-    );
+        .where(eq(rtus.id, id));
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.rtu.update",
-      entityType: "rtu",
-      entityId: id,
-      payload: body,
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.rtu.update",
+          entityType: "rtu",
+          entityId: id,
+          organizationId,
+          payload: body,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }
@@ -248,12 +259,16 @@ export class RtusAdminService {
         throw new ConflictException("Cannot deactivate RTU with active assets");
       }
       await tx.update(rtus).set({ active: false }).where(eq(rtus.id, id));
-    });
-    await this.audit.write({
-      actor: jwt,
-      action: "master.rtu.deactivate",
-      entityType: "rtu",
-      entityId: id,
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.rtu.deactivate",
+          entityType: "rtu",
+          entityId: id,
+          organizationId,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }
@@ -276,14 +291,18 @@ export class RtusAdminService {
 
     const organizationId =
       existing.organizationId ?? (await this.resolveLocationOrg(existing.locationId));
-    await withTenant(this.tenantDb, organizationId, (tx) =>
-      tx.update(rtus).set({ active: true }).where(eq(rtus.id, id)),
-    );
-    await this.audit.write({
-      actor: jwt,
-      action: "master.rtu.reactivate",
-      entityType: "rtu",
-      entityId: id,
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
+      await tx.update(rtus).set({ active: true }).where(eq(rtus.id, id));
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.rtu.reactivate",
+          entityType: "rtu",
+          entityId: id,
+          organizationId,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }

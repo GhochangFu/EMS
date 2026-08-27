@@ -45,7 +45,10 @@ import {
   unsupportedRuleType,
   type LatestSampleLoader,
 } from "./rule-evaluation";
+import { insertRuleAuditLog } from "./rule-audit";
+import { assertRuleCodeAvailable, nextRuleCode } from "./rule-codes";
 import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
+import { resolveAssetOrgOrNull, resolveWriteOrg } from "./rule-org";
 import { filterRuleRowsByAssetIds, selectRuleRowById, selectRuleRows } from "./rule-reads";
 import { pointKeysForAsset } from "./rule-points";
 import { batchedLatestPointValues, latestPointValue } from "./rule-samples";
@@ -139,10 +142,14 @@ export class RulesService {
     assetIds?: string[] | null,
   ): Promise<RuleListItem> {
     this.assertAssetInScope(dto.assetId ?? null, assetIds);
-    const values = await this.validateRuleDraft(dto);
-    const organizationId = await this.resolveWriteOrg(values.assetId);
+    // Resolved before validateRuleDraft, not after: E7.1c's code-uniqueness
+    // check is org-scoped and needs the org to scope it by.
+    // `values.assetId` (below) is `dto.assetId` unchanged by validation on
+    // both branches, so this is the same value the old order would have used.
+    const organizationId = await resolveWriteOrg(this.fleetDb, dto.assetId ?? null, dto.ruleType);
+    const values = await this.validateRuleDraft(dto, undefined, organizationId);
     const actorId = await this.resolveActorId(actor);
-    const code = values.code ?? (await this.nextRuleCode(dto.name));
+    const code = values.code ?? (await nextRuleCode(this.fleetDb, dto.name));
     const now = new Date();
 
     const created = await withTenant(this.db, organizationId, async (tx) => {
@@ -166,20 +173,13 @@ export class RulesService {
         throw new BadRequestException("Could not create rule draft");
       }
 
-      // The audit row carries no organization_id in E7.1b (deferred to E7.1c);
-      // Task 4's audit_log policy must tolerate this NULL-org insert (4 services).
-      await tx.insert(auditLog).values({
+      await insertRuleAuditLog(tx, {
+        organizationId,
         actorId,
         action: "rule_draft_create",
-        entityType: "automation_rule",
         entityId: row.id,
         reason: "Operator created rule draft",
-        payload: {
-          code,
-          name: dto.name,
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
-        },
+        payload: { code, name: dto.name, oidcSubject: actor.sub, actorEmail: actor.email },
       });
 
       // E7.1c: read back under the write's own tenant GUC, not on fleetDb.
@@ -203,11 +203,12 @@ export class RulesService {
     }
     const merged = mergeRuleDraft(current, dto);
     this.assertAssetInScope(merged.assetId ?? null, assetIds);
-    const values = await this.validateRuleDraft(merged, id);
     // The rule keeps its existing tenant: E7.1b does not re-derive org on an
     // asset change (the streaming raise's divergence guard is the backstop), so
-    // the update never touches the org column.
+    // the update never touches the org column. Resolved before
+    // validateRuleDraft so its E7.1c code check can be scoped to it.
     const organizationId = this.requireRuleOrg(current);
+    const values = await this.validateRuleDraft(merged, id, organizationId);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
 
@@ -217,10 +218,10 @@ export class RulesService {
         .set({ ...values, updatedAt: now })
         .where(eq(automationRules.id, id));
 
-      await tx.insert(auditLog).values({
+      await insertRuleAuditLog(tx, {
+        organizationId,
         actorId,
         action: "rule_update",
-        entityType: "automation_rule",
         entityId: id,
         reason: dto.reason ?? "Operator updated rule",
         payload: {
@@ -245,7 +246,10 @@ export class RulesService {
     assetIds?: string[] | null,
   ): Promise<RulePreviewResult> {
     this.assertAssetInScope(dto.assetId ?? null, assetIds);
-    const values = await this.validateRuleDraft(dto, dto.id);
+    // `null`: a preview evaluates a draft that may not even be persisted, so
+    // there is no org to scope the code-uniqueness check to — it is skipped
+    // here and left to the authoritative check in `createDraft`.
+    const values = await this.validateRuleDraft(dto, dto.id, null);
     const actorId = await this.resolveActorId(actor);
     const result = await this.evaluateRule({
       id: dto.id ?? "00000000-0000-0000-0000-000000000000",
@@ -281,7 +285,27 @@ export class RulesService {
       updatedAt: new Date(),
     });
 
-    await this.db.insert(auditLog).values({
+    // E7.1c (item D) — the AUDIT ROW's org, not the evaluation's. The synthetic
+    // row handed to `evaluateRule` above stays `organizationId: null` on
+    // purpose (a preview evaluates a draft, joined to nothing); that is a
+    // different question from whether THIS preview's audit trail can name a
+    // real tenant. `resolveWriteOrg` is not reused here — it throws on an
+    // asset-less or unresolvable asset, which is correct for `createDraft`'s
+    // write but wrong for a preview, whose whole point is to evaluate drafts
+    // `createDraft` would still refuse. `bms-schema.ts`'s own comment on
+    // `audit_log.organization_id` is the rule this closes for the ORDINARY
+    // case: "a NULL on [a tenant-scoped row] is a defect, not a platform
+    // event" — an asset-bearing preview (the common case) derives a real org
+    // and is stamped and written under `withTenant` like any other
+    // tenant-scoped audit row. Only the genuinely asset-less case (a
+    // `time_window` draft with no asset yet, or an asset id that resolves to
+    // nothing) keeps `null` on `fleetDb` (BYPASSRLS) — the tenant pool's NULL
+    // branch is scoped `TO bms_fleet` only after 0048, so this connection
+    // carries no GUC.
+    const auditOrg = values.assetId
+      ? await resolveAssetOrgOrNull(this.fleetDb, values.assetId)
+      : null;
+    const auditPayload = {
       actorId,
       action: "rule_preview",
       entityType: "automation_rule",
@@ -295,7 +319,14 @@ export class RulesService {
         oidcSubject: actor.sub,
         actorEmail: actor.email,
       },
-    });
+    };
+    if (auditOrg === null) {
+      await this.fleetDb.insert(auditLog).values({ organizationId: null, ...auditPayload });
+    } else {
+      await withTenant(this.db, auditOrg, (tx) =>
+        tx.insert(auditLog).values({ organizationId: auditOrg, ...auditPayload }),
+      );
+    }
 
     return result;
   }
@@ -312,7 +343,11 @@ export class RulesService {
     if (current.lifecycleStatus === "archived") {
       throw new BadRequestException("Archived rules cannot be published");
     }
-    await this.validateRuleDraft(ruleBodyFromRow(current), id);
+    // Publishing re-validates the rule's own current code, scoped to its own
+    // org — `currentId` already excludes the row from colliding with itself,
+    // and the org scope is what stops a same-code rule in another tenant from
+    // blocking this publish (E7.1c).
+    await this.validateRuleDraft(ruleBodyFromRow(current), id, this.requireRuleOrg(current));
     const updated = await this.writeLifecycleUpdate(
       id,
       "rule_publish",
@@ -367,7 +402,7 @@ export class RulesService {
     const organizationId = this.requireRuleOrg(current);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
-    const code = await this.nextRuleCode(`${current.code}-COPY`);
+    const code = await nextRuleCode(this.fleetDb, `${current.code}-COPY`);
 
     const created = await withTenant(this.db, organizationId, async (tx) => {
       const [row] = await tx
@@ -401,10 +436,10 @@ export class RulesService {
         throw new BadRequestException("Could not duplicate rule");
       }
 
-      await tx.insert(auditLog).values({
+      await insertRuleAuditLog(tx, {
+        organizationId,
         actorId,
         action: "rule_duplicate",
-        entityType: "automation_rule",
         entityId: row.id,
         reason: dto.reason ?? "Operator duplicated rule",
         payload: {
@@ -495,10 +530,10 @@ export class RulesService {
         .set({ enabled: dto.enabled, updatedAt: now })
         .where(eq(automationRules.id, id));
 
-      await tx.insert(auditLog).values({
+      await insertRuleAuditLog(tx, {
+        organizationId,
         actorId,
         action: "rule_enabled_update",
-        entityType: "automation_rule",
         entityId: id,
         reason: dto.reason ?? (dto.enabled ? "Rule enabled" : "Rule disabled"),
         payload: {
@@ -748,9 +783,16 @@ export class RulesService {
     return unsupportedRuleType(row);
   }
 
+  /**
+   * `organizationId` is required, not optional, on purpose: `null` means "skip
+   * the code-uniqueness check" (`assertRuleCodeAvailable`'s own contract), and
+   * a default would let a forgotten call site silently stop checking rather
+   * than fail to compile. Only `previewRule` passes `null` explicitly.
+   */
   private async validateRuleDraft(
     dto: RuleDraftBody,
-    currentId?: string,
+    currentId: string | undefined,
+    organizationId: string | null,
   ): Promise<RuleDraftValues> {
     // ADR 0031 Amendment 1: the category vocabulary is data, so this is where a
     // bad one is caught — `categorySchema` can only check shape now.
@@ -783,27 +825,10 @@ export class RulesService {
 
     const code = dto.code?.trim().toUpperCase();
     if (code) {
-      // fleetDb, and deliberately cross-org: `automation_rules_code_unique` is
-      // still a global unique index — the `(organization_id, code)` re-key is
-      // E7.1c (decision 7) — so this scan must see every tenant's codes to turn
-      // a collision into a 400 here rather than a 500 from the index.
-      const existingRules = await this.fleetDb
-        .select({
-          id: automationRules.id,
-          code: automationRules.code,
-          lifecycleStatus: automationRules.lifecycleStatus,
-        })
-        .from(automationRules)
-        .orderBy(automationRules.createdAt);
-      const existing = existingRules.find(
-        (rule) =>
-          rule.id !== currentId &&
-          rule.lifecycleStatus !== "archived" &&
-          rule.code.trim().toUpperCase() === code,
-      );
-      if (existing) {
-        throw new BadRequestException("Rule code already exists");
-      }
+      // `rule-codes.ts` (§4.5 extraction): org-scoped since 0048 re-keyed
+      // `automation_rules`' identity to `(organization_id, code)`. `null`
+      // (only `previewRule`) skips the check — see that function's doc.
+      await assertRuleCodeAvailable(this.fleetDb, organizationId, code, currentId);
     }
 
     if (dto.ruleType === "threshold") {
@@ -891,31 +916,6 @@ export class RulesService {
     }
   }
 
-  /**
-   * The organization a new rule is written into: its asset's org (read on
-   * fleetDb before the GUC). An asset-less `time_window` rule is refused with a
-   * 4xx (ruling 4) — never a NULL insert — until the E7.1d org-picker lands.
-   */
-  private async resolveWriteOrg(assetId: string | null): Promise<string> {
-    if (!assetId) {
-      throw new BadRequestException(
-        "Select an organization for this rule: an asset-less time-window rule has no organization to derive one from",
-      );
-    }
-    const [asset] = await this.fleetDb
-      .select({ organizationId: assets.organizationId })
-      .from(assets)
-      .where(eq(assets.id, assetId))
-      .limit(1);
-    if (!asset) {
-      throw new BadRequestException("Selected asset does not exist");
-    }
-    if (!asset.organizationId) {
-      throw new BadRequestException("Asset has no organization; run the 0046 backfill");
-    }
-    return asset.organizationId;
-  }
-
   /** The stored org of a rule being mutated; refuses a pre-0046 NULL. */
   private requireRuleOrg(row: RuleRow): string {
     if (!row.organizationId) {
@@ -944,45 +944,17 @@ export class RulesService {
         .set({ ...values, updatedAt: new Date() })
         .where(eq(automationRules.id, id));
 
-      await tx.insert(auditLog).values({
+      await insertRuleAuditLog(tx, {
+        organizationId,
         actorId,
         action,
-        entityType: "automation_rule",
         entityId: id,
-        reason:
-          dto.reason ?? (action === "rule_publish" ? "Rule published" : "Rule archived"),
-        payload: {
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
-        },
+        reason: dto.reason ?? (action === "rule_publish" ? "Rule published" : "Rule archived"),
+        payload: { oidcSubject: actor.sub, actorEmail: actor.email },
       });
 
       return this.getRuleRowTx(tx, id); // E7.1c: read back on the write's tenant GUC
     });
-  }
-
-  private async nextRuleCode(seed: string): Promise<string> {
-    const base = seed
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 48);
-    const prefix = base.length >= 3 ? base : "OPERATOR-RULE";
-
-    for (let index = 0; index < 100; index += 1) {
-      const candidate = index === 0 ? prefix : `${prefix}-${index + 1}`;
-      // fleetDb: the code space is global until E7.1c re-keys it (decision 7).
-      const [existing] = await this.fleetDb
-        .select({ id: automationRules.id })
-        .from(automationRules)
-        .where(eq(automationRules.code, candidate))
-        .limit(1);
-      if (!existing) {
-        return candidate;
-      }
-    }
-
-    throw new BadRequestException("Could not generate a unique rule code");
   }
 
   private async resolveActorId(

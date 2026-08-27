@@ -358,21 +358,25 @@ export class WorkOrdersService {
       if (!created) {
         throw new BadRequestException("Could not create work order");
       }
-      return created.id;
-    });
 
-    await this.db.insert(auditLog).values({
-      actorId,
-      action: "work_order_create",
-      entityType: "work_order",
-      entityId: createdId,
-      reason: "Work order created",
-      payload: {
-        assetId: dto.assetId,
-        alarmId: dto.alarmId ?? null,
-        oidcSubject: actor.sub,
-        actorEmail: actor.email,
-      },
+      // E7.1c (item D): folded into this transaction (was a separate
+      // `this.db.insert` after it closed) so the stamped organizationId
+      // matches the GUC the strict WITH CHECK now demands.
+      await tx.insert(auditLog).values({
+        organizationId,
+        actorId,
+        action: "work_order_create",
+        entityType: "work_order",
+        entityId: created.id,
+        reason: "Work order created",
+        payload: {
+          assetId: dto.assetId,
+          alarmId: dto.alarmId ?? null,
+          oidcSubject: actor.sub,
+          actorEmail: actor.email,
+        },
+      });
+      return created.id;
     });
 
     return this.readBackWorkOrder(createdId, organizationId, assetIds);
@@ -407,6 +411,7 @@ export class WorkOrdersService {
         .where(eq(workOrders.id, id));
 
       await tx.insert(auditLog).values({
+        organizationId,
         actorId,
         action: "work_order_status_update",
         entityType: "work_order",
@@ -509,6 +514,7 @@ export class WorkOrdersService {
 
         if (currentStatus && currentStatus !== item.status) {
           await tx.insert(auditLog).values({
+            organizationId,
             actorId,
             action: "work_order_status_update",
             entityType: "work_order",
@@ -526,6 +532,7 @@ export class WorkOrdersService {
       }
 
       await tx.insert(auditLog).values({
+        organizationId,
         actorId,
         action: "work_order_reorder",
         entityType: "work_order",

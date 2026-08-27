@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, gte, sql } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
@@ -36,6 +36,16 @@ import { WebhookTransport } from "./webhook.transport";
 export type DispatchInput = {
   ruleId: string;
   ruleCode: string;
+  /**
+   * `E7.1c` (decision 7, `0048`): `notification_deliveries.organization_id`
+   * is `NOT NULL`, and a dispatch's only source for it is the rule —
+   * `automation_rules.organization_id` has been `NOT NULL` since `0047`, so
+   * this is never `null` in practice. `dispatch` has no production caller
+   * today (measured — only `sendTest` writes a ledger row in production); the
+   * two callers that build a `DispatchInput` are
+   * `storm-control.integration.spec.ts` and `notifications.service.spec.ts`.
+   */
+  organizationId: string;
   alarmId: string | null;
   severity: string | null;
   message: string;
@@ -56,10 +66,14 @@ export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(
-    // E7.1b (ADR 0043 §5): notification_deliveries gains a nullable organization_id
-    // and a FORCEd policy in 0047. Every delivery this item is NULL-org (enforcement
-    // and org population are E7.1c, decision 7), and a NULL-org row is visible only
-    // via BYPASSRLS — so both the ledger insert and the rate-limit read run on fleetDb.
+    // E7.1c (ADR 0043 Amendment 5, decision 7, 0048): notification_deliveries.
+    // organization_id is NOT NULL and every write here now stamps a real org —
+    // the rule's for a dispatch, the channel's for a send test (refused
+    // outright for a NULL-org channel, see sendTest). Both the ledger insert
+    // and the rate-limit read still run on fleetDb, but for a different reason
+    // than before 0048: this is a fire-and-forget path with no tenant
+    // transaction to run under, so the org filter is the WHERE clause, not the
+    // connection — see isOverHourlyLimit's own comment.
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly channels: ChannelsService,
     private readonly logTransport: LogTransport,
@@ -119,7 +133,7 @@ export class NotificationsService {
     // 2. The per-channel hourly ceiling.
     let overLimit: boolean;
     try {
-      overLimit = await this.isOverHourlyLimit(channel.id);
+      overLimit = await this.isOverHourlyLimit(channel.id, input.organizationId);
     } catch (err) {
       // A ceiling that cannot be read is not a licence to send without one.
       this.logger.warn(`rate-limit check failed for channel=${channel.code}: ${reasonOf(err)}`);
@@ -174,26 +188,34 @@ export class NotificationsService {
 
   /**
    * `true` when this channel has already had `ratePerHour` **sent** deliveries
-   * in the last hour.
+   * in the last hour, for THIS organization.
    *
    * Counts `sent` only, deliberately. Counting skips would let the ceiling fill
    * with its own refusals: one noisy hour would lock the channel out for the
    * next, and the rate limiter would be the thing keeping it locked.
+   *
+   * `E7.1c`: scoped by `organizationId` — this is the revisit the old comment
+   * asked for by name ("once deliveries carry a real org, a cross-org count
+   * would charge one tenant's sends against another's ceiling"). A channel
+   * shared across tenants (a fleet-managed global, joined to rules in more than
+   * one organization) now gets one ceiling **per tenant**, not one shared pool
+   * a noisy tenant could exhaust for everyone else on the same channel.
+   *
+   * `fleetDb` stays load-bearing, but for a different reason than before: this
+   * is a fire-and-forget read outside any tenant transaction (`dispatch` never
+   * opens one, and `sendTest` runs off a request that has not either), so
+   * there is no `withTenant` GUC to run it under — the `WHERE` clause is now
+   * what does the org filtering, not the connection.
    */
-  private async isOverHourlyLimit(channelId: string): Promise<boolean> {
+  private async isOverHourlyLimit(channelId: string, organizationId: string): Promise<boolean> {
     const since = new Date(Date.now() - 60 * 60 * 1000);
-    // fleetDb is load-bearing here, like the maintenance duplicate-WO guard: on
-    // the tenant pool the NULL-org delivery rows would be invisible and the
-    // ceiling would count 0, so the rate limiter would stop limiting. E7.1c must
-    // revisit this — once deliveries carry a real org, a cross-org count would
-    // charge one tenant's sends against another's ceiling; correct only because
-    // every row is NULL-org and channels are global this item.
     const rows = await this.fleetDb
       .select({ count: sql<number>`count(*)::int` })
       .from(notificationDeliveries)
       .where(
         and(
           eq(notificationDeliveries.channelId, channelId),
+          eq(notificationDeliveries.organizationId, organizationId),
           eq(notificationDeliveries.status, "sent"),
           gte(notificationDeliveries.attemptedAt, since),
         ),
@@ -212,23 +234,43 @@ export class NotificationsService {
    * Subject to the hourly ceiling — a test is a real send and must not be a way
    * around it — but **not** to the transition dedupe, which has no meaning
    * here: there is no alarm and nothing transitioned.
+   *
+   * `E7.1c` (Blocker 1's ruling): refuses a fleet-wide (`organizationId ===
+   * null`) channel outright, before the rate-limit read and before the
+   * transport is ever touched. `record()`'s insert is now `NOT NULL` on
+   * `organizationId`, and its own `catch` only logs — so without this
+   * explicit 400, pressing **Send Test** on a global channel would send the
+   * real message and write **no** ledger row, the same silent-loss failure a
+   * cached browser bundle produces: it looks like it worked.
    */
   async sendTest(channel: NotificationChannelRow): Promise<{
     status: DeliveryResult["status"];
     error: string | null;
   }> {
+    if (channel.organizationId === null) {
+      throw new BadRequestException(
+        "A fleet-wide channel has no organization to attribute the delivery to; " +
+          "create an org-scoped channel or wait for the E7.1d organization picker",
+      );
+    }
+    // Narrowed once, right after the guard: every `record()` call below reads
+    // this local rather than `channel.organizationId` again, so nothing here
+    // can silently drift back to sending an un-attributable delivery if the
+    // guard above is ever moved.
+    const organizationId = channel.organizationId;
+
     let overLimit: boolean;
     try {
-      overLimit = await this.isOverHourlyLimit(channel.id);
+      overLimit = await this.isOverHourlyLimit(channel.id, organizationId);
     } catch (err) {
       this.logger.warn(`rate-limit check failed for channel=${channel.code}: ${reasonOf(err)}`);
-      return this.record({ ruleId: null, alarmId: null }, channel, null, {
+      return this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, {
         status: "failed",
         error: "rate-limit check failed",
       });
     }
     if (overLimit) {
-      return this.record({ ruleId: null, alarmId: null }, channel, null, {
+      return this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, {
         status: "skipped_rate_limited",
         error: null,
       });
@@ -250,18 +292,19 @@ export class NotificationsService {
     } catch (err) {
       result = { status: "failed", error: `transport threw: ${reasonOf(err)}` };
     }
-    return this.record({ ruleId: null, alarmId: null }, channel, null, result);
+    return this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, result);
   }
 
   /** Writes the ledger row and returns the result unchanged. */
   private async record(
-    input: { ruleId: string | null; alarmId: string | null },
+    input: { ruleId: string | null; alarmId: string | null; organizationId: string },
     channel: NotificationChannelRow,
     dedupeKey: string | null,
     result: DeliveryResult,
   ): Promise<DeliveryResult> {
     try {
       await this.fleetDb.insert(notificationDeliveries).values({
+        organizationId: input.organizationId,
         ruleId: input.ruleId,
         alarmId: input.alarmId,
         channelId: channel.id,

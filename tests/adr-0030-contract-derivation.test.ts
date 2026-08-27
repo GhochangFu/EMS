@@ -106,6 +106,30 @@ describe("ADR 0030 — contracts stay single-source", () => {
     ).toEqual([]);
   });
 
+  it("E7.1c: the notification DTOs stamp organizationId with Amendment 5's nullability", () => {
+    // A plain field addition (ADR 0030 Amendment 1 does not bind — no
+    // `.merge()`, no `z.intersection`, neither schema is all-readonly), so
+    // nothing else in this file would notice a wrong nullability. Migration
+    // `0048` gives `notification_channels.organization_id` a legitimate NULL
+    // (a fleet-managed global channel, decision 7) and gives
+    // `notification_deliveries.organization_id` `SET NOT NULL` (item C) — the
+    // two DTOs must disagree on nullability in exactly that direction.
+    const source = readFileSync(join(contractsDir, "notifications.ts"), "utf8");
+
+    const channelSchema = /notificationChannelDtoSchema\s*=\s*z\.object\(\{[\s\S]*?\n\}\);/.exec(
+      source,
+    )?.[0];
+    expect(channelSchema, "notificationChannelDtoSchema not found by this scan").toBeTruthy();
+    expect(channelSchema).toMatch(/organizationId:\s*z\.string\(\)\.nullable\(\)/);
+
+    const deliverySchema = /notificationDeliveryDtoSchema\s*=\s*z\.object\(\{[\s\S]*?\n\}\);/.exec(
+      source,
+    )?.[0];
+    expect(deliverySchema, "notificationDeliveryDtoSchema not found by this scan").toBeTruthy();
+    expect(deliverySchema).toMatch(/organizationId:\s*z\.string\(\),/);
+    expect(deliverySchema).not.toMatch(/organizationId:\s*z\.string\(\)\.nullable\(\)/);
+  });
+
   it("never encodes an intersection with a flattening combinator", () => {
     // ADR 0030 Amendment 1, rules 1 and 2 — measured, not styled.
     //

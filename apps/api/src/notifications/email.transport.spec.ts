@@ -23,6 +23,7 @@ const CONFIGURED = {
 function channel(overrides: Partial<NotificationChannelRow> = {}): NotificationChannelRow {
   return {
     id: "44444444-4444-4444-4444-444444444444",
+    organizationId: "12121212-1212-1212-1212-121212121212",
     code: "ops-email",
     name: "Operations email",
     kind: "email",

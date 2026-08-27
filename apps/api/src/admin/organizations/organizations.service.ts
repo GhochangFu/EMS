@@ -25,6 +25,15 @@ import type {
  * check queries `locations` (RLS since migration `0040`) and runs on
  * `fleetDb` instead — a global admin's own gate (`assertAdminRole`) already
  * ran before this method does anything, so there is no scope to preserve.
+ *
+ * `E7.1c` (item D) — every `audit.write` here is a platform event, not a
+ * tenant one: `bms.audit_log.organizationId`'s own schema comment names
+ * `"organization X created"` as the canonical example of a `NULL`-org row.
+ * Every method here is `assertAdminRole`-gated (global admin only) and acts
+ * on an organization's own lifecycle, not on a resource a tenant owns, so
+ * each `audit.write` passes `organizationId: null` and `this.fleetDb`
+ * explicitly as `executor` — the default tenant pool admits neither `null`
+ * nor a real id once `0048` lands.
  */
 @Injectable()
 export class OrganizationsAdminService {
@@ -99,13 +108,17 @@ export class OrganizationsAdminService {
       })
       .returning();
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.organization.create",
-      entityType: "organization",
-      entityId: created.id,
-      payload: body,
-    });
+    await this.audit.write(
+      {
+        actor: jwt,
+        action: "master.organization.create",
+        entityType: "organization",
+        entityId: created.id,
+        organizationId: null,
+        payload: body,
+      },
+      this.fleetDb,
+    );
 
     return this.mapRow(created);
   }
@@ -137,13 +150,17 @@ export class OrganizationsAdminService {
       .where(eq(organizations.id, id))
       .returning();
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.organization.update",
-      entityType: "organization",
-      entityId: id,
-      payload: body,
-    });
+    await this.audit.write(
+      {
+        actor: jwt,
+        action: "master.organization.update",
+        entityType: "organization",
+        entityId: id,
+        organizationId: null,
+        payload: body,
+      },
+      this.fleetDb,
+    );
 
     return this.mapRow(updated);
   }
@@ -177,12 +194,16 @@ export class OrganizationsAdminService {
       .where(eq(organizations.id, id))
       .returning();
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.organization.deactivate",
-      entityType: "organization",
-      entityId: id,
-    });
+    await this.audit.write(
+      {
+        actor: jwt,
+        action: "master.organization.deactivate",
+        entityType: "organization",
+        entityId: id,
+        organizationId: null,
+      },
+      this.fleetDb,
+    );
 
     return this.mapRow(updated);
   }
@@ -201,12 +222,16 @@ export class OrganizationsAdminService {
       throw new NotFoundException("Organization not found");
     }
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.organization.reactivate",
-      entityType: "organization",
-      entityId: id,
-    });
+    await this.audit.write(
+      {
+        actor: jwt,
+        action: "master.organization.reactivate",
+        entityType: "organization",
+        entityId: id,
+        organizationId: null,
+      },
+      this.fleetDb,
+    );
 
     return this.mapRow(updated);
   }

@@ -194,18 +194,28 @@ export class AssetTemplatesAdminService {
         .returning();
 
       await this.replacePoints(tx, row.id, body.organizationId, body.points);
+
+      // E7.1c (item D): folded into this transaction so the stamped
+      // organizationId matches the GUC the strict WITH CHECK now demands.
+      // Safe inside the `.catch` below: translateDraftConflict only rewrites
+      // a `23505` on `asset_templates_org_code_draft_unique` and returns any
+      // other error (including one from this insert) unchanged.
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset_template.create",
+          entityType: "asset_template",
+          entityId: row.id,
+          organizationId: body.organizationId,
+          payload: { code: body.code, version: row.version, points: body.points.length },
+        },
+        tx,
+      );
       return row;
     }).catch((err: unknown) => {
       throw this.translateDraftConflict(err, body.code);
     });
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset_template.create",
-      entityType: "asset_template",
-      entityId: created.id,
-      payload: { code: body.code, version: created.version, points: body.points.length },
-    });
     return this.getById(jwt, created.id);
   }
 
@@ -256,23 +266,29 @@ export class AssetTemplatesAdminService {
       if (body.points) {
         await this.replacePoints(tx, id, template.organizationId, body.points);
       }
-    });
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset_template.update",
-      entityType: "asset_template",
-      entityId: id,
       // `content` is summarised, not spread: it is bounded at 256 KiB and an
       // audit row per edit carrying a full copy grows `bms.audit_log` by the
       // size of the template on every keystroke-level save. The *fact* of a
       // content change is what an audit trail needs; the content itself is on
       // the version row, which is immutable once published.
-      payload: {
-        ...body,
-        content: body.content ? { changed: true, sections: Object.keys(body.content) } : undefined,
-        points: body.points?.length,
-      },
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset_template.update",
+          entityType: "asset_template",
+          entityId: id,
+          organizationId: template.organizationId,
+          payload: {
+            ...body,
+            content: body.content
+              ? { changed: true, sections: Object.keys(body.content) }
+              : undefined,
+            points: body.points?.length,
+          },
+        },
+        tx,
+      );
     });
     return this.getById(jwt, id);
   }
@@ -318,19 +334,23 @@ export class AssetTemplatesAdminService {
     await this.assertTemplateAlarmVocabularies(storedContent);
 
     const now = new Date();
-    await withTenant(this.tenantDb, template.organizationId, (tx) =>
-      tx
+    await withTenant(this.tenantDb, template.organizationId, async (tx) => {
+      await tx
         .update(assetTemplates)
         .set({ status: "published", publishedAt: now, updatedAt: now })
-        .where(eq(assetTemplates.id, id)),
-    );
+        .where(eq(assetTemplates.id, id));
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset_template.publish",
-      entityType: "asset_template",
-      entityId: id,
-      payload: { code: template.code, version: template.version },
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset_template.publish",
+          entityType: "asset_template",
+          entityId: id,
+          organizationId: template.organizationId,
+          payload: { code: template.code, version: template.version },
+        },
+        tx,
+      );
     });
     return this.getById(jwt, id);
   }
@@ -354,19 +374,23 @@ export class AssetTemplatesAdminService {
     }
 
     const now = new Date();
-    await withTenant(this.tenantDb, template.organizationId, (tx) =>
-      tx
+    await withTenant(this.tenantDb, template.organizationId, async (tx) => {
+      await tx
         .update(assetTemplates)
         .set({ status: "archived", archivedAt: now, updatedAt: now })
-        .where(eq(assetTemplates.id, id)),
-    );
+        .where(eq(assetTemplates.id, id));
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset_template.archive",
-      entityType: "asset_template",
-      entityId: id,
-      payload: { code: template.code, version: template.version },
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset_template.archive",
+          entityType: "asset_template",
+          entityId: id,
+          organizationId: template.organizationId,
+          payload: { code: template.code, version: template.version },
+        },
+        tx,
+      );
     });
     return this.getById(jwt, id);
   }
@@ -419,18 +443,26 @@ export class AssetTemplatesAdminService {
         .returning();
 
       await this.replacePoints(tx, row.id, template.organizationId, source);
+
+      // E7.1c (item D): folded, same reasoning as `create` above — the
+      // `.catch` below only rewrites a `23505` on the draft-uniqueness
+      // constraint and passes any other error through unchanged.
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset_template.draft",
+          entityType: "asset_template",
+          entityId: row.id,
+          organizationId: template.organizationId,
+          payload: { code: template.code, fromVersion: template.version, version: row.version },
+        },
+        tx,
+      );
       return row;
     }).catch((err: unknown) => {
       throw this.translateDraftConflict(err, template.code);
     });
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset_template.draft",
-      entityType: "asset_template",
-      entityId: draft.id,
-      payload: { code: template.code, fromVersion: template.version, version: draft.version },
-    });
     return this.getById(jwt, draft.id);
   }
 
@@ -447,16 +479,19 @@ export class AssetTemplatesAdminService {
     this.assertDraft(template, "deleted");
 
     // template_points cascade on the FK.
-    await withTenant(this.tenantDb, template.organizationId, (tx) =>
-      tx.delete(assetTemplates).where(eq(assetTemplates.id, id)),
-    );
-
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset_template.delete_draft",
-      entityType: "asset_template",
-      entityId: id,
-      payload: { code: template.code, version: template.version },
+    await withTenant(this.tenantDb, template.organizationId, async (tx) => {
+      await tx.delete(assetTemplates).where(eq(assetTemplates.id, id));
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset_template.delete_draft",
+          entityType: "asset_template",
+          entityId: id,
+          organizationId: template.organizationId,
+          payload: { code: template.code, version: template.version },
+        },
+        tx,
+      );
     });
     return { deleted: true };
   }

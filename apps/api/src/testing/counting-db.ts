@@ -18,11 +18,28 @@ import type { BmsDb } from "@bms/db";
 export type CountingDb = { db: BmsDb; transactions: () => number };
 
 export function countingDb(inner: BmsDb): CountingDb {
+  const counted = countingDbMethod(inner, "transaction");
+  return { db: counted.db, transactions: counted.calls };
+}
+
+export type CountingDbMethod = { db: BmsDb; calls: () => number };
+
+/**
+ * `E7.1c` (item D) — generalises `countingDb` to intercept an arbitrary
+ * top-level method, not only `.transaction`. Needed for a (b)-classified
+ * `MasterDataAuditService.write` site: `RulesService.previewRule` routes its
+ * audit insert to `fleetDb` with a **plain** `.insert(...)`, never opening a
+ * `.transaction()` — so `countingDb`'s own counter would read `0` on both
+ * pools regardless of which one actually received the write, proving
+ * nothing. Counting `.insert` instead makes the routing directly assertable.
+ * `countingDb` itself is unchanged and delegates here with `"transaction"`.
+ */
+export function countingDbMethod(inner: BmsDb, method: string): CountingDbMethod {
   let count = 0;
   const proxy = new Proxy(inner as object, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
-      if (prop === "transaction" && typeof value === "function") {
+      if (prop === method && typeof value === "function") {
         return (...args: unknown[]) => {
           count += 1;
           return (value as (...a: unknown[]) => unknown).apply(target, args);
@@ -31,5 +48,5 @@ export function countingDb(inner: BmsDb): CountingDb {
       return typeof value === "function" ? value.bind(target) : value;
     },
   }) as unknown as BmsDb;
-  return { db: proxy, transactions: () => count };
+  return { db: proxy, calls: () => count };
 }

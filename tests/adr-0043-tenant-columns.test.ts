@@ -71,11 +71,19 @@ const TENANT_TABLES = [
 const JUNCTIONS = ["asset_group_members", "rule_notifications", "alarm_affected_assets"];
 
 /**
- * The four tables that keep a NULLABLE `organization_id` and a NULL-tolerant
- * policy (decision 5/7 + Amendment 4): a global `admin` `users` row is org-less,
- * and every E7.1b `audit_log`/channel/delivery row is written org-less (E7.1c
- * populates them). They are the ONLY tenant tables absent from 0047's
- * `SET NOT NULL`.
+ * The four tables **`0047` itself** leaves with a NULLABLE `organization_id`
+ * and a blanket NULL-tolerant policy (decision 5/7 + Amendment 4): a global
+ * `admin` `users` row is org-less, and every E7.1b `audit_log`/channel/delivery
+ * row was written org-less at the time `0047` landed. This is `0047`'s own
+ * text, scanned as-is below — it does not change when a later migration does.
+ *
+ * **Superseded for current behaviour by `0048`** (ADR 0043 Amendment 5,
+ * `E7.1c`): `notification_deliveries` gained `SET NOT NULL` and left this set
+ * (4 → 3 nullable tables), and `users`/`notification_channels`/`audit_log`
+ * kept a nullable column but had their blanket NULL-tolerant `WITH CHECK`
+ * narrowed to role-scoped `TO bms_fleet`. For what the database actually
+ * enforces today, see `tests/adr-0043-amendment-5-with-check.test.ts`, not
+ * this constant.
  */
 const NULLABLE_TENANT_TABLES = [
   "users",
@@ -238,11 +246,18 @@ describe("E7.1b / 0047 — every tenant table and junction gets a tenant_isolati
   });
 });
 
-describe("E7.1b / 0047 — the 4 nullable tables get a NULL-tolerant WITH CHECK", () => {
+describe("E7.1b / 0047 — as 0047 wrote it, the 4 nullable tables get a NULL-tolerant WITH CHECK", () => {
   /**
    * A NULL-org insert must not be rejected (a global `admin` user, an org-less
-   * audit/channel/delivery row). `[^;]*` bounds the scan to this table's single
-   * CREATE POLICY statement, so it cannot borrow another table's clause.
+   * audit/channel/delivery row) — in `0047`'s own text. `[^;]*` bounds the scan
+   * to this table's single CREATE POLICY statement, so it cannot borrow another
+   * table's clause.
+   *
+   * `0048` (Amendment 5, `E7.1c`) later narrows three of these four to a
+   * role-scoped `TO bms_fleet` disjunct and removes the fourth
+   * (`notification_deliveries`) outright — this block does not track that; it
+   * stays green because `0047`'s file has not changed. See
+   * `tests/adr-0043-amendment-5-with-check.test.ts` for the current state.
    */
   it.each(NULLABLE_TENANT_TABLES)("bms.%s policy admits organization_id IS NULL", (table) => {
     expect(migration0047).not.toBeNull();
