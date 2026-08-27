@@ -10,8 +10,10 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   assertNullOrgChannelIsolatedFromTenant,
+  assertNullOrgDeliveryIsRefusedForEveryRole,
+  assertNullOrgUserInsertIsRefusedForTenant,
   assertRuleNotificationsJunctionKeysOnRuleOrg,
-  assertTenantCanCreateButNotSeeNullOrgChannel,
+  assertTenantCannotCreateNullOrgChannel,
 } from "./channels.rls.integration.spec";
 
 /**
@@ -47,8 +49,16 @@ const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
 const RUN = randomUUID().replace(/-/g, "").slice(0, 12);
 const CHANNEL_CODE = `E71B-NCH-${RUN}`;
 const RULE_CODE = `E71B-NRULE-${RUN}`;
-// The channel a tenant plants directly (self-cleaning in its assertion).
+// The NULL-org channel a tenant attempts to plant directly — E7.1c: refused
+// outright once 0048 lands (self-cleaning in the fleet-pool branch of the
+// assertion, which still succeeds).
 const TENANT_CREATED_CODE = `E71B-NCHTC-${RUN}`;
+// E7.1c — the positive-control code for an org-scoped insert on the tenant
+// pool. Self-cleaning inside the same transaction as its own assertion.
+const TENANT_ORG_SCOPED_CODE = `E71C-NCHOS-${RUN}`;
+// E7.1c — the NULL-org bms.users probe email. Never lands (0039:106 revokes
+// the grant), so there is nothing to clean up.
+const NULL_ORG_USER_EMAIL = `e71c-null-org-user-${RUN}@bms.local`;
 
 describe.skipIf(!connectionString)("E7.1b — notification channel + junction isolation under real RLS", () => {
   let ownerPool: pg.Pool;
@@ -110,9 +120,15 @@ describe.skipIf(!connectionString)("E7.1b — notification channel + junction is
       throw new Error("E7.1b: no rule_categories — run pnpm db:seed.");
     }
 
-    // NULL-org channel — `organization_id` is left to its nullable default. Seeded
-    // on the fleet pool because a tenant connection cannot write a NULL-org row
-    // under 0047 (that is exactly what this suite proves).
+    // NULL-org channel — `organization_id` is left to its nullable default.
+    // Seeded on the fleet pool because a global (fleet-managed) channel is
+    // decision 7's `bms_fleet`-only write, not because a tenant connection is
+    // unable to write one here: under the still-landed `0047` a tenant CAN
+    // write a NULL-org channel (that is the pre-`0048` defect
+    // `assertTenantCannotCreateNullOrgChannel`'s first assertion documents). A
+    // tenant connection cannot write a NULL-org row only once `0048` lands and
+    // role-scopes the WITH CHECK NULL disjunct `TO bms_fleet` — that is the
+    // expected **post-0048** state, not the current one.
     const chan = await ownerPool.query<{ id: string }>(
       `INSERT INTO bms.notification_channels (code, name, kind, enabled)
          VALUES ($1, $2, $3, true) RETURNING id`,
@@ -143,11 +159,20 @@ describe.skipIf(!connectionString)("E7.1b — notification channel + junction is
       if (channelId) {
         await ownerPool.query("DELETE FROM bms.notification_channels WHERE id = $1", [channelId]);
       }
-      // Defensive: the tenant-created channel self-cleans in its assertion, but
-      // clear it here too in case that assertion threw before reaching cleanup.
+      // Defensive: the tenant-created channel and the positive-control channel
+      // both self-clean in their assertions, but clear them here too in case
+      // either assertion threw before reaching its own cleanup.
       await ownerPool.query("DELETE FROM bms.notification_channels WHERE code = $1", [
         TENANT_CREATED_CODE,
       ]);
+      await ownerPool.query("DELETE FROM bms.notification_channels WHERE code = $1", [
+        TENANT_ORG_SCOPED_CODE,
+      ]);
+      // No defensive cleanup for NULL_ORG_USER_EMAIL: 0039:106 revokes INSERT
+      // *and* DELETE on bms.users from both bms_tenant and bms_fleet, so
+      // `ownerPool` here (the fleet/BYPASSRLS connection this gate hands back
+      // by default) could not run the delete even if the insert ever landed.
+      // That the row can never be inserted is exactly what the assertion pins.
     }
     await Promise.all([ownerPool, tenantPool].filter(Boolean).map((p) => p.end()));
   });
@@ -166,13 +191,22 @@ describe.skipIf(!connectionString)("E7.1b — notification channel + junction is
     );
   });
 
-  it("lets a tenant create a NULL-org channel it then cannot see (partial write-containment)", async () => {
-    await assertTenantCanCreateButNotSeeNullOrgChannel(
+  it("refuses a tenant-created NULL-org channel outright, with an org-scoped positive control", async () => {
+    await assertTenantCannotCreateNullOrgChannel(
       tenantDb,
       fleetDb,
       ruleOrgId,
       TENANT_CREATED_CODE,
+      TENANT_ORG_SCOPED_CODE,
       channelKind,
     );
+  });
+
+  it("refuses a NULL-org delivery for both bms_tenant and bms_fleet", async () => {
+    await assertNullOrgDeliveryIsRefusedForEveryRole(tenantDb, fleetDb, ruleOrgId, channelId);
+  });
+
+  it("refuses a NULL-org bms.users insert for bms_tenant (the grant, not the policy)", async () => {
+    await assertNullOrgUserInsertIsRefusedForTenant(tenantDb, ruleOrgId, NULL_ORG_USER_EMAIL);
   });
 });
