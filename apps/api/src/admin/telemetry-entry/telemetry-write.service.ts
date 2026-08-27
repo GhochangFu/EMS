@@ -418,67 +418,75 @@ export class TelemetryWriteService {
         }
       }
 
-      // ---- audit, atomic with the writes it describes ----
-      // Driven by `accepted` (every row this attempt tried to write), not
-      // `writtenRows` (only the rows that actually landed) — an attempt
-      // where every row was rejected inside the transaction (an all-conflict
-      // `reject`-policy batch, or every row's mapping collided) must still
-      // leave an audit trail. `rowCount` still reports what was actually
-      // written, so the payload stays truthful even when that is zero. The
-      // OTHER way every row can be rejected — none surviving `validateRow`
-      // at all, so `accepted` is empty and this transaction never opens —
-      // is audited separately, above, before the early `return`.
-      //
-      // E7.1c (item D) — routed to `fleetDb` with each asset's REAL org, not
-      // folded into `tx`. `tx` here is a bare `this.db.transaction()`, not a
-      // `withTenant` one (`pointValues` carries no organization_id/policy —
-      // decision 9 — so nothing above needed a GUC), and a batch can span
-      // several assets in several organizations in one call: one `SET LOCAL`
-      // cannot serve all of them. Same reasoning and the same table
-      // (`asset_points` auto-provision, `:269-280` above) already stamps a
-      // real, non-null org via `fleetDb` for exactly this reason — `bms_fleet`
-      // is BYPASSRLS (`0039:33`), so the insert is admitted with any org
-      // value and a `withTenant` GUC here would be tautological (the GUC and
-      // the stamped value would come from the same asset row). This also
-      // means an audit row can now survive a rolled-back value batch; that is
-      // acceptable because it is driven by `accepted`, not `writtenRows` —
-      // `rowCount` alone carries whether anything actually landed.
-      const assetIds = [...new Set(accepted.map((a) => a.row.assetId))];
-      for (const assetId of assetIds) {
-        const forAsset = writtenRows.filter((a) => a.row.assetId === assetId);
-        const sortedTimes = sortByParsedTime(forAsset.map((a) => a.row.time));
-        // Non-null: `assetId` is drawn from `accepted` itself.
-        const assetOrganizationId = accepted.find((a) => a.row.assetId === assetId)!
-          .organizationId;
-        await this.audit.write(
-          {
-            actor: jwt,
-            action: input.auditAction,
-            entityType: "asset",
-            entityId: assetId,
-            organizationId: assetOrganizationId,
-            payload: {
-              batchId,
-              sourceKind: input.sourceKind,
-              conflictPolicy: input.conflictPolicy,
-              rowCount: forAsset.length,
-              // Names which point(s) were written, not just the asset and a
-              // count — without it, an overwrite is traceable to "this
-              // asset, this time window" but not to "this point". Bounded by
-              // the row cap (50 for manual entry, 20,000 for import), same
-              // as rejectedRowNumbers below.
-              pointKeys: [...new Set(forAsset.map((a) => a.row.pointKey))],
-              firstTime: sortedTimes[0] ?? null,
-              lastTime: sortedTimes.at(-1) ?? null,
-              rejectedRowNumbers: rejected.slice(0, 20).map((r) => r.rowNumber),
-            },
-          },
-          this.fleetDb,
-        );
-      }
-
       return { written: writtenRows.length, writtenRows };
     });
+
+    // ---- audit, AFTER the transaction commits, never inside it ----
+    // Driven by `accepted` (every row this attempt tried to write), not
+    // `writtenRows` (only the rows that actually landed) — an attempt where
+    // every row was rejected inside the transaction (an all-conflict
+    // `reject`-policy batch, or every row's mapping collided) must still
+    // leave an audit trail. `rowCount` still reports what was actually
+    // written, so the payload stays truthful even when that is zero. The
+    // OTHER way every row can be rejected — none surviving `validateRow` at
+    // all, so `accepted` is empty and this transaction never opens — is
+    // audited separately, above, before the early `return`.
+    //
+    // E7.1c (item D) — routed to `fleetDb` with each asset's REAL org.
+    // `bms_fleet` is BYPASSRLS (`0039:33`), so the insert is admitted with any
+    // org value, and a `withTenant` GUC would be tautological (the GUC and
+    // the stamped value would come from the same asset row) — a batch can
+    // also span several assets in several organizations in one call, and one
+    // `SET LOCAL` cannot serve all of them.
+    //
+    // **Moved out of the `this.db.transaction()` callback above** (it used to
+    // sit where that `});` now is, with a header claiming "atomic with the
+    // writes it describes"). That claim was already false the moment the
+    // write moved to `fleetDb`: a separate `pg` pool is a separate
+    // connection, so nothing written there was ever inside `tx`'s commit/
+    // rollback boundary. Sitting inside the callback was actively worse than
+    // merely non-atomic, though — `MasterDataAuditService.write`'s own
+    // invariant is that a rolled-back transaction must not leave an audit row
+    // describing a write that never happened, and a throw partway through
+    // this loop (a later asset's audit write failing, say) rolled back `tx`
+    // while the EARLIER assets' audit rows, already committed on their own
+    // connection, survived describing value writes that had just been undone.
+    // Running the loop only after `this.db.transaction()` has returned
+    // removes that window: every `writtenRows` entry used below is drawn from
+    // a batch already known to have committed.
+    const assetIds = [...new Set(accepted.map((a) => a.row.assetId))];
+    for (const assetId of assetIds) {
+      const forAsset = writtenRows.filter((a) => a.row.assetId === assetId);
+      const sortedTimes = sortByParsedTime(forAsset.map((a) => a.row.time));
+      // Non-null: `assetId` is drawn from `accepted` itself.
+      const assetOrganizationId = accepted.find((a) => a.row.assetId === assetId)!
+        .organizationId;
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: input.auditAction,
+          entityType: "asset",
+          entityId: assetId,
+          organizationId: assetOrganizationId,
+          payload: {
+            batchId,
+            sourceKind: input.sourceKind,
+            conflictPolicy: input.conflictPolicy,
+            rowCount: forAsset.length,
+            // Names which point(s) were written, not just the asset and a
+            // count — without it, an overwrite is traceable to "this asset,
+            // this time window" but not to "this point". Bounded by the row
+            // cap (50 for manual entry, 20,000 for import), same as
+            // rejectedRowNumbers below.
+            pointKeys: [...new Set(forAsset.map((a) => a.row.pointKey))],
+            firstTime: sortedTimes[0] ?? null,
+            lastTime: sortedTimes.at(-1) ?? null,
+            rejectedRowNumbers: rejected.slice(0, 20).map((r) => r.rowNumber),
+          },
+        },
+        this.fleetDb,
+      );
+    }
 
     if (writtenRows.length > 0) {
       const writtenTimes = writtenRows.map((a) => Date.parse(a.row.time));
