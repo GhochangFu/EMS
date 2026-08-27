@@ -85,6 +85,43 @@ export async function assertRefusesOutOfScopeOrganization(
 }
 
 /**
+ * `E7.1c` (item D) — `create`'s audit write moved from a separate
+ * `this.audit.write(...)` call AFTER `withTenant` closed (unstamped, on the
+ * plain tenant pool) to inside it, passing `tx` and this same
+ * `organizationId`. `countingDb`'s `.transaction()` counter cannot
+ * discriminate this: both the old and new code open exactly one tenant
+ * transaction for the `insert(pointKeys)` — folding the audit write into an
+ * ALREADY-open transaction adds no second one. Reading the stamped value
+ * back is the only proof available, which is what this does.
+ */
+export async function assertCreateAuditRowStampsOrganization(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { svc, ownerPool, organizationId } = ctx;
+  const created = await svc.create(jwt, {
+    organizationId,
+    code: `f4.16-audit-org-${Date.now()}`,
+    name: "E7.1c item D audit organization stamp check",
+  });
+  try {
+    const { rows } = await ownerPool.query<{ organization_id: string | null }>(
+      `SELECT organization_id FROM bms.audit_log
+        WHERE action = 'master.point_key.create' AND entity_id = $1
+        ORDER BY created_at DESC LIMIT 1`,
+      [created.id],
+    );
+    expect(rows.length, "create wrote one audit row").toBe(1);
+    expect(
+      rows[0]?.organization_id,
+      "the audit row carries the SAME org as the point key it describes",
+    ).toBe(organizationId);
+  } finally {
+    await ownerPool.query("DELETE FROM bms.point_keys WHERE id = $1", [created.id]);
+  }
+}
+
+/**
  * The actual `WITH CHECK` proof, exercised directly against the real
  * `bms_tenant` role rather than through the service — `PointKeysAdminService`
  * never constructs a mismatched GUC/row-organization pair itself.

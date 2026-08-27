@@ -6,9 +6,9 @@ import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
-import { countingDb } from "../testing/counting-db";
+import { countingDb, countingDbMethod } from "../testing/counting-db";
 import type { RulesService } from "./rules.service";
-import type { RuleDraftBody } from "./rules.schema";
+import type { RuleDraftBody, RulePreviewBody } from "./rules.schema";
 
 /**
  * `E7.1b` — the org-stamping and ruling-4 proof for `RulesService.createDraft`
@@ -98,6 +98,15 @@ function timeWindowDraft(code: string): RuleDraftBody {
  * A threshold `createDraft` under a real `bms_tenant` connection stamps
  * `automation_rules.organization_id` from the asset, and its audit row resolves
  * a non-NULL actor id from the pre-tenant `fleetDb` identity read.
+ *
+ * `E7.1c` (item D) — also asserts `audit_log.organization_id` on the same row.
+ * `insertRuleAuditLog` folds into `createDraft`'s own `withTenant` transaction
+ * (via `tx`, `rule-audit.ts`), so `countingDb`'s `.transaction()` counter
+ * cannot see this land: folding an insert into an ALREADY-OPEN transaction
+ * opens no new one, and `assertCreateDraftReadsBackOnTenantTransaction` below
+ * already pins that count at 1 both before and after this stamp existed. The
+ * only way to prove the value landed is to read it back, which is what this
+ * does.
  */
 export async function assertCreateStampsOrgAndActorUnderRealRls(
   ctx: RulesRlsFixtures,
@@ -118,8 +127,8 @@ export async function assertCreateStampsOrgAndActorUnderRealRls(
     ctx.organizationId,
   );
 
-  const audit = await ctx.ownerPool.query<{ actor_id: string | null }>(
-    `SELECT actor_id FROM bms.audit_log
+  const audit = await ctx.ownerPool.query<{ actor_id: string | null; organization_id: string | null }>(
+    `SELECT actor_id, organization_id FROM bms.audit_log
       WHERE entity_type = 'automation_rule' AND entity_id = $1 AND action = 'rule_draft_create'`,
     [created.id],
   );
@@ -128,6 +137,10 @@ export async function assertCreateStampsOrgAndActorUnderRealRls(
     audit.rows[0]?.actor_id,
     "the actor resolved on fleetDb, so audit_log.actor_id is not NULL",
   ).not.toBeNull();
+  expect(
+    audit.rows[0]?.organization_id,
+    "E7.1c item D: the audit row carries the SAME org as the rule it describes",
+  ).toBe(ctx.organizationId);
 }
 
 /**
@@ -155,6 +168,93 @@ export async function assertCreateDraftReadsBackOnTenantTransaction(
     fleet.transactions(),
     "the folded read-back opens no fleet transaction (org/actor/code use fleet.select)",
   ).toBe(0);
+}
+
+/**
+ * `E7.1c` (item D) — `previewRule`'s audit organization forks on whether the
+ * draft resolves a real asset, the same review finding that closed
+ * `rules.service.ts:286-306`'s previous unconditional `null`: a NULL on a
+ * tenant-scoped row is a defect (`bms-schema.ts`'s own comment on
+ * `audit_log.organization_id`), and an asset-bearing preview is the ORDINARY
+ * case, not the exceptional one.
+ *
+ * Two branches, because a test that only exercised the asset-bearing case
+ * would pass just as well if the code hard-coded a real org, and one that
+ * only exercised the asset-less case would pass just as well if the revert
+ * this closes still shipped.
+ *
+ * `countingDb`'s `.transaction()` counter is what discriminates the
+ * asset-bearing branch — `withTenant` opens exactly one tenant transaction,
+ * and `tx.insert(...)` inside it is a fresh Drizzle builder object the
+ * counter never sees (only the top-level call is intercepted). The
+ * asset-less branch opens no transaction on either pool, so
+ * `countingDbMethod(db, "insert")`'s call-count is what discriminates it —
+ * the same reasoning the pre-fix version of this assertion recorded.
+ */
+export async function assertPreviewAuditOrgForksOnAsset(
+  ctx: RulesRlsFixtures,
+  assetBearingCode: string,
+  assetlessCode: string,
+): Promise<void> {
+  // `validateRuleDraft` uppercases `code` before it reaches the audit payload
+  // (`rules.service.ts`: `dto.code?.trim().toUpperCase()`) — match that, or a
+  // mixed-case `code` here (this file's own `PREFIX` embeds a lowercase
+  // random-hex segment) finds zero rows and asserts nothing.
+  async function auditOrgFor(code: string): Promise<string | null | undefined> {
+    const audit = await ctx.ownerPool.query<{ organization_id: string | null }>(
+      `SELECT organization_id FROM bms.audit_log
+        WHERE action = 'rule_preview' AND payload->>'code' = $1
+        ORDER BY created_at DESC LIMIT 1`,
+      [code.toUpperCase()],
+    );
+    expect(audit.rows.length, `previewRule(${code}) wrote one audit row`).toBe(1);
+    return audit.rows[0]?.organization_id;
+  }
+
+  // --- asset-bearing: a real org, routed through withTenant ---------------
+  {
+    const tenant = countingDb(ctx.tenantDb);
+    const fleetInsert = countingDbMethod(ctx.fleetDb, "insert");
+    const svc = ctx.makeService(tenant.db, fleetInsert.db);
+    const dto: RulePreviewBody = { ...thresholdDraft(ctx, assetBearingCode), id: undefined };
+
+    await svc.previewRule(dto, ctx.scopedActor, [ctx.assetId]);
+
+    expect(
+      tenant.transactions(),
+      "an asset-bearing preview's audit write opens one tenant transaction",
+    ).toBe(1);
+    expect(fleetInsert.calls(), "no fleet insert for an asset-bearing preview's audit row").toBe(
+      0,
+    );
+    expect(
+      await auditOrgFor(assetBearingCode),
+      "a preview whose asset resolves to a real organization stamps that organization, not null",
+    ).toBe(ctx.organizationId);
+  }
+
+  // --- asset-less: nothing to derive, stays the platform-event NULL -------
+  {
+    const tenantInsert = countingDbMethod(ctx.tenantDb, "insert");
+    const fleetInsert = countingDbMethod(ctx.fleetDb, "insert");
+    const svc = ctx.makeService(tenantInsert.db, fleetInsert.db);
+    const dto: RulePreviewBody = { ...timeWindowDraft(assetlessCode), id: undefined };
+
+    // adminActor + assetIds: null, not scopedActor — a scoped actor's
+    // asset-less draft 404s in `assertAssetInScope` before org resolution
+    // even runs (ruling 4, refuse-only), which would prove nothing here.
+    await svc.previewRule(dto, ctx.adminActor, null);
+
+    expect(fleetInsert.calls(), "an asset-less preview's audit write reaches fleetDb").toBe(1);
+    expect(
+      tenantInsert.calls(),
+      "no insert of any kind touches the tenant pool for an asset-less preview",
+    ).toBe(0);
+    expect(
+      await auditOrgFor(assetlessCode),
+      "a preview with no asset to derive an org from keeps decision 5's platform-event NULL",
+    ).toBeNull();
+  }
 }
 
 /**
@@ -211,6 +311,54 @@ export async function assertPublishRuleReadsBackInTenantTransaction(
     "publishRule writes and reads back in one tenant transaction",
   ).toBe(1);
   expect(fleet.transactions(), "only the pre-write current-row read runs on fleet").toBe(1);
+}
+
+/**
+ * `E7.1c` Task 9 — the live-defect proof, on real Postgres rather than a mock.
+ *
+ * Before `0048` re-keyed `automation_rules`' identity to `(organization_id,
+ * code)`, `validateRuleDraft`'s code-uniqueness scan read every tenant's codes
+ * on `fleetDb`: creating the SAME code in a second organization found the
+ * first organization's row and 400'd, and publishing carried the same defect
+ * through its own re-validation. This is the one assertion that would have
+ * caught it — `rules.service.spec.ts`'s mock answers every `.where(...)` with
+ * the same fixed rows regardless of the filter, so it cannot tell an
+ * org-scoped query from an unscoped one; only a real database, with real
+ * per-organization rows, can go red on a revert of the `organizationId`
+ * filter. The same code twice in the SAME organization must still 400 —
+ * proving the check did not simply disappear.
+ */
+export async function assertSameRuleCodePublishesInBothOrganizations(
+  ctx: RulesRlsFixtures,
+  code: string,
+): Promise<void> {
+  const inOrgA = await ctx.service.createDraft(thresholdDraft(ctx, code), ctx.scopedActor, [
+    ctx.assetId,
+  ]);
+  ctx.createdRuleIds.push(inOrgA.id);
+
+  // Same code, a SECOND organization. `adminActor` + `assetIds: null` so
+  // `assertAssetInScope` does not refuse a global admin acting on org B's
+  // asset — `foreignAssetId`/`organizationId` are already used this way by
+  // the decision-3 read assertions above.
+  const inOrgB = await ctx.service.createDraft(
+    thresholdDraft({ ...ctx, assetId: ctx.foreignAssetId }, code),
+    ctx.adminActor,
+    null,
+  );
+  ctx.createdRuleIds.push(inOrgB.id);
+
+  // Publishing re-validates the rule's own code (scoped to its own org, since
+  // Task 9): neither create's later publish may collide with the other's.
+  await ctx.service.publishRule(inOrgA.id, { reason: "E7.1c org A publish" }, ctx.scopedActor, [
+    ctx.assetId,
+  ]);
+  await ctx.service.publishRule(inOrgB.id, { reason: "E7.1c org B publish" }, ctx.adminActor, null);
+
+  // The SAME code, a SECOND time, in the SAME organization: still refused.
+  await expect(
+    ctx.service.createDraft(thresholdDraft(ctx, code), ctx.scopedActor, [ctx.assetId]),
+  ).rejects.toBeInstanceOf(BadRequestException);
 }
 
 /**

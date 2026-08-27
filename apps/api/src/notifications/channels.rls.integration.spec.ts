@@ -102,56 +102,190 @@ export async function assertNullOrgChannelIsolatedFromTenant(
 }
 
 /**
- * A tenant CAN create a NULL-org channel — the `0047` WITH CHECK admits
- * `organization_id IS NULL` regardless of the GUC — which is then invisible to
- * that same tenant (strict USING) and lives only in the fleet-managed global
- * channel namespace. Write-containment is therefore PARTIAL in E7.1b: a tenant
- * cannot read or modify existing NULL-org channels, but can blindly create new
- * ones it cannot see.
+ * `E7.1c` (ADR 0043 Amendment 5, ruled 2026-08-27) — this function used to be
+ * `assertTenantCanCreateButNotSeeNullOrgChannel` and documented a defect: the
+ * `0047` `WITH CHECK` admitted `organization_id IS NULL` for **every** role, so
+ * a tenant connection could plant a NULL-org channel it then could not see
+ * (partial write-containment — read/modify of an *existing* NULL-org row was
+ * closed, but *creating* a fresh one was not). That was measured, not assumed:
+ * a plain INSERT with no `organization_id` succeeded on the tenant pool, and an
+ * immediate `SELECT` on the same connection returned zero rows.
  *
- * This is a transitional posture. Channels stay NULL-org and fleet-managed until
- * E7.1c (decision 7) gives them an org, a `SET NOT NULL`, and moves the write to
- * `withTenant`; that is when the create direction closes. Whether `bms_tenant`
- * should hold INSERT on `notification_channels` at all before then is a DB-role
- * containment question for the owner (revoke the grant, or role-scope the
- * `WITH CHECK` NULL disjunct `TO bms_fleet`) — the exposure is bounded to
- * namespace pollution / self-exfiltration: the `rule_notifications` junction
- * keys on the RULE's org (proven below), so a tenant cannot wire another org's
- * rule to a channel it planted, and a victim org cannot see a NULL-org channel
- * to wire one.
+ * **Migration `0048` closes that gap** by splitting the shared policy: a
+ * strict `tenant_isolation` (every role, no NULL disjunct) plus a second,
+ * permissive `tenant_isolation_fleet_null` policy scoped `TO bms_fleet` alone.
+ * Permissive policies OR together, so only `bms_fleet` may still write a
+ * NULL-org row; `bms_tenant` is refused outright by `WITH CHECK`. This
+ * function is renamed to match: it now pins the **refusal**, not the create-
+ * then-hide sequence. Until `0048` lands the INSERT below still succeeds (the
+ * pre-`0048` behaviour above), so the first assertion is red on purpose — see
+ * the plan's `docs/plans/e7.1c-slice-2-channel-org-scope.md` §6 Task 2.
  *
- * The INSERT must NOT use RETURNING — RETURNING reads the new row back under the
- * strict USING, which a NULL-org row fails, raising a policy error that would
- * mask the fact that the write itself is admitted.
+ * The positive control (organization-scoped insert, visible to its own
+ * creator) is new in this rewrite: without it a broken grant — `bms_tenant`
+ * refused for *any* insert, not specifically a NULL-org one — would make the
+ * refusal assertion pass for the wrong reason.
+ *
+ * **No RETURNING, on any of the three probes.** RETURNING reads the new row
+ * back under the strict USING, which a NULL-org row fails regardless of
+ * whether the INSERT itself was admitted or refused — so a RETURNING probe
+ * cannot distinguish "the write was refused" from "the write succeeded but the
+ * read-back failed", and the test would pass for the wrong reason either way.
+ * This is the standing lesson recorded in Amendment 5's consequences; every
+ * probe here stays write-only (or, for the positive control, reads back with a
+ * separate plain SELECT rather than a RETURNING clause).
  */
-export async function assertTenantCanCreateButNotSeeNullOrgChannel(
+export async function assertTenantCannotCreateNullOrgChannel(
   tenantDb: BmsDb,
   fleetDb: BmsDb,
   tenantOrgId: string,
-  code: string,
+  nullOrgCode: string,
+  orgScopedCode: string,
   kind: string,
 ): Promise<void> {
+  // (1) A plain NULL-org INSERT now rejects outright — no RETURNING, so the
+  // rejection can only be the WITH CHECK refusal, not a read-back failure.
+  // Isolated in its own withTenant/transaction: once 0048 lands this statement
+  // aborts the transaction, so it must not share one with the positive control.
+  try {
+    await expect(
+      withTenant(tenantDb, tenantOrgId, (tx) =>
+        tx.execute(
+          sql`INSERT INTO bms.notification_channels (code, name, kind, enabled)
+              VALUES (${nullOrgCode}, 'E7.1c tenant null-org attempt', ${kind}, true)`,
+        ),
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  } finally {
+    // Best-effort, unconditional cleanup — not a second read of the probe's
+    // own row. Pre-0048 this insert currently succeeds (the defect this
+    // assertion pins), and the row is invisible even to its own tenant
+    // creator under the strict USING, so only bms_fleet (BYPASSRLS) can see
+    // and remove it. A plain filtered DELETE afterward is not the RETURNING
+    // read-back the "no RETURNING" rule forbids — it asserts nothing about
+    // admission vs refusal, it only prevents an orphaned row.
+    await fleetDb.execute(sql`DELETE FROM bms.notification_channels WHERE code = ${nullOrgCode}`);
+  }
+
+  // (2) Positive control, on a fresh transaction: an org-scoped insert from the
+  // same tenant succeeds and is visible to its own creator. Without this, a
+  // broken/over-narrow grant would make (1) pass vacuously (refused for every
+  // insert, not specifically the NULL-org one).
   await withTenant(tenantDb, tenantOrgId, async (tx) => {
-    // Plain INSERT (no RETURNING): admitted by `organization_id IS NULL`.
     await tx.execute(
-      sql`INSERT INTO bms.notification_channels (code, name, kind, enabled)
-          VALUES (${code}, 'E7.1b tenant-created null-org', ${kind}, true)`,
+      sql`INSERT INTO bms.notification_channels (code, name, kind, enabled, organization_id)
+          VALUES (${orgScopedCode}, 'E7.1c tenant org-scoped control', ${kind}, true, ${tenantOrgId})`,
     );
-    // ...but immediately invisible to its own creator under the strict USING.
     const seen = await tx.execute(
-      sql`SELECT id FROM bms.notification_channels WHERE code = ${code}`,
+      sql`SELECT id FROM bms.notification_channels WHERE code = ${orgScopedCode}`,
     );
-    expect(seen.rows).toHaveLength(0);
+    expect(seen.rows).toHaveLength(1);
+    // Cleanup inside the same transaction — no row escapes to afterAll.
+    await tx.execute(sql`DELETE FROM bms.notification_channels WHERE code = ${orgScopedCode}`);
   });
 
-  // It really landed — visible only in the fleet-managed namespace.
+  // (3) `bms_fleet` (decision 7's fleet-managed global) may still insert a
+  // NULL-org channel, and the row is visible on the fleet connection.
+  await fleetDb.execute(
+    sql`INSERT INTO bms.notification_channels (code, name, kind, enabled)
+        VALUES (${nullOrgCode}, 'E7.1c fleet null-org channel', ${kind}, true)`,
+  );
   const onFleet = await fleetDb.execute(
-    sql`SELECT id FROM bms.notification_channels WHERE code = ${code}`,
+    sql`SELECT id FROM bms.notification_channels WHERE code = ${nullOrgCode}`,
   );
   expect(onFleet.rows).toHaveLength(1);
 
-  // Clean up the tenant-planted row on the fleet pool.
-  await fleetDb.execute(sql`DELETE FROM bms.notification_channels WHERE code = ${code}`);
+  // Clean up the fleet-planted row.
+  await fleetDb.execute(sql`DELETE FROM bms.notification_channels WHERE code = ${nullOrgCode}`);
+}
+
+/**
+ * `E7.1c` (ADR 0043 Amendment 5) — the `notification_deliveries` half of the
+ * ruling: the `0048` migration removes the `organization_id IS NULL` branch
+ * outright (no second, fleet-scoped policy — unlike `users`/
+ * `notification_channels`) **and** adds `SET NOT NULL` to the column. Both
+ * roles must be shown refused, but for different reasons:
+ *
+ * - `bms_tenant` is refused by `WITH CHECK` (the NULL disjunct is gone).
+ * - `bms_fleet` carries BYPASSRLS, so no policy ever applies to it — its
+ *   refusal can only be the `NOT NULL` column constraint. This is the trap the
+ *   plan calls out explicitly: do not read `bms_fleet`'s refusal as proof the
+ *   policy narrowed, because the policy never bound it in the first place.
+ *
+ * Until `0048` lands the column stays nullable and the shared `WITH CHECK`
+ * still admits `organization_id IS NULL` for both roles, so both inserts
+ * below currently succeed — this assertion is red on purpose.
+ *
+ * No RETURNING: same reasoning as `assertTenantCannotCreateNullOrgChannel`.
+ */
+export async function assertNullOrgDeliveryIsRefusedForEveryRole(
+  tenantDb: BmsDb,
+  fleetDb: BmsDb,
+  tenantOrgId: string,
+  channelId: string,
+): Promise<void> {
+  // Scoped by channel_id, not a code the probe just inserted and read back —
+  // this is best-effort cleanup, not the RETURNING read-back the "no
+  // RETURNING" rule forbids. `channelId` is this run's own fixture channel, so
+  // no other test's rows can be caught by the filter.
+  try {
+    await expect(
+      withTenant(tenantDb, tenantOrgId, (tx) =>
+        tx.execute(
+          sql`INSERT INTO bms.notification_deliveries (channel_id, status)
+              VALUES (${channelId}, 'sent')`,
+        ),
+      ),
+      "bms_tenant must not be able to write a NULL-org delivery",
+    ).rejects.toThrow(/row-level security|not-null constraint/i);
+  } finally {
+    await fleetDb.execute(
+      sql`DELETE FROM bms.notification_deliveries WHERE channel_id = ${channelId} AND organization_id IS NULL`,
+    );
+  }
+
+  try {
+    await expect(
+      fleetDb.execute(
+        sql`INSERT INTO bms.notification_deliveries (channel_id, status)
+            VALUES (${channelId}, 'sent')`,
+      ),
+      "bms_fleet carries BYPASSRLS, so its refusal can only be the NOT NULL column, never the policy",
+    ).rejects.toThrow(/not-null constraint/i);
+  } finally {
+    await fleetDb.execute(
+      sql`DELETE FROM bms.notification_deliveries WHERE channel_id = ${channelId} AND organization_id IS NULL`,
+    );
+  }
+}
+
+/**
+ * `E7.1c` (ADR 0043 Amendment 5) — the `bms.users` half of Blocker-adjacent
+ * ground truth: **this assertion does not depend on `0048` at all.**
+ * `0039:106` (`REVOKE INSERT, DELETE ON bms.users FROM bms_tenant, bms_fleet`)
+ * already removed `INSERT` from both pool roles, unconditionally, before
+ * `E7.1b` even existed. So a `bms_tenant` insert of a NULL-org `bms.users` row
+ * is refused **by the grant**, not by `tenant_isolation`'s `WITH CHECK` — the
+ * policy never gets a chance to run. This is pinned here anyway because
+ * Amendment 5 is what makes `bms.users`' NULL branch `TO bms_fleet`-scoped in
+ * `0048`, and a reader of that migration could otherwise assume the grant *and*
+ * the policy jointly guard this path; only the grant does. No RETURNING: same
+ * reasoning as the channel probe above.
+ */
+export async function assertNullOrgUserInsertIsRefusedForTenant(
+  tenantDb: BmsDb,
+  tenantOrgId: string,
+  email: string,
+): Promise<void> {
+  await expect(
+    withTenant(tenantDb, tenantOrgId, (tx) =>
+      tx.execute(
+        sql`INSERT INTO bms.users (email, password_hash, display_name, role)
+            VALUES (${email}, 'x', 'E7.1c null-org user probe', 'viewer')`,
+      ),
+    ),
+    "bms_tenant has no INSERT grant on bms.users at all (0039:106) — this is not a policy check",
+  ).rejects.toThrow(/permission denied/i);
 }
 
 /**

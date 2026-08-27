@@ -430,6 +430,7 @@ export class MaintenanceService {
       }
 
       await tx.insert(auditLog).values({
+        organizationId,
         actorId,
         action: "maintenance_schedule_create",
         entityType: "maintenance_schedule",
@@ -542,6 +543,7 @@ export class MaintenanceService {
         .set({ active: dto.active })
         .where(eq(maintenanceTaskTemplates.id, existing.templateId));
       await tx.insert(auditLog).values({
+        organizationId,
         actorId,
         action: dto.active
           ? "maintenance_schedule_activate"
@@ -667,6 +669,7 @@ export class MaintenanceService {
         .where(eq(maintenanceSchedules.id, scheduleId));
 
       await tx.insert(auditLog).values({
+        organizationId,
         actorId,
         action: "maintenance_convert_to_work_order",
         entityType: "maintenance_schedule",

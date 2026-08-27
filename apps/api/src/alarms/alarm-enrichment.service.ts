@@ -143,6 +143,7 @@ export class AlarmEnrichmentService {
       }
 
       await tx.insert(auditLog).values({
+        organizationId,
         actorId: dbActorId,
         action: "alarm_enrichment_update",
         entityType: "alarm",

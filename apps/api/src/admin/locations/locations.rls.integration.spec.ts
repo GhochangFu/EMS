@@ -38,6 +38,7 @@ type SvcWithFixtures = {
 export async function assertWriteLifecycleSurvivesRealRls(
   ctx: SvcWithFixtures,
   jwt: JwtPayload,
+  register: (id: string) => void,
 ): Promise<string> {
   const { svc, ownerPool, organizationId } = ctx;
   const created = await svc.create(jwt, {
@@ -49,6 +50,12 @@ export async function assertWriteLifecycleSurvivesRealRls(
     latitude: 0,
     longitude: 0,
   });
+  // Registered HERE, not from the caller on the return value: every assertion
+  // below can throw, and a throw skips the caller's own bookkeeping entirely.
+  // Two such rows are what turned `db:seed` red on 2026-08-27 (PHEWB locations:
+  // expected 6, got 7) — the row was committed, the suite failed, and nothing
+  // in the process knew the id any more. `afterAll` now does.
+  register(created.id);
   expect(created.organizationId).toBe(organizationId);
   expect(created.active).toBe(true);
 

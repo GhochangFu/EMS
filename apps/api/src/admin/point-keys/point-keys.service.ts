@@ -94,8 +94,8 @@ export class PointKeysAdminService {
       throw new ForbiddenException("Organization is outside your access scope");
     }
 
-    const created = await withTenant(this.tenantDb, body.organizationId, (tx) =>
-      tx
+    const created = await withTenant(this.tenantDb, body.organizationId, async (tx) => {
+      const [row] = await tx
         .insert(pointKeys)
         .values({
           organizationId: body.organizationId,
@@ -106,17 +106,24 @@ export class PointKeysAdminService {
           description: body.description ?? null,
           active: true,
         })
-        .returning()
-        .then(([row]) => row),
-    );
+        .returning();
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.point_key.create",
-      entityType: "point_key",
-      entityId: created.id,
-      payload: body,
+      // E7.1c (item D): folded into this transaction so the stamped
+      // organizationId matches the GUC the strict WITH CHECK now demands.
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.point_key.create",
+          entityType: "point_key",
+          entityId: row.id,
+          organizationId: body.organizationId,
+          payload: body,
+        },
+        tx,
+      );
+      return row;
     });
+
     return this.fetchRow(created.id);
   }
 
@@ -136,8 +143,8 @@ export class PointKeysAdminService {
       throw new ForbiddenException("Point key is outside your access scope");
     }
 
-    await withTenant(this.tenantDb, existing.organizationId, (tx) =>
-      tx
+    await withTenant(this.tenantDb, existing.organizationId, async (tx) => {
+      await tx
         .update(pointKeys)
         .set({
           name: body.name ?? existing.name,
@@ -146,15 +153,19 @@ export class PointKeysAdminService {
           description:
             body.description !== undefined ? body.description : existing.description,
         })
-        .where(eq(pointKeys.id, id)),
-    );
+        .where(eq(pointKeys.id, id));
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.point_key.update",
-      entityType: "point_key",
-      entityId: id,
-      payload: body,
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.point_key.update",
+          entityType: "point_key",
+          entityId: id,
+          organizationId: existing.organizationId,
+          payload: body,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }
@@ -171,14 +182,18 @@ export class PointKeysAdminService {
       throw new ForbiddenException("Point key is outside your access scope");
     }
 
-    await withTenant(this.tenantDb, existing.organizationId, (tx) =>
-      tx.update(pointKeys).set({ active: false }).where(eq(pointKeys.id, id)),
-    );
-    await this.audit.write({
-      actor: jwt,
-      action: "master.point_key.deactivate",
-      entityType: "point_key",
-      entityId: id,
+    await withTenant(this.tenantDb, existing.organizationId, async (tx) => {
+      await tx.update(pointKeys).set({ active: false }).where(eq(pointKeys.id, id));
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.point_key.deactivate",
+          entityType: "point_key",
+          entityId: id,
+          organizationId: existing.organizationId,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }
@@ -195,14 +210,18 @@ export class PointKeysAdminService {
       throw new ForbiddenException("Point key is outside your access scope");
     }
 
-    await withTenant(this.tenantDb, existing.organizationId, (tx) =>
-      tx.update(pointKeys).set({ active: true }).where(eq(pointKeys.id, id)),
-    );
-    await this.audit.write({
-      actor: jwt,
-      action: "master.point_key.reactivate",
-      entityType: "point_key",
-      entityId: id,
+    await withTenant(this.tenantDb, existing.organizationId, async (tx) => {
+      await tx.update(pointKeys).set({ active: true }).where(eq(pointKeys.id, id));
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.point_key.reactivate",
+          entityType: "point_key",
+          entityId: id,
+          organizationId: existing.organizationId,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }

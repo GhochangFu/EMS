@@ -139,16 +139,23 @@ export class AssetPointsAdminService {
           sourceKind: sourceRtuId ? "measured" : "unmapped",
         })
         .returning();
+
+      // E7.1c (item D): folded into this transaction so the stamped
+      // organizationId matches the GUC the strict WITH CHECK now demands.
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset_point.create",
+          entityType: "asset_point",
+          entityId: row.id,
+          organizationId,
+          payload: body,
+        },
+        tx,
+      );
       return row;
     });
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset_point.create",
-      entityType: "asset_point",
-      entityId: created.id,
-      payload: body,
-    });
     return this.fetchRow(created.id);
   }
 
@@ -192,8 +199,8 @@ export class AssetPointsAdminService {
     }
     const catalog = await this.resolveCatalogPointKey(existing.assetId, nextPointKey);
 
-    await withTenant(this.tenantDb, organizationId, (tx) =>
-      tx
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
+      await tx
         .update(assetPoints)
         .set({
           pointKey: nextPointKey,
@@ -201,15 +208,19 @@ export class AssetPointsAdminService {
           sensorCode: body.sensorCode !== undefined ? body.sensorCode : existing.sensorCode,
           unit: body.unit !== undefined ? body.unit : (existing.unit ?? catalog.unit),
         })
-        .where(eq(assetPoints.id, id)),
-    );
+        .where(eq(assetPoints.id, id));
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset_point.update",
-      entityType: "asset_point",
-      entityId: id,
-      payload: body,
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset_point.update",
+          entityType: "asset_point",
+          entityId: id,
+          organizationId,
+          payload: body,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }
@@ -231,14 +242,18 @@ export class AssetPointsAdminService {
     }
     const organizationId = this.requireRowOrg(existing.organizationId);
 
-    await withTenant(this.tenantDb, organizationId, (tx) =>
-      tx.update(assetPoints).set({ active: false }).where(eq(assetPoints.id, id)),
-    );
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset_point.deactivate",
-      entityType: "asset_point",
-      entityId: id,
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
+      await tx.update(assetPoints).set({ active: false }).where(eq(assetPoints.id, id));
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset_point.deactivate",
+          entityType: "asset_point",
+          entityId: id,
+          organizationId,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }
@@ -260,14 +275,18 @@ export class AssetPointsAdminService {
     }
     const organizationId = this.requireRowOrg(existing.organizationId);
 
-    await withTenant(this.tenantDb, organizationId, (tx) =>
-      tx.update(assetPoints).set({ active: true }).where(eq(assetPoints.id, id)),
-    );
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset_point.reactivate",
-      entityType: "asset_point",
-      entityId: id,
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
+      await tx.update(assetPoints).set({ active: true }).where(eq(assetPoints.id, id));
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset_point.reactivate",
+          entityType: "asset_point",
+          entityId: id,
+          organizationId,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }

@@ -39,6 +39,16 @@ export type NotificationChannelRow = {
   code: string;
   name: string;
   kind: string;
+  /**
+   * `E7.1c` (ADR 0043 Amendment 5, decision 7). `null` names a fleet-managed
+   * global channel. `NotificationsService.sendTest` refuses one outright
+   * (Blocker 1's ruling) rather than write a delivery row it has no
+   * organization to attribute — `dispatch` never sees `null` here in practice
+   * because a rule always carries a real org (`automationRules.organizationId`
+   * has been `NOT NULL` since `0047`) and stamps the DELIVERY from the rule,
+   * not the channel.
+   */
+  organizationId: string | null;
   config: Record<string, unknown>;
   secret: string | null;
   /**

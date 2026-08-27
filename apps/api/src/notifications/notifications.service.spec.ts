@@ -1,3 +1,5 @@
+import { BadRequestException } from "@nestjs/common";
+
 import { buildDedupeKey } from "./dedupe-key";
 import type {
   DeliveryResult,
@@ -15,10 +17,12 @@ function assert(condition: boolean, message: string): void {
 }
 
 const RULE_ID = "11111111-1111-1111-1111-111111111111";
+const ORG_ID = "aaaaaaaa-0000-0000-0000-00000000000a";
 
 function channelRow(overrides: Partial<NotificationChannelRow> = {}): NotificationChannelRow {
   return {
     id: "33333333-3333-3333-3333-333333333333",
+    organizationId: ORG_ID,
     code: "ops-webhook",
     name: "Operations webhook",
     kind: "webhook",
@@ -34,6 +38,11 @@ function input(overrides: Partial<DispatchInput> = {}): DispatchInput {
   return {
     ruleId: RULE_ID,
     ruleCode: "UPS-BATT-TEMP",
+    // E7.1c: a dispatch always has a rule, and automationRules.organizationId
+    // has been NOT NULL since 0047 — this is the rule's org, never the
+    // channel's (the channel may be a fleet-managed global; the delivery
+    // still must attribute to the rule that raised it).
+    organizationId: ORG_ID,
     alarmId: "22222222-2222-2222-2222-222222222222",
     severity: "critical",
     message: "UPS-1 battery temperature is 48C.",
@@ -42,7 +51,13 @@ function input(overrides: Partial<DispatchInput> = {}): DispatchInput {
   };
 }
 
-type Recorded = { status: string; error: string | null; channelId: string; dedupeKey: string };
+type Recorded = {
+  status: string;
+  error: string | null;
+  channelId: string;
+  dedupeKey: string;
+  organizationId: string;
+};
 
 /**
  * A fake `BmsDb` narrow enough for this service: it answers the rate-limit
@@ -65,13 +80,14 @@ function fakeDb(sentInLastHour = 0): {
       }),
     }),
     insert: () => ({
-      values: (row: { status: string; error: string | null; channelId: string; dedupeKey: string }) => {
+      values: (row: Recorded) => {
         if (insertsFail) return Promise.reject(new Error("ledger unavailable"));
         recorded.push({
           status: row.status,
           error: row.error,
           channelId: row.channelId,
           dedupeKey: row.dedupeKey,
+          organizationId: row.organizationId,
         });
         return Promise.resolve();
       },
@@ -329,6 +345,43 @@ export async function runNotificationsServiceTests(): Promise<void> {
     assert(
       new Set(recorded.map((r) => r.channelId)).size === 2,
       "each row names its own channel",
+    );
+    assert(
+      recorded.every((r) => r.organizationId === ORG_ID),
+      "every row is stamped with the rule's organization (E7.1c)",
+    );
+  }
+
+  // --- sendTest refuses a fleet-wide (NULL-org) channel outright -----------
+  //
+  // `E7.1c` Blocker 1's ruling: `record()`'s insert is NOT NULL on
+  // organizationId, and its own catch only logs. Without this explicit 400,
+  // pressing Send Test on a global channel would send the real message and
+  // write no ledger row — both directions are asserted, not just the throw.
+  {
+    const { db, recorded } = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+
+    let threw = false;
+    try {
+      await service.sendTest(channelRow({ organizationId: null }));
+    } catch (err) {
+      threw = err instanceof BadRequestException;
+    }
+    assert(threw, "sendTest on a NULL-org channel must throw BadRequestException");
+    assert(webhook.sent.length === 0, "a refused test must never reach the transport");
+    assert(recorded.length === 0, "a refused test must write no ledger row");
+
+    // The happy path on an org-scoped channel writes a row carrying that org.
+    const result = await service.sendTest(channelRow({ organizationId: ORG_ID }));
+    assert(result.status === "sent", "an org-scoped channel's test still sends");
+    assert(webhook.sent.length === 1, "the org-scoped test reached the transport");
+    assert(
+      recorded.length === 1 && recorded[0]?.organizationId === ORG_ID,
+      "the ledger row carries the channel's organization",
     );
   }
 

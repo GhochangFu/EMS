@@ -20,9 +20,11 @@ import {
   assertAssetlessTimeWindowRefusedForScoped,
   assertCreateDraftReadsBackOnTenantTransaction,
   assertCreateStampsOrgAndActorUnderRealRls,
+  assertPreviewAuditOrgForksOnAsset,
   assertPublishRuleReadsBackInTenantTransaction,
   assertRuleExecutionListReturnsBothOrgsForTwoOrgActor,
   assertRuleListReturnsBothOrgsForTwoOrgActor,
+  assertSameRuleCodePublishesInBothOrganizations,
   assertSingleOrgRuleExecutionListReturnsOwnRow,
   assertSingleOrgRuleExecutionListRunsOnTenantTransaction,
   assertSingleOrgRuleListReturnsOwnRow,
@@ -310,12 +312,20 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
     await assertCreateDraftReadsBackOnTenantTransaction(ctx, `${PREFIX}READBACK`);
   });
 
+  it("previewRule's audit org forks on whether the draft resolves an asset (E7.1c item D)", async () => {
+    await assertPreviewAuditOrgForksOnAsset(ctx, `${PREFIX}PREVIEWASSET`, `${PREFIX}PREVIEWNOASSET`);
+  });
+
   it("folds the updateRule read-back into the write's tenant transaction (E7.1c)", async () => {
     await assertUpdateRuleReadsBackInTenantTransaction(ctx, `${PREFIX}UPDRB`);
   });
 
   it("folds the publishRule (writeLifecycleUpdate) read-back into the write's tenant transaction (E7.1c)", async () => {
     await assertPublishRuleReadsBackInTenantTransaction(ctx, `${PREFIX}PUBRB`);
+  });
+
+  it("publishes the same rule code in two organizations, and still 400s it twice in one (E7.1c Task 9)", async () => {
+    await assertSameRuleCodePublishesInBothOrganizations(ctx, `${PREFIX}DUP`);
   });
 
   it("404s a scoped actor's asset-less time_window create before org resolution", async () => {

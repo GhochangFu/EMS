@@ -164,16 +164,23 @@ export class AssetsAdminService {
           active: true,
         })
         .returning();
+
+      // E7.1c (item D): folded into this transaction so the stamped
+      // organizationId matches the GUC the strict WITH CHECK now demands.
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset.create",
+          entityType: "asset",
+          entityId: row.id,
+          organizationId,
+          payload: body,
+        },
+        tx,
+      );
       return row;
     });
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset.create",
-      entityType: "asset",
-      entityId: created.id,
-      payload: body,
-    });
     return this.fetchRow(created.id);
   }
 
@@ -248,14 +255,18 @@ export class AssetsAdminService {
           meta: body.meta !== undefined ? body.meta : existing.meta,
         })
         .where(eq(assets.id, id));
-    });
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset.update",
-      entityType: "asset",
-      entityId: id,
-      payload: body,
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset.update",
+          entityType: "asset",
+          entityId: id,
+          organizationId,
+          payload: body,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }
@@ -270,13 +281,16 @@ export class AssetsAdminService {
     await withTenant(this.tenantDb, organizationId, async (tx) => {
       await tx.update(assets).set({ active: false }).where(eq(assets.id, id));
       await tx.update(assetPoints).set({ active: false }).where(eq(assetPoints.assetId, id));
-    });
-
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset.deactivate",
-      entityType: "asset",
-      entityId: id,
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset.deactivate",
+          entityType: "asset",
+          entityId: id,
+          organizationId,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }
@@ -288,14 +302,18 @@ export class AssetsAdminService {
     }
 
     const organizationId = await this.resolveAssetOrg(id);
-    await withTenant(this.tenantDb, organizationId, (tx) =>
-      tx.update(assets).set({ active: true }).where(eq(assets.id, id)),
-    );
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset.reactivate",
-      entityType: "asset",
-      entityId: id,
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
+      await tx.update(assets).set({ active: true }).where(eq(assets.id, id));
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.asset.reactivate",
+          entityType: "asset",
+          entityId: id,
+          organizationId,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }

@@ -10,6 +10,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../../testing/integra
 import { asRole } from "../../testing/role-urls";
 import { PointKeysAdminService } from "./point-keys.service";
 import {
+  assertCreateAuditRowStampsOrganization,
   assertPolicyRefusesMismatchedOrg,
   assertRefusesOutOfScopeOrganization,
   assertWriteLifecycleSurvivesRealRls,
@@ -125,6 +126,10 @@ describe.skipIf(!connectionString)("F4.16 — PointKeysAdminService under real R
 
   it("refuses an organization_admin creating a point key outside their granted organization", async () => {
     await assertRefusesOutOfScopeOrganization({ svc, ownerPool, organizationId }, jwt);
+  });
+
+  it("stamps the create audit row with the point key's own organization (E7.1c item D)", async () => {
+    await assertCreateAuditRowStampsOrganization({ svc, ownerPool, organizationId }, jwt);
   });
 
   it("refuses a write whose row claims a different organization than SET LOCAL names (WITH CHECK)", async () => {

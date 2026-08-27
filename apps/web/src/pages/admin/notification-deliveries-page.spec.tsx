@@ -27,6 +27,7 @@ const user: AuthUser = {
 function delivery(overrides: Partial<NotificationDeliveryDto>): NotificationDeliveryDto {
   return {
     id: "d1",
+    organizationId: "org-1",
     ruleId: "r1",
     ruleCode: "UPS-BATT-TEMP",
     alarmId: "a1",

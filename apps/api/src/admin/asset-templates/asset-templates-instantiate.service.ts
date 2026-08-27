@@ -239,6 +239,30 @@ export class AssetTemplateInstantiationService {
         if (pointValues.length > 0) {
           await tx.insert(assetPoints).values(pointValues);
         }
+
+        // E7.1c (item D): folded into this transaction so the stamped
+        // organizationId matches the GUC the strict WITH CHECK now demands.
+        // Safe inside the `.catch` below: translateAssetCodeCollision only
+        // rewrites a `23505` on `assets_code_unique` and passes any other
+        // error (including one from this insert) through unchanged.
+        await this.audit.write(
+          {
+            actor: jwt,
+            action: "master.asset.instantiate",
+            entityType: "asset_template",
+            entityId: template.id,
+            organizationId: template.organizationId,
+            payload: {
+              templateCode: template.code,
+              templateVersion: template.version,
+              locationId: target.locationId,
+              rtuId: target.rtuId,
+              assetIds: inserted.map((row) => row.id),
+              pointCount: pointValues.length,
+            },
+          },
+          tx,
+        );
         return { idByCode, pointCount: pointValues.length };
       })
       .catch((err: unknown) => {
@@ -259,21 +283,6 @@ export class AssetTemplateInstantiationService {
         pointCount: plan.points.length,
         skippedPoints: plan.skippedPoints,
       };
-    });
-
-    await this.audit.write({
-      actor: jwt,
-      action: "master.asset.instantiate",
-      entityType: "asset_template",
-      entityId: template.id,
-      payload: {
-        templateCode: template.code,
-        templateVersion: template.version,
-        locationId: target.locationId,
-        rtuId: target.rtuId,
-        assetIds: assetDtos.map((asset) => asset.id),
-        pointCount: created.pointCount,
-      },
     });
 
     return {

@@ -107,6 +107,7 @@ export async function runLogTransportTests(): Promise<void> {
       severity: "critical",
       channel: {
         id: "33333333-3333-3333-3333-333333333333",
+        organizationId: "12121212-1212-1212-1212-121212121212",
         code: "ops-email",
         name: "Operations email",
         kind: "email",
