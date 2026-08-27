@@ -20,7 +20,7 @@ import {
   assertAssetlessTimeWindowRefusedForScoped,
   assertCreateDraftReadsBackOnTenantTransaction,
   assertCreateStampsOrgAndActorUnderRealRls,
-  assertPreviewAuditIsNullOrgOnFleetPool,
+  assertPreviewAuditOrgForksOnAsset,
   assertPublishRuleReadsBackInTenantTransaction,
   assertRuleExecutionListReturnsBothOrgsForTwoOrgActor,
   assertRuleListReturnsBothOrgsForTwoOrgActor,
@@ -312,8 +312,8 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
     await assertCreateDraftReadsBackOnTenantTransaction(ctx, `${PREFIX}READBACK`);
   });
 
-  it("routes previewRule's audit write to fleetDb with a NULL org (E7.1c item D)", async () => {
-    await assertPreviewAuditIsNullOrgOnFleetPool(ctx, `${PREFIX}PREVIEW`);
+  it("previewRule's audit org forks on whether the draft resolves an asset (E7.1c item D)", async () => {
+    await assertPreviewAuditOrgForksOnAsset(ctx, `${PREFIX}PREVIEWASSET`, `${PREFIX}PREVIEWNOASSET`);
   });
 
   it("folds the updateRule read-back into the write's tenant transaction (E7.1c)", async () => {

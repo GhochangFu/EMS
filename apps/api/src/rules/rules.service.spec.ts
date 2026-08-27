@@ -194,7 +194,6 @@ export async function runRuleSeverityRoundTripTests(): Promise<void> {
   );
 
   await runComposedUpdateTest();
-  await runRuleCodeUniquenessTests();
 }
 
 /**
@@ -248,7 +247,7 @@ async function runComposedUpdateTest(): Promise<void> {
  * all, so a revert that deletes the call (rather than the filter) is caught
  * here too.
  */
-async function runRuleCodeUniquenessTests(): Promise<void> {
+export async function runRuleCodeUniquenessTests(): Promise<void> {
   const orgId = "22222222-2222-4222-8222-222222222222";
   const collisionRows = [{ id: "existing-rule-id", code: "DUP-CODE", lifecycleStatus: "draft" }];
 

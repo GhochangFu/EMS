@@ -64,15 +64,26 @@ export async function assertRuleCodeAvailable(
 /**
  * Generates a fresh code from a seed name — `SEED`, `SEED-2`, `SEED-3`, …
  *
- * **Left global on purpose, out of this task's scope.** Task 9 (E7.1c) is the
- * live-defect fix for `assertRuleCodeAvailable` above, which turns another
- * tenant's code into a spurious 400. This scan has no such failure mode: an
- * index collision with another org's code merely makes the generated
- * candidate skip to the next suffix, which is conservative (an unnecessarily
- * different code), not a false rejection and not an information leak — the
- * caller never sees which code, or whose, was skipped. Scoping it to
- * `organizationId` the same way would be a genuine improvement, but it was
- * not asked for here and is reported rather than folded into this fix.
+ * **Left global, out of this task's scope — reported, not fixed.** Task 9
+ * (E7.1c) is the live-defect fix for `assertRuleCodeAvailable` above, which
+ * turns another tenant's code into a spurious 400. This scan has no such
+ * failure mode: an index collision with another org's code merely makes the
+ * generated candidate skip to the next suffix, which is conservative (an
+ * unnecessarily different code), not a false rejection.
+ *
+ * It is a narrow oracle, though, and an earlier version of this comment
+ * overclaimed "not an information leak" — worth correcting rather than
+ * repeating. The returned suffix reveals THAT a literal code string exists
+ * SOMEWHERE in the system (seed it with a guessed competitor code and read
+ * back whether the candidate skipped), even though it never reveals WHOSE
+ * code or which organization. Scoping this scan to `organizationId`, the way
+ * `assertRuleCodeAvailable` was scoped, would close that — a caller in org A
+ * would then only ever learn about org A's own codes. Not done here: it is a
+ * behaviour change to a code-generation path with no existing test coverage
+ * (unlike `assertRuleCodeAvailable`, which `rules.service.spec.ts` and
+ * `assertSameRuleCodePublishesInBothOrganizations` already pin), so shipping
+ * it inside this review-response would itself be an untested change of the
+ * kind this task exists to eliminate.
  */
 export async function nextRuleCode(fleetDb: BmsDb, seed: string): Promise<string> {
   const base = seed

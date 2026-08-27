@@ -48,6 +48,7 @@ import {
 import { insertRuleAuditLog } from "./rule-audit";
 import { assertRuleCodeAvailable, nextRuleCode } from "./rule-codes";
 import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
+import { resolveAssetOrgOrNull, resolveWriteOrg } from "./rule-org";
 import { filterRuleRowsByAssetIds, selectRuleRowById, selectRuleRows } from "./rule-reads";
 import { pointKeysForAsset } from "./rule-points";
 import { batchedLatestPointValues, latestPointValue } from "./rule-samples";
@@ -145,7 +146,7 @@ export class RulesService {
     // check is org-scoped and needs the org to scope it by.
     // `values.assetId` (below) is `dto.assetId` unchanged by validation on
     // both branches, so this is the same value the old order would have used.
-    const organizationId = await this.resolveWriteOrg(dto.assetId ?? null);
+    const organizationId = await resolveWriteOrg(this.fleetDb, dto.assetId ?? null, dto.ruleType);
     const values = await this.validateRuleDraft(dto, undefined, organizationId);
     const actorId = await this.resolveActorId(actor);
     const code = values.code ?? (await nextRuleCode(this.fleetDb, dto.name));
@@ -284,13 +285,27 @@ export class RulesService {
       updatedAt: new Date(),
     });
 
-    // E7.1c (item D) — a genuine platform/no-tenant-context write: a preview
-    // evaluates a draft that may not even be persisted ("no org on either
-    // axis", above), so there is no organization to stamp. Routed to
-    // `fleetDb` (BYPASSRLS): the default tenant pool's NULL branch is scoped
-    // `TO bms_fleet` only after 0048, and this connection carries no GUC.
-    await this.fleetDb.insert(auditLog).values({
-      organizationId: null,
+    // E7.1c (item D) — the AUDIT ROW's org, not the evaluation's. The synthetic
+    // row handed to `evaluateRule` above stays `organizationId: null` on
+    // purpose (a preview evaluates a draft, joined to nothing); that is a
+    // different question from whether THIS preview's audit trail can name a
+    // real tenant. `resolveWriteOrg` is not reused here — it throws on an
+    // asset-less or unresolvable asset, which is correct for `createDraft`'s
+    // write but wrong for a preview, whose whole point is to evaluate drafts
+    // `createDraft` would still refuse. `bms-schema.ts`'s own comment on
+    // `audit_log.organization_id` is the rule this closes for the ORDINARY
+    // case: "a NULL on [a tenant-scoped row] is a defect, not a platform
+    // event" — an asset-bearing preview (the common case) derives a real org
+    // and is stamped and written under `withTenant` like any other
+    // tenant-scoped audit row. Only the genuinely asset-less case (a
+    // `time_window` draft with no asset yet, or an asset id that resolves to
+    // nothing) keeps `null` on `fleetDb` (BYPASSRLS) — the tenant pool's NULL
+    // branch is scoped `TO bms_fleet` only after 0048, so this connection
+    // carries no GUC.
+    const auditOrg = values.assetId
+      ? await resolveAssetOrgOrNull(this.fleetDb, values.assetId)
+      : null;
+    const auditPayload = {
       actorId,
       action: "rule_preview",
       entityType: "automation_rule",
@@ -304,7 +319,14 @@ export class RulesService {
         oidcSubject: actor.sub,
         actorEmail: actor.email,
       },
-    });
+    };
+    if (auditOrg === null) {
+      await this.fleetDb.insert(auditLog).values({ organizationId: null, ...auditPayload });
+    } else {
+      await withTenant(this.db, auditOrg, (tx) =>
+        tx.insert(auditLog).values({ organizationId: auditOrg, ...auditPayload }),
+      );
+    }
 
     return result;
   }
@@ -892,31 +914,6 @@ export class RulesService {
     if (!pointKeysForAsset(asset.domain, asset.code).includes(pointKey)) {
       throw new BadRequestException("Selected telemetry point is not compatible with asset");
     }
-  }
-
-  /**
-   * The organization a new rule is written into: its asset's org (read on
-   * fleetDb before the GUC). An asset-less `time_window` rule is refused with a
-   * 4xx (ruling 4) — never a NULL insert — until the E7.1d org-picker lands.
-   */
-  private async resolveWriteOrg(assetId: string | null): Promise<string> {
-    if (!assetId) {
-      throw new BadRequestException(
-        "Select an organization for this rule: an asset-less time-window rule has no organization to derive one from",
-      );
-    }
-    const [asset] = await this.fleetDb
-      .select({ organizationId: assets.organizationId })
-      .from(assets)
-      .where(eq(assets.id, assetId))
-      .limit(1);
-    if (!asset) {
-      throw new BadRequestException("Selected asset does not exist");
-    }
-    if (!asset.organizationId) {
-      throw new BadRequestException("Asset has no organization; run the 0046 backfill");
-    }
-    return asset.organizationId;
   }
 
   /** The stored org of a rule being mutated; refuses a pre-0046 NULL. */

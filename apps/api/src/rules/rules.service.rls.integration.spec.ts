@@ -171,46 +171,90 @@ export async function assertCreateDraftReadsBackOnTenantTransaction(
 }
 
 /**
- * `E7.1c` (item D) — `previewRule` is the (b)-classified audit site: a
- * genuinely org-less write (a preview may evaluate an unsaved draft), routed
- * to `fleetDb` with `organizationId: null` rather than the default tenant
- * pool. `countingDb`'s own `.transaction()` counter cannot see this either
- * way — `previewRule` opens no transaction on any pool, tenant or fleet, so
- * that counter reads `0`/`0` regardless of which pool the insert actually
- * reached. `countingDbMethod(db, "insert")` counts the `.insert(...)` call
- * itself instead, which is the seam that actually discriminates: a revert to
- * the funnel's old `this.db` default would move this insert onto the tenant
- * pool and this assertion would flip.
+ * `E7.1c` (item D) — `previewRule`'s audit organization forks on whether the
+ * draft resolves a real asset, the same review finding that closed
+ * `rules.service.ts:286-306`'s previous unconditional `null`: a NULL on a
+ * tenant-scoped row is a defect (`bms-schema.ts`'s own comment on
+ * `audit_log.organization_id`), and an asset-bearing preview is the ORDINARY
+ * case, not the exceptional one.
+ *
+ * Two branches, because a test that only exercised the asset-bearing case
+ * would pass just as well if the code hard-coded a real org, and one that
+ * only exercised the asset-less case would pass just as well if the revert
+ * this closes still shipped.
+ *
+ * `countingDb`'s `.transaction()` counter is what discriminates the
+ * asset-bearing branch — `withTenant` opens exactly one tenant transaction,
+ * and `tx.insert(...)` inside it is a fresh Drizzle builder object the
+ * counter never sees (only the top-level call is intercepted). The
+ * asset-less branch opens no transaction on either pool, so
+ * `countingDbMethod(db, "insert")`'s call-count is what discriminates it —
+ * the same reasoning the pre-fix version of this assertion recorded.
  */
-export async function assertPreviewAuditIsNullOrgOnFleetPool(
+export async function assertPreviewAuditOrgForksOnAsset(
   ctx: RulesRlsFixtures,
-  code: string,
+  assetBearingCode: string,
+  assetlessCode: string,
 ): Promise<void> {
-  const tenant = countingDbMethod(ctx.tenantDb, "insert");
-  const fleet = countingDbMethod(ctx.fleetDb, "insert");
-  const svc = ctx.makeService(tenant.db, fleet.db);
-  const dto: RulePreviewBody = { ...thresholdDraft(ctx, code), id: undefined };
-
-  await svc.previewRule(dto, ctx.scopedActor, [ctx.assetId]);
-
-  expect(fleet.calls(), "previewRule's audit write reaches fleetDb, not the tenant pool").toBe(1);
-  expect(tenant.calls(), "no insert of any kind touches the tenant pool for a preview").toBe(0);
-
   // `validateRuleDraft` uppercases `code` before it reaches the audit payload
   // (`rules.service.ts`: `dto.code?.trim().toUpperCase()`) — match that, or a
   // mixed-case `code` here (this file's own `PREFIX` embeds a lowercase
   // random-hex segment) finds zero rows and asserts nothing.
-  const audit = await ctx.ownerPool.query<{ organization_id: string | null }>(
-    `SELECT organization_id FROM bms.audit_log
-      WHERE action = 'rule_preview' AND payload->>'code' = $1
-      ORDER BY created_at DESC LIMIT 1`,
-    [code.toUpperCase()],
-  );
-  expect(audit.rows.length, "previewRule wrote one audit row").toBe(1);
-  expect(
-    audit.rows[0]?.organization_id,
-    "a preview has no org to attribute — decision 5's platform-event NULL",
-  ).toBeNull();
+  async function auditOrgFor(code: string): Promise<string | null | undefined> {
+    const audit = await ctx.ownerPool.query<{ organization_id: string | null }>(
+      `SELECT organization_id FROM bms.audit_log
+        WHERE action = 'rule_preview' AND payload->>'code' = $1
+        ORDER BY created_at DESC LIMIT 1`,
+      [code.toUpperCase()],
+    );
+    expect(audit.rows.length, `previewRule(${code}) wrote one audit row`).toBe(1);
+    return audit.rows[0]?.organization_id;
+  }
+
+  // --- asset-bearing: a real org, routed through withTenant ---------------
+  {
+    const tenant = countingDb(ctx.tenantDb);
+    const fleetInsert = countingDbMethod(ctx.fleetDb, "insert");
+    const svc = ctx.makeService(tenant.db, fleetInsert.db);
+    const dto: RulePreviewBody = { ...thresholdDraft(ctx, assetBearingCode), id: undefined };
+
+    await svc.previewRule(dto, ctx.scopedActor, [ctx.assetId]);
+
+    expect(
+      tenant.transactions(),
+      "an asset-bearing preview's audit write opens one tenant transaction",
+    ).toBe(1);
+    expect(fleetInsert.calls(), "no fleet insert for an asset-bearing preview's audit row").toBe(
+      0,
+    );
+    expect(
+      await auditOrgFor(assetBearingCode),
+      "a preview whose asset resolves to a real organization stamps that organization, not null",
+    ).toBe(ctx.organizationId);
+  }
+
+  // --- asset-less: nothing to derive, stays the platform-event NULL -------
+  {
+    const tenantInsert = countingDbMethod(ctx.tenantDb, "insert");
+    const fleetInsert = countingDbMethod(ctx.fleetDb, "insert");
+    const svc = ctx.makeService(tenantInsert.db, fleetInsert.db);
+    const dto: RulePreviewBody = { ...timeWindowDraft(assetlessCode), id: undefined };
+
+    // adminActor + assetIds: null, not scopedActor — a scoped actor's
+    // asset-less draft 404s in `assertAssetInScope` before org resolution
+    // even runs (ruling 4, refuse-only), which would prove nothing here.
+    await svc.previewRule(dto, ctx.adminActor, null);
+
+    expect(fleetInsert.calls(), "an asset-less preview's audit write reaches fleetDb").toBe(1);
+    expect(
+      tenantInsert.calls(),
+      "no insert of any kind touches the tenant pool for an asset-less preview",
+    ).toBe(0);
+    expect(
+      await auditOrgFor(assetlessCode),
+      "a preview with no asset to derive an org from keeps decision 5's platform-event NULL",
+    ).toBeNull();
+  }
 }
 
 /**
