@@ -203,21 +203,32 @@ export class TelemetryWriteService {
       // for a scope-denied bulk import) must still leave a trail, not zero
       // rows just because nothing reached the database.
       const noWriteBatchId = randomUUID();
-      await this.audit.write({
-        actor: jwt,
-        action: input.auditAction,
-        entityType: "telemetry_batch",
-        entityId: noWriteBatchId,
-        payload: {
-          batchId: noWriteBatchId,
-          sourceKind: input.sourceKind,
-          conflictPolicy: input.conflictPolicy,
-          rowCount: 0,
-          // Row numbers only, same non-disclosure reasoning as the
-          // written-path audit below: never asset codes/ids here.
-          rejectedRowNumbers: rejected.slice(0, 20).map((r) => r.rowNumber),
+      // E7.1c (item D) — no row validated, so no org is resolvable (every
+      // row could have failed for a different asset in a different
+      // organization, or for no asset at all). Routed to `fleetDb`
+      // (BYPASSRLS) with organizationId: null. This is a THIRD reading of a
+      // NULL audit row, distinct from ADR 0043 decision 5's "platform event"
+      // and from the pre-0048 un-attributed history: an attempt that touched
+      // no tenant data at all. Worth naming rather than folding into either.
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: input.auditAction,
+          entityType: "telemetry_batch",
+          entityId: noWriteBatchId,
+          organizationId: null,
+          payload: {
+            batchId: noWriteBatchId,
+            sourceKind: input.sourceKind,
+            conflictPolicy: input.conflictPolicy,
+            rowCount: 0,
+            // Row numbers only, same non-disclosure reasoning as the
+            // written-path audit below: never asset codes/ids here.
+            rejectedRowNumbers: rejected.slice(0, 20).map((r) => r.rowNumber),
+          },
         },
-      });
+        this.fleetDb,
+      );
       return {
         result: {
           written: 0,
@@ -417,16 +428,35 @@ export class TelemetryWriteService {
       // OTHER way every row can be rejected — none surviving `validateRow`
       // at all, so `accepted` is empty and this transaction never opens —
       // is audited separately, above, before the early `return`.
+      //
+      // E7.1c (item D) — routed to `fleetDb` with each asset's REAL org, not
+      // folded into `tx`. `tx` here is a bare `this.db.transaction()`, not a
+      // `withTenant` one (`pointValues` carries no organization_id/policy —
+      // decision 9 — so nothing above needed a GUC), and a batch can span
+      // several assets in several organizations in one call: one `SET LOCAL`
+      // cannot serve all of them. Same reasoning and the same table
+      // (`asset_points` auto-provision, `:269-280` above) already stamps a
+      // real, non-null org via `fleetDb` for exactly this reason — `bms_fleet`
+      // is BYPASSRLS (`0039:33`), so the insert is admitted with any org
+      // value and a `withTenant` GUC here would be tautological (the GUC and
+      // the stamped value would come from the same asset row). This also
+      // means an audit row can now survive a rolled-back value batch; that is
+      // acceptable because it is driven by `accepted`, not `writtenRows` —
+      // `rowCount` alone carries whether anything actually landed.
       const assetIds = [...new Set(accepted.map((a) => a.row.assetId))];
       for (const assetId of assetIds) {
         const forAsset = writtenRows.filter((a) => a.row.assetId === assetId);
         const sortedTimes = sortByParsedTime(forAsset.map((a) => a.row.time));
+        // Non-null: `assetId` is drawn from `accepted` itself.
+        const assetOrganizationId = accepted.find((a) => a.row.assetId === assetId)!
+          .organizationId;
         await this.audit.write(
           {
             actor: jwt,
             action: input.auditAction,
             entityType: "asset",
             entityId: assetId,
+            organizationId: assetOrganizationId,
             payload: {
               batchId,
               sourceKind: input.sourceKind,
@@ -443,7 +473,7 @@ export class TelemetryWriteService {
               rejectedRowNumbers: rejected.slice(0, 20).map((r) => r.rowNumber),
             },
           },
-          tx,
+          this.fleetDb,
         );
       }
 
