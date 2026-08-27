@@ -39,6 +39,15 @@ const channelConfigSchema = z.record(z.unknown());
 const channelSecretSchema = z.string().min(8).max(512).nullable();
 
 export const createNotificationChannelBodySchema = z.object({
+  /**
+   * `E7.1c` (ADR 0043 Amendment 5, Blocker 1 ruling). **Optional, on purpose:**
+   * an `admin` who omits it still gets a fleet-managed global channel — exactly
+   * today's behaviour — so the web UI needs no change and `E7.1d` (the admin UI
+   * split) stays out of this slice. Supplied, or implied for an
+   * `organization_admin` with exactly one direct grant, it creates an
+   * org-scoped channel instead. `ChannelsService.create` resolves and gates it.
+   */
+  organizationId: z.string().uuid().optional(),
   code: z
     .string()
     .min(1)
