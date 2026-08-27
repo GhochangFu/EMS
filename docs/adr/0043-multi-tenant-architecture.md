@@ -45,6 +45,22 @@ becomes a **second** exception — the column is `NOT NULL` for tenant-scoped
 users and `NULL` for a global fleet actor. Decisions 1–4 and 6–13 are
 untouched.
 
+**Amended a fifth time 2026-08-27**, at the gate for `E7.1c` **slice 2** and
+before any implementation code for it — see
+[Amendment 5](#amendment-5-2026-08-27--the-null-organization-with-check-disjunct-is-role-scoped-to-bms_fleet-the-blanket-bms_tenant-dml-grant-stands).
+`0047`'s `tenant_isolation` `WITH CHECK` admits a `NULL`-organization insert
+that its own `USING` then hides, so a tenant can write a row it cannot read —
+measured on the running stack, not inferred. The `NULL` branch is **role-scoped
+`TO bms_fleet`** on `bms.users`, `bms.audit_log` and
+`bms.notification_channels`, and **removed outright** on
+`bms.notification_deliveries`, which gains `SET NOT NULL` in the same item. The
+blanket `bms_tenant` DML grant in `0039` **stands**, because decision 7 requires
+it: an `organization_admin` managing its own channel writes on the tenant pool.
+Decisions 7 and 8 gain a constraint neither stated, and **decision 5 and
+Amendment 4 are amended in their `WITH CHECK` clause only** — the `audit_log`
+and `bms.users` `NULL` exceptions survive in substance but become fleet-writable
+alone. Decisions 1–4, 6 and 9–13 are untouched.
+
 One decision changed between the owner's ruling and this draft. Decision 6 was
 ruled as `asset_id NOT NULL`; drafting found that `time_window` rules
 legitimately carry no asset, the finding was put back to the owner, and the
@@ -911,3 +927,121 @@ and it is nullable.**
   assumed absent.** Decision 10 already forbids them on tenant tables. `E7.1b`
   verifies the claim against the streaming and dashboard paths rather than
   inheriting it.
+
+## Amendment 5 (2026-08-27) — the `NULL`-organization `WITH CHECK` disjunct is role-scoped to `bms_fleet`; the blanket `bms_tenant` DML grant stands
+
+Ruled by the repository owner at the gate for **`E7.1c` slice 2**, before any
+implementation code for it, in three passes — the grant-versus-policy call, then
+how far across the four affected tables it reaches, then whether `bms.users`
+belongs inside `E7.1c` at all. Slice 1 (`da90d13`, PR #166) had already closed
+`E7.1b`'s post-write read-back residual on decision 1; this amendment gates the
+channels and rule-identity work that follows it.
+
+**What this amendment touches, stated precisely, because the reach is wider than
+the item that carries it.** Decisions 7 and 8 gain a `WITH CHECK` constraint
+that neither stated. **Decision 5 and Amendment 4 are also amended**, in their
+`WITH CHECK` clause only: decision 5's `audit_log` `NULL` exception and
+Amendment 4's `bms.users` `NULL` home both survive unchanged in *substance* —
+each is still legitimate — but each is now writable by `bms_fleet` alone.
+Decisions 1–4, 6 and 9–13 are untouched. Nothing here changes `0039`'s
+column-level grants on `bms.users`, and nothing changes the `bms_auth` pre-auth
+read of Amendment 1; both were checked rather than assumed, because
+Amendment 4's consequences warn that `bms.users` is the most load-bearing table
+in this design.
+
+**`bms.users` was out of `E7.1c`'s stated scope and is deliberately pulled in.**
+The `E7.1c` row, decisions 6 and 7, and every residual `E7.1b` handed over
+all omit it; it surfaced only when `0047` was read table by table. Splitting it
+to a later row was offered and **rejected** — the defect is one class with one
+migration, and leaving it standing on the user table for a cycle is the worse
+trade. `audit_log` had an independent reason to be here regardless: `E7.1c`
+populates its `organization_id`.
+
+### The problem, measured on the running stack rather than inferred
+
+`E7.1b`'s security review raised it on 2026-08-25 and `E7.1b` deliberately did
+not settle it, because the fix belongs beside decision 7's channel work. Two
+independent controls were both expected to contain a tenant, and neither does.
+
+1. **The grant is blanket.** `0039_tenant_roles_and_grants.sql:49` is
+   `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA bms TO
+   bms_tenant, bms_fleet`. `bms_tenant` therefore holds DML on
+   `bms.notification_channels` whatever decision 7 does to the table.
+
+2. **The policy admits a `NULL`-organization insert.** `0047`'s
+   `tenant_isolation` is written as
+   `WITH CHECK (organization_id IS NULL OR organization_id = <current org>)`.
+   The `USING` clause has no such disjunct, so the two halves disagree: a
+   tenant may **write** a row it may not **read**.
+
+Verified on the running stack (port 5433): a plain `INSERT` of a `NULL`-org row
+**succeeds**. It only *looks* refused under `RETURNING`, because `RETURNING`
+reads the new row back under the strict `USING`, which a `NULL`-org row fails.
+The tenant then cannot see the row it made, and the row lands in the
+fleet-managed global channel namespace.
+
+**The exposure is bounded, and naming the bound is part of the ruling.** The
+`rule_notifications` junction keys on the *rule's* organization
+(`0047:261-272`, proven by
+`channels.rls.integration.spec.ts::assertRuleNotificationsJunctionKeysOnRuleOrg`),
+so a tenant cannot wire another organization's rule to a channel it planted,
+and a victim organization cannot see a `NULL`-org channel. The residual is
+namespace pollution and self-exfiltration, not a cross-tenant read, and no API
+route exposes it today. That is why this is an amendment at the start of
+`E7.1c` rather than an incident.
+
+### The ruling
+
+**The `NULL` branch of the `WITH CHECK` is role-scoped to `bms_fleet`. The
+blanket `bms_tenant` DML grant stands.**
+
+1. **`bms_tenant` keeps INSERT/UPDATE/DELETE on `bms.notification_channels`.**
+   Revoking it was considered and **rejected**, because it breaks the feature
+   this same item adds. Decision 7 makes channels org-scoped and gives
+   `organization_admin` the right to manage its own; `channels.service.ts:120-121`
+   already records that `E7.1c` moves the channel writes off `fleetDb` onto
+   `withTenant`. A customer admin creating its own channel therefore writes on
+   the tenant pool. **The grant is not the hole — the policy disjunct is**, and
+   the fix belongs where the defect is.
+
+2. **The disjunct is split per table, and all four tables that carry it are
+   covered.** `0047` puts the identical `organization_id IS NULL OR ...`
+   `WITH CHECK` on **`bms.users`, `bms.audit_log`, `bms.notification_channels`
+   and `bms.notification_deliveries`**. Ruling only the table that was raised
+   would leave the same defect standing on three siblings, so:
+
+   | Table | Treatment | Why |
+   |---|---|---|
+   | `bms.notification_channels` | `NULL` branch `TO bms_fleet` | The raised case. A global channel is fleet-managed by decision 7. |
+   | `bms.users` | `NULL` branch `TO bms_fleet` | Amendment 4 rules the `NULL` home is a **fleet-actor marker**. Only a fleet actor may create one. |
+   | `bms.audit_log` | `NULL` branch `TO bms_fleet` | Decision 5's stated exception is the **platform** event. A tenant-written audit row always has the tenant's organization. |
+   | `bms.notification_deliveries` | branch **removed outright** | `E7.1c` gives the column `SET NOT NULL`, so a `NULL` is a defect for every role, not a fleet privilege. |
+
+3. **`USING` is unchanged on all four.** The asymmetry this amendment removes is
+   in `WITH CHECK` alone; narrowing `USING` would change read semantics that
+   decisions 4 and 12 and Amendments 3 and 4 already settled.
+
+### Consequences
+
+- **A test pins each of the four, in both directions.** For the three
+  fleet-scoped tables: `bms_fleet` may insert a `NULL`-org row and `bms_tenant`
+  may not. For `notification_deliveries`: neither role may. The existing
+  `assertTenantCanCreateButNotSeeNullOrgChannel` in
+  `apps/api/src/notifications/channels.rls.integration.spec.ts` documents the
+  **defect** and must be inverted, not deleted — the assertion it makes today
+  becomes the assertion that the fix works.
+- **Probe write-containment without `RETURNING`.** The measurement above is the
+  standing lesson: a `RETURNING` insert that appears refused may have committed.
+  Any future test of a `WITH CHECK` must separate the write from the read-back.
+- **The `E7.1c` estimate moved `3–4` → `6–8`**, carrying this amendment plus the
+  two residuals `E7.1b` deferred that slice 1 did not close — `audit_log`
+  organization population with its org-scoped reader, and
+  `notification_deliveries` `SET NOT NULL`. The third, the single-org post-write
+  read-backs still on `fleetDb`, is what **slice 1** closed (`da90d13`, PR #166),
+  which is why this amendment gates **slice 2** rather than the item's start.
+- **`0039`'s blanket grant is now load-bearing and should say so.** It is not an
+  oversight left in place; it is required by decision 7. A later reader tempted
+  to tighten it must read this amendment first.
+- **This does not settle per-role grants generally.** Only the `WITH CHECK`
+  disjunct is ruled. A future narrowing of `0039` from `ALL TABLES` to a per-table
+  matrix is its own decision and its own ADR.
