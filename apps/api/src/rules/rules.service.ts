@@ -688,7 +688,11 @@ export class RulesService {
       return;
     }
     if (!assetId || !assetIds.includes(assetId)) {
-      throw new NotFoundException("Rule asset is outside your access scope");
+      // Same message as `getRuleRow`'s "no such id" 404, on purpose: a distinct
+      // "outside your access scope" body would let a caller tell "no such rule"
+      // apart from "exists but not yours" across tenants — a cross-tenant
+      // existence oracle (E7.1b security review, Low). One message closes it.
+      throw new NotFoundException("Rule not found");
     }
   }
 

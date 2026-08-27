@@ -48,7 +48,7 @@ function controllerWith(options: { writeAllowed?: boolean } = {}): {
     assertRuleInScope: (ruleId: string, assetIds?: string[] | null) => {
       if (assetIds === null || assetIds === undefined) return Promise.resolve();
       if (ruleId === OUT_OF_SCOPE_RULE) {
-        return Promise.reject(new NotFoundException("Rule asset is outside your access scope"));
+        return Promise.reject(new NotFoundException("Rule not found"));
       }
       return Promise.resolve();
     },
