@@ -776,7 +776,12 @@ export const automationRules = bmsSchema.table("automation_rules", {
   organizationId: uuid("organization_id")
     .notNull()
     .references(() => organizations.id),
-  code: varchar("code", { length: 64 }).notNull().unique(),
+  // NOT `.unique()`: 0048 re-keyed identity to (organization_id, code) and
+  // dropped the old global-unique `automation_rules_code_idx`, replacing it
+  // with `automation_rules_org_code_idx` — a composite unique index the
+  // migration owns and this file does not mirror (see notificationDeliveries'
+  // comment below for the convention).
+  code: varchar("code", { length: 64 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   // ADR 0031: a **concern**, not a plant domain. `automation_rules_category_fk`
@@ -851,11 +856,19 @@ export const notificationChannelKinds = bmsSchema.table("notification_channel_ki
 
 export const notificationChannels = bmsSchema.table("notification_channels", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b: NULLABLE column only. SET NOT NULL and the (organization_id, code)
-  // re-key are E7.1c (ADR 0043 decision 7) — its global-unique `code` has no
-  // tenant path to backfill from until then.
+  // Stays NULLABLE — ADR 0043 Amendment 5 keeps this the fleet-managed-global
+  // case (decision 7): a channel with no organization is legitimate, owned by
+  // `bms_fleet`. `0048` role-scoped the WITH CHECK NULL branch `TO bms_fleet`
+  // (every other role's write must now name a real organization); it did not
+  // change the column's nullability.
   organizationId: uuid("organization_id").references(() => organizations.id),
-  code: varchar("code", { length: 64 }).notNull().unique(),
+  // NOT `.unique()`: 0048 dropped the old global-unique
+  // `notification_channels_code_key` and replaced it with
+  // `notification_channels_org_code_unique` — a composite
+  // `(organization_id, code)` index (NULLS NOT DISTINCT) the migration owns
+  // and this file does not mirror (see notificationDeliveries' comment below
+  // for the convention).
+  code: varchar("code", { length: 64 }).notNull(),
   name: varchar("name", { length: 128 }).notNull(),
   kind: varchar("kind", { length: 64 })
     .notNull()
@@ -899,9 +912,20 @@ export const ruleNotifications = bmsSchema.table(
  */
 export const notificationDeliveries = bmsSchema.table("notification_deliveries", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // E7.1b: NULLABLE column only, backfilled best-effort via alarm_id. SET NOT
-  // NULL moves to E7.1c with its parent channel (ADR 0043 decision 7).
-  organizationId: uuid("organization_id").references(() => organizations.id),
+  // NOT NULL as of migration 0048 (ADR 0043 Amendment 5): unlike `users`,
+  // `notification_channels` and `audit_log`, this table has no legitimate
+  // PERMANENT NULL case — a dispatch always has a rule, and
+  // `automationRules.organizationId` has been NOT NULL since 0047 — so the
+  // WITH CHECK NULL branch was removed outright rather than narrowed
+  // `TO bms_fleet`. `NotificationsService.record()` is the write path that
+  // must supply it on every insert (a dispatch: its rule's org; a send test:
+  // its channel's, refused with 400 for a global/NULL-org channel) — that
+  // write-path change is E7.1c Task 8, tracked separately from this column
+  // change (0048's own header explains why the two could land in either
+  // order here, unlike `audit_log`'s writers, which had to move first).
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
   ruleId: uuid("rule_id").references(() => automationRules.id),
   alarmId: uuid("alarm_id").references(() => alarms.id),
   channelId: uuid("channel_id")
