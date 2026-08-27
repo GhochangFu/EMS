@@ -46,7 +46,6 @@ describe.skipIf(!connectionString)(
   () => {
     let fleetFixturePool: pg.Pool;
     let authPool: pg.Pool;
-    let tenantPool: pg.Pool;
     let fleetPool: pg.Pool;
     let svc: AccessControlService;
     let activeLocationCount: number;
@@ -58,19 +57,14 @@ describe.skipIf(!connectionString)(
         process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
         "F4.16",
       );
-      tenantPool = await openIntegrationPool(
-        process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
-        "F4.16",
-      );
       fleetPool = await openIntegrationPool(
         process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
         "F4.16",
       );
-      svc = new AccessControlService(
-        createDb(authPool),
-        createDb(tenantPool),
-        createDb(fleetPool),
-      );
+      // E7.1b: AccessControlService reads only bms_auth (bms.users) and bms_fleet
+      // (grant walks + tenant tables, BYPASSRLS, filtered by the actor's grants).
+      // It no longer touches the tenant pool, so this suite does not open one.
+      svc = new AccessControlService(createDb(authPool), createDb(fleetPool));
 
       const { rows } = await fleetFixturePool.query<{ count: string }>(
         "select count(*)::text as count from bms.locations where active = true",
@@ -82,7 +76,6 @@ describe.skipIf(!connectionString)(
       await Promise.all([
         fleetFixturePool?.end(),
         authPool?.end(),
-        tenantPool?.end(),
         fleetPool?.end(),
       ]);
     });

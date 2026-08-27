@@ -4,9 +4,11 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 
 import { loadFixtures, type Fixtures } from "../admin/asset-templates/asset-templates.instantiate.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { asRole } from "../testing/role-urls";
 import {
   assertCacheIsNotReReadWithinTtl,
   assertHandCreatedAssetContributesNothing,
+  assertLoaderGoesDarkOnBareTenantPool,
   assertLoaderResolvesValidRowsAndSkipsInvalidOnes,
   cleanup,
 } from "./calc-definitions.integration.spec";
@@ -26,11 +28,18 @@ const connectionString = requireIntegrationDb({
 
 describe.skipIf(!connectionString)("F2.4 — calc definition loader", () => {
   let pool: pg.Pool | undefined;
+  let tenantPool: pg.Pool | undefined;
   let fx: Fixtures;
 
   beforeAll(async () => {
     const created = await openIntegrationPool(connectionString as string, "F2.4");
     pool = created;
+    // E7.1b: the bare tenant pool (no GUC) for the fleetDb-routing regression guard.
+    tenantPool = await openIntegrationPool(
+      process.env.DATABASE_URL_TENANT ??
+        asRole(connectionString as string, "bms_tenant", "bms_tenant_dev"),
+      "F2.4",
+    );
     fx = await loadFixtures(created);
     await cleanup(created);
   });
@@ -39,6 +48,9 @@ describe.skipIf(!connectionString)("F2.4 — calc definition loader", () => {
     if (pool) {
       await cleanup(pool);
       await pool.end();
+    }
+    if (tenantPool) {
+      await tenantPool.end();
     }
   });
 
@@ -64,5 +76,10 @@ describe.skipIf(!connectionString)("F2.4 — calc definition loader", () => {
   it("does not re-read within its 60s cache TTL", async () => {
     if (!pool) throw new Error("pool required");
     await assertCacheIsNotReReadWithinTtl(pool, fx);
+  });
+
+  it("resolves nothing on a bare tenant pool — proves the read must be on fleet", async () => {
+    if (!pool || !tenantPool) throw new Error("pools required");
+    await assertLoaderGoesDarkOnBareTenantPool(pool, tenantPool, fx);
   });
 });

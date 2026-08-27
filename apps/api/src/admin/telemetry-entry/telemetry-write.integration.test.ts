@@ -40,8 +40,8 @@ describe.skipIf(!connectionString)("TelemetryWriteService", () => {
     await cleanup(created);
 
     const db = createDb(created);
-    const access = new AccessControlService(db, db, db);
-    const audit = new MasterDataAuditService(db);
+    const access = new AccessControlService(db, db);
+    const audit = new MasterDataAuditService(db, db);
     svc = new TelemetryWriteService(db, db, created, access, audit);
     fx = await loadFixtures(created);
   }, 60_000);
@@ -73,9 +73,12 @@ describe.skipIf(!connectionString)("TelemetryWriteService", () => {
     let sourceRefRejected = false;
     try {
       await pool.query(
-        `INSERT INTO bms.asset_points (asset_id, point_key, source_data_key, source_kind, rtu_id)
-         VALUES ($1, 'f18-check-probe', 'f18-check-probe', 'measured', NULL)`,
-        [fx.freshAssetId],
+        // E7.1b: stamp organization_id so 0047's NOT NULL does not fire before
+        // the CHECK this probe exists to prove (the fleet pool bypasses the
+        // tenant policy, so only the NOT NULL would pre-empt it).
+        `INSERT INTO bms.asset_points (asset_id, organization_id, point_key, source_data_key, source_kind, rtu_id)
+         VALUES ($1, $2, 'f18-check-probe', 'f18-check-probe', 'measured', NULL)`,
+        [fx.freshAssetId, fx.freshAssetOrganizationId],
       );
     } catch (err) {
       sourceRefRejected =

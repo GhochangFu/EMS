@@ -6,9 +6,16 @@ import { createDb } from "@bms/db";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
+import { asRole } from "../../testing/role-urls";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { TelemetryWriteService } from "../telemetry-entry/telemetry-write.service";
-import { cleanup, loadFixtures, runTelemetryImportServiceTests, type Fixtures } from "./telemetry-import.spec";
+import {
+  assertImportGoesDarkOnBareTenantPool,
+  cleanup,
+  loadFixtures,
+  runTelemetryImportServiceTests,
+  type Fixtures,
+} from "./telemetry-import.spec";
 import { TelemetryImportService } from "./telemetry-import.service";
 
 /**
@@ -32,7 +39,9 @@ const connectionString = requireIntegrationDb({
 
 describe.skipIf(!connectionString)("TelemetryImportService", () => {
   let pool: pg.Pool | undefined;
+  let tenantPool: pg.Pool | undefined;
   let svc: TelemetryImportService;
+  let tenantBackedSvc: TelemetryImportService;
   let fx: Fixtures;
 
   beforeAll(async () => {
@@ -41,17 +50,30 @@ describe.skipIf(!connectionString)("TelemetryImportService", () => {
     await cleanup(created);
 
     const db = createDb(created);
-    const access = new AccessControlService(db, db, db);
-    const audit = new MasterDataAuditService(db);
+    const access = new AccessControlService(db, db);
+    const audit = new MasterDataAuditService(db, db);
     const writeService = new TelemetryWriteService(db, db, created, access, audit);
     svc = new TelemetryImportService(db, access, writeService);
     fx = await loadFixtures(created);
+
+    // E7.1b: the same service with its asset-resolution read on a bare tenant
+    // pool (no GUC) — everything else (role check, write path) stays on fleet, so
+    // a rejection here is caused only by the read pool. The fleetDb-routing guard.
+    tenantPool = await openIntegrationPool(
+      process.env.DATABASE_URL_TENANT ??
+        asRole(connectionString as string, "bms_tenant", "bms_tenant_dev"),
+      "F1.9",
+    );
+    tenantBackedSvc = new TelemetryImportService(createDb(tenantPool), access, writeService);
   }, 60_000);
 
   afterAll(async () => {
     if (pool) {
       await cleanup(pool);
       await pool.end();
+    }
+    if (tenantPool) {
+      await tenantPool.end();
     }
   }, 60_000);
 
@@ -63,4 +85,8 @@ describe.skipIf(!connectionString)("TelemetryImportService", () => {
     },
     30_000,
   );
+
+  it("rejects every row on a bare tenant pool — proves the read must be on fleet", async () => {
+    await assertImportGoesDarkOnBareTenantPool(tenantBackedSvc, fx);
+  }, 30_000);
 });

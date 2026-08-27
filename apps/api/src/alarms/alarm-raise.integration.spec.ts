@@ -6,7 +6,7 @@ import type { BmsDb } from "@bms/db";
 import type { AlarmRaiseRule } from "./alarm-raise.service";
 import { AlarmRaiser } from "./alarm-raise.service";
 import type { AlarmsGateway } from "./alarms.gateway";
-import { createFixtureAssets } from "../testing/integration-fixtures";
+import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
 
 /**
  * `F3.6` — `AlarmRaiser` against a real database.
@@ -44,7 +44,13 @@ function stubGateway(): AlarmsGateway {
 
 async function insertTestRule(
   db: BmsDb,
-  overrides: { code: string; pointKey: string; severity: string; assetId: string },
+  overrides: {
+    code: string;
+    pointKey: string;
+    severity: string;
+    assetId: string;
+    organizationId: string;
+  },
 ): Promise<AlarmRaiseRule> {
   const [row] = await db
     .insert(automationRules)
@@ -53,6 +59,7 @@ async function insertTestRule(
       name: `F3.6 integration test — ${overrides.code}`,
       category: "safety",
       ruleType: "threshold",
+      organizationId: overrides.organizationId,
       assetId: overrides.assetId,
       pointKey: overrides.pointKey,
       operator: "gte",
@@ -71,6 +78,7 @@ async function insertTestRule(
     id: row.id,
     code: row.code,
     severity: overrides.severity,
+    organizationId: overrides.organizationId,
     name: `F3.6 integration test — ${overrides.code}`,
     pointKey: overrides.pointKey,
     alarmMessage: null,
@@ -105,16 +113,18 @@ async function withRollback(
  */
 export async function assertRaisesDedupesAndTracesOnlyOnRaise(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
-    const [assetId] = await createFixtureAssets(tx, 1, "F36");
+    const loc = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "F36", loc);
     const rule = await insertTestRule(tx, {
       code: "F36_TEST_RAISE_DEDUPE",
       pointKey: "f36_test_dedupe_point",
       severity: "warning",
       assetId,
+      organizationId: loc.organizationId,
     });
     const raiser = new AlarmRaiser(tx, stubGateway());
 
-    const first = await raiser.raise(assetId, rule, 1_000_000);
+    const first = await raiser.raise(assetId, loc.organizationId, rule, 1_000_000);
     assert(first.raised, "the first raise for a fresh (asset, rule) must succeed");
     assert(first.alarmId !== null, "a successful raise returns the alarm id");
 
@@ -127,7 +137,7 @@ export async function assertRaisesDedupesAndTracesOnlyOnRaise(db: BmsDb): Promis
       `expected exactly 1 open alarm after the first raise, found ${openAfterFirst.length}`,
     );
 
-    const second = await raiser.raise(assetId, rule, 1_000_001);
+    const second = await raiser.raise(assetId, loc.organizationId, rule, 1_000_001);
     assert(
       !second.raised,
       "raising the same open (asset, rule) again must dedupe via alarms_open_per_rule_uidx, not insert a second row",
@@ -171,16 +181,18 @@ export async function assertPreservesSeededSeverity(db: BmsDb): Promise<void> {
       .values({ code: "high", label: "High", tone: "warning", rank: 25 })
       .onConflictDoNothing();
 
-    const [assetId] = await createFixtureAssets(tx, 1, "F36");
+    const loc = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "F36", loc);
     const rule = await insertTestRule(tx, {
       code: "F36_TEST_RAISE_HIGH_SEVERITY",
       pointKey: "f36_test_high_point",
       severity: "high",
       assetId,
+      organizationId: loc.organizationId,
     });
     const raiser = new AlarmRaiser(tx, stubGateway());
 
-    const result = await raiser.raise(assetId, rule, 1_000_000);
+    const result = await raiser.raise(assetId, loc.organizationId, rule, 1_000_000);
     assert(result.raised, "raising a rule with a non-default seeded severity must succeed");
 
     const [row] = await tx

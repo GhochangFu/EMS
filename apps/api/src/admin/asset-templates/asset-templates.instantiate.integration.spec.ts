@@ -294,8 +294,9 @@ export async function assertRtuPathProducesMeasuredPoints(
     template_id: string | null;
     domain: string;
     site_name: string;
+    organization_id: string | null;
   }>(
-    `SELECT code, location_id, rtu_id, template_id, domain, site_name
+    `SELECT code, location_id, rtu_id, template_id, domain, site_name, organization_id
        FROM bms.assets WHERE code LIKE $1 ORDER BY code`,
     [`${TEST_ASSET_PREFIX}%`],
   );
@@ -316,6 +317,12 @@ export async function assertRtuPathProducesMeasuredPoints(
       row.site_name.length > 0,
       `${row.code}: site_name is NOT NULL and must fall back to the location name`,
     );
+    // E7.1b: instantiate stamps the template's org onto every asset (nullable
+    // with no default, so this is NULL — and fails — without the withTenant stamp).
+    assert(
+      row.organization_id === fx.organizationId,
+      `${row.code}: asset must be stamped with the template's org (${fx.organizationId}), got ${row.organization_id}`,
+    );
   }
 
   // Two measured points per asset — not three, and not four.
@@ -326,8 +333,9 @@ export async function assertRtuPathProducesMeasuredPoints(
     unit: string | null;
     rtu_id: string | null;
     source_kind: string;
+    organization_id: string | null;
   }>(
-    `SELECT a.code, p.point_key, p.source_data_key, p.unit, p.rtu_id, p.source_kind
+    `SELECT a.code, p.point_key, p.source_data_key, p.unit, p.rtu_id, p.source_kind, p.organization_id
        FROM bms.asset_points p JOIN bms.assets a ON a.id = p.asset_id
       WHERE a.code LIKE $1 ORDER BY a.code, p.point_key`,
     [`${TEST_ASSET_PREFIX}%`],
@@ -353,6 +361,12 @@ export async function assertRtuPathProducesMeasuredPoints(
     assert(
       row.rtu_id === fx.rtuId,
       `${row.code}/${row.point_key}: asset_points_source_ref_check requires the RTU on a measured point`,
+    );
+    // E7.1b: each instantiated point carries the template's org too.
+    assert(
+      row.organization_id === fx.organizationId,
+      `${row.code}/${row.point_key}: asset_point must be stamped with the template's org ` +
+        `(${fx.organizationId}), got ${row.organization_id}`,
     );
   }
 

@@ -122,13 +122,21 @@ async function seed(
 
   await db.insert(templatePoints).values([
     {
+      organizationId: fx.organizationId,
       templateId: template.id,
       pointKey: MEASURED_KEY,
       kind: "measured",
       sourceDataKeyPattern: "SITE/{asset_code}/M",
       sortOrder: 0,
     },
-    { templateId: template.id, pointKey: DERIVED_KEY, kind: "derived", sortOrder: 1, ...TEMPLATE_CALC },
+    {
+      organizationId: fx.organizationId,
+      templateId: template.id,
+      pointKey: DERIVED_KEY,
+      kind: "derived",
+      sortOrder: 1,
+      ...TEMPLATE_CALC,
+    },
   ]);
 
   const [asset] = await db
@@ -137,6 +145,12 @@ async function seed(
       code: `${TEST_ASSET_PREFIX}${suffix}`,
       name: `Override Fixture Asset ${suffix}`,
       siteName: "Fixture Site",
+      // `E7.1b`: `otherLocationId` lives in `organizationId` (same org, per the
+      // Fixtures contract), so this keeps `assets.organization_id` consistent
+      // with its location. `AssetPointCalcOverrideService` now derives the
+      // `withTenant` org from this column; a NULL here would make every
+      // `setOverride` in this suite a 400.
+      organizationId: fx.organizationId,
       locationId: opts.locationId ?? fx.otherLocationId,
       domain: "electrical",
       templateId: template.id,
@@ -257,6 +271,7 @@ export async function assertSetUpdatesAnExistingRowInPlace(
 
   // The row CalcWriteService would have created on a first computed value.
   await db.insert(assetPoints).values({
+    organizationId: fx.organizationId,
     assetId,
     pointKey: DERIVED_KEY,
     sourceDataKey: `computed:${DERIVED_KEY}`,
@@ -396,6 +411,7 @@ export async function assertAnExistingMappingRowIsNeverOverridden(
   // hand-created point, or from a template that used to declare this key as
   // measured.
   await db.insert(assetPoints).values({
+    organizationId: fx.organizationId,
     assetId,
     pointKey: DERIVED_KEY,
     sourceDataKey: "REAL/TAG/FROM/RTU",
@@ -556,8 +572,8 @@ export async function assertComputedRowCannotBeReKeyed(
   const mappingSvc = new AssetPointsAdminService(
     db,
     db,
-    new AccessControlService(db, db, db),
-    new MasterDataAuditService(db),
+    new AccessControlService(db, db),
+    new MasterDataAuditService(db, db),
   );
 
   await svc.setOverride(fx.adminJwt, assetId, DERIVED_KEY, {

@@ -89,8 +89,8 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
 
     const tenantDb = createDb(tenantPool);
     const fleetDb = createDb(fleetPool);
-    const access = new AccessControlService(createDb(authPool), tenantDb, fleetDb);
-    const audit = new MasterDataAuditService(tenantDb);
+    const access = new AccessControlService(createDb(authPool), fleetDb);
+    const audit = new MasterDataAuditService(tenantDb, fleetDb);
     const vocabularies = new VocabulariesService(tenantDb);
     const instantiation = new AssetTemplateInstantiationService(fleetDb, tenantDb, access, audit);
     svc = {

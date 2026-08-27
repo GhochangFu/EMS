@@ -4,7 +4,7 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import type { BmsDb } from "@bms/db";
 import { notificationDeliveries } from "@bms/db";
 
-import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE } from "../database/database.tokens";
 import { ChannelsService } from "./channels.service";
 import { buildDedupeKey } from "./dedupe-key";
 import { EmailTransport } from "./email.transport";
@@ -56,7 +56,11 @@ export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(
-    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    // E7.1b (ADR 0043 §5): notification_deliveries gains a nullable organization_id
+    // and a FORCEd policy in 0047. Every delivery this item is NULL-org (enforcement
+    // and org population are E7.1c, decision 7), and a NULL-org row is visible only
+    // via BYPASSRLS — so both the ledger insert and the rate-limit read run on fleetDb.
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly channels: ChannelsService,
     private readonly logTransport: LogTransport,
     private readonly emailTransport: EmailTransport,
@@ -178,7 +182,13 @@ export class NotificationsService {
    */
   private async isOverHourlyLimit(channelId: string): Promise<boolean> {
     const since = new Date(Date.now() - 60 * 60 * 1000);
-    const rows = await this.db
+    // fleetDb is load-bearing here, like the maintenance duplicate-WO guard: on
+    // the tenant pool the NULL-org delivery rows would be invisible and the
+    // ceiling would count 0, so the rate limiter would stop limiting. E7.1c must
+    // revisit this — once deliveries carry a real org, a cross-org count would
+    // charge one tenant's sends against another's ceiling; correct only because
+    // every row is NULL-org and channels are global this item.
+    const rows = await this.fleetDb
       .select({ count: sql<number>`count(*)::int` })
       .from(notificationDeliveries)
       .where(
@@ -251,7 +261,7 @@ export class NotificationsService {
     result: DeliveryResult,
   ): Promise<DeliveryResult> {
     try {
-      await this.db.insert(notificationDeliveries).values({
+      await this.fleetDb.insert(notificationDeliveries).values({
         ruleId: input.ruleId,
         alarmId: input.alarmId,
         channelId: channel.id,

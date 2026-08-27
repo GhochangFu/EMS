@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 
 import type { EnergyReportPreview, EnergyReportTemplate } from "@bms/shared";
 
-import { TENANT_POOL } from "../database/database.tokens";
+import { FLEET_POOL } from "../database/database.tokens";
 import {
   aggregateRelation,
   avgExpr,
@@ -28,7 +28,14 @@ const energyTemplate: EnergyReportTemplate = {
 
 @Injectable()
 export class ReportsService {
-  constructor(@Inject(TENANT_POOL) private readonly pool: Pool) {}
+  // E7.1b: the energy report joins `bms.assets` (FORCE-policied as of 0047) —
+  // `energySourceTotals`'s `solar_ids` and `energyTopConsumers`'s asset join. On
+  // the tenant pool with no GUC those return zero rows for EVERY caller (incl.
+  // the global admin): top-consumers empties and solar generation is
+  // misattributed to grid. The report reads across the caller's `assetIds` scope
+  // (threaded as `$3`/`$4`), which is the isolation control (Amendment 2/3), so
+  // it runs on fleetDb (BYPASSRLS). Its telemetry aggregates are unpoliced.
+  constructor(@Inject(FLEET_POOL) private readonly pool: Pool) {}
 
   /** Builds the Sprint E Energy Consumption report preview. */
   async energyPreview(

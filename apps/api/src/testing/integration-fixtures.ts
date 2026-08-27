@@ -145,7 +145,7 @@ export async function createFixtureAssets(
   if (count < 1) {
     throw new Error(`createFixtureAssets needs count >= 1, got ${count}`);
   }
-  const { locationId } = location ?? (await fixtureLocation(db));
+  const { locationId, organizationId } = location ?? (await fixtureLocation(db));
   const domain = await anyAssetDomain(db);
 
   const rows = await db
@@ -157,6 +157,11 @@ export async function createFixtureAssets(
         name: `${label} integration fixture asset ${i}`,
         siteName: `${label} integration fixture site`,
         locationId,
+        // E7.1b: stamp the location's org so a fixture asset carries the same
+        // organization_id the 0046 backfill would give it. Every writer derived
+        // from these assets (alarms, rules, work orders) then resolves a real
+        // org rather than NULL under the withTenant funnel.
+        organizationId,
         domain,
       })),
     )

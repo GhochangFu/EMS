@@ -40,6 +40,10 @@ export async function assertOrganizationAdminScopeSurvivesRealRls(
   const { scope } = await svc.currentUser(jwt);
   expect(scope.kind).toBe("location");
   expect(scope.locations.length).toBeGreaterThan(0);
+  // E7.1b: proves the organization-source assets read resolves under real roles
+  // via fleetDb (0 rows if it were still on the tenant pool with no GUC once
+  // 0047 policies `assets`).
+  expect(scope.assetIds.length).toBeGreaterThan(0);
 
   const writableOrgs = await svc.writableOrganizationIds(jwt);
   expect(writableOrgs).not.toBeNull();
@@ -83,6 +87,15 @@ export async function assertOrganizationAdminStillIsolatedUnderRealRls(
   const { scope: globalScope } = await svc.currentUser(globalJwt);
 
   expect(globalScope.locations.length).toBeGreaterThan(scope.locations.length);
+
+  // Positive control (E7.1b Task 5). Without it this assertion passes vacuously
+  // if the org-admin's scope collapses to empty: an empty scope trivially
+  // satisfies the foreign negative below, since it manages nothing — including
+  // the foreign location. Proving the org-admin CAN manage one of its OWN
+  // locations makes an empty scope red here, not silently green.
+  expect(scope.locations.length).toBeGreaterThan(0);
+  const ownLocationId = scope.locations[0]?.id as string;
+  expect(await svc.canManageLocation(jwt, ownLocationId)).toBe(true);
 
   const otherLocationIds = globalScope.locations
     .map((location) => location.id)

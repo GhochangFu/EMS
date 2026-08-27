@@ -35,6 +35,16 @@ at the call site. The other half of `E7.1`'s ADR work — making
 [ADR 0045](0045-non-superuser-table-owner.md), a separate ADR for the same
 reason ADR 0044 was separate.
 
+**Amended a fourth time 2026-08-26**, at the start of `E7.1b` and before any
+implementation code — see
+[Amendment 4](#amendment-4-2026-08-26--bmsusersorganization_id-is-nullable-for-the-global-admin-a-second-exception-beside-audit_log).
+Decision 5 named `audit_log` as "the one exception" to
+`organization_id NOT NULL`; the global `admin` and the Euphoria operator belong
+to **no** organization and decision 1 rejected inventing one, so `bms.users`
+becomes a **second** exception — the column is `NOT NULL` for tenant-scoped
+users and `NULL` for a global fleet actor. Decisions 1–4 and 6–13 are
+untouched.
+
 One decision changed between the owner's ruling and this draft. Decision 6 was
 ruled as `asset_id NOT NULL`; drafting found that `time_window` rules
 legitimately carry no asset, the finding was put back to the owner, and the
@@ -801,6 +811,102 @@ be **stated and enforced** rather than designed around.
   same gate; the classification lands with `E7.1b`.
 - **`telemetry.*` is unaffected.** Decision 9 stands: no column, no policy, and
   isolation from `readableAssetIds`. This amendment is about `bms.*` only.
+
+## Amendment 4 (2026-08-26) — `bms.users.organization_id` is nullable for the global admin, a second exception beside `audit_log`
+
+Ruled by the repository owner at the start of `E7.1b`, before any
+implementation code. Decisions 1–4 and 6–13 are untouched; decision 5 gains one
+stated exception.
+
+### The problem, measured before planning
+
+Decision 5 gives `bms.users` `organization_id NOT NULL` naming the user's home
+organization, and names `audit_log` as **"the one exception to `NOT NULL` in
+this decision."** The data does not fit that. `demo-users-seed.ts` inserts the
+global `admin@bms.local` with `role: "admin"` and **no** membership row — no
+`user_organization_access`, no `user_location_access` — and `hierarchy-seed.ts`
+seeds exactly two organizations, `ESKOM` and `PHEWB`, both **end customers**.
+Decision 1 rules that Ion Exchange is not a tenant, and decision 4's rejection
+of a platform pseudo-organization for `audit_log` says the same thing a second
+way. So the global `admin` (Ion Exchange) and the Euphoria operator (decision 2)
+have **no organization to put in a `NOT NULL` column**, and the decision-11
+backfill cannot reach one — `bms.users` carries no `asset_id`, so the
+`asset_id → assets.location_id → locations.organization_id` walk does not apply
+to it at all.
+
+### The ruling
+
+**`bms.users.organization_id` is a second exception to decision 5's `NOT NULL`,
+and it is nullable.**
+
+1. **The column is `NOT NULL` in effect for a tenant-scoped user and `NULL` for a
+   global fleet actor.** A `NULL` home means "this actor belongs to no single
+   tenant"; it is the `bms.users` analogue of `audit_log`'s nullable platform
+   row. A `NULL`-home row is the global `admin`/operator, and it resolves to
+   `bms_fleet` at connect time exactly as decision 12 already requires — the
+   pool is chosen from the **role** in the database user record, not from the
+   (absent) organization, so nothing in decision 12 changes.
+
+2. **The `bms.users` backfill is not the decision-11 asset walk. It resolves the
+   home organization from the user's own grants, and it fails loud for a scoped
+   user it cannot resolve.** A `phe-admin`-shaped user resolves through its
+   `user_organization_access` row; a `wc-admin`/`wc-hvac-admin`-shaped user
+   resolves through `user_location_access → locations.organization_id`. A user
+   with role `admin` and no grant resolves to `NULL` **by design**. A user with
+   any **other** role and no resolvable home is a defect and **aborts the
+   migration listing the offending ids**, the same fail-loud posture decision 11
+   takes — a scoped user with no tenant is a data error, not a fleet actor. If a
+   scoped user legitimately spans several organizations, it is a multi-tenant
+   actor whose home is one of them and whose reach is `user_organization_access`
+   plus `bms_fleet` (decision 5's existing rule), not a `NULL` home.
+
+3. **The policy needs no special case for `NULL`.** `tenant_isolation` reads
+   `organization_id = nullif(current_setting('app.current_organization', true),
+   '')::uuid`, and a `NULL`-home row is never equal to any set organization, so
+   it is invisible to `bms_tenant` and visible only under `bms_fleet` —
+   precisely the containment a global actor needs, and the same behaviour
+   `audit_log`'s `NULL` rows already have. `FORCE ROW LEVEL SECURITY` still
+   lands on `bms.users` with the rest of the set.
+
+4. **`bms_auth` reads `bms.users` pre-authentication through a permissive
+   policy, and its reachable set narrows to `bms.users` alone.** `bms.users`
+   gaining RLS would otherwise deny the pre-tenant login/bootstrap read
+   (Amendment 1: no organization is set at login), so `E7.1b` adds
+   `auth_bootstrap_read ON bms.users FOR SELECT TO bms_auth USING (true)` — the
+   exact shape migration `0040` already uses for `bms.locations` and
+   `bms.user_organization_access`, scoped to `SELECT` and to this one table, not
+   `BYPASSRLS`. This is posture-neutral: `bms_auth` already holds the
+   `password_hash` column grant and already reads every user row by email at
+   login. With the home column present the walk is no longer needed, so `E7.1b`
+   **removes** `0040`'s two `auth_bootstrap_read` policies and the three
+   walk grants Amendment 1 added (`bms.user_organization_access`,
+   `bms.user_location_access`, `bms.locations`), discharging Amendment 1's own
+   instruction — *"`E7.1` removes these three grants… if it lands without
+   removing them, the least-privilege claim in Amendment 1 is false and the
+   review should say so."*
+
+### Consequences
+
+- **A test pins the `NULL` home.** It asserts that the global `admin` row carries
+  a `NULL` `organization_id`, that it is invisible under `bms_tenant` and visible
+  under `bms_fleet`, and that login for that actor still succeeds through
+  `bms_auth`. The exception must be visible in the suite so a future change to it
+  is a decision rather than a drift.
+- **A test pins the scoped-user backfill and its abort.** A `wc-admin`-shaped
+  user resolves to the Western Cape location's organization; a non-`admin` user
+  with no resolvable home aborts the migration rather than defaulting.
+- **`bms.users` column grants may need `organization_id` added to the `bms_tenant`
+  / `bms_fleet` `SELECT`/`UPDATE` column lists** (`0039` enumerates them because
+  `password_hash` forced a column-level grant). A column added to `bms.users`
+  without adding it there is unreadable to the pool roles by construction —
+  `0039`'s comment says so — which fails loud rather than leaking, but the plan
+  must add it deliberately.
+- **The `NULL` home is a fleet-actor marker, not a licence to skip the column on
+  writes.** Every tenant-scoped user must carry a home organization; a `NULL` on
+  a non-`admin` row is a defect, mirroring decision 5's rule for `audit_log`.
+- **If Ion Exchange is ever modelled as an organization** (decision 1 reopened),
+  this exception is revisited — a global admin would then have a real home and
+  the `NULL` case could narrow to the Euphoria operator or disappear.
 - **Read paths that cannot be wrapped in a transaction must be found, not
   assumed absent.** Decision 10 already forbids them on tenant tables. `E7.1b`
   verifies the claim against the streaming and dashboard paths rather than

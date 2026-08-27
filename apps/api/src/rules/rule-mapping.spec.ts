@@ -37,6 +37,8 @@ export function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
     ruleType: "threshold",
     source: "operator_rule",
     enabled: true,
+    organizationId: "org-1",
+    assetOrganizationId: "org-1",
     assetId: "asset-1",
     assetCode: "ASSET-1",
     assetName: "Feeder 1",

@@ -14,17 +14,24 @@ import type { AdminAssetPointDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreateAssetPointBody, UpdateAssetPointBody } from "./asset-points.schema";
 import { resolveCatalogPointKey } from "./resolve-catalog-point-key";
 
 /**
- * `F4.16` / ADR 0043 — `asset_points`/`assets` carry no policy, so every
- * write runs on `tenantDb` unchanged. `list`/`fetchRow` join `locations`
- * (RLS since migration `0040`) and run on `fleetDb` instead, trusting the
- * scope filter already applied via `writableLocationIds`/`canManageAsset` —
- * the same "bypass, then trust an already-computed grant" shape
- * `AccessControlService` uses for its own `bms_auth` reads.
+ * `F4.16` / `E7.1b` / ADR 0043 — `asset_points` (and `assets`) gain
+ * `organization_id` + a `tenant_isolation` policy + `FORCE` in migration `0047`.
+ *
+ * Reads run on `fleetDb`, trusting the `writableLocationIds`/`canManageAsset`
+ * scope filter this service already applies before returning a row — the same
+ * "bypass, then trust an already-computed grant" shape `AccessControlService`
+ * uses (Amendment 2/3). Writes run inside `withTenant(tenantDb, organizationId,
+ * …)`: `create` stamps the org derived from the asset (`asset_id → assets`, the
+ * same path `0046` backfilled); `update`/`deactivate`/`reactivate` use the
+ * point's own `organization_id`, read back on `fleetDb`. A point never changes
+ * asset (`UpdateAssetPointBody` carries no `assetId`), so its org is fixed and
+ * there is no cross-org move to guard.
  */
 @Injectable()
 export class AssetPointsAdminService {
@@ -100,26 +107,40 @@ export class AssetPointsAdminService {
     // a point mapped through this endpoint is fed by whatever feeds its asset.
     // With no gateway the honest record is `unmapped`, not `manual`: nobody
     // claimed this point is hand-entered, only that no source is known yet.
-    const [ownerAsset] = await this.tenantDb
-      .select({ rtuId: assets.rtuId })
+    //
+    // fleetDb read (Amendment 2/3): `assets` gains a policy in 0047, and this
+    // precedes any tenant context; the `canManageAsset` gate above is the
+    // isolation control. The same read yields the org the new point is stamped
+    // with — `asset_points.organization_id` is `asset_id → assets`, so it can
+    // only be the asset's org.
+    const [ownerAsset] = await this.fleetDb
+      .select({ organizationId: assets.organizationId, rtuId: assets.rtuId })
       .from(assets)
       .where(eq(assets.id, body.assetId))
       .limit(1);
-    const sourceRtuId = ownerAsset?.rtuId ?? null;
+    if (!ownerAsset) {
+      throw new NotFoundException("Asset not found");
+    }
+    const organizationId = this.requireRowOrg(ownerAsset.organizationId);
+    const sourceRtuId = ownerAsset.rtuId ?? null;
 
-    const [created] = await this.tenantDb
-      .insert(assetPoints)
-      .values({
-        assetId: body.assetId,
-        pointKey: body.pointKey,
-        sourceDataKey: body.sourceDataKey,
-        sensorCode: body.sensorCode ?? null,
-        unit: body.unit ?? catalog.unit,
-        active: true,
-        rtuId: sourceRtuId,
-        sourceKind: sourceRtuId ? "measured" : "unmapped",
-      })
-      .returning();
+    const created = await withTenant(this.tenantDb, organizationId, async (tx) => {
+      const [row] = await tx
+        .insert(assetPoints)
+        .values({
+          assetId: body.assetId,
+          organizationId,
+          pointKey: body.pointKey,
+          sourceDataKey: body.sourceDataKey,
+          sensorCode: body.sensorCode ?? null,
+          unit: body.unit ?? catalog.unit,
+          active: true,
+          rtuId: sourceRtuId,
+          sourceKind: sourceRtuId ? "measured" : "unmapped",
+        })
+        .returning();
+      return row;
+    });
 
     await this.audit.write({
       actor: jwt,
@@ -137,7 +158,10 @@ export class AssetPointsAdminService {
     id: string,
     body: UpdateAssetPointBody,
   ): Promise<AdminAssetPointDto> {
-    const [existing] = await this.tenantDb
+    // fleetDb read (Amendment 2/3): `asset_points` gains a policy in 0047, and
+    // this read precedes any tenant context; `canManageAsset` below is the
+    // isolation control.
+    const [existing] = await this.fleetDb
       .select()
       .from(assetPoints)
       .where(eq(assetPoints.id, id))
@@ -148,6 +172,7 @@ export class AssetPointsAdminService {
     if (!(await this.accessControl.canManageAsset(jwt, existing.assetId))) {
       throw new ForbiddenException("Asset point is outside your access scope");
     }
+    const organizationId = this.requireRowOrg(existing.organizationId);
 
     const nextPointKey = body.pointKey ?? existing.pointKey;
     if (nextPointKey !== existing.pointKey && existing.sourceKind === "computed") {
@@ -167,15 +192,17 @@ export class AssetPointsAdminService {
     }
     const catalog = await this.resolveCatalogPointKey(existing.assetId, nextPointKey);
 
-    await this.tenantDb
-      .update(assetPoints)
-      .set({
-        pointKey: nextPointKey,
-        sourceDataKey: body.sourceDataKey ?? existing.sourceDataKey,
-        sensorCode: body.sensorCode !== undefined ? body.sensorCode : existing.sensorCode,
-        unit: body.unit !== undefined ? body.unit : (existing.unit ?? catalog.unit),
-      })
-      .where(eq(assetPoints.id, id));
+    await withTenant(this.tenantDb, organizationId, (tx) =>
+      tx
+        .update(assetPoints)
+        .set({
+          pointKey: nextPointKey,
+          sourceDataKey: body.sourceDataKey ?? existing.sourceDataKey,
+          sensorCode: body.sensorCode !== undefined ? body.sensorCode : existing.sensorCode,
+          unit: body.unit !== undefined ? body.unit : (existing.unit ?? catalog.unit),
+        })
+        .where(eq(assetPoints.id, id)),
+    );
 
     await this.audit.write({
       actor: jwt,
@@ -189,7 +216,9 @@ export class AssetPointsAdminService {
 
   /** Deactivates an asset point mapping. */
   async deactivate(jwt: JwtPayload, id: string): Promise<AdminAssetPointDto> {
-    const [existing] = await this.tenantDb
+    // fleetDb read (Amendment 2/3): see `update`. The point's own org drives the
+    // tenant context for the state flip.
+    const [existing] = await this.fleetDb
       .select()
       .from(assetPoints)
       .where(eq(assetPoints.id, id))
@@ -200,8 +229,11 @@ export class AssetPointsAdminService {
     if (!(await this.accessControl.canManageAsset(jwt, existing.assetId))) {
       throw new ForbiddenException("Asset point is outside your access scope");
     }
+    const organizationId = this.requireRowOrg(existing.organizationId);
 
-    await this.tenantDb.update(assetPoints).set({ active: false }).where(eq(assetPoints.id, id));
+    await withTenant(this.tenantDb, organizationId, (tx) =>
+      tx.update(assetPoints).set({ active: false }).where(eq(assetPoints.id, id)),
+    );
     await this.audit.write({
       actor: jwt,
       action: "master.asset_point.deactivate",
@@ -213,7 +245,9 @@ export class AssetPointsAdminService {
 
   /** Reactivates an asset point mapping. */
   async reactivate(jwt: JwtPayload, id: string): Promise<AdminAssetPointDto> {
-    const [existing] = await this.tenantDb
+    // fleetDb read (Amendment 2/3): see `update`. The point's own org drives the
+    // tenant context for the state flip.
+    const [existing] = await this.fleetDb
       .select()
       .from(assetPoints)
       .where(eq(assetPoints.id, id))
@@ -224,8 +258,11 @@ export class AssetPointsAdminService {
     if (!(await this.accessControl.canManageAsset(jwt, existing.assetId))) {
       throw new ForbiddenException("Asset point is outside your access scope");
     }
+    const organizationId = this.requireRowOrg(existing.organizationId);
 
-    await this.tenantDb.update(assetPoints).set({ active: true }).where(eq(assetPoints.id, id));
+    await withTenant(this.tenantDb, organizationId, (tx) =>
+      tx.update(assetPoints).set({ active: true }).where(eq(assetPoints.id, id)),
+    );
     await this.audit.write({
       actor: jwt,
       action: "master.asset_point.reactivate",
@@ -250,6 +287,18 @@ export class AssetPointsAdminService {
       throw new BadRequestException(result.reason);
     }
     return { unit: result.unit };
+  }
+
+  /**
+   * The row's (or asset's) own organization, which every `asset_points` row
+   * carries after the `0046` backfill. A NULL only survives on a pre-`0046` row
+   * that dodged it; treat it as unresolvable rather than open `withTenant(null)`.
+   */
+  private requireRowOrg(organizationId: string | null): string {
+    if (!organizationId) {
+      throw new BadRequestException("Asset point has no organization; run the 0046 backfill");
+    }
+    return organizationId;
   }
 
   private async fetchRow(id: string): Promise<AdminAssetPointDto> {

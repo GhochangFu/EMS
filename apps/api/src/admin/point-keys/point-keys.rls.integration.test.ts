@@ -95,8 +95,8 @@ describe.skipIf(!connectionString)("F4.16 — PointKeysAdminService under real R
     svc = new PointKeysAdminService(
       fleetDb,
       tenantDb,
-      new AccessControlService(createDb(authPool), tenantDb, fleetDb),
-      new MasterDataAuditService(tenantDb),
+      new AccessControlService(createDb(authPool), fleetDb),
+      new MasterDataAuditService(tenantDb, fleetDb),
     );
   });
 

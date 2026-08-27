@@ -69,16 +69,17 @@ export async function seedAccessControlFixtures(pool: pg.Pool): Promise<void> {
   // fixture would silently stop being a fixture.
   const asset = await pool.query<{ id: string }>(
     `
-    INSERT INTO bms.assets (code, name, site_name, location_id, rtu_id, domain, active, meta)
+    INSERT INTO bms.assets (code, name, site_name, location_id, rtu_id, domain, active, meta, organization_id)
     VALUES ($1, 'Manual Read Meter 01', 'Decommissioned Substation', $2, NULL, 'electrical', true,
-            '{"sourceKind":"manual","note":"F4.10 fixture: readings entered by hand, no gateway"}'::jsonb)
+            '{"sourceKind":"manual","note":"F4.10 fixture: readings entered by hand, no gateway"}'::jsonb, $3)
     ON CONFLICT (code) DO UPDATE
        SET rtu_id = NULL,
            location_id = EXCLUDED.location_id,
-           meta = EXCLUDED.meta
+           meta = EXCLUDED.meta,
+           organization_id = EXCLUDED.organization_id
     RETURNING id
     `,
-    [MANUAL_ASSET_CODE, locationId],
+    [MANUAL_ASSET_CODE, locationId, organizationId],
   );
   const assetId = asset.rows[0]?.id;
   if (!assetId) {
@@ -99,11 +100,11 @@ export async function seedAccessControlFixtures(pool: pg.Pool): Promise<void> {
   }
   await pool.query(
     `
-    INSERT INTO bms.asset_points (asset_id, point_key, source_data_key, rtu_id, source_kind, unit, active)
-    VALUES ($1, $2, $3, NULL, 'manual', $4, true)
+    INSERT INTO bms.asset_points (asset_id, point_key, source_data_key, rtu_id, source_kind, unit, active, organization_id)
+    VALUES ($1, $2, $3, NULL, 'manual', $4, true, $5)
     ON CONFLICT (asset_id, point_key) DO UPDATE
-       SET rtu_id = NULL, source_kind = 'manual'
+       SET rtu_id = NULL, source_kind = 'manual', organization_id = EXCLUDED.organization_id
     `,
-    [assetId, key.code, `MANUAL_${key.code.toUpperCase()}`, key.unit],
+    [assetId, key.code, `MANUAL_${key.code.toUpperCase()}`, key.unit, organizationId],
   );
 }

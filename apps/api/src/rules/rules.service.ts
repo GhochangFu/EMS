@@ -2,15 +2,15 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { asc, desc, eq, inArray, or } from "drizzle-orm";
 
 import {
   assets,
   auditLog,
   automationRules,
-  pointValues,
   ruleExecutions,
   users,
 } from "@bms/db";
@@ -31,7 +31,9 @@ import {
   isSampleFreshEnoughToRaise,
   shouldRaise,
 } from "../alarms/alarm-raise.service";
-import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { withTenant } from "../database/tenant-context";
+import { withReadScope } from "../database/tenant-read-scope";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { alarmMessageFieldsFromCondition } from "./alarm-message";
 // The three modules extracted for AGENTS.md §4.5 (1000-line cap). Each holds
@@ -44,7 +46,9 @@ import {
   type LatestSampleLoader,
 } from "./rule-evaluation";
 import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
+import { filterRuleRowsByAssetIds, selectRuleRows } from "./rule-reads";
 import { pointKeysForAsset } from "./rule-points";
+import { batchedLatestPointValues, latestPointValue } from "./rule-samples";
 import type {
   ListRuleExecutionsQuery,
   RuleDraftBody,
@@ -57,16 +61,39 @@ import type { EvaluationResult, RuleDraftValues, RuleRow } from "./rules.types";
 
 @Injectable()
 export class RulesService {
+  private readonly logger = new Logger(RulesService.name);
+
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    // E7.1b (ADR 0043 decisions 1+3): the user-facing `listRules` and
+    // `listExecutions` read `automation_rules`/`rule_executions` — decision-1
+    // tables — through `withReadScope`: a single-organization actor inside
+    // `withTenant` (the 0047 FORCE policy scopes the read — decision 1), an admin
+    // or multi-organization actor on `fleetDb` (decisions 2/3), where the
+    // caller's `assetIds` is the isolation control. `evaluateEnabledRules` is a
+    // deliberately cross-org system sweep (ADR 0033 decision 2); the code scan,
+    // the pre-write asset lookup and the pre-tenant actor read stay on `fleetDb`;
+    // `getBuilderCatalog` reads `assets` (master data, not a decision-1 table).
+    // Writes run inside `withTenant(org)`. Residual (tracked for a later fold):
+    // the `getRuleRow` post-write read-back reads on `fleetDb`.
+    // `rule_notifications` stays in `ChannelsService`.
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly vocabularies: VocabulariesService,
     private readonly alarmRaiser: AlarmRaiser,
   ) {}
 
   /** Lists Sprint D automation rules with optional asset context. */
   async listRules(assetIds?: string[] | null): Promise<{ items: RuleListItem[] }> {
-    const rows = this.filterRuleRows(await this.ruleRows(), assetIds);
-    return { items: rows.map((row) => mapRuleRow(row)) };
+    return withReadScope(
+      this.db,
+      this.fleetDb,
+      assetIds,
+      () => ({ items: [] }),
+      async (tx) => {
+        const rows = filterRuleRowsByAssetIds(await selectRuleRows(tx), assetIds);
+        return { items: rows.map((row) => mapRuleRow(row)) };
+      },
+    );
   }
 
   /** Lists assets and supported telemetry points for the guided rule builder. */
@@ -76,7 +103,8 @@ export class RulesService {
     if (assetIds && assetIds.length === 0) {
       return { assets: [] };
     }
-    const base = this.db
+    // fleetDb: the caller's `assetIds` (the WHERE below) is the isolation control.
+    const base = this.fleetDb
       .select({
         id: assets.id,
         code: assets.code,
@@ -112,15 +140,18 @@ export class RulesService {
   ): Promise<RuleListItem> {
     this.assertAssetInScope(dto.assetId ?? null, assetIds);
     const values = await this.validateRuleDraft(dto);
+    const organizationId = await this.resolveWriteOrg(values.assetId);
     const actorId = await this.resolveActorId(actor);
+    const code = values.code ?? (await this.nextRuleCode(dto.name));
     const now = new Date();
 
-    const [created] = await this.db.transaction(async (tx) => {
+    const created = await withTenant(this.db, organizationId, async (tx) => {
       const [row] = await tx
         .insert(automationRules)
         .values({
           ...values,
-          code: values.code ?? (await this.nextRuleCode(dto.name)),
+          organizationId,
+          code,
           source: "operator_rule",
           enabled: false,
           lifecycleStatus: "draft",
@@ -135,6 +166,8 @@ export class RulesService {
         throw new BadRequestException("Could not create rule draft");
       }
 
+      // The audit row carries no organization_id in E7.1b (deferred to E7.1c);
+      // Task 4's audit_log policy must tolerate this NULL-org insert (4 services).
       await tx.insert(auditLog).values({
         actorId,
         action: "rule_draft_create",
@@ -142,14 +175,14 @@ export class RulesService {
         entityId: row.id,
         reason: "Operator created rule draft",
         payload: {
-          code: values.code,
+          code,
           name: dto.name,
           oidcSubject: actor.sub,
           actorEmail: actor.email,
         },
       });
 
-      return [row];
+      return row;
     });
 
     return mapRuleRow(await this.getRuleRow(created.id));
@@ -170,10 +203,14 @@ export class RulesService {
     const merged = mergeRuleDraft(current, dto);
     this.assertAssetInScope(merged.assetId ?? null, assetIds);
     const values = await this.validateRuleDraft(merged, id);
+    // The rule keeps its existing tenant: E7.1b does not re-derive org on an
+    // asset change (the streaming raise's divergence guard is the backstop), so
+    // the update never touches the org column.
+    const organizationId = this.requireRuleOrg(current);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
 
-    await this.db.transaction(async (tx) => {
+    await withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(automationRules)
         .set({ ...values, updatedAt: now })
@@ -215,6 +252,9 @@ export class RulesService {
       ruleType: values.ruleType,
       source: "operator_rule",
       enabled: false,
+      // A preview evaluates a draft, not a persisted rule — no org on either axis.
+      organizationId: null,
+      assetOrganizationId: null,
       assetId: values.assetId ?? null,
       assetCode: null,
       assetName: null,
@@ -269,12 +309,19 @@ export class RulesService {
       throw new BadRequestException("Archived rules cannot be published");
     }
     await this.validateRuleDraft(ruleBodyFromRow(current), id);
-    await this.writeLifecycleUpdate(id, "rule_publish", dto, actor, {
-      lifecycleStatus: "published",
-      enabled: true,
-      publishedAt: new Date(),
-      archivedAt: null,
-    });
+    await this.writeLifecycleUpdate(
+      id,
+      "rule_publish",
+      dto,
+      actor,
+      {
+        lifecycleStatus: "published",
+        enabled: true,
+        publishedAt: new Date(),
+        archivedAt: null,
+      },
+      this.requireRuleOrg(current),
+    );
     return mapRuleRow(await this.getRuleRow(id));
   }
 
@@ -287,11 +334,18 @@ export class RulesService {
   ): Promise<RuleListItem> {
     const current = await this.getRuleRow(id);
     this.assertAssetInScope(current.assetId, assetIds);
-    await this.writeLifecycleUpdate(id, "rule_archive", dto, actor, {
-      lifecycleStatus: "archived",
-      enabled: false,
-      archivedAt: new Date(),
-    });
+    await this.writeLifecycleUpdate(
+      id,
+      "rule_archive",
+      dto,
+      actor,
+      {
+        lifecycleStatus: "archived",
+        enabled: false,
+        archivedAt: new Date(),
+      },
+      this.requireRuleOrg(current),
+    );
     return mapRuleRow(await this.getRuleRow(id));
   }
 
@@ -304,14 +358,18 @@ export class RulesService {
   ): Promise<RuleListItem> {
     const current = await this.getRuleRow(id);
     this.assertAssetInScope(current.assetId, assetIds);
+    // The copy inherits the source rule's tenant. `duplicateRule` bypasses
+    // `validateRuleDraft`, so it carries its own `organizationId` stamp.
+    const organizationId = this.requireRuleOrg(current);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
     const code = await this.nextRuleCode(`${current.code}-COPY`);
 
-    const [created] = await this.db.transaction(async (tx) => {
+    const created = await withTenant(this.db, organizationId, async (tx) => {
       const [row] = await tx
         .insert(automationRules)
         .values({
+          organizationId,
           code,
           name: `${current.name} copy`,
           description: current.description,
@@ -354,7 +412,7 @@ export class RulesService {
         },
       });
 
-      return [row];
+      return row;
     });
 
     return mapRuleRow(await this.getRuleRow(created.id));
@@ -365,45 +423,50 @@ export class RulesService {
     query: ListRuleExecutionsQuery,
     assetIds?: string[] | null,
   ): Promise<{ items: RuleExecutionItem[] }> {
-    if (assetIds && assetIds.length === 0) {
-      return { items: [] };
-    }
-    const base = this.db
-      .select({
-        id: ruleExecutions.id,
-        ruleId: ruleExecutions.ruleId,
-        ruleCode: automationRules.code,
-        ruleName: automationRules.name,
-        evaluatedAt: ruleExecutions.evaluatedAt,
-        status: ruleExecutions.status,
-        matched: ruleExecutions.matched,
-        observedValue: ruleExecutions.observedValue,
-        message: ruleExecutions.message,
-        trace: ruleExecutions.trace,
-      })
-      .from(ruleExecutions)
-      .innerJoin(automationRules, eq(ruleExecutions.ruleId, automationRules.id));
-    const rows = await (assetIds
-      ? base
-          .where(inArray(automationRules.assetId, assetIds))
-          .orderBy(desc(ruleExecutions.evaluatedAt))
-          .limit(query.limit)
-      : base.orderBy(desc(ruleExecutions.evaluatedAt)).limit(query.limit));
+    return withReadScope(
+      this.db,
+      this.fleetDb,
+      assetIds,
+      () => ({ items: [] }),
+      async (tx) => {
+        const base = tx
+          .select({
+            id: ruleExecutions.id,
+            ruleId: ruleExecutions.ruleId,
+            ruleCode: automationRules.code,
+            ruleName: automationRules.name,
+            evaluatedAt: ruleExecutions.evaluatedAt,
+            status: ruleExecutions.status,
+            matched: ruleExecutions.matched,
+            observedValue: ruleExecutions.observedValue,
+            message: ruleExecutions.message,
+            trace: ruleExecutions.trace,
+          })
+          .from(ruleExecutions)
+          .innerJoin(automationRules, eq(ruleExecutions.ruleId, automationRules.id));
+        const rows = await (assetIds
+          ? base
+              .where(inArray(automationRules.assetId, assetIds))
+              .orderBy(desc(ruleExecutions.evaluatedAt))
+              .limit(query.limit)
+          : base.orderBy(desc(ruleExecutions.evaluatedAt)).limit(query.limit));
 
-    return {
-      items: rows.map((row) => ({
-        id: row.id,
-        ruleId: row.ruleId,
-        ruleCode: row.ruleCode,
-        ruleName: row.ruleName,
-        evaluatedAt: row.evaluatedAt.toISOString(),
-        status: row.status as RuleExecutionStatus,
-        matched: row.matched,
-        observedValue: row.observedValue,
-        message: row.message,
-        trace: asTrace(row.trace),
-      })),
-    };
+        return {
+          items: rows.map((row) => ({
+            id: row.id,
+            ruleId: row.ruleId,
+            ruleCode: row.ruleCode,
+            ruleName: row.ruleName,
+            evaluatedAt: row.evaluatedAt.toISOString(),
+            status: row.status as RuleExecutionStatus,
+            matched: row.matched,
+            observedValue: row.observedValue,
+            message: row.message,
+            trace: asTrace(row.trace),
+          })),
+        };
+      },
+    );
   }
 
   /** Toggles a rule and writes a lightweight audit row. */
@@ -418,10 +481,11 @@ export class RulesService {
     if (current.lifecycleStatus !== "published") {
       throw new BadRequestException("Only published rules can be enabled or disabled");
     }
+    const organizationId = this.requireRuleOrg(current);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
 
-    await this.db.transaction(async (tx) => {
+    await withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(automationRules)
         .set({ enabled: dto.enabled, updatedAt: now })
@@ -460,10 +524,13 @@ export class RulesService {
     actor: Pick<JwtPayload, "sub" | "email">,
     assetIds?: string[] | null,
   ): Promise<{ items: RuleExecutionItem[] }> {
-    const allRows = (await this.ruleRows()).filter(
+    // Decision 2 (ADR 0033): the sweep reads every tenant's rules on a bare
+    // fleet transaction (BYPASSRLS), cross-org by design; only the returned trace
+    // list is scoped to the caller's assetIds.
+    const allRows = (await this.fleetDb.transaction((tx) => selectRuleRows(tx))).filter(
       (row) => row.enabled && row.lifecycleStatus === "published",
     );
-    const scopedIds = new Set(this.filterRuleRows(allRows, assetIds).map((row) => row.id));
+    const scopedIds = new Set(filterRuleRowsByAssetIds(allRows, assetIds).map((row) => row.id));
     const items: RuleExecutionItem[] = [];
 
     // Decision 2 makes this evaluate every enabled+published rule regardless
@@ -472,9 +539,21 @@ export class RulesService {
     // its telemetry sample measured at 4.3s for that count; this collapses it
     // to one query total, keyed by the same `(assetId, pointKey)` pair
     // `evaluateThresholdRule`'s loader already takes.
-    const sampleLookup = await this.batchedLatestPointValues(allRows);
+    const sampleLookup = await batchedLatestPointValues(this.db, allRows);
 
     for (const row of allRows) {
+      // E7.1b: the trace insert + `lastEvaluatedAt` update run under the rule's
+      // tenant GUC. A rule with no org — none exists on real data (the 0046
+      // backfill aborts on it) — is skipped with a warning, so one un-orgd rule
+      // cannot 500 the evaluate-now sweep for every other tenant.
+      if (!row.organizationId) {
+        this.logger.warn(
+          `evaluate-now: skipping rule ${row.code} (${row.id}) with no organization_id`,
+        );
+        continue;
+      }
+      const ruleOrg = row.organizationId;
+
       const result = await this.evaluateRule(row, sampleLookup);
 
       // Raise before the trace insert below, so a successful raise's
@@ -500,56 +579,72 @@ export class RulesService {
         const sample = await sampleLookup(row.assetId, row.pointKey);
         if (sample && isSampleFreshEnoughToRaise(sample.time, new Date())) {
           const { alarmMessage, unit } = alarmMessageFieldsFromCondition(row.condition);
-          const raised = await this.alarmRaiser.raise(
-            row.assetId,
-            {
-              id: row.id,
-              code: row.code,
-              name: row.name,
-              pointKey: row.pointKey,
-              severity: row.severity,
-              alarmMessage,
-              unit,
-            },
-            result.observedValue,
-            { recordTrace: false },
-          );
-          raisedAlarmId = raised.alarmId;
+          // E7.1b: raise takes the asset's org (GUC + `alarms.org`) and the
+          // rule's own org (`rule_executions.org`), both now on the rule row
+          // (ruleRows on fleetDb) — the transitional per-rule lookup is gone.
+          // AlarmRaiser refuses and logs a raise where the two disagree.
+          if (row.assetOrganizationId) {
+            const raised = await this.alarmRaiser.raise(
+              row.assetId,
+              row.assetOrganizationId,
+              {
+                id: row.id,
+                code: row.code,
+                name: row.name,
+                pointKey: row.pointKey,
+                severity: row.severity,
+                organizationId: ruleOrg,
+                alarmMessage,
+                unit,
+              },
+              result.observedValue,
+              { recordTrace: false },
+            );
+            raisedAlarmId = raised.alarmId;
+          }
         }
       }
 
-      const [created] = await this.db
-        .insert(ruleExecutions)
-        .values({
-          ruleId: row.id,
-          status: result.status,
-          matched: result.matched,
-          observedValue: result.observedValue,
-          message: result.message,
-          trace: {
-            ...result.trace,
-            ...(raisedAlarmId ? { alarmId: raisedAlarmId } : {}),
-            // The OIDC subject, not the email (security review, F3.6): this
-            // trace is now written for every enabled rule regardless of the
-            // caller's assetIds (ADR 0033 decision 2), and `listExecutions`
-            // scopes reads by asset, not by who evaluated — so an operator at
-            // location B can read a location-A operator's trace on assets B
-            // can see. `sub` is still an actionable identifier for an admin
-            // correlating against `bms.users`, without handing every scoped
-            // reader a plaintext email address they have no other route to.
-            evaluatedBy: actor.sub,
-            source: row.source,
-          },
-        })
-        .returning({
-          id: ruleExecutions.id,
-          evaluatedAt: ruleExecutions.evaluatedAt,
-        });
+      // Under the rule's GUC, stamping `rule_executions.org` from the rule. The
+      // raise above ran in its own withTenant(asset org) — a separate write, as
+      // the raise and the trace already were before E7.1b.
+      const created = await withTenant(this.db, ruleOrg, async (tx) => {
+        const [inserted] = await tx
+          .insert(ruleExecutions)
+          .values({
+            organizationId: ruleOrg,
+            ruleId: row.id,
+            status: result.status,
+            matched: result.matched,
+            observedValue: result.observedValue,
+            message: result.message,
+            trace: {
+              ...result.trace,
+              ...(raisedAlarmId ? { alarmId: raisedAlarmId } : {}),
+              // The OIDC subject, not the email (security review, F3.6): this
+              // trace is now written for every enabled rule regardless of the
+              // caller's assetIds (ADR 0033 decision 2), and `listExecutions`
+              // scopes reads by asset, not by who evaluated — so an operator at
+              // location B can read a location-A operator's trace on assets B
+              // can see. `sub` is still an actionable identifier for an admin
+              // correlating against `bms.users`, without handing every scoped
+              // reader a plaintext email address they have no other route to.
+              evaluatedBy: actor.sub,
+              source: row.source,
+            },
+          })
+          .returning({
+            id: ruleExecutions.id,
+            evaluatedAt: ruleExecutions.evaluatedAt,
+          });
 
-      await this.db
-        .update(automationRules)
-        .set({ lastEvaluatedAt: created?.evaluatedAt ?? new Date(), updatedAt: new Date() })
-        .where(eq(automationRules.id, row.id));
+        await tx
+          .update(automationRules)
+          .set({ lastEvaluatedAt: inserted?.evaluatedAt ?? new Date(), updatedAt: new Date() })
+          .where(eq(automationRules.id, row.id));
+
+        return inserted;
+      });
 
       if (created && scopedIds.has(row.id)) {
         items.push({
@@ -568,13 +663,6 @@ export class RulesService {
     }
 
     return { items };
-  }
-
-  private filterRuleRows(rows: RuleRow[], assetIds?: string[] | null): RuleRow[] {
-    if (assetIds === null || assetIds === undefined) {
-      return rows;
-    }
-    return rows.filter((row) => row.assetId !== null && assetIds.includes(row.assetId));
   }
 
   /**
@@ -604,46 +692,12 @@ export class RulesService {
     }
   }
 
-  private async ruleRows(): Promise<RuleRow[]> {
-    return this.db
-      .select({
-        id: automationRules.id,
-        code: automationRules.code,
-        name: automationRules.name,
-        description: automationRules.description,
-        category: automationRules.category,
-        ruleType: automationRules.ruleType,
-        source: automationRules.source,
-        enabled: automationRules.enabled,
-        assetId: automationRules.assetId,
-        assetCode: assets.code,
-        assetName: assets.name,
-        siteName: assets.siteName,
-        // ADR 0031's second axis. It rides the LEFT JOIN that was already here
-        // for `assetCode`/`assetName`/`siteName` — no extra query, no extra
-        // round trip, and null exactly when the rule targets no asset.
-        assetDomain: assets.domain,
-        pointKey: automationRules.pointKey,
-        operator: automationRules.operator,
-        thresholdValue: automationRules.thresholdValue,
-        severity: automationRules.severity,
-        condition: automationRules.condition,
-        action: automationRules.action,
-        lastEvaluatedAt: automationRules.lastEvaluatedAt,
-        lifecycleStatus: automationRules.lifecycleStatus,
-        publishedAt: automationRules.publishedAt,
-        archivedAt: automationRules.archivedAt,
-        duplicatedFromRuleId: automationRules.duplicatedFromRuleId,
-        createdAt: automationRules.createdAt,
-        updatedAt: automationRules.updatedAt,
-      })
-      .from(automationRules)
-      .leftJoin(assets, eq(automationRules.assetId, assets.id))
-      .orderBy(desc(automationRules.enabled), automationRules.category, automationRules.name);
-  }
-
   private async getRuleRow(id: string): Promise<RuleRow> {
-    const [row] = (await this.ruleRows()).filter((item) => item.id === id);
+    // Write-path resolver read-back: reads every tenant's rules on a bare fleet
+    // transaction (BYPASSRLS) and filters by id in memory. Residual — tracked for
+    // a later fold into the write's own tenant transaction (E7.1b).
+    const rows = await this.fleetDb.transaction((tx) => selectRuleRows(tx));
+    const [row] = rows.filter((item) => item.id === id);
     if (!row) {
       throw new NotFoundException("Rule not found");
     }
@@ -664,103 +718,13 @@ export class RulesService {
     if (row.ruleType === "threshold") {
       return evaluateThresholdRule(
         row,
-        loader ?? ((assetId, pointKey) => this.latestPointValue(assetId, pointKey)),
+        loader ?? ((assetId, pointKey) => latestPointValue(this.db, assetId, pointKey)),
       );
     }
     if (row.ruleType === "time_window") {
       return evaluateTimeWindowRule(row, new Date());
     }
     return unsupportedRuleType(row);
-  }
-
-  private async latestPointValue(
-    assetId: string,
-    pointKey: string,
-  ): Promise<{ time: Date; value: number; unit: string | null } | null> {
-    const [sample] = await this.db
-      .select({
-        time: pointValues.time,
-        value: pointValues.value,
-        unit: pointValues.unit,
-      })
-      .from(pointValues)
-      .where(and(eq(pointValues.assetId, assetId), eq(pointValues.pointKey, pointKey)))
-      .orderBy(desc(pointValues.time))
-      .limit(1);
-    return sample ?? null;
-  }
-
-  /**
-   * The latest sample for every `(assetId, pointKey)` pair any threshold rule
-   * in `rows` needs, in one query.
-   *
-   * NOT the `DISTINCT ON` idiom `dashboard.service.ts`/`map.service.ts` use
-   * for the same "latest per group" shape, and that absence is deliberate,
-   * not an oversight: code review measured why. `DISTINCT ON` joined against
-   * an explicit pairs list cannot drive `point_values_point_asset_time_idx`
-   * the way it can when the join key is one specific asset already in scope,
-   * so Postgres falls back to scanning every chunk (decompressing the
-   * compressed ones) and sorting the result -- measured 613ms for 337 pairs
-   * against this table's 740k live rows on the running stack, worse
-   * wall-clock than the pre-batch shape looked on paper even though it is
-   * still one query instead of many. `CROSS JOIN LATERAL ... ORDER BY time
-   * DESC LIMIT 1` below lets the planner drive an index scan per pair
-   * instead -- measured 16ms for the identical 337 pairs. Both forms were
-   * timed with `EXPLAIN (ANALYZE, BUFFERS)` against the live stack before
-   * choosing this one; neither number was assumed from the idiom's shape.
-   *
-   * Returns a `LatestSampleLoader`: a rule this batch has no sample for
-   * (never published, or genuinely no telemetry yet) resolves to `null` from
-   * the map lookup -- `evaluateThresholdRule` already treats that as
-   * `skipped`, not `error`, so no caller-visible behaviour changes.
-   */
-  private async batchedLatestPointValues(rows: RuleRow[]): Promise<LatestSampleLoader> {
-    const pairs = new Map<string, { assetId: string; pointKey: string }>();
-    for (const row of rows) {
-      if (row.ruleType === "threshold" && row.assetId && row.pointKey) {
-        pairs.set(`${row.assetId}:${row.pointKey}`, {
-          assetId: row.assetId,
-          pointKey: row.pointKey,
-        });
-      }
-    }
-    const unique = [...pairs.values()];
-    const samples = new Map<string, { time: Date; value: number; unit: string | null }>();
-
-    if (unique.length > 0) {
-      const valuesList = sql.join(
-        unique.map(({ assetId, pointKey }) => sql`(${assetId}::uuid, ${pointKey}::varchar)`),
-        sql`, `,
-      );
-      const result = await this.db.execute<{
-        asset_id: string;
-        point_key: string;
-        time: Date;
-        value: number;
-        unit: string | null;
-      }>(sql`
-        WITH pairs (asset_id, point_key) AS (VALUES ${valuesList})
-        SELECT p.asset_id, p.point_key, s.time, s.value, s.unit
-        FROM pairs p
-        CROSS JOIN LATERAL (
-          SELECT pv.time, pv.value, pv.unit
-          FROM telemetry.point_values pv
-          WHERE pv.asset_id = p.asset_id AND pv.point_key = p.point_key
-          ORDER BY pv.time DESC
-          LIMIT 1
-        ) s
-      `);
-
-      for (const r of result.rows) {
-        samples.set(`${r.asset_id}:${r.point_key}`, {
-          time: new Date(r.time),
-          value: r.value,
-          unit: r.unit,
-        });
-      }
-    }
-
-    return async (assetId, pointKey) => samples.get(`${assetId}:${pointKey}`) ?? null;
   }
 
   private async validateRuleDraft(
@@ -798,7 +762,11 @@ export class RulesService {
 
     const code = dto.code?.trim().toUpperCase();
     if (code) {
-      const existingRules = await this.db
+      // fleetDb, and deliberately cross-org: `automation_rules_code_unique` is
+      // still a global unique index — the `(organization_id, code)` re-key is
+      // E7.1c (decision 7) — so this scan must see every tenant's codes to turn
+      // a collision into a 400 here rather than a 500 from the index.
+      const existingRules = await this.fleetDb
         .select({
           id: automationRules.id,
           code: automationRules.code,
@@ -888,7 +856,8 @@ export class RulesService {
   }
 
   private async assertCompatiblePoint(assetId: string, pointKey: string): Promise<void> {
-    const [asset] = await this.db
+    // fleetDb: a pre-write asset lookup, already scope-checked by the caller.
+    const [asset] = await this.fleetDb
       .select({ code: assets.code, domain: assets.domain })
       .from(assets)
       .where(eq(assets.id, assetId))
@@ -899,6 +868,39 @@ export class RulesService {
     if (!pointKeysForAsset(asset.domain, asset.code).includes(pointKey)) {
       throw new BadRequestException("Selected telemetry point is not compatible with asset");
     }
+  }
+
+  /**
+   * The organization a new rule is written into: its asset's org (read on
+   * fleetDb before the GUC). An asset-less `time_window` rule is refused with a
+   * 4xx (ruling 4) — never a NULL insert — until the E7.1d org-picker lands.
+   */
+  private async resolveWriteOrg(assetId: string | null): Promise<string> {
+    if (!assetId) {
+      throw new BadRequestException(
+        "Select an organization for this rule: an asset-less time-window rule has no organization to derive one from",
+      );
+    }
+    const [asset] = await this.fleetDb
+      .select({ organizationId: assets.organizationId })
+      .from(assets)
+      .where(eq(assets.id, assetId))
+      .limit(1);
+    if (!asset) {
+      throw new BadRequestException("Selected asset does not exist");
+    }
+    if (!asset.organizationId) {
+      throw new BadRequestException("Asset has no organization; run the 0046 backfill");
+    }
+    return asset.organizationId;
+  }
+
+  /** The stored org of a rule being mutated; refuses a pre-0046 NULL. */
+  private requireRuleOrg(row: RuleRow): string {
+    if (!row.organizationId) {
+      throw new BadRequestException("Rule has no organization; run the 0046 backfill");
+    }
+    return row.organizationId;
   }
 
   private async writeLifecycleUpdate(
@@ -912,9 +914,10 @@ export class RulesService {
       publishedAt: Date | null;
       archivedAt: Date | null;
     }>,
+    organizationId: string,
   ): Promise<void> {
     const actorId = await this.resolveActorId(actor);
-    await this.db.transaction(async (tx) => {
+    await withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(automationRules)
         .set({ ...values, updatedAt: new Date() })
@@ -945,7 +948,8 @@ export class RulesService {
 
     for (let index = 0; index < 100; index += 1) {
       const candidate = index === 0 ? prefix : `${prefix}-${index + 1}`;
-      const [existing] = await this.db
+      // fleetDb: the code space is global until E7.1c re-keys it (decision 7).
+      const [existing] = await this.fleetDb
         .select({ id: automationRules.id })
         .from(automationRules)
         .where(eq(automationRules.code, candidate))
@@ -961,7 +965,8 @@ export class RulesService {
   private async resolveActorId(
     actor: Pick<JwtPayload, "sub" | "email">,
   ): Promise<string | null> {
-    const [actorRow] = await this.db
+    // fleetDb: a pre-tenant identity read (pre-empts the Task-4 actor-loss).
+    const [actorRow] = await this.fleetDb
       .select({ id: users.id })
       .from(users)
       .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))

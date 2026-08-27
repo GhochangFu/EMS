@@ -13,16 +13,22 @@ import type { AdminRtuDto, AdminRtuSummaryDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
 
 /**
- * `F4.16` / ADR 0043 — `rtus` carries no policy, so every write below runs on
- * `tenantDb` unchanged. Reads that join `locations` (RLS since migration
- * `0040`) run on `fleetDb` instead, trusting the scope filter this service
- * already applies via `writableLocationIds`/`canManageLocation` — the same
- * "bypass, then trust an already-computed grant" shape `AccessControlService`
- * uses for its own `bms_auth` reads.
+ * `F4.16` / `E7.1b` / ADR 0043 — `rtus` gains `organization_id` + a
+ * `tenant_isolation` policy + `FORCE` in migration `0047`.
+ *
+ * Reads run on `fleetDb`, trusting the `writableLocationIds`/`canManageLocation`
+ * scope filter this service already applies (Amendment 2/3) — the same "bypass,
+ * then trust an already-computed grant" shape `AccessControlService` uses. Writes
+ * run inside `withTenant(tenantDb, organizationId, …)`; the org is the RTU's
+ * location's org, resolved before the write. An RTU never relocates (its
+ * `location_id` is not updatable), so — unlike `assets` — there is no cross-org
+ * move to guard against. The `deactivate` active-asset count reads `assets`
+ * (policied in `0047`) inside that same GUC.
  */
 @Injectable()
 export class RtusAdminService {
@@ -112,25 +118,30 @@ export class RtusAdminService {
     if (!(await this.accessControl.canManageLocation(jwt, body.locationId))) {
       throw new ForbiddenException("Location is outside your access scope");
     }
+    const organizationId = await this.resolveLocationOrg(body.locationId);
 
-    const [created] = await this.tenantDb
-      .insert(rtus)
-      .values({
-        locationId: body.locationId,
-        code: body.code,
-        displayName: body.displayName,
-        sourceType: body.sourceType,
-        domain: body.domain ?? null,
-        externalRtuId: body.externalRtuId ?? null,
-        rtuCode: body.rtuCode ?? null,
-        mqttTopic: body.mqttTopic ?? null,
-        stationCode: body.stationCode ?? null,
-        stationName: body.stationName ?? null,
-        ingestEnabled: body.ingestEnabled ?? false,
-        meta: body.meta ?? null,
-        active: true,
-      })
-      .returning();
+    const created = await withTenant(this.tenantDb, organizationId, (tx) =>
+      tx
+        .insert(rtus)
+        .values({
+          locationId: body.locationId,
+          code: body.code,
+          displayName: body.displayName,
+          sourceType: body.sourceType,
+          domain: body.domain ?? null,
+          externalRtuId: body.externalRtuId ?? null,
+          rtuCode: body.rtuCode ?? null,
+          mqttTopic: body.mqttTopic ?? null,
+          stationCode: body.stationCode ?? null,
+          stationName: body.stationName ?? null,
+          ingestEnabled: body.ingestEnabled ?? false,
+          organizationId,
+          meta: body.meta ?? null,
+          active: true,
+        })
+        .returning()
+        .then(([row]) => row),
+    );
 
     await this.audit.write({
       actor: jwt,
@@ -144,7 +155,9 @@ export class RtusAdminService {
 
   /** Updates an RTU in scope. */
   async update(jwt: JwtPayload, id: string, body: UpdateRtuBody): Promise<AdminRtuDto> {
-    const [existing] = await this.tenantDb
+    // fleetDb read (Amendment 2/3): `rtus` gains a policy in 0047; the
+    // `canManageLocation` gate below is the isolation control.
+    const [existing] = await this.fleetDb
       .select()
       .from(rtus)
       .where(eq(rtus.id, id))
@@ -156,9 +169,12 @@ export class RtusAdminService {
       throw new ForbiddenException("RTU is outside your access scope");
     }
 
-    await this.tenantDb
-      .update(rtus)
-      .set({
+    const organizationId =
+      existing.organizationId ?? (await this.resolveLocationOrg(existing.locationId));
+    await withTenant(this.tenantDb, organizationId, (tx) =>
+      tx
+        .update(rtus)
+        .set({
         code: body.code ?? existing.code,
         displayName: body.displayName ?? existing.displayName,
         sourceType: body.sourceType ?? existing.sourceType,
@@ -187,8 +203,10 @@ export class RtusAdminService {
           body.meta !== undefined
             ? { ...(existing.meta ?? {}), ...body.meta }
             : existing.meta,
+        organizationId,
       })
-      .where(eq(rtus.id, id));
+        .where(eq(rtus.id, id)),
+    );
 
     await this.audit.write({
       actor: jwt,
@@ -202,7 +220,9 @@ export class RtusAdminService {
 
   /** Deactivates an RTU when no active assets remain. */
   async deactivate(jwt: JwtPayload, id: string): Promise<AdminRtuDto> {
-    const [existing] = await this.tenantDb
+    // fleetDb read (Amendment 2/3): `rtus` gains a policy in 0047; the
+    // `canManageLocation` gate below is the isolation control.
+    const [existing] = await this.fleetDb
       .select()
       .from(rtus)
       .where(eq(rtus.id, id))
@@ -214,16 +234,21 @@ export class RtusAdminService {
       throw new ForbiddenException("RTU is outside your access scope");
     }
 
-    const [activeAsset] = await this.tenantDb
-      .select({ count: sql<number>`count(*)::int` })
-      .from(assets)
-      .where(and(eq(assets.rtuId, id), eq(assets.active, true)))
-      .limit(1);
-    if ((activeAsset?.count ?? 0) > 0) {
-      throw new ConflictException("Cannot deactivate RTU with active assets");
-    }
-
-    await this.tenantDb.update(rtus).set({ active: false }).where(eq(rtus.id, id));
+    const organizationId =
+      existing.organizationId ?? (await this.resolveLocationOrg(existing.locationId));
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
+      // The RTU's assets share its org, so the active-asset guard reads `assets`
+      // (policied in 0047) inside the same tenant GUC.
+      const [activeAsset] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(assets)
+        .where(and(eq(assets.rtuId, id), eq(assets.active, true)))
+        .limit(1);
+      if ((activeAsset?.count ?? 0) > 0) {
+        throw new ConflictException("Cannot deactivate RTU with active assets");
+      }
+      await tx.update(rtus).set({ active: false }).where(eq(rtus.id, id));
+    });
     await this.audit.write({
       actor: jwt,
       action: "master.rtu.deactivate",
@@ -235,7 +260,9 @@ export class RtusAdminService {
 
   /** Reactivates an RTU. */
   async reactivate(jwt: JwtPayload, id: string): Promise<AdminRtuDto> {
-    const [existing] = await this.tenantDb
+    // fleetDb read (Amendment 2/3): `rtus` gains a policy in 0047; the
+    // `canManageLocation` gate below is the isolation control.
+    const [existing] = await this.fleetDb
       .select()
       .from(rtus)
       .where(eq(rtus.id, id))
@@ -247,7 +274,11 @@ export class RtusAdminService {
       throw new ForbiddenException("RTU is outside your access scope");
     }
 
-    await this.tenantDb.update(rtus).set({ active: true }).where(eq(rtus.id, id));
+    const organizationId =
+      existing.organizationId ?? (await this.resolveLocationOrg(existing.locationId));
+    await withTenant(this.tenantDb, organizationId, (tx) =>
+      tx.update(rtus).set({ active: true }).where(eq(rtus.id, id)),
+    );
     await this.audit.write({
       actor: jwt,
       action: "master.rtu.reactivate",
@@ -255,6 +286,24 @@ export class RtusAdminService {
       entityId: id,
     });
     return this.fetchRow(id);
+  }
+
+  /**
+   * Resolves a location's organization on `fleetDb` before a write opens its
+   * tenant context. `locations` carries a policy (`0040`); the caller has
+   * already passed `canManageLocation` for this location, which is the
+   * isolation control.
+   */
+  private async resolveLocationOrg(locationId: string): Promise<string> {
+    const [row] = await this.fleetDb
+      .select({ organizationId: locations.organizationId })
+      .from(locations)
+      .where(eq(locations.id, locationId))
+      .limit(1);
+    if (!row) {
+      throw new NotFoundException("Location not found");
+    }
+    return row.organizationId;
   }
 
   private async fetchRow(id: string): Promise<AdminRtuDto> {

@@ -5,7 +5,7 @@ import { auditLog, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
-import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 
 type AuditInput = {
   actor: Pick<JwtPayload, "sub" | "email">;
@@ -19,7 +19,10 @@ type AuditInput = {
 /** Writes audit rows for master-data mutations. */
 @Injectable()
 export class MasterDataAuditService {
-  constructor(@Inject(TENANT_DRIZZLE) private readonly db: BmsDb) {}
+  constructor(
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+  ) {}
 
   /**
    * Persists a master-data audit log entry.
@@ -33,9 +36,23 @@ export class MasterDataAuditService {
    * deadlock. Passing `tx` also makes the audit row atomic with the mutation
    * it describes — without it, a rolled-back transaction can leave an audit
    * row on disk describing a write that never happened.
+   *
+   * E7.1b Amendment 4 — the actor identity read runs on `fleetDb` (`bms_fleet`,
+   * BYPASSRLS), not on the write `executor`. `bms.users` gains a NULL-tolerant
+   * `tenant_isolation` policy + FORCE in `0047`. The audit-outside-`withTenant`
+   * callers (assets, rtus, point-keys) invoke `write` with no
+   * `app.current_organization` set, so a bare tenant read there would see only
+   * NULL-org users — and a scoped actor's `organization_id` is non-NULL after
+   * the `0046` backfill, so `actorId` would silently resolve to NULL and the
+   * audit row would lose its actor. The fleet pool sees the row regardless of
+   * org, and it is a separate `pg` pool from the tenant one, so this second
+   * lookup never contends with an open tenant transaction on `executor`. The
+   * insert itself stays on `executor` — its `organization_id` is NULL this item
+   * (population is E7.1c), which the `0047` NULL-tolerant `WITH CHECK` admits
+   * whether or not a GUC is set.
    */
   async write(input: AuditInput, executor: BmsDb = this.db): Promise<void> {
-    const [actorRow] = await executor
+    const [actorRow] = await this.fleetDb
       .select({ id: users.id })
       .from(users)
       .where(or(eq(users.id, input.actor.sub), eq(users.email, input.actor.email)))

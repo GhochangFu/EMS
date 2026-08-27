@@ -179,14 +179,41 @@ export async function cleanup(pool: pg.Pool): Promise<void> {
  * trivially and hide a column swapped for another.
  */
 export async function seedReadings(pool: pg.Pool): Promise<Fixtures> {
-  const { rows } = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.assets ORDER BY code LIMIT 1`,
-  );
-  const assetId = rows[0]?.id;
-  assert(
-    typeof assetId === "string",
-    "F4.1 fixture needs at least one row in bms.assets; run `pnpm db:seed` first",
-  );
+  // E7.1b: `bms.assets` carries a `tenant_isolation` policy + FORCE as of `0047`,
+  // and this suite's pool is the FORCE-bound owner (it needs the owner to
+  // `SET ROLE bms_rollup` for the production-aggregate refresh). With no tenant
+  // GUC the owner sees no asset, so resolve one under each organization's context
+  // in turn — `bms.organizations` is not policied, so it can be enumerated
+  // directly. The suite only needs a single asset id to hang readings off, and
+  // `telemetry.point_values` is not policied, so the inserts below need no
+  // tenant context.
+  const client = await pool.connect();
+  let assetId: string | undefined;
+  try {
+    const { rows: orgs } = await client.query<{ id: string }>(
+      `SELECT id FROM bms.organizations ORDER BY id`,
+    );
+    for (const { id: orgId } of orgs) {
+      await client.query(`SELECT set_config('app.current_organization', $1, false)`, [orgId]);
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM bms.assets ORDER BY code LIMIT 1`,
+      );
+      if (rows[0]) {
+        assetId = rows[0].id;
+        break;
+      }
+    }
+  } finally {
+    await client
+      .query(`SELECT set_config('app.current_organization', '', false)`)
+      .catch(() => undefined);
+    client.release();
+  }
+  // An `if`/`throw` rather than `assert(...)` so TypeScript narrows `assetId`
+  // from `string | undefined` to `string` for the reads and insert below.
+  if (assetId === undefined) {
+    throw new Error("F4.1 fixture needs at least one row in bms.assets; run `pnpm db:seed` first");
+  }
 
   // Uneven on purpose, and cycled so different minutes inside the same hour get
   // different weights — that is what makes an average of averages diverge.
@@ -665,10 +692,31 @@ export async function assertEnergySummaryMatchesRaw(
     assetIds: string[] | null,
   ) => Promise<{ totalKwh: number; peakKw: number }>,
 ): Promise<void> {
-  const { rows: assets } = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.assets ORDER BY code LIMIT 1`,
-  );
-  const assetId = assets[0]?.id;
+  // E7.1b: `bms.assets` is FORCE-policied as of `0047` and this is the owner
+  // pool, so resolve an asset under each organization's tenant context in turn
+  // (`bms.organizations` is not policied). See `seedReadings` for the full note.
+  const client = await pool.connect();
+  let assetId: string | undefined;
+  try {
+    const { rows: orgs } = await client.query<{ id: string }>(
+      `SELECT id FROM bms.organizations ORDER BY id`,
+    );
+    for (const { id: orgId } of orgs) {
+      await client.query(`SELECT set_config('app.current_organization', $1, false)`, [orgId]);
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM bms.assets ORDER BY code LIMIT 1`,
+      );
+      if (rows[0]) {
+        assetId = rows[0].id;
+        break;
+      }
+    }
+  } finally {
+    await client
+      .query(`SELECT set_config('app.current_organization', '', false)`)
+      .catch(() => undefined);
+    client.release();
+  }
   if (typeof assetId !== "string") {
     throw new Error("energySummary check needs at least one row in bms.assets");
   }

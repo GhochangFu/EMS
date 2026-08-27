@@ -1,11 +1,11 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import type pg from "pg";
 
-import { assetPoints, pointValues, refreshAggregatesFrom } from "@bms/db";
+import { assetPoints, assets, pointValues, refreshAggregatesFrom } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
-import { TENANT_DRIZZLE, TENANT_POOL } from "../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE, TENANT_POOL } from "../database/database.tokens";
 import { MetricsService } from "../observability/metrics.service";
 import { chunkForNotify, type NotifyReading } from "../admin/telemetry-entry/notify-chunk";
 import { SOURCE_DATA_KEY_MAX_LENGTH, computedSourceDataKey } from "./computed-source-data-key";
@@ -51,6 +51,14 @@ function valueKey(time: Date | string, assetId: string, pointKey: string): strin
  * `TelemetryBroadcastHub`, which is decision 11's re-entrancy argument —
  * the streaming host's own input filter is what stops that from looping,
  * not an absence of notification here.
+ *
+ * **E7.1b (ADR 0043 §5).** `asset_points` is a policied tenant table. Having
+ * no tenant actor, the auto-provision runs on `fleetDb` (BYPASSRLS) and stamps
+ * the org read from the asset — the same machine-path shape as the notification
+ * ledger, not a `withTenant` GUC (which would be tautological, the GUC and the
+ * stamped value both coming from the asset). It runs before the value
+ * transaction rather than inside it; `point_values` is an unpolicied hypertable,
+ * so that transaction stays a plain `this.db.transaction`.
  */
 @Injectable()
 export class CalcWriteService {
@@ -58,6 +66,11 @@ export class CalcWriteService {
 
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    // E7.1b: asset_points is a policied tenant table since 0046. The calc
+    // engine has no tenant actor, so its auto-provision runs on fleetDb
+    // (BYPASSRLS) and stamps the org read from the asset here — the notification
+    // -ledger shape, not a withTenant GUC that would be tautological.
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     @Inject(TENANT_POOL) private readonly pool: pg.Pool,
     private readonly metrics: MetricsService,
   ) {}
@@ -67,76 +80,102 @@ export class CalcWriteService {
       return { written: 0, assetPointsCreated: 0 };
     }
 
-    const { written, assetPointsCreated, writtenRows } = await this.db.transaction(async (tx) => {
-      // ---- mapping creation, savepoint-isolated per (assetId, pointKey) ----
+    // ---- mapping creation, on fleetDb, before the value transaction (E7.1b) --
+    //
+    // The calc engine has no tenant actor, so an auto-provisioned asset_points
+    // mapping is stamped with the org read from its asset and written on fleetDb
+    // (BYPASSRLS) — the notification-ledger shape, not a withTenant GUC that
+    // would be tautological here (GUC and stamped value both come from the same
+    // asset row). This moves the insert OUTSIDE the value transaction: a
+    // committed mapping can survive a rolled-back value batch, which is inert —
+    // onConflictDoNothing on (assetId, pointKey) makes a re-create idempotent,
+    // and an orphan computed mapping produces nothing until a value lands. Each
+    // insert is its own fleetDb statement, so a source_data_key collision skips
+    // only its own pair, exactly as the per-SAVEPOINT form did.
 
-      const pairs = new Map<string, CalcWriteInput>();
-      for (const v of values) {
-        pairs.set(rowKey(v.assetId, v.pointKey), v);
+    const distinctAssetIds = [...new Set(values.map((v) => v.assetId))];
+    const orgRows = await this.fleetDb
+      .select({ id: assets.id, organizationId: assets.organizationId })
+      .from(assets)
+      .where(inArray(assets.id, distinctAssetIds));
+    const orgByAsset = new Map(orgRows.map((r) => [r.id, r.organizationId]));
+
+    const pairs = new Map<string, CalcWriteInput>();
+    for (const v of values) {
+      pairs.set(rowKey(v.assetId, v.pointKey), v);
+    }
+
+    let assetPointsCreated = 0;
+    const failedPairs = new Set<string>();
+    for (const [key, representative] of pairs) {
+      // The format is shared with the override endpoint (ADR 0039 decision 7's
+      // second creator of this row) — only the format. The insert stays here
+      // because this path wants "create if missing, count creations" while the
+      // override path wants the row back to update it.
+      const formatted = computedSourceDataKey(representative.pointKey);
+      if (!formatted.ok) {
+        // A DB-level failure here would be Postgres 22001 ("string data right
+        // truncation"), not 23505 — the catch below only special-cases the
+        // unique-violation collision, so an uncaught 22001 would propagate past
+        // every other pair. Checked up front, so this is a single-pair skip like
+        // the collision case.
+        failedPairs.add(key);
+        this.logger.warn(
+          `calc write: synthesised source_data_key for ${key} is ${formatted.length} chars, ` +
+            `which exceeds the ${SOURCE_DATA_KEY_MAX_LENGTH}-char column limit; skipping this value`,
+        );
+        continue;
       }
-
-      let assetPointsCreated = 0;
-      const failedPairs = new Set<string>();
-      for (const [key, representative] of pairs) {
-        // The format is shared with the override endpoint (ADR 0039 decision
-        // 7's second creator of this row) — only the format. The insert below
-        // stays here, because this path wants "create if missing, count
-        // creations" under its own SAVEPOINT while the override path wants the
-        // row back to update it.
-        const formatted = computedSourceDataKey(representative.pointKey);
-        if (!formatted.ok) {
-          // A DB-level failure here would be Postgres 22001 ("string data
-          // right truncation"), not 23505 — the catch below only special-cases
-          // the unique-violation collision, so an uncaught 22001 would
-          // propagate out of this SAVEPOINT-isolated attempt, past the outer
-          // db.transaction, and abort every OTHER pair's write in this same
-          // batch too. Checked up front instead, so this is the same
-          // single-pair skip the collision case already is.
-          failedPairs.add(key);
-          this.logger.warn(
-            `calc write: synthesised source_data_key for ${key} is ${formatted.length} chars, ` +
-              `which exceeds the ${SOURCE_DATA_KEY_MAX_LENGTH}-char column limit; skipping this value`,
-          );
-          continue;
-        }
-        const sourceDataKey = formatted.sourceDataKey;
-        try {
-          const inserted = await tx.transaction(async (tx2) => {
-            const [created] = await tx2
-              .insert(assetPoints)
-              .values({
-                assetId: representative.assetId,
-                pointKey: representative.pointKey,
-                sourceDataKey,
-                unit: null,
-                active: true,
-                rtuId: null,
-                sourceKind: "computed",
-              })
-              .onConflictDoNothing({ target: [assetPoints.assetId, assetPoints.pointKey] })
-              .returning({ id: assetPoints.id });
-            return created;
-          });
-          if (inserted !== undefined) {
-            assetPointsCreated += 1;
-          }
-        } catch (err: unknown) {
-          const code = (err as { code?: string } | null)?.code;
-          if (code !== UNIQUE_VIOLATION) {
-            throw err;
-          }
-          // The synthesised source_data_key ("computed:{pointKey}") collided
-          // with an unrelated existing mapping's — not the (assetId,
-          // pointKey) ON CONFLICT target. The SAVEPOINT rolled back this one
-          // attempt only; every value for this pair is skipped, every other
-          // pair's mapping creation proceeds.
-          failedPairs.add(key);
-          this.logger.warn(
-            `calc write: source_data_key collision creating a mapping for ${key}; skipping this value`,
-          );
-        }
+      const sourceDataKey = formatted.sourceDataKey;
+      // E7.1b: `asset_points.organization_id` is NOT NULL since 0047. The org
+      // comes from the asset row read above; `.get` is undefined only if the
+      // asset does not exist, in which case the FK on `asset_id` would reject the
+      // insert anyway. Skip the pair like the source_data_key case rather than
+      // pass a null into the NOT NULL column.
+      const organizationId = orgByAsset.get(representative.assetId);
+      if (organizationId === undefined) {
+        failedPairs.add(key);
+        this.logger.warn(
+          `calc write: asset ${representative.assetId} has no organization row; ` +
+            `skipping ${key}`,
+        );
+        continue;
       }
+      try {
+        const [created] = await this.fleetDb
+          .insert(assetPoints)
+          .values({
+            assetId: representative.assetId,
+            organizationId,
+            pointKey: representative.pointKey,
+            sourceDataKey,
+            unit: null,
+            active: true,
+            rtuId: null,
+            sourceKind: "computed",
+          })
+          .onConflictDoNothing({ target: [assetPoints.assetId, assetPoints.pointKey] })
+          .returning({ id: assetPoints.id });
+        if (created !== undefined) {
+          assetPointsCreated += 1;
+        }
+      } catch (err: unknown) {
+        const code = (err as { code?: string } | null)?.code;
+        if (code !== UNIQUE_VIOLATION) {
+          throw err;
+        }
+        // The synthesised source_data_key ("computed:{pointKey}") collided with
+        // an unrelated existing mapping's — not the (assetId, pointKey) ON
+        // CONFLICT target. This one fleetDb statement rolled back; every value
+        // for this pair is skipped, every other pair proceeds.
+        failedPairs.add(key);
+        this.logger.warn(
+          `calc write: source_data_key collision creating a mapping for ${key}; skipping this value`,
+        );
+      }
+    }
 
+    const { written, writtenRows } = await this.db.transaction(async (tx) => {
       // ---- value writes, chunked, ON CONFLICT DO NOTHING only -------------
       //
       // Never overwrite (decision 8): a recompute of the same instant is a
@@ -185,7 +224,7 @@ export class CalcWriteService {
         }
       }
 
-      return { written: writtenRows.length, assetPointsCreated, writtenRows };
+      return { written: writtenRows.length, writtenRows };
     });
 
     if (writtenRows.length > 0) {

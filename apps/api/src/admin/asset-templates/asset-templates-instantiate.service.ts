@@ -23,6 +23,7 @@ import type { AssetInstantiationResultDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type {
   InstantiateAssetBody,
@@ -91,10 +92,17 @@ type AssetPlan = {
  * `ENABLE ROW LEVEL SECURITY` (migration `0040`); the reads against them here
  * (`fetchTemplate`, `resolveTarget`, `assertCatalogActive`) run on `fleetDb`,
  * trusting the scope filter this service already applies via
- * `canManageOrganization`/`canManageLocation`. The write transaction inserts
- * only into `assets` and `asset_points`, neither of which carry a policy, so
- * it stays a plain `tenantDb.transaction()` — no `withTenant` is needed
- * because RLS is not in play for either table.
+ * `canManageOrganization`/`canManageLocation`.
+ *
+ * **E7.1b.** `assets`, `asset_points` and `template_points` all became policied
+ * tenant tables (`0046` column, `0047` policy + `FORCE`). The reads of them here
+ * — the `template_points` load and the `assertAssetCodesFree` code-collision
+ * check on `assets` — run on `fleetDb`; the collision check must see estate-wide
+ * anyway (codes are globally unique), and the grant is applied only to decide
+ * which taken codes may be named. The write transaction runs inside
+ * `withTenant(template.org)` and stamps `organization_id` onto every asset and
+ * asset_point — a single-org batch, since `resolveTarget` refuses a target in a
+ * different org than the template.
  */
 @Injectable()
 export class AssetTemplateInstantiationService {
@@ -157,7 +165,10 @@ export class AssetTemplateInstantiationService {
       throw new ForbiddenException("Target location is outside your access scope");
     }
 
-    const points = await this.tenantDb
+    // E7.1b: `template_points` read on `fleetDb` — a `FORCE`d tenant table in
+    // `0047`, where a `tenantDb` read with no GUC would see zero points and this
+    // would reject a valid template as having none.
+    const points = await this.fleetDb
       .select()
       .from(templatePoints)
       .where(eq(templatePoints.templateId, templateId))
@@ -180,8 +191,11 @@ export class AssetTemplateInstantiationService {
     const plans = body.assets.map((entry) => this.planAsset(entry, measured, catalogUnits));
 
     const sourceKind = target.rtuId ? "measured" : "unmapped";
-    const created = await this.tenantDb
-      .transaction(async (tx) => {
+    // E7.1b: `assets` and `asset_points` are policied tenant tables since 0046.
+    // The whole batch is one org — `resolveTarget` already refuses a target in a
+    // different org than the template (above) — so the write runs inside
+    // `withTenant(template.org)` and stamps that org onto every row.
+    const created = await withTenant(this.tenantDb, template.organizationId, async (tx) => {
         const inserted = await tx
           .insert(assets)
           .values(
@@ -193,6 +207,7 @@ export class AssetTemplateInstantiationService {
               rtuId: target.rtuId,
               domain: template.domain,
               templateId: template.id,
+              organizationId: template.organizationId,
               active: true,
             })),
           )
@@ -207,6 +222,7 @@ export class AssetTemplateInstantiationService {
           }
           return plan.points.map((point) => ({
             assetId,
+            organizationId: template.organizationId,
             pointKey: point.pointKey,
             sourceDataKey: point.sourceDataKey,
             unit: point.unit,
@@ -420,7 +436,12 @@ export class AssetTemplateInstantiationService {
     entries: InstantiateAssetBody[],
   ): Promise<void> {
     const codes = entries.map((entry) => entry.code);
-    const taken = await this.tenantDb
+    // E7.1b: `assets` read on `fleetDb` — FORCEd in 0047. This collision check
+    // must see across the tenant boundary (codes are unique estate-wide, and a
+    // zero-row tenantDb read would miss a collision and let the INSERT fail with
+    // a raw constraint error instead of a named one); the grant is applied below
+    // only to decide which codes may be NAMED versus counted.
+    const taken = await this.fleetDb
       .select({ code: assets.code, locationId: assets.locationId })
       .from(assets)
       .where(inArray(assets.code, codes));

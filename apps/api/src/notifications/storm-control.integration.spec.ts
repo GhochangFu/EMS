@@ -47,9 +47,12 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
     },
   };
 
-  const channels = new ChannelsService(db, {
+  // E7.1b: ChannelsService takes (fleetDb, tenantDb, crypto). This suite drives
+  // dispatch, whose channel/delivery reads and writes all run on fleetDb, so the
+  // one real db serves both pool slots.
+  const channels = new ChannelsService(db, db, {
     decrypt: () => ({}),
-  } as unknown as ConstructorParameters<typeof ChannelsService>[1]);
+  } as unknown as ConstructorParameters<typeof ChannelsService>[2]);
 
   const service = new NotificationsService(
     db,

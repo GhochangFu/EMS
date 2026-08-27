@@ -104,11 +104,14 @@ export async function assertNoRoleCanInsertOrDeleteUsers(pool: pg.Pool): Promise
  * tables, and reaches nothing else. Asserted directly rather than trusted: this
  * is the whole justification for a third role over reusing `bms_fleet`.
  *
- * The four are `users` (the credential and the role) plus
- * `user_organization_access`, `user_location_access` and `locations`, which the
- * identity bootstrap walks to find the home organization until `E7.1` puts
- * `organization_id` on `bms.users`. When that column lands, the last three
- * grants come back out and this assertion narrows to one table.
+ * Since `E7.1b` / ADR 0043 Amendment 4 that is a single table: `bms.users`,
+ * which now carries `organization_id`, so the identity bootstrap resolves the
+ * home organization from the user row instead of walking the grant tables.
+ * `0047` therefore dropped `bms_auth`'s SELECT on `user_organization_access`,
+ * `user_location_access` and `locations` (0039:122-124) — the standing removal
+ * Amendment 1 promised. This asserts the narrowed set *positively* (exactly
+ * `bms.users`, nothing more), so a future migration that re-widens `bms_auth`
+ * fails here rather than silently.
  */
 export async function assertAuthReachesOnlyIdentityTables(pool: pg.Pool): Promise<void> {
   const { rows } = await pool.query<{ table_schema: string; table_name: string }>(
@@ -119,12 +122,27 @@ export async function assertAuthReachesOnlyIdentityTables(pool: pg.Pool): Promis
       where grantee = 'bms_auth'
      order by table_schema, table_name`,
   );
-  expect(rows).toEqual([
-    { table_schema: "bms", table_name: "locations" },
-    { table_schema: "bms", table_name: "user_location_access" },
-    { table_schema: "bms", table_name: "user_organization_access" },
-    { table_schema: "bms", table_name: "users" },
-  ]);
+  expect(rows).toEqual([{ table_schema: "bms", table_name: "users" }]);
+}
+
+/**
+ * `E7.1b` / ADR 0043 Amendment 4 — `bms_auth`'s only write on `bms.users` is
+ * `UPDATE (last_login_at)` (0039:113). That column grant is the SOLE containment
+ * for `0047`'s `auth_bootstrap_write` policy, which is row-unrestricted
+ * (`USING (true) WITH CHECK (true)`) so `AuthService.login` can stamp any user's
+ * `last_login_at` before any tenant context exists. Asserted positively (exactly
+ * that one column, nothing more), so a future migration widening `bms_auth`'s
+ * UPDATE columns — which would let it rewrite `role` / `email` /
+ * `organization_id` on any user row fleet-wide — fails here rather than silently.
+ */
+export async function assertAuthCanUpdateOnlyLastLogin(pool: pg.Pool): Promise<void> {
+  const { rows } = await pool.query<{ column_name: string }>(
+    `select column_name from information_schema.column_privileges
+      where grantee = 'bms_auth' and table_schema = 'bms'
+        and table_name = 'users' and privilege_type = 'UPDATE'
+      order by column_name`,
+  );
+  expect(rows.map((r) => r.column_name)).toEqual(["last_login_at"]);
 }
 
 /**

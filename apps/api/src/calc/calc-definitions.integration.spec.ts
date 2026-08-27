@@ -56,8 +56,15 @@ async function seedTemplate(
     .returning({ id: assetTemplates.id });
 
   await db.insert(templatePoints).values([
-    { templateId: template.id, pointKey: measuredKey, kind: "measured", sortOrder: 0 },
     {
+      organizationId: fx.organizationId,
+      templateId: template.id,
+      pointKey: measuredKey,
+      kind: "measured",
+      sortOrder: 0,
+    },
+    {
+      organizationId: fx.organizationId,
       templateId: template.id,
       pointKey: "CALCDEF_VALID_STREAMING",
       kind: "derived",
@@ -67,6 +74,7 @@ async function seedTemplate(
       sortOrder: 1,
     },
     {
+      organizationId: fx.organizationId,
       templateId: template.id,
       pointKey: "CALCDEF_VALID_SCHEDULED",
       kind: "derived",
@@ -80,6 +88,7 @@ async function seedTemplate(
       // Every existing derived row is exactly this shape until an author
       // sets calc_trigger under F2.4 — the case the loader must not assume a
       // default trigger for.
+      organizationId: fx.organizationId,
       templateId: template.id,
       pointKey: "CALCDEF_NO_TRIGGER",
       kind: "derived",
@@ -93,6 +102,7 @@ async function seedTemplate(
   const [asset] = await db
     .insert(assets)
     .values({
+      organizationId: fx.organizationId,
       code: `${TEST_ASSET_PREFIX}01`,
       name: "Calc Definitions Fixture Asset",
       siteName: "Fixture Site",
@@ -119,6 +129,7 @@ export async function assertHandCreatedAssetContributesNothing(
   const [handCreated] = await db
     .insert(assets)
     .values({
+      organizationId: fx.organizationId,
       code: `${TEST_ASSET_PREFIX}HANDCREATED`,
       name: "Hand-created, no template",
       siteName: "Fixture Site",
@@ -178,6 +189,48 @@ export async function assertLoaderResolvesValidRowsAndSkipsInvalidOnes(
   assert(
     [...inputKeys].some((key) => key === `${assetId}:${measuredKey}`),
     "getInputKeys must include the measured point both derived formulas reference",
+  );
+}
+
+/**
+ * `E7.1b` — why the calc cache read must be on fleet. `CalcDefinitionsService`
+ * reads the cross-org cache on `fleetDb`; the fix moved it off `TENANT_DRIZZLE`
+ * (ADR 0043 Amendment 3 — a system cache with no JWT and no org context). Had it
+ * stayed on the bare tenant pool, the 0047 FORCE policy on
+ * `assets`/`template_points`/`asset_points` would return nothing with no GUC set,
+ * and the engine would compute no derived telemetry at all. A fleet-backed loader
+ * resolves the seeded formula; a tenant-pool-backed one resolves nothing.
+ *
+ * A necessity proof, not a wiring guard: it constructs the service with explicit
+ * pools, so the `@Inject(FLEET_DRIZZLE)` token itself is gated by
+ * `database/fleet-read-wiring.test.ts`, not here.
+ */
+export async function assertLoaderGoesDarkOnBareTenantPool(
+  fleetPool: pg.Pool,
+  tenantPool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const fleetDb = createDb(fleetPool);
+  const { assetId } = await seedTemplate(fleetDb, fx);
+  const measuredKey = fx.pointKeys[0].code;
+
+  const fleetSvc = new CalcDefinitionsService(fleetDb, new MetricsService());
+  const onFleet = await fleetSvc.getDefinitionsForInput(assetId, measuredKey);
+  assert(
+    onFleet.some((def) => def.pointKey === "CALCDEF_VALID_STREAMING"),
+    "the fleet-backed loader must resolve the seeded derived formula (positive control)",
+  );
+
+  const tenantSvc = new CalcDefinitionsService(createDb(tenantPool), new MetricsService());
+  const onTenant = await tenantSvc.getDefinitionsForInput(assetId, measuredKey);
+  assert(
+    onTenant.length === 0,
+    `a bare tenant pool must resolve no calc definitions under 0047 FORCE, got ${onTenant.length}`,
+  );
+  const scheduled = await tenantSvc.getScheduledDefinitions();
+  assert(
+    !scheduled.some((def) => def.pointKey === "CALCDEF_VALID_SCHEDULED"),
+    "a bare tenant pool must schedule no derived formulas",
   );
 }
 

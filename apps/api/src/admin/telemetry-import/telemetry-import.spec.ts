@@ -121,10 +121,10 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
 
   const freshCode = `${TEST_ASSET_PREFIX}${Date.now()}`;
   const { rows: assetRows } = await pool.query<{ id: string }>(
-    `INSERT INTO bms.assets (code, name, site_name, location_id, rtu_id, domain, active)
-     VALUES ($1, 'F1.9 import-path fixture', 'Fixture Site', $2, NULL, 'water', true)
+    `INSERT INTO bms.assets (code, name, site_name, location_id, rtu_id, domain, active, organization_id)
+     VALUES ($1, 'F1.9 import-path fixture', 'Fixture Site', $2, NULL, 'water', true, $3)
      RETURNING id`,
-    [freshCode, grant.location_id],
+    [freshCode, grant.location_id, grant.organization_id],
   );
   const freshAssetId = assetRows[0]?.id;
   if (!freshAssetId) {
@@ -194,6 +194,43 @@ async function countPointValuesForAsset(pool: pg.Pool, assetId: string): Promise
     [assetId],
   );
   return Number(rows[0]?.count ?? "0");
+}
+
+/**
+ * `E7.1b` — why the asset-resolution read must be on fleet.
+ * `TelemetryImportService` resolves `asset_code`/`asset_id` on `fleetDb`; the fix
+ * moved that read off `TENANT_DRIZZLE` (a master-data importer's
+ * `writableLocationIds` can span organizations — ADR 0043 Amendment 3). Had it
+ * stayed on the bare tenant pool, the 0047 FORCE policy on `assets` would return
+ * nothing with no GUC set, so every row would reject "asset not found" and the
+ * whole CSV import would be silently broken for every caller. A tenant-pool-
+ * backed service must reject a code that resolves fine on fleet.
+ *
+ * A necessity proof, not a wiring guard: it constructs the service with an
+ * explicit pool, so the `@Inject(FLEET_DRIZZLE)` token is gated by
+ * `database/fleet-read-wiring.test.ts`, not here.
+ */
+export async function assertImportGoesDarkOnBareTenantPool(
+  tenantBackedSvc: TelemetryImportService,
+  fx: Fixtures,
+): Promise<void> {
+  const buffer = buildWorkbookBuffer([
+    HEADER,
+    [fx.freshAssetCode, fx.freshAssetPointKey.code, 1, fx.freshAssetPointKey.unit ?? "", new Date().toISOString()],
+  ]);
+  const preview = await tenantBackedSvc.preview(fx.adminJwt, buffer, {
+    sourceKind: "unmapped",
+    conflictPolicy: "reject",
+  });
+  assert(
+    preview.acceptedCount === 0 && preview.rejectedCount === 1,
+    `on a bare tenant pool the asset-resolution read returns nothing, so a resolvable code must still ` +
+      `reject "asset not found" — got ${JSON.stringify(preview)}`,
+  );
+  assert(
+    preview.rejected[0]?.reason === "Asset not found or outside your access scope",
+    `the tenant-dark rejection must be the non-disclosure message, got "${preview.rejected[0]?.reason}"`,
+  );
 }
 
 /**
@@ -458,9 +495,9 @@ export async function runTelemetryImportServiceTests(
   let sourceRefRejected = false;
   try {
     await pool.query(
-      `INSERT INTO bms.asset_points (asset_id, point_key, source_data_key, source_kind, rtu_id)
-       VALUES ($1, 'f19-import-check-probe', 'f19-import-check-probe', 'measured', NULL)`,
-      [fx.freshAssetId],
+      `INSERT INTO bms.asset_points (asset_id, point_key, source_data_key, source_kind, rtu_id, organization_id)
+       VALUES ($1, 'f19-import-check-probe', 'f19-import-check-probe', 'measured', NULL, $2)`,
+      [fx.freshAssetId, fx.freshAssetOrganizationId],
     );
   } catch (err) {
     sourceRefRejected =

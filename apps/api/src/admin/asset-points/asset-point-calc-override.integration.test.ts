@@ -49,8 +49,9 @@ describe.skipIf(!connectionString)("F2.6 — asset point calc overrides", () => 
     const db = createDb(created);
     svc = new AssetPointCalcOverrideService(
       db,
-      new AccessControlService(db, db, db),
-      new MasterDataAuditService(db),
+      db,
+      new AccessControlService(db, db),
+      new MasterDataAuditService(db, db),
     );
     fx = await loadFixtures(created);
     await cleanup(created);

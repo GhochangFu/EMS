@@ -180,6 +180,7 @@ async function seedVersion(
 
   await db.insert(templatePoints).values(
     opts.points.map((point, index) => ({
+      organizationId: fx.organizationId,
       templateId: template.id,
       pointKey: point.pointKey,
       kind: point.kind ?? "measured",
@@ -210,6 +211,7 @@ async function seedAsset(
   const [asset] = await db
     .insert(assets)
     .values({
+      organizationId: fx.organizationId,
       code: `${TEST_ASSET_PREFIX}${suffix}`,
       name: `Migrate Fixture Asset ${suffix}`,
       siteName: "Fixture Site",
@@ -243,6 +245,7 @@ async function pointRows(
     source_kind: string;
     rtu_id: string | null;
     unit: string | null;
+    organization_id: string | null;
   }[]
 > {
   const { rows } = await pool.query<{
@@ -251,8 +254,9 @@ async function pointRows(
     source_kind: string;
     rtu_id: string | null;
     unit: string | null;
+    organization_id: string | null;
   }>(
-    `SELECT point_key, source_data_key, source_kind, rtu_id, unit FROM bms.asset_points
+    `SELECT point_key, source_data_key, source_kind, rtu_id, unit, organization_id FROM bms.asset_points
       WHERE asset_id = $1 ORDER BY point_key`,
     [assetId],
   );
@@ -443,6 +447,13 @@ export async function assertApplyMovesOnlySelectedAssets(
     `the template's unit override must reach the row, got ${String(rows[0]?.unit)}. ` +
       "Decision 4 says these rows are created by the same path instantiation uses, and " +
       "AssetTemplateInstantiationService.planAsset resolves point.unit ?? catalogUnit ?? null.",
+  );
+  // E7.1b: the migration write runs inside withTenant(target.org) and stamps the
+  // new point with that org. Nullable, no default — NULL, and this fails,
+  // without the stamp.
+  assert(
+    rows[0]?.organization_id === fx.organizationId,
+    `the migrated point must carry the target's org (${fx.organizationId}), got ${String(rows[0]?.organization_id)}`,
   );
   assert(
     (await pointRows(pool, untouched)).length === 0,
@@ -834,6 +845,7 @@ export async function assertExistingRowRefusesAMeasuredAddition(
   // Exactly what the override endpoint leaves behind, and what `CalcWriteService`
   // writes on the point's first computed value.
   await db.insert(assetPoints).values({
+    organizationId: fx.organizationId,
     assetId,
     pointKey: "KWH",
     sourceDataKey: "computed:KWH",

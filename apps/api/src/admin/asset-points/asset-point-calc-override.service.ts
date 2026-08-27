@@ -19,7 +19,8 @@ import type {
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { computedSourceDataKey } from "../../calc/computed-source-data-key";
-import { TENANT_DRIZZLE } from "../../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   validateMergedCalcOverride,
@@ -56,11 +57,28 @@ import {
  *   whole estate.
  * - A merged configuration the engine could not run — D-1, in
  *   `validateMergedCalcOverride`.
+ *
+ * ## `E7.1b` — reads on `fleetDb`, the write inside `withTenant`
+ *
+ * `asset_points`, `assets` and `template_points` gain a `tenant_isolation`
+ * policy + `FORCE` in `0047`. The three reads (asset, template points, the
+ * existing row) precede any tenant context, so they run on `fleetDb` behind the
+ * `canManageAsset` gate (Amendment 2/3). The `setOverride`/`clearOverride`
+ * transaction becomes `withTenant(db, org, …)`, org derived from the asset — so
+ * the eagerly-created row is stamped and passes the policy. The audit write
+ * stays **inside** that transaction (as F2.6 designed it): atomic with the
+ * mutation, and its `current_org` equals the actor's org so the actor row is
+ * visible for `actorId` resolution.
  */
 @Injectable()
 export class AssetPointCalcOverrideService {
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    // `E7.1b` — `asset_points`/`assets`/`template_points` gain a policy in 0047.
+    // The three reads this service makes precede any tenant context, so they run
+    // on `fleetDb` behind the `canManageAsset` gate (Amendment 2/3); only the
+    // write transaction opens a `withTenant` GUC, on `db` (the tenant pool).
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
   ) {}
@@ -81,13 +99,13 @@ export class AssetPointCalcOverrideService {
       return { items: [] };
     }
 
-    const points = await this.db
+    const points = await this.fleetDb
       .select()
       .from(templatePoints)
       .where(and(eq(templatePoints.templateId, asset.templateId), eq(templatePoints.kind, "derived")))
       .orderBy(asc(templatePoints.sortOrder), asc(templatePoints.pointKey));
 
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select()
       .from(assetPoints)
       .where(eq(assetPoints.assetId, assetId));
@@ -170,7 +188,7 @@ export class AssetPointCalcOverrideService {
       newSourceDataKey = formatted.sourceDataKey;
     }
 
-    await this.db.transaction(async (tx) => {
+    await withTenant(this.db, ctx.organizationId, async (tx) => {
       let rowId = ctx.existingRowId;
       if (rowId !== null) {
         await tx.update(assetPoints).set(values).where(eq(assetPoints.id, rowId));
@@ -195,6 +213,7 @@ export class AssetPointCalcOverrideService {
           .insert(assetPoints)
           .values({
             assetId,
+            organizationId: ctx.organizationId,
             pointKey,
             sourceDataKey: newSourceDataKey,
             sourceKind: "computed",
@@ -258,7 +277,7 @@ export class AssetPointCalcOverrideService {
       );
     }
 
-    await this.db.transaction(async (tx) => {
+    await withTenant(this.db, ctx.organizationId, async (tx) => {
       // Read inside the transaction, before nulling. Decision 9 asks the audit
       // to record "the columns changed", and `CALC_COLUMNS` is the columns this
       // endpoint *can* change — usually a superset. Recording all five on a row
@@ -310,12 +329,20 @@ export class AssetPointCalcOverrideService {
     assetId: string,
     pointKey: string,
   ): Promise<{
+    organizationId: string;
     template: AssetPointCalcOverrideFields;
     declaredPointKeys: string[];
     existingRowId: string | null;
   }> {
     await this.accessControl.requireMasterDataUser(jwt);
     const asset = await this.requireAsset(assetId);
+    // The org drives the `withTenant` GUC the two writers open. Derived from the
+    // asset (`asset_points.organization_id` is `asset_id → assets`, the `0046`
+    // path); a NULL only survives on a pre-`0046` row, unresolvable for a write.
+    if (!asset.organizationId) {
+      throw new BadRequestException("Asset has no organization; run the 0046 backfill");
+    }
+    const organizationId = asset.organizationId;
     if (!(await this.accessControl.canManageAsset(jwt, assetId))) {
       throw new ForbiddenException("Asset is outside your access scope");
     }
@@ -326,7 +353,7 @@ export class AssetPointCalcOverrideService {
       );
     }
 
-    const points = await this.db
+    const points = await this.fleetDb
       .select()
       .from(templatePoints)
       .where(eq(templatePoints.templateId, asset.templateId));
@@ -344,7 +371,7 @@ export class AssetPointCalcOverrideService {
       );
     }
 
-    const [existing] = await this.db
+    const [existing] = await this.fleetDb
       .select({ id: assetPoints.id, sourceKind: assetPoints.sourceKind })
       .from(assetPoints)
       .where(and(eq(assetPoints.assetId, assetId), eq(assetPoints.pointKey, pointKey)))
@@ -360,6 +387,7 @@ export class AssetPointCalcOverrideService {
     }
 
     return {
+      organizationId,
       template: toFields(point),
       // **Measured only**, matching `assetTemplatePointsBodySchema`'s
       // sibling-scoped rule: "a derived formula may only reference measured
@@ -381,9 +409,15 @@ export class AssetPointCalcOverrideService {
     };
   }
 
-  private async requireAsset(assetId: string): Promise<{ id: string; templateId: string | null }> {
-    const [asset] = await this.db
-      .select({ id: assets.id, templateId: assets.templateId })
+  private async requireAsset(
+    assetId: string,
+  ): Promise<{ id: string; templateId: string | null; organizationId: string | null }> {
+    const [asset] = await this.fleetDb
+      .select({
+        id: assets.id,
+        templateId: assets.templateId,
+        organizationId: assets.organizationId,
+      })
       .from(assets)
       .where(eq(assets.id, assetId))
       .limit(1);

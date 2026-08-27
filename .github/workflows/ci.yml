@@ -35,8 +35,11 @@ jobs:
     env:
       # ADR 0045 decision 3 (E7.1a). `DATABASE_URL` names `bms_owner`, the
       # non-superuser schema owner that `FORCE ROW LEVEL SECURITY` binds;
-      # `DATABASE_URL_SUPERUSER` carries the `bms_app` connection and reaches
-      # only `db:roles` and `db:migrate`.
+      # `DATABASE_URL_SUPERUSER` carries the `bms_app` connection, used by
+      # `db:roles`, `db:migrate`, and — since E7.1b — `db:seed`'s org-less
+      # identity inserts (`bms.users`), which `bms_owner` cannot make under
+      # `0047`'s FORCE. Set at job scope, so every step sees it; `db:seed`
+      # would otherwise derive it from `DATABASE_URL` with the dev password.
       DATABASE_URL: postgres://bms_owner:bms_owner_dev@localhost:5432/bms
       DATABASE_URL_SUPERUSER: postgres://bms_app:bms_app_dev@localhost:5432/bms
       # ADR 0043 decision 8. Match docker-compose.yml's dev passwords exactly —

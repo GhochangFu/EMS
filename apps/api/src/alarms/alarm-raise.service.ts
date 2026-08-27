@@ -1,10 +1,11 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 
 import { alarms, assets, ruleExecutions } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { withTenant } from "../database/tenant-context";
 import type { AlarmMessageRule } from "../rules/alarm-message";
 import { composeAlarmMessage } from "../rules/alarm-message";
 import { defaultAlarmSeverity } from "../rules/alarm-severity-default";
@@ -91,6 +92,13 @@ export type AlarmRaiseRule = AlarmMessageRule & {
   id: string;
   code: string;
   severity: string | null;
+  /**
+   * `E7.1b` — the rule's own organization (`automation_rules.organization_id`,
+   * source of the `rule_executions` row's org). Compared against the asset's org
+   * to catch a rule pointing at an asset in another tenant; `null` on a rule the
+   * `0046` backfill has not reached.
+   */
+  organizationId: string | null;
 };
 
 export type AlarmRaiseResult = {
@@ -121,12 +129,18 @@ export type AlarmRaiseResult = {
  */
 @Injectable()
 export class AlarmRaiser {
+  private readonly logger = new Logger(AlarmRaiser.name);
+
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly gateway: AlarmsGateway,
   ) {}
 
   /**
+   * @param organizationId the asset's organization — the tenant the alarm is
+   *   filed under (`alarms.organization_id`) and the org the whole write runs
+   *   inside via `withTenant`. Both engines derive it from the asset, since
+   *   neither carries a JWT.
    * @param opts.recordTrace Default `true` — writes one `bms.rule_executions`
    *   row on a successful raise (ADR 0033 decision 3). `RulesService`'s
    *   on-demand evaluator (task 5) passes `false`: it already writes a richer
@@ -137,52 +151,102 @@ export class AlarmRaiser {
    */
   async raise(
     assetId: string,
+    organizationId: string,
     rule: AlarmRaiseRule,
     value: number,
     opts: { recordTrace?: boolean } = {},
   ): Promise<AlarmRaiseResult> {
-    const severity = defaultAlarmSeverity(rule.severity);
-    const message = composeAlarmMessage(rule, value);
-
-    const inserted = await this.db
-      .insert(alarms)
-      .values({
-        assetId,
-        ruleId: rule.id,
-        ruleKey: rule.code,
-        severity,
-        message,
-      })
-      .onConflictDoNothing()
-      .returning();
-
-    const row = inserted[0];
-    if (!row) {
-      // Already open for this (asset, rule) — the dedupe, not a failure.
+    // E7.1b: a threshold rule must watch an asset in its own tenant. The assets
+    // service permits a cross-org relocation, so an asset can move out from
+    // under a rule still pointing at it — at which point alarms.org (the asset,
+    // 0046) and rule_executions.org (the rule, 0046) diverge. Raising anyway
+    // would file the alarm into a different tenant than its own trace, so refuse
+    // and log rather than misfile it. A null rule org (pre-backfill) is not a
+    // mismatch.
+    if (rule.organizationId && rule.organizationId !== organizationId) {
+      this.logger.warn(
+        `alarm raise skipped for rule ${rule.id} on asset ${assetId}: rule org ` +
+          `${rule.organizationId} != asset org ${organizationId}`,
+      );
       return { raised: false, alarmId: null };
     }
 
-    const [full] = await this.db
-      .select({
-        id: alarms.id,
-        assetId: alarms.assetId,
-        ruleKey: alarms.ruleKey,
-        ruleId: alarms.ruleId,
-        severity: alarms.severity,
-        message: alarms.message,
-        raisedAt: alarms.raisedAt,
-        acknowledgedAt: alarms.acknowledgedAt,
-        acknowledgedBy: alarms.acknowledgedBy,
-        assetCode: assets.code,
-        assetName: assets.name,
-        siteName: assets.siteName,
-      })
-      .from(alarms)
-      .innerJoin(assets, eq(alarms.assetId, assets.id))
-      .where(eq(alarms.id, row.id))
-      .limit(1);
+    const severity = defaultAlarmSeverity(rule.severity);
+    const message = composeAlarmMessage(rule, value);
 
-    if (full) {
+    // One tenant transaction: the dedupe insert, the read-back and the trace all
+    // run inside withTenant(asset org) so every write satisfies the 0047 policy.
+    // The broadcast is deferred until after commit — a rolled-back transaction
+    // must not announce an alarm that does not exist.
+    const outcome = await withTenant(this.db, organizationId, async (tx) => {
+      const inserted = await tx
+        .insert(alarms)
+        .values({
+          organizationId,
+          assetId,
+          ruleId: rule.id,
+          ruleKey: rule.code,
+          severity,
+          message,
+        })
+        .onConflictDoNothing()
+        .returning();
+
+      const row = inserted[0];
+      if (!row) {
+        // Already open for this (asset, rule) — the dedupe, not a failure.
+        return { raised: false as const, alarmId: null as string | null, broadcast: null };
+      }
+
+      const [full] = await tx
+        .select({
+          id: alarms.id,
+          assetId: alarms.assetId,
+          ruleKey: alarms.ruleKey,
+          ruleId: alarms.ruleId,
+          severity: alarms.severity,
+          message: alarms.message,
+          raisedAt: alarms.raisedAt,
+          acknowledgedAt: alarms.acknowledgedAt,
+          acknowledgedBy: alarms.acknowledgedBy,
+          assetCode: assets.code,
+          assetName: assets.name,
+          siteName: assets.siteName,
+        })
+        .from(alarms)
+        .innerJoin(assets, eq(alarms.assetId, assets.id))
+        .where(eq(alarms.id, row.id))
+        .limit(1);
+
+      // Traced only on a raise (ADR 0033 decision 3) — bms.rule_executions has
+      // no retention policy, and an every-evaluation trace is (readings × rules)
+      // rows per batch. Skippable — see the `recordTrace` doc above. Its org is
+      // the rule's (rule_executions.org resolves via rule_id, 0046), which the
+      // guard above has proven equal to the asset org this GUC is set to.
+      //
+      // `raisedBy`, not `source`: code review caught that `source` here and
+      // `RulesService.evaluateEnabledRules`'s own trace insert
+      // (`source: row.source`, `automation_rules.source` — `operator_rule` /
+      // `simulator_threshold` / `phe_alarm_seed`) would otherwise write the same
+      // JSON key with two disjoint vocabularies into the same table, readable
+      // only by which engine happened to reach the rule.
+      if (opts.recordTrace ?? true) {
+        await tx.insert(ruleExecutions).values({
+          organizationId: rule.organizationId ?? organizationId,
+          ruleId: rule.id,
+          status: "matched",
+          matched: true,
+          observedValue: value,
+          message,
+          trace: { assetId, alarmId: row.id, raisedBy: "alarm_engine" },
+        });
+      }
+
+      return { raised: true as const, alarmId: row.id, broadcast: full ?? null };
+    });
+
+    if (outcome.broadcast) {
+      const full = outcome.broadcast;
       this.gateway.broadcastCreated({
         id: full.id,
         assetId: full.assetId,
@@ -199,27 +263,6 @@ export class AlarmRaiser {
       });
     }
 
-    // Traced only on a raise (ADR 0033 decision 3) — bms.rule_executions has
-    // no retention policy, and an every-evaluation trace is (readings × rules)
-    // rows per batch. Skippable — see the `recordTrace` doc above.
-    //
-    // `raisedBy`, not `source`: code review caught that `source` here and
-    // `RulesService.evaluateEnabledRules`'s own trace insert
-    // (`source: row.source`, `automation_rules.source` — `operator_rule` /
-    // `simulator_threshold` / `phe_alarm_seed`) would otherwise write the same
-    // JSON key with two disjoint vocabularies into the same table, readable
-    // only by which engine happened to reach the rule.
-    if (opts.recordTrace ?? true) {
-      await this.db.insert(ruleExecutions).values({
-        ruleId: rule.id,
-        status: "matched",
-        matched: true,
-        observedValue: value,
-        message,
-        trace: { assetId, alarmId: row.id, raisedBy: "alarm_engine" },
-      });
-    }
-
-    return { raised: true, alarmId: row.id };
+    return { raised: outcome.raised, alarmId: outcome.alarmId };
   }
 }

@@ -75,8 +75,8 @@ describe.skipIf(!connectionString)("F2.6 — template version migration", () => 
     svc = new AssetTemplateMigrationService(
       fleetDb,
       tenantDb,
-      new AccessControlService(createDb(authPool), tenantDb, fleetDb),
-      new MasterDataAuditService(tenantDb),
+      new AccessControlService(createDb(authPool), fleetDb),
+      new MasterDataAuditService(tenantDb, fleetDb),
     );
     // Fixtures are cross-organization by design and set up on the owner
     // connection on purpose — seeding is not the behaviour under test.

@@ -18,6 +18,25 @@ import {
  * the AGENTS.md §4.5 1000-line cap. Pure move: one user per read-scope source,
  * which is what `apps/api/src/auth/access-control.integration.spec.ts` asserts
  * against — the emails and roles here are that suite's fixture contract.
+ *
+ * **`E7.1b` / ADR 0043 decision 5 + Amendment 4.** `seed.ts` runs all three
+ * exported functions on the superuser connection rather than the `FORCE`-bound
+ * `bms_owner` seed pool. See `resolveSeedSuperuserUrl` in `seed-tenant.ts`: under
+ * `0047`'s strict `USING`, `bms_owner` cannot see or `RETURNING`-insert the
+ * global `admin`'s NULL-org row, and the pool roles have no `INSERT` on
+ * `bms.users` at all.
+ *
+ * Per Amendment 4 every tenant-scoped user carries a home `organization_id`
+ * (`phe-admin` → PHEWB; `wc-admin`/`wc-hvac-admin` → the ESKOM org that owns the
+ * Western Cape location and asset groups — there is no separate Western Cape
+ * org), matching what migration `0046`'s backfill resolves from each user's
+ * grants on a
+ * pre-existing database. The seed stamps it on insert because `0046` runs before
+ * the seed and so backfills an empty table — the seed is the only place a
+ * fresh-database row gets its home. Only the global `admin` (a fleet actor,
+ * decision 2) is org-less — a NULL home, invisible to every tenant GUC. `adminId`
+ * is still usable as an FK from `bms_owner`-pool inserts (alarms, work orders): a
+ * foreign-key check is not row-level-security-filtered.
  */
 
 const SCOPED_USERS = [
@@ -68,8 +87,26 @@ export async function ensureAdminUser(db: BmsDb): Promise<string> {
 /**
  * Creates the location- and asset-group-scoped demo logins and grants each the
  * one scope its role is meant to demonstrate.
+ *
+ * **`E7.1b`: this runs on the superuser connection** (`seed.ts`), not the
+ * `bms_owner` seed pool. `0047` makes `bms.users` `FORCE`-bound, so `bms_owner`
+ * can neither see these rows (a re-seed's existence check would read empty and
+ * duplicate-key) nor `INSERT ... RETURNING` one. `organizationId` is the ESKOM
+ * org (owner of the Western Cape location and groups): it stamps each scoped
+ * user's home org (Amendment 4 — `wc-admin` resolves there through
+ * `user_location_access → locations.organization_id`, `wc-hvac-admin` through its
+ * asset group's own `organization_id`) and scopes the `locations` lookup, which a
+ * `BYPASSRLS`/superuser read no longer filters by org, so it names its org
+ * explicitly rather than trusting a policy this connection bypasses. The grants
+ * it writes,
+ * `user_location_access` and `user_asset_group_access`, carry no policy today, so
+ * BYPASSRLS is transparent for them; were either ever policied, this path would
+ * silently bypass it and would need revisiting.
  */
-export async function seedScopedDemoUsers(db: BmsDb): Promise<void> {
+export async function seedScopedDemoUsers(
+  db: BmsDb,
+  organizationId: string,
+): Promise<void> {
   const scopedUserIds = new Map<string, string>();
   for (const scopedUser of SCOPED_USERS) {
     const existingScopedUser = await db
@@ -83,6 +120,7 @@ export async function seedScopedDemoUsers(db: BmsDb): Promise<void> {
         .set({
           displayName: scopedUser.displayName,
           role: scopedUser.role,
+          organizationId,
         })
         .where(eq(users.id, existingScopedUser[0].id));
       scopedUserIds.set(scopedUser.email, existingScopedUser[0].id);
@@ -95,6 +133,7 @@ export async function seedScopedDemoUsers(db: BmsDb): Promise<void> {
         passwordHash: await bcrypt.hash(scopedUser.password, 10),
         displayName: scopedUser.displayName,
         role: scopedUser.role,
+        organizationId,
       })
       .returning({ id: users.id });
     if (createdScopedUser) {
@@ -105,7 +144,12 @@ export async function seedScopedDemoUsers(db: BmsDb): Promise<void> {
   const [westernCape] = await db
     .select({ id: locations.id })
     .from(locations)
-    .where(eq(locations.slug, "rsmoc-western-cape"))
+    .where(
+      and(
+        eq(locations.slug, "rsmoc-western-cape"),
+        eq(locations.organizationId, organizationId),
+      ),
+    )
     .limit(1);
   const wcAdminId = scopedUserIds.get("wc-admin@bms.local");
   if (westernCape && wcAdminId) {
@@ -181,6 +225,7 @@ export async function seedPheOrganizationAdmin(
         passwordHash: await bcrypt.hash("admin123", 10),
         displayName: "PHE Organization Admin",
         role: "organization_admin",
+        organizationId: phewbOrgId,
       })
       .returning({ id: users.id });
     pheAdminId = createdPheAdmin?.id;
@@ -190,6 +235,7 @@ export async function seedPheOrganizationAdmin(
       .set({
         displayName: "PHE Organization Admin",
         role: "organization_admin",
+        organizationId: phewbOrgId,
       })
       .where(eq(users.id, pheAdminId));
   }

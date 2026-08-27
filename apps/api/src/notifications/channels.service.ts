@@ -23,7 +23,8 @@ import type {
   NotificationReadinessDto,
 } from "@bms/shared";
 
-import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { withTenant } from "../database/tenant-context";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import type { NotificationChannelRow } from "./notification-transport";
 import type { NotificationsConfig } from "./notifications.config";
@@ -107,18 +108,38 @@ async function translateConstraintErrors<T>(
   }
 }
 
+/**
+ * `E7.1b` (ADR 0043 §5) — `notification_channels` and `notification_deliveries`
+ * gain a **nullable** `organization_id` this item and a `tenant_isolation`
+ * policy + `FORCE` in `0047`; their `SET NOT NULL` and the `(organization_id,
+ * code)` identity re-key move to E7.1c (decision 7). Until then a channel has no
+ * tenant — every route here is global-admin (`assertAdmin`) — so its rows carry
+ * a NULL org, and a NULL-org row is **invisible and unmodifiable** to the tenant
+ * pool under `FORCE`: no `current_org` makes `NULL = current_org` true, so an
+ * UPDATE/DELETE there affects zero rows without erroring. So every channel and
+ * delivery read and write runs on `fleetDb` (BYPASSRLS) this item. E7.1c moves
+ * the writes to `withTenant` once org is populated and NOT NULL.
+ *
+ * The one exception is `setRuleChannels`: the `rule_notifications` junction's
+ * tenant parent is the rule, which **does** carry a non-NULL org, and its route
+ * is org-scoped (`assertRuleInScope`), so that write runs inside
+ * `withTenant(rule.org)` and refuses a NULL-org rule rather than silently
+ * no-op'ing the junction rewrite under `FORCE`. (`0047`'s `rule_notifications`
+ * policy must therefore key on `automation_rules.organization_id`.)
+ */
 @Injectable()
 export class ChannelsService {
   private readonly logger = new Logger(ChannelsService.name);
 
   constructor(
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly crypto: CredentialCryptoService,
   ) {}
 
   /** Every channel, newest configuration first, as the admin screen shows them. */
   async list(): Promise<NotificationChannelDto[]> {
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select()
       .from(notificationChannels)
       .orderBy(notificationChannels.code);
@@ -127,7 +148,7 @@ export class ChannelsService {
 
   /** One channel as the transports see it, or `null` when it does not exist. */
   async loadById(id: string): Promise<NotificationChannelRow | null> {
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select()
       .from(notificationChannels)
       .where(eq(notificationChannels.id, id))
@@ -142,7 +163,7 @@ export class ChannelsService {
   ): Promise<NotificationChannelDto> {
     const secret = this.encryptSecret(body.secret ?? null);
     const rows = await translateConstraintErrors(() =>
-      this.db
+      this.fleetDb
         .insert(notificationChannels)
         .values({
           code: body.code,
@@ -185,7 +206,7 @@ export class ChannelsService {
     if (body.secret !== undefined) Object.assign(values, this.encryptSecret(body.secret));
 
     const rows = await translateConstraintErrors(() =>
-      this.db
+      this.fleetDb
         .update(notificationChannels)
         .set(values)
         .where(eq(notificationChannels.id, id))
@@ -218,7 +239,7 @@ export class ChannelsService {
   async remove(id: string, actor: Pick<JwtPayload, "sub" | "email">): Promise<boolean> {
     const rows = await translateConstraintErrors(
       () =>
-        this.db
+        this.fleetDb
           .delete(notificationChannels)
           .where(eq(notificationChannels.id, id))
           .returning({ id: notificationChannels.id }),
@@ -247,7 +268,7 @@ export class ChannelsService {
       query.ruleId === undefined ? undefined : eq(notificationDeliveries.ruleId, query.ruleId),
     ].filter((f): f is NonNullable<typeof f> => f !== undefined);
 
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({
         id: notificationDeliveries.id,
         ruleId: notificationDeliveries.ruleId,
@@ -307,7 +328,7 @@ export class ChannelsService {
     const keyReady = CredentialCryptoService.isConfigured();
     let secretBearingChannels = 0;
     if (!keyReady) {
-      const rows = await this.db
+      const rows = await this.fleetDb
         .select({ count: sqlCount })
         .from(notificationChannels)
         .where(
@@ -362,15 +383,21 @@ export class ChannelsService {
     channelIds: string[],
     actor: Pick<JwtPayload, "sub" | "email">,
   ): Promise<string[] | null> {
-    const rule = await this.db
-      .select({ id: automationRules.id })
+    const [rule] = await this.fleetDb
+      .select({ id: automationRules.id, organizationId: automationRules.organizationId })
       .from(automationRules)
       .where(eq(automationRules.id, ruleId))
       .limit(1);
-    if (rule.length === 0) return null;
+    if (rule === undefined) return null;
+    if (!rule.organizationId) {
+      // E7.1b: the junction rewrite runs under the rule's org GUC; a NULL-org
+      // rule would silently no-op it under FORCE. Refuse rather than corrupt.
+      throw new BadRequestException("Rule has no organization; run the 0046 backfill");
+    }
+    const organizationId = rule.organizationId;
 
     const unique = [...new Set(channelIds)];
-    await this.db.transaction(async (tx) => {
+    await withTenant(this.db, organizationId, async (tx) => {
       await tx.delete(ruleNotifications).where(eq(ruleNotifications.ruleId, ruleId));
       if (unique.length > 0) {
         await tx
@@ -390,7 +417,7 @@ export class ChannelsService {
 
   /** The channel ids a rule currently notifies. */
   async ruleChannelIds(ruleId: string): Promise<string[]> {
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({ channelId: ruleNotifications.channelId })
       .from(ruleNotifications)
       .where(eq(ruleNotifications.ruleId, ruleId));
@@ -420,13 +447,16 @@ export class ChannelsService {
     entityId: string | null,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const [actorRow] = await this.db
+    // Actor identity is a pre-tenant read, and the audit row is org-less this
+    // item (ruling 5), so both run on fleetDb — consistent with this service
+    // being untenanted until E7.1c.
+    const [actorRow] = await this.fleetDb
       .select({ id: users.id })
       .from(users)
       .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
       .limit(1);
 
-    await this.db.insert(auditLog).values({
+    await this.fleetDb.insert(auditLog).values({
       actorId: actorRow?.id ?? null,
       action,
       entityType: "notification_channel",
@@ -455,7 +485,7 @@ export class ChannelsService {
 
   /** The enabled channels joined to a rule, in channel-code order. */
   async loadForRule(ruleId: string): Promise<NotificationChannelRow[]> {
-    const rows = await this.db
+    const rows = await this.fleetDb
       .select({
         id: notificationChannels.id,
         code: notificationChannels.code,

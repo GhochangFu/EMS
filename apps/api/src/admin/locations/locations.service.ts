@@ -18,11 +18,14 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreateLocationBody, UpdateLocationBody } from "./locations.schema";
 
 /**
- * `F4.16` / ADR 0043 — `locations` carries `ENABLE ROW LEVEL SECURITY`
- * (migration `0040`). Reads run on `fleetDb`, trusting the scope filter this
- * service already applies via `writableLocationIds`/`canManageLocation` — the
- * same "bypass, then trust an already-computed grant" shape
- * `AccessControlService` uses for its own `bms_auth` reads. Writes run inside
+ * `F4.16` / ADR 0043 — `locations` is one of the five tables `F4.16` routes on
+ * `fleetDb` (migration `0040`); Amendment 3 decision 2 grandfathers that
+ * behaviour and asks only for the reason this comment now records. Reads run on
+ * `fleetDb` because `writableLocationIds`/`canManageLocation` resolve to a
+ * cross-organization union for a multi-org master-data admin — a single tenant
+ * GUC cannot serve them, and decision 3 routes that case to the fleet pool
+ * rather than looping one transaction per organization. The `WHERE` filter is
+ * the isolation control the amendment trusts. Writes run inside
  * `withTenant(tenantDb, organizationId, …)`, which sets the RLS GUC to the
  * row's own organization before insert/update — the id is always known
  * before the write (from the request body, or from a fleet read already
@@ -208,16 +211,28 @@ export class LocationsAdminService {
       throw new NotFoundException("Location not found");
     }
 
-    const [activeRtu] = await this.tenantDb
-      .select({ count: sql<number>`count(*)::int` })
-      .from(rtus)
-      .where(and(eq(rtus.locationId, id), eq(rtus.active, true)))
-      .limit(1);
-    const [activeAsset] = await this.tenantDb
-      .select({ count: sql<number>`count(*)::int` })
-      .from(assets)
-      .where(and(eq(assets.locationId, id), eq(assets.active, true)))
-      .limit(1);
+    // E7.1b: `rtus` and `assets` are FORCE-policied as of 0047, so these guard
+    // counts must run inside the location's org GUC — on the bare tenant pool
+    // with no `SET LOCAL` they return 0 and the guard never fires, deactivating a
+    // location that still has active RTUs or assets. `rtus.service.deactivate`
+    // counts inside its own GUC for the same reason; this matches it.
+    const { activeRtu, activeAsset } = await withTenant(
+      this.tenantDb,
+      existing.organizationId,
+      async (tx) => {
+        const [activeRtu] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(rtus)
+          .where(and(eq(rtus.locationId, id), eq(rtus.active, true)))
+          .limit(1);
+        const [activeAsset] = await tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(assets)
+          .where(and(eq(assets.locationId, id), eq(assets.active, true)))
+          .limit(1);
+        return { activeRtu, activeAsset };
+      },
+    );
     if ((activeRtu?.count ?? 0) > 0 || (activeAsset?.count ?? 0) > 0) {
       throw new ConflictException("Cannot deactivate location with active RTUs or assets");
     }

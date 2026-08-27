@@ -54,7 +54,7 @@ describe.skipIf(!connectionString)("F4.14 — audit read API", () => {
     pool = created;
 
     const db = createDb(created);
-    svc = new AuditAdminService(db, new AccessControlService(db, db, db));
+    svc = new AuditAdminService(db, new AccessControlService(db, db));
     fx = await loadFixtures(created);
     // Before as well as after: a crashed previous run must not fail this one.
     await cleanup(created);

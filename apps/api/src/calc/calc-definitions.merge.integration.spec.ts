@@ -99,11 +99,18 @@ async function seedVersion(
     .returning({ id: assetTemplates.id });
 
   await db.insert(templatePoints).values([
-    { templateId: template.id, pointKey: measuredKey, kind: "measured", sortOrder: 0 },
+    {
+      organizationId: fx.organizationId,
+      templateId: template.id,
+      pointKey: measuredKey,
+      kind: "measured",
+      sortOrder: 0,
+    },
     {
       // A second measured point, this one carrying calc columns it has no
       // business carrying — case 8's fixture. `kind` is never coalesced, so
       // an override on it must still not produce a definition.
+      organizationId: fx.organizationId,
       templateId: template.id,
       pointKey: MEASURED_TEMPLATE_KEY,
       kind: "measured",
@@ -111,6 +118,7 @@ async function seedVersion(
       sortOrder: 1,
     },
     {
+      organizationId: fx.organizationId,
       templateId: template.id,
       pointKey: DERIVED_KEY,
       kind: "derived",
@@ -124,6 +132,7 @@ async function seedVersion(
   const [asset] = await db
     .insert(assets)
     .values({
+      organizationId: fx.organizationId,
       code: `${TEST_ASSET_PREFIX}${assetSuffix}`,
       name: `Merge Fixture Asset ${assetSuffix}`,
       siteName: "Fixture Site",
@@ -146,12 +155,14 @@ async function seedVersion(
 async function writeOverrideRow(
   db: BmsDb,
   assetId: string,
+  organizationId: string,
   override: Partial<CalcValues>,
   extra: { active?: boolean; pointKey?: string; sourceKind?: "computed" | "unmapped" } = {},
 ): Promise<void> {
   const pointKey = extra.pointKey ?? DERIVED_KEY;
   const sourceKind = extra.sourceKind ?? "computed";
   await db.insert(assetPoints).values({
+    organizationId,
     assetId,
     pointKey,
     // `unmapped` keeps `asset_points_source_ref_check` satisfied with a NULL
@@ -208,7 +219,7 @@ export async function assertAllNullRowIsIdenticalToNoRow(
 ): Promise<void> {
   const db = createDb(pool);
   const { assetId, measuredKey } = await seedVersion(db, fx, 1, "02");
-  await writeOverrideRow(db, assetId, {});
+  await writeOverrideRow(db, assetId, fx.organizationId, {});
 
   const def = await loadDerived(db, assetId, measuredKey);
   assert(def !== undefined, "an all-NULL asset_points row must not suppress the definition");
@@ -242,7 +253,7 @@ export async function assertEachColumnOverridesIndependently(
   {
     await runCleanup(pool);
     const { assetId, measuredKey } = await seedVersion(db, fx, 1, "03A");
-    await writeOverrideRow(db, assetId, { formula: `{${fx.pointKeys[0].code}} * 3` });
+    await writeOverrideRow(db, assetId, fx.organizationId, { formula: `{${fx.pointKeys[0].code}} * 3` });
     const def = await loadDerived(db, assetId, measuredKey);
     assert(def !== undefined, "overriding formula alone must still yield a definition");
     assert(
@@ -256,7 +267,7 @@ export async function assertEachColumnOverridesIndependently(
   {
     await runCleanup(pool);
     const { assetId, measuredKey } = await seedVersion(db, fx, 1, "03B");
-    await writeOverrideRow(db, assetId, { calcIntervalSeconds: 900 });
+    await writeOverrideRow(db, assetId, fx.organizationId, { calcIntervalSeconds: 900 });
     const def = await loadDerived(db, assetId, measuredKey);
     assert(
       def?.intervalSeconds === 900,
@@ -272,7 +283,7 @@ export async function assertEachColumnOverridesIndependently(
   {
     await runCleanup(pool);
     const { assetId, measuredKey } = await seedVersion(db, fx, 1, "03C");
-    await writeOverrideRow(db, assetId, { maxInputAgeSeconds: 30 });
+    await writeOverrideRow(db, assetId, fx.organizationId, { maxInputAgeSeconds: 30 });
     const def = await loadDerived(db, assetId, measuredKey);
     assert(
       def?.maxInputAgeSeconds === 30,
@@ -304,7 +315,7 @@ export async function assertEachColumnOverridesIndependently(
         "override assertion below proves nothing",
     );
 
-    await writeOverrideRow(db, assetId, { formulaDialect: "bms-calc-v1" });
+    await writeOverrideRow(db, assetId, fx.organizationId, { formulaDialect: "bms-calc-v1" });
     const def = await loadDerived(db, assetId, measuredKey);
     assert(
       def !== undefined,
@@ -329,7 +340,7 @@ export async function assertEachColumnOverridesIndependently(
       calcTrigger: "streaming",
       calcIntervalSeconds: null,
     });
-    await writeOverrideRow(db, assetId, { calcTrigger: "scheduled", calcIntervalSeconds: 60 });
+    await writeOverrideRow(db, assetId, fx.organizationId, { calcTrigger: "scheduled", calcIntervalSeconds: 60 });
     const def = await loadDerived(db, assetId, measuredKey);
     assert(
       def?.trigger === "scheduled",
@@ -350,7 +361,7 @@ export async function assertFullOverrideTakesNothingFromTemplate(
 ): Promise<void> {
   const db = createDb(pool);
   const { assetId, measuredKey } = await seedVersion(db, fx, 1, "04");
-  await writeOverrideRow(db, assetId, {
+  await writeOverrideRow(db, assetId, fx.organizationId, {
     formula: `{${fx.pointKeys[0].code}} + 7`,
     formulaDialect: "bms-calc-v1",
     calcTrigger: "scheduled",
@@ -379,6 +390,7 @@ export async function assertOverrideDoesNotLeakBetweenAssets(
   const [assetB] = await db
     .insert(assets)
     .values({
+      organizationId: fx.organizationId,
       code: `${TEST_ASSET_PREFIX}05B`,
       name: "Merge Fixture Asset B",
       siteName: "Fixture Site",
@@ -388,7 +400,7 @@ export async function assertOverrideDoesNotLeakBetweenAssets(
     })
     .returning({ id: assets.id });
 
-  await writeOverrideRow(db, assetA, { calcIntervalSeconds: 45 });
+  await writeOverrideRow(db, assetA, fx.organizationId, { calcIntervalSeconds: 45 });
 
   const svc = new CalcDefinitionsService(db, new MetricsService());
   const defA = (await svc.getDefinitionsForInput(assetA, measuredKey)).find(
@@ -445,7 +457,7 @@ export async function assertEachAssetResolvesAgainstItsOwnPin(
 export async function assertInactiveRowStillResolves(pool: pg.Pool, fx: Fixtures): Promise<void> {
   const db = createDb(pool);
   const { assetId, measuredKey } = await seedVersion(db, fx, 1, "07");
-  await writeOverrideRow(db, assetId, { calcIntervalSeconds: 45 }, { active: false });
+  await writeOverrideRow(db, assetId, fx.organizationId, { calcIntervalSeconds: 45 }, { active: false });
 
   const def = await loadDerived(db, assetId, measuredKey);
   assert(
@@ -483,6 +495,7 @@ export async function assertMeasuredPointIsNeverActivatedByAnOverride(
   await writeOverrideRow(
     db,
     assetId,
+    fx.organizationId,
     {
       formula: `{${fx.pointKeys[0].code}} * 5`,
       formulaDialect: "bms-calc-v1",
@@ -527,6 +540,7 @@ export async function assertNonComputedRowOverridesNothing(
   await writeOverrideRow(
     db,
     assetId,
+    fx.organizationId,
     { calcIntervalSeconds: 45, maxInputAgeSeconds: 30 },
     { sourceKind: "unmapped" },
   );

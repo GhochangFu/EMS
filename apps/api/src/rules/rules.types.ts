@@ -25,6 +25,16 @@ export type RuleRow = {
   ruleType: string;
   source: string;
   enabled: boolean;
+  /**
+   * `E7.1b`: the rule's own tenant (`automation_rules.organization_id`, 0046)
+   * and its asset's tenant (`assets.organization_id`). The write path stamps
+   * `rule_executions.organization_id` from the former and scopes the streaming
+   * raise by the latter; both ride the `leftJoin` that already reads the asset,
+   * so neither costs an extra query. `assetOrganizationId` is null exactly when
+   * the rule targets no asset — a `time_window` rule.
+   */
+  organizationId: string | null;
+  assetOrganizationId: string | null;
   assetId: string | null;
   assetCode: string | null;
   assetName: string | null;

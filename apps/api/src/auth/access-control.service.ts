@@ -19,7 +19,7 @@ import type {
   UserRole,
 } from "@bms/shared";
 
-import { AUTH_DRIZZLE, FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { AUTH_DRIZZLE, FLEET_DRIZZLE } from "../database/database.tokens";
 import {
   noAccessScope,
   type ReadScopeSource,
@@ -40,37 +40,33 @@ type DbUser = {
 };
 
 /**
- * `F4.16` / ADR 0043 — three pools, not one.
+ * `F4.16` / ADR 0043 (Amendments 2–4) — scope resolution runs **before** any
+ * tenant context exists, so it cannot name an organization with `SET LOCAL
+ * app.current_organization`: finding the organization is this service's job, and
+ * an actor may hold grants across more than one, which a single GUC cannot
+ * express.
  *
- * `locations` and `user_organization_access` carry `ENABLE ROW LEVEL SECURITY`
- * (decision 10), and `bms_tenant`/`bms_fleet` only see rows for the organization
- * named by `SET LOCAL app.current_organization` — which this service cannot set
- * until it already knows the organization, and knowing it is this service's job.
+ * Every grant-walk and tenant-table read therefore runs on `fleetDb`
+ * (`bms_fleet`, `BYPASSRLS`), filtered by ids this service already trusts — the
+ * caller's own `userId`, or an organization/location id derived from that user's
+ * own grant rows, never a caller-supplied one. The `WHERE` filter is the
+ * isolation control (Amendment 2/3), the same "bypass, then trust an
+ * already-computed grant" shape a global admin's `scopeFromSource("global")` has
+ * always used. `E7.1b`'s `0047` removes `bms_auth`'s grants on `locations` and
+ * `user_organization_access` and gives `assets`/`asset_groups` a policy, so the
+ * older `authDb`/`tenantDb` reads here would lose their grant or fall to zero
+ * rows — the fleet re-point is what keeps scope resolution whole across that flip.
  *
- * Rather than resolve that circularity with a `withTenant` transaction per
- * candidate organization (correct, but only needed where `bms_auth` cannot
- * already read the table), this service uses the grant Amendment 1 already put
- * in place for exactly this shape of read: `bms_auth` holds an unqualified
- * `SELECT` on `locations` and `user_organization_access`, via the
- * `auth_bootstrap_read` policy, specifically because the bootstrap needs to find
- * the organization before any tenant context exists. Every method below that
- * queries those two tables uses `authDb`, filtered by ids this service already
- * trusts (a grant row's own organization id, never a caller-supplied one) — the
- * same defense-in-depth those two tables already gave up **is not weakened
- * further** by this service also relying on it for authorization, not just
- * login. `E7.1` removes the grant and the policy; this file's `authDb` reads
- * come out in the same change (see the ADR's own removal note).
- *
- * `assets`, `asset_groups`, `asset_group_members` and `user_asset_group_access`
- * carry no policy yet and are not granted to `bms_auth`, so those queries run on
- * `tenantDb` (or `fleetDb` for a global admin) exactly as before — RLS is not in
- * play for them either way, so no `withTenant` wrapping is needed there either.
+ * Only `resolveDbUser` stays on `authDb`: `bms_auth` keeps its narrow `SELECT`
+ * on `bms.users` alone (Amendment 4's `auth_bootstrap_read` policy), which is the
+ * one read that must work before the fleet pool is even reached. The tenant pool
+ * is intentionally **not** injected here — this service never reads through a
+ * tenant GUC.
  */
 @Injectable()
 export class AccessControlService {
   constructor(
     @Inject(AUTH_DRIZZLE) private readonly authDb: BmsDb,
-    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
   ) {}
 
@@ -180,13 +176,17 @@ export class AccessControlService {
       if (orgIds.length === 0) {
         return [];
       }
-      const rows = await this.authDb
+      // fleetDb: pre-tenant scope resolution across the actor's org grants; a
+      // single SET LOCAL cannot express the set, and the orgId WHERE filter is
+      // the isolation control (ADR 0043 Amendment 2/3).
+      const rows = await this.fleetDb
         .select({ id: locations.id })
         .from(locations)
         .where(inArray(locations.organizationId, orgIds));
       return rows.map((row) => row.id);
     }
-    const rows = await this.authDb
+    // fleetDb: pre-tenant resolution keyed by the actor's own userId (Amendment 2/3).
+    const rows = await this.fleetDb
       .select({ id: locations.id })
       .from(userLocationAccess)
       .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
@@ -253,7 +253,10 @@ export class AccessControlService {
     if (user.role === "admin") {
       return true;
     }
-    const [row] = await this.tenantDb
+    // fleetDb: pre-tenant lookup of the asset's home location before any org
+    // context exists (finding it is the point); isolation is the
+    // canManageLocation check below, filtered by the actor's grants (Amendment 2/3).
+    const [row] = await this.fleetDb
       .select({ locationId: assets.locationId })
       .from(assets)
       .where(eq(assets.id, assetId))
@@ -330,7 +333,8 @@ export class AccessControlService {
 
   /** Organization ids from this user's direct `user_organization_access` grants. */
   private async directOrganizationIds(userId: string): Promise<string[]> {
-    const rows = await this.authDb
+    // fleetDb: pre-tenant grant walk keyed by the actor's own userId (Amendment 2/3).
+    const rows = await this.fleetDb
       .select({ id: userOrganizationAccess.organizationId })
       .from(userOrganizationAccess)
       .where(eq(userOrganizationAccess.userId, userId));
@@ -339,7 +343,8 @@ export class AccessControlService {
 
   /** Organization ids implied by this user's `user_location_access` grants. */
   private async locationDerivedOrganizationIds(userId: string): Promise<string[]> {
-    const rows = await this.authDb
+    // fleetDb: pre-tenant grant walk keyed by the actor's own userId (Amendment 2/3).
+    const rows = await this.fleetDb
       .select({ id: locations.organizationId })
       .from(userLocationAccess)
       .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
@@ -397,9 +402,10 @@ export class AccessControlService {
 
     if (source === "organization") {
       const organizationIds = await this.directOrganizationIds(user.id);
+      // fleetDb: pre-tenant resolution filtered by the actor's own org grants (Amendment 2/3).
       const locationRows =
         organizationIds.length > 0
-          ? await this.authDb
+          ? await this.fleetDb
               .select({
                 id: locations.id,
                 code: locations.code,
@@ -418,9 +424,11 @@ export class AccessControlService {
               .orderBy(asc(locations.name))
           : [];
       const locationIds = locationRows.map((row) => row.id);
+      // fleetDb: assets gains a policy in 0047; filtered by locationIds derived
+      // from the actor's own grants above (Amendment 2/3).
       const assetRows =
         locationIds.length > 0
-          ? await this.tenantDb
+          ? await this.fleetDb
               .select({ id: assets.id })
               .from(assets)
               .where(inArray(assets.locationId, locationIds))
@@ -437,7 +445,8 @@ export class AccessControlService {
     }
 
     if (source === "location") {
-      const locationRows = await this.authDb
+      // fleetDb: pre-tenant resolution keyed by the actor's own userId (Amendment 2/3).
+      const locationRows = await this.fleetDb
         .select({
           id: locations.id,
           code: locations.code,
@@ -456,9 +465,11 @@ export class AccessControlService {
         )
         .orderBy(asc(locations.name));
       const locationIds = locationRows.map((row) => row.id);
+      // fleetDb: assets gains a policy in 0047; filtered by locationIds derived
+      // from the actor's own grants above (Amendment 2/3).
       const assetRows =
         locationIds.length > 0
-          ? await this.tenantDb
+          ? await this.fleetDb
               .select({ id: assets.id })
               .from(assets)
               .where(inArray(assets.locationId, locationIds))
@@ -475,11 +486,13 @@ export class AccessControlService {
     }
 
     if (source === "asset_group") {
-      // assetGroups/userAssetGroupAccess are not policied and not granted to
-      // bms_auth, so they run on the tenant pool. locations is both, so it is
-      // queried separately on the auth pool rather than joined in — the original
-      // single joined query cannot run unmodified on either pool alone.
-      const groupRows = await this.tenantDb
+      // fleetDb throughout: pre-tenant resolution before any org context exists.
+      // asset_groups gains a policy in 0047 and locations already carries one;
+      // both reads are keyed by the actor's own userId / user-derived location
+      // ids, which is the isolation control (Amendment 2/3). The join is split
+      // only because the original single query mixed a userId-keyed grant walk
+      // with a location filter.
+      const groupRows = await this.fleetDb
         .select({
           id: assetGroups.id,
           locationId: assetGroups.locationId,
@@ -493,7 +506,7 @@ export class AccessControlService {
       const locationIds = [...new Set(groupRows.map((row) => row.locationId))];
       const locationRows =
         locationIds.length > 0
-          ? await this.authDb
+          ? await this.fleetDb
               .select({
                 id: locations.id,
                 code: locations.code,
@@ -523,9 +536,11 @@ export class AccessControlService {
         });
 
       const groupIds = activeGroupRows.map((row) => row.id);
+      // fleetDb: assets + the asset_group_members junction gain policies in 0047;
+      // filtered by groupIds derived from the actor's own grants above (Amendment 2/3).
       const assetRows =
         groupIds.length > 0
-          ? await this.tenantDb
+          ? await this.fleetDb
               .select({ id: assets.id })
               .from(assetGroupMembers)
               .innerJoin(assets, eq(assetGroupMembers.assetId, assets.id))
