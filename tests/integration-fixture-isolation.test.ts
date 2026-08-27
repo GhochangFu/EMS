@@ -389,3 +389,184 @@ describe("committed fixture prefixes are per-run", () => {
     ).toBe(false);
   });
 });
+
+/**
+ * The 2026-08-27 `reports.service.rls.integration.test.ts` /
+ * `rollup-conversion.integration.test.ts` flake — the **reading** counterpart of
+ * the two rules above, and the one the first rule's own docstring predicted:
+ * "that is a convention holding, not a constraint."
+ *
+ * `reports.service.rls` resolved its solar fixture with
+ * `SELECT id, organization_id FROM bms.assets WHERE code ILIKE 'PV%' ORDER BY
+ * code LIMIT 1`. `rollup-conversion` commits a probe asset coded
+ * `PV-F428-PROBE`, which sorts **before** `PV-INV-01` — the only seeded `PV%`
+ * asset. So whenever the two files landed in one Vitest invocation, the reports
+ * suite adopted the rollup suite's fixture: it wrote 1890 `kw` rows onto a
+ * foreign probe and refreshed the production aggregates over them, while
+ * `cleanupProbes` deleted that asset and every telemetry row on it. Both suites
+ * then failed on the other's damage and neither message named the collision.
+ * Reproduced 2026-08-27; the 1890 in
+ * `this check requires the raw fixture to be deleted first; 1890 rows remain`
+ * is the reports fixture's own per-asset insert count, which is what identified
+ * the writer.
+ *
+ * The convention the two rules above rely on is that every fixture prefix sorts
+ * *after* the lowest seeded code. `PV-F428-PROBE` is the first one in the tree
+ * that does not, and nothing forced it to — the `PV` prefix is load-bearing for
+ * that suite, because the dashboard and report split solar with
+ * `code ILIKE 'PV%'`. So the fix cannot be "rename the probe": the next suite
+ * needing a solar fixture has the same constraint. It has to be on the reading
+ * side, and it is the same rule as before — **do not share the row**. An exact
+ * `code = $1` / `code = ANY($1)` cannot resolve to another suite's fixture,
+ * because every committed fixture code carries its own prefix.
+ *
+ * **Distinct from `F4.53`, and it does not close that row.** `F4.53` is the
+ * *unordered* `LIMIT` on the reading side, in four named files —
+ * `alarm-enrichment`, `alarm-raise`, `assets.service` and
+ * `evaluate-enabled-rules` — none of which is this one, and landing it in full
+ * would leave this defect in place. Also distinct from `F4.65` (a suite sweeping
+ * a prefix it shares with a concurrent copy of itself), `F4.54` (the seed sweep)
+ * and `F4.55` (the aggregate teardown deadlock). All five present as "a parallel
+ * suite made my fixture disappear", which is why they are easy to conflate and
+ * worth keeping apart. **No backlog row names this one yet** — allocating it is
+ * the owner's call; the rule is stated here so the class is gated meanwhile.
+ *
+ * **The rule reads the statement, not the file**, for the reason `F4.38` gives:
+ * "does this token appear anywhere in the file" survives the mutation that
+ * matters. Each `bms.assets` query is examined on its own terms below, and
+ * `the analysis kills the mutation it exists to catch` holds that.
+ *
+ * **What this does not catch**, said here rather than discovered later. The scan
+ * is over backtick template literals, so a query built by concatenation or held
+ * in a `.sql` file is invisible, as is Drizzle's builder form
+ * (`db.select().from(assets).where(ilike(assets.code, "PV%"))`) — neither shape
+ * appears in the tree today and both would be the same defect. A pattern bound
+ * as a parameter (`code ILIKE $1`) reads as safe because that is how every
+ * own-prefix cleanup in this repo is written; a suite that bound `'PV%'` to it
+ * would slip through. And the rule says nothing about `ORDER BY id` or an
+ * unordered `LIMIT`, which is a different mechanism with its own rule above.
+ */
+describe("fixture assets are resolved by exact code, not by pattern", () => {
+  /**
+   * One backtick-delimited SQL literal that reads `bms.assets`, bounded so a
+   * malformed match cannot swallow the rest of the file.
+   *
+   * `g` is required by `matchAll` and makes `.test()` stateful through
+   * `lastIndex`, which would make the population count below alternate between
+   * runs of the same file list. So membership is decided by
+   * {@link READS_ASSETS_TABLE} and only extraction uses this one.
+   */
+  const ASSETS_QUERY = /`[^`]{0,600}?\bFROM\s+bms\.assets\b[^`]{0,600}?`/g;
+  /** Stateless membership test — is there a `bms.assets` read in this file at all. */
+  const READS_ASSETS_TABLE = /\bFROM\s+bms\.assets\b/;
+  /** A **literal** code pattern — `code LIKE 'X%'`, not `code LIKE $1`. */
+  const LITERAL_CODE_PATTERN = /\bcode\s+(?:NOT\s+)?I?LIKE\s+'/i;
+  /**
+   * An id-scoped read cannot adopt a foreign row whatever its code predicate
+   * says, so it is not this defect. `rollup-conversion.integration.spec.ts`
+   * mirrors the shipped `code ILIKE 'PV%'` split this way on purpose, and
+   * `reports.service.rls`'s own collation guard does the same.
+   */
+  const ID_SCOPED = /\bid\s*(?:=|IN)\s*(?:ANY\s*\(|\(|\$)/i;
+
+  /**
+   * Prose about the rule is not the rule being broken — this file and the two
+   * suites involved all quote the offending query in their header comments.
+   * Line-keyed, matching the first rule above; a comment that opens mid-line
+   * after code is not a shape this repo writes.
+   */
+  function withoutComments(source: string): string {
+    return source
+      .split(/\r?\n/)
+      .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+      .join("\n");
+  }
+
+  /** Every `bms.assets` query in `source` that resolves a row by code pattern. */
+  function patternReads(source: string): string[] {
+    return [...withoutComments(source).matchAll(ASSETS_QUERY)]
+      .map((match) => match[0])
+      .filter((statement) => LITERAL_CODE_PATTERN.test(statement) && !ID_SCOPED.test(statement));
+  }
+
+  function specsReadingAssets(): string[] {
+    return ["apps", "packages"]
+      .flatMap((root) => {
+        try {
+          return walk(join(repoRoot, root));
+        } catch {
+          return [];
+        }
+      })
+      .filter((f) => /(\.spec|\.integration\.test)\.tsx?$/.test(f))
+      .filter((f) => READS_ASSETS_TABLE.test(withoutComments(readFileSync(f, "utf8"))))
+      .map((f) => relative(repoRoot, f).replace(/\\/g, "/"))
+      .sort();
+  }
+
+  it("no spec resolves a bms.assets row by a literal code pattern", () => {
+    const specs = specsReadingAssets();
+
+    // The same floor the two rules above use: an empty offender list must mean
+    // "scanned and clean", not "the walk or the query pattern broke". 22 spec
+    // files carry a `FROM bms.assets` statement as of this commit.
+    expect(
+      specs.length,
+      "no spec with a FROM bms.assets query was found. Either the walk or READS_ASSETS_TABLE " +
+        "is broken, and the offender list below would mean nothing.",
+    ).toBeGreaterThanOrEqual(20);
+
+    const offenders = specs.flatMap((rel) =>
+      patternReads(readFileSync(join(repoRoot, rel), "utf8")).map(
+        (statement) => `${rel} — ${statement.replace(/\s+/g, " ")}`,
+      ),
+    );
+
+    expect(
+      offenders,
+      `a spec resolves a bms.assets row by code pattern:\n${offenders.join("\n")}\n\n` +
+        "Name the seeded row by exact code instead — SOLAR_ASSET_CODE / GRID_ASSET_CODE in " +
+        "apps/api/src/reports/reports.service.rls.integration.spec.ts. A pattern read returns " +
+        "whichever row currently sorts first, which is another suite's committed fixture as " +
+        "often as it is the seed. Scoping the read by id is the other way out, and is what the " +
+        "suites mirroring the shipped `code ILIKE 'PV%'` split already do.",
+    ).toEqual([]);
+  });
+
+  it("the analysis kills the mutation it exists to catch", () => {
+    // The defect, verbatim, as it stood before 2026-08-27.
+    const defect =
+      "await fleetPool.query(`SELECT id, organization_id FROM bms.assets " +
+      "WHERE code ILIKE 'PV%' ORDER BY code LIMIT 1`);";
+    expect(patternReads(defect)).toHaveLength(1);
+
+    // Its other half, which spans lines in the original.
+    const sibling =
+      "await fleetPool.query(`SELECT id FROM bms.assets\n" +
+      "  WHERE organization_id = $1 AND code NOT ILIKE 'PV%'\n" +
+      "  ORDER BY code LIMIT 1`, [organizationId]);";
+    expect(patternReads(sibling)).toHaveLength(1);
+
+    // The fix must pass, or the mutations above prove nothing.
+    const fixed =
+      "await fleet.query(`SELECT code, id, organization_id FROM bms.assets " +
+      "WHERE code = ANY($1::text[])`, [[SOLAR_ASSET_CODE, GRID_ASSET_CODE]]);";
+    expect(patternReads(fixed)).toEqual([]);
+
+    // An id-scoped read mirroring the shipped solar split is not this defect —
+    // rollup-conversion.integration.spec.ts, verbatim.
+    const idScoped = "`SELECT id FROM bms.assets WHERE code ILIKE 'PV%' AND id = ANY($3::uuid[])`";
+    expect(patternReads(idScoped)).toEqual([]);
+
+    // An own-prefix sweep binds its pattern as a parameter; that is the cleanup
+    // rule's business, not this one's.
+    const ownPrefix = "await pool.query(`SELECT id FROM bms.assets WHERE code LIKE $1`, [prefix]);";
+    expect(patternReads(ownPrefix)).toEqual([]);
+
+    // Quoting the defect in a docstring is not committing it.
+    const prose =
+      " * They used to be resolved by pattern: `SELECT id FROM bms.assets WHERE\n" +
+      " *   code ILIKE 'PV%' ORDER BY code LIMIT 1`.";
+    expect(patternReads(prose)).toEqual([]);
+  });
+});
