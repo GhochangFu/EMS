@@ -65,7 +65,7 @@ import { ReportsService } from "./reports.service";
  * `tests/adr-0024-retention-bounds.test.ts` invariant, and it is why this is not
  * a single `DELETE ... USING unnest(pairs)`.
  *
- * ## Why the two fixture assets are named by exact code
+ * ## Why the two fixture assets are named by exact code (`F4.67`)
  *
  * They used to be resolved by pattern: `code ILIKE 'PV%' ORDER BY code LIMIT 1`
  * for the solar one, `code NOT ILIKE 'PV%' ORDER BY code LIMIT 1` for its
@@ -113,8 +113,7 @@ import { ReportsService } from "./reports.service";
 const POINT_KEY = "kw";
 
 /**
- * The seeded solar asset, by exact code — see the header section on the
- * 2026-08-27 adoption flake.
+ * The seeded solar asset, by exact code — see the `F4.67` section in the header.
  *
  * Must satisfy the report's own `code ILIKE 'PV%'` split, which
  * {@link resolveEnergyFixtureAssets} asserts rather than assumes: renaming this
@@ -205,8 +204,8 @@ export interface EnergyFixtureAssets {
  * Exported and taking a `pg.PoolClient` as well as a `pg.Pool` for one reason:
  * {@link assertForeignPvFixtureIsNotAdopted} drives it inside its own
  * transaction, against a planted decoy, so the "cannot adopt a foreign row"
- * property is executed rather than argued. See the exact-code section in the
- * header for what adopting one did.
+ * property is executed rather than argued. See the `F4.67` section in the header
+ * for what adopting one did.
  *
  * Every premise the three assertions rest on is checked here rather than
  * downstream: both rows exist, the solar one really is `PV%`-coded, the other one
@@ -230,7 +229,7 @@ export async function resolveEnergyFixtureAssets(
     `E7.1b energy RLS fixture needs the seeded asset ${SOLAR_ASSET_CODE}; run \`pnpm db:seed\`. ` +
       "If the seed renamed it, rename SOLAR_ASSET_CODE here — do not widen this back to a " +
       "`code ILIKE 'PV%'` scan, which adopts another suite's committed probe (see the " +
-      "exact-code section in this file's header).",
+      "`F4.67` section in this file's header).",
   );
   assert(
     other !== undefined,
@@ -274,8 +273,8 @@ export async function resolveEnergyFixtureAssets(
  *
  * Assets are read as **fleet** (BYPASSRLS) by {@link resolveEnergyFixtureAssets}
  * — the seed's `PV-INV-01` and its same-org sibling `CH-CRAC-101`, named by exact
- * code. The exact-code section in this file's header is why they are not resolved
- * by pattern, and what it cost when they were.
+ * code. The `F4.67` section in this file's header is why they are not resolved by
+ * pattern, and what it cost when they were.
  *
  * The refresh is `@bms/db`'s `refreshAggregatesFrom` — the same shared helper the
  * `CalcWriteService`/`TelemetryWriteService` write paths use — rather than a
@@ -492,13 +491,13 @@ export async function assertReportResolvesWithOrgGuc(
 }
 
 /**
- * **The 2026-08-27 adoption regression, executed rather than argued.** Plants an asset that
+ * **The `F4.67` regression, executed rather than argued.** Plants an asset that
  * sorts ahead of every seeded `PV%` code and proves
  * {@link resolveEnergyFixtureAssets} still returns the seeded row.
  *
  * The decoy is a stand-in for `rollup-conversion.integration.spec.ts`'s
- * `PV-F428-PROBE`, which really did get adopted here (see the exact-code section
- * in this file's header). Restoring the old `code ILIKE 'PV%' ORDER BY code LIMIT 1`
+ * `PV-F428-PROBE`, which really did get adopted here (see the `F4.67` section in
+ * this file's header). Restoring the old `code ILIKE 'PV%' ORDER BY code LIMIT 1`
  * read fails this immediately — the decoy sorts first by construction, and the
  * sanity check below proves that rather than trusting the collation.
  *
@@ -567,11 +566,10 @@ export async function assertForeignPvFixtureIsNotAdopted(
     assert(
       resolved.pvAssetId === fx.pvAssetId,
       `resolveEnergyFixtureAssets adopted a foreign PV asset: got ${resolved.pvAssetId}, ` +
-        `expected the seeded ${SOLAR_ASSET_CODE} (${fx.pvAssetId}). This is the 2026-08-27 ` +
-        `adoption defect — ` +
+        `expected the seeded ${SOLAR_ASSET_CODE} (${fx.pvAssetId}). This is the F4.67 defect — ` +
         "the resolution went back to matching a code pattern instead of an exact code, and " +
         "whichever suite currently owns a PV-prefixed committed fixture is now this suite's " +
-        "fixture. See the exact-code section in this file's header.",
+        "fixture. See the `F4.67` section in this file's header.",
     );
     assert(
       resolved.otherAssetId === fx.otherAssetId,

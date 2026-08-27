@@ -105,7 +105,7 @@ describe.skipIf(!connectionString)(
     });
 
     /**
-     * Not about RLS. It gates the fixture resolution itself, which used
+     * `F4.67` — not about RLS. It gates the fixture resolution itself, which used
      * to adopt `rollup-conversion.integration.spec.ts`'s committed `PV-F428-PROBE`
      * whenever the two files ran in one Vitest invocation. Plants a decoy inside
      * its own rolled-back transaction, so the guard cannot become the hazard.

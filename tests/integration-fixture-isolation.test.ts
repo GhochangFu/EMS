@@ -428,8 +428,8 @@ describe("committed fixture prefixes are per-run", () => {
  * a prefix it shares with a concurrent copy of itself), `F4.54` (the seed sweep)
  * and `F4.55` (the aggregate teardown deadlock). All five present as "a parallel
  * suite made my fixture disappear", which is why they are easy to conflate and
- * worth keeping apart. **No backlog row names this one yet** — allocating it is
- * the owner's call; the rule is stated here so the class is gated meanwhile.
+ * worth keeping apart. Tracked as `F4.67`, which this rule and the suite it names
+ * are the fix for.
  *
  * **The rule reads the statement, not the file**, for the reason `F4.38` gives:
  * "does this token appear anywhere in the file" survives the mutation that
