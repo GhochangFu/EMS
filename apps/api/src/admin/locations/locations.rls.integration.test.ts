@@ -33,6 +33,62 @@ const connectionString = requireIntegrationDb({
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
 const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000001";
 
+/** Every location code family this suite commits, for the stale sweep below. */
+const LOCATION_FAMILIES = ["F4.16-RLS-%", "E71B-LOC-GUARD-%"];
+const GUARD_ASSET_FAMILY = "E71B-AS-GUARD-%";
+
+/**
+ * Reaps rows an earlier run of this suite committed but never cleaned.
+ *
+ * `work-orders.service.rls.integration.test.ts` calls this shape "the `F4.16`
+ * shape" and carries the same sweep for the same reason: `db:seed`'s
+ * `verifyHierarchySeed` counts PHEWB locations exactly, so one leaked fixture
+ * row turns the seed red on any database that is not thrown away after the run.
+ * CI never sees it — its database is fresh every job — and a developer database
+ * accumulates. Five rows had by 2026-08-27, which is what made `db:seed` fail
+ * with "PHEWB locations: expected 6, got 7".
+ *
+ * Two leak paths, and neither is reachable from inside the failing process:
+ * `svc.create` can commit the row and then throw before returning it (the audit
+ * write is a separate transaction), so no caller ever learns the id; and a
+ * killed run — Ctrl+C, a crashed worker — never reaches `afterAll` at all. The
+ * `register` callback closes the third path, an assertion failing *after* a
+ * successful create. This closes the other two.
+ *
+ * Bounded by `created_at`, which is the only thing that makes it safe: a
+ * concurrent instance's rows are seconds old, so a half-hour-old row cannot
+ * belong to a run still in flight. Child-first, because the FK from `assets`
+ * into `locations` is NO ACTION, not CASCADE. Non-fatal: a row an FK still pins
+ * is a later run's hygiene, not this run's failure — fixture codes carry a
+ * timestamp, so a leftover cannot collide with anything this run writes.
+ */
+async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
+  const STALE = "created_at < now() - interval '30 minutes'";
+  try {
+    await pool.query(`DELETE FROM bms.assets WHERE code LIKE $1 AND ${STALE}`, [
+      GUARD_ASSET_FAMILY,
+    ]);
+    for (const family of LOCATION_FAMILIES) {
+      // Audit rows first: they carry the location's id, and dropping the
+      // location without them leaves an entity_id pointing at nothing.
+      await pool.query(
+        `DELETE FROM bms.audit_log
+          WHERE entity_type = 'location'
+            AND entity_id IN (SELECT id FROM bms.locations WHERE code LIKE $1 AND ${STALE})`,
+        [family],
+      );
+      await pool.query(`DELETE FROM bms.locations WHERE code LIKE $1 AND ${STALE}`, [family]);
+    }
+  } catch (err) {
+    process.stderr.write(
+      "[F4.16] could not sweep stale fixture rows: " +
+        `${err instanceof Error ? err.message : String(err)}\n` +
+        "        Harmless for this run — fixture codes are per-run — but the rows stay,\n" +
+        "        and pnpm db:seed will fail its PHEWB location count until they go.\n",
+    );
+  }
+}
+
 function jwtFor(email: string): JwtPayload {
   return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role: "organization_admin" };
 }
@@ -64,6 +120,8 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
       "F4.16",
     );
+
+    await sweepStaleRuns(ownerPool);
 
     const { rows } = await ownerPool.query<{ id: string }>(
       `SELECT uoa.organization_id AS id
@@ -98,9 +156,12 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
   });
 
   afterAll(async () => {
-    // Defensive fallback only — the happy-path test below deletes its own row
-    // immediately. A no-op DELETE on an already-gone id is harmless, so this
-    // only matters if that test threw before reaching its own cleanup.
+    // The happy-path test below deletes its own row immediately, so on a green
+    // run this is a no-op DELETE on an already-gone id. It earns its keep when
+    // that test throws *after* the create: `register` records the id at the
+    // moment the row exists rather than on the return value, so a failed
+    // assertion no longer strands a committed PHEWB location that `db:seed`
+    // will later count.
     if (createdIds.length > 0) {
       await ownerPool.query("DELETE FROM bms.locations WHERE id = ANY($1)", [createdIds]);
     }
@@ -111,8 +172,8 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
     const id = await assertWriteLifecycleSurvivesRealRls(
       { svc, tenantPool, ownerPool, organizationId },
       jwt,
+      (created) => createdIds.push(created),
     );
-    createdIds.push(id);
     // Deleted here, not deferred to afterAll: the lifecycle ends with the row
     // active=true, and this suite's other two `it`s (plus every other
     // integration suite Vitest runs concurrently against the same shared
