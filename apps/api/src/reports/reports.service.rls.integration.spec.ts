@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { refreshAggregatesFrom } from "@bms/db";
 import type pg from "pg";
 
@@ -63,6 +65,41 @@ import { ReportsService } from "./reports.service";
  * `tests/adr-0024-retention-bounds.test.ts` invariant, and it is why this is not
  * a single `DELETE ... USING unnest(pairs)`.
  *
+ * ## Why the two fixture assets are named by exact code (`F4.67`)
+ *
+ * They used to be resolved by pattern: `code ILIKE 'PV%' ORDER BY code LIMIT 1`
+ * for the solar one, `code NOT ILIKE 'PV%' ORDER BY code LIMIT 1` for its
+ * sibling. That reads *whatever currently sorts first*, not *what the seed
+ * contains* — and `rollup-conversion.integration.spec.ts` commits a probe asset
+ * coded `PV-F428-PROBE` for the whole of its run. `PV-F428-PROBE` sorts **before**
+ * `PV-INV-01`, the only seeded `PV%` asset, so whenever the two files overlapped
+ * in one Vitest invocation this suite adopted the other suite's fixture as its
+ * own: it wrote 1890 `kw` rows onto a foreign probe and refreshed the production
+ * aggregates over them, while that suite's `cleanupProbes` deleted the asset and
+ * every telemetry row on it. Both then failed on the other's damage, neither
+ * naming the collision — `fleet: the PV fixture asset must appear in
+ * topConsumers` here, and
+ * `this check requires the raw fixture to be deleted first; 1890 rows remain`
+ * there. Reproduced 2026-08-27; the count is this suite's own per-asset insert
+ * total (120 minutes x mean(1,5,17,40) = 1890), which is what identifies the
+ * writer.
+ *
+ * `integration-fixtures.ts` already states the rule this broke: **`ORDER BY` does
+ * not close the race, it narrows it** — "by code it depends on every other
+ * suite's prefix convention holding forever". `tests/integration-fixture-
+ * isolation.test.ts` even names the convention and the fact that it is "a
+ * convention holding, not a constraint". `PV-F428-PROBE` is the first fixture
+ * code in the tree that sorts ahead of the seeded row a pattern read wanted.
+ *
+ * An exact `code = ANY(...)` cannot adopt a foreign row: every committed fixture
+ * code in this repository carries its own prefix, and no suite creates
+ * `PV-INV-01` or `CH-CRAC-101`. It also serves the reason the pattern read was
+ * chosen for — a seed rename — strictly better: the resolver returns nothing and
+ * trips its own `run pnpm db:seed` assertion by name, where the pattern silently
+ * selected something else. {@link assertForeignPvFixtureIsNotAdopted} proves the
+ * property against a planted decoy rather than asserting it in prose, and
+ * `tests/integration-fixture-isolation.test.ts` gates the class statically.
+ *
  * ## What this proves, and what it does not
  *
  * A **necessity** proof: the read has to be on fleet for the report to work.
@@ -74,6 +111,30 @@ import { ReportsService } from "./reports.service";
 
 /** Point key the report hard-codes; shared with the live simulator (see header). */
 const POINT_KEY = "kw";
+
+/**
+ * The seeded solar asset, by exact code — see the `F4.67` section in the header.
+ *
+ * Must satisfy the report's own `code ILIKE 'PV%'` split, which
+ * {@link resolveEnergyFixtureAssets} asserts rather than assumes: renaming this
+ * constant to a non-`PV` code would leave every assertion below comparing zero
+ * to zero.
+ *
+ * Written by `packages/db/src/eskom-assets-seed.ts`. Nothing under `apps/**` or
+ * `tests/**` creates or deletes it — the committed-fixture suites sweep only
+ * their own prefixes — so unlike a pattern read this cannot resolve to another
+ * suite's row.
+ */
+const SOLAR_ASSET_CODE = "PV-INV-01";
+
+/**
+ * Its non-solar sibling, by exact code, and in the **same** organization so one
+ * `app.current_organization` GUC makes both visible. The same-org premise is
+ * asserted in {@link resolveEnergyFixtureAssets}: a seed that moved either row
+ * to another organization would otherwise turn the positive control into a
+ * silent half-pass.
+ */
+const GRID_ASSET_CODE = "CH-CRAC-101";
 
 /** Two hours of minute-level readings, uneven per minute so buckets are non-trivial. */
 const FIXTURE_MINUTES = 120;
@@ -89,16 +150,23 @@ const SAMPLES_PER_MINUTE = [1, 5, 17, 40] as const;
  */
 const SUBSECOND_MS = 137;
 
-function assert(condition: boolean, message: string): void {
+/**
+ * An assertion signature (`asserts condition`) rather than a plain `void`, so a
+ * checked premise narrows for the code after it. Without that, every use below
+ * needs an `as string` or a `?.` that quietly re-admits the case the assertion
+ * just ruled out — which is how `pv.organization_id as string` got written here
+ * before {@link resolveEnergyFixtureAssets} existed.
+ */
+function assert(condition: boolean, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
   }
 }
 
 export interface EnergyRlsFixture {
-  /** A `PV%`-coded asset (solar), resolved from the seed as fleet. */
+  /** The seeded `PV%`-coded asset (solar), resolved by exact code as fleet. */
   readonly pvAssetId: string;
-  /** A non-`PV%` asset in the **same** organization, so one GUC makes both visible. */
+  /** Its non-`PV%` sibling in the **same** organization, so one GUC makes both visible. */
   readonly otherAssetId: string;
   /** The organization both fixture assets belong to. */
   readonly organizationId: string;
@@ -123,12 +191,90 @@ function scopedAssetIds(fx: EnergyRlsFixture): string[] {
   return [fx.pvAssetId, fx.otherAssetId];
 }
 
+/** What {@link resolveEnergyFixtureAssets} returns — the seed rows, and their org. */
+export interface EnergyFixtureAssets {
+  readonly pvAssetId: string;
+  readonly otherAssetId: string;
+  readonly organizationId: string;
+}
+
+/**
+ * Resolves the two seeded fixture assets by exact code, as **fleet** (BYPASSRLS).
+ *
+ * Exported and taking a `pg.PoolClient` as well as a `pg.Pool` for one reason:
+ * {@link assertForeignPvFixtureIsNotAdopted} drives it inside its own
+ * transaction, against a planted decoy, so the "cannot adopt a foreign row"
+ * property is executed rather than argued. See the `F4.67` section in the header
+ * for what adopting one did.
+ *
+ * Every premise the three assertions rest on is checked here rather than
+ * downstream: both rows exist, the solar one really is `PV%`-coded, the other one
+ * really is not, and both carry the same non-null organization.
+ */
+export async function resolveEnergyFixtureAssets(
+  fleet: pg.Pool | pg.PoolClient,
+): Promise<EnergyFixtureAssets> {
+  const { rows } = await fleet.query<{
+    code: string;
+    id: string;
+    organization_id: string | null;
+  }>(`SELECT code, id, organization_id FROM bms.assets WHERE code = ANY($1::text[])`, [
+    [SOLAR_ASSET_CODE, GRID_ASSET_CODE],
+  ]);
+
+  const pv = rows.find((r) => r.code === SOLAR_ASSET_CODE);
+  const other = rows.find((r) => r.code === GRID_ASSET_CODE);
+  assert(
+    pv !== undefined,
+    `E7.1b energy RLS fixture needs the seeded asset ${SOLAR_ASSET_CODE}; run \`pnpm db:seed\`. ` +
+      "If the seed renamed it, rename SOLAR_ASSET_CODE here — do not widen this back to a " +
+      "`code ILIKE 'PV%'` scan, which adopts another suite's committed probe (see the " +
+      "`F4.67` section in this file's header).",
+  );
+  assert(
+    other !== undefined,
+    `E7.1b energy RLS fixture needs the seeded asset ${GRID_ASSET_CODE}; run \`pnpm db:seed\`. ` +
+      "Same rule as above: rename the constant, do not restore the pattern read.",
+  );
+
+  // The report splits solar with `code ILIKE 'PV%'`, so the codes above are not
+  // interchangeable labels — one must match that predicate and the other must
+  // not, or `sourceTotals.solarKwh` is zero on every pool and the divergence
+  // this suite exists to show becomes invisible.
+  assert(
+    /^PV/i.test(SOLAR_ASSET_CODE),
+    `SOLAR_ASSET_CODE is "${SOLAR_ASSET_CODE}", which the report's \`code ILIKE 'PV%'\` split ` +
+      "does not match — solarKwh would be 0 on every pool and every assertion here vacuous",
+  );
+  assert(
+    !/^PV/i.test(GRID_ASSET_CODE),
+    `GRID_ASSET_CODE is "${GRID_ASSET_CODE}", which the report reads as solar. The second ` +
+      "fixture asset must be non-solar for the grid/solar attribution to mean anything.",
+  );
+
+  const organizationId = pv.organization_id;
+  assert(
+    typeof organizationId === "string",
+    `${SOLAR_ASSET_CODE} carries no organization_id — 0047 gave bms.assets a NOT NULL tenant ` +
+      "column, so an unmigrated or hand-edited database is the likely cause",
+  );
+  assert(
+    other.organization_id === organizationId,
+    `${SOLAR_ASSET_CODE} (${organizationId}) and ${GRID_ASSET_CODE} ` +
+      `(${other.organization_id}) are in different organizations. One \`app.current_organization\` ` +
+      "GUC cannot make both visible, so the third assertion would half-pass.",
+  );
+
+  return { pvAssetId: pv.id, otherAssetId: other.id, organizationId };
+}
+
 /**
  * Resolves the two fixture assets and materialises `kw` telemetry for both.
  *
- * Assets are read as **fleet** (BYPASSRLS): the seed's `PV-INV-01` and a same-org
- * sibling. Resolving them from the database rather than hard-coding a code means
- * a seed rename fails loudly here instead of silently selecting nothing.
+ * Assets are read as **fleet** (BYPASSRLS) by {@link resolveEnergyFixtureAssets}
+ * — the seed's `PV-INV-01` and its same-org sibling `CH-CRAC-101`, named by exact
+ * code. The `F4.67` section in this file's header is why they are not resolved by
+ * pattern, and what it cost when they were.
  *
  * The refresh is `@bms/db`'s `refreshAggregatesFrom` — the same shared helper the
  * `CalcWriteService`/`TelemetryWriteService` write paths use — rather than a
@@ -141,27 +287,8 @@ export async function setUpEnergyFixture(
   ownerPool: pg.Pool,
   fleetPool: pg.Pool,
 ): Promise<EnergyRlsFixture> {
-  const { rows: pvRows } = await fleetPool.query<{ id: string; organization_id: string | null }>(
-    `SELECT id, organization_id FROM bms.assets WHERE code ILIKE 'PV%' ORDER BY code LIMIT 1`,
-  );
-  const pv = pvRows[0];
-  assert(
-    pv !== undefined && typeof pv.organization_id === "string",
-    "E7.1b energy RLS fixture needs a seeded PV% asset with an organization_id; run `pnpm db:seed`",
-  );
-  const organizationId = pv.organization_id as string;
-
-  const { rows: otherRows } = await fleetPool.query<{ id: string }>(
-    `SELECT id FROM bms.assets
-      WHERE organization_id = $1 AND code NOT ILIKE 'PV%'
-      ORDER BY code LIMIT 1`,
-    [organizationId],
-  );
-  const other = otherRows[0];
-  assert(
-    other !== undefined,
-    "E7.1b energy RLS fixture needs a second non-PV asset in the PV asset's organization",
-  );
+  const { pvAssetId, otherAssetId, organizationId } =
+    await resolveEnergyFixtureAssets(fleetPool);
 
   // Recent, uneven, distinct sub-second timestamps. `base` is far enough inside
   // today's window that a two-date range brackets it regardless of the hour.
@@ -170,8 +297,8 @@ export async function setUpEnergyFixture(
   const assetsArr: string[] = [];
   const values: number[] = [];
   const fixtureAssets: { id: string; magnitude: number }[] = [
-    { id: pv.id, magnitude: 40 },
-    { id: other.id, magnitude: 55 },
+    { id: pvAssetId, magnitude: 40 },
+    { id: otherAssetId, magnitude: 55 },
   ];
   for (const { id, magnitude } of fixtureAssets) {
     for (let minute = 0; minute < FIXTURE_MINUTES; minute += 1) {
@@ -203,8 +330,8 @@ export async function setUpEnergyFixture(
 
   const refreshFromIso = new Date(base - 3_600_000).toISOString();
   const fx: EnergyRlsFixture = {
-    pvAssetId: pv.id,
-    otherAssetId: other.id,
+    pvAssetId,
+    otherAssetId,
     organizationId,
     query: { startDate: refreshFromIso.slice(0, 10), endDate: new Date().toISOString().slice(0, 10) },
     insertedTimes: inserted.rows.map((r) => r.time),
@@ -361,4 +488,148 @@ export async function assertReportResolvesWithOrgGuc(
     `tenant + org GUC: solar must be attributed again once the GUC is set, got ` +
       `solarKwh=${preview.sourceTotals.solarKwh}`,
   );
+}
+
+/**
+ * **The `F4.67` regression, executed rather than argued.** Plants one decoy per
+ * half of the resolution — each sorting ahead of its half's seeded code — and
+ * proves {@link resolveEnergyFixtureAssets} still returns both seeded rows.
+ *
+ * **Both decoys are load-bearing**; see the comment at the plant. With only the
+ * `PV%` one, the non-PV assertion could not fail under any mutation, and
+ * reverting that half alone re-opened `F4.67` with this guard still green.
+ *
+ * The decoy is a stand-in for `rollup-conversion.integration.spec.ts`'s
+ * `PV-F428-PROBE`, which really did get adopted here (see the `F4.67` section in
+ * this file's header). Restoring the old `code ILIKE 'PV%' ORDER BY code LIMIT 1`
+ * read fails this immediately — the decoy sorts first by construction, and the
+ * sanity check below proves that rather than trusting the collation.
+ *
+ * **It runs inside its own transaction and rolls back**, which is the same
+ * property `integration-fixtures.ts` names as the only one that closes this class
+ * of race: an uncommitted row is invisible to every other connection, so planting
+ * a `PV%` decoy cannot itself become the hazard it is testing for. That is also
+ * why this takes a checked-out client rather than the pool — a pooled `BEGIN` and
+ * the `SELECT` after it can land on different connections.
+ *
+ * `randomUUID()` in the code, not a constant: two instances of this file on one
+ * database would otherwise collide on `assets_code_unique`, and an uncommitted
+ * duplicate key blocks the second inserter until the first transaction ends.
+ */
+export async function assertForeignPvFixtureIsNotAdopted(
+  fleetPool: pg.Pool,
+  fx: EnergyRlsFixture,
+): Promise<void> {
+  const client = await fleetPool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // **Two decoys, one per half of the resolution, and the second is not
+    // decoration.** The first draft planted only the `PV%` decoy, which left the
+    // `otherAssetId` assertion below unable to fail: a `PV`-prefixed row is
+    // excluded from the non-PV half by construction, under the exact-code
+    // resolution *and* under the `code NOT ILIKE 'PV%' ORDER BY code LIMIT 1`
+    // read it replaced, so no mutation of that half could move the result. The
+    // sibling defect — reverting only the non-PV half — survived the guard named
+    // for it. Found by the `F4.67` code review; §4.6's rule is that an assertion
+    // no mutation of the code it guards can move is not a gate.
+    //
+    // `PV-AAA-` sorts before `PV-INV-01` and before `PV-F428-PROBE`; `AA-` sorts
+    // before `CH-CRAC-101`, the lowest seeded code. So each decoy is what its
+    // half's pattern read would have returned, and each is also a decoy for any
+    // future fixture prefix rather than only for the one that bit.
+    //
+    // Columns are copied from the seeded row of the same half, so neither insert
+    // can fail on a NOT NULL or a foreign key this suite would otherwise track,
+    // and each decoy carries its own half's organization.
+    const plant = async (code: string, copyFrom: string): Promise<string> => {
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO bms.assets (code, name, site_name, domain, location_id, organization_id)
+         SELECT $1, $1, 'E7.1b decoy site', a.domain, a.location_id, a.organization_id
+         FROM bms.assets a WHERE a.code = $2
+         RETURNING id`,
+        [code, copyFrom],
+      );
+      const id = rows[0]?.id;
+      assert(
+        typeof id === "string",
+        `the decoy asset ${code} was not created from ${copyFrom}; the assertions below prove ` +
+          "nothing without it",
+      );
+      return id;
+    };
+
+    const pvDecoyCode = `PV-AAA-E71B-DECOY-${randomUUID()}`;
+    const gridDecoyCode = `AA-E71B-DECOY-${randomUUID()}`;
+    const pvDecoyId = await plant(pvDecoyCode, SOLAR_ASSET_CODE);
+    const gridDecoyId = await plant(gridDecoyCode, GRID_ASSET_CODE);
+
+    // The premise, measured on this database's collation rather than assumed:
+    // each decoy really is what its half's old pattern read would have returned.
+    // Without this the test would pass on a collation where a decoy sorted last,
+    // for the wrong reason.
+    //
+    // Scoped by id rather than written as the forbidden
+    // `WHERE code ILIKE 'PV%' ORDER BY code LIMIT 1` — an id-scoped read cannot
+    // adopt anything, so this guard does not have to exempt itself from the rule
+    // in `tests/integration-fixture-isolation.test.ts` that it exists to support.
+    // It orders the real rows under the real collation, which is the whole
+    // premise; any third row of either class present would be another foreign
+    // fixture, so "the decoy beats the seeded row" is the claim that matters
+    // either way.
+    const assertSortsFirst = async (
+      decoyId: string,
+      decoyCode: string,
+      seededId: string,
+      seededCode: string,
+    ): Promise<void> => {
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM bms.assets WHERE id = ANY($1::uuid[]) ORDER BY code LIMIT 1`,
+        [[decoyId, seededId]],
+      );
+      assert(
+        rows[0]?.id === decoyId,
+        `the decoy ${decoyCode} does not sort before ${seededCode} under this database's ` +
+          "collation, so the pattern read this guards against would not have adopted it and " +
+          "the matching assertion below is not tested",
+      );
+    };
+    await assertSortsFirst(pvDecoyId, pvDecoyCode, fx.pvAssetId, SOLAR_ASSET_CODE);
+    await assertSortsFirst(gridDecoyId, gridDecoyCode, fx.otherAssetId, GRID_ASSET_CODE);
+
+    const resolved = await resolveEnergyFixtureAssets(client);
+    assert(
+      resolved.pvAssetId === fx.pvAssetId,
+      `resolveEnergyFixtureAssets adopted a foreign PV asset: got ${resolved.pvAssetId}, ` +
+        `expected the seeded ${SOLAR_ASSET_CODE} (${fx.pvAssetId}). This is the F4.67 defect — ` +
+        "the resolution went back to matching a code pattern instead of an exact code, and " +
+        "whichever suite currently owns a PV-prefixed committed fixture is now this suite's " +
+        "fixture. See the `F4.67` section in this file's header.",
+    );
+    assert(
+      resolved.otherAssetId === fx.otherAssetId,
+      `resolveEnergyFixtureAssets adopted a foreign non-PV asset: got ${resolved.otherAssetId}, ` +
+        `expected the seeded ${GRID_ASSET_CODE} (${fx.otherAssetId}). Same defect, other half — ` +
+        "the sibling read went back to `code NOT ILIKE 'PV%' ORDER BY code LIMIT 1`, which " +
+        `${gridDecoyCode} now outranks. See the \`F4.67\` section in this file's header.`,
+    );
+  } finally {
+    // The decoy must never become visible to another connection, so the rollback
+    // runs even when an assertion above threw — and its own failure must not
+    // replace that assertion's message.
+    //
+    // A failed ROLLBACK is not survivable, though, and swallowing it alone would
+    // hand a connection back to the pool **still inside this transaction, with
+    // the decoy row uncommitted on it**; the next checkout would then run inside
+    // it. So the release destroys the connection instead — the same shape
+    // `withRollupRole` in `packages/db/src/refresh-aggregates.ts` uses for its
+    // `RESET ROLE`, and for the same reason.
+    let rolledBack = true;
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      rolledBack = false;
+    }
+    client.release(rolledBack ? undefined : new Error("ROLLBACK failed on the decoy transaction"));
+  }
 }

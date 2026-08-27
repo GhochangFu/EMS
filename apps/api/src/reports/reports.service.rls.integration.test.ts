@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import {
+  assertForeignPvFixtureIsNotAdopted,
   assertReportGoesDarkOnBareTenant,
   assertReportResolvesOnFleet,
   assertReportResolvesWithOrgGuc,
@@ -101,6 +102,17 @@ describe.skipIf(!connectionString)(
     it("resolves again on the same tenant role once the org GUC is set", async () => {
       if (!gucTenantPool || !fx) throw new Error("fixture required");
       await assertReportResolvesWithOrgGuc(gucTenantPool, fx);
+    });
+
+    /**
+     * `F4.67` — not about RLS. It gates the fixture resolution itself, which used
+     * to adopt `rollup-conversion.integration.spec.ts`'s committed `PV-F428-PROBE`
+     * whenever the two files ran in one Vitest invocation. Plants a decoy inside
+     * its own rolled-back transaction, so the guard cannot become the hazard.
+     */
+    it("does not adopt a foreign PV-prefixed fixture asset", async () => {
+      if (!fleetPool || !fx) throw new Error("fixture required");
+      await assertForeignPvFixtureIsNotAdopted(fleetPool, fx);
     });
   },
 );
