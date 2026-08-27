@@ -1,6 +1,10 @@
 import { describe, it } from "vitest";
 
-import { runAdminAccessTests, runAssetTemplateTabTests } from "./admin-access.spec";
+import {
+  runAdminAccessTests,
+  runAssetTemplateTabTests,
+  runNotificationTabTests,
+} from "./admin-access.spec";
 
 /** Vitest entry point — see `apps/api/src/admin/admin.schema.test.ts` (ADR 0014). */
 describe("admin-access", () => {
@@ -10,5 +14,9 @@ describe("admin-access", () => {
 
   it("shows the Asset Templates tab to every master-data role", () => {
     runAssetTemplateTabTests();
+  });
+
+  it("shows the F3.8 notification tabs to admin and organization_admin only", () => {
+    runNotificationTabTests();
   });
 });

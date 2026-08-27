@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type { NotificationDeliveryDto } from "@bms/shared";
 
+import * as orgApi from "../../api/admin/organizations";
 import * as api from "../../api/notifications";
 import { NotificationReadinessBanner } from "../../components/notification-readiness-banner";
 import type { AuthUser } from "../../stores/auth-store";
@@ -24,10 +26,37 @@ const user: AuthUser = {
   role: "admin",
 } as unknown as AuthUser;
 
+/** `E7.1d` — two real organizations, so the ledger's new column has names. */
+const IONX = "aaaaaaaa-0000-0000-0000-000000000001";
+const PHEWB = "aaaaaaaa-0000-0000-0000-000000000002";
+
+const ORGANIZATIONS = [
+  {
+    id: IONX,
+    code: "IONX",
+    name: "Ion Exchange",
+    active: true,
+    meta: null,
+    createdAt: new Date(0).toISOString(),
+  },
+  {
+    id: PHEWB,
+    code: "PHEWB",
+    name: "PHE West Bengal",
+    active: true,
+    meta: null,
+    createdAt: new Date(0).toISOString(),
+  },
+];
+
+function stubOrganizations(): void {
+  vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue({ items: ORGANIZATIONS });
+}
+
 function delivery(overrides: Partial<NotificationDeliveryDto>): NotificationDeliveryDto {
   return {
     id: "d1",
-    organizationId: "org-1",
+    organizationId: IONX,
     ruleId: "r1",
     ruleCode: "UPS-BATT-TEMP",
     alarmId: "a1",
@@ -160,4 +189,83 @@ export async function bannerIsSilentWhenTheCheckFails(): Promise<void> {
     expect(api.fetchNotificationReadiness).toHaveBeenCalled();
   });
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
+}
+
+/**
+ * `E7.1d` — the ledger names the tenant (ADR 0043 Consequences).
+ *
+ * An `admin`'s `writableOrganizationIds` is unrestricted, so the rows here
+ * span every tenant. Without the column a failed delivery names a channel code
+ * and no owner, and two organizations running a channel called `ops-email`
+ * produce a ledger nobody can read.
+ */
+export async function namesTheOrganizationOfEveryAttempt(): Promise<void> {
+  stubOrganizations();
+  vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({
+    items: [
+      delivery({ id: "d1", organizationId: IONX }),
+      delivery({ id: "d2", organizationId: PHEWB, status: "failed", error: "webhook 500" }),
+    ],
+  });
+  vi.spyOn(api, "fetchNotificationChannels").mockResolvedValue({ items: [] });
+
+  renderWith(<NotificationDeliveriesPage user={user} />);
+
+  expect(await screen.findByRole("columnheader", { name: "Organization" })).toBeInTheDocument();
+  // Names, never uuids. `organizationId` is NOT NULL on this DTO since
+  // migration 0048, so there is no fleet-wide case to render here.
+  expect(await screen.findByRole("cell", { name: "Ion Exchange" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "PHE West Bengal" })).toBeInTheDocument();
+  expect(screen.queryByText(IONX)).not.toBeInTheDocument();
+}
+
+/** `E7.1d` — the organization filter narrows the ledger to one tenant. */
+export async function filtersTheLedgerByOrganization(): Promise<void> {
+  stubOrganizations();
+  vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({
+    items: [
+      delivery({ id: "d1", organizationId: IONX, channelCode: "ionx-email" }),
+      delivery({ id: "d2", organizationId: PHEWB, channelCode: "phe-email" }),
+    ],
+  });
+  vi.spyOn(api, "fetchNotificationChannels").mockResolvedValue({ items: [] });
+
+  renderWith(<NotificationDeliveriesPage user={user} />);
+
+  // Decision 10 stands: nothing is filtered until the operator asks.
+  expect(await screen.findByText("ionx-email")).toBeInTheDocument();
+  expect(screen.getByText("phe-email")).toBeInTheDocument();
+
+  const organizationFilter = await screen.findByLabelText("Organization");
+  await waitFor(() => {
+    expect(screen.getByRole("option", { name: "PHE West Bengal" })).toBeInTheDocument();
+  });
+  await userEvent.selectOptions(organizationFilter, PHEWB);
+
+  await waitFor(() => {
+    expect(screen.queryByText("ionx-email")).not.toBeInTheDocument();
+  });
+  expect(screen.getByText("phe-email")).toBeInTheDocument();
+}
+
+/**
+ * `E7.1d` — the filter offers only organizations the ledger actually contains.
+ *
+ * Listing every organization would offer choices that can only ever empty the
+ * table, which reads as a broken filter rather than as an empty tenant.
+ */
+export async function offersOnlyOrganizationsPresentInTheLedger(): Promise<void> {
+  stubOrganizations();
+  vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({
+    items: [delivery({ id: "d1", organizationId: IONX })],
+  });
+  vi.spyOn(api, "fetchNotificationChannels").mockResolvedValue({ items: [] });
+
+  renderWith(<NotificationDeliveriesPage user={user} />);
+
+  await screen.findByRole("cell", { name: "Ion Exchange" });
+  expect(screen.getByRole("option", { name: "All organizations" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Ion Exchange" })).toBeInTheDocument();
+  // PHEWB is a real organization with no delivery in this window.
+  expect(screen.queryByRole("option", { name: "PHE West Bengal" })).not.toBeInTheDocument();
 }

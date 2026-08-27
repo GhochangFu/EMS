@@ -3,6 +3,12 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  anAdminCreatesAnOrgScopedChannel,
+  anAdminCreatingFleetWideOmitsTheOrganization,
+  anOrganizationAdminSeesItsOwnOrganizationLocked,
+  editingShowsTheOrganizationAndCannotChangeIt,
+  namesTheOrganizationOfEveryChannel,
+  refusesSendTestOnAFleetWideChannelWithTheReason,
   rendersBothKinds,
   showsTheReadinessWarning,
   showsTheServerRefusalOnSave,
@@ -46,5 +52,30 @@ describe("F3.8 notification channels page", () => {
 
   it("warns when a transport is not configured", async () => {
     await showsTheReadinessWarning();
+  });
+
+  // `E7.1d` — the org-scoped/fleet-wide split (ADR 0043 Consequences).
+  it("names the organization of every channel, fleet-wide included", async () => {
+    await namesTheOrganizationOfEveryChannel();
+  });
+
+  it("refuses Send test on a fleet-wide channel and says why, before the click", async () => {
+    await refusesSendTestOnAFleetWideChannelWithTheReason();
+  });
+
+  it("lets an admin create a channel inside an organization", async () => {
+    await anAdminCreatesAnOrgScopedChannel();
+  });
+
+  it("omits organizationId entirely when an admin creates a fleet-wide channel", async () => {
+    await anAdminCreatingFleetWideOmitsTheOrganization();
+  });
+
+  it("locks an organization admin to its own organization, with no fleet-wide option", async () => {
+    await anOrganizationAdminSeesItsOwnOrganizationLocked();
+  });
+
+  it("shows the organization when editing and never sends it in the patch", async () => {
+    await editingShowsTheOrganizationAndCannotChangeIt();
   });
 });

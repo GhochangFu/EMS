@@ -4,10 +4,14 @@ import type { NotificationChannelDto } from "@bms/shared";
 
 import {
   blankChannelForm,
+  channelFormToPatch,
   channelFormToPayload,
+  channelOrganizationOptions,
   deliveryStatusLabel,
   deliveryStatusTone,
   formFromChannel,
+  organizationLabel,
+  sendTestRefusal,
   targetFromConfig,
   testResultMessage,
 } from "./notification-channels";
@@ -129,5 +133,105 @@ describe("send-test message", () => {
       expect(message.length).toBeGreaterThan(10);
       expect(message).toContain("ops-webhook");
     }
+  });
+});
+
+/**
+ * `E7.1d` — the org-scoped/fleet-wide split (ADR 0043 Consequences).
+ *
+ * The API decided all of this in `E7.1c`; these prove the client agrees with
+ * it rather than re-deriving it. Each assertion below names the API rule it
+ * mirrors, because a client that drifts from one of them produces a refusal
+ * the operator cannot act on.
+ */
+describe("E7.1d channel organization scope", () => {
+  const orgs = [
+    { id: "aaaaaaaa-0000-0000-0000-000000000001", name: "Ion Exchange", active: true },
+    { id: "aaaaaaaa-0000-0000-0000-000000000002", name: "PHE West Bengal", active: true },
+    { id: "aaaaaaaa-0000-0000-0000-000000000003", name: "Retired Org", active: false },
+  ];
+
+  it("offers an admin fleet-wide plus every active organization", () => {
+    const options = channelOrganizationOptions("admin", orgs);
+    expect(options[0]).toEqual({ value: "", label: "Fleet-wide (all organizations)" });
+    expect(options.map((option) => option.label)).toEqual([
+      "Fleet-wide (all organizations)",
+      "Ion Exchange",
+      "PHE West Bengal",
+    ]);
+  });
+
+  it("never offers an organization_admin the fleet-wide option", () => {
+    // `canManageNotificationChannel` returns false for a null organization on
+    // this role, so a fleet-wide entry here would always answer 403.
+    const options = channelOrganizationOptions("organization_admin", orgs);
+    expect(options.some((option) => option.value === "")).toBe(false);
+    expect(options.map((option) => option.label)).toEqual(["Ion Exchange", "PHE West Bengal"]);
+  });
+
+  it("offers a location_admin nothing — the read gate is the write gate", () => {
+    // `ChannelsService.list` returns [] for this role unconditionally, so
+    // there is no channel for it to place in an organization.
+    expect(channelOrganizationOptions("location_admin", orgs)).toEqual([]);
+    expect(channelOrganizationOptions("operator", orgs)).toEqual([]);
+    expect(channelOrganizationOptions("viewer", orgs)).toEqual([]);
+  });
+
+  it("omits `organizationId` for a fleet-wide choice rather than sending an empty string", () => {
+    // The API types it `z.string().uuid().optional()`. Omitted means
+    // fleet-wide; `""` would be a 400 dressed up as a deliberate choice.
+    const payload = channelFormToPayload({ ...blankChannelForm(), code: "ops", name: "Ops" });
+    expect("organizationId" in payload).toBe(false);
+
+    const scoped = channelFormToPayload({
+      ...blankChannelForm(),
+      code: "ops",
+      name: "Ops",
+      organizationId: orgs[0]!.id,
+    });
+    expect(scoped.organizationId).toBe(orgs[0]!.id);
+  });
+
+  it("keeps `organizationId` out of a PATCH — a channel cannot change tenant", () => {
+    // `updateNotificationChannelBodySchema` declares neither `code` nor
+    // `organizationId`. Zod strips both silently, which is exactly why the
+    // client must not send them: a 200 would look like the move worked.
+    const patch = channelFormToPatch({
+      ...blankChannelForm(),
+      code: "ops",
+      name: "Ops",
+      organizationId: orgs[0]!.id,
+    });
+    expect("organizationId" in patch).toBe(false);
+    expect("code" in patch).toBe(false);
+    expect(patch.name).toBe("Ops");
+  });
+
+  it("round-trips a fleet-wide channel through the edit form as Fleet-wide", () => {
+    expect(formFromChannel(channel).organizationId).toBe("");
+    expect(
+      formFromChannel({ ...channel, organizationId: orgs[1]!.id }).organizationId,
+    ).toBe(orgs[1]!.id);
+  });
+
+  it("refuses Send test on a fleet-wide channel, and says why", () => {
+    // `NotificationsService.sendTest` throws a 400 here: a delivery row has
+    // carried `organization_id NOT NULL` since migration 0048.
+    const refusal = sendTestRefusal(channel);
+    expect(refusal).not.toBeNull();
+    expect(refusal).toMatch(/no organization/i);
+    expect(sendTestRefusal({ ...channel, organizationId: orgs[0]!.id })).toBeNull();
+  });
+
+  it("names an organization rather than printing its uuid", () => {
+    expect(organizationLabel(orgs[0]!.id, orgs)).toBe("Ion Exchange");
+    expect(organizationLabel(null, orgs)).toBe("Fleet-wide");
+    // A deactivated org still resolves — the lookup list is fetched with
+    // "all" precisely so a real row does not render as "Unknown".
+    expect(organizationLabel(orgs[2]!.id, orgs)).toBe("Retired Org");
+    // Falls back to the id, never to a word that reads like a bug.
+    expect(organizationLabel("aaaaaaaa-0000-0000-0000-00000000ffff", orgs)).toBe(
+      "aaaaaaaa-0000-0000-0000-00000000ffff",
+    );
   });
 });

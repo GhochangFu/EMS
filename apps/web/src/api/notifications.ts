@@ -41,6 +41,16 @@ export type NotificationChannelPayload = {
   /** Omit to keep the stored secret; `null` clears it; a string replaces it. */
   secret?: string | null;
   enabled?: boolean;
+  /**
+   * `E7.1d`. Create-only, and optional exactly as
+   * `createNotificationChannelBodySchema` has it since `E7.1c`: omitted, an
+   * `admin` gets a fleet-wide channel and a single-grant `organization_admin`
+   * gets its own organization implicitly.
+   *
+   * `PATCH` never carries it — `updateNotificationChannelBodySchema` has no
+   * such field, so a channel's organization is fixed at create.
+   */
+  organizationId?: string;
 };
 
 /** The server's message, when it sent one — a 409 on a duplicate code says so. */
@@ -87,10 +97,18 @@ export async function createNotificationChannel(
   );
 }
 
-/** PATCH /api/v1/notifications/channels/:id */
+/**
+ * PATCH /api/v1/notifications/channels/:id
+ *
+ * `organizationId` is excluded from the patch **type**, not merely omitted at
+ * the call site (`E7.1d`). `updateNotificationChannelBodySchema` carries no
+ * such key, so Zod would strip one silently — and a tenancy field that is
+ * accepted, ignored and answered `200` is how a client comes to believe it can
+ * move a channel between organizations. The compiler refuses it instead.
+ */
 export async function updateNotificationChannel(input: {
   id: string;
-  patch: Partial<NotificationChannelPayload>;
+  patch: Omit<Partial<NotificationChannelPayload>, "organizationId">;
 }): Promise<NotificationChannelDto> {
   const res = await fetch(`${base}/api/v1/notifications/channels/${input.id}`, {
     ...withAuth({
