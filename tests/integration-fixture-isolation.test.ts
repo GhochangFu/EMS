@@ -437,30 +437,43 @@ describe("committed fixture prefixes are per-run", () => {
  * `the analysis kills the mutation it exists to catch` holds that.
  *
  * **What this does not catch**, said here rather than discovered later. The scan
- * is over backtick template literals, so a query built by concatenation or held
- * in a `.sql` file is invisible, as is Drizzle's builder form
- * (`db.select().from(assets).where(ilike(assets.code, "PV%"))`) — neither shape
- * appears in the tree today and both would be the same defect. A pattern bound
- * as a parameter (`code ILIKE $1`) reads as safe because that is how every
- * own-prefix cleanup in this repo is written; a suite that bound `'PV%'` to it
- * would slip through. And the rule says nothing about `ORDER BY id` or an
- * unordered `LIMIT`, which is a different mechanism with its own rule above.
+ * scans string literals, so a query built by **concatenation** or held in a
+ * `.sql` file never appears as one literal and is invisible, as is Drizzle's
+ * builder form (`db.select().from(assets).where(ilike(assets.code, "PV%"))`) —
+ * neither shape appears in the tree today and both would be the same defect. A
+ * `${...}` interpolation containing a nested backtick literal ends the outer
+ * window early. A pattern bound **as a parameter** (`code ILIKE $1`) reads as
+ * safe, because that is how every own-prefix cleanup in this repo is written; a
+ * suite that bound `'PV%'` to it would slip through. The walk covers `apps` and
+ * `packages` — `tests/` is excluded on purpose (this file quotes the forbidden
+ * query in its own mutation strings, so scanning it would need a
+ * self-exemption), which leaves `tests/f1.7-seed-ownership.integration.test.ts`
+ * unscanned; it holds no pattern read today. And the rule says nothing about
+ * `ORDER BY id` or an unordered `LIMIT`, which is a different mechanism with its
+ * own rule above.
+ *
+ * **Three gaps this list used to have, closed rather than documented**, all
+ * measured by the `F4.67` code review against a real mutation: the scan read
+ * *backtick* literals only while six live sites write the same read
+ * double-quoted; it capped each window at 600 characters and reported anything
+ * longer as **clean**; and its window could run from one literal's close to the
+ * next one's open, computing both the offender text and the id-scoped exemption
+ * over arbitrary source. All three are gated by
+ * `the analysis kills the mutation it exists to catch` and
+ * `the literal scan bounds each window at its own delimiter` below.
  */
 describe("fixture assets are resolved by exact code, not by pattern", () => {
-  /**
-   * One backtick-delimited SQL literal that reads `bms.assets`, bounded so a
-   * malformed match cannot swallow the rest of the file.
-   *
-   * `g` is required by `matchAll` and makes `.test()` stateful through
-   * `lastIndex`, which would make the population count below alternate between
-   * runs of the same file list. So membership is decided by
-   * {@link READS_ASSETS_TABLE} and only extraction uses this one.
-   */
-  const ASSETS_QUERY = /`[^`]{0,600}?\bFROM\s+bms\.assets\b[^`]{0,600}?`/g;
   /** Stateless membership test — is there a `bms.assets` read in this file at all. */
   const READS_ASSETS_TABLE = /\bFROM\s+bms\.assets\b/;
-  /** A **literal** code pattern — `code LIKE 'X%'`, not `code LIKE $1`. */
-  const LITERAL_CODE_PATTERN = /\bcode\s+(?:NOT\s+)?I?LIKE\s+'/i;
+  /**
+   * A **literal** code pattern — `code LIKE 'X%'`, not `code LIKE $1`.
+   *
+   * The optional backslash is not decoration: SQL written inside a
+   * single-quoted JavaScript string has to escape its own quotes, so the defect
+   * arrives spelled `code ILIKE \'PV%\'`. Without it that spelling scored zero
+   * offenders while the same query in backticks scored one.
+   */
+  const LITERAL_CODE_PATTERN = /\bcode\s+(?:NOT\s+)?I?LIKE\s+\\?'/i;
   /**
    * An id-scoped read cannot adopt a foreign row whatever its code predicate
    * says, so it is not this defect. `rollup-conversion.integration.spec.ts`
@@ -482,13 +495,101 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
       .join("\n");
   }
 
-  /** Every `bms.assets` query in `source` that resolves a row by code pattern. */
-  function patternReads(source: string): string[] {
-    return [...withoutComments(source).matchAll(ASSETS_QUERY)]
-      .map((match) => match[0])
-      .filter((statement) => LITERAL_CODE_PATTERN.test(statement) && !ID_SCOPED.test(statement));
+  /**
+   * Every string literal in `source`, of all three JavaScript delimiters.
+   *
+   * **Scanned rather than matched by one regex, and that is the fix for three
+   * separate defects the `F4.67` review measured in the first draft:**
+   *
+   * 1. It read backtick literals only. Six live sites in this tree write a
+   *    `bms.assets` read as a double-quoted string, so the identical defect in
+   *    that spelling scored **zero** offenders — a mutation that survived the
+   *    rule outright.
+   * 2. Its window was capped at 600 characters either side of `FROM
+   *    bms.assets`, and an over-long literal produced no match and was reported
+   *    as **clean** rather than as unanalysable. `rollup-conversion`'s own CTE
+   *    already sits at ~70% of that cap.
+   * 3. `` /`[^`]*…`/ `` happily spans from one literal's closing delimiter,
+   *    through raw source, to the next literal's opening one — so both the
+   *    offender text and the {@link ID_SCOPED} exemption could be computed over
+   *    arbitrary code. Demonstrated on `locations.rls.integration.spec.ts`.
+   *
+   * A literal is bounded by its own delimiter, so there is no window to size and
+   * no way to run past the close. Escapes are honoured; an unterminated `'`/`"`
+   * ends at the newline, as it does in the language.
+   *
+   * **What this still cannot see**, kept next to the code rather than only in
+   * the header: a `${...}` interpolation containing a nested backtick literal
+   * ends the outer window early, and a query assembled by concatenation or held
+   * in a `.sql` file never appears as one literal at all.
+   */
+  function stringLiterals(source: string): string[] {
+    const out: string[] = [];
+    const delimiters = new Set(['"', "'", "`"]);
+    let i = 0;
+    while (i < source.length) {
+      const quote = source[i] as string;
+      if (!delimiters.has(quote)) {
+        i += 1;
+        continue;
+      }
+      let j = i + 1;
+      let closed = false;
+      while (j < source.length) {
+        const ch = source[j];
+        if (ch === "\\") {
+          j += 2;
+          continue;
+        }
+        if (ch === quote) {
+          closed = true;
+          break;
+        }
+        // Only a template literal may span lines; a newline inside `'`/`"` means
+        // the delimiter was not a string opener at all (an apostrophe in prose
+        // that survived comment-stripping, say), so give up on it rather than
+        // swallowing the rest of the file looking for a partner.
+        if (quote !== "`" && ch === "\n") {
+          break;
+        }
+        j += 1;
+      }
+      if (closed) {
+        out.push(source.slice(i, j + 1));
+        i = j + 1;
+      } else {
+        i += 1;
+      }
+    }
+    return out;
   }
 
+  /** Every `bms.assets` query in `source` that resolves a row by code pattern. */
+  function patternReads(source: string): string[] {
+    return stringLiterals(withoutComments(source)).filter(
+      (statement) =>
+        READS_ASSETS_TABLE.test(statement) &&
+        LITERAL_CODE_PATTERN.test(statement) &&
+        !ID_SCOPED.test(statement),
+    );
+  }
+
+  /**
+   * The files the rule covers: `.spec` / `.integration.test` suites, **and the
+   * shared fixture helpers under `src/testing/`**.
+   *
+   * The helpers are in scope because `apps/api/src/testing/integration-fixtures.ts`
+   * is this repo's named home for fixture resolution — moving a resolver there is
+   * a plausible refactor, and without this the rule would go quiet with no test
+   * failing to say so.
+   *
+   * `tests/` is deliberately NOT a root, which is the same reason the two rules
+   * above give: this file quotes the forbidden query in its own mutation strings,
+   * so scanning `tests/` would make the rule flag itself and need a
+   * self-exemption — a hole worth more than it closes.
+   * `tests/f1.7-seed-ownership.integration.test.ts` reads `bms.assets` and is
+   * therefore unscanned; it holds no pattern read today.
+   */
   function specsReadingAssets(): string[] {
     return ["apps", "packages"]
       .flatMap((root) => {
@@ -498,7 +599,11 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
           return [];
         }
       })
-      .filter((f) => /(\.spec|\.integration\.test)\.tsx?$/.test(f))
+      .filter(
+        (f) =>
+          /(\.spec|\.integration\.test)\.tsx?$/.test(f) ||
+          /[\\/]src[\\/]testing[\\/][^\\/]+\.tsx?$/.test(f),
+      )
       .filter((f) => READS_ASSETS_TABLE.test(withoutComments(readFileSync(f, "utf8"))))
       .map((f) => relative(repoRoot, f).replace(/\\/g, "/"))
       .sort();
@@ -508,8 +613,15 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
     const specs = specsReadingAssets();
 
     // The same floor the two rules above use: an empty offender list must mean
-    // "scanned and clean", not "the walk or the query pattern broke". 22 spec
-    // files carry a `FROM bms.assets` statement as of this commit.
+    // "scanned and clean", not "the walk or the query pattern broke".
+    //
+    // **25 files as of this commit** — 15 `.spec.ts`, 10 `.integration.test.ts`,
+    // and none yet under `src/testing/`. Measured by running this function, not
+    // estimated: the first draft of this comment said 22, which was the count of
+    // files with an *extractable backtick* statement rather than the count this
+    // assertion actually makes, and the review that caught it proposed 28. A
+    // comment asserting a measurement the tree does not have is a defect this
+    // repo has recorded before (`vitest.config.ts`, the E8.3 note).
     expect(
       specs.length,
       "no spec with a FROM bms.assets query was found. Either the walk or READS_ASSETS_TABLE " +
@@ -553,8 +665,37 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
       "WHERE code = ANY($1::text[])`, [[SOLAR_ASSET_CODE, GRID_ASSET_CODE]]);";
     expect(patternReads(fixed)).toEqual([]);
 
-    // An id-scoped read mirroring the shipped solar split is not this defect —
-    // rollup-conversion.integration.spec.ts, verbatim.
+    // **The same defect in the other two delimiters.** Both scored ZERO against
+    // the first draft, which read backtick literals only — a mutation that
+    // survived the rule outright, and the shape six live sites in this tree
+    // already write (`assets.service.rls.integration.*`, `locations.rls`,
+    // `multi-org-scope.rls`). The single-quoted case additionally has to escape
+    // its own quotes, which is what {@link LITERAL_CODE_PATTERN}'s optional
+    // backslash is for.
+    const doubleQuoted =
+      'await fleetPool.query("SELECT id, organization_id FROM bms.assets ' +
+      "WHERE code NOT ILIKE 'PV%' ORDER BY code LIMIT 1\");";
+    expect(patternReads(doubleQuoted)).toHaveLength(1);
+    const singleQuoted =
+      "await fleetPool.query('SELECT id FROM bms.assets WHERE code ILIKE \\'PV%\\' " +
+      "ORDER BY code LIMIT 1');";
+    expect(patternReads(singleQuoted)).toHaveLength(1);
+
+    // **An over-long literal must not read as clean.** The first draft capped its
+    // window at 600 characters either side and silently produced no match beyond
+    // it; `rollup-conversion`'s own CTE already sits at ~70% of that cap, so this
+    // was one refactor away from going quiet.
+    const overLong =
+      "`SELECT id FROM bms.assets WHERE code ILIKE 'PV%' ORDER BY code LIMIT 1 -- " +
+      "x".repeat(1500) +
+      "`";
+    expect(patternReads(overLong)).toHaveLength(1);
+
+    // An id-scoped read mirroring the shipped solar split is not this defect.
+    // A fragment of `rollup-conversion.integration.spec.ts:572`, not the whole
+    // statement — the real one is a multi-line CTE of ~850 characters, and the
+    // exemption is verified against that file directly by the population scan
+    // above rather than by this line.
     const idScoped = "`SELECT id FROM bms.assets WHERE code ILIKE 'PV%' AND id = ANY($3::uuid[])`";
     expect(patternReads(idScoped)).toEqual([]);
 
@@ -568,5 +709,25 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
       " * They used to be resolved by pattern: `SELECT id FROM bms.assets WHERE\n" +
       " *   code ILIKE 'PV%' ORDER BY code LIMIT 1`.";
     expect(patternReads(prose)).toEqual([]);
+  });
+
+  it("the literal scan bounds each window at its own delimiter", () => {
+    // The third defect the review measured: `/`[^`]*…`/` spans from one
+    // literal's CLOSING delimiter, through raw source, to the next literal's
+    // OPENING one — so both the offender text and the ID_SCOPED exemption could
+    // be computed over arbitrary code between two unrelated literals. Proven on
+    // `locations.rls.integration.spec.ts`, whose backtick literals contain no
+    // `bms.assets` read at all yet which yielded a match.
+    const between = "await q(`SELECT 1`);\nconst sql = \"SELECT id FROM bms.assets\";\nq(`SELECT 2`);";
+    const windows = stringLiterals(between);
+    expect(windows).toEqual(["`SELECT 1`", '"SELECT id FROM bms.assets"', "`SELECT 2`"]);
+
+    // An escaped delimiter does not end the literal.
+    expect(stringLiterals("const a = 'it\\'s one string';")).toEqual(["'it\\'s one string'"]);
+
+    // A template literal may span lines; a bare `'`/`"` may not, so an
+    // apostrophe in surviving prose cannot swallow the rest of the file.
+    expect(stringLiterals("`line one\nline two`")).toEqual(["`line one\nline two`"]);
+    expect(stringLiterals("it's fine\nconst x = 1;")).toEqual([]);
   });
 });

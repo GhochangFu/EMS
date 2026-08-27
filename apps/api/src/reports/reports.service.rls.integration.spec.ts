@@ -491,9 +491,13 @@ export async function assertReportResolvesWithOrgGuc(
 }
 
 /**
- * **The `F4.67` regression, executed rather than argued.** Plants an asset that
- * sorts ahead of every seeded `PV%` code and proves
- * {@link resolveEnergyFixtureAssets} still returns the seeded row.
+ * **The `F4.67` regression, executed rather than argued.** Plants one decoy per
+ * half of the resolution — each sorting ahead of its half's seeded code — and
+ * proves {@link resolveEnergyFixtureAssets} still returns both seeded rows.
+ *
+ * **Both decoys are load-bearing**; see the comment at the plant. With only the
+ * `PV%` one, the non-PV assertion could not fail under any mutation, and
+ * reverting that half alone re-opened `F4.67` with this guard still green.
  *
  * The decoy is a stand-in for `rollup-conversion.integration.spec.ts`'s
  * `PV-F428-PROBE`, which really did get adopted here (see the `F4.67` section in
@@ -520,47 +524,78 @@ export async function assertForeignPvFixtureIsNotAdopted(
   try {
     await client.query("BEGIN");
 
-    // `PV-AAA-` sorts before `PV-INV-01`, and before `PV-F428-PROBE` too, so this
-    // is a decoy for any future fixture prefix as well as the one that bit.
-    // Columns are copied from the seeded row so the insert cannot fail on a NOT
-    // NULL or a foreign key this suite would otherwise have to track.
-    const decoyCode = `PV-AAA-E71B-DECOY-${randomUUID()}`;
-    const { rows: planted } = await client.query<{ id: string }>(
-      `INSERT INTO bms.assets (code, name, site_name, domain, location_id, organization_id)
-       SELECT $1, $1, 'E7.1b decoy site', a.domain, a.location_id, a.organization_id
-       FROM bms.assets a WHERE a.code = $2
-       RETURNING id`,
-      [decoyCode, SOLAR_ASSET_CODE],
-    );
-    const decoyId = planted[0]?.id;
-    assert(
-      typeof decoyId === "string",
-      `the decoy asset was not created from ${SOLAR_ASSET_CODE}; this assertion proves nothing ` +
-        "without it",
-    );
-
-    // The premise, measured on this database's collation rather than assumed: the
-    // decoy really is what the old pattern read would have returned. Without this
-    // the test would pass on a collation where it sorted last, for the wrong
-    // reason.
+    // **Two decoys, one per half of the resolution, and the second is not
+    // decoration.** The first draft planted only the `PV%` decoy, which left the
+    // `otherAssetId` assertion below unable to fail: a `PV`-prefixed row is
+    // excluded from the non-PV half by construction, under the exact-code
+    // resolution *and* under the `code NOT ILIKE 'PV%' ORDER BY code LIMIT 1`
+    // read it replaced, so no mutation of that half could move the result. The
+    // sibling defect — reverting only the non-PV half — survived the guard named
+    // for it. Found by the `F4.67` code review; §4.6's rule is that an assertion
+    // no mutation of the code it guards can move is not a gate.
     //
-    // Scoped to the two ids rather than written as the forbidden
+    // `PV-AAA-` sorts before `PV-INV-01` and before `PV-F428-PROBE`; `AA-` sorts
+    // before `CH-CRAC-101`, the lowest seeded code. So each decoy is what its
+    // half's pattern read would have returned, and each is also a decoy for any
+    // future fixture prefix rather than only for the one that bit.
+    //
+    // Columns are copied from the seeded row of the same half, so neither insert
+    // can fail on a NOT NULL or a foreign key this suite would otherwise track,
+    // and each decoy carries its own half's organization.
+    const plant = async (code: string, copyFrom: string): Promise<string> => {
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO bms.assets (code, name, site_name, domain, location_id, organization_id)
+         SELECT $1, $1, 'E7.1b decoy site', a.domain, a.location_id, a.organization_id
+         FROM bms.assets a WHERE a.code = $2
+         RETURNING id`,
+        [code, copyFrom],
+      );
+      const id = rows[0]?.id;
+      assert(
+        typeof id === "string",
+        `the decoy asset ${code} was not created from ${copyFrom}; the assertions below prove ` +
+          "nothing without it",
+      );
+      return id;
+    };
+
+    const pvDecoyCode = `PV-AAA-E71B-DECOY-${randomUUID()}`;
+    const gridDecoyCode = `AA-E71B-DECOY-${randomUUID()}`;
+    const pvDecoyId = await plant(pvDecoyCode, SOLAR_ASSET_CODE);
+    const gridDecoyId = await plant(gridDecoyCode, GRID_ASSET_CODE);
+
+    // The premise, measured on this database's collation rather than assumed:
+    // each decoy really is what its half's old pattern read would have returned.
+    // Without this the test would pass on a collation where a decoy sorted last,
+    // for the wrong reason.
+    //
+    // Scoped by id rather than written as the forbidden
     // `WHERE code ILIKE 'PV%' ORDER BY code LIMIT 1` — an id-scoped read cannot
     // adopt anything, so this guard does not have to exempt itself from the rule
     // in `tests/integration-fixture-isolation.test.ts` that it exists to support.
     // It orders the real rows under the real collation, which is the whole
-    // premise; any third `PV%` row present would be another foreign fixture, so
-    // "the decoy beats the seeded row" is the claim that matters either way.
-    const { rows: wouldHaveBeen } = await client.query<{ id: string }>(
-      `SELECT id FROM bms.assets WHERE id = ANY($1::uuid[]) ORDER BY code LIMIT 1`,
-      [[decoyId, fx.pvAssetId]],
-    );
-    assert(
-      wouldHaveBeen[0]?.id === decoyId,
-      `the decoy ${decoyCode} does not sort before ${SOLAR_ASSET_CODE} under this database's ` +
-        "collation, so the pattern read this guards against would not have adopted it and " +
-        "nothing below is tested",
-    );
+    // premise; any third row of either class present would be another foreign
+    // fixture, so "the decoy beats the seeded row" is the claim that matters
+    // either way.
+    const assertSortsFirst = async (
+      decoyId: string,
+      decoyCode: string,
+      seededId: string,
+      seededCode: string,
+    ): Promise<void> => {
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM bms.assets WHERE id = ANY($1::uuid[]) ORDER BY code LIMIT 1`,
+        [[decoyId, seededId]],
+      );
+      assert(
+        rows[0]?.id === decoyId,
+        `the decoy ${decoyCode} does not sort before ${seededCode} under this database's ` +
+          "collation, so the pattern read this guards against would not have adopted it and " +
+          "the matching assertion below is not tested",
+      );
+    };
+    await assertSortsFirst(pvDecoyId, pvDecoyCode, fx.pvAssetId, SOLAR_ASSET_CODE);
+    await assertSortsFirst(gridDecoyId, gridDecoyCode, fx.otherAssetId, GRID_ASSET_CODE);
 
     const resolved = await resolveEnergyFixtureAssets(client);
     assert(
@@ -574,7 +609,9 @@ export async function assertForeignPvFixtureIsNotAdopted(
     assert(
       resolved.otherAssetId === fx.otherAssetId,
       `resolveEnergyFixtureAssets adopted a foreign non-PV asset: got ${resolved.otherAssetId}, ` +
-        `expected the seeded ${GRID_ASSET_CODE} (${fx.otherAssetId}). Same defect, other half.`,
+        `expected the seeded ${GRID_ASSET_CODE} (${fx.otherAssetId}). Same defect, other half — ` +
+        "the sibling read went back to `code NOT ILIKE 'PV%' ORDER BY code LIMIT 1`, which " +
+        `${gridDecoyCode} now outranks. See the \`F4.67\` section in this file's header.`,
     );
   } finally {
     // The decoy must never become visible to another connection, so the rollback
