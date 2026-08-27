@@ -46,6 +46,7 @@ import {
   type LatestSampleLoader,
 } from "./rule-evaluation";
 import { insertRuleAuditLog } from "./rule-audit";
+import { assertRuleCodeAvailable, nextRuleCode } from "./rule-codes";
 import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
 import { filterRuleRowsByAssetIds, selectRuleRowById, selectRuleRows } from "./rule-reads";
 import { pointKeysForAsset } from "./rule-points";
@@ -140,10 +141,14 @@ export class RulesService {
     assetIds?: string[] | null,
   ): Promise<RuleListItem> {
     this.assertAssetInScope(dto.assetId ?? null, assetIds);
-    const values = await this.validateRuleDraft(dto);
-    const organizationId = await this.resolveWriteOrg(values.assetId);
+    // Resolved before validateRuleDraft, not after: E7.1c's code-uniqueness
+    // check is org-scoped and needs the org to scope it by.
+    // `values.assetId` (below) is `dto.assetId` unchanged by validation on
+    // both branches, so this is the same value the old order would have used.
+    const organizationId = await this.resolveWriteOrg(dto.assetId ?? null);
+    const values = await this.validateRuleDraft(dto, undefined, organizationId);
     const actorId = await this.resolveActorId(actor);
-    const code = values.code ?? (await this.nextRuleCode(dto.name));
+    const code = values.code ?? (await nextRuleCode(this.fleetDb, dto.name));
     const now = new Date();
 
     const created = await withTenant(this.db, organizationId, async (tx) => {
@@ -197,11 +202,12 @@ export class RulesService {
     }
     const merged = mergeRuleDraft(current, dto);
     this.assertAssetInScope(merged.assetId ?? null, assetIds);
-    const values = await this.validateRuleDraft(merged, id);
     // The rule keeps its existing tenant: E7.1b does not re-derive org on an
     // asset change (the streaming raise's divergence guard is the backstop), so
-    // the update never touches the org column.
+    // the update never touches the org column. Resolved before
+    // validateRuleDraft so its E7.1c code check can be scoped to it.
     const organizationId = this.requireRuleOrg(current);
+    const values = await this.validateRuleDraft(merged, id, organizationId);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
 
@@ -239,7 +245,10 @@ export class RulesService {
     assetIds?: string[] | null,
   ): Promise<RulePreviewResult> {
     this.assertAssetInScope(dto.assetId ?? null, assetIds);
-    const values = await this.validateRuleDraft(dto, dto.id);
+    // `null`: a preview evaluates a draft that may not even be persisted, so
+    // there is no org to scope the code-uniqueness check to — it is skipped
+    // here and left to the authoritative check in `createDraft`.
+    const values = await this.validateRuleDraft(dto, dto.id, null);
     const actorId = await this.resolveActorId(actor);
     const result = await this.evaluateRule({
       id: dto.id ?? "00000000-0000-0000-0000-000000000000",
@@ -312,7 +321,11 @@ export class RulesService {
     if (current.lifecycleStatus === "archived") {
       throw new BadRequestException("Archived rules cannot be published");
     }
-    await this.validateRuleDraft(ruleBodyFromRow(current), id);
+    // Publishing re-validates the rule's own current code, scoped to its own
+    // org — `currentId` already excludes the row from colliding with itself,
+    // and the org scope is what stops a same-code rule in another tenant from
+    // blocking this publish (E7.1c).
+    await this.validateRuleDraft(ruleBodyFromRow(current), id, this.requireRuleOrg(current));
     const updated = await this.writeLifecycleUpdate(
       id,
       "rule_publish",
@@ -367,7 +380,7 @@ export class RulesService {
     const organizationId = this.requireRuleOrg(current);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
-    const code = await this.nextRuleCode(`${current.code}-COPY`);
+    const code = await nextRuleCode(this.fleetDb, `${current.code}-COPY`);
 
     const created = await withTenant(this.db, organizationId, async (tx) => {
       const [row] = await tx
@@ -748,9 +761,16 @@ export class RulesService {
     return unsupportedRuleType(row);
   }
 
+  /**
+   * `organizationId` is required, not optional, on purpose: `null` means "skip
+   * the code-uniqueness check" (`assertRuleCodeAvailable`'s own contract), and
+   * a default would let a forgotten call site silently stop checking rather
+   * than fail to compile. Only `previewRule` passes `null` explicitly.
+   */
   private async validateRuleDraft(
     dto: RuleDraftBody,
-    currentId?: string,
+    currentId: string | undefined,
+    organizationId: string | null,
   ): Promise<RuleDraftValues> {
     // ADR 0031 Amendment 1: the category vocabulary is data, so this is where a
     // bad one is caught — `categorySchema` can only check shape now.
@@ -783,27 +803,10 @@ export class RulesService {
 
     const code = dto.code?.trim().toUpperCase();
     if (code) {
-      // fleetDb, and deliberately cross-org: `automation_rules_code_unique` is
-      // still a global unique index — the `(organization_id, code)` re-key is
-      // E7.1c (decision 7) — so this scan must see every tenant's codes to turn
-      // a collision into a 400 here rather than a 500 from the index.
-      const existingRules = await this.fleetDb
-        .select({
-          id: automationRules.id,
-          code: automationRules.code,
-          lifecycleStatus: automationRules.lifecycleStatus,
-        })
-        .from(automationRules)
-        .orderBy(automationRules.createdAt);
-      const existing = existingRules.find(
-        (rule) =>
-          rule.id !== currentId &&
-          rule.lifecycleStatus !== "archived" &&
-          rule.code.trim().toUpperCase() === code,
-      );
-      if (existing) {
-        throw new BadRequestException("Rule code already exists");
-      }
+      // `rule-codes.ts` (§4.5 extraction): org-scoped since 0048 re-keyed
+      // `automation_rules`' identity to `(organization_id, code)`. `null`
+      // (only `previewRule`) skips the check — see that function's doc.
+      await assertRuleCodeAvailable(this.fleetDb, organizationId, code, currentId);
     }
 
     if (dto.ruleType === "threshold") {
@@ -955,30 +958,6 @@ export class RulesService {
 
       return this.getRuleRowTx(tx, id); // E7.1c: read back on the write's tenant GUC
     });
-  }
-
-  private async nextRuleCode(seed: string): Promise<string> {
-    const base = seed
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 48);
-    const prefix = base.length >= 3 ? base : "OPERATOR-RULE";
-
-    for (let index = 0; index < 100; index += 1) {
-      const candidate = index === 0 ? prefix : `${prefix}-${index + 1}`;
-      // fleetDb: the code space is global until E7.1c re-keys it (decision 7).
-      const [existing] = await this.fleetDb
-        .select({ id: automationRules.id })
-        .from(automationRules)
-        .where(eq(automationRules.code, candidate))
-        .limit(1);
-      if (!existing) {
-        return candidate;
-      }
-    }
-
-    throw new BadRequestException("Could not generate a unique rule code");
   }
 
   private async resolveActorId(

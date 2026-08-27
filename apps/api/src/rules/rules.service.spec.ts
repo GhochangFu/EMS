@@ -1,5 +1,7 @@
 import "reflect-metadata";
 
+import { BadRequestException } from "@nestjs/common";
+
 import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 import type { BmsDb } from "@bms/db";
 
@@ -32,7 +34,11 @@ function assert(condition: boolean, message: string): void {
  * acceptable rather than merely known.
  */
 type ValidateAccess = {
-  validateRuleDraft: (dto: RuleDraftBody, currentId?: string) => Promise<RuleDraftValues>;
+  validateRuleDraft: (
+    dto: RuleDraftBody,
+    currentId: string | undefined,
+    organizationId: string | null,
+  ) => Promise<RuleDraftValues>;
 };
 
 type Chain = {
@@ -135,7 +141,15 @@ function timeWindowDraft(severity?: RuleDraftBody["severity"]): RuleDraftBody {
  * need a severity.
  */
 export async function runRuleSeverityRoundTripTests(): Promise<void> {
-  const omittedThreshold = await validator(HVAC_ASSET).validateRuleDraft(thresholdDraft());
+  // `organizationId` is `null` throughout this function: none of these drafts
+  // set `code`, so `validateRuleDraft`'s code-uniqueness scan never runs
+  // regardless of what is passed — see `runRuleCodeUniquenessTests` below for
+  // the cases that actually exercise it.
+  const omittedThreshold = await validator(HVAC_ASSET).validateRuleDraft(
+    thresholdDraft(),
+    undefined,
+    null,
+  );
   assert(
     omittedThreshold.severity === null,
     `omitting severity on a threshold draft must store null, got ${String(omittedThreshold.severity)}`,
@@ -143,6 +157,8 @@ export async function runRuleSeverityRoundTripTests(): Promise<void> {
 
   const explicitNullThreshold = await validator(HVAC_ASSET).validateRuleDraft(
     thresholdDraft(null),
+    undefined,
+    null,
   );
   assert(
     explicitNullThreshold.severity === null,
@@ -151,6 +167,8 @@ export async function runRuleSeverityRoundTripTests(): Promise<void> {
 
   const criticalThreshold = await validator(HVAC_ASSET).validateRuleDraft(
     thresholdDraft("critical"),
+    undefined,
+    null,
   );
   assert(
     criticalThreshold.severity === "critical",
@@ -159,19 +177,24 @@ export async function runRuleSeverityRoundTripTests(): Promise<void> {
 
   // The time-window branch reads no asset and, with `code` omitted, runs no
   // uniqueness scan either — so it needs no rows at all.
-  const omittedWindow = await validator().validateRuleDraft(timeWindowDraft());
+  const omittedWindow = await validator().validateRuleDraft(timeWindowDraft(), undefined, null);
   assert(
     omittedWindow.severity === null,
     `omitting severity on a time-window draft must store null, got ${String(omittedWindow.severity)}`,
   );
 
-  const explicitWindow = await validator().validateRuleDraft(timeWindowDraft("info"));
+  const explicitWindow = await validator().validateRuleDraft(
+    timeWindowDraft("info"),
+    undefined,
+    null,
+  );
   assert(
     explicitWindow.severity === "info",
     `a chosen severity must survive on a time-window draft, got ${String(explicitWindow.severity)}`,
   );
 
   await runComposedUpdateTest();
+  await runRuleCodeUniquenessTests();
 }
 
 /**
@@ -193,12 +216,63 @@ async function runComposedUpdateTest(): Promise<void> {
   // severity is the case.
   const stored = ruleRow({ severity: null });
 
+  // organizationId: null — this case is about severity, not code identity,
+  // and skipping the scan keeps it from depending on `stored`'s code never
+  // colliding with the asset row's own `code` field the mock reuses below.
   const merged = await validator([
     { code: stored.assetCode, domain: stored.assetDomain },
-  ]).validateRuleDraft(mergeRuleDraft(stored, {}));
+  ]).validateRuleDraft(mergeRuleDraft(stored, {}), undefined, null);
 
   assert(
     merged.severity === null,
     `an update that never mentions severity must leave a null one alone, got ${String(merged.severity)}`,
+  );
+}
+
+/**
+ * `E7.1c` Task 9 — the code-uniqueness check (`rule-codes.ts`,
+ * `assertRuleCodeAvailable`) actually runs when a draft carries an explicit
+ * `code`, and `organizationId: null` actually skips it.
+ *
+ * **What this does and does not prove.** `selectChain` (above) answers every
+ * `.where(...)` call with the same fixed `rows`, regardless of what condition
+ * is passed — so this mock cannot tell an org-scoped query from an unscoped
+ * one, and a test built only on it would pass whether or not the real query
+ * filters by `organizationId`. That would be exactly the "passes vacuously"
+ * failure this task exists to avoid. The genuine two-organization proof — that
+ * the SAME code succeeds in a second organization and still 400s twice in
+ * the same one — runs against real Postgres in
+ * `rules.service.rls.integration.spec.ts`
+ * (`assertSameRuleCodePublishesInBothOrganizations`), where the database, not
+ * a mock, does the filtering. This case only proves the check is wired in at
+ * all, so a revert that deletes the call (rather than the filter) is caught
+ * here too.
+ */
+async function runRuleCodeUniquenessTests(): Promise<void> {
+  const orgId = "22222222-2222-4222-8222-222222222222";
+  const collisionRows = [{ id: "existing-rule-id", code: "DUP-CODE", lifecycleStatus: "draft" }];
+
+  let threw = false;
+  try {
+    await validator(collisionRows).validateRuleDraft(
+      { ...thresholdDraft(), code: "dup-code" },
+      undefined,
+      orgId,
+    );
+  } catch (err) {
+    threw = err instanceof BadRequestException;
+  }
+  assert(threw, "a code already used by another rule must be rejected with a BadRequestException");
+
+  // organizationId: null (previewRule's contract) skips the scan outright, so
+  // the SAME colliding rows do not stop the draft from validating.
+  const skipped = await validator(HVAC_ASSET).validateRuleDraft(
+    { ...thresholdDraft(), code: "dup-code" },
+    undefined,
+    null,
+  );
+  assert(
+    skipped.code === "DUP-CODE",
+    `organizationId: null must skip the uniqueness check entirely, got code=${String(skipped.code)}`,
   );
 }

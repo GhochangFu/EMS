@@ -24,6 +24,7 @@ import {
   assertPublishRuleReadsBackInTenantTransaction,
   assertRuleExecutionListReturnsBothOrgsForTwoOrgActor,
   assertRuleListReturnsBothOrgsForTwoOrgActor,
+  assertSameRuleCodePublishesInBothOrganizations,
   assertSingleOrgRuleExecutionListReturnsOwnRow,
   assertSingleOrgRuleExecutionListRunsOnTenantTransaction,
   assertSingleOrgRuleListReturnsOwnRow,
@@ -321,6 +322,10 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
 
   it("folds the publishRule (writeLifecycleUpdate) read-back into the write's tenant transaction (E7.1c)", async () => {
     await assertPublishRuleReadsBackInTenantTransaction(ctx, `${PREFIX}PUBRB`);
+  });
+
+  it("publishes the same rule code in two organizations, and still 400s it twice in one (E7.1c Task 9)", async () => {
+    await assertSameRuleCodePublishesInBothOrganizations(ctx, `${PREFIX}DUP`);
   });
 
   it("404s a scoped actor's asset-less time_window create before org resolution", async () => {

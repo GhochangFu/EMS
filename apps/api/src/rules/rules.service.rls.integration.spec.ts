@@ -270,6 +270,54 @@ export async function assertPublishRuleReadsBackInTenantTransaction(
 }
 
 /**
+ * `E7.1c` Task 9 — the live-defect proof, on real Postgres rather than a mock.
+ *
+ * Before `0048` re-keyed `automation_rules`' identity to `(organization_id,
+ * code)`, `validateRuleDraft`'s code-uniqueness scan read every tenant's codes
+ * on `fleetDb`: creating the SAME code in a second organization found the
+ * first organization's row and 400'd, and publishing carried the same defect
+ * through its own re-validation. This is the one assertion that would have
+ * caught it — `rules.service.spec.ts`'s mock answers every `.where(...)` with
+ * the same fixed rows regardless of the filter, so it cannot tell an
+ * org-scoped query from an unscoped one; only a real database, with real
+ * per-organization rows, can go red on a revert of the `organizationId`
+ * filter. The same code twice in the SAME organization must still 400 —
+ * proving the check did not simply disappear.
+ */
+export async function assertSameRuleCodePublishesInBothOrganizations(
+  ctx: RulesRlsFixtures,
+  code: string,
+): Promise<void> {
+  const inOrgA = await ctx.service.createDraft(thresholdDraft(ctx, code), ctx.scopedActor, [
+    ctx.assetId,
+  ]);
+  ctx.createdRuleIds.push(inOrgA.id);
+
+  // Same code, a SECOND organization. `adminActor` + `assetIds: null` so
+  // `assertAssetInScope` does not refuse a global admin acting on org B's
+  // asset — `foreignAssetId`/`organizationId` are already used this way by
+  // the decision-3 read assertions above.
+  const inOrgB = await ctx.service.createDraft(
+    thresholdDraft({ ...ctx, assetId: ctx.foreignAssetId }, code),
+    ctx.adminActor,
+    null,
+  );
+  ctx.createdRuleIds.push(inOrgB.id);
+
+  // Publishing re-validates the rule's own code (scoped to its own org, since
+  // Task 9): neither create's later publish may collide with the other's.
+  await ctx.service.publishRule(inOrgA.id, { reason: "E7.1c org A publish" }, ctx.scopedActor, [
+    ctx.assetId,
+  ]);
+  await ctx.service.publishRule(inOrgB.id, { reason: "E7.1c org B publish" }, ctx.adminActor, null);
+
+  // The SAME code, a SECOND time, in the SAME organization: still refused.
+  await expect(
+    ctx.service.createDraft(thresholdDraft(ctx, code), ctx.scopedActor, [ctx.assetId]),
+  ).rejects.toBeInstanceOf(BadRequestException);
+}
+
+/**
  * Ruling 4: an asset-less `time_window` rule has no asset to derive an org from.
  * A global admin (no single tenant) is refused with a 4xx rather than inserting
  * a NULL `organization_id`, and nothing is written.
