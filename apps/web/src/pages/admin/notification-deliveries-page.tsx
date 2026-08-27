@@ -63,7 +63,13 @@ export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageP
     [organizationsQ.data?.items],
   );
 
-  const deliveries = deliveriesQ.data?.items ?? [];
+  // Memoised the same way `organizations` is above: `?? []` allocates a fresh
+  // array on every render while the query is unsettled, which would re-run the
+  // `filterableOrganizations` memo below for no change.
+  const deliveries = useMemo(
+    () => deliveriesQ.data?.items ?? [],
+    [deliveriesQ.data?.items],
+  );
 
   // Only the organizations that actually appear in the ledger. Listing every
   // organization would offer filters that can only ever empty the table.
