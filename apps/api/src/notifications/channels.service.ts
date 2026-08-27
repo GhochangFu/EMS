@@ -85,14 +85,18 @@ const FOREIGN_KEY_VIOLATION = "23503";
 async function translateConstraintErrors<T>(
   run: () => Promise<T>,
   /**
-   * What a foreign-key violation means for THIS operation.
+   * What a foreign-key violation means for THIS operation, given the raw
+   * error (so a caller can tell one constraint from another by `.constraint`
+   * — see `create`'s override below).
    *
-   * On a write it is always an undeclared `kind`. On a delete it is the
-   * opposite direction — a row that still references the channel — and the two
-   * need different sentences, because the actions they imply are different:
-   * fix the kind, versus disable the channel instead of deleting it.
+   * The default assumes the only FK a write can hit is `kind`, true until
+   * `E7.1c` gave `create` a second one: `body.organizationId`, checked
+   * against `bms.organizations(id)` as `notification_channels_organization_
+   * id_fkey` (verified against `pg_constraint`, not assumed). On a delete the
+   * direction is the opposite one anyway — a row that still references the
+   * channel — so its own override never reads `err`.
    */
-  onForeignKey: () => Error = () =>
+  onForeignKey: (err: unknown) => Error = () =>
     new BadRequestException(
       "Unknown channel kind — it must be a code declared in bms.notification_channel_kinds",
     ),
@@ -110,11 +114,14 @@ async function translateConstraintErrors<T>(
       );
     }
     if (code === FOREIGN_KEY_VIOLATION) {
-      throw onForeignKey();
+      throw onForeignKey(err);
     }
     throw err;
   }
 }
+
+/** The Postgres constraint name behind `create`'s `body.organizationId` FK. */
+const ORGANIZATION_ID_FK = "notification_channels_organization_id_fkey";
 
 /**
  * `E7.1b` (ADR 0043 §5) — `notification_channels` and `notification_deliveries`
@@ -135,8 +142,23 @@ async function translateConstraintErrors<T>(
  * `list`, `loadById` and `listDeliveries` gain an organization filter for the
  * same reason `PointKeysAdminService.list` has one: `assertAdmin` came off
  * these routes this item (`canManageNotificationChannel` replaces it), and an
- * unfiltered read would hand one tenant's channel config, or another's alarm
- * text off the delivery ledger, to any `organization_admin`.
+ * unfiltered read would hand one tenant's channel config, or another's
+ * delivery/error metadata off the ledger, to any `organization_admin`. (Not
+ * "alarm text" — the ledger select never carries a subject, message or body;
+ * see `listDeliveries`' own comment.)
+ *
+ * `list` and `listDeliveries` gate on exactly the role `canManageNotification
+ * Channel` would ever return `true` for — `admin` or `organization_admin` —
+ * rather than merely on `isMasterDataRole`. Ruled 2026-08-27, after two
+ * reviewers found the gap independently: `writableOrganizationIds` resolves a
+ * `location_admin`/`asset_group_admin` to a real, non-empty set (through
+ * `locationDerivedOrganizationIds`, the whole home organization), so a read
+ * gated on it alone would disclose channel `config` and delivery/error
+ * metadata that `loadById` then refuses with a 403 on the very same row —
+ * read-then-403 on a payload that already leaked. A `location_admin` gets
+ * `[]` from both reads, not a redacted or location-scoped view: `config`
+ * cannot be redacted without losing the reason a read exists at all, and a
+ * channel carries no location dimension to scope the second option to.
  *
  * The one exception is `setRuleChannels`: the `rule_notifications` junction's
  * tenant parent is the rule, which **does** carry a non-NULL org, and its route
@@ -169,9 +191,18 @@ export class ChannelsService {
    * is that a fleet-managed row is fleet business, so an `organization_admin`
    * sees an unresolvable channel id on a rule wired to one until `E7.1d`
    * gives it its own picker.
+   *
+   * **The read gate is the write gate (ruling, 2026-08-27).** A
+   * `location_admin`/`asset_group_admin` gets `[]` unconditionally — never a
+   * `writableOrganizationIds`-filtered list — because `canManageNotification
+   * Channel` returns `false` for both roles regardless of organization; the
+   * class comment above has the incident this closes.
    */
   async list(jwt: JwtPayload): Promise<NotificationChannelDto[]> {
-    await this.accessControl.requireMasterDataUser(jwt);
+    const user = await this.accessControl.requireMasterDataUser(jwt);
+    if (user.role !== "admin" && user.role !== "organization_admin") {
+      return [];
+    }
     const writableOrgIds = await this.accessControl.writableOrganizationIds(jwt);
     if (writableOrgIds !== null && writableOrgIds.length === 0) {
       return [];
@@ -276,17 +307,30 @@ export class ChannelsService {
       ...secret,
     };
 
-    const row = await translateConstraintErrors(async () => {
-      const rows =
-        targetOrgId === null
-          ? await this.fleetDb.insert(notificationChannels).values(values).returning()
-          : await withTenant(this.db, targetOrgId, (tx) =>
-              tx.insert(notificationChannels).values(values).returning(),
-            );
-      const inserted = rows[0];
-      if (inserted === undefined) throw new Error("channel insert returned no row");
-      return inserted;
-    });
+    const row = await translateConstraintErrors(
+      async () => {
+        const rows =
+          targetOrgId === null
+            ? await this.fleetDb.insert(notificationChannels).values(values).returning()
+            : await withTenant(this.db, targetOrgId, (tx) =>
+                tx.insert(notificationChannels).values(values).returning(),
+              );
+        const inserted = rows[0];
+        if (inserted === undefined) throw new Error("channel insert returned no row");
+        return inserted;
+      },
+      (err) => {
+        const constraint = (err as { constraint?: string } | null)?.constraint;
+        if (constraint === ORGANIZATION_ID_FK) {
+          return new BadRequestException(
+            "organizationId does not name an existing organization",
+          );
+        }
+        return new BadRequestException(
+          "Unknown channel kind — it must be a code declared in bms.notification_channel_kinds",
+        );
+      },
+    );
 
     await this.audit(jwt, "notification_channel_create", row.id, row.organizationId, {
       code: row.code,
@@ -411,20 +455,29 @@ export class ChannelsService {
    * Recent delivery attempts, newest first — the same bounded shape as
    * executions.
    *
-   * `E7.1c` (item G, the security-critical one): the ledger carries alarm
-   * text (`bms.notification_deliveries` joins into rule/alarm context on the
-   * admin screen), so the organization filter here is what stops one tenant's
-   * admin reading another's alarm history the moment `assertAdmin` came off
-   * this route. `admin` is unfiltered; every other role gets
+   * `E7.1c` (item G, the security-critical one): the select below
+   * (`:id, organizationId, ruleId, ruleCode, alarmId, channelId, channelCode,
+   * status, attemptedAt, error`) carries no alarm text — no subject, message
+   * or body — so the exposure the organization filter guards is channel
+   * `config` (via `channelCode`/`channelId`, resolvable through `list()`) and
+   * delivery/error metadata, not alarm content. `assertAdmin` came off this
+   * route this item; `admin` is unfiltered, every other permitted role gets
    * `inArray(organizationId, writableOrganizationIds)` — deliveries are
    * `NOT NULL`-org since `0048`, so there is no global-delivery case to
    * reason about the way `list()` has one for channels.
+   *
+   * **The read gate is the write gate (ruling, 2026-08-27).** Same as
+   * `list()`: a `location_admin`/`asset_group_admin` gets `{ items: [] }`
+   * unconditionally, not a `writableOrganizationIds`-filtered read.
    */
   async listDeliveries(
     jwt: JwtPayload,
     query: ListDeliveriesQuery,
   ): Promise<{ items: NotificationDeliveryDto[] }> {
-    await this.accessControl.requireMasterDataUser(jwt);
+    const user = await this.accessControl.requireMasterDataUser(jwt);
+    if (user.role !== "admin" && user.role !== "organization_admin") {
+      return { items: [] };
+    }
     const writableOrgIds = await this.accessControl.writableOrganizationIds(jwt);
     if (writableOrgIds !== null && writableOrgIds.length === 0) {
       return { items: [] };
@@ -571,6 +624,32 @@ export class ChannelsService {
     const organizationId = rule.organizationId;
 
     const unique = [...new Set(channelIds)];
+    if (unique.length > 0) {
+      // The junction has no policy of its own to catch this (0047's
+      // rule_notifications policy tests automation_rules.organization_id
+      // alone — channel org was nullable when it was written, 0048 made it a
+      // real key, and nothing enforces the pairing). Refuse before the
+      // insert rather than silently wiring a rule to another tenant's
+      // channel. A channel id this batch cannot resolve at all is left to the
+      // existing foreign-key refusal at insert time; only a channel that
+      // resolves to a DIFFERENT organization is rejected here — a
+      // fleet-managed global (organizationId === null) stays shareable per
+      // decision 7.
+      const channelRows = await this.fleetDb
+        .select({ id: notificationChannels.id, organizationId: notificationChannels.organizationId })
+        .from(notificationChannels)
+        .where(inArray(notificationChannels.id, unique));
+      const orgById = new Map(channelRows.map((row) => [row.id, row.organizationId]));
+      const wrongOrg = unique.filter((id) => {
+        const channelOrg = orgById.get(id);
+        return channelOrg !== undefined && channelOrg !== null && channelOrg !== organizationId;
+      });
+      if (wrongOrg.length > 0) {
+        throw new BadRequestException(
+          `Channel(s) belong to a different organization than this rule: ${wrongOrg.join(", ")}`,
+        );
+      }
+    }
     await withTenant(this.db, organizationId, async (tx) => {
       await tx.delete(ruleNotifications).where(eq(ruleNotifications.ruleId, ruleId));
       if (unique.length > 0) {

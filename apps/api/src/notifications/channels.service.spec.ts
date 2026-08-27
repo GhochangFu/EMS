@@ -14,15 +14,27 @@ function assert(condition: boolean, message: string): void {
 type Ctor = ConstructorParameters<typeof ChannelsService>;
 
 /**
- * A db whose writes reject with a given Postgres SQLSTATE.
+ * A db whose writes reject with a given Postgres SQLSTATE (and, optionally,
+ * the `constraint` name node-postgres attaches — what distinguishes the
+ * `kind` FK from the `organizationId` one in `create`'s translated error).
  *
  * `select` answers `update`/`remove`'s pre-GUC read of the channel's own
- * `organization_id` (E7.1c Task 7) — every case below is a **global** channel
- * (`organizationId: null`), which is what routes the write onto this same
- * fake `fleetDb` rather than `withTenant`'s tenant pool.
+ * `organization_id` (E7.1c Task 7) — every `dbRejecting` case except the
+ * org-scoped create below is a **global** channel (`organizationId: null`),
+ * which is what routes the write onto this same fake `fleetDb` rather than
+ * `withTenant`'s tenant pool. `transaction` stands in for the tenant pool's
+ * `withTenant` path: it runs the callback against a stub that answers the
+ * `SET LOCAL` `execute` and then rejects the same way `fleetDb` does.
  */
-function dbRejecting(code: string): Ctor[0] {
-  const failure = Object.assign(new Error(`constraint violation ${code}`), { code });
+function dbRejecting(code: string, constraint?: string): Ctor[0] {
+  const failure = Object.assign(new Error(`constraint violation ${code}`), {
+    code,
+    constraint,
+  });
+  const tx = {
+    execute: () => Promise.resolve(undefined),
+    insert: () => ({ values: () => ({ returning: () => Promise.reject(failure) }) }),
+  };
   return {
     select: () => ({
       from: () => ({
@@ -34,6 +46,7 @@ function dbRejecting(code: string): Ctor[0] {
       set: () => ({ where: () => ({ returning: () => Promise.reject(failure) }) }),
     }),
     delete: () => ({ where: () => ({ returning: () => Promise.reject(failure) }) }),
+    transaction: (fn: (tx: unknown) => Promise<unknown>) => fn(tx),
   } as unknown as Ctor[0];
 }
 
@@ -138,6 +151,31 @@ export async function runChannelsServiceTests(): Promise<void> {
         /delivery history/i.test((e as Error).message) &&
         /disable/i.test((e as Error).message),
       "deleting a channel that has delivery history",
+    );
+
+    // E7.1c gave `create` a SECOND foreign key once `body.organizationId`
+    // became a real column: the default `onForeignKey` above answers "unknown
+    // channel kind" for both, so an admin naming a UUID that is not an
+    // organization was told to fix a `kind` that was never wrong. `create`'s
+    // own `onForeignKey` distinguishes them by `err.constraint` — verified
+    // against a live `pg_constraint` read, not assumed.
+    const badOrg = makeChannels(
+      dbRejecting("23503", "notification_channels_organization_id_fkey"),
+    );
+    await rejectsWith(
+      () =>
+        badOrg.create(ACTOR, {
+          organizationId: "99999999-9999-4999-8999-999999999999",
+          code: "ops-webhook",
+          name: "Ops",
+          kind: "email",
+          config: {},
+          enabled: true,
+        }),
+      (e) =>
+        e instanceof BadRequestException &&
+        /does not name an existing organization/i.test((e as Error).message),
+      "organizationId naming no organization",
     );
 
     // Anything else still surfaces as itself — this translates two states, it

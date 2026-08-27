@@ -70,12 +70,32 @@ export async function assertChannelWritesRouteByOrgScope(
 
   // --- update mirrors create's fork -----------------------------------------
   const tenantBeforeUpdate = countedTenant.transactions();
-  await channels.update(orgAdminJwt, orgScoped.id, { name: "E7.1c RLS scope proof (renamed)" });
+  const updatedOrgScoped = await channels.update(orgAdminJwt, orgScoped.id, {
+    name: "E7.1c RLS scope proof (renamed)",
+  });
   expect(countedTenant.transactions()).toBe(tenantBeforeUpdate + 1);
+  expect(updatedOrgScoped).not.toBeNull();
+  expect(updatedOrgScoped?.name).toBe("E7.1c RLS scope proof (renamed)");
 
+  // A flat FLEET counter alone proves nothing here: `fleetDb.update()` is a
+  // plain statement, never `.transaction()`, so it stays flat for ANY
+  // implementation, including one that routes the global branch onto the
+  // tenant pool and writes nothing. The TENANT counter staying flat, plus a
+  // non-null, freshly-named row read back off the return value, is what
+  // actually proves the global branch reached `fleetDb`: routing it to
+  // `this.db.update(...)` instead would match zero rows under FORCE (no
+  // `current_org` GUC on this connection), returning `null` — an admin
+  // renaming a global channel would 404 while a fleet-counter-only assertion
+  // stayed green.
+  const tenantBeforeGlobalUpdate = countedTenant.transactions();
   const fleetBeforeUpdate = countedFleet.transactions();
-  await channels.update(globalAdminJwt, global.id, { name: "E7.1c RLS scope proof (renamed)" });
+  const updatedGlobal = await channels.update(globalAdminJwt, global.id, {
+    name: "E7.1c RLS scope proof (renamed, global)",
+  });
   expect(countedFleet.transactions()).toBe(fleetBeforeUpdate);
+  expect(countedTenant.transactions()).toBe(tenantBeforeGlobalUpdate);
+  expect(updatedGlobal).not.toBeNull();
+  expect(updatedGlobal?.name).toBe("E7.1c RLS scope proof (renamed, global)");
 
   return { orgScopedChannelId: orgScoped.id, globalChannelId: global.id };
 }
@@ -154,4 +174,102 @@ export async function assertChannelAuditStampsOrgCorrectly(
   ).toBeNull();
 
   return { orgScopedChannelId: orgScoped.id, globalChannelId: global.id };
+}
+
+/**
+ * REAL BUG, closed: `setRuleChannels` resolves the RULE's org and opens
+ * `withTenant` on it, then used to insert `{ruleId, channelId}` for every
+ * supplied id with no check that each channel belongs to that org.
+ * `rule_notifications`'s own policy (`0047`) tests
+ * `automation_rules.organization_id` alone — deliberate when it was written,
+ * because channel org was nullable then — so nothing in the database catches
+ * a cross-org wire-up; `0048` made channel org a real key and nothing was
+ * updated to enforce the pairing until this fix.
+ *
+ * Both directions are asserted — a hard-coded `throw` would pass only the
+ * refusal, and the pre-fix code would pass only the acceptance.
+ */
+export async function assertSetRuleChannelsRefusesCrossOrgChannel(
+  channels: ChannelsService,
+  ruleIdInOrgA: string,
+  channelIdInOrgB: string,
+  globalChannelId: string,
+  actor: Pick<JwtPayload, "sub" | "email">,
+): Promise<void> {
+  await expect(
+    channels.setRuleChannels(ruleIdInOrgA, [channelIdInOrgB], actor),
+  ).rejects.toThrow(/different organization/i);
+
+  // Decision 7: a fleet-managed global channel stays shareable — the refusal
+  // above is about ANOTHER organization's channel, not about a NULL-org one.
+  const wired = await channels.setRuleChannels(ruleIdInOrgA, [globalChannelId], actor);
+  expect(wired).toEqual([globalChannelId]);
+}
+
+/**
+ * OWNER RULING (2026-08-27), closed: `list()`'s and `listDeliveries()`'s read
+ * gate must equal `canManageNotificationChannel`'s write gate. Before this
+ * fix, `writableOrganizationIds` resolved a `location_admin` to its whole
+ * home organization (`locationDerivedOrganizationIds`), so both reads
+ * disclosed channel `config` and delivery/error metadata that `loadById` then
+ * refused with a 403 on the very same row — a read that already leaked,
+ * gated by a check that came too late.
+ *
+ * Neither read had ANY coverage before this: not a unit test, not an RLS
+ * integration test, no HTTP request (`notifications.controller.spec.ts`
+ * stubs `listDeliveries` and never varies the organization). Seeds a channel
+ * and a delivery in each of two REAL organizations and asserts a strict
+ * subset for `organization_admin` — never merely non-empty — everything for
+ * `admin`, and exactly nothing for `location_admin`, which is the ruling's
+ * own proof.
+ */
+export async function assertChannelAndDeliveryReadsAreOrgScoped(
+  channels: ChannelsService,
+  orgAdminJwt: JwtPayload,
+  globalAdminJwt: JwtPayload,
+  locationAdminJwt: JwtPayload,
+  channelAId: string,
+  channelBId: string,
+): Promise<void> {
+  const orgAdminChannelIds = (await channels.list(orgAdminJwt)).map((c) => c.id);
+  expect(orgAdminChannelIds, "organization_admin sees its own org's channel").toContain(
+    channelAId,
+  );
+  expect(
+    orgAdminChannelIds,
+    "organization_admin does NOT see the other org's channel — a strict subset, not merely non-empty",
+  ).not.toContain(channelBId);
+
+  const adminChannelIds = (await channels.list(globalAdminJwt)).map((c) => c.id);
+  expect(adminChannelIds, "admin sees both organizations' channels").toEqual(
+    expect.arrayContaining([channelAId, channelBId]),
+  );
+
+  expect(
+    await channels.list(locationAdminJwt),
+    "location_admin gets [] from list() — not a location-filtered view, the read gate is the write gate",
+  ).toEqual([]);
+
+  const orgAdminDeliveryChannelIds = (
+    await channels.listDeliveries(orgAdminJwt, { limit: 500 })
+  ).items.map((d) => d.channelId);
+  expect(orgAdminDeliveryChannelIds, "organization_admin sees its own org's delivery").toContain(
+    channelAId,
+  );
+  expect(
+    orgAdminDeliveryChannelIds,
+    "organization_admin does NOT see the other org's delivery",
+  ).not.toContain(channelBId);
+
+  const adminDeliveryChannelIds = (
+    await channels.listDeliveries(globalAdminJwt, { limit: 500 })
+  ).items.map((d) => d.channelId);
+  expect(adminDeliveryChannelIds, "admin sees both organizations' deliveries").toEqual(
+    expect.arrayContaining([channelAId, channelBId]),
+  );
+
+  expect(
+    await channels.listDeliveries(locationAdminJwt, { limit: 500 }),
+    "location_admin gets { items: [] } from listDeliveries() — same ruling",
+  ).toEqual({ items: [] });
 }

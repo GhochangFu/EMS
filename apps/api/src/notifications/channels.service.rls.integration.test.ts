@@ -13,9 +13,11 @@ import { asRole } from "../testing/role-urls";
 import { countingDb } from "../testing/counting-db";
 import { ChannelsService } from "./channels.service";
 import {
+  assertChannelAndDeliveryReadsAreOrgScoped,
   assertChannelAuditStampsOrgCorrectly,
   assertChannelRemoveRoutesByOrgScope,
   assertChannelWritesRouteByOrgScope,
+  assertSetRuleChannelsRefusesCrossOrgChannel,
 } from "./channels.service.rls.integration.spec";
 
 /**
@@ -39,6 +41,9 @@ const ORG_SCOPED_SCOPE_CODE = `E71C-CHSC-${RUN}`;
 const GLOBAL_SCOPE_CODE = `E71C-CHGL-${RUN}`;
 const ORG_SCOPED_AUDIT_CODE = `E71C-CHAO-${RUN}`;
 const GLOBAL_AUDIT_CODE = `E71C-CHAG-${RUN}`;
+const READ_SCOPE_CODE_A = `E71C-CHRA-${RUN}`;
+const READ_SCOPE_CODE_B = `E71C-CHRB-${RUN}`;
+const RULE_FENCE_CODE = `E71C-RULEFENCE-${RUN}`;
 
 describe.skipIf(!connectionString)(
   "E7.1c — ChannelsService writes route by org scope, and audit() stamps the right org",
@@ -48,6 +53,7 @@ describe.skipIf(!connectionString)(
     let authPool: pg.Pool;
     let fleetDb: BmsDb;
     let channelIds: string[] = [];
+    let ruleIds: string[] = [];
 
     beforeAll(async () => {
       const url = connectionString as string;
@@ -64,6 +70,16 @@ describe.skipIf(!connectionString)(
     }, 60_000);
 
     afterAll(async () => {
+      if (ruleIds.length > 0) {
+        // Before notification_channels: rule_notifications references both
+        // the rule and the channel, and would otherwise block either delete.
+        await ownerPool.query(`DELETE FROM bms.rule_notifications WHERE rule_id = ANY($1::uuid[])`, [
+          ruleIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.automation_rules WHERE id = ANY($1::uuid[])`, [
+          ruleIds,
+        ]);
+      }
       if (channelIds.length > 0) {
         await ownerPool.query(
           `DELETE FROM bms.notification_deliveries WHERE channel_id = ANY($1::uuid[])`,
@@ -113,6 +129,7 @@ describe.skipIf(!connectionString)(
 
       const orgAdminJwt = jwtFor(SEEDED.organizationAdmin, "organization_admin");
       const globalAdminJwt = jwtFor(SEEDED.globalAdmin, "admin");
+      const locationAdminJwt = jwtFor(SEEDED.locationAdmin, "location_admin");
 
       const scoped = await assertChannelWritesRouteByOrgScope(
         channels,
@@ -146,6 +163,84 @@ describe.skipIf(!connectionString)(
         GLOBAL_AUDIT_CODE,
       );
       channelIds.push(audited.orgScopedChannelId, audited.globalChannelId);
+
+      // --- REAL BUG: setRuleChannels must refuse an out-of-org channel -----
+      // A rule in org A (orgAdminOrgId); `scoped.orgScopedChannelId` (org A,
+      // from the very first assertion above) is already this rule's own org
+      // and is not what is being tested here — a channel in a DIFFERENT,
+      // real organization is, so a second organization is resolved from the
+      // location_admin fixture's own home org rather than invented.
+      const orgBRow = await ownerPool.query<{ id: string }>(
+        `SELECT organization_id AS id FROM bms.users WHERE email = $1`,
+        [SEEDED.locationAdmin],
+      );
+      const orgBId = orgBRow.rows[0]?.id;
+      if (!orgBId) {
+        throw new Error(`E7.1c: ${SEEDED.locationAdmin} has no home organization — run pnpm db:seed.`);
+      }
+
+      const channelA = await ownerPool.query<{ id: string }>(
+        `INSERT INTO bms.notification_channels (organization_id, code, name, kind, config, enabled)
+         VALUES ($1, $2, 'E7.1c read-scope proof (org A)', $3, '{}'::jsonb, true)
+         RETURNING id`,
+        [orgAdminOrgId, READ_SCOPE_CODE_A, kind],
+      );
+      const channelAId = channelA.rows[0]?.id;
+      const channelB = await ownerPool.query<{ id: string }>(
+        `INSERT INTO bms.notification_channels (organization_id, code, name, kind, config, enabled)
+         VALUES ($1, $2, 'E7.1c read-scope proof (org B)', $3, '{}'::jsonb, true)
+         RETURNING id`,
+        [orgBId, READ_SCOPE_CODE_B, kind],
+      );
+      const channelBId = channelB.rows[0]?.id;
+      if (!channelAId || !channelBId) {
+        throw new Error("E7.1c: read-scope fixture channels did not insert");
+      }
+      channelIds.push(channelAId, channelBId);
+
+      await ownerPool.query(
+        `INSERT INTO bms.notification_deliveries (organization_id, channel_id, status)
+         VALUES ($1, $2, 'sent')`,
+        [orgAdminOrgId, channelAId],
+      );
+      await ownerPool.query(
+        `INSERT INTO bms.notification_deliveries (organization_id, channel_id, status)
+         VALUES ($1, $2, 'sent')`,
+        [orgBId, channelBId],
+      );
+
+      await assertChannelAndDeliveryReadsAreOrgScoped(
+        channels,
+        orgAdminJwt,
+        globalAdminJwt,
+        locationAdminJwt,
+        channelAId,
+        channelBId,
+      );
+
+      // --- REAL BUG: setRuleChannels must refuse a cross-org channel -------
+      const rule = await ownerPool.query<{ id: string }>(
+        `INSERT INTO bms.automation_rules (organization_id, code, name, rule_type)
+         VALUES ($1, $2, 'E7.1c setRuleChannels org-fence proof', 'time_window')
+         RETURNING id`,
+        [orgAdminOrgId, RULE_FENCE_CODE],
+      );
+      const ruleId = rule.rows[0]?.id;
+      if (!ruleId) {
+        throw new Error("E7.1c: setRuleChannels fixture rule did not insert");
+      }
+      ruleIds.push(ruleId);
+
+      // `audited.globalChannelId` (still alive — `scoped.globalChannelId` was
+      // already removed by `assertChannelRemoveRoutesByOrgScope` above) is
+      // the fleet-managed global channel decision 7 keeps shareable.
+      await assertSetRuleChannelsRefusesCrossOrgChannel(
+        channels,
+        ruleId,
+        channelBId,
+        audited.globalChannelId,
+        orgAdminJwt,
+      );
     }, 60_000);
   },
 );
