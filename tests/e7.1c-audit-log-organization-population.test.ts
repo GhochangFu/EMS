@@ -65,22 +65,18 @@ function findSites(needle: string): Site[] {
  * scan that fails the moment a new `insert(auditLog)` or `MasterDataAuditService.write`
  * call site omits the field.
  *
- * Deliberately excludes `apps/api/src/notifications/channels.service.ts:459`
- * from the "must name organizationId" reading: that private `audit()` helper
- * has no field at all yet, which is equivalent to an explicit `null` on
- * `fleetDb` (an omitted column is NULL on insert) — legitimate today because
- * every channel is global. It is Task 7's file, not item D's, to wire an
- * actual organizationId parameter once channel org-scoping lands (see the
- * comment at that line and the implementer's report on this branch).
+ * No longer excludes `apps/api/src/notifications/channels.service.ts`: commit
+ * `410ee78` on this branch (E7.1c, item G) wired a real `organizationId`
+ * parameter through the private `audit()` helper, so the exclusion this
+ * comment used to document is stale — leaving the filter in place would have
+ * hidden a reverted stamp from the one invariant built to catch it, since
+ * `audit()` writes on `fleetDb` (BYPASSRLS) and a wrong or missing
+ * `organizationId` there is silently admitted, not refused.
  */
 describe("E7.1c (item D) — every audit_log write names an organizationId", () => {
-  const CHANNELS_AUDIT_HELPER = "apps/api/src/notifications/channels.service.ts";
-
   it("every direct insert(auditLog).values({...}) names organizationId", () => {
-    const sites = findSites("insert(auditLog).values(").filter(
-      (s) => s.file !== CHANNELS_AUDIT_HELPER,
-    );
-    expect(sites.length, "expected at least the known direct insert(auditLog) sites").toBeGreaterThanOrEqual(12);
+    const sites = findSites("insert(auditLog).values(");
+    expect(sites.length, "expected at least the known direct insert(auditLog) sites").toBeGreaterThanOrEqual(14);
     const missing = sites.filter((s) => !/organizationId/.test(s.window));
     expect(
       missing.map((s) => `${s.file}:${s.index}`),
