@@ -8,6 +8,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   assertGlobalAdminUserIsNullOrgTenantInvisibleAuthReadable,
+  assertNoTenantScopedUserIsOrgLess,
   assertScopedUserVisibleOnlyUnderOwnOrg,
 } from "./amendment-4-users.rls.integration.spec";
 
@@ -149,5 +150,9 @@ describe.skipIf(!connectionString)("E7.1b — bms.users Amendment 4 policies und
       homeOrgId,
       otherOrgId,
     );
+  });
+
+  it("stamps every tenant-scoped demo user a home org (no non-admin left org-less)", async () => {
+    await assertNoTenantScopedUserIsOrgLess(fleetDb);
   });
 });

@@ -27,8 +27,10 @@ import {
  * `bms.users` at all.
  *
  * Per Amendment 4 every tenant-scoped user carries a home `organization_id`
- * (`phe-admin` → PHEWB; `wc-admin`/`wc-hvac-admin` → the Western Cape org),
- * matching what migration `0046`'s backfill resolves from each user's grants on a
+ * (`phe-admin` → PHEWB; `wc-admin`/`wc-hvac-admin` → the ESKOM org that owns the
+ * Western Cape location and asset groups — there is no separate Western Cape
+ * org), matching what migration `0046`'s backfill resolves from each user's
+ * grants on a
  * pre-existing database. The seed stamps it on insert because `0046` runs before
  * the seed and so backfills an empty table — the seed is the only place a
  * fresh-database row gets its home. Only the global `admin` (a fleet actor,
@@ -89,10 +91,11 @@ export async function ensureAdminUser(db: BmsDb): Promise<string> {
  * **`E7.1b`: this runs on the superuser connection** (`seed.ts`), not the
  * `bms_owner` seed pool. `0047` makes `bms.users` `FORCE`-bound, so `bms_owner`
  * can neither see these rows (a re-seed's existence check would read empty and
- * duplicate-key) nor `INSERT ... RETURNING` one. `organizationId` is the Western
- * Cape org: it stamps each scoped user's home org (Amendment 4 — `wc-admin`
- * resolves there through `user_location_access`, `wc-hvac-admin` through its
- * asset group's location) and scopes the `locations` lookup, which a
+ * duplicate-key) nor `INSERT ... RETURNING` one. `organizationId` is the ESKOM
+ * org (owner of the Western Cape location and groups): it stamps each scoped
+ * user's home org (Amendment 4 — `wc-admin` resolves there through
+ * `user_location_access → locations.organization_id`, `wc-hvac-admin` through its
+ * asset group's own `organization_id`) and scopes the `locations` lookup, which a
  * `BYPASSRLS`/superuser read no longer filters by org, so it names its org
  * explicitly rather than trusting a policy this connection bypasses. The grants
  * it writes,
