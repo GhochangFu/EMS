@@ -57,11 +57,13 @@ import type {
  * item (ruling 5, deferred to E7.1c); their inserts pass the NULL-tolerant
  * `WITH CHECK` under the tenant GUC.
  *
- * The write-path reads stay on `fleetDb`: `resolveScheduleOrg` and
- * `convertToWorkOrder`'s pre-check resolve the org before the GUC exists.
- * Residual (tracked for a later fold into the write transaction): the private
- * `getScheduleItem`/`getWorkOrder` post-write read-backs read on `fleetDb` behind
- * `assetIds`, so a single-org write's read-back still touches fleet.
+ * The write-path reads stay on `fleetDb`: `resolveScheduleOrg`,
+ * `convertToWorkOrder`'s pre-check and duplicate guard, and `updateSchedule`'s
+ * pre-write existence read resolve state before (or across) the GUC. **E7.1c**
+ * closed the E7.1b read-back residual: the private post-write read-backs now run
+ * on the tenant pool under the write's org — `createSchedule`/`updateSchedule`
+ * fold `readScheduleItem` into the write transaction, and `convertToWorkOrder`
+ * reads the work order back in its own `withTenant` (decision 1).
  */
 @Injectable()
 export class MaintenanceService {
@@ -239,14 +241,21 @@ export class MaintenanceService {
   }
 
   /**
-   * Maps each schedule to its open work order, if any, on the passed handle. It
-   * has two modes since E7.1b: `list` passes its `withReadScope` transaction, so
-   * a single-organization caller's guard read runs under the org GUC alongside
-   * the list itself (decision 1); the write-path callers (`convertToWorkOrder`'s
-   * duplicate guard, `getScheduleItem`'s read-back) wrap a bare
-   * `fleetDb.transaction`, so they read cross-organization — the duplicate guard
-   * must, or on a GUC-less pool it would see zero rows and stop guarding. Behind
-   * the caller's `assetIds` scope in every caller; on `fleetDb` it can only
+   * Maps each schedule to its open work order, if any, on the passed handle. Its
+   * callers differ in which pool that handle names, and deliberately:
+   *
+   * - `list` and the `readScheduleItem` read-back (E7.1c) pass a **tenant**
+   *   transaction, so the guard runs under the caller's org GUC (decision 1). For
+   *   the read-back this is a display field about the caller's own org, so org
+   *   scoping is correct.
+   * - `convertToWorkOrder`'s pre-write **duplicate guard**, and `updateSchedule`'s
+   *   pre-write existence read (`getScheduleItem` → `readScheduleItem`), wrap a
+   *   bare `fleetDb.transaction`, so both read on **fleet**. The duplicate guard
+   *   must read **cross-organization** — on a GUC-less pool it would see zero rows
+   *   and stop guarding a foreign-org open work order; the existence read is a
+   *   pre-GUC read before the org is resolved.
+   *
+   * Behind the caller's `assetIds` scope in every caller; on `fleetDb` it can only
    * over-refuse, never leak.
    */
   private async getActiveWorkOrdersBySchedule(
@@ -384,7 +393,7 @@ export class MaintenanceService {
 
     const actorId = await this.resolveActorId(actor);
     const firstDueAt = new Date(dto.firstDueAt);
-    const createdId = await withTenant(this.db, organizationId, async (tx) => {
+    const item = await withTenant(this.db, organizationId, async (tx) => {
       const [template] = await tx
         .insert(maintenanceTaskTemplates)
         .values({
@@ -438,17 +447,30 @@ export class MaintenanceService {
         },
       });
 
-      return schedule.id;
+      // E7.1c: read back under the write's own tenant GUC, not on fleetDb.
+      return this.readScheduleItem(tx, schedule.id, assetIds);
     });
 
-    return this.getScheduleItem(createdId, assetIds);
+    return item;
   }
 
-  private async getScheduleItem(
+  /**
+   * Reads one schedule's list item (row + active-work-order display field) on the
+   * passed transaction handle. Two callers wrap it differently: the pre-write
+   * existence read (`getScheduleItem`) wraps it in a `fleetDb.transaction` — a
+   * pre-GUC read before the org is resolved; the post-write read-back
+   * (`createSchedule`/`updateSchedule`) runs it on the write's own `withTenant`
+   * transaction, so a single-org write reads its result back under the org GUC
+   * (E7.1c, ADR 0043 decision 1). The active-work-order lookup here is a display
+   * field, so scoping it to the write's org is correct — unlike
+   * `convertToWorkOrder`'s cross-org duplicate guard.
+   */
+  private async readScheduleItem(
+    tx: BmsTx,
     id: string,
     assetIds?: string[] | null,
   ): Promise<MaintenanceScheduleItem> {
-    const [row] = await this.fleetDb
+    const [row] = await tx
       .select({
         id: maintenanceSchedules.id,
         templateId: maintenanceSchedules.templateId,
@@ -487,12 +509,16 @@ export class MaintenanceService {
     if (!row) {
       throw new NotFoundException("Maintenance schedule not found");
     }
-    // Post-write read-back: the duplicate guard reads cross-org on a bare fleet
-    // transaction (getActiveWorkOrdersBySchedule is BmsTx-only since E7.1b).
-    const active = await this.fleetDb.transaction((tx) =>
-      this.getActiveWorkOrdersBySchedule([id], tx),
-    );
+    const active = await this.getActiveWorkOrdersBySchedule([id], tx);
     return this.mapScheduleRow(row, active.get(id) ?? null);
+  }
+
+  /** Pre-write existence read on `fleetDb` (pre-GUC), behind the caller's scope. */
+  private getScheduleItem(
+    id: string,
+    assetIds?: string[] | null,
+  ): Promise<MaintenanceScheduleItem> {
+    return this.fleetDb.transaction((tx) => this.readScheduleItem(tx, id, assetIds));
   }
 
   /** Activates or deactivates a maintenance schedule and template. */
@@ -506,7 +532,7 @@ export class MaintenanceService {
     const organizationId = await this.resolveScheduleOrg(id, assetIds);
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
-    await withTenant(this.db, organizationId, async (tx) => {
+    const item = await withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(maintenanceSchedules)
         .set({ active: dto.active, updatedAt: now })
@@ -534,8 +560,10 @@ export class MaintenanceService {
           actorEmail: actor.email,
         },
       });
+      // E7.1c: read back under the write's own tenant GUC, not on fleetDb.
+      return this.readScheduleItem(tx, id, assetIds);
     });
-    return this.getScheduleItem(id, assetIds);
+    return item;
   }
 
   /** Converts a maintenance schedule occurrence into an audited work order. */
@@ -656,15 +684,23 @@ export class MaintenanceService {
       return workOrder.id;
     });
 
-    const workOrder = await this.getWorkOrder(createdWorkOrderId, assetIds);
+    // E7.1c: the getWorkOrder read-back runs on the tenant pool under the write's
+    // org. It is its own withTenant (not folded into the write transaction above)
+    // because getWorkOrder is a plain select with no fleetDb.transaction for
+    // countingDb to observe a fold through — a distinct tenant transaction is what
+    // keeps the routing assertable (maintenance `.rls.integration` proof).
+    const workOrder = await withTenant(this.db, organizationId, (tx) =>
+      this.readWorkOrder(tx, createdWorkOrderId, assetIds),
+    );
     return { workOrder };
   }
 
-  private async getWorkOrder(
+  private async readWorkOrder(
+    tx: BmsTx,
     id: string,
     assetIds?: string[] | null,
   ): Promise<WorkOrderListItem> {
-    const [row] = await this.fleetDb
+    const [row] = await tx
       .select({
         id: workOrders.id,
         assetId: workOrders.assetId,

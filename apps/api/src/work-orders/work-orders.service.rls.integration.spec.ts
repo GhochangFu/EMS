@@ -178,3 +178,127 @@ export async function assertSingleOrgWorkOrderListRunsOnTenantTransaction(
   expect(tenant.transactions(), "a single-org list opens one tenant transaction").toBe(1);
   expect(fleet.transactions(), "a single-org list opens no fleet transaction").toBe(0);
 }
+
+/**
+ * `E7.1c` — the private post-write read-back (`getById`) runs on the **tenant**
+ * pool, not the unconditional fleet pool (ADR 0043 decision 1). A single-org
+ * `create` opens one tenant transaction for the write and a second for the
+ * read-back, and zero fleet transactions (org and actor resolution use
+ * `fleetDb.select`, not `.transaction`).
+ *
+ * Unlike the rules/maintenance folds, `work_orders` has no `fleetDb.transaction`
+ * on any path, so `countingDb` cannot observe the read-back as a *fleet*
+ * transaction disappearing. Routing the read-back through its own `withTenant`
+ * (rather than folding it into the write transaction, the way `acknowledge`
+ * does) is what makes the routing assertable with the existing `countingDb`
+ * primitive: a revert of the read-back to `this.fleetDb.select` drops the tenant
+ * count from two to one.
+ */
+export async function assertWorkOrderCreateReadsBackOnTenantTransaction(
+  ctx: WorkOrdersRlsFixtures,
+  actor: Pick<JwtPayload, "sub" | "email">,
+): Promise<void> {
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  await svc.create(
+    { assetId: ctx.assetId, title: "E7.1c WO read-back", priority: "medium" },
+    actor,
+    [ctx.assetId],
+  );
+  expect(
+    tenant.transactions(),
+    "create writes then reads back, both on the tenant pool",
+  ).toBe(2);
+  expect(fleet.transactions(), "a single-org create opens no fleet transaction").toBe(0);
+}
+
+/**
+ * `E7.1c` — `updateStatus` reads back the row it just mutated, on the **tenant**
+ * pool. This is the path where a wrongly-scoped read-back would be a 404 *after* a
+ * committed write, so the assertion is two-sided: the returned item carries the
+ * mutation (the read-back saw the row under its own GUC — not a spurious 404), and
+ * the counts show two tenant transactions (write + read-back) with the pre-write
+ * existence/terminal check the only fleet transaction. A read-back left on
+ * `this.fleetDb.select` drops the tenant count to one.
+ */
+export async function assertUpdateStatusReadsBackOnTenantTransaction(
+  ctx: WorkOrdersRlsFixtures,
+  actor: Pick<JwtPayload, "sub" | "email">,
+): Promise<void> {
+  const wo = await ctx.svc.create(
+    { assetId: ctx.assetId, title: "E7.1c updateStatus read-back", priority: "medium" },
+    actor,
+    [ctx.assetId],
+  );
+
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  const updated = await svc.updateStatus(
+    wo.id,
+    { status: "in_progress", sortOrder: 2 },
+    actor,
+    [ctx.assetId],
+  );
+  expect(
+    updated.status,
+    "the read-back returns the mutated row under the tenant GUC, not a 404 after a committed write",
+  ).toBe("in_progress");
+  expect(
+    tenant.transactions(),
+    "updateStatus writes then reads back, both on the tenant pool",
+  ).toBe(2);
+  expect(
+    fleet.transactions(),
+    "only the pre-write existence/terminal check runs on fleet",
+  ).toBe(1);
+}
+
+/**
+ * `E7.1c` — `reorder` reads back N work orders, and they run in ONE shared tenant
+ * transaction, not one per id. A two-item reorder therefore opens exactly two
+ * tenant transactions (the write, then the batch read-back) and the count does
+ * not grow with batch size. This pins the batch invariant: a revert to a per-id
+ * `withTenant` read-back would make it `1 + items.length`, and a revert to
+ * `this.fleetDb.select` would drop it to one.
+ */
+export async function assertReorderReadsBackInOneTenantTransaction(
+  ctx: WorkOrdersRlsFixtures,
+  actor: Pick<JwtPayload, "sub" | "email">,
+): Promise<void> {
+  // Two work orders in the same org, created on the un-counted service so only
+  // the reorder call below is measured.
+  const a = await ctx.svc.create(
+    { assetId: ctx.assetId, title: "E7.1c reorder A", priority: "medium" },
+    actor,
+    [ctx.assetId],
+  );
+  const b = await ctx.svc.create(
+    { assetId: ctx.assetId, title: "E7.1c reorder B", priority: "medium" },
+    actor,
+    [ctx.assetId],
+  );
+
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  await svc.reorder(
+    {
+      items: [
+        { id: a.id, status: "in_progress", sortOrder: 1 },
+        { id: b.id, status: "in_progress", sortOrder: 2 },
+      ],
+    },
+    actor,
+    [ctx.assetId],
+  );
+  expect(
+    tenant.transactions(),
+    "reorder writes then reads back all ids in one shared tenant transaction",
+  ).toBe(2);
+  expect(
+    fleet.transactions(),
+    "reorder resolves org/actor via fleet.select, opening no fleet transaction",
+  ).toBe(0);
+}

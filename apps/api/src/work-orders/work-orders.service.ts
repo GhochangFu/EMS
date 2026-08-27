@@ -16,7 +16,7 @@ import type {
 } from "@bms/shared";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
-import { withTenant } from "../database/tenant-context";
+import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
 import type {
   CloseWorkOrderBody,
@@ -42,10 +42,12 @@ const terminalStatuses = new Set<WorkOrderStatus>(["closed"]);
  * pre-check resolve the org before any GUC exists, and `resolveActorId` reads
  * the pre-tenant `bms.users` identity — after `0047`'s NULL-tolerant `users`
  * policy a scoped actor's row is invisible to a bare tenant pool (no
- * `current_org`), which would silently drop the audit actor. Residual (tracked
- * for a later fold into the write transaction): the private `getById` post-write
- * read-back reads `work_orders` on `fleetDb` behind `assetIds`, so a single-org
- * write's read-back still touches fleet.
+ * `current_org`), which would silently drop the audit actor. `updateStatus`'s
+ * pre-write existence/terminal check also stays on `fleetDb` (`getById`), before
+ * the org is resolved. **E7.1c** closed the E7.1b read-back residual: the private
+ * post-write read-backs now run on the tenant pool under the write's org
+ * (`readBackWorkOrder`), so a single-org write reads its result back under the
+ * `0047` FORCE policy rather than the unconditional fleet pool (decision 1).
  *
  * A Kanban reorder is single-organization by construction — one board shows one
  * org's assets — so a batch that resolves to more than one organization is a
@@ -158,11 +160,20 @@ export class WorkOrdersService {
     return orgs[0] as string;
   }
 
-  private async getById(
+  /**
+   * Reads one work order's list projection on the passed transaction handle. Two
+   * callers wrap it differently: the pre-write existence/terminal check
+   * (`getById`) wraps it in a `fleetDb.transaction` — a pre-GUC read behind the
+   * caller's scope, like `resolveWorkOrderOrg`; the post-write read-back
+   * (`readBackWorkOrder`) wraps it in `withTenant`, so a single-org write reads
+   * its result back under the org GUC (ADR 0043 decision 1).
+   */
+  private async readWorkOrderById(
+    tx: BmsTx,
     id: string,
     assetIds?: string[] | null,
   ): Promise<WorkOrderListItem> {
-    const [row] = await this.fleetDb
+    const [row] = await tx
       .select({
         id: workOrders.id,
         assetId: workOrders.assetId,
@@ -196,6 +207,34 @@ export class WorkOrdersService {
       throw new NotFoundException("Work order not found");
     }
     return this.mapRow(row);
+  }
+
+  /**
+   * Pre-write read on `fleetDb` (pre-GUC), behind the caller's scope. Used by
+   * `updateStatus`'s existence/terminal check, which runs before the org is
+   * resolved — a NULL-org row must 404 here, not 400 from `resolveWorkOrderOrg`.
+   */
+  private getById(id: string, assetIds?: string[] | null): Promise<WorkOrderListItem> {
+    return this.fleetDb.transaction((tx) => this.readWorkOrderById(tx, id, assetIds));
+  }
+
+  /**
+   * Post-write read-back on the **tenant** pool (E7.1c, ADR 0043 decision 1). A
+   * single-org write reads its result back under its own org GUC rather than on
+   * the unconditional fleet pool. It runs in its own `withTenant` — not folded
+   * into the write transaction the way `alarms.acknowledge` does — because
+   * `work_orders` has no `fleetDb.transaction` on any path for `countingDb` to
+   * observe a fold through, so a distinct tenant transaction is what keeps the
+   * routing assertable (work-orders `.rls.integration` proof).
+   */
+  private readBackWorkOrder(
+    id: string,
+    organizationId: string,
+    assetIds?: string[] | null,
+  ): Promise<WorkOrderListItem> {
+    return withTenant(this.db, organizationId, (tx) =>
+      this.readWorkOrderById(tx, id, assetIds),
+    );
   }
 
   /** Lists recent work orders for the Sprint A API. */
@@ -336,7 +375,7 @@ export class WorkOrdersService {
       },
     });
 
-    return this.getById(createdId, assetIds);
+    return this.readBackWorkOrder(createdId, organizationId, assetIds);
   }
 
   /** Updates a work order status and records the state change in audit log. */
@@ -383,7 +422,7 @@ export class WorkOrdersService {
       });
     });
 
-    return this.getById(id, assetIds);
+    return this.readBackWorkOrder(id, organizationId, assetIds);
   }
 
   /** Closes a work order and records the closure reason. */
@@ -500,7 +539,16 @@ export class WorkOrdersService {
       });
     });
 
-    const items = await Promise.all(ids.map((id) => this.getById(id, assetIds)));
+    // E7.1c: the N post-write read-backs run in ONE additional tenant
+    // transaction (not one per id, and not on the fleet pool), so a single-org
+    // reorder shows exactly two tenant transactions regardless of batch size.
+    const items = await withTenant(this.db, organizationId, async (tx) => {
+      const rows: WorkOrderListItem[] = [];
+      for (const id of ids) {
+        rows.push(await this.readWorkOrderById(tx, id, assetIds));
+      }
+      return rows;
+    });
     return { items };
   }
 }

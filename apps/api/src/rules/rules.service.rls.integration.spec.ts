@@ -131,6 +131,89 @@ export async function assertCreateStampsOrgAndActorUnderRealRls(
 }
 
 /**
+ * `E7.1c` — the post-write read-back (`getRuleRow`) is folded into the write's
+ * own `withTenant` transaction, so a single-org `createDraft` opens exactly one
+ * tenant transaction and zero fleet transactions. Before E7.1c the read-back was
+ * a separate `fleetDb.transaction(selectRuleRows)` reading every tenant's rules;
+ * a revert restores that one fleet transaction, so `fleet.transactions() === 0`
+ * is the discriminating assertion.
+ */
+export async function assertCreateDraftReadsBackOnTenantTransaction(
+  ctx: RulesRlsFixtures,
+  code: string,
+): Promise<void> {
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  const created = await svc.createDraft(thresholdDraft(ctx, code), ctx.scopedActor, [ctx.assetId]);
+  ctx.createdRuleIds.push(created.id);
+  expect(
+    tenant.transactions(),
+    "createDraft writes and reads back in one tenant transaction",
+  ).toBe(1);
+  expect(
+    fleet.transactions(),
+    "the folded read-back opens no fleet transaction (org/actor/code use fleet.select)",
+  ).toBe(0);
+}
+
+/**
+ * `E7.1c` — `updateRule` pins the inline-fold-with-pre-write variant: the
+ * pre-write `getRuleRow` stays on `fleetDb` (one fleet transaction) and the
+ * post-write read-back folds into the write's `withTenant` (one tenant
+ * transaction). Before E7.1c the post-write `getRuleRow` added a SECOND fleet
+ * transaction, so `fleet.transactions() === 1` discriminates a revert of just
+ * this site.
+ */
+export async function assertUpdateRuleReadsBackInTenantTransaction(
+  ctx: RulesRlsFixtures,
+  code: string,
+): Promise<void> {
+  const created = await ctx.service.createDraft(thresholdDraft(ctx, code), ctx.scopedActor, [
+    ctx.assetId,
+  ]);
+  ctx.createdRuleIds.push(created.id);
+
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  await svc.updateRule(created.id, { name: `${code}-updated` }, ctx.scopedActor, [ctx.assetId]);
+  expect(
+    tenant.transactions(),
+    "updateRule writes and reads back in one tenant transaction",
+  ).toBe(1);
+  expect(fleet.transactions(), "only the pre-write current-row read runs on fleet").toBe(1);
+}
+
+/**
+ * `E7.1c` — `publishRule` pins the `writeLifecycleUpdate` fold variant (also used
+ * by `archiveRule`): the write and its read-back run in one `withTenant`, the
+ * pre-write `getRuleRow` is the only fleet transaction. Same discriminating
+ * assertion as `updateRule`.
+ */
+export async function assertPublishRuleReadsBackInTenantTransaction(
+  ctx: RulesRlsFixtures,
+  code: string,
+): Promise<void> {
+  const created = await ctx.service.createDraft(thresholdDraft(ctx, code), ctx.scopedActor, [
+    ctx.assetId,
+  ]);
+  ctx.createdRuleIds.push(created.id);
+
+  const tenant = countingDb(ctx.tenantDb);
+  const fleet = countingDb(ctx.fleetDb);
+  const svc = ctx.makeService(tenant.db, fleet.db);
+  await svc.publishRule(created.id, { reason: "E7.1c publish read-back" }, ctx.scopedActor, [
+    ctx.assetId,
+  ]);
+  expect(
+    tenant.transactions(),
+    "publishRule writes and reads back in one tenant transaction",
+  ).toBe(1);
+  expect(fleet.transactions(), "only the pre-write current-row read runs on fleet").toBe(1);
+}
+
+/**
  * Ruling 4: an asset-less `time_window` rule has no asset to derive an org from.
  * A global admin (no single tenant) is refused with a 4xx rather than inserting
  * a NULL `organization_id`, and nothing is written.

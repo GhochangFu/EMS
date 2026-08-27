@@ -32,7 +32,7 @@ import {
   shouldRaise,
 } from "../alarms/alarm-raise.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
-import { withTenant } from "../database/tenant-context";
+import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { alarmMessageFieldsFromCondition } from "./alarm-message";
@@ -46,7 +46,7 @@ import {
   type LatestSampleLoader,
 } from "./rule-evaluation";
 import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
-import { filterRuleRowsByAssetIds, selectRuleRows } from "./rule-reads";
+import { filterRuleRowsByAssetIds, selectRuleRowById, selectRuleRows } from "./rule-reads";
 import { pointKeysForAsset } from "./rule-points";
 import { batchedLatestPointValues, latestPointValue } from "./rule-samples";
 import type {
@@ -74,9 +74,9 @@ export class RulesService {
     // deliberately cross-org system sweep (ADR 0033 decision 2); the code scan,
     // the pre-write asset lookup and the pre-tenant actor read stay on `fleetDb`;
     // `getBuilderCatalog` reads `assets` (master data, not a decision-1 table).
-    // Writes run inside `withTenant(org)`. Residual (tracked for a later fold):
-    // the `getRuleRow` post-write read-back reads on `fleetDb`.
-    // `rule_notifications` stays in `ChannelsService`.
+    // Writes run inside `withTenant(org)`, and E7.1c folds the post-write
+    // read-back into that transaction (`getRuleRowTx`); the pre-write current-row
+    // read stays on `fleetDb`. `rule_notifications` stays in `ChannelsService`.
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly vocabularies: VocabulariesService,
     private readonly alarmRaiser: AlarmRaiser,
@@ -182,10 +182,11 @@ export class RulesService {
         },
       });
 
-      return row;
+      // E7.1c: read back under the write's own tenant GUC, not on fleetDb.
+      return this.getRuleRowTx(tx, row.id);
     });
 
-    return mapRuleRow(await this.getRuleRow(created.id));
+    return mapRuleRow(created);
   }
 
   /** Updates a draft or published operator-created rule after validation. */
@@ -210,7 +211,7 @@ export class RulesService {
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
 
-    await withTenant(this.db, organizationId, async (tx) => {
+    const updated = await withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(automationRules)
         .set({ ...values, updatedAt: now })
@@ -229,9 +230,12 @@ export class RulesService {
           actorEmail: actor.email,
         },
       });
+
+      // E7.1c: read back under the write's own tenant GUC, not on fleetDb.
+      return this.getRuleRowTx(tx, id);
     });
 
-    return mapRuleRow(await this.getRuleRow(id));
+    return mapRuleRow(updated);
   }
 
   /** Evaluates a draft payload against current data without enabling it. */
@@ -309,7 +313,7 @@ export class RulesService {
       throw new BadRequestException("Archived rules cannot be published");
     }
     await this.validateRuleDraft(ruleBodyFromRow(current), id);
-    await this.writeLifecycleUpdate(
+    const updated = await this.writeLifecycleUpdate(
       id,
       "rule_publish",
       dto,
@@ -322,7 +326,7 @@ export class RulesService {
       },
       this.requireRuleOrg(current),
     );
-    return mapRuleRow(await this.getRuleRow(id));
+    return mapRuleRow(updated);
   }
 
   /** Archives a rule and removes it from active evaluation. */
@@ -334,7 +338,7 @@ export class RulesService {
   ): Promise<RuleListItem> {
     const current = await this.getRuleRow(id);
     this.assertAssetInScope(current.assetId, assetIds);
-    await this.writeLifecycleUpdate(
+    const updated = await this.writeLifecycleUpdate(
       id,
       "rule_archive",
       dto,
@@ -346,7 +350,7 @@ export class RulesService {
       },
       this.requireRuleOrg(current),
     );
-    return mapRuleRow(await this.getRuleRow(id));
+    return mapRuleRow(updated);
   }
 
   /** Copies an existing rule into a disabled draft for operator editing. */
@@ -412,10 +416,10 @@ export class RulesService {
         },
       });
 
-      return row;
+      return this.getRuleRowTx(tx, row.id); // E7.1c: read back on the write's tenant GUC
     });
 
-    return mapRuleRow(await this.getRuleRow(created.id));
+    return mapRuleRow(created);
   }
 
   /** Lists recent rule execution traces. */
@@ -485,7 +489,7 @@ export class RulesService {
     const actorId = await this.resolveActorId(actor);
     const now = new Date();
 
-    await withTenant(this.db, organizationId, async (tx) => {
+    const updated = await withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(automationRules)
         .set({ enabled: dto.enabled, updatedAt: now })
@@ -505,9 +509,11 @@ export class RulesService {
           actorEmail: actor.email,
         },
       });
+
+      return this.getRuleRowTx(tx, id); // E7.1c: read back on the write's tenant GUC
     });
 
-    return mapRuleRow(await this.getRuleRow(id));
+    return mapRuleRow(updated);
   }
 
   /**
@@ -692,12 +698,23 @@ export class RulesService {
     }
   }
 
+  /**
+   * The **pre-write** current-row read (and `assertRuleInScope`), on `fleetDb`
+   * before the org is resolved — a pre-GUC read like the write services'
+   * `resolveXOrg`. The **post-write** read-backs use `getRuleRowTx` instead (E7.1c).
+   */
   private async getRuleRow(id: string): Promise<RuleRow> {
-    // Write-path resolver read-back: reads every tenant's rules on a bare fleet
-    // transaction (BYPASSRLS) and filters by id in memory. Residual — tracked for
-    // a later fold into the write's own tenant transaction (E7.1b).
     const rows = await this.fleetDb.transaction((tx) => selectRuleRows(tx));
     const [row] = rows.filter((item) => item.id === id);
+    if (!row) {
+      throw new NotFoundException("Rule not found");
+    }
+    return row;
+  }
+
+  /** `E7.1c` — the post-write read-back, on the write's own tenant GUC (see `selectRuleRowById`). */
+  private async getRuleRowTx(tx: BmsTx, id: string): Promise<RuleRow> {
+    const row = await selectRuleRowById(tx, id);
     if (!row) {
       throw new NotFoundException("Rule not found");
     }
@@ -915,9 +932,9 @@ export class RulesService {
       archivedAt: Date | null;
     }>,
     organizationId: string,
-  ): Promise<void> {
+  ): Promise<RuleRow> {
     const actorId = await this.resolveActorId(actor);
-    await withTenant(this.db, organizationId, async (tx) => {
+    return withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(automationRules)
         .set({ ...values, updatedAt: new Date() })
@@ -935,6 +952,8 @@ export class RulesService {
           actorEmail: actor.email,
         },
       });
+
+      return this.getRuleRowTx(tx, id); // E7.1c: read back on the write's tenant GUC
     });
   }
 
