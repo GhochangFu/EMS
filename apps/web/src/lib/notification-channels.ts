@@ -132,14 +132,26 @@ export function channelOrganizationOptions(
  * the form asks instead of guessing and getting a refusal it cannot act on.
  *
  * An `admin` is never refused here: `""` is Fleet-wide for that role, a real
- * choice and the default.
+ * choice and the default, and it needs no organization to exist.
+ *
+ * `organizationsUnavailable` separates a list that FAILED from one that came
+ * back empty. TanStack's `isPending` goes false on an error too, with no data,
+ * so without it a failed request would tell an `organization_admin` that it
+ * administers no active organization — a statement of fact drawn from a query
+ * that never answered. `NotificationReadinessBanner` keeps the same
+ * distinction in the other direction: an absent banner must mean "nothing to
+ * say", never "the check did not run".
  */
 export function organizationChoiceRefusal(
   role: UserRole,
   options: ReadonlyArray<ChannelOrganizationOption>,
   organizationId: string,
+  organizationsUnavailable = false,
 ): string | null {
   if (role === "admin") return null;
+  if (organizationsUnavailable) {
+    return "The organization list could not be loaded, so this form cannot tell which tenant a new channel would belong to. Reload the page.";
+  }
   if (options.length === 0) {
     return "You administer no active organization, so there is no tenant to create a channel in.";
   }

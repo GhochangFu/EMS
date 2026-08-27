@@ -13,6 +13,7 @@ import {
 } from "./notification-channels";
 import {
   asksAMultiGrantOrganizationAdminToChoose,
+  distinguishesAFailedOrganizationListFromAnEmptyOne,
   keepsOrganizationIdOutOfAPatch,
   namesAnOrganizationRatherThanPrintingItsUuid,
   neverOffersAnOrganizationAdminTheFleetWideOption,
@@ -196,5 +197,9 @@ describe("E7.1d channel organization scope", () => {
 
   it("never refuses an admin its fleet-wide default", () => {
     neverRefusesAnAdminItsFleetWideDefault();
+  });
+
+  it("says the organization list failed rather than claiming there are none", () => {
+    distinguishesAFailedOrganizationListFromAnEmptyOne();
   });
 });

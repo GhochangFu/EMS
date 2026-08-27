@@ -10,6 +10,7 @@ import {
   editingShowsTheOrganizationAndCannotChangeIt,
   namesTheOrganizationOfEveryChannel,
   refusesCreateWhenNoActiveOrganizationIsAdministered,
+  saysTheOrganizationListFailedRatherThanClaimingThereAreNone,
   refusesSendTestOnAFleetWideChannelWithTheReason,
   rendersBothKinds,
   showsTheReadinessWarning,
@@ -87,5 +88,9 @@ describe("F3.8 notification channels page", () => {
 
   it("refuses create when the role administers no active organization", async () => {
     await refusesCreateWhenNoActiveOrganizationIsAdministered();
+  });
+
+  it("says the organization list failed rather than claiming there are none", async () => {
+    await saysTheOrganizationListFailedRatherThanClaimingThereAreNone();
   });
 });

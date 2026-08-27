@@ -166,6 +166,28 @@ export function refusesCreateWhenNoActiveOrganizationIsAdministered(): void {
   expect(refusal).toMatch(/no active organization/i);
 }
 
+/**
+ * A list that failed is not a list that came back empty.
+ *
+ * `isPending` goes false on an error too, so the caller can only tell the two
+ * apart by saying which happened. Told nothing, this would report "you
+ * administer no active organization" — a fact about tenancy asserted from a
+ * request that never answered.
+ */
+export function distinguishesAFailedOrganizationListFromAnEmptyOne(): void {
+  const failed = organizationChoiceRefusal("organization_admin", [], "", true);
+  expect(failed).toMatch(/could not be loaded/i);
+  expect(failed).not.toMatch(/no active organization/i);
+
+  // Empty and settled still says what it means.
+  expect(organizationChoiceRefusal("organization_admin", [], "", false)).toMatch(
+    /no active organization/i,
+  );
+
+  // An `admin` is unaffected either way: fleet-wide needs no list at all.
+  expect(organizationChoiceRefusal("admin", [], "", true)).toBeNull();
+}
+
 /** An `admin` is never refused: `""` is Fleet-wide there, and it is the default. */
 export function neverRefusesAnAdminItsFleetWideDefault(): void {
   const options = channelOrganizationOptions("admin", orgs);

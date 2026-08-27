@@ -540,3 +540,29 @@ export async function refusesCreateWhenNoActiveOrganizationIsAdministered(): Pro
   await userEvent.click(submit);
   expect(create).not.toHaveBeenCalled();
 }
+
+/**
+ * `E7.1d` — a failed organization list says so, and does not assert a fact.
+ *
+ * `isPending` goes false on an error as well as on success, so the refusal
+ * above would otherwise fire on an empty `data` and tell this operator it
+ * administers no active organization — which may be untrue, and is drawn from
+ * a request that never answered. Same distinction
+ * `bannerIsSilentWhenTheCheckFails` exists to keep, in the other direction.
+ */
+export async function saysTheOrganizationListFailedRatherThanClaimingThereAreNone(): Promise<void> {
+  stubApi();
+  vi.spyOn(orgApi, "fetchAdminOrganizations").mockRejectedValue(new Error("organizations 500"));
+  vi.spyOn(api, "fetchNotificationChannels").mockResolvedValue({
+    items: [{ ...emailChannel, organizationId: ORGANIZATIONS[0]!.id }],
+  });
+  renderPage(orgAdmin);
+
+  await screen.findByText("ops-email");
+  await waitFor(() => {
+    expect(screen.getByText(/could not be loaded/i)).toBeInTheDocument();
+  });
+  expect(screen.queryByText(/no active organization/i)).not.toBeInTheDocument();
+  // Still refused — the form genuinely cannot name a tenant.
+  expect(screen.getByRole("button", { name: "Add channel" })).toBeDisabled();
+}

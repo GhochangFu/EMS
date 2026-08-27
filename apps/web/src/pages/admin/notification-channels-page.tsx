@@ -115,13 +115,15 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
   // channel they are creating belongs to.
   //
   // `<= 1` covers two states — one option, chosen for you, and none, where
-  // there is nothing to choose. Both lock the control, and **neither is what
-  // keeps an unchosen organization from being submitted**: with no options
-  // `effectiveOrganizationId` falls back to `""`, which omits `organizationId`
-  // and lets `resolveCreateTargetOrg` resolve a tenant the picker deliberately
-  // refused to offer. `organizationChoiceRefusal` below is what stops that,
-  // and it is the only thing that does — changing this line to `=== 1` alters
-  // nothing an operator or a test can observe.
+  // there is nothing to choose at all. Both lock the control, and the second
+  // is why this is not `=== 1`: an unlocked empty picker offers a placeholder
+  // the operator can never satisfy.
+  //
+  // The lock is not what keeps an unchosen organization from being SUBMITTED.
+  // With no options `effectiveOrganizationId` falls back to `""`, which omits
+  // `organizationId` and lets `resolveCreateTargetOrg` resolve a tenant the
+  // picker deliberately refused to offer. `organizationChoiceRefusal` below is
+  // the only thing that stops that. Two guards, two different jobs.
   const organizationLocked = user.role !== "admin" && organizationOptions.length <= 1;
   const effectiveOrganizationId = organizationLocked
     ? (organizationOptions[0]?.value ?? "")
@@ -134,7 +136,12 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
   const organizationsSettled = !organizationsQ.isPending;
   const organizationRefusal =
     editing === null && organizationsSettled
-      ? organizationChoiceRefusal(user.role, organizationOptions, effectiveOrganizationId)
+      ? organizationChoiceRefusal(
+          user.role,
+          organizationOptions,
+          effectiveOrganizationId,
+          organizationsQ.isError,
+        )
       : null;
 
   const saveMutation = useMutation({
