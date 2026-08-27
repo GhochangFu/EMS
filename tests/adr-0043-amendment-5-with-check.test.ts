@@ -133,9 +133,19 @@ describe("E7.1c / 0048 — bms.audit_log is not touched (Blocker 2 is still open
    * Until that is ruled, `0048` must not carry `audit_log`'s policy or
    * column changes — if the human chooses the one-PR option, this assertion
    * is the one to invert, per the plan's own instruction (§6 Task 1 item 5).
+   *
+   * Statement-bounded, not a bare string search: plan §4/§6 Task 3d both
+   * expect `0048` to carry a comment naming PR 2 as the reason `audit_log` is
+   * deferred, and `0047` itself already mentions `audit_log` in prose. A bare
+   * `not.toMatch(/bms\.audit_log\b/i)` would go red against that correctly-
+   * written comment, so this checks for the two DDL statement shapes that
+   * would actually touch the table, exactly as `adr-0043-tenant-columns.test.ts`
+   * bounds its own ADD COLUMN / SET NOT NULL scans to a statement rather than
+   * a bare substring.
    */
-  it("no CREATE POLICY / ALTER TABLE statement in 0048 names bms.audit_log", () => {
+  it("no CREATE/DROP POLICY or ALTER TABLE statement in 0048 names bms.audit_log", () => {
     expect(migration0048).not.toBeNull();
-    expect(migration0048).not.toMatch(/bms\.audit_log\b/i);
+    expect(migration0048).not.toMatch(/(?:CREATE|DROP)\s+POLICY\s+\w+\s+ON\s+bms\.audit_log\b/i);
+    expect(migration0048).not.toMatch(/ALTER TABLE\s+bms\.audit_log\b/i);
   });
 });
