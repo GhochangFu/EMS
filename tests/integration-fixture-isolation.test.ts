@@ -1,21 +1,21 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-const repoRoot = fileURLToPath(new URL("..", import.meta.url));
-const skipDirs = new Set(["node_modules", "dist", "build", "coverage", ".git"]);
-
-function walk(dir: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    if (skipDirs.has(entry)) continue;
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) walk(full, out);
-    else out.push(full);
-  }
-  return out;
-}
+// The source scan the reading rules share. It lived in this file until a second
+// reading rule needed it; it is a module now so both use one scanner rather than
+// two that can drift apart, and so this file stays under the AGENTS.md §4.5
+// length limit. `tests/support/` holds no `.test.ts`, so Vitest does not collect
+// it, and it is typechecked as an import of this file.
+import {
+  READS_ASSETS_TABLE,
+  repoRoot,
+  specsReadingAssets,
+  stringLiterals,
+  walk,
+  withoutComments,
+} from "./support/source-scan";
 
 /**
  * The 2026-08-23 `alarm-enrichment.integration.test.ts` flake, stated as the
@@ -463,8 +463,6 @@ describe("committed fixture prefixes are per-run", () => {
  * `the literal scan bounds each window at its own delimiter` below.
  */
 describe("fixture assets are resolved by exact code, not by pattern", () => {
-  /** Stateless membership test — is there a `bms.assets` read in this file at all. */
-  const READS_ASSETS_TABLE = /\bFROM\s+bms\.assets\b/;
   /**
    * A **literal** code pattern — `code LIKE 'X%'`, not `code LIKE $1`.
    *
@@ -482,88 +480,6 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
    */
   const ID_SCOPED = /\bid\s*(?:=|IN)\s*(?:ANY\s*\(|\(|\$)/i;
 
-  /**
-   * Prose about the rule is not the rule being broken — this file and the two
-   * suites involved all quote the offending query in their header comments.
-   * Line-keyed, matching the first rule above; a comment that opens mid-line
-   * after code is not a shape this repo writes.
-   */
-  function withoutComments(source: string): string {
-    return source
-      .split(/\r?\n/)
-      .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
-      .join("\n");
-  }
-
-  /**
-   * Every string literal in `source`, of all three JavaScript delimiters.
-   *
-   * **Scanned rather than matched by one regex, and that is the fix for three
-   * separate defects the `F4.67` review measured in the first draft:**
-   *
-   * 1. It read backtick literals only. Six live sites in this tree write a
-   *    `bms.assets` read as a double-quoted string, so the identical defect in
-   *    that spelling scored **zero** offenders — a mutation that survived the
-   *    rule outright.
-   * 2. Its window was capped at 600 characters either side of `FROM
-   *    bms.assets`, and an over-long literal produced no match and was reported
-   *    as **clean** rather than as unanalysable. `rollup-conversion`'s own CTE
-   *    already sits at ~70% of that cap.
-   * 3. `` /`[^`]*…`/ `` happily spans from one literal's closing delimiter,
-   *    through raw source, to the next literal's opening one — so both the
-   *    offender text and the {@link ID_SCOPED} exemption could be computed over
-   *    arbitrary code. Demonstrated on `locations.rls.integration.spec.ts`.
-   *
-   * A literal is bounded by its own delimiter, so there is no window to size and
-   * no way to run past the close. Escapes are honoured; an unterminated `'`/`"`
-   * ends at the newline, as it does in the language.
-   *
-   * **What this still cannot see**, kept next to the code rather than only in
-   * the header: a `${...}` interpolation containing a nested backtick literal
-   * ends the outer window early, and a query assembled by concatenation or held
-   * in a `.sql` file never appears as one literal at all.
-   */
-  function stringLiterals(source: string): string[] {
-    const out: string[] = [];
-    const delimiters = new Set(['"', "'", "`"]);
-    let i = 0;
-    while (i < source.length) {
-      const quote = source[i] as string;
-      if (!delimiters.has(quote)) {
-        i += 1;
-        continue;
-      }
-      let j = i + 1;
-      let closed = false;
-      while (j < source.length) {
-        const ch = source[j];
-        if (ch === "\\") {
-          j += 2;
-          continue;
-        }
-        if (ch === quote) {
-          closed = true;
-          break;
-        }
-        // Only a template literal may span lines; a newline inside `'`/`"` means
-        // the delimiter was not a string opener at all (an apostrophe in prose
-        // that survived comment-stripping, say), so give up on it rather than
-        // swallowing the rest of the file looking for a partner.
-        if (quote !== "`" && ch === "\n") {
-          break;
-        }
-        j += 1;
-      }
-      if (closed) {
-        out.push(source.slice(i, j + 1));
-        i = j + 1;
-      } else {
-        i += 1;
-      }
-    }
-    return out;
-  }
-
   /** Every `bms.assets` query in `source` that resolves a row by code pattern. */
   function patternReads(source: string): string[] {
     return stringLiterals(withoutComments(source)).filter(
@@ -572,41 +488,6 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
         LITERAL_CODE_PATTERN.test(statement) &&
         !ID_SCOPED.test(statement),
     );
-  }
-
-  /**
-   * The files the rule covers: `.spec` / `.integration.test` suites, **and the
-   * shared fixture helpers under `src/testing/`**.
-   *
-   * The helpers are in scope because `apps/api/src/testing/integration-fixtures.ts`
-   * is this repo's named home for fixture resolution — moving a resolver there is
-   * a plausible refactor, and without this the rule would go quiet with no test
-   * failing to say so.
-   *
-   * `tests/` is deliberately NOT a root, which is the same reason the two rules
-   * above give: this file quotes the forbidden query in its own mutation strings,
-   * so scanning `tests/` would make the rule flag itself and need a
-   * self-exemption — a hole worth more than it closes.
-   * `tests/f1.7-seed-ownership.integration.test.ts` reads `bms.assets` and is
-   * therefore unscanned; it holds no pattern read today.
-   */
-  function specsReadingAssets(): string[] {
-    return ["apps", "packages"]
-      .flatMap((root) => {
-        try {
-          return walk(join(repoRoot, root));
-        } catch {
-          return [];
-        }
-      })
-      .filter(
-        (f) =>
-          /(\.spec|\.integration\.test)\.tsx?$/.test(f) ||
-          /[\\/]src[\\/]testing[\\/][^\\/]+\.tsx?$/.test(f),
-      )
-      .filter((f) => READS_ASSETS_TABLE.test(withoutComments(readFileSync(f, "utf8"))))
-      .map((f) => relative(repoRoot, f).replace(/\\/g, "/"))
-      .sort();
   }
 
   it("no spec resolves a bms.assets row by a literal code pattern", () => {
@@ -729,5 +610,227 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
     // apostrophe in surviving prose cannot swallow the rest of the file.
     expect(stringLiterals("`line one\nline two`")).toEqual(["`line one\nline two`"]);
     expect(stringLiterals("it's fine\nconst x = 1;")).toEqual([]);
+  });
+});
+
+/**
+ * The 2026-08-27 `point-aggregates.integration.test.ts` failure — the **third**
+ * reading defect, and the one that proves the rule above is narrower than the
+ * sentence people quote about it.
+ *
+ * `point-aggregates.integration.spec.ts` resolved its fixture asset twice with
+ * `SELECT id FROM bms.assets ORDER BY code LIMIT 1`. That is `F4.67`'s mechanism
+ * with the `WHERE` clause **removed**, so it is strictly wider — `F4.67` could
+ * only adopt a foreign `PV%` row, this could adopt whatever sorted first in the
+ * whole table — and it was invisible to both rules already here:
+ *
+ * - the rollback rule filters its candidates to specs containing `tx.rollback()`,
+ *   and this file contains none;
+ * - the `F4.67` rule looks for a literal code *pattern* (`code ILIKE 'PV%'`), and
+ *   this query has no code predicate at all.
+ *
+ * **It did not need a foreign fixture to fail.** Measured on a seeded developer
+ * database: the first organization by `id` is `ESKOM` and its lowest code is
+ * `CH-CRAC-101` — `1d4c1fd0-0ede-4ede-a74a-ed5dd9998b69` — which is the row
+ * `reports.service.rls.integration.spec.ts` names as `GRID_ASSET_CODE`. Both
+ * suites write `point_key = 'kw'` onto it in an overlapping recent window, so the
+ * two contended on one *seeded* row with no transient fixture in play. Running
+ * the pair in one Vitest invocation failed on the first attempt with
+ * `energySummary("7d").totalKwh is 267.28, the equivalent raw query says 264.9`,
+ * a message that blames the `level`/`kwhFactor` pairing instead. That half is
+ * `no two suites claim the same asset code`, in
+ * `tests/integration-fixture-sharing.test.ts`; this rule is the resolution shape,
+ * and neither one alone would have caught the failure.
+ *
+ * **No `tx.rollback()` filter here, deliberately.** The rollback rule gates
+ * *eligibility to read*: a suite that never commits may not take a row off the
+ * seed at all, because that row belongs to no transaction of its own. That is a
+ * property of the isolation style, so keying on the marker is right there. This
+ * rule gates *resolution shape*, which is isolation-independent — a
+ * committed-fixture suite resolving positionally adopts a neighbour's row exactly
+ * as a rollback one does, and `point-aggregates` (zero `tx.rollback()`) is the
+ * proof. Applying the filter here would have reproduced the gap this rule exists
+ * to close. The population is {@link specsReadingAssets}, unfiltered.
+ *
+ * **What this does not catch.** Everything the `F4.67` rule cannot see, for the
+ * same reasons and with the same scanner: a query built by concatenation or held
+ * in a `.sql` file is never one literal, and Drizzle's builder form
+ * (`db.select().from(assets).limit(1)`) is not SQL text at all — that last one is
+ * `F4.53`'s spelling, so this rule does **not** close `F4.53`. {@link EXACT_CODE}
+ * is unqualified, so a **joined** table's `code` satisfies it: `FROM bms.assets a
+ * JOIN bms.locations l ON l.code = $1 … ORDER BY a.code LIMIT 1` reads as named
+ * although the asset is still picked by position. No read of that shape exists
+ * today — the six exempted below join on `organization_id` or `active` — and
+ * qualifying the predicate would have to survive `a.code`, `assets.code` and the
+ * unaliased form. The exemption list is keyed by file, so a *new* positional read
+ * inside an already-listed file passes; that is the same trade `NOT_YET_PER_RUN`
+ * makes.
+ */
+describe("fixture assets are resolved by name, not by position", () => {
+  /** `LIMIT` is the positional tell. `ORDER BY` narrows the race, it does not close it. */
+  const POSITIONAL = /\bLIMIT\b/i;
+  /** A named row. `code = $1`, `code = ANY($1)` and `code IN (...)` all resolve one thing. */
+  const EXACT_CODE = /\bcode\s*(?:=|IN\s*\()/i;
+  /** An id-scoped read cannot adopt a foreign row whatever else it says. */
+  const ID_SCOPED = /\bid\s*(?:=|IN)\s*(?:ANY\s*\(|\(|\$)/i;
+
+  /**
+   * Specs holding a positional `bms.assets` read that this change does not fix.
+   *
+   * Six statements across four files, measured by running {@link positionalReads}
+   * over the tree. They are the same class and each is a live hazard, but they
+   * are not this fix, and converting one means choosing a named row for that
+   * suite — a judgement per file, not a sweep. Listing them keeps the rule
+   * enforcing today instead of waiting for that work, and `the exemption list
+   * only gets shorter` stops the list growing.
+   *
+   * **They are the positional class in files `F4.53` never named, and that row is
+   * not the place to look them up.** `F4.53` enumerates eight unordered
+   * selections in four files; checked 2026-08-27, all eight are resolved —
+   * `alarm-enrichment`, `alarm-raise` and `evaluate-enabled-rules` build their
+   * assets with `createFixtureAssets()`, `alarm-enrichment`'s `bms.users` read is
+   * now `ORDER BY id` with the reason recorded next to it (no spec in `apps/api`
+   * writes that table, so nothing can delete the row), and the file holding the
+   * `bms.organizations` read is gone, replaced by
+   * `assets.service.rls.integration.spec.ts`, which reads id-scoped. None of the
+   * six below is one of them, and most carry `ORDER BY`, which `F4.53` explicitly
+   * is not about.
+   *
+   * - `resolve-catalog-point-key.spec.ts` — `WHERE l.active = true ORDER BY
+   *   a.code LIMIT 1`.
+   * - `telemetry-write.spec.ts`, `telemetry-import.spec.ts` — "an asset in some
+   *   other organization", `ORDER BY a.code LIMIT 1`.
+   * - `access-control.integration.spec.ts` — three reads (`rtu_id IS NULL
+   *   LIMIT 5`, and two access-scoped `LIMIT 1`s). This is also `F4.66`'s file,
+   *   and for the same underlying reason: it asserts against whatever the table
+   *   happens to hold rather than against rows it named.
+   */
+  const POSITIONAL_NOT_YET_NAMED: readonly string[] = [
+    "apps/api/src/admin/asset-points/resolve-catalog-point-key.spec.ts",
+    "apps/api/src/admin/telemetry-entry/telemetry-write.spec.ts",
+    "apps/api/src/admin/telemetry-import/telemetry-import.spec.ts",
+    "apps/api/src/auth/access-control.integration.spec.ts",
+  ];
+
+  /** Every `bms.assets` query in `source` that resolves a row by position. */
+  function positionalReads(source: string): string[] {
+    return stringLiterals(withoutComments(source)).filter(
+      (statement) =>
+        READS_ASSETS_TABLE.test(statement) &&
+        POSITIONAL.test(statement) &&
+        !EXACT_CODE.test(statement) &&
+        !ID_SCOPED.test(statement),
+    );
+  }
+
+  function specsWithPositionalReads(): string[] {
+    return specsReadingAssets().filter(
+      (rel) => positionalReads(readFileSync(join(repoRoot, rel), "utf8")).length > 0,
+    );
+  }
+
+  it("no spec resolves a bms.assets row by position", () => {
+    const specs = specsReadingAssets();
+
+    // The floor every rule in this file carries: an empty offender list must mean
+    // "scanned and clean", not "the walk broke". 26 files as of this commit,
+    // measured by running the function.
+    expect(
+      specs.length,
+      "no spec with a FROM bms.assets query was found. Either the walk or READS_ASSETS_TABLE " +
+        "is broken, and the offender list below would mean nothing.",
+    ).toBeGreaterThanOrEqual(20);
+
+    const offenders = specs
+      .filter((rel) => !POSITIONAL_NOT_YET_NAMED.includes(rel))
+      .flatMap((rel) =>
+        positionalReads(readFileSync(join(repoRoot, rel), "utf8")).map(
+          (statement) => `${rel} — ${statement.replace(/\s+/g, " ")}`,
+        ),
+      );
+
+    expect(
+      offenders,
+      `a spec resolves a bms.assets row by position:\n${offenders.join("\n")}\n\n` +
+        "Name the row instead — FIXTURE_ASSET_CODE in " +
+        "apps/api/src/telemetry/point-aggregates.integration.spec.ts, resolved by " +
+        "resolveSeededAssetByCode() in apps/api/src/testing/integration-fixtures.ts. A " +
+        "positional read returns whatever currently sorts first, which is another suite's " +
+        "committed fixture as often as it is the seed, and `ORDER BY` only narrows that.",
+    ).toEqual([]);
+  });
+
+  it("the exemption list only gets shorter", () => {
+    const specs = specsWithPositionalReads();
+
+    // A path that no longer holds a positional read is an exemption nobody needs,
+    // and a typo would silently exempt nothing while looking like it exempts
+    // something. Both directions, the same ratchet `NOT_YET_PER_RUN` uses.
+    const stale = POSITIONAL_NOT_YET_NAMED.filter((rel) => !specs.includes(rel));
+    expect(
+      stale,
+      `these exemptions no longer name a spec with a positional bms.assets read:\n${stale.join("\n")}`,
+    ).toEqual([]);
+
+    expect(
+      POSITIONAL_NOT_YET_NAMED.length,
+      "the exemption list grew. A new fixture read must name its row from the start.",
+    ).toBeLessThanOrEqual(4);
+  });
+
+  it("the analysis kills the mutation it exists to catch", () => {
+    // The defect, verbatim, as it stood at both call sites before 2026-08-27.
+    const defect = "await client.query(`SELECT id FROM bms.assets ORDER BY code LIMIT 1`);";
+    expect(positionalReads(defect)).toHaveLength(1);
+
+    // Unordered — `F4.53`'s raw-SQL spelling. The same rule, and the reason it is
+    // stated as "by position" rather than "ordered".
+    expect(positionalReads("await pool.query(`SELECT id FROM bms.assets LIMIT 2`);")).toHaveLength(
+      1,
+    );
+
+    // The fix must pass, or the mutations above prove nothing. Both the exact-code
+    // read itself and the constant handed to the shared resolver.
+    const fixed = "await client.query(`SELECT id FROM bms.assets WHERE code = $1`, [code]);";
+    expect(positionalReads(fixed)).toEqual([]);
+    expect(
+      positionalReads("const fx = await resolveSeededAssetByCode(pool, FIXTURE_ASSET_CODE);"),
+    ).toEqual([]);
+
+    // An exact-code read that still carries `LIMIT 1` is named, not positional —
+    // there the `LIMIT` is belt-and-braces, not the resolution.
+    expect(
+      positionalReads("`SELECT id FROM bms.assets WHERE code = $1 ORDER BY code LIMIT 1`"),
+    ).toEqual([]);
+
+    // `F4.67`'s pattern read is the other rule's business. It has no exact code,
+    // so this one flags it too, and that overlap is intended: the two rules fail
+    // independently and neither relies on the other still existing.
+    expect(
+      positionalReads("`SELECT id FROM bms.assets WHERE code ILIKE 'PV%' ORDER BY code LIMIT 1`"),
+    ).toHaveLength(1);
+
+    // Id-scoped: cannot adopt a foreign row whatever it sorts by.
+    expect(
+      positionalReads("`SELECT id FROM bms.assets WHERE id = ANY($1::uuid[]) LIMIT 1`"),
+    ).toEqual([]);
+
+    // **A parameter-bound pattern PLUS a `LIMIT` is an offender here, and that
+    // diverges from the `F4.67` rule on purpose.** There a `code LIKE $1` is
+    // exempt because it is how every own-prefix *cleanup* is written, and a
+    // cleanup acts on the whole matching set — which row sorts first is
+    // irrelevant to it. A `LIMIT` turns the same predicate into a pick of one,
+    // and a pattern cannot name which. No read of this shape exists in the tree
+    // today; flagging it is fail-closed, and the fix is to name the row.
+    expect(
+      positionalReads("`SELECT id FROM bms.assets WHERE code LIKE $1 LIMIT 1`"),
+    ).toHaveLength(1);
+    // The cleanup itself, with no `LIMIT`, stays clean.
+    expect(positionalReads("`DELETE FROM bms.assets WHERE code LIKE $1`")).toEqual([]);
+
+    // Quoting the defect in a docstring is not committing it.
+    expect(
+      positionalReads(" * it used to read `SELECT id FROM bms.assets ORDER BY code LIMIT 1`."),
+    ).toEqual([]);
   });
 });
