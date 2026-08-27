@@ -257,8 +257,7 @@ There is no "debug-only" bypass.
   to `bms.assets` would collide with the ADR 0023/0024 aggregate and
   retention jobs. This line predates that ruling and read as an unqualified
   blanket target; it is not one, and revisiting the `telemetry.*` exception
-  needs its own ADR. (This section is aspirational throughout, per the file
-  header — see AGENTS.md §2's *Tenancy* row for what is actually built.)
+  needs its own ADR.
 - Input validation on the edge **and** at the service boundary.
 - Rate limiting at Traefik per IP and at API per user / IP.
 - Audit log is append-only; nightly hash-chained.
