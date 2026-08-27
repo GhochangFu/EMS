@@ -18,7 +18,6 @@ import { ZodError, z } from "zod";
 
 import type { JwtPayload } from "@bms/shared";
 
-import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { ChannelsService } from "./channels.service";
@@ -35,12 +34,21 @@ const idParamSchema = z.string().uuid();
 /**
  * `F3.8` — the notifications API (ADR 0041).
  *
- * Channel administration and the delivery ledger are admin-only. **Readiness
- * is not**, deliberately: decision 10 renders it as a banner on the rules
- * surface, and a location-scoped operator editing a rule marked `notify` is
- * exactly the person who must see that no transport is configured. It returns
- * one boolean and one sentence per kind — no host, no port, no credential — so
- * there is nothing an admin-only gate would be protecting.
+ * `E7.1c` (ADR 0043 Amendment 5, decision 7): channel administration and the
+ * delivery ledger were global-admin-only (`assertAdmin`) through `E7.1b`,
+ * because every channel was global. Now that a channel can be org-scoped,
+ * every route below gates through `ChannelsService`/`AccessControlService`'s
+ * `canManageNotificationChannel`/`writableOrganizationIds` instead — each
+ * service method resolves the database role and the target organization
+ * itself, the same "never trust the token's role claim" property `assertAdmin`
+ * used to enforce here directly (found by the `F3.8` security review: a
+ * demoted admin's token otherwise keeps channel administration for the rest
+ * of `JWT_TTL`). **Readiness stays ungated**, deliberately: decision 10
+ * renders it as a banner on the rules surface, and a location-scoped operator
+ * editing a rule marked `notify` is exactly the person who must see that no
+ * transport is configured. It returns one boolean and one sentence per kind —
+ * no host, no port, no credential — so there is nothing an admin-only gate
+ * would be protecting.
  */
 @Controller("notifications")
 @UseGuards(JwtAuthGuard)
@@ -48,42 +56,19 @@ export class NotificationsController {
   constructor(
     private readonly channels: ChannelsService,
     private readonly notifications: NotificationsService,
-    private readonly accessControl: AccessControlService,
     @Inject(NOTIFICATIONS_CONFIG) private readonly config: NotificationsConfig,
   ) {}
 
-  /**
-   * The admin gate for every channel and ledger route.
-   *
-   * **The role comes from `bms.users`, not from the token.** `assertAdminRole`
-   * takes a role, and passing `user.role` off the `JwtPayload` reads the wrong
-   * authority: `access-control.service.ts` records that a token outlives a
-   * demotion by up to `JWT_TTL` (8h), and that in OIDC mode `roleFromClaims`
-   * falls back to `viewer` when realm roles are missing. So a demoted admin
-   * kept channel administration — creating webhook targets, sending tests,
-   * reading the whole ledger — for the rest of the token's life. Every other
-   * `assertAdminRole` caller in this repository resolves the database user
-   * first (`organizations.service.ts:81`); this one now does too.
-   *
-   * Found by the `F3.8` security review.
-   */
-  private async assertAdmin(jwt: JwtPayload): Promise<void> {
-    const user = await this.accessControl.requireMasterDataUser(jwt);
-    this.accessControl.assertAdminRole(user.role);
-  }
-
   @Get("channels")
   async listChannels(@CurrentUser() user: JwtPayload) {
-    await this.assertAdmin(user);
-    return { items: await this.channels.list() };
+    return { items: await this.channels.list(user) };
   }
 
   @Post("channels")
   @HttpCode(HttpStatus.CREATED)
   async createChannel(@CurrentUser() user: JwtPayload, @Body() body: unknown) {
-    await this.assertAdmin(user);
     const dto = parse(createNotificationChannelBodySchema, body);
-    return this.channels.create(dto, user);
+    return this.channels.create(user, dto);
   }
 
   @Patch("channels/:id")
@@ -92,10 +77,9 @@ export class NotificationsController {
     @Param("id") id: string,
     @Body() body: unknown,
   ) {
-    await this.assertAdmin(user);
     const channelId = parse(idParamSchema, id);
     const dto = parse(updateNotificationChannelBodySchema, body);
-    const updated = await this.channels.update(channelId, dto, user);
+    const updated = await this.channels.update(user, channelId, dto);
     if (updated === null) throw new NotFoundException("Notification channel not found");
     return updated;
   }
@@ -103,9 +87,8 @@ export class NotificationsController {
   @Delete("channels/:id")
   @HttpCode(HttpStatus.OK)
   async deleteChannel(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
-    await this.assertAdmin(user);
     const channelId = parse(idParamSchema, id);
-    const removed = await this.channels.remove(channelId, user);
+    const removed = await this.channels.remove(user, channelId);
     if (!removed) throw new NotFoundException("Notification channel not found");
     return { deleted: true as const };
   }
@@ -120,9 +103,12 @@ export class NotificationsController {
   @Post("channels/:id/test")
   @HttpCode(HttpStatus.OK)
   async testChannel(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
-    await this.assertAdmin(user);
     const channelId = parse(idParamSchema, id);
-    const channel = await this.channels.loadById(channelId);
+    // loadById gates on canManageNotificationChannel itself — a NULL-org
+    // (fleet-wide) channel refuses an organization_admin outright here, and
+    // sendTest below refuses a NULL-org channel for anyone, admin included
+    // (Blocker 1's ruling: no organization to attribute the delivery to).
+    const channel = await this.channels.loadById(user, channelId);
     if (channel === null) throw new NotFoundException("Notification channel not found");
 
     const result = await this.notifications.sendTest(channel);
@@ -140,8 +126,7 @@ export class NotificationsController {
 
   @Get("deliveries")
   async listDeliveries(@CurrentUser() user: JwtPayload, @Query() query: unknown) {
-    await this.assertAdmin(user);
-    return this.channels.listDeliveries(parse(listDeliveriesQuerySchema, query));
+    return this.channels.listDeliveries(user, parse(listDeliveriesQuerySchema, query));
   }
 
   /** Authenticated, not admin-only — see the class comment. */

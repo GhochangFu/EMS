@@ -59,6 +59,7 @@ const TEST_CHANNEL_CODE = "f3-8-test-channel";
 describe.skipIf(!connectionString)("F3.8 notification schema", () => {
   let pool: IntegrationPool | undefined;
   let channelId: string;
+  let organizationId: string;
 
   async function removeTestRows(): Promise<void> {
     if (!pool) throw new Error("pool not initialised");
@@ -76,8 +77,17 @@ describe.skipIf(!connectionString)("F3.8 notification schema", () => {
   }
 
   beforeAll(async () => {
+    // This gate's default connection is `bms_fleet` (BYPASSRLS), so inserting
+    // an explicit organization_id below is not an RLS proof — it exists only
+    // because `notification_deliveries.organization_id` became NOT NULL in
+    // `0048` (ADR 0043 Amendment 5) and this suite's own INSERTs, unlike a
+    // dispatch, have no rule to derive one from.
     pool = await openIntegrationPool(connectionString as string, "F3.8");
     await removeTestRows();
+    const org = await pool.query<{ id: string }>(`SELECT id FROM bms.organizations LIMIT 1`);
+    const orgRow = org.rows[0];
+    if (orgRow === undefined) throw new Error("F3.8: no bms.organizations row — run pnpm db:seed.");
+    organizationId = orgRow.id;
     const created = await pool.query<{ id: string }>(
       `INSERT INTO bms.notification_channels (code, name, kind)
        VALUES ($1, 'F3.8 test channel', 'webhook')
@@ -128,9 +138,9 @@ describe.skipIf(!connectionString)("F3.8 notification schema", () => {
     if (!pool) throw new Error("pool not initialised");
     await expect(
       pool.query(
-        `INSERT INTO bms.notification_deliveries (channel_id, status)
-         VALUES ($1, 'delivered')`,
-        [channelId],
+        `INSERT INTO bms.notification_deliveries (channel_id, organization_id, status)
+         VALUES ($1, $2, 'delivered')`,
+        [channelId, organizationId],
       ),
     ).rejects.toThrow(/notification_deliveries_status_check/);
   });
@@ -149,8 +159,9 @@ describe.skipIf(!connectionString)("F3.8 notification schema", () => {
     ];
     for (const status of statuses) {
       await pool.query(
-        `INSERT INTO bms.notification_deliveries (channel_id, status) VALUES ($1, $2)`,
-        [channelId, status],
+        `INSERT INTO bms.notification_deliveries (channel_id, organization_id, status)
+         VALUES ($1, $2, $3)`,
+        [channelId, organizationId, status],
       );
     }
     const written = await pool.query<{ count: string }>(

@@ -16,6 +16,7 @@ const PUBLIC_URL = "https://hooks.example.com/services/SECRET-PATH-DO-NOT-LOG";
 function channel(overrides: Partial<NotificationChannelRow> = {}): NotificationChannelRow {
   return {
     id: "33333333-3333-3333-3333-333333333333",
+    organizationId: "12121212-1212-1212-1212-121212121212",
     code: "ops-webhook",
     name: "Operations webhook",
     kind: "webhook",
