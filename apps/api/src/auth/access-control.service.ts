@@ -214,6 +214,36 @@ export class AccessControlService {
   }
 
   /**
+   * Whether the user may manage a notification channel — created, updated,
+   * deleted or sent a test through, for the given organization.
+   *
+   * `E7.1c` (ADR 0043 Amendment 5, decision 7). The one deviation from
+   * {@link canManagePointKey}'s template is the nullable parameter: a `null`
+   * `organizationId` names a fleet-managed **global** channel, and it is
+   * fleet-only — `organization_admin` gets `false` for it, not a delegated
+   * `canManageOrganization` call, because there is no organization to check
+   * membership against and a global row is a fleet actor's row, not a
+   * tenant's. `admin` is unconditionally `true`, `null` included.
+   */
+  async canManageNotificationChannel(
+    jwt: JwtPayload,
+    organizationId: string | null,
+  ): Promise<boolean> {
+    const user = await this.resolveDbUser(jwt);
+    this.assertMasterDataRole(user.role);
+    if (user.role === "admin") {
+      return true;
+    }
+    if (user.role === "organization_admin") {
+      if (organizationId === null) {
+        return false;
+      }
+      return this.canManageOrganization(jwt, organizationId);
+    }
+    return false;
+  }
+
+  /**
    * Whether the user may author asset templates for the given organization
    * (ADR 0015 §7).
    *
