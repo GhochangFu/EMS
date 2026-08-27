@@ -45,6 +45,7 @@ import {
   unsupportedRuleType,
   type LatestSampleLoader,
 } from "./rule-evaluation";
+import { insertRuleAuditLog } from "./rule-audit";
 import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
 import { filterRuleRowsByAssetIds, selectRuleRowById, selectRuleRows } from "./rule-reads";
 import { pointKeysForAsset } from "./rule-points";
@@ -166,20 +167,13 @@ export class RulesService {
         throw new BadRequestException("Could not create rule draft");
       }
 
-      // The audit row carries no organization_id in E7.1b (deferred to E7.1c);
-      // Task 4's audit_log policy must tolerate this NULL-org insert (4 services).
-      await tx.insert(auditLog).values({
+      await insertRuleAuditLog(tx, {
+        organizationId,
         actorId,
         action: "rule_draft_create",
-        entityType: "automation_rule",
         entityId: row.id,
         reason: "Operator created rule draft",
-        payload: {
-          code,
-          name: dto.name,
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
-        },
+        payload: { code, name: dto.name, oidcSubject: actor.sub, actorEmail: actor.email },
       });
 
       // E7.1c: read back under the write's own tenant GUC, not on fleetDb.
@@ -217,10 +211,10 @@ export class RulesService {
         .set({ ...values, updatedAt: now })
         .where(eq(automationRules.id, id));
 
-      await tx.insert(auditLog).values({
+      await insertRuleAuditLog(tx, {
+        organizationId,
         actorId,
         action: "rule_update",
-        entityType: "automation_rule",
         entityId: id,
         reason: dto.reason ?? "Operator updated rule",
         payload: {
@@ -281,7 +275,13 @@ export class RulesService {
       updatedAt: new Date(),
     });
 
-    await this.db.insert(auditLog).values({
+    // E7.1c (item D) — a genuine platform/no-tenant-context write: a preview
+    // evaluates a draft that may not even be persisted ("no org on either
+    // axis", above), so there is no organization to stamp. Routed to
+    // `fleetDb` (BYPASSRLS): the default tenant pool's NULL branch is scoped
+    // `TO bms_fleet` only after 0048, and this connection carries no GUC.
+    await this.fleetDb.insert(auditLog).values({
+      organizationId: null,
       actorId,
       action: "rule_preview",
       entityType: "automation_rule",
@@ -401,10 +401,10 @@ export class RulesService {
         throw new BadRequestException("Could not duplicate rule");
       }
 
-      await tx.insert(auditLog).values({
+      await insertRuleAuditLog(tx, {
+        organizationId,
         actorId,
         action: "rule_duplicate",
-        entityType: "automation_rule",
         entityId: row.id,
         reason: dto.reason ?? "Operator duplicated rule",
         payload: {
@@ -495,10 +495,10 @@ export class RulesService {
         .set({ enabled: dto.enabled, updatedAt: now })
         .where(eq(automationRules.id, id));
 
-      await tx.insert(auditLog).values({
+      await insertRuleAuditLog(tx, {
+        organizationId,
         actorId,
         action: "rule_enabled_update",
-        entityType: "automation_rule",
         entityId: id,
         reason: dto.reason ?? (dto.enabled ? "Rule enabled" : "Rule disabled"),
         payload: {
@@ -944,17 +944,13 @@ export class RulesService {
         .set({ ...values, updatedAt: new Date() })
         .where(eq(automationRules.id, id));
 
-      await tx.insert(auditLog).values({
+      await insertRuleAuditLog(tx, {
+        organizationId,
         actorId,
         action,
-        entityType: "automation_rule",
         entityId: id,
-        reason:
-          dto.reason ?? (action === "rule_publish" ? "Rule published" : "Rule archived"),
-        payload: {
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
-        },
+        reason: dto.reason ?? (action === "rule_publish" ? "Rule published" : "Rule archived"),
+        payload: { oidcSubject: actor.sub, actorEmail: actor.email },
       });
 
       return this.getRuleRowTx(tx, id); // E7.1c: read back on the write's tenant GUC

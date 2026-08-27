@@ -223,6 +223,7 @@ export class AlarmsService {
       }
 
       await tx.insert(auditLog).values({
+        organizationId,
         actorId: dbActorId,
         action: "alarm_ack",
         entityType: "alarm",
