@@ -348,6 +348,7 @@ export class AssetTemplateMigrationService {
           action: "master.asset_template.migrate",
           entityType: "asset_template",
           entityId: plan.target.id,
+          organizationId: plan.target.organizationId,
           payload: {
             code: plan.target.code,
             fromVersions: plan.fromVersions,

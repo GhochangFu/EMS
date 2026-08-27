@@ -248,6 +248,7 @@ export class AssetPointCalcOverrideService {
           action: "master.asset_point.override_set",
           entityType: "asset_point",
           entityId: rowId,
+          organizationId: ctx.organizationId,
           payload: { assetId, pointKey, columns: changedColumns(values) },
         },
         tx,
@@ -305,6 +306,7 @@ export class AssetPointCalcOverrideService {
           action: "master.asset_point.override_clear",
           entityType: "asset_point",
           entityId: rowId,
+          organizationId: ctx.organizationId,
           payload: {
             assetId,
             pointKey,
