@@ -89,14 +89,27 @@ jobs:
       # catches this class: the break came from adding a COPY line, which no
       # lint or repo-invariant over the Dockerfile text would have flagged.
       #
-      # Ingest only, deliberately. It is the one image that installs before
-      # COPYing sources (api COPYs first; web and sim already pass
-      # `--ignore-scripts`), so it is the one exposed to root `postinstall`
-      # running against a workspace that is not there yet. The other three
-      # images remain ungated here — widening this to a matrix is a CI-time
-      # trade-off, not part of this fix.
+      # Ingest was the first image gated here, deliberately: it installs before
+      # COPYing sources, so it is the one exposed to root `postinstall` running
+      # against a workspace that is not there yet. That step's original comment
+      # left the other three "ungated here — widening this to a matrix is a
+      # CI-time trade-off, not part of this fix."
+      #
+      # The api step below ends that deferral, with the evidence the deferral
+      # lacked. 377e8f9 (#159) appended `node .githooks/install.mjs` to root
+      # `postinstall`; apps/api/Dockerfile does not COPY that directory, so the
+      # API image stopped building on main and this pipeline stayed green — the
+      # exact history the paragraph above records for ingest, repeating on the
+      # image the product actually deploys. Two builds, not a matrix: web and sim
+      # pass `--ignore-scripts` and nothing in them depends on a lifecycle script,
+      # so the root manifest cannot reach them. Ingest stays gated because that
+      # flag is load-bearing there (see its Dockerfile), and api because it
+      # deliberately runs lifecycle scripts — `bcrypt` needs its own.
       - name: Build the ingest image
         run: docker build -f apps/ingest/Dockerfile .
+
+      - name: Build the api image
+        run: docker build -f apps/api/Dockerfile .
 
       - name: Initialise database schemas
         run: |
