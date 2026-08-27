@@ -117,8 +117,8 @@ export class LocationsAdminService {
       throw new ForbiddenException("Organization is outside your access scope");
     }
 
-    const created = await withTenant(this.tenantDb, body.organizationId, (tx) =>
-      tx
+    const created = await withTenant(this.tenantDb, body.organizationId, async (tx) => {
+      const [row] = await tx
         .insert(locations)
         .values({
           organizationId: body.organizationId,
@@ -133,19 +133,25 @@ export class LocationsAdminService {
           meta: body.meta ?? null,
           active: true,
         })
-        .returning()
-        .then(([row]) => row),
-    );
+        .returning();
 
-    const row = await this.fetchRow(created.id);
-    await this.audit.write({
-      actor: jwt,
-      action: "master.location.create",
-      entityType: "location",
-      entityId: created.id,
-      payload: body,
+      // E7.1c (item D): folded into this transaction so the stamped
+      // organizationId matches the GUC the strict WITH CHECK now demands.
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.location.create",
+          entityType: "location",
+          entityId: row.id,
+          organizationId: body.organizationId,
+          payload: body,
+        },
+        tx,
+      );
+      return row;
     });
-    return row;
+
+    return this.fetchRow(created.id);
   }
 
   /** Updates a location in scope. */
@@ -168,8 +174,8 @@ export class LocationsAdminService {
       throw new NotFoundException("Location not found");
     }
 
-    await withTenant(this.tenantDb, existing.organizationId, (tx) =>
-      tx
+    await withTenant(this.tenantDb, existing.organizationId, async (tx) => {
+      await tx
         .update(locations)
         .set({
           code: body.code ?? existing.code,
@@ -183,15 +189,19 @@ export class LocationsAdminService {
           meta: body.meta !== undefined ? body.meta : existing.meta,
           updatedAt: new Date(),
         })
-        .where(eq(locations.id, id)),
-    );
+        .where(eq(locations.id, id));
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.location.update",
-      entityType: "location",
-      entityId: id,
-      payload: body,
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.location.update",
+          entityType: "location",
+          entityId: id,
+          organizationId: existing.organizationId,
+          payload: body,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }
@@ -237,18 +247,22 @@ export class LocationsAdminService {
       throw new ConflictException("Cannot deactivate location with active RTUs or assets");
     }
 
-    await withTenant(this.tenantDb, existing.organizationId, (tx) =>
-      tx
+    await withTenant(this.tenantDb, existing.organizationId, async (tx) => {
+      await tx
         .update(locations)
         .set({ active: false, updatedAt: new Date() })
-        .where(eq(locations.id, id)),
-    );
+        .where(eq(locations.id, id));
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.location.deactivate",
-      entityType: "location",
-      entityId: id,
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.location.deactivate",
+          entityType: "location",
+          entityId: id,
+          organizationId: existing.organizationId,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }
@@ -268,18 +282,22 @@ export class LocationsAdminService {
       throw new NotFoundException("Location not found");
     }
 
-    await withTenant(this.tenantDb, existing.organizationId, (tx) =>
-      tx
+    await withTenant(this.tenantDb, existing.organizationId, async (tx) => {
+      await tx
         .update(locations)
         .set({ active: true, updatedAt: new Date() })
-        .where(eq(locations.id, id)),
-    );
+        .where(eq(locations.id, id));
 
-    await this.audit.write({
-      actor: jwt,
-      action: "master.location.reactivate",
-      entityType: "location",
-      entityId: id,
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.location.reactivate",
+          entityType: "location",
+          entityId: id,
+          organizationId: existing.organizationId,
+        },
+        tx,
+      );
     });
     return this.fetchRow(id);
   }
