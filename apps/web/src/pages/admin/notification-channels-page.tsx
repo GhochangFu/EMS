@@ -22,6 +22,7 @@ import {
   channelFormToPayload,
   channelOrganizationOptions,
   formFromChannel,
+  organizationChoiceRefusal,
   organizationLabel,
   sendTestRefusal,
   targetFromConfig,
@@ -108,14 +109,33 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
     [user.role, organizations],
   );
 
-  // The `HierarchyFilterBar` pattern: a non-global admin with exactly one
-  // organization has no choice to make, so the control is shown locked rather
-  // than hidden. Hiding it would leave the operator unable to see which tenant
-  // the channel they are creating belongs to.
+  // The `HierarchyFilterBar` pattern: a non-global admin with nothing to
+  // choose between is shown the control locked rather than not shown it at
+  // all. Hiding it would leave the operator unable to see which tenant the
+  // channel they are creating belongs to.
+  //
+  // `<= 1` covers two states — one option, chosen for you, and none, where
+  // there is nothing to choose. Both lock the control, and **neither is what
+  // keeps an unchosen organization from being submitted**: with no options
+  // `effectiveOrganizationId` falls back to `""`, which omits `organizationId`
+  // and lets `resolveCreateTargetOrg` resolve a tenant the picker deliberately
+  // refused to offer. `organizationChoiceRefusal` below is what stops that,
+  // and it is the only thing that does — changing this line to `=== 1` alters
+  // nothing an operator or a test can observe.
   const organizationLocked = user.role !== "admin" && organizationOptions.length <= 1;
   const effectiveOrganizationId = organizationLocked
     ? (organizationOptions[0]?.value ?? "")
     : form.organizationId;
+
+  // Whether the create form has a usable organization, and why not when it has
+  // none. The list decides it, so the form waits for the list rather than
+  // guessing while it loads: an `organization_admin` briefly has no options,
+  // and acting on that would show a refusal that is about to stop being true.
+  const organizationsSettled = !organizationsQ.isPending;
+  const organizationRefusal =
+    editing === null && organizationsSettled
+      ? organizationChoiceRefusal(user.role, organizationOptions, effectiveOrganizationId)
+      : null;
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -160,6 +180,13 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
 
   const channels = channelsQ.data?.items ?? [];
   const unready = (readinessQ.data?.items ?? []).filter((item) => !item.configured);
+  // Declared after the mutations because it reads one of them. A create waits
+  // for the organization list as well as for its own request: without the list
+  // the form cannot know whether it has a tenant to create in.
+  const cannotSave =
+    saveMutation.isPending ||
+    organizationRefusal !== null ||
+    (editing === null && !organizationsSettled);
 
   return (
     <MasterDataLayout user={user}>
@@ -349,11 +376,23 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
                     {organizationLabel(editing.organizationId, organizations)}
                   </option>
                 ) : (
-                  organizationOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))
+                  <>
+                    {/* An `organization_admin` is offered no fleet-wide entry,
+                        so a blank form's `""` matches no option and the
+                        control would render `selectedIndex = -1` — a picker
+                        showing the first organization while holding none.
+                        `HierarchyFilterBar` answers this with an explicit
+                        placeholder and so does this. An `admin` needs none:
+                        `""` is Fleet-wide there, and it is the first option. */}
+                    {user.role !== "admin" && !organizationLocked ? (
+                      <option value="">Select organization</option>
+                    ) : null}
+                    {organizationOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </>
                 )}
               </select>
             </label>
@@ -399,11 +438,17 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
               <span>Enabled</span>
             </label>
           </div>
+          {/* The reason travels with the disabled control, the same way the
+              Send test refusal does. A submit button that is greyed out and
+              says nothing leaves the operator with no move to make. */}
+          {organizationRefusal ? (
+            <p className="text-xs text-bms-muted">{organizationRefusal}</p>
+          ) : null}
           <div className="flex gap-2">
             <button
               type="submit"
-              className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
-              disabled={saveMutation.isPending}
+              className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:bg-gray-300"
+              disabled={cannotSave}
             >
               {editing ? "Save changes" : "Add channel"}
             </button>

@@ -100,15 +100,16 @@ export async function createNotificationChannel(
 /**
  * PATCH /api/v1/notifications/channels/:id
  *
- * `organizationId` is excluded from the patch **type**, not merely omitted at
- * the call site (`E7.1d`). `updateNotificationChannelBodySchema` carries no
- * such key, so Zod would strip one silently — and a tenancy field that is
- * accepted, ignored and answered `200` is how a client comes to believe it can
- * move a channel between organizations. The compiler refuses it instead.
+ * `organizationId` and `code` are excluded from the patch **type**, not merely
+ * omitted at the call site (`E7.1d`). `updateNotificationChannelBodySchema`
+ * carries neither key, so Zod would strip either silently — and a field that
+ * is accepted, ignored and answered `200` is how a client comes to believe it
+ * can move a channel between organizations, or rename its code. The compiler
+ * refuses both instead.
  */
 export async function updateNotificationChannel(input: {
   id: string;
-  patch: Omit<Partial<NotificationChannelPayload>, "organizationId">;
+  patch: Omit<Partial<NotificationChannelPayload>, "organizationId" | "code">;
 }): Promise<NotificationChannelDto> {
   const res = await fetch(`${base}/api/v1/notifications/channels/${input.id}`, {
     ...withAuth({

@@ -256,6 +256,13 @@ export async function namesTheOrganizationOfEveryChannel(): Promise<void> {
   // `organizationId: null` is fleet-wide, a legitimate ongoing state.
   expect(screen.getByRole("cell", { name: "Fleet-wide" })).toBeInTheDocument();
   expect(screen.queryByText(ORGANIZATIONS[1]!.id)).not.toBeInTheDocument();
+
+  // `"all"`, never `"true"`. Every assertion above runs against a stub, so
+  // without this the filter could drift to `"true"` and this column would
+  // render raw uuids for any channel in a deactivated organization while
+  // staying green here — `organizationLabel`'s uuid fallback makes that read
+  // like data rather than a bug.
+  expect(orgApi.fetchAdminOrganizations).toHaveBeenCalledWith("all");
 }
 
 /**
@@ -426,4 +433,110 @@ export async function editingShowsTheOrganizationAndCannotChangeIt(): Promise<vo
   const patch = update.mock.calls[0]![0].patch as object;
   expect("organizationId" in patch).toBe(false);
   expect("code" in patch).toBe(false);
+}
+
+/**
+ * `E7.1d` — an `organization_admin` with two organizations is asked to choose.
+ *
+ * Two options means the control is not locked, and a blank form holds `""` —
+ * which matches no option for this role, so the select would render
+ * `selectedIndex = -1`: a picker showing the first organization while holding
+ * none. Submitting that omits `organizationId` and `resolveCreateTargetOrg`
+ * answers "You manage more than one organization — specify organizationId
+ * explicitly", a 400 the operator cannot connect to anything they did.
+ *
+ * No seeded user has two grants, so jsdom is the only place this path runs.
+ */
+export async function asksAMultiGrantOrganizationAdminToChoose(): Promise<void> {
+  const create = vi.fn().mockResolvedValue(emailChannel);
+  stubApi({ createNotificationChannel: create as unknown as typeof api.createNotificationChannel });
+  vi.spyOn(api, "fetchNotificationChannels").mockResolvedValue({
+    items: [{ ...emailChannel, organizationId: ORGANIZATIONS[0]!.id }],
+  });
+  renderPage(orgAdmin);
+
+  await screen.findByText("ops-email");
+  const organizationSelect = await screen.findByLabelText("Organization");
+  await waitFor(() => {
+    expect(screen.getByRole("option", { name: "PHE West Bengal" })).toBeInTheDocument();
+  });
+
+  // The placeholder is what keeps the control honest: it holds no organization
+  // and it says so, instead of displaying one it will not send.
+  expect(screen.getByRole("option", { name: "Select organization" })).toBeInTheDocument();
+  expect(organizationSelect).toHaveValue("");
+  expect(organizationSelect).toBeEnabled();
+  expect(screen.queryByRole("option", { name: /Fleet-wide/i })).not.toBeInTheDocument();
+
+  // The refusal arrives before the click, and the reason is on the screen.
+  const submit = screen.getByRole("button", { name: "Add channel" });
+  expect(submit).toBeDisabled();
+  expect(screen.getByText(/Choose an organization/i)).toBeInTheDocument();
+
+  await userEvent.type(screen.getByLabelText("Code"), "phe-ops");
+  await userEvent.type(screen.getByLabelText("Name"), "PHE ops");
+  await userEvent.type(screen.getByLabelText(/Recipients/i), "ops@phe.test");
+  await userEvent.click(submit);
+  // Asserting the negative, not only `toBeDisabled()`: a guard swapped for a
+  // no-op handler would still leave the button looking right.
+  expect(create).not.toHaveBeenCalled();
+
+  // Choosing clears the refusal and the choice reaches the API.
+  await userEvent.selectOptions(organizationSelect, ORGANIZATIONS[1]!.id);
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "Add channel" })).toBeEnabled();
+  });
+  expect(screen.queryByText(/Choose an organization/i)).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "Add channel" }));
+  await waitFor(() => {
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+  expect(create.mock.calls[0]![0]).toMatchObject({
+    code: "phe-ops",
+    organizationId: ORGANIZATIONS[1]!.id,
+  });
+}
+
+/**
+ * `E7.1d` — every grant deactivated is refused, not silently resolved.
+ *
+ * `channelOrganizationOptions` filters to active organizations while the API's
+ * `writableOrganizationIds` does not, so the two lists can disagree. Treating
+ * an empty list as "locked" would render an empty disabled control whose value
+ * falls back to `""`, omit `organizationId`, and let `resolveCreateTargetOrg`
+ * create the channel in the deactivated organization the picker deliberately
+ * refused to offer — with the Organization box blank and nothing on screen
+ * saying where it went.
+ */
+export async function refusesCreateWhenNoActiveOrganizationIsAdministered(): Promise<void> {
+  const create = vi.fn().mockResolvedValue(emailChannel);
+  stubApi({ createNotificationChannel: create as unknown as typeof api.createNotificationChannel });
+  vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue({ items: [] });
+  vi.spyOn(api, "fetchNotificationChannels").mockResolvedValue({
+    items: [{ ...emailChannel, organizationId: ORGANIZATIONS[0]!.id }],
+  });
+  renderPage(orgAdmin);
+
+  await screen.findByText("ops-email");
+
+  // Locked and empty — there is genuinely nothing to choose between, so the
+  // control says so by being inert rather than by offering a placeholder the
+  // operator can never satisfy.
+  const organizationSelect = await screen.findByLabelText("Organization");
+  await waitFor(() => {
+    expect(organizationSelect).toBeDisabled();
+  });
+
+  const submit = await screen.findByRole("button", { name: "Add channel" });
+  await waitFor(() => {
+    expect(submit).toBeDisabled();
+  });
+  expect(screen.getByText(/no active organization/i)).toBeInTheDocument();
+
+  await userEvent.type(screen.getByLabelText("Code"), "orphan-ops");
+  await userEvent.type(screen.getByLabelText("Name"), "Orphan ops");
+  await userEvent.type(screen.getByLabelText(/Recipients/i), "ops@example.test");
+  await userEvent.click(submit);
+  expect(create).not.toHaveBeenCalled();
 }

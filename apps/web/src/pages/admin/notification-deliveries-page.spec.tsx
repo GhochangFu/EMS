@@ -49,10 +49,6 @@ const ORGANIZATIONS = [
   },
 ];
 
-function stubOrganizations(): void {
-  vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue({ items: ORGANIZATIONS });
-}
-
 function delivery(overrides: Partial<NotificationDeliveryDto>): NotificationDeliveryDto {
   return {
     id: "d1",
@@ -82,7 +78,18 @@ const ALL_FIVE: NotificationDeliveryDto[] = [
   delivery({ id: "d5", status: "skipped_rate_limited" }),
 ];
 
-function renderWith(node: React.ReactElement): void {
+/**
+ * The organization stub belongs here, not in each test.
+ *
+ * Since `E7.1d` every render of this page calls `fetchAdminOrganizations`, so
+ * a test that forgets to stub it makes a REAL request to `localhost:4000`. On
+ * a machine running `pnpm --filter api dev` that answers 401, and
+ * `clearSessionOnAuthFailure` then clears the module-level auth store — which
+ * `vi.restoreAllMocks()` does not undo, so the damage lands on whichever test
+ * runs next. A test must not depend on whether the dev API happens to be up.
+ */
+function renderWith(node: React.ReactElement, organizations = ORGANIZATIONS): void {
+  vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue({ items: organizations });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
@@ -200,7 +207,6 @@ export async function bannerIsSilentWhenTheCheckFails(): Promise<void> {
  * produce a ledger nobody can read.
  */
 export async function namesTheOrganizationOfEveryAttempt(): Promise<void> {
-  stubOrganizations();
   vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({
     items: [
       delivery({ id: "d1", organizationId: IONX }),
@@ -217,11 +223,18 @@ export async function namesTheOrganizationOfEveryAttempt(): Promise<void> {
   expect(await screen.findByRole("cell", { name: "Ion Exchange" })).toBeInTheDocument();
   expect(screen.getByRole("cell", { name: "PHE West Bengal" })).toBeInTheDocument();
   expect(screen.queryByText(IONX)).not.toBeInTheDocument();
+
+  // `"all"`, never `"true"`. Every assertion above runs against a stub, so
+  // without this the filter could drift to `"true"` and both the column and
+  // the selector would render raw uuids in production while staying green
+  // here — and `organizationLabel`'s uuid fallback makes that look like data
+  // rather than a bug. A delivery to a deactivated organization is still a row
+  // that must name its tenant.
+  expect(orgApi.fetchAdminOrganizations).toHaveBeenCalledWith("all");
 }
 
 /** `E7.1d` — the organization filter narrows the ledger to one tenant. */
 export async function filtersTheLedgerByOrganization(): Promise<void> {
-  stubOrganizations();
   vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({
     items: [
       delivery({ id: "d1", organizationId: IONX, channelCode: "ionx-email" }),
@@ -255,7 +268,6 @@ export async function filtersTheLedgerByOrganization(): Promise<void> {
  * table, which reads as a broken filter rather than as an empty tenant.
  */
 export async function offersOnlyOrganizationsPresentInTheLedger(): Promise<void> {
-  stubOrganizations();
   vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({
     items: [delivery({ id: "d1", organizationId: IONX })],
   });

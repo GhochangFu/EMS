@@ -121,6 +121,35 @@ export function channelOrganizationOptions(
 }
 
 /**
+ * Why this form cannot be submitted yet, as far as the organization goes, or
+ * `null` when it can (`E7.1d`).
+ *
+ * `channelOrganizationOptions` gives an `organization_admin` no fleet-wide
+ * entry, so a blank form under that role holds `organizationId: ""` — a value
+ * no option matches, which renders as `selectedIndex = -1`. Submitting it
+ * omits `organizationId`, and `resolveCreateTargetOrg` then answers 400 for a
+ * role that manages more than one organization. The operator never chose, so
+ * the form asks instead of guessing and getting a refusal it cannot act on.
+ *
+ * An `admin` is never refused here: `""` is Fleet-wide for that role, a real
+ * choice and the default.
+ */
+export function organizationChoiceRefusal(
+  role: UserRole,
+  options: ReadonlyArray<ChannelOrganizationOption>,
+  organizationId: string,
+): string | null {
+  if (role === "admin") return null;
+  if (options.length === 0) {
+    return "You administer no active organization, so there is no tenant to create a channel in.";
+  }
+  if (organizationId === "") {
+    return "Choose an organization. This role cannot create a fleet-wide channel.";
+  }
+  return null;
+}
+
+/**
  * Opens an existing channel for editing.
  *
  * `secret` is always `""`, never a placeholder that looks like a value. The DTO
@@ -202,10 +231,16 @@ export function channelFormToPayload(form: ChannelForm): NotificationChannelPayl
  * client should not have. `organizationId` in particular decides which tenant
  * owns the row, and a field that is sent, ignored and answered `200` reads
  * from the client's side exactly like a field that worked.
+ *
+ * **Both** names are excluded from the return type, not only `organizationId`.
+ * The argument that made tenancy a compile error is the argument for `code`
+ * too: it is equally absent from the schema and equally answered `200`. A type
+ * that forbids one and permits the other invites the next caller to send the
+ * other.
  */
 export function channelFormToPatch(
   form: ChannelForm,
-): Omit<Partial<NotificationChannelPayload>, "organizationId"> {
+): Omit<Partial<NotificationChannelPayload>, "organizationId" | "code"> {
   const { code: _code, organizationId: _organizationId, ...patch } = channelFormToPayload(form);
   return patch;
 }

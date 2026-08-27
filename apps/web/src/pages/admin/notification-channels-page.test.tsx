@@ -6,8 +6,10 @@ import {
   anAdminCreatesAnOrgScopedChannel,
   anAdminCreatingFleetWideOmitsTheOrganization,
   anOrganizationAdminSeesItsOwnOrganizationLocked,
+  asksAMultiGrantOrganizationAdminToChoose,
   editingShowsTheOrganizationAndCannotChangeIt,
   namesTheOrganizationOfEveryChannel,
+  refusesCreateWhenNoActiveOrganizationIsAdministered,
   refusesSendTestOnAFleetWideChannelWithTheReason,
   rendersBothKinds,
   showsTheReadinessWarning,
@@ -77,5 +79,13 @@ describe("F3.8 notification channels page", () => {
 
   it("shows the organization when editing and never sends it in the patch", async () => {
     await editingShowsTheOrganizationAndCannotChangeIt();
+  });
+
+  it("asks an organization admin with two organizations to choose one", async () => {
+    await asksAMultiGrantOrganizationAdminToChoose();
+  });
+
+  it("refuses create when the role administers no active organization", async () => {
+    await refusesCreateWhenNoActiveOrganizationIsAdministered();
   });
 });
