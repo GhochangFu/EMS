@@ -638,8 +638,9 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
  * the pair in one Vitest invocation failed on the first attempt with
  * `energySummary("7d").totalKwh is 267.28, the equivalent raw query says 264.9`,
  * a message that blames the `level`/`kwhFactor` pairing instead. That half is
- * `no two suites claim the same asset code` below; this rule is the resolution
- * shape, and neither one alone would have caught the failure.
+ * `no two suites claim the same asset code`, in
+ * `tests/integration-fixture-sharing.test.ts`; this rule is the resolution shape,
+ * and neither one alone would have caught the failure.
  *
  * **No `tx.rollback()` filter here, deliberately.** The rollback rule gates
  * *eligibility to read*: a suite that never commits may not take a row off the
@@ -655,9 +656,15 @@ describe("fixture assets are resolved by exact code, not by pattern", () => {
  * same reasons and with the same scanner: a query built by concatenation or held
  * in a `.sql` file is never one literal, and Drizzle's builder form
  * (`db.select().from(assets).limit(1)`) is not SQL text at all — that last one is
- * `F4.53`'s spelling, so this rule does **not** close `F4.53`. The exemption list
- * is keyed by file, so a *new* positional read inside an already-listed file
- * passes; that is the same trade `NOT_YET_PER_RUN` makes.
+ * `F4.53`'s spelling, so this rule does **not** close `F4.53`. {@link EXACT_CODE}
+ * is unqualified, so a **joined** table's `code` satisfies it: `FROM bms.assets a
+ * JOIN bms.locations l ON l.code = $1 … ORDER BY a.code LIMIT 1` reads as named
+ * although the asset is still picked by position. No read of that shape exists
+ * today — the six exempted below join on `organization_id` or `active` — and
+ * qualifying the predicate would have to survive `a.code`, `assets.code` and the
+ * unaliased form. The exemption list is keyed by file, so a *new* positional read
+ * inside an already-listed file passes; that is the same trade `NOT_YET_PER_RUN`
+ * makes.
  */
 describe("fixture assets are resolved by name, not by position", () => {
   /** `LIMIT` is the positional tell. `ORDER BY` narrows the race, it does not close it. */
@@ -672,10 +679,22 @@ describe("fixture assets are resolved by name, not by position", () => {
    *
    * Six statements across four files, measured by running {@link positionalReads}
    * over the tree. They are the same class and each is a live hazard, but they
-   * belong to the open `F4.53` family rather than to this fix, and converting one
-   * means choosing a named row for that suite — a judgement per file, not a
-   * sweep. Listing them keeps the rule enforcing today instead of waiting for
-   * that work, and `the exemption list only gets shorter` stops the list growing.
+   * are not this fix, and converting one means choosing a named row for that
+   * suite — a judgement per file, not a sweep. Listing them keeps the rule
+   * enforcing today instead of waiting for that work, and `the exemption list
+   * only gets shorter` stops the list growing.
+   *
+   * **They are the positional class in files `F4.53` never named, and that row is
+   * not the place to look them up.** `F4.53` enumerates eight unordered
+   * selections in four files; checked 2026-08-27, all eight are resolved —
+   * `alarm-enrichment`, `alarm-raise` and `evaluate-enabled-rules` build their
+   * assets with `createFixtureAssets()`, `alarm-enrichment`'s `bms.users` read is
+   * now `ORDER BY id` with the reason recorded next to it (no spec in `apps/api`
+   * writes that table, so nothing can delete the row), and the file holding the
+   * `bms.organizations` read is gone, replaced by
+   * `assets.service.rls.integration.spec.ts`, which reads id-scoped. None of the
+   * six below is one of them, and most carry `ORDER BY`, which `F4.53` explicitly
+   * is not about.
    *
    * - `resolve-catalog-point-key.spec.ts` — `WHERE l.active = true ORDER BY
    *   a.code LIMIT 1`.
@@ -812,175 +831,6 @@ describe("fixture assets are resolved by name, not by position", () => {
     // Quoting the defect in a docstring is not committing it.
     expect(
       positionalReads(" * it used to read `SELECT id FROM bms.assets ORDER BY code LIMIT 1`."),
-    ).toEqual([]);
-  });
-});
-
-/**
- * The other half of the 2026-08-27 `point-aggregates` failure, and the half the
- * shape rules cannot see.
- *
- * `point-aggregates.integration.spec.ts` and
- * `reports.service.rls.integration.spec.ts` both resolved `CH-CRAC-101` and both
- * wrote `point_key = 'kw'` onto it in an overlapping recent window. Once the
- * first is converted to an exact code, **both suites satisfy every rule above** —
- * neither reads by pattern, neither reads by position — and the collision is
- * untouched. A rule that would have missed the defect it shipped with is not a
- * gate (AGENTS.md §4.6), so the invariant is stated directly: two suites must not
- * name the same asset.
- *
- * Sharing a row is the same defect the whole file is about, one level up. Whose
- * row it is decides who may write to it and who may delete it, and a seeded row
- * has no owner — so two suites that both claim one have no protocol between them
- * at all. `createFixtureAssets()` closes this for the rollback suites by giving
- * each its own row; a per-run prefix closes it for the committed-fixture suites.
- * A suite that must read a *seeded* row — because a continuous aggregate cannot
- * see uncommitted data — has neither escape, so the only thing left is for the
- * claims to be disjoint.
- *
- * **The claim is read from the code, not declared in a list**, so it cannot drift
- * from what the suite actually does. Two shapes count as claiming a code: an
- * exact-code `bms.assets` read with the constant in its parameters, and a call to
- * `resolveSeededAssetByCode()` — the shared resolver, which is where the read
- * itself lives once a suite uses it.
- *
- * **What this does not catch.** A constant imported from another module resolves
- * to nothing here (only same-file `const NAME = "..."` declarations are traced),
- * so a shared code routed through an import reads as unclaimed — fail-open, and
- * the reason no suite should export a seeded fixture code. Two suites *reading*
- * one row with neither writing to it would be flagged although it is harmless;
- * that is fail-closed and none exists today. And a code assembled at run time is
- * not a literal, so it is invisible, exactly as in the rules above.
- */
-describe("no two suites claim the same asset code", () => {
-  /** An exact-code read. The pattern forms are the other rules' business. */
-  const EXACT_CODE_READ = /\bcode\s*(?:=|IN\s*\()/i;
-  /** The shared resolver in `apps/api/src/testing/integration-fixtures.ts`. */
-  const RESOLVER_CALL = /resolveSeededAssetByCode\s*\(([^)]{0,200})\)/g;
-  /** `const NAME = "LITERAL";` — the declaration, in this file, of a claimed code. */
-  const CONST_STRING = /\bconst\s+([A-Za-z_$][\w$]*)\s*(?::[^=]+)?=\s*(["'])((?:\\.|(?!\2).)*)\2/g;
-  /** How far past a read's SQL literal its parameter array can reasonably run. */
-  const ARGUMENT_WINDOW = 300;
-
-  /** Every asset code `source` names as its own fixture. */
-  function assetCodeClaims(source: string): string[] {
-    const src = withoutComments(source);
-    const consts = new Map<string, string>();
-    for (const m of src.matchAll(CONST_STRING)) {
-      consts.set(m[1] as string, m[3] as string);
-    }
-
-    const claimed = new Set<string>();
-    const collect = (text: string): void => {
-      for (const id of text.matchAll(/\b[A-Za-z_$][\w$]*\b/g)) {
-        const value = consts.get(id[0]);
-        if (value !== undefined) claimed.add(value);
-      }
-    };
-
-    // The literals come back in source order, so a moving cursor gives each one
-    // its exact position without searching the whole file for a duplicate text.
-    let cursor = 0;
-    for (const literal of stringLiterals(src)) {
-      const at = src.indexOf(literal, cursor);
-      cursor = at + literal.length;
-      if (!READS_ASSETS_TABLE.test(literal) || !EXACT_CODE_READ.test(literal)) continue;
-      collect(src.slice(cursor, cursor + ARGUMENT_WINDOW));
-    }
-    for (const call of src.matchAll(RESOLVER_CALL)) {
-      collect(call[1] as string);
-    }
-    return [...claimed];
-  }
-
-  function claimsByFile(): Map<string, string[]> {
-    const out = new Map<string, string[]>();
-    for (const root of ["apps", "packages"]) {
-      for (const file of walk(join(repoRoot, root))) {
-        if (!/(\.spec|\.integration\.test)\.tsx?$/.test(file)) continue;
-        const claims = assetCodeClaims(readFileSync(file, "utf8"));
-        if (claims.length > 0) {
-          out.set(relative(repoRoot, file).replace(/\\/g, "/"), claims.sort());
-        }
-      }
-    }
-    return out;
-  }
-
-  it("every asset code is claimed by at most one spec", () => {
-    const claims = claimsByFile();
-
-    // The floor the other rules carry: no collision must mean "scanned and
-    // disjoint", not "extracted nothing". Four files claim codes as of this
-    // commit, measured by running the function.
-    expect(
-      claims.size,
-      "no spec was found claiming an asset code. Either the walk, the read pattern or the " +
-        "constant tracing is broken, and the empty collision list below would mean nothing.",
-    ).toBeGreaterThanOrEqual(3);
-
-    const owners = new Map<string, string[]>();
-    for (const [rel, codes] of claims) {
-      for (const code of codes) {
-        owners.set(code, [...(owners.get(code) ?? []), rel]);
-      }
-    }
-    const shared = [...owners]
-      .filter(([, files]) => files.length > 1)
-      .map(([code, files]) => `${code} — ${files.join(", ")}`);
-
-    expect(
-      shared,
-      `these asset codes are claimed by more than one spec:\n${shared.join("\n")}\n\n` +
-        "Give one of them a different seeded row. A seeded asset has no owner, so two suites " +
-        "that name it have no protocol about who writes to it or when — which is how " +
-        "point-aggregates and reports.service.rls came to write `point_key = 'kw'` onto " +
-        "CH-CRAC-101 at the same time. The codes already taken are listed by this test's " +
-        "own scan; pick one nothing holds.",
-    ).toEqual([]);
-  });
-
-  it("the analysis kills the mutation it exists to catch", () => {
-    // The defect: `point-aggregates` naming the row `reports.service.rls` holds.
-    // Both spellings, because the two suites write the read differently.
-    const reports =
-      'const GRID_ASSET_CODE = "CH-CRAC-101";\n' +
-      "await fleet.query(`SELECT id FROM bms.assets WHERE code = ANY($1::text[])`, " +
-      "[[SOLAR_ASSET_CODE, GRID_ASSET_CODE]]);";
-    const viaResolver =
-      'const FIXTURE_ASSET_CODE = "CH-CRAC-101";\n' +
-      "const assetId = await resolveSeededAssetByCode(pool, FIXTURE_ASSET_CODE);";
-    expect(assetCodeClaims(reports)).toContain("CH-CRAC-101");
-    expect(assetCodeClaims(viaResolver)).toContain("CH-CRAC-101");
-
-    // The fix: a different seeded row, so the two sets no longer meet.
-    const fixed =
-      'const FIXTURE_ASSET_CODE = "CH-CRAC-102";\n' +
-      "const assetId = await resolveSeededAssetByCode(pool, FIXTURE_ASSET_CODE);";
-    expect(assetCodeClaims(fixed)).toEqual(["CH-CRAC-102"]);
-
-    // An inline read whose code is bound from a parameter the file does not
-    // declare claims nothing — the fail-open case the docstring names.
-    expect(
-      assetCodeClaims("await pool.query(`SELECT id FROM bms.assets WHERE code = $1`, [code]);"),
-    ).toEqual([]);
-
-    // Prose quoting a code is not claiming it.
-    expect(
-      assetCodeClaims(
-        ' * it used to resolve `CH-CRAC-101` here.\n' +
-          'const OTHER = "CH-CRAC-101";\n' +
-          "await pool.query(`SELECT id FROM bms.locations WHERE code = $1`, [OTHER]);",
-      ),
-    ).toEqual([]);
-
-    // A pattern read is the `F4.67` rule's business, not this one's: it names no
-    // row, so there is nothing to collide on.
-    expect(
-      assetCodeClaims(
-        'const P = "PV%";\n' +
-          "await pool.query(`SELECT id FROM bms.assets WHERE code ILIKE $1 ORDER BY code LIMIT 1`, [P]);",
-      ),
     ).toEqual([]);
   });
 });
