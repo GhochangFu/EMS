@@ -251,13 +251,14 @@ There is no "debug-only" bypass.
 - Passwordless preferred (OIDC + MFA via Keycloak).
 - Least privilege at the DB level: API uses a role with CRUD on its own
   schemas, no `SUPERUSER`.
-- Row-level security on every cross-tenant `bms.*` table — **implemented**
-  (ADR 0043, `E7.1a`–`E7.1c`). `telemetry.*` is a stated, **permanent**
-  exception (decision 9): isolation there is application-layer only, through
-  `readableAssetIds`, because a per-row join to `bms.assets` would collide
-  with the ADR 0023/0024 aggregate and retention jobs. This line predates
-  that ruling and read as a blanket target; it is not one, and revisiting the
-  `telemetry.*` exception needs its own ADR.
+- Row-level security on every cross-tenant `bms.*` table. `telemetry.*` is a
+  stated, **permanent** exception (ADR 0043 decision 9): isolation there is
+  application-layer only, through `readableAssetIds`, because a per-row join
+  to `bms.assets` would collide with the ADR 0023/0024 aggregate and
+  retention jobs. This line predates that ruling and read as an unqualified
+  blanket target; it is not one, and revisiting the `telemetry.*` exception
+  needs its own ADR. (This section is aspirational throughout, per the file
+  header — see AGENTS.md §2's *Tenancy* row for what is actually built.)
 - Input validation on the edge **and** at the service boundary.
 - Rate limiting at Traefik per IP and at API per user / IP.
 - Audit log is append-only; nightly hash-chained.
