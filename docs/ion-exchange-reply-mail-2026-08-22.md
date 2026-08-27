@@ -43,16 +43,16 @@ the product.
 - Notification service (email + webhook first) with escalation and distribution lists
 - Self-service dashboard builder (KPI cards, gauges, trends, comparisons)
 - Tag-mapping bulk editor with an Excel mapping sheet; scheduled sFTP/file ingestion
-- The **water-treatment template pack in build**. We understand the plant tag
-  lists follow once the agreement completes, so we have not waited: attached is
-  a **derived tag list** for six plant types — STP, ETP, cooling tower, WTP, RO
-  and softener, ~100 points — built from industry practice, your reference
-  dashboards and IESL's published monitoring packages. Authoring proceeds on it
-  in that order (your own documents emphasize STP, ETP, cooling tower and WTP);
-  re-ordering costs nothing — tell us at the workshop. **What we ask now is an
-  hour's redline, not a tag export**: strike what is not fitted, add what is
-  missing. Templates are versioned, so the confirmed list simply publishes as
-  version 2 later.
+- The **water-treatment template pack ready to start authoring**. We
+  understand the plant tag lists follow once the agreement completes, so we
+  have not waited: attached is a **derived tag list** for six plant types —
+  STP, ETP, cooling tower, WTP, RO and softener, ~100 points — built from
+  industry practice, your reference dashboards and IESL's published
+  monitoring packages. We propose authoring in that order (your own documents
+  emphasize STP, ETP, cooling tower and WTP); re-ordering costs nothing —
+  tell us at the workshop. **What we ask now is an hour's redline, not a tag
+  export**: strike what is not fitted, add what is missing. Templates are
+  versioned, so the confirmed list simply publishes as version 2 later.
 - The architecture pack for the four layers (below), presented at the workshop
 
 **By three months:**
