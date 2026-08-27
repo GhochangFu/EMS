@@ -12,6 +12,27 @@ type AuditInput = {
   action: string;
   entityType: string;
   entityId: string;
+  /**
+   * E7.1c (item D) — required, not optional. `bms.audit_log.organization_id`
+   * keeps a legitimate `NULL` (ADR 0043 decision 5: a platform event belongs
+   * to no tenant), but after `0048` the `NULL` branch of `audit_log`'s
+   * `WITH CHECK` is scoped `TO bms_fleet`. That turns "which pool, which
+   * value" into a decision every caller must make by hand:
+   *
+   * - A tenant-scoped mutation: pass the **enclosing `withTenant` transaction's
+   *   own organization id**, and pass that same transaction as `executor` (see
+   *   below) — the stamped value and the GUC must agree or the strict
+   *   `WITH CHECK` on `bms_tenant` refuses the row.
+   * - A genuine platform/fleet event (no tenant owns the action, e.g.
+   *   `organizations.service.ts` creating the organization itself): pass
+   *   `null` **and** pass `this.fleetDb` as `executor` explicitly — `NULL` is
+   *   only admitted `TO bms_fleet` now, never `TO bms_tenant`.
+   *
+   * Making the field required is deliberate: every call site had to be
+   * touched and reasoned about once, rather than silently inheriting a
+   * default that is wrong half the time.
+   */
+  organizationId: string | null;
   reason?: string;
   payload?: Record<string, unknown>;
 };
@@ -37,6 +58,20 @@ export class MasterDataAuditService {
    * it describes — without it, a rolled-back transaction can leave an audit
    * row on disk describing a write that never happened.
    *
+   * **E7.1c (item D) — the default `executor = this.db` is now a trap, not a
+   * convenience.** `this.db` is the plain tenant pool with no GUC set. After
+   * `0048` BOTH a `null` and a real `organizationId` fail on it: `null` fails
+   * because the tenant-role `NULL` branch is gone (scoped `TO bms_fleet`
+   * only), and a real id fails because the strict `WITH CHECK`
+   * (`organization_id = current_setting('app.current_organization')`) sees an
+   * unset GUC on that connection. There is no longer a safe default — every
+   * caller must pass an `executor` that matches the `organizationId` it is
+   * stamping: the enclosing `withTenant` transaction for a tenant-scoped
+   * `organizationId`, or `this.fleetDb` for `null`. The parameter keeps its
+   * default only so a caller that already opened its own tenant transaction
+   * reads naturally as `write(input, tx)`; it is not a "leave it out and it
+   * will still work" default any more.
+   *
    * E7.1b Amendment 4 — the actor identity read runs on `fleetDb` (`bms_fleet`,
    * BYPASSRLS), not on the write `executor`. `bms.users` gains a NULL-tolerant
    * `tenant_isolation` policy + FORCE in `0047`. The audit-outside-`withTenant`
@@ -46,10 +81,9 @@ export class MasterDataAuditService {
    * the `0046` backfill, so `actorId` would silently resolve to NULL and the
    * audit row would lose its actor. The fleet pool sees the row regardless of
    * org, and it is a separate `pg` pool from the tenant one, so this second
-   * lookup never contends with an open tenant transaction on `executor`. The
-   * insert itself stays on `executor` — its `organization_id` is NULL this item
-   * (population is E7.1c), which the `0047` NULL-tolerant `WITH CHECK` admits
-   * whether or not a GUC is set.
+   * lookup never contends with an open tenant transaction on `executor`. That
+   * split survives E7.1c unchanged: only the insert's `organization_id` and
+   * its `executor` changed, never the actor lookup.
    */
   async write(input: AuditInput, executor: BmsDb = this.db): Promise<void> {
     const [actorRow] = await this.fleetDb
@@ -59,6 +93,7 @@ export class MasterDataAuditService {
       .limit(1);
 
     await executor.insert(auditLog).values({
+      organizationId: input.organizationId,
       actorId: actorRow?.id ?? null,
       action: input.action,
       entityType: input.entityType,
