@@ -42,6 +42,7 @@ const OTHER_ORG_ID = "bbbbbbbb-0000-0000-0000-00000000000b";
 
 const dto: NotificationChannelDto = {
   id: CHANNEL_ID,
+  organizationId: OWN_ORG_ID,
   code: "ops-webhook",
   name: "Operations webhook",
   kind: "webhook",

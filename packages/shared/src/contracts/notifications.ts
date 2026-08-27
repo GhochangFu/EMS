@@ -45,6 +45,13 @@ export const notificationDeliveryStatusSchema = z.enum([
 /** One configured destination. */
 export const notificationChannelDtoSchema = z.object({
   id: z.string(),
+  /**
+   * `E7.1c` (ADR 0043 Amendment 5, decision 7). `null` names a fleet-managed
+   * global channel — a legitimate, ongoing state, not a pre-migration
+   * artifact: an `admin` who omits `organizationId` on create still gets one.
+   * Non-null on an org-scoped channel, since migration `0048`.
+   */
+  organizationId: z.string().nullable(),
   code: z.string(),
   name: z.string(),
   // A code from `bms.notification_channel_kinds`, not a union — see the file
@@ -69,6 +76,14 @@ export const notificationChannelDtoSchema = z.object({
  */
 export const notificationDeliveryDtoSchema = z.object({
   id: z.string(),
+  /**
+   * Non-null. `bms.notification_deliveries.organization_id` gained
+   * `SET NOT NULL` in migration `0048` (ADR 0043 Amendment 5, item C): a
+   * dispatch stamps its rule's org, a send test stamps its channel's org (and
+   * refuses outright on a `NULL`-org channel — Blocker 1's ruling) — there is
+   * no delivery row left that carries no organization.
+   */
+  organizationId: z.string(),
   ruleId: z.string().nullable(),
   ruleCode: z.string().nullable(),
   alarmId: z.string().nullable(),

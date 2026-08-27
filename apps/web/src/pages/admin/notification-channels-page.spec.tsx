@@ -31,6 +31,7 @@ const user: AuthUser = {
 
 const emailChannel: NotificationChannelDto = {
   id: "11111111-1111-1111-1111-111111111111",
+  organizationId: null,
   code: "ops-email",
   name: "Operations email",
   kind: "email",
@@ -43,6 +44,7 @@ const emailChannel: NotificationChannelDto = {
 
 const webhookChannel: NotificationChannelDto = {
   id: "22222222-2222-2222-2222-222222222222",
+  organizationId: null,
   code: "ops-webhook",
   name: "Operations webhook",
   kind: "webhook",

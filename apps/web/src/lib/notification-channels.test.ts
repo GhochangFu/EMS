@@ -14,6 +14,7 @@ import {
 
 const channel: NotificationChannelDto = {
   id: "33333333-3333-3333-3333-333333333333",
+  organizationId: null,
   code: "ops-webhook",
   name: "Operations webhook",
   kind: "webhook",

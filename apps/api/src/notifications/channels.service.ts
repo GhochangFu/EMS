@@ -443,6 +443,7 @@ export class ChannelsService {
     const rows = await this.fleetDb
       .select({
         id: notificationDeliveries.id,
+        organizationId: notificationDeliveries.organizationId,
         ruleId: notificationDeliveries.ruleId,
         ruleCode: automationRules.code,
         alarmId: notificationDeliveries.alarmId,
@@ -466,6 +467,7 @@ export class ChannelsService {
     return {
       items: rows.map((row) => ({
         id: row.id,
+        organizationId: row.organizationId,
         ruleId: row.ruleId,
         ruleCode: row.ruleCode,
         alarmId: row.alarmId,
@@ -752,6 +754,7 @@ export class ChannelsService {
  */
 function toDto(row: {
   id: string;
+  organizationId: string | null;
   code: string;
   name: string;
   kind: string;
@@ -763,6 +766,7 @@ function toDto(row: {
 }): NotificationChannelDto {
   return {
     id: row.id,
+    organizationId: row.organizationId,
     code: row.code,
     name: row.name,
     kind: row.kind,
