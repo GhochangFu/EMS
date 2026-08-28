@@ -2234,9 +2234,10 @@ decision-5 tables) and ADR 0045's owner-role work did not fit the original
   policy; isolation stays `readableAssetIds`, by design.
 
 Mirrored into: AGENTS.md status line, §2 *Tenancy* row (new), *Secrets* row and
-*Audit read* row, §4.3/§4.4, §4.7's fifth gate and **both** projection rules —
-ADR 0043 Amendment 6 and ADR 0046 Amendment 2, cross-linked there because they
-fire on different triggers and neither generalises alone — and §6 (narrowed,
+*Audit read* row, *Operations* row, §4.3/§4.4, §4.7's fifth gate and all
+**three** projection rules — ADR 0043 Amendment 6, ADR 0046 Amendment 2 and ADR
+0046 Amendment 3, cross-linked there because each fires on a different trigger
+and none generalises alone — and §6 (narrowed,
 not deleted — per-org SMTP relays, white-label branding, a `platform_admin`
 rung and `telemetry.*` RLS all stay deferred).
 
@@ -2253,12 +2254,19 @@ written — `E7.1i` was filed in the same pass.
 sees the acting operator's `oidcSubject`, removed in SQL and keyed on the
 database role. Its own reviews then raised two more, both landed as PR #192
 (`f56cb4f`) — a static guard holding the *writers* to a top-level key, since the
-jsonb `-` operator reaches nothing deeper, and **`E8.6`**, which records that
-`rule_executions.trace.evaluatedBy` carries the same operator subject to a
-*wider* audience (`GET /rules/executions` has no role gate at all) and is
-**owed an ADR before any code** — the `F3.6` review chose `sub` *over* the email
-there deliberately, which is the opposite of Amendment 2's ruling, so one of the
-two comments must be corrected whichever way the owner rules. Still open:
+jsonb `-` operator reaches nothing deeper, and **`E8.6`**, which found the same
+operator subject in a second table: `rule_executions.trace.evaluatedBy`, reached
+by a *wider* audience, because `GET /rules/executions` has no role gate at all.
+**`E8.6` is now done too** (PR #194, squash `b13db40`), ruled as **ADR 0046
+Amendment 3** before any code — the third instance of one projection rule. It
+**removes without replacing**: unlike the audit log, where `actorEmail` survives
+because a ledger must answer *"who changed this"*, a scoped reader of a trace
+gets no evaluator at all, because `F3.6` chose `sub` *instead of* the email
+rather than alongside it. That asymmetry is decision 8 and is recorded so the
+obvious later "fix" — mirroring Amendment 2 and adding the email — is seen for
+what it would be: disclosing plaintext addresses to `operator` and `viewer`, an
+audience wider than Amendment 2 ever exposed. The now-dead `F3.6` justification
+was corrected in the same commit. Still open:
 `E7.1i` indexes `bms.audit_log (organization_id, created_at)` — availability,
 not disclosure — and `E8.5` bounds or scrubs the `rtus.meta` value space that
 ADR 0021 decision 6's re-measurement could not clear by field name.
