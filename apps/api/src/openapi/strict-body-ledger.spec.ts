@@ -549,6 +549,12 @@ const ALREADY =
   "Strict before E7.1f, for a reason recorded beside the schema. Listed so the audit is " +
   "complete rather than only the nodes this item changed.";
 
+const WIDGET_CONFIG =
+  "F3.1a (ADR 0047). The shared config schema, tightened with `.strict()` at this write " +
+  "boundary. The shared export stays tolerant because §4.8 requires a RESPONSE contract to " +
+  "survive a field the server has added; an authoring body has the opposite obligation, and " +
+  "one schema serves both because strictness is composed here rather than forked.";
+
 const STRICT = (why: string): LedgerEntry => ({ strict: true, why });
 
 /**
@@ -579,6 +585,47 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "createAssetTemplateBodySchema/content/alarms[]": STRICT(ALREADY),
   "createAssetTemplateBodySchema/content/alarms[]/philosophy": STRICT(ALREADY),
   "createAssetTemplateBodySchema/content/dashboards{}": STRICT(ALREADY),
+  "createAssetTemplateBodySchema/content/dashboards{}/widgets[]|0": STRICT(
+      "F3.1a (ADR 0047). A template dashboard widget is authored by hand, so an unknown key is " +
+      "an author's typo and must be refused rather than silently dropped. The four arms are " +
+      "strict here, and each `config` is the SHARED schema tightened at this boundary — " +
+      "`radialGaugeConfigObjectSchema.strict()` and the exported `gaugeRangeIsOrdered` " +
+      "predicate for the gauge, whose shared export is a ZodEffects with no `.strict()`. The " +
+      "shared contracts stay tolerant because §4.8 requires a RESPONSE to survive a field the " +
+      "server adds; strictness belongs on the write side, which is this one.",
+    ),
+  "createAssetTemplateBodySchema/content/dashboards{}/widgets[]|0/config": STRICT(WIDGET_CONFIG),
+  "createAssetTemplateBodySchema/content/dashboards{}/widgets[]|0/config/thresholds[]": STRICT(WIDGET_CONFIG),
+  "createAssetTemplateBodySchema/content/dashboards{}/widgets[]|1": STRICT(
+      "F3.1a (ADR 0047). A template dashboard widget is authored by hand, so an unknown key is " +
+      "an author's typo and must be refused rather than silently dropped. The four arms are " +
+      "strict here, and each `config` is the SHARED schema tightened at this boundary — " +
+      "`radialGaugeConfigObjectSchema.strict()` and the exported `gaugeRangeIsOrdered` " +
+      "predicate for the gauge, whose shared export is a ZodEffects with no `.strict()`. The " +
+      "shared contracts stay tolerant because §4.8 requires a RESPONSE to survive a field the " +
+      "server adds; strictness belongs on the write side, which is this one.",
+    ),
+  "createAssetTemplateBodySchema/content/dashboards{}/widgets[]|1/config": STRICT(WIDGET_CONFIG),
+  "createAssetTemplateBodySchema/content/dashboards{}/widgets[]|2": STRICT(
+      "F3.1a (ADR 0047). A template dashboard widget is authored by hand, so an unknown key is " +
+      "an author's typo and must be refused rather than silently dropped. The four arms are " +
+      "strict here, and each `config` is the SHARED schema tightened at this boundary — " +
+      "`radialGaugeConfigObjectSchema.strict()` and the exported `gaugeRangeIsOrdered` " +
+      "predicate for the gauge, whose shared export is a ZodEffects with no `.strict()`. The " +
+      "shared contracts stay tolerant because §4.8 requires a RESPONSE to survive a field the " +
+      "server adds; strictness belongs on the write side, which is this one.",
+    ),
+  "createAssetTemplateBodySchema/content/dashboards{}/widgets[]|2/config": STRICT(WIDGET_CONFIG),
+  "createAssetTemplateBodySchema/content/dashboards{}/widgets[]|3": STRICT(
+      "F3.1a (ADR 0047). A template dashboard widget is authored by hand, so an unknown key is " +
+      "an author's typo and must be refused rather than silently dropped. The four arms are " +
+      "strict here, and each `config` is the SHARED schema tightened at this boundary — " +
+      "`radialGaugeConfigObjectSchema.strict()` and the exported `gaugeRangeIsOrdered` " +
+      "predicate for the gauge, whose shared export is a ZodEffects with no `.strict()`. The " +
+      "shared contracts stay tolerant because §4.8 requires a RESPONSE to survive a field the " +
+      "server adds; strictness belongs on the write side, which is this one.",
+    ),
+  "createAssetTemplateBodySchema/content/dashboards{}/widgets[]|3/config": STRICT(WIDGET_CONFIG),
   "createAssetTemplateBodySchema/content/kpis[]": STRICT(ALREADY),
   "createAssetTemplateBodySchema/content/maintenance[]": STRICT(ALREADY),
   "createAssetTemplateBodySchema/points[]": STRICT(CALLER_ERROR),
@@ -629,6 +676,47 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "updateAssetTemplateBodySchema/content/alarms[]": STRICT(ALREADY),
   "updateAssetTemplateBodySchema/content/alarms[]/philosophy": STRICT(ALREADY),
   "updateAssetTemplateBodySchema/content/dashboards{}": STRICT(ALREADY),
+  "updateAssetTemplateBodySchema/content/dashboards{}/widgets[]|0": STRICT(
+      "F3.1a (ADR 0047). A template dashboard widget is authored by hand, so an unknown key is " +
+      "an author's typo and must be refused rather than silently dropped. The four arms are " +
+      "strict here, and each `config` is the SHARED schema tightened at this boundary — " +
+      "`radialGaugeConfigObjectSchema.strict()` and the exported `gaugeRangeIsOrdered` " +
+      "predicate for the gauge, whose shared export is a ZodEffects with no `.strict()`. The " +
+      "shared contracts stay tolerant because §4.8 requires a RESPONSE to survive a field the " +
+      "server adds; strictness belongs on the write side, which is this one.",
+    ),
+  "updateAssetTemplateBodySchema/content/dashboards{}/widgets[]|0/config": STRICT(WIDGET_CONFIG),
+  "updateAssetTemplateBodySchema/content/dashboards{}/widgets[]|0/config/thresholds[]": STRICT(WIDGET_CONFIG),
+  "updateAssetTemplateBodySchema/content/dashboards{}/widgets[]|1": STRICT(
+      "F3.1a (ADR 0047). A template dashboard widget is authored by hand, so an unknown key is " +
+      "an author's typo and must be refused rather than silently dropped. The four arms are " +
+      "strict here, and each `config` is the SHARED schema tightened at this boundary — " +
+      "`radialGaugeConfigObjectSchema.strict()` and the exported `gaugeRangeIsOrdered` " +
+      "predicate for the gauge, whose shared export is a ZodEffects with no `.strict()`. The " +
+      "shared contracts stay tolerant because §4.8 requires a RESPONSE to survive a field the " +
+      "server adds; strictness belongs on the write side, which is this one.",
+    ),
+  "updateAssetTemplateBodySchema/content/dashboards{}/widgets[]|1/config": STRICT(WIDGET_CONFIG),
+  "updateAssetTemplateBodySchema/content/dashboards{}/widgets[]|2": STRICT(
+      "F3.1a (ADR 0047). A template dashboard widget is authored by hand, so an unknown key is " +
+      "an author's typo and must be refused rather than silently dropped. The four arms are " +
+      "strict here, and each `config` is the SHARED schema tightened at this boundary — " +
+      "`radialGaugeConfigObjectSchema.strict()` and the exported `gaugeRangeIsOrdered` " +
+      "predicate for the gauge, whose shared export is a ZodEffects with no `.strict()`. The " +
+      "shared contracts stay tolerant because §4.8 requires a RESPONSE to survive a field the " +
+      "server adds; strictness belongs on the write side, which is this one.",
+    ),
+  "updateAssetTemplateBodySchema/content/dashboards{}/widgets[]|2/config": STRICT(WIDGET_CONFIG),
+  "updateAssetTemplateBodySchema/content/dashboards{}/widgets[]|3": STRICT(
+      "F3.1a (ADR 0047). A template dashboard widget is authored by hand, so an unknown key is " +
+      "an author's typo and must be refused rather than silently dropped. The four arms are " +
+      "strict here, and each `config` is the SHARED schema tightened at this boundary — " +
+      "`radialGaugeConfigObjectSchema.strict()` and the exported `gaugeRangeIsOrdered` " +
+      "predicate for the gauge, whose shared export is a ZodEffects with no `.strict()`. The " +
+      "shared contracts stay tolerant because §4.8 requires a RESPONSE to survive a field the " +
+      "server adds; strictness belongs on the write side, which is this one.",
+    ),
+  "updateAssetTemplateBodySchema/content/dashboards{}/widgets[]|3/config": STRICT(WIDGET_CONFIG),
   "updateAssetTemplateBodySchema/content/kpis[]": STRICT(ALREADY),
   "updateAssetTemplateBodySchema/content/maintenance[]": STRICT(ALREADY),
   "updateAssetTemplateBodySchema/points[]": STRICT(CALLER_ERROR),

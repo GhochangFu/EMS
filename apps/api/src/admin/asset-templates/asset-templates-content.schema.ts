@@ -8,12 +8,16 @@ import {
   // `@bms/shared/contracts`, because apps/api compiles with moduleResolution "node" and
   // ignores the exports map — ADR 0030 Amendment 2.
   chartConfigSchema,
-  radialGaugeConfigSchema,
-  tankLevelConfigSchema,
-  valueTileConfigSchema,
   formatCalcError,
+  GAUGE_RANGE_MESSAGE,
+  gaugeRangeIsOrdered,
+  gaugeThresholdSchema,
   MAX_FORMULA_POINT_REFS,
+  MAX_GAUGE_THRESHOLDS,
+  radialGaugeConfigObjectSchema,
+  tankLevelConfigSchema,
   validateFormula,
+  valueTileConfigSchema,
 } from "@bms/shared";
 import type { TemplateContent } from "@bms/shared";
 
@@ -43,8 +47,10 @@ export const skillSchema = alarmSkillCodeSchema;
  * - **Anchored** — the consumer is unbuilt but the *references* are checkable
  *   today. `kpis.expression` is validated under `bms-calc-v1` (ADR 0036,
  *   `F2.3`) when `dialect` says so, and stays opaque behind `"unvalidated"`
- *   for content written before that grammar existed; `dashboards` carries
- *   ordering and nothing else because `F3.1` owns the widget vocabulary.
+ *   for content written before that grammar existed. `dashboards` carried
+ *   ordering and nothing else until `F3.1a`; ADR 0047 gave it the widget
+ *   vocabulary, so a view now also carries typed `widgets[]` whose point keys
+ *   the reference check reaches.
  * - **Reserved** — `health` and `optimisation` are rejected, each naming its own
  *   blocking item. A reserved key that is silently accepted lets `E5.1` author a
  *   shape `F3.1`/`E1.1` will contradict, and the contradiction surfaces a year
@@ -321,36 +327,65 @@ export const templateDashboardWidgetVariants = z.discriminatedUnion("widgetType"
     .object({
       ...templateWidgetIdentityFields,
       widgetType: z.literal("radial_gauge"),
-      config: radialGaugeConfigSchema,
+      // `.strict()` before `.refine()`: the shared export is a ZodEffects, which has no
+      // `.strict()`, so the object and the range rule are composed here from the two pieces
+      // `@bms/shared` exports for exactly this. The rule is still declared once.
+      // `.strict()` before `.refine()`, and the thresholds array restated with a strict item:
+      // the shared exports stay tolerant for the response direction (§4.8), so every level an
+      // author can type into is tightened here instead. `.extend()` preserves `unknownKeys`,
+      // so the object stays strict — and `.extend()` is legal in `apps/api`; the ADR 0030 ban
+      // covers `packages/shared/src/contracts/` only.
+      config: radialGaugeConfigObjectSchema
+        .strict()
+        .extend({
+          thresholds: z
+            .array(gaugeThresholdSchema.strict())
+            .max(MAX_GAUGE_THRESHOLDS)
+            .optional(),
+        })
+        .refine(gaugeRangeIsOrdered, { message: GAUGE_RANGE_MESSAGE, path: ["max"] })
+        .describe(
+          "A radial gauge's scale. `max` must be greater than `min`: an inverted or empty " +
+            "range gives the needle no defined position, and zod-to-json-schema emits nothing " +
+            "for a refinement, so without this line the document would promise a 200 the API " +
+            "answers with a 400 (ADR 0029 Amendment 1).",
+        ),
     })
     .strict(),
   z
     .object({
       ...templateWidgetIdentityFields,
       widgetType: z.literal("tank_level"),
-      config: tankLevelConfigSchema,
+      config: tankLevelConfigSchema.strict(),
     })
     .strict(),
   z
     .object({
       ...templateWidgetIdentityFields,
       widgetType: z.literal("value_tile"),
-      config: valueTileConfigSchema,
+      config: valueTileConfigSchema.strict(),
     })
     .strict(),
   z
     .object({
       ...templateWidgetIdentityFields,
       widgetType: z.literal("chart"),
-      config: chartConfigSchema,
+      config: chartConfigSchema.strict(),
     })
     .strict(),
 ]);
 
-const templateDashboardWidgetSchema = templateDashboardWidgetVariants.refine(
-  (widget) => widget.gridX + widget.gridW <= 12,
-  { message: "a widget must fit inside the 12-column canvas", path: ["gridW"] },
-);
+const templateDashboardWidgetSchema = templateDashboardWidgetVariants
+  .refine((widget) => widget.gridX + widget.gridW <= 12, {
+    message: "a widget must fit inside the 12-column canvas",
+    path: ["gridW"],
+  })
+  .describe(
+    "A widget on a template's default dashboard. `gridX + gridW` must not exceed 12: the " +
+      "canvas is twelve columns, and `dashboard_widgets_grid_bounds_check` enforces the same " +
+      "bound in SQL, so an author who overflows it gets a 400 naming the field rather than a " +
+      "500 carrying a constraint name.",
+  );
 
 /**
  * A dashboard view: the ADR 0019 ordering, and — since `F3.1a` — the widgets drawn from it.

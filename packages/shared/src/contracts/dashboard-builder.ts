@@ -98,6 +98,10 @@ const commonConfigFields = {
   decimals: z.number().int().min(0).max(6).optional(),
 };
 
+/** At most this many bands on one gauge. Exported so `apps/api` can restate the array with a
+ * strict item schema without restating the bound. */
+export const MAX_GAUGE_THRESHOLDS = 8;
+
 /** One coloured band on a radial gauge. */
 export const gaugeThresholdSchema = z
   .object({
@@ -112,19 +116,32 @@ export const gaugeThresholdSchema = z
  * maximum, thresholds, bands — is disjoint from a cartesian chart's, and merging them would put
  * two unrelated halves in one form in front of a non-programmer.
  */
-export const radialGaugeConfigSchema = z
-  .object({
-    ...commonConfigFields,
-    min: z.number(),
-    max: z.number(),
-    thresholds: z.array(gaugeThresholdSchema).max(8).optional(),
-  })
-  // An inverted or empty range gives the needle no defined position. Refused here rather than
-  // left for the renderer to guess, because a guess renders something plausible and wrong.
-  .refine((config) => config.max > config.min, {
-    message: "max must be greater than min",
-    path: ["max"],
-  });
+export const radialGaugeConfigObjectSchema = z.object({
+  ...commonConfigFields,
+  min: z.number(),
+  max: z.number(),
+  thresholds: z.array(gaugeThresholdSchema).max(MAX_GAUGE_THRESHOLDS).optional(),
+});
+
+/**
+ * An inverted or empty range gives the needle no defined position, so it is refused rather than
+ * left for the renderer to guess — a guess renders something plausible and wrong.
+ *
+ * Exported as a **predicate**, not only as a built schema, because `.refine()` produces a
+ * `ZodEffects` and `ZodEffects` has no `.strict()`. `apps/api` needs a strict gauge config for
+ * the template authoring body (E7.1f), so it composes
+ * `radialGaugeConfigObjectSchema.strict().refine(gaugeRangeIsOrdered, …)`. Declaring the rule
+ * once as a function is what keeps that from becoming a second copy of it.
+ */
+export const gaugeRangeIsOrdered = (config: { min: number; max: number }): boolean =>
+  config.max > config.min;
+
+export const GAUGE_RANGE_MESSAGE = "max must be greater than min";
+
+export const radialGaugeConfigSchema = radialGaugeConfigObjectSchema.refine(gaugeRangeIsOrdered, {
+  message: GAUGE_RANGE_MESSAGE,
+  path: ["max"],
+});
 
 /** A tank level: an SVG fill illustration plus a percentage, the §7 *Key Parameters* shape. */
 export const tankLevelConfigSchema = z
