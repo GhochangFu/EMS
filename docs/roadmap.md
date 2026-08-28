@@ -2250,11 +2250,26 @@ rung and `telemetry.*` RLS all stay deferred).
 `E7.1e` (the org-scoped `bms.audit_log` reader, gated by **ADR 0046**) landed
 2026-08-28 as PR #188, and `E7.1h` (its projection half, Amendment 2) as
 PR #191 the same day, and `E7.1i` (the index behind the scoped read) as PR #196.
-**`E7.1f` is now the last child of this split still open** — `.strict()` on the
-mutating body schemas, gated by **ADR 0029** Amendment 3. That sentence has been
-wrong twice before: it once named `E7.1f` last while `E7.1i` was open and filed
-in the same pass, then named two while `E7.1i` was in flight. It is true as of
-PR #196, and it is the line to re-check whenever an `E7.1x` lands.
+**`E7.1f` is done** (PR [#199](https://github.com/GhochangFu/EMS/pull/199),
+squash `cf5e230`), gated by **ADR 0029** Amendment 3 and its Errata 1
+(PR [#198](https://github.com/GhochangFu/EMS/pull/198), squash `be19046`), so
+**every child of the `E7.1` split is now closed.** The line above this one has
+been wrong twice before — it once named `E7.1f` last while `E7.1i` was open and
+filed in the same pass, then named two while `E7.1i` was in flight — so re-check
+it whenever an `E7.1x` appears rather than trusting it.
+
+Two things `E7.1f` produced that outlive it. **Errata 1 withdrew the premise of
+the amendment that gated it**: `.strict()` changes no byte of the generated
+document, because a plain `z.object` already emits `additionalProperties:
+false`. That inverts the defect — the document had published the strict contract
+since `F4.20` while the server accepted the key, so the server was more
+permissive than its own published contract. And the audit's method was corrected
+mid-flight: asking "is an unknown key a caller error?" assumes there is one
+caller, and the onboarding draft has three (the PATCH, the stored draft carrying
+`_secrets`, and the model's `draftPatch`). Making it strict deadlocked the
+ADR 0022 pilot and silently discarded LLM patches — neither visible to
+`pnpm test`, because `_secrets` needs `CREDENTIAL_ENCRYPTION_KEY` and CI does
+not set it. Those seven nodes stay permissive with the reason recorded.
 
 `E7.1e`'s own reviews raised three follow-ups, all Wave 5. **`E7.1h` is done**
 (PR #191, squash `a62e707`): a non-`admin` reader keeps `actorEmail` and never
