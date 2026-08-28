@@ -10,7 +10,15 @@ import { auditExportQuerySchema, auditListQuerySchema } from "./audit.schema";
 import { AuditAdminService } from "./audit.service";
 import type { AuditExportFile } from "./audit.service";
 
-/** Audit log read + export (ADR 0021, `F4.14`). Global admin only. */
+/**
+ * Audit log read + export (ADR 0021, `F4.14`; widened by ADR 0046, `E7.1e`).
+ *
+ * The global `admin` reads every organization; an `organization_admin` reads
+ * its own organizations' rows only, and never a `NULL`-organization row.
+ * `location_admin` and `asset_group_admin` are refused. The gate and the scope
+ * both live in `AuditAdminService.resolveReadScope` — this controller parses
+ * and serialises only.
+ */
 @Controller("admin/audit")
 @UseGuards(JwtAuthGuard)
 export class AuditAdminController {
