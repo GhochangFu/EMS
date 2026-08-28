@@ -27,6 +27,7 @@ import type { z } from "zod";
 import type * as A from "./contracts/admin";
 import type * as Au from "./contracts/auth";
 import type * as D from "./contracts/dashboard";
+import type * as Db from "./contracts/dashboard-builder";
 import type * as E from "./contracts/envelopes";
 import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
@@ -82,6 +83,24 @@ export type LoadTrendPoint = z.infer<typeof D.loadTrendPointSchema>;
 /** Live map marker (`GET /api/v1/map/sites`). */
 export type MapSiteLive = z.infer<typeof D.mapSiteLiveSchema>;
 export type MapSiteDto = z.infer<typeof D.mapSiteDtoSchema>;
+
+// --- Configurable dashboards (F3.1a, ADR 0047) ------------------------------
+/** The four widget types. Closed — a fifth ships a component, so it is a code change (§4.8). */
+export type WidgetType = z.infer<typeof Db.widgetTypeSchema>;
+/** The generic `chart` type's series: one component, four shapes (ADR 0047 decision 4). */
+export type ChartSeriesKind = z.infer<typeof Db.chartSeriesKindSchema>;
+/** Which slot of the renderer a bound point feeds. */
+export type WidgetPointRole = z.infer<typeof Db.widgetPointRoleSchema>;
+/** Type and config as one discriminated value — what `F3.1c`'s exhaustive switch reads. */
+export type DashboardWidgetSpec = z.infer<typeof Db.dashboardWidgetSpecSchema>;
+/** One point binding — a row, never an id inside JSON (ADR 0047 decision 3). */
+export type DashboardWidgetPointDto = z.infer<typeof Db.dashboardWidgetPointDtoSchema>;
+/** A widget as read, narrowing on `widgetType` through the intersection. */
+export type DashboardWidgetDto = z.infer<typeof Db.dashboardWidgetDtoSchema>;
+/** A dashboard with its widgets. */
+export type DashboardDto = z.infer<typeof Db.dashboardDtoSchema>;
+/** A dashboard in a list, without its widgets. */
+export type DashboardSummaryDto = z.infer<typeof Db.dashboardSummaryDtoSchema>;
 
 /** Builds the REST path segment for `GET .../points/:pointRef/recent`. */
 export function encodePointRef(assetId: string, pointKey: string): string {
