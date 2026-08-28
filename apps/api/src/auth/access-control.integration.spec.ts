@@ -53,6 +53,25 @@ export function jwtFor(email: string, role: UserRole): JwtPayload {
 const ids = (rows: { id: string }[]): Set<string> => new Set(rows.map((r) => r.id));
 
 /**
+ * The ids of a live table that a concurrent suite cannot have moved under us
+ * (`F4.53`).
+ *
+ * Takes the same `SELECT` run twice, around whatever is being asserted, and
+ * keeps only what both saw. `bms.assets` and `bms.locations` are shared with
+ * every other `apps/api` integration suite in the run, so a single read is a
+ * snapshot of a set that is being both inserted into and deleted from. An id in
+ * both reads was there at both ends, and these are `defaultRandom()` uuids that
+ * are never reused, so the row existed for the whole interval between them.
+ */
+const stableIds = (
+  before: { rows: { id: string }[] },
+  after: { rows: { id: string }[] },
+): string[] => {
+  const stillPresent = ids(after.rows);
+  return before.rows.map((r) => r.id).filter((id) => stillPresent.has(id));
+};
+
+/**
  * Asserts a call is refused *for the right reason*.
  *
  * A bare `catch {}` would score a dropped connection, a TypeError, or a
@@ -162,63 +181,93 @@ export async function assertGlobalAdminScope(
   svc: AccessControlService,
   pool: pg.Pool,
 ): Promise<void> {
-  // **Every expected set is read BEFORE the scope call, and every assertion is
-  // a superset or a disjointness check rather than an equality (`F4.53`).**
+  // **Every expected set is bracketed: read once before the scope call and
+  // once after, and only the ids present in BOTH are asserted (`F4.53`).**
   //
-  // Nine `apps/api` integration suites commit assets and leave `rtu_id` NULL.
-  // Against a live table, `scope` and a later `SELECT` are two snapshots of a
-  // moving set, so an equal count was a property of the schedule and not of the
-  // code. It failed in CI on 2026-08-28: a foreign suite's gateway-less asset
-  // was committed between the count read and the gateway-less read, so the
-  // counts agreed and the membership check then named a row that did not exist
-  // when `scope` was computed.
+  // Nine `apps/api` integration suites commit assets and leave `rtu_id` NULL,
+  // then delete them again in their own `afterAll`. Against that live table,
+  // `scope` and any `SELECT` are two snapshots of a moving set, so an equal
+  // count was a property of the schedule and not of the code.
   //
-  // Reading first makes the direction of the drift knowable. A row committed
-  // after this read can only ADD to `scope`, never remove from it, so
-  // `scope ⊇ expected` holds under every interleaving.
+  // The first repair (2026-08-28) read every expected set BEFORE `scope` and
+  // asserted `scope ⊇ expected`, on the argument that "a row committed after
+  // this read can only ADD to `scope`, never remove from it". **That argument
+  // was wrong, and it failed the same day in the mirror direction**: a foreign
+  // suite's asset was committed, read into `expected` here, and DELETED by that
+  // suite before `scope` was computed — so `expected` named a row `scope`
+  // could not contain. Reading early fixes insertions and creates deletions.
   //
-  // **The equality was not merely relaxed — it never tested what it appeared
-  // to.** Over-breadth is proven by the inactive-location check below, by
+  // Bracketing fixes both, and the argument is about identity rather than
+  // timing: an id in both reads was present at both ends, and `id` is a
+  // `defaultRandom()` uuid that is never reused, so that row existed for the
+  // whole interval — including the instant `scope` was computed. A row
+  // inserted after the first read is not in it; a row deleted before the
+  // second is not in it either. Neither can be asserted, and neither should be.
+  //
+  // **The count equality is still gone, and that is still the substantive
+  // change.** Over-breadth is proven by the inactive-location check below, by
   // identity, which is exactly what that check's own comment already said.
-  const expectedLocations = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.locations WHERE active = true`,
-  );
-  const inactive = await pool.query<{ id: string; code: string }>(
-    `SELECT id, code FROM bms.locations WHERE active = false`,
-  );
-  const expectedAssets = await pool.query<{ id: string }>(`SELECT id FROM bms.assets`);
+  //
+  // No `LIMIT` on any of these. An unordered `LIMIT` is `F4.53`'s own shape,
+  // and it is what let the gateway-less read reach a foreign transient in the
+  // first place. Each set is bounded by the seed; taking all of it costs
+  // nothing.
+  const readActiveLocations = () =>
+    pool.query<{ id: string }>(`SELECT id FROM bms.locations WHERE active = true`);
+  const readAssets = () => pool.query<{ id: string }>(`SELECT id FROM bms.assets`);
   // ADR 0018 made assets.rtu_id nullable. A gateway-less asset must still be
   // visible — the silent-invisibility shape that ADR closed in the admin list
   // would reappear here if any scope query joined through rtus.
-  //
-  // No `LIMIT`. An unordered `LIMIT` is `F4.53`'s own shape, and it is what let
-  // this read reach a foreign suite's transient asset. The set is small and
-  // bounded by the seed; taking all of it costs nothing and races on nothing.
-  const gatewayless = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.assets WHERE rtu_id IS NULL`,
+  const readGatewayless = () =>
+    pool.query<{ id: string }>(`SELECT id FROM bms.assets WHERE rtu_id IS NULL`);
+
+  const locationsBefore = await readActiveLocations();
+  const inactive = await pool.query<{ id: string; code: string }>(
+    `SELECT id, code FROM bms.locations WHERE active = false`,
   );
+  const assetsBefore = await readAssets();
+  const gatewaylessBefore = await readGatewayless();
 
   const { scope } = await svc.currentUser(jwtFor(SEEDED.globalAdmin, "admin"));
+
+  const expectedLocations = stableIds(locationsBefore, await readActiveLocations());
+  const expectedAssets = stableIds(assetsBefore, await readAssets());
+  const expectedGatewayless = stableIds(gatewaylessBefore, await readGatewayless());
 
   if (scope.kind !== "global") {
     throw new Error(`global admin scope kind: expected "global", got "${scope.kind}"`);
   }
 
+  // An empty intersection would pass every loop below vacuously. It cannot
+  // happen against a seeded database — and if it does, the diagnosis is the
+  // seed, not the scope query.
+  const empty = [
+    expectedLocations.length === 0 ? "active locations" : undefined,
+    expectedAssets.length === 0 ? "assets" : undefined,
+    expectedGatewayless.length === 0 ? "gateway-less assets (ADR 0018)" : undefined,
+  ].filter((label): label is string => label !== undefined);
+  if (empty.length > 0) {
+    throw new Error(
+      `F4.10 global-scope fixtures missing — run 'pnpm db:seed'. No stable ` +
+        `${empty.join(", ")}, so the assertions below pass vacuously.`,
+    );
+  }
+
   const visible = new Set(scope.assetIds);
   const visibleLocations = new Set(scope.locations.map((location) => location.id));
 
-  for (const row of expectedLocations.rows) {
-    if (!visibleLocations.has(row.id)) {
+  for (const id of expectedLocations) {
+    if (!visibleLocations.has(id)) {
       throw new Error(
-        `active location ${row.id} is missing from the global admin's scope — ` +
+        `active location ${id} is missing from the global admin's scope — ` +
           "a scope query is filtering where a global admin must see everything",
       );
     }
   }
-  for (const row of expectedAssets.rows) {
-    if (!visible.has(row.id)) {
+  for (const id of expectedAssets) {
+    if (!visible.has(id)) {
       throw new Error(
-        `asset ${row.id} is missing from the global admin's scope — ` +
+        `asset ${id} is missing from the global admin's scope — ` +
           "a scope query is filtering where a global admin must see everything",
       );
     }
@@ -227,10 +276,10 @@ export async function assertGlobalAdminScope(
   // Subsumed by the loop above, and kept deliberately: it is the only assertion
   // that names ADR 0018 and `bms.rtus`, so a future weakening of the asset
   // check still fails here with the diagnosis attached rather than a bare id.
-  for (const row of gatewayless.rows) {
-    if (!visible.has(row.id)) {
+  for (const id of expectedGatewayless) {
+    if (!visible.has(id)) {
       throw new Error(
-        `asset ${row.id} has no gateway and is invisible to a global admin — ` +
+        `asset ${id} has no gateway and is invisible to a global admin — ` +
           "a scope query is joining through bms.rtus (ADR 0018)",
       );
     }
