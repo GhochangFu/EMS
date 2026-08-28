@@ -28,7 +28,9 @@ import type { AuditAdminService } from "./audit.service";
  * The `E7.1e` rows live under their own `entity_type` on purpose. Folding them
  * into `TEST_ENTITY_TYPE` would move the `total === 4` counts and the T0/T1/T2
  * ordering expectations below, which is how a new feature quietly dissolves the
- * regression value of the suite it joins.
+ * regression value of the suite it joins. `E7.1h` extended those same three
+ * rows with a real `payload` rather than adding a fourth, for the same reason —
+ * the counts above it do not move.
  *
  * These tests write, so every row carries one of the two fixture entity types
  * and is deleted before and after the run — a crashed run must not poison the
@@ -74,6 +76,32 @@ const GRANTLESS_ORG_ADMIN_EMAIL = `e71e-grantless-${RUN}@bms.local`;
  * ADR 0046 decision 1 says "one of its own organizations", plural.
  */
 const MULTI_ORG_ADMIN_EMAIL = `e71e-multiorg-${RUN}@bms.local`;
+
+/**
+ * `E7.1h` — the acting operator's IdP subject, as the 16 write sites store it.
+ *
+ * A per-run sentinel rather than a fixed string, and deliberately not
+ * UUID-shaped: the export assertions test for its **absence** in a CSV that
+ * already carries several UUIDs, and a value that could coincide with an
+ * `actor_id` would make `!body.includes(...)` pass for the wrong reason.
+ *
+ * The `E7.1g` lesson is why this fixture exists at all. A redaction assertion
+ * run against rows whose `payload` never held the key passes just as well
+ * against the unredacted code, so the first thing
+ * {@link assertActorSubjectRedaction} does is prove the global admin still
+ * reads it.
+ */
+const FIXTURE_OIDC_SUBJECT = `e71h-subject-${RUN}`;
+
+/**
+ * A sibling key inside the same `payload`, kept through the redaction.
+ *
+ * ADR 0046 Amendment 2 blanks one key, not the payload — `actorEmail` is the
+ * answer to *"who changed this"* and a tenant is entitled to it. Without a
+ * sibling to survive, a reader that returned `payload: null` for every tenant
+ * would satisfy every other assertion here.
+ */
+const FIXTURE_PAYLOAD_NOTE = "e71h redaction fixture";
 
 /** Oldest fixture row. */
 const T0 = "2026-08-01T00:00:00.000Z";
@@ -339,8 +367,21 @@ export async function seedRows(pool: pg.Pool, fx: Fixtures): Promise<void> {
  * this set is for. The foreign-organization row is the one that matters: with
  * only the own-org and `NULL` rows, a reader that filtered nothing but `NULL`
  * would pass every assertion below.
+ *
+ * `E7.1h` gave all three a real `payload`. They carried `NULL` until then,
+ * which made the redaction untestable against them — see
+ * {@link FIXTURE_OIDC_SUBJECT}. The shape matches what the 16 write sites
+ * actually store: the subject and the email at the **top level**, beside the
+ * mutation's own fields. It is deliberately newline-free, because
+ * {@link assertScopedExport} and {@link assertGrantlessOrgAdminReadsNothing}
+ * count CSV lines.
  */
 export async function seedOrganizationRows(pool: pg.Pool, fx: Fixtures): Promise<void> {
+  const payload = JSON.stringify({
+    oidcSubject: FIXTURE_OIDC_SUBJECT,
+    actorEmail: "admin@bms.local",
+    note: FIXTURE_PAYLOAD_NOTE,
+  });
   const rows: [string, string | null][] = [
     [ACTION_OWN, fx.ownOrgId],
     [ACTION_FOREIGN, fx.foreignOrgId],
@@ -349,8 +390,8 @@ export async function seedOrganizationRows(pool: pg.Pool, fx: Fixtures): Promise
   for (const [action, organizationId] of rows) {
     await pool.query(
       `INSERT INTO bms.audit_log (organization_id, actor_id, action, entity_type, entity_id, reason, payload, created_at)
-       VALUES ($1, $2, $3, $4, gen_random_uuid(), NULL, NULL, $5)`,
-      [organizationId, fx.actorId, action, TEST_ORG_ENTITY_TYPE, T2],
+       VALUES ($1, $2, $3, $4, gen_random_uuid(), NULL, $5, $6)`,
+      [organizationId, fx.actorId, action, TEST_ORG_ENTITY_TYPE, payload, T2],
     );
   }
 }
@@ -713,5 +754,134 @@ export async function assertScopedExport(
   assert(
     lines[1].includes(ACTION_OWN) && !lines[1].includes(ACTION_FOREIGN),
     "and the row is its own, not the other organization's",
+  );
+}
+
+/**
+ * Reads a `payload` as the parsed object the column is supposed to yield.
+ *
+ * The type check is not ceremony. `E7.1h` replaces the plain `auditLog.payload`
+ * column reference with a `sql` template, and a template drops drizzle's
+ * knowledge of the column type. If the value came back as a *JSON string*
+ * instead, every assertion below would still read the right characters while
+ * `audit.serialise.ts` `cellValue` — which calls `JSON.stringify(row.payload)`
+ * — silently double-encoded the export cell for the global admin, the one path
+ * this item is supposed to leave untouched.
+ */
+function payloadObject(payload: unknown, what: string): Record<string, unknown> {
+  assert(
+    typeof payload === "object" && payload !== null && !Array.isArray(payload),
+    `${what}: expected the parsed jsonb object, got ${
+      payload === null ? "null" : Array.isArray(payload) ? "an array" : typeof payload
+    }. A string here means the column is no longer parsed and the export double-encodes it.`,
+  );
+  return payload as Record<string, unknown>;
+}
+
+/**
+ * `E7.1h` / **ADR 0046 Amendment 2** — a scoped reader sees `actorEmail`, never
+ * the acting operator's `oidcSubject`.
+ *
+ * `E7.1e` widened the audience without moving a single column, which is the
+ * case ADR 0043 Amendment 6 exists to catch: when a scoped read joins a table
+ * holding a legitimate `NULL`-organization row, the `WHERE` is not the whole
+ * gate and the `SELECT` list is the other half. A global `admin` is org-less
+ * and acts on tenant data by design, so a fleet operator acknowledging an alarm
+ * for PHEWB leaves rows `phe-admin@bms.local` can now read.
+ *
+ * **The order below is the point.** Step 1 proves the fixture actually carries
+ * the key, because a redaction assertion against rows that never held it passes
+ * against the unredacted code just as well — `E7.1g`'s vacuous-pass lesson,
+ * named in this item's own backlog row as the thing to avoid.
+ *
+ * What this **cannot** show, said plainly: that the redaction is keyed on the
+ * caller's *role* rather than on `scope === null` (Amendment 2 constraint 2).
+ * Inside the set of principals that reach the projection at all, `admin`
+ * resolves to a `null` scope and `organization_admin` to an array, so the two
+ * keyings are behaviourally identical here. `tests/` holds a static guard for
+ * that one, and says so (AGENTS.md §4.4).
+ */
+export async function assertActorSubjectRedaction(
+  svc: AuditAdminService,
+  fx: Fixtures,
+): Promise<void> {
+  // 1. The global admin's view is the forensic record and does not change.
+  //    Amendment 2 is explicit that this item does not narrow what the writers
+  //    store: removing the subject from the row itself would destroy evidence
+  //    to solve a disclosure that a projection solves.
+  const unfiltered = await svc.list(fx.adminJwt, { ...ORG_FIXTURES });
+  assert(
+    unfiltered.total === 3,
+    `the global admin still reads all three rows, got total ${unfiltered.total}`,
+  );
+  for (const item of unfiltered.items) {
+    const payload = payloadObject(item.payload, `global admin's ${item.action} row`);
+    assert(
+      payload.oidcSubject === FIXTURE_OIDC_SUBJECT,
+      `the global admin reads the operator's oidcSubject unchanged on ${item.action}. ` +
+        "If this fails the fixture lost the key, and every redaction assertion below " +
+        "becomes vacuous — it would pass against the unredacted reader too.",
+    );
+  }
+
+  // 2. The scoped reader: the one key gone, its siblings untouched.
+  const scoped = await svc.list(fx.orgAdminJwt, { ...ORG_FIXTURES });
+  assert(
+    scoped.total === 1 && scoped.items.length === 1,
+    `the organization admin still reads its own row, got total ${scoped.total}`,
+  );
+  const scopedPayload = payloadObject(scoped.items[0].payload, "organization admin's row");
+  assert(
+    !("oidcSubject" in scopedPayload),
+    "the key is REMOVED, not blanked — `payload - 'oidcSubject'` deletes it, and asserting " +
+      `absence rather than a null value is what distinguishes the two. Got: ${JSON.stringify(
+        scopedPayload,
+      )}`,
+  );
+  assert(
+    scopedPayload.actorEmail === "admin@bms.local" &&
+      scopedPayload.note === FIXTURE_PAYLOAD_NOTE,
+    "and every sibling key survives. Amendment 2 blanks one key, not the payload: an email " +
+      "answers \"who changed this\" and a tenant is entitled to it for actions on its own " +
+      `data. Got: ${JSON.stringify(scopedPayload)}`,
+  );
+  assert(
+    scoped.items[0].actorEmail === "admin@bms.local",
+    "the top-level actorEmail column is untouched as well — the redaction is one jsonb key, " +
+      "not the actor left join ADR 0021 decision 7 built",
+  );
+
+  // 3. A second non-admin scope shape, so the rule is not "the single-grant
+  //    reader is special". The multi-organization actor reads two rows.
+  const multi = await svc.list(fx.multiOrgAdminJwt, { ...ORG_FIXTURES });
+  assert(multi.total === 2, `the multi-organization actor reads both rows, got ${multi.total}`);
+  assert(
+    multi.items.every(
+      (item) => !("oidcSubject" in payloadObject(item.payload, `multi-org ${item.action} row`)),
+    ),
+    "and neither of its rows carries the operator's subject",
+  );
+
+  // 4. The export inherits it — Amendment 2 constraint 3. Behavioural rather
+  //    than structural, because `list` and `export` share `selectRows` and a
+  //    CSV either contains the sentinel or it does not.
+  const window = { entityType: TEST_ORG_ENTITY_TYPE, from: T0, to: T2, format: "csv" } as const;
+
+  const adminCsv = String((await svc.export(fx.adminJwt, { ...window })).body);
+  assert(
+    adminCsv.includes(FIXTURE_OIDC_SUBJECT),
+    "the global admin's export still carries the subject — the same falsifiability check as " +
+      "step 1, on the second endpoint",
+  );
+
+  const scopedCsv = String((await svc.export(fx.orgAdminJwt, { ...window })).body);
+  assert(
+    !scopedCsv.includes(FIXTURE_OIDC_SUBJECT),
+    `the organization admin's export carries no subject anywhere in the file. Got: ${scopedCsv}`,
+  );
+  assert(
+    scopedCsv.includes(FIXTURE_PAYLOAD_NOTE),
+    "but it still carries the rest of the payload — an export that dropped the column " +
+      "entirely would pass the assertion above for the wrong reason",
   );
 }

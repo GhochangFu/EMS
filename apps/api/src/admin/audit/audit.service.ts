@@ -51,28 +51,35 @@ export type AuditExportFile = {
  * {@link AuditAdminService.resolveReadScope} reads the same pool for the same
  * reason — an `admin` row is itself NULL-org.
  *
- * **Two disclosure questions this widening opens, and neither is answered by an
- * ADR yet.** The projection did not change; the audience did, which is exactly
- * the case ADR 0043 Amendment 6 exists to catch — a scoped read joining a table
- * that holds a legitimate `NULL`-organization row, where the `WHERE` clause is
- * not the whole gate and the `SELECT` list is the other half.
+ * **The projection is the other half of the gate.** `E7.1e` widened the
+ * audience without moving a single column, which is exactly the case ADR 0043
+ * Amendment 6 exists to catch — a scoped read joining a table that holds a
+ * legitimate `NULL`-organization row, where the `WHERE` clause is not the whole
+ * gate and the `SELECT` list is the other half. It opened two disclosure
+ * questions. **One is now ruled; the other is still open.**
  *
- * 1. The actor left join returns `actorEmail`, and several writers put the
- *    acting operator's `oidcSubject` into `payload` (`rules.service.ts`,
- *    `alarm-enrichment.service.ts`, `channels.service.ts`). A fleet operator
- *    acting on a tenant's data is therefore identifiable to that tenant.
- * 2. `payload` is returned **verbatim** (ADR 0021), so the secret-bearing
- *    request-body surface recorded against `E8.3` now has a wider audience.
- *    ADR 0021 decision 6 was re-measured across every audit write site at
- *    `E7.1e`: no site passes a secret today, and `rtus.meta`
- *    (`z.record(z.unknown())`) is the one unbounded value space left.
+ * 1. **Ruled — ADR 0046 Amendment 2, built as `E7.1h`.** The actor left join
+ *    returns `actorEmail`, and 16 write sites across six services put the
+ *    acting operator's `oidcSubject` at the top level of `payload`. A global
+ *    `admin` is org-less and acts on tenant data by design, so a fleet operator
+ *    acknowledging an alarm for PHEWB left rows a tenant admin could read. The
+ *    email **stays** — it answers *"who changed this"* and a tenant is entitled
+ *    to it for actions on its own data. The IdP subject is **removed for every
+ *    non-`admin` reader**, in SQL, by {@link AuditAdminService.selectRows}. It
+ *    is still written and still read by the global admin: that view is the
+ *    forensic record, and narrowing the writers would destroy evidence to solve
+ *    a disclosure a projection solves.
+ * 2. **Still open.** `payload` is otherwise returned **verbatim** (ADR 0021),
+ *    so the request-body surface recorded against `E8.3` now has a wider
+ *    audience. ADR 0021 decision 6 was re-measured across every audit write
+ *    site at `E7.1e`: no site passes a secret today, and `rtus.meta`
+ *    (`z.record(z.unknown())`) is the one unbounded value space left, tracked
+ *    as `E8.5`. Amendment 2 is explicit that it does not settle this.
  *
  * An earlier draft of this comment cited ADR 0021 decision 7 as settling
  * question 1. It does not — decision 7 rules only that `actor_id` stays
  * nullable and an unresolved actor renders as `null` rather than a fabricated
- * identity. It says nothing about who may read the actor. Both questions are
- * owed to the owner as an ADR 0046 amendment surface; nothing here pre-empts
- * the ruling, and the behaviour is unchanged from the global-admin reader.
+ * identity. It says nothing about who may read the actor.
  */
 @Injectable()
 export class AuditAdminService {
@@ -83,18 +90,18 @@ export class AuditAdminService {
 
   /** Lists audit rows, newest first. */
   async list(jwt: JwtPayload, query: AuditListQuery): Promise<AuditLogListResponse> {
-    const scope = await this.resolveReadScope(jwt);
+    const { scope, redactActorSubject } = await this.resolveReadScope(jwt);
     const where = this.buildWhere(query, scope);
 
     const total = await this.count(where);
-    const rows = await this.selectRows(where, query.limit, query.offset);
+    const rows = await this.selectRows(where, query.limit, query.offset, redactActorSubject);
 
     return { items: rows, total, limit: query.limit, offset: query.offset };
   }
 
   /** Builds a CSV or XLSX export of the matching rows. */
   async export(jwt: JwtPayload, query: AuditExportQuery): Promise<AuditExportFile> {
-    const scope = await this.resolveReadScope(jwt);
+    const { scope, redactActorSubject } = await this.resolveReadScope(jwt);
     const where = this.buildWhere(query, scope);
 
     // Count before selecting: refusing is the contract (ADR 0021 decision 5),
@@ -106,7 +113,7 @@ export class AuditAdminService {
     const total = await this.count(where);
     assertWithinExportCap(total);
 
-    const rows = await this.selectRows(where, MAX_EXPORT_ROWS, 0);
+    const rows = await this.selectRows(where, MAX_EXPORT_ROWS, 0, redactActorSubject);
     const stamp = query.from.slice(0, 10);
 
     if (query.format === "xlsx") {
@@ -172,8 +179,26 @@ export class AuditAdminService {
    *
    * The claim fallback itself is pre-existing and out of scope to change here —
    * recorded against `F4.10` in `docs/BACKLOG.md` and owed its own ADR.
+   *
+   * **`redactActorSubject` is derived here, from the same DB role, and this is
+   * the only place it is derived** (`E7.1h` / ADR 0046 Amendment 2). The
+   * amendment's constraint 2 is explicit that the projection keys on the
+   * caller's *role* and not on `scope === null`: today those two coincide,
+   * because `admin` is the only role reaching this line with a `null` scope,
+   * but should a future role ever resolve to a null scope the role-keyed test
+   * still redacts and a scope-keyed one silently stops. That equivalence is
+   * also why no behavioural test can tell the two apart —
+   * `tests/e7.1h-audit-subject-redaction-guard.test.ts` is the static guard,
+   * and says so (§4.4).
+   *
+   * "Read scope" covers both halves of the gate, not only the row filter. ADR
+   * 0043 Amendment 6 is the rule: when a scoped read joins a table holding a
+   * legitimate `NULL`-organization row, the `WHERE` is not the whole gate and
+   * the `SELECT` list is the other half.
    */
-  private async resolveReadScope(jwt: JwtPayload): Promise<string[] | null> {
+  private async resolveReadScope(
+    jwt: JwtPayload,
+  ): Promise<{ scope: string[] | null; redactActorSubject: boolean }> {
     const [provisioned] = await this.fleetDb
       .select({ id: users.id })
       .from(users)
@@ -192,7 +217,10 @@ export class AuditAdminService {
       );
     }
 
-    return this.accessControl.writableOrganizationIds(jwt);
+    return {
+      scope: await this.accessControl.writableOrganizationIds(jwt),
+      redactActorSubject: user.role !== "admin",
+    };
   }
 
   /**
@@ -241,22 +269,57 @@ export class AuditAdminService {
     return row?.value ?? 0;
   }
 
+  /**
+   * @param redactActorSubject removes the acting operator's `oidcSubject` from
+   *   `payload` — ADR 0046 Amendment 2, built as `E7.1h`. Resolved once in
+   *   {@link AuditAdminService.resolveReadScope} from the DB role, and passed
+   *   here by both `list` and `export` so the two cannot disagree.
+   */
   private async selectRows(
     where: SQL | undefined,
     limit: number,
     offset: number,
+    redactActorSubject: boolean,
   ): Promise<AuditRow[]> {
+    // **Redacted in SQL, not in the `.map()` below** — Amendment 2 constraint
+    // 1. The value must never leave Postgres for a tenant: a row that crosses
+    // the wire can reach a query log or an error dump, and a `delete` in JS
+    // would have already shipped it.
+    //
+    // All 16 write sites put the key at the **top level**, re-verified at
+    // `E7.1h` rather than taken from the ADR's own list, so `-` (jsonb key
+    // removal) suffices and no recursive scrub is needed.
+    //
+    // The `jsonb_typeof` guard is measured, not defensive habit. `jsonb - text`
+    // deletes a key from an object and a matching element from an array, but
+    // **raises `cannot delete from scalar`** on a string, number or boolean —
+    // which would 500 this endpoint for tenants only, never for the global
+    // admin who skips this branch. `payload` is unbounded jsonb with no CHECK
+    // constraint. Measured on the seeded stack at `E7.1h`, over 1,145 rows and
+    // excluding this suite's own fixtures: 1,007 objects, 138 SQL `NULL`s, and
+    // **no scalars and no arrays** — 52 rows carried the key. Only the shape
+    // claim is durable; the counts drift, because the API integration suites
+    // write real audit history every run. Nothing stops the first scalar from
+    // arriving, so the CASE stays.
+    const payloadColumn: SQL<unknown> = redactActorSubject
+      ? sql`case when jsonb_typeof(${auditLog.payload}) = 'object'
+                 then ${auditLog.payload} - 'oidcSubject'
+                 else ${auditLog.payload} end`
+      : sql`${auditLog.payload}`;
+
     const rows = await this.fleetDb
       .select({
         id: auditLog.id,
         createdAt: auditLog.createdAt,
         actorId: auditLog.actorId,
+        // ADR 0046 Amendment 2 keeps this: an email answers "who changed this",
+        // and a tenant is entitled to it for actions on its own data.
         actorEmail: users.email,
         action: auditLog.action,
         entityType: auditLog.entityType,
         entityId: auditLog.entityId,
         reason: auditLog.reason,
-        payload: auditLog.payload,
+        payload: payloadColumn,
       })
       .from(auditLog)
       // `actor_id` is nullable and rows whose actor lookup failed keep it null
