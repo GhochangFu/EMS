@@ -216,11 +216,15 @@ Create `apps/api/.env` (do not commit):
 # superuser bypasses every tenant policy regardless of FORCE.
 DATABASE_URL=postgres://bms_owner:bms_owner_dev@localhost:5432/bms
 
-# The provisioning superuser (ADR 0045 decision 3). Read by `db:roles` and
-# `db:migrate`, and outside those only by the integration-test gate, which
-# never ships — never by the running API. `db:roles` needs it for CREATE ROLE
-# and ALTER ROLE ... BYPASSRLS; `db:migrate` needs it because a fresh database
-# replays migration 0039, whose line 33 requires SUPERUSER.
+# The provisioning superuser (ADR 0045 decision 3). Read by `db:roles`,
+# `db:migrate` and `db:seed`, and outside those only by the integration-test
+# gate, which never ships — never by the running API. `db:roles` needs it for
+# CREATE ROLE and ALTER ROLE ... BYPASSRLS; `db:migrate` needs it because a
+# fresh database replays migration 0039, whose line 33 requires SUPERUSER;
+# `db:seed` needs it since E7.1b for the three identity functions only,
+# because bms.users has FORCE ROW LEVEL SECURITY and every seeded login is
+# org-less. Leave this unset and db:seed derives bms_app:bms_app_dev from
+# DATABASE_URL, which fails with 42501 if that password is not yours.
 DATABASE_URL_SUPERUSER=postgres://bms_app:bms_app_dev@localhost:5432/bms
 
 # ADR 0043 decision 8. The API always connects as one of these three
@@ -325,9 +329,21 @@ The roles it creates, and what each is for:
   an explicit `SET ROLE`, never ambiently.
 
 `bms_app` keeps `SUPERUSER` but is now provisioning-only. It is reached through
-`DATABASE_URL_SUPERUSER` by exactly two commands, `db:roles` and `db:migrate`,
-and by nothing else — never by the API, where a superuser connection would
-bypass every tenant policy regardless of `FORCE`.
+`DATABASE_URL_SUPERUSER` by three commands — `db:roles`, `db:migrate` and,
+since `E7.1b`, `db:seed` — and by nothing else, never by the API, where a
+superuser connection would bypass every tenant policy regardless of `FORCE`.
+
+`db:seed` uses it for the three identity functions only (`ensureAdminUser`,
+`seedScopedDemoUsers`, `seedPheOrganizationAdmin`); the tenant-scoped bulk
+still runs as the `FORCE`-bound `bms_owner`, so ADR 0045's boundary is
+unweakened for every table a tenant owns. Migration `0047` gives `bms.users`
+`FORCE ROW LEVEL SECURITY` with a strict `USING`, and every seeded login is
+org-less, so `bms_owner` can neither see nor insert one — see
+`resolveSeedSuperuserUrl` in `packages/db/src/seed-tenant.ts` for the full
+argument. When `DATABASE_URL_SUPERUSER` is unset, that function derives
+`bms_app:bms_app_dev` from `DATABASE_URL`; a `bms_app` with a different
+password must therefore set the variable, or the seed fails with `42501` on
+`bms.users`.
 
 A managed Postgres deployment (not this local setup) cannot run `db:roles` as
 written: `CREATE ROLE` needs `CREATEROLE` and `ALTER ROLE ... BYPASSRLS` needs
@@ -444,8 +460,9 @@ the repo root:
 # Core app path: Postgres/TimescaleDB, Redis, Keycloak, migrations/seed, API, and web.
 docker compose --profile core up --build
 
-# Optional explicit migration/seed run.
-docker compose --profile migrate run --rm migrate
+# Optional explicit migration/seed run. Keep `--build`: unlike `up`,
+# `docker compose run` reuses the image it finds and never rebuilds it.
+docker compose --profile migrate run --build --rm migrate
 
 # Optional live telemetry; this waits for migrations/seed.
 docker compose --profile sim up --build sim
@@ -534,10 +551,11 @@ banner; that is the intended behaviour, not a fault.
 | `pg_ctlcluster: Error: Could not bind to socket` | Another Postgres is running on `:5432`. `sudo lsof -i :5432` to find it; either kill it or change `port` in `/etc/postgresql/16/main/postgresql.conf`. |
 | `extension "timescaledb" is not available`       | Re-run `sudo timescaledb-tune --quiet --yes` then restart Postgres. Confirm `shared_preload_libraries` includes `timescaledb` in `postgresql.conf`.    |
 | `pnpm: command not found` after reopening shell  | `corepack enable` again; ensure `~/.local/bin` and fnm paths are in `$PATH`.                                                                           |
-| File watch limit errors from Vite                | `echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf && sudo sysctl -p`.                                                            |
+| File watch limit errors from Vite                | `echo fs.inotify.max_user_watches=524288 \| sudo tee -a /etc/sysctl.conf && sudo sysctl -p`.                                                           |
 | Slow `pnpm install`                              | Make sure the repo is under `~/projects`, **not** `/mnt/c/...`.                                                                                        |
 | Cursor terminal opens PowerShell instead of bash | Open the workspace via "Connect to WSL" — bottom-left status bar should read "WSL: Ubuntu-22.04".                                                      |
-| Compose API starts before seeded data exists     | Run `docker compose --profile migrate run --rm migrate` once, then restart the `api`, `web`, and `sim` services.                                       |
+| Compose API starts before seeded data exists     | Run `docker compose --profile migrate run --build --rm migrate` once, then restart the `api`, `web`, and `sim` services.                               |
+| Seed stops with `new row violates row-level security policy for table "users"` (`42501`) | Two different causes. **Compose:** the `migrate` image is older than the `E7.1b` seed fix, because `docker compose run` never rebuilds — re-run it with `--build` as above. **Native:** `db:seed` derived `bms_app:bms_app_dev` from `DATABASE_URL` and that password is wrong — set `DATABASE_URL_SUPERUSER` in `apps/api/.env` (step 9). |
 
 
 ---
