@@ -51,13 +51,28 @@ export type AuditExportFile = {
  * {@link AuditAdminService.resolveReadScope} reads the same pool for the same
  * reason — an `admin` row is itself NULL-org.
  *
- * Two consequences of widening the reader, both pre-existing and deliberately
- * unchanged here. `payload` is returned **verbatim** (ADR 0021), so the
- * secret-bearing-request-body surface recorded against `E8.3` now has a wider
- * audience than the global admin. And the actor left join returns
- * `actorEmail`, so a tenant admin can see which operator acted on its
- * organization; that is ADR 0021 decision 7 working as designed and not a
- * decision-2 question, which is about the row's organization.
+ * **Two disclosure questions this widening opens, and neither is answered by an
+ * ADR yet.** The projection did not change; the audience did, which is exactly
+ * the case ADR 0043 Amendment 6 exists to catch — a scoped read joining a table
+ * that holds a legitimate `NULL`-organization row, where the `WHERE` clause is
+ * not the whole gate and the `SELECT` list is the other half.
+ *
+ * 1. The actor left join returns `actorEmail`, and several writers put the
+ *    acting operator's `oidcSubject` into `payload` (`rules.service.ts`,
+ *    `alarm-enrichment.service.ts`, `channels.service.ts`). A fleet operator
+ *    acting on a tenant's data is therefore identifiable to that tenant.
+ * 2. `payload` is returned **verbatim** (ADR 0021), so the secret-bearing
+ *    request-body surface recorded against `E8.3` now has a wider audience.
+ *    ADR 0021 decision 6 was re-measured across every audit write site at
+ *    `E7.1e`: no site passes a secret today, and `rtus.meta`
+ *    (`z.record(z.unknown())`) is the one unbounded value space left.
+ *
+ * An earlier draft of this comment cited ADR 0021 decision 7 as settling
+ * question 1. It does not — decision 7 rules only that `actor_id` stays
+ * nullable and an unresolved actor renders as `null` rather than a fabricated
+ * identity. It says nothing about who may read the actor. Both questions are
+ * owed to the owner as an ADR 0046 amendment surface; nothing here pre-empts
+ * the ruling, and the behaviour is unchanged from the global-admin reader.
  */
 @Injectable()
 export class AuditAdminService {
@@ -123,7 +138,12 @@ export class AuditAdminService {
    * tenant is exactly the stale naming this repo has been bitten by, so the
    * name now states what it returns (decision 3).
    *
-   * Three checks, in this order, and none is redundant.
+   * Three checks, in this order. **Check 2's role assertion is subsumed by
+   * check 3** — `assertMasterDataRole` admits `location_admin`, which check 3
+   * then refuses, so its only live function here is resolving the DB user.
+   * Said explicitly because the opposite belief is the dangerous one: widening
+   * check 3 to `location_admin` on the assumption that master data already
+   * gates it would open the endpoint to a role ADR 0046 decision 4 refuses.
    *
    * **The provisioned-account probe stays first and unchanged.**
    * `AccessControlService` deliberately falls back to the JWT claim when **no**

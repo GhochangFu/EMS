@@ -11,6 +11,7 @@ import {
   assertExportShape,
   assertFiltersNarrow,
   assertGrantlessOrgAdminReadsNothing,
+  assertMultiOrganizationScope,
   assertOrderingIsStable,
   assertOrganizationScope,
   assertReadGateRoles,
@@ -112,6 +113,10 @@ describe.skipIf(!connectionString)("F4.14 — audit read API", () => {
 
   it("scopes an organization admin to its own rows, never NULL (ADR 0046 decisions 1–2)", async () => {
     await assertOrganizationScope(svc, fx);
+  });
+
+  it("reads every granted organization for a multi-organization actor", async () => {
+    await assertMultiOrganizationScope(svc, fx);
   });
 
   it("reads nothing for an organization admin with no grant (§4.7)", async () => {

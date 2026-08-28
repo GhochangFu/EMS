@@ -45,8 +45,15 @@ export const auditListQuerySchema = z
     to: isoTimestamp.optional(),
     limit: z.coerce.number().int().min(1).max(200).default(50),
     // Bounded: deep offsets scan linearly, and this table grows on every
-    // `rules/preview` call (§4.7). Global-admin-only, so this is a guard
-    // against accident rather than abuse.
+    // `rules/preview` call (§4.7).
+    //
+    // This used to say "global-admin-only, so this is a guard against accident
+    // rather than abuse". `E7.1e` (ADR 0046) made that false — an
+    // `organization_admin` now reaches this parameter. There is no index on
+    // `bms.audit_log (organization_id)`, so a scoped deep-offset read walks
+    // `audit_log_created_idx` backwards past every other organization's rows.
+    // The bound is what keeps that finite. Availability, not disclosure; the
+    // index is recorded as follow-up work rather than added here.
     offset: z.coerce.number().int().min(0).max(100_000).default(0),
   })
   .strict()

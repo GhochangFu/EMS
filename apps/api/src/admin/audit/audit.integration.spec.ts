@@ -60,9 +60,20 @@ const ACTION_PLATFORM = "E71E-AUDIT-TEST.platform";
  * `bms.users.email` is UNIQUE, so a fixed address collides between two
  * developers sharing one database.
  */
-const GRANTLESS_ORG_ADMIN_EMAIL = `e71e-grantless-${randomUUID()
-  .replace(/-/g, "")
-  .slice(0, 12)}@bms.local`;
+const RUN = randomUUID().replace(/-/g, "").slice(0, 12);
+
+const GRANTLESS_ORG_ADMIN_EMAIL = `e71e-grantless-${RUN}@bms.local`;
+
+/**
+ * An `organization_admin` granted **both** organizations.
+ *
+ * Without it the scope list never holds more than one id, and
+ * `inArray(col, ids)` is indistinguishable from `eq(col, ids[0])`. A
+ * multi-organization actor is an explicitly supported shape — ADR 0043
+ * Amendment 2 exists because a single `SET LOCAL` GUC cannot express it, and
+ * ADR 0046 decision 1 says "one of its own organizations", plural.
+ */
+const MULTI_ORG_ADMIN_EMAIL = `e71e-multiorg-${RUN}@bms.local`;
 
 /** Oldest fixture row. */
 const T0 = "2026-08-01T00:00:00.000Z";
@@ -74,12 +85,24 @@ const T2 = "2026-08-03T00:00:00.000Z";
 export type Fixtures = {
   adminJwt: JwtPayload;
   locationAdminJwt: JwtPayload;
+  /** `wc-hvac-admin@bms.local` — refused by `requireMasterDataUser`, decision 4. */
+  assetGroupAdminJwt: JwtPayload;
   /** `phe-admin@bms.local` — `organization_admin`, granted PHEWB only. */
   orgAdminJwt: JwtPayload;
   /** A real `organization_admin` row with no organization grant at all. */
   grantlessOrgAdminJwt: JwtPayload;
+  /** A real `organization_admin` row granted **both** organizations. */
+  multiOrgAdminJwt: JwtPayload;
   /** Claims `admin` but has no `bms.users` row — see `assertReadGateRoles`. */
   unprovisionedAdminJwt: JwtPayload;
+  /**
+   * Claims `organization_admin` and has no `bms.users` row.
+   *
+   * The only principal the provisioned-account probe alone refuses. ADR 0044
+   * refuses a claimed `admin` inside `resolveDbUser`, so the `admin` case
+   * cannot tell whether the probe still exists.
+   */
+  unprovisionedOrgAdminJwt: JwtPayload;
   actorId: string;
   /** The org admin's own organization. */
   ownOrgId: string;
@@ -143,13 +166,41 @@ export async function seedGrantlessOrgAdmin(
      VALUES ($1, $2, 'not-a-usable-hash', 'E7.1e grantless org admin', 'organization_admin')`,
     [fx.ownOrgId, GRANTLESS_ORG_ADMIN_EMAIL],
   );
+
+  // The multi-organization actor, same pool and same reason. Two grants, so
+  // `writableOrganizationIds` returns two ids and `inArray` is exercised as
+  // something `eq` cannot imitate.
+  const { rows } = await superuserPool.query<{ id: string }>(
+    `INSERT INTO bms.users (organization_id, email, password_hash, display_name, role)
+     VALUES ($1, $2, 'not-a-usable-hash', 'E7.1e multi-org admin', 'organization_admin')
+     RETURNING id`,
+    [fx.ownOrgId, MULTI_ORG_ADMIN_EMAIL],
+  );
+  const multiOrgUserId = rows[0]?.id;
+  if (!multiOrgUserId) {
+    throw new Error("E7.1e could not create the multi-organization fixture user");
+  }
+  await superuserPool.query(
+    `INSERT INTO bms.user_organization_access (user_id, organization_id)
+     VALUES ($1, $2), ($1, $3)`,
+    [multiOrgUserId, fx.ownOrgId, fx.foreignOrgId],
+  );
 }
 
-/** Removes the grantless `organization_admin`, on the same superuser pool. */
+/**
+ * Removes both fixture users, on the same superuser pool.
+ *
+ * The grants go first: `user_organization_access.user_id` references
+ * `bms.users`, so deleting the user before its grants violates the foreign key.
+ */
 export async function cleanupGrantlessOrgAdmin(superuserPool: pg.Pool): Promise<void> {
-  await superuserPool.query(`DELETE FROM bms.users WHERE email = $1`, [
-    GRANTLESS_ORG_ADMIN_EMAIL,
-  ]);
+  const emails = [GRANTLESS_ORG_ADMIN_EMAIL, MULTI_ORG_ADMIN_EMAIL];
+  await superuserPool.query(
+    `DELETE FROM bms.user_organization_access
+      WHERE user_id IN (SELECT id FROM bms.users WHERE email = ANY($1))`,
+    [emails],
+  );
+  await superuserPool.query(`DELETE FROM bms.users WHERE email = ANY($1)`, [emails]);
 }
 
 export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
@@ -184,8 +235,12 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
     );
   }
 
+  // `ORDER BY created_at, code`, not `ORDER BY code`: oldest wins. `F4.53`'s
+  // gate does not list `bms.organizations` in its FIXTURE_TABLE set, so this
+  // read is one the rule would forbid if it could see it — the convention
+  // holding rather than a constraint. Written to the rule anyway.
   const { rows: foreignRows } = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY code LIMIT 1`,
+    `SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1`,
     [ownOrgId],
   );
   const foreignOrgId = foreignRows[0]?.id;
@@ -211,6 +266,27 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
       sub: "00000000-0000-4000-8000-000000000000",
       email: GRANTLESS_ORG_ADMIN_EMAIL,
       name: "integration:grantless-org-admin",
+      role: "organization_admin",
+    },
+    multiOrgAdminJwt: {
+      sub: "00000000-0000-4000-8000-000000000000",
+      email: MULTI_ORG_ADMIN_EMAIL,
+      name: "integration:multi-org-admin",
+      role: "organization_admin",
+    },
+    assetGroupAdminJwt: {
+      sub: "00000000-0000-4000-8000-000000000000",
+      email: "wc-hvac-admin@bms.local",
+      name: "integration:asset-group-admin",
+      role: "asset_group_admin",
+    },
+    // Neither the id nor the email matches a `bms.users` row, and the claim is
+    // `organization_admin` rather than `admin`, so ADR 0044's refusal does not
+    // fire. Only the probe refuses this one.
+    unprovisionedOrgAdminJwt: {
+      sub: "ffffffff-ffff-4fff-8fff-fffffffffffe",
+      email: "e71e-unprovisioned@example.invalid",
+      name: "integration:unprovisioned-org-admin",
       role: "organization_admin",
     },
     adminJwt: {
@@ -332,18 +408,39 @@ export async function assertReadGateRoles(
     "and the page is empty, not merely mis-counted",
   );
 
-  // The case the provisioned negative above does NOT cover, and the one that
+  // ADR 0046 decision 4 names `asset_group_admin` as well, and it is refused
+  // one step earlier — `requireMasterDataUser`'s `isMasterDataRole` check never
+  // lets it reach the role branch. Asserted on this endpoint rather than left
+  // to `access-scope.spec.ts`, which tests a different module and does not hold
+  // this gate.
+  await expectRejection(
+    () => svc.list(fx.assetGroupAdminJwt, { ...ALL_FIXTURES }),
+    /master data administration/i,
+    "asset group admin reading the audit log",
+  );
+
+  // The case the provisioned negatives above do NOT cover, and the one that
   // matters most: `resolveDbUser` falls back to the *claim* when no `bms.users`
-  // row matches (`access-control.service.ts` — the row-absent branch), so an
-  // unprovisioned principal claiming `admin` resolves to `role: "admin"` and
-  // `writableOrganizationIds() === null`. Without an explicit provisioning
-  // check this endpoint hands it the entire audit log, and deleting someone's
-  // `bms.users` row would *escalate* rather than revoke them. Recorded against
-  // `F4.10` in docs/BACKLOG.md as pre-existing; ADR 0021 made it load-bearing
-  // by resting decision 1 solely on the `null` scope.
+  // row matches (`access-control.service.ts` — the row-absent branch). Without
+  // an explicit provisioning check this endpoint trusts whatever the IdP says,
+  // and deleting someone's `bms.users` row would *escalate* rather than revoke
+  // them. Recorded against `F4.10` in docs/BACKLOG.md as pre-existing; ADR 0021
+  // made it load-bearing by resting decision 1 solely on the `null` scope.
+  //
+  // **Both halves are needed, and the second is the one that gates the probe.**
+  // The probe runs first, so both cases below carry ITS message today. But
+  // delete the probe and they diverge: ADR 0044 refuses a claimed `admin`
+  // inside `resolveDbUser`, so the `admin` case still throws — with a different
+  // wording ("claims the admin role but matches no provisioned account"), which
+  // is why the regex here is the probe's exact sentence and not a shared
+  // "provisioned account" substring that would match both. The claimed
+  // `organization_admin` is the only principal the probe ALONE refuses: ADR
+  // 0044 lets that claim through, and without the probe it resolves to an empty
+  // scope and returns 200 with an empty page instead of 403.
+  const probeRefusal = /requires a provisioned account; this token matches no user/i;
   await expectRejection(
     () => svc.list(fx.unprovisionedAdminJwt, { ...ALL_FIXTURES }),
-    /provisioned account/i,
+    probeRefusal,
     "unprovisioned principal claiming admin reading the audit log",
   );
   await expectRejection(
@@ -354,8 +451,24 @@ export async function assertReadGateRoles(
         to: T2,
         format: "csv",
       }),
-    /provisioned account/i,
+    probeRefusal,
     "unprovisioned principal claiming admin exporting the audit log",
+  );
+  await expectRejection(
+    () => svc.list(fx.unprovisionedOrgAdminJwt, { ...ALL_FIXTURES }),
+    probeRefusal,
+    "unprovisioned principal claiming organization_admin reading the audit log",
+  );
+  await expectRejection(
+    () =>
+      svc.export(fx.unprovisionedOrgAdminJwt, {
+        entityType: TEST_ENTITY_TYPE,
+        from: T0,
+        to: T2,
+        format: "csv",
+      }),
+    probeRefusal,
+    "unprovisioned principal claiming organization_admin exporting the audit log",
   );
 }
 
@@ -505,6 +618,35 @@ export async function assertOrganizationScope(
   assert(
     !scoped.items.some((item) => item.action === ACTION_PLATFORM),
     "and neither does the platform event (decision 2)",
+  );
+}
+
+/**
+ * ADR 0046 decision 1 says "one of its **own organizations**", plural — a
+ * multi-organization actor reads all of them, and still not the platform row.
+ *
+ * Without this, the scope list never holds more than one id and
+ * `inArray(col, ids)` is indistinguishable from `eq(col, ids[0])`. ADR 0043
+ * Amendment 2 exists precisely because one `SET LOCAL` GUC cannot express this
+ * shape, so it is not a hypothetical.
+ */
+export async function assertMultiOrganizationScope(
+  svc: AuditAdminService,
+  fx: Fixtures,
+): Promise<void> {
+  const scoped = await svc.list(fx.multiOrgAdminJwt, { ...ORG_FIXTURES });
+  assert(
+    scoped.total === 2,
+    `an actor granted both organizations reads both rows, got total ${scoped.total}`,
+  );
+  const actions = scoped.items.map((item) => item.action).sort();
+  assert(
+    actions.length === 2 && actions.includes(ACTION_OWN) && actions.includes(ACTION_FOREIGN),
+    `and they are the two org-stamped rows, got ${actions.join(", ")}`,
+  );
+  assert(
+    !actions.includes(ACTION_PLATFORM),
+    "the platform event stays out even for a multi-organization actor (decision 2)",
   );
 }
 
