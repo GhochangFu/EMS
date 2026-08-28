@@ -453,6 +453,14 @@ already 400s, because the non-empty `.refine()` runs after stripping.
    it. That test is doing its job; update it deliberately in the same change,
    never by regenerating a fixture to make it quiet.
 
+   > **This ruling's premise is wrong and its instruction has no target.** A
+   > plain `z.object` already emits `additionalProperties: false` under this
+   > repository's converter options, so `.strict()` changes no document byte.
+   > The correction, the measurement, and what it means for `E7.1f` are in
+   > [Errata 1](#errata-1-to-amendment-3--the-emitted-document-does-not-change-2026-08-28).
+   > The second sentence — never regenerate a fixture to make a test quiet —
+   > stands on its own and is unaffected.
+
 3. **Order matters, and it is a trap.** `.refine()` returns a `ZodEffects`,
    which has no `.strict()`. The form is
    `z.object({…}).strict().refine(…)` — strict **before** refine. The existing
@@ -467,8 +475,104 @@ already 400s, because the non-empty `.refine()` runs after stripping.
 - **The document becomes stricter than the server was**, for the schemas that
   gain `.strict()`. That is the point — Amendment 1 already records that this
   document's job is to describe what the server actually accepts.
+  **Corrected by [Errata 1](#errata-1-to-amendment-3--the-emitted-document-does-not-change-2026-08-28):**
+  the document does not become stricter, because it was already strict. The
+  *server* becomes as strict as the document has been since `F4.20`.
 - **A 200 that silently discarded a field becomes a 400 that names it.** This is
   a breaking change for any consumer that was sending ignored keys. None is
   known inside this repository; outside it, this ADR is the notice.
 - **Nothing here changes the generation pipeline, the `raw` flag, or the
   `API_DOCS_ENABLED` behaviour** ruled in Amendments 1 and 2.
+
+---
+
+## Errata 1 to Amendment 3 — the emitted document does not change (2026-08-28)
+
+Filed the same day Amendment 3 landed (`c279f7b`, PR
+[#182](https://github.com/GhochangFu/EMS/pull/182)), during `E7.1f`'s step-3
+planning and **before any implementation code**. Ruled by the repository owner
+on the measurement below. Amendment 3's ruling 2 is corrected here rather than
+rewritten in place: what was decided, and on what belief, is part of the record.
+
+### Measured facts
+
+Ruling 2 asserts that a schema which gains `.strict()` changes the generated
+contract. It does not. `zod-to-json-schema` emits `additionalProperties: false`
+for a **plain** `z.object` as well — the two are byte-identical. Only
+`.passthrough()` differs.
+
+Measured against the pinned dependency, with the exact options
+`apps/api/src/openapi/zod-openapi.ts:84-91` passes:
+
+```text
+STRIP    z.object({a})                -> {"type":"object",…,"additionalProperties":false}
+STRICT   z.object({a}).strict()       -> {"type":"object",…,"additionalProperties":false}
+PASS     z.object({a}).passthrough()  -> {"type":"object",…,"additionalProperties":true}
+```
+
+Reproduce it in one command:
+
+```bash
+cd apps/api && node -e "
+const {z}=require('zod');const {zodToJsonSchema}=require('zod-to-json-schema');
+const o={target:'openApi3',pipeStrategy:'input',effectStrategy:'input',\$refStrategy:'none'};
+const p=(l,s)=>console.log(l, JSON.stringify(zodToJsonSchema(s,o)));
+p('STRIP  ', z.object({a:z.string()}));
+p('STRICT ', z.object({a:z.string()}).strict());
+p('PASS   ', z.object({a:z.string()}).passthrough());
+"
+```
+
+`apps/api/src/openapi/openapi-document.ts` never mentions
+`additionalProperties`: it calls `convertZodSchema` and serves the result
+unaltered. So the served document has carried the field since `F4.20`.
+
+### What this inverts
+
+The defect `E7.1f` corrects runs the **other way** from the one Amendment 3
+describes, and the correction makes the case stronger rather than weaker.
+
+The document already publishes `additionalProperties: false` for every plain
+`z.object`. The server strips the unknown key and answers **200**. So the server
+is **more permissive than the contract it publishes** — the reverse of the
+direction `LOWER_BOUND_NOTICE` in `zod-openapi.ts` warns a reader about, which
+is that a payload valid against the document may still be refused. For an
+unknown key the truth today is the opposite: a payload **invalid** against the
+document is **accepted**.
+
+`.strict()` therefore changes no document byte. It makes the server honour a
+contract it has been publishing for weeks.
+
+### The ruling
+
+1. **Amendment 3 ruling 2's premise is withdrawn.** No test assertion moves and
+   no fixture is regenerated in `E7.1f`, because nothing in the emitted document
+   changes. `apps/api/src/openapi/openapi-contract.spec.ts` asserts a non-empty
+   conversion and never reads `additionalProperties`;
+   `tests/adr-0029-openapi-contract.test.ts` asserts refine→describe order,
+   controller registration and no-inline-schemas, and never reads it either.
+   Both stay green, unmodified, and must be run rather than assumed.
+
+2. **A check keyed on the emitted `additionalProperties` value is vacuous and
+   must not be written.** Strip and strict are indistinguishable in the output.
+   Any gate on per-schema strictness reads `_def.unknownKeys` off the Zod tree
+   instead. This is the errata's operative instruction for `E7.1f`.
+
+3. **Rulings 1, 3 and 4 of Amendment 3 stand unchanged** — the per-schema
+   judgement with a recorded reason, the `.strict()`-before-`.refine()` chain
+   order, and the caller check before it ships. Ruling 2's second sentence, that
+   a test is never quieted by regenerating a fixture, also stands.
+
+### Consequences
+
+- **The `E7.1f` scope does not move.** The audit is the same audit; only the
+  claim about what the document will do is corrected.
+- **The breaking-change notice in Amendment 3's Consequences still holds.** A
+  consumer that was sending ignored keys still starts receiving 400. That was
+  never a document change; it was always a server change.
+- **This is a second instance of ADR 0029's own recurring lesson**, after
+  Amendment 1's `.refine` finding and the `.describe()` ordering trap: what
+  `zod-to-json-schema` emits is not what a reader of the Zod source predicts,
+  and the only reliable way to know is to run the converter. Ruling 2 was
+  written from the prediction. **Measure the converter before recording what it
+  emits.**
