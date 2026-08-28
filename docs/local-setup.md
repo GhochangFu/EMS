@@ -555,8 +555,30 @@ banner; that is the intended behaviour, not a fault.
 | Slow `pnpm install`                              | Make sure the repo is under `~/projects`, **not** `/mnt/c/...`.                                                                                        |
 | Cursor terminal opens PowerShell instead of bash | Open the workspace via "Connect to WSL" — bottom-left status bar should read "WSL: Ubuntu-22.04".                                                      |
 | Compose API starts before seeded data exists     | Run `docker compose --profile migrate run --build --rm migrate` once, then restart the `api`, `web`, and `sim` services.                               |
-| Seed stops with `new row violates row-level security policy for table "users"` (`42501`) | Two different causes. **Compose:** the `migrate` image is older than the `E7.1b` seed fix, because `docker compose run` never rebuilds — re-run it with `--build` as above. **Native:** `db:seed` derived `bms_app:bms_app_dev` from `DATABASE_URL` and that password is wrong — set `DATABASE_URL_SUPERUSER` in `apps/api/.env` (step 9). |
+| Seed fails with `42501` on `bms.users`           | Two unrelated causes. See the note under this table.                                                                                                   |
 
+### Seed fails with `42501` on `bms.users`
+
+The whole error is `new row violates row-level security policy for table
+"users"`, raised out of `packages/db/src/demo-users-seed.ts`. Two unrelated
+things produce it, and the fixes do not overlap.
+
+**Compose — the `migrate` image is stale.** Unlike `up`, `docker compose run`
+reuses whatever image it finds and never rebuilds on its own, so an image built
+before your last `git pull` runs old migrations and an old seed against a
+current database. If that image predates `E7.1b`, its seed still writes the
+identity rows as `bms_owner` and hits the policy. Rebuild it:
+
+```bash
+docker compose --profile migrate run --build --rm migrate
+```
+
+**Native — the derived superuser credential is wrong.** `db:seed` needs a
+superuser for its three identity functions (see step 10). When
+`DATABASE_URL_SUPERUSER` is unset, `resolveSeedSuperuserUrl` derives
+`bms_app:bms_app_dev` from `DATABASE_URL`; a `bms_app` with any other password
+fails with the same `42501`. Set the variable explicitly in `apps/api/.env`,
+as step 9 shows.
 
 ---
 
