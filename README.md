@@ -72,8 +72,11 @@ all day.
 # Build and start Postgres/TimescaleDB, Redis, Keycloak, migrations/seed, API, and web.
 docker compose --profile core up --build
 
-# Optional: run migrations and seed data explicitly.
-docker compose --profile migrate run --rm migrate
+# Optional: run migrations and seed data explicitly. Keep `--build`: unlike
+# `up`, `docker compose run` reuses the image it finds and never rebuilds on
+# its own, so without it an image built before your last `git pull` runs the
+# old migrations and the old seed against a current database.
+docker compose --profile migrate run --build --rm migrate
 
 # Optional: start live telemetry; this also waits for migrations/seed.
 docker compose --profile sim up --build sim
