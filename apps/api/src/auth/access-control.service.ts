@@ -297,6 +297,31 @@ export class AccessControlService {
     return this.canManageLocation(jwt, row.locationId);
   }
 
+  /**
+   * Whether the caller holds the global `admin` role **in the database**.
+   *
+   * Added for ADR 0046 Amendment 3 (`E8.6`), and it exists so a projection can
+   * be keyed on the role without throwing for the roles it does not admit —
+   * `requireMasterDataUser` refuses `operator` and `viewer`, which reach
+   * `GET /rules/executions` legitimately.
+   *
+   * **Do not substitute a scope check for this.** `readableAssetIds` returns
+   * `null` only for `admin` today, so `assetIds === null` picks out the same
+   * callers — and that coincidence is exactly what Amendment 2 forbids relying
+   * on. A future role resolving to an unrestricted scope would silently stop a
+   * scope-keyed redaction; a role-keyed one keeps working.
+   *
+   * The claim cannot reach `true` here: ADR 0044 makes `resolveDbUser` throw on
+   * a claimed `admin` with no `bms.users` row, so this returns `true` only for a
+   * real provisioned row. Every other principal — including an unprovisioned
+   * one falling back to its claim — yields `false`, which redacts. The failure
+   * direction is closed.
+   */
+  async isGlobalAdmin(jwt: JwtPayload): Promise<boolean> {
+    const user = await this.resolveDbUser(jwt);
+    return user.role === "admin";
+  }
+
   /** Resolves the DB user and enforces master-data role in one step. */
   async requireMasterDataUser(jwt: JwtPayload): Promise<DbUser> {
     const user = await this.resolveDbUser(jwt);

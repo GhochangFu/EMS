@@ -1,9 +1,49 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 
-import { assets, automationRules } from "@bms/db";
+import { assets, automationRules, ruleExecutions } from "@bms/db";
 
 import type { BmsTx } from "../database/tenant-context";
 import type { RuleRow } from "./rules.types";
+
+/**
+ * The `rule_executions.trace` projection — **ADR 0046 Amendment 3** (`E8.6`).
+ *
+ * `evaluateEnabledRules` writes `evaluatedBy: actor.sub`, the evaluating
+ * operator's IdP subject, into `trace`. `GET /rules/executions` carries **no
+ * role gate at all** — it scopes on `readableAssetIds` — so `operator`,
+ * `viewer`, `location_admin` and `asset_group_admin` all read it, an audience
+ * strictly wider than the audit log's. The amendment removes the key for every
+ * non-`admin` reader.
+ *
+ * **Redacted in SQL, never in the caller's `.map()`.** The value must not leave
+ * Postgres for a reader not entitled to it: a row that crosses the wire can
+ * reach a query log or an error dump. A JS-side scrub returns identical bytes,
+ * so the response cannot tell you which one you have — which is why
+ * `tests/e8.6-trace-evaluator-redaction-guard.test.ts` is static and says so.
+ *
+ * **Removed, not replaced** (decision 8). Unlike the audit log, where
+ * `actorEmail` survives because a ledger must answer *"who changed this"*, a
+ * scoped reader here gains nothing in place of the subject: a trace answers
+ * *what the rule saw*, and the evaluator is not part of that answer below
+ * `admin`.
+ *
+ * The `jsonb_typeof` guard is the one `audit.service.ts` carries, for the same
+ * measured reason: `jsonb - text` raises `cannot delete from scalar` on a
+ * string, number or boolean, which would 500 this endpoint **for non-`admin`
+ * callers only** and never for the admin who skips the branch. `trace` is
+ * unbounded jsonb with no CHECK constraint.
+ *
+ * It lives here rather than inline in `rules.service.ts` because that file sits
+ * at the §4.5 1000-line cap — the hook refused the inline version.
+ */
+export function traceProjection(redactEvaluatedBy: boolean): SQL<unknown> {
+  return redactEvaluatedBy
+    ? sql`case when jsonb_typeof(${ruleExecutions.trace}) = 'object'
+               then ${ruleExecutions.trace} - 'evaluatedBy'
+               else ${ruleExecutions.trace} end`
+    : sql`${ruleExecutions.trace}`;
+}
 
 /**
  * The `automation_rules ⋈ assets` list projection, shared by `selectRuleRows`

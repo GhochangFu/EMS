@@ -113,9 +113,14 @@ export class RulesController {
   async listExecutions(@CurrentUser() user: JwtPayload, @Query() query: unknown) {
     try {
       const dto = listRuleExecutionsQuerySchema.parse(query);
+      // ADR 0046 Amendment 3: the projection is keyed on the **database role**,
+      // resolved separately. Do not collapse this into the `assetIds === null`
+      // above — that picks out the same callers today only by coincidence, and
+      // Amendment 2 forbids relying on it.
       return await this.rules.listExecutions(
         dto,
         await this.accessControl.readableAssetIds(user),
+        !(await this.accessControl.isGlobalAdmin(user)),
       );
     } catch (err) {
       if (err instanceof ZodError) {

@@ -24,6 +24,18 @@ import type { RuleDraftBody, RulePreviewBody } from "./rules.schema";
  * identity read. It also proves ruling 4: an asset-less `time_window` create has
  * no org to derive and is refused rather than inserting a NULL.
  */
+/**
+ * `E8.6` / ADR 0046 Amendment 3 — the evaluator's IdP subject, as
+ * `evaluateEnabledRules` stores it in `rule_executions.trace`.
+ *
+ * Fixed per module load rather than per run, because the driver seeds it and
+ * the assertions read it. Deliberately **not** UUID-shaped, on the `E7.1h`
+ * precedent: the assertions test for this value's *absence*, and a sentinel
+ * that looked like any other identifier in the row could make that pass for the
+ * wrong reason.
+ */
+export const EVALUATOR_SUBJECT = "e86-evaluator-subject-sentinel";
+
 export type RulesRlsFixtures = {
   service: RulesService;
   /** The real `bms_tenant` handle — for building a counting-wrapped service. */
@@ -456,7 +468,14 @@ export async function assertSingleOrgRuleListReturnsOwnRow(
 export async function assertRuleExecutionListReturnsBothOrgsForTwoOrgActor(
   ctx: RulesRlsFixtures,
 ): Promise<void> {
-  const both = await ctx.service.listExecutions({ limit: 200 }, [ctx.assetId, ctx.foreignAssetId]);
+  const both = await ctx.service.listExecutions(
+    { limit: 200 },
+    [ctx.assetId, ctx.foreignAssetId],
+    // This assertion is about row isolation, not the projection. Read as the
+    // global admin so the two concerns stay separable — a redacting read here
+    // would still pass, and would quietly make this a test of two things.
+    false,
+  );
   const ids = both.items.map((i) => i.id);
   expect(ids, "org A's execution is returned on the two-org path").toContain(ctx.inScopeExecutionId);
   expect(ids, "org B's execution is returned on the same read (fleet fallback)").toContain(
@@ -474,7 +493,7 @@ export async function assertRuleExecutionListReturnsBothOrgsForTwoOrgActor(
 export async function assertSingleOrgRuleExecutionListReturnsOwnRow(
   ctx: RulesRlsFixtures,
 ): Promise<void> {
-  const own = await ctx.service.listExecutions({ limit: 200 }, [ctx.assetId]);
+  const own = await ctx.service.listExecutions({ limit: 200 }, [ctx.assetId], false);
   const ids = own.items.map((i) => i.id);
   expect(ids, "the single-org tenant read returns the caller's own execution").toContain(
     ctx.inScopeExecutionId,
@@ -495,9 +514,88 @@ export async function assertSingleOrgRuleExecutionListRunsOnTenantTransaction(
   const tenant = countingDb(ctx.tenantDb);
   const fleet = countingDb(ctx.fleetDb);
   const svc = ctx.makeService(tenant.db, fleet.db);
-  await svc.listExecutions({ limit: 200 }, [ctx.assetId]);
+  await svc.listExecutions({ limit: 200 }, [ctx.assetId], false);
   expect(tenant.transactions(), "a single-org listExecutions opens one tenant transaction").toBe(1);
   expect(fleet.transactions(), "a single-org listExecutions opens no fleet transaction").toBe(0);
+}
+
+/**
+ * `E8.6` / **ADR 0046 Amendment 3** — a non-`admin` reader does not see who
+ * evaluated a rule.
+ *
+ * The third instance of the same projection rule (ADR 0043 Amendment 6, ADR
+ * 0046 Amendment 2, this). `rules.service.ts` writes `evaluatedBy: actor.sub`
+ * into `trace`, and `GET /rules/executions` carries **no role gate at all** —
+ * it scopes on `readableAssetIds`, so `operator`, `viewer`, `location_admin`
+ * and `asset_group_admin` all reach it. That audience is strictly wider than
+ * the audit log's, which is why the ruling reached further than Amendment 2.
+ *
+ * **Step 1 is the falsifiability check and must stay first.** The fixture rows
+ * carried `trace: {}` until `E8.6`; against those, every assertion below passes
+ * word for word with the redaction deleted. `E7.1g` is the precedent and
+ * `E7.1h` repeated it.
+ *
+ * **Removed, not replaced** (decision 8). Unlike the audit log — where
+ * `actorEmail` survives because a ledger that cannot answer *"who changed
+ * this"* fails at its purpose — the scoped reader here gains nothing in place
+ * of the subject. A trace answers *what the rule saw*; the evaluator is not
+ * part of that answer below `admin`. The asymmetry is the ruling, so it is
+ * asserted rather than left to be re-litigated.
+ */
+export async function assertEvaluatorSubjectRedactedForNonAdmin(
+  ctx: RulesRlsFixtures,
+): Promise<void> {
+  const traceOf = (item: { id: string; trace: unknown }, what: string): Record<string, unknown> => {
+    expect(
+      typeof item.trace === "object" && item.trace !== null && !Array.isArray(item.trace),
+      `${what}: expected the parsed jsonb object, got ${
+        item.trace === null ? "null" : typeof item.trace
+      }. A string here means the column is no longer parsed by the driver.`,
+    ).toBe(true);
+    return item.trace as Record<string, unknown>;
+  };
+
+  // 1. The global admin still reads it — the forensic record is unchanged, and
+  //    without this the assertions below cannot fail.
+  const asAdmin = await ctx.service.listExecutions({ limit: 200 }, [ctx.assetId], false);
+  const adminRow = asAdmin.items.find((i) => i.id === ctx.inScopeExecutionId);
+  expect(adminRow, "the global admin reads the seeded execution").toBeDefined();
+  expect(
+    traceOf(adminRow!, "global admin's trace").evaluatedBy,
+    "the global admin reads `evaluatedBy` unchanged. If this fails the fixture lost the key " +
+      "and every assertion below is vacuous — it would pass against the unredacted reader too.",
+  ).toBe(EVALUATOR_SUBJECT);
+
+  // 2. A non-admin reader: the key is REMOVED, not blanked.
+  const asScoped = await ctx.service.listExecutions({ limit: 200 }, [ctx.assetId], true);
+  const scopedRow = asScoped.items.find((i) => i.id === ctx.inScopeExecutionId);
+  expect(scopedRow, "the scoped reader still reads the row itself").toBeDefined();
+  const scopedTrace = traceOf(scopedRow!, "scoped reader's trace");
+  expect(
+    "evaluatedBy" in scopedTrace,
+    `the key is REMOVED, not set to null — \`trace - 'evaluatedBy'\` deletes it, and asserting ` +
+      `absence is what distinguishes the two. Got: ${JSON.stringify(scopedTrace)}`,
+  ).toBe(false);
+
+  // 3. The rest of the trace survives. Without this, a reader that returned
+  //    `trace: null` for every non-admin would satisfy step 2.
+  expect(
+    { source: scopedTrace.source, observed: scopedTrace.observed },
+    "every other key survives — this removes one identity field, not the diagnostic payload " +
+      "the endpoint exists to serve",
+  ).toEqual({ source: "rule", observed: 1 });
+
+  // 4. Not just the row the caller owns: redaction follows the reader, not the
+  //    row's organization.
+  const acrossOrgs = await ctx.service.listExecutions(
+    { limit: 200 },
+    [ctx.assetId, ctx.foreignAssetId],
+    true,
+  );
+  expect(
+    acrossOrgs.items.some((i) => "evaluatedBy" in traceOf(i, `row ${i.id}`)),
+    "no row carries the evaluator's subject on a redacting read, in either organization",
+  ).toBe(false);
 }
 
 /**

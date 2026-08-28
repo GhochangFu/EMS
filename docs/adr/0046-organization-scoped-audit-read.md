@@ -231,4 +231,86 @@ forensic record and removing it there would destroy evidence to solve a
 disclosure problem that a projection solves. Nor does it touch `payload`'s
 verbatim return in general — the unbounded `z.record(z.unknown())` value spaces
 that ADR 0021 decision 6 makes a standing obligation are a separate matter,
-tracked against `E8.3`.
+tracked against `E8.5`.
+
+*Corrected 2026-08-28: this paragraph cited `E8.3`, which was already closed
+when the amendment was written. `E8.3` is the onboarding credential exposure
+(ADR 0022); `E8.5` is the open row for `rtus.meta`'s unbounded value space,
+raised by the same `E7.1e` review that raised this amendment. Every artifact
+built against the amendment — `audit.service.ts`, `E7.1h` and its sweep —
+already said `E8.5`, so the ADR text was the only thing pointing at a closed
+row. Raised by the `E7.1h` compliance review; the citation is corrected, no
+decision changes.*
+
+
+## Amendment 3 (2026-08-28) — a non-`admin` reader of a rule execution trace does not see who evaluated it
+
+Ruled by the repository owner at the `E8.6` gate and **before any
+implementation code**, on a finding the `E7.1h` security review raised. **This
+is the third instance of the same projection rule** — ADR 0043 Amendment 6,
+Amendment 2 above, and now this one — and it changes no policy, grant or
+migration.
+
+**Why this amends ADR 0046 rather than ADR 0033.** ADR 0033 owns *what a trace
+contains*; this is a ruling about *who may read a field of it*, which is
+Amendment 2's subject applied to a second table. Keeping both in one place is
+how the next reader finds the pair. The `E8.6` row left the choice open and
+this settles it.
+
+**The finding.** Amendment 2 removed the acting operator's `oidcSubject` from
+the audit `payload` for every non-`admin` reader. The same value is written
+elsewhere: `rules.service.ts` puts `evaluatedBy: actor.sub` into
+`rule_executions.trace`, `listExecutions` projects `trace`, and the contract
+returns it as `z.record(z.unknown())`.
+
+**The audience there is strictly wider than the endpoint Amendment 2 closed.**
+`GET /rules/executions` carries `JwtAuthGuard` and **no role gate at all** — it
+scopes on `readableAssetIds` — so `operator`, `viewer`, `location_admin` and
+`asset_group_admin` all reach it, where ADR 0046 admits only `admin` and
+`organization_admin` to the audit log. ADR 0033 decision 2 makes
+`evaluateEnabledRules` a cross-organization sweep, so a fleet operator's subject
+lands on traces for every enabled rule regardless of whose assets they are.
+
+## Decision
+
+7. **`trace.evaluatedBy` is removed for any non-`admin` reader**, under the same
+   three constraints as Amendment 2, which are not restated as new rules but
+   inherited: redact in SQL with the jsonb `-` operator and never in the
+   `.map()`; key it on the **database role** and never on the scope; and any
+   second reader of the same column inherits it through the shared projection.
+
+8. **It is removed, not replaced.** The scoped reader gains nothing in its
+   place — not the email, not a display name. This is the one point where this
+   amendment deliberately does **not** mirror Amendment 2, and the asymmetry is
+   the ruling rather than an oversight.
+
+## Consequences
+
+- **A non-`admin` reader loses evaluator attribution on this endpoint
+  entirely**, and that cost is accepted rather than mitigated. The audit log,
+  not the trace, is where a tenant is entitled to know who acted: there
+  `actorEmail` survives precisely because a ledger that cannot answer *"who
+  changed this"* fails at its purpose. A trace is diagnostic — it answers *what
+  the rule saw* — and the evaluator is not part of that answer for anyone below
+  `admin`.
+- **This reverses the reasoning recorded at `F3.6`, and that comment must be
+  corrected in the same commit.** `rules.service.ts` currently justifies
+  storing `sub` on the ground that a scoped reader may see it while a plaintext
+  email would be worse — *"still an actionable identifier for an admin
+  correlating against `bms.users`, without handing every scoped reader a
+  plaintext email address they have no other route to"*. Under this amendment a
+  scoped reader sees neither. The **write** is unchanged and `sub` remains the
+  right thing to store, so only the justification moves; leaving it would tell
+  the next reader that scoped visibility is intended.
+- **The writers are untouched**, as in Amendment 2: the global `admin` still
+  reads `evaluatedBy`, because that view is the forensic record and narrowing
+  the writers would destroy evidence to solve a disclosure a projection solves.
+- **The missing role gate on `GET /rules/executions` is NOT closed by this, and
+  is not deferred silently either.** This amendment narrows what that endpoint
+  discloses; it does not decide whether `operator` and `viewer` should reach it
+  at all. That is a separate question about the ADR 0017 read surface, and it
+  was offered at this gate and explicitly not chosen — narrowing the endpoint
+  could break workflows that legitimately read traces. It stays open.
+- `trace` is also an unbounded `z.record(z.unknown())`, so it shares `E8.5`'s
+  value-space problem. That is a separate finding on the same column and this
+  amendment does not settle it.
