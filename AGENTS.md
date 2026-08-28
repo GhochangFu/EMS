@@ -71,7 +71,9 @@
 > (`SET LOCAL app.current_organization` inside a transaction) or a
 > named-reason `fleetDb`, and org-scoped notification channels and rule
 > identity gated by `canManageNotificationChannel` (**ADR 0043** and its
-> Amendments 1–6, `E7.1a`–`E7.1d` and `E7.1g`) — real rather than theatre only because of
+> Amendments 1–6, `E7.1a`–`E7.1d` and `E7.1g`), with the `bms.audit_log` reader
+> organization-scoped for `organization_admin` (**ADR 0046** and its two
+> amendments, `E7.1e`) — real rather than theatre only because of
 > two prerequisites landed beside it: an unprovisioned `admin` JWT claim now
 > refuses outright instead of resolving unrestricted (**ADR 0044**), and the
 > schema owner is no longer a superuser, so `FORCE ROW LEVEL SECURITY` actually
@@ -248,7 +250,7 @@ entry **D-0001**.
 | AI onboarding | Scoped admin ingestion wizard using OpenAI chat completions with structured JSON, and a deterministic rule-based fallback when `OPENAI_API_KEY` is unset (ADR 0011). **Credentials never transit the chat** (**ADR 0022**, `E8.3`): they arrive through `POST /api/v1/admin/onboarding/sessions/:id/credentials`, and a chat turn that appears to carry one is **refused — not parsed, not stored, not forwarded to the model**. The wizard used to *prompt* for them and parse them out of the turn, which left plaintext in `onboarding_sessions.messages`; migration `0026` purges that column on every existing row (session rows are kept — `audit_log` references them by id). The detector that spots a credential-bearing turn is a **nudge, not the control** — six review rounds found it simultaneously too narrow and too broad, and its documented misses are asserted as tests. The control is that credentials have a typed home. Do not "improve" that detector without reading ADR 0022's amendments first |
 | Secrets      | AES-256-GCM encrypted RTU connection credentials via `CREDENTIAL_ENCRYPTION_KEY`; never returned decrypted by the API (ADR 0012). Writers into that store: the master-data RTU admin, and the onboarding credentials endpoint above (**ADR 0022**), which **fails closed** with 503 when the key is unset rather than reporting a success that stored nothing. In an onboarding draft the blob is keyed by **RTU `code`, never by array position** — the draft's `rtus` array is replaced wholesale by any patch, so a positional key delivered one broker's password into a different broker's connection config. A code claimed by no RTU, or by more than one, drops rather than guesses. **SMTP stays platform-owned in the environment** (**ADR 0043** decision 13, reaffirming ADR 0041 decision 8): `SMTP_HOST`/`PORT`/`USER`/`PASSWORD`/`SECURE`/`FROM` are read once in `notifications.config.ts`, no service body reads `process.env` directly, and none of them appears in any UI. An organization owns presentation and routing only — from-name, reply-to, recipient lists, webhook URL, webhook HMAC secret and the per-channel rate limit, all in `notification_channels.config` and the encrypted secret columns above — never the transport itself. Per-organization SMTP relays stay deferred; the mechanism above (`secret_ciphertext`/`secret_iv`/`secret_key_version` plus `CredentialCryptoService`) is what a future per-org relay password would use, not what runs today |
 | Operations   | Work orders, maintenance schedules, basic rules, Energy CSV reports, completed 2D Control Room foundation screens, completed guided rule builder, and completed Control Room extension. Every mutating endpoint across these four domains is gated by the **operations write matrix** (ADR 0017) — see §4.7. The Energy CSV export escapes through the shared serialiser, **not** its own rule — see the *CSV exports* row (ADR 0026) |
-| Audit read   | `bms.audit_log` becomes readable under **ADR 0021** (`F4.14`): `GET /api/v1/admin/audit` and `/audit/export` (CSV + XLSX), in `apps/api/src/admin/audit/`. **Global admin only** — the table gained `organization_id` under ADR 0043 decision 5 (**nullable**, the one stated exception: a platform event belongs to no tenant), and every write call site is required to stamp it, real org or explicit `null`, since `E7.1c`'s `MasterDataAuditService.write` funnel — but the *reader* (`AuditAdminService`) is untouched and stays exactly what it was: unfiltered, on `fleetDb`, because it is gated to the global admin role alone and that role sees every organization by definition. §4.7's scope predicates are therefore still not in play here, **not because the column is missing** (it is not, since `E7.1b`) but because no `organization_admin` route into this endpoint exists; scoped reads for `organization_admin` and below stay **deferred to their own ADR**, not silently omitted. Purely additive: no DDL, no trigger, no new package (`xlsx` was already an api dependency). `payload` is returned **verbatim**, which makes every `payload: body` call site a security surface — see §4.7. Export requires a `from`/`to` window of ≤366 days and is capped at 50,000 rows, **refusing rather than truncating**; the cap was measured, not assumed, and is a *row* bound with **no byte bound** — that gap is recorded in ADR 0021, not fixed. Append-only storage and hash-chaining are `F4.15` and stay out of scope (§6) |
+| Audit read   | `bms.audit_log` becomes readable under **ADR 0021** (`F4.14`): `GET /api/v1/admin/audit` and `/audit/export` (CSV + XLSX), in `apps/api/src/admin/audit/`. **Organization-scoped since ADR 0046** (`E7.1e`), global-admin-only before it. The table gained `organization_id` under ADR 0043 decision 5 (**nullable**, the one stated exception: a platform event belongs to no tenant), and every write call site is required to stamp it, real org or explicit `null`, since `E7.1c`'s `MasterDataAuditService.write` funnel — for a year that column had a writer and no reader, which is the defect `E7.1e` closed. The global `admin` still reads every organization unfiltered; an `organization_admin` reads its own organizations' rows and **never a `NULL`-organization row**, neither pre-`0048` un-attributed history nor a platform event (decision 2 — deliberately blunt, because a date bound that reclassifies the same `NULL` on either side of a migration is a rule nobody can hold in their head at 3 a.m.). `location_admin` and `asset_group_admin` stay refused, and ADR 0021's deferral stands **for them alone**. Both reads stay on `fleetDb` with the ADR 0043 Amendment 3 named reason: the tenant filter is explicit in the `WHERE`, and a GUC-bound `tenantDb` read would add a second, invisible filter that could only ever disagree with it — and cannot express a multi-organization actor at all. Purely additive throughout: no DDL, no trigger, no migration, no new package (`xlsx` was already an api dependency). `payload` is returned **verbatim**, which makes every `payload: body` call site a security surface — and one whose audience is now wider than the global admin, see §4.7. Export requires a `from`/`to` window of ≤366 days and is capped at 50,000 rows, **refusing rather than truncating**; the cap was measured, not assumed, and is a *row* bound with **no byte bound** — that gap is recorded in ADR 0021, not fixed. Append-only storage and hash-chaining are `F4.15` and stay out of scope (§6) |
 | Notifications | **ADR 0041** (`F3.8`): one `NotificationTransport` interface in `apps/api/src/notifications/`, with `log`, `email` (`nodemailer`) and `webhook` implementations. **Dispatch is inline and fire-and-forget — no queue, no Redis** — and `dispatch()` **never rejects**: a failure is a `failed` delivery row, not an exception thrown back into the alarm path that raised it. **A row is written for every attempt, including the ones that send nothing.** The five statuses are `sent`, `failed`, `skipped_unconfigured`, `skipped_deduped` and `skipped_rate_limited`, because *"no notification arrived"* and *"no notification was attempted"* are different answers to an operator and only the ledger can tell them apart. Storm control is two-sided: a transition dedupe (an unchanged plant sends nothing) and an hourly ceiling that counts `sent` **only**, so throttling cannot throttle itself. **A channel's secret never touches `config`** — `config` is returned by the API and appears in logs (§9.6), so the credential lives in three columns holding ADR 0012 ciphertext, IV and key version, made all-or-nothing by a CHECK; the DTO carries `hasSecret: boolean` and never the value. **The kind vocabulary is a lookup table, not an enum** (ADR 0031 A1), so `F3.9`'s `sms` is an `INSERT` — but it is **not yet open end-to-end**: the admin UI hardcodes two `<option>`s and the transport lookup is a `switch`, so a new row still needs code. `notification_deliveries` FKs are `NO ACTION` on purpose — history outlives configuration, and deleting a channel with history returns a **409 telling the operator to disable it instead**, found by clicking the button rather than by the compiler. **Webhook egress is restricted at the transport**: loopback, private, link-local and this-network destinations are refused *before* `fetch`, with `redirect: "manual"` and a 5 s timeout. The IPv4-mapped IPv6 form (`https://[::ffff:7f00:1]/`) reached the Compose network until the security review caught it — the unit tests had asserted the dotted form, which `new URL()` never produces, so they were exercising an unreachable branch. The residual DNS-rebinding window is documented in the file header, not implied. Both `/rules/:id/notifications` routes carry **role AND scope** checks per §4.7; the role gate alone admits `location_admin`, which let a scoped admin redirect or silence another site's alarms until review found it |
 | CSV exports  | **Both** CSV downloads escape through one module, `apps/api/src/serialise/csv.ts` (**ADR 0026** and its **Amendment 1**; `F4.29`, `F4.31`, `F4.50`): the audit export (ADR 0021) and the Energy Consumption report. Before it they disagreed — the audit one neutralised spreadsheet formula leaders and the reports one only quoted, so an asset `code` beginning `=` was delivered as a **live formula**. `csvTextCell` prefixes an apostrophe when a value starts with `=` `+` `-` `@` TAB or CR, **then** tests the quote trigger `/["\n\r,\t;\|]/` — that order is load-bearing, since the guarded form of a CR-led value still contains a CR and must be quoted or the record splits. **TAB, `;` and `\|` joined the trigger in Amendment 1 (`F4.50`)**, and the reason is not RFC 4180 — it is that Excel 2013 was measured evaluating `=1+1` out of an unquoted cell in **four** consumers that do not read the file as comma-delimited: two clipboard pastes, a comma+TAB file open, and a `;`-list-separator locale double-click. All six are formula-*initiating* characters, **not** "characters a spreadsheet strips as whitespace": `\r` must stay in the leader list *and* the trigger, and deleting it from either reopens a hole every test would still pass. **Numeric cells are exempt and take `csvNumberCell`**, because the guard neutralises cells whose Excel formula reading differs from their literal text and for a number it does not (`=-5` is `-5`) — guarding one would import the client's figures as text and break their arithmetic. The split is enforced by the two functions' **parameter types**, never by a regex that re-parses output, and escaped cells carry a branded `CsvField` so a raw string in a row is a **compile error**. The audit call site is still blanket because all nine of its columns are string-shaped: the two exports are **consistent, not identical**. `toSheetRows` (XLSX) is correctly unguarded — SheetJS writes `t="str"`, ECMA-376's *cached formula result* type, and the safety is the **absence of any `<f>` element**, not the cell type. **`energySheetRows` joins it** since Amendment 2, unguarded for the same measured reason, with one difference that is load-bearing: it keeps numeric cells as `number` rather than returning `string[][]`, because every numeric column in that report is one the client computes on and text would set `t="str"` and break their arithmetic — the same harm decision 2 forbids the apostrophe guard from causing, arriving by a different route. **Whether a leading U+0020/U+00A0/U+FEFF is stripped-then-evaluated is no longer an open question, and the answer was yes.** `F4.31` ran it: **Google Sheets evaluated a cell led by a single U+0020 space**, shipped in both exports since `73a9fd2`. `csvTextCell` therefore tests the value **with leading whitespace stripped** as well as raw — the class, not the one character that was measured. **Know what the quoting does and does not buy.** Excel honours the `"` text qualifier only when the quote **opens a field**, so the deciding variable is whether the **comma** is still among the consumer's delimiters. Where it is, the cell arrives intact and the vector is closed. Where it is not, two separators in one cell put the closing quote on a later fragment and the formula evaluates anyway — **both guards are positional, and a re-split moves the position**, so the apostrophe fails the same way. `F4.51` **answered that residual by changing format, not by escaping** (Amendment 2): `GET /api/v1/reports/energy/export.xlsx` ships beside the CSV, both rendered from one table so they cannot drift, and the CSV bytes are unchanged. **The CSV residual itself is still open and must not be written up as closed** — for a consumer whose delimiters exclude the comma, two separators in one cell still evaluate, and nothing in `csv.ts` can repair it, because the apostrophe protects the first fragment only. Rejecting the separators at the **write** path was considered and rejected as **impossible to complete**: the exported columns take input at 13+ Zod validation points across five modules, and the audit export's `actor_email` comes from `users.email`, which has no write path in this codebase at all. Anyone reopening that idea must answer `users.email` first. The standing instruction is unchanged, and two separate measurements have now proved it right: **do not add — or remove — characters on reasoning alone.** Measure it with `pnpm csv:formula-probe`, and read the control that matches your delimiter, because the wrong control cannot fire and a vacuous run looks exactly like a clean one |
 | API contracts | **Every API *response* type is `z.infer` of a schema in `packages/shared/src/contracts/`, never written twice** (**ADR 0030**, `F4.23`). The contract was never missing — `packages/shared` already exported 100 types imported at 148 sites — what was missing was a **runtime**: every export was a `type`, and `apps/web` imported `zod` zero times, so no response was checked anywhere. 88 schemas now cover them, and `apps/web` calls `checkResponse(schema, payload, endpoint)` (`src/api/validate.ts`) on 33 direct reads plus all 42 `adminFetch` calls, whose `schema` parameter is **required** so the compiler finds every site. **It validates and does not transform** — Zod strips unknown keys, so returning `result.data` would silently delete a field the server has newly added; `checkResponse` returns the original payload either way. **Failure direction is asymmetric on purpose**: throw in dev/test, log-and-pass in production, because a blank Control Room during an incident is worse than one drifted field — the same asymmetry ADR 0029 Amendment 2 applied to `API_DOCS_ENABLED`. Issues are logged as **`path` and `code` only** (§9.6): a Zod issue embeds the *received value*, so logging `message` publishes server data to a shared operations console. **Three findings worth carrying:** `@bms/shared/contracts` **does not typecheck from `apps/api`**, which compiles `moduleResolution: "node"` (node10) and ignores the `exports` map while Node's *runtime* resolution honours it — the dangerous half — so `index.ts` re-exports the schemas and the subpath is an `apps/web` convenience only; a **required `unknown` property is not expressible in Zod** (`z.unknown()` yields an *optional* key, and `z.any()`/`z.custom<unknown>()` behave identically), which is why `AuditLogEntryDto.payload` is the one contract this migration changed; and the validator **found real drift on its first run against the deployment** — `GET /rules` had never conformed, 48 of 89 rows carrying an undeclared `category`, fixed in `F4.43`. That is the argument for the 89 routes the spike did not measure. **`RuleListItem` gained `assetDomain` in `F4.45`** (ADR 0031), read from `bms.assets.domain` on the join that already served `assetCode`/`siteName` — a rule's plant domain is the *asset's* fact and is never stored on the rule. **Three contract fields are deliberately no longer enums**: `category`, `assetDomain` and `severity` are `z.string()` codes, because ADR 0031 Amendment 1 moved the first two vocabularies into `bms.rule_categories` / `bms.asset_domains` and **ADR 0032** moved the third into `bms.alarm_severities`, so a domain pack ships a sector — or the client's `B9` answer ships a severity level — with an `INSERT`. The cost is stated rather than hidden — this validator can no longer report an unknown category the way it reported `electrical`; that check moved to two foreign keys, where it is absolute rather than advisory, and to `VocabulariesService` at each write boundary so an unknown code stays a **400** rather than becoming a 500. See §4.8 |
@@ -958,18 +960,47 @@ admin may deploy a published org template without being able to author one
 (ADR 0015 §7 as amended). Do not require `canManageTemplate` there — it means
 "may author" and is false for exactly that role.
 
-**Audit read** (ADR 0021, `F4.14`) — a **third** gate, reusing neither of the
-two above. `bms.audit_log` gained `organization_id` under ADR 0043 (nullable —
-decision 5's platform-event exception), but the master-data scope predicates
-still do not apply to this endpoint, because it stays gated to the global
-admin role alone rather than resolving a per-caller organization set — a
-design choice, not a gap the column would have closed.
-`AuditAdminService.requireGlobalAdmin` runs two checks in order: a matching
-**`bms.users` row must exist**, and only then must `writableOrganizationIds`
-be `null`.
+**Audit read** (ADR 0021, `F4.14`; widened by **ADR 0046**, `E7.1e`) — a
+**third** gate, reusing neither of the two above. `bms.audit_log` gained
+`organization_id` under ADR 0043 (nullable — decision 5's platform-event
+exception) and, since `E7.1e`, that column finally has a reader:
+`AuditAdminService.resolveReadScope` runs **three** checks in order.
 
-**The first check is not redundant — Amendment 1 exists because it was
-missing.** Before ADR 0044, `resolveDbUser` deliberately fell back to the JWT
+1. A matching **`bms.users` row must exist** — the provisioned-account probe.
+2. `requireMasterDataUser`, which refuses `asset_group_admin`.
+3. The role must be `admin` or `organization_admin`. Only then is
+   `writableOrganizationIds` consulted, and **only for the scope**: `null`
+   reads every organization, an array becomes
+   `inArray(auditLog.organizationId, ids)`.
+
+**Check 3 is keyed on the role resolved from `bms.users`, never on the shape of
+the scope array**, and ADR 0046 Amendment 1 exists because decision 3's original
+wording said otherwise. `writableOrganizationIds` resolves a `location_admin`
+through `locationDerivedOrganizationIds` — its **whole organization**, not its
+granted locations — so a gate keyed on "a non-empty array means a scoped read"
+admits the role decision 4 refuses and hands it every audit row its organization
+owns. That is this section's own read-gate-wider-than-write-gate lesson, on a
+more sensitive endpoint. Nor is it keyed on `jwt.role`: a token outlives a
+demotion by up to `JWT_TTL`.
+
+**`organization_id IS NULL` is never in a scoped reader's result set** (decision
+2) — not pre-`0048` un-attributed history, not a genuine platform event.
+`inArray` never matches `NULL`, so the ruling costs no clause, which is exactly
+why the integration suite asserts it directly rather than leaving it to fall out
+of an implementation detail. `location_admin` and `asset_group_admin` stay
+refused (decision 4): their scope is *sub*-organizational, an audit row carries
+an organization and nothing finer, so returning their organization's rows would
+silently widen them to `organization_admin`.
+
+**A scoped reader sees `actorEmail` but never the acting operator's
+`oidcSubject`** — ADR 0046 Amendment 2, the same projection rule as Amendment 6
+below. `E7.1e` moved no column; it moved the audience, and sixteen write sites
+across six services put `oidcSubject` at the top level of the audit `payload`,
+which ADR 0021 returns verbatim. `E7.1h` implements the redaction; the writers
+keep recording it, because the global admin's view is the forensic record.
+
+**The first check is not redundant — ADR 0021 Amendment 1 exists because it was
+missing**, and `E7.1e` widened what it protects. Before ADR 0044, `resolveDbUser` deliberately fell back to the JWT
 claim when no row matched, so in OIDC mode (what compose and the pilot run) an
 *unprovisioned* Keycloak principal holding realm role `admin` resolved to
 `role: "admin"` and a `null`, unrestricted scope. Every other `/admin/*`
@@ -987,6 +1018,17 @@ all already fail closed via a grant-table lookup keyed by user id, never the
 unrestricted `null` sentinel. If you add an endpoint whose only control is an
 unrestricted scope for a non-`admin` role, check that role's fallback
 behaviour before trusting it.
+
+**`E7.1e` made that check load-bearing again, and its own review proved the
+test for it was vacuous.** ADR 0044 closed the `admin` branch, so once
+`organization_admin` became a reader the probe is the *only* thing refusing an
+unprovisioned principal claiming that role — without it, such a caller resolves
+to an empty scope and receives `200 {"items":[],"total":0}` instead of a 403,
+losing the refusal contract in silence. The suite had asserted both
+unprovisioned cases against a shared `/provisioned account/i` substring, which
+also matches ADR 0044's *different* message, so deleting the probe outright left
+it green. **When two gates can refuse the same caller, assert the exact wording
+of the one you mean to test** — a substring that matches both proves neither.
 
 **Onboarding** (ADR 0022, `E8.3`) — a **fourth** gate. Every onboarding entry
 point requires role `admin` or `organization_admin` **plus**
@@ -1065,6 +1107,23 @@ creates an audit-read exposure**, so re-run that check whenever one changes.
 The obligation is on the call sites, not on one writer: there are 15
 `insert(auditLog)` sites in total and 14 do not go through
 `MasterDataAuditService`.
+
+**`E7.1e` widened who this exposes to, and re-ran the check.** The reader is no
+longer global-admin-only (ADR 0046), so a `payload` written against a tenant's
+organization is now readable by that tenant's `organization_admin`. Re-measured
+2026-08-28 across **all ~40** audit write sites, up from the twelve above:
+**no site passes a secret today.** Every site added since 2026-08-09 passes
+named fields rather than a body, `channels.service.ts` refuses explicitly and
+records `hasSecret` instead of the secret, onboarding audits ids only, and RTU
+credentials go to `rtu_connection_configs.credentials_ciphertext` under ADR 0012.
+
+**One shape survives that check and a field-name check cannot clear it**:
+`createRtuBodySchema.meta` is `z.record(z.unknown())`, an unbounded value space
+recorded verbatim — tracked as `E8.5`, on the precedent that
+`onboarding-redaction.ts` already scrubs `meta` "like `config`". When you re-run
+this obligation, enumerate the *value spaces* as well as the field names; a
+`z.record(z.unknown())` behind an audited body is a standing hole no name list
+closes.
 
 ### 4.8 Shared API contracts (ADR 0030)
 
@@ -1262,10 +1321,17 @@ These are intentionally deferred. Do not implement them yet:
   picker, and both tables name the owning tenant. `E7.1g` (Amendment 6, PR
   #185) closed what that screen exposed: a fleet-managed channel's `error` is
   redacted in a tenant's delivery ledger while its `channelCode` is not — see
-  §4.7. **Still deferred:** org-level **read** RBAC
-  on `bms.audit_log` (§4.7's third gate stays global-admin-only; the column
-  now exists but the reader was never widened to `organization_admin` — see
-  §2's *Audit read* row), per-organization SMTP relays (decision 13 — the
+  §4.7. `E7.1e` (**ADR 0046**, PR #188) widened the third gate: an
+  `organization_admin` reads its own organizations' `bms.audit_log` rows, and
+  never a `NULL`-organization row — neither pre-`0048` un-attributed history
+  nor a platform event. **Still deferred:** org-level **read** RBAC on
+  `bms.audit_log` **for `location_admin` and `asset_group_admin`** — ADR 0046
+  lifted ADR 0021's deferral for `organization_admin` alone, and decision 4
+  keeps those two refused permanently rather than pending, because their scope
+  is *sub*-organizational while an audit row carries an organization and
+  nothing finer; attributing pre-`0048` history is a backfill with its own row
+  and its own ADR (decision 2's consequence); per-organization SMTP relays
+  (decision 13 — the
   ADR 0012 credential-store mechanism already exists, not wired to it),
   white-label branding per tenant, a `platform_admin` rung above `admin`
   (decision 2 — two named `admin` accounts express the distinction instead
