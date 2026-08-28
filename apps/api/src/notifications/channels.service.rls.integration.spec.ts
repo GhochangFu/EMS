@@ -273,3 +273,71 @@ export async function assertChannelAndDeliveryReadsAreOrgScoped(
     "location_admin gets { items: [] } from listDeliveries() — same ruling",
   ).toEqual({ items: [] });
 }
+
+/**
+ * `E7.1g` (ADR 0043 Amendment 6) — a fleet-managed channel's failure detail is
+ * redacted in a tenant's ledger; its code is not.
+ *
+ * `listDeliveries` filters on `notification_deliveries.organization_id` alone.
+ * The joined channel's OWN organization was never tested, so a delivery that
+ * decision 7 legitimately routes through a `NULL`-org channel — a global admin
+ * wires org A's rule to fleet channel `ops-pager`, `record()` stamps the
+ * RULE's organization — came back to org A's `organization_admin` carrying
+ * whatever `webhook-guard.ts` wrote into `error`, including a resolved
+ * internal hostname.
+ *
+ * All four assertions are load-bearing, and the two positive ones are what
+ * make this a gate rather than a smoke test:
+ *
+ * 1. the tenant's view of the FLEET row has `error === null`;
+ * 2. the tenant's view of the fleet row still has `channelCode` — Amendment 6
+ *    rejected withholding both, because ADR 0041 decision 10 requires a failed
+ *    delivery to stay identifiable;
+ * 3. the tenant's view of its OWN channel's row has `error` intact — this is
+ *    what fails an over-broad redaction that blanks every non-admin row;
+ * 4. `admin`'s view of the fleet row has `error` intact — "a global admin's
+ *    view is unchanged".
+ *
+ * Both fixture deliveries carry a NON-NULL `error` on purpose. A delivery
+ * seeded with `status: 'sent'` and a NULL error passes assertion 1 vacuously
+ * and passes the unfixed code too.
+ */
+export async function assertFleetChannelErrorIsRedactedForATenant(
+  channels: ChannelsService,
+  orgAdminJwt: JwtPayload,
+  globalAdminJwt: JwtPayload,
+  fleetDelivery: { readonly id: string; readonly channelCode: string; readonly error: string },
+  orgScopedDelivery: { readonly id: string; readonly error: string },
+): Promise<void> {
+  const tenantItems = (await channels.listDeliveries(orgAdminJwt, { limit: 500 })).items;
+
+  const tenantFleetRow = tenantItems.find((d) => d.id === fleetDelivery.id);
+  expect(
+    tenantFleetRow,
+    "organization_admin sees the delivery its own rule made through the fleet channel — decision 7 keeps a global shareable, so the ROW is in scope",
+  ).toBeDefined();
+  expect(
+    tenantFleetRow?.error,
+    "the fleet channel's failure detail is blanked for a tenant — null, not '' and not a dropped column",
+  ).toBeNull();
+  expect(
+    tenantFleetRow?.channelCode,
+    "the fleet channel's CODE survives — withholding both was considered and rejected (ADR 0041 decision 10)",
+  ).toBe(fleetDelivery.channelCode);
+
+  const tenantOwnRow = tenantItems.find((d) => d.id === orgScopedDelivery.id);
+  expect(tenantOwnRow, "organization_admin sees its own org-scoped channel's delivery").toBeDefined();
+  expect(
+    tenantOwnRow?.error,
+    "a tenant's own channel's failure detail is UNTOUCHED — only a NULL-org channel is redacted",
+  ).toBe(orgScopedDelivery.error);
+
+  const adminFleetRow = (await channels.listDeliveries(globalAdminJwt, { limit: 500 })).items.find(
+    (d) => d.id === fleetDelivery.id,
+  );
+  expect(adminFleetRow, "admin sees the fleet channel's delivery").toBeDefined();
+  expect(
+    adminFleetRow?.error,
+    "a global admin's view is unchanged — the redaction is keyed on the CALLER's role, not on the row",
+  ).toBe(fleetDelivery.error);
+}

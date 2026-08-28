@@ -468,8 +468,15 @@ export class ChannelsService {
    * delivery/error metadata, not alarm content. `assertAdmin` came off this
    * route this item; `admin` is unfiltered, every other permitted role gets
    * `inArray(organizationId, writableOrganizationIds)` — deliveries are
-   * `NOT NULL`-org since `0048`, so there is no global-delivery case to
+   * `NOT NULL`-org since `0048`, so there is no global-*delivery* case to
    * reason about the way `list()` has one for channels.
+   *
+   * **There is a global-*channel* case, though, and `E7.1g` is it.** The
+   * delivery's own organization is not the joined channel's: decision 7 keeps
+   * a fleet-managed global shareable, so a tenant's row can point at a
+   * `NULL`-org channel. ADR 0043 Amendment 6 rules that `error` is blanked for
+   * a non-`admin` caller on such a row and `channelCode` is not — see the
+   * `errorProjection` comment in the body.
    *
    * **The read gate is the write gate (ruling, 2026-08-27).** Same as
    * `list()`: a `location_admin` gets `{ items: [] }` unconditionally, not a
@@ -488,6 +495,29 @@ export class ChannelsService {
     if (writableOrgIds !== null && writableOrgIds.length === 0) {
       return { items: [] };
     }
+
+    // `E7.1g` (ADR 0043 Amendment 6): a fleet-managed channel's failure detail
+    // is redacted for a tenant; its code is not. Decision 7 lets a global admin
+    // wire a NULL-org channel onto a tenant's rule, and `record()` stamps the
+    // RULE's organization, so the delivery is legitimately in the tenant's
+    // scope while the joined channel is fleet business — the same posture
+    // `list()` states at the top of this class.
+    //
+    // Keyed on the caller's ROLE, not on `writableOrgIds === null`. `list()`
+    // deliberately treats "unrestricted scope" as equivalent to `admin`; the
+    // amendment says non-`admin`. Should a future role ever resolve to a null
+    // scope, the role-keyed test still redacts and the scope-keyed one would
+    // silently stop. `error` is the only redacted column: `channelCode` stays,
+    // because ADR 0041 decision 10 needs a failed delivery to be identifiable.
+    //
+    // Done in SQL rather than in the `.map()` below so the detail never leaves
+    // Postgres for a tenant — a row that crosses the wire can reach a query log
+    // or an error dump.
+    const errorProjection =
+      user.role === "admin"
+        ? notificationDeliveries.error
+        : sql<string | null>`CASE WHEN ${notificationChannels.organizationId} IS NULL
+             THEN NULL ELSE ${notificationDeliveries.error} END`;
 
     const filters = [
       query.channelId === undefined
@@ -510,7 +540,7 @@ export class ChannelsService {
         channelCode: notificationChannels.code,
         status: notificationDeliveries.status,
         attemptedAt: notificationDeliveries.attemptedAt,
-        error: notificationDeliveries.error,
+        error: errorProjection,
       })
       .from(notificationDeliveries)
       .innerJoin(
