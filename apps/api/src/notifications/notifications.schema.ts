@@ -38,30 +38,32 @@ const channelConfigSchema = z.record(z.unknown());
  */
 const channelSecretSchema = z.string().min(8).max(512).nullable();
 
-export const createNotificationChannelBodySchema = z.object({
-  /**
-   * `E7.1c` (ADR 0043 Amendment 5, Blocker 1 ruling). **Optional, on purpose:**
-   * an `admin` who omits it still gets a fleet-managed global channel — exactly
-   * today's behaviour — so the web UI needs no change and `E7.1d` (the admin UI
-   * split) stays out of this slice. Supplied, or implied for an
-   * `organization_admin` with exactly one direct grant, it creates an
-   * org-scoped channel instead. `ChannelsService.create` resolves and gates it.
-   */
-  organizationId: z.string().uuid().optional(),
-  code: z
-    .string()
-    .min(1)
-    .max(64)
-    // Stable identifier, so the same restriction the rest of the repo's codes
-    // use: it appears in logs and in delivery rows, where a space or a slash
-    // would be read as a delimiter.
-    .regex(/^[a-z0-9][a-z0-9-]*$/, "code must be lowercase letters, digits and hyphens"),
-  name: z.string().min(1).max(128),
-  kind: channelKindSchema,
-  config: channelConfigSchema.default({}),
-  secret: channelSecretSchema.optional(),
-  enabled: z.boolean().default(true),
-});
+export const createNotificationChannelBodySchema = z
+  .object({
+    /**
+     * `E7.1c` (ADR 0043 Amendment 5, Blocker 1 ruling). **Optional, on purpose:**
+     * an `admin` who omits it still gets a fleet-managed global channel — exactly
+     * today's behaviour — so the web UI needs no change and `E7.1d` (the admin UI
+     * split) stays out of this slice. Supplied, or implied for an
+     * `organization_admin` with exactly one direct grant, it creates an
+     * org-scoped channel instead. `ChannelsService.create` resolves and gates it.
+     */
+    organizationId: z.string().uuid().optional(),
+    code: z
+      .string()
+      .min(1)
+      .max(64)
+      // Stable identifier, so the same restriction the rest of the repo's codes
+      // use: it appears in logs and in delivery rows, where a space or a slash
+      // would be read as a delimiter.
+      .regex(/^[a-z0-9][a-z0-9-]*$/, "code must be lowercase letters, digits and hyphens"),
+    name: z.string().min(1).max(128),
+    kind: channelKindSchema,
+    config: channelConfigSchema.default({}),
+    secret: channelSecretSchema.optional(),
+    enabled: z.boolean().default(true),
+  })
+  .strict();
 
 export const updateNotificationChannelBodySchema = z
   .object({
@@ -71,6 +73,9 @@ export const updateNotificationChannelBodySchema = z
     secret: channelSecretSchema.optional(),
     enabled: z.boolean().optional(),
   })
+  // `.strict()` must precede `.refine` — a `ZodEffects` has no `.strict()`.
+  // Nothing may separate `.refine(...)` from its `.describe(...)` below.
+  .strict()
   // An empty PATCH is a mistake, not a no-op: it reads as "I changed
   // something" and changes nothing, which is the shape of a lost edit.
   .refine((body) => Object.keys(body).length > 0, {
@@ -100,9 +105,11 @@ export const listDeliveriesQuerySchema = z.object({
  * The whole set, not a delta. A join is a set, and "these are the channels"
  * survives a lost request in a way "add this one" does not.
  */
-export const setRuleNotificationsBodySchema = z.object({
-  channelIds: z.array(z.string().uuid()).max(50),
-});
+export const setRuleNotificationsBodySchema = z
+  .object({
+    channelIds: z.array(z.string().uuid()).max(50),
+  })
+  .strict();
 
 export type CreateNotificationChannelBody = z.infer<
   typeof createNotificationChannelBodySchema

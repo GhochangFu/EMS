@@ -48,31 +48,37 @@ export const listMaintenanceQuerySchema = z.object({
   horizonDays: z.coerce.number().int().min(1).max(120).default(30),
 });
 
-export const convertMaintenanceBodySchema = z.object({
-  notes: z.string().min(3).max(2000).optional(),
-});
+export const convertMaintenanceBodySchema = z
+  .object({
+    notes: z.string().min(3).max(2000).optional(),
+  })
+  .strict();
 
-export const createMaintenanceScheduleBodySchema = z.object({
-  assetId: z.string().uuid(),
-  title: z.string().min(3).max(255),
-  description: z.string().max(4000).optional(),
-  category: maintenanceCategorySchema.default("preventive"),
-  generationMode: maintenanceGenerationModeSchema.default("calendar"),
-  ownerTeam: z.string().max(128).optional(),
-  vendorName: z.string().max(128).optional(),
-  complianceRef: z.string().max(128).optional(),
-  triggerSummary: z.string().max(2000).optional(),
-  safetyCritical: z.boolean().default(false),
-  priority: maintenancePrioritySchema.default("medium"),
-  estimatedMinutes: z.number().int().min(5).max(1_440).default(60),
-  intervalDays: z.number().int().min(1).max(730),
-  firstDueAt: z.string().datetime({ offset: true }),
-});
+export const createMaintenanceScheduleBodySchema = z
+  .object({
+    assetId: z.string().uuid(),
+    title: z.string().min(3).max(255),
+    description: z.string().max(4000).optional(),
+    category: maintenanceCategorySchema.default("preventive"),
+    generationMode: maintenanceGenerationModeSchema.default("calendar"),
+    ownerTeam: z.string().max(128).optional(),
+    vendorName: z.string().max(128).optional(),
+    complianceRef: z.string().max(128).optional(),
+    triggerSummary: z.string().max(2000).optional(),
+    safetyCritical: z.boolean().default(false),
+    priority: maintenancePrioritySchema.default("medium"),
+    estimatedMinutes: z.number().int().min(5).max(1_440).default(60),
+    intervalDays: z.number().int().min(1).max(730),
+    firstDueAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
 
-export const updateMaintenanceScheduleBodySchema = z.object({
-  active: z.boolean(),
-  reason: z.string().min(3).max(2000).optional(),
-});
+export const updateMaintenanceScheduleBodySchema = z
+  .object({
+    active: z.boolean(),
+    reason: z.string().min(3).max(2000).optional(),
+  })
+  .strict();
 
 export type ListMaintenanceQuery = z.infer<typeof listMaintenanceQuerySchema>;
 export type ConvertMaintenanceBody = z.infer<

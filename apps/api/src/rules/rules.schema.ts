@@ -60,36 +60,44 @@ const ruleCodeSchema = z.preprocess(
     .regex(/^[A-Z0-9][A-Z0-9_-]*$/),
 );
 
-const actionSchema = z.object({
-  type: actionTypeSchema,
-  target: z.string().min(2).max(128),
-});
+const actionSchema = z
+  .object({
+    type: actionTypeSchema,
+    target: z.string().min(2).max(128),
+  })
+  .strict();
 
-const latestConditionSchema = z.object({
-  window: z.literal("latest"),
-  unit: z.string().max(32).optional(),
-});
+const latestConditionSchema = z
+  .object({
+    window: z.literal("latest"),
+    unit: z.string().max(32).optional(),
+  })
+  .strict();
 
-const timeWindowConditionSchema = z.object({
-  days: z.array(daySchema).min(1).max(7),
-  startTime: timeSchema,
-  endTime: timeSchema,
-});
+const timeWindowConditionSchema = z
+  .object({
+    days: z.array(daySchema).min(1).max(7),
+    startTime: timeSchema,
+    endTime: timeSchema,
+  })
+  .strict();
 
-export const ruleDraftBodySchema = z.object({
-  code: ruleCodeSchema.optional(),
-  name: z.string().trim().min(3).max(255),
-  description: z.string().trim().max(2000).nullable().optional(),
-  category: categorySchema.default(DEFAULT_RULE_CATEGORY_CODE),
-  ruleType: ruleTypeSchema,
-  assetId: z.string().uuid().nullable().optional(),
-  pointKey: z.string().trim().min(1).max(128).nullable().optional(),
-  operator: operatorSchema.nullable().optional(),
-  thresholdValue: z.coerce.number().finite().nullable().optional(),
-  severity: severitySchema.nullable().optional(),
-  condition: z.union([latestConditionSchema, timeWindowConditionSchema]),
-  action: actionSchema,
-});
+export const ruleDraftBodySchema = z
+  .object({
+    code: ruleCodeSchema.optional(),
+    name: z.string().trim().min(3).max(255),
+    description: z.string().trim().max(2000).nullable().optional(),
+    category: categorySchema.default(DEFAULT_RULE_CATEGORY_CODE),
+    ruleType: ruleTypeSchema,
+    assetId: z.string().uuid().nullable().optional(),
+    pointKey: z.string().trim().min(1).max(128).nullable().optional(),
+    operator: operatorSchema.nullable().optional(),
+    thresholdValue: z.coerce.number().finite().nullable().optional(),
+    severity: severitySchema.nullable().optional(),
+    condition: z.union([latestConditionSchema, timeWindowConditionSchema]),
+    action: actionSchema,
+  })
+  .strict();
 
 export const ruleUpdateBodySchema = ruleDraftBodySchema.partial().extend({
   reason: z.string().min(3).max(2000).optional(),
@@ -99,14 +107,18 @@ export const rulePreviewBodySchema = ruleDraftBodySchema.extend({
   id: z.string().uuid().optional(),
 });
 
-export const ruleLifecycleBodySchema = z.object({
-  reason: z.string().min(3).max(2000).optional(),
-});
+export const ruleLifecycleBodySchema = z
+  .object({
+    reason: z.string().min(3).max(2000).optional(),
+  })
+  .strict();
 
-export const ruleToggleBodySchema = z.object({
-  enabled: z.boolean(),
-  reason: z.string().min(3).max(2000).optional(),
-});
+export const ruleToggleBodySchema = z
+  .object({
+    enabled: z.boolean(),
+    reason: z.string().min(3).max(2000).optional(),
+  })
+  .strict();
 
 export const listRuleExecutionsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(25),

@@ -38,18 +38,20 @@ import type { AssetPointCalcOverrideFields } from "@bms/shared";
  */
 export const calcPointKeyParamSchema = z.string().min(1).max(128);
 
-export const assetPointCalcOverrideBodySchema = z.object({
-  formula: z.string().min(1).max(MAX_FORMULA_LENGTH).nullable(),
-  formulaDialect: z.literal(CALC_DIALECT).nullable(),
-  calcTrigger: z.enum(CALC_TRIGGERS).nullable(),
-  calcIntervalSeconds: z
-    .number()
-    .int()
-    .min(MIN_CALC_INTERVAL_SECONDS)
-    .max(MAX_CALC_INTERVAL_SECONDS)
-    .nullable(),
-  maxInputAgeSeconds: z.number().int().min(1).max(MAX_INPUT_AGE_SECONDS_BOUND).nullable(),
-});
+export const assetPointCalcOverrideBodySchema = z
+  .object({
+    formula: z.string().min(1).max(MAX_FORMULA_LENGTH).nullable(),
+    formulaDialect: z.literal(CALC_DIALECT).nullable(),
+    calcTrigger: z.enum(CALC_TRIGGERS).nullable(),
+    calcIntervalSeconds: z
+      .number()
+      .int()
+      .min(MIN_CALC_INTERVAL_SECONDS)
+      .max(MAX_CALC_INTERVAL_SECONDS)
+      .nullable(),
+    maxInputAgeSeconds: z.number().int().min(1).max(MAX_INPUT_AGE_SECONDS_BOUND).nullable(),
+  })
+  .strict();
 
 export type AssetPointCalcOverrideBody = z.infer<typeof assetPointCalcOverrideBodySchema>;
 
