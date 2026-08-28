@@ -410,3 +410,65 @@ I. **A query schema's refinements were being discarded.** A `GET`'s schema is
 - **A production instance with `API_DOCS_ENABLED` unset serves nothing at
   `/api/v1/docs`** — a 404, not a 401. Worth knowing before someone reports it
   as a bug.
+
+## Amendment 3 — `.strict()` on mutating body schemas emits `additionalProperties: false` (2026-08-28)
+
+Ruled by the repository owner at the gate for **`E7.1f`**, before any
+implementation code. Raised by the `E7.1d` security review. This amendment
+records the **document-visible consequence** of that row; the schema audit
+itself belongs to `E7.1f` and is not restated here.
+
+### Why this reaches ADR 0029 at all
+
+`updateNotificationChannelBodySchema`
+(`apps/api/src/notifications/notifications.schema.ts:66`) is a plain
+`z.object`, so `PATCH {"name":"x","organizationId":"<other-tenant>"}` answers
+**200 with the tenancy unchanged**.
+
+**Containment is sound and this is not an authorization gap** —
+`ChannelsService.update` reads the organization from `loadExistingForWrite(id)`
+and never from the body, so the field cannot take effect by any path. It is a
+**contract** defect, which is why it lands here: a caller that is not
+`apps/web` — curl, an integration, a consumer generated from this document —
+reads 200 as *"the move succeeded"*. `E7.1d` closed it for the one client that
+was already correct, by excluding `organizationId` and `code` from
+`updateNotificationChannel`'s patch **type**. Every other consumer of the
+document still reads the old answer.
+
+Note the gap is exactly the **mixed-body** case. `{"organizationId":"…"}` alone
+already 400s, because the non-empty `.refine()` runs after stripping.
+
+### The ruling
+
+1. **`.strict()` is a per-schema judgement in this repo, not house style, and
+   stays that way.** Six of roughly twenty `*.schema.ts` files use it, and
+   `admin/audit/audit.schema.ts:8` documents the reasoning. `E7.1f` adds
+   `.strict()` where an unknown key is a caller error and **records why** where
+   it is not. A blanket sweep is explicitly not the ruling.
+
+2. **The emitted document changes, and that is accepted rather than worked
+   around.** `zod-to-json-schema` renders a strict object as
+   `additionalProperties: false`, so every schema that gains `.strict()` changes
+   the generated contract. `tests/adr-0029-openapi-contract.test.ts` will see
+   it. That test is doing its job; update it deliberately in the same change,
+   never by regenerating a fixture to make it quiet.
+
+3. **Order matters, and it is a trap.** `.refine()` returns a `ZodEffects`,
+   which has no `.strict()`. The form is
+   `z.object({…}).strict().refine(…)` — strict **before** refine. The existing
+   `.describe()`-last convention is unaffected.
+
+4. **Land it once, deliberately.** Before it ships, check that no current caller
+   depends on a field being stripped: today those callers receive 200, and after
+   this they receive 400. That check is part of `E7.1f`, not a follow-up.
+
+### Consequences
+
+- **The document becomes stricter than the server was**, for the schemas that
+  gain `.strict()`. That is the point — Amendment 1 already records that this
+  document's job is to describe what the server actually accepts.
+- **A 200 that silently discarded a field becomes a 400 that names it.** This is
+  a breaking change for any consumer that was sending ignored keys. None is
+  known inside this repository; outside it, this ADR is the notice.
+- **Nothing here changes the generation pipeline, the `raw` flag, or the
+  `API_DOCS_ENABLED` behaviour** ruled in Amendments 1 and 2.

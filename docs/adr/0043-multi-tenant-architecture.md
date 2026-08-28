@@ -1045,3 +1045,70 @@ blanket `bms_tenant` DML grant stands.**
 - **This does not settle per-role grants generally.** Only the `WITH CHECK`
   disjunct is ruled. A future narrowing of `0039` from `ALL TABLES` to a per-table
   matrix is its own decision and its own ADR.
+
+## Amendment 6 (2026-08-28) — a fleet-managed channel's failure detail is redacted in a tenant's ledger; its code is not
+
+Ruled by the repository owner at the gate for **`E7.1g`**, before any
+implementation code. Raised by the `E7.1d` security review, which found it while
+checking the screen `E7.1d` had just put in front of tenant admins.
+
+**What this amendment touches.** Decision 7 only, and only its read side.
+Decision 7's substance stands: *a fleet-managed global stays shareable*, so
+`setRuleChannels` may still wire a `NULL`-organization channel onto a tenant's
+rule. What is added is a rule about what comes **back** through the ledger.
+Decisions 1–6 and 8–13 are untouched, and no policy, grant or migration changes —
+this is an application-layer projection rule.
+
+### The defect, and why it is reachable
+
+`ChannelsService.listDeliveries` (`:497`) filters on
+`notification_deliveries.organization_id` alone. The joined channel's **own**
+organization is never tested, while both `channelCode` (`:510`) and `error`
+(`:513`) are returned.
+
+The reachable path is rule dispatch, not `sendTest` — `sendTest` refuses a
+`NULL`-org channel outright, which is why `E7.1d` disables the button and says
+so. But `setRuleChannels` (`:644`) deliberately permits a fleet-managed channel
+on a tenant's rule under decision 7, and `record()` stamps the **rule's**
+organization on the delivery. So: a global admin wires org A's rule to the fleet
+channel `ops-pager`; the webhook fails; `webhook-guard.ts:200` writes
+`webhook host hooks.internal.example.com could not be resolved` into `error`;
+and org A's `organization_admin` reads a fleet channel's code together with a
+resolved internal hostname.
+
+**No secret leaks and §9.6 is not breached** — the HMAC key never enters
+`config` and never enters `error`. What leaks is fleet infrastructure naming,
+to a tenant. It also contradicts the posture `list()` states in its own comment
+at `:190`, where fleet-managed rows are withheld from an `organization_admin`
+because *"a fleet-managed row is fleet business"*.
+
+### The ruling
+
+**Redact the detail, keep the code.** For a non-`admin` caller, `error` is
+blanked when the joined `notification_channels.organization_id IS NULL`.
+`channelCode` is returned intact. A global admin's view is unchanged.
+
+**Withholding both was considered and rejected**, and the reason is the more
+interesting half of this amendment. The tenant's own alarm really was dispatched
+through that channel. A failed delivery that names nothing is precisely the
+failure mode [ADR 0041](0041-notification-service.md) decision 10 exists to
+prevent — *"no notification arrived"* and *"no notification was attempted"* must
+stay distinguishable, and a row the operator cannot identify collapses them
+again. The code is what makes the row actionable; the resolved hostname is what
+makes it a disclosure. They separate cleanly, so they are separated.
+
+The join is already in the query. This is one `CASE`, not a restructure.
+
+### Consequences
+
+- **A tenant admin sees that a fleet channel failed, but not why.** That is
+  intentional and is the whole ruling. The route to the reason is the operator,
+  who is the only party who can act on it anyway.
+- **`E7.1d` is what made this visible**, not what introduced it. The projection
+  has been wrong since the ledger existed; before `E7.1d` no tenant-facing
+  screen rendered it. Recorded because "the review that shipped the screen found
+  the leak the screen exposed" is the sequence worth repeating, not hiding.
+- **This does not settle redaction generally.** Only `error` on a
+  `NULL`-organization channel is ruled. Any wider question — whether other
+  fleet-owned columns leak through tenant-facing projections — is its own audit
+  and its own decision.
