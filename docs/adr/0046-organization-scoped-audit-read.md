@@ -121,3 +121,114 @@ is being decided in the same pass on exactly that principle.
 - **ADR 0029's OpenAPI document changes**: the two audit routes' role
   descriptions widen. No schema shape moves.
 - The two refused roles remain the obvious amendment surface for this ADR.
+
+## Amendment 1 (2026-08-28) — decision 3's array test is subordinate to decision 4's role list
+
+Ruled by the repository owner after the `E7.1e` implementation review, on a
+conflict all three reviewers found independently. **No decision is reversed and
+no behaviour changes**; this amendment corrects wording that, read literally,
+contradicts decision 4 of this same ADR.
+
+**The conflict.** Decision 3 says the gate branches on
+`writableOrganizationIds(jwt)`: *"`null` → unfiltered … a non-empty array →
+`inArray(auditLog.organizationId, ids)`"*. Decision 4 says `location_admin`
+stays refused. Those two cannot both be implemented as written, because
+`AccessControlService.writableOrganizationIds` resolves a `location_admin`
+through `locationDerivedOrganizationIds` — which returns **the organizations
+implied by its location grants**, that is, the whole organization, not the
+granted locations. A `location_admin` therefore produces a *non-empty array*
+and, under decision 3's literal wording, would be admitted to every audit row
+its organization owns.
+
+That is precisely the read-gate-wider-than-write-gate defect `E7.1c`'s review
+found on `ChannelsService.list()`, recorded in AGENTS.md §4.7, on a more
+sensitive endpoint.
+
+**The ruling.** Decision 4 governs. The gate branches on the **role resolved
+from `bms.users`**, not on the shape of the scope array:
+
+1. the ADR 0044 provisioned-account probe, unchanged and still first;
+2. `requireMasterDataUser`, which refuses `asset_group_admin`;
+3. `role === "admin" || role === "organization_admin"`, and everything else is
+   refused. Only then is `writableOrganizationIds` consulted, for the scope
+   alone and never for the authorization decision.
+
+Two properties of that ordering are load-bearing and are stated here so a later
+reader does not rediscover them:
+
+- **The role comes from the database, not from `jwt.role`.** A token outlives a
+  demotion by up to `JWT_TTL`, and in OIDC mode `roleFromClaims` falls back to
+  `viewer` when realm roles are absent. Every other gate in
+  `AccessControlService` reads the database role for the same reason.
+- **An empty array is not the unrestricted `null`** (AGENTS.md §4.7). An
+  `organization_admin` holding no `user_organization_access` grant resolves to
+  `[]`, which must match no row. Decision 3 did not enumerate this case;
+  `inArray(column, [])` compiles to the literal SQL `false` in the pinned
+  `drizzle-orm@0.38.4`, which is the required behaviour, and
+  `audit.integration.spec.ts` asserts it directly rather than trusting the
+  compiler.
+
+**Why an amendment rather than a silent implementation.** ADR 0021's own
+Amendment 1 exists because that ADR's original wording asserted a property the
+code did not have. Leaving decision 3 as written would repeat exactly that: the
+next person to implement against this ADR reads "non-empty array" and reopens
+the hole. Recording the subordination costs one section and closes it.
+
+## Amendment 2 (2026-08-28) — a scoped reader sees the actor's email, never the acting operator's `oidcSubject`
+
+Ruled by the repository owner after the `E7.1e` implementation review, raised
+independently by the security and compliance reviewers. **This is a projection
+rule, on the same pattern as [ADR 0043 Amendment
+6](0043-multi-tenant-architecture.md#amendment-6-2026-08-28--a-fleet-managed-channels-failure-detail-is-redacted-in-a-tenants-ledger-its-code-is-not),
+and it changes no policy, grant or migration.**
+
+**What decision 2 did not cover.** Decisions 1–6 settle *which rows* a scoped
+reader sees. They say nothing about *which columns*, and the projection is the
+other half of the gate whenever the audience widens — the rule AGENTS.md §4.7
+records from ADR 0043 Amendment 6. `E7.1e` changed no column in
+`AuditAdminService.selectRows`; it changed who reads them.
+
+**The disclosure.** Two channels carry the acting operator's identity to a
+tenant admin:
+
+- `actorEmail`, resolved through the `bms.users` left join; and
+- `oidcSubject`, which **16 write sites across six services** place at the top
+  level of the audit `payload` — `rules.service.ts`, `work-orders.service.ts`,
+  `maintenance.service.ts`, `alarms.service.ts`,
+  `alarm-enrichment.service.ts` and `channels.service.ts`. ADR 0021 returns
+  `payload` verbatim, so they are returned with it.
+
+A global `admin` — the Euphoria/Ion Exchange operator — is org-less and acts on
+tenant data by design, so a fleet operator acknowledging an alarm for PHEWB
+leaves rows that `phe-admin@bms.local` can now read.
+
+**The ruling.** `actorEmail` stays; `oidcSubject` is blanked for any
+non-`admin` caller.
+
+An email in an audit trail is the answer to *"who changed this"*, and a tenant
+is entitled to it for actions on its own data — withholding it would make the
+ledger unable to do the job ADR 0021 built it for. An IdP subject identifier is
+an internal credential of the identity provider; it answers no tenant question
+and belongs to the operator's own account, not to the tenant's record.
+
+Three implementation constraints, all inherited from ADR 0043 Amendment 6 and
+stated so the follow-up does not re-derive them:
+
+1. **Redact in SQL, not in the `.map()`.** The value must never leave Postgres
+   for a tenant — a row that crosses the wire can reach a query log or an error
+   dump. `payload - 'oidcSubject'` is the jsonb key removal; every one of the
+   16 sites writes the key at the top level, so no recursive scrub is needed.
+2. **Key it on the caller's `role`, not on `scope === null`.** Amendment 6
+   settled this: should a future role ever resolve to a null scope, the
+   role-keyed test still redacts and a scope-keyed one would silently stop.
+3. **The redaction applies to the export as well as the list**, which share
+   `selectRows` — decision 6's structure makes this automatic and
+   `tests/e7.1e-audit-read-scope-guard.test.ts` pins it.
+
+**Not in scope here.** This does not narrow what the writers record. The
+`oidcSubject` stays in the stored row, because the global admin's view is the
+forensic record and removing it there would destroy evidence to solve a
+disclosure problem that a projection solves. Nor does it touch `payload`'s
+verbatim return in general — the unbounded `z.record(z.unknown())` value spaces
+that ADR 0021 decision 6 makes a standing obligation are a separate matter,
+tracked against `E8.3`.
