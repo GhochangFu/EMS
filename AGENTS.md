@@ -1228,10 +1228,13 @@ sidebar; keep scoped visibility and active-state behaviour consistent with
 These are intentionally deferred. Do not implement them yet:
 
 - **Multi-tenancy and row-level security are delivered** (**ADR 0043**,
-  `E7.1a`–`E7.1c`) — organization-scoped RLS under `FORCE` on the decision-5
-  table set, a `bms_tenant`/`bms_fleet`/`bms_auth` role split, and org-scoped
+  `E7.1a`–`E7.1d`) — organization-scoped RLS under `FORCE` on the decision-5
+  table set, a `bms_tenant`/`bms_fleet`/`bms_auth` role split, org-scoped
   notification channels and rule identity gated by
-  `canManageNotificationChannel`. **Still deferred:** org-level **read** RBAC
+  `canManageNotificationChannel`, and (`E7.1d`, PR #180) the `F3.8` admin UI
+  split: both notification screens gate on `canManageNotificationChannels`
+  rather than on `isMasterDataAdmin`, the create form carries an organization
+  picker, and both tables name the owning tenant. **Still deferred:** org-level **read** RBAC
   on `bms.audit_log` (§4.7's third gate stays global-admin-only; the column
   now exists but the reader was never widened to `organization_admin` — see
   §2's *Audit read* row), per-organization SMTP relays (decision 13 — the

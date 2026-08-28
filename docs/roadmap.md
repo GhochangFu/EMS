@@ -2163,14 +2163,13 @@ Mirrored into: AGENTS.md status line and §2 *Database roles* row (the role
 inventory only — see the section below for the tenancy semantics this
 migration made possible but did not itself add).
 
-### Multi-tenant architecture — RLS, role split and org scoping (`E7.1a`–`E7.1c`, ADR 0043) — done
+### Multi-tenant architecture — RLS, role split and org scoping (`E7.1a`–`E7.1d`, ADR 0043) — done
 
-**2026-08-24 through 2026-08-27, PRs #155/#162/#166/#169.** ADR 0043 and its
-five amendments, plus ADR 0044 and ADR 0045. Split into four children at the
-§10 gate because the counted write blast radius (~65 sites across the
+**2026-08-24 through 2026-08-28, PRs #155/#162/#166/#169/#180.** ADR 0043 and
+its five amendments, plus ADR 0044 and ADR 0045. Split into four children at
+the §10 gate because the counted write blast radius (~65 sites across the
 decision-5 tables) and ADR 0045's owner-role work did not fit the original
-`14–20` estimate. `E7.1d` — the admin UI split between org-scoped and
-fleet-wide — is still open.
+`14–20` estimate. **All four children are now delivered.**
 
 - **`E7.1a`** (ADR 0045, PR #155) gave the schema a non-superuser owner,
   `bms_owner`, so `FORCE ROW LEVEL SECURITY` — a no-op under the superuser
@@ -2196,6 +2195,22 @@ fleet-wide — is still open.
   reviews found no Critical, no High; two false greens and two real defects
   (a rule wirable to a foreign org's channel; the read gate wider than the
   write gate) were fixed.
+- **`E7.1d`** (PR #180, squash `af40aaa`) split the `F3.8` admin UI. The gates
+  were wrong in both directions: the two master-data tabs were still
+  `globalAdminOnly`, so an `organization_admin` never saw screens the API had
+  served it since `E7.1c`, while the routes used a bare `AdminRoute` whose
+  `isMasterDataAdmin` admits `location_admin` — and `ChannelsService.list`
+  returns `[]` for that role, so the page was reachable by URL and answered
+  with an empty table indistinguishable from an empty tenant. Both now gate on
+  `canManageNotificationChannels`. The create form gained the organization
+  picker `NotificationsService.sendTest` had been naming in its own 400 since
+  `E7.1c`; until then the only channel the UI could create was fleet-wide, and
+  a fleet-wide channel cannot be send-tested at all. Both tables name the
+  owning tenant, and the readiness banner is untouched (ADR 0041 decision 10).
+  Three reviews found no Critical, no High; six findings fixed, and a seventh
+  found while fixing — `isPending` is false on error too, so a *failed*
+  organization list rendered "You administer no active organization", a
+  tenancy claim drawn from a request that never answered.
 - **`telemetry.*` is untouched throughout** (decision 9) — no column, no
   policy; isolation stays `readableAssetIds`, by design.
 
