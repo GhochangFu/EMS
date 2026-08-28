@@ -20,6 +20,7 @@ import {
   assertAssetlessTimeWindowRefusedForScoped,
   assertCreateDraftReadsBackOnTenantTransaction,
   assertCreateStampsOrgAndActorUnderRealRls,
+  assertEvaluatorSubjectRedactedForNonAdmin,
   assertPreviewAuditOrgForksOnAsset,
   assertPublishRuleReadsBackInTenantTransaction,
   assertRuleExecutionListReturnsBothOrgsForTwoOrgActor,
@@ -30,6 +31,7 @@ import {
   assertSingleOrgRuleListReturnsOwnRow,
   assertSingleOrgRuleListRunsOnTenantTransaction,
   assertUpdateRuleReadsBackInTenantTransaction,
+  EVALUATOR_SUBJECT,
   type RulesRlsFixtures,
 } from "./rules.service.rls.integration.spec";
 
@@ -178,6 +180,13 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
 
     // One execution per seeded rule, stamped its org under the org GUC, so
     // listExecutions has rows to return on both the single-org and fleet paths.
+    //
+    // `E8.6` gave `trace` real content. It was `{}`, which made ADR 0046
+    // Amendment 3 untestable against these rows: an assertion that the
+    // evaluator's subject is absent passes just as well against the unredacted
+    // reader when no row ever carried one. The shape matches what
+    // `evaluateEnabledRules` actually writes — `evaluatedBy` and `source` at the
+    // top level, beside whatever the evaluation produced.
     const seedExecution = async (orgId: string, ruleId: string): Promise<string> =>
       withTenant(tenantDb, orgId, async (tx) => {
         const [row] = await tx
@@ -189,7 +198,11 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
             matched: true,
             observedValue: 1,
             message: "E7.1b read-path execution",
-            trace: {},
+            trace: {
+              evaluatedBy: EVALUATOR_SUBJECT,
+              source: "rule",
+              observed: 1,
+            },
           })
           .returning({ id: ruleExecutions.id });
         return row.id;
@@ -356,5 +369,9 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
 
   it("runs a single-org listExecutions on the tenant pool (one tenant transaction, no fleet)", async () => {
     await assertSingleOrgRuleExecutionListRunsOnTenantTransaction(ctx);
+  });
+
+  it("hides the evaluator's oidcSubject from a non-admin reader (ADR 0046 Amendment 3)", async () => {
+    await assertEvaluatorSubjectRedactedForNonAdmin(ctx);
   });
 });

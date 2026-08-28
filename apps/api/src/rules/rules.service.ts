@@ -49,7 +49,12 @@ import { insertRuleAuditLog } from "./rule-audit";
 import { assertRuleCodeAvailable, nextRuleCode } from "./rule-codes";
 import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
 import { resolveAssetOrgOrNull, resolveWriteOrg } from "./rule-org";
-import { filterRuleRowsByAssetIds, selectRuleRowById, selectRuleRows } from "./rule-reads";
+import {
+  filterRuleRowsByAssetIds,
+  selectRuleRowById,
+  selectRuleRows,
+  traceProjection,
+} from "./rule-reads";
 import { pointKeysForAsset } from "./rule-points";
 import { batchedLatestPointValues, latestPointValue } from "./rule-samples";
 import type {
@@ -457,10 +462,23 @@ export class RulesService {
     return mapRuleRow(created);
   }
 
-  /** Lists recent rule execution traces. */
+  /**
+   * Lists recent rule execution traces.
+   *
+   * @param redactEvaluatedBy removes `trace.evaluatedBy` — the evaluating
+   *   operator's IdP subject — for every non-`admin` reader (ADR 0046
+   *   Amendment 3, `E8.6`). **Required, not defaulted**, on the ADR 0030
+   *   precedent: a default is a call site nobody has to think about, and this
+   *   endpoint carries no role gate of its own, so the compiler finding every
+   *   caller is the control. Resolve it from
+   *   {@link AccessControlService.isGlobalAdmin} — the database role — and
+   *   never from `assetIds === null`, which picks out the same callers today
+   *   only by coincidence.
+   */
   async listExecutions(
     query: ListRuleExecutionsQuery,
-    assetIds?: string[] | null,
+    assetIds: string[] | null | undefined,
+    redactEvaluatedBy: boolean,
   ): Promise<{ items: RuleExecutionItem[] }> {
     return withReadScope(
       this.db,
@@ -479,7 +497,9 @@ export class RulesService {
             matched: ruleExecutions.matched,
             observedValue: ruleExecutions.observedValue,
             message: ruleExecutions.message,
-            trace: ruleExecutions.trace,
+            // ADR 0046 Amendment 3 — redacted in SQL, never in the `.map()`
+            // below. See `traceProjection` for why both halves matter.
+            trace: traceProjection(redactEvaluatedBy),
           })
           .from(ruleExecutions)
           .innerJoin(automationRules, eq(ruleExecutions.ruleId, automationRules.id));
@@ -662,14 +682,15 @@ export class RulesService {
             trace: {
               ...result.trace,
               ...(raisedAlarmId ? { alarmId: raisedAlarmId } : {}),
-              // The OIDC subject, not the email (security review, F3.6): this
-              // trace is now written for every enabled rule regardless of the
-              // caller's assetIds (ADR 0033 decision 2), and `listExecutions`
-              // scopes reads by asset, not by who evaluated — so an operator at
-              // location B can read a location-A operator's trace on assets B
-              // can see. `sub` is still an actionable identifier for an admin
-              // correlating against `bms.users`, without handing every scoped
-              // reader a plaintext email address they have no other route to.
+              // The OIDC subject, not the email (F3.6). **The write is
+              // unchanged; its justification moved** under ADR 0046 Amendment 3
+              // — the old one is deleted rather than left to mislead. F3.6
+              // reasoned `sub` was safe to expose because an opaque identifier
+              // beats a plaintext email for a scoped reader. A scoped reader
+              // now sees *neither*: `listExecutions` removes this key for every
+              // non-`admin` caller. The reason to store it is the global
+              // admin's forensic view — `sub` correlates against `bms.users`
+              // and the IdP, and survives an email change.
               evaluatedBy: actor.sub,
               source: row.source,
             },
