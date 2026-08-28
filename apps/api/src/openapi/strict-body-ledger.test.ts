@@ -4,6 +4,7 @@ import {
   testEveryNodeHasARecordedDecision,
   testEveryRegisteredSchemaIsUnderAudit,
   testTheLedgerHasNoEntriesForNodesThatAreGone,
+  testTheWalkerSeesConstructsTheRegistryDoesNotUseYet,
   testTheWalkHandlesEveryConstructItMeets,
 } from "./strict-body-ledger.spec";
 
@@ -25,5 +26,9 @@ describe("E7.1f — every request body object node carries a strictness decision
 
   it("records no decision for a node that no longer exists", () => {
     testTheLedgerHasNoEntriesForNodesThatAreGone();
+  });
+
+  it("sees catchall, brand and tuple-rest constructs the registry does not use yet", () => {
+    testTheWalkerSeesConstructsTheRegistryDoesNotUseYet();
   });
 });

@@ -32,8 +32,7 @@ export const draftLocationSchema = z
     province: z.string().max(64).optional(),
     capital: z.string().max(128).optional(),
     meta: z.record(z.unknown()).optional(),
-  })
-  .strict();
+  });
 
 export const draftRtuSchema = z
   .object({
@@ -54,8 +53,7 @@ export const draftRtuSchema = z
     stationName: z.string().max(255).optional(),
     ingestEnabled: z.boolean().optional(),
     meta: z.record(z.unknown()).optional(),
-  })
-  .strict();
+  });
 
 export const draftPointKeySchema = z
   .object({
@@ -64,8 +62,7 @@ export const draftPointKeySchema = z
     domain: z.string().max(64).optional(),
     unit: z.string().max(32).optional(),
     description: z.string().optional(),
-  })
-  .strict();
+  });
 
 export const draftAssetSchema = z
   .object({
@@ -81,8 +78,7 @@ export const draftAssetSchema = z
     // valid list, instead of letting `assets_domain_fk` produce a 500.
     domain: assetDomainCodeSchema,
     meta: z.record(z.unknown()).optional(),
-  })
-  .strict();
+  });
 
 export const draftAssetPointSchema = z
   .object({
@@ -91,17 +87,46 @@ export const draftAssetPointSchema = z
     sourceDataKey: z.string().min(1).max(128),
     sensorCode: z.string().max(64).optional(),
     unit: z.string().max(32).optional(),
-  })
-  .strict();
+  });
 
 export const onboardingDraftMetaSchema = z
   .object({
     rtuTargetCount: z.number().int().positive().optional(),
     importedFromExcel: z.boolean().optional(),
     useExistingPointKeys: z.boolean().optional(),
-  })
-  .strict();
+  });
 
+/**
+ * **Deliberately NOT `.strict()`, and neither is anything below it (`E7.1f`).**
+ *
+ * ADR 0029 Amendment 3 ruling 1 keeps strictness a per-schema judgement. This
+ * subtree is the node in this repository where the judgement comes out the
+ * other way, and the reason is that **these schema objects validate three
+ * different producers**, only one of which is an HTTP caller:
+ *
+ * 1. `PATCH :id/draft` — a real caller, where an unknown key is a caller error.
+ * 2. **The stored draft**, re-parsed by `OnboardingValidateService.validate`.
+ *    It carries the top-level `_secrets` key as soon as any RTU credential is
+ *    set (`onboarding-redaction.ts:290`). Strict rejects it, and because
+ *    `validate` returns before `validateCrossField`, `readyToCommit` can never
+ *    become true again — while `onboarding-validate.service.ts` separately
+ *    refuses an MQTT ingest RTU whose `credentialsSet` is false. Setting the
+ *    credential is what breaks the parse, so the ADR 0022 pilot flow deadlocks.
+ * 3. **The model's `draftPatch`** (`onboarding-chat.service.ts:238`), where the
+ *    result is `.data ?? {}`. One invented key from the LLM would discard the
+ *    operator's entire turn while the assistant still answers "I've updated the
+ *    draft" — silent data loss, which is worse than the 200 this item set out
+ *    to fix. Stripping is what the M2 fix there relies on.
+ *
+ * So the wrapper `patchDraftBodySchema` is strict — it declares only `draft`,
+ * so nothing rides alongside — and the draft body itself strips, exactly as it
+ * did before. **What is given up is real and is stated rather than hidden:** a
+ * `PATCH {"draft":{"location":{"nope":1}}}` still answers 200 with `nope`
+ * dropped. Closing that needs one schema per producer rather than one shared
+ * object, which is a bigger change than `E7.1f` was scoped for.
+ *
+ * Do not add `.strict()` here without splitting those three producers first.
+ */
 export const onboardingDraftSchema = z
   .object({
     location: draftLocationSchema.optional(),
@@ -110,8 +135,7 @@ export const onboardingDraftSchema = z
     assets: z.array(draftAssetSchema).optional(),
     assetPoints: z.array(draftAssetPointSchema).optional(),
     onboardingMeta: onboardingDraftMetaSchema.optional(),
-  })
-  .strict();
+  });
 
 export const createSessionBodySchema = z
   .object({

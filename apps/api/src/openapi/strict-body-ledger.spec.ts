@@ -1,4 +1,5 @@
 import { expect } from "vitest";
+import { z } from "zod";
 import type { ZodTypeAny } from "zod";
 
 import { assetPointCalcOverrideBodySchema } from "../admin/asset-points/asset-point-calc-override.schema";
@@ -97,12 +98,18 @@ import { REQUEST_SCHEMAS } from "./openapi-registry";
  * ## Why the ledger reads the Zod tree and not the emitted document
  *
  * Amendment 3 ruling 2 says the generated document changes when a schema gains
- * `.strict()`. **It does not** — measured, and corrected by that amendment's
- * Errata 1. Under this repo's converter options a plain `z.object` already
- * emits `additionalProperties: false`; strip and strict are byte-identical and
- * only `.passthrough()` differs. A gate keyed on the emitted value would
- * therefore assert nothing at all. This one reads `_def.unknownKeys` off the
- * Zod tree, which is the only place the distinction survives.
+ * `.strict()`. **It does not.** Measured while writing this file, with the
+ * exact converter options `zod-openapi.ts:84-91` passes: a plain `z.object`
+ * already emits `additionalProperties: false`, so strip and strict are
+ * byte-identical and only `.passthrough()` differs. Counted across the whole
+ * registry before and after this change: 73 `false`, 0 `true`, both times.
+ *
+ * A gate keyed on the emitted value would therefore assert nothing at all.
+ * This one reads `_def.unknownKeys` off the Zod tree — the only place the
+ * distinction survives — and cross-checks `_def.catchall`, which can override
+ * it. The measurement is recorded against ADR 0029 as Amendment 3 Errata 1;
+ * the reasoning above stands on its own if you are reading this before that
+ * lands.
  *
  * That errata also inverts the defect, and the inversion is the reason this
  * matters: the document has published `additionalProperties: false` since
@@ -305,7 +312,19 @@ export function walkObjectNodes(rootLabel: string, root: ZodTypeAny): WalkedNode
   const seen = new Set<ZodTypeAny>();
 
   const visit = (schema: ZodTypeAny, label: string): void => {
-    if (schema === undefined || schema === null || seen.has(schema)) return;
+    // **A missing child is reported, never skipped.** This guard is the general
+    // form of a bug found twice while writing this file: the walker read the
+    // wrong `_def` key for a construct (`ZodPipeline` lost its `out` side;
+    // `ZodBranded` and `ZodPromise` keep their child on `_def.type`, not
+    // `_def.innerType`), so `visit(undefined)` returned quietly, `unhandled`
+    // stayed empty, and an entire strict-or-not subtree never reached the
+    // ledger with the build green. Reading a key that does not exist must be
+    // as loud as meeting a construct that is not handled.
+    if (schema === undefined || schema === null) {
+      unhandled.push(`${label} — MISSING CHILD (the walker read a _def key this construct does not have)`);
+      return;
+    }
+    if (seen.has(schema)) return;
     seen.add(schema);
 
     const def = defOf(schema);
@@ -318,7 +337,19 @@ export function walkObjectNodes(rootLabel: string, root: ZodTypeAny): WalkedNode
 
     switch (typeName) {
       case "ZodObject": {
-        found.push({ label, unknownKeys: String(def.unknownKeys) });
+        // **`unknownKeys` alone is not the answer, and trusting it would make
+        // this whole file lie.** `z.object({…}).strict().catchall(z.string())`
+        // reports `unknownKeys: "strict"` while **accepting and keeping** an
+        // unknown key — measured on this repo's zod. A ledger that read only
+        // `unknownKeys` would record that node as strict, the `stale` check
+        // would agree, and the assertion "this node refuses unknown keys" would
+        // be false with everything green. A plain object's catchall is
+        // `ZodNever`; anything else overrides the strictness verdict.
+        const catchall = def.catchall as ZodTypeAny | undefined;
+        const catchallType = catchall ? defOf(catchall).typeName : "ZodNever";
+        const effective = catchallType === "ZodNever" ? String(def.unknownKeys) : `catchall:${catchallType}`;
+        found.push({ label, unknownKeys: effective });
+        if (catchallType !== "ZodNever" && catchall) visit(catchall, `${label}{catchall}`);
         const shape = (def.shape as () => Record<string, ZodTypeAny>)();
         for (const [key, child] of Object.entries(shape)) visit(child, `${label}/${key}`);
         return;
@@ -331,9 +362,16 @@ export function walkObjectNodes(rootLabel: string, root: ZodTypeAny): WalkedNode
       case "ZodDefault":
       case "ZodCatch":
       case "ZodReadonly":
+        visit(def.innerType as ZodTypeAny, label);
+        return;
+      // `_def.type`, NOT `_def.innerType`. Grouping these with the wrappers
+      // above was a real bug: the key does not exist on them, so a strict
+      // object under `.brand()` was silently dropped from the audit. The
+      // MISSING CHILD guard now catches that class, but the correct key is
+      // still the fix.
       case "ZodBranded":
       case "ZodPromise":
-        visit(def.innerType as ZodTypeAny, label);
+        visit(def.type as ZodTypeAny, label);
         return;
       case "ZodArray":
       case "ZodSet":
@@ -375,6 +413,12 @@ export function walkObjectNodes(rootLabel: string, root: ZodTypeAny): WalkedNode
       case "ZodTuple": {
         const items = (def.items ?? []) as ZodTypeAny[];
         items.forEach((item, index) => visit(item, `${label}[${index}]`));
+        // `.rest()` holds its element on `_def.rest` and is `null` without one.
+        // Read explicitly rather than left out: an unread key passes nothing to
+        // `visit`, so the MISSING CHILD guard never fires for it and the gap
+        // would be as quiet as the two this file has already had.
+        const rest = def.rest as ZodTypeAny | null | undefined;
+        if (rest) visit(rest, `${label}[...rest]`);
         return;
       }
       case "ZodLazy":
@@ -444,22 +488,28 @@ export type LedgerEntry =
   | { readonly strict: false; readonly because: string };
 
 /**
- * **The finding this audit produced, and the reason the ledger is uniform.**
+ * **The finding this audit produced — and the exception that corrected it.**
  *
- * `E7.1f` asked whether an unknown key is a caller error *per node*. The answer
- * came out the same for all 73, and that is a property of the codebase rather
- * than a shortcut: **every schema that needs open-ended data already has a
+ * `E7.1f` asked whether an unknown key is a caller error *per node*. For 66 of
+ * the 73 the answer is yes, and that is a property of the codebase rather than
+ * a shortcut: **every schema that needs open-ended data already has a
  * `z.record` for it** — `meta` on locations, assets, RTUs, organizations and
  * template drafts; `config` on an RTU and a notification channel;
  * `credentials`; `sourceDataKeyVars`; `dashboards`. `.strict()` does not close
- * any of those. So there is no node where a caller has a legitimate key with
- * nowhere to put it, which is the only thing that would argue for leaving one
- * open.
+ * any of those, so a caller with a legitimate key always has somewhere to put
+ * it.
  *
- * That is a finding, not an absence of one. It is also why the `strict: false`
- * branch stays in the type and stays asserted: the next schema added without a
- * `z.record` escape hatch is the one that will need it, and it must explain
- * itself rather than inherit this paragraph.
+ * **The remaining seven are the onboarding draft subtree, and they stay open.**
+ * The first version of this ledger recorded them as strict on the strength of
+ * that same reasoning, and it was wrong — not because the `z.record` argument
+ * failed, but because "is this a caller error?" assumes there is one caller.
+ * Those seven objects validate three producers (see `THREE_PRODUCERS`), and
+ * strictness broke two of them. The question the audit should ask first is
+ * **how many producers share this schema object**, and only then whether an
+ * unknown key is an error for each of them.
+ *
+ * That is why the `strict: false` branch is in the type and asserted. It was
+ * written expecting some future schema to need it; the need was already here.
  */
 const CALLER_ERROR =
   "Every field this endpoint accepts is named in the schema, and open-ended data has a " +
@@ -470,14 +520,30 @@ const CREDENTIAL =
   "Carries credential material (§9.6, ADR 0022/ADR 0012). An unknown key silently dropped " +
   "on a credential write is the case with the least excuse for being quiet.";
 
-const ROUND_TRIP =
-  "Round-tripped: apps/web reads this shape from a response contract and sends it back " +
-  "verbatim (`patchDraft` sends `OnboardingSessionDto[\"draft\"]`). The request schema in " +
-  "apps/api and the response contract in packages/shared/src/contracts/onboarding.ts are " +
-  "two copies of one shape, and they were compared field by field at every level before " +
-  "this was made strict — they match exactly today. `.strict()` deliberately couples them: " +
-  "a field added to the response contract alone now breaks the round-trip loudly, at the " +
-  "first PATCH, instead of being silently dropped forever.";
+/**
+ * The one place the audit came out the other way — see `onboarding.schema.ts`
+ * for the full reasoning, which is deliberately in the source beside the
+ * schema rather than only here.
+ *
+ * **This entry exists because the first version of this ledger was wrong.**
+ * It recorded these seven nodes as strict, justified by an `apps/web`
+ * round-trip. Two independent reviews found the justification was the wrong
+ * question: these schema objects validate **three** producers, and only one is
+ * an HTTP caller. Making them strict deadlocked the ADR 0022 onboarding commit
+ * (the stored draft carries `_secrets`) and silently discarded the LLM's draft
+ * patch on any invented key. Both were live regressions, and neither was
+ * visible to `pnpm test` — `_secrets` is only written when
+ * `CREDENTIAL_ENCRYPTION_KEY` is set, which CI does not set.
+ */
+const THREE_PRODUCERS =
+  "NOT strict, deliberately. These objects validate three producers, not one: the PATCH " +
+  "body, the STORED draft re-parsed by OnboardingValidateService (it carries a top-level " +
+  "`_secrets` once any RTU credential is set, so strict deadlocks readyToCommit forever), " +
+  "and the model's `draftPatch` in onboarding-chat.service.ts, where the result is " +
+  "`.data ?? {}` so one invented key would discard the operator's whole turn while the " +
+  "assistant still reports success. The wrapper `patchDraftBodySchema` IS strict and " +
+  "declares only `draft`, so nothing rides alongside. What is given up: a key nested " +
+  "inside `draft` is still dropped with a 200. Closing that needs one schema per producer.";
 
 const ALREADY =
   "Strict before E7.1f, for a reason recorded beside the schema. Listed so the audit is " +
@@ -531,13 +597,13 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "manualReadingsBodySchema/rows[]": STRICT(ALREADY),
   migrateAssetsBodySchema: STRICT(CALLER_ERROR),
   patchDraftBodySchema: STRICT(CALLER_ERROR),
-  "patchDraftBodySchema/draft": STRICT(ROUND_TRIP),
-  "patchDraftBodySchema/draft/assetPoints[]": STRICT(ROUND_TRIP),
-  "patchDraftBodySchema/draft/assets[]": STRICT(ROUND_TRIP),
-  "patchDraftBodySchema/draft/location": STRICT(ROUND_TRIP),
-  "patchDraftBodySchema/draft/onboardingMeta": STRICT(ROUND_TRIP),
-  "patchDraftBodySchema/draft/pointKeys[]": STRICT(ROUND_TRIP),
-  "patchDraftBodySchema/draft/rtus[]": STRICT(ROUND_TRIP),
+  "patchDraftBodySchema/draft": { strict: false, because: THREE_PRODUCERS },
+  "patchDraftBodySchema/draft/assetPoints[]": { strict: false, because: THREE_PRODUCERS },
+  "patchDraftBodySchema/draft/assets[]": { strict: false, because: THREE_PRODUCERS },
+  "patchDraftBodySchema/draft/location": { strict: false, because: THREE_PRODUCERS },
+  "patchDraftBodySchema/draft/onboardingMeta": { strict: false, because: THREE_PRODUCERS },
+  "patchDraftBodySchema/draft/pointKeys[]": { strict: false, because: THREE_PRODUCERS },
+  "patchDraftBodySchema/draft/rtus[]": { strict: false, because: THREE_PRODUCERS },
   reorderWorkOrdersBodySchema: STRICT(CALLER_ERROR),
   "reorderWorkOrdersBodySchema/items[]": STRICT(CALLER_ERROR),
   ruleDraftBodySchema: STRICT(CALLER_ERROR),
@@ -629,6 +695,52 @@ export function testEveryNodeHasARecordedDecision(): void {
 }
 
 /**
+ * **The walker is tested against constructs the registry does not contain yet.**
+ *
+ * Every other assertion here runs over the real schemas, so it can only catch
+ * what is already in the tree. These three cases were each a live bug in this
+ * file — found by review, not by the suite — and none of them is reachable from
+ * `REQUEST_SCHEMAS` today. Without this test they would come back the moment
+ * someone used `.catchall()`, `.brand()` or a tuple `.rest()` in a body schema,
+ * and they would come back **silently**, which is the property that makes them
+ * worth pinning rather than merely fixing.
+ */
+export function testTheWalkerSeesConstructsTheRegistryDoesNotUseYet(): void {
+  // `.catchall()` reports `unknownKeys: "strict"` while ACCEPTING unknown keys.
+  // A ledger that trusted `unknownKeys` would record this node as strict and be
+  // wrong about the one thing it exists to state.
+  const catchall = z.object({ a: z.string() }).strict().catchall(z.string());
+  const catchallNodes = walkObjectNodes("probe", catchall);
+  expect(
+    catchallNodes[0]?.unknownKeys,
+    "a .catchall() object accepts unknown keys, so it must NOT be reported as strict — " +
+      "zod still says unknownKeys: 'strict' for it, which is the trap",
+  ).not.toEqual("strict");
+  expect(
+    catchall.safeParse({ a: "x", surprise: "y" }).success,
+    "sanity: this probe is only meaningful while .catchall() really does accept the key",
+  ).toBe(true);
+
+  // `.brand()` keeps its child on `_def.type`. Reading `_def.innerType` yielded
+  // `undefined`, and a strict object underneath vanished from the audit.
+  const branded = z.object({ inner: z.object({ b: z.string() }).strict() }).brand("probe");
+  const brandedNodes = walkObjectNodes("brand", branded as unknown as ZodTypeAny);
+  expect(
+    brandedNodes.map((n) => n.label),
+    "the walker must descend through .brand() and find the object underneath",
+  ).toContain("brand/inner");
+  expect(unhandled, "descending a branded schema must raise nothing").toEqual([]);
+
+  // A tuple's `.rest()` element hangs off `_def.rest`, which nothing else reads.
+  const tuple = z.object({ t: z.tuple([z.string()]).rest(z.object({ c: z.string() }).strict()) });
+  const tupleNodes = walkObjectNodes("tup", tuple);
+  expect(
+    tupleNodes.map((n) => n.label),
+    "the walker must find an object in a tuple's rest element",
+  ).toContain("tup/t[...rest]");
+}
+
+/**
  * The ledger describes the tree that exists, not one that used to.
  *
  * Without this, deleting a schema leaves its entries behind and the ledger
@@ -660,6 +772,19 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     ...Object.values(BODY_SCHEMAS),
     ...Object.values(QUERY_SCHEMAS),
   ]);
+
+  // **Pin the query list, or this assertion has a hole shaped like a shortcut.**
+  // `REQUEST_SCHEMAS` records no HTTP method, so a schema satisfies the check
+  // from EITHER map. A developer who adds a route, sees "in no audit list" and
+  // pastes the name into `QUERY_SCHEMAS` skips the strictness audit entirely,
+  // with a green build. Eight is the owner's 2026-08-28 boundary; a ninth must
+  // be a deliberate act, not a way out of a failing test.
+  expect(
+    Object.keys(QUERY_SCHEMAS).length,
+    "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
+      "new query schema was registered, widen this number and say so; if a BODY schema was " +
+      "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
+  ).toBe(8);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))
