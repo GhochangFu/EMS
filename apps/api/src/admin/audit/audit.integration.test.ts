@@ -7,6 +7,7 @@ import { createDb } from "@bms/db";
 import { AccessControlService } from "../../auth/access-control.service";
 import { AuditAdminService } from "./audit.service";
 import {
+  assertActorSubjectRedaction,
   assertActorlessRowSurvives,
   assertExportShape,
   assertFiltersNarrow,
@@ -125,6 +126,10 @@ describe.skipIf(!connectionString)("F4.14 — audit read API", () => {
 
   it("exports under the same scope as the list (ADR 0046 decision 6)", async () => {
     await assertScopedExport(svc, fx);
+  });
+
+  it("blanks the operator's oidcSubject for a scoped reader, keeps actorEmail (Amendment 2)", async () => {
+    await assertActorSubjectRedaction(svc, fx);
   });
 
   it("keeps rows whose actor could not be resolved", async () => {
