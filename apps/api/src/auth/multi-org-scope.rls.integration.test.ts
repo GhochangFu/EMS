@@ -134,7 +134,8 @@ describe.skipIf(!connectionString)("E7.1b — multi-org actor scope under real R
 
     const repAsset = async (orgId: string, code: string): Promise<string> => {
       const loc = await superPool.query<{ id: string }>(
-        "SELECT id FROM bms.locations WHERE organization_id = $1 AND active = true LIMIT 1",
+        `SELECT id FROM bms.locations
+           WHERE organization_id = $1 AND active = true ORDER BY created_at, code LIMIT 1`,
         [orgId],
       );
       if (!loc.rows[0]) {

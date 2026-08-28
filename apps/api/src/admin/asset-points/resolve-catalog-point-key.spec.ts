@@ -54,7 +54,7 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
   const { rows: keyRows } = await pool.query<{ code: string; unit: string | null }>(
     `SELECT code, unit FROM bms.point_keys
       WHERE organization_id = $1 AND active = true
-      ORDER BY code LIMIT 1`,
+      ORDER BY created_at, code LIMIT 1`,
     [asset.organization_id],
   );
   const activePointKey = keyRows[0];

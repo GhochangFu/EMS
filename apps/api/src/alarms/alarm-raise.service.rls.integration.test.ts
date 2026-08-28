@@ -74,7 +74,8 @@ describe.skipIf(!connectionString)("E7.1b — AlarmRaiser stamps org under real 
     const organizationId = org.rows[0].id;
 
     const loc = await ownerPool.query<{ id: string }>(
-      "SELECT id FROM bms.locations WHERE organization_id = $1 AND active = true LIMIT 1",
+      `SELECT id FROM bms.locations
+         WHERE organization_id = $1 AND active = true ORDER BY created_at, code LIMIT 1`,
       [organizationId],
     );
     if (!loc.rows[0]) {

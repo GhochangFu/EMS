@@ -285,7 +285,7 @@ export async function createProbes(pool: pg.Pool): Promise<Probes> {
   assertSafeToWriteFixtures();
 
   const { rows: locations } = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.locations ORDER BY name LIMIT 1`,
+    `SELECT id FROM bms.locations ORDER BY created_at, name LIMIT 1`,
   );
   const locationId = locations[0]?.id;
   if (typeof locationId !== "string") {

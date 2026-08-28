@@ -155,7 +155,7 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
 
   const { rows: keyRows } = await pool.query<{ code: string; unit: string | null }>(
     `SELECT code, unit FROM bms.point_keys
-      WHERE organization_id = $1 AND active = true ORDER BY code LIMIT 4`,
+      WHERE organization_id = $1 AND active = true ORDER BY created_at, code LIMIT 4`,
     [grant.organization_id],
   );
   if (keyRows.length < 4) {
@@ -167,16 +167,16 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
 
   const { rows: otherRows } = await pool.query<{ id: string }>(
     `SELECT id FROM bms.locations
-      WHERE organization_id = $1 AND active = true AND id <> $2 ORDER BY code LIMIT 1`,
+      WHERE organization_id = $1 AND active = true AND id <> $2 ORDER BY created_at, code LIMIT 1`,
     [grant.organization_id, grant.location_id],
   );
   const { rows: foreignRows } = await pool.query<{ id: string }>(
     `SELECT id FROM bms.locations
-      WHERE organization_id <> $1 AND active = true ORDER BY code LIMIT 1`,
+      WHERE organization_id <> $1 AND active = true ORDER BY created_at, code LIMIT 1`,
     [grant.organization_id],
   );
   const { rows: inactiveRows } = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.locations WHERE active = false ORDER BY code LIMIT 1`,
+    `SELECT id FROM bms.locations WHERE active = false ORDER BY created_at, code LIMIT 1`,
   );
   if (!otherRows[0] || !foreignRows[0] || !inactiveRows[0]) {
     throw new Error(

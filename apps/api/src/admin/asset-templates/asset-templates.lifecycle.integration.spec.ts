@@ -153,13 +153,31 @@ export async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
   }
 }
 
-/** Resolves an organization with at least two active point keys. */
+/**
+ * Resolves an organization with at least two active point keys.
+ *
+ * **Ordered by `created_at`, and that is the whole point (`F4.53`).** Ordering
+ * by `code` is not enough: `asset-points.service.rls.integration.test.ts:56`
+ * mints an active `E71B_AP_<uuid>_CAT` key for its own run and deletes it at
+ * line 256, and that code sorts early. This suite then adopted a foreign,
+ * transient key and validated a template against it *after* its owner had
+ * cleaned up — `Not in this organization's active point-key catalog`, on a
+ * template that was correct. It reddened CI on `main` at `7543253`.
+ *
+ * `F4.67` is the same mechanism on `bms.assets` and its fix was the same idea;
+ * it was ordering by `code` there too, which is why closing it did not stop
+ * this. The invariant is **oldest wins**: a seeded row predates every suite, so
+ * preferring `created_at` can only ever resolve a row no suite deletes. `code`
+ * stays as the tiebreaker because the seed writes a whole catalog in one
+ * statement, so timestamps tie inside an organization and `created_at` alone
+ * would not be deterministic.
+ */
 export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
   const { rows } = await pool.query<{ organization_id: string; codes: string[] }>(
-    `SELECT organization_id, ARRAY_AGG(code ORDER BY code) AS codes
+    `SELECT organization_id, (ARRAY_AGG(code ORDER BY created_at, code))[1:2] AS codes
        FROM bms.point_keys WHERE active = true
       GROUP BY organization_id HAVING COUNT(*) >= 2
-      ORDER BY organization_id LIMIT 1`,
+      ORDER BY MIN(created_at), organization_id LIMIT 1`,
   );
   const row = rows[0];
   if (!row) {
