@@ -20,7 +20,10 @@
 > provenance rule that decides which of those values is a reading at all
 > (**ADR 0028**), and the OpenAPI document generated from the Zod schemas that
 > validate each request (**ADR 0029**, with amendments for the refinements the
-> conversion drops and for the docs being absent rather than guarded), and the
+> conversion drops, for the docs being absent rather than guarded, and for
+> `.strict()` on mutating bodies — whose Errata 1 records that the emitted
+> document never changes, because a plain `z.object` already says
+> `additionalProperties: false`), and the
 > **response** contracts that are now schemas rather than types, validated at
 > the web client's boundary (**ADR 0030**, with amendments for the conversion
 > spike, for what building it changed, and for the real drift its validator
@@ -528,6 +531,34 @@ Do not add top-level folders without updating this section.
   `z.string().describe("x").refine(…)` yields **no** description, because
   `.refine` wraps the described schema in a new `ZodEffects`.
   `tests/adr-0029-openapi-contract.test.ts` fails the build on both.
+- **`.strict()` on a request body is a per-schema judgement, and the first
+  question is how many producers share the schema object** (ADR 0029
+  Amendment 3, `E7.1f`). Without it an unknown key is dropped and the write
+  answers `200`, which every caller that is not `apps/web` reads as "accepted"
+  — that is a contract defect even where containment is sound, and it is how
+  `PATCH {"name":"x","organizationId":"<other-tenant>"}` reported a tenancy
+  move that never happened. So decide it per node and **record the decision**:
+  `apps/api/src/openapi/strict-body-ledger.spec.ts` walks every object
+  reachable from the registry and fails the build on one that carries none, or
+  on a permissive one with no reason given. A blanket sweep is explicitly not
+  the rule.
+  **The judgement is not "is an unknown key a caller error?" — that assumes
+  there is one caller.** `E7.1f` made the onboarding draft strict and broke two
+  things, because those same schema objects also validate the **stored** draft
+  (it carries `_secrets` once a credential is set, so `readyToCommit` could
+  never become true again and the ADR 0022 pilot deadlocked) and the **model's**
+  `draftPatch` (read as `.data ?? {}`, so one invented key discarded the
+  operator's whole turn while the assistant still reported success). Count the
+  producers first; strictness is only right where every one of them is a caller.
+  Neither failure was visible to `pnpm test` — `_secrets` needs
+  `CREDENTIAL_ENCRYPTION_KEY`, which CI does not set.
+  Two traps: `.strict()` must precede `.refine()`, because a `ZodEffects` has
+  no `.strict()`; and `.catchall()` leaves `_def.unknownKeys` reading
+  `"strict"` while the object **accepts** unknown keys, so never conclude
+  strictness from that field alone. What does **not** change is the emitted
+  document — Errata 1 measured 73 `additionalProperties: false` and 0 `true`
+  either way, so nothing about `.strict()` is visible there and no fixture is
+  ever regenerated for it.
 - **Where the OpenAPI docs are served they are unauthenticated, so they are
   absent by default** (ADR 0029 Amendment 2). There is no guarded state and
   attempting one is wasted work: Swagger UI does not send an `Authorization`
