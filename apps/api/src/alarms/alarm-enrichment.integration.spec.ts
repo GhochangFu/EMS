@@ -45,16 +45,30 @@ function assert(condition: boolean, message: string): void {
 }
 
 /**
- * The actor every upsert records. `bms.users` is read, not built in-transaction,
- * because no spec in `apps/api` writes to it — so unlike `bms.assets` (see
- * `../testing/integration-fixtures.ts`) nothing can delete this row mid-test.
- * `ORDER BY id` makes the choice deterministic rather than heap-order.
+ * The actor every upsert records — the **oldest** user, never the lowest id.
+ *
+ * `F4.53`'s eighth enumerated instance, and the one the `7543253` review refused
+ * to let the row close over. The comment that stood here claimed `bms.users` was
+ * safe to read positionally "because no spec in `apps/api` writes to it — so
+ * unlike `bms.assets` nothing can delete this row mid-test". **That was false
+ * when it was written.** `apps/api/src/auth/multi-org-scope.rls.integration.test.ts:113`
+ * commits a user through `superPool` in `beforeAll`, outside any transaction,
+ * and deletes it in `afterAll`. `users.id` is `defaultRandom()` against four
+ * seeded rows, so the transient user won `ORDER BY id LIMIT 1` roughly one run
+ * in five — and both files run in a single `--project api` invocation.
+ *
+ * `ORDER BY id` did make the choice deterministic *given a fixed set of rows*,
+ * which is not the property this needs: the **set** is what moves. Ordering by
+ * `createdAt` is the invariant the rest of `F4.53` uses — a seeded user predates
+ * every suite in the run, so it can only ever resolve a row no suite deletes.
+ * `id` stays as the tiebreaker because the seed writes its four users in one
+ * statement, so their timestamps tie.
  */
 async function firstSeededUser(db: BmsDb): Promise<Pick<JwtPayload, "sub" | "email">> {
   const [user] = await db
     .select({ id: users.id, email: users.email })
     .from(users)
-    .orderBy(asc(users.id))
+    .orderBy(asc(users.createdAt), asc(users.id))
     .limit(1);
   if (!user) {
     throw new Error("no seeded user available — run pnpm db:seed first");

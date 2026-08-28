@@ -11,8 +11,8 @@ import { repoRoot, stringLiterals, walk, withoutComments } from "./support/sourc
  * `tests/integration-fixture-isolation.test.ts` already carries `F4.67` and
  * `F4.68` for `bms.assets`, and says in its own text that `F4.53` — the
  * unordered `LIMIT` — is "a different mechanism" it does not yet enforce. This
- * file is that rule, and it covers the two further tables the mechanism moved
- * to once the `bms.assets` instances were closed.
+ * file is that rule, and it covers all four tables the mechanism has been seen
+ * on: `bms.assets`, `bms.locations`, `bms.point_keys` and `bms.users`.
  *
  * **Why a new file rather than a rule added to that one**: it is 836 lines
  * against the AGENTS.md §4.5 cap of 1000, and `tests/integration-fixture-sharing.test.ts`
@@ -45,25 +45,46 @@ import { repoRoot, stringLiterals, walk, withoutComments } from "./support/sourc
  * still required: the seed writes a catalog in one statement, so timestamps tie
  * within an organization and `created_at` alone is not deterministic.
  *
- * **What this does not catch.** A query assembled by concatenation, held in a
- * `.sql` file, or built through a query builder is not one string literal and is
- * invisible here — the same fail-open the sibling rules carry, and the reason
- * these reads should stay written as literals. A read that resolves the row by
- * name is out of scope by design: naming a row is the *other* fix for this
- * mechanism, and `integration-fixture-sharing.test.ts` owns the collisions that
- * naming creates.
+ * **The third instance, and why this file scans two spellings.** The `7543253`
+ * review refused to close `F4.53` because its eighth enumerated selection was
+ * still live and no gate could see it: `alarm-enrichment.integration.spec.ts`
+ * resolved its actor with `.from(users).orderBy(asc(users.id)).limit(1)` — a
+ * *builder* chain, not a string literal — under a comment claiming `bms.users`
+ * was safe because nothing writes to it. `multi-org-scope.rls.integration.test.ts`
+ * commits a user outside any transaction and deletes it in `afterAll`, and
+ * `users.id` is `defaultRandom()` against four seeded rows, so that transient
+ * user won `ORDER BY id LIMIT 1` about one run in five. A rule that only read
+ * SQL literals would have let that stand, so this one reads both forms.
+ *
+ * **What this still does not catch.** A query assembled by concatenation or held
+ * in a `.sql` file is neither one literal nor one chain — the same fail-open the
+ * sibling rules carry. A read that resolves the row by name is out of scope by
+ * design: naming a row is the *other* fix for this mechanism, and
+ * `integration-fixture-sharing.test.ts` owns the collisions that naming creates.
  */
 describe("F4.53 — positional fixture reads resolve the oldest row", () => {
-  /** The three tables suites resolve parents from. */
-  const FIXTURE_TABLE = /\bFROM\s+bms\.(assets|locations|point_keys)\b/i;
+  /** The four tables suites resolve parents and actors from. */
+  const FIXTURE_TABLE = /\bFROM\s+bms\.(assets|locations|point_keys|users)\b/i;
+  /**
+   * The same four tables in Drizzle's builder spelling.
+   *
+   * A string-literal scan cannot see `.from(users).orderBy(asc(users.id)).limit(1)`
+   * at all, and `F4.53` quotes exactly that form. The `7543253` review refused to
+   * close the row over it for that reason: without this half, a suite written in
+   * builder form passes every rule in the tree.
+   */
+  const BUILDER_READ = /\.from\(\s*(assets|locations|pointKeys|users)\s*\)/g;
   /** `LIMIT` is the positional tell, exactly as the `F4.68` rule uses it. */
   const POSITIONAL = /\bLIMIT\b/i;
   /**
    * A read that names its row is not positional and is not this rule's business.
-   * `code`, because that is how the seed identifies a fixture, and `id`, because
-   * a read bound to one id is already fully determined.
+   * `code`, because that is how the seed identifies a fixture; `id`, because a
+   * read bound to one id is already fully determined; and `email`, which is
+   * `unique()` on `bms.users` and is therefore that table's seeded identity —
+   * `WHERE email = 'admin@bms.local'` names a row exactly as `WHERE code = …`
+   * does elsewhere.
    */
-  const NAMED_READ = /\b(?:code|id)\s*(?:=|\bIN\s*\(|=\s*ANY)/i;
+  const NAMED_READ = /\b(?:code|id|email)\s*(?:=|\bIN\s*\(|=\s*ANY)/i;
   /** The fix: the oldest row, which is always a seeded one. */
   const PREFERS_OLDEST = /\bORDER\s+BY\b[\s\S]{0,120}?\bcreated_at\b/i;
   /**
@@ -89,11 +110,27 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
       "apps/api/src/auth/access-control.integration.spec.ts",
       "the ungranted-location probe: refusal is asserted for any id, so which row it draws cannot change the verdict",
     ],
+    [
+      "apps/api/src/database/role-grants.integration.spec.ts",
+      "column-privilege probes: one read is a positive control and the other must throw, so the grant decides the outcome and the row is never inspected",
+    ],
   ]);
+
+  /**
+   * How far a builder chain may run past its `.from(...)`.
+   *
+   * The window ends at the statement's own `;`, whichever comes first — the same
+   * bound `integration-fixture-sharing.test.ts` settled on after the `F4.67`
+   * review measured an unbounded window twice. A chain that runs longer loses
+   * its claim rather than borrowing the next statement's `createdAt`, which
+   * would be fail-open in the one direction that matters here.
+   */
+  const CHAIN_WINDOW = 400;
 
   /** Every positional fixture read in `source` that does not prefer the oldest row. */
   function offendingReads(source: string): string[] {
-    return stringLiterals(withoutComments(source)).filter(
+    const src = withoutComments(source);
+    const literals = stringLiterals(src).filter(
       (literal) =>
         FIXTURE_TABLE.test(literal) &&
         POSITIONAL.test(literal) &&
@@ -101,6 +138,21 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
         !PROJECTS_A_CONSTANT.test(literal) &&
         !PREFERS_OLDEST.test(literal),
     );
+
+    const chains: string[] = [];
+    for (const match of src.matchAll(BUILDER_READ)) {
+      const from = match.index ?? 0;
+      const raw = src.slice(from, from + CHAIN_WINDOW);
+      const end = raw.indexOf(";");
+      const chain = end === -1 ? raw : raw.slice(0, end);
+      // `.limit(` is the positional tell, exactly as `LIMIT` is in the SQL half.
+      if (!/\.limit\s*\(/.test(chain)) continue;
+      // A named read is out of scope here for the same reason it is there.
+      if (/\bwhere\s*\(/.test(chain) && /\beq\s*\(/.test(chain)) continue;
+      if (/\.orderBy\s*\(/.test(chain) && /\bcreatedAt\b/.test(chain)) continue;
+      chains.push(chain.replace(/\s+/g, " ").trim());
+    }
+    return [...literals, ...chains];
   }
 
   function scan(): { scanned: number; offenders: string[] } {
@@ -206,10 +258,70 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
     ).toEqual([]);
   });
 
+  it("the builder half kills the mutation the SQL half cannot see", () => {
+    // `F4.53`'s eighth instance, in the exact spelling that made the `7543253`
+    // review refuse the flip. No string literal in this source names a table.
+    const defect =
+      "const [user] = await db\n" +
+      "  .select({ id: users.id, email: users.email })\n" +
+      "  .from(users)\n" +
+      "  .orderBy(asc(users.id))\n" +
+      "  .limit(1);";
+    expect(offendingReads(defect)).toHaveLength(1);
+
+    // The fix.
+    expect(
+      offendingReads(
+        "const [user] = await db\n" +
+          "  .select({ id: users.id, email: users.email })\n" +
+          "  .from(users)\n" +
+          "  .orderBy(asc(users.createdAt), asc(users.id))\n" +
+          "  .limit(1);",
+      ),
+    ).toEqual([]);
+
+    // `F4.53`'s own quoted spelling — an unordered builder `limit`, which is
+    // strictly worse than the defect above and must also fail.
+    expect(
+      offendingReads("const rows = await db.select({ id: assets.id }).from(assets).limit(2);"),
+    ).toHaveLength(1);
+
+    // A builder read with no `.limit()` returns the whole set: not positional.
+    expect(
+      offendingReads("const rows = await db.select({ id: assets.id }).from(assets);"),
+    ).toEqual([]);
+
+    // A builder read bound to one row by `eq()` names it, exactly as
+    // `WHERE code = $1` does on the SQL side.
+    expect(
+      offendingReads(
+        "const [a] = await db.select().from(assets).where(eq(assets.code, code)).limit(1);",
+      ),
+    ).toEqual([]);
+
+    // An insert is not a read — `.from()` is what this rule keys on, and a
+    // values/returning chain never carries one.
+    expect(
+      offendingReads("await db.insert(users).values(row).returning({ id: users.id });"),
+    ).toEqual([]);
+
+    // The window stops at the statement's own `;`, so a `createdAt` belonging to
+    // the NEXT statement cannot launder the offending chain above it.
+    expect(
+      offendingReads(
+        "const rows = await db.select({ id: assets.id }).from(assets).limit(2);\n" +
+          "const other = await db.select().from(locations).orderBy(asc(locations.createdAt));",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("the exemption list only gets shorter", () => {
     // Same guard the committed-fixture rules carry: an exemption is a debt, and
     // a rule that lets its own exemption list grow silently stops being a rule.
-    expect([...EXEMPT.keys()]).toEqual(["apps/api/src/auth/access-control.integration.spec.ts"]);
+    expect([...EXEMPT.keys()]).toEqual([
+      "apps/api/src/auth/access-control.integration.spec.ts",
+      "apps/api/src/database/role-grants.integration.spec.ts",
+    ]);
     for (const [file, why] of EXEMPT) {
       expect(why.length, `${file} is exempt with no argument recorded`).toBeGreaterThan(40);
     }
