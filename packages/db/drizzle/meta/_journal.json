@@ -344,6 +344,13 @@
       "when": 1787920383386,
       "tag": "0049_audit_log_organization_created_index",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1788006783386,
+      "tag": "0050_configurable_dashboard_tables",
+      "breakpoints": true
     }
   ]
 }
