@@ -17,6 +17,7 @@ import {
   assertChannelAuditStampsOrgCorrectly,
   assertChannelRemoveRoutesByOrgScope,
   assertChannelWritesRouteByOrgScope,
+  assertFleetChannelErrorIsRedactedForATenant,
   assertSetRuleChannelsRefusesCrossOrgChannel,
 } from "./channels.service.rls.integration.spec";
 
@@ -44,6 +45,10 @@ const GLOBAL_AUDIT_CODE = `E71C-CHAG-${RUN}`;
 const READ_SCOPE_CODE_A = `E71C-CHRA-${RUN}`;
 const READ_SCOPE_CODE_B = `E71C-CHRB-${RUN}`;
 const RULE_FENCE_CODE = `E71C-RULEFENCE-${RUN}`;
+// E7.1g: the shape `webhook-guard.ts:200` writes — a resolved host name is
+// exactly the fleet-infrastructure detail ADR 0043 Amendment 6 withholds.
+const FLEET_DELIVERY_ERROR = `webhook host hooks-${RUN}.internal.example.invalid could not be resolved`;
+const ORG_SCOPED_DELIVERY_ERROR = `smtp 550 mailbox unavailable (${RUN})`;
 
 describe.skipIf(!connectionString)(
   "E7.1c — ChannelsService writes route by org scope, and audit() stamps the right org",
@@ -216,6 +221,42 @@ describe.skipIf(!connectionString)(
         locationAdminJwt,
         channelAId,
         channelBId,
+      );
+
+      // --- E7.1g (ADR 0043 Amendment 6): redact a FLEET channel's error ----
+      // Both deliveries are stamped with org A, which is the whole point: the
+      // fleet one is what `record()` writes when decision 7 lets a global
+      // admin wire org A's rule to a NULL-org channel, so the row is legally
+      // in org A's scope and only the joined channel's org distinguishes it.
+      // Both carry a non-NULL `error`; a NULL one would pass vacuously.
+      const fleetDeliveryRow = await ownerPool.query<{ id: string }>(
+        `INSERT INTO bms.notification_deliveries (organization_id, channel_id, status, error)
+         VALUES ($1, $2, 'failed', $3)
+         RETURNING id`,
+        [orgAdminOrgId, audited.globalChannelId, FLEET_DELIVERY_ERROR],
+      );
+      const orgScopedDeliveryRow = await ownerPool.query<{ id: string }>(
+        `INSERT INTO bms.notification_deliveries (organization_id, channel_id, status, error)
+         VALUES ($1, $2, 'failed', $3)
+         RETURNING id`,
+        [orgAdminOrgId, channelAId, ORG_SCOPED_DELIVERY_ERROR],
+      );
+      const fleetDeliveryId = fleetDeliveryRow.rows[0]?.id;
+      const orgScopedDeliveryId = orgScopedDeliveryRow.rows[0]?.id;
+      if (!fleetDeliveryId || !orgScopedDeliveryId) {
+        throw new Error("E7.1g: redaction fixture deliveries did not insert");
+      }
+
+      await assertFleetChannelErrorIsRedactedForATenant(
+        channels,
+        orgAdminJwt,
+        globalAdminJwt,
+        {
+          id: fleetDeliveryId,
+          channelCode: GLOBAL_AUDIT_CODE,
+          error: FLEET_DELIVERY_ERROR,
+        },
+        { id: orgScopedDeliveryId, error: ORG_SCOPED_DELIVERY_ERROR },
       );
 
       // --- REAL BUG: setRuleChannels must refuse a cross-org channel -------
