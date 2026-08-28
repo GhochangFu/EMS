@@ -1137,7 +1137,12 @@ Process (`AGENTS.md` §10).
   and never been readable. Global admin only as shipped — widened to
   `organization_admin` for its own organizations' rows by **ADR 0046**
   (`E7.1e`, PR #188), which also rules that a scoped reader never sees a
-  `NULL`-organization row. Offset-paginated with a `(created_at, id)`
+  `NULL`-organization row. **The projection narrowed with the audience**
+  (Amendment 2, `E7.1h`, PR #191): a scoped reader keeps `actorEmail` — the
+  answer to *"who changed this"*, which the ledger exists to give — and never
+  sees the acting operator's `oidcSubject`, removed in SQL. The writers still
+  record it; the global admin's view is the forensic record.
+  Offset-paginated with a `(created_at, id)`
   tie-break so pages are stable, export bounded by a required ≤366-day window
   and a 50,000-row cap that **refuses rather than truncates**.
 - **Unblocks:** F4.15 (append-only audit + nightly hash-chaining) — the only
@@ -2228,21 +2233,35 @@ decision-5 tables) and ADR 0045's owner-role work did not fit the original
 - **`telemetry.*` is untouched throughout** (decision 9) — no column, no
   policy; isolation stays `readableAssetIds`, by design.
 
-Mirrored into: AGENTS.md status line, §2 *Tenancy* row (new) and *Secrets*
-row, §4.3/§4.4, §4.7's fifth gate and its Amendment 6 projection rule, and §6
-(narrowed, not deleted — per-org SMTP relays, white-label branding, a
-`platform_admin` rung and `telemetry.*` RLS all stay deferred).
+Mirrored into: AGENTS.md status line, §2 *Tenancy* row (new), *Secrets* row and
+*Audit read* row, §4.3/§4.4, §4.7's fifth gate and **both** projection rules —
+ADR 0043 Amendment 6 and ADR 0046 Amendment 2, cross-linked there because they
+fire on different triggers and neither generalises alone — and §6 (narrowed,
+not deleted — per-org SMTP relays, white-label branding, a `platform_admin`
+rung and `telemetry.*` RLS all stay deferred).
 
 `E7.1e` (the org-scoped `bms.audit_log` reader, gated by **ADR 0046**) landed
-2026-08-28 as PR #188, so `E7.1f` (`.strict()` on the mutating body schemas,
-gated by **ADR 0029** Amendment 3) is the last child of this split still open.
+2026-08-28 as PR #188, and `E7.1h` (its projection half, Amendment 2) as
+PR #191 the same day. **Two children of this split are still open:** `E7.1f`
+(`.strict()` on the mutating body schemas, gated by **ADR 0029** Amendment 3)
+and `E7.1i` (an index behind the scoped read). An earlier version of this
+paragraph called `E7.1f` "the last child still open" and was already wrong when
+written — `E7.1i` was filed in the same pass.
 
-`E7.1e`'s own reviews raised three follow-ups, all Wave 5: `E7.1h` implements
-ADR 0046 Amendment 2 (blank the acting operator's `oidcSubject` for a
-non-`admin` reader; keep `actorEmail`), `E7.1i` indexes
-`bms.audit_log (organization_id, created_at)` — availability, not disclosure —
-and `E8.5` bounds or scrubs the `rtus.meta` value space that ADR 0021
-decision 6's re-measurement could not clear by field name.
+`E7.1e`'s own reviews raised three follow-ups, all Wave 5. **`E7.1h` is done**
+(PR #191, squash `a62e707`): a non-`admin` reader keeps `actorEmail` and never
+sees the acting operator's `oidcSubject`, removed in SQL and keyed on the
+database role. Its own reviews then raised two more, both landed as PR #192
+(`f56cb4f`) — a static guard holding the *writers* to a top-level key, since the
+jsonb `-` operator reaches nothing deeper, and **`E8.6`**, which records that
+`rule_executions.trace.evaluatedBy` carries the same operator subject to a
+*wider* audience (`GET /rules/executions` has no role gate at all) and is
+**owed an ADR before any code** — the `F3.6` review chose `sub` *over* the email
+there deliberately, which is the opposite of Amendment 2's ruling, so one of the
+two comments must be corrected whichever way the owner rules. Still open:
+`E7.1i` indexes `bms.audit_log (organization_id, created_at)` — availability,
+not disclosure — and `E8.5` bounds or scrubs the `rtus.meta` value space that
+ADR 0021 decision 6's re-measurement could not clear by field name.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
