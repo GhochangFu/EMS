@@ -21,91 +21,109 @@ export const onboardingProtocolSchema = z.enum([
   "rest_poller",
 ]);
 
-export const draftLocationSchema = z.object({
-  code: z.string().min(2).max(64).regex(/^[A-Z0-9_-]+$/),
-  slug: z.string().min(2).max(64).regex(/^[a-z0-9-]+$/),
-  name: z.string().min(2).max(255),
-  type: z.enum(["smoc_campus", "rsmoc", "csmoc"]),
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
-  province: z.string().max(64).optional(),
-  capital: z.string().max(128).optional(),
-  meta: z.record(z.unknown()).optional(),
-});
+export const draftLocationSchema = z
+  .object({
+    code: z.string().min(2).max(64).regex(/^[A-Z0-9_-]+$/),
+    slug: z.string().min(2).max(64).regex(/^[a-z0-9-]+$/),
+    name: z.string().min(2).max(255),
+    type: z.enum(["smoc_campus", "rsmoc", "csmoc"]),
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    province: z.string().max(64).optional(),
+    capital: z.string().max(128).optional(),
+    meta: z.record(z.unknown()).optional(),
+  })
+  .strict();
 
-export const draftRtuSchema = z.object({
-  // Trimmed at the boundary so two RTUs cannot differ by invisible whitespace
-  // alone. `_secrets` is keyed by this code (ADR 0022 Amendment 5), and JS
-  // `.trim()` eats NBSP — which renders as an ordinary space in the wizard, so
-  // the near-duplicate is undetectable by eye. `rtuCodeAt` refuses a contested
-  // code independently; this stops the alias being created in the first place.
-  code: z.string().trim().min(2).max(64),
-  displayName: z.string().min(2).max(255),
-  protocol: onboardingProtocolSchema,
-  config: z.record(z.unknown()).default({}),
-  credentialsSet: z.boolean().optional(),
-  domain: z.string().max(64).optional(),
-  externalRtuId: z.number().int().optional(),
-  rtuCode: z.string().max(64).optional(),
-  stationCode: z.string().max(64).optional(),
-  stationName: z.string().max(255).optional(),
-  ingestEnabled: z.boolean().optional(),
-  meta: z.record(z.unknown()).optional(),
-});
+export const draftRtuSchema = z
+  .object({
+    // Trimmed at the boundary so two RTUs cannot differ by invisible whitespace
+    // alone. `_secrets` is keyed by this code (ADR 0022 Amendment 5), and JS
+    // `.trim()` eats NBSP — which renders as an ordinary space in the wizard, so
+    // the near-duplicate is undetectable by eye. `rtuCodeAt` refuses a contested
+    // code independently; this stops the alias being created in the first place.
+    code: z.string().trim().min(2).max(64),
+    displayName: z.string().min(2).max(255),
+    protocol: onboardingProtocolSchema,
+    config: z.record(z.unknown()).default({}),
+    credentialsSet: z.boolean().optional(),
+    domain: z.string().max(64).optional(),
+    externalRtuId: z.number().int().optional(),
+    rtuCode: z.string().max(64).optional(),
+    stationCode: z.string().max(64).optional(),
+    stationName: z.string().max(255).optional(),
+    ingestEnabled: z.boolean().optional(),
+    meta: z.record(z.unknown()).optional(),
+  })
+  .strict();
 
-export const draftPointKeySchema = z.object({
-  code: z.string().min(1).max(128),
-  name: z.string().min(1).max(255),
-  domain: z.string().max(64).optional(),
-  unit: z.string().max(32).optional(),
-  description: z.string().optional(),
-});
+export const draftPointKeySchema = z
+  .object({
+    code: z.string().min(1).max(128),
+    name: z.string().min(1).max(255),
+    domain: z.string().max(64).optional(),
+    unit: z.string().max(32).optional(),
+    description: z.string().optional(),
+  })
+  .strict();
 
-export const draftAssetSchema = z.object({
-  rtuIndex: z.number().int().min(0),
-  code: z.string().min(2).max(64),
-  name: z.string().min(2).max(255),
-  siteName: z.string().min(2).max(255),
-  // ADR 0031 Amendment 1: shape only — the live vocabulary is
-  // `bms.asset_domains`, checked at commit. This path matters most of the
-  // three: `onboarding-excel.service.ts` reads the `domain` column of an
-  // uploaded spreadsheet verbatim, so an arbitrary cell can reach
-  // `assets.domain`. `OnboardingCommitService` rejects an unknown code with the
-  // valid list, instead of letting `assets_domain_fk` produce a 500.
-  domain: assetDomainCodeSchema,
-  meta: z.record(z.unknown()).optional(),
-});
+export const draftAssetSchema = z
+  .object({
+    rtuIndex: z.number().int().min(0),
+    code: z.string().min(2).max(64),
+    name: z.string().min(2).max(255),
+    siteName: z.string().min(2).max(255),
+    // ADR 0031 Amendment 1: shape only — the live vocabulary is
+    // `bms.asset_domains`, checked at commit. This path matters most of the
+    // three: `onboarding-excel.service.ts` reads the `domain` column of an
+    // uploaded spreadsheet verbatim, so an arbitrary cell can reach
+    // `assets.domain`. `OnboardingCommitService` rejects an unknown code with the
+    // valid list, instead of letting `assets_domain_fk` produce a 500.
+    domain: assetDomainCodeSchema,
+    meta: z.record(z.unknown()).optional(),
+  })
+  .strict();
 
-export const draftAssetPointSchema = z.object({
-  assetIndex: z.number().int().min(0),
-  pointKey: z.string().min(1).max(128),
-  sourceDataKey: z.string().min(1).max(128),
-  sensorCode: z.string().max(64).optional(),
-  unit: z.string().max(32).optional(),
-});
+export const draftAssetPointSchema = z
+  .object({
+    assetIndex: z.number().int().min(0),
+    pointKey: z.string().min(1).max(128),
+    sourceDataKey: z.string().min(1).max(128),
+    sensorCode: z.string().max(64).optional(),
+    unit: z.string().max(32).optional(),
+  })
+  .strict();
 
-export const onboardingDraftMetaSchema = z.object({
-  rtuTargetCount: z.number().int().positive().optional(),
-  importedFromExcel: z.boolean().optional(),
-  useExistingPointKeys: z.boolean().optional(),
-});
+export const onboardingDraftMetaSchema = z
+  .object({
+    rtuTargetCount: z.number().int().positive().optional(),
+    importedFromExcel: z.boolean().optional(),
+    useExistingPointKeys: z.boolean().optional(),
+  })
+  .strict();
 
-export const onboardingDraftSchema = z.object({
-  location: draftLocationSchema.optional(),
-  rtus: z.array(draftRtuSchema).optional(),
-  pointKeys: z.array(draftPointKeySchema).optional(),
-  assets: z.array(draftAssetSchema).optional(),
-  assetPoints: z.array(draftAssetPointSchema).optional(),
-  onboardingMeta: onboardingDraftMetaSchema.optional(),
-});
+export const onboardingDraftSchema = z
+  .object({
+    location: draftLocationSchema.optional(),
+    rtus: z.array(draftRtuSchema).optional(),
+    pointKeys: z.array(draftPointKeySchema).optional(),
+    assets: z.array(draftAssetSchema).optional(),
+    assetPoints: z.array(draftAssetPointSchema).optional(),
+    onboardingMeta: onboardingDraftMetaSchema.optional(),
+  })
+  .strict();
 
-export const createSessionBodySchema = z.object({
-  organizationId: z.string().uuid(),
-});
+export const createSessionBodySchema = z
+  .object({
+    organizationId: z.string().uuid(),
+  })
+  .strict();
 
-export const chatBodySchema = z.object({
-  message: z.string().min(1).max(8000),
-});
+export const chatBodySchema = z
+  .object({
+    message: z.string().min(1).max(8000),
+  })
+  .strict();
 
 /**
  * `POST :id/credentials` (ADR 0022 decision 1). Values are plaintext in the
@@ -126,9 +144,11 @@ export const setCredentialsBodySchema = z
 
 export type SetCredentialsBody = z.infer<typeof setCredentialsBodySchema>;
 
-export const patchDraftBodySchema = z.object({
-  draft: onboardingDraftSchema,
-});
+export const patchDraftBodySchema = z
+  .object({
+    draft: onboardingDraftSchema,
+  })
+  .strict();
 
 export type OnboardingDraftInput = z.infer<typeof onboardingDraftSchema>;
 export type OnboardingPhase = z.infer<typeof onboardingPhaseSchema>;

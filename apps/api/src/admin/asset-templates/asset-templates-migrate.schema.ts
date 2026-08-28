@@ -18,16 +18,18 @@ import { z } from "zod";
 /** Same ceiling as `instantiateAssetsBodySchema`'s asset array — one call, one batch. */
 const MAX_ASSETS_PER_MIGRATION = 200;
 
-export const migrateAssetsBodySchema = z.object({
-  assetIds: z
-    .array(z.string().uuid())
-    .min(1)
-    .max(MAX_ASSETS_PER_MIGRATION)
-    .describe(
-      `The assets to move onto this version. Between 1 and ${MAX_ASSETS_PER_MIGRATION}. ` +
-        "Every id must be inside your writable scope and pinned to another version of the " +
-        "same template code.",
-    ),
-});
+export const migrateAssetsBodySchema = z
+  .object({
+    assetIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .max(MAX_ASSETS_PER_MIGRATION)
+      .describe(
+        `The assets to move onto this version. Between 1 and ${MAX_ASSETS_PER_MIGRATION}. ` +
+          "Every id must be inside your writable scope and pinned to another version of the " +
+          "same template code.",
+      ),
+  })
+  .strict();
 
 export type MigrateAssetsBody = z.infer<typeof migrateAssetsBodySchema>;

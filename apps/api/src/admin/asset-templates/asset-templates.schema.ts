@@ -53,6 +53,11 @@ export const templatePointBodySchema = z
     required: z.boolean().default(true),
     sortOrder: z.number().int().min(0).default(0),
   })
+  // `.strict()` must sit on the object, before `.superRefine` — a
+  // `ZodEffects` (what `.superRefine`/`.refine`/`.transform` return) has no
+  // `.strict()`. Nothing may separate `.superRefine(...)` from the
+  // `.describe(...)` below it (tests/adr-0029-openapi-contract.test.ts).
+  .strict()
   .superRefine((point, ctx) => {
     const hasFormula = point.formula != null || point.formulaDialect != null;
     if (point.kind === "derived" && (!point.formula || point.formulaDialect !== CALC_DIALECT)) {
@@ -177,36 +182,40 @@ const templatePointsBodySchema = z
       "in this array, and none of those references may resolve to another derived point.",
   );
 
-export const createAssetTemplateBodySchema = z.object({
-  organizationId: z.string().uuid(),
-  code: z.string().min(1).max(64),
-  name: z.string().min(1).max(255),
-  assetType: z.string().min(1).max(64),
-  // ADR 0031 Amendment 1: shape only; `AssetTemplatesService` checks the code
-  // against `bms.asset_domains`. Instantiating a template copies this value
-  // straight onto every asset it creates
-  // (`asset-templates-instantiate.service.ts`), so an unchecked template domain
-  // becomes a foreign-key violation one hop later, at instantiation time, far
-  // from the form that caused it.
-  domain: assetDomainCodeSchema,
-  description: z.string().max(2000).nullish(),
-  content: templateContentSchema.optional(),
-  points: templatePointsBodySchema.default([]),
-});
+export const createAssetTemplateBodySchema = z
+  .object({
+    organizationId: z.string().uuid(),
+    code: z.string().min(1).max(64),
+    name: z.string().min(1).max(255),
+    assetType: z.string().min(1).max(64),
+    // ADR 0031 Amendment 1: shape only; `AssetTemplatesService` checks the code
+    // against `bms.asset_domains`. Instantiating a template copies this value
+    // straight onto every asset it creates
+    // (`asset-templates-instantiate.service.ts`), so an unchecked template domain
+    // becomes a foreign-key violation one hop later, at instantiation time, far
+    // from the form that caused it.
+    domain: assetDomainCodeSchema,
+    description: z.string().max(2000).nullish(),
+    content: templateContentSchema.optional(),
+    points: templatePointsBodySchema.default([]),
+  })
+  .strict();
 
 /**
  * Draft edits only. `code` and `organizationId` are absent on purpose: they are
  * the identity a published version's pin resolves through, and `version` is
  * assigned by the version-bump rule, never by a caller.
  */
-export const updateAssetTemplateBodySchema = z.object({
-  name: z.string().min(1).max(255).optional(),
-  assetType: z.string().min(1).max(64).optional(),
-  domain: assetDomainCodeSchema.optional(),
-  description: z.string().max(2000).nullish(),
-  content: templateContentSchema.optional(),
-  points: templatePointsBodySchema.optional(),
-});
+export const updateAssetTemplateBodySchema = z
+  .object({
+    name: z.string().min(1).max(255).optional(),
+    assetType: z.string().min(1).max(64).optional(),
+    domain: assetDomainCodeSchema.optional(),
+    description: z.string().max(2000).nullish(),
+    content: templateContentSchema.optional(),
+    points: templatePointsBodySchema.optional(),
+  })
+  .strict();
 
 /**
  * One asset to build from the template (`F2.2`, ADR 0015 §6).
@@ -220,12 +229,14 @@ export const updateAssetTemplateBodySchema = z.object({
  * `CH01_CHW_SUPPLY_T`. `{asset_code}` is always available and is *not* taken
  * from here; see `INSTANTIATE_RESERVED_VAR` in the service.
  */
-const instantiateAssetBodySchema = z.object({
-  code: z.string().min(1).max(64),
-  name: z.string().min(1).max(255),
-  siteName: z.string().min(1).max(255).optional(),
-  sourceDataKeyVars: z.record(z.string().max(128)).optional(),
-});
+const instantiateAssetBodySchema = z
+  .object({
+    code: z.string().min(1).max(64),
+    name: z.string().min(1).max(255),
+    siteName: z.string().min(1).max(255).optional(),
+    sourceDataKeyVars: z.record(z.string().max(128)).optional(),
+  })
+  .strict();
 
 /**
  * The instantiation payload (ADR 0015 §6, as amended 2026-08-05).
@@ -248,6 +259,10 @@ export const instantiateAssetsBodySchema = z
     locationId: z.string().uuid().optional(),
     assets: z.array(instantiateAssetBodySchema).min(1).max(200),
   })
+  // `.strict()` must precede `.superRefine` — it returns a `ZodEffects`,
+  // which has no `.strict()`. Nothing may separate `.superRefine(...)` from
+  // its `.describe(...)`; `.transform(...)` chains after the describe.
+  .strict()
   .superRefine((body, ctx) => {
     if (Boolean(body.rtuId) === Boolean(body.locationId)) {
       ctx.addIssue({
