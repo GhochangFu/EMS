@@ -1134,9 +1134,12 @@ Process (`AGENTS.md` §10).
   `main`, so unlike F2.1/F2.2/E1.7 there is no PR number to cite.
 - **Delivered:** `GET /api/v1/admin/audit` and `/audit/export` (CSV + XLSX) in
   `apps/api/src/admin/audit/`. `bms.audit_log` had been written since ADR 0009
-  and never been readable. Global admin only, offset-paginated with a
-  `(created_at, id)` tie-break so pages are stable, export bounded by a required
-  ≤366-day window and a 50,000-row cap that **refuses rather than truncates**.
+  and never been readable. Global admin only as shipped — widened to
+  `organization_admin` for its own organizations' rows by **ADR 0046**
+  (`E7.1e`, PR #188), which also rules that a scoped reader never sees a
+  `NULL`-organization row. Offset-paginated with a `(created_at, id)`
+  tie-break so pages are stable, export bounded by a required ≤366-day window
+  and a 50,000-row cap that **refuses rather than truncates**.
 - **Unblocks:** F4.15 (append-only audit + nightly hash-chaining) — the only
   item listing F4.14, and F4.14 was its only dependency.
 - **Notable:** the security review found a **privilege-escalation path**, and it
@@ -2230,9 +2233,16 @@ row, §4.3/§4.4, §4.7's fifth gate and its Amendment 6 projection rule, and §
 (narrowed, not deleted — per-org SMTP relays, white-label branding, a
 `platform_admin` rung and `telemetry.*` RLS all stay deferred).
 
-`E7.1e` (the org-scoped `bms.audit_log` reader, gated by **ADR 0046**) and
-`E7.1f` (`.strict()` on the mutating body schemas, gated by **ADR 0029**
-Amendment 3) are the two children of this split still open.
+`E7.1e` (the org-scoped `bms.audit_log` reader, gated by **ADR 0046**) landed
+2026-08-28 as PR #188, so `E7.1f` (`.strict()` on the mutating body schemas,
+gated by **ADR 0029** Amendment 3) is the last child of this split still open.
+
+`E7.1e`'s own reviews raised three follow-ups, all Wave 5: `E7.1h` implements
+ADR 0046 Amendment 2 (blank the acting operator's `oidcSubject` for a
+non-`admin` reader; keep `actorEmail`), `E7.1i` indexes
+`bms.audit_log (organization_id, created_at)` — availability, not disclosure —
+and `E8.5` bounds or scrubs the `rtus.meta` value space that ADR 0021
+decision 6's re-measurement could not clear by field name.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
