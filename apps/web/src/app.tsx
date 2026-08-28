@@ -358,7 +358,7 @@ export function App() {
         path="/admin/notification-channels"
         element={
           accessToken && user ? (
-            <AdminRoute user={user}>
+            <AdminRoute user={user} requireNotificationAdmin>
               <NotificationChannelsPage user={user} />
             </AdminRoute>
           ) : (
@@ -370,7 +370,7 @@ export function App() {
         path="/admin/notification-deliveries"
         element={
           accessToken && user ? (
-            <AdminRoute user={user}>
+            <AdminRoute user={user} requireNotificationAdmin>
               <NotificationDeliveriesPage user={user} />
             </AdminRoute>
           ) : (

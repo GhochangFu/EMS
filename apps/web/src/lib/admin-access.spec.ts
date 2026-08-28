@@ -1,5 +1,6 @@
 import {
   canAccessOnboarding,
+  canManageNotificationChannels,
   masterDataTabs,
   visibleMasterDataTabs,
   canCreateLocations,
@@ -92,29 +93,80 @@ export function runAssetTemplateTabTests(): void {
   for (const role of ["admin", "organization_admin", "location_admin"] as const) {
     const paths = visibleMasterDataTabs(role).map((tab) => tab.path);
     assert(paths.includes(TEMPLATES), `${role} must see the Asset Templates tab`);
-    // `F3.8` added the Notifications tab, visible to the global admin only —
-    // every channel route is gated on `assertAdminRole`, so showing it to the
-    // other two would lead them to a 403.
-    const expected = role === "admin" ? 11 : role === "organization_admin" ? 9 : 8;
+    // `E7.1d` moved the two `F3.8` tabs from `globalAdminOnly` to
+    // `notificationAdmin`, so an `organization_admin` now sees both: eleven
+    // tabs, the same as `admin`. It was nine. A `location_admin` still sees
+    // eight — `ChannelsService.list` returns `[]` for that role.
+    const expected = role === "location_admin" ? 8 : 11;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
-    );
-    assert(
-      paths.includes("/admin/notification-channels") === (role === "admin"),
-      `only the global admin may see the Notifications tab — ${role} saw ${paths.join(",")}`,
     );
   }
 
   // Point Keys is still the only `catalogOnly` tab. If Asset Templates ever
   // became catalogOnly this would fail, which is the failure this test exists
-  // for — `F3.8`'s Notifications tab uses `globalAdminOnly`, a different gate,
-  // and is asserted separately above.
+  // for — `F3.8`'s two tabs use `notificationAdmin`, a different gate, and are
+  // asserted in `runNotificationTabTests`.
   const hidden = masterDataTabs
     .filter((tab) => "catalogOnly" in tab && tab.catalogOnly)
     .map((tab) => tab.path);
   assert(
     hidden.join(",") === "/admin/point-keys",
     `only Point Keys is catalog-only — got ${hidden.join(",")}`,
+  );
+}
+
+/**
+ * The Notifications and Deliveries tabs (`E7.1d`, ADR 0043 Consequences).
+ *
+ * These were `globalAdminOnly` because every channel route was gated on
+ * `assertAdminRole` and a tab leading to a 403 is worse than no tab. `E7.1c`
+ * replaced that gate with `canManageNotificationChannel`, which admits an
+ * `organization_admin` for its own organizations — so the reason for hiding
+ * them is gone and the tabs are owed.
+ *
+ * A `location_admin` is still refused, and that half matters as much: the API
+ * returns `[]` for it unconditionally, so the page it would reach renders an
+ * empty table that reads like "your organization has no channels" rather than
+ * like a refusal.
+ */
+export function runNotificationTabTests(): void {
+  const CHANNELS = "/admin/notification-channels";
+  const DELIVERIES = "/admin/notification-deliveries";
+
+  assert(canManageNotificationChannels("admin"), "admin may manage channels");
+  assert(
+    canManageNotificationChannels("organization_admin"),
+    "organization_admin may manage its own channels since E7.1c",
+  );
+  assert(
+    !canManageNotificationChannels("location_admin"),
+    "location_admin may not — ChannelsService.list returns [] for it",
+  );
+  assert(!canManageNotificationChannels("asset_group_admin"), "asset_group_admin may not");
+  assert(!canManageNotificationChannels("operator"), "operator may not");
+  assert(!canManageNotificationChannels("viewer"), "viewer may not");
+
+  for (const role of ["admin", "organization_admin"] as const) {
+    const paths = visibleMasterDataTabs(role).map((tab) => tab.path);
+    assert(paths.includes(CHANNELS), `${role} must see the Notifications tab`);
+    assert(paths.includes(DELIVERIES), `${role} must see the Deliveries tab`);
+  }
+  for (const role of ["location_admin"] as const) {
+    const paths = visibleMasterDataTabs(role).map((tab) => tab.path);
+    assert(!paths.includes(CHANNELS), `${role} must not see the Notifications tab`);
+    assert(!paths.includes(DELIVERIES), `${role} must not see the Deliveries tab`);
+  }
+
+  // The two tabs are the only `notificationAdmin` ones, and no tab is left on
+  // the old `globalAdminOnly` gate — if one is added later it must be a
+  // deliberate choice between the two flags, not an inheritance from here.
+  const gated = masterDataTabs
+    .filter((tab) => "notificationAdmin" in tab && tab.notificationAdmin)
+    .map((tab) => tab.path);
+  assert(
+    gated.join(",") === `${CHANNELS},${DELIVERIES}`,
+    `only the two F3.8 tabs are notificationAdmin — got ${gated.join(",")}`,
   );
 }

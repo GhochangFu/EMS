@@ -7,7 +7,10 @@ import {
   bannerIsSilentWhenEverythingIsConfigured,
   bannerIsSilentWhenTheCheckFails,
   explainsAnEmptyLedger,
+  filtersTheLedgerByOrganization,
   labelsATestSendWithNoRule,
+  namesTheOrganizationOfEveryAttempt,
+  offersOnlyOrganizationsPresentInTheLedger,
   showsEverySkipWithoutAsking,
 } from "./notification-deliveries-page.spec";
 
@@ -44,5 +47,18 @@ describe("F3.8 notification deliveries", () => {
 
   it("stays silent when the readiness check itself fails", async () => {
     await bannerIsSilentWhenTheCheckFails();
+  });
+
+  // `E7.1d` — the ledger names its tenants (ADR 0043 Consequences).
+  it("names the organization of every attempt", async () => {
+    await namesTheOrganizationOfEveryAttempt();
+  });
+
+  it("narrows the ledger to one organization on request, not by default", async () => {
+    await filtersTheLedgerByOrganization();
+  });
+
+  it("offers only the organizations the ledger actually contains", async () => {
+    await offersOnlyOrganizationsPresentInTheLedger();
   });
 });

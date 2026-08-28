@@ -11,6 +11,20 @@ import {
   targetFromConfig,
   testResultMessage,
 } from "./notification-channels";
+import {
+  asksAMultiGrantOrganizationAdminToChoose,
+  distinguishesAFailedOrganizationListFromAnEmptyOne,
+  keepsOrganizationIdOutOfAPatch,
+  namesAnOrganizationRatherThanPrintingItsUuid,
+  neverOffersAnOrganizationAdminTheFleetWideOption,
+  neverRefusesAnAdminItsFleetWideDefault,
+  offersAnAdminFleetWidePlusEveryActiveOrganization,
+  offersEveryOtherRoleNothing,
+  omitsOrganizationIdForAFleetWideChoice,
+  refusesCreateWhenNoActiveOrganizationIsAdministered,
+  refusesSendTestOnAFleetWideChannelWithAReason,
+  roundTripsAFleetWideChannelThroughTheEditForm,
+} from "./notification-channels.spec";
 
 const channel: NotificationChannelDto = {
   id: "33333333-3333-3333-3333-333333333333",
@@ -129,5 +143,63 @@ describe("send-test message", () => {
       expect(message.length).toBeGreaterThan(10);
       expect(message).toContain("ops-webhook");
     }
+  });
+});
+
+/**
+ * `E7.1d` — the org-scoped/fleet-wide split (ADR 0043 Consequences).
+ *
+ * Assertions live in the sibling `.spec` (ADR 0014, §4.6): the carve-out for
+ * inline assertions is the top-level `tests/` directory, and this file is not
+ * in it. The blocks above predate the rule's enforcement here and are left
+ * where they are — moving them would be an unrelated reformat (§9.9).
+ */
+describe("E7.1d channel organization scope", () => {
+  it("offers an admin fleet-wide plus every active organization", () => {
+    offersAnAdminFleetWidePlusEveryActiveOrganization();
+  });
+
+  it("never offers an organization_admin the fleet-wide option", () => {
+    neverOffersAnOrganizationAdminTheFleetWideOption();
+  });
+
+  it("offers every other role nothing — the read gate is the write gate", () => {
+    offersEveryOtherRoleNothing();
+  });
+
+  it("omits `organizationId` for a fleet-wide choice rather than sending an empty string", () => {
+    omitsOrganizationIdForAFleetWideChoice();
+  });
+
+  it("keeps `organizationId` out of a PATCH — a channel cannot change tenant", () => {
+    keepsOrganizationIdOutOfAPatch();
+  });
+
+  it("round-trips a fleet-wide channel through the edit form as Fleet-wide", () => {
+    roundTripsAFleetWideChannelThroughTheEditForm();
+  });
+
+  it("refuses Send test on a fleet-wide channel, and says why", () => {
+    refusesSendTestOnAFleetWideChannelWithAReason();
+  });
+
+  it("names an organization rather than printing its uuid", () => {
+    namesAnOrganizationRatherThanPrintingItsUuid();
+  });
+
+  it("asks a multi-grant organization_admin to choose, before the click", () => {
+    asksAMultiGrantOrganizationAdminToChoose();
+  });
+
+  it("refuses create when the role administers no active organization", () => {
+    refusesCreateWhenNoActiveOrganizationIsAdministered();
+  });
+
+  it("never refuses an admin its fleet-wide default", () => {
+    neverRefusesAnAdminItsFleetWideDefault();
+  });
+
+  it("says the organization list failed rather than claiming there are none", () => {
+    distinguishesAFailedOrganizationListFromAnEmptyOne();
   });
 });
