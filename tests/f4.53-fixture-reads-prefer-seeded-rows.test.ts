@@ -105,14 +105,33 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
    * would add determinism the proof does not need. Listed rather than pattern-
    * matched away, so that the next unordered read has to be argued for too.
    */
-  const EXEMPT = new Map<string, string>([
+  /**
+   * **An exemption names a query, never a file.** The first version of this rule
+   * keyed on the filename, and on 2026-08-28 that hid a real defect: exempting
+   * `access-control.integration.spec.ts` for its ungranted-location probe also
+   * silenced `SELECT id FROM bms.assets WHERE rtu_id IS NULL LIMIT 5` in the
+   * same file, which then read a foreign suite's transient gateway-less asset
+   * and reddened CI. A file-wide exemption is a blanket over every read the file
+   * will ever contain, including the ones written after it.
+   */
+  const EXEMPT = new Map<string, ReadonlyArray<{ readonly match: string; readonly why: string }>>([
     [
       "apps/api/src/auth/access-control.integration.spec.ts",
-      "the ungranted-location probe: refusal is asserted for any id, so which row it draws cannot change the verdict",
+      [
+        {
+          match: "id <> ALL($1)",
+          why: "the ungranted-location probe: refusal is asserted for any id, so which row it draws cannot change the verdict",
+        },
+      ],
     ],
     [
       "apps/api/src/database/role-grants.integration.spec.ts",
-      "column-privilege probes: one read is a positive control and the other must throw, so the grant decides the outcome and the row is never inspected",
+      [
+        {
+          match: "from bms.users limit 1",
+          why: "column-privilege probes: one read is a positive control and the other must throw, so the grant decides the outcome and the row is never inspected",
+        },
+      ],
     ],
   ]);
 
@@ -162,10 +181,14 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
       for (const file of walk(join(repoRoot, root))) {
         if (!/(\.spec|\.integration\.test)\.tsx?$/.test(file)) continue;
         const rel = relative(repoRoot, file).replace(/\\/g, "/");
-        if (EXEMPT.has(rel)) continue;
+        // An exempt file is still scanned. Only the named queries are skipped,
+        // so a new offending read in that same file still fails this rule.
         scanned += 1;
+        const exemptions = EXEMPT.get(rel) ?? [];
         for (const literal of offendingReads(readFileSync(file, "utf8"))) {
-          offenders.push(`${rel} — ${literal.replace(/\s+/g, " ").trim().slice(0, 140)}`);
+          const flat = literal.replace(/\s+/g, " ").trim();
+          if (exemptions.some((e) => flat.toLowerCase().includes(e.match.toLowerCase()))) continue;
+          offenders.push(`${rel} — ${flat.slice(0, 140)}`);
         }
       }
     }
@@ -315,15 +338,46 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
     ).toHaveLength(1);
   });
 
-  it("the exemption list only gets shorter", () => {
+  it("the exemption list only gets shorter, and every exemption names a query", () => {
     // Same guard the committed-fixture rules carry: an exemption is a debt, and
     // a rule that lets its own exemption list grow silently stops being a rule.
     expect([...EXEMPT.keys()]).toEqual([
       "apps/api/src/auth/access-control.integration.spec.ts",
       "apps/api/src/database/role-grants.integration.spec.ts",
     ]);
-    for (const [file, why] of EXEMPT) {
-      expect(why.length, `${file} is exempt with no argument recorded`).toBeGreaterThan(40);
+    for (const [file, entries] of EXEMPT) {
+      expect(entries.length, `${file} is listed with no exemption`).toBeGreaterThan(0);
+      for (const entry of entries) {
+        expect(
+          entry.why.length,
+          `${file} exempts "${entry.match}" with no argument recorded`,
+        ).toBeGreaterThan(40);
+        // The 2026-08-28 defect: an exemption broad enough to be a filename
+        // covers reads nobody has argued for, including ones not yet written.
+        expect(
+          entry.match.length,
+          `${file}: an exemption must name a query fragment, not a whole file`,
+        ).toBeGreaterThan(8);
+      }
     }
+  });
+
+  it("an exemption covers its own query and nothing else in the file", () => {
+    // The defect this rule shipped with. `access-control.integration.spec.ts`
+    // was exempt for its ungranted-location probe, and that silenced an
+    // unrelated unordered read in the same file — which then adopted a foreign
+    // suite's gateway-less asset and reddened CI.
+    const exemptRead = "`SELECT id FROM bms.locations WHERE id <> ALL($1) LIMIT 10`";
+    const unrelatedRead = "`SELECT id FROM bms.assets WHERE rtu_id IS NULL LIMIT 5`";
+    const entries = EXEMPT.get("apps/api/src/auth/access-control.integration.spec.ts") ?? [];
+    const covered = (literal: string): boolean =>
+      entries.some((e) => literal.toLowerCase().includes(e.match.toLowerCase()));
+
+    // Both are offending reads on their own terms...
+    expect(offendingReads(`await pool.query(${exemptRead});`)).toHaveLength(1);
+    expect(offendingReads(`await pool.query(${unrelatedRead});`)).toHaveLength(1);
+    // ...and only the argued one is exempt.
+    expect(covered(exemptRead)).toBe(true);
+    expect(covered(unrelatedRead)).toBe(false);
   });
 });

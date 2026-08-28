@@ -162,35 +162,71 @@ export async function assertGlobalAdminScope(
   svc: AccessControlService,
   pool: pg.Pool,
 ): Promise<void> {
+  // **Every expected set is read BEFORE the scope call, and every assertion is
+  // a superset or a disjointness check rather than an equality (`F4.53`).**
+  //
+  // Nine `apps/api` integration suites commit assets and leave `rtu_id` NULL.
+  // Against a live table, `scope` and a later `SELECT` are two snapshots of a
+  // moving set, so an equal count was a property of the schedule and not of the
+  // code. It failed in CI on 2026-08-28: a foreign suite's gateway-less asset
+  // was committed between the count read and the gateway-less read, so the
+  // counts agreed and the membership check then named a row that did not exist
+  // when `scope` was computed.
+  //
+  // Reading first makes the direction of the drift knowable. A row committed
+  // after this read can only ADD to `scope`, never remove from it, so
+  // `scope ⊇ expected` holds under every interleaving.
+  //
+  // **The equality was not merely relaxed — it never tested what it appeared
+  // to.** Over-breadth is proven by the inactive-location check below, by
+  // identity, which is exactly what that check's own comment already said.
+  const expectedLocations = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.locations WHERE active = true`,
+  );
+  const inactive = await pool.query<{ id: string; code: string }>(
+    `SELECT id, code FROM bms.locations WHERE active = false`,
+  );
+  const expectedAssets = await pool.query<{ id: string }>(`SELECT id FROM bms.assets`);
+  // ADR 0018 made assets.rtu_id nullable. A gateway-less asset must still be
+  // visible — the silent-invisibility shape that ADR closed in the admin list
+  // would reappear here if any scope query joined through rtus.
+  //
+  // No `LIMIT`. An unordered `LIMIT` is `F4.53`'s own shape, and it is what let
+  // this read reach a foreign suite's transient asset. The set is small and
+  // bounded by the seed; taking all of it costs nothing and races on nothing.
+  const gatewayless = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.assets WHERE rtu_id IS NULL`,
+  );
+
   const { scope } = await svc.currentUser(jwtFor(SEEDED.globalAdmin, "admin"));
 
   if (scope.kind !== "global") {
     throw new Error(`global admin scope kind: expected "global", got "${scope.kind}"`);
   }
 
-  const expectedLocations = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.locations WHERE active = true`,
-  );
-  const expectedAssets = await pool.query<{ id: string }>(`SELECT id FROM bms.assets`);
-
-  if (scope.locations.length !== expectedLocations.rowCount) {
-    throw new Error(
-      `global admin locations: expected ${expectedLocations.rowCount}, got ${scope.locations.length}`,
-    );
-  }
-  if (scope.assetIds.length !== expectedAssets.rowCount) {
-    throw new Error(
-      `global admin assets: expected ${expectedAssets.rowCount}, got ${scope.assetIds.length}`,
-    );
-  }
-
-  // ADR 0018 made assets.rtu_id nullable. A gateway-less asset must still be
-  // visible — the silent-invisibility shape that ADR closed in the admin list
-  // would reappear here if any scope query joined through rtus.
-  const gatewayless = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.assets WHERE rtu_id IS NULL LIMIT 5`,
-  );
   const visible = new Set(scope.assetIds);
+  const visibleLocations = new Set(scope.locations.map((location) => location.id));
+
+  for (const row of expectedLocations.rows) {
+    if (!visibleLocations.has(row.id)) {
+      throw new Error(
+        `active location ${row.id} is missing from the global admin's scope — ` +
+          "a scope query is filtering where a global admin must see everything",
+      );
+    }
+  }
+  for (const row of expectedAssets.rows) {
+    if (!visible.has(row.id)) {
+      throw new Error(
+        `asset ${row.id} is missing from the global admin's scope — ` +
+          "a scope query is filtering where a global admin must see everything",
+      );
+    }
+  }
+
+  // Subsumed by the loop above, and kept deliberately: it is the only assertion
+  // that names ADR 0018 and `bms.rtus`, so a future weakening of the asset
+  // check still fails here with the diagnosis attached rather than a bare id.
   for (const row of gatewayless.rows) {
     if (!visible.has(row.id)) {
       throw new Error(
@@ -202,10 +238,6 @@ export async function assertGlobalAdminScope(
 
   // An inactive location must be absent by identity, not just by count. Counts
   // alone cannot tell "filtered correctly" from "filtered something else".
-  const inactive = await pool.query<{ id: string; code: string }>(
-    `SELECT id, code FROM bms.locations WHERE active = false`,
-  );
-  const visibleLocations = new Set(scope.locations.map((location) => location.id));
   for (const row of inactive.rows) {
     if (visibleLocations.has(row.id)) {
       throw new Error(
