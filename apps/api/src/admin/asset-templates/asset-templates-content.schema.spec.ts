@@ -1,8 +1,11 @@
+import { widgetTypeSchema } from "@bms/shared";
+
 import {
   MAX_CONTENT_BYTES,
   collectContentPointRefs,
   findUnresolvedContentRefs,
   templateContentSchema,
+  templateDashboardWidgetVariants,
   type TemplateContentParsed,
 } from "./asset-templates-content.schema";
 
@@ -273,15 +276,134 @@ export function runTemplateContentSchemaTests(): void {
     "featured order must be preserved — the order IS the information",
   );
 
-  // F3.1 owns the widget vocabulary. A pack that authors one now is a pack that
-  // gets rewritten when F3.1 disagrees.
+  // BACKWARDS COMPATIBILITY FIRST, before anything about widgets: every
+  // ADR 0019-era stored row is `featured`-only, nothing backfills them, and
+  // `POST :id/draft` byte-copies stored content. A view with no `widgets` key
+  // must keep parsing exactly as it did.
+  assert(
+    parse({ dashboards: { overview: { featured: ["A"] } } }).dashboards?.overview?.widgets ===
+      undefined,
+    "a pre-F3.1a view carries no widgets and must still parse",
+  );
+
   rejects(
     { dashboards: { overview: { featured: ["A"], layout: "grid" } } },
-    "a dashboard view carries ordering and nothing else",
+    "a dashboard view carries ordering and widgets, not an arbitrary layout key",
+  );
+
+  // ---- dashboards: widgets, opened by F3.1a (ADR 0047) ---------------------
+  //
+  // Drift guard first. The config schemas are the shared ones, but the
+  // type→config PAIRING is restated here, because a strict authoring arm cannot
+  // be built by intersecting the shared union. So assert the arm counts match:
+  // a fifth widget type added to @bms/shared and not to this file would
+  // otherwise be quietly unusable in a template, with nothing failing.
+  assert(
+    templateDashboardWidgetVariants.options.length === widgetTypeSchema.options.length,
+    `every shared widget type needs a template arm — shared has ${widgetTypeSchema.options.length}, this file has ${templateDashboardWidgetVariants.options.length}`,
+  );
+  //
+  // This block replaces two assertions that required `widgets` to be REFUSED.
+  // They were correct under ADR 0019, whose §3 left `dashboards` at ordering
+  // only "until F3.1 defines the widget vocabulary", and ADR 0047 is that
+  // definition. The flip is the point of this row, not collateral.
+
+  const withWidget = parse({
+    dashboards: {
+      overview: {
+        featured: ["RO_FEED_PRESSURE"],
+        widgets: [
+          {
+            widgetType: "radial_gauge",
+            config: { min: 0, max: 100, unit: "%" },
+            pointKeys: ["RO_RECOVERY"],
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 3,
+          },
+        ],
+      },
+    },
+  });
+  assert(
+    withWidget.dashboards?.overview?.widgets?.[0]?.widgetType === "radial_gauge",
+    "a template widget must parse and narrow on widgetType",
+  );
+
+  // A template binds `template_points.point_key` STRINGS, where a live dashboard
+  // binds `bms.asset_points.id` as foreign-key rows. The asymmetry is real: a
+  // template has no asset yet, so existence is proved by the reference check
+  // below rather than by a constraint.
+  assert(
+    withWidget.dashboards?.overview?.widgets?.[0]?.pointKeys[0] === "RO_RECOVERY",
+    "a template widget binds point KEYS, not point ids",
+  );
+
+  rejects(
+    {
+      dashboards: {
+        overview: {
+          featured: ["A"],
+          widgets: [{ widgetType: "mimic", config: {}, pointKeys: ["A"], gridX: 0, gridY: 0, gridW: 2, gridH: 2 }],
+        },
+      },
+    },
+    "the widget vocabulary is closed — a kind with no component is refused here too",
+  );
+
+  rejects(
+    {
+      dashboards: {
+        overview: {
+          featured: ["A"],
+          widgets: [
+            {
+              widgetType: "radial_gauge",
+              config: { min: 0, max: 100 },
+              pointKeys: ["A"],
+              gridX: 10,
+              gridY: 0,
+              gridW: 4,
+              gridH: 2,
+            },
+          ],
+        },
+      },
+    },
+    "a widget must fit the 12-column canvas here as well as in SQL",
+  );
+
+  const oneWidget = {
+    widgetType: "value_tile" as const,
+    config: {},
+    pointKeys: ["A"],
+    gridX: 0,
+    gridY: 0,
+    gridW: 2,
+    gridH: 2,
+  };
+  rejects(
+    {
+      dashboards: {
+        overview: {
+          featured: ["A"],
+          widgets: Array.from({ length: 41 }, () => oneWidget),
+        },
+      },
+    },
+    "at most 40 widgets per view",
   );
   rejects(
-    { dashboards: { overview: { widgets: [] } } },
-    "`widgets` is F3.1's vocabulary, not this contract's",
+    {
+      dashboards: {
+        overview: {
+          featured: ["A"],
+          widgets: [{ ...oneWidget, pointKeys: Array.from({ length: 9 }, (_u, i) => `P${i}`) }],
+        },
+      },
+    },
+    "at most 8 point keys per widget",
   );
 
   // ---- limits --------------------------------------------------------------
@@ -410,5 +532,45 @@ export function runTemplateContentSchemaTests(): void {
   assert(
     findUnresolvedContentRefs(parse({ alarms: [alarm] }), []).join(",") === "RO_FEED_PRESSURE",
     "an empty template declares nothing, so every reference is unresolved",
+  );
+
+  // ---- the assertion F3.1a exists to make -----------------------------------
+  //
+  // `collectContentPointRefs` is the single function that decides whether ADR
+  // 0019's guarantee reaches the new half. `assertContentRefsResolve` calls
+  // `findUnresolvedContentRefs`, which calls this, from THREE places in
+  // `asset-templates.service.ts` — create, update and publish. If the walk does
+  // not descend into `widgets[].pointKeys`, all three checks silently stop
+  // covering widgets, nothing in the type system says so, and ADR 0019 §3's
+  // tier promotion becomes a claim rather than a fact.
+  //
+  // The failure it prevents is concrete: `content` and `points` are patched
+  // independently, so a points patch can orphan a widget binding the request
+  // never mentioned, and the template still publishes.
+  const widgetRefs = parse({
+    dashboards: {
+      overview: {
+        featured: ["RO_TEMP"],
+        widgets: [
+          {
+            widgetType: "chart",
+            config: { series: "line" },
+            pointKeys: ["RO_RECOVERY", "RO_FLUX"],
+            gridX: 0,
+            gridY: 0,
+            gridW: 6,
+            gridH: 4,
+          },
+        ],
+      },
+    },
+  });
+  assert(
+    collectContentPointRefs(widgetRefs).join(",") === "RO_TEMP,RO_RECOVERY,RO_FLUX",
+    `a widget's point keys must be collected after the view's featured order, got ${collectContentPointRefs(widgetRefs).join(",")}`,
+  );
+  assert(
+    findUnresolvedContentRefs(widgetRefs, ["RO_TEMP"]).join(",") === "RO_FLUX,RO_RECOVERY",
+    `a widget binding a point the template does not declare must be reported unresolved, got ${findUnresolvedContentRefs(widgetRefs, ["RO_TEMP"]).join(",")}`,
   );
 }

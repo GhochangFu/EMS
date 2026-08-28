@@ -3,6 +3,14 @@ import { z } from "zod";
 import {
   alarmSkillCodeSchema,
   CALC_DIALECT,
+  // F3.1a: the four widget config schemas, reused rather than restated (§4.8 — "a vocabulary
+  // is declared once and everything else is derived from it"). `@bms/shared` and not
+  // `@bms/shared/contracts`, because apps/api compiles with moduleResolution "node" and
+  // ignores the exports map — ADR 0030 Amendment 2.
+  chartConfigSchema,
+  radialGaugeConfigSchema,
+  tankLevelConfigSchema,
+  valueTileConfigSchema,
   formatCalcError,
   MAX_FORMULA_POINT_REFS,
   validateFormula,
@@ -131,6 +139,11 @@ const safeKeySchema = z
 const MAX_SECTION_ENTRIES = 200;
 const MAX_DASHBOARD_VIEWS = 20;
 const MAX_FEATURED_POINTS = 50;
+// F3.1a (ADR 0047). Depth budget while these were added: raw → dashboards → view →
+// widgets[] → widget → config → thresholds[] → threshold is 8 levels against
+// MAX_CONTENT_DEPTH = 12. It fits; a further nested option would not.
+const MAX_DASHBOARD_WIDGETS = 40;
+const MAX_WIDGET_POINT_KEYS = 8;
 // ADR 0036 decision 8: reused, not restated, so the two numbers cannot drift.
 const MAX_KPI_POINT_REFS = MAX_FORMULA_POINT_REFS;
 
@@ -257,11 +270,106 @@ const templateMaintenancePlanSchema = z
   })
   .strict();
 
-/** Ordering, and nothing else. No widget types, no layout, no sizes — that is
- * `F3.1`'s vocabulary and this schema will not pre-empt it. */
+/**
+ * One widget on a template dashboard (`F3.1a`, ADR 0047).
+ *
+ * The type-and-config half is the **shared** union, re-exported and not restated — §4.8's "a
+ * vocabulary is declared once and everything else is derived from it", the rule
+ * `rules.schema.ts` already follows. `z.intersection` because §4.8 prescribes it for `A & B`
+ * and because a `z.discriminatedUnion` cannot be `.extend()`ed anyway.
+ *
+ * `pointKeyRef` stays local rather than moving to `@bms/shared`: it is this file's
+ * character-class contract for a `template_points.point_key`, and moving it would drag the
+ * whole content vocabulary across a package boundary.
+ *
+ * The grid is bounded here as well as by `dashboard_widgets_grid_bounds_check`, so a template
+ * author gets a 400 naming the field rather than a 500 carrying a constraint name.
+ */
+const templateWidgetIdentityFields = {
+  pointKeys: z.array(pointKeyRef).min(1).max(MAX_WIDGET_POINT_KEYS),
+  title: z.string().max(255).optional(),
+  gridX: z.number().int().min(0).max(11),
+  gridY: z.number().int().min(0),
+  gridW: z.number().int().min(1).max(12),
+  gridH: z.number().int().min(1).max(24),
+};
+
+/**
+ * The four arms, spread rather than intersected — and the reason is that this surface must
+ * stay **strict** while `@bms/shared`'s must not.
+ *
+ * The first draft wrote `z.intersection(identity.strict(), dashboardWidgetSpecSchema)`. It
+ * parsed nothing: two strict halves each reject the other's keys, so every widget failed with
+ * `unrecognized_keys: widgetType, config`. Dropping `.strict()` is the fix on the shared side,
+ * where §4.8 requires a tolerant *response* contract — but `content` is an **authoring** body,
+ * where an unknown key is an author's typo that must be refused rather than silently dropped,
+ * and `contentEnvelopeSchema` and every sibling here are strict for exactly that reason.
+ *
+ * So the identity fields are spread into each arm, which is the same technique the shared file
+ * uses for its common config fields and for the same underlying constraint:
+ * `z.discriminatedUnion` accepts only `ZodObject` arms, so neither `.extend()` (banned in
+ * `contracts/`, and flattening anyway) nor `z.intersection` can build one.
+ *
+ * **The config schemas are still the shared ones** — the vocabulary is declared once. What is
+ * restated here is only the type→config pairing, and `templateDashboardWidgetVariants` is
+ * exported so the spec can assert its arm count against `widgetTypeSchema.options.length`: a
+ * fifth widget type added to `@bms/shared` and not to this file fails the build rather than
+ * being quietly unusable in templates.
+ */
+export const templateDashboardWidgetVariants = z.discriminatedUnion("widgetType", [
+  z
+    .object({
+      ...templateWidgetIdentityFields,
+      widgetType: z.literal("radial_gauge"),
+      config: radialGaugeConfigSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...templateWidgetIdentityFields,
+      widgetType: z.literal("tank_level"),
+      config: tankLevelConfigSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...templateWidgetIdentityFields,
+      widgetType: z.literal("value_tile"),
+      config: valueTileConfigSchema,
+    })
+    .strict(),
+  z
+    .object({
+      ...templateWidgetIdentityFields,
+      widgetType: z.literal("chart"),
+      config: chartConfigSchema,
+    })
+    .strict(),
+]);
+
+const templateDashboardWidgetSchema = templateDashboardWidgetVariants.refine(
+  (widget) => widget.gridX + widget.gridW <= 12,
+  { message: "a widget must fit inside the 12-column canvas", path: ["gridW"] },
+);
+
+/**
+ * A dashboard view: the ADR 0019 ordering, and — since `F3.1a` — the widgets drawn from it.
+ *
+ * `featured` is unchanged and stays required: it is what a consumer with no widget support
+ * reads, and every row stored before ADR 0047 has only this key. `widgets` is **optional** for
+ * the same reason — nothing backfills those rows, and `POST :id/draft` byte-copies stored
+ * content, so requiring `widgets` would strand a pre-`F3.1a` template behind its own immutable
+ * published version.
+ *
+ * This schema used to refuse a `widgets` key outright, and its comment said the vocabulary was
+ * `F3.1`'s. ADR 0047 is that vocabulary. The refusal has moved down a level rather than
+ * disappearing: an *undeclared widget type* is still refused, by
+ * `dashboardWidgetSpecSchema`'s closed enum.
+ */
 const templateDashboardViewSchema = z
   .object({
     featured: z.array(pointKeyRef).min(1).max(MAX_FEATURED_POINTS),
+    widgets: z.array(templateDashboardWidgetSchema).max(MAX_DASHBOARD_WIDGETS).optional(),
   })
   .strict();
 
@@ -398,6 +506,15 @@ export function collectContentPointRefs(content: TemplateContentParsed): string[
   }
   for (const view of Object.values(content.dashboards ?? {})) {
     refs.push(...view.featured);
+    // F3.1a: a widget's bindings are references too, and this line is what makes ADR 0019's
+    // guarantee reach them. `assertContentRefsResolve` calls this from three places —
+    // create, update and publish — because `content` and `points` are patched independently
+    // and a points patch can orphan a binding the request never mentioned. Omit this walk and
+    // all three checks silently stop covering widgets, with nothing in the type system to say
+    // so, and ADR 0019 §3's tier promotion becomes a claim rather than a fact.
+    for (const widget of view.widgets ?? []) {
+      refs.push(...widget.pointKeys);
+    }
   }
   return refs;
 }
