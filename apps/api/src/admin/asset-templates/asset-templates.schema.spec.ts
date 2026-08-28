@@ -246,36 +246,57 @@ export function runAssetTemplateSchemaTests(): void {
 
   // ---- identity and version are never caller-supplied -----------------------
 
-  // A row IS a version (ADR 0015 fork 2). If a caller could set `version`, the
-  // pin in assets.template_id and the version it claims could disagree — the
-  // exact failure the collapsed table exists to make impossible.
-  const withVersion = createAssetTemplateBodySchema.parse({
+  // **The mechanism changed in `E7.1f`; the guarantee did not, and it got
+  // stronger.** These four assertions used to prove that `version`, `status`,
+  // `code` and `organizationId` were *silently stripped* — parsed away, with
+  // the write answering 200. That was the ADR 0029 Amendment 3 defect exactly:
+  // a caller who sent `version: 7` was told the request succeeded and had no
+  // way to learn the field was discarded. The schemas are now `.strict()`, so
+  // the same four keys are **refused, by name**.
+  //
+  // This is the one place in the repository where a caller genuinely depended
+  // on a field being stripped — found by running the full suite, which is what
+  // ruling 4 asks for ("check that no current caller depends on a field being
+  // stripped: today those callers receive 200, and after this they receive
+  // 400"). The dependency was this test, not a client, so nothing shipped
+  // breaks. It is rewritten rather than deleted because what it protects is
+  // unchanged: a row IS a version (ADR 0015 fork 2), and if a caller could set
+  // `version` the pin in `assets.template_id` and the version it claims could
+  // disagree — the exact failure the collapsed table exists to make impossible.
+
+  const withVersion = createAssetTemplateBodySchema.safeParse({
     ...validTemplate,
     version: 7,
     status: "published",
   } as Record<string, unknown>);
   assert(
-    !("version" in withVersion),
-    "version must not survive parsing — it is assigned by the version-bump rule",
+    !withVersion.success,
+    "create must refuse caller-supplied version/status rather than strip them — version is " +
+      "assigned by the version-bump rule and publishing is an endpoint, not a field",
   );
   assert(
-    !("status" in withVersion),
-    "status must not survive parsing — publishing is an endpoint, not a field",
+    JSON.stringify(withVersion.error?.issues ?? []).includes("version"),
+    "the refusal must name `version`, so a caller learns the field was rejected instead of " +
+      "inferring from a 200 that it was applied",
   );
 
   // Update carries neither identity nor lifecycle: `code` and `organizationId`
   // are what a published version's pin resolves through.
-  const update = updateAssetTemplateBodySchema.parse({
-    name: "Renamed",
-    code: "SOMETHING-ELSE",
-    organizationId: "22222222-2222-4222-8222-222222222222",
-    status: "published",
-  } as Record<string, unknown>);
+  const update = updateAssetTemplateBodySchema.parse({ name: "Renamed" });
   assert(update.name === "Renamed", "update must accept a name change");
   for (const forbidden of ["code", "organizationId", "status"]) {
+    const rejected = updateAssetTemplateBodySchema.safeParse({
+      name: "Renamed",
+      [forbidden]: forbidden === "organizationId" ? "22222222-2222-4222-8222-222222222222" : "x",
+    } as Record<string, unknown>);
     assert(
-      !(forbidden in update),
-      `${forbidden} must not survive an update parse — it is not editable`,
+      !rejected.success,
+      `${forbidden} is not editable, so an update carrying it must be refused rather than ` +
+        "quietly parsed away",
+    );
+    assert(
+      JSON.stringify(rejected.error?.issues ?? []).includes(forbidden),
+      `the refusal must name ${forbidden}`,
     );
   }
 
