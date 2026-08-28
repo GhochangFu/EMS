@@ -2163,7 +2163,7 @@ Mirrored into: AGENTS.md status line and §2 *Database roles* row (the role
 inventory only — see the section below for the tenancy semantics this
 migration made possible but did not itself add).
 
-### Multi-tenant architecture — RLS, role split and org scoping (`E7.1a`–`E7.1d`, ADR 0043) — done
+### Multi-tenant architecture — RLS, role split and org scoping (`E7.1a`–`E7.1d`, `E7.1g`, ADR 0043) — done
 
 **2026-08-24 through 2026-08-28, PRs #155/#162/#166/#169/#180.** ADR 0043 and
 its five amendments, plus ADR 0044 and ADR 0045. Split into four children at
@@ -2211,13 +2211,28 @@ decision-5 tables) and ADR 0045's owner-role work did not fit the original
   found while fixing — `isPending` is false on error too, so a *failed*
   organization list rendered "You administer no active organization", a
   tenancy claim drawn from a request that never answered.
+- **`E7.1g`** (Amendment 6, PR #185, squash `437cdfc`) closed the disclosure
+  the `E7.1d` security review found in the screen `E7.1d` had just shipped.
+  `ChannelsService.listDeliveries` filtered on the delivery's
+  `organization_id` and never tested the joined channel's own — and decision 7
+  keeps a fleet-managed global *shareable*, so a global admin can wire one
+  onto a tenant's rule, `record()` stamps the rule's organization, and the
+  tenant then reads a fleet channel's code beside a resolved internal hostname
+  out of `error`. **Redact the detail, keep the code:** `error` is blanked for
+  a non-`admin` caller when the joined channel's organization is `NULL`;
+  `channelCode` stays, because ADR 0041 decision 10 needs a failed delivery to
+  remain identifiable. One `CASE`, in SQL, keyed on the caller's role.
 - **`telemetry.*` is untouched throughout** (decision 9) — no column, no
   policy; isolation stays `readableAssetIds`, by design.
 
 Mirrored into: AGENTS.md status line, §2 *Tenancy* row (new) and *Secrets*
-row, §4.3/§4.4, §4.7's fifth gate, and §6 (narrowed, not deleted — per-org
-SMTP relays, white-label branding, a `platform_admin` rung and `telemetry.*`
-RLS all stay deferred).
+row, §4.3/§4.4, §4.7's fifth gate and its Amendment 6 projection rule, and §6
+(narrowed, not deleted — per-org SMTP relays, white-label branding, a
+`platform_admin` rung and `telemetry.*` RLS all stay deferred).
+
+`E7.1e` (the org-scoped `bms.audit_log` reader, gated by **ADR 0046**) and
+`E7.1f` (`.strict()` on the mutating body schemas, gated by **ADR 0029**
+Amendment 3) are the two children of this split still open.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending

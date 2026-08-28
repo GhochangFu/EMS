@@ -71,7 +71,7 @@
 > (`SET LOCAL app.current_organization` inside a transaction) or a
 > named-reason `fleetDb`, and org-scoped notification channels and rule
 > identity gated by `canManageNotificationChannel` (**ADR 0043** and its
-> Amendments 1–5, `E7.1a`–`E7.1c`) — real rather than theatre only because of
+> Amendments 1–6, `E7.1a`–`E7.1d` and `E7.1g`) — real rather than theatre only because of
 > two prerequisites landed beside it: an unprovisioned `admin` JWT claim now
 > refuses outright instead of resolving unrestricted (**ADR 0044**), and the
 > schema owner is no longer a superuser, so `FORCE ROW LEVEL SECURITY` actually
@@ -1030,6 +1030,31 @@ enumerate every role the old predicate admits and every role the new one
 admits, and diff the two sets — do not assume a wider read gate is merely
 more permissive in ways that do not matter.
 
+**A row in a tenant's scope can still join to a fleet-managed parent, and the
+projection is a second gate** (ADR 0043 Amendment 6, `E7.1g`, PR #185).
+`listDeliveries` filtered on `notification_deliveries.organization_id` and
+never tested the joined channel's *own* organization. Decision 7 keeps a
+fleet-managed global **shareable**, so `setRuleChannels` may wire one onto a
+tenant's rule and `record()` then stamps the **rule's** organization — the
+delivery is legitimately the tenant's while the channel is fleet business.
+An `organization_admin` was therefore reading a fleet channel's code beside
+whatever `webhook-guard.ts` had written into `error`, a resolved internal
+hostname included. **The ruling is redact the detail, keep the code:** for a
+non-`admin` caller `error` is blanked when the joined
+`notification_channels.organization_id IS NULL`, `channelCode` is returned
+intact, and a global admin's view is unchanged. Withholding both was
+considered and **rejected** — ADR 0041 decision 10 needs a failed delivery to
+stay identifiable, and a row the operator cannot name collapses "no
+notification arrived" back into "no notification was attempted". The
+redaction is keyed on the caller's **role**, not on `writableOrganizationIds
+=== null`, because `list()` deliberately treats unrestricted scope as
+equivalent to `admin` while the amendment says non-`admin`; it is done in SQL
+so the detail never leaves Postgres for a tenant. **The general rule:** when a
+scoped read joins a table that has a legitimate `NULL`-organization row, the
+`WHERE` clause is not the whole gate — the `SELECT` list is the other half.
+This does not settle redaction generally; only `error` on a `NULL`-org
+channel is ruled.
+
 **Standing obligation (ADR 0021 decision 6).** `audit_log.payload` stores the
 verbatim request body at **twelve** call sites — assets, asset-points,
 locations, organizations, point-keys and RTUs, create and update each — and the
@@ -1228,13 +1253,16 @@ sidebar; keep scoped visibility and active-state behaviour consistent with
 These are intentionally deferred. Do not implement them yet:
 
 - **Multi-tenancy and row-level security are delivered** (**ADR 0043**,
-  `E7.1a`–`E7.1d`) — organization-scoped RLS under `FORCE` on the decision-5
+  `E7.1a`–`E7.1d` and `E7.1g`) — organization-scoped RLS under `FORCE` on the decision-5
   table set, a `bms_tenant`/`bms_fleet`/`bms_auth` role split, org-scoped
   notification channels and rule identity gated by
   `canManageNotificationChannel`, and (`E7.1d`, PR #180) the `F3.8` admin UI
   split: both notification screens gate on `canManageNotificationChannels`
   rather than on `isMasterDataAdmin`, the create form carries an organization
-  picker, and both tables name the owning tenant. **Still deferred:** org-level **read** RBAC
+  picker, and both tables name the owning tenant. `E7.1g` (Amendment 6, PR
+  #185) closed what that screen exposed: a fleet-managed channel's `error` is
+  redacted in a tenant's delivery ledger while its `channelCode` is not — see
+  §4.7. **Still deferred:** org-level **read** RBAC
   on `bms.audit_log` (§4.7's third gate stays global-admin-only; the column
   now exists but the reader was never widened to `organization_admin` — see
   §2's *Audit read* row), per-organization SMTP relays (decision 13 — the
