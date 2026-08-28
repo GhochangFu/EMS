@@ -49,11 +49,11 @@ export const auditListQuerySchema = z
     //
     // This used to say "global-admin-only, so this is a guard against accident
     // rather than abuse". `E7.1e` (ADR 0046) made that false — an
-    // `organization_admin` now reaches this parameter. There is no index on
-    // `bms.audit_log (organization_id)`, so a scoped deep-offset read walks
-    // `audit_log_created_idx` backwards past every other organization's rows.
+    // organization_admin now reaches this parameter. E7.1i added the
+    // tenant-leading bms.audit_log (organization_id, created_at DESC, id DESC)
+    // index, so scoped deep-offset reads can seek directly into the tenant's rows.
     // The bound is what keeps that finite. Availability, not disclosure; the
-    // index is recorded as follow-up work rather than added here.
+    // index remains alongside the global chronological index for unscoped reads.
     offset: z.coerce.number().int().min(0).max(100_000).default(0),
   })
   .strict()
