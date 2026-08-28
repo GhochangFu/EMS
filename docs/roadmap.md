@@ -1144,7 +1144,13 @@ Process (`AGENTS.md` §10).
   record it; the global admin's view is the forensic record.
   Offset-paginated with a `(created_at, id)`
   tie-break so pages are stable, export bounded by a required ≤366-day window
-  and a 50,000-row cap that **refuses rather than truncates**.
+  and a 50,000-row cap that **refuses rather than truncates**. `E7.1i` (PR #196)
+  added `audit_log_organization_created_idx` on
+  `(organization_id, created_at DESC, id DESC)` to match that filter and
+  tie-break, keeping the original chronological index for the unscoped read —
+  though at present data volume the planner still prefers the old index plus an
+  incremental sort, so the benefit is banked against growth rather than realised
+  today.
 - **Unblocks:** F4.15 (append-only audit + nightly hash-chaining) — the only
   item listing F4.14, and F4.14 was its only dependency.
 - **Notable:** the security review found a **privilege-escalation path**, and it
@@ -2243,11 +2249,12 @@ rung and `telemetry.*` RLS all stay deferred).
 
 `E7.1e` (the org-scoped `bms.audit_log` reader, gated by **ADR 0046**) landed
 2026-08-28 as PR #188, and `E7.1h` (its projection half, Amendment 2) as
-PR #191 the same day. **Two children of this split are still open:** `E7.1f`
-(`.strict()` on the mutating body schemas, gated by **ADR 0029** Amendment 3)
-and `E7.1i` (an index behind the scoped read). An earlier version of this
-paragraph called `E7.1f` "the last child still open" and was already wrong when
-written — `E7.1i` was filed in the same pass.
+PR #191 the same day, and `E7.1i` (the index behind the scoped read) as PR #196.
+**`E7.1f` is now the last child of this split still open** — `.strict()` on the
+mutating body schemas, gated by **ADR 0029** Amendment 3. That sentence has been
+wrong twice before: it once named `E7.1f` last while `E7.1i` was open and filed
+in the same pass, then named two while `E7.1i` was in flight. It is true as of
+PR #196, and it is the line to re-check whenever an `E7.1x` lands.
 
 `E7.1e`'s own reviews raised three follow-ups, all Wave 5. **`E7.1h` is done**
 (PR #191, squash `a62e707`): a non-`admin` reader keeps `actorEmail` and never
@@ -2266,10 +2273,17 @@ rather than alongside it. That asymmetry is decision 8 and is recorded so the
 obvious later "fix" — mirroring Amendment 2 and adding the email — is seen for
 what it would be: disclosing plaintext addresses to `operator` and `viewer`, an
 audience wider than Amendment 2 ever exposed. The now-dead `F3.6` justification
-was corrected in the same commit. Still open:
-`E7.1i` indexes `bms.audit_log (organization_id, created_at)` — availability,
-not disclosure — and `E8.5` bounds or scrubs the `rtus.meta` value space that
-ADR 0021 decision 6's re-measurement could not clear by field name.
+was corrected in the same commit. **`E7.1i` is also done** (PR #196, squash
+`196a856`): migration `0049` adds
+`audit_log_organization_created_idx` on
+`bms.audit_log (organization_id, created_at DESC, id DESC)` and keeps the
+original chronological index for unscoped reads — availability, not disclosure.
+Its own measurement is the part to carry: **at current volume the planner still
+prefers the old index plus an incremental sort**, and picks the new one only
+with incremental sort disabled, so this is write cost now for a read benefit
+that arrives with growth. **Still open:** `E8.5` bounds or scrubs the
+`rtus.meta` value space that ADR 0021 decision 6's re-measurement could not
+clear by field name.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
