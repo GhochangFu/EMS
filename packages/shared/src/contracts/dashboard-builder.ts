@@ -202,9 +202,10 @@ export const MAX_WIDGET_POINTS = 8;
  * How many points **each type** may bind (ADR 0047 Amendment 2).
  *
  * **This is the one catalog field that lives here rather than in `F3.1c`'s frontend registry,
- * and the reason is the consumer, not the data.** Decision 2 put label, icon, default size,
- * cardinality and the series mapping in `apps/web/src/lib/widget-catalog.ts` because the
- * vocabulary is presentation. Four of those five still are. Cardinality is not: `F3.1b` must
+ * and the reason is the consumer, not the data.** Decision 2 put label, icon, default size and
+ * cardinality in `apps/web/src/lib/widget-catalog.ts` because the vocabulary is presentation
+ * (the plain-label→ECharts series mapping is decision 4's, in the same file). Three of those
+ * four still are. Cardinality is not: `F3.1b` must
  * refuse a two-point gauge *on write*, and `apps/api` cannot import from `apps/web`. The split
  * line is therefore **validation rule versus presentation**, not contract versus catalog.
  * `widget-catalog.ts` imports these numbers rather than restating them, so the write path and

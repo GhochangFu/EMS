@@ -517,8 +517,10 @@ happened to write `canManageDashboard`. The fourth is a label.
 
 Decision 2 reads: *"Label, icon, default size, and how many point references a
 type accepts are data, and they belong in a frontend registry keyed by the
-enum."* **Four of those five still do. Cardinality does not, and the reason is
-the consumer rather than the data.**
+enum."* **Three of those four still do. Cardinality does not, and the reason is
+the consumer rather than the data.** (The fifth catalog field, the
+plain-label→ECharts series mapping, is decision 4's rather than decision 2's;
+it stays in `widget-catalog.ts` and is not in question here.)
 
 `F3.1b` must refuse a two-point radial gauge **on write** — `0050`'s header
 already records why the database cannot: cardinality is a per-widget row count
@@ -632,3 +634,30 @@ the one that does not exist.
 - **No schema change and no `0051`.** Ruling 2 is an application rule: `0050`
   permits both scope columns to be NULL and must keep doing so, because `admin`
   and `organization_admin` legitimately create such rows.
+- **Ruling 1 creates an obligation on a surface that is already on `main`, and
+  this amendment defers it rather than leaving it silent.**
+  `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts:299`
+  bounds a template dashboard widget at `pointKeys: z.array(pointKeyRef).min(1)
+  .max(MAX_WIDGET_POINT_KEYS)`, and `templateWidgetIdentityFields` is spread
+  into **all four** arms of `templateDashboardWidgetVariants`. So the template
+  `radial_gauge` arm accepts **1..8** point keys, and an organization
+  administrator can author, save and publish a template dashboard carrying an
+  eight-point gauge today. This amendment's own standard is the argument
+  against passing over it: *a rule enforced only by the surface that happens to
+  be convenient is not enforced.* The template surface enforces the global cap
+  only.
+  **The obligation:** each arm takes `WIDGET_POINT_CARDINALITY[type]` rather
+  than the shared bound. **It falls to whichever of `F3.1e` or `F3.2` lands
+  first** — `F3.1e` opens this authoring surface and gives it a tab, `F3.2`
+  instantiates a template dashboard into `bms.dashboard_widgets` and is where a
+  gauge with eight bindings would otherwise be created or refused.
+  **And the deferral has to carry a second question, not only the rule.**
+  `asset_templates.content` already stores whatever has been authored, so
+  tightening an arm later reddens the author's *next* update or publish of an
+  existing template rather than the write that created it. Whichever row takes
+  this must decide what happens to content already saved — migrate it, refuse
+  it at the next publish with a message naming the widget, or grandfather it —
+  and record that answer. Tightening the arm and discovering the consequence
+  from a support ticket is the failure mode here.
+  Nothing misbehaves today: no code reads or writes the three tables until
+  `F3.1b`/`F3.1c`, which is why `F3.1a` closed with API and browser marked N/A.
