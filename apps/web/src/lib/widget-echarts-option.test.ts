@@ -39,15 +39,15 @@ describe("widget-echarts-option: buildRadialGaugeOption", () => {
 });
 
 describe("widget-echarts-option: buildChartOption", () => {
-  it("gives 'line' no areaStyle", () => {
+  it("gives the plain trend series no areaStyle", () => {
     chartLineSeriesHasNoAreaStyle();
   });
 
-  it("maps 'area' to a line series with areaStyle, never an 'area' series type", () => {
+  it("maps the filled trend to a line series with areaStyle, never a separate series type", () => {
     chartAreaSeriesIsLineWithAreaStyle();
   });
 
-  it("maps 'bar' and 'scatter' directly", () => {
+  it("maps the bar and scatter kinds directly", () => {
     chartBarAndScatterMapDirectly();
   });
 

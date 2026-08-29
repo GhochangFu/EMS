@@ -27,7 +27,7 @@ describe("widget-catalog", () => {
     chartSeriesLabelsArePinned();
   });
 
-  it("maps the filled trend to a line series with areaStyle, not an 'area' type", () => {
+  it("maps the filled trend to a line series with areaStyle, not a separate series type", () => {
     areaSeriesIsLineWithAreaStyle();
   });
 
