@@ -661,3 +661,105 @@ the one that does not exist.
   from a support ticket is the failure mode here.
   Nothing misbehaves today: no code reads or writes the three tables until
   `F3.1b`/`F3.1c`, which is why `F3.1a` closed with API and browser marked N/A.
+
+## Amendment 3 — the template arms tighten now, and the stored population is empty (2026-08-29)
+
+Ruled by the repository owner on 2026-08-29, at the `F3.1e` step 2 gate and
+**before any implementation code**, in the same `docs(adr):` change as
+[ADR 0038](0038-template-authoring-ui.md) Amendment 4. Two amendments in one
+PR follows PR #204, which carried ADR 0019 Amendment 3 and ADR 0047
+Amendment 1 together.
+
+This discharges the obligation Amendment 2 §Consequences deferred, and it
+discharges **both halves** of it: the rule, and the question about content
+already saved.
+
+### 1. Each arm takes `WIDGET_POINT_CARDINALITY[type]`
+
+`apps/api/src/admin/asset-templates/asset-templates-content.schema.ts:299`
+spreads one bound into all four arms of `templateDashboardWidgetVariants`:
+
+```ts
+pointKeys: z.array(pointKeyRef).min(1).max(MAX_WIDGET_POINT_KEYS),
+```
+
+`MAX_WIDGET_POINT_KEYS` is `MAX_WIDGET_POINTS`, which is 8. So the template
+`radial_gauge` arm accepts one to eight point keys while Amendment 2 §1 says a
+gauge takes exactly one. **Each arm now takes its own type's cardinality**:
+
+- `radial_gauge`, `tank_level`, `value_tile` — exactly one point key.
+- `chart` — one to `MAX_WIDGET_POINTS`.
+
+The numbers are **not** restated in `apps/api`. They are read from
+`WIDGET_POINT_CARDINALITY`, which is Amendment 2 §1's whole point: the
+cardinality is declared once in `@bms/shared` and every surface derives from
+it. An arm that hardcodes `1` re-opens the seam this amendment closed.
+
+### 2. Content already stored is neither migrated nor grandfathered, because there is none
+
+Amendment 2 named three permitted answers — migrate, refuse at the next
+publish, or grandfather — and required whichever row took the obligation to
+pick one and record it. **The answer is that none of the three is needed, and
+the reason is a fact about this repository rather than a preference.**
+
+The set of stored rows that can carry an over-bound widget is **empty**:
+
+- **No seed writes `content.dashboards` at all.** Nothing under `packages/db/src/`
+  populates the key, so no seeded or demo template can carry a widget.
+- **`TemplateDashboardView.widgets` is optional**, and
+  `asset-template-content.ts:150` states why: *"nothing backfills those rows"*.
+  Every row written before `F3.1a` has `featured` only.
+- **The schema that accepts a widget is hours old.**
+  `templateDashboardWidgetVariants` reached `main` in `b0b4f3f` on 2026-08-29,
+  the same day as this amendment.
+- **No authoring surface exists.** `dashboards` has no tab — that is precisely
+  what ADR 0038 Amendment 4 changes — so the only way to have written an
+  eight-point gauge is a hand-composed `PATCH /:id` against a build of `main`
+  from the same day.
+
+So the arms tighten, no migration is written, and no grandfather path is added.
+
+**This is recorded as a finding with its evidence, not as an assumption**, and
+the distinction matters for the row that acts on it. If `F3.1e`'s build finds a
+stored widget that fails the tightened arm — in a developer database, in a
+fixture, or anywhere else — the finding is falsified and the ruling must come
+back to the owner rather than be worked around. Silently relaxing the bound
+because one row failed is the outcome this paragraph exists to prevent.
+
+### 3. `F3.2` inherits a closed question, not an open one
+
+Amendment 2 §Consequences gave this obligation to *"whichever of `F3.1e` or
+`F3.2` lands first"*. `F3.1e` takes it. `F3.2` therefore inherits a template
+surface whose arms already agree with `WIDGET_POINT_CARDINALITY`, and it may
+instantiate template content into `bms.dashboard_widgets` without deciding what
+to do with a gauge carrying eight bindings — because the authoring surface can
+no longer produce one.
+
+`F3.2`'s row in `docs/BACKLOG.md` states this obligation as open. It is closed
+by this amendment, and **the row is corrected in this change**, not deferred to
+the `chore(agents):` sweep. The first draft of this amendment said the
+opposite. It was wrong on the repository's own record: PR #201, PR #204 and
+PR #205 are the three `docs(adr):` changes that precede this one, and all three
+edit `docs/BACKLOG.md` in the same commit. `AGENTS.md` §9.10 gates edits to
+`AGENTS.md` itself, not to the backlog.
+
+### Consequences
+
+- **A migration is deliberately not written.** No `0051`, and no data fix-up.
+  Amendment 2's ruling 2 already recorded that its own rule was an application
+  rule needing no schema change; this is the same shape, and for the same
+  reason: `asset_templates.content` is `jsonb` that only the API validates.
+- **`MAX_WIDGET_POINT_KEYS` survives as the global ceiling**, not as the
+  per-arm bound. `dashboard-builder.spec.ts` already asserts every
+  `WIDGET_POINT_CARDINALITY` max is at or below `MAX_WIDGET_POINTS`, so the two
+  cannot drift apart in the direction that matters.
+- **The `F3.1e` build owes a test per arm, not one shared test.** A single
+  eight-point-gauge refusal would pass against a bound that tightened only
+  `radial_gauge`. Each of the three single-point arms refuses two keys, and
+  `chart` still accepts eight — otherwise a copy-paste that tightens `chart`
+  too ships with nothing red.
+- **`docs/BACKLOG.md`'s `F3.1e` and `F3.2` rows both describe this as owed**,
+  and both are corrected in this change. `F3.1e` moves ⬜ → 🟡: its ADR gate is
+  ruled here and in ADR 0038 Amendment 4, which is what 🟡 means. It does
+  **not** move to 🔵 — `docs/scripts/backlog-status.mjs:440` states that no row
+  is 🔵 and that in-flight is derived from the branch name.

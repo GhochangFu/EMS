@@ -633,3 +633,109 @@ all still exist. Nothing else in the product behaves that way.
 source row. It must not, and nothing here does: `archived_at` is a record of
 what happened, the source row keeps its status, and the new draft is a separate
 version that follows the ordinary draft lifecycle from there.
+
+## Amendment 4 — the detail page has six tabs; `dashboards` is the sixth (2026-08-29)
+
+Ruled by the repository owner on 2026-08-29, at the `F3.1e` step 2 gate and
+**before any implementation code**, in its own `docs(adr):` change. The routing
+was itself the question put, and the owner chose the standalone PR over
+bundling the amendment into the feature branch — the precedent set by ADR 0019
+Amendment 3 and ADR 0047 Amendments 1 and 2, all of which landed as `docs(adr):`
+PRs ahead of the work that motivated them.
+
+### The condition decision 2 wrote, and why it is now discharged
+
+Decision 2 says the page has **exactly five** tabs, and then says of the sixth:
+
+> **`dashboards` gets no tab either.** Its only authorable content today is the
+> ordering of point keys, which belongs on the Points tab as the existing
+> `sortOrder` control rather than as a section editor implying a layout the
+> contract does not carry. **It becomes a tab when `F3.1` gives it widgets.**
+
+`F3.1a` gave it widgets. It merged on 2026-08-29 as `b0b4f3f` (PR #202) under
+[ADR 0047](0047-configurable-dashboards.md), and
+`packages/shared/src/asset-template-content.ts` now reads:
+
+```ts
+export type TemplateDashboardView = {
+  featured: string[];
+  widgets?: TemplateDashboardWidget[];
+};
+```
+
+`asset-templates-content.schema.ts` accepts those widgets on `PATCH /:id`
+today. The stated condition is met exactly as written, so this amendment
+discharges it rather than reopening decision 2's reasoning. **The count moves
+five → six. Nothing else in decision 2 changes**: `health` and `optimisation`
+are still refused by `templateContentSchema` and still get no tab, `E1.1` and
+`E1.6` still own them, and `maintenance` is still deliberately omitted.
+
+### The count is held in two executable places, not one, and both move
+
+This is the half the ADR 0047 §Consequences bullet and the `F3.1e` backlog row
+both understate. They name the source scan. There are **two** independent
+gates, and each one holds the number **and** names `dashboards` in a
+closed-section list:
+
+| File | What it holds |
+|---|---|
+| `tests/adr-0038-template-authoring-ui.test.ts` | the source scan of `template-tabs.ts` — `.toBe(5)` on the id count and again on the brace count, `EXPECTED` as the exact ordered id list, the `TemplateTabId` union scan, and `"dashboards"` in the reserved-section loop |
+| `apps/web/src/lib/template-tabs.spec.ts` | `TEMPLATE_TABS.length === 5`, the joined id string `"details,points,calculations,kpis,alarms"`, and its own `"dashboards"` ban in `runNoClosedSectionTabTests` |
+
+The two are not redundant and the scan file says so in its own docblock:
+*"behaviour there, text here."* A change that edits only one of them leaves the
+other red, which is the correct outcome — but an agent that finds the second
+red **after** the first is already edited is being invited to edit it too,
+without a ruling. Both are named here so that neither edit is discretionary.
+
+Three further sites carry the number in prose and must be corrected in the same
+change, because a comment that contradicts the code is the drift `CLAUDE.md`'s
+precedence rule exists to stop: `template-tabs.ts`'s docblock (which also
+states the deferral this amendment discharges), `template-tab-strip.tsx:19`,
+and `asset-template-detail-page.tsx:574`'s *"Unreachable while `TemplateTabId`
+names five tabs"*.
+
+### What an agent may and may not do
+
+**May:** change both gates from five to six, add `"dashboards"` to `EXPECTED`
+and to the union, and remove `"dashboards"` from the two reserved-section loops
+— in the same change as the tab, citing this amendment.
+
+**May not:** weaken either gate. The scan must keep asserting an exact ordered
+list, an exact count, an exact brace count, the anti-vacuity guard, and the
+flat-literal shape. `health`, `optimisation`, `optimization` and `maintenance`
+stay in both closed-section loops. An agent that relaxes `.toBe(6)` to
+`.toBeGreaterThan(0)`, or deletes a loop rather than removing one entry from
+it, has defeated the machinery this amendment is deliberately preserving.
+
+The distinction is the one decision 2 was built on: a type cannot stop a
+seventh tab, and a behavioural test would agree with whatever it found. The
+number is asserted in source text on purpose. It moves by amendment, once, with
+a reason — which is what this is.
+
+### The tab itself
+
+| Tab | Writes | Notes |
+|-----|--------|-------|
+| Dashboards | `PATCH /:id` — `content.dashboards` | `featured[]` ordering and `widgets[]`; the widget vocabulary is ADR 0047's `widgetTypeSchema`, and the per-type point cardinality is `WIDGET_POINT_CARDINALITY` from `@bms/shared` (ADR 0047 Amendment 2) |
+
+It is the **sixth** in the strip, after Alarms. Decision 3's lifecycle rule
+applies to it unchanged and needs no restatement: on a `published` or
+`archived` version the tab is read-only, like every other.
+
+**`sortOrder` on the Points tab is untouched.** Decision 2 sent the `featured`
+ordering there when it was the only authorable thing, and moving it now would
+be a second change riding on this one. The two surfaces coexist; if that proves
+confusing to an author it is a `F3.1e` closure observation, not a ruling taken
+here in advance.
+
+### What this does not decide
+
+- **No renderer.** ADR 0047 decision 6 keeps the boundary, and `F3.1c` owns the
+  four widget components. This tab authors template *content*; it does not draw
+  a dashboard.
+- **No instantiation.** Turning template content into `bms.dashboard_widgets`
+  rows is `F3.2`, which stays a Wave 2 P1 row. ADR 0047's decision 6 declined
+  folding it in, and nothing here reopens that.
+- **No seventh tab.** `maintenance` stays omitted for the reason decision 2
+  gives, and `health` / `optimisation` stay refused by the API.
