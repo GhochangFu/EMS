@@ -36,15 +36,23 @@
  * `unwritableContentKeys` names the problem instead, so the page can say what
  * is wrong before the author fills in a form and collects a 400.
  */
-import type { TemplateAlarm, TemplateKpi } from "@bms/shared";
+import type { TemplateAlarm, TemplateDashboardView, TemplateKpi } from "@bms/shared";
 
 /** The stored column, as the read DTO delivers it. */
 export type StoredTemplateContent = Readonly<Record<string, unknown>>;
 
-/** The two sections F2.5 authors. Everything else is carried, not edited. */
+/**
+ * The three sections `F2.5`/`F3.1e` author. Everything else is carried, not
+ * edited.
+ *
+ * `dashboards` is a **record**, not an array like its two siblings — a named
+ * view keyed by name, not a list of entries. `mergeTemplateContent` branches
+ * on that shape rather than treating every section as `[...patch.value]`.
+ */
 export type TemplateContentPatch =
   | { section: "kpis"; value: readonly TemplateKpi[] }
-  | { section: "alarms"; value: readonly TemplateAlarm[] };
+  | { section: "alarms"; value: readonly TemplateAlarm[] }
+  | { section: "dashboards"; value: Readonly<Record<string, TemplateDashboardView>> };
 
 /**
  * Keys `contentEnvelopeSchema` accepts.
@@ -107,6 +115,23 @@ export function mergeTemplateContent(
       continue;
     }
     merged[key] = stored[key];
+  }
+  if (patch.section === "dashboards") {
+    // A record, not an array: `[...patch.value]` would iterate `Object.values`
+    // and lose every key. Copied the same way `stored` is above — a filtered
+    // loop, not a spread, so a view named `__proto__` can never reach
+    // `merged[key] = value` and invoke the prototype setter. The API refuses
+    // such a name at `safeKeySchema` anyway; this is the client-side half of
+    // the same refusal.
+    const dashboards: Record<string, TemplateDashboardView> = {};
+    for (const key of Object.keys(patch.value)) {
+      if (UNSAFE_KEYS.includes(key)) {
+        continue;
+      }
+      dashboards[key] = { ...patch.value[key] };
+    }
+    merged[patch.section] = dashboards;
+    return merged;
   }
   merged[patch.section] = [...patch.value];
   return merged;

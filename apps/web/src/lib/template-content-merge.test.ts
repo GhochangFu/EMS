@@ -2,10 +2,14 @@ import { describe, it } from "vitest";
 
 import {
   runCleanContentIsWritableTests,
+  runDashboardsPatchDoesNotAliasTests,
+  runDashboardsPatchDropsUnsafeViewNamesTests,
+  runDashboardsPatchPreservesOtherSectionsTests,
   runDoesNotInventContentVersionTests,
   runDoesNotMutateStoredTests,
   runDropsUnsafeKeysTests,
   runEachSectionIsIndependentTests,
+  runEmptyDashboardsRecordIsKeptTests,
   runEmptySectionWritesAnArrayTests,
   runPreservesEveryOtherKeyTests,
   runInheritedKeyTests,
@@ -48,5 +52,21 @@ describe("template content merge", () => {
 
   it("calls an inherited key unknown, and never shows a function to the author", () => {
     runInheritedKeyTests();
+  });
+
+  it("a dashboards patch (a record, not an array) preserves every other section", () => {
+    runDashboardsPatchPreservesOtherSectionsTests();
+  });
+
+  it("writes an empty dashboards record as {}, never deleting the key", () => {
+    runEmptyDashboardsRecordIsKeptTests();
+  });
+
+  it("drops a prototype-pollution view name from a dashboards patch", () => {
+    runDashboardsPatchDropsUnsafeViewNamesTests();
+  });
+
+  it("does not alias the caller's dashboards record", () => {
+    runDashboardsPatchDoesNotAliasTests();
   });
 });

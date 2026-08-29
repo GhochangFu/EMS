@@ -14,7 +14,7 @@
  * `Object.hasOwn` on the fixture **before** using it, so nobody can later
  * "tidy" it into a literal and quietly disarm the check.
  */
-import type { TemplateAlarm, TemplateKpi } from "@bms/shared";
+import type { TemplateAlarm, TemplateDashboardView, TemplateKpi } from "@bms/shared";
 
 import {
   contentCanBeWrittenBack,
@@ -370,4 +370,125 @@ export function runInheritedKeyTests(): void {
   const realByKey = new Map(withReal.map((problem) => [problem.key, problem]));
   assert(realByKey.get("health")?.reason === "reserved", "health is still reserved");
   assert(realByKey.get("optimisation")?.reason === "reserved", "optimisation is still reserved");
+}
+
+const DASHBOARDS: Record<string, TemplateDashboardView> = {
+  overview: { featured: ["A", "B"] },
+  detail: { featured: ["A"], widgets: [] },
+};
+
+/**
+ * `mergeTemplateContent`'s third arm (`F3.1e`, ADR 0038 Amendment 4).
+ *
+ * A dashboards patch is a **record**, not an array — `TemplateContentPatch`'s
+ * two existing members both spread `[...patch.value]`. This proves the
+ * record write preserves every section it does not own, on the same §3.1
+ * finding the first test in this file pins for the array sections.
+ */
+export function runDashboardsPatchPreservesOtherSectionsTests(): void {
+  const stored = storedWithFutureKey();
+  const merged = mergeTemplateContent(stored, { section: "dashboards", value: DASHBOARDS });
+
+  for (const key of ["kpis", "alarms", "maintenance", "someFutureKey"]) {
+    assert(
+      JSON.stringify(merged[key]) === JSON.stringify(stored[key]),
+      `${key} must survive a dashboards edit unchanged — got ${JSON.stringify(merged[key])}`,
+    );
+  }
+  assert(
+    JSON.stringify(merged.dashboards) === JSON.stringify(DASHBOARDS),
+    `the edited section must be the new value — got ${JSON.stringify(merged.dashboards)}`,
+  );
+  assert(
+    Object.keys(merged).sort().join(",") === Object.keys(stored).sort().join(","),
+    "the merge must add no key and remove none",
+  );
+
+  // The other direction: editing kpis must not touch a stored dashboards.
+  const kpiEdit = mergeTemplateContent(stored, { section: "kpis", value: [KPI] });
+  assert(
+    JSON.stringify(kpiEdit.dashboards) === JSON.stringify(stored.dashboards),
+    "editing kpis must not touch dashboards",
+  );
+}
+
+/**
+ * An empty dashboards record is written as `{}`, never a deletion — the
+ * record precedent of `runEmptySectionWritesAnArrayTests`. Deleting the last
+ * view is a real intent `buildDashboardsPayload` already expresses this way;
+ * this proves the merge layer carries `{}` through rather than dropping the
+ * key.
+ */
+export function runEmptyDashboardsRecordIsKeptTests(): void {
+  const stored = storedWithFutureKey();
+  const merged = mergeTemplateContent(stored, { section: "dashboards", value: {} });
+
+  assert(Object.hasOwn(merged, "dashboards"), "the key must still exist");
+  assert(
+    typeof merged.dashboards === "object" && merged.dashboards !== null,
+    "the value must be an object",
+  );
+  assert(Object.keys(merged.dashboards as object).length === 0, "the record must be empty");
+
+  const bare = mergeTemplateContent({ contentVersion: 1 }, { section: "dashboards", value: {} });
+  assert(Object.hasOwn(bare, "dashboards"), "a first edit creates the section even when empty");
+}
+
+/**
+ * The record copy is a filtered loop, not a spread — `merged[key] = value`
+ * must never run with `key === "__proto__"`. Built with `JSON.parse`, per the
+ * file docblock: an object literal never creates an own `__proto__` property,
+ * so a literal fixture would prove nothing.
+ */
+export function runDashboardsPatchDropsUnsafeViewNamesTests(): void {
+  const patch = JSON.parse(
+    '{"__proto__":{"featured":["A"]},"constructor":{"featured":["A"]},"overview":{"featured":["A"]}}',
+  ) as Record<string, TemplateDashboardView>;
+
+  assert(
+    Object.hasOwn(patch, "__proto__"),
+    "fixture guard: build this with JSON.parse — an object literal creates no own __proto__ key",
+  );
+  assert(Object.keys(patch).includes("constructor"), "fixture guard: constructor is an own key");
+
+  const merged = mergeTemplateContent({ contentVersion: 1 }, { section: "dashboards", value: patch });
+  const dashboards = merged.dashboards as Record<string, unknown>;
+
+  for (const key of ["__proto__", "constructor", "prototype"]) {
+    assert(
+      !Object.hasOwn(dashboards, key),
+      `${key} must not be copied into the merged dashboards record — got ${JSON.stringify(
+        Object.keys(dashboards),
+      )}`,
+    );
+  }
+  assert(
+    ({} as Record<string, unknown>).polluted === undefined,
+    "Object.prototype must not have been polluted",
+  );
+  assert(Object.hasOwn(dashboards, "overview"), "the legitimate view survives");
+
+  // The reason the filter is not optional, restated for the record arm: a
+  // spread carries __proto__ through as an own property.
+  const spread = { ...patch };
+  assert(
+    Object.hasOwn(spread, "__proto__"),
+    "object spread does carry an own __proto__ key — that is why the filter exists",
+  );
+}
+
+/** The merged record does not alias the caller's object. */
+export function runDashboardsPatchDoesNotAliasTests(): void {
+  const stored = storedWithFutureKey();
+  const source: Record<string, TemplateDashboardView> = { overview: { featured: ["A"] } };
+  const merged = mergeTemplateContent(stored, { section: "dashboards", value: source });
+
+  source.overview = { featured: ["A", "B"] };
+  assert(
+    JSON.stringify((merged.dashboards as Record<string, unknown>).overview) ===
+      JSON.stringify({ featured: ["A"] }),
+    "the merged section must not alias the caller's record",
+  );
+  assert(merged !== stored, "the merge returns a new object");
+  assert(merged.dashboards !== source, "the dashboards value is copied, not the same reference");
 }
