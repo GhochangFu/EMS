@@ -48,7 +48,8 @@ import { z } from "zod";
  *
  * ---
  *
- * **Nothing here is `.strict()`, and that is the rule rather than an omission.**
+ * **The axis is response versus request, not this file versus the rest of the directory —
+ * every schema below is a RESPONSE contract, and none of them is `.strict()` because of that.**
  *
  * These are RESPONSE contracts (ADR 0030 decision 2), and §4.8 is explicit about the direction:
  * `checkResponse` returns the **original** payload, never `result.data`, because Zod strips
@@ -92,8 +93,13 @@ export const widgetToneSchema = z.enum(["ok", "info", "warning", "critical"]);
 /**
  * Fields every config carries. A plain object, spread into each arm — see the file docblock
  * for why this cannot be a schema.
+ *
+ * Exported (`F3.1b`) so `apps/api`'s strict write-side gauge config can spread it too, rather
+ * than restating two field schemas a third time. Object spread is not a Zod combinator, so
+ * re-exporting a plain object trips neither the ADR 0030 scan nor
+ * `tests/f3.1a-dashboard-schema.test.ts`.
  */
-const commonConfigFields = {
+export const commonConfigFields = {
   unit: z.string().max(32).optional(),
   decimals: z.number().int().min(0).max(6).optional(),
 };
@@ -199,6 +205,18 @@ export const dashboardWidgetSpecSchema = z.discriminatedUnion("widgetType", [
 export const MAX_WIDGET_POINTS = 8;
 
 /**
+ * How many widgets one dashboard may hold. Enforced by `F3.1b`'s write path, not by the
+ * database, for the same reason `MAX_WIDGET_POINTS` is not: a per-dashboard row count is not
+ * something a row-level `CHECK` can see.
+ *
+ * Moved here from `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts`
+ * (`F3.1a` left it local because the live dashboard table did not exist yet) and exported so
+ * that file imports it rather than keeping a second copy the two write paths could drift
+ * apart on — the same discipline that file's `MAX_WIDGET_POINT_KEYS` comment already states.
+ */
+export const MAX_DASHBOARD_WIDGETS = 40;
+
+/**
  * How many points **each type** may bind (ADR 0047 Amendment 2).
  *
  * **This is the one catalog field that lives here rather than in `F3.1c`'s frontend registry,
@@ -238,6 +256,15 @@ export const WIDGET_POINT_CARDINALITY: Record<
  * and §4.8's failure direction makes that throw in dev and test and log on every production
  * read. A response contract states what the store can hold; the write bound belongs to
  * `F3.1b`.
+ *
+ * **`assetId`/`pointKey`/`unit` widened in by `F3.1b`.** Without them a caller cannot build the
+ * `pointRef` (`encodePointRef`) `GET /telemetry/points/:pointRef/recent` needs, and `F3.1c`
+ * would need a second round trip per point just to render one binding. Bounds match
+ * `bms.asset_points`' own columns exactly — `assetId` a uuid FK, `pointKey varchar(128)`,
+ * `unit varchar(32)` nullable — because §4.8 forbids a response contract asserting what the
+ * store cannot hold. This is also what makes `F3.1b`'s Task 5 organization guard load-bearing:
+ * `assetId` is the value a caller turns straight into a `telemetry.*` read, so a foreign one
+ * leaving this API is a cross-tenant telemetry read one HTTP call later.
  */
 export const dashboardWidgetPointDtoSchema = z
   .object({
@@ -245,6 +272,9 @@ export const dashboardWidgetPointDtoSchema = z
     pointId: z.string().uuid(),
     role: widgetPointRoleSchema,
     sortOrder: z.number().int(),
+    assetId: z.string().uuid(),
+    pointKey: z.string().max(128),
+    unit: z.string().max(32).nullable(),
   });
 
 /**

@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runDashboardBuilderTests,
+  runDashboardWidgetPointDtoTests,
   runWidgetPointCardinalityTests,
 } from "./dashboard-builder.spec";
 
@@ -15,5 +16,11 @@ describe("F3.1a — the dashboard widget vocabulary and config union", () => {
 describe("ADR 0047 Amendment 2 — per-type point cardinality", () => {
   it("covers every widget type and stays inside the global cap", () => {
     runWidgetPointCardinalityTests();
+  });
+});
+
+describe("F3.1b — the widened point-binding DTO", () => {
+  it("carries assetId/pointKey/unit, so a caller can build a pointRef", () => {
+    runDashboardWidgetPointDtoTests();
   });
 });
