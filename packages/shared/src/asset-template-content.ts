@@ -4,6 +4,11 @@ import type {
   AutomationRuleOperator,
   AutomationRuleSeverity,
   CalcDialect,
+  // F3.1a: the widget vocabulary and its four config variants, derived rather than restated —
+  // §4.8's "a vocabulary is declared once and everything else is derived from it". Taken from
+  // `./index` like every other type here: the alias lives there, and the cycle is harmless
+  // because `index.ts` re-exports this file with `export type *`, so both sides erase.
+  DashboardWidgetSpec,
   MaintenanceGenerationMode,
   MaintenanceScheduleCategory,
   WorkOrderPriority,
@@ -121,11 +126,46 @@ export type TemplateMaintenancePlan = {
 };
 
 /**
- * Which points matter for this asset type, in what order. No widget types, no
- * layout, no sizes — that is `F3.1`'s vocabulary.
+ * One widget on a template's default dashboard (`F3.1a`, ADR 0047).
+ *
+ * **The point reference is the asymmetry worth knowing.** A *live* dashboard binds
+ * `bms.asset_points.id` as foreign-key rows in `bms.dashboard_widget_points`, because ADR 0047
+ * decision 3 rejects ids inside JSON. A *template* dashboard has no asset yet, so it binds
+ * `template_points.point_key` **strings**, exactly as `featured[]` already does, and existence
+ * is proved by `collectContentPointRefs` → `assertContentRefsResolve` on create, update and
+ * publish rather than by a constraint. Same widget vocabulary, same config union; only the
+ * reference differs.
+ *
+ * The type and grid halves are derived from the shared union rather than restated, so a fifth
+ * widget type or a changed config shape cannot reach one surface and miss the other.
+ */
+export type TemplateDashboardWidget = {
+  pointKeys: string[];
+  title?: string;
+  gridX: number;
+  gridY: number;
+  gridW: number;
+  gridH: number;
+} & DashboardWidgetSpec;
+
+/**
+ * Which points matter for this asset type, in what order — and, since `F3.1a`, how they are
+ * drawn.
+ *
+ * `featured` is the ADR 0019 ordering and stays: it is what a consumer with no widget support
+ * reads, and every stored row written before ADR 0047 has only this key. `widgets` is optional
+ * for the same reason — nothing backfills those rows, and `POST :id/draft` byte-copies stored
+ * content, so a required `widgets` would strand a pre-`F3.1a` template behind its own immutable
+ * published version.
+ *
+ * This docblock used to end "No widget types, no layout, no sizes — that is `F3.1`'s
+ * vocabulary." ADR 0047 is that vocabulary, so the sentence is now false and is replaced rather
+ * than left to mislead. ADR 0047 §Consequences rules this edit lands with the code: it is not
+ * `AGENTS.md`, so it is not §9.10-gated.
  */
 export type TemplateDashboardView = {
   featured: string[];
+  widgets?: TemplateDashboardWidget[];
 };
 
 export type TemplateContent = {
