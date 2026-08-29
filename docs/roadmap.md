@@ -1854,6 +1854,16 @@ Process (`AGENTS.md` §10).
   and that is held by a **source scan** rather than a type: a type cannot
   stop a sixth entry being added, and a behavioural test reading the registry
   would simply agree with whatever it found.
+
+  > **This bullet is `F2.5`'s record and stands as written** — it is what was
+  > true when `F2.5` shipped, and rewriting it would falsify the record of that
+  > day (the convention `docs/BACKLOG.md:254` sets). Two things have since
+  > changed, recorded here rather than edited into the sentence above:
+  > **the count is six**, because `F3.1e` made `dashboards` the sixth tab under
+  > ADR 0038 Amendment 4 — so `health` and `optimisation` are the two closed
+  > sections now; and **the count is held in three places, not one**, the
+  > extra two being `template-tabs.spec.ts` and `template-tab-guard.spec.ts`.
+  > See *The template Dashboards tab* below.
 - **One editor, two contexts.** A derived point's `formula` and a KPI's
   `expression` share the `bms-calc-v1` parser, so they share a component —
   but they share nothing else, so the rules are a discriminated union rather
@@ -2367,10 +2377,39 @@ keys** — the third of the five reopenings ADR 0019 predicted, after `kpis`
 orphan check reaches the new half on create, update and publish.
 
 **Still open, and none of it is a surprise:** `F3.1b` (the tenant-scoped
-read/write API), `F3.1c` (the four renderers), `F3.1d` (the builder surface) and
-`F3.1e` (the template *Dashboards* tab, which amends ADR 0038 rather than
-editing its five-tab source scan). `F3.1b` ‖ `F3.1c` is a genuine two-agent
-batch on disjoint packages. **Dependants of the `F3.1` umbrella — `F3.2`,
+read/write API), `F3.1c` (the four renderers) and `F3.1d` (the builder
+surface). `F3.1b` ‖ `F3.1c` is a genuine two-agent batch on disjoint packages.
+
+### The template *Dashboards* tab (`F3.1e`, ADR 0038 Amendment 4) — done
+
+**Done 2026-08-29**, PR [#207](https://github.com/GhochangFu/EMS/pull/207),
+squash `898b816`; its two ADR gates landed first as PR
+[#206](https://github.com/GhochangFu/EMS/pull/206), squash `61ab0c5`. The
+detail page moves from five tabs to six, discharging the condition ADR 0038
+decision 2 wrote for itself — *"it becomes a tab when `F3.1` gives it
+widgets"* — after `F3.1a` gave it widgets.
+
+**The count was held in three executable places, not the one every document
+named.** The source scan is the famous one; `template-tabs.spec.ts` is a
+second; and `template-tab-guard.spec.ts` is a third that holds it
+**arithmetically**, as a count of ordered tab pairs (`n(n-1)`, so six tabs give
+thirty). That file never contains the word "five", so a search for the tab
+count does not find it. A compliance review found it before the amendment
+merged — after the amendment's own first draft had said there were two.
+
+**`F3.1e` also discharged ADR 0047 Amendment 2's shared obligation**, which
+`F3.2` would otherwise have inherited: each arm of the template widget union
+now takes `WIDGET_POINT_CARDINALITY[type]` rather than one shared cap, so a
+gauge binds exactly one point and a chart up to `MAX_WIDGET_POINTS`.
+**Amendment 3 recorded that no stored content needed migrating, and kept the
+finding falsifiable** rather than stating it as a preference.
+
+**Effort moved `1–2` → `3–4`**: the owner ruled the full optional config set
+over the plan's smaller recommendation, and the gauge's threshold-band editor
+is nearly all of the increment. A correctness review found one real defect the
+browser pass had missed — four view-name errors were computed and never
+rendered, so a duplicate name greyed Save out with nothing above to fix, and a
+blocked Save was the only thing between that and a destroyed stored view. **Dependants of the `F3.1` umbrella — `F3.2`,
 `F3.5`, `E4.2`, `F3.28`, `F3.32` — unblock when the umbrella closes, not when
 `F3.1a` did.** One decision is owner-gated and deferred to `F3.1b`: migration
 L2, where `dashboards.location_id` and `asset_group_id` are `NO ACTION` while
