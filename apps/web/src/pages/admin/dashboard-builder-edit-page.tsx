@@ -120,7 +120,12 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
         name: name.trim(),
         description: description.trim() === "" ? null : description.trim(),
         locationId: scope.kind === "location" ? scope.locationId : null,
-        assetGroupId: null,
+        // `assetGroupId` is deliberately OMITTED, never sent as `null`. `updateDashboard`'s
+        // body merges on presence, not truthiness, so an explicit `null` would CLEAR the
+        // column on every save — widening a plant-area dashboard to the whole tenant with
+        // no signal anywhere on the page (the class ADR 0047 Amendment 1 rejected `ON DELETE
+        // SET NULL` for). `DashboardScopeFields` offers no asset-group control on this page,
+        // so this page has no authority to touch that column at all.
       };
       const updated = await updateDashboard(dto.id, body);
       return putDashboardWidgets(updated.id, buildPutWidgetsPayload(rows));
