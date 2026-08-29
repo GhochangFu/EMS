@@ -462,6 +462,12 @@ export function runOptionalConfigOmittedTests(): void {
       ],
     }),
   ]).Overview.widgets!;
+  // The same fixture guard the chart case below carries, and for the same
+  // reason: without it `!("thresholds" in gauge.config)` passes for **any**
+  // arm — a `buildWidgetPayload` that returned a `value_tile` would satisfy it,
+  // because a tile has no `thresholds` either. Added by the correctness review
+  // of `F3.1e`, which found the chart case guarded and this one not.
+  assert(gauge.widgetType === "radial_gauge", "fixture guard: the built widget stayed a gauge");
   assert(gauge.config.unit === "kPa" && gauge.config.decimals === 2, "a set unit/decimals is sent");
   assert(!("thresholds" in gauge.config), "no thresholds entered means the key is absent, not []");
 
@@ -499,6 +505,31 @@ export function runChangeDetectionTests(): void {
     { ...rows[0], widgets: [widget({ widgetType: "value_tile", pointKeys: ["FLOW"] })] },
   ];
   assert(dashboardsHaveChanged(withWidget, stored), "adding a widget is a change");
+
+  // Widget **removal**, the one mutation on the plan's list that had no
+  // assertion — found by the correctness review of `F3.1e`. It is correct by
+  // inspection (`buildDashboardsPayload` omits the `widgets` key at zero, so
+  // the JSON differs), but "correct by inspection" is what the plan's list
+  // exists to stop. Asserted from a *stored* view that has a widget, so the
+  // removal is a real reversal rather than a comparison against a view that
+  // never had one.
+  const storedWithWidget: Record<string, TemplateDashboardView> = {
+    Overview: {
+      featured: ["FLOW"],
+      widgets: [
+        { widgetType: "value_tile", config: {}, pointKeys: ["FLOW"], gridX: 0, gridY: 0, gridW: 1, gridH: 1 },
+      ],
+    },
+  };
+  const rowsWithWidget = dashboardRowsFrom(storedWithWidget);
+  assert(
+    !dashboardsHaveChanged(rowsWithWidget, storedWithWidget),
+    "fixture guard: the widget-bearing read-back is unchanged before the removal",
+  );
+  assert(
+    dashboardsHaveChanged([{ ...rowsWithWidget[0], widgets: [] }], storedWithWidget),
+    "removing a widget is a change",
+  );
 
   // `rows[0].featured` has one entry, too few to reorder — a two-entry
   // fixture is needed for a real move.

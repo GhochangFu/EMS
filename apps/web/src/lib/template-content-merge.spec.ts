@@ -441,8 +441,17 @@ export function runEmptyDashboardsRecordIsKeptTests(): void {
  * so a literal fixture would prove nothing.
  */
 export function runDashboardsPatchDropsUnsafeViewNamesTests(): void {
+  // `prototype` carries a `polluted` marker, and both are deliberate.
+  //
+  // The loop below asserts over all three of `UNSAFE_KEYS`, but this fixture
+  // used to contain only two of them — so the `prototype` iteration checked a
+  // key that was never in the input, and deleting `"prototype"` from
+  // `UNSAFE_KEYS` left this test green. Found by the correctness review of
+  // `F3.1e`. The fixture must carry every key the loop names, or the loop is
+  // asserting over absence.
   const patch = JSON.parse(
-    '{"__proto__":{"featured":["A"]},"constructor":{"featured":["A"]},"overview":{"featured":["A"]}}',
+    '{"__proto__":{"featured":["A"]},"constructor":{"featured":["A"]},' +
+      '"prototype":{"featured":["A"],"polluted":true},"overview":{"featured":["A"]}}',
   ) as Record<string, TemplateDashboardView>;
 
   assert(
@@ -450,6 +459,7 @@ export function runDashboardsPatchDropsUnsafeViewNamesTests(): void {
     "fixture guard: build this with JSON.parse — an object literal creates no own __proto__ key",
   );
   assert(Object.keys(patch).includes("constructor"), "fixture guard: constructor is an own key");
+  assert(Object.keys(patch).includes("prototype"), "fixture guard: prototype is an own key");
 
   const merged = mergeTemplateContent({ contentVersion: 1 }, { section: "dashboards", value: patch });
   const dashboards = merged.dashboards as Record<string, unknown>;
@@ -462,9 +472,16 @@ export function runDashboardsPatchDropsUnsafeViewNamesTests(): void {
       )}`,
     );
   }
+  // This assertion was decorative until the fixture gained a `polluted` marker:
+  // nothing in the input wrote that key, so it could never have failed. It now
+  // reads a value the fixture actually carries, on the one key whose whole
+  // purpose is to reach `Object.prototype`. Kept rather than deleted, because a
+  // filter that let `prototype` through *and* assigned into it is precisely the
+  // failure this arm exists to prevent — and it would not be visible in
+  // `Object.keys(dashboards)`.
   assert(
     ({} as Record<string, unknown>).polluted === undefined,
-    "Object.prototype must not have been polluted",
+    "Object.prototype must not have been polluted — a `prototype` view name reached it",
   );
   assert(Object.hasOwn(dashboards, "overview"), "the legitimate view survives");
 
