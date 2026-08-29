@@ -16,26 +16,41 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
  * this shape of rule (`tests/adr-0038-template-authoring-ui.test.ts`,
  * `tests/repo-invariants.test.ts`).
  *
- * Scoped to `apps/web/src/components/widgets/` and
- * `apps/web/src/lib/widget-*.ts` — the three pre-existing hand-written charts
- * (`load-trend-chart.tsx`, `energy-source-stack-chart.tsx`,
- * `energy-top-bar-chart.tsx`) are not configurable widgets and belong outside
- * these roots, not on an allowlist whose entries would outlive their reason.
+ * **Walks all of `apps/web/src` recursively, not just the widget roots.**
+ * An earlier version scoped this to `apps/web/src/components/widgets/` and
+ * `apps/web/src/lib/widget-*.ts` and was non-recursive besides — a
+ * compliance review planted two duplicates that both survived: one *inside*
+ * the widgets root, missed only because the walk skipped directories
+ * (`apps/web/src/components/widgets/charts/inner.tsx`), and one at
+ * `apps/web/src/components/dashboards/chart-series-picker.tsx` — the file
+ * `docs/BACKLOG.md` names as what `F3.1d` will write, and which is outside
+ * both roots by construction. The row that will next need this mapping was
+ * exactly the one the old scope could not see. Recursing the whole app
+ * source tree removes the "which future directory" guess entirely.
  *
- * Allowlisted inside the roots: `widget-catalog.ts` itself (the one place the
- * mapping is allowed to exist) and every `*.spec.ts(x)` (assertions naming
- * the series kinds under test, e.g. `{ series: "bar" }`, are not the
- * production mapping this rule protects).
+ * Allowlisted: `widget-catalog.ts` itself (the one place the mapping is
+ * allowed to exist), every `*.spec.ts(x)` (assertions naming the series
+ * kinds under test, e.g. `{ series: "bar" }`, are not the production mapping
+ * this rule protects), and the three pre-existing hand-written charts that
+ * predate the widget vocabulary and are not configurable widgets —
+ * `load-trend-chart.tsx`, `energy-source-stack-chart.tsx`,
+ * `energy-top-bar-chart.tsx`. These three are named explicitly rather than
+ * matched by a pattern, so the allowlist cannot silently grow: a fourth
+ * hand-written chart added later must be added here by name or it fails the
+ * scan, which is the point.
  *
  * If this fires, fix the builder, not the scan.
  */
 
-const SCAN_ROOTS = [
-  { dir: join(repoRoot, "apps/web/src/components/widgets"), filter: (name: string) => /\.tsx?$/.test(name) },
-  { dir: join(repoRoot, "apps/web/src/lib"), filter: (name: string) => /^widget-.*\.ts$/.test(name) },
-];
+const SCAN_ROOT = join(repoRoot, "apps/web/src");
+const SKIP_DIRS = new Set(["node_modules", "dist", "build", "coverage", ".git"]);
 
-const ALLOWLISTED_BASENAMES = new Set(["widget-catalog.ts"]);
+const ALLOWLISTED_BASENAMES = new Set([
+  "widget-catalog.ts",
+  "load-trend-chart.tsx",
+  "energy-source-stack-chart.tsx",
+  "energy-top-bar-chart.tsx",
+]);
 const isAllowlistedSpec = (name: string) => /\.spec\.tsx?$/.test(name);
 
 /** Strips block and line comments before scanning — the repo idiom at `tests/repo-invariants.test.ts:610-612` — so a docblock explaining the rule cannot trip the rule it explains. */
@@ -50,34 +65,49 @@ function stripComments(src: string): string {
 // `areaStyle` is a bare object key and is untouched by this pattern either way.
 const SERIES_LITERAL = /(["'])(line|bar|scatter|area)\1/g;
 
-function scanFiles(): string[] {
-  const found: string[] = [];
-  for (const { dir, filter } of SCAN_ROOTS) {
-    let names: string[];
-    try {
-      names = readdirSync(dir);
-    } catch {
-      continue;
-    }
-    for (const name of names) {
-      const full = join(dir, name);
-      if (statSync(full).isDirectory()) continue;
-      if (!filter(name)) continue;
-      found.push(full);
+function walk(dir: string, out: string[] = []): string[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return out;
+  }
+  for (const entry of entries) {
+    if (SKIP_DIRS.has(entry)) continue;
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      walk(full, out);
+    } else if (/\.tsx?$/.test(entry)) {
+      out.push(full);
     }
   }
-  return found;
+  return out;
+}
+
+function scanFiles(): string[] {
+  return walk(SCAN_ROOT);
 }
 
 describe("F3.1c: the ECharts series mapping is stated once", () => {
   it("scanned a non-trivial number of files (a broken walk would pass vacuously)", () => {
-    // 15 files exist in the two roots at F3.1c HEAD (6 components + 9 lib
-    // files including specs/wrappers). Set well under that and far above
-    // zero, so the walk failing silently is what this assertion catches.
-    expect(scanFiles().length).toBeGreaterThan(10);
+    // 251 .ts/.tsx files exist under apps/web/src at F3.1c HEAD. Set well
+    // under that and far above zero, so the walk failing silently — or
+    // reverting to the old non-recursive shape — is what this catches.
+    expect(scanFiles().length).toBeGreaterThan(100);
   });
 
-  it("no file outside widget-catalog.ts/*.spec.ts(x) writes an ECharts series-name literal", () => {
+  it("the walk is recursive: a file inside a subdirectory of the scan root is found", () => {
+    // The positive control for the exact defect a compliance review found:
+    // a non-recursive walk over apps/web/src would see zero files here,
+    // since every real file lives inside a subdirectory of it.
+    const found = scanFiles();
+    const inSubdirectory = found.some((f) => relative(SCAN_ROOT, f).includes("/") || relative(SCAN_ROOT, f).includes("\\"));
+    expect(inSubdirectory, "the walk must recurse into subdirectories, or a nested duplicate is invisible to it").toBe(
+      true,
+    );
+  });
+
+  it("no file outside the allowlist writes an ECharts series-name literal", () => {
     const offenders: string[] = [];
 
     for (const file of scanFiles()) {
