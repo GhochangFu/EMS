@@ -1,6 +1,8 @@
 import type { ChartSeriesKind, DashboardWidgetSpec, WidgetType } from "@bms/shared";
 import { WIDGET_POINT_CARDINALITY } from "@bms/shared";
 
+import type { KpiTileStatus } from "../components/kpi-tile";
+
 /**
  * `F3.1c` — the dashboard widget catalog (ADR 0047, Amendment 2 §1).
  *
@@ -26,12 +28,15 @@ export type WidgetTone = NonNullable<
 >;
 
 /**
- * What `DashboardWidget` renders while its data is not yet a value — the same
- * union `KpiTile` and `LoadTrendChart` already use as their own `status` prop,
- * declared once here so the compiler proves agreement at every spread site
- * rather than by a second declaration.
+ * What `DashboardWidget` renders while its data is not yet a value.
+ * §4.8: a vocabulary is declared once — this **is** `KpiTileStatus`
+ * (`kpi-tile.tsx`), not a second four-member union that happens to read the
+ * same, so the compiler proves agreement at every spread site rather than
+ * three independent declarations drifting apart (`WidgetData`'s `status`
+ * below derives from this rather than restating it a third time).
+ * `LoadTrendChart` uses the same shape as its own `status` prop too.
  */
-export type WidgetStatus = "loading" | "error" | "empty" | "ready";
+export type WidgetStatus = KpiTileStatus;
 
 /** One bound series' worth of samples, ordered by time, as a widget receives it. */
 export type WidgetSeriesPoint = { readonly t: string; readonly v: number | null };

@@ -1,6 +1,6 @@
 import type { DashboardWidgetDto } from "@bms/shared";
 
-import type { WidgetSeries } from "../../lib/widget-catalog";
+import type { WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
 import { widgetTitle } from "../../lib/widget-value";
 import { ChartWidget } from "./chart-widget";
 import { RadialGaugeWidget } from "./radial-gauge-widget";
@@ -13,10 +13,14 @@ import { ValueTileWidget } from "./value-tile-widget";
  * not what an endpoint returns; `F3.1d` maps `F3.1b`'s response into it.
  * This is the seam `F3.1d` inherits, so it is defined deliberately rather
  * than left implicit.
+ *
+ * `status` derives from `WidgetStatus` (§4.8: a vocabulary is declared
+ * once) rather than restating its four members a third time — `WidgetStatus`
+ * itself is `KpiTileStatus`, not a fourth independent copy.
  */
 export type WidgetData =
-  | { status: "loading" | "error" | "empty" }
-  | { status: "ready"; primary: number | null; series: readonly WidgetSeries[] };
+  | { status: Exclude<WidgetStatus, "ready"> }
+  | { status: Extract<WidgetStatus, "ready">; primary: number | null; series: readonly WidgetSeries[] };
 
 type DashboardWidgetProps = {
   widget: DashboardWidgetDto;

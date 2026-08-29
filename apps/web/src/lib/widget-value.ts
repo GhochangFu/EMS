@@ -1,6 +1,5 @@
 import type { WidgetType } from "@bms/shared";
 
-import type { KpiTileStatus } from "../components/kpi-tile";
 import { WIDGET_CATALOG, type ValueTileConfig, type WidgetStatus, type WidgetTone } from "./widget-catalog";
 
 /** `commonConfigFields` plus `value_tile`'s own `abbreviate` — every shape `formatWidgetValue` needs to read. */
@@ -137,7 +136,7 @@ const WIDGET_TONE_TO_KPI_TONE: Readonly<Record<WidgetTone, "default" | "warning"
 
 export type KpiTileWidgetProps = {
   readonly label: string;
-  readonly status: KpiTileStatus;
+  readonly status: WidgetStatus;
   readonly value: string | null;
   readonly unit?: string;
   readonly tone: "default" | "warning" | "critical";
