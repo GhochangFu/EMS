@@ -416,11 +416,44 @@ export default defineConfig({
       // this item's own gain was unprotected, and a regression could have
       // given it back without tripping the gate — which is the exact failure
       // the `F4.46` entry above records finding in `main`.
+      //
+      // Ratcheted by `F3.1c` (the four dashboard widget renderers, ADR 0047)
+      // from 53.7/50.0/55.3/53.8. Measured 2026-08-29 against the live
+      // database (port 5433 on this machine), all 215 files / 1052 tests
+      // running and none skipped: 68.52 statements · 65.33 branches ·
+      // 70.68 functions · 68.57 lines.
+      //
+      // **The jump is almost entirely NOT this item's**, and that is stated
+      // plainly so the next reader does not misattribute 15 points to three
+      // small files. `F3.1c` adds exactly three files to this denominator —
+      // `widget-catalog.ts`, `widget-value.ts`, `widget-echarts-option.ts`,
+      // 333 lines together — against a 7517-statement denominator, roughly
+      // 2% of it. The 2026-08-21 `F2.5` entry above is the last time this
+      // ratchet was measured; eight days and several large items landed
+      // between it and this measurement (the `E7.1` multi-tenant series,
+      // ADR 0043–0047, `F3.1a`) without anyone re-measuring this gate, so it
+      // had drifted roughly 15 points **stale-low** rather than tight. This
+      // entry catches the ratchet up to the branch tip; it does not claim
+      // `F3.1c` wrote 15 points of new coverage.
+      //
+      // Two full-suite runs under default parallelism each hit a different,
+      // unrelated pre-existing timeout flake — `evaluate-enabled-rules.
+      // integration.test.ts` once, then `pre-commit-gate.test.ts` and
+      // `telemetry-listener.test.ts` together on the next attempt — each
+      // file verified green in isolation immediately after. Consistent with
+      // the CPU-contention pattern this file already documents for
+      // `evaluate-enabled-rules.integration.spec.ts` and
+      // `alarm-enrichment.integration.spec.ts` above, not a regression from
+      // this item. The measurement above is the clean `--no-file-parallelism`
+      // rerun: 215/215 files, 1052/1052 tests, exit 0.
+      //
+      // Set just below the measurement, per axis, at roughly the same margin
+      // this file's other entries use.
       thresholds: {
-        statements: 53.7,
-        branches: 50.0,
-        functions: 55.3,
-        lines: 53.8,
+        statements: 68.3,
+        branches: 65.1,
+        functions: 70.5,
+        lines: 68.4,
       },
     },
   },
