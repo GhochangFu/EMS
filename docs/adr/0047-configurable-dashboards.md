@@ -502,3 +502,133 @@ not need a separate ruling — deleting a tenant is not an act this system offer
 - **`F3.1c` inherits the one already in `0050`'s header** and unchanged by this:
   a widget whose bindings have reached zero renders *"no data bound"*, never a
   blank rectangle.
+
+---
+
+## Amendment 2 — cardinality is a validation rule, and publishing to the whole tenant is an organization-level act (2026-08-29)
+
+**Accepted (2026-08-29).** Settles four items raised at `F3.1b`/`F3.1c`
+planning, **before either row's first commit**. **No schema change.** Two narrow
+a sentence of decision 2 and decision 4. The third records a rule that was never
+written down anywhere and would otherwise have been decided by whichever agent
+happened to write `canManageDashboard`. The fourth is a label.
+
+### 1. Point cardinality moves into the contract; the rest of the catalog does not
+
+Decision 2 reads: *"Label, icon, default size, and how many point references a
+type accepts are data, and they belong in a frontend registry keyed by the
+enum."* **Four of those five still do. Cardinality does not, and the reason is
+the consumer rather than the data.**
+
+`F3.1b` must refuse a two-point radial gauge **on write** — `0050`'s header
+already records why the database cannot: cardinality is a per-widget row count
+and no row-level `CHECK` can see it. `apps/api` cannot import from `apps/web`.
+So the number that decision 2 placed in `apps/web/src/lib/widget-catalog.ts` is
+needed by a package that cannot reach it.
+
+**The ruling: `WIDGET_POINT_CARDINALITY` lives in
+`packages/shared/src/contracts/dashboard-builder.ts`, beside `MAX_WIDGET_POINTS`.**
+`widget-catalog.ts` **imports** those numbers and restates none of them, keeping
+label, icon, default size and the plain-label→ECharts series mapping local.
+
+**The split line is now *validation rule versus presentation*, not *contract
+versus catalog*.** That is the sentence decision 2 lacked. A cardinality is not
+a matter of taste — a dashboard that violates it is refused, and both the write
+path and the renderer have to agree about which dashboards exist.
+
+Two alternatives were put to the owner and declined:
+
+- **The API enforces only the global `MAX_WIDGET_POINTS`**, with per-type
+  cardinality left to `F3.1d`'s builder UI. Declined: a direct API caller binds
+  five points to a gauge, and `F3.1c`'s renderer has to survive a state the
+  product says is impossible. A rule enforced only by the surface that happens
+  to be convenient is not enforced.
+- **`apps/api` keeps its own copy, with a source scan asserting agreement.**
+  Declined: two sources of truth held together by a text scan. That is the shape
+  of the false greens `F3.1a`'s review found four of, and it buys nothing the
+  shared constant does not.
+
+**`min` is an authoring rule and never a stored invariant**, and this must be
+written down or a read path will enforce it. `dashboard_widget_points.point_id`
+is `ON DELETE CASCADE`, so retiring a sensor can legitimately take a live gauge
+to zero bindings. Amendment 1 already ruled that this state stays **readable**
+and renders as *"no data bound"*. A read that refuses or hides a widget below
+`min` turns a retired sensor into a missing dashboard.
+
+### 2. An organization-wide dashboard may only be created by `admin` or `organization_admin`
+
+`0050`'s header records the three scope cases: *"both NULL is organization-wide,
+`location_id` set is a site dashboard, `asset_group_id` set is a plant-area
+dashboard."* Nothing said **who may create the first kind**. A dashboard with no
+scope column is visible to every user in the tenant, across every location.
+
+**The ruling: `admin` and `organization_admin` only.** A `location_admin` and an
+`asset_group_admin` still author freely **inside their own scope**, which they
+always could; what is closed to them is the scopeless kind.
+
+The obvious argument for the wider rule is real and was weighed: a site admin
+who builds a good dashboard cannot share it with the other plants without asking
+somebody, and across an organization with many sites that is a bottleneck.
+
+**It was declined on the second cost, not the first.** An organization-wide
+dashboard has **no scope column, and therefore no owner**. Once a site admin
+creates one, nothing on the row records which site made it: no other admin can
+be stopped from editing it, and it cannot later be revoked by scope, because
+there is no scope to revoke by. The permission check is reversible; the
+ownerless rows it produces are not. This is the audience-widening class that
+[ADR 0046](0046-organization-scoped-audit-read.md) and Amendment 1 above both
+turn on, reached through a third door.
+
+**`F3.1b` owns the rule** in `AccessControlService.canManageDashboard`, and its
+carrier is the assertion that a `location_admin` is refused an organization-wide
+dashboard **inside its own organization** — the case a later refactor is most
+likely to lose, because every other assertion about that role is about a foreign
+organization.
+
+**Read visibility is *not* narrowed by this and stays as decision 3 implies:** a
+scoped user sees the organization-wide dashboards of their tenant. The
+alternative — organization-wide dashboards visible only to unscoped users —
+would make the third scope case useless and was declined.
+
+### 3. `F3.1d` owes a *duplicate* action
+
+Ruling 2 removes a workflow, so it names the replacement rather than leaving the
+gap for someone to close by widening the permission again. **`F3.1d`'s builder
+surface owes a "duplicate this dashboard" action** that copies a dashboard into
+a scope the caller may already write to.
+
+That is how a site admin's good dashboard reaches other plants: each site admin
+takes a copy into their own site, and promoting one to organization-wide stays
+an act of the two organization-level roles. Every row keeps an owner, and no
+permission widens.
+
+### 4. The fourth series label
+
+Decision 4 names three plain labels — *Trend*, *Comparison bars*, *Scatter* —
+for **four** series kinds, because `line` and `area` both read as a trend. The
+four labels are:
+
+| Label an administrator picks | ECharts series |
+|---|---|
+| Trend | `line` |
+| Trend (filled) | `line` + `areaStyle` |
+| Comparison bars | `bar` |
+| Scatter | `scatter` |
+
+`area` is **not** an ECharts series type, which is exactly why decision 4 keeps
+the mapping in one place: an author who could type the series name would type
+the one that does not exist.
+
+### Consequences
+
+- **The seam lands before both children**, in the same change as this amendment:
+  `WIDGET_POINT_CARDINALITY` plus its assertions. `F3.1b` and `F3.1c` are
+  parallel-safe (decision 1's *"disjoint packages"*) **only once it is on
+  `main`** — both consume it, and two branches inventing it is the drift this
+  amendment exists to prevent.
+- **`F3.1c` inherits "define no cardinality numbers locally"**, and
+  `widget-catalog.ts`'s `points` field is an import.
+- **`F3.1d` inherits the duplicate action** from ruling 3.
+- **No schema change and no `0051`.** Ruling 2 is an application rule: `0050`
+  permits both scope columns to be NULL and must keep doing so, because `admin`
+  and `organization_admin` legitimately create such rows.
