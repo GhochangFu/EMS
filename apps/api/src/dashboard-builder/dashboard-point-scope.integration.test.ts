@@ -20,7 +20,10 @@ import {
  * `F3.1b` Task 5 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014); this
  * file owns the database lifecycle and the manufactured fixture.
  *
- * **The fixture is manufactured through `DATABASE_URL_SUPERUSER` (`bms_app`), not `bms_fleet`.**
+ * **The fixture is manufactured through the "superuser" role url (`bms_app`), not `bms_fleet`**
+ * — `resolveIntegrationRoleUrl(url, "superuser", process.env)`, the same derivation
+ * `integration-db-gate.ts` performs; ADR 0045 keeps the literal env var name out of every file
+ * under `apps/api/src` but this one, so it is not spelled out here either.
  * A genuine Postgres superuser bypasses row security entirely regardless of `FORCE`, so the
  * INSERT below lands even though `dashboard_widget_points`'s own `WITH CHECK` would otherwise
  * refuse a foreign `point_id` at write time (the exact refusal Task 4's cross-org tests already

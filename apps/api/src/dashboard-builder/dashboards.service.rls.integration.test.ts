@@ -81,8 +81,11 @@ describe.skipIf(!connectionString)(
         throw new Error("F3.1b: ESKOM/PHEWB organizations not found — run pnpm db:seed");
       }
 
+      // F4.53: ORDER BY created_at (id as a tiebreaker) resolves the OLDEST row — a seeded one,
+      // which predates every suite in the run and so is the only row no concurrent suite can
+      // delete out from under this fixture setup.
       const phewbLocation = await ownerPool.query<{ id: string }>(
-        `SELECT id FROM bms.locations WHERE organization_id = $1 LIMIT 1`,
+        `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, id LIMIT 1`,
         [phewbOrgId],
       );
       phewbLocationId = phewbLocation.rows[0]?.id ?? "";
