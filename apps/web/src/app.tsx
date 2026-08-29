@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { fetchCurrentUser } from "./api/login";
 import { AlarmsPage } from "./pages/alarms-page";
 import { DashboardPage } from "./pages/dashboard-page";
+import { DashboardsPage } from "./pages/dashboards-page";
+import { DashboardViewerPage } from "./pages/dashboard-viewer-page";
 import { LocationDashboardPage } from "./pages/location-dashboard-page";
 import { MapPage } from "./pages/map-page";
 import { CracPage } from "./pages/crac-page";
@@ -125,6 +127,26 @@ export function App() {
         element={
           accessToken && user ? (
             <AlarmsPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/dashboards"
+        element={
+          accessToken && user ? (
+            <DashboardsPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/dashboards/:slug"
+        element={
+          accessToken && user ? (
+            <DashboardViewerPage user={user} />
           ) : (
             <Navigate to="/login" replace />
           )
