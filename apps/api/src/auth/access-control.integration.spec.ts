@@ -759,3 +759,136 @@ export async function assertAssetManagementFollowsLocation(
     throw new Error("canManageAsset allowed a non-existent asset");
   }
 }
+
+/**
+ * `F3.1b` — `canManageDashboard` (ADR 0047 Amendment 2 ruling 2).
+ *
+ * Every case below is asserted against a REAL organization/location/group
+ * the seed produced, never an invented uuid — a fabricated id would pass
+ * every "false" assertion vacuously regardless of whether the method reads
+ * the database at all.
+ */
+export async function assertCanManageDashboard(
+  svc: AccessControlService,
+  pool: pg.Pool,
+): Promise<void> {
+  const orgAdminOrg = await pool.query<{ id: string }>(
+    `SELECT uoa.organization_id AS id
+       FROM bms.user_organization_access uoa
+       JOIN bms.users u ON u.id = uoa.user_id
+      WHERE u.email = $1 LIMIT 1`,
+    [SEEDED.organizationAdmin],
+  );
+  const orgAId = orgAdminOrg.rows[0]?.id;
+  if (!orgAId) {
+    throw new Error(`F3.1b: ${SEEDED.organizationAdmin} has no organization grant`);
+  }
+  const foreignOrg = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
+    [orgAId],
+  );
+  const orgBId = foreignOrg.rows[0]?.id;
+  if (!orgBId) {
+    throw new Error("F3.1b: need a second organization to prove organization_admin is refused");
+  }
+
+  const locationAdminLocation = await pool.query<{ id: string; organization_id: string }>(
+    `SELECT l.id, l.organization_id
+       FROM bms.locations l
+       JOIN bms.user_location_access ula ON ula.location_id = l.id
+       JOIN bms.users u ON u.id = ula.user_id
+      WHERE u.email = $1 LIMIT 1`,
+    [SEEDED.locationAdmin],
+  );
+  const locId = locationAdminLocation.rows[0]?.id;
+  const locOrgId = locationAdminLocation.rows[0]?.organization_id;
+  if (!locId || !locOrgId) {
+    throw new Error(`F3.1b: ${SEEDED.locationAdmin} has no location grant`);
+  }
+
+  const groupAdminGroup = await pool.query<{ id: string; location_id: string; organization_id: string }>(
+    `SELECT ag.id, ag.location_id, ag.organization_id
+       FROM bms.asset_groups ag
+       JOIN bms.user_asset_group_access uaga ON uaga.asset_group_id = ag.id
+       JOIN bms.users u ON u.id = uaga.user_id
+      WHERE u.email = $1 LIMIT 1`,
+    [SEEDED.assetGroupAdmin],
+  );
+  const groupId = groupAdminGroup.rows[0]?.id;
+  const groupOrgId = groupAdminGroup.rows[0]?.organization_id;
+  if (!groupId || !groupOrgId) {
+    throw new Error(`F3.1b: ${SEEDED.assetGroupAdmin} has no asset-group grant`);
+  }
+  const foreignGroup = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.asset_groups WHERE id <> $1 AND organization_id <> $2 LIMIT 1`,
+    [groupId, groupOrgId],
+  );
+  const foreignGroupId = foreignGroup.rows[0]?.id;
+  if (!foreignGroupId) {
+    throw new Error("F3.1b: need a foreign asset group to prove asset_group_admin is refused");
+  }
+
+  const orgWide = { locationId: null, assetGroupId: null };
+
+  // admin: true for every organization and scope, including organization-wide.
+  const admin = jwtFor(SEEDED.globalAdmin, "admin");
+  if (!(await svc.canManageDashboard(admin, orgAId, orgWide))) {
+    throw new Error("admin must manage an organization-wide dashboard");
+  }
+  if (!(await svc.canManageDashboard(admin, orgBId, { locationId: locId, assetGroupId: null }))) {
+    throw new Error("admin must manage a location-scoped dashboard in any organization");
+  }
+
+  // organization_admin: true for its own organization, false — refused, not
+  // merely absent — for another's.
+  const orgAdmin = jwtFor(SEEDED.organizationAdmin, "organization_admin");
+  if (!(await svc.canManageDashboard(orgAdmin, orgAId, orgWide))) {
+    throw new Error("organization_admin must manage an organization-wide dashboard in its own org");
+  }
+  if (await svc.canManageDashboard(orgAdmin, orgBId, orgWide)) {
+    throw new Error("organization_admin must be refused another organization's dashboard");
+  }
+
+  // location_admin: true for a dashboard scoped to a location it holds.
+  const locationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
+  if (!(await svc.canManageDashboard(locationAdmin, locOrgId, { locationId: locId, assetGroupId: null }))) {
+    throw new Error("location_admin must manage a dashboard scoped to its own location");
+  }
+  // FALSE for an organization-wide dashboard in its OWN organization — the
+  // carrier of ADR 0047 Amendment 2 ruling 2, and the assertion a refactor is
+  // most likely to lose (every other location_admin assertion here is about a
+  // foreign organization, not its own).
+  if (await svc.canManageDashboard(locationAdmin, locOrgId, orgWide)) {
+    throw new Error(
+      "location_admin must be refused an organization-wide dashboard even in its own organization " +
+        "— such a row has no scope column and therefore no owner",
+    );
+  }
+
+  // asset_group_admin: true for a group whose location it holds, false otherwise.
+  const groupAdmin = jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin");
+  if (!(await svc.canManageDashboard(groupAdmin, groupOrgId, { locationId: null, assetGroupId: groupId }))) {
+    throw new Error("asset_group_admin must manage a dashboard scoped to its own group");
+  }
+  if (
+    await svc.canManageDashboard(groupAdmin, groupOrgId, { locationId: null, assetGroupId: foreignGroupId })
+  ) {
+    throw new Error("asset_group_admin must be refused a dashboard scoped to a foreign group");
+  }
+  if (await svc.canManageDashboard(groupAdmin, groupOrgId, orgWide)) {
+    throw new Error("asset_group_admin must be refused an organization-wide dashboard");
+  }
+
+  // viewer / operator: false, always — not thrown. An unprovisioned email so
+  // resolveDbUser falls back to the claim (ADR 0017/0044) rather than
+  // resolving a seeded admin/org-admin row that would make this vacuous.
+  for (const role of ["viewer", "operator"] as const) {
+    const jwt = jwtFor(`f3.1b-no-grants-${role}@integration.invalid`, role);
+    if (await svc.canManageDashboard(jwt, orgAId, { locationId: locId, assetGroupId: null })) {
+      throw new Error(`${role} must be refused canManageDashboard on any scope`);
+    }
+    if (await svc.canManageDashboard(jwt, orgAId, orgWide)) {
+      throw new Error(`${role} must be refused an organization-wide dashboard`);
+    }
+  }
+}

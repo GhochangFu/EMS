@@ -322,6 +322,78 @@ export class AccessControlService {
     return user.role === "admin";
   }
 
+  /**
+   * Whether the user may create, edit, delete, or replace the widgets of a
+   * dashboard with the given organization and scope (`F3.1b`, ADR 0047
+   * Amendment 2 ruling 2).
+   *
+   * **Deliberately does NOT gate through `assertMasterDataRole`/
+   * `isMasterDataRole`**, unlike {@link canManageNotificationChannel} and
+   * {@link canManageTemplate} which this otherwise mirrors.
+   * `isMasterDataRole` excludes `asset_group_admin` on purpose everywhere
+   * else in this service — but decision 2 explicitly admits it here for a
+   * dashboard scoped to a group it holds. Gating through that helper would
+   * refuse the one role this method exists to admit. `viewer`/`operator`
+   * fall through every branch below to `false` rather than a thrown
+   * `ForbiddenException`, because this method answers a boolean a caller
+   * uses to decide whether to 403 — not one that throws its own.
+   */
+  async canManageDashboard(
+    jwt: JwtPayload,
+    organizationId: string,
+    scope: { locationId: string | null; assetGroupId: string | null },
+  ): Promise<boolean> {
+    const user = await this.resolveDbUser(jwt);
+    if (user.role === "admin") {
+      return true;
+    }
+    if (user.role === "organization_admin") {
+      return this.canManageOrganization(jwt, organizationId);
+    }
+    // An organization-wide dashboard (both scope columns NULL) has no scope
+    // column and therefore no owner — only the two organization-level roles
+    // above may create or edit one. This is the assertion a refactor is most
+    // likely to lose, because every other assertion about location_admin is
+    // about a foreign organization rather than its own.
+    if (scope.locationId === null && scope.assetGroupId === null) {
+      return false;
+    }
+    if (user.role === "location_admin") {
+      return scope.locationId !== null && (await this.canManageLocation(jwt, scope.locationId));
+    }
+    if (user.role === "asset_group_admin") {
+      if (scope.assetGroupId === null) {
+        return false;
+      }
+      // Direct membership on the target group, NOT `canManageLocation`.
+      // `canManageLocation` resolves through `writableLocationIds`, which
+      // calls `assertMasterDataRole` — and `isMasterDataRole` deliberately
+      // excludes `asset_group_admin` everywhere else in this service. Calling
+      // it here would throw for the one role this branch exists to admit
+      // (found empirically: the integration test below throws
+      // ForbiddenException without this). An asset_group_admin's grant lives
+      // on the GROUP (`user_asset_group_access`), never on a location, so the
+      // membership check is on the group itself, not a location lookup —
+      // `bms.asset_groups.location_id` being NOT NULL is what lets
+      // `scopeFromSource("asset_group")` resolve a group's location
+      // elsewhere in this file; it is not itself the predicate here.
+      // fleetDb: pre-tenant grant walk keyed by the actor's own userId
+      // (Amendment 2/3).
+      const [row] = await this.fleetDb
+        .select({ id: userAssetGroupAccess.assetGroupId })
+        .from(userAssetGroupAccess)
+        .where(
+          and(
+            eq(userAssetGroupAccess.userId, user.id),
+            eq(userAssetGroupAccess.assetGroupId, scope.assetGroupId),
+          ),
+        )
+        .limit(1);
+      return row !== undefined;
+    }
+    return false;
+  }
+
   /** Resolves the DB user and enforces master-data role in one step. */
   async requireMasterDataUser(jwt: JwtPayload): Promise<DbUser> {
     const user = await this.resolveDbUser(jwt);
