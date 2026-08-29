@@ -442,12 +442,26 @@ export function runTemplateContentSchemaTests(): void {
     },
     "at most 40 widgets per view",
   );
+  // Re-keyed from `oneWidget` (a `value_tile`): after the per-arm cardinality
+  // tightening, a `value_tile` is refused at ONE pointKey, so a nine-key
+  // `value_tile` would still fail this rejects() call but for the wrong
+  // reason, asserting a message that no longer describes why. `chart` is the
+  // only arm the "at most 8 point keys" message is still true of.
+  const oneChart = {
+    widgetType: "chart" as const,
+    config: { series: "line" as const },
+    pointKeys: ["A"],
+    gridX: 0,
+    gridY: 0,
+    gridW: 2,
+    gridH: 2,
+  };
   rejects(
     {
       dashboards: {
         overview: {
           featured: ["A"],
-          widgets: [{ ...oneWidget, pointKeys: Array.from({ length: 9 }, (_u, i) => `P${i}`) }],
+          widgets: [{ ...oneChart, pointKeys: Array.from({ length: 9 }, (_u, i) => `P${i}`) }],
         },
       },
     },
