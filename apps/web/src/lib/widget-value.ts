@@ -107,7 +107,10 @@ export function toKpiTileProps(params: {
   return {
     label: title,
     status,
-    value: status === "ready" ? formatWidgetValue(primary, config) : null,
+    // `unit` is passed to KpiTile separately below, which renders it in its
+    // own span — not into `formatWidgetValue`'s `unit` option, or the tile
+    // would read e.g. "7.1 kW kW".
+    value: status === "ready" ? formatWidgetValue(primary, { decimals: config.decimals, abbreviate: config.abbreviate }) : null,
     unit: config.unit,
     tone: WIDGET_TONE_TO_KPI_TONE[tone],
   };

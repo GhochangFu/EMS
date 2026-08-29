@@ -77,3 +77,19 @@ export function toKpiTilePropsHidesTheValueOffTheReadyStatus(): void {
   });
   expect(notReady.value).toBeNull();
 }
+
+/**
+ * `KpiTile` renders `unit` in its own span, separately from `value`. A
+ * config-carried unit passed into both `formatWidgetValue` and the tile's
+ * own `unit` prop reads e.g. "7.1 kW kW" — this pins that it does not.
+ */
+export function toKpiTilePropsDoesNotDoubleRenderTheUnit(): void {
+  const props = toKpiTileProps({
+    title: "Total load",
+    status: "ready",
+    primary: 7.1,
+    config: { unit: "kW", decimals: 1 },
+  });
+  expect(props.value, "the unit belongs on KpiTile's own unit prop, not baked into the formatted value").toBe("7.1");
+  expect(props.unit).toBe("kW");
+}

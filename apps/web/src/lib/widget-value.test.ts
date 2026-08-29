@@ -6,6 +6,7 @@ import {
   formatWidgetValueRoundsAndUnrounds,
   tankFillPercentClampsIntoZeroToOneHundred,
   tankFillPercentGuardsAZeroOrInvalidFullScale,
+  toKpiTilePropsDoesNotDoubleRenderTheUnit,
   toKpiTilePropsHidesTheValueOffTheReadyStatus,
   toKpiTilePropsMapsAllFourTonesExhaustively,
   widgetTitleFallsBackToTheCatalogLabel,
@@ -43,5 +44,9 @@ describe("widget-value", () => {
 
   it("hides the formatted value off the ready status", () => {
     toKpiTilePropsHidesTheValueOffTheReadyStatus();
+  });
+
+  it("does not double-render the unit into both the value and KpiTile's own unit prop", () => {
+    toKpiTilePropsDoesNotDoubleRenderTheUnit();
   });
 });
