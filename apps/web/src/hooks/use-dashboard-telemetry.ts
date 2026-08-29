@@ -5,6 +5,7 @@ import { io, type Socket } from "socket.io-client";
 import { encodePointRef, type DashboardDto, type TelemetryReading } from "@bms/shared";
 
 import { fetchTelemetryRecent } from "../api/telemetry";
+import { mergeSeededAndLiveReadings } from "../lib/dashboard-telemetry-merge";
 import { pointRefsFor, type HistoryByRef, type LatestByRef, type LatestReading } from "../lib/dashboard-widget-data";
 import { STALE_TICK_MS } from "../lib/schematic-telemetry";
 import { socketBaseUrl } from "../lib/socket-url";
@@ -124,10 +125,13 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
   refs.forEach((ref, index) => {
     const seeded = seedQueries[index]?.data ?? [];
     const live = liveByRef.get(ref) ?? [];
-    // `fetchTelemetryRecent` returns newest-first; reversed here so the
-    // history reads oldest-first, then the live overlay — arriving in
-    // receive order — extends it forward.
-    const ascending = [...seeded].reverse().concat(live);
+    // Review finding (HIGH) — a plain concat drew every live sample TWICE after a window-focus
+    // refetch: `main.tsx` leaves `refetchOnWindowFocus` at the TanStack default with
+    // `staleTime: 0`, so returning to the tab re-fetches a window that already contains
+    // whatever the overlay collected while backgrounded, and `buildChartOption` neither
+    // filters nor deduplicates. `mergeSeededAndLiveReadings` (`dashboard-telemetry-merge.ts`)
+    // drops an overlay sample once the fresh seed has re-supplied it.
+    const ascending = mergeSeededAndLiveReadings(seeded, live);
     historyByRef.set(
       ref,
       ascending.map((reading) => ({ t: reading.time, v: reading.value })),
