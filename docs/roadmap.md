@@ -2376,9 +2376,43 @@ keys** — the third of the five reopenings ADR 0019 predicted, after `kpis`
 `widgets[]`, and `collectContentPointRefs` walks `widgets[].pointKeys`, so the
 orphan check reaches the new half on create, update and publish.
 
-**Still open, and none of it is a surprise:** `F3.1b` (the tenant-scoped
-read/write API), `F3.1c` (the four renderers) and `F3.1d` (the builder
-surface). `F3.1b` ‖ `F3.1c` is a genuine two-agent batch on disjoint packages.
+**Still open:** `F3.1d` (the builder surface) alone. `F3.1b` (the tenant-scoped
+read/write API) and `F3.1c` (the four renderers) **landed 2026-08-29** — PR
+[#210](https://github.com/GhochangFu/EMS/pull/210), squash `4d1cfcd`, and PR
+[#211](https://github.com/GhochangFu/EMS/pull/211), squash `6692af3`.
+
+They were planned as *"a genuine two-agent batch on disjoint packages"*, and
+**the file-level claim held while the vocabulary-level one did not.** Neither
+branch touched a file the other did. But `F3.1e` merged between them, and it had
+independently written the same four chart-series labels and four widget-type
+labels that ADR 0047 Amendment 2 §4 rules once — caught in CI by `F3.1c`'s own
+source scan, not by review. The labels now derive from `widget-catalog.ts`.
+
+Worth carrying into the next parallel batch: **"disjoint files" is not
+"disjoint decisions"**. Two rows in one wave can share no source file and still
+restate the same ruling, and the thing that caught it was an executable scan
+that a third row happened to trip.
+
+### The dashboard read/write API and the four renderers (`F3.1b` ‖ `F3.1c`) — done
+
+**Done 2026-08-29.** `F3.1b` gives CRUD over the three tables, tenant-scoped,
+in the ADR 0017 write matrix and audit-stamped; `F3.1c` gives the four
+renderers behind an exhaustive dispatcher. Both closure records, with the
+findings, are in [`BACKLOG.md`](./BACKLOG.md).
+
+**Two are worth repeating here because they are about method, not about
+dashboards.** `F3.1b`'s ruling-2 authorization guard — the check ADR 0047
+Amendment 2 itself names as *"the case a later refactor is most likely to
+lose"* — shipped as **dead code**, short-circuited by two earlier null guards,
+and deleting it left the suite green; it now throws instead of falling through,
+so removing it is a named crash. And `F3.1c`'s §4.6 browser pass found two
+defects that **no test in the row could reach** — a gauge readout drawn across
+its own dial, and a 13-character string in a 100-unit viewBox — because both
+are geometry, and every spec in that row asserts numbers and strings.
+
+**What is still missing after both:** nothing assembles a stored dashboard into
+a page. The renderers take a widget and data as props; the route, the grid
+layout and the point binding are `F3.1d`.
 
 ### The template *Dashboards* tab (`F3.1e`, ADR 0038 Amendment 4) — done
 
