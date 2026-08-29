@@ -1,12 +1,19 @@
-import { dashboardSummaryDtoSchema, dashboardWidgetDtoSchema } from "@bms/shared";
+import { ConflictException } from "@nestjs/common";
 
+import { dashboardSummaryDtoSchema, dashboardWidgetDtoSchema } from "@bms/shared";
+import type { BmsDb } from "@bms/db";
+import type { JwtPayload } from "@bms/shared";
+
+import type { AccessControlService } from "../auth/access-control.service";
+import type { MasterDataAuditService } from "../admin/master-data-audit.service";
 import {
   diffWidgets,
   mapDashboardSummary,
   mapDashboardWidget,
+  DashboardsService,
   type StoredWidgetForDiff,
 } from "./dashboards.service";
-import type { WidgetWriteBody } from "./dashboards.schema";
+import type { CreateDashboardBody, UpdateDashboardBody, WidgetWriteBody } from "./dashboards.schema";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -191,4 +198,166 @@ export function runDashboardsServiceUnitTests(): void {
     diff.unchangedIds.length === 1 && diff.unchangedIds[0] === WIDGET_A,
     `the untouched widget (A) must keep its id and generate no update — got ${JSON.stringify(diff.unchangedIds)}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Unit 8 — a `23505` on `dashboards_organization_slug_key` becomes a 409;
+// any other error passes through unchanged. `DashboardsService` is
+// constructed with `new` (its own docblock, §4.6: no Nest module, no
+// database) with fakes standing in for every collaborator, so `create`'s and
+// `update`'s catch clauses are exercised for real rather than the private
+// translator being called directly.
+// ---------------------------------------------------------------------------
+
+const FAKE_JWT = {} as unknown as JwtPayload;
+
+function fakeAccessControl(): AccessControlService {
+  return {
+    assertOperationsWriteRole: async () => undefined,
+    canManageDashboard: async () => true,
+  } as unknown as AccessControlService;
+}
+
+function fakeAudit(): MasterDataAuditService {
+  // Never reached: the fake `tenantDb.transaction` below rejects before the
+  // callback that would call `audit.write` is ever invoked.
+  return {} as unknown as MasterDataAuditService;
+}
+
+/** `db.transaction(...)` rejects with `err` before its callback ever runs — enough for
+ * `withTenant`'s promise to reach the service's `.catch` untouched. */
+function rejectingTenantDb(err: unknown): BmsDb {
+  return {
+    transaction: async () => {
+      throw err;
+    },
+  } as unknown as BmsDb;
+}
+
+type SelectChain = {
+  from: () => SelectChain;
+  where: () => SelectChain;
+  limit: () => SelectChain;
+  then: (resolve: (rows: unknown[]) => void) => void;
+};
+
+/** A thenable answering every Drizzle builder call with itself, resolving to `rows` — the
+ * `rules.service.spec.ts:58-67` idiom, reused here for `fetchRowForWrite`'s single read. */
+function selectChain(rows: unknown[]): SelectChain {
+  const chain: SelectChain = {
+    from: () => chain,
+    where: () => chain,
+    limit: () => chain,
+    then: (resolve) => resolve(rows),
+  };
+  return chain;
+}
+
+function fleetDbWithExistingRow(): BmsDb {
+  return { select: () => selectChain([dashboardRow]) } as unknown as BmsDb;
+}
+
+const DUPLICATE_SLUG_ERROR = { code: "23505", constraint: "dashboards_organization_slug_key" };
+/** Non-null, and NOT the dashboards slug key — this is what a `constraint != null` widening
+ * would wrongly swallow, and exactly why the fixture must carry a constraint at all rather
+ * than an `undefined` one (which `!= null` would also let through, proving nothing). */
+const UNRELATED_CONSTRAINT_ERROR = { code: "23505", constraint: "dashboards_pkey" };
+
+export async function runDashboardsServiceConflictTranslationTests(): Promise<void> {
+  const createBody: CreateDashboardBody = {
+    organizationId: ORG_ID,
+    slug: "overview",
+    name: "Overview",
+  };
+
+  // -- create(): the matching constraint becomes a 409 naming the slug -----
+  {
+    const service = new DashboardsService(
+      rejectingTenantDb(DUPLICATE_SLUG_ERROR),
+      fleetDbWithExistingRow(),
+      fakeAccessControl(),
+      fakeAudit(),
+    );
+    let caught: unknown;
+    try {
+      await service.create(FAKE_JWT, createBody);
+    } catch (err) {
+      caught = err;
+    }
+    assert(caught instanceof ConflictException, `create() must throw ConflictException on a duplicate slug, got ${String(caught)}`);
+    assert(
+      (caught as ConflictException).getStatus() === 409,
+      "the duplicate-slug translation must be a 409, not any other status",
+    );
+    assert(
+      typeof (caught as ConflictException).message === "string" &&
+        (caught as ConflictException).message.includes("overview"),
+      `the 409 message must name the slug ("overview"), got: ${(caught as ConflictException).message}`,
+    );
+  }
+
+  // -- create(): any OTHER error (including a non-null, non-matching constraint) passes
+  // through unchanged — the assertion that actually gates: a translator that swallows every
+  // error would pass the ConflictException checks above while failing this one.
+  {
+    const service = new DashboardsService(
+      rejectingTenantDb(UNRELATED_CONSTRAINT_ERROR),
+      fleetDbWithExistingRow(),
+      fakeAccessControl(),
+      fakeAudit(),
+    );
+    let caught: unknown;
+    try {
+      await service.create(FAKE_JWT, createBody);
+    } catch (err) {
+      caught = err;
+    }
+    assert(
+      caught === UNRELATED_CONSTRAINT_ERROR,
+      `create() must pass through an error whose constraint is not dashboards_organization_slug_key unchanged, got ${JSON.stringify(caught)}`,
+    );
+  }
+
+  // -- update(): the same pair, through the merge-then-write path ----------
+  const updateBody: UpdateDashboardBody = { slug: "renamed" };
+
+  {
+    const service = new DashboardsService(
+      rejectingTenantDb(DUPLICATE_SLUG_ERROR),
+      fleetDbWithExistingRow(),
+      fakeAccessControl(),
+      fakeAudit(),
+    );
+    let caught: unknown;
+    try {
+      await service.update(FAKE_JWT, DASHBOARD_ID, updateBody);
+    } catch (err) {
+      caught = err;
+    }
+    assert(caught instanceof ConflictException, `update() must throw ConflictException on a duplicate slug, got ${String(caught)}`);
+    assert(
+      typeof (caught as ConflictException).message === "string" &&
+        (caught as ConflictException).message.includes("renamed"),
+      `update()'s 409 message must name the PATCH's own slug ("renamed"), got: ${(caught as ConflictException).message}`,
+    );
+  }
+
+  {
+    const service = new DashboardsService(
+      rejectingTenantDb(UNRELATED_CONSTRAINT_ERROR),
+      fleetDbWithExistingRow(),
+      fakeAccessControl(),
+      fakeAudit(),
+    );
+    let caught: unknown;
+    try {
+      await service.update(FAKE_JWT, DASHBOARD_ID, updateBody);
+    } catch (err) {
+      caught = err;
+    }
+    assert(
+      caught === UNRELATED_CONSTRAINT_ERROR,
+      `update() must pass through an error whose constraint is not dashboards_organization_slug_key unchanged, got ${JSON.stringify(caught)}`,
+    );
+  }
 }

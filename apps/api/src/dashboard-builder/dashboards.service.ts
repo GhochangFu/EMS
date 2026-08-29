@@ -1,4 +1,11 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { dashboards, dashboardWidgetPoints, dashboardWidgets } from "@bms/db";
@@ -326,6 +333,8 @@ export class DashboardsService {
         tx,
       );
       return this.loadFullDto(tx, row.id);
+    }).catch((err: unknown) => {
+      throw this.translateSlugConflict(err, body.slug);
     });
   }
 
@@ -399,6 +408,8 @@ export class DashboardsService {
       );
 
       return this.loadFullDto(tx, id);
+    }).catch((err: unknown) => {
+      throw this.translateSlugConflict(err, body.slug ?? existing.slug);
     });
   }
 
@@ -543,6 +554,29 @@ export class DashboardsService {
   }
 
   // ---- shared helpers -----------------------------------------------------
+
+  /**
+   * Turns the partial unique index violation into an answer.
+   *
+   * `dashboards_organization_slug_key` (migration `0050`) is what stops two dashboards sharing a
+   * slug within one organization, and it fires on an ordinary authoring mistake — reusing a
+   * slug, or two authors saving the same one at once. Surfacing the raw constraint name would
+   * read as a bug rather than as "pick a different slug".
+   *
+   * `asset-templates.service.ts:805-813`'s `translateDraftConflict` is the precedent this copies
+   * verbatim in shape: read the constraint off the error, translate the one name this method
+   * owns, and return every other error unchanged — including a `23505` on a different
+   * constraint, which must reach the caller exactly as the driver raised it.
+   */
+  private translateSlugConflict(err: unknown, slug: string): unknown {
+    const constraint = (err as { constraint?: string } | null)?.constraint;
+    if (constraint === "dashboards_organization_slug_key") {
+      return new ConflictException(
+        `A dashboard with slug "${slug}" already exists in this organization. Choose a different slug.`,
+      );
+    }
+    return err;
+  }
 
   private async insertPoints(
     tx: BmsTx,
