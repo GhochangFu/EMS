@@ -7,6 +7,7 @@ import { AssetsModule } from "./assets/assets.module";
 import { AuthModule } from "./auth/auth.module";
 import { CalcModule } from "./calc/calc.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
+import { DashboardBuilderModule } from "./dashboard-builder/dashboard-builder.module";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
 import { pinoHttpOptions } from "./logger.options";
@@ -31,6 +32,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     AssetsModule,
     TelemetryModule,
     DashboardModule,
+    DashboardBuilderModule,
     AlarmsModule,
     CalcModule,
     WorkOrdersModule,
