@@ -25,6 +25,7 @@ import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { DashboardCanvas, type CanvasTile } from "../../components/dashboards/dashboard-canvas";
 import { DashboardScopeFields, type DashboardScopeValue } from "../../components/dashboards/dashboard-scope-fields";
+import { DuplicateDashboardDialog } from "../../components/dashboards/duplicate-dashboard-dialog";
 import { WidgetInspector } from "../../components/dashboards/widget-inspector";
 import type { AuthUser } from "../../stores/auth-store";
 import type { WidgetType } from "@bms/shared";
@@ -71,6 +72,12 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   const [rows, setRows] = useState<DashboardWidgetRow[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // ADR 0047 Amendment 2 ruling 3's duplicate action needs a way in, and this page is it: the
+  // ruling reserved the organization-wide dashboard to the two organization-level roles and
+  // named copy as the replacement route by which a site admin's good dashboard reaches another
+  // plant. A dialog no page renders satisfies none of that, so the entry point is part of the
+  // obligation rather than a nicety on top of it.
+  const [duplicating, setDuplicating] = useState(false);
 
   useEffect(() => {
     if (!dto) {
@@ -196,6 +203,19 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                   locations={locationsQ.data?.items ?? []}
                 />
               </div>
+              <div className="mt-3 border-t border-gray-100 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setDuplicating(true)}
+                  className="rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:bg-gray-50"
+                >
+                  Duplicate this dashboard
+                </button>
+                <p className="mt-1 text-xs text-bms-muted">
+                  Copies this dashboard into a scope you may already write to. The copy stays in this
+                  organization.
+                </p>
+              </div>
             </SectionCard>
 
             <SectionCard
@@ -271,6 +291,15 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                 {problems.length > 0 ? "Fix the problems above to save." : !changed ? "No changes yet." : ""}
               </span>
             </div>
+
+            {duplicating ? (
+              <DuplicateDashboardDialog
+                sourceSlug={dto.slug}
+                sourceOrganizationId={dto.organizationId}
+                role={user.role}
+                onClose={() => setDuplicating(false)}
+              />
+            ) : null}
           </>
         ) : null}
       </div>
