@@ -192,11 +192,33 @@ function oneChartSeries(name = "s1"): readonly WidgetSeries[] {
   return [{ name, sortOrder: 0, points: [{ t: "2026-08-29T11:00:00.000Z", v: 1 }] }];
 }
 
+function threeChartSeries(): readonly WidgetSeries[] {
+  return [
+    { name: "third", sortOrder: 5, points: [] },
+    { name: "first", sortOrder: -2, points: [] },
+    { name: "second", sortOrder: 0, points: [] },
+  ];
+}
+
 export function chartLineSeriesHasNoAreaStyle(): void {
   const config: ChartConfig = { series: "line" };
-  const out = asChart(buildChartOption(config, oneChartSeries(), CHART_NOW)).series[0];
+  const option = asChart(buildChartOption(config, oneChartSeries(), CHART_NOW));
+  const out = option.series[0];
   expect(out.type).toBe("line");
   expect(out.areaStyle, "'line' must not carry areaStyle, or it silently renders filled").toBeUndefined();
+
+  // Neither the data tuple's order nor the x-axis kind was asserted
+  // anywhere else in this file: [String(p.v), p.t] instead of [p.t, p.v],
+  // or xAxis: { type: "category" } instead of "time", would land every
+  // sample at the wrong coordinate on the wrong axis kind and stay green.
+  expect(
+    out.data[0],
+    "the tuple must be [timestamp, value] — a swapped pair lands every point at the wrong coordinate",
+  ).toEqual(["2026-08-29T11:00:00.000Z", 1]);
+  expect(
+    option.xAxis.type,
+    "a time series plotted on a 'category' axis reads as evenly-spaced ticks rather than real elapsed time",
+  ).toBe("time");
 }
 
 /** This is decision 4's entire payload. `area` is not an ECharts series type — it is `line` plus `areaStyle`. */
@@ -214,14 +236,23 @@ export function chartBarAndScatterMapDirectly(): void {
   );
 }
 
+/**
+ * "Every series" means every series — a fixture of one cannot tell "sets
+ * stack on series[0]" apart from "sets stack on every series", so this uses
+ * the same three-series fixture `chartNSeriesProduceNEntriesOrderedBySortOrder`
+ * builds below.
+ */
 export function chartStackedSetsStackOnEverySeriesAbsentSetsNone(): void {
-  const stacked = asChart(
-    buildChartOption({ series: "line", stacked: true }, oneChartSeries(), CHART_NOW),
-  ).series[0];
-  expect(stacked.stack, "overlapping series read as one wrong total without a shared stack key").toBeDefined();
+  const stacked = asChart(buildChartOption({ series: "line", stacked: true }, threeChartSeries(), CHART_NOW)).series;
+  expect(stacked).toHaveLength(3);
+  for (const s of stacked) {
+    expect(s.stack, `${s.name}: overlapping series read as one wrong total without a shared stack key`).toBeDefined();
+  }
 
-  const unstacked = asChart(buildChartOption({ series: "line" }, oneChartSeries(), CHART_NOW)).series[0];
-  expect(unstacked.stack).toBeUndefined();
+  const unstacked = asChart(buildChartOption({ series: "line" }, threeChartSeries(), CHART_NOW)).series;
+  for (const s of unstacked) {
+    expect(s.stack).toBeUndefined();
+  }
 }
 
 export function chartYAxisLabelSetsNameAbsentOmitsIt(): void {
@@ -246,11 +277,6 @@ export function chartWindowMinutesSetsTheXAxisLowerBoundRelativeToNow(): void {
 }
 
 export function chartNSeriesProduceNEntriesOrderedBySortOrder(): void {
-  const series: readonly WidgetSeries[] = [
-    { name: "third", sortOrder: 5, points: [] },
-    { name: "first", sortOrder: -2, points: [] },
-    { name: "second", sortOrder: 0, points: [] },
-  ];
-  const out = asChart(buildChartOption({ series: "line" }, series, CHART_NOW)).series;
+  const out = asChart(buildChartOption({ series: "line" }, threeChartSeries(), CHART_NOW)).series;
   expect(out.map((s) => s.name)).toEqual(["first", "second", "third"]);
 }
