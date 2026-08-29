@@ -500,13 +500,12 @@ export function runChangeDetectionTests(): void {
   ];
   assert(dashboardsHaveChanged(withWidget, stored), "adding a widget is a change");
 
-  const reordered = [{ ...rows[0], featured: [...rows[0].featured].reverse() }];
-  // featured has one entry above; use a two-entry fixture for a real reorder.
+  // `rows[0].featured` has one entry, too few to reorder — a two-entry
+  // fixture is needed for a real move.
   const storedTwo: Record<string, TemplateDashboardView> = { Overview: { featured: ["FLOW", "TEMP"] } };
   const rowsTwo = dashboardRowsFrom(storedTwo);
   const swapped = [{ ...rowsTwo[0], featured: moveArrayItem(rowsTwo[0].featured, 0, 1) }];
   assert(dashboardsHaveChanged(swapped, storedTwo), "reordering featured is a change");
-  void reordered;
 
   const withNewView = [...rows, view({ name: "Detail", featured: ["TEMP"] })];
   assert(dashboardsHaveChanged(withNewView, stored), "adding a view is a change");
