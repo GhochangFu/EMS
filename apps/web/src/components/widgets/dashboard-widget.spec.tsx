@@ -49,8 +49,10 @@ const IDENTITY = {
   gridY: 0,
   gridW: 4,
   gridH: 4,
+  // Not `as const`: that widens `points` to `readonly []`, which the DTO's
+  // mutable array does not accept.
   points: [],
-} as const;
+};
 
 const READY_AT_750: WidgetData = { status: "ready", primary: 750, series: [] };
 
@@ -156,6 +158,12 @@ export function aLiveTankWithNoReadingSaysSoInsideTheVessel(): void {
 
   expect(screen.getByRole("img", { name: "Clarifier tank: No data bound" })).toBeInTheDocument();
   expect(screen.queryByText("No data bound.")).not.toBeInTheDocument();
+
+  // The words go to the accessible name; the vessel draws the em dash. Drawing
+  // the sentence overflowed the 100-unit viewBox on both sides — the §4.6
+  // browser pass rendered it as "lo data bound", clipped by the card.
+  expect(screen.getByText("—")).toBeInTheDocument();
+  expect(screen.queryByText("No data bound")).not.toBeInTheDocument();
 }
 
 /**

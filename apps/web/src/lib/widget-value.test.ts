@@ -8,6 +8,7 @@ import {
   tankFillGeometryComputesTheRectFromThePercentage,
   tankFillGeometryLabelHonoursDecimals,
   tankFillGeometryRendersNoDataBoundForANullPercentage,
+  tankReadoutFitsInsideTheVessel,
   tankFillPercentClampsIntoZeroToOneHundred,
   tankFillPercentGuardsAZeroOrInvalidFullScale,
   toKpiTilePropsDoesNotDoubleRenderTheUnit,
@@ -48,6 +49,10 @@ describe("widget-value", () => {
 
   it("renders 'No data bound' with zero height for a null percentage", () => {
     tankFillGeometryRendersNoDataBoundForANullPercentage();
+  });
+
+  it("keeps whatever it draws inside the vessel", () => {
+    tankReadoutFitsInsideTheVessel();
   });
 
   it("honours decimals on the tank fill label", () => {

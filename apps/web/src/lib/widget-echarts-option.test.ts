@@ -11,6 +11,7 @@ import {
   gaugeDetailFormatsTheReadingWithUnitAndDecimals,
   gaugeMinOffsetIsSubtractedNotIgnored,
   gaugeNeedleValueIsClampedIntoRange,
+  gaugeReadoutClearsTheDialAndTheAxisIsNotOverLabelled,
   gaugePutsMinMaxOnTheSeriesAndValueInData,
   gaugeThresholdOutsideRangeIsClampedNotDropped,
   gaugeThresholdsAreSortedRegardlessOfStorageOrder,
@@ -45,6 +46,10 @@ describe("widget-echarts-option: buildRadialGaugeOption", () => {
 
   it("formats the detail label with the configured unit and decimals, not the raw ECharts default", () => {
     gaugeDetailFormatsTheReadingWithUnitAndDecimals();
+  });
+
+  it("draws the readout below the dial and does not over-label the axis", () => {
+    gaugeReadoutClearsTheDialAndTheAxisIsNotOverLabelled();
   });
 });
 

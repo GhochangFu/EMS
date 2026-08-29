@@ -24,7 +24,12 @@ type GaugeOptionShape = {
       readonly max: number;
       readonly axisLine: { readonly lineStyle: { readonly color: readonly (readonly [number, string])[] } };
       readonly data: readonly [{ readonly value: number }];
-      readonly detail: { readonly formatter: (value: number) => string };
+      readonly detail: {
+        readonly formatter: (value: number) => string;
+        readonly fontSize: number;
+        readonly offsetCenter: readonly [number, string];
+      };
+      readonly splitNumber: number;
     },
   ];
 };
@@ -153,6 +158,35 @@ export function gaugeDetailFormatsTheReadingWithUnitAndDecimals(): void {
   const config: RadialGaugeConfig = { min: 0, max: 14, unit: "pH", decimals: 1 };
   const formatter = asGauge(buildRadialGaugeOption(config, 7.126)).series[0].detail.formatter;
   expect(formatter(7.126), "the raw ECharts default renders the unformatted float on the gauge face").toBe("7.1 pH");
+}
+
+/**
+ * The readout sits below the dial, and the axis is not over-labelled.
+ *
+ * Both are ECharts defaults this option deliberately overrides, and both were
+ * found by eye in the `F3.1c` §4.6 browser pass rather than by any assertion
+ * here: `detail` defaults to `fontSize: 30` at `offsetCenter: [0, "40%"]`,
+ * which drew "7.5 bar" across the arc and its own tick labels, and
+ * `splitNumber` defaults to 10, which printed eleven crowded labels on a
+ * six-unit range. Deleting either override restores an overlap no other test
+ * in this file can see, so the overrides are pinned rather than left to a
+ * comment.
+ */
+export function gaugeReadoutClearsTheDialAndTheAxisIsNotOverLabelled(): void {
+  const series = asGauge(buildRadialGaugeOption({ min: 6, max: 12, unit: "bar", decimals: 1 }, 7.5)).series[0];
+
+  const offsetY = series.detail.offsetCenter[1];
+  expect(
+    Number.parseFloat(offsetY),
+    `the readout must sit below the dial's centre, not across it; ECharts' own default is "40%"`,
+  ).toBeGreaterThanOrEqual(60);
+  expect(offsetY.endsWith("%"), "offsetCenter takes a percentage of the gauge radius, not a raw number").toBe(true);
+  expect(series.detail.fontSize, "30 (the ECharts default) is wider than the dial's open bottom").toBeLessThanOrEqual(
+    18,
+  );
+  expect(series.splitNumber, "the default 10 prints eleven tick labels, which collide at this size").toBeLessThanOrEqual(
+    5,
+  );
 }
 
 export function gaugeNeedleValueIsClampedIntoRange(): void {

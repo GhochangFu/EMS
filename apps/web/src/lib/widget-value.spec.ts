@@ -4,6 +4,8 @@ import {
   formatWidgetValue,
   TANK_FILL_MAX_HEIGHT,
   TANK_FLOOR_Y,
+  TANK_READOUT_MAX_DECIMALS,
+  TANK_VIEW_W,
   tankFillGeometry,
   tankFillPercent,
   toKpiTileProps,
@@ -102,6 +104,31 @@ export function tankFillGeometryRendersNoDataBoundForANullPercentage(): void {
   const geometry = tankFillGeometry(null);
   expect(geometry.height, "a null reading must draw zero fill, not a stale or NaN height").toBe(0);
   expect(geometry.label).toBe("No data bound");
+  expect(
+    geometry.readout,
+    "the drawn string is not the label: 'No data bound' is 13 characters in a 100-unit viewBox and " +
+      "overflowed the vessel on both sides, which the F3.1c §4.6 browser pass caught",
+  ).toBe("—");
+}
+
+/**
+ * Whatever is drawn must fit the vessel.
+ *
+ * The `viewBox` is `TANK_VIEW_W` units wide and the readout is centred at
+ * 14px, so roughly eight characters fit. This bounds the readout rather than
+ * pinning its text, because the bound is the thing that failed — a future
+ * wording is free to change, and is not free to overflow.
+ */
+export function tankReadoutFitsInsideTheVessel(): void {
+  const readouts = [
+    tankFillGeometry(null).readout,
+    tankFillGeometry(100).readout,
+    tankFillGeometry(75.34, 6).readout,
+  ];
+
+  for (const readout of readouts) {
+    expect(readout.length, `"${readout}" is too wide for a ${TANK_VIEW_W}-unit vessel`).toBeLessThanOrEqual(8);
+  }
 }
 
 /**
@@ -113,6 +140,11 @@ export function tankFillGeometryRendersNoDataBoundForANullPercentage(): void {
 export function tankFillGeometryLabelHonoursDecimals(): void {
   expect(tankFillGeometry(75.34).label, "absent decimals rounds to a whole percentage").toBe("75%");
   expect(tankFillGeometry(75.34, 1).label).toBe("75.3%");
+  expect(
+    tankFillGeometry(75.343_21, 6).label,
+    `decimals is capped at ${TANK_READOUT_MAX_DECIMALS} here: "75.343210%" is ten characters and overflows ` +
+      "the vessel. commonConfigFields permits 6, so this is reachable from stored config, not hypothetical.",
+  ).toBe("75.34%");
 }
 
 export function widgetTitleFallsBackToTheCatalogLabel(): void {

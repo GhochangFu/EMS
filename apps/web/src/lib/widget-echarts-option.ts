@@ -67,7 +67,23 @@ export function buildRadialGaugeOption(config: RadialGaugeConfig, value: number)
         // and `decimals` on every config arm including this one, so a
         // reading of 7.126 on a { unit: "pH", decimals: 1 } gauge must not
         // render "7.126" where the author configured "7.1 pH".
-        detail: { formatter: (v) => formatWidgetValue(v, { unit: config.unit, decimals: config.decimals }) },
+        //
+        // The three style keys are not decoration. ECharts 5.6.0 defaults the
+        // readout to `fontSize: 30` at `offsetCenter: [0, "40%"]`, which in a
+        // 220px widget draws it *across* the dial — the `F3.1c` §4.6 browser
+        // pass caught "7.5 bar" overlapping the arc and its own tick labels,
+        // and the card then clipped it. `72%` moves it into the open bottom of
+        // the gauge, below the arc's ends.
+        detail: {
+          formatter: (v) => formatWidgetValue(v, { unit: config.unit, decimals: config.decimals }),
+          fontSize: 16,
+          offsetCenter: [0, "72%"],
+        },
+        // The default `splitNumber: 10` prints eleven tick labels. On a 6..12
+        // range that is "6.6 7.2 7.8 8.4 9 9.6 …", which collides with itself
+        // at this size and with the needle. Four splits give five labels.
+        splitNumber: 4,
+        axisLabel: { fontSize: 9, distance: 12 },
         // A reading above `max` (or below `min`) must not send the needle
         // outside the widget box — clamped the same way the value driving
         // the axis colours already is.

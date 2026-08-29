@@ -84,10 +84,39 @@ export const TANK_FLOOR_Y = TANK_VIEW_H - TANK_WALL;
 export const TANK_FILL_MAX_HEIGHT = TANK_FLOOR_Y - TANK_WALL;
 export const TANK_FILL_WIDTH = TANK_VIEW_W - TANK_WALL * 2 - 4;
 
+/**
+ * The tank percentage is drawn at 2 decimals at most, whatever
+ * `commonConfigFields.decimals` says (it permits 6).
+ *
+ * "100.000000%" is eleven characters and overflows a 100-unit vessel — the
+ * same failure the `F3.1c` §4.6 browser pass found on "No data bound". It is
+ * capped rather than shrunk to fit, and capped in the **label** as well as the
+ * readout, so a screen reader and the screen say the same number: §7 calls
+ * this widget "an SVG fill illustration plus a percentage", and a fill
+ * illustration accurate to a millionth of a percent is precision the shape
+ * cannot carry. An author who needs six decimals of a reading wants a
+ * `value_tile`, which formats the reading itself rather than a fraction of
+ * full scale.
+ */
+export const TANK_READOUT_MAX_DECIMALS = 2;
+
 export type TankFillGeometry = {
   readonly y: number;
   readonly height: number;
+  /** The full wording. Goes to the vessel's accessible name, where length costs nothing. */
   readonly label: string;
+  /**
+   * What is *drawn* inside the vessel, which is not always the label.
+   *
+   * The tank's `viewBox` is 100 units wide, so a 13-character sentence at the
+   * 14px readout size overflows the vessel on both sides — found in the
+   * `F3.1c` §4.6 browser pass, where "No data bound" rendered as
+   * "lo data bound" clipped by the card. A percentage is at most six
+   * characters and fits; the no-reading case draws the em dash `KpiTile`
+   * already uses for the same condition, and the words stay in `label` for
+   * anyone not looking at it.
+   */
+  readonly readout: string;
 };
 
 /**
@@ -109,11 +138,13 @@ export type TankFillGeometry = {
  */
 export function tankFillGeometry(pct: number | null, decimals?: number): TankFillGeometry {
   if (pct === null) {
-    return { y: TANK_FLOOR_Y, height: 0, label: "No data bound" };
+    return { y: TANK_FLOOR_Y, height: 0, label: "No data bound", readout: "—" };
   }
   const height = (pct / 100) * TANK_FILL_MAX_HEIGHT;
-  const label = `${decimals !== undefined ? pct.toFixed(decimals) : Math.round(pct)}%`;
-  return { y: TANK_FLOOR_Y - height, height, label };
+  const label = `${
+    decimals !== undefined ? pct.toFixed(Math.min(decimals, TANK_READOUT_MAX_DECIMALS)) : Math.round(pct)
+  }%`;
+  return { y: TANK_FLOOR_Y - height, height, label, readout: label };
 }
 
 /**

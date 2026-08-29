@@ -37,7 +37,7 @@ export function TankLevelWidget({ title, status, primary, config }: TankLevelWid
   const pct = tankFillPercent(primary, config.fullScale);
   const tone = config.fillTone ?? "ok";
   const color = WIDGET_TONE_COLOR[tone];
-  const { y, height, label } = tankFillGeometry(pct, config.decimals);
+  const { y, height, label, readout } = tankFillGeometry(pct, config.decimals);
 
   return (
     <WidgetFrame title={title} status={status}>
@@ -64,7 +64,7 @@ export function TankLevelWidget({ title, status, primary, config }: TankLevelWid
           textAnchor="middle"
           className="fill-bms-ink font-mono text-[14px] font-semibold"
         >
-          {label}
+          {readout}
         </text>
       </svg>
     </WidgetFrame>
