@@ -12,6 +12,8 @@ import {
   blankDashboardWidgetRow,
   buildPutWidgetsPayload,
   dashboardBuilderErrors,
+  dashboardBuilderProblemSubject,
+  unselectedDashboardBuilderProblems,
   type DashboardWidgetRow,
 } from "../../lib/dashboard-builder-form";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
@@ -64,6 +66,10 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
   });
 
   const problems = dashboardBuilderErrors(rows);
+  // Review finding — `WidgetInspector` (below) renders only the SELECTED widget's problems, so
+  // a set-level problem or another widget's problem must surface somewhere else, or `Save`
+  // disables with a reason nothing on the page shows.
+  const summaryProblems = unselectedDashboardBuilderProblems(problems, selected);
   const scopeChosen = scope.kind === "organization" ? scope.organizationId !== "" : scope.locationId !== "";
   const blocked = name.trim() === "" || slug.trim() === "" || !scopeChosen || problems.length > 0;
 
@@ -216,7 +222,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
           />
         ) : null}
 
-        <div className="flex items-center gap-3 border-t border-gray-200 pt-3">
+        <div className="flex items-start gap-3 border-t border-gray-200 pt-3">
           <button
             type="button"
             disabled={blocked || saveM.isPending}
@@ -226,7 +232,19 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
             {saveM.isPending ? "Saving…" : "Create dashboard"}
           </button>
           {problems.length > 0 ? (
-            <span className="text-[11px] text-bms-muted">Fix the problems above to save.</span>
+            <div className="text-[11px] text-bms-muted">
+              <p>Fix the problems below to save.</p>
+              {summaryProblems.length > 0 ? (
+                <ul className="mt-1 space-y-0.5 text-red-700">
+                  {summaryProblems.map((problem, index) => (
+                    <li key={index}>
+                      <span className="font-semibold">{dashboardBuilderProblemSubject(rows, problem)}:</span>{" "}
+                      {problem.message}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>

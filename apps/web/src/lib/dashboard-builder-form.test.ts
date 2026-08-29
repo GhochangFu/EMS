@@ -5,7 +5,9 @@ import {
   runBuildPutWidgetsPayloadTests,
   runBuilderHasChangedTests,
   runDashboardBuilderErrorsTests,
+  runDashboardBuilderProblemSubjectTests,
   runDashboardRowsFromDtoTests,
+  runUnselectedDashboardBuilderProblemsTests,
 } from "./dashboard-builder-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -28,5 +30,13 @@ describe("dashboard builder form", () => {
 
   it("tracks unsaved changes against the dashboard's own stored widgets", () => {
     runBuilderHasChangedTests();
+  });
+
+  it("surfaces every problem WidgetInspector's current selection does not render", () => {
+    runUnselectedDashboardBuilderProblemsTests();
+  });
+
+  it("names a problem's subject — Dashboard, or the widget's own title/catalog label", () => {
+    runDashboardBuilderProblemSubjectTests();
   });
 });

@@ -176,6 +176,38 @@ export type DashboardBuilderProblem = {
 };
 
 /**
+ * Review finding — `WidgetInspector` renders only the SELECTED widget's problems
+ * (`problems.filter((p) => p.widget === selected)`), so a set-level problem (`widget: null`)
+ * and any OTHER widget's problem render nowhere at all: `Save` goes disabled, the page says
+ * "Fix the problems above to save", and nothing above shows a problem. This is what a
+ * page-level summary must show — every problem `WidgetInspector`'s current selection does not.
+ */
+export function unselectedDashboardBuilderProblems(
+  problems: readonly DashboardBuilderProblem[],
+  selected: number | null,
+): DashboardBuilderProblem[] {
+  return problems.filter((problem) => selected === null || problem.widget !== selected);
+}
+
+/** A human-readable subject for a problem — "Dashboard" for a set-level one (`widget: null`),
+ * or the widget's own title/catalog label otherwise, so a summary entry names what it is about
+ * without the reader having to count tiles on the canvas. */
+export function dashboardBuilderProblemSubject(
+  rows: readonly DashboardWidgetRow[],
+  problem: DashboardBuilderProblem,
+): string {
+  if (problem.widget === null) {
+    return "Dashboard";
+  }
+  const row = rows[problem.widget];
+  if (!row) {
+    return `Widget ${problem.widget + 1}`;
+  }
+  const label = row.title.trim() || WIDGET_CATALOG[row.widgetType].label;
+  return `Widget ${problem.widget + 1} (${label})`;
+}
+
+/**
  * Validates the whole widget set before `PUT /dashboards/:id/widgets` is attempted.
  *
  * Cardinality is read from `WIDGET_CATALOG[type].points` — never a literal — so this cannot

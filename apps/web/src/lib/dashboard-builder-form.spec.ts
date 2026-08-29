@@ -7,7 +7,9 @@ import {
   buildPutWidgetsPayload,
   builderHasChanged,
   dashboardBuilderErrors,
+  dashboardBuilderProblemSubject,
   dashboardRowsFromDto,
+  unselectedDashboardBuilderProblems,
   type DashboardWidgetRow,
 } from "./dashboard-builder-form";
 
@@ -148,6 +150,50 @@ export function runDashboardBuilderErrorsTests(): void {
   assert(
     dashboardBuilderErrors(badConfig).some((p) => p.field === "max"),
     "an inverted gauge range is caught through widgetConfigErrors, not restated here",
+  );
+}
+
+/**
+ * Review finding — `WidgetInspector` renders only the SELECTED widget's problems, so a
+ * set-level problem and any OTHER widget's problem must surface in a page-level summary
+ * instead, or `Save` disables with a reason that renders nowhere.
+ */
+export function runUnselectedDashboardBuilderProblemsTests(): void {
+  const problems = [
+    { widget: null, field: "widgets", message: "too many widgets" },
+    { widget: 0, field: "points", message: "widget 0 problem" },
+    { widget: 1, field: "points", message: "widget 1 problem" },
+  ];
+
+  assert(
+    unselectedDashboardBuilderProblems(problems, null).length === 3,
+    "with nothing selected, WidgetInspector renders nothing, so every problem needs the summary",
+  );
+
+  const withWidget1Selected = unselectedDashboardBuilderProblems(problems, 1);
+  assert(
+    withWidget1Selected.length === 2 &&
+      withWidget1Selected.every((p) => p.widget !== 1),
+    "with widget 1 selected, only ITS OWN problem is hidden (shown by WidgetInspector instead) " +
+      `— got widgets [${withWidget1Selected.map((p) => p.widget).join(", ")}]`,
+  );
+}
+
+/** `dashboardBuilderProblemSubject` — names what a problem is about, for the summary above. */
+export function runDashboardBuilderProblemSubjectTests(): void {
+  const rows = [blankDashboardWidgetRow("value_tile"), { ...blankDashboardWidgetRow("chart"), title: "Feed trend" }];
+
+  assert(
+    dashboardBuilderProblemSubject(rows, { widget: null, field: "widgets", message: "m" }) === "Dashboard",
+    "a set-level problem (widget: null) is named 'Dashboard'",
+  );
+  assert(
+    dashboardBuilderProblemSubject(rows, { widget: 1, field: "points", message: "m" }) === "Widget 2 (Feed trend)",
+    "a titled widget is named by its own title, one-indexed for a reader",
+  );
+  assert(
+    dashboardBuilderProblemSubject(rows, { widget: 0, field: "points", message: "m" }) === "Widget 1 (Value tile)",
+    "an untitled widget falls back to its catalog label",
   );
 }
 

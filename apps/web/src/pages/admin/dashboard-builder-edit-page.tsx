@@ -15,7 +15,9 @@ import {
   buildPutWidgetsPayload,
   builderHasChanged,
   dashboardBuilderErrors,
+  dashboardBuilderProblemSubject,
   dashboardRowsFromDto,
+  unselectedDashboardBuilderProblems,
   type DashboardWidgetRow,
 } from "../../lib/dashboard-builder-form";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
@@ -101,6 +103,10 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   });
 
   const problems = dashboardBuilderErrors(rows);
+  // Review finding — `WidgetInspector` (below) renders only the SELECTED widget's problems, so
+  // a set-level problem or another widget's problem must surface somewhere else, or `Save`
+  // disables with a reason nothing on the page shows.
+  const summaryProblems = unselectedDashboardBuilderProblems(problems, selected);
   const scopeChanged = dto
     ? scope.kind !== (dto.locationId ? "location" : "organization") ||
       (scope.kind === "location" && scope.locationId !== dto.locationId)
@@ -283,7 +289,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
               />
             ) : null}
 
-            <div className="flex items-center gap-3 border-t border-gray-200 pt-3">
+            <div className="flex items-start gap-3 border-t border-gray-200 pt-3">
               <button
                 type="button"
                 disabled={blocked || saveM.isPending}
@@ -292,9 +298,19 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
               >
                 {saveM.isPending ? "Saving…" : "Save dashboard"}
               </button>
-              <span className="text-[11px] text-bms-muted">
-                {problems.length > 0 ? "Fix the problems above to save." : !changed ? "No changes yet." : ""}
-              </span>
+              <div className="text-[11px] text-bms-muted">
+                <p>{problems.length > 0 ? "Fix the problems below to save." : !changed ? "No changes yet." : ""}</p>
+                {summaryProblems.length > 0 ? (
+                  <ul className="mt-1 space-y-0.5 text-red-700">
+                    {summaryProblems.map((problem, index) => (
+                      <li key={index}>
+                        <span className="font-semibold">{dashboardBuilderProblemSubject(rows, problem)}:</span>{" "}
+                        {problem.message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
             </div>
 
             {duplicating ? (

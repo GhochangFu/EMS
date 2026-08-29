@@ -89,6 +89,28 @@ export async function addingAWidgetSelectsItForEditing(): Promise<void> {
   expect(screen.getByText("Bound points")).toBeInTheDocument();
 }
 
+/**
+ * Review finding — `WidgetInspector` renders only the SELECTED widget's problems, so adding a
+ * second widget (which `addWidget` auto-selects) hid the FIRST widget's own problem entirely:
+ * `Save` disabled, "Fix the problems… to save", and nothing on the page named which widget or
+ * why. This is the exact reproduction the finding names: two value tiles, the second selected,
+ * the first (unselected) still missing its required point binding.
+ */
+export async function anUnselectedWidgetsProblemRendersInTheSummary(): Promise<void> {
+  stubMasterData();
+  renderPage(asUser("admin"));
+
+  await screen.findByRole("radio", { name: "Organization-wide" });
+  await userEvent.click(screen.getByRole("button", { name: "+ Value tile" }));
+  await userEvent.click(screen.getByRole("button", { name: "+ Value tile" }));
+
+  // The second widget just added is auto-selected (`addWidget`'s own behaviour); the first is
+  // now unselected and still has zero bound points, which `WidgetInspector` cannot show.
+  expect(screen.getByRole("button", { name: "Create dashboard" })).toBeDisabled();
+  expect(screen.getByText("Fix the problems below to save.")).toBeInTheDocument();
+  expect(screen.getByText(/Widget 1 \(Value tile\):/)).toBeInTheDocument();
+}
+
 /** The create action stays disabled until name, slug and scope are filled. */
 export async function createIsDisabledUntilRequiredFieldsAreFilled(): Promise<void> {
   stubMasterData();

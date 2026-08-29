@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   addingAWidgetSelectsItForEditing,
+  anUnselectedWidgetsProblemRendersInTheSummary,
   createIsDisabledUntilRequiredFieldsAreFilled,
   locationAdminGetsNoOrganizationWideOptionOnTheComposedPage,
 } from "./dashboard-builder-page.spec";
@@ -29,5 +30,9 @@ describe("F3.1d dashboard builder page", () => {
 
   it("disables Create dashboard until the required fields are filled", async () => {
     await createIsDisabledUntilRequiredFieldsAreFilled();
+  });
+
+  it("renders an unselected widget's problem in a summary beside Save", async () => {
+    await anUnselectedWidgetsProblemRendersInTheSummary();
   });
 });
