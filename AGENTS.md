@@ -89,10 +89,14 @@
 > rather than a lookup table, over three tenant-scoped tables
 > (`bms.dashboards`, `bms.dashboard_widgets`, `bms.dashboard_widget_points`),
 > which also opens ADR 0019's `dashboards` section past ordered point keys
-> (**ADR 0047**, `F3.1a`). **Only `F3.1a` of the five is built** — the read/write
-> API, the renderers, the builder surface and the template *Dashboards* tab
-> (`F3.1b`–`F3.1e`) are approved scope and unbuilt, so nothing yet composes a
-> dashboard.
+> (**ADR 0047**, `F3.1a`). **Four of the five are built** (2026-08-29) — the
+> schema (`F3.1a`), the read/write API (`F3.1b`), the four renderers (`F3.1c`)
+> and the template *Dashboards* tab (`F3.1e`). **Only `F3.1d`, the builder
+> surface, is approved scope and unbuilt**, and the distinction it leaves is
+> worth stating precisely: a caller can create and read a dashboard through the
+> API, and the components can draw all four widget types, but **nothing
+> assembles a stored dashboard into a page** — no route, no layout, no binding
+> UI. A dashboard row today is data with no reader.
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
@@ -1576,17 +1580,24 @@ These are intentionally deferred. Do not implement them yet:
   is the third of the five reopenings ADR 0019 predicted**, after `kpis` (`F2.3`)
   and `alarms.philosophy` (`E2.1`); `health` and `optimisation` are the two left.
 
-  What is **not** open, and is the more useful half of this entry: a template can
-  now *declare* widgets, and nothing on `main` renders one. `F3.1b` (the
-  read/write API), `F3.1c` (the four renderers) and `F3.1d` (the builder
-  surface) are approved scope under ADR 0047 and **unbuilt**. **`F3.1e` is
-  done** (2026-08-29): `dashboards` now has a tab in the template authoring
-  screen and the count is six, under ADR 0038 Amendment 4 — so this bullet no
-  longer holds `dashboards` out of the tab strip. The count is still changed by
-  amending ADR 0038, never by editing a gate, and there are **three** gates
-  rather than the one this bullet used to name; see §2 *Template authoring*.
-  What stays true is the *rendering* half: a template can declare a widget and
-  nothing draws one until `F3.1c`
+  What is **not** open, and is the more useful half of this entry. **`F3.1b`,
+  `F3.1c` and `F3.1e` are all done** (2026-08-29): `dashboards` has a tab in the
+  template authoring screen and the count is six, under ADR 0038 Amendment 4 —
+  so this bullet no longer holds `dashboards` out of the tab strip; the API
+  reads and writes the three tables; and all four widget types draw. The count
+  is still changed by amending ADR 0038, never by editing a gate, and there are
+  **three** gates rather than the one this bullet used to name; see §2
+  *Template authoring*.
+
+  **Only `F3.1d`, the builder surface, is still approved scope and unbuilt**, and
+  the sentence this bullet used to end on — *"nothing draws one until `F3.1c`"* —
+  has been discharged rather than deleted. What replaces it is narrower and is
+  the thing to check before assuming a dashboard works end to end: **no route
+  assembles a stored dashboard into a page.** The renderers take a widget and
+  data as props; the composition that fetches a dashboard, lays its widgets on
+  the grid and binds each to its points is `F3.1d`. Two consequences a reader
+  should not have to derive: an authored template widget still reaches no
+  screen, and `bms.dashboards` rows created through the API have no viewer
 
   `alarms.philosophy` **left this list under ADR 0034** (`E2.1`): `skill` is
   now checked against `bms.alarm_skills` rather than accepted as free text,
