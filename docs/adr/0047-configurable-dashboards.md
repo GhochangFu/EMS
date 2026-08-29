@@ -62,6 +62,13 @@ mentioning it:
   because *"a type cannot stop a sixth being added and a behavioural test would
   simply agree with whatever it found."* ADR 0038:124 states the condition
   directly: *"It becomes a tab when `F3.1` gives it widgets."*
+  **Amendment 3 (2026-08-29) corrects one word here: "a source scan", singular.**
+  ADR 0038 Amendment 4 discharged the condition and found the count held in
+  **three** executable places — that scan,
+  `apps/web/src/lib/template-tabs.spec.ts`, and
+  `apps/web/src/lib/template-tab-guard.spec.ts:76`, where it is an ordered-pair
+  count rather than a tab count. The singular is corrected because this bullet
+  is what a later reader searches when asking where the number lives.
 - **[ADR 0037](0037-calc-execution-engine.md):268** assigns the KPI *rendering*
   half to `F2.5`/`F3.1` rather than to the calc engine.
 
@@ -403,6 +410,13 @@ local machine, is what caught it.
   the ADR and change the scan to six in the same change, with the reason. An
   agent that edits `tests/adr-0038-template-authoring-ui.test.ts` to make a
   sixth tab pass has defeated the only thing holding the tab count.
+  **Corrected by Amendment 3 (2026-08-29), on two counts.** *"the only thing"*
+  is wrong: ADR 0038 Amendment 4 found the count held in **three** executable
+  places, and that scan is only one of them. And *"in the same change"* is not
+  the route taken — the owner ruled the amendment into its own `docs(adr):` PR
+  ahead of the feature branch, on the PR #204 precedent. Read ADR 0038
+  Amendment 4 for the complete surface; this bullet is left in place because it
+  is what ADR 0047 said at its §10 gate.
 - **`packages/shared/src/asset-template-content.ts:124`'s docblock becomes
   false** on `F3.1a` — it names `F3.1` as the owner of a vocabulary that will by
   then exist. Not `AGENTS.md`, so not §9.10-gated; it lands with the code.
@@ -685,7 +699,8 @@ pointKeys: z.array(pointKeyRef).min(1).max(MAX_WIDGET_POINT_KEYS),
 
 `MAX_WIDGET_POINT_KEYS` is `MAX_WIDGET_POINTS`, which is 8. So the template
 `radial_gauge` arm accepts one to eight point keys while Amendment 2 §1 says a
-gauge takes exactly one. **Each arm now takes its own type's cardinality**:
+gauge takes exactly one. **Each arm takes its own type's cardinality**, and
+`F3.1e` is the change that makes it so:
 
 - `radial_gauge`, `tank_level`, `value_tile` — exactly one point key.
 - `chart` — one to `MAX_WIDGET_POINTS`.
@@ -694,6 +709,15 @@ The numbers are **not** restated in `apps/api`. They are read from
 `WIDGET_POINT_CARDINALITY`, which is Amendment 2 §1's whole point: the
 cardinality is declared once in `@bms/shared` and every surface derives from
 it. An arm that hardcodes `1` re-opens the seam this amendment closed.
+
+**The `MAX_WIDGET_POINT_KEYS` alias is deleted, not kept.** It has exactly two
+references — the declaration at `asset-templates-content.schema.ts:156` and the
+single use at `:299` — so once every arm reads `WIDGET_POINT_CARDINALITY[type]`
+the alias has no use site, and `tsconfig.base.json:13` sets
+`"noUnusedLocals": true`. Keeping it fails the build. The global ceiling
+survives where it already lives: `dashboard-builder.spec.ts:216-221` asserts
+every type's `max` is at or below `MAX_WIDGET_POINTS`, and `:235-236` pins
+`chart`'s max **to** it.
 
 ### 2. Content already stored is neither migrated nor grandfathered, because there is none
 
@@ -707,8 +731,8 @@ The set of stored rows that can carry an over-bound widget is **empty**:
 - **No seed writes `content.dashboards` at all.** Nothing under `packages/db/src/`
   populates the key, so no seeded or demo template can carry a widget.
 - **`TemplateDashboardView.widgets` is optional**, and
-  `asset-template-content.ts:150` states why: *"nothing backfills those rows"*.
-  Every row written before `F3.1a` has `featured` only.
+  `packages/shared/src/asset-template-content.ts:157` states why: *"nothing
+  backfills those rows"*. Every row written before `F3.1a` has `featured` only.
 - **The schema that accepts a widget is hours old.**
   `templateDashboardWidgetVariants` reached `main` in `b0b4f3f` on 2026-08-29,
   the same day as this amendment.
@@ -721,19 +745,32 @@ So the arms tighten, no migration is written, and no grandfather path is added.
 
 **This is recorded as a finding with its evidence, not as an assumption**, and
 the distinction matters for the row that acts on it. If `F3.1e`'s build finds a
-stored widget that fails the tightened arm — in a developer database, in a
-fixture, or anywhere else — the finding is falsified and the ruling must come
-back to the owner rather than be worked around. Silently relaxing the bound
-because one row failed is the outcome this paragraph exists to prevent.
+widget that fails a tightened arm **in stored `asset_templates.content`** — in
+a developer database, a seeded row, or a customer export — the finding is
+falsified and the ruling must come back to the owner rather than be worked
+around. Silently relaxing the bound because one row failed is the outcome this
+paragraph exists to prevent.
+
+**The clause is about stored content only, and the scope matters.** A test
+fixture that fails a tightened arm is not a falsification: several exist to be
+refused on purpose, and `asset-templates-content.schema.spec.ts:441-450` is one
+of them. Reading the clause more broadly would turn every deliberate rejection
+case into a reason to stop.
 
 ### 3. `F3.2` inherits a closed question, not an open one
 
 Amendment 2 §Consequences gave this obligation to *"whichever of `F3.1e` or
-`F3.2` lands first"*. `F3.1e` takes it. `F3.2` therefore inherits a template
-surface whose arms already agree with `WIDGET_POINT_CARDINALITY`, and it may
-instantiate template content into `bms.dashboard_widgets` without deciding what
-to do with a gauge carrying eight bindings — because the authoring surface can
-no longer produce one.
+`F3.2` lands first"*. `F3.1e` takes it.
+
+**Stated in the right tense, because `main` does not have this yet.** The
+ruling is taken here; `asset-templates-content.schema.ts:299` still reads
+`.max(MAX_WIDGET_POINT_KEYS)` and will until `F3.1e` merges. **Once it does**,
+`F3.2` inherits a template surface whose arms agree with
+`WIDGET_POINT_CARDINALITY`, and it may instantiate template content into
+`bms.dashboard_widgets` without deciding what to do with a gauge carrying eight
+bindings — because the authoring surface will no longer produce one. Until
+then the question is *ruled*, not *discharged*, and `F3.2` must not start on
+the assumption that the arms are already tight.
 
 `F3.2`'s row in `docs/BACKLOG.md` states this obligation as open. It is closed
 by this amendment, and **the row is corrected in this change**, not deferred to
@@ -749,8 +786,8 @@ edit `docs/BACKLOG.md` in the same commit. `AGENTS.md` §9.10 gates edits to
   Amendment 2's ruling 2 already recorded that its own rule was an application
   rule needing no schema change; this is the same shape, and for the same
   reason: `asset_templates.content` is `jsonb` that only the API validates.
-- **`MAX_WIDGET_POINT_KEYS` survives as the global ceiling**, not as the
-  per-arm bound. `dashboard-builder.spec.ts` already asserts every
+- **`MAX_WIDGET_POINT_KEYS` does not survive** — see §1. The global ceiling
+  survives instead in `dashboard-builder.spec.ts:216-221`, which asserts every
   `WIDGET_POINT_CARDINALITY` max is at or below `MAX_WIDGET_POINTS`, so the two
   cannot drift apart in the direction that matters.
 - **The `F3.1e` build owes a test per arm, not one shared test.** A single
@@ -758,8 +795,22 @@ edit `docs/BACKLOG.md` in the same commit. `AGENTS.md` §9.10 gates edits to
   `radial_gauge`. Each of the three single-point arms refuses two keys, and
   `chart` still accepts eight — otherwise a copy-paste that tightens `chart`
   too ships with nothing red.
+- **One existing test becomes a false green, and it must be re-keyed rather
+  than left passing.** `asset-templates-content.schema.spec.ts:441-450` rejects
+  a widget carrying nine `pointKeys` with the message *"at most 8 point keys
+  per widget"*, and its `oneWidget` fixture is a `value_tile`. After the arms
+  tighten, that case is refused at **one** key, not at eight: the test still
+  passes, and it now proves nothing about the global cap while asserting a
+  message that no longer describes why it failed. Re-key the nine-point case to
+  `chart`, which is the only arm the message is still true of.
 - **`docs/BACKLOG.md`'s `F3.1e` and `F3.2` rows both describe this as owed**,
   and both are corrected in this change. `F3.1e` moves ⬜ → 🟡: its ADR gate is
-  ruled here and in ADR 0038 Amendment 4, which is what 🟡 means. It does
-  **not** move to 🔵 — `docs/scripts/backlog-status.mjs:440` states that no row
-  is 🔵 and that in-flight is derived from the branch name.
+  ruled here and in ADR 0038 Amendment 4, and
+  `docs/scripts/backlog-status.mjs:38` maps 🟡 to *"ADR / planned"*, which is
+  exactly that state. It does **not** move to 🔵 —
+  `docs/scripts/backlog-status.mjs:553` states that no row is 🔵 and that
+  in-flight is derived from the branch name.
+- **§3's Mermaid map correctly gains nothing, and that is recorded rather than
+  left silent** (the practice ADR 0030's sweep row states). `docs/BACKLOG.md:635`
+  is `F31["F3.1 Dashboard builder (a done, b-e open)"]` — the umbrella node.
+  There is no per-child node, and the label stays true with `F3.1e` at 🟡.

@@ -670,48 +670,99 @@ five → six. Nothing else in decision 2 changes**: `health` and `optimisation`
 are still refused by `templateContentSchema` and still get no tab, `E1.1` and
 `E1.6` still own them, and `maintenance` is still deliberately omitted.
 
-### The count is held in two executable places, not one, and both move
+### The count is held in three executable places, not one, and all three move
 
-This is the half the ADR 0047 §Consequences bullet and the `F3.1e` backlog row
-both understate. They name the source scan. There are **two** independent
-gates, and each one holds the number **and** names `dashboards` in a
-closed-section list:
+**The first draft of this amendment said two, and a compliance review found the
+third before the amendment merged.** That is recorded rather than quietly
+fixed, because it is the same failure ADR 0047's own sweep row records against
+itself: *"Re-running the searches is necessary and is not sufficient."* An
+amendment whose purpose is to name the complete change surface missed a third
+of it on the first pass, and the miss was in the file least like the other two.
+
+ADR 0047's §Consequences bullet and the `F3.1e` backlog row name only the
+source scan. There are **three** independent gates:
 
 | File | What it holds |
 |---|---|
-| `tests/adr-0038-template-authoring-ui.test.ts` | the source scan of `template-tabs.ts` — `.toBe(5)` on the id count and again on the brace count, `EXPECTED` as the exact ordered id list, the `TemplateTabId` union scan, and `"dashboards"` in the reserved-section loop |
-| `apps/web/src/lib/template-tabs.spec.ts` | `TEMPLATE_TABS.length === 5`, the joined id string `"details,points,calculations,kpis,alarms"`, and its own `"dashboards"` ban in `runNoClosedSectionTabTests` |
+| `tests/adr-0038-template-authoring-ui.test.ts` | the source scan of `template-tabs.ts` — `.toBe(5)` on the id count and again on the brace count, `EXPECTED` as the exact ordered id list, the `TemplateTabId` union scan, and `"dashboards"` in the reserved-section loop at `:131` |
+| `apps/web/src/lib/template-tabs.spec.ts` | `TEMPLATE_TABS.length === 5` at `:23`, the joined id string at `:25`, the reserved-section ban at `:49`, **and** `"dashboards"` in the resolver's fallback list at `:73` |
+| `apps/web/src/lib/template-tab-guard.spec.ts` | `assert(blocked === 20, …)` at `:76` — an anti-vacuity count of **ordered tab pairs**, not of tabs. Its own comment says *"Five tabs give twenty ordered pairs."* |
 
-The two are not redundant and the scan file says so in its own docblock:
-*"behaviour there, text here."* A change that edits only one of them leaves the
-other red, which is the correct outcome — but an agent that finds the second
-red **after** the first is already edited is being invited to edit it too,
-without a ruling. Both are named here so that neither edit is discretionary.
+The first two are not redundant and the scan file says so in its own docblock:
+*"behaviour there, text here."*
 
-Three further sites carry the number in prose and must be corrected in the same
-change, because a comment that contradicts the code is the drift `CLAUDE.md`'s
-precedence rule exists to stop: `template-tabs.ts`'s docblock (which also
-states the deferral this amendment discharges), `template-tab-strip.tsx:19`,
-and `asset-template-detail-page.tsx:574`'s *"Unreachable while `TemplateTabId`
-names five tabs"*.
+**The third is the one an agent will meet last and understand least.** It holds
+the count *arithmetically*: the dirty-tab guard is exercised over every ordered
+pair of distinct tabs, and `n` tabs give `n(n-1)` pairs. Five give 20; **six
+give 30**. Nothing in the file says "five", so a search for the count does not
+find it, and the test goes red on a number that looks unrelated to tabs.
+`template-tab-guard.test.ts` calls `runDirtyTabTests()`, so it does run.
 
 ### What an agent may and may not do
 
-**May:** change both gates from five to six, add `"dashboards"` to `EXPECTED`
-and to the union, and remove `"dashboards"` from the two reserved-section loops
-— in the same change as the tab, citing this amendment.
+**May**, in the same change as the tab, citing this amendment:
 
-**May not:** weaken either gate. The scan must keep asserting an exact ordered
-list, an exact count, an exact brace count, the anti-vacuity guard, and the
-flat-literal shape. `health`, `optimisation`, `optimization` and `maintenance`
-stay in both closed-section loops. An agent that relaxes `.toBe(6)` to
-`.toBeGreaterThan(0)`, or deletes a loop rather than removing one entry from
-it, has defeated the machinery this amendment is deliberately preserving.
+- change all three gates from five to six, and add `"dashboards"` to `EXPECTED`
+  and to the `TemplateTabId` union;
+- remove `"dashboards"` from the **two reserved-section loops**
+  (`adr-0038-template-authoring-ui.test.ts:131` and `template-tabs.spec.ts:49`);
+- remove `"dashboards"` from the **resolver fallback list** at
+  `template-tabs.spec.ts:73`. This is a third loop of a different kind and it
+  needs saying separately: it asserts that `resolveTemplateTab("dashboards")`
+  falls back to Details. Once `dashboards` is a real tab that assertion
+  contradicts `:65`'s *"every tab id resolves to itself"* directly, so the
+  entry must go. The other six entries stay, and the ordering comment above
+  them still applies — `"nonsense"` remains a plausible-but-wrong id and
+  remains first;
+- change `blocked === 20` to `blocked === 30` at `template-tab-guard.spec.ts:76`,
+  **and write the derivation `n(n-1)` into the comment above it**, so the next
+  tab change is arithmetic rather than archaeology.
+
+**May not:** weaken any of the three. The exact ordered list, the two counts,
+the brace count, the anti-vacuity guards and the flat-literal shape all stay.
+`health`, `optimisation` and `maintenance` stay in **both** reserved-section
+loops; `optimization` (the American spelling) exists **only** in
+`adr-0038-template-authoring-ui.test.ts:131` and must not be added to
+`template-tabs.spec.ts:49` to make the two match — the scan file explains why
+it carries the extra spelling and the spec file does not need it.
+
+An agent that relaxes `.toBe(6)` to `.toBeGreaterThan(0)`, deletes a loop
+rather than removing one entry, or replaces `blocked === 30` with
+`blocked > 0`, has defeated the machinery this amendment is deliberately
+preserving.
 
 The distinction is the one decision 2 was built on: a type cannot stop a
 seventh tab, and a behavioural test would agree with whatever it found. The
 number is asserted in source text on purpose. It moves by amendment, once, with
 a reason — which is what this is.
+
+### The prose that also becomes false
+
+Six sites state the count or the no-tab rule in comments and titles. They are
+not gates, but a comment that contradicts the code is the drift `CLAUDE.md`'s
+precedence rule exists to stop, so they are corrected in the same change:
+
+- `apps/web/src/lib/template-tabs.ts` — the docblock, which also states the
+  deferral this amendment discharges;
+- `apps/web/src/components/asset-templates/template-tab-strip.tsx:19`;
+- `apps/web/src/pages/admin/asset-template-detail-page.tsx:574` —
+  *"Unreachable while `TemplateTabId` names five tabs"*;
+- `apps/web/src/pages/admin/asset-template-detail-page.tsx:338-342` — the
+  in-JSX comment repeating the five-tab claim;
+- `apps/web/src/pages/admin/asset-template-versions-page.tsx:4-8` —
+  *"**A route, not a sixth tab.** ADR 0038 names exactly five tabs"*. This one
+  breaks **twice**: the count, and the phrase "sixth tab", which after this
+  amendment names something that exists. Its actual argument survives and
+  should be kept — migration acts on *assets*, not on the template's own shape,
+  so it is still a route and not a tab. Only the count and the ordinal change;
+- `apps/web/src/lib/template-tabs.test.ts:11` — the test title *"holds exactly
+  the five tabs ADR 0038 names"*.
+
+**Dated records stand and must not be edited.** `template-tab-guard.ts:12`,
+`template-authoring-access.spec.ts:118`, `vitest.config.ts:363` and the
+`docs/plans/f2.5-*` files describe what was true when `F2.5` shipped or narrate
+a bug that was fixed then. Rewriting one falsifies the record of that day —
+the convention ADR 0047's sweep row states for `docs/BACKLOG.md:254`.
 
 ### The tab itself
 
