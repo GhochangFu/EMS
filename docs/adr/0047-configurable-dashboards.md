@@ -814,3 +814,91 @@ edit `docs/BACKLOG.md` in the same commit. `AGENTS.md` §9.10 gates edits to
   left silent** (the practice ADR 0030's sweep row states). `docs/BACKLOG.md:635`
   is `F31["F3.1 Dashboard builder (a done, b-e open)"]` — the umbrella node.
   There is no per-child node, and the label stays true with `F3.1e` at 🟡.
+
+## Amendment 4 — a saved dashboard needs a page to be seen on, and that page is `F3.1d`'s (2026-08-29)
+
+Ruled by the owner at `F3.1d`'s §10 gate, **before any implementation code**,
+and raised by reading decision 1's own table back against `apps/web`'s route
+tree rather than by reviewing a diff.
+
+### The question
+
+Decision 1 gives `F3.1c` *"the four core widget renderers"* and `F3.1d` *"the
+builder surface — compose, arrange, bind points, pick the chart series, save."*
+**Neither cell names a page on which a user who is not an administrator sees a
+saved dashboard.**
+
+The route tree confirms the gap rather than implying it: `/` is
+`dashboard-page.tsx` and `/locations/:locationId/dashboard` is
+`location-dashboard-page.tsx`, and both are the *fixed* control-room reads that
+`packages/shared/src/contracts/dashboard-builder.ts`'s own docblock separates
+from this ADR's tables — *"`./dashboard.ts` already holds the fixed
+control-room reads"*. `F3.1c` closed having rendered its four widgets on **a
+temporary local route reverted before the commit**, which is the same finding
+recorded from the other side and read at the time as a review convenience.
+
+So the five children as drafted close the umbrella with a builder that saves
+rows nothing renders outside it.
+
+### The ruling: `F3.1d` ships a read-only viewer beside the builder
+
+**Why not a sixth child (`F3.1f`).** Provenance would be cleaner, and it was
+declined on the release rather than on the paperwork. `F3.1` closing is what
+frees `F3.2`, `F3.5`, `E4.2`, `F3.28` and `F3.32` (decision 1), and closing it
+would then hand five rows a feature whose output is reachable only by the two
+roles entitled to author it. A dashboard an operator cannot open is not a
+dashboard.
+
+**Why not `F3.28`.** Decision 6 names `F3.28` as explicitly *not* part of
+`F3.1`, and the dependency runs the wrong way for folding: `F3.28` composes the
+alarms rail, the KPI period-delta and the status legend **on top of** a page
+that renders a dashboard, so the viewer cannot live inside the row that
+consumes it. Folding it in would also make the umbrella's closure wait on a
+Wave 2 row that the umbrella exists to unblock.
+
+### What the viewer is, and what it is not
+
+- **A route that reads and never writes.** It lists the dashboards the caller
+  may read and renders one. Every mutating affordance stays on the builder
+  surface, under Amendment 2 ruling 2 and this row's forms-not-buttons rule.
+- **No new API, and this was checked rather than assumed.** `GET /dashboards`
+  and `GET /dashboards/:slug` already exist
+  (`dashboard-builder.controller.ts:59,65`), read-scoped through
+  `readableOrganizationIds`/`withOrganizationReadScope` — the HIGH fix `F3.1b`
+  closed on. Live values come from the bindings the response **already
+  carries**: `dashboardWidgetPointDtoSchema` widened in `assetId`, `pointKey`
+  and `unit` for exactly this purpose, so a caller builds the `pointRef` with
+  `encodePointRef` and reads `GET /telemetry/points/:pointRef/recent` plus the
+  `/ws/telemetry` socket that `use-telemetry-live.ts` already wraps. The viewer
+  adds no API route, no schema and no migration.
+- **Read authorization stays the API's.** Amendment 2 ruling 2's *"read
+  visibility is not narrowed by this"* holds unchanged: a scoped user sees the
+  organization-wide dashboards of their tenant. The page renders what the list
+  returns and does not re-derive the rule client-side.
+- **It is not the dark canvas.** Decision 6's last bullet stands — `F3.1` ships
+  in the existing light palette, and `docs/BACKLOG.md` §5's *Reference layout
+  language* ⚠ stays open and stays the owner's.
+- **It is not `F3.2`.** Instantiating a template's dashboard into
+  `bms.dashboard_widgets` remains `F3.2`'s. The viewer renders rows that
+  already exist.
+
+### Consequences
+
+- **`F3.1d`'s effort moves `4–5` → `5–6`, and the split total `15–20` →
+  `16–21`.** Re-derived rather than padded: the viewer is one list page, one
+  detail route and a reuse of `F3.1c`'s exhaustive dispatcher, and it pays its
+  own §4.6 browser pass inside `F3.1d`'s. `docs/BACKLOG.md`'s `F3.1d` row moves
+  with it, and this amendment is the source that row cites.
+- **`F3.1d` is the first child for which no §4.6 layer is N/A.** `F3.1a` closed
+  with API and browser N/A, `F3.1b` with browser N/A, `F3.1c` with API and
+  database N/A — each honestly, and each because the row genuinely reached only
+  one or two layers. This row writes the three tables through the API and
+  renders them in a browser, so all three layers are checked or the closure is
+  not honest.
+- **The `AGENTS.md` §2 row that decision 1's Consequences already owes gains
+  the viewer route**, not the builder alone. That edit belongs to the
+  `chore(agents):` sweep after `F3.1d` closes (§9.10), never to the feature
+  commit.
+- **No schema change and no `0051`.** Same reason Amendment 2 gave for its own
+  ruling 2: this is an application-surface decision, and `0050` already permits
+  every row the viewer reads.
