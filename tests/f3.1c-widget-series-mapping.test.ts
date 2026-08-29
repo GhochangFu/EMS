@@ -63,7 +63,25 @@ function stripComments(src: string): string {
 // The backreference requires matching quote characters, so `lineStyle` or a
 // prose mention like "a bar chart" inside an unrelated word never matches;
 // `areaStyle` is a bare object key and is untouched by this pattern either way.
+/**
+ * **Two or more DISTINCT names, not any single one.**
+ *
+ * The first shape of this rule flagged every occurrence, and `F3.1e` proved it
+ * wrong the day the two rows met: `template-dashboard-form.ts` writes
+ * `series: "line"` as the default `ChartSeriesKind` for an unrecognised stored
+ * value, and `"line"` there is a *contract* kind, not an ECharts series type —
+ * three of the four kinds happen to be spelled like their ECharts counterparts,
+ * which is exactly why `area` (not an ECharts type at all) is the one that
+ * matters.
+ *
+ * Flagging that default is worse than useless: a rule that fires on correct
+ * code gets silenced by adding the file to the allowlist, and the allowlist is
+ * then wide enough to hide a real second mapping. So the rule counts *distinct*
+ * names instead. One name is a default. **A mapping needs at least two** — even
+ * the narrowest interesting one, `area` → `line`, names both.
+ */
 const SERIES_LITERAL = /(["'])(line|bar|scatter|area)\1/g;
+const MIN_DISTINCT_FOR_A_MAPPING = 2;
 
 function walk(dir: string, out: string[] = []): string[] {
   let entries: string[];
@@ -116,8 +134,9 @@ describe("F3.1c: the ECharts series mapping is stated once", () => {
 
       const src = stripComments(readFileSync(file, "utf8"));
       SERIES_LITERAL.lastIndex = 0;
-      if (SERIES_LITERAL.test(src)) {
-        offenders.push(relative(repoRoot, file).replace(/\\/g, "/"));
+      const names = new Set([...src.matchAll(SERIES_LITERAL)].map((m) => m[2]));
+      if (names.size >= MIN_DISTINCT_FOR_A_MAPPING) {
+        offenders.push(`${relative(repoRoot, file).replace(/\\/g, "/")} (${[...names].sort().join(", ")})`);
       }
     }
 
