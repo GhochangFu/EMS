@@ -1,4 +1,5 @@
 import {
+  DASHBOARD_GRID,
   MAX_WIDGET_POINTS,
   WIDGET_POINT_CARDINALITY,
   chartConfigSchema,
@@ -195,6 +196,64 @@ export function runDashboardBuilderTests(): void {
     "a widget overflowing the 12-column canvas must be refused",
   );
   expectRejects(dashboardWidgetDtoSchema, { ...widget, gridW: 0 }, "a zero-width widget");
+}
+
+/**
+ * `F3.1d` Unit 2 — `DASHBOARD_GRID` is the single source for the canvas
+ * bounds, and `dashboardWidgetIdentitySchema`'s four fields plus its
+ * `.refine()` must read it rather than restate `11`/`12`/`24`.
+ * `tests/f3.1d-grid-bounds-single-source.test.ts` is the scan that keeps a
+ * fifth TypeScript copy from appearing; this is the pin that proves THIS
+ * schema is one of the wired sites rather than a fourth private copy.
+ */
+export function runDashboardGridTests(): void {
+  assert(DASHBOARD_GRID.columns === 12, "the canvas is 12 columns");
+  assert(DASHBOARD_GRID.minWidgetW === 1, "a widget is at least 1 column wide");
+  assert(DASHBOARD_GRID.minWidgetH === 1, "a widget is at least 1 row tall");
+  assert(DASHBOARD_GRID.maxWidgetH === 24, "a widget is at most 24 rows tall");
+
+  const gridFixture = {
+    id: "11111111-1111-4111-8111-111111111111",
+    dashboardId: "22222222-2222-4222-8222-222222222222",
+    organizationId: "33333333-3333-4333-8333-333333333333",
+    title: null,
+    gridY: 0,
+    gridH: 1,
+    points: [],
+    widgetType: "value_tile",
+    config: {},
+  };
+
+  // The pin the mutation table names: "set DASHBOARD_GRID.columns = 16" must
+  // flip this red. At columns=16 the field's legitimate max becomes 15 and
+  // gridX:15 parses — so today, with columns=12, this must still be refused.
+  // gridW is 1 so only the field-level .max() on gridX is exercised, not the
+  // .refine() cross-check (15 + 1 = 16, already over today's bound either way).
+  expectRejects(
+    dashboardWidgetDtoSchema,
+    { ...gridFixture, gridX: 15, gridW: 1 },
+    "gridX 15 exceeds DASHBOARD_GRID.columns - 1 today — refused unless the constant has drifted",
+  );
+  expectAccepts(
+    dashboardWidgetDtoSchema,
+    { ...gridFixture, gridX: 11, gridW: 1 },
+    "gridX at DASHBOARD_GRID.columns - 1 (the last column) is accepted",
+  );
+
+  // The .refine() cross-check, isolated from the field-level .max(): both
+  // gridX (11) and gridW (2) are individually legal, but their sum (13)
+  // exceeds today's 12-column canvas. Flips at the same mutation, since a
+  // properly wired .refine() reads DASHBOARD_GRID.columns too.
+  expectRejects(
+    dashboardWidgetDtoSchema,
+    { ...gridFixture, gridX: 11, gridW: 2 },
+    "gridX 11 + gridW 2 (13) exceeds the 12-column canvas though both individual bounds are legal",
+  );
+  expectAccepts(
+    dashboardWidgetDtoSchema,
+    { ...gridFixture, gridX: 11, gridW: 1 },
+    "gridX 11 + gridW 1 (12) exactly fills the canvas and is accepted",
+  );
 }
 
 /**

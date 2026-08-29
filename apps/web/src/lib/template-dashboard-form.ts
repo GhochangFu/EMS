@@ -1,4 +1,4 @@
-import { WIDGET_POINT_CARDINALITY } from "@bms/shared";
+import { DASHBOARD_GRID, WIDGET_POINT_CARDINALITY } from "@bms/shared";
 import type {
   ChartSeriesKind,
   DashboardWidgetSpec,
@@ -374,12 +374,16 @@ export function dashboardFormErrors(
           message: `A widget title is at most ${MAX_WIDGET_TITLE_LENGTH} characters.`,
         });
       }
-      if (!Number.isInteger(widget.gridX) || widget.gridX < 0 || widget.gridX > 11) {
+      if (
+        !Number.isInteger(widget.gridX) ||
+        widget.gridX < 0 ||
+        widget.gridX > DASHBOARD_GRID.columns - 1
+      ) {
         problems.push({
           view: viewIndex,
           widget: widgetIndex,
           field: "gridX",
-          message: "gridX must be an integer from 0 to 11.",
+          message: `gridX must be an integer from 0 to ${DASHBOARD_GRID.columns - 1}.`,
         });
       }
       if (!Number.isInteger(widget.gridY) || widget.gridY < 0) {
@@ -390,23 +394,31 @@ export function dashboardFormErrors(
           message: "gridY must be an integer of at least 0.",
         });
       }
-      if (!Number.isInteger(widget.gridW) || widget.gridW < 1 || widget.gridW > 12) {
+      if (
+        !Number.isInteger(widget.gridW) ||
+        widget.gridW < DASHBOARD_GRID.minWidgetW ||
+        widget.gridW > DASHBOARD_GRID.columns
+      ) {
         problems.push({
           view: viewIndex,
           widget: widgetIndex,
           field: "gridW",
-          message: "gridW must be an integer from 1 to 12.",
+          message: `gridW must be an integer from ${DASHBOARD_GRID.minWidgetW} to ${DASHBOARD_GRID.columns}.`,
         });
       }
-      if (!Number.isInteger(widget.gridH) || widget.gridH < 1 || widget.gridH > 24) {
+      if (
+        !Number.isInteger(widget.gridH) ||
+        widget.gridH < DASHBOARD_GRID.minWidgetH ||
+        widget.gridH > DASHBOARD_GRID.maxWidgetH
+      ) {
         problems.push({
           view: viewIndex,
           widget: widgetIndex,
           field: "gridH",
-          message: "gridH must be an integer from 1 to 24.",
+          message: `gridH must be an integer from ${DASHBOARD_GRID.minWidgetH} to ${DASHBOARD_GRID.maxWidgetH}.`,
         });
       }
-      if (widget.gridX + widget.gridW > 12) {
+      if (widget.gridX + widget.gridW > DASHBOARD_GRID.columns) {
         problems.push({
           view: viewIndex,
           widget: widgetIndex,

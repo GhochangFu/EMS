@@ -5,6 +5,7 @@ import {
   commonConfigFields,
   gaugeRangeIsOrdered,
   gaugeThresholdSchema,
+  DASHBOARD_GRID,
   GAUGE_RANGE_MESSAGE,
   MAX_DASHBOARD_WIDGETS,
   MAX_GAUGE_THRESHOLDS,
@@ -195,10 +196,10 @@ const widgetIdentityWriteFields = {
   // sync diff on it.
   id: z.string().uuid().optional(),
   title: z.string().max(255).nullable().optional(),
-  gridX: z.number().int().min(0).max(11),
+  gridX: z.number().int().min(0).max(DASHBOARD_GRID.columns - 1),
   gridY: z.number().int().min(0),
-  gridW: z.number().int().min(1).max(12),
-  gridH: z.number().int().min(1).max(24),
+  gridW: z.number().int().min(DASHBOARD_GRID.minWidgetW).max(DASHBOARD_GRID.columns),
+  gridH: z.number().int().min(DASHBOARD_GRID.minWidgetH).max(DASHBOARD_GRID.maxWidgetH),
 };
 
 /**
@@ -277,7 +278,7 @@ const eachWidgetFitsTheGrid = (
   ctx: z.RefinementCtx,
 ): void => {
   widgets.forEach((widget, index) => {
-    if (widget.gridX + widget.gridW > 12) {
+    if (widget.gridX + widget.gridW > DASHBOARD_GRID.columns) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: [index, "gridW"],
@@ -301,9 +302,10 @@ const widgetsWriteFieldSchema = z
   .max(MAX_DASHBOARD_WIDGETS)
   .superRefine(eachWidgetFitsTheGrid)
   .describe(
-    `At most ${MAX_DASHBOARD_WIDGETS} widgets. Each must fit inside the 12-column canvas ` +
-      "(gridX + gridW <= 12), the same bound dashboard_widgets_grid_bounds_check enforces in " +
-      "SQL — this gives a 400 naming the field rather than a 500 carrying a constraint name.",
+    `At most ${MAX_DASHBOARD_WIDGETS} widgets. Each must fit inside the ${DASHBOARD_GRID.columns}-column ` +
+      `canvas (gridX + gridW <= ${DASHBOARD_GRID.columns}), the same bound ` +
+      "dashboard_widgets_grid_bounds_check enforces in SQL — this gives a 400 naming the field " +
+      "rather than a 500 carrying a constraint name.",
   );
 
 export const putDashboardWidgetsBodySchema = z

@@ -1,4 +1,5 @@
 import {
+  DASHBOARD_GRID,
   GAUGE_RANGE_MESSAGE,
   MAX_DASHBOARD_WIDGETS,
   MAX_GAUGE_THRESHOLDS,
@@ -317,4 +318,50 @@ export function runDashboardsSchemaTests(): void {
   if (parsed.success) {
     assert(parsed.data.id === POINT_C, "a supplied id must survive parsing unchanged");
   }
+}
+
+/**
+ * `F3.1d` Unit 2 — `widgetIdentityWriteFields`'s bounds and
+ * `eachWidgetFitsTheGrid`'s array-level cross-check must both read
+ * `DASHBOARD_GRID` rather than a private `11`/`12`/`24`.
+ * `tests/f3.1d-grid-bounds-single-source.test.ts` is the scan that keeps a
+ * fifth TypeScript copy from appearing; these pins prove THIS file is one of
+ * the wired sites rather than a fourth.
+ */
+export function runDashboardsSchemaGridBoundsTests(): void {
+  assert(DASHBOARD_GRID.columns === 12, "the canvas is 12 columns");
+
+  // Isolates widgetIdentityWriteFields's own per-field gridX .max() from the
+  // array-level superRefine: gridW is 1, so gridX + gridW never crosses the
+  // 12-column canvas either way. Flips at "set DASHBOARD_GRID.columns = 16",
+  // the same mutation the shared package's pin flips at.
+  expectRejects(
+    widgetWriteSchema,
+    { ...validGaugeWidget, gridX: 12, gridW: 1 },
+    "gridX at DASHBOARD_GRID.columns itself (12) exceeds the per-field bound (max is columns - 1) today",
+  );
+  expectAccepts(
+    widgetWriteSchema,
+    { ...validGaugeWidget, gridX: 11, gridW: 1 },
+    "gridX at DASHBOARD_GRID.columns - 1 (11) is accepted",
+  );
+
+  // Isolates eachWidgetFitsTheGrid, the array-level superRefine, from the
+  // per-field bounds above: gridX (11) and gridW (2) are each individually
+  // legal, but their sum (13) exceeds today's 12-column canvas. This is the
+  // assertion the mutation table names: "a 16-wide widget passes the array
+  // refinement" — at columns=16 this sum-13 widget is well inside the
+  // widened canvas and parses.
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validGaugeWidget, gridX: 11, gridW: 2 }] },
+    ["widgets", 0, "gridW"],
+    ["12-column canvas"],
+    "gridX 11 + gridW 2 (13) exceeds today's 12-column canvas though both individual bounds are legal",
+  );
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validGaugeWidget, gridX: 11, gridW: 1 }] },
+    "gridX 11 + gridW 1 (12) exactly fills the canvas and is accepted",
+  );
 }
