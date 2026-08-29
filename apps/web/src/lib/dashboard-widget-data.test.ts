@@ -4,6 +4,7 @@ import {
   runChartSeriesOrderingTests,
   runPointRefsForTests,
   runSingleValueWidgetTests,
+  runStalenessTests,
   runZeroBindingsTests,
 } from "./dashboard-widget-data.spec";
 
@@ -23,5 +24,9 @@ describe("dashboard widget data", () => {
 
   it("orders a chart's series by sortOrder, not by array position", () => {
     runChartSeriesOrderingTests();
+  });
+
+  it("ages a reading through the ADR 0027 staleness gate rather than showing it as live forever", () => {
+    runStalenessTests();
   });
 });

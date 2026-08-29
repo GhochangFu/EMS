@@ -4,10 +4,13 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aFailedValueTileShowsTheTilesOwnFailureLine,
+  aFreshReadyWidgetShowsNoOfflineBadge,
   aLiveTankWithNoReadingSaysSoInsideTheVessel,
   aReadyTankShowsItsPercentageAndNamesTheVessel,
   aReadyValueTileShowsTheFormattedReadingAndItsUnit,
   aReadyWidgetShowsNoPlaceholder,
+  aStaleReadyValueTileShowsKpiTilesOwnStaleNote,
+  aStaleReadyWidgetSaysOfflineWithoutHidingTheReading,
   aValueTileDrawsOneCardWithOneHeading,
   anUntitledWidgetFallsBackToItsCatalogLabel,
   eachNonReadyStateReplacesTheWidgetBody,
@@ -59,5 +62,17 @@ describe("F3.1c widget rendering", () => {
 
   it("shows the tile's own failure line when a value tile fails", () => {
     aFailedValueTileShowsTheTilesOwnFailureLine();
+  });
+
+  it("says Offline on a stale WidgetFrame widget without hiding the reading", () => {
+    aStaleReadyWidgetSaysOfflineWithoutHidingTheReading();
+  });
+
+  it("shows no Offline badge on a fresh, ready WidgetFrame widget", () => {
+    aFreshReadyWidgetShowsNoOfflineBadge();
+  });
+
+  it("shows KpiTile's own stale note on a stale value tile", () => {
+    aStaleReadyValueTileShowsKpiTilesOwnStaleNote();
   });
 });

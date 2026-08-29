@@ -14,6 +14,7 @@ type TankLevelWidgetProps = {
   title: string;
   status: WidgetStatus;
   primary: number | null;
+  stale?: boolean;
   config: TankLevelConfig;
 };
 
@@ -33,14 +34,14 @@ type TankLevelWidgetProps = {
  * the vessel's own coordinate system, also owned there so the two files
  * cannot drift out of agreement.
  */
-export function TankLevelWidget({ title, status, primary, config }: TankLevelWidgetProps) {
+export function TankLevelWidget({ title, status, primary, stale, config }: TankLevelWidgetProps) {
   const pct = tankFillPercent(primary, config.fullScale);
   const tone = config.fillTone ?? "ok";
   const color = WIDGET_TONE_COLOR[tone];
   const { y, height, label, readout } = tankFillGeometry(pct, config.decimals);
 
   return (
-    <WidgetFrame title={title} status={status}>
+    <WidgetFrame title={title} status={status} stale={stale}>
       <svg
         role="img"
         aria-label={`${title}: ${label}`}

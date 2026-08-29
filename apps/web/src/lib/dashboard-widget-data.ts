@@ -1,6 +1,7 @@
 import { encodePointRef } from "@bms/shared";
 import type { DashboardDto, DashboardWidgetDto, DashboardWidgetPointDto } from "@bms/shared";
 
+import { isStale, readingTimestampMs } from "./schematic-telemetry";
 import type { WidgetSeries, WidgetSeriesPoint } from "./widget-catalog";
 import type { WidgetData } from "../components/widgets/dashboard-widget";
 
@@ -13,12 +14,20 @@ import type { WidgetData } from "../components/widgets/dashboard-widget";
  * or a running API.
  */
 
+/** One point's latest reading, carrying `time` beside `value` — review finding (HIGH): a
+ * value with no timestamp cannot be aged, so nothing downstream could tell a dead sensor's
+ * frozen last reading from a live one. `time` is the same ISO string shape `TelemetryReading`
+ * carries, read through `readingTimestampMs`/`isStale` (`schematic-telemetry.ts`) — the SAME
+ * gate and the SAME `FRESH_MS` window the seven control-room pages already use, not a second
+ * one invented here. */
+export type LatestReading = { readonly value: number; readonly time: string };
+
 /** A point's latest reading, keyed by `encodePointRef(assetId, pointKey)`. `null` is a point
  * that has never reported, not a missing entry — a genuinely absent ref (never resolved,
  * still loading) is also read as `null` here, and the caller decides whether that distinction
  * needs a "loading" status of its own; this mapper always answers `"ready"` once a widget has
  * at least one binding, per ADR 0047 Amendment 1 (see `widgetDataFor`). */
-export type LatestByRef = ReadonlyMap<string, number | null>;
+export type LatestByRef = ReadonlyMap<string, LatestReading | null>;
 
 /** One bound point's recent history, keyed the same way. An absent ref reads as no samples,
  * not an error — the same "no data yet" reading `LatestByRef` gives a fresh binding. */
@@ -50,6 +59,26 @@ function primaryPoint(points: readonly DashboardWidgetPointDto[]): DashboardWidg
 }
 
 /**
+ * The freshest sample's age, across every series a `chart` widget draws — `null` when there
+ * is none. `WidgetSeriesPoint.t` is the same ISO shape a `LatestReading.time` carries, so this
+ * reuses `readingTimestampMs` rather than parsing dates a second way.
+ */
+function freshestSeriesMs(series: readonly WidgetSeries[], nowMs: number): number | null {
+  let latest: number | null = null;
+  for (const one of series) {
+    const last = one.points[one.points.length - 1];
+    if (!last) {
+      continue;
+    }
+    const ms = readingTimestampMs(last.t, nowMs);
+    if (ms !== null && (latest === null || ms > latest)) {
+      latest = ms;
+    }
+  }
+  return latest;
+}
+
+/**
  * Maps one widget's bindings and the two resolved data maps onto what
  * `DashboardWidget` renders.
  *
@@ -66,11 +95,21 @@ function primaryPoint(points: readonly DashboardWidgetPointDto[]): DashboardWidg
  * `primary: null` — `radial-gauge-widget.tsx`'s own docblock is the renderer
  * side of that distinction (a `null` primary pins the needle at `config.min`
  * instead of feeding ECharts a `NaN`).
+ *
+ * **`stale` (review finding, HIGH) is the ADR 0027 gate, reaching a dashboard widget for the
+ * first time.** Before this, `latestByRef` carried a bare value with no timestamp, so a dead
+ * sensor's last reading rendered exactly like a live one — and nothing forced a re-render while
+ * the socket stayed silent, which is the signal an outage removes. `nowMs` is an ARGUMENT, never
+ * read from the clock inside this pure function (the `widget-echarts-option.ts` rule), so the
+ * caller controls it and a test can pin it. No reading at all (`null`) reads as stale too —
+ * `isStale(null, nowMs)` already says so — because "never contacted" is no better evidence of
+ * life than "contacted long ago".
  */
 export function widgetDataFor(
   widget: DashboardWidgetDto,
   latestByRef: LatestByRef,
   historyByRef: HistoryByRef,
+  nowMs: number,
 ): WidgetData {
   if (widget.points.length === 0) {
     return { status: "empty" };
@@ -91,10 +130,12 @@ export function widgetDataFor(
         sortOrder: point.sortOrder,
         points: historyByRef.get(encodePointRef(point.assetId, point.pointKey)) ?? [],
       }));
-    return { status: "ready", primary: null, series };
+    return { status: "ready", primary: null, series, stale: isStale(freshestSeriesMs(series, nowMs), nowMs) };
   }
 
   const point = primaryPoint(widget.points);
-  const primary = point ? (latestByRef.get(encodePointRef(point.assetId, point.pointKey)) ?? null) : null;
-  return { status: "ready", primary, series: [] };
+  const reading = point ? (latestByRef.get(encodePointRef(point.assetId, point.pointKey)) ?? null) : null;
+  const primary = reading ? reading.value : null;
+  const lastSeenMs = reading ? readingTimestampMs(reading.time, nowMs) : null;
+  return { status: "ready", primary, series: [], stale: isStale(lastSeenMs, nowMs) };
 }

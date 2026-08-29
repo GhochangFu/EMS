@@ -5,7 +5,8 @@ import { io, type Socket } from "socket.io-client";
 import { encodePointRef, type DashboardDto, type TelemetryReading } from "@bms/shared";
 
 import { fetchTelemetryRecent } from "../api/telemetry";
-import { pointRefsFor, type HistoryByRef, type LatestByRef } from "../lib/dashboard-widget-data";
+import { pointRefsFor, type HistoryByRef, type LatestByRef, type LatestReading } from "../lib/dashboard-widget-data";
+import { STALE_TICK_MS } from "../lib/schematic-telemetry";
 import { socketBaseUrl } from "../lib/socket-url";
 import { useAuthStore } from "../stores/auth-store";
 
@@ -66,6 +67,22 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
     setLiveByRef(new Map());
   }, [refsKey]);
 
+  // Review finding (HIGH) — forces a re-render every `STALE_TICK_MS` so the caller's staleness
+  // gate is re-evaluated even when the socket stays silent, the same idiom
+  // `schematic-telemetry-context.tsx`'s own `staleTick` uses for the seven control-room pages.
+  // Without this, the only thing that could make a widget notice it had gone stale was an
+  // incoming socket message — exactly the signal an outage removes. The counter itself carries
+  // no information; it exists only to change this hook's return-triggering state on a timer.
+  const [, setStaleTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setStaleTick((n) => n + 1);
+    }, STALE_TICK_MS);
+    return () => {
+      window.clearInterval(id);
+    };
+  }, []);
+
   useEffect(() => {
     if (refs.length === 0) {
       return;
@@ -101,7 +118,7 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, refsKey]);
 
-  const latestByRef = new Map<string, number | null>();
+  const latestByRef = new Map<string, LatestReading | null>();
   const historyByRef = new Map<string, readonly { readonly t: string; readonly v: number | null }[]>();
 
   refs.forEach((ref, index) => {
@@ -116,7 +133,10 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
       ascending.map((reading) => ({ t: reading.time, v: reading.value })),
     );
     const latestLive = live[live.length - 1];
-    latestByRef.set(ref, (latestLive ?? seeded[0])?.value ?? null);
+    const latestReading = latestLive ?? seeded[0];
+    // Review finding (HIGH) — carries `time` beside `value`, so `widgetDataFor` can age this
+    // reading through `isStale` rather than treating a dead sensor's frozen last value as live.
+    latestByRef.set(ref, latestReading ? { value: latestReading.value, time: latestReading.time } : null);
   });
 
   return {

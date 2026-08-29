@@ -42,6 +42,11 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
   });
 
   const { latestByRef, historyByRef } = useDashboardTelemetry(dashboardQ.data);
+  // Read fresh on every render, so the periodic re-render `useDashboardTelemetry`'s own
+  // `staleTick` drives (review finding, HIGH) actually advances the clock `widgetDataFor` ages
+  // readings against — without this the tick would fire but every widget would keep comparing
+  // against the timestamp of whatever render last touched a socket message.
+  const now = Date.now();
 
   const tiles: WidgetTile[] = (dashboardQ.data?.widgets ?? []).map((widget) => ({
     key: widget.id,
@@ -88,7 +93,12 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
           <DashboardCanvas
             tiles={tiles}
             renderTile={(tile) => (
-              <DashboardWidgetLive widget={tile.widget} latestByRef={latestByRef} historyByRef={historyByRef} />
+              <DashboardWidgetLive
+                widget={tile.widget}
+                latestByRef={latestByRef}
+                historyByRef={historyByRef}
+                now={now}
+              />
             )}
           />
         ) : null}

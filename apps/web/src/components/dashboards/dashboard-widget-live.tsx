@@ -18,6 +18,9 @@ type DashboardWidgetLiveProps = {
  * need to change if the mapping seam ever moved.
  */
 export function DashboardWidgetLive({ widget, latestByRef, historyByRef, now }: DashboardWidgetLiveProps) {
-  const data = widgetDataFor(widget, latestByRef, historyByRef);
-  return <DashboardWidget widget={widget} data={data} now={now} />;
+  // Resolved ONCE and reused for both the staleness gate and the chart's rolling window — two
+  // clock reads in one render pass could otherwise disagree by the render's own duration.
+  const resolvedNow = now ?? Date.now();
+  const data = widgetDataFor(widget, latestByRef, historyByRef, resolvedNow);
+  return <DashboardWidget widget={widget} data={data} now={resolvedNow} />;
 }

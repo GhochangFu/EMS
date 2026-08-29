@@ -10,6 +10,7 @@ type RadialGaugeWidgetProps = {
   title: string;
   status: WidgetStatus;
   primary: number | null;
+  stale?: boolean;
   config: RadialGaugeConfig;
 };
 
@@ -23,14 +24,14 @@ type RadialGaugeWidgetProps = {
  * feeding ECharts a `NaN` — the empty state proper is `WidgetData.status ===
  * "empty"`, which `WidgetFrame` renders instead of this branch.
  */
-export function RadialGaugeWidget({ title, status, primary, config }: RadialGaugeWidgetProps) {
+export function RadialGaugeWidget({ title, status, primary, stale, config }: RadialGaugeWidgetProps) {
   const option = useMemo<EChartsOption>(
     () => buildRadialGaugeOption(config, primary ?? config.min),
     [config, primary],
   );
 
   return (
-    <WidgetFrame title={title} status={status}>
+    <WidgetFrame title={title} status={status} stale={stale}>
       <ReactECharts option={option} style={{ height: 220 }} notMerge lazyUpdate />
     </WidgetFrame>
   );

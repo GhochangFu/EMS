@@ -54,7 +54,7 @@ const IDENTITY = {
   points: [],
 };
 
-const READY_AT_750: WidgetData = { status: "ready", primary: 750, series: [] };
+const READY_AT_750: WidgetData = { status: "ready", primary: 750, series: [], stale: false };
 
 /**
  * A widget of each type, with the smallest config its arm accepts.
@@ -152,7 +152,7 @@ export function aLiveTankWithNoReadingSaysSoInsideTheVessel(): void {
   render(
     <DashboardWidget
       widget={sampleWidget("tank_level", "Clarifier tank")}
-      data={{ status: "ready", primary: null, series: [] }}
+      data={{ status: "ready", primary: null, series: [], stale: false }}
     />,
   );
 
@@ -252,4 +252,40 @@ export function aFailedValueTileShowsTheTilesOwnFailureLine(): void {
 
   expect(screen.getByText("Could not load")).toBeInTheDocument();
   expect(screen.queryByText("Could not load widget.")).not.toBeInTheDocument();
+}
+
+const STALE_AT_750: WidgetData = { status: "ready", primary: 750, series: [], stale: true };
+
+/**
+ * Review finding (HIGH) — a `WidgetFrame`-backed widget (everything but `value_tile`) must say
+ * it is offline when its reading is stale, WITHOUT hiding the reading itself: the value is
+ * still honest evidence, just old, the same call `KpiTile`'s own `stale` ring already makes
+ * elsewhere in this app. This is the assertion `widgetDataFor`'s own staleness computation would
+ * be invisible without — a correct `stale: true` that no renderer reads is the same defect as
+ * never computing it.
+ */
+export function aStaleReadyWidgetSaysOfflineWithoutHidingTheReading(): void {
+  render(<DashboardWidget widget={sampleWidget("tank_level", "Clarifier tank")} data={STALE_AT_750} />);
+
+  expect(screen.getByText("Offline")).toBeInTheDocument();
+  // The vessel still draws — a stale reading is not the same state as no reading at all.
+  expect(screen.getByRole("img", { name: "Clarifier tank: 75.0%" })).toBeInTheDocument();
+}
+
+/** A fresh, ready `WidgetFrame` widget shows no "Offline" badge — the narrow half of the
+ * assertion above, so the fix is a signal on stale data and not a badge shown unconditionally. */
+export function aFreshReadyWidgetShowsNoOfflineBadge(): void {
+  render(<DashboardWidget widget={sampleWidget("tank_level", "Clarifier tank")} data={READY_AT_750} />);
+
+  expect(screen.queryByText("Offline")).not.toBeInTheDocument();
+}
+
+/** `value_tile` does not go through `WidgetFrame` (it composes `KpiTile` directly), so its own
+ * stale indicator is `KpiTile`'s existing ring + note — the same idiom `dashboard-page.tsx`
+ * already drives from ADR 0027, reused rather than a second wording invented for this row. */
+export function aStaleReadyValueTileShowsKpiTilesOwnStaleNote(): void {
+  render(<DashboardWidget widget={sampleWidget("value_tile")} data={STALE_AT_750} />);
+
+  expect(screen.getByText(/stale/i)).toBeInTheDocument();
+  expect(screen.getByText("750.0")).toBeInTheDocument();
 }
