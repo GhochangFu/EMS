@@ -456,13 +456,18 @@ export default defineConfig({
       // margin does not absorb: `apps/api/src/calc/**` branches reachable
       // only from state a fresh `db:migrate` → `db:seed` may not reproduce
       // (the `F2.5` entry above), and `F4.33` (compressed chunks) recorded
-      // as still open. The measurement was also taken on this machine's
-      // long-lived database under `--no-file-parallelism`, neither of which
-      // is what CI runs (a fresh database, default parallelism, plain
-      // `pnpm test:coverage`). A threshold CI cannot meet is worse than a
-      // stale-low one and §4.6 leaves no clean escape — never lower a
-      // threshold to go green — so ~0.5–1.0 per axis is banked here instead
-      // of ~0.2, still catching roughly 14 of the 15 stale-low points.
+      // as still open. The measurement above was taken against this
+      // machine's long-lived database, not the fresh one `db:migrate` →
+      // `db:seed` produces per CI run — that is the divergence the margin
+      // is for. (An earlier version of this note also cited
+      // `--no-file-parallelism` as a reason to widen; that was wrong and is
+      // corrected here — parallelism changes how many worker processes run
+      // concurrently, not which lines execute, so it has no bearing on a
+      // coverage measurement and was never a real hazard to margin against.)
+      // A threshold CI cannot meet is worse than a stale-low one and §4.6
+      // leaves no clean escape — never lower a threshold to go green — so
+      // ~0.5–1.0 per axis is banked here instead of ~0.2, still catching
+      // roughly 14 of the 15 stale-low points.
       thresholds: {
         statements: 67.8,
         branches: 64.3,
