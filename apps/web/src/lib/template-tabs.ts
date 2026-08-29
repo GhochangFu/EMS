@@ -1,15 +1,23 @@
 /**
  * The detail page's tab registry (`F2.5`, ADR 0038 decision 2 — Unit 7).
  *
- * ADR 0038 names **exactly five** tabs, and names them so that the closed
- * sections cannot arrive by accident. Two content sections are reserved by the
- * API and one is deferred:
+ * ADR 0038 names **exactly six** tabs, and names them so that the closed
+ * sections cannot arrive by accident. Two content sections stay reserved by the
+ * API:
  *
  * - the two reserved section keys (`E1.1` and `E1.6` own them) are rejected by
  *   `templateContentSchema`, so a tab for either would always error, which is
  *   worse than no tab;
- * - the dashboard section carries only an ordering today, which belongs on the
- *   Points tab as `sortOrder`. It becomes a tab when `F3.1` gives it widgets.
+ * - `maintenance` is deliberately omitted — ADR 0038 *Not in this ADR*.
+ *
+ * **`dashboards` was the third of these until `F3.1e`, and it is now the sixth
+ * tab.** This docblock used to read *"the dashboard section carries only an
+ * ordering today, which belongs on the Points tab as `sortOrder`. It becomes a
+ * tab when `F3.1` gives it widgets."* `F3.1a` gave it widgets in `b0b4f3f`, so
+ * [ADR 0038](../../../../docs/adr/0038-template-authoring-ui.md) Amendment 4
+ * discharged that condition rather than restating it. The `sortOrder` control
+ * on the Points tab is untouched and the two surfaces coexist — Amendment 4
+ * rules that explicitly, so do not "tidy" one of them away.
  *
  * ## Why this is in `lib/` and not beside the strip that renders it
  *
@@ -25,7 +33,7 @@
  *
  * ## The registry is scanned as text, not only as a type
  *
- * A type cannot stop someone adding a sixth tab, so Unit 8's invariant reads
+ * A type cannot stop someone adding a seventh tab, so Unit 8's invariant reads
  * this file's source and extracts the entries. The registry is therefore a flat
  * array literal, one entry per line, `id` first, with a bare string literal —
  * no computed key, no spread, no construction from another module.
@@ -37,14 +45,15 @@
  * [...source.matchAll(/\bid:\s*"([a-z]+)"/g)].map((match) => match[1])
  * ```
  *
- * That returns exactly `details, points, calculations, kpis, alarms`, verified
- * against this file before Unit 7 closed. Anyone changing the shape below must
+ * That returns exactly `details, points, calculations, kpis, alarms,
+ * dashboards`, verified against this file when `F3.1e` added the sixth entry.
+ * Anyone changing the shape below must
  * re-run it — a broken regex returns nothing and reads as compliance, which is
  * why Unit 8 must also fail on an empty scan.
  */
 
-/** The five tabs, and the only five. */
-export type TemplateTabId = "details" | "points" | "calculations" | "kpis" | "alarms";
+/** The six tabs, and the only six. */
+export type TemplateTabId = "details" | "points" | "calculations" | "kpis" | "alarms" | "dashboards";
 
 export type TemplateTab = {
   id: TemplateTabId;
@@ -59,6 +68,7 @@ export const TEMPLATE_TABS: readonly TemplateTab[] = [
   { id: "calculations", label: "Calculations", hint: "Formulas for derived points, and when each one runs." },
   { id: "kpis", label: "KPIs", hint: "Named expressions over this template's points." },
   { id: "alarms", label: "Alarms", hint: "Thresholds, severities and the knowledge behind each one." },
+  { id: "dashboards", label: "Dashboards", hint: "Which points a dashboard shows, and the widgets drawn from them." },
 ];
 
 /** The tab a bare detail URL opens. */

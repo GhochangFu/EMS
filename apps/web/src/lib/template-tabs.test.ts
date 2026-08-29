@@ -8,7 +8,7 @@ import {
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
 describe("template tabs", () => {
-  it("holds exactly the five tabs ADR 0038 names", () => {
+  it("holds exactly the six tabs ADR 0038 names", () => {
     runRegistryShapeTests();
   });
 
