@@ -16,7 +16,7 @@ type TemplateTabStripProps = {
   onSelect: (tab: TemplateTabId) => void;
 };
 
-/** The five tabs, with the active one's hint underneath. */
+/** The six tabs, with the active one's hint underneath. */
 export function TemplateTabStrip({ active, onSelect }: TemplateTabStripProps) {
   const current = TEMPLATE_TABS.find((tab) => tab.id === active) ?? TEMPLATE_TABS[0];
 

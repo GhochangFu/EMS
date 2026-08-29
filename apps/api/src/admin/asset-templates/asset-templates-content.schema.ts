@@ -14,13 +14,13 @@ import {
   gaugeThresholdSchema,
   MAX_FORMULA_POINT_REFS,
   MAX_GAUGE_THRESHOLDS,
-  MAX_WIDGET_POINTS,
   radialGaugeConfigObjectSchema,
   tankLevelConfigSchema,
   validateFormula,
   valueTileConfigSchema,
+  WIDGET_POINT_CARDINALITY,
 } from "@bms/shared";
-import type { TemplateContent } from "@bms/shared";
+import type { TemplateContent, WidgetType } from "@bms/shared";
 
 import {
   maintenanceCategorySchema,
@@ -150,10 +150,6 @@ const MAX_FEATURED_POINTS = 50;
 // widgets[] → widget → config → thresholds[] → threshold is 8 levels against
 // MAX_CONTENT_DEPTH = 12. It fits; a further nested option would not.
 const MAX_DASHBOARD_WIDGETS = 40;
-// Reused, not restated, so a template widget cannot be authored with more bindings than the
-// live dashboard `F3.1b` instantiates it into will accept. Same discipline as
-// MAX_KPI_POINT_REFS below.
-const MAX_WIDGET_POINT_KEYS = MAX_WIDGET_POINTS;
 // ADR 0036 decision 8: reused, not restated, so the two numbers cannot drift.
 const MAX_KPI_POINT_REFS = MAX_FORMULA_POINT_REFS;
 
@@ -296,13 +292,32 @@ const templateMaintenancePlanSchema = z
  * author gets a 400 naming the field rather than a 500 carrying a constraint name.
  */
 const templateWidgetIdentityFields = {
-  pointKeys: z.array(pointKeyRef).min(1).max(MAX_WIDGET_POINT_KEYS),
   title: z.string().max(255).optional(),
   gridX: z.number().int().min(0).max(11),
   gridY: z.number().int().min(0),
   gridW: z.number().int().min(1).max(12),
   gridH: z.number().int().min(1).max(24),
 };
+
+/**
+ * How many point keys one widget of this type may bind (ADR 0047 Amendment 3).
+ *
+ * The numbers are **not** restated here. `WIDGET_POINT_CARDINALITY` is where the
+ * cardinality is declared (ADR 0047 Amendment 2 §1) and every surface derives from
+ * it; an arm that hardcodes `1` re-opens the seam that amendment closed.
+ *
+ * `.min(1)` stays on every arm even though the shared docblock's *"`min` is an
+ * authoring rule and never a stored invariant"* (`dashboard-builder.ts:214-218`)
+ * says a live widget may legitimately fall to zero bindings after a cascaded
+ * point deletion. That note is about the **read** path `F3.1b`/`F3.1c` own — this
+ * is the **authoring** body, where a widget with no binding is not a widget an
+ * author can usefully create.
+ */
+const widgetPointKeys = (widgetType: WidgetType) =>
+  z
+    .array(pointKeyRef)
+    .min(WIDGET_POINT_CARDINALITY[widgetType].min)
+    .max(WIDGET_POINT_CARDINALITY[widgetType].max);
 
 /**
  * The four arms, spread rather than intersected — and the reason is that this surface must
@@ -331,6 +346,7 @@ export const templateDashboardWidgetVariants = z.discriminatedUnion("widgetType"
     .object({
       ...templateWidgetIdentityFields,
       widgetType: z.literal("radial_gauge"),
+      pointKeys: widgetPointKeys("radial_gauge"),
       // `.strict()` before `.refine()`: the shared export is a ZodEffects, which has no
       // `.strict()`, so the object and the range rule are composed here from the two pieces
       // `@bms/shared` exports for exactly this. The rule is still declared once.
@@ -360,6 +376,7 @@ export const templateDashboardWidgetVariants = z.discriminatedUnion("widgetType"
     .object({
       ...templateWidgetIdentityFields,
       widgetType: z.literal("tank_level"),
+      pointKeys: widgetPointKeys("tank_level"),
       config: tankLevelConfigSchema.strict(),
     })
     .strict(),
@@ -367,6 +384,7 @@ export const templateDashboardWidgetVariants = z.discriminatedUnion("widgetType"
     .object({
       ...templateWidgetIdentityFields,
       widgetType: z.literal("value_tile"),
+      pointKeys: widgetPointKeys("value_tile"),
       config: valueTileConfigSchema.strict(),
     })
     .strict(),
@@ -374,6 +392,7 @@ export const templateDashboardWidgetVariants = z.discriminatedUnion("widgetType"
     .object({
       ...templateWidgetIdentityFields,
       widgetType: z.literal("chart"),
+      pointKeys: widgetPointKeys("chart"),
       config: chartConfigSchema.strict(),
     })
     .strict(),

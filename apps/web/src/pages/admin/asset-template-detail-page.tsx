@@ -74,6 +74,7 @@ import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { AlarmsTab } from "../../components/asset-templates/alarms-tab";
 import { CalculationsTab } from "../../components/asset-templates/calculations-tab";
+import { DashboardsTab } from "../../components/asset-templates/dashboards-tab";
 import { DetailsTab } from "../../components/asset-templates/details-tab";
 import { KpisTab } from "../../components/asset-templates/kpis-tab";
 import { PointsTab } from "../../components/asset-templates/points-tab";
@@ -335,11 +336,13 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
             >
               All templates
             </Link>
-            {/* `F2.6` (ADR 0039 decision 8). In the page chrome, not a sixth
-                tab: ADR 0038 names exactly five and `tests/adr-0038-template-
+            {/* `F2.6` (ADR 0039 decision 8). In the page chrome, not a seventh
+                tab: ADR 0038 names exactly six and `tests/adr-0038-template-
                 authoring-ui.test.ts` keeps it that way (D-3). Migration is also
-                not authoring — it acts on assets, and the five tabs are all
-                about this template's own shape. */}
+                not authoring — it acts on assets, and the six tabs are all
+                about this template's own shape. That second reason is the
+                load-bearing one and it did not change when `F3.1e` added the
+                sixth tab. */}
             <Link
               to={`/admin/asset-templates/${template.id}/versions`}
               className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
@@ -571,7 +574,17 @@ function TemplateTabBody({
       />
     );
   }
-  // Unreachable while `TemplateTabId` names five tabs. Adding a sixth without
+  if (tab === "dashboards") {
+    return (
+      <DashboardsTab
+        template={template}
+        editable={editable}
+        onSaved={onSaved}
+        onDirtyChange={onDirtyChange}
+      />
+    );
+  }
+  // Unreachable while `TemplateTabId` names six tabs. Adding a seventh without
   // an arm here is a type error on this line, naming the tab that has no
   // editor — rather than a silent render of whichever arm came last.
   const unreachable: never = tab;

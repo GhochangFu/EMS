@@ -54,9 +54,14 @@ export function runCleanTabTests(): void {
 /**
  * A dirty tab blocks every switch away from it.
  *
- * Asserted over all twenty ordered pairs rather than one example, because the
+ * Asserted over all thirty ordered pairs rather than one example, because the
  * defect was that *all five* tabs lost state — a guard wired to one of them
  * would satisfy a single-case test and leave four tabs still losing edits.
+ *
+ * **"All five" is deliberately not updated to six.** It narrates the `F2.5`
+ * defect, when there were five tabs and five of them lost state. The count of
+ * *pairs* moved to thirty in `F3.1e` because a sixth tab exists now; the record
+ * of what was wrong that day does not move with it.
  */
 export function runDirtyTabTests(): void {
   let blocked = 0;
@@ -71,9 +76,15 @@ export function runDirtyTabTests(): void {
     }
   }
   // Anti-vacuity: if the registry or this loop ever stopped producing pairs,
-  // every assertion above would pass by never running. Five tabs give twenty
-  // ordered pairs.
-  assert(blocked === 20, `expected 20 blocked pairs, checked ${blocked}`);
+  // every assertion above would pass by never running.
+  //
+  // **The number is arithmetic, not a tab count.** The loop walks every ordered
+  // pair of *distinct* tabs, so `n` tabs give `n(n-1)` pairs: five gave twenty,
+  // six give thirty. ADR 0038 Amendment 4 requires this derivation written down,
+  // because the word "five" appears nowhere in this file — a search for the tab
+  // count does not find this line, and the next tab change should be arithmetic
+  // rather than archaeology.
+  assert(blocked === 30, `expected 30 blocked pairs, checked ${blocked}`);
 }
 
 /**

@@ -18,11 +18,15 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-/** Five tabs, the five ADR 0038 names, in the ADR's order. */
+/** Six tabs, the six ADR 0038 names, in the ADR's order (Amendment 4). */
 export function runRegistryShapeTests(): void {
-  assert(TEMPLATE_TABS.length === 5, `ADR 0038 names five tabs, got ${TEMPLATE_TABS.length}`);
   assert(
-    TEMPLATE_TABS.map((tab) => tab.id).join(",") === "details,points,calculations,kpis,alarms",
+    TEMPLATE_TABS.length === 6,
+    `ADR 0038 Amendment 4 names six tabs, got ${TEMPLATE_TABS.length}`,
+  );
+  assert(
+    TEMPLATE_TABS.map((tab) => tab.id).join(",") ===
+      "details,points,calculations,kpis,alarms,dashboards",
     `the registry drifted — got ${TEMPLATE_TABS.map((tab) => tab.id).join(",")}`,
   );
   assert(
@@ -36,17 +40,20 @@ export function runRegistryShapeTests(): void {
 }
 
 /**
- * The three closed sections have no tab.
+ * The closed sections have no tab.
  *
  * The two reserved keys are refused by `templateContentSchema`, so a tab for
- * either would always error — worse than no tab. The dashboard section carries
- * only an ordering, which is the Points tab's `sortOrder`. Asserted over the
- * ids rather than trusted to the count: five tabs is still five tabs if one of
+ * either would always error — worse than no tab. `maintenance` is deliberately
+ * omitted. **`dashboards` left this list in `F3.1e`** (ADR 0038 Amendment 4):
+ * it carried only an ordering when this was written, and `F3.1a` gave it
+ * widgets, which is the condition decision 2 set for it becoming a tab.
+ * Asserted over the ids rather than trusted to the count: six tabs is still six
+ * tabs if one of
  * them is the wrong one.
  */
 export function runNoClosedSectionTabTests(): void {
   const ids = TEMPLATE_TABS.map((tab) => tab.id as string);
-  for (const closed of ["health", "optimisation", "dashboards", "maintenance"]) {
+  for (const closed of ["health", "optimisation", "maintenance"]) {
     assert(!ids.includes(closed), `${closed} has no tab in this ADR — got ${ids.join(",")}`);
   }
 }
@@ -70,7 +77,14 @@ export function runResolveTabTests(): void {
   // by accident, so a loop that tested those first would fail with a message
   // about the empty string and hide the case that actually matters — a URL
   // naming a tab that does not exist, rendering a body for it.
-  for (const bad of ["nonsense", "health", "dashboards", "Details", "", undefined, null]) {
+  // `"dashboards"` left this list in `F3.1e`, and it is a **different** removal
+  // from the closed-section one above — ADR 0038 Amendment 4 rules the two
+  // separately for that reason. This list is about ids that must NOT resolve;
+  // once `dashboards` is a real tab, asserting it falls back to Details
+  // contradicts the "every tab id resolves to itself" loop directly. The other
+  // six entries stay, and the ordering note above still holds: `"nonsense"` is
+  // the plausible-but-wrong id and stays first.
+  for (const bad of ["nonsense", "health", "Details", "", undefined, null]) {
     assert(
       resolveTemplateTab(bad) === DEFAULT_TEMPLATE_TAB,
       `${JSON.stringify(bad)} must fall back to Details, got ${resolveTemplateTab(bad)}`,
