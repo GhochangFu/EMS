@@ -24,6 +24,8 @@ import {
   assertCrossTenantSlugReadIs404,
   assertFleetBranchExcludesAForeignOrganization,
   assertForeignOrgIdUpdateIs404SameAsNonexistent,
+  assertLocationAdminCannotRehomeOrganizationWideDashboard,
+  assertLocationAdminMayStillUpdateItsOwnLocationDashboard,
   assertPutWidgetsDtoReflectsTheWrite,
   assertUnauthorizedUpdateWithScopeConflictIs404,
 } from "./dashboards.service.rls.integration.spec";
@@ -51,6 +53,8 @@ const LEAK_ORG_CODE = `F31B-LEAK-${RUN}`;
 const LEAK_SLUG = `f31b-leak-${RUN}`;
 const MULTI_ORG_EMAIL = `f31b-multiorg-${RUN}@integration.invalid`;
 const SCOPE_CONFLICT_SLUG = `f31b-conflict-${RUN}`;
+const ORG_WIDE_REHOME_SLUG = `f31d-orgwide-rehome-${RUN}`;
+const OWN_LOCATION_SLUG = `f31d-own-location-${RUN}`;
 
 describe.skipIf(!connectionString)(
   "F3.1b — DashboardsService pool routing, audit stamping, cross-tenant read/write",
@@ -67,6 +71,7 @@ describe.skipIf(!connectionString)(
     let phewbLocationId: string;
     let phewbAssetGroupId: string;
     let eskomPointId: string;
+    let eskomLocationAdminLocationId: string;
     let leakOrgIdForCleanup: string | undefined;
     let multiOrgUserIdForCleanup: string | undefined;
     /** Set only when the seed supplied no PHEWB asset group and this suite made one. */
@@ -151,6 +156,20 @@ describe.skipIf(!connectionString)(
       eskomPointId = eskomPoint.rows[0]?.id ?? "";
       if (!eskomPointId) {
         throw new Error("F3.1b: ESKOM has no asset_points — run pnpm db:seed");
+      }
+
+      // wc-admin@bms.local's own granted location — the site the F3.1d re-home exploit tries
+      // to move an organization-wide dashboard onto.
+      const eskomLocationAdminLocation = await ownerPool.query<{ id: string }>(
+        `SELECT l.id
+           FROM bms.locations l
+           JOIN bms.user_location_access ula ON ula.location_id = l.id
+           JOIN bms.users u ON u.id = ula.user_id
+          WHERE u.email = 'wc-admin@bms.local' LIMIT 1`,
+      );
+      eskomLocationAdminLocationId = eskomLocationAdminLocation.rows[0]?.id ?? "";
+      if (!eskomLocationAdminLocationId) {
+        throw new Error("F3.1d: wc-admin@bms.local has no location grant — run pnpm db:seed");
       }
     }, 60_000);
 
@@ -347,6 +366,54 @@ describe.skipIf(!connectionString)(
         twoOrgActor,
         [eskomOrgId, phewbOrgId],
         { id: leakDashboard.id, slug: LEAK_SLUG },
+      );
+    }, 60_000);
+
+    it("F3.1d review (HIGH) — a location_admin cannot re-home an organization-wide dashboard onto its own site", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+
+      // Organization-wide (both scope columns NULL), in ESKOM — the location_admin's OWN
+      // organization, which is the sharp case: read is organization-wide by design, so this
+      // admin can already see the row through list()/getBySlug() before ever PATCHing it.
+      const orgWideDashboard = await service.create(globalAdmin, {
+        organizationId: eskomOrgId,
+        slug: ORG_WIDE_REHOME_SLUG,
+        name: "F3.1d org-wide re-home proof",
+      } as Parameters<DashboardsService["create"]>[1]);
+      dashboardIds.push(orgWideDashboard.id);
+
+      const eskomLocationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
+      await assertLocationAdminCannotRehomeOrganizationWideDashboard(
+        service,
+        eskomLocationAdmin,
+        orgWideDashboard.id,
+        eskomLocationAdminLocationId,
+      );
+    }, 60_000);
+
+    it("F3.1d review (HIGH) — the same location_admin may still PATCH a dashboard already scoped to its own location", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+
+      const ownLocationDashboard = await service.create(globalAdmin, {
+        organizationId: eskomOrgId,
+        slug: OWN_LOCATION_SLUG,
+        name: "F3.1d own-location proof",
+        locationId: eskomLocationAdminLocationId,
+      } as Parameters<DashboardsService["create"]>[1]);
+      dashboardIds.push(ownLocationDashboard.id);
+
+      const eskomLocationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
+      await assertLocationAdminMayStillUpdateItsOwnLocationDashboard(
+        service,
+        eskomLocationAdmin,
+        ownLocationDashboard.id,
+        "F3.1d own-location proof (renamed)",
       );
     }, 60_000);
   },
