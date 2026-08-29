@@ -1,4 +1,6 @@
 import {
+  MAX_WIDGET_POINTS,
+  WIDGET_POINT_CARDINALITY,
   chartConfigSchema,
   chartSeriesKindSchema,
   dashboardWidgetDtoSchema,
@@ -186,4 +188,52 @@ export function runDashboardBuilderTests(): void {
     "a widget overflowing the 12-column canvas must be refused",
   );
   expectRejects(dashboardWidgetDtoSchema, { ...widget, gridW: 0 }, "a zero-width widget");
+}
+
+/**
+ * ADR 0047 Amendment 2 — the per-type point cardinality map.
+ *
+ * The map is the seam between `F3.1b`'s write path and `F3.1c`'s catalog, so what these
+ * assertions protect is the *agreement* between two packages that cannot import each other.
+ */
+export function runWidgetPointCardinalityTests(): void {
+  // The `Record` type already refuses a missing key, so this loop cannot fail while the
+  // declaration keeps its type. It is kept deliberately, and only for the case the type cannot
+  // see: an entry reintroduced through a cast, or a weakening to `Partial<Record<…>>`. Stated
+  // rather than left implicit, because `F3.1a` shipped three assertions that passed while
+  // checking nothing and the fix is to say what an assertion is for.
+  for (const widgetType of widgetTypeSchema.options) {
+    assert(
+      WIDGET_POINT_CARDINALITY[widgetType] !== undefined,
+      `every widget type needs a cardinality entry, ${widgetType} has none`,
+    );
+  }
+
+  // The bound the type cannot express. A per-type maximum may be lower than the global cap and
+  // never higher — otherwise `F3.1b` accepts a widget that `MAX_WIDGET_POINTS` (and the template
+  // authoring surface's `MAX_WIDGET_POINT_KEYS`, reconciled against it) refuses one layer down.
+  for (const widgetType of widgetTypeSchema.options) {
+    const { min, max } = WIDGET_POINT_CARDINALITY[widgetType];
+    assert(min >= 1, `${widgetType} must bind at least one point, got min ${min}`);
+    assert(min <= max, `${widgetType} has min ${min} above max ${max}`);
+    assert(
+      max <= MAX_WIDGET_POINTS,
+      `${widgetType} allows ${max} points, above the global cap of ${MAX_WIDGET_POINTS}`,
+    );
+  }
+
+  // The four values, pinned by name. Written against `MAX_WIDGET_POINTS` rather than against
+  // `8`, so the pin does not become the third copy of that number.
+  for (const widgetType of ["radial_gauge", "tank_level", "value_tile"] as const) {
+    assert(
+      WIDGET_POINT_CARDINALITY[widgetType].min === 1 &&
+        WIDGET_POINT_CARDINALITY[widgetType].max === 1,
+      `${widgetType} takes exactly one point, got ${JSON.stringify(WIDGET_POINT_CARDINALITY[widgetType])}`,
+    );
+  }
+  assert(
+    WIDGET_POINT_CARDINALITY.chart.min === 1 &&
+      WIDGET_POINT_CARDINALITY.chart.max === MAX_WIDGET_POINTS,
+    `chart takes 1..MAX_WIDGET_POINTS series, got ${JSON.stringify(WIDGET_POINT_CARDINALITY.chart)}`,
+  );
 }

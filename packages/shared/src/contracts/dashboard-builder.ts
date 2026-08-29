@@ -199,6 +199,38 @@ export const dashboardWidgetSpecSchema = z.discriminatedUnion("widgetType", [
 export const MAX_WIDGET_POINTS = 8;
 
 /**
+ * How many points **each type** may bind (ADR 0047 Amendment 2).
+ *
+ * **This is the one catalog field that lives here rather than in `F3.1c`'s frontend registry,
+ * and the reason is the consumer, not the data.** Decision 2 put label, icon, default size and
+ * cardinality in `apps/web/src/lib/widget-catalog.ts` because the vocabulary is presentation
+ * (the plain-label→ECharts series mapping is decision 4's, in the same file). Three of those
+ * four still are. Cardinality is not: `F3.1b` must
+ * refuse a two-point gauge *on write*, and `apps/api` cannot import from `apps/web`. The split
+ * line is therefore **validation rule versus presentation**, not contract versus catalog.
+ * `widget-catalog.ts` imports these numbers rather than restating them, so the write path and
+ * the renderer cannot disagree about which dashboards are legal.
+ *
+ * **`min` is an authoring rule and never a stored invariant.** `dashboard_widget_points.point_id`
+ * is `ON DELETE CASCADE`, so retiring a sensor can legitimately take a live gauge to zero
+ * bindings. That state must stay *readable* — `F3.1c` renders it as "no data bound". A read path
+ * that refuses or hides a widget with fewer than `min` bindings turns a retired sensor into a
+ * missing dashboard.
+ *
+ * The type is a `Record` over the enum, so a fifth widget type fails the build here rather than
+ * binding an unbounded number of points in silence.
+ */
+export const WIDGET_POINT_CARDINALITY: Record<
+  z.infer<typeof widgetTypeSchema>,
+  { readonly min: number; readonly max: number }
+> = {
+  radial_gauge: { min: 1, max: 1 },
+  tank_level: { min: 1, max: 1 },
+  value_tile: { min: 1, max: 1 },
+  chart: { min: 1, max: MAX_WIDGET_POINTS },
+};
+
+/**
  * One point binding. A row in `bms.dashboard_widget_points`, never an id inside JSON.
  *
  * **`sortOrder` carries no `.min(0)`, deliberately.** `sort_order integer NOT NULL DEFAULT 0`
