@@ -8,6 +8,7 @@ import {
   chartStackedSetsStackOnEverySeriesAbsentSetsNone,
   chartWindowMinutesSetsTheXAxisLowerBoundRelativeToNow,
   chartYAxisLabelSetsNameAbsentOmitsIt,
+  gaugeMinOffsetIsSubtractedNotIgnored,
   gaugeNeedleValueIsClampedIntoRange,
   gaugePutsMinMaxOnTheSeriesAndValueInData,
   gaugeThresholdOutsideRangeIsClampedNotDropped,
@@ -35,6 +36,10 @@ describe("widget-echarts-option: buildRadialGaugeOption", () => {
 
   it("clamps the needle value into [min,max]", () => {
     gaugeNeedleValueIsClampedIntoRange();
+  });
+
+  it("subtracts a non-zero min rather than treating the range as starting at 0", () => {
+    gaugeMinOffsetIsSubtractedNotIgnored();
   });
 });
 

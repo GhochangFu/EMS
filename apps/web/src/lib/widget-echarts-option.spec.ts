@@ -75,6 +75,34 @@ export function gaugeThresholdsBecomeAscendingFractionsEndingAtOne(): void {
   }
 }
 
+/**
+ * Every other gauge fixture in this file is `min: 0, max: 100` — both
+ * ECharts' own default AND the identity for `(t.value - min) / (max - min)`,
+ * so `min` never actually has to be subtracted for those to pass. A non-zero
+ * `min` is the only fixture that can tell `(t.value - min) / range` apart
+ * from `t.value / range`, and the only one that can tell `series.min` reading
+ * `config.min` apart from a hardcoded `0`.
+ */
+export function gaugeMinOffsetIsSubtractedNotIgnored(): void {
+  const config: RadialGaugeConfig = {
+    min: 6,
+    max: 8,
+    thresholds: [{ value: 7.5, tone: "warning" }],
+  };
+  const option = asGauge(buildRadialGaugeOption(config, 7));
+  const series = option.series[0];
+
+  expect(series.min, "a hardcoded series.min=0 would pass every other fixture in this file").toBe(6);
+  expect(series.max).toBe(8);
+
+  const stops = series.axisLine.lineStyle.color;
+  expect(
+    stops[0],
+    "(7.5 - 6) / 2 = 0.75; the un-offset (7.5 / 2 = 3.75, clamped to 1) is the defect this pins",
+  ).toEqual([0.75, WIDGET_TONE_COLOR.ok]);
+  expect(stops[1]).toEqual([1, WIDGET_TONE_COLOR.warning]);
+}
+
 export function gaugeThresholdsAreSortedRegardlessOfStorageOrder(): void {
   const outOfOrder: RadialGaugeConfig = {
     min: 0,
@@ -100,12 +128,16 @@ export function gaugeThresholdsAreSortedRegardlessOfStorageOrder(): void {
 }
 
 export function gaugeThresholdOutsideRangeIsClampedNotDropped(): void {
+  // min: 6 rather than 0: -2 / 100 and (-2 - 0) / 100 both clamp to the same
+  // 0, so a 0-min fixture cannot tell the offset apart from its absence. At
+  // min: 6, the un-offset form (2 / 2 = 1) and the correct form
+  // ((2 - 6) / 2 = -2, clamped to 0) land at opposite ends of the arc.
   const config: RadialGaugeConfig = {
-    min: 0,
-    max: 100,
-    thresholds: [{ value: -20, tone: "warning" }],
+    min: 6,
+    max: 8,
+    thresholds: [{ value: 2, tone: "warning" }],
   };
-  const stops = asGauge(buildRadialGaugeOption(config, 50)).series[0].axisLine.lineStyle.color;
+  const stops = asGauge(buildRadialGaugeOption(config, 7)).series[0].axisLine.lineStyle.color;
   expect(stops.length, "a threshold outside [min,max] must still produce a stop, not vanish").toBeGreaterThan(0);
   expect(stops[0][0]).toBe(0);
 }
