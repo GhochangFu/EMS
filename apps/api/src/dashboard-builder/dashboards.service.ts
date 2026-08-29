@@ -295,6 +295,21 @@ export class DashboardsService {
 
     const nextLocationId = body.locationId !== undefined ? body.locationId : existing.locationId;
     const nextAssetGroupId = body.assetGroupId !== undefined ? body.assetGroupId : existing.assetGroupId;
+    const nextScope: DashboardScope = { locationId: nextLocationId, assetGroupId: nextAssetGroupId };
+
+    // Authorization BEFORE the scope-validity check, and deliberately in this order. Same
+    // message whether this dashboard belongs to another organization or does not exist —
+    // rules.service.ts:753-757's precedent: a distinct 403/400 here would let a caller tell "no
+    // such dashboard" apart from "exists but not yours", a cross-tenant existence oracle. Doing
+    // the "both scope columns set" check FIRST would leak exactly that through a narrower door:
+    // a caller who supplies only `locationId` against a FOREIGN dashboard whose stored
+    // `assetGroupId` happens to be non-null would see a 400 (revealing the row exists and its
+    // scope shape) before ever reaching this refusal. canManageDashboard does not itself depend
+    // on the two columns being mutually exclusive, so checking it first is safe either way.
+    if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, nextScope))) {
+      throw new NotFoundException("Dashboard not found");
+    }
+
     if (nextLocationId !== null && nextAssetGroupId !== null) {
       // The merged row, not just this request's body — a PATCH that sets only one of the two
       // columns cannot see the other's already-stored value, so this check must run after the
@@ -302,14 +317,6 @@ export class DashboardsService {
       throw new BadRequestException(
         "at most one of locationId or assetGroupId may be set — both null is organization-wide",
       );
-    }
-    const nextScope: DashboardScope = { locationId: nextLocationId, assetGroupId: nextAssetGroupId };
-
-    // Same message whether this dashboard belongs to another organization or does not exist —
-    // rules.service.ts:753-757's precedent: a distinct 403 here would let a caller tell "no such
-    // dashboard" apart from "exists but not yours", a cross-tenant existence oracle.
-    if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, nextScope))) {
-      throw new NotFoundException("Dashboard not found");
     }
 
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
