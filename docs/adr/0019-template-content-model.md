@@ -614,3 +614,119 @@ Whether decision 1's pairing is right, or `operator` should stay required
 (reading "gt" with no number as still-useful philosophy). Drafted as paired
 because a comparator without a value adds nothing ISA-18.2 rationalization
 needs — the `message` carries the meaning.
+
+---
+
+## Amendment 3 — `dashboards` leaves *Anchored* (`F3.1a`, ADR 0047) (2026-08-29)
+
+**Accepted (2026-08-29).** Records a change this ADR predicted and
+[ADR 0047](0047-configurable-dashboards.md) made. Filed separately from ADR
+0047's `chore(agents):` sweep (PR #203) because amending an ADR is the owner's
+call, not sweep bookkeeping — the same reason ADR 0029 Amendment 3 Errata 1
+landed as its own `docs(adr):` PR (#198).
+
+No DDL. No new dependency. Nothing in the shipped code changes; this amendment
+makes the ADR describe what merged as `b0b4f3f` (`F3.1a`, PR #202).
+
+### What this ADR said would happen
+
+Decision 1 closes: *"The tier of a section is a fact about the repository, not a
+preference. When `F3.1` lands, `dashboards` moves up a tier."* It has landed.
+Four statements in this ADR were written against the old state and are corrected
+below rather than left to mislead:
+
+| Where | Said | Now |
+|---|---|---|
+| Status, ¶3 | *"`dashboards` stays closed to `featured[]` until `F3.1`"* | The condition is discharged. `featured[]` stays and stays **required**; `widgets[]` is added beside it, optional. |
+| §1 tier table | *Anchored* → `kpis`, `dashboards` | *Anchored* → `kpis`. `dashboards` moves — see the tier note below, which is the one part of this amendment that is a reading rather than a record. |
+| §3 consumer table, *Default dashboards* row | *"**Not started.** `F3.1` is P0, 14–18 person-weeks … and owns the widget vocabulary."* | `F3.1` split into five children on 2026-08-28 (ADR 0047), effort `15–20`. **`F3.1a` is done**: it owns the vocabulary and it is on `main`. `F3.1b`–`F3.1e` are approved and unbuilt. |
+| Decision 5 | *"Ordering, and nothing else. No widget types, no layout, no sizes — that is `F3.1`'s vocabulary and this ADR will not pre-empt it."* | The refusal was right and is now spent. `F3.1a` defined the vocabulary, and the template shape was written **against** it. A view carries `featured[]` plus up to 40 `widgets[]`. |
+| §Consequences, ¶*Negative* | *"A domain author who wants to ship a dashboard layout with the pack cannot, until `F3.1`."* | They can, as of `F3.1a`. The rest of that paragraph stands: the sequencing cost was real and was paid. |
+
+### What actually shipped, and the one asymmetry worth carrying
+
+A `TemplateDashboardView` is now `{ featured: string[]; widgets?: TemplateDashboardWidget[] }`.
+A widget carries `pointKeys`, an optional `title`, a grid rectangle, and the
+`widgetType` + `config` pair — the **same discriminated union the live tables
+use**, imported from `packages/shared/src/contracts/dashboard-builder.ts` rather
+than restated, which is decision 1's *Bound* mechanism applied verbatim (this
+ADR's own rule: *"enums imported from the live schema rather than restated"*).
+
+**The asymmetry is the point reference, and it is not an oversight.** A *live*
+dashboard binds `bms.asset_points.id` as foreign-key rows in
+`bms.dashboard_widget_points`, because ADR 0047 decision 3 rejects ids inside
+JSON. A *template* dashboard has no asset yet, so it binds
+`template_points.point_key` **strings**, exactly as `featured[]` already does.
+Same vocabulary, same config union, different reference — and existence is
+proved by §6's reference validation rather than by a constraint.
+
+That makes §6 do more work than it did, and this is the highest-value line in
+`F3.1a`'s diff: `collectContentPointRefs` walks `widgets[].pointKeys` as well as
+`featured`, so a widget naming a point the template does not declare is refused
+on create, update **and** publish. Nothing in the type system would have caught
+that omission — the schema would have validated a widget pointing at nothing.
+
+Caps, for the record: at most 20 views (unchanged), at most 40 widgets per view,
+at most 8 point keys per widget. The last is `MAX_WIDGET_POINTS` imported from
+the shared contract rather than a second literal, so the template surface and
+the runtime tables cannot drift to different numbers.
+
+**Strictness runs the opposite way on the two surfaces, and confusing them
+already cost time once.** The template widget is a **strict** discriminated
+union — unknown keys refused — because a template is an *authoring* surface. The
+response contract in `contracts/` is **not** strict, because `AGENTS.md` §4.8
+requires a response schema to tolerate keys it does not know. Applying E7.1f's
+request-side strictness rule to the response axis is what made `F3.1a`'s first
+intersection parse nothing at all.
+
+### The tier note — a reading, not a record
+
+Decision 1 defines the ladder by **consumer state**: *Bound* means "the consumer
+is on `main`". By that wording `dashboards` is not Bound, because nothing renders
+a widget yet — `F3.1c` is unbuilt.
+
+By every *mechanism* the ladder attaches to Bound, it now is one: fully typed,
+`.strict()`, vocabulary imported from the live schema rather than restated, and
+references checked. Only the renderer is missing.
+
+**What the ladder was actually measuring is whether the vocabulary is frozen on
+`main`, not whether something draws it.** That distinction did not need making
+when this ADR was written, because before ADR 0047 no vocabulary here was ever
+frozen ahead of its consumer. ADR 0047 froze one deliberately — the whole point
+of splitting `F3.1a` out as ⭐ was to land the vocabulary first so four other
+rows could build against it.
+
+So: `dashboards` is **Bound**, and decision 1's phrase *"the consumer is on
+`main`"* should be read as *"the vocabulary the section commits to is frozen on
+`main`"*. Recorded as a reading rather than folded silently into the table,
+because it is the one judgment in this amendment that ADR 0047 did not already
+make. `health` and `optimisation` are unaffected — neither has a vocabulary,
+frozen or otherwise, which is exactly why both are still *Reserved* and
+**rejected**.
+
+### Consequences
+
+- **Three of the five reopenings this ADR predicted have happened**: `kpis`
+  (`F2.3`, ADR 0036), `alarms.philosophy` (`E2.1`, ADR 0034), and now
+  `dashboards` (`F3.1a`, ADR 0047). `health` (`E1.1`) and `optimisation`
+  (`E1.6`) remain. The §Consequences line *"`E1.7` will therefore be revisited
+  rather than finished"* is holding as written.
+- **`E5.1` can now author a pack with a dashboard layout.** The sequencing this
+  ADR insisted on paid off exactly as intended: the vocabulary was frozen first,
+  so a pack authored today cannot contradict `F3.1b`–`F3.1e`.
+- **Nothing backfills stored rows**, and `widgets` is optional for that reason.
+  `POST :id/draft` byte-copies stored content, so a required `widgets` would
+  strand a pre-`F3.1a` template behind its own immutable published version —
+  the same trap decision 6's `:id/draft` exemption was written for.
+- **`AGENTS.md` §6's closed-content list dropped from three to two** in PR #203.
+  `dashboards` is still out of the template authoring screen's tab registry, and
+  the five-tab source scan still holds: `F3.1e` changes that by amending
+  [ADR 0038](0038-template-authoring-ui.md), never by editing the scan.
+
+### Not decided here
+
+Whether a template's `widgets[]` should ever *materialise* into
+`bms.dashboard_widgets` rows for an instantiated asset. That is `F3.2`, it needs
+its own gate, and this ADR's standing rule applies unchanged: **ADR 0019 is an
+authoring surface, and deploying template content into running objects is
+someone else's ADR.**
