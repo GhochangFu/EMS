@@ -69,6 +69,8 @@ describe.skipIf(!connectionString)(
     let eskomPointId: string;
     let leakOrgIdForCleanup: string | undefined;
     let multiOrgUserIdForCleanup: string | undefined;
+    /** Set only when the seed supplied no PHEWB asset group and this suite made one. */
+    let createdAssetGroupIdForCleanup: string | undefined;
 
     beforeAll(async () => {
       const url = connectionString as string;
@@ -121,7 +123,22 @@ describe.skipIf(!connectionString)(
       );
       phewbAssetGroupId = phewbAssetGroup.rows[0]?.id ?? "";
       if (!phewbAssetGroupId) {
-        throw new Error("F3.1b: PHEWB has no asset group — run pnpm db:seed");
+        // **A fresh `pnpm db:seed` gives PHEWB locations but no asset groups.** This threw
+        // `run pnpm db:seed` until CI proved the advice wrong: a developer database
+        // accumulates PHEWB groups from the pilot seed and from other suites' fixtures, so the
+        // requirement held locally and failed on the only database that is actually clean.
+        // A seeded row is still preferred (`F4.53`) — this is the fallback when the seed has
+        // none, not a replacement for reading one.
+        const created = await ownerPool.query<{ id: string }>(
+          `INSERT INTO bms.asset_groups (organization_id, location_id, code, name)
+           VALUES ($1, $2, $3, $4) RETURNING id`,
+          [phewbOrgId, phewbLocationId, `f31b-fixture-${Date.now()}`, "F3.1b fixture group"],
+        );
+        phewbAssetGroupId = created.rows[0]?.id ?? "";
+        createdAssetGroupIdForCleanup = phewbAssetGroupId;
+      }
+      if (!phewbAssetGroupId) {
+        throw new Error("F3.1b: could not read or create a PHEWB asset group");
       }
 
       // Finding 7 (review): ESKOM has exactly one seeded asset_points row while other suites
@@ -141,6 +158,9 @@ describe.skipIf(!connectionString)(
       if (dashboardIds.length > 0) {
         await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [dashboardIds]);
         await ownerPool.query(`DELETE FROM bms.dashboards WHERE id = ANY($1::uuid[])`, [dashboardIds]);
+      }
+      if (createdAssetGroupIdForCleanup) {
+        await ownerPool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [createdAssetGroupIdForCleanup]);
       }
       if (multiOrgUserIdForCleanup) {
         // bms_fleet has no DELETE grant on bms.users either — superuserPool throughout.

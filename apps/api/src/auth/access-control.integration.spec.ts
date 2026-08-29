@@ -21,9 +21,14 @@ import type { AccessControlService } from "./access-control.service";
  * proves only that it is self-consistent, which is exactly the property a
  * wrong `INNER JOIN` also has.
  *
- * Read-only by construction: no fixture is inserted, updated or deleted, so the
- * suite is safe against the shared local database and needs no teardown. The
- * fixtures are the ones `pnpm db:seed` creates.
+ * Read-only by construction, with **one bounded exception since `F3.1b`**: the
+ * fixtures are the ones `pnpm db:seed` creates, and nothing here inserts,
+ * updates or deletes — except `assertCanManageDashboard`, which creates a
+ * foreign asset group when the seed supplied none, and deletes that same row on
+ * the way out. It never touches a seeded row. The exception exists because a
+ * fresh seed gives the second organization locations but no asset groups, so
+ * the refusal that block asserts had nothing foreign to be refused on the only
+ * database that is actually clean — CI's.
  */
 
 /** Emails seeded by `packages/db/src/seed.ts`, one per read-scope source. */
@@ -834,9 +839,35 @@ export async function assertCanManageDashboard(
     `SELECT id FROM bms.asset_groups WHERE id <> $1 AND organization_id <> $2 LIMIT 1`,
     [groupId, groupOrgId],
   );
-  const foreignGroupId = foreignGroup.rows[0]?.id;
+  let foreignGroupId = foreignGroup.rows[0]?.id;
+  /** Set only when the seed supplied no foreign asset group and this function made one. */
+  let createdForeignGroupId: string | undefined;
   if (!foreignGroupId) {
-    throw new Error("F3.1b: need a foreign asset group to prove asset_group_admin is refused");
+    // **A fresh `pnpm db:seed` gives the second organization locations but no asset groups.**
+    // This threw "run pnpm db:seed" until CI proved the advice wrong: a developer database
+    // accumulates them from the pilot seed and from other suites' fixtures, so the requirement
+    // held on every machine and failed on the only database that is actually clean. Without
+    // this the refusal below has nothing foreign to be refused, which is the assertion the
+    // whole block exists for.
+    const foreignLocation = await pool.query<{ id: string; organization_id: string }>(
+      `SELECT id, organization_id FROM bms.locations WHERE organization_id <> $1 ORDER BY created_at, id LIMIT 1`,
+      [groupOrgId],
+    );
+    const foreignLocationId = foreignLocation.rows[0]?.id;
+    const foreignLocationOrgId = foreignLocation.rows[0]?.organization_id;
+    if (!foreignLocationId || !foreignLocationOrgId) {
+      throw new Error("F3.1b: need a location in a second organization to build a foreign asset group");
+    }
+    const created = await pool.query<{ id: string }>(
+      `INSERT INTO bms.asset_groups (organization_id, location_id, code, name)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [foreignLocationOrgId, foreignLocationId, `f31b-foreign-${Date.now()}`, "F3.1b foreign group"],
+    );
+    foreignGroupId = created.rows[0]?.id;
+    createdForeignGroupId = foreignGroupId;
+  }
+  if (!foreignGroupId) {
+    throw new Error("F3.1b: could not read or create a foreign asset group");
   }
   const groupForeignOrg = await pool.query<{ id: string }>(
     `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
@@ -932,5 +963,13 @@ export async function assertCanManageDashboard(
     if (await svc.canManageDashboard(jwt, orgAId, orgWide)) {
       throw new Error(`${role} must be refused an organization-wide dashboard`);
     }
+  }
+
+  // Only the group this function created, and only on the way out — a seeded row is never
+  // deleted here. Deliberately after the assertions rather than in a `finally`: a failing
+  // assertion should leave the fixture in place to be inspected, and the next run's
+  // `code` carries a fresh timestamp, so a leftover cannot collide.
+  if (createdForeignGroupId) {
+    await pool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [createdForeignGroupId]);
   }
 }
