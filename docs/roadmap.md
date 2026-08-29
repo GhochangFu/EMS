@@ -2300,6 +2300,83 @@ that arrives with growth. **Still open:** `E8.5` bounds or scrubs the
 `rtus.meta` value space that ADR 0021 decision 6's re-measurement could not
 clear by field name.
 
+### Configurable dashboard vocabulary and schema (`F3.1a`, ADR 0047) — done
+
+`F3.1` — *configurable dashboard schema + builder UI* — was the largest single
+row left in Wave 1, and on 2026-08-28 the owner split it into five children at
+the §10 gate under **[ADR 0047](./adr/0047-configurable-dashboards.md)**, on the
+`E7.1` precedent. `F3.1a` is the first and the only ⭐ one: it defines the widget
+vocabulary and the schema every other child hangs off. It merged 2026-08-29 as
+PR [#202](https://github.com/GhochangFu/EMS/pull/202), squash `b0b4f3f`, with the
+ADR landing first as PR [#201](https://github.com/GhochangFu/EMS/pull/201).
+
+**Six decisions were put to the owner one at a time and all six were ruled
+before any implementation code. Four went as recommended; two changed the
+draft.** The load-bearing one is decision 2: **`widgetType` is a closed
+`z.enum` with a SQL `CHECK`, not a lookup table** — deliberately the *opposite*
+of what ADR 0031 and ADR 0032 decided for rule concerns, plant domains and alarm
+severities. The reason is ADR 0032's own test, applied rather than reversed: *a
+vocabulary is only closed if the behaviour cannot be carried as data.* A
+severity's behaviour is `rank` and `tone`, which are two columns; **a widget
+type's behaviour is a React component, and no column holds one.** A type
+declared by an `INSERT` would pass the foreign key, the API and the save, and
+then draw a blank rectangle in front of an operator with nothing in the console,
+the log or the network tab. `AGENTS.md` §4.8 now carries this as its first
+worked example of the *closed* answer, because every example there since ADR
+0031 moves a vocabulary the other way and a reader could otherwise conclude that
+open is the destination rather than an answer.
+
+The second decision that changed the draft came from the owner asking how an
+admin adds a widget to the shared palette. The answer is that a new *kind* is
+always a release — so the lever that matters is absorbing chart-shaped asks into
+configuration. §7's three *Key Parameters* widgets (`radial_gauge`, `tank_level`,
+`value_tile`) are taken verbatim, and its "24-hour area chart" becomes one
+generic **`chart`** whose `config` selects line, area, bar or scatter from
+ECharts. The builder will show *Trend* / *Comparison bars* / *Scatter*, never
+ECharts series names. The radial gauge is **not** merged into it despite also
+being an ECharts series: its config surface (min, max, thresholds, bands) is
+disjoint from a cartesian chart's, and merging would put two unrelated halves in
+one form in front of a non-programmer.
+
+**What shipped is the schema half only.** Migration `0050` creates
+`bms.dashboards`, `bms.dashboard_widgets` and `bms.dashboard_widget_points` with
+`organization_id NOT NULL`, a `tenant_isolation` policy and `FORCE ROW LEVEL
+SECURITY` in the creating migration — ADR 0043/0045's rule, followed the first
+time rather than retrofitted the way `E7.1b`'s migrations `0046`/`0047` had to
+be. The third table is the point of the design: a widget binds live
+`bms.asset_points` rows through a real foreign key, where ADR 0019 had to
+hand-build the equivalent orphan check because template `content` is `jsonb`.
+The vocabulary and the per-type `config` union live in
+`packages/shared/src/contracts/dashboard-builder.ts`; the drizzle declarations in
+`packages/db/src/schema/dashboard-schema.ts`.
+
+**The security review found one HIGH and proved it on the running stack**, which
+is the part of this row worth carrying forward to anything else that stamps a
+denormalised `organization_id`: **Postgres runs a referential-integrity check
+with row security off**, so a foreign key never consults the parent's policy. A
+correctly-stamped row bound another tenant's point and the `INSERT` succeeded.
+The three tables *looked* like they met the standard `bms.asset_group_members`
+sets in migration `0047` §3c while enforcing strictly less than it. Every policy
+now checks its org-bearing parents with an `EXISTS`, in `USING` and in `WITH
+CHECK`, verified live in both directions.
+
+`F3.1a` also **opens ADR 0019's `dashboards` content section past ordered point
+keys** — the third of the five reopenings ADR 0019 predicted, after `kpis`
+(`F2.3`) and `alarms.philosophy` (`E2.1`). `TemplateDashboardView` carries
+`widgets[]`, and `collectContentPointRefs` walks `widgets[].pointKeys`, so the
+orphan check reaches the new half on create, update and publish.
+
+**Still open, and none of it is a surprise:** `F3.1b` (the tenant-scoped
+read/write API), `F3.1c` (the four renderers), `F3.1d` (the builder surface) and
+`F3.1e` (the template *Dashboards* tab, which amends ADR 0038 rather than
+editing its five-tab source scan). `F3.1b` ‖ `F3.1c` is a genuine two-agent
+batch on disjoint packages. **Dependants of the `F3.1` umbrella — `F3.2`,
+`F3.5`, `E4.2`, `F3.28`, `F3.32` — unblock when the umbrella closes, not when
+`F3.1a` did.** One decision is owner-gated and deferred to `F3.1b`: migration
+L2, where `dashboards.location_id` and `asset_group_id` are `NO ACTION` while
+`point_id` cascades, so deleting a location a dashboard is scoped to raises a
+bare `23503`. Nothing deletes a location today.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
