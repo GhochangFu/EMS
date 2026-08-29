@@ -416,11 +416,63 @@ export default defineConfig({
       // this item's own gain was unprotected, and a regression could have
       // given it back without tripping the gate — which is the exact failure
       // the `F4.46` entry above records finding in `main`.
+      //
+      // Ratcheted by `F3.1c` (the four dashboard widget renderers, ADR 0047)
+      // from 53.7/50.0/55.3/53.8. Measured 2026-08-29 against the live
+      // database (port 5433 on this machine), all 215 files / 1052 tests
+      // running and none skipped: 68.52 statements · 65.33 branches ·
+      // 70.68 functions · 68.57 lines.
+      //
+      // **The jump is almost entirely NOT this item's**, and that is stated
+      // plainly so the next reader does not misattribute 15 points to three
+      // small files. `F3.1c` adds exactly three files to this denominator —
+      // `widget-catalog.ts`, `widget-value.ts`, `widget-echarts-option.ts`,
+      // 333 lines together — against a 7517-statement denominator, roughly
+      // 2% of it. The evidence, not just the claim: the `F2.5` entry above
+      // (2026-08-21, the last time this ratchet was measured) recorded 131
+      // files / **483 tests**; `F3.1a`'s closure record
+      // (`docs/BACKLOG.md:436`) recorded **1023 passed**; this measurement
+      // is **1052**. Test count more than doubled between the last ratchet
+      // and `F3.1a` alone, and rose by 29 more since — several large items
+      // landed in between (the `E7.1` multi-tenant series, ADR 0043–0047,
+      // `F3.1a`) without anyone re-measuring this gate, so it had drifted
+      // roughly 15 points **stale-low** rather than tight. This entry
+      // catches the ratchet up to the branch tip; it does not claim `F3.1c`
+      // wrote 15 points of new coverage.
+      //
+      // Two full-suite runs under default parallelism each hit a different,
+      // unrelated pre-existing timeout flake — `evaluate-enabled-rules.
+      // integration.test.ts` once, then `pre-commit-gate.test.ts` and
+      // `telemetry-listener.test.ts` together on the next attempt — each
+      // file verified green in isolation immediately after. Consistent with
+      // the CPU-contention pattern this file already documents for
+      // `evaluate-enabled-rules.integration.spec.ts` and
+      // `alarm-enrichment.integration.spec.ts` above, not a regression from
+      // this item. The measurement above is the clean `--no-file-parallelism`
+      // rerun: 215/215 files, 1052/1052 tests, exit 0.
+      //
+      // **Margin widened well past this file's usual ~0.3, deliberately.**
+      // This file documents two hazards against itself that a normal ~0.3
+      // margin does not absorb: `apps/api/src/calc/**` branches reachable
+      // only from state a fresh `db:migrate` → `db:seed` may not reproduce
+      // (the `F2.5` entry above), and `F4.33` (compressed chunks) recorded
+      // as still open. The measurement above was taken against this
+      // machine's long-lived database, not the fresh one `db:migrate` →
+      // `db:seed` produces per CI run — that is the divergence the margin
+      // is for. (An earlier version of this note also cited
+      // `--no-file-parallelism` as a reason to widen; that was wrong and is
+      // corrected here — parallelism changes how many worker processes run
+      // concurrently, not which lines execute, so it has no bearing on a
+      // coverage measurement and was never a real hazard to margin against.)
+      // A threshold CI cannot meet is worse than a stale-low one and §4.6
+      // leaves no clean escape — never lower a threshold to go green — so
+      // ~0.5–1.0 per axis is banked here instead of ~0.2, still catching
+      // roughly 14 of the 15 stale-low points.
       thresholds: {
-        statements: 53.7,
-        branches: 50.0,
-        functions: 55.3,
-        lines: 53.8,
+        statements: 67.8,
+        branches: 64.3,
+        functions: 70.0,
+        lines: 67.9,
       },
     },
   },

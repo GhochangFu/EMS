@@ -7,6 +7,7 @@ import {
   widgetToneSchema,
   widgetTypeSchema,
 } from "@bms/shared";
+import { CHART_SERIES, WIDGET_CATALOG } from "./widget-catalog";
 import type {
   ChartSeriesKind,
   DashboardWidgetSpec,
@@ -77,12 +78,9 @@ const CHART_SERIES_VALUES: readonly ChartSeriesKind[] = chartSeriesKindSchema.op
 
 /** Labels stay local — `F3.1c`'s `widget-catalog.ts` does not exist yet
  * (§5.4). This is a recorded residual for that item to fold in. */
-export const WIDGET_TYPE_LABELS: Record<WidgetType, string> = {
-  radial_gauge: "Radial gauge",
-  tank_level: "Tank level",
-  value_tile: "Value tile",
-  chart: "Chart",
-};
+export const WIDGET_TYPE_LABELS: Record<WidgetType, string> = Object.fromEntries(
+  widgetTypeSchema.options.map((type) => [type, WIDGET_CATALOG[type].label]),
+) as Record<WidgetType, string>;
 
 /**
  * The plain label an author sees, and the contract value it writes.
@@ -90,13 +88,16 @@ export const WIDGET_TYPE_LABELS: Record<WidgetType, string> = {
  * **`area` is a legal contract value, not a mistake.** The ECharts
  * translation (`area` → `line` series + `areaStyle`) is `F3.1c`'s, downstream
  * of this contract.
+ *
+ * **Derived from `F3.1c`'s catalog rather than restated.** Both rows landed in
+ * the same wave and each wrote these four labels independently; `F3.1c` landed
+ * second, so the copies are collapsed here onto `CHART_SERIES`, which is where
+ * ADR 0047 Amendment 2 §4 rules them. `WIDGET_TYPE_LABELS` above was the same
+ * duplication and is derived the same way. The specs that pin the label text
+ * still pin it — they now check the derivation instead of a second literal.
  */
-export const CHART_SERIES_OPTIONS: readonly { label: string; value: ChartSeriesKind }[] = [
-  { label: "Trend", value: "line" },
-  { label: "Trend (filled)", value: "area" },
-  { label: "Comparison bars", value: "bar" },
-  { label: "Scatter", value: "scatter" },
-];
+export const CHART_SERIES_OPTIONS: readonly { label: string; value: ChartSeriesKind }[] =
+  chartSeriesKindSchema.options.map((value) => ({ label: CHART_SERIES[value].label, value }));
 
 /**
  * `contentEnvelopeSchema` caps a dashboards record at 20 views
