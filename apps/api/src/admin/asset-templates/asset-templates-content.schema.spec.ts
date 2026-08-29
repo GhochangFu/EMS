@@ -1,4 +1,4 @@
-import { widgetTypeSchema } from "@bms/shared";
+import { WIDGET_POINT_CARDINALITY, widgetTypeSchema } from "@bms/shared";
 
 import {
   MAX_CONTENT_BYTES,
@@ -452,6 +452,135 @@ export function runTemplateContentSchemaTests(): void {
       },
     },
     "at most 8 point keys per widget",
+  );
+
+  // ---- dashboards: per-arm cardinality (ADR 0047 Amendment 3) --------------
+  //
+  // A single eight-point-gauge refusal would pass against a bound that
+  // tightened only radial_gauge. One case per arm, each with its own valid
+  // config, because config is required per type.
+
+  const gridFields = { gridX: 0, gridY: 0, gridW: 2, gridH: 2 };
+
+  rejects(
+    {
+      dashboards: {
+        overview: {
+          featured: ["A"],
+          widgets: [
+            {
+              widgetType: "radial_gauge",
+              config: { min: 0, max: 100 },
+              pointKeys: ["A", "B"],
+              ...gridFields,
+            },
+          ],
+        },
+      },
+    },
+    "a radial_gauge widget binds exactly one point; two must be refused",
+  );
+
+  rejects(
+    {
+      dashboards: {
+        overview: {
+          featured: ["A"],
+          widgets: [
+            {
+              widgetType: "tank_level",
+              config: { fullScale: 100 },
+              pointKeys: ["A", "B"],
+              ...gridFields,
+            },
+          ],
+        },
+      },
+    },
+    "a tank_level widget binds exactly one point; two must be refused",
+  );
+
+  rejects(
+    {
+      dashboards: {
+        overview: {
+          featured: ["A"],
+          widgets: [
+            {
+              widgetType: "value_tile",
+              config: {},
+              pointKeys: ["A", "B"],
+              ...gridFields,
+            },
+          ],
+        },
+      },
+    },
+    "a value_tile widget binds exactly one point; two must be refused",
+  );
+
+  assert(
+    templateContentSchema.safeParse({
+      dashboards: {
+        overview: {
+          featured: ["A"],
+          widgets: [
+            {
+              widgetType: "chart",
+              config: { series: "line" },
+              pointKeys: Array.from({ length: 8 }, (_u, i) => `P${i}`),
+              ...gridFields,
+            },
+          ],
+        },
+      },
+    }).success,
+    "a chart widget binds up to eight points; eight must be accepted",
+  );
+
+  // The completeness loop. Not a substitute for the four explicit cases above
+  // — it is the guard that a fifth widget type cannot arrive untested. The
+  // anti-vacuity count proves the loop actually ran, so an empty scan cannot
+  // read as compliance.
+  let cardinalityLoopIterations = 0;
+  for (const widgetType of widgetTypeSchema.options) {
+    cardinalityLoopIterations += 1;
+    const { max } = WIDGET_POINT_CARDINALITY[widgetType];
+    const configFor: Record<(typeof widgetTypeSchema.options)[number], Record<string, unknown>> = {
+      radial_gauge: { min: 0, max: 100 },
+      tank_level: { fullScale: 100 },
+      value_tile: {},
+      chart: { series: "line" },
+    };
+    const widgetWith = (pointKeys: string[]) => ({
+      dashboards: {
+        overview: {
+          featured: ["A"],
+          widgets: [
+            {
+              widgetType,
+              config: configFor[widgetType],
+              pointKeys,
+              ...gridFields,
+            },
+          ],
+        },
+      },
+    });
+    rejects(
+      widgetWith(Array.from({ length: max + 1 }, (_u, i) => `P${i}`)),
+      `${widgetType}: ${max + 1} point keys must be refused (cardinality max is ${max})`,
+    );
+    assert(
+      templateContentSchema.safeParse(widgetWith(Array.from({ length: max }, (_u, i) => `P${i}`)))
+        .success,
+      `${widgetType}: ${max} point keys must be accepted (cardinality max is ${max})`,
+    );
+  }
+  assert(
+    cardinalityLoopIterations === widgetTypeSchema.options.length &&
+      cardinalityLoopIterations === 4,
+    `the completeness loop must run once per widget type, ran ${cardinalityLoopIterations} times`,
   );
 
   // ---- limits --------------------------------------------------------------
