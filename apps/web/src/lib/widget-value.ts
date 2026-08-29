@@ -20,15 +20,24 @@ export function formatWidgetValue(value: number | null, format: WidgetValueForma
     return "—";
   }
   const body = format.abbreviate
-    ? abbreviateNumber(value)
+    ? abbreviateNumber(value, format.decimals)
     : format.decimals !== undefined
       ? value.toFixed(format.decimals)
       : String(value);
   return format.unit ? `${body} ${format.unit}` : body;
 }
 
-/** `value_tile`'s `abbreviate` config key. Ignoring it overflows the card, and the config would lie about what it does. */
-function abbreviateNumber(value: number): string {
+/**
+ * `value_tile`'s `abbreviate` config key. Ignoring it overflows the card,
+ * and the config would lie about what it does.
+ *
+ * `decimals` is threaded through and honoured below the 1000 threshold too
+ * — an author sets `abbreviate` because the tile *sometimes* exceeds 1000,
+ * so a sub-1000 reading must not fall back to an unrounded raw float and
+ * overflow the card, which is the exact failure `abbreviate` exists to
+ * prevent.
+ */
+function abbreviateNumber(value: number, decimals?: number): string {
   const abs = Math.abs(value);
   const [divisor, suffix]: [number, string] =
     abs >= 1_000_000_000
@@ -39,7 +48,7 @@ function abbreviateNumber(value: number): string {
           ? [1_000, "k"]
           : [1, ""];
   if (divisor === 1) {
-    return String(value);
+    return decimals !== undefined ? value.toFixed(decimals) : String(value);
   }
   const scaled = Math.round((value / divisor) * 100) / 100;
   return `${scaled}${suffix}`;
@@ -61,6 +70,51 @@ export function tankFillPercent(value: number | null, fullScale: number): number
   }
   const pct = (value / fullScale) * 100;
   return Math.min(100, Math.max(0, pct));
+}
+
+/**
+ * `tank-level-widget.tsx`'s SVG vessel coordinate system. Owned here, not in
+ * the component, so `tankFillGeometry` below is the only place that computes
+ * an absolute `y`/`height` from a percentage — a single source rather than
+ * two files agreeing on `FLOOR_Y`/`FILL_HEIGHT` by convention.
+ */
+export const TANK_VIEW_W = 100;
+export const TANK_VIEW_H = 140;
+export const TANK_WALL = 10;
+export const TANK_FLOOR_Y = TANK_VIEW_H - TANK_WALL;
+export const TANK_FILL_MAX_HEIGHT = TANK_FLOOR_Y - TANK_WALL;
+export const TANK_FILL_WIDTH = TANK_VIEW_W - TANK_WALL * 2 - 4;
+
+export type TankFillGeometry = {
+  readonly y: number;
+  readonly height: number;
+  readonly label: string;
+};
+
+/**
+ * The tank fill rect's position and its percentage label, as pure
+ * arithmetic — moved out of `TankLevelWidget` because a sign error in
+ * `y = floor - height` draws a full tank empty, plausibly, with no console
+ * error and (until this moved here) no test that could catch it: the `.tsx`
+ * is outside the coverage `include` and had no spec of its own (`F3.1c`
+ * `Q1`).
+ *
+ * `decimals` is honoured on the percentage the way `commonConfigFields`
+ * intends, e.g. "75.3%" rather than "75%" — `unit` is deliberately NOT
+ * threaded through here: `tankLevelConfigSchema` inherits `unit` from
+ * `commonConfigFields` uniformly across all four widget arms, but a fill
+ * percentage is not a unit-bearing reading (`fullScale`'s unit, if any,
+ * belongs to the *reading*, and "75.3% L" is not a thing) — §7 calls this
+ * widget "an SVG fill illustration plus a percentage", not a formatted
+ * value, so only precision applies here.
+ */
+export function tankFillGeometry(pct: number | null, decimals?: number): TankFillGeometry {
+  if (pct === null) {
+    return { y: TANK_FLOOR_Y, height: 0, label: "No data bound" };
+  }
+  const height = (pct / 100) * TANK_FILL_MAX_HEIGHT;
+  const label = `${decimals !== undefined ? pct.toFixed(decimals) : Math.round(pct)}%`;
+  return { y: TANK_FLOOR_Y - height, height, label };
 }
 
 /**

@@ -2,8 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   formatWidgetValueAbbreviatesOnlyWhenAsked,
+  formatWidgetValueHonoursDecimalsBelowTheAbbreviationThreshold,
   formatWidgetValueRendersAnEmDashForNull,
   formatWidgetValueRoundsAndUnrounds,
+  tankFillGeometryComputesTheRectFromThePercentage,
+  tankFillGeometryLabelHonoursDecimals,
+  tankFillGeometryRendersNoDataBoundForANullPercentage,
   tankFillPercentClampsIntoZeroToOneHundred,
   tankFillPercentGuardsAZeroOrInvalidFullScale,
   toKpiTilePropsDoesNotDoubleRenderTheUnit,
@@ -26,12 +30,28 @@ describe("widget-value", () => {
     formatWidgetValueAbbreviatesOnlyWhenAsked();
   });
 
+  it("honours decimals below the abbreviation threshold, not just above it", () => {
+    formatWidgetValueHonoursDecimalsBelowTheAbbreviationThreshold();
+  });
+
   it("clamps a tank fill percentage into [0, 100]", () => {
     tankFillPercentClampsIntoZeroToOneHundred();
   });
 
   it("guards a zero full-scale or a null reading rather than dividing", () => {
     tankFillPercentGuardsAZeroOrInvalidFullScale();
+  });
+
+  it("computes the tank fill rect's y/height from the percentage", () => {
+    tankFillGeometryComputesTheRectFromThePercentage();
+  });
+
+  it("renders 'No data bound' with zero height for a null percentage", () => {
+    tankFillGeometryRendersNoDataBoundForANullPercentage();
+  });
+
+  it("honours decimals on the tank fill label", () => {
+    tankFillGeometryLabelHonoursDecimals();
   });
 
   it("falls back to the catalog label for a null or empty title", () => {
