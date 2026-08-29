@@ -220,3 +220,86 @@ export async function assertCrossOrgLocationScopeRefusedByRls(
     "must NOT name the foreign key — 0050's header records WITH CHECK runs before the FK's AFTER trigger",
   ).not.toMatch(/dashboards_location_id_fkey/i);
 }
+
+/**
+ * **Finding 1 (review, HIGH) — the fleet-branch negative.** `assertCrossTenantSlugReadIs404`-
+ * style tests that use a SINGLE-organization actor exercise only the TENANT branch, where the
+ * `0047` `FORCE` RLS policy masks a missing caller-side filter — which is exactly how the
+ * original `readableAssetIds`-routed implementation shipped with a cross-tenant read leak that
+ * every earlier test passed. This is the test that only fails if `withOrganizationReadScope`'s
+ * fleet branch is missing its `inArray(dashboards.organizationId, organizationIdFilter)`
+ * filter: a genuinely two-organization caller (ADR 0043 decision 3's documented fallback —
+ * `organization_admin` with two `user_organization_access` rows) must see only ITS OWN two
+ * organizations' dashboards, never a third, unrelated organization's — not as a row in
+ * `list()`, and not even as the ambiguity-disclosing 400 `getBySlug` used to be capable of.
+ */
+export async function assertFleetBranchExcludesAForeignOrganization(
+  service: DashboardsService,
+  twoOrgActor: JwtPayload,
+  ownOrgIds: readonly string[],
+  foreignOrgDashboard: { readonly id: string; readonly slug: string },
+): Promise<void> {
+  const listed = await service.list(twoOrgActor);
+  expect(
+    listed.items.some((item) => item.id === foreignOrgDashboard.id),
+    "a two-organization caller's list() must not include a third organization's dashboard",
+  ).toBe(false);
+  for (const item of listed.items) {
+    expect(
+      ownOrgIds.includes(item.organizationId),
+      `list() returned a dashboard (${item.id}, org ${item.organizationId}) outside the ` +
+        "caller's own two organizations — the fleet-branch leak this test exists to catch",
+    ).toBe(true);
+  }
+
+  await expect(service.getBySlug(twoOrgActor, foreignOrgDashboard.slug)).rejects.toMatchObject({
+    status: 404,
+  });
+}
+
+/**
+ * **Finding 5 (review) — the test commit `15a1ab9`'s `update()` reorder shipped without.**
+ * `dashboards.service.rls.integration.spec.ts`'s existing update() calls all send `{name}`
+ * only, so the "both scope columns set" 400 branch was never reached and reverting the reorder
+ * left the whole suite green. This targets a dashboard whose STORED scope already carries
+ * `assetGroupId`, PATCHes only `locationId`, and — with an actor `canManageDashboard` refuses
+ * for this row — asserts the SAME 404 a nonexistent id gets. Before the reorder, the
+ * "both set" 400 ran first and would have disclosed both that the row exists and that its
+ * stored scope is an asset group, to a caller with no authority over it.
+ */
+export async function assertUnauthorizedUpdateWithScopeConflictIs404(
+  service: DashboardsService,
+  unauthorizedActor: JwtPayload,
+  dashboardIdWithStoredAssetGroupId: string,
+  anyLocationId: string,
+): Promise<void> {
+  const nonexistentId = "00000000-0000-4000-8000-0000000000ff";
+
+  let scopedConflictMessage: unknown;
+  try {
+    await service.update(unauthorizedActor, dashboardIdWithStoredAssetGroupId, {
+      locationId: anyLocationId,
+    });
+  } catch (err) {
+    scopedConflictMessage =
+      (err as { response?: unknown; message?: unknown }).response ?? (err as Error).message;
+  }
+  let nonexistentMessage: unknown;
+  try {
+    await service.update(unauthorizedActor, nonexistentId, { locationId: anyLocationId });
+  } catch (err) {
+    nonexistentMessage =
+      (err as { response?: unknown; message?: unknown }).response ?? (err as Error).message;
+  }
+
+  expect(
+    scopedConflictMessage,
+    "an unauthorized caller PATCHing a dashboard whose merge would violate the scope invariant must still be refused",
+  ).toBeDefined();
+  expect(
+    scopedConflictMessage,
+    "must be the SAME 404 as a nonexistent id — a distinguishable 400 here would disclose the " +
+      "row exists, and that its stored scope is an asset group, before this caller has any " +
+      "authority to know either",
+  ).toEqual(nonexistentMessage);
+}

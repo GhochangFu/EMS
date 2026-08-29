@@ -337,6 +337,15 @@ export class AccessControlService {
    * fall through every branch below to `false` rather than a thrown
    * `ForbiddenException`, because this method answers a boolean a caller
    * uses to decide whether to 403 — not one that throws its own.
+   *
+   * **Checks the scope id's OWN `organization_id`, not only whether the
+   * caller manages it (found in review).** `canManageLocation` and the group
+   * membership check each answer "may this user manage this location/group",
+   * never "does it belong to `organizationId`" — without
+   * {@link locationBelongsToOrganization}/{@link assetGroupBelongsToOrganization}
+   * an ORG_A `location_admin`'s OWN `locationId` authorized a write on an
+   * ORG_B dashboard, contained only later by the database (a 400 or a 500
+   * depending on the target's stored scope) rather than by this gate.
    */
   async canManageDashboard(
     jwt: JwtPayload,
@@ -350,19 +359,36 @@ export class AccessControlService {
     if (user.role === "organization_admin") {
       return this.canManageOrganization(jwt, organizationId);
     }
-    // An organization-wide dashboard (both scope columns NULL) has no scope
-    // column and therefore no owner — only the two organization-level roles
-    // above may create or edit one. This is the assertion a refactor is most
-    // likely to lose, because every other assertion about location_admin is
-    // about a foreign organization rather than its own.
+    // ADR 0047 Amendment 2 ruling 2 — the SOLE refusal for an organization-wide dashboard
+    // (both scope columns NULL): such a row has no scope column and therefore no owner, so
+    // only the two organization-level roles above may create or edit one. This is the
+    // assertion a refactor is most likely to lose, because every other assertion about
+    // location_admin is about a foreign organization rather than its own.
+    //
+    // Nothing below re-checks "is my field null" (found in review: it used to, twice, and
+    // each per-leg guard alone reached the same `false` this block does, so deleting this
+    // block changed no test outcome). `resolveScopeTarget` THROWS instead if it is ever
+    // reached with both null, so deleting this guard now surfaces as a crash on the ruling-2
+    // test case rather than a second silent refusal.
     if (scope.locationId === null && scope.assetGroupId === null) {
       return false;
     }
+    const target = this.resolveScopeTarget(scope);
+
     if (user.role === "location_admin") {
-      return scope.locationId !== null && (await this.canManageLocation(jwt, scope.locationId));
+      if (target.kind !== "location") {
+        return false;
+      }
+      if (!(await this.locationBelongsToOrganization(target.id, organizationId))) {
+        return false;
+      }
+      return this.canManageLocation(jwt, target.id);
     }
     if (user.role === "asset_group_admin") {
-      if (scope.assetGroupId === null) {
+      if (target.kind !== "assetGroup") {
+        return false;
+      }
+      if (!(await this.assetGroupBelongsToOrganization(target.id, organizationId))) {
         return false;
       }
       // Direct membership on the target group, NOT `canManageLocation`.
@@ -385,13 +411,134 @@ export class AccessControlService {
         .where(
           and(
             eq(userAssetGroupAccess.userId, user.id),
-            eq(userAssetGroupAccess.assetGroupId, scope.assetGroupId),
+            eq(userAssetGroupAccess.assetGroupId, target.id),
           ),
         )
         .limit(1);
       return row !== undefined;
     }
     return false;
+  }
+
+  /**
+   * Discriminates a `canManageDashboard` scope, given that the "both null" case has already
+   * been refused by the ruling-2 guard immediately above the one call site. Three outcomes:
+   *
+   * - `{location, null}` / `{null, assetGroup}` — the ordinary, valid cases; every dashboard
+   *   this API can WRITE satisfies "at most one of locationId/assetGroupId" (Task 3's
+   *   `scopeIsSingular` request-schema refinement on create).
+   * - `{kind: "invalid"}` for `{location, assetGroup}` (both set) — refused, but NOT via a
+   *   throw. `DashboardsService.update` deliberately calls `canManageDashboard` with the
+   *   MERGED scope (existing row + PATCH body) BEFORE its own "both set" 400 check, precisely
+   *   so an unauthorized caller is refused with the same 404 as a nonexistent id rather than a
+   *   400 that discloses the row exists and what its stored scope is (finding 5, review) — so
+   *   this state genuinely reaches here in normal operation and must resolve gracefully.
+   * - throws for `{null, null}` — this is the one state that should NEVER reach this function,
+   *   because the ruling-2 guard at the call site refuses it first. Throwing rather than
+   *   returning a sentinel here is what makes that guard load-bearing: delete it and this
+   *   throws on the exact case it exists to refuse, instead of a second branch quietly
+   *   producing the same `false`.
+   */
+  private resolveScopeTarget(scope: {
+    locationId: string | null;
+    assetGroupId: string | null;
+  }): { kind: "location"; id: string } | { kind: "assetGroup"; id: string } | { kind: "invalid" } {
+    if (scope.locationId !== null && scope.assetGroupId === null) {
+      return { kind: "location", id: scope.locationId };
+    }
+    if (scope.assetGroupId !== null && scope.locationId === null) {
+      return { kind: "assetGroup", id: scope.assetGroupId };
+    }
+    if (scope.locationId !== null && scope.assetGroupId !== null) {
+      return { kind: "invalid" };
+    }
+    throw new Error(
+      "canManageDashboard: reached resolveScopeTarget with both locationId and assetGroupId " +
+        "null — the ruling-2 guard immediately above this call must have been removed",
+    );
+  }
+
+  /**
+   * Whether `locationId` itself belongs to `organizationId` — the half of ADR 0047 Amendment
+   * 2's scope check `canManageLocation` alone cannot answer (see the class docblock on
+   * `canManageDashboard`).
+   */
+  private async locationBelongsToOrganization(
+    locationId: string,
+    organizationId: string,
+  ): Promise<boolean> {
+    const [row] = await this.fleetDb
+      .select({ organizationId: locations.organizationId })
+      .from(locations)
+      .where(eq(locations.id, locationId))
+      .limit(1);
+    return row !== undefined && row.organizationId === organizationId;
+  }
+
+  /** The asset-group analogue of {@link locationBelongsToOrganization}. */
+  private async assetGroupBelongsToOrganization(
+    assetGroupId: string,
+    organizationId: string,
+  ): Promise<boolean> {
+    const [row] = await this.fleetDb
+      .select({ organizationId: assetGroups.organizationId })
+      .from(assetGroups)
+      .where(eq(assetGroups.id, assetGroupId))
+      .limit(1);
+    return row !== undefined && row.organizationId === organizationId;
+  }
+
+  /**
+   * Organization ids the user may READ dashboards for (and, in general, any organization-only
+   * read that must stay open to `viewer`/`operator`, unlike {@link writableOrganizationIds}).
+   * `null` means unrestricted (global admin).
+   *
+   * **Why this exists rather than reusing `readableAssetIds`/`AccessibleScope.assetIds`
+   * (`F3.1b`, found in review):** `bms.dashboards` has no asset column at all — its only
+   * tenant key is `organization_id` — and `AccessibleScope.locations[]` carries no
+   * `organizationId` either, so neither can supply the caller-side filter
+   * `withOrganizationReadScope`'s fleet branch needs. This mirrors `scopeForUser`'s
+   * precedence walk but resolves organizations instead of locations/assets, reusing the same
+   * private helpers `writableOrganizationIds` does for the sources they share.
+   */
+  async readableOrganizationIds(jwt: JwtPayload): Promise<string[] | null> {
+    const user = await this.resolveDbUser(jwt);
+    if (user.role === "admin") {
+      return null;
+    }
+    for (const source of readScopeSourcesForRole(user.role)) {
+      const ids = await this.organizationIdsFromReadScopeSource(user.id, source);
+      if (ids.length > 0) {
+        return ids;
+      }
+    }
+    return [];
+  }
+
+  /** The organization-only analogue of `scopeFromSource`'s location/asset resolution, for the
+   * three sources that can yield one. `"global"` never reaches here (only `admin` gets it, and
+   * `admin` returns above); `"none"` yields `[]` via the trailing `return []` below. */
+  private async organizationIdsFromReadScopeSource(
+    userId: string,
+    source: ReadScopeSource,
+  ): Promise<string[]> {
+    if (source === "organization") {
+      return this.directOrganizationIds(userId);
+    }
+    if (source === "location") {
+      return this.locationDerivedOrganizationIds(userId);
+    }
+    if (source === "asset_group") {
+      // fleetDb: pre-tenant grant walk keyed by the actor's own userId (Amendment 2/3).
+      // bms.asset_groups.organization_id is NOT NULL, so no join through locations is needed.
+      const rows = await this.fleetDb
+        .select({ id: assetGroups.organizationId })
+        .from(userAssetGroupAccess)
+        .innerJoin(assetGroups, eq(userAssetGroupAccess.assetGroupId, assetGroups.id))
+        .where(eq(userAssetGroupAccess.userId, userId));
+      return [...new Set(rows.map((row) => row.id))];
+    }
+    return [];
   }
 
   /** Resolves the DB user and enforces master-data role in one step. */

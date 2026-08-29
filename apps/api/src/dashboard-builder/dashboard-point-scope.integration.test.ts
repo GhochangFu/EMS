@@ -87,12 +87,19 @@ describe.skipIf(!connectionString)(
         throw new Error("F3.1b Task 5: ESKOM/PHEWB organizations not found — run pnpm db:seed");
       }
 
+      // F4.53 (finding 7, review): ORDER BY created_at (id as a tiebreaker) resolves the OLDEST
+      // row — a seeded one, which predates every suite in the run. ESKOM has exactly one
+      // seeded asset_points row while other suites create and delete transient ESKOM points in
+      // the same parallel run; an unordered LIMIT 1 can adopt one of those and then find it
+      // gone under ON DELETE CASCADE.
       const eskomPoint = await ownerPool.query<{ id: string; asset_id: string; point_key: string }>(
-        `SELECT id, asset_id, point_key FROM bms.asset_points WHERE organization_id = $1 LIMIT 1`,
+        `SELECT id, asset_id, point_key FROM bms.asset_points
+          WHERE organization_id = $1 ORDER BY created_at, id LIMIT 1`,
         [eskomOrgId],
       );
       const phewbPoint = await ownerPool.query<{ id: string; asset_id: string; point_key: string }>(
-        `SELECT id, asset_id, point_key FROM bms.asset_points WHERE organization_id = $1 LIMIT 1`,
+        `SELECT id, asset_id, point_key FROM bms.asset_points
+          WHERE organization_id = $1 ORDER BY created_at, id LIMIT 1`,
         [phewbOrgId],
       );
       if (!eskomPoint.rows[0] || !phewbPoint.rows[0]) {

@@ -9,7 +9,7 @@ import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
-import { withReadScope } from "../database/tenant-read-scope";
+import { withOrganizationReadScope } from "../database/tenant-read-scope";
 import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBoundPoint } from "./dashboard-point-scope";
 import type { CreateDashboardBody, PutDashboardWidgetsBody, UpdateDashboardBody, WidgetWriteBody } from "./dashboards.schema";
 
@@ -45,6 +45,15 @@ export function mapDashboardSummary(row: DashboardRow, widgetCount: number): Das
  * Row -> DTO for one widget. `widgetType`/`config` are cast, not re-validated: the DB CHECK
  * (`dashboard_widgets_widget_type_check`) guarantees `widgetType` is one of the four values, the
  * same trust `AdminAssetPointDto`'s `sourceKind` cast already extends to `sourceKind_check`.
+ *
+ * **One cast, not two (found in review).** `merged as unknown as DashboardWidgetDto` defeats the
+ * compiler entirely — going through `unknown` accepts any shape at all, on the one mapper that
+ * builds a response DTO. `merged as DashboardWidgetDto` alone still typechecks: TypeScript's
+ * "insufficient overlap" check only refuses a direct cast between structurally unrelated types,
+ * and `merged`'s inferred shape already carries every field of the target intersection under
+ * the same names — the discriminant `widgetType` just is not narrowed to one arm's literal
+ * (impossible statically here; it is a runtime value from `row`), which is exactly the residual
+ * risk this comment records rather than a stronger cast hides.
  */
 export function mapDashboardWidget(
   row: WidgetRow,
@@ -71,7 +80,7 @@ export function mapDashboardWidget(
     widgetType: row.widgetType,
     config: row.config,
   };
-  return merged as unknown as DashboardWidgetDto;
+  return merged as DashboardWidgetDto;
 }
 
 /** One stored widget's content, in the shape the diff compares against a submitted one. */
@@ -184,16 +193,32 @@ export class DashboardsService {
   /**
    * Lists dashboards, tenant-scoped. Open to `viewer`/`operator` — D4: this must NOT use
    * `writableOrganizationIds` (it calls `assertMasterDataRole` and would 403 a viewer).
+   *
+   * **Routed by `readableOrganizationIds`, never `readableAssetIds` (found in review).**
+   * `bms.dashboards` has no asset column — its only tenant key is `organization_id` — so an
+   * asset-derived routing decision is the wrong basis for this table entirely, and it failed
+   * in both directions: on the fleet branch (any caller whose readable assets, or lack of
+   * grants, don't collapse to exactly one organization) `readableAssetIds` supplied no
+   * `WHERE` filter at all, leaking every organization's dashboards; and a scoped caller whose
+   * grants resolve to zero assets took the `empty` branch and lost dashboards ADR 0047
+   * Amendment 2 ruling 2 says they must see. `organizationIdFilter` is the caller-side
+   * isolation control the fleet branch needs — see `withOrganizationReadScope`'s own docblock.
    */
   async list(jwt: JwtPayload, organizationId?: string): Promise<{ items: DashboardSummaryDto[] }> {
-    const assetIds = await this.accessControl.readableAssetIds(jwt);
-    return withReadScope(
+    const orgIds = await this.accessControl.readableOrganizationIds(jwt);
+    return withOrganizationReadScope(
       this.tenantDb,
       this.fleetDb,
-      assetIds,
+      orgIds,
       () => ({ items: [] }),
-      async (tx) => {
-        const conditions = organizationId ? [eq(dashboards.organizationId, organizationId)] : [];
+      async (tx, organizationIdFilter) => {
+        const conditions = [];
+        if (organizationId) {
+          conditions.push(eq(dashboards.organizationId, organizationId));
+        }
+        if (organizationIdFilter) {
+          conditions.push(inArray(dashboards.organizationId, organizationIdFilter));
+        }
         const rows = await tx
           .select({
             dashboard: dashboards,
@@ -211,23 +236,30 @@ export class DashboardsService {
   }
 
   /**
-   * Reads one dashboard by `(slug, organizationId?)` — D5: on the fleet pool a global admin can
-   * match more than one organization's dashboard for one slug, and this refuses ambiguity with
-   * a 400 rather than guessing the first (ADR 0046's audience-widening failure).
+   * Reads one dashboard by `(slug, organizationId?)` — D5: on the fleet pool a global admin (or
+   * any multi-organization caller) can match more than one organization's dashboard for one
+   * slug, and this refuses ambiguity with a 400 rather than guessing the first (ADR 0046's
+   * audience-widening failure). Routed by `readableOrganizationIds` for the same reason `list`
+   * is (see its docblock) — and `organizationIdFilter` on the fleet branch is what keeps the
+   * ambiguity check itself from becoming a cross-tenant existence disclosure: it now only fires
+   * when two of the CALLER'S OWN visible organizations share a slug, never a foreign one.
    */
   async getBySlug(jwt: JwtPayload, slug: string, organizationId?: string): Promise<DashboardDto> {
-    const assetIds = await this.accessControl.readableAssetIds(jwt);
-    return withReadScope(
+    const orgIds = await this.accessControl.readableOrganizationIds(jwt);
+    return withOrganizationReadScope(
       this.tenantDb,
       this.fleetDb,
-      assetIds,
+      orgIds,
       () => {
         throw new NotFoundException("Dashboard not found");
       },
-      async (tx) => {
+      async (tx, organizationIdFilter) => {
         const conditions = [eq(dashboards.slug, slug)];
         if (organizationId) {
           conditions.push(eq(dashboards.organizationId, organizationId));
+        }
+        if (organizationIdFilter) {
+          conditions.push(inArray(dashboards.organizationId, organizationIdFilter));
         }
         const rows = await tx
           .select()
@@ -248,6 +280,14 @@ export class DashboardsService {
 
   // ---- writes -----------------------------------------------------------------
 
+  /**
+   * Creates a dashboard. Gated by both `assertOperationsWriteRole("configuration")` and
+   * `canManageDashboard` (§4.7's additive pair — the controller already ran the first before
+   * this method was even called; this call is the defence-in-depth copy for a caller that
+   * invokes the service directly). `body`'s scope is already singular by construction —
+   * `createDashboardBodySchema`'s `scopeIsSingular` refinement refused a body carrying both
+   * `locationId` and `assetGroupId` before this method could ever see it.
+   */
   async create(jwt: JwtPayload, body: CreateDashboardBody): Promise<DashboardDto> {
     await this.accessControl.assertOperationsWriteRole(jwt, "configuration");
     const scope: DashboardScope = { locationId: body.locationId ?? null, assetGroupId: body.assetGroupId ?? null };
@@ -289,6 +329,16 @@ export class DashboardsService {
     });
   }
 
+  /**
+   * Updates a dashboard. `body` is a partial PATCH; every field is merged against the STORED
+   * row before any check runs, because a PATCH that sets only `locationId` cannot see whether
+   * the row already carries an `assetGroupId` — the schema alone cannot enforce singularity on
+   * a value it never receives. `canManageDashboard` runs on that merged scope BEFORE the
+   * "both set" 400 check (finding 5, review, and its own comment below): checking scope
+   * validity first would let an unauthorized caller distinguish "no such id" from "exists, and
+   * its stored scope conflicts with your PATCH" through a 400 rather than the uniform 404 every
+   * other refusal on this route promises.
+   */
   async update(jwt: JwtPayload, id: string, body: UpdateDashboardBody): Promise<DashboardDto> {
     await this.accessControl.assertOperationsWriteRole(jwt, "configuration");
     const existing = await this.fetchRowForWrite(id);
@@ -305,7 +355,11 @@ export class DashboardsService {
     // a caller who supplies only `locationId` against a FOREIGN dashboard whose stored
     // `assetGroupId` happens to be non-null would see a 400 (revealing the row exists and its
     // scope shape) before ever reaching this refusal. canManageDashboard does not itself depend
-    // on the two columns being mutually exclusive, so checking it first is safe either way.
+    // on the two columns being mutually exclusive, so checking it first is safe either way —
+    // `resolveScopeTarget` inside it resolves this exact "both set" merged scope to `{kind:
+    // "invalid"}` rather than throwing, precisely so this call site can run before the 400
+    // check below (finding 5, review — this ordering now ships with the test that would have
+    // caught reverting it).
     if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, nextScope))) {
       throw new NotFoundException("Dashboard not found");
     }
@@ -348,6 +402,12 @@ export class DashboardsService {
     });
   }
 
+  /**
+   * Deletes a dashboard. Both child tables (`dashboard_widgets`, `dashboard_widget_points`) are
+   * `ON DELETE CASCADE` (migration `0050`), so no manual cleanup runs here. `canManageDashboard`
+   * is evaluated against the row's OWN stored scope, which is always singular by construction —
+   * there is no merge to reorder against, unlike `update`.
+   */
   async remove(jwt: JwtPayload, id: string): Promise<void> {
     await this.accessControl.assertOperationsWriteRole(jwt, "configuration");
     const existing = await this.fetchRowForWrite(id);

@@ -1,4 +1,11 @@
-import { GAUGE_RANGE_MESSAGE, MAX_WIDGET_POINTS, WIDGET_POINT_CARDINALITY, widgetTypeSchema } from "@bms/shared";
+import {
+  GAUGE_RANGE_MESSAGE,
+  MAX_DASHBOARD_WIDGETS,
+  MAX_GAUGE_THRESHOLDS,
+  MAX_WIDGET_POINTS,
+  WIDGET_POINT_CARDINALITY,
+  widgetTypeSchema,
+} from "@bms/shared";
 
 import {
   createDashboardBodySchema,
@@ -261,6 +268,43 @@ export function runDashboardsSchemaTests(): void {
     putDashboardWidgetsBodySchema,
     { widgets: [validGaugeWidget, validChartWidget] },
     "a well-formed widget set must parse",
+  );
+
+  // -------------------------------------------------------------------------
+  // Finding 6 (review) — the two write bounds that had no refusal test:
+  // MAX_DASHBOARD_WIDGETS widgets per PUT, and MAX_GAUGE_THRESHOLDS threshold
+  // bands per gauge. Both build the array at the bound and one past it, so a
+  // deleted or widened `.max()` on either schema is what these catch —
+  // the gauge thresholds `.strict()` item is already gated by the ledger
+  // walk; the two `.max()` counts themselves were not.
+  // -------------------------------------------------------------------------
+  const widgetsAtCap = Array.from({ length: MAX_DASHBOARD_WIDGETS }, () => validGaugeWidget);
+  const widgetsOverCap = [...widgetsAtCap, validGaugeWidget];
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: widgetsAtCap },
+    `exactly MAX_DASHBOARD_WIDGETS (${MAX_DASHBOARD_WIDGETS}) widgets must parse`,
+  );
+  expectRejects(
+    putDashboardWidgetsBodySchema,
+    { widgets: widgetsOverCap },
+    `MAX_DASHBOARD_WIDGETS + 1 (${MAX_DASHBOARD_WIDGETS + 1}) widgets must be refused`,
+  );
+
+  const thresholdsAtCap = Array.from({ length: MAX_GAUGE_THRESHOLDS }, (_unused, i) => ({
+    value: i,
+    tone: "info" as const,
+  }));
+  const thresholdsOverCap = [...thresholdsAtCap, { value: MAX_GAUGE_THRESHOLDS, tone: "info" as const }];
+  expectAccepts(
+    widgetWriteSchema,
+    { ...validGaugeWidget, config: { min: 0, max: 100, thresholds: thresholdsAtCap } },
+    `exactly MAX_GAUGE_THRESHOLDS (${MAX_GAUGE_THRESHOLDS}) threshold bands must parse`,
+  );
+  expectRejects(
+    widgetWriteSchema,
+    { ...validGaugeWidget, config: { min: 0, max: 100, thresholds: thresholdsOverCap } },
+    `MAX_GAUGE_THRESHOLDS + 1 (${MAX_GAUGE_THRESHOLDS + 1}) threshold bands must be refused`,
   );
 
   // -------------------------------------------------------------------------

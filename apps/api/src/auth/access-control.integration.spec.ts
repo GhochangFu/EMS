@@ -805,6 +805,17 @@ export async function assertCanManageDashboard(
   if (!locId || !locOrgId) {
     throw new Error(`F3.1b: ${SEEDED.locationAdmin} has no location grant`);
   }
+  // Dedicated, relative to locOrgId — NOT orgBId (that is "not orgAId", and with exactly two
+  // seeded organizations it can coincide with locOrgId itself, which silently turns finding
+  // 4's regression test into a no-op assertion about the location_admin's own organization).
+  const locForeignOrg = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
+    [locOrgId],
+  );
+  const locForeignOrgId = locForeignOrg.rows[0]?.id;
+  if (!locForeignOrgId) {
+    throw new Error("F3.1b: need a second organization to prove the location's own org does not authorize a foreign org's dashboard");
+  }
 
   const groupAdminGroup = await pool.query<{ id: string; location_id: string; organization_id: string }>(
     `SELECT ag.id, ag.location_id, ag.organization_id
@@ -826,6 +837,14 @@ export async function assertCanManageDashboard(
   const foreignGroupId = foreignGroup.rows[0]?.id;
   if (!foreignGroupId) {
     throw new Error("F3.1b: need a foreign asset group to prove asset_group_admin is refused");
+  }
+  const groupForeignOrg = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
+    [groupOrgId],
+  );
+  const groupForeignOrgId = groupForeignOrg.rows[0]?.id;
+  if (!groupForeignOrgId) {
+    throw new Error("F3.1b: need a second organization to prove the group's own org does not authorize a foreign org's dashboard");
   }
 
   const orgWide = { locationId: null, assetGroupId: null };
@@ -864,6 +883,19 @@ export async function assertCanManageDashboard(
         "— such a row has no scope column and therefore no owner",
     );
   }
+  // Finding 4 (review): the location it holds authorizing a FOREIGN organization's dashboard.
+  // canManageLocation alone answers "may this user manage this location", never "does this
+  // location belong to organizationId" — without that second check an ORG_A location_admin's
+  // own locationId passed authorization for an ORG_B dashboard, contained only later by the
+  // database rather than by this gate.
+  if (
+    await svc.canManageDashboard(locationAdmin, locForeignOrgId, { locationId: locId, assetGroupId: null })
+  ) {
+    throw new Error(
+      "location_admin's own location must NOT authorize a dashboard stamped with ANOTHER " +
+        "organization's id — the location belongs to its own org, not locForeignOrgId",
+    );
+  }
 
   // asset_group_admin: true for a group whose location it holds, false otherwise.
   const groupAdmin = jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin");
@@ -877,6 +909,16 @@ export async function assertCanManageDashboard(
   }
   if (await svc.canManageDashboard(groupAdmin, groupOrgId, orgWide)) {
     throw new Error("asset_group_admin must be refused an organization-wide dashboard");
+  }
+  // Finding 4 (review): the group it holds authorizing a FOREIGN organization's dashboard —
+  // the asset-group analogue of the location_admin case above.
+  if (
+    await svc.canManageDashboard(groupAdmin, groupForeignOrgId, { locationId: null, assetGroupId: groupId })
+  ) {
+    throw new Error(
+      "asset_group_admin's own group must NOT authorize a dashboard stamped with ANOTHER " +
+        "organization's id — the group belongs to its own org, not groupForeignOrgId",
+    );
   }
 
   // viewer / operator: false, always — not thrown. An unprovisioned email so
