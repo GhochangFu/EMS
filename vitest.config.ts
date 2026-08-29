@@ -428,13 +428,17 @@ export default defineConfig({
       // small files. `F3.1c` adds exactly three files to this denominator —
       // `widget-catalog.ts`, `widget-value.ts`, `widget-echarts-option.ts`,
       // 333 lines together — against a 7517-statement denominator, roughly
-      // 2% of it. The 2026-08-21 `F2.5` entry above is the last time this
-      // ratchet was measured; eight days and several large items landed
-      // between it and this measurement (the `E7.1` multi-tenant series,
-      // ADR 0043–0047, `F3.1a`) without anyone re-measuring this gate, so it
-      // had drifted roughly 15 points **stale-low** rather than tight. This
-      // entry catches the ratchet up to the branch tip; it does not claim
-      // `F3.1c` wrote 15 points of new coverage.
+      // 2% of it. The evidence, not just the claim: the `F2.5` entry above
+      // (2026-08-21, the last time this ratchet was measured) recorded 131
+      // files / **483 tests**; `F3.1a`'s closure record
+      // (`docs/BACKLOG.md:436`) recorded **1023 passed**; this measurement
+      // is **1052**. Test count more than doubled between the last ratchet
+      // and `F3.1a` alone, and rose by 29 more since — several large items
+      // landed in between (the `E7.1` multi-tenant series, ADR 0043–0047,
+      // `F3.1a`) without anyone re-measuring this gate, so it had drifted
+      // roughly 15 points **stale-low** rather than tight. This entry
+      // catches the ratchet up to the branch tip; it does not claim `F3.1c`
+      // wrote 15 points of new coverage.
       //
       // Two full-suite runs under default parallelism each hit a different,
       // unrelated pre-existing timeout flake — `evaluate-enabled-rules.
@@ -447,13 +451,23 @@ export default defineConfig({
       // this item. The measurement above is the clean `--no-file-parallelism`
       // rerun: 215/215 files, 1052/1052 tests, exit 0.
       //
-      // Set just below the measurement, per axis, at roughly the same margin
-      // this file's other entries use.
+      // **Margin widened well past this file's usual ~0.3, deliberately.**
+      // This file documents two hazards against itself that a normal ~0.3
+      // margin does not absorb: `apps/api/src/calc/**` branches reachable
+      // only from state a fresh `db:migrate` → `db:seed` may not reproduce
+      // (the `F2.5` entry above), and `F4.33` (compressed chunks) recorded
+      // as still open. The measurement was also taken on this machine's
+      // long-lived database under `--no-file-parallelism`, neither of which
+      // is what CI runs (a fresh database, default parallelism, plain
+      // `pnpm test:coverage`). A threshold CI cannot meet is worse than a
+      // stale-low one and §4.6 leaves no clean escape — never lower a
+      // threshold to go green — so ~0.5–1.0 per axis is banked here instead
+      // of ~0.2, still catching roughly 14 of the 15 stale-low points.
       thresholds: {
-        statements: 68.3,
-        branches: 65.1,
-        functions: 70.5,
-        lines: 68.4,
+        statements: 67.8,
+        branches: 64.3,
+        functions: 70.0,
+        lines: 67.9,
       },
     },
   },
