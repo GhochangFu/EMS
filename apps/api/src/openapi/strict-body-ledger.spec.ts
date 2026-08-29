@@ -50,6 +50,13 @@ import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { loginBodySchema } from "../auth/login.schema";
 import { locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import {
+  createDashboardBodySchema,
+  getDashboardQuerySchema,
+  listDashboardsQuerySchema,
+  putDashboardWidgetsBodySchema,
+  updateDashboardBodySchema,
+} from "../dashboard-builder/dashboards.schema";
+import {
   convertMaintenanceBodySchema,
   createMaintenanceScheduleBodySchema,
   listMaintenanceQuerySchema,
@@ -161,6 +168,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   createAssetBodySchema,
   createAssetPointBodySchema,
   createAssetTemplateBodySchema,
+  createDashboardBodySchema,
   createLocationBodySchema,
   createMaintenanceScheduleBodySchema,
   createNotificationChannelBodySchema,
@@ -174,6 +182,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   manualReadingsBodySchema,
   migrateAssetsBodySchema,
   patchDraftBodySchema,
+  putDashboardWidgetsBodySchema,
   reorderWorkOrdersBodySchema,
   ruleDraftBodySchema,
   ruleLifecycleBodySchema,
@@ -185,6 +194,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   updateAssetBodySchema,
   updateAssetPointBodySchema,
   updateAssetTemplateBodySchema,
+  updateDashboardBodySchema,
   updateLocationBodySchema,
   updateMaintenanceScheduleBodySchema,
   updateNotificationChannelBodySchema,
@@ -195,7 +205,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
 };
 
 /**
- * The eight registered **query** schemas.
+ * The TEN registered **query** schemas — eight at `E7.1f`, plus two added by `F3.1b`.
  *
  * **Deliberately outside this item's audit, ruled by the repository owner on
  * 2026-08-28.** Amendment 3's title and the `E7.1f` row both say *mutating
@@ -208,11 +218,23 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
  * `admin/audit/audit.schema.ts:8` — "an unknown query key is a caller error,
  * not a…". That precedent is the argument for widening the audit later; it was
  * put to the owner and not taken for `E7.1f`.
+ *
+ * **`F3.1b` widened eight to ten**, registering `listDashboardsQuerySchema`
+ * (`GET /dashboards`) and `getDashboardQuerySchema` (`GET /dashboards/:slug`) —
+ * both carry the single `organizationId` parameter D5 needs to disambiguate a
+ * slug shared by more than one organization on the fleet pool. Leaving them
+ * unregistered would have made that parameter undiscoverable from the served
+ * document, which is the exact failure `F4.20` is in this repository's history
+ * for: a green suite and a static invariant still let a served document be
+ * wrong. This is the "deliberate act" `testEveryRegisteredSchemaIsUnderAudit`'s
+ * own comment asks for, not the shortcut it exists to catch.
  */
 export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   auditExportQuerySchema,
   auditListQuerySchema,
   energyReportQuerySchema,
+  getDashboardQuerySchema,
+  listDashboardsQuerySchema,
   listDeliveriesQuerySchema,
   listMaintenanceQuerySchema,
   listRuleExecutionsQuerySchema,
@@ -555,6 +577,20 @@ const WIDGET_CONFIG =
   "survive a field the server has added; an authoring body has the opposite obligation, and " +
   "one schema serves both because strictness is composed here rather than forked.";
 
+const DASHBOARD_WIDGET_WRITE_CONFIG =
+  "F3.1b (ADR 0047). Same composition as WIDGET_CONFIG above, at the live-dashboard write " +
+  "boundary rather than the template-authoring one: the shared config schema imported from " +
+  "@bms/shared, tightened with `.strict()` here (and, for the gauge arm, restated one level " +
+  "so its `thresholds[]` items are strict too — `.strict()` does not descend). The shared " +
+  "export stays tolerant per §4.8's response-survives-a-new-field rule; this write body has " +
+  "the opposite obligation.";
+
+const DASHBOARD_WIDGET_ARM =
+  "F3.1b (ADR 0047). A live dashboard widget is authored by hand — through F3.1d eventually, " +
+  "and through this API directly today — so an unknown key is an author's typo and must be " +
+  "refused rather than silently dropped. Each of the four arms is strict, and cardinality " +
+  "(ADR 0047 Amendment 2) is enforced on the `points` field, not by this node's own strictness.";
+
 const STRICT = (why: string): LedgerEntry => ({ strict: true, why });
 
 /**
@@ -629,6 +665,7 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "createAssetTemplateBodySchema/content/kpis[]": STRICT(ALREADY),
   "createAssetTemplateBodySchema/content/maintenance[]": STRICT(ALREADY),
   "createAssetTemplateBodySchema/points[]": STRICT(CALLER_ERROR),
+  createDashboardBodySchema: STRICT(CALLER_ERROR),
   createLocationBodySchema: STRICT(CALLER_ERROR),
   createMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),
   createNotificationChannelBodySchema: STRICT(CALLER_ERROR),
@@ -651,6 +688,17 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "patchDraftBodySchema/draft/onboardingMeta": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/pointKeys[]": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/rtus[]": { strict: false, because: THREE_PRODUCERS },
+  putDashboardWidgetsBodySchema: STRICT(CALLER_ERROR),
+  "putDashboardWidgetsBodySchema/widgets[]|0": STRICT(DASHBOARD_WIDGET_ARM),
+  "putDashboardWidgetsBodySchema/widgets[]|0/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
+  "putDashboardWidgetsBodySchema/widgets[]|0/config/thresholds[]": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
+  "putDashboardWidgetsBodySchema/widgets[]|0/points[]": STRICT(CALLER_ERROR),
+  "putDashboardWidgetsBodySchema/widgets[]|1": STRICT(DASHBOARD_WIDGET_ARM),
+  "putDashboardWidgetsBodySchema/widgets[]|1/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
+  "putDashboardWidgetsBodySchema/widgets[]|2": STRICT(DASHBOARD_WIDGET_ARM),
+  "putDashboardWidgetsBodySchema/widgets[]|2/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
+  "putDashboardWidgetsBodySchema/widgets[]|3": STRICT(DASHBOARD_WIDGET_ARM),
+  "putDashboardWidgetsBodySchema/widgets[]|3/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
   reorderWorkOrdersBodySchema: STRICT(CALLER_ERROR),
   "reorderWorkOrdersBodySchema/items[]": STRICT(CALLER_ERROR),
   ruleDraftBodySchema: STRICT(CALLER_ERROR),
@@ -672,6 +720,7 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   updateAssetBodySchema: STRICT(CALLER_ERROR),
   updateAssetPointBodySchema: STRICT(CALLER_ERROR),
   updateAssetTemplateBodySchema: STRICT(CALLER_ERROR),
+  updateDashboardBodySchema: STRICT(CALLER_ERROR),
   "updateAssetTemplateBodySchema/content": STRICT(ALREADY),
   "updateAssetTemplateBodySchema/content/alarms[]": STRICT(ALREADY),
   "updateAssetTemplateBodySchema/content/alarms[]/philosophy": STRICT(ALREADY),
@@ -865,14 +914,20 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // `REQUEST_SCHEMAS` records no HTTP method, so a schema satisfies the check
   // from EITHER map. A developer who adds a route, sees "in no audit list" and
   // pastes the name into `QUERY_SCHEMAS` skips the strictness audit entirely,
-  // with a green build. Eight is the owner's 2026-08-28 boundary; a ninth must
-  // be a deliberate act, not a way out of a failing test.
+  // with a green build. Eight was the owner's 2026-08-28 boundary; a ninth
+  // must be a deliberate act, not a way out of a failing test.
+  //
+  // **`F3.1b` widened it to ten, deliberately: `listDashboardsQuerySchema` and
+  // `getDashboardQuerySchema` (both carry D5's `organizationId` disambiguator)
+  // are genuinely new GET query schemas, not a body schema smuggled in to
+  // dodge the strictness audit below — both are plain, unstrict `organizationId`
+  // filters with no request body to decide strictness for.**
   expect(
     Object.keys(QUERY_SCHEMAS).length,
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(8);
+  ).toBe(10);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

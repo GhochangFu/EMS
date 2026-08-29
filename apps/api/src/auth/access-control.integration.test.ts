@@ -8,6 +8,7 @@ import { AccessControlService } from "./access-control.service";
 import {
   assertAssetGroupScope,
   assertAssetManagementFollowsLocation,
+  assertCanManageDashboard,
   assertDbRoleBeatsJwtClaim,
   assertFixturesPresent,
   assertGlobalAdminScope,
@@ -134,5 +135,9 @@ describe.skipIf(!connectionString)("F4.10 — access control against a real data
 
   it("resolves asset management through location_id (ADR 0018)", async () => {
     await assertAssetManagementFollowsLocation(svc, pool as pg.Pool);
+  });
+
+  it("canManageDashboard follows ADR 0047 Amendment 2 ruling 2 (F3.1b)", async () => {
+    await assertCanManageDashboard(svc, pool as pg.Pool);
   });
 });

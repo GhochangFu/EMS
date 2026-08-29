@@ -21,9 +21,14 @@ import type { AccessControlService } from "./access-control.service";
  * proves only that it is self-consistent, which is exactly the property a
  * wrong `INNER JOIN` also has.
  *
- * Read-only by construction: no fixture is inserted, updated or deleted, so the
- * suite is safe against the shared local database and needs no teardown. The
- * fixtures are the ones `pnpm db:seed` creates.
+ * Read-only by construction, with **one bounded exception since `F3.1b`**: the
+ * fixtures are the ones `pnpm db:seed` creates, and nothing here inserts,
+ * updates or deletes — except `assertCanManageDashboard`, which creates a
+ * foreign asset group when the seed supplied none, and deletes that same row on
+ * the way out. It never touches a seeded row. The exception exists because a
+ * fresh seed gives the second organization locations but no asset groups, so
+ * the refusal that block asserts had nothing foreign to be refused on the only
+ * database that is actually clean — CI's.
  */
 
 /** Emails seeded by `packages/db/src/seed.ts`, one per read-scope source. */
@@ -757,5 +762,214 @@ export async function assertAssetManagementFollowsLocation(
   // Unknown id: no row, so no location — must be denied, not thrown.
   if (await svc.canManageAsset(jwt, "00000000-0000-4000-8000-0000000000ff")) {
     throw new Error("canManageAsset allowed a non-existent asset");
+  }
+}
+
+/**
+ * `F3.1b` — `canManageDashboard` (ADR 0047 Amendment 2 ruling 2).
+ *
+ * Every case below is asserted against a REAL organization/location/group
+ * the seed produced, never an invented uuid — a fabricated id would pass
+ * every "false" assertion vacuously regardless of whether the method reads
+ * the database at all.
+ */
+export async function assertCanManageDashboard(
+  svc: AccessControlService,
+  pool: pg.Pool,
+): Promise<void> {
+  const orgAdminOrg = await pool.query<{ id: string }>(
+    `SELECT uoa.organization_id AS id
+       FROM bms.user_organization_access uoa
+       JOIN bms.users u ON u.id = uoa.user_id
+      WHERE u.email = $1 LIMIT 1`,
+    [SEEDED.organizationAdmin],
+  );
+  const orgAId = orgAdminOrg.rows[0]?.id;
+  if (!orgAId) {
+    throw new Error(`F3.1b: ${SEEDED.organizationAdmin} has no organization grant`);
+  }
+  const foreignOrg = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
+    [orgAId],
+  );
+  const orgBId = foreignOrg.rows[0]?.id;
+  if (!orgBId) {
+    throw new Error("F3.1b: need a second organization to prove organization_admin is refused");
+  }
+
+  const locationAdminLocation = await pool.query<{ id: string; organization_id: string }>(
+    `SELECT l.id, l.organization_id
+       FROM bms.locations l
+       JOIN bms.user_location_access ula ON ula.location_id = l.id
+       JOIN bms.users u ON u.id = ula.user_id
+      WHERE u.email = $1 LIMIT 1`,
+    [SEEDED.locationAdmin],
+  );
+  const locId = locationAdminLocation.rows[0]?.id;
+  const locOrgId = locationAdminLocation.rows[0]?.organization_id;
+  if (!locId || !locOrgId) {
+    throw new Error(`F3.1b: ${SEEDED.locationAdmin} has no location grant`);
+  }
+  // Dedicated, relative to locOrgId — NOT orgBId (that is "not orgAId", and with exactly two
+  // seeded organizations it can coincide with locOrgId itself, which silently turns finding
+  // 4's regression test into a no-op assertion about the location_admin's own organization).
+  const locForeignOrg = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
+    [locOrgId],
+  );
+  const locForeignOrgId = locForeignOrg.rows[0]?.id;
+  if (!locForeignOrgId) {
+    throw new Error("F3.1b: need a second organization to prove the location's own org does not authorize a foreign org's dashboard");
+  }
+
+  const groupAdminGroup = await pool.query<{ id: string; location_id: string; organization_id: string }>(
+    `SELECT ag.id, ag.location_id, ag.organization_id
+       FROM bms.asset_groups ag
+       JOIN bms.user_asset_group_access uaga ON uaga.asset_group_id = ag.id
+       JOIN bms.users u ON u.id = uaga.user_id
+      WHERE u.email = $1 LIMIT 1`,
+    [SEEDED.assetGroupAdmin],
+  );
+  const groupId = groupAdminGroup.rows[0]?.id;
+  const groupOrgId = groupAdminGroup.rows[0]?.organization_id;
+  if (!groupId || !groupOrgId) {
+    throw new Error(`F3.1b: ${SEEDED.assetGroupAdmin} has no asset-group grant`);
+  }
+  const foreignGroup = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.asset_groups WHERE id <> $1 AND organization_id <> $2 LIMIT 1`,
+    [groupId, groupOrgId],
+  );
+  let foreignGroupId = foreignGroup.rows[0]?.id;
+  /** Set only when the seed supplied no foreign asset group and this function made one. */
+  let createdForeignGroupId: string | undefined;
+  if (!foreignGroupId) {
+    // **A fresh `pnpm db:seed` gives the second organization locations but no asset groups.**
+    // This threw "run pnpm db:seed" until CI proved the advice wrong: a developer database
+    // accumulates them from the pilot seed and from other suites' fixtures, so the requirement
+    // held on every machine and failed on the only database that is actually clean. Without
+    // this the refusal below has nothing foreign to be refused, which is the assertion the
+    // whole block exists for.
+    const foreignLocation = await pool.query<{ id: string; organization_id: string }>(
+      `SELECT id, organization_id FROM bms.locations WHERE organization_id <> $1 ORDER BY created_at, id LIMIT 1`,
+      [groupOrgId],
+    );
+    const foreignLocationId = foreignLocation.rows[0]?.id;
+    const foreignLocationOrgId = foreignLocation.rows[0]?.organization_id;
+    if (!foreignLocationId || !foreignLocationOrgId) {
+      throw new Error("F3.1b: need a location in a second organization to build a foreign asset group");
+    }
+    const created = await pool.query<{ id: string }>(
+      `INSERT INTO bms.asset_groups (organization_id, location_id, code, name)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [foreignLocationOrgId, foreignLocationId, `f31b-foreign-${Date.now()}`, "F3.1b foreign group"],
+    );
+    foreignGroupId = created.rows[0]?.id;
+    createdForeignGroupId = foreignGroupId;
+  }
+  if (!foreignGroupId) {
+    throw new Error("F3.1b: could not read or create a foreign asset group");
+  }
+  const groupForeignOrg = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
+    [groupOrgId],
+  );
+  const groupForeignOrgId = groupForeignOrg.rows[0]?.id;
+  if (!groupForeignOrgId) {
+    throw new Error("F3.1b: need a second organization to prove the group's own org does not authorize a foreign org's dashboard");
+  }
+
+  const orgWide = { locationId: null, assetGroupId: null };
+
+  // admin: true for every organization and scope, including organization-wide.
+  const admin = jwtFor(SEEDED.globalAdmin, "admin");
+  if (!(await svc.canManageDashboard(admin, orgAId, orgWide))) {
+    throw new Error("admin must manage an organization-wide dashboard");
+  }
+  if (!(await svc.canManageDashboard(admin, orgBId, { locationId: locId, assetGroupId: null }))) {
+    throw new Error("admin must manage a location-scoped dashboard in any organization");
+  }
+
+  // organization_admin: true for its own organization, false — refused, not
+  // merely absent — for another's.
+  const orgAdmin = jwtFor(SEEDED.organizationAdmin, "organization_admin");
+  if (!(await svc.canManageDashboard(orgAdmin, orgAId, orgWide))) {
+    throw new Error("organization_admin must manage an organization-wide dashboard in its own org");
+  }
+  if (await svc.canManageDashboard(orgAdmin, orgBId, orgWide)) {
+    throw new Error("organization_admin must be refused another organization's dashboard");
+  }
+
+  // location_admin: true for a dashboard scoped to a location it holds.
+  const locationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
+  if (!(await svc.canManageDashboard(locationAdmin, locOrgId, { locationId: locId, assetGroupId: null }))) {
+    throw new Error("location_admin must manage a dashboard scoped to its own location");
+  }
+  // FALSE for an organization-wide dashboard in its OWN organization — the
+  // carrier of ADR 0047 Amendment 2 ruling 2, and the assertion a refactor is
+  // most likely to lose (every other location_admin assertion here is about a
+  // foreign organization, not its own).
+  if (await svc.canManageDashboard(locationAdmin, locOrgId, orgWide)) {
+    throw new Error(
+      "location_admin must be refused an organization-wide dashboard even in its own organization " +
+        "— such a row has no scope column and therefore no owner",
+    );
+  }
+  // Finding 4 (review): the location it holds authorizing a FOREIGN organization's dashboard.
+  // canManageLocation alone answers "may this user manage this location", never "does this
+  // location belong to organizationId" — without that second check an ORG_A location_admin's
+  // own locationId passed authorization for an ORG_B dashboard, contained only later by the
+  // database rather than by this gate.
+  if (
+    await svc.canManageDashboard(locationAdmin, locForeignOrgId, { locationId: locId, assetGroupId: null })
+  ) {
+    throw new Error(
+      "location_admin's own location must NOT authorize a dashboard stamped with ANOTHER " +
+        "organization's id — the location belongs to its own org, not locForeignOrgId",
+    );
+  }
+
+  // asset_group_admin: true for a group whose location it holds, false otherwise.
+  const groupAdmin = jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin");
+  if (!(await svc.canManageDashboard(groupAdmin, groupOrgId, { locationId: null, assetGroupId: groupId }))) {
+    throw new Error("asset_group_admin must manage a dashboard scoped to its own group");
+  }
+  if (
+    await svc.canManageDashboard(groupAdmin, groupOrgId, { locationId: null, assetGroupId: foreignGroupId })
+  ) {
+    throw new Error("asset_group_admin must be refused a dashboard scoped to a foreign group");
+  }
+  if (await svc.canManageDashboard(groupAdmin, groupOrgId, orgWide)) {
+    throw new Error("asset_group_admin must be refused an organization-wide dashboard");
+  }
+  // Finding 4 (review): the group it holds authorizing a FOREIGN organization's dashboard —
+  // the asset-group analogue of the location_admin case above.
+  if (
+    await svc.canManageDashboard(groupAdmin, groupForeignOrgId, { locationId: null, assetGroupId: groupId })
+  ) {
+    throw new Error(
+      "asset_group_admin's own group must NOT authorize a dashboard stamped with ANOTHER " +
+        "organization's id — the group belongs to its own org, not groupForeignOrgId",
+    );
+  }
+
+  // viewer / operator: false, always — not thrown. An unprovisioned email so
+  // resolveDbUser falls back to the claim (ADR 0017/0044) rather than
+  // resolving a seeded admin/org-admin row that would make this vacuous.
+  for (const role of ["viewer", "operator"] as const) {
+    const jwt = jwtFor(`f3.1b-no-grants-${role}@integration.invalid`, role);
+    if (await svc.canManageDashboard(jwt, orgAId, { locationId: locId, assetGroupId: null })) {
+      throw new Error(`${role} must be refused canManageDashboard on any scope`);
+    }
+    if (await svc.canManageDashboard(jwt, orgAId, orgWide)) {
+      throw new Error(`${role} must be refused an organization-wide dashboard`);
+    }
+  }
+
+  // Only the group this function created, and only on the way out — a seeded row is never
+  // deleted here. Deliberately after the assertions rather than in a `finally`: a failing
+  // assertion should leave the fixture in place to be inspected, and the next run's
+  // `code` carries a fresh timestamp, so a leftover cannot collide.
+  if (createdForeignGroupId) {
+    await pool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [createdForeignGroupId]);
   }
 }

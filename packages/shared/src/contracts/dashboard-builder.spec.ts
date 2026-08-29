@@ -4,6 +4,7 @@ import {
   chartConfigSchema,
   chartSeriesKindSchema,
   dashboardWidgetDtoSchema,
+  dashboardWidgetPointDtoSchema,
   dashboardWidgetSpecSchema,
   radialGaugeConfigSchema,
   widgetPointRoleSchema,
@@ -152,12 +153,18 @@ export function runDashboardBuilderTests(): void {
         pointId: "55555555-5555-4555-8555-555555555555",
         role: "series",
         sortOrder: 0,
+        assetId: "88888888-8888-4888-8888-888888888888",
+        pointKey: "kw",
+        unit: "kW",
       },
       {
         id: "66666666-6666-4666-8666-666666666666",
         pointId: "77777777-7777-4777-8777-777777777777",
         role: "series",
         sortOrder: 1,
+        assetId: "99999999-9999-4999-8999-999999999999",
+        pointKey: "kwh",
+        unit: null,
       },
     ],
     widgetType: "chart",
@@ -235,5 +242,39 @@ export function runWidgetPointCardinalityTests(): void {
     WIDGET_POINT_CARDINALITY.chart.min === 1 &&
       WIDGET_POINT_CARDINALITY.chart.max === MAX_WIDGET_POINTS,
     `chart takes 1..MAX_WIDGET_POINTS series, got ${JSON.stringify(WIDGET_POINT_CARDINALITY.chart)}`,
+  );
+}
+
+/**
+ * `F3.1b` — the widened point-binding DTO carries `assetId`/`pointKey`/`unit`.
+ *
+ * Without these a caller cannot build the `pointRef` a telemetry read needs, and this is also
+ * the shape Task 5's organization guard (`dashboard-point-scope.ts`) exists to keep tenant-pure
+ * on the way out — asserted here only as "the contract requires it", not as the guard itself.
+ */
+export function runDashboardWidgetPointDtoTests(): void {
+  const point = {
+    id: "44444444-4444-4444-8444-444444444444",
+    pointId: "55555555-5555-4555-8555-555555555555",
+    role: "primary",
+    sortOrder: 0,
+    assetId: "88888888-8888-4888-8888-888888888888",
+    pointKey: "kw",
+    unit: "kW",
+  };
+  expectAccepts(
+    dashboardWidgetPointDtoSchema,
+    point,
+    "a point binding with assetId/pointKey and a unit must parse",
+  );
+  expectAccepts(
+    dashboardWidgetPointDtoSchema,
+    { ...point, unit: null },
+    "a point binding with a null unit must parse — not every point carries one",
+  );
+  expectRejects(
+    dashboardWidgetPointDtoSchema,
+    { ...point, assetId: undefined },
+    "a point binding missing assetId must be refused — without it a caller cannot build a pointRef",
   );
 }
