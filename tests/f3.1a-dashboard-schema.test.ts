@@ -17,9 +17,37 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  * opposite of what this repository wants. `tests/adr-0030-contract-derivation.test.ts` skips
  * comment lines for the same reason.
  *
- * Positive assertions keep the raw text: a `toContain` cannot be satisfied by a comment that
- * happens to quote the statement, because the statement has to be there too.
+ * **A positive assertion needs it too, and the first draft of this file got that wrong.** The
+ * sentence here used to read "a `toContain` cannot be satisfied by a comment that happens to
+ * quote the statement, because the statement has to be there too". That is false, and this
+ * item's correctness review measured it: `RESET ROLE;` occurs twice in the raw migration —
+ * once as the statement, once inside the header comment explaining why it is mandatory — so
+ * deleting the statement left the assertion green. Nothing else covered it, because the
+ * integration suite's `pg_get_userbyid(relowner)` proves `SET ROLE` *fired*, never that it was
+ * *released*. Both role assertions now read `sqlOnly()`.
+ *
+ * A positive assertion may keep the raw text only where a comment could not plausibly quote
+ * the thing being asserted.
  */
+/** The text of one table's `CREATE POLICY tenant_isolation` statement, terminator included. */
+const policyBlock = (migration: string, table: string): string => {
+  const start = migration.indexOf(`CREATE POLICY tenant_isolation ON bms.${table}\n`);
+  if (start < 0) throw new Error(`no tenant_isolation policy for bms.${table}`);
+  const end = migration.indexOf(";\n", start);
+  if (end < 0) throw new Error(`unterminated tenant_isolation policy for bms.${table}`);
+  return migration.slice(start, end + 1);
+};
+
+/** One table's `CREATE TABLE …( … );` body, so a per-table assertion cannot be satisfied by a
+ * neighbour's column. */
+const tableBlock = (migration: string, table: string): string => {
+  const start = migration.indexOf(`CREATE TABLE IF NOT EXISTS bms.${table} (`);
+  if (start < 0) throw new Error(`no CREATE TABLE for bms.${table}`);
+  const end = migration.indexOf("\n);", start);
+  if (end < 0) throw new Error(`unterminated CREATE TABLE for bms.${table}`);
+  return migration.slice(start, end + 3);
+};
+
 const sqlOnly = (source: string): string =>
   source
     .split("\n")
@@ -104,11 +132,14 @@ describe("F3.1a — configurable dashboard schema (migration 0050)", () => {
     // ownership, and `0041:112-119`'s ALTER DEFAULT PRIVILEGES FOR ROLE bms_owner grants to
     // bms_tenant/bms_fleet only for objects *that role* creates. pnpm db:migrate connects as
     // DATABASE_URL_SUPERUSER (bms_app), so without this the three tables reach no pool role.
-    expect(migration).toContain("SET ROLE bms_owner;");
+    // sqlOnly(), not the raw text: the header quotes both statements while explaining why
+    // they are mandatory, so a raw scan is satisfied by the prose alone. Measured — deleting
+    // `RESET ROLE;` from the file left the raw assertion green.
+    expect(sqlOnly(migration)).toContain("SET ROLE bms_owner;");
 
     // Mandatory, not symmetry: `0041`'s comment records that a leaked SET ROLE reaches the
     // drizzle migrator's own journal write and every later migration in the same run.
-    expect(migration).toContain("RESET ROLE;");
+    expect(sqlOnly(migration)).toContain("RESET ROLE;");
   });
 
   it("never uses CREATE INDEX CONCURRENTLY", () => {
@@ -121,40 +152,114 @@ describe("F3.1a — configurable dashboard schema (migration 0050)", () => {
     const migration = read(MIGRATION_REL);
 
     for (const table of TABLES) {
-      expect(migration, `${table} needs organization_id NOT NULL (ADR 0047 decision 5)`).toMatch(
-        new RegExp(
-          `organization_id uuid NOT NULL REFERENCES bms\\.organizations\\(id\\)[\\s\\S]{0,4000}?CREATE TABLE IF NOT EXISTS bms\\.${table}|CREATE TABLE IF NOT EXISTS bms\\.${table}[\\s\\S]{0,4000}?organization_id uuid NOT NULL REFERENCES bms\\.organizations\\(id\\)`,
-        ),
-      );
-
+      // Scoped to this table's OWN block. The first draft allowed the declaration to sit
+      // within 4000 characters of the CREATE TABLE, and the review measured a 3600-character
+      // gap between `bms.dashboards` and the NEXT table's column — so removing the column from
+      // one table was satisfied by its neighbour's.
+      expect(
+        tableBlock(migration, table),
+        `${table} needs organization_id NOT NULL (ADR 0047 decision 5)`,
+      ).toContain("organization_id uuid NOT NULL REFERENCES bms.organizations(id)");
       expect(migration).toContain(`ALTER TABLE bms.${table} ENABLE ROW LEVEL SECURITY;`);
 
-      // ENABLE alone exempts the table owner, and bms_owner is the owner — so without FORCE
-      // the policy is decorative for the one role that matters. This is the defect ADR 0045
-      // was written for: F4.16's FORCE was a no-op while bms_app owned the schema.
+      // ENABLE alone exempts the table owner, and bms_owner IS the owner — so without FORCE
+      // the policy is decorative for the one role that matters. That is the defect ADR 0045
+      // exists for: F4.16's FORCE was a no-op while bms_app owned the schema.
       expect(migration).toContain(`ALTER TABLE bms.${table} FORCE ROW LEVEL SECURITY;`);
-
       expect(migration).toContain(`DROP POLICY IF EXISTS tenant_isolation ON bms.${table};`);
+
       expect(migration).toContain(`CREATE POLICY tenant_isolation ON bms.${table}`);
     }
-
-    // USING and WITH CHECK must be the identical strict predicate. Read and write have to
-    // agree: a read-only predicate leaves the write path open, which is the shape E7.1c found
-    // — "the grant was not the hole, the policy disjunct was".
-    const predicate =
-      "organization_id = nullif(current_setting('app.current_organization', true), '')::uuid";
-    expect(
-      sqlOnly(migration).split(predicate).length - 1,
-      "each of the three policies needs the predicate twice — once USING, once WITH CHECK",
-    ).toBe(TABLES.length * 2);
   });
 
-  it("admits no NULL-organization disjunct in any policy", () => {
-    // All three tables are organization_id NOT NULL, so unlike bms.users, bms.audit_log and
-    // bms.notification_channels there is no legitimate fleet-owned row to admit. `0047`'s §3b
-    // idiom and `0048`'s Amendment 5 role-scoped NULL branch both exist for tables that have
-    // one; copying either here by habit would open a hole with nothing behind it.
-    expect(sqlOnly(read(MIGRATION_REL))).not.toMatch(/organization_id IS NULL/i);
+  it("checks every org-bearing parent, not only the row's own column", () => {
+    // ADDED AFTER THIS ITEM'S SECURITY REVIEW PROVED THE GAP ON THE RUNNING STACK.
+    //
+    // Postgres runs a referential-integrity check with row security OFF, so a foreign key
+    // never consults the parent's policy. A correctly-stamped row can therefore point at
+    // another tenant's parent and be accepted: as `bms_tenant` with the ESKOM GUC set, an
+    // ESKOM-stamped `dashboard_widget_points` row bound a PHEWB `asset_points` id and the
+    // INSERT succeeded.
+    //
+    // `bms.asset_group_members` in migration 0047 §3c is the structural twin and already
+    // carries the answer — check both org-bearing parents with an EXISTS, in USING and in
+    // WITH CHECK, calling it "tighter than keying on one and leaving a cross-org pairing
+    // visible". These three tables have a denormalised `organization_id` as well, which makes
+    // them LOOK like they meet that standard while enforcing strictly less.
+    //
+    // Asserted per leg rather than by matching the whole policy verbatim: a verbatim match
+    // reddens on any reformatting, and this states what must be TRUE rather than how it is
+    // typed.
+    const migration = read(MIGRATION_REL);
+    const ORG = "nullif(current_setting('app.current_organization', true), '')::uuid";
+
+    const parentChecks: Record<string, Array<[string, string, string]>> = {
+      dashboards: [
+        ["bms.locations l", "l.id = dashboards.location_id", "l.organization_id"],
+        ["bms.asset_groups g", "g.id = dashboards.asset_group_id", "g.organization_id"],
+      ],
+      dashboard_widgets: [
+        ["bms.dashboards d", "d.id = dashboard_widgets.dashboard_id", "d.organization_id"],
+      ],
+      dashboard_widget_points: [
+        ["bms.dashboard_widgets w", "w.id = dashboard_widget_points.widget_id", "w.organization_id"],
+        ["bms.asset_points p", "p.id = dashboard_widget_points.point_id", "p.organization_id"],
+      ],
+    };
+
+    for (const [table, legs] of Object.entries(parentChecks)) {
+      const policy = policyBlock(migration, table);
+
+      // The own-column check survives ALONGSIDE the parent checks, not instead of them.
+      expect(policy, `${table} must still check its own organization_id`).toContain(
+        `organization_id = ${ORG}`,
+      );
+
+      for (const [from, join, orgCol] of legs) {
+        // Twice — once in USING, once in WITH CHECK. A read-only check leaves the write path
+        // open, which is the asymmetry E7.1c found: the grant was not the hole, the policy
+        // disjunct was.
+        expect(
+          policy.split(`SELECT 1 FROM ${from}`).length - 1,
+          `${table} must check ${from} in USING and in WITH CHECK`,
+        ).toBe(2);
+        expect(policy).toContain(join);
+        // Written explicitly rather than leaning on the parent's own policy to filter the
+        // subquery — 0047 §3c's rule, and what makes it correct under `bms_owner`, which is
+        // FORCE-bound but filtered differently from `bms_tenant`.
+        expect(policy).toContain(`${orgCol} = ${ORG}`);
+      }
+    }
+  });
+
+  it("admits no fail-open disjunct in any policy", () => {
+    const sql = sqlOnly(read(MIGRATION_REL));
+
+    // Shape 1 — the 0047/0048 NULL-org branch. All three tables are `organization_id NOT
+    // NULL`, so there is no legitimate fleet-owned row and nothing behind such a disjunct.
+    expect(sql).not.toMatch(/organization_id IS NULL/i);
+
+    // Shape 2, and the more dangerous one, because it fails OPEN rather than closed: a policy
+    // admitting every row when the GUC is unset. Two other guards look like they would catch
+    // it and do not — a disjunct ADDS text rather than changing it, so any occurrence count
+    // still passes; and the integration suite never reaches it, because `inTx` always sets the
+    // GUC and its no-tenant case sets `''`, so `current_setting` returns the empty string and
+    // never NULL.
+    expect(sql).not.toMatch(/current_setting\([^()]*\)\s*IS NULL/i);
+
+    // The ONLY `OR` these policies may contain is `<nullable scope> IS NULL OR EXISTS (…)`,
+    // which cannot fail open: a NULL scope is an organization-wide dashboard, still gated by
+    // the own-column check. Anything else is a widening nobody recorded.
+    //
+    // Line-scoped on purpose: an unbounded `[^;]*` across a 250-line file backtracks for two
+    // minutes and kills the worker, which is how this assertion was first written.
+    for (const line of sql.split("\n")) {
+      const or = /\bOR\b(.*)$/i.exec(line);
+      if (or === null) continue;
+      expect(line.trim(), `unexpected OR in a policy: ${line.trim()}`).toMatch(
+        /IS NULL OR EXISTS \(SELECT 1/,
+      );
+    }
   });
 
   it("closes the widget vocabulary to exactly the four ADR 0047 types", () => {
@@ -232,7 +337,7 @@ describe("F3.1a — configurable dashboard schema (migration 0050)", () => {
     );
   });
 
-  it("creates the four indexes, each with a read behind it", () => {
+  it("creates the three explicit indexes, each with a read behind it", () => {
     const migration = read(MIGRATION_REL);
     for (const index of [
       "dashboard_widgets_dashboard_idx",

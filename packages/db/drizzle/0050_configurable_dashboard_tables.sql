@@ -228,25 +228,100 @@ CREATE INDEX IF NOT EXISTS dashboard_widget_points_point_idx
 -- That is the exact defect ADR 0045 exists for: `F4.16`'s FORCE was a no-op
 -- while `bms_app` owned the schema.
 
+-- EVERY POLICY CHECKS ITS ORG-BEARING PARENTS, NOT ONLY ITS OWN COLUMN.
+--
+-- The own column alone is NOT enough, and this was proved on the running stack
+-- by this item's security review rather than reasoned about: Postgres runs a
+-- referential-integrity check with row security OFF, so a foreign key never
+-- consults the parent's policy. As `bms_tenant` with the ESKOM tenant set, an
+-- ESKOM-stamped `dashboard_widget_points` row bound a PHEWB `asset_points` id
+-- and the INSERT succeeded.
+--
+-- `bms.asset_group_members` in `0047` section 3c is the structural twin and
+-- already carries the answer: check BOTH org-bearing parents with an `EXISTS`,
+-- in `USING` and in `WITH CHECK`. Its own comment calls that "tighter than
+-- keying on one and leaving a cross-org pairing visible". These three tables
+-- also have a denormalised `organization_id`, which makes them LOOK like they
+-- meet that standard while enforcing strictly less -- so they carry the
+-- own-column check AND the parent checks.
+--
+-- The comparison is written explicitly (`parent.organization_id = <current
+-- org>`) rather than leaning on the parent's own policy to filter the
+-- subquery. That is `0047` section 3c's rule, and it is what makes this correct
+-- under `bms_owner`, which is FORCE-bound but filtered differently from
+-- `bms_tenant`.
+--
+-- `dashboards`' two scope legs are nullable, so each is `IS NULL OR EXISTS(...)`.
+-- Those are the only `OR`s in any of these policies and neither can fail open:
+-- a NULL scope is an organization-wide dashboard, still gated by the own-column
+-- check.
+--
+-- ONE VISIBLE CONSEQUENCE, and it is not a regression: `WITH CHECK` runs before
+-- the foreign key's AFTER trigger, so a NONEXISTENT parent id is now refused by
+-- the policy rather than by the key, and the error names row-level security
+-- instead of the constraint. The foreign keys are unchanged and still enforced.
+
 ALTER TABLE bms.dashboards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bms.dashboards FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON bms.dashboards;
 CREATE POLICY tenant_isolation ON bms.dashboards
-  USING (organization_id = nullif(current_setting('app.current_organization', true), '')::uuid)
-  WITH CHECK (organization_id = nullif(current_setting('app.current_organization', true), '')::uuid);
+  USING (
+    organization_id = nullif(current_setting('app.current_organization', true), '')::uuid
+    AND (location_id IS NULL OR EXISTS (SELECT 1 FROM bms.locations l
+             WHERE l.id = dashboards.location_id
+               AND l.organization_id = nullif(current_setting('app.current_organization', true), '')::uuid))
+    AND (asset_group_id IS NULL OR EXISTS (SELECT 1 FROM bms.asset_groups g
+             WHERE g.id = dashboards.asset_group_id
+               AND g.organization_id = nullif(current_setting('app.current_organization', true), '')::uuid))
+  )
+  WITH CHECK (
+    organization_id = nullif(current_setting('app.current_organization', true), '')::uuid
+    AND (location_id IS NULL OR EXISTS (SELECT 1 FROM bms.locations l
+             WHERE l.id = dashboards.location_id
+               AND l.organization_id = nullif(current_setting('app.current_organization', true), '')::uuid))
+    AND (asset_group_id IS NULL OR EXISTS (SELECT 1 FROM bms.asset_groups g
+             WHERE g.id = dashboards.asset_group_id
+               AND g.organization_id = nullif(current_setting('app.current_organization', true), '')::uuid))
+  );
 
 ALTER TABLE bms.dashboard_widgets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bms.dashboard_widgets FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON bms.dashboard_widgets;
 CREATE POLICY tenant_isolation ON bms.dashboard_widgets
-  USING (organization_id = nullif(current_setting('app.current_organization', true), '')::uuid)
-  WITH CHECK (organization_id = nullif(current_setting('app.current_organization', true), '')::uuid);
+  USING (
+    organization_id = nullif(current_setting('app.current_organization', true), '')::uuid
+    AND EXISTS (SELECT 1 FROM bms.dashboards d
+             WHERE d.id = dashboard_widgets.dashboard_id
+               AND d.organization_id = nullif(current_setting('app.current_organization', true), '')::uuid)
+  )
+  WITH CHECK (
+    organization_id = nullif(current_setting('app.current_organization', true), '')::uuid
+    AND EXISTS (SELECT 1 FROM bms.dashboards d
+             WHERE d.id = dashboard_widgets.dashboard_id
+               AND d.organization_id = nullif(current_setting('app.current_organization', true), '')::uuid)
+  );
 
 ALTER TABLE bms.dashboard_widget_points ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bms.dashboard_widget_points FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON bms.dashboard_widget_points;
 CREATE POLICY tenant_isolation ON bms.dashboard_widget_points
-  USING (organization_id = nullif(current_setting('app.current_organization', true), '')::uuid)
-  WITH CHECK (organization_id = nullif(current_setting('app.current_organization', true), '')::uuid);
+  USING (
+    organization_id = nullif(current_setting('app.current_organization', true), '')::uuid
+    AND EXISTS (SELECT 1 FROM bms.dashboard_widgets w
+             WHERE w.id = dashboard_widget_points.widget_id
+               AND w.organization_id = nullif(current_setting('app.current_organization', true), '')::uuid)
+    AND EXISTS (SELECT 1 FROM bms.asset_points p
+             WHERE p.id = dashboard_widget_points.point_id
+               AND p.organization_id = nullif(current_setting('app.current_organization', true), '')::uuid)
+  )
+  WITH CHECK (
+    organization_id = nullif(current_setting('app.current_organization', true), '')::uuid
+    AND EXISTS (SELECT 1 FROM bms.dashboard_widgets w
+             WHERE w.id = dashboard_widget_points.widget_id
+               AND w.organization_id = nullif(current_setting('app.current_organization', true), '')::uuid)
+    AND EXISTS (SELECT 1 FROM bms.asset_points p
+             WHERE p.id = dashboard_widget_points.point_id
+               AND p.organization_id = nullif(current_setting('app.current_organization', true), '')::uuid)
+  );
 
 RESET ROLE;

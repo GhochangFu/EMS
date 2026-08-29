@@ -241,6 +241,13 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
       );
       const locationId = loc.rows[0]?.id;
       const groupId = group.rows[0]?.id;
+      // Asserted, not branched on. The both-axes-set case below is the ONLY exercise of
+      // dashboards_scope_check, and behind an `if` it would stop running — silently, still
+      // green — the day the seed stopped creating a group for the first organization.
+      expect(
+        groupId,
+        "F3.1a: needs an asset group in the first organization — run pnpm db:seed",
+      ).toBeDefined();
 
       // Organization-wide: both NULL.
       expect(
@@ -262,7 +269,7 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
         ).rows.length,
       ).toBe(1);
 
-      if (groupId !== undefined) {
+      {
         expect(
           (
             await run(
@@ -344,12 +351,42 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
 
       // An unknown point cannot be bound — the property a point id inside a jsonb blob could
       // never have (ADR 0047 decision 3).
+      //
+      // The refusal now names ROW-LEVEL SECURITY rather than the foreign key, and that is the
+      // policy working rather than the key failing: the parent-org EXISTS added after this
+      // item's security review runs in WITH CHECK, which fires before the key's AFTER trigger.
+      // A nonexistent id satisfies neither, and the policy simply gets there first.
       await refuses(
         run,
         `INSERT INTO bms.dashboard_widget_points (organization_id, widget_id, point_id)
          VALUES ($1, $2, $3)`,
         [orgA, widgetId, randomUUID()],
-        "dashboard_widget_points_point_id_fkey",
+        "row-level security policy",
+      );
+
+      // THE CROSS-TENANT BINDING — the High finding this item's security review proved live.
+      // Before the parent-org EXISTS, this INSERT returned `INSERT 0 1`: Postgres runs a
+      // referential-integrity check with row security OFF, so the foreign key never consults
+      // bms.asset_points' own policy, and an ESKOM-stamped row bound a PHEWB point.
+      // The point has to be READ under org B's tenant, because FORCE binds this connection
+      // too — under org A's GUC the row is correctly invisible, and a naive read here returns
+      // zero rows and looks like an unseeded database. Switch, read, switch back.
+      await run(`SET LOCAL app.current_organization = '${orgB}'`);
+      const foreignPoint = await run(
+        `SELECT id FROM bms.asset_points WHERE organization_id = $1 ORDER BY id`,
+        [orgB],
+      );
+      await run(`SET LOCAL app.current_organization = '${orgA}'`);
+      expect(
+        foreignPoint.rows.length,
+        "F3.1a: needs at least one asset point in the second organization — run pnpm db:seed",
+      ).toBeGreaterThan(0);
+      await refuses(
+        run,
+        `INSERT INTO bms.dashboard_widget_points (organization_id, widget_id, point_id)
+         VALUES ($1, $2, $3)`,
+        [orgA, widgetId, foreignPoint.rows[0]?.id],
+        "row-level security policy",
       );
 
       // The same point twice in the same role is a duplicate series, not a second binding.
@@ -381,6 +418,10 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
 
   it("isolates tenants, and FORCE binds the owner", async () => {
     await inTx(async (run) => {
+      // All three tables must hold a row before the GUC is blanked. Without the widget and
+      // the binding, two of the three FORCE assertions below return 0 whether FORCE is set or
+      // not — they would pass over an empty table and prove nothing.
+      await seedFixture(run, { withPoint: true });
       await run(
         `INSERT INTO bms.dashboards (organization_id, slug, name) VALUES ($1, $2, 'A')`,
         [orgA, `iso-${RUN}`],

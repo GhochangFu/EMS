@@ -14,6 +14,7 @@ import {
   gaugeThresholdSchema,
   MAX_FORMULA_POINT_REFS,
   MAX_GAUGE_THRESHOLDS,
+  MAX_WIDGET_POINTS,
   radialGaugeConfigObjectSchema,
   tankLevelConfigSchema,
   validateFormula,
@@ -149,7 +150,10 @@ const MAX_FEATURED_POINTS = 50;
 // widgets[] → widget → config → thresholds[] → threshold is 8 levels against
 // MAX_CONTENT_DEPTH = 12. It fits; a further nested option would not.
 const MAX_DASHBOARD_WIDGETS = 40;
-const MAX_WIDGET_POINT_KEYS = 8;
+// Reused, not restated, so a template widget cannot be authored with more bindings than the
+// live dashboard `F3.1b` instantiates it into will accept. Same discipline as
+// MAX_KPI_POINT_REFS below.
+const MAX_WIDGET_POINT_KEYS = MAX_WIDGET_POINTS;
 // ADR 0036 decision 8: reused, not restated, so the two numbers cannot drift.
 const MAX_KPI_POINT_REFS = MAX_FORMULA_POINT_REFS;
 

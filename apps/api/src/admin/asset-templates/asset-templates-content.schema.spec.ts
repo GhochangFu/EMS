@@ -352,6 +352,54 @@ export function runTemplateContentSchemaTests(): void {
     "the widget vocabulary is closed — a kind with no component is refused here too",
   );
 
+  // The behaviour the strictness commit is NAMED for, and which it shipped no test of until
+  // this item's correctness review said so. Template content is an AUTHORING body: an unknown
+  // key is the author's typo, and dropping it silently loses work the author believes is
+  // saved. Both levels are strict — the widget object and the config inside it.
+  rejects(
+    {
+      dashboards: {
+        overview: {
+          featured: ["A"],
+          widgets: [
+            {
+              widgetType: "value_tile",
+              config: {},
+              pointKeys: ["A"],
+              gridX: 0,
+              gridY: 0,
+              gridW: 2,
+              gridH: 2,
+              gridwidth: 2,
+            },
+          ],
+        },
+      },
+    },
+    "a stray key on a template widget must be refused, not dropped",
+  );
+  rejects(
+    {
+      dashboards: {
+        overview: {
+          featured: ["A"],
+          widgets: [
+            {
+              widgetType: "radial_gauge",
+              config: { min: 0, max: 100, decimls: 2 },
+              pointKeys: ["A"],
+              gridX: 0,
+              gridY: 0,
+              gridW: 2,
+              gridH: 2,
+            },
+          ],
+        },
+      },
+    },
+    "a typo inside a widget config must be refused, not dropped",
+  );
+
   rejects(
     {
       dashboards: {

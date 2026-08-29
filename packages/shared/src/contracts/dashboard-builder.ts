@@ -187,13 +187,32 @@ export const dashboardWidgetSpecSchema = z.discriminatedUnion("widgetType", [
   z.object({ widgetType: z.literal("chart"), config: chartConfigSchema }),
 ]);
 
-/** One point binding. A row in `bms.dashboard_widget_points`, never an id inside JSON. */
+/**
+ * How many points one widget may bind. **Enforced by `F3.1b`'s write path, not by the
+ * database** — cardinality is a per-widget row count and no row-level `CHECK` can see it.
+ *
+ * Exported so `F3.1b` uses this number rather than inventing a third: the template authoring
+ * surface already caps a widget at `MAX_WIDGET_POINT_KEYS` in
+ * `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts`, and the two must
+ * agree or a template widget will not survive instantiation.
+ */
+export const MAX_WIDGET_POINTS = 8;
+
+/**
+ * One point binding. A row in `bms.dashboard_widget_points`, never an id inside JSON.
+ *
+ * **`sortOrder` carries no `.min(0)`, deliberately.** `sort_order integer NOT NULL DEFAULT 0`
+ * permits a negative, so a bound here would reject a row the database is entitled to produce —
+ * and §4.8's failure direction makes that throw in dev and test and log on every production
+ * read. A response contract states what the store can hold; the write bound belongs to
+ * `F3.1b`.
+ */
 export const dashboardWidgetPointDtoSchema = z
   .object({
     id: z.string().uuid(),
     pointId: z.string().uuid(),
     role: widgetPointRoleSchema,
-    sortOrder: z.number().int().min(0),
+    sortOrder: z.number().int(),
   });
 
 /**
@@ -213,7 +232,12 @@ const dashboardWidgetIdentitySchema = z
     gridY: z.number().int().min(0),
     gridW: z.number().int().min(1).max(12),
     gridH: z.number().int().min(1).max(24),
-    points: z.array(dashboardWidgetPointDtoSchema).max(16),
+    // No `.max()`: cardinality is a per-widget row count that no row-level CHECK can see, so
+    // the database does not enforce it and a response contract must not claim it does. The cap
+    // is `MAX_WIDGET_POINTS`, enforced by `F3.1b` on write. The grid bounds above are a
+    // different case — `dashboard_widgets_grid_bounds_check` really does enforce those, so
+    // stating them here cannot reject a row the store can hold.
+    points: z.array(dashboardWidgetPointDtoSchema),
   })
   .refine((widget) => widget.gridX + widget.gridW <= 12, {
     message: "a widget must fit inside the 12-column canvas",
@@ -242,8 +266,10 @@ export const dashboardDtoSchema = z
   .object({
     id: z.string().uuid(),
     organizationId: z.string().uuid(),
-    slug: z.string().min(1).max(64),
-    name: z.string().min(1).max(255),
+    // No `.min(1)`: varchar(64)/varchar(255) accept the empty string, so requiring one
+    // here would reject a row the store can hold. The write bound is `F3.1b`'s.
+    slug: z.string().max(64),
+    name: z.string().max(255),
     description: z.string().nullable(),
     locationId: z.string().uuid().nullable(),
     assetGroupId: z.string().uuid().nullable(),
@@ -263,8 +289,10 @@ export const dashboardSummaryDtoSchema = z
   .object({
     id: z.string().uuid(),
     organizationId: z.string().uuid(),
-    slug: z.string().min(1).max(64),
-    name: z.string().min(1).max(255),
+    // No `.min(1)`: varchar(64)/varchar(255) accept the empty string, so requiring one
+    // here would reject a row the store can hold. The write bound is `F3.1b`'s.
+    slug: z.string().max(64),
+    name: z.string().max(255),
     description: z.string().nullable(),
     locationId: z.string().uuid().nullable(),
     assetGroupId: z.string().uuid().nullable(),
