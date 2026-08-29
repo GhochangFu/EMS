@@ -1,8 +1,8 @@
 import { expect } from "vitest";
 
-import type { RadialGaugeConfig } from "./widget-catalog";
+import type { ChartConfig, RadialGaugeConfig, WidgetSeries } from "./widget-catalog";
 import { WIDGET_TONE_COLOR } from "./widget-catalog";
-import { buildRadialGaugeOption } from "./widget-echarts-option";
+import { buildChartOption, buildRadialGaugeOption } from "./widget-echarts-option";
 
 /**
  * `F3.1c` Task 2 — `widget-echarts-option.ts`'s gauge builder (ADR 0047).
@@ -108,4 +108,95 @@ export function gaugeNeedleValueIsClampedIntoRange(): void {
     "a reading above max must not send the needle outside the widget box",
   ).toBe(100);
   expect(asGauge(buildRadialGaugeOption(config, -10)).series[0].data[0].value).toBe(0);
+}
+
+/**
+ * Task 3 — `buildChartOption` (ADR 0047 decision 4, Amendment 2 §4). Read
+ * back through a minimal local shape for the same reason the gauge
+ * assertions above are: `EChartsOption["series"]` is a union that fights a
+ * direct assertion on `series[0].type`/`.areaStyle`/`.stack`.
+ */
+type ChartOptionShape = {
+  readonly xAxis: { readonly type: string; readonly min: string };
+  readonly yAxis: { readonly type: string; readonly name?: string };
+  readonly series: readonly {
+    readonly name: string;
+    readonly type: string;
+    readonly areaStyle?: unknown;
+    readonly stack?: string;
+    readonly data: readonly (readonly [string, number | null])[];
+  }[];
+};
+
+function asChart(option: unknown): ChartOptionShape {
+  return option as unknown as ChartOptionShape;
+}
+
+const CHART_NOW = Date.parse("2026-08-29T12:00:00.000Z");
+
+function oneChartSeries(name = "s1"): readonly WidgetSeries[] {
+  return [{ name, sortOrder: 0, points: [{ t: "2026-08-29T11:00:00.000Z", v: 1 }] }];
+}
+
+export function chartLineSeriesHasNoAreaStyle(): void {
+  const config: ChartConfig = { series: "line" };
+  const out = asChart(buildChartOption(config, oneChartSeries(), CHART_NOW)).series[0];
+  expect(out.type).toBe("line");
+  expect(out.areaStyle, "'line' must not carry areaStyle, or it silently renders filled").toBeUndefined();
+}
+
+/** This is decision 4's entire payload. `area` is not an ECharts series type — it is `line` plus `areaStyle`. */
+export function chartAreaSeriesIsLineWithAreaStyle(): void {
+  const config: ChartConfig = { series: "area" };
+  const out = asChart(buildChartOption(config, oneChartSeries(), CHART_NOW)).series[0];
+  expect(out.type, "'area' is not an ECharts series type — it is line + areaStyle").toBe("line");
+  expect(out.areaStyle).toBeDefined();
+}
+
+export function chartBarAndScatterMapDirectly(): void {
+  expect(asChart(buildChartOption({ series: "bar" }, oneChartSeries(), CHART_NOW)).series[0].type).toBe("bar");
+  expect(asChart(buildChartOption({ series: "scatter" }, oneChartSeries(), CHART_NOW)).series[0].type).toBe(
+    "scatter",
+  );
+}
+
+export function chartStackedSetsStackOnEverySeriesAbsentSetsNone(): void {
+  const stacked = asChart(
+    buildChartOption({ series: "line", stacked: true }, oneChartSeries(), CHART_NOW),
+  ).series[0];
+  expect(stacked.stack, "overlapping series read as one wrong total without a shared stack key").toBeDefined();
+
+  const unstacked = asChart(buildChartOption({ series: "line" }, oneChartSeries(), CHART_NOW)).series[0];
+  expect(unstacked.stack).toBeUndefined();
+}
+
+export function chartYAxisLabelSetsNameAbsentOmitsIt(): void {
+  const labelled = asChart(buildChartOption({ series: "line", yAxisLabel: "kW" }, oneChartSeries(), CHART_NOW));
+  expect(labelled.yAxis.name).toBe("kW");
+
+  const unlabelled = asChart(buildChartOption({ series: "line" }, oneChartSeries(), CHART_NOW));
+  expect(unlabelled.yAxis.name, "a configured label must not silently vanish").toBeUndefined();
+}
+
+export function chartWindowMinutesSetsTheXAxisLowerBoundRelativeToNow(): void {
+  const withWindow = asChart(
+    buildChartOption({ series: "line", windowMinutes: 60 }, oneChartSeries(), CHART_NOW),
+  );
+  expect(withWindow.xAxis.min).toBe(new Date(CHART_NOW - 60 * 60_000).toISOString());
+
+  const defaulted = asChart(buildChartOption({ series: "line" }, oneChartSeries(), CHART_NOW));
+  expect(
+    defaulted.xAxis.min,
+    "absent windowMinutes must fall back to the documented day, not 'all data' — a widget configured for a day must not show a year",
+  ).toBe(new Date(CHART_NOW - 1_440 * 60_000).toISOString());
+}
+
+export function chartNSeriesProduceNEntriesOrderedBySortOrder(): void {
+  const series: readonly WidgetSeries[] = [
+    { name: "third", sortOrder: 5, points: [] },
+    { name: "first", sortOrder: -2, points: [] },
+    { name: "second", sortOrder: 0, points: [] },
+  ];
+  const out = asChart(buildChartOption({ series: "line" }, series, CHART_NOW)).series;
+  expect(out.map((s) => s.name)).toEqual(["first", "second", "third"]);
 }

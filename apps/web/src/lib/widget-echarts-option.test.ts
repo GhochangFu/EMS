@@ -1,6 +1,13 @@
 import { describe, it } from "vitest";
 
 import {
+  chartAreaSeriesIsLineWithAreaStyle,
+  chartBarAndScatterMapDirectly,
+  chartLineSeriesHasNoAreaStyle,
+  chartNSeriesProduceNEntriesOrderedBySortOrder,
+  chartStackedSetsStackOnEverySeriesAbsentSetsNone,
+  chartWindowMinutesSetsTheXAxisLowerBoundRelativeToNow,
+  chartYAxisLabelSetsNameAbsentOmitsIt,
   gaugeNeedleValueIsClampedIntoRange,
   gaugePutsMinMaxOnTheSeriesAndValueInData,
   gaugeThresholdOutsideRangeIsClampedNotDropped,
@@ -28,5 +35,35 @@ describe("widget-echarts-option: buildRadialGaugeOption", () => {
 
   it("clamps the needle value into [min,max]", () => {
     gaugeNeedleValueIsClampedIntoRange();
+  });
+});
+
+describe("widget-echarts-option: buildChartOption", () => {
+  it("gives 'line' no areaStyle", () => {
+    chartLineSeriesHasNoAreaStyle();
+  });
+
+  it("maps 'area' to a line series with areaStyle, never an 'area' series type", () => {
+    chartAreaSeriesIsLineWithAreaStyle();
+  });
+
+  it("maps 'bar' and 'scatter' directly", () => {
+    chartBarAndScatterMapDirectly();
+  });
+
+  it("sets stack on every series when stacked, and omits it otherwise", () => {
+    chartStackedSetsStackOnEverySeriesAbsentSetsNone();
+  });
+
+  it("sets yAxis.name from yAxisLabel, and omits it when absent", () => {
+    chartYAxisLabelSetsNameAbsentOmitsIt();
+  });
+
+  it("sets the x-axis lower bound from windowMinutes relative to the injected now, defaulting to a day", () => {
+    chartWindowMinutesSetsTheXAxisLowerBoundRelativeToNow();
+  });
+
+  it("produces one series entry per binding, ordered by sortOrder", () => {
+    chartNSeriesProduceNEntriesOrderedBySortOrder();
   });
 });

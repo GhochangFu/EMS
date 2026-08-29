@@ -1,6 +1,6 @@
 import type { EChartsOption } from "echarts";
 
-import { WIDGET_TONE_COLOR, type RadialGaugeConfig } from "./widget-catalog";
+import { CHART_SERIES, WIDGET_TONE_COLOR, type ChartConfig, type RadialGaugeConfig, type WidgetSeries } from "./widget-catalog";
 
 function clamp(value: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, value));
@@ -55,5 +55,47 @@ export function buildRadialGaugeOption(config: RadialGaugeConfig, value: number)
         data: [{ value: clampedValue }],
       },
     ],
+  };
+}
+
+/** `chartConfigSchema.windowMinutes`'s documented default — a day, expressed in the unit the config carries. */
+const DEFAULT_WINDOW_MINUTES = 1_440;
+
+/**
+ * The generic `chart` widget's ECharts option (decision 4). The series *type*
+ * is read only from `CHART_SERIES[config.series]` — this function holds no
+ * ECharts series-name literal of its own, which is what keeps the
+ * plain-label-to-ECharts mapping stated in exactly one place
+ * (`tests/f3.1c-widget-series-mapping.test.ts` scans for a second one).
+ *
+ * `now` is a required parameter, never read from `Date.now()` inside this
+ * function — a builder that reads the clock cannot be tested deterministically
+ * (the same rule `tests/repo-invariants.test.ts` holds against
+ * `schematic-telemetry-context.tsx`, there in the opposite direction: the
+ * clock read belongs in the component that calls this, at render, not here).
+ */
+export function buildChartOption(config: ChartConfig, series: readonly WidgetSeries[], now: number): EChartsOption {
+  const seriesShape = CHART_SERIES[config.series];
+  const windowMinutes = config.windowMinutes ?? DEFAULT_WINDOW_MINUTES;
+  const xAxisMin = new Date(now - windowMinutes * 60_000).toISOString();
+
+  // The contract permits a negative sortOrder; ignoring order makes legend
+  // colours change between reads, since ECharts assigns a series' colour by
+  // its position in this array.
+  const ordered = [...series].sort((a, b) => a.sortOrder - b.sortOrder);
+
+  return {
+    xAxis: { type: "time", min: xAxisMin },
+    yAxis: {
+      type: "value",
+      ...(config.yAxisLabel ? { name: config.yAxisLabel } : {}),
+    },
+    series: ordered.map((s) => ({
+      name: s.name,
+      type: seriesShape.type,
+      data: s.points.map((p) => [p.t, p.v] as [string, number | null]),
+      ...(seriesShape.area ? { areaStyle: {} } : {}),
+      ...(config.stacked ? { stack: "f3.1c-widget-stack" } : {}),
+    })),
   };
 }
