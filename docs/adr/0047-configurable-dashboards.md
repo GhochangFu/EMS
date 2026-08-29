@@ -432,3 +432,73 @@ local machine, is what caught it.
   inside an approved boundary, not scope decisions, and pre-deciding them here
   would be inventing a schema before anything has to consume it — which is the
   mistake ADR 0019 was written to avoid.
+
+---
+
+## Amendment 1 — a dashboard's *scope* refuses deletion; its *bindings* cascade (2026-08-29)
+
+**Accepted (2026-08-29).** Settles the one item `F3.1a` left owner-gated, raised
+by the migration review as **L2**. **No schema change** — migration `0050`
+already behaves this way, and this amendment makes the behaviour intentional and
+written down rather than inherited from the SQL default.
+
+### The question
+
+`0050` is asymmetric. `dashboard_widget_points.point_id` and `.widget_id` and
+`dashboard_widgets.dashboard_id` are `ON DELETE CASCADE`; `dashboards.location_id`
+and `.asset_group_id` are `NO ACTION`. The migration header explains the cascade
+and says nothing about the other half, so deleting a location that a dashboard is
+scoped to raises a bare `23503` naming a constraint. The review asked whether
+`ON DELETE SET NULL` should land in a `0051`, and `F3.1a` recorded that as the
+likely answer.
+
+### The ruling: keep `NO ACTION`, and fix the *message* in `F3.1b`
+
+`SET NULL` was **rejected**, and the reason is worth more than the ruling. A
+dashboard scoped to one site would survive the delete and silently become
+**organization-wide** — built for one plant, now shown to every viewer in the
+tenant, with nothing anywhere saying so. That is an audience widening without a
+signal, which is the failure class [ADR 0046](0046-organization-scoped-audit-read.md)
+and its three amendments exist to prevent. `ON DELETE CASCADE` was rejected too:
+it destroys operator-authored dashboards with no warning and no undo.
+
+**`NO ACTION` refuses the delete, and that is already the correct behaviour.**
+Nothing is lost, nothing widens, and the operator is told to deal with the
+dashboards first. What is wrong is only the *error*, and there is no endpoint to
+improve yet — `apps/api/src` has no delete path for `bms.locations` or
+`bms.asset_groups`, so nothing can reach this constraint today.
+
+**Owed to `F3.1b`, or to whichever row lands master-data delete first:** refuse
+with *"this location has 3 dashboards"* and a way to reach them, not `23503`.
+
+### The asymmetry is principled, and this is the sentence the header lacked
+
+The two halves are not the same act, which is why one answer does not fit both.
+
+- **A point is one binding of many.** Retiring a sensor is ordinary master-data
+  work, and `0050`'s header already rules that it must not be blocked by
+  somebody else's dashboard: the widget loses a binding, and zero bindings is a
+  state the schema can report where a stale JSON id could not.
+- **A location or an asset group is the dashboard's *scope* — its identity, not
+  one of its parts.** Deleting it does not leave a smaller dashboard; it leaves
+  a dashboard whose audience is undefined. There is no correct silent answer, so
+  the correct answer is to refuse and ask.
+
+**The test, for the next foreign key on these tables:** does deleting the parent
+leave the dashboard *smaller*, or leave it *pointing at nobody*? Cascade the
+first. Refuse the second.
+
+`organization_id` is `NO ACTION` on all three tables by the same reading and did
+not need a separate ruling — deleting a tenant is not an act this system offers.
+
+### Consequences
+
+- **No `0051`.** `0050` cannot be edited now that it is on `main`, and it does
+  not need to be. The cost of this ruling is that the *reason* lives here rather
+  than in the migration header where a reader of `0050` will look first — which
+  is why this amendment states the test explicitly.
+- **`F3.1b` inherits one obligation**, recorded in its `docs/BACKLOG.md` row: a
+  refusal that names the dashboards, not the constraint.
+- **`F3.1c` inherits the one already in `0050`'s header** and unchanged by this:
+  a widget whose bindings have reached zero renders *"no data bound"*, never a
+  blank rectangle.
