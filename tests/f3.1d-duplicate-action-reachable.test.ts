@@ -59,11 +59,20 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+/**
+ * Review finding — the positive control below used to RE-TYPE this expression by hand against
+ * synthetic strings instead of calling this predicate. Weaken the check to a module-only test
+ * (`src.includes(DIALOG_MODULE)` alone) and the hand-typed control stayed green — and so did the
+ * main assertion, because the edit page genuinely does import the module — while the RULE this
+ * file exists to enforce (a render, not merely an import) silently stopped being checked.
+ * Exported so the control feeds the same two synthetic strings through the real predicate.
+ */
+export function isHostSource(src: string): boolean {
+  return src.includes(DIALOG_MODULE) && src.includes(DIALOG_ELEMENT);
+}
+
 function hostPages(): string[] {
-  return walk(PAGES_ROOT).filter((file) => {
-    const src = readFileSync(file, "utf8");
-    return src.includes(DIALOG_MODULE) && src.includes(DIALOG_ELEMENT);
-  });
+  return walk(PAGES_ROOT).filter((file) => isHostSource(readFileSync(file, "utf8")));
 }
 
 describe("F3.1d: the duplicate action is reachable from a page", () => {
@@ -88,11 +97,13 @@ describe("F3.1d: the duplicate action is reachable from a page", () => {
   it("the check requires a render and not merely an import", () => {
     // The positive control, synthetic rather than repo-derived so it cannot rot as the tree
     // changes: a page that imports the module but never mounts the component is the exact
-    // half-wired state a bare `includes(module)` check would call a pass.
+    // half-wired state a bare `includes(module)` check would call a pass. Review finding: this
+    // MUST call `isHostSource` — the same predicate `hostPages` uses — rather than re-typing the
+    // expression, or a weakening of the real predicate leaves this control unable to see it.
     const importedOnly = 'import { DuplicateDashboardDialog } from "../components/dashboards/duplicate-dashboard-dialog";';
-    expect(importedOnly.includes(DIALOG_MODULE) && importedOnly.includes(DIALOG_ELEMENT)).toBe(false);
+    expect(isHostSource(importedOnly)).toBe(false);
 
     const rendered = `${importedOnly}\n  return duplicating ? <DuplicateDashboardDialog onClose={close} /> : null;`;
-    expect(rendered.includes(DIALOG_MODULE) && rendered.includes(DIALOG_ELEMENT)).toBe(true);
+    expect(isHostSource(rendered)).toBe(true);
   });
 });
