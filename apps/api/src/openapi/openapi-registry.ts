@@ -55,6 +55,8 @@ import { loginBodySchema } from "../auth/login.schema";
 import { locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import {
   createDashboardBodySchema,
+  getDashboardQuerySchema,
+  listDashboardsQuerySchema,
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
 } from "../dashboard-builder/dashboards.schema";
@@ -129,6 +131,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AuditAdminController_list: auditListQuerySchema,
   AuthController_login: loginBodySchema,
   DashboardBuilderController_create: createDashboardBodySchema,
+  DashboardBuilderController_getBySlug: getDashboardQuerySchema,
+  DashboardBuilderController_list: listDashboardsQuerySchema,
   DashboardBuilderController_putWidgets: putDashboardWidgetsBodySchema,
   DashboardBuilderController_update: updateDashboardBodySchema,
   DashboardController_energyTopConsumers: locationDashboardQuerySchema,

@@ -22,13 +22,14 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import {
   createDashboardBodySchema,
+  getDashboardQuerySchema,
+  listDashboardsQuerySchema,
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
 } from "./dashboards.schema";
 import { DashboardsService } from "./dashboards.service";
 
 const idParamSchema = z.string().uuid();
-const organizationIdQueryParam = z.string().uuid().optional();
 
 /**
  * `F3.1b` — the dashboard read/write API (ADR 0047). Route base `/dashboards`.
@@ -56,17 +57,15 @@ export class DashboardBuilderController {
   ) {}
 
   @Get()
-  async list(@CurrentUser() user: JwtPayload, @Query("organizationId") organizationId?: string) {
-    return this.dashboards.list(user, parse(organizationIdQueryParam, organizationId));
+  async list(@CurrentUser() user: JwtPayload, @Query() query: unknown) {
+    const { organizationId } = parse(listDashboardsQuerySchema, query);
+    return this.dashboards.list(user, organizationId);
   }
 
   @Get(":slug")
-  async getBySlug(
-    @CurrentUser() user: JwtPayload,
-    @Param("slug") slug: string,
-    @Query("organizationId") organizationId?: string,
-  ) {
-    return this.dashboards.getBySlug(user, slug, parse(organizationIdQueryParam, organizationId));
+  async getBySlug(@CurrentUser() user: JwtPayload, @Param("slug") slug: string, @Query() query: unknown) {
+    const { organizationId } = parse(getDashboardQuerySchema, query);
+    return this.dashboards.getBySlug(user, slug, organizationId);
   }
 
   @Post()

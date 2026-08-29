@@ -51,6 +51,8 @@ import { loginBodySchema } from "../auth/login.schema";
 import { locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import {
   createDashboardBodySchema,
+  getDashboardQuerySchema,
+  listDashboardsQuerySchema,
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
 } from "../dashboard-builder/dashboards.schema";
@@ -203,7 +205,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
 };
 
 /**
- * The eight registered **query** schemas.
+ * The TEN registered **query** schemas — eight at `E7.1f`, plus two added by `F3.1b`.
  *
  * **Deliberately outside this item's audit, ruled by the repository owner on
  * 2026-08-28.** Amendment 3's title and the `E7.1f` row both say *mutating
@@ -216,11 +218,23 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
  * `admin/audit/audit.schema.ts:8` — "an unknown query key is a caller error,
  * not a…". That precedent is the argument for widening the audit later; it was
  * put to the owner and not taken for `E7.1f`.
+ *
+ * **`F3.1b` widened eight to ten**, registering `listDashboardsQuerySchema`
+ * (`GET /dashboards`) and `getDashboardQuerySchema` (`GET /dashboards/:slug`) —
+ * both carry the single `organizationId` parameter D5 needs to disambiguate a
+ * slug shared by more than one organization on the fleet pool. Leaving them
+ * unregistered would have made that parameter undiscoverable from the served
+ * document, which is the exact failure `F4.20` is in this repository's history
+ * for: a green suite and a static invariant still let a served document be
+ * wrong. This is the "deliberate act" `testEveryRegisteredSchemaIsUnderAudit`'s
+ * own comment asks for, not the shortcut it exists to catch.
  */
 export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   auditExportQuerySchema,
   auditListQuerySchema,
   energyReportQuerySchema,
+  getDashboardQuerySchema,
+  listDashboardsQuerySchema,
   listDeliveriesQuerySchema,
   listMaintenanceQuerySchema,
   listRuleExecutionsQuerySchema,
@@ -900,14 +914,20 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // `REQUEST_SCHEMAS` records no HTTP method, so a schema satisfies the check
   // from EITHER map. A developer who adds a route, sees "in no audit list" and
   // pastes the name into `QUERY_SCHEMAS` skips the strictness audit entirely,
-  // with a green build. Eight is the owner's 2026-08-28 boundary; a ninth must
-  // be a deliberate act, not a way out of a failing test.
+  // with a green build. Eight was the owner's 2026-08-28 boundary; a ninth
+  // must be a deliberate act, not a way out of a failing test.
+  //
+  // **`F3.1b` widened it to ten, deliberately: `listDashboardsQuerySchema` and
+  // `getDashboardQuerySchema` (both carry D5's `organizationId` disambiguator)
+  // are genuinely new GET query schemas, not a body schema smuggled in to
+  // dodge the strictness audit below — both are plain, unstrict `organizationId`
+  // filters with no request body to decide strictness for.**
   expect(
     Object.keys(QUERY_SCHEMAS).length,
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(8);
+  ).toBe(10);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

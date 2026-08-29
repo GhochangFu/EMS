@@ -147,9 +147,9 @@ export async function runDashboardBuilderControllerTests(): Promise<void> {
   // viewer -> 200 on both reads (no write-role gate applies to GET).
   {
     const { controller } = controllerWith({ writeRoleRejects: true });
-    const listed = await controller.list(VIEWER);
+    const listed = await controller.list(VIEWER, {});
     assert(Array.isArray(listed.items), "list() must succeed for a viewer");
-    const got = await controller.getBySlug(VIEWER, "overview");
+    const got = await controller.getBySlug(VIEWER, "overview", {});
     assert(got.slug === "overview", "getBySlug() must succeed for a viewer");
   }
 
@@ -206,11 +206,11 @@ export async function runDashboardBuilderControllerTests(): Promise<void> {
       },
     });
     await rejects(
-      () => controller.getBySlug(ADMIN, "overview"),
+      () => controller.getBySlug(ADMIN, "overview", {}),
       (e) => e instanceof BadRequestException,
       "an ambiguous slug with no organizationId",
     );
-    const disambiguated = await controller.getBySlug(ADMIN, "overview", ORG_ID);
+    const disambiguated = await controller.getBySlug(ADMIN, "overview", { organizationId: ORG_ID });
     assert(disambiguated.id === DASHBOARD_ID, "the same slug WITH organizationId must resolve the one row");
   }
 

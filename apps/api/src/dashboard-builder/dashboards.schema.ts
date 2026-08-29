@@ -106,6 +106,33 @@ export type CreateDashboardBody = z.infer<typeof createDashboardBodySchema>;
 export type UpdateDashboardBody = z.infer<typeof updateDashboardBodySchema>;
 
 // ---------------------------------------------------------------------------
+// GET query parameters — registered in openapi-registry.ts's REQUEST_SCHEMAS
+// and strict-body-ledger.spec.ts's QUERY_SCHEMAS, exactly like every other
+// registered GET query schema in this repo (`locationDashboardQuerySchema` is
+// the shape precedent). Unregistered, the served OpenAPI document would
+// describe neither GET operation's `organizationId` parameter at all — D5's
+// whole point (a caller disambiguates a slug with `?organizationId=`) would
+// be undiscoverable from the document, which is exactly the failure ADR 0029
+// exists to close (F4.20: a green suite and a static invariant still let a
+// served document be wrong in three ways).
+// ---------------------------------------------------------------------------
+
+/** `GET /dashboards` — an optional tenant filter; admin/multi-organization callers see every
+ * organization's dashboards when it is omitted. */
+export const listDashboardsQuerySchema = z.object({
+  organizationId: z.string().uuid().optional(),
+});
+
+/** `GET /dashboards/:slug` — D5: on the fleet pool a slug may match more than one
+ * organization's dashboard, and `organizationId` is how a caller disambiguates it. */
+export const getDashboardQuerySchema = z.object({
+  organizationId: z.string().uuid().optional(),
+});
+
+export type ListDashboardsQuery = z.infer<typeof listDashboardsQuerySchema>;
+export type GetDashboardQuery = z.infer<typeof getDashboardQuerySchema>;
+
+// ---------------------------------------------------------------------------
 // bms.dashboard_widgets / bms.dashboard_widget_points — PUT :id/widgets
 // ---------------------------------------------------------------------------
 
