@@ -74,6 +74,7 @@ import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { AlarmsTab } from "../../components/asset-templates/alarms-tab";
 import { CalculationsTab } from "../../components/asset-templates/calculations-tab";
+import { DashboardsTab } from "../../components/asset-templates/dashboards-tab";
 import { DetailsTab } from "../../components/asset-templates/details-tab";
 import { KpisTab } from "../../components/asset-templates/kpis-tab";
 import { PointsTab } from "../../components/asset-templates/points-tab";
@@ -566,6 +567,16 @@ function TemplateTabBody({
   if (tab === "alarms") {
     return (
       <AlarmsTab
+        template={template}
+        editable={editable}
+        onSaved={onSaved}
+        onDirtyChange={onDirtyChange}
+      />
+    );
+  }
+  if (tab === "dashboards") {
+    return (
+      <DashboardsTab
         template={template}
         editable={editable}
         onSaved={onSaved}
