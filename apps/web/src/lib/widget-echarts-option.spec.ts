@@ -54,8 +54,17 @@ export function gaugeThresholdsBecomeAscendingFractionsEndingAtOne(): void {
   };
   const stops = asGauge(buildRadialGaugeOption(config, 50)).series[0].axisLine.lineStyle.color;
 
-  expect(stops[0]).toEqual([0.6, WIDGET_TONE_COLOR.warning]);
-  expect(stops[1]).toEqual([0.8, WIDGET_TONE_COLOR.critical]);
+  // Each ECharts stop paints the segment ENDING at its fraction. A
+  // threshold means "at or above this value, the tone begins" (the
+  // AutomationRuleOperator "gte" reading), so the band below the first
+  // threshold must stay "ok" — painting it "warning" instead is exactly
+  // the bug this pins: a healthy reading would sit on an elevated band.
+  expect(stops[0], "the band before the first threshold must be the base ok tone, not the threshold's own").toEqual([
+    0.6,
+    WIDGET_TONE_COLOR.ok,
+  ]);
+  expect(stops[1]).toEqual([0.8, WIDGET_TONE_COLOR.warning]);
+  expect(stops[2]).toEqual([1, WIDGET_TONE_COLOR.critical]);
   const last = stops.at(-1);
   expect(
     last?.[0],

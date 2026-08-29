@@ -20,27 +20,39 @@ export function buildRadialGaugeOption(config: RadialGaugeConfig, value: number)
   const range = max - min;
   const clampedValue = clamp(value, min, max);
 
-  // ECharts axisLine colour stops are ascending [fraction, colour] pairs; a
-  // stored threshold is a raw reading value and must be converted, not
-  // passed through — raw values would collapse every band into the first 1%
-  // of the arc. gaugeThresholdSchema imposes no ordering, so the store can
-  // hold an out-of-order array; sorted here rather than trusted. A threshold
-  // outside [min, max] is clamped rather than dropped, so a stale config
-  // still paints an arc instead of silently losing a band.
-  const stops: [number, string][] = [...thresholds]
-    .sort((a, b) => a.value - b.value)
-    .map((t) => [clamp((t.value - min) / range, 0, 1), WIDGET_TONE_COLOR[t.tone]]);
+  // ECharts axisLine colour stops are ascending [fraction, colour] pairs,
+  // and each stop's colour paints the segment ENDING at its fraction — not
+  // starting there. A threshold in this codebase's idiom (the
+  // AutomationRuleOperator "gte" reading `thresholdValue`/`severity` already
+  // use) means "at or above this value, this tone begins", so the band
+  // BEFORE threshold i must carry threshold (i-1)'s tone — or the base "ok"
+  // tone before the first threshold — and the band AFTER the last threshold,
+  // up to the top of the arc, carries the last threshold's own tone. That is
+  // one colour shifted from the threshold that introduces it, which is what
+  // keeps a healthy reading on the "ok" band instead of painting the region
+  // below the first threshold in that threshold's own (already-elevated)
+  // colour. n thresholds therefore produce n+1 stops.
+  //
+  // A stored threshold is a raw reading value and must be converted to a
+  // fraction, not passed through — raw values would collapse every band
+  // into the first 1% of the arc. gaugeThresholdSchema imposes no ordering,
+  // so the store can hold an out-of-order array; sorted here rather than
+  // trusted. A threshold outside [min, max] is clamped rather than dropped,
+  // so a stale config still paints an arc instead of silently losing a band.
+  const sortedThresholds = [...thresholds].sort((a, b) => a.value - b.value);
+  const bandStops: [number, string][] = sortedThresholds.map((t, i) => [
+    clamp((t.value - min) / range, 0, 1),
+    WIDGET_TONE_COLOR[i === 0 ? "ok" : sortedThresholds[i - 1].tone],
+  ]);
 
   // The last stop must reach 1: ECharts leaves everything past the final
   // defined stop unpainted (no error, just a blank arc), so the top band is
-  // extended to the end using its own colour rather than left short.
-  const lastStop = stops.at(-1);
+  // extended to the end using the last threshold's own tone rather than
+  // left short.
   const colorStops: [number, string][] =
-    stops.length === 0
+    sortedThresholds.length === 0
       ? [[1, WIDGET_TONE_COLOR.ok]]
-      : lastStop && lastStop[0] === 1
-        ? stops
-        : [...stops, [1, lastStop ? lastStop[1] : WIDGET_TONE_COLOR.ok]];
+      : [...bandStops, [1, WIDGET_TONE_COLOR[sortedThresholds[sortedThresholds.length - 1].tone]]];
 
   return {
     series: [
