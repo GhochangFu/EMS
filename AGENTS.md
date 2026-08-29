@@ -445,9 +445,9 @@ bms/
 │                                src/schema/ splits the drizzle declarations:
 │                                bms-schema.ts, telemetry-schema.ts, and since
 │                                F3.1a dashboard-schema.ts (ADR 0047), which is
-│                                its own file because bms-schema.ts had reached
-│                                the §4.5 line limit — not because the tables
-│                                are a separate concern
+│                                its own file because bms-schema.ts was NEAR
+│                                the §4.5 line limit (975 of 1000) — not because
+│                                the tables are a separate concern
 └── docs/
     ├── adr/                   ← Phase 1+ architecture decisions (the live scope record)
     ├── archive/               ← superseded planning docs, kept for provenance
