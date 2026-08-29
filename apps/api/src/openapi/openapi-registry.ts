@@ -54,6 +54,11 @@ import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { loginBodySchema } from "../auth/login.schema";
 import { locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import {
+  createDashboardBodySchema,
+  putDashboardWidgetsBodySchema,
+  updateDashboardBodySchema,
+} from "../dashboard-builder/dashboards.schema";
+import {
   convertMaintenanceBodySchema,
   createMaintenanceScheduleBodySchema,
   listMaintenanceQuerySchema,
@@ -123,6 +128,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AuditAdminController_export: auditExportQuerySchema,
   AuditAdminController_list: auditListQuerySchema,
   AuthController_login: loginBodySchema,
+  DashboardBuilderController_create: createDashboardBodySchema,
+  DashboardBuilderController_putWidgets: putDashboardWidgetsBodySchema,
+  DashboardBuilderController_update: updateDashboardBodySchema,
   DashboardController_energyTopConsumers: locationDashboardQuerySchema,
   LocationsAdminController_create: createLocationBodySchema,
   LocationsAdminController_update: updateLocationBodySchema,
