@@ -1,6 +1,7 @@
 import type { EChartsOption } from "echarts";
 
 import { CHART_SERIES, WIDGET_TONE_COLOR, type ChartConfig, type RadialGaugeConfig, type WidgetSeries } from "./widget-catalog";
+import { formatWidgetValue } from "./widget-value";
 
 function clamp(value: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, value));
@@ -61,6 +62,12 @@ export function buildRadialGaugeOption(config: RadialGaugeConfig, value: number)
         min,
         max,
         axisLine: { lineStyle: { color: colorStops } },
+        // ECharts 5.6.0 defaults `detail.show: true` with no `formatter`,
+        // which prints the raw number — `commonConfigFields` puts `unit`
+        // and `decimals` on every config arm including this one, so a
+        // reading of 7.126 on a { unit: "pH", decimals: 1 } gauge must not
+        // render "7.126" where the author configured "7.1 pH".
+        detail: { formatter: (v) => formatWidgetValue(v, { unit: config.unit, decimals: config.decimals }) },
         // A reading above `max` (or below `min`) must not send the needle
         // outside the widget box — clamped the same way the value driving
         // the axis colours already is.

@@ -8,6 +8,7 @@ import {
   chartStackedSetsStackOnEverySeriesAbsentSetsNone,
   chartWindowMinutesSetsTheXAxisLowerBoundRelativeToNow,
   chartYAxisLabelSetsNameAbsentOmitsIt,
+  gaugeDetailFormatsTheReadingWithUnitAndDecimals,
   gaugeMinOffsetIsSubtractedNotIgnored,
   gaugeNeedleValueIsClampedIntoRange,
   gaugePutsMinMaxOnTheSeriesAndValueInData,
@@ -40,6 +41,10 @@ describe("widget-echarts-option: buildRadialGaugeOption", () => {
 
   it("subtracts a non-zero min rather than treating the range as starting at 0", () => {
     gaugeMinOffsetIsSubtractedNotIgnored();
+  });
+
+  it("formats the detail label with the configured unit and decimals, not the raw ECharts default", () => {
+    gaugeDetailFormatsTheReadingWithUnitAndDecimals();
   });
 });
 

@@ -24,6 +24,7 @@ type GaugeOptionShape = {
       readonly max: number;
       readonly axisLine: { readonly lineStyle: { readonly color: readonly (readonly [number, string])[] } };
       readonly data: readonly [{ readonly value: number }];
+      readonly detail: { readonly formatter: (value: number) => string };
     },
   ];
 };
@@ -140,6 +141,18 @@ export function gaugeThresholdOutsideRangeIsClampedNotDropped(): void {
   const stops = asGauge(buildRadialGaugeOption(config, 7)).series[0].axisLine.lineStyle.color;
   expect(stops.length, "a threshold outside [min,max] must still produce a stop, not vanish").toBeGreaterThan(0);
   expect(stops[0][0]).toBe(0);
+}
+
+/**
+ * ECharts 5.6.0 defaults `detail.show: true` with no `formatter`, printing
+ * the raw number. `commonConfigFields` puts `unit`/`decimals` on every
+ * config arm including the gauge's, so a { min: 0, max: 14, unit: "pH",
+ * decimals: 1 } gauge reading 7.126 must render "7.1 pH", not "7.126".
+ */
+export function gaugeDetailFormatsTheReadingWithUnitAndDecimals(): void {
+  const config: RadialGaugeConfig = { min: 0, max: 14, unit: "pH", decimals: 1 };
+  const formatter = asGauge(buildRadialGaugeOption(config, 7.126)).series[0].detail.formatter;
+  expect(formatter(7.126), "the raw ECharts default renders the unformatted float on the gauge face").toBe("7.1 pH");
 }
 
 export function gaugeNeedleValueIsClampedIntoRange(): void {
