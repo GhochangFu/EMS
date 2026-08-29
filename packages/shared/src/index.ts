@@ -363,6 +363,10 @@ export type RtusListResponse = z.infer<typeof E.rtusListResponseSchema>;
 export type AssetsListResponse = z.infer<typeof E.assetsListResponseSchema>;
 export type AssetPointsListResponse = z.infer<typeof E.assetPointsListResponseSchema>;
 export type PointKeysListResponse = z.infer<typeof E.pointKeysListResponseSchema>;
+/** `F3.1b`/`F3.1d` (ADR 0047) — `GET /dashboards`. */
+export type DashboardsListResponse = z.infer<typeof E.dashboardsListResponseSchema>;
+/** `F3.1b`/`F3.1d` (ADR 0047) — `DELETE /dashboards/:id`. */
+export type DashboardDeletedResponse = z.infer<typeof E.dashboardDeletedResponseSchema>;
 /** `F2.5` (ADR 0038) — the template list. Rows omit `points`, carry `pointCount`. */
 export type AssetTemplatesListResponse = z.infer<
   typeof E.assetTemplatesListResponseSchema

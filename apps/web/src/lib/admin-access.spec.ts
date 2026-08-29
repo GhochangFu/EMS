@@ -1,5 +1,7 @@
 import {
   canAccessOnboarding,
+  canAuthorDashboards,
+  canCreateOrganizationWideDashboard,
   canManageNotificationChannels,
   masterDataTabs,
   visibleMasterDataTabs,
@@ -169,4 +171,45 @@ export function runNotificationTabTests(): void {
     gated.join(",") === `${CHANNELS},${DELIVERIES}`,
     `only the two F3.8 tabs are notificationAdmin — got ${gated.join(",")}`,
   );
+}
+
+/**
+ * The two dashboard authoring predicates (`F3.1d` §6.2, ADR 0038 decision 10 applied).
+ *
+ * `canAuthorDashboards` mirrors `canPerformOperationsWrite(role, "configuration")` — the SAME
+ * four roles as `WRITE_MATRIX`'s `configuration: true` column
+ * (`apps/api/src/auth/operations-write.ts`). `canCreateOrganizationWideDashboard` is narrower:
+ * ADR 0047 Amendment 2 ruling 2 restricts the ORGANIZATION-WIDE scope (both `locationId` and
+ * `assetGroupId` null) to the two organization-level roles, because that row has no scope
+ * column and therefore no other owner.
+ */
+export function runDashboardAuthoringPredicateTests(): void {
+  // The load-bearing assertion (plan §9): every role NOT in the configuration-write column
+  // must be refused, named individually rather than as a single "the rest" case, so adding a
+  // role to either list here is a decision, not a fallthrough.
+  assert(canAuthorDashboards("admin"), "admin may author dashboards");
+  assert(canAuthorDashboards("organization_admin"), "organization_admin may author dashboards");
+  assert(canAuthorDashboards("location_admin"), "location_admin may author dashboards");
+  assert(canAuthorDashboards("asset_group_admin"), "asset_group_admin may author dashboards");
+  assert(!canAuthorDashboards("operator"), "operator may not author dashboards");
+  assert(!canAuthorDashboards("viewer"), "viewer may not author dashboards");
+
+  assert(canCreateOrganizationWideDashboard("admin"), "admin may create an organization-wide dashboard");
+  assert(
+    canCreateOrganizationWideDashboard("organization_admin"),
+    "organization_admin may create an organization-wide dashboard",
+  );
+  // The load-bearing assertion (plan §9): BOTH scoped-admin roles are refused, not just one —
+  // a location_admin and an asset_group_admin author freely inside their OWN scope
+  // (canAuthorDashboards admits both), but neither owns a dashboard with no scope at all.
+  assert(
+    !canCreateOrganizationWideDashboard("location_admin"),
+    "location_admin may not create an organization-wide dashboard",
+  );
+  assert(
+    !canCreateOrganizationWideDashboard("asset_group_admin"),
+    "asset_group_admin may not create an organization-wide dashboard",
+  );
+  assert(!canCreateOrganizationWideDashboard("operator"), "operator may not create an organization-wide dashboard");
+  assert(!canCreateOrganizationWideDashboard("viewer"), "viewer may not create an organization-wide dashboard");
 }
