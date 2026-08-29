@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import {
   adminSeesTheOrganizationWideOption,
   assetGroupAdminNeverSeesTheOrganizationWideOptionEither,
+  forALocationAdminAnOrganizationWideValueClampsToLocation,
   locationAdminNeverSeesTheOrganizationWideOption,
   noRoleIsOfferedAnAssetGroupOption,
   organizationAdminSeesTheOrganizationWideOption,
@@ -39,5 +40,9 @@ describe("F3.1d dashboard scope fields", () => {
 
   it("offers no role an asset-group option", () => {
     noRoleIsOfferedAnAssetGroupOption();
+  });
+
+  it("clamps a location_admin fed an organization-wide value back to an unchosen location", () => {
+    forALocationAdminAnOrganizationWideValueClampsToLocation();
   });
 });

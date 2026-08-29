@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 import type { UserRole } from "@bms/shared";
 
 import { canCreateOrganizationWideDashboard } from "../../lib/admin-access";
@@ -61,6 +63,21 @@ export function DashboardScopeFields({
   error,
 }: DashboardScopeFieldsProps) {
   const canOrgWide = canCreateOrganizationWideDashboard(role);
+
+  // Review finding (HIGH) — `duplicate-dashboard-dialog.tsx` and `dashboard-builder-edit-page.tsx`
+  // both prefill two-way from the source's own scope (`source.locationId ? location :
+  // organization`). For a role `canOrgWide` refuses, that can hand this component a
+  // `value.kind === "organization"` it renders as NEITHER radio checked and no select — nothing
+  // in the DOM shows the current scope — while the caller's own `scopeChosen` (reading
+  // `organizationId !== ""`) still comes back true, leaving Save/Duplicate enabled for a submit
+  // the server refuses. Clamped here, once, rather than in every caller that might prefill this
+  // value: `locationId` is left EMPTY rather than guessed, so `scopeChosen` reads false and the
+  // button is correctly disabled until the author actually picks a location.
+  useEffect(() => {
+    if (!canOrgWide && value.kind === "organization") {
+      onChange({ kind: "location", organizationId: value.organizationId, locationId: "" });
+    }
+  }, [canOrgWide, value, onChange]);
 
   return (
     <fieldset className="space-y-2">

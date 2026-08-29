@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import { expect } from "vitest";
+import { expect, vi } from "vitest";
 
 import type { UserRole } from "@bms/shared";
 
@@ -68,6 +68,37 @@ export function adminSeesTheOrganizationWideOption(): void {
   renderFields("admin");
 
   expect(screen.getByRole("radio", { name: "Organization-wide" })).toBeInTheDocument();
+}
+
+/**
+ * Review finding (HIGH) — `duplicate-dashboard-dialog.tsx` and
+ * `dashboard-builder-edit-page.tsx` both prefill two-way from the source's own scope
+ * (`source.locationId ? location : organization`). For a `location_admin` fed an
+ * organization-wide source that way, this component previously rendered neither the
+ * organization-wide radio nor its select — nothing indicated the current scope — while
+ * `value.kind === "organization"` still made the caller's own `scopeChosen` read true, leaving
+ * Save/Duplicate enabled for a submit the server refuses. The existing `renderFields` helper
+ * above always passes `{kind: "location"}`, which is why it could not see this: this case feeds
+ * the mismatched `{kind: "organization"}` value directly.
+ */
+export function forALocationAdminAnOrganizationWideValueClampsToLocation(): void {
+  const onChange = vi.fn();
+  render(
+    <DashboardScopeFields
+      role="location_admin"
+      value={{ kind: "organization", organizationId: "org-1" }}
+      onChange={onChange}
+      organizations={ORGANIZATIONS}
+      locations={LOCATIONS}
+    />,
+  );
+
+  expect(
+    onChange,
+    "a role that cannot author organization-wide must have its value clamped back to " +
+      "an (unchosen) location, not left as an organization-wide value nothing in the DOM shows",
+  ).toHaveBeenCalledWith({ kind: "location", organizationId: "org-1", locationId: "" });
+  expect(screen.queryByRole("radio", { name: "Organization-wide" })).not.toBeInTheDocument();
 }
 
 /** No asset-group radio anywhere, for any role — the owner ruling plan §6 records (backlog `F3.34`). */
