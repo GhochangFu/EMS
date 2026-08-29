@@ -8,6 +8,7 @@ import {
   // `@bms/shared/contracts`, because apps/api compiles with moduleResolution "node" and
   // ignores the exports map — ADR 0030 Amendment 2.
   chartConfigSchema,
+  DASHBOARD_GRID,
   formatCalcError,
   GAUGE_RANGE_MESSAGE,
   gaugeRangeIsOrdered,
@@ -298,13 +299,22 @@ const templateMaintenancePlanSchema = z
  *
  * The grid is bounded here as well as by `dashboard_widgets_grid_bounds_check`, so a template
  * author gets a 400 naming the field rather than a 500 carrying a constraint name.
+ *
+ * **The numbers come from `DASHBOARD_GRID` and are not restated** (`F3.1d`). This is the same
+ * canvas, not a coincidence that two bounds match: the docblock above already names
+ * `dashboard_widgets_grid_bounds_check` as the other enforcer of *this* rule, and `F3.2`
+ * instantiates a template's dashboard straight into `bms.dashboard_widgets`, so a template
+ * widget that this schema accepts and that check refuses is a defect by construction. It is the
+ * `WIDGET_POINT_CARDINALITY` case one field down, decided the same way ADR 0047 Amendment 3
+ * decided that one: a rule enforced only by the surface that happens to be convenient is not
+ * enforced. `tests/f3.1d-grid-bounds-single-source.test.ts` is what keeps a copy from returning.
  */
 const templateWidgetIdentityFields = {
   title: z.string().max(255).optional(),
-  gridX: z.number().int().min(0).max(11),
+  gridX: z.number().int().min(0).max(DASHBOARD_GRID.columns - 1),
   gridY: z.number().int().min(0),
-  gridW: z.number().int().min(1).max(12),
-  gridH: z.number().int().min(1).max(24),
+  gridW: z.number().int().min(DASHBOARD_GRID.minWidgetW).max(DASHBOARD_GRID.columns),
+  gridH: z.number().int().min(DASHBOARD_GRID.minWidgetH).max(DASHBOARD_GRID.maxWidgetH),
 };
 
 /**
@@ -407,15 +417,15 @@ export const templateDashboardWidgetVariants = z.discriminatedUnion("widgetType"
 ]);
 
 const templateDashboardWidgetSchema = templateDashboardWidgetVariants
-  .refine((widget) => widget.gridX + widget.gridW <= 12, {
-    message: "a widget must fit inside the 12-column canvas",
+  .refine((widget) => widget.gridX + widget.gridW <= DASHBOARD_GRID.columns, {
+    message: `a widget must fit inside the ${DASHBOARD_GRID.columns}-column canvas`,
     path: ["gridW"],
   })
   .describe(
-    "A widget on a template's default dashboard. `gridX + gridW` must not exceed 12: the " +
-      "canvas is twelve columns, and `dashboard_widgets_grid_bounds_check` enforces the same " +
-      "bound in SQL, so an author who overflows it gets a 400 naming the field rather than a " +
-      "500 carrying a constraint name.",
+    "A widget on a template's default dashboard. `gridX` plus its width must not exceed " +
+      `${DASHBOARD_GRID.columns}: that is the width of the canvas, and ` +
+      "`dashboard_widgets_grid_bounds_check` enforces the same bound in SQL, so an author who " +
+      "overflows it gets a 400 naming the field rather than a 500 carrying a constraint name.",
   );
 
 /**
