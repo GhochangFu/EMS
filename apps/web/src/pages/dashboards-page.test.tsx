@@ -3,7 +3,9 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  anAssetGroupRowIsLabelledAssetGroupNotOrganizationWide,
   anAuthoringRoleSeesTheManageLink,
+  assetGroupAdminSeesNoManageLinkDespiteCanAuthorDashboards,
   rendersEveryRowTheApiReturns,
   viewerRoleSeesNoAuthoringAffordance,
 } from "./dashboards-page.spec";
@@ -29,5 +31,13 @@ describe("F3.1d dashboards page", () => {
 
   it("renders every row the API returns, without re-deriving visibility", async () => {
     await rendersEveryRowTheApiReturns();
+  });
+
+  it("shows an asset_group_admin no Manage dashboards link, despite canAuthorDashboards", async () => {
+    await assetGroupAdminSeesNoManageLinkDespiteCanAuthorDashboards();
+  });
+
+  it("labels an asset-group row 'Asset group', not 'Organization-wide'", async () => {
+    await anAssetGroupRowIsLabelledAssetGroupNotOrganizationWide();
   });
 });

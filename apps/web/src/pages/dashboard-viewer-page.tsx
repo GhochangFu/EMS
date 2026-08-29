@@ -5,7 +5,7 @@ import type { DashboardWidgetDto } from "@bms/shared";
 
 import { fetchDashboard } from "../api/dashboards";
 import { apiErrorMessage } from "../lib/api-error-message";
-import { canAuthorDashboards } from "../lib/admin-access";
+import { canAuthorDashboards, isMasterDataAdmin } from "../lib/admin-access";
 import { useDashboardTelemetry } from "../hooks/use-dashboard-telemetry";
 import { AppShell } from "../layouts/app-shell";
 import { PageHeader } from "../components/page-header";
@@ -29,6 +29,12 @@ type WidgetTile = CanvasTile & { widget: DashboardWidgetDto };
  * `?organizationId=` disambiguates a slug that matches more than one
  * organization's dashboard on the fleet pool (D5). On that 400 the API's own
  * message is rendered inline, unmodified.
+ *
+ * **The "Edit dashboard" link is gated on `canAuthorDashboards(role) && isMasterDataAdmin(role)`
+ * (review finding, HIGH).** `canAuthorDashboards` alone admits `asset_group_admin`, but the
+ * target route is wrapped in `<AdminRoute>`, which guards on `isMasterDataAdmin` and excludes
+ * that role — the un-narrowed gate handed it a link into a silent redirect. Mirrors
+ * `dashboards-page.tsx`'s own fix; `canAuthorDashboards`'s membership is unchanged.
  */
 export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
   const { slug = "" } = useParams<{ slug: string }>();
@@ -65,7 +71,7 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
           title={dashboardQ.data?.name ?? slug}
           subtitle={dashboardQ.data?.description ?? undefined}
           actions={
-            dashboardQ.data && canAuthorDashboards(user.role) ? (
+            dashboardQ.data && canAuthorDashboards(user.role) && isMasterDataAdmin(user.role) ? (
               <Link
                 to={`/admin/dashboards/${slug}${organizationId ? `?organizationId=${organizationId}` : ""}`}
                 className="rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:bg-gray-50"

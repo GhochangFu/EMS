@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 
 import { fetchDashboards } from "../api/dashboards";
 import { apiErrorMessage } from "../lib/api-error-message";
-import { canAuthorDashboards } from "../lib/admin-access";
+import { canAuthorDashboards, isMasterDataAdmin } from "../lib/admin-access";
 import { AppShell } from "../layouts/app-shell";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
@@ -22,6 +22,14 @@ type DashboardsPageProps = {
  * dashboards" link, gated on `canAuthorDashboards`; every mutating control
  * (create/edit/duplicate/delete) lives on the builder this links to, never
  * here (plan §6.1).
+ *
+ * **The link is gated on `canAuthorDashboards(role) && isMasterDataAdmin(role)`, not
+ * `canAuthorDashboards` alone (review finding, HIGH).** `canAuthorDashboards` admits
+ * `asset_group_admin`, but `/admin/dashboards` is wrapped in `<AdminRoute>`, which guards on
+ * `isMasterDataAdmin` and excludes that role — the link would otherwise send it straight into a
+ * silent redirect to `/`. `canAuthorDashboards`'s own membership is unchanged (plan §15 Q1 is
+ * the owner's open question, not this row's to close); this gates the link on the predicate
+ * that actually guards the route it points to.
  */
 export function DashboardsPage({ user }: DashboardsPageProps) {
   const listQ = useQuery({
@@ -39,7 +47,7 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
           title="Dashboards"
           subtitle="Configurable widget boards bound to live telemetry"
           actions={
-            canAuthorDashboards(user.role) ? (
+            canAuthorDashboards(user.role) && isMasterDataAdmin(user.role) ? (
               <Link
                 to="/admin/dashboards"
                 className="rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:bg-gray-50"
@@ -79,7 +87,11 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
                   <tr key={dashboard.id} className="border-b border-gray-100">
                     <td className="px-3 py-2 font-medium">{dashboard.name}</td>
                     <td className="px-3 py-2 text-xs text-bms-muted">
-                      {dashboard.locationId ? "Location" : "Organization-wide"}
+                      {dashboard.locationId
+                        ? "Location"
+                        : dashboard.assetGroupId
+                          ? "Asset group"
+                          : "Organization-wide"}
                     </td>
                     <td className="px-3 py-2 text-xs">{dashboard.widgetCount}</td>
                     <td className="px-3 py-2 text-right">

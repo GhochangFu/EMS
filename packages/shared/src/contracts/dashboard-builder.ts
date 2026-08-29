@@ -319,7 +319,7 @@ const dashboardWidgetIdentitySchema = z
     points: z.array(dashboardWidgetPointDtoSchema),
   })
   .refine((widget) => widget.gridX + widget.gridW <= DASHBOARD_GRID.columns, {
-    message: "a widget must fit inside the 12-column canvas",
+    message: `a widget must fit inside the ${DASHBOARD_GRID.columns}-column canvas`,
     path: ["gridW"],
   });
 

@@ -89,6 +89,23 @@ export async function anAuthoringRoleSeesTheManageLink(): Promise<void> {
   expect(link).toHaveAttribute("href", "/admin/dashboards");
 }
 
+/**
+ * Review finding (HIGH) — `canAuthorDashboards` admits `asset_group_admin`, but `/admin/dashboards`
+ * is wrapped in `<AdminRoute>`, which guards on `isMasterDataAdmin` and excludes that role
+ * (`admin-route.tsx`). Gating the link on `canAuthorDashboards` alone hands this role a link
+ * that redirects it to `/` with no message the moment it is clicked — seeded
+ * `wc-hvac-admin@bms.local` reproduces it. **Do not widen `canAuthorDashboards`'s membership**
+ * (plan §15 Q1 leaves that gap with the owner); gate on the predicate that actually guards the
+ * route instead.
+ */
+export async function assetGroupAdminSeesNoManageLinkDespiteCanAuthorDashboards(): Promise<void> {
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue(RESPONSE);
+  renderPage(asUser("asset_group_admin"));
+
+  expect(await screen.findByText("Site A Overview")).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: /Manage dashboards/i })).not.toBeInTheDocument();
+}
+
 /** Renders whatever the API returns — no client-side re-derivation of read visibility. */
 export async function rendersEveryRowTheApiReturns(): Promise<void> {
   vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({
@@ -100,4 +117,32 @@ export async function rendersEveryRowTheApiReturns(): Promise<void> {
 
   expect(await screen.findByText("Org-wide board")).toBeInTheDocument();
   expect(screen.getByText("Organization-wide")).toBeInTheDocument();
+}
+
+/**
+ * Review finding — the scope column has three cases (`0050`'s header: both NULL is
+ * organization-wide, `locationId` set is a site dashboard, `assetGroupId` set is a plant-area
+ * dashboard), and the old `locationId ? "Location" : "Organization-wide"` collapsed the last two
+ * into one label — an asset-group row read "Organization-wide", the widest audience, on the one
+ * column an operator reads to judge audience. `rendersEveryRowTheApiReturns` above sets both
+ * `locationId` and `assetGroupId` to `null` on its fixture, so it cannot see this: this test adds
+ * a THIRD row rather than mutating that one.
+ */
+export async function anAssetGroupRowIsLabelledAssetGroupNotOrganizationWide(): Promise<void> {
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({
+    items: [
+      {
+        ...RESPONSE.items[0]!,
+        id: "aaaaaaaa-0000-0000-0000-000000000002",
+        name: "Plant-area board",
+        locationId: null,
+        assetGroupId: "44444444-4444-4444-8444-444444444444",
+      },
+    ],
+  });
+  renderPage(asUser("operator"));
+
+  expect(await screen.findByText("Plant-area board")).toBeInTheDocument();
+  expect(screen.getByText("Asset group")).toBeInTheDocument();
+  expect(screen.queryByText("Organization-wide")).not.toBeInTheDocument();
 }
