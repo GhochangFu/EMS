@@ -51,10 +51,17 @@ export type WidgetSeries = {
   readonly points: readonly WidgetSeriesPoint[];
 };
 
-/** Hex, not a Tailwind class — `axisLine.lineStyle.color` and an SVG `fill` both need a colour value, not a class name. */
+/**
+ * Hex, not a Tailwind class — `axisLine.lineStyle.color` and an SVG `fill`
+ * both need a colour value, not a class name. Sourced from `TRINETRA.html:12`
+ * (`--sc`, `--in`, `--wn`, `--cr`), matching §5's palette rule and the same
+ * four hexes already in use for this semantic — `energy-top-bar-chart.tsx:17`
+ * and `crac-schematic.tsx:354,361` for `info`, `crac-schematic.tsx:17-19` for
+ * the other three.
+ */
 export const WIDGET_TONE_COLOR: Readonly<Record<WidgetTone, string>> = {
   ok: "#039855",
-  info: "#0EA5E9",
+  info: "#1570EF",
   warning: "#DC6803",
   critical: "#D92D20",
 };

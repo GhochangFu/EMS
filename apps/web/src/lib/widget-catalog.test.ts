@@ -6,7 +6,7 @@ import {
   catalogDefaultSizesFitTheGrid,
   catalogLabelsAreNonEmpty,
   chartSeriesLabelsArePinned,
-  toneColorsCoverAllFourTones,
+  toneColorsMatchTheMockupPaletteExactly,
 } from "./widget-catalog.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -31,7 +31,7 @@ describe("widget-catalog", () => {
     areaSeriesIsLineWithAreaStyle();
   });
 
-  it("gives every widget tone a hex colour", () => {
-    toneColorsCoverAllFourTones();
+  it("matches every widget tone to the mockup palette exactly", () => {
+    toneColorsMatchTheMockupPaletteExactly();
   });
 });

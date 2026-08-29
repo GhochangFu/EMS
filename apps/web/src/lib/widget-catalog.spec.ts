@@ -72,10 +72,15 @@ export function areaSeriesIsLineWithAreaStyle(): void {
   expect(CHART_SERIES.scatter.type).toBe("scatter");
 }
 
-/** `StatusPill`'s four shared tones, matching hex rather than a Tailwind class — ECharts and SVG `fill` both need a colour value. */
-export function toneColorsCoverAllFourTones(): void {
-  expect(WIDGET_TONE_COLOR.ok).toMatch(/^#[0-9A-Fa-f]{6}$/);
-  expect(WIDGET_TONE_COLOR.info).toMatch(/^#[0-9A-Fa-f]{6}$/);
-  expect(WIDGET_TONE_COLOR.warning).toMatch(/^#[0-9A-Fa-f]{6}$/);
-  expect(WIDGET_TONE_COLOR.critical).toMatch(/^#[0-9A-Fa-f]{6}$/);
+/**
+ * Pinned to `TRINETRA.html:12`'s literal hexes, not merely "looks like a
+ * colour" — a shape-only `/^#[0-9A-Fa-f]{6}$/` check leaves `ok` and
+ * `critical` free to swap, which is a green suite and a healthy gauge band
+ * (or a healthy tank fill) rendering red.
+ */
+export function toneColorsMatchTheMockupPaletteExactly(): void {
+  expect(WIDGET_TONE_COLOR.ok, "TRINETRA.html:12 --sc").toBe("#039855");
+  expect(WIDGET_TONE_COLOR.info, "TRINETRA.html:12 --in").toBe("#1570EF");
+  expect(WIDGET_TONE_COLOR.warning, "TRINETRA.html:12 --wn").toBe("#DC6803");
+  expect(WIDGET_TONE_COLOR.critical, "TRINETRA.html:12 --cr").toBe("#D92D20");
 }
