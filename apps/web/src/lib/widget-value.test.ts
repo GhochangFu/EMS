@@ -1,6 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  formatDeltaIsNullWithoutAComputablePercentage,
+  formatDeltaMatchesTheMocksExactWording,
+  formatDeltaSignsDirectionCorrectlyAndFlatOnATinyChange,
   formatWidgetValueAbbreviatesOnlyWhenAsked,
   formatWidgetValueHonoursDecimalsBelowTheAbbreviationThreshold,
   formatWidgetValueRendersAnEmDashForNull,
@@ -13,7 +16,10 @@ import {
   tankFillPercentGuardsAZeroOrInvalidFullScale,
   toKpiTilePropsDoesNotDoubleRenderTheUnit,
   toKpiTilePropsHidesTheValueOffTheReadyStatus,
+  toKpiTilePropsHintPrecedence,
+  toKpiTilePropsLetsACallerSuppliedToneWinOverConfigsTone,
   toKpiTilePropsMapsAllFourTonesExhaustively,
+  toKpiTilePropsReadsToneFromConfigThroughTheExistingMap,
   widgetTitleFallsBackToTheCatalogLabel,
 } from "./widget-value.spec";
 
@@ -73,5 +79,29 @@ describe("widget-value", () => {
 
   it("does not double-render the unit into both the value and KpiTile's own unit prop", () => {
     toKpiTilePropsDoesNotDoubleRenderTheUnit();
+  });
+
+  it("formats a delta matching the Nexus mock's exact wording", () => {
+    formatDeltaMatchesTheMocksExactWording();
+  });
+
+  it("returns null for a delta with no computable percentage", () => {
+    formatDeltaIsNullWithoutAComputablePercentage();
+  });
+
+  it("signs the delta's direction correctly, and calls a tiny change flat rather than arrowed", () => {
+    formatDeltaSignsDirectionCorrectlyAndFlatOnATinyChange();
+  });
+
+  it("reads tone from config.tone through the existing tone map", () => {
+    toKpiTilePropsReadsToneFromConfigThroughTheExistingMap();
+  });
+
+  it("lets a caller-supplied tone win over config.tone", () => {
+    toKpiTilePropsLetsACallerSuppliedToneWinOverConfigsTone();
+  });
+
+  it("fills the hint slot from at most one source, per the one-slot precedence", () => {
+    toKpiTilePropsHintPrecedence();
   });
 });

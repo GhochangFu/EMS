@@ -1,4 +1,4 @@
-import type { WidgetType } from "@bms/shared";
+import type { WidgetIcon, WidgetType } from "@bms/shared";
 
 import { WIDGET_CATALOG, type ValueTileConfig, type WidgetStatus, type WidgetTone } from "./widget-catalog";
 
@@ -165,20 +165,85 @@ const WIDGET_TONE_TO_KPI_TONE: Readonly<Record<WidgetTone, "default" | "warning"
   critical: "critical",
 };
 
+/** One computed change-over-time reading, ready to drop straight into `KpiTile`'s `hint` slot. */
+export type WidgetDelta = {
+  readonly direction: "up" | "down" | "flat";
+  readonly text: string;
+};
+
+/**
+ * `valueTileConfigSchema.compareToPrevious` (ADR 0048 decision 6): the delta
+ * against the immediately preceding window of the same length. The wording
+ * is pinned to the Nexus mock's own copy
+ * (`docs/ion-exchange-nexus-dashboard-2026-08-29.html`, the KPI row) —
+ * "vs yesterday" renders even for a non-24h `windowMinutes` today, which is
+ * a copy gap for whoever ships a non-daily compare window, not something to
+ * paper over here with vaguer wording the mock does not show.
+ *
+ * A `baseline` of `0` has no percentage — dividing by it renders `Infinity%`
+ * or `NaN%`, not a delta — and either input missing means there is nothing
+ * to compare, not a delta of zero. All three return `null`.
+ *
+ * "Flat" is decided on the *rounded* magnitude, not on exact equality: a
+ * change that rounds to `0.0%` must not point an up or down arrow at a
+ * direction the printed number does not support. The flat case draws a
+ * third, neutral arrow instead of picking one of the other two, so "no
+ * material change" is not mistaken for "no data" — the condition an absent
+ * `hint` already means.
+ */
+export function formatDelta(current: number | null, baseline: number | null): WidgetDelta | null {
+  if (current === null || baseline === null || !Number.isFinite(current) || !Number.isFinite(baseline)) {
+    return null;
+  }
+  if (baseline === 0) {
+    return null;
+  }
+  const pct = ((current - baseline) / baseline) * 100;
+  const magnitude = Math.abs(pct).toFixed(1);
+  if (magnitude === "0.0") {
+    return { direction: "flat", text: `→ ${magnitude}% vs yesterday` };
+  }
+  return {
+    direction: pct > 0 ? "up" : "down",
+    text: `${pct > 0 ? "↑" : "↓"} ${magnitude}% vs yesterday`,
+  };
+}
+
 export type KpiTileWidgetProps = {
   readonly label: string;
   readonly status: WidgetStatus;
   readonly value: string | null;
   readonly unit?: string;
+  /**
+   * One line under the value. `toKpiTileProps` fills it from at most one
+   * source — the computed delta or `config.hint`, never both — per the one
+   * slot `valueTileConfigSchema.hint`'s own docblock rules.
+   */
+  readonly hint?: string;
   readonly tone: "default" | "warning" | "critical";
+  /**
+   * A name, not an element — this file is `.ts` and cannot hold JSX.
+   * `ValueTileWidget`'s `.tsx` resolves the name to the actual icon.
+   */
+  readonly icon?: WidgetIcon;
 };
 
 /**
- * Composes `ValueTileWidget`'s props for `<KpiTile ...>`. `tone` is not read
- * from `valueTileConfigSchema` — that config carries no tone field — so it is
- * a parameter with a neutral default; the mapping is tested exhaustively here
- * so it is correct the day a caller (alarm-derived state, `F3.28`) has a real
- * tone to pass.
+ * Composes `ValueTileWidget`'s props for `<KpiTile ...>`.
+ *
+ * `tone`: a caller-supplied `tone` wins over `config.tone` — `F3.28`'s
+ * alarm-derived tone reflects a *live* condition (an active alarm), which
+ * outranks the tile's own static, author-set default. Neither present falls
+ * back to `"ok"`, same as before this config field existed.
+ *
+ * `hint`: the delta computed from `compareValue` wins the slot over
+ * `config.hint` whenever `config.compareToPrevious` is set *and* the delta
+ * is computable (see `formatDelta`); otherwise `config.hint` renders, and if
+ * neither applies `hint` is left `undefined`. `compareValue` is a parameter,
+ * not a fetch — this function stays pure arithmetic on values its caller
+ * already holds.
+ *
+ * `icon`: carried through by name only — see `KpiTileWidgetProps.icon`.
  */
 export function toKpiTileProps(params: {
   readonly title: string;
@@ -186,16 +251,26 @@ export function toKpiTileProps(params: {
   readonly primary: number | null;
   readonly config: ValueTileConfig;
   readonly tone?: WidgetTone;
+  readonly compareValue?: number | null;
 }): KpiTileWidgetProps {
-  const { title, status, primary, config, tone = "ok" } = params;
+  const { title, status, primary, config, tone, compareValue = null } = params;
+  const ready = status === "ready";
+  // **Gated on `ready` for the same reason `value` is.** TanStack Query keeps
+  // the previous `data` through a refetch error, so a widget can hold a stale
+  // non-null `primary` while its status is `"error"`. Ungated, the tile would
+  // then read "Could not load" with a confident "↓ 6.8% vs yesterday" under it —
+  // a number the operator can act on, above a line saying the read failed.
+  const delta = ready && config.compareToPrevious ? formatDelta(primary, compareValue) : null;
   return {
     label: title,
     status,
     // `unit` is passed to KpiTile separately below, which renders it in its
     // own span — not into `formatWidgetValue`'s `unit` option, or the tile
     // would read e.g. "7.1 kW kW".
-    value: status === "ready" ? formatWidgetValue(primary, { decimals: config.decimals, abbreviate: config.abbreviate }) : null,
+    value: ready ? formatWidgetValue(primary, { decimals: config.decimals, abbreviate: config.abbreviate }) : null,
     unit: config.unit,
-    tone: WIDGET_TONE_TO_KPI_TONE[tone],
+    hint: delta ? delta.text : config.hint,
+    tone: WIDGET_TONE_TO_KPI_TONE[tone ?? config.tone ?? "ok"],
+    icon: config.icon,
   };
 }
