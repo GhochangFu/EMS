@@ -8,7 +8,10 @@ import type { BmsDb } from "@bms/db";
 import {
   assertAlarmSkillRejectsInactiveCode,
   assertAlarmSkillRejectsUnknownCode,
+  assertAssetRoleRejectsInactiveCode,
+  assertAssetRoleRejectsUnknownCode,
   assertListReturnsAlarmSkillsOrdered,
+  assertListReturnsAssetRolesOrdered,
 } from "./vocabularies.service.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 
@@ -53,3 +56,51 @@ describe.skipIf(!connectionString)("E2.1 — VocabulariesService alarm skills ag
     await assertAlarmSkillRejectsInactiveCode(db);
   });
 });
+
+/**
+ * `F3.37` (ADR 0049 decision 5) — the fifth vocabulary. Its own guard and its
+ * own pool rather than three more `it`s above, because the guard message names
+ * the item whose evidence a skip would silently withhold, and this is a
+ * different item from `E2.1`.
+ */
+const roleConnectionString = requireIntegrationDb({
+  item: "F3.37",
+  label: "VocabulariesService asset role tests",
+  because:
+    "a green run here would assert that list() serves bms.asset_roles ordered " +
+    "and active-only, and that assertAssetRole turns an unknown or retired code " +
+    "into a 400 rather than letting asset_group_members_role_fkey surface as a " +
+    "500 — while nothing checked any of it against a real database. Fix the " +
+    "pipeline, do not relax this guard.",
+});
+
+describe.skipIf(!roleConnectionString)(
+  "F3.37 — VocabulariesService asset roles against a real database",
+  () => {
+    let pool: pg.Pool;
+    let db: BmsDb;
+
+    beforeAll(async () => {
+      pool = await openIntegrationPool(roleConnectionString as string, "F3.37");
+      db = createDb(pool);
+    });
+
+    afterAll(async () => {
+      if (pool) {
+        await pool.end();
+      }
+    });
+
+    it("returns asset roles ordered by sortOrder, active only", async () => {
+      await assertListReturnsAssetRolesOrdered(db);
+    });
+
+    it("rejects an asset role code with no matching row, listing live codes", async () => {
+      await assertAssetRoleRejectsUnknownCode(db);
+    });
+
+    it("rejects a retired asset role code", async () => {
+      await assertAssetRoleRejectsInactiveCode(db);
+    });
+  },
+);

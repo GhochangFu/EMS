@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { alarmSeverities, alarmSkills, assetDomains, ruleCategories } from "@bms/db";
+import { alarmSeverities, alarmSkills, assetDomains, assetRoles, ruleCategories } from "@bms/db";
 import { asc, eq } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
@@ -7,6 +7,7 @@ import type {
   AlarmSeverityDto,
   AlarmSkillDto,
   AssetDomainDto,
+  AssetRoleDto,
   RuleCategoryDto,
   VocabulariesResponse,
 } from "@bms/shared";
@@ -14,8 +15,9 @@ import type {
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 
 /**
- * Four open vocabularies — rule concerns and plant domains (ADR 0031
- * Amendment 1), alarm severity (ADR 0032), and alarm skill (ADR 0034).
+ * Five open vocabularies — rule concerns and plant domains (ADR 0031
+ * Amendment 1), alarm severity (ADR 0032), alarm skill (ADR 0034), and the
+ * asset role a group membership plays (ADR 0049 decision 5, `F3.37`).
  *
  * **Why this service exists at all.** Both vocabularies used to be `z.enum`s, so
  * a bad value was rejected by the request schema with a clear 400 naming the
@@ -28,10 +30,10 @@ import { TENANT_DRIZZLE } from "../database/database.tokens";
  * That is the whole job here: keep the boundary honest now that the vocabulary
  * moved out of the boundary.
  *
- * Reads are uncached deliberately. These tables are tiny (four and five rows),
- * the queries are primary-key or full scans of a handful of rows, and a cache
- * would mean a newly seeded domain pack stayed invisible until a restart —
- * which is exactly the friction this design exists to remove.
+ * Reads are uncached deliberately. These tables are tiny (four to twenty-six
+ * rows), the queries are primary-key or full scans of a handful of rows, and a
+ * cache would mean a newly seeded domain pack stayed invisible until a restart
+ * — which is exactly the friction this design exists to remove.
  */
 @Injectable()
 export class VocabulariesService {
@@ -46,7 +48,7 @@ export class VocabulariesService {
    * stops being offered for new work while existing rows keep resolving.
    */
   async list(): Promise<VocabulariesResponse> {
-    const [categories, domains, severities, skills] = await Promise.all([
+    const [categories, domains, severities, skills, roles] = await Promise.all([
       this.db
         .select({
           code: ruleCategories.code,
@@ -94,6 +96,24 @@ export class VocabulariesService {
         .from(alarmSkills)
         .where(eq(alarmSkills.active, true))
         .orderBy(asc(alarmSkills.sortOrder), asc(alarmSkills.code)),
+      // ADR 0049 decision 5: ordered by sortOrder like assetDomains and
+      // alarmSkills, not by a rank column — a role carries no urgency. The
+      // seeded sortOrder is banded per train (Electrical 110-160, Water
+      // 210-250, STP 310-360, ETP 410-440, HVAC 510-550), which is what groups
+      // a picker. That banding is a convention and not a gate: the lookup
+      // table carries no `domain` column, ruled at the F3.37 plan gate because
+      // a foreign key to `bms.asset_domains` would have forced `stp` and `etp`
+      // rows into the vocabulary every asset's plant domain reads.
+      this.db
+        .select({
+          code: assetRoles.code,
+          label: assetRoles.label,
+          sortOrder: assetRoles.sortOrder,
+          active: assetRoles.active,
+        })
+        .from(assetRoles)
+        .where(eq(assetRoles.active, true))
+        .orderBy(asc(assetRoles.sortOrder), asc(assetRoles.code)),
     ]);
 
     return {
@@ -105,6 +125,7 @@ export class VocabulariesService {
       assetDomains: domains as AssetDomainDto[],
       alarmSeverities: severities as AlarmSeverityDto[],
       alarmSkills: skills as AlarmSkillDto[],
+      assetRoles: roles as AssetRoleDto[],
     };
   }
 
@@ -179,6 +200,27 @@ export class VocabulariesService {
   }
 
   /**
+   * Rejects an asset role that is not a live vocabulary row (ADR 0049
+   * decision 5). Same shape as the four above — without this an unknown code
+   * would travel to Postgres and return as `asset_group_members_role_fkey`, a
+   * 500 where there should be a 400.
+   *
+   * `assetRoleCodeSchema` is a `z.string()` and not a `z.enum` on purpose, so
+   * the request schema checks shape only and this is the whole boundary.
+   */
+  async assertAssetRole(code: string): Promise<void> {
+    const [row] = await this.db
+      .select({ active: assetRoles.active })
+      .from(assetRoles)
+      .where(eq(assetRoles.code, code))
+      .limit(1);
+
+    if (!row || !row.active) {
+      throw new BadRequestException(await this.unknownCodeMessage("role", code));
+    }
+  }
+
+  /**
    * Names the valid values back to the caller.
    *
    * The enum did this for free — a Zod `invalid_enum_value` lists its options —
@@ -186,33 +228,51 @@ export class VocabulariesService {
    * import sheet. Costs one extra query on the failure path only.
    */
   private async unknownCodeMessage(
-    field: "domain" | "category" | "severity" | "skill",
+    field: "domain" | "category" | "severity" | "skill" | "role",
     code: string,
   ): Promise<string> {
-    const available =
-      field === "domain"
-        ? await this.db
-            .select({ code: assetDomains.code })
-            .from(assetDomains)
-            .where(eq(assetDomains.active, true))
-            .orderBy(asc(assetDomains.sortOrder))
-        : field === "category"
-          ? await this.db
-              .select({ code: ruleCategories.code })
-              .from(ruleCategories)
-              .where(eq(ruleCategories.active, true))
-              .orderBy(asc(ruleCategories.sortOrder))
-          : field === "severity"
-            ? await this.db
-                .select({ code: alarmSeverities.code })
-                .from(alarmSeverities)
-                .where(eq(alarmSeverities.active, true))
-                .orderBy(asc(alarmSeverities.rank))
-            : await this.db
-                .select({ code: alarmSkills.code })
-                .from(alarmSkills)
-                .where(eq(alarmSkills.active, true))
-                .orderBy(asc(alarmSkills.sortOrder));
+    // A lookup rather than the nested ternary this was until `F3.37`. Four
+    // arms were already at the edge of readable; the fifth made it five deep,
+    // and a sixth vocabulary is not hypothetical — ADR 0031 Amendment 1
+    // schedules three domain packs. The four existing messages are unchanged
+    // byte for byte, which `assertAlarmSkillRejectsUnknownCode` and its three
+    // siblings are the gate on.
+    const liveCodes: Record<typeof field, () => Promise<{ code: string }[]>> = {
+      domain: () =>
+        this.db
+          .select({ code: assetDomains.code })
+          .from(assetDomains)
+          .where(eq(assetDomains.active, true))
+          .orderBy(asc(assetDomains.sortOrder)),
+      category: () =>
+        this.db
+          .select({ code: ruleCategories.code })
+          .from(ruleCategories)
+          .where(eq(ruleCategories.active, true))
+          .orderBy(asc(ruleCategories.sortOrder)),
+      // Ordered by `rank`, not `sortOrder` — for severity the display order
+      // *is* the urgency order, and `alarm_severities` has no sort column.
+      severity: () =>
+        this.db
+          .select({ code: alarmSeverities.code })
+          .from(alarmSeverities)
+          .where(eq(alarmSeverities.active, true))
+          .orderBy(asc(alarmSeverities.rank)),
+      skill: () =>
+        this.db
+          .select({ code: alarmSkills.code })
+          .from(alarmSkills)
+          .where(eq(alarmSkills.active, true))
+          .orderBy(asc(alarmSkills.sortOrder)),
+      role: () =>
+        this.db
+          .select({ code: assetRoles.code })
+          .from(assetRoles)
+          .where(eq(assetRoles.active, true))
+          .orderBy(asc(assetRoles.sortOrder)),
+    };
+
+    const available = await liveCodes[field]();
 
     // The rejected code is echoed so the caller can see what was wrong with
     // their input — but it is caller-supplied text, and Nest logs 4xx messages.
