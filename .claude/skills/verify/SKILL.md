@@ -165,10 +165,19 @@ The browser MCP tools work from a subagent: `tabs_context_mcp`,
 2026-08-30. Do not re-derive this; if it ever stops working, the failure is
 loud (no tabs visible) rather than silent.
 
-### 4.4 Two traps that present as a login failure
+### 4.4 Three traps that present as a broken feature
 
-Both of these cost `F3.37` real time, and both look like bad credentials:
+All three look like a defect and are not:
 
+- **The dev server is serving the wrong branch.** It recompiles on checkout, so
+  a branch switch in the session silently reverts the app underneath a browser
+  run, and the feature's route then redirects to `/`. This is not hypothetical:
+  the first run of `browser-verifier` (2026-08-30) returned four FAILs against a
+  screen whose branch was not checked out, and the agent was right to — the
+  route genuinely was not in the source it was served. Run
+  `git branch --show-current` before you navigate. If the route is missing from
+  `apps/web/src/app.tsx` as well as from the page, suspect the branch, not the
+  code.
 - **The API's CORS allowlist names `:5173` only** (`apps/api/src/main.ts`). A
   dev server on any other port serves the login page perfectly and has every
   request blocked by the browser. Serve on 5173, or add the origin.

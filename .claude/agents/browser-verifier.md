@@ -50,9 +50,17 @@ per `computer` action, and `read_page` defaults to a 50k-character tree — pass
 
 ## Before you blame the page
 
-Three failures here present as bad credentials or a broken feature. Check them
+Four failures here present as bad credentials or a missing feature. Check them
 before reporting a defect:
 
+- **The wrong branch is checked out.** Run `git branch --show-current` **first**,
+  before you navigate anywhere. A dev server recompiles on checkout, so a branch
+  switch in the calling session silently reverts the app underneath you, and the
+  feature's route then 404s or redirects to `/`. This is the fault that produced
+  this bullet: the first real run of this agent reported four FAILs against a
+  screen whose branch was not checked out. If the claim names a feature and the
+  branch does not contain it, that is **BLOCKED — wrong branch**, and the
+  caller needs to know which branch you were actually served.
 - **CORS.** `apps/api/src/main.ts` allows `http://localhost:5173` and
   `http://127.0.0.1:5173` only. A dev server on any other port renders the login
   form and has every request blocked by the browser. Read
@@ -67,6 +75,16 @@ before reporting a defect:
 
 Report any of these as **BLOCKED**, not as a failed check. They are environment
 faults, and calling one a defect sends the caller after the wrong bug.
+
+**The distinction that matters.** A route missing from the *running page* is not
+the same as a route missing from the *source*. Read the source before you decide:
+
+- The route exists in `apps/web/src/app.tsx` and the page still 404s → a real
+  **FAIL**, and a good one.
+- The route is absent from the source too → almost always **BLOCKED**, because
+  the likeliest cause is the branch, not a defect. Say which branch you were on.
+  Only call it FAIL if the caller explicitly told you the route was already
+  merged on the branch you are serving.
 
 ## Rules
 
