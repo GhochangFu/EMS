@@ -59,11 +59,11 @@ WAVE 1  F1.2 F1.3 F1.4 F1.5 F1.6 [F1.7 ✅] F1.10  [F2.2 ✅] [F2.4 ✅]  F3.7 F
 WAVE 2  [F2.5 ✅] [F2.6 ✅] F2.7 F2.8  F3.2 F3.16 F3.20(P1↑) F3.34 F3.35🟡 [F3.37 ✅]  F3.21⭐  F4.6 F4.15
         E5.1 E5.2 [E2.1 ✅] E1.1⭐
 WAVE 3  F3.22 F3.23 F3.24 F3.25 F3.26 F3.27  F3.12 F3.5  F3.36🟡
-        E1.2 E1.3 E1.4 E4.1 E2.2 E2.4 E3.2
+        E1.2 E1.3🟡 E1.4 E4.1 E2.2 E2.4 E3.2
 WAVE 4  F3.13 F3.14 F4.9 F4.27 F4.13 [F4.16 ✅] F4.17 F4.21 F4.25
         E4.2 E2.3 E7.2 E7.3 E3.3 [E7.1🟡 → [E7.1a ✅] → [E7.1b ✅] → [E7.1c ✅] → [E7.1d ✅], [E7.1e ✅]]
 WAVE 5  F3.9 F3.17 F3.18 F3.19 F4.3 F4.18 F4.19 F4.22 F4.26 F1.11
-        E1.5 E1.6 E4.3 E5.3 E6.1 E6.2 E7.4 [E7.1f ✅] [E7.1g ✅] [E7.1h ✅] [E7.1i ✅] E8.5 [E8.6 ✅]
+        E1.5 E1.6 E1.8 E4.3 E5.3 E6.1 E6.2 E7.4 [E7.1f ✅] [E7.1g ✅] [E7.1h ✅] [E7.1i ✅] E8.5 [E8.6 ✅]
 ```
 
 **Critical path (protect Track B):**
@@ -71,7 +71,7 @@ WAVE 5  F3.9 F3.17 F3.18 F3.19 F4.3 F4.18 F4.19 F4.22 F4.26 F1.11
 its dependencies are met — but it is *not* startable: it is blocked on an
 unanswered client question set, which no `Depends` cell can express. See the
 `E5.1` row in §2 Track B before dispatching it.** And `F2.1 ✅ → F2.2 ✅ → F3.22` and
-`F4.1 + F1.x → E1.1 → E1.3/E1.2`, converging on the Foundry demo: *a
+`F4.1 + F1.x → E1.1 → E1.2/E1.8`, converging on the Foundry demo: *a
 water-treatment plant onboarded from a rich template by the onboarding agent,
 with health scores, pre-threshold anomaly alerts, and enriched alarms.*
 
@@ -287,9 +287,17 @@ re-derived from the `Depends` column rather than read off the slot table:
 
 **Still blocked, and worth recording so the next cascade check does not
 re-derive it:** `E2.2` (alarm philosophy KB) needs `E1.7` **and** `E2.1`, which
-is ⬜ and itself waits on `F3.6`. `E1.3` (asset health score) needs `E1.7` **and**
-`E1.1` ⭐, the ML foundation, which is ADR-gated on a stack choice. Both are two
-items away, not one.
+is ⬜ and itself waits on `F3.6` — two items away, not one.
+
+**`E1.3` is no longer in that list, and the reason is worth keeping.** It read
+as two items away on exactly the same grounds: it needed `E1.7` **and** `E1.1` ⭐,
+the ML foundation, which is ADR-gated on a stack choice. The client's
+2026-08-22 answer made the go-live score telemetry-only, and ADR 0050
+(2026-08-30) dropped the `E1.1` edge on that basis and moved the ML half to
+`E1.8`. A count-in-range ratio needs no model. The lesson is that a `Depends`
+cell records what was true when the row was written, and a client answer can
+retire an edge without touching either row — so a cascade check that trusts the
+cell alone will keep a P1 item blocked behind capability it does not use.
 
 **The lesson worth carrying forward.** `E1.7`'s backlog row promises six things.
 Checked against `main` rather than against the row, **five of the six consumers
@@ -502,10 +510,11 @@ drizzle journal is a single shared file).
 |----|--------|---------|---|--------|------|---------|
 | **E1.1** | ⬜ | ML serving foundation: model runtime (batch+streaming scoring), feature extraction from aggregates, model registry ⭐ — **ADR first (stack choice)**. **2026-08-22: A2 partially answered — sheet row 9 reads "AI algos can be IEIL scope; REST API enabled". That tilts this row toward a plug-in / serving surface rather than a model factory, and the §5 ML-stack ADR is now draftable. The one open input is call direction: do we call their hosted model over REST, or do they pull our aggregates and push scores back? "Can be" is a hedge, not a commitment — the ADR should carry both readings until A2 closes (§8).** | P1 | 8–12 | 2 | F4.1, F1.x, ADR |
 | E1.2 | ⬜ | Multi-variate anomaly detection (pre-threshold, per asset class) | P1 | 8–10 | 3 | E1.1 |
-| E1.3 | ⬜ | Asset Health Score — asset → plant → enterprise rollups. **§7 pins the enterprise rollup's shape**: a donut over **five named buckets** — Excellent / Good / Fair / Poor / Critical — with count *and* share per bucket against a total asset count (the reference reads 265 assets: 112 / 86 / 42 / 17 / 8). So the score is banded, not just continuous, and the band names are the client's. The per-**class** strip ("MCCs 4 · 1 Critical") is a different rollup and sits in `F3.28`. **2026-08-22: the client supplied the formula (sheet row 12) — tag-level goodness = data points in safe range / total data points, rolled up with user-configurable weights, topped by bad-actor identification. Telemetry-only at go-live is thereby confirmed and B15's three source questions dissolve; the SOW §4.3 five-input score becomes a later phase, so effort here goes *down*. Build the roll-up level-agnostic — the ladder may gain tiers via `F2.10` (§8).** | P1 | 6–8 | 3 | E1.1, E1.7 |
+| E1.3 | 🟡 | Asset Health Score — asset → plant → enterprise rollups. **§7 pins the enterprise rollup's shape**: a donut over **five named buckets** — Excellent / Good / Fair / Poor / Critical — with count *and* share per bucket against a total asset count (the reference reads 265 assets: 112 / 86 / 42 / 17 / 8). So the score is banded, not just continuous, and the band names are the client's. The per-**class** strip ("MCCs 4 · 1 Critical") is a different rollup and sits in `F3.28`. **2026-08-22: the client supplied the formula (sheet row 12) — tag-level goodness = data points in safe range / total data points, rolled up with user-configurable weights, topped by bad-actor identification. Telemetry-only at go-live is thereby confirmed and B15's three source questions dissolve; the SOW §4.3 five-input score becomes a later phase, so effort here goes *down*. Build the roll-up level-agnostic — the ladder may gain tiers via `F2.10` (§8).** **2026-08-30: ADR 0050 accepted, settling three mechanisms.** *(1)* Aggregation resolves **outside** the formula — ADR 0036 stays frozen and the service hands windowed inputs to the existing pure `evaluate()`, exactly as ADR 0037's *Not in this ADR* already specifies for KPI evaluation. Amending the grammar is `F2.8`'s call, not this row's. *(2)* The in-range numerator is **materialized by a scheduled roll-up job into its own relation** — not a continuous-aggregate column (ADR 0023's aggregates are hierarchical, so a join to the rules table would have to survive Timescale's restrictions on both joined and stacked aggregates) and not a write-path flag (four services insert telemetry). Reading raw at request time was measured and refused: the median sample gap is 0.509 s, so a 265-asset enterprise donut over 24 hours would scan hundreds of millions of rows. *(3)* **"Safe range" does not exist in the schema** — there is no bound column on `bms.asset_points`. In-range is derived from `bms.automation_rules`: no enabled, published threshold rule fires. The operator vocabulary in use is `eq · gt · gte · lt`, with no `lte` and no range concept, so `eq` can make the in-range set non-contiguous and "range" is a misnomer for what is computed. An unruled tag is **excluded** from the roll-up rather than scored 1.0, and the excluded count is reported. **The `E1.1` edge is dropped** — the go-live score needs no model, and the SOW §4.3 five-input score moves to `E1.8`. **Not yet demonstrable, and this is not a dependency:** the overlap between tags with telemetry and tags with a published threshold rule is currently **zero**, because 15 of the 16 rollup pairs are orphaned integration-test rows on deleted assets and the one real pair carries neither a rule nor a catalog row. A seeded asset holding both is a prerequisite for verification and has no row yet (ADR 0050 Consequences). | P1 | 6–8 | 3 | E1.7 |
 | E1.4 | ⬜ | Predictive forecasting: energy/water/chemical/utility demand | P1 | 6–8 | 3 | E1.1 |
 | E1.5 | ⬜ | Asset degradation + Remaining Useful Life + maintenance-schedule forecasts | P2 | 8–10 | 5 | E1.3, E3.1 |
 | E1.6 | ⬜ | Optimisation advisories with quantified ₹/kWh/kL/CO₂ benefits | P2 | 10–14 | 5 | E1.2, E1.4, F2.4 |
+| E1.8 | ⬜ | **SOW §4.3 five-input health score, ML-enriched** — created 2026-08-30 by ADR 0050, which split it out of `E1.3` rather than deleting the scope. The client's 2026-08-22 answer confirmed telemetry-only at go-live and moved the five-input score to a later phase; `E1.3` therefore dropped its `E1.1` edge and **this row keeps it**. Scope is the enrichment only — the five bands, the level-agnostic roll-up ladder and the tag-level in-range ratio all ship in `E1.3`. The split runs along bad-actor identification too: ranking assets by the score `E1.3` computes is `E1.3`'s, and anomaly-based bad-actor detection is this row's, because that is the half that needs a model. Reopen the SOW §4.3 input list when scoping — it is the record of what the five inputs are, and `E1.3` deliberately implements one of them. | P2 | 4–6 | 5 | E1.1, E1.3 |
 
 ### Track F — Platform Foundation (tests, security, API, scale, deploy)
 
@@ -668,6 +677,7 @@ flowchart LR
         E13["E1.3 Health score"]
         E14["E1.4 Forecasting"]
         E16["E1.6 Advisories"]
+        E18["E1.8 Five-input score"]
     end
 
     subgraph TM["Maintenance & Mobile"]
@@ -695,7 +705,8 @@ flowchart LR
     F312 --> F313
     F41 --> E11
     F1x --> E11
-    E11 --> E12 & E13 & E14
+    E11 --> E12 & E14 & E18
+    E13 --> E18
     E12 --> E16
     E14 --> E16
     E41 --> E42
@@ -1110,7 +1121,7 @@ acceptance detail, not scope; the dated detail sits in each row itself.
 | 9 | Asset model & AI/ML analytics, REST-enabled | `E1.1`–`E1.6` — see 8.1/A2 |
 | 10 | Plant / utility mimics, process line diagrams | `F3.28` (fixed parity) — **configurable builder is new → `F3.32`** |
 | 11 | Self-service configuration for non-programmers | `F2.5` ✅ (bar raised: "non-programmers" is now client language) · `F3.1` ✅ · `F2.7` — **authoring and publishing *section* dashboard templates, with defaults shipped in the box, is new → `F3.36`** (⚠ ADR) |
-| 12 | Health score & five-level roll-up, bad actors | `E1.3` (formula supplied) — **ladder → `F2.10`**; the score reaches a dashboard as an `F3.35` catalog metric, which **cannot compute until the client supplies the roll-up formula** |
+| 12 | Health score & five-level roll-up, bad actors | `E1.3` 🟡 (formula supplied; **ADR 0050 accepted 2026-08-30**) — **ladder → `F2.10`**; the ML-enriched five-input score split out to `E1.8`. The stale note that the score "cannot compute until the client supplies the roll-up formula" was cleared here: the client supplied it on 2026-08-22, and ADR 0050 settled the three mechanisms it needed |
 | 13 | SSO, RBAC, site/asset-level access | shipped scoping + `F4.13` · `F4.16` · B13 still unanswered |
 | 14 | Web & mobile, approvals, field entry | `F3.20` (widened) · `E3.2` |
 | 15 | Optional ESG module | `E4.1` · `E4.2` · `E4.3` — the client's own "optional" |
