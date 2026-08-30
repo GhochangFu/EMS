@@ -244,6 +244,32 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
         "DELETE FROM bms.asset_group_members WHERE asset_group_id = ANY($1)",
         [createdGroupIds],
       );
+      // **A cross-suite coupling, and CI is the only place it fires.**
+      //
+      // `dashboards.service.rls.integration.test.ts` (`F3.1b`) resolves its
+      // asset group with
+      //   SELECT id FROM bms.asset_groups WHERE organization_id = $1
+      //   ORDER BY created_at, id LIMIT 1
+      // and its own comment records that **PHEWB has no seeded asset groups on
+      // a clean database** — only a developer database accumulates them. This
+      // suite's `foreign` fixture is created in another organization, which on
+      // CI is PHEWB, so it becomes the only and therefore oldest group there.
+      // `F3.1b` adopts it instead of creating its own and attaches a dashboard,
+      // and the DELETE below then fails on `dashboards_asset_group_id_fkey`.
+      // Measured: green locally, red on CI, where the database is clean.
+      //
+      // Scoped to dashboards pointing at THIS suite's own group ids — never a
+      // sweep. Such a row can only be a transient fixture attached to a group
+      // that is being torn down, so it is unusable either way; leaving it would
+      // leak both the dashboard and the group permanently. Widgets cascade
+      // (ADR 0047 Amendment 1), so this needs no second statement.
+      //
+      // The durable fix belongs to `F3.1b`: a suite that adopts an arbitrary
+      // pre-existing row cannot tell a seeded one from another suite's fixture.
+      // Raised rather than reached into from here.
+      await ownerPool.query("DELETE FROM bms.dashboards WHERE asset_group_id = ANY($1)", [
+        createdGroupIds,
+      ]);
       await ownerPool.query("DELETE FROM bms.asset_groups WHERE id = ANY($1)", [createdGroupIds]);
     }
     if (createdMembershipIds.length > 0) {
