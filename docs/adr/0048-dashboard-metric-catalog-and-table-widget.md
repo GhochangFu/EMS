@@ -208,7 +208,8 @@ table says so instead of hiding it behind a nullable column.
 ### 5. `table` is the fifth `widgetType`, and it is a release
 
 `widgetTypeSchema` gains `"table"`; migration `0051` widens
-`dashboard_widgets_widget_type_check`; `WIDGET_POINT_CARDINALITY` gains a fifth
+`dashboard_widgets_widget_type_check`
+(**that number is wrong — see [Errata 1](#errata-1--the-migration-number-was-taken-2026-08-30)**); `WIDGET_POINT_CARDINALITY` gains a fifth
 key, which its `Record` type forces at compile time; `widget-catalog.ts` gains
 its entry.
 
@@ -272,7 +273,8 @@ pinning anything.
 - **`bms.dashboard_widget_sources` is the fourth table on this feature.** The
   viewer gains a second read path and a second join. `use-dashboard-telemetry.ts`
   gains a branch beside its point path; the socket stays one per page.
-- **Migration `0051` widens a `CHECK` and creates a table.** Forward-only, and
+- **Migration `0051` widens a `CHECK` and creates a table** (**the number is
+  wrong — see [Errata 1](#errata-1--the-migration-number-was-taken-2026-08-30)**). Forward-only, and
   tenant-scoped in the same migration that creates it — ADR 0043/0045, and
   `E7.1b`'s `0046`/`0047` are the recorded cost of retrofitting.
 - **The new aggregate endpoint is a general read over telemetry** and needs the
@@ -300,3 +302,46 @@ pinning anything.
   `telemetry.controller.ts` and found wrong. The check that caught it — read the
   controller, do not infer the endpoint from the existence of the view — is the
   reusable part.
+
+## Errata 1 — the migration number was taken (2026-08-30)
+
+Decision 5 and the Consequences bullet both name migration `0051` for Stage B's
+`CHECK` widening. **`0051` was taken by `F3.37` (`bms.asset_roles`) on
+2026-08-30, the same day this ADR was accepted.** `E1.3` then took `0052` and
+`0053`. The next free number is `0054`, and Stage B must read it from
+`packages/db/drizzle/` when the migration is written rather than from this
+record.
+
+The original sentences are corrected by pointer rather than rewritten: what was
+decided, and on what belief, is part of the record.
+
+### Why it happened, which is the reusable part
+
+Reserving a migration number in prose does not reserve it. This ADR was drafted
+and accepted while `F3.37` was in flight against the same directory; nothing
+arbitrates between an ADR that names a number and a branch that takes one, and
+the loser is whichever lands second — here, the ADR, which cannot fail a test.
+
+**ADR 0050 acted on this before its own migration existed.** Its Dependencies
+section says: *"The migration number is taken from `packages/db/drizzle/` when
+the migration is written, and is deliberately not recorded here. ADR 0048
+decision 5 named a number in prose, `F3.37` took it the same day, and that
+erratum is still owed."* That is the practice this errata ratifies — **an ADR
+names the migration's job, never its number.**
+
+### What is not corrected here
+
+Everything else in decision 5 stands: `table` is the fifth `widgetType`, it is a
+release rather than an absorbed change, and the `CHECK` widening plus the
+`WIDGET_POINT_CARDINALITY` key are still what Stage B needs.
+
+**The `AGENTS.md` / `docs/roadmap.md` sweep this ADR schedules is still not
+due.** Its Consequences gate it on *"after `F3.35` closes"*, and `F3.35` is
+`🟡`: Stage A shipped as PR #226, and Stages B and C are unbuilt. The sweep's
+named targets — §2 gaining a second binding kind and a fifth widget type,
+§4.8's catalog worked example — describe capability `main` does not have, so
+writing them now would make the rulebook claim a `table` widget and a metric
+catalog that do not exist. Checked on 2026-08-30 by re-running the searches this
+ADR's Consequences prescribe: neither `AGENTS.md` nor `docs/roadmap.md` mentions
+`F3.35`, ADR 0048 or `dashboard_widget_sources` at all, so the sweep is an
+addition rather than a softening and nothing false is sitting there meanwhile.
