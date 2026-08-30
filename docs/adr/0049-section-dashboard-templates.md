@@ -221,3 +221,62 @@ list exactly which ones need it.
 - **One decision here was ruled by precedent rather than by the owner**
   (decision 6, the unresolved role). It is marked in place. If the owner wants
   an import to refuse instead, that is an amendment and not a re-reading.
+
+## Amendment 1 — `bms.asset_roles` is global; only `bms.dashboard_templates` is tenant-scoped (2026-08-30)
+
+### Context
+
+The Consequences bullet "Two migrations" above says of `F3.37`'s and `F3.36`'s
+tables: *"Both forward-only and both tenant-scoped in the migration that creates
+them."* That is true of `bms.dashboard_templates`. It is **false** of
+`bms.asset_roles`, and `F3.37` built the table global — no `organization_id`, no
+row-level security, no policy.
+
+The contradiction was found at `F3.37`'s step-3 plan gate on 2026-08-30, ruled
+there, and recorded in migration `0051`'s header and in
+`tests/f3.37-asset-role-vocabulary.test.ts`. That was not enough. `CLAUDE.md`
+makes an ADR authoritative on scope over both a migration comment and a test, and
+`F3.36` — the next row, which depends on this table — starts by reading this
+record. An implementer following the sentence as written would add
+`organization_id` to `bms.asset_roles` in `0052`.
+
+This amendment exists because a review of `F3.37` raised exactly that failure
+path before the branch merged.
+
+### Decision
+
+1. **`bms.asset_roles` is a global vocabulary.** No `organization_id`, no RLS, no
+   policy. It is the fifth member of the class migration `0047` deliberately left
+   alone, beside `asset_domains`, `rule_categories`, `alarm_severities` and
+   `alarm_skills`, and `tests/adr-0043-tenant-columns.test.ts` already lists all
+   four in its `NO_COLUMN` set.
+2. **Three reasons, and the second is the load-bearing one.** (a) Every sibling
+   vocabulary is global, so a tenant-scoped fifth would be the odd one out
+   without a stated cause. (b) **Decision 3's stock catalog only works if a role
+   code means the same thing in every organization** — a catalog that shipped
+   `chiller` could not resolve against a per-tenant vocabulary in which `chiller`
+   might not exist or might mean something else. (c) A nullable
+   `organization_id` is the exact shape decision 3 rejected, on the reasoning
+   `E7.1c` and ADR 0043 Amendment 5 settled.
+3. **`bms.dashboard_templates` is unaffected.** `F3.36` still creates it
+   tenant-scoped with `organization_id NOT NULL`, a `tenant_isolation` policy and
+   `FORCE ROW LEVEL SECURITY` from its first migration, per ADR 0043/0045. The
+   original bullet's claim holds for it in full.
+4. **The junction gains no column.** `bms.asset_group_members.role` is closed by
+   a foreign key. Migration `0047` lines 223-240 already police that table
+   through **both** parents under FORCE, and `0046`'s own text names junctions as
+   deliberately column-free.
+
+### Consequences
+
+- The `F3.37` closure sweep has one more target than the grep list above found:
+  this amendment. The list was built by grep at authoring time and could not
+  name a contradiction nobody had noticed yet.
+- The gate on the ruling stays where `F3.37` put it —
+  `tests/f3.37-asset-role-vocabulary.test.ts` assertion 1 fails the build if the
+  table gains an `organization_id`, an `ENABLE ROW LEVEL SECURITY`, or a policy.
+  This amendment states the decision; the test enforces it.
+- **The lesson is about where a correction lives, not about the table.** A
+  ruling recorded only in the artifact it changed is invisible to the next row,
+  which reads the ADR. When a plan gate contradicts its own ADR, the amendment
+  is part of the work, not a follow-up.
