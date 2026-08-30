@@ -105,6 +105,18 @@ Two of five needed pixels. The other three had a gate already, and the browser
 run was a slower, weaker copy of it — weaker because it checked an impression of
 the screen rather than an exact value.
 
+**The boundary, and it is a hard one.** A cheaper gate may replace a browser
+check of **logic**. It may never replace the check of **what is actually
+served**. AGENTS.md §4.6 states this in its own words — *"a static check is not
+a substitute for reading what is served"* — and pays for it with `F4.20`, which
+shipped a green suite, `typecheck`, `typecheck:tests` **and** a static invariant
+while the served document was broken three ways, all three found only by
+fetching it from the running container. jsdom renders against a stub: it cannot
+see a stale bundle, a container that was built but never restarted, or a route
+the router does not have. That is why the last two rows of the table stay
+browser-only, and why no future row may move a served-artifact check out of that
+column on the strength of a unit test.
+
 Name the layers you skipped **and why**, the same way §4.6 requires you to name
 the N/A ones. "Not needed — the jsdom spec gates it" is a result. Silence is
 indistinguishable from not checking.
@@ -160,10 +172,18 @@ Use `browser-verifier` (`.claude/agents/browser-verifier.md`). Give it the URL,
 the credentials situation, and the **specific claims** to check — not "look at
 the page". It returns a pass/fail table.
 
-The browser MCP tools work from a subagent: `tabs_context_mcp`,
-`javascript_tool` and `find` were all confirmed against a live tab on
-2026-08-30. Do not re-derive this; if it ever stops working, the failure is
-loud (no tabs visible) rather than silent.
+The browser MCP tools reached a live tab from a subagent on **2026-08-30** —
+`tabs_context_mcp`, `javascript_tool` and `find`, all confirmed. Treat that as a
+dated observation, not a guarantee: this repo has a recorded case of the browser
+tool failing to reach `localhost` in one session and succeeding in the next, so
+the capability is session-specific. The failure is at least loud — no tabs
+visible — rather than silent. Re-check only if that happens.
+
+**`ToolSearch` is a dependency, not belt-and-braces.** Those tools are named in
+`browser-verifier.md`'s frontmatter and still arrive **deferred**: naming them
+grants access, it does not load their schemas. Confirmed by asking the agent
+that had just used them. Do not remove `ToolSearch` from that `tools:` list
+while tidying.
 
 ### 4.4 Three traps that present as a broken feature
 
