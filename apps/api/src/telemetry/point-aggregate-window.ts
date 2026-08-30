@@ -180,6 +180,26 @@ function relationFor(level: AggregateLevel): string {
 }
 
 /**
+ * A `$n` placeholder, for composing these fragments into one statement.
+ *
+ * The service puts the current window's scalars, the compare window's scalars
+ * and the bucket rows in **one statement** so they share a transaction snapshot
+ * — two statements could straddle an incoming write and make the footer
+ * disagree with the plot it sits under. That means the same fragment is emitted
+ * twice with different parameter numbers, so the numbers are arguments.
+ *
+ * They are numbers, not strings, and they are checked. An index is the one thing
+ * here that a caller supplies and that reaches the SQL text, so it may not be
+ * anything but a positive integer.
+ */
+function placeholder(index: number): string {
+  if (!Number.isInteger(index) || index < 1) {
+    throw new Error(`point-aggregate-window: refusing a non-positional parameter index ${index}`);
+  }
+  return `$${index}`;
+}
+
+/**
  * The scalar statistics — all four functions at once, unconditionally.
  *
  * The chart footer needs Peak and Average simultaneously and the tile needs one
@@ -190,8 +210,10 @@ function relationFor(level: AggregateLevel): string {
  * tie-break is required**: two equal peaks without it make the tile flicker
  * between reads and any test on it flaky.
  */
-export function scalarSql(level: AggregateLevel): string {
+export function scalarSql(level: AggregateLevel, fromIndex = 3, toIndex = 4): string {
   const relation = relationFor(level);
+  const from = placeholder(fromIndex);
+  const to = placeholder(toIndex);
   return `
     SELECT
       ${AGG_EXPR.sum} AS sum,
@@ -203,13 +225,13 @@ export function scalarSql(level: AggregateLevel): string {
         SELECT p.bucket
         FROM ${relation} p
         WHERE p.asset_id = $1 AND p.point_key = $2
-          AND p.bucket >= $3::timestamptz AND p.bucket < $4::timestamptz
+          AND p.bucket >= ${from}::timestamptz AND p.bucket < ${to}::timestamptz
         ORDER BY p.max_value DESC NULLS LAST, p.bucket ASC
         LIMIT 1
       ) AS peak_at
     FROM ${relation}
     WHERE asset_id = $1 AND point_key = $2
-      AND bucket >= $3::timestamptz AND bucket < $4::timestamptz
+      AND bucket >= ${from}::timestamptz AND bucket < ${to}::timestamptz
   `;
 }
 
@@ -229,7 +251,12 @@ export function scalarSql(level: AggregateLevel): string {
  * from "past it". Truncating a chart silently is the same class of defect as
  * widening a bucket silently.
  */
-export function bucketSql(fn: PointAggregateFunction, level: AggregateLevel): string {
+export function bucketSql(
+  fn: PointAggregateFunction,
+  level: AggregateLevel,
+  fromIndex = 3,
+  toIndex = 4,
+): string {
   const expression = aggregateExpression(fn);
   if (expression === undefined) {
     throw new Error(`bucketSql: unknown aggregate function "${fn}"`);
@@ -238,7 +265,8 @@ export function bucketSql(fn: PointAggregateFunction, level: AggregateLevel): st
     SELECT bucket AS t, ${expression} AS v
     FROM ${relationFor(level)}
     WHERE asset_id = $1 AND point_key = $2
-      AND bucket >= $3::timestamptz AND bucket < $4::timestamptz
+      AND bucket >= ${placeholder(fromIndex)}::timestamptz
+      AND bucket < ${placeholder(toIndex)}::timestamptz
     GROUP BY bucket
     ORDER BY bucket ASC
     LIMIT ${MAX_BUCKETS + 1}

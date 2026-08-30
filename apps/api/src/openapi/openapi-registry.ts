@@ -44,6 +44,7 @@ import {
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
 import { manualReadingsBodySchema } from "../admin/telemetry-entry/manual-readings.schema";
+import { pointAggregateQuerySchema } from "../telemetry/telemetry.schema";
 import {
   createNotificationChannelBodySchema,
   listDeliveriesQuerySchema,
@@ -170,6 +171,7 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   RulesController_setEnabled: ruleToggleBodySchema,
   RulesController_setRuleNotifications: setRuleNotificationsBodySchema,
   RulesController_updateRule: ruleUpdateBodySchema,
+  TelemetryController_aggregate: pointAggregateQuerySchema,
   WorkOrdersController_close: closeWorkOrderBodySchema,
   WorkOrdersController_create: createWorkOrderBodySchema,
   WorkOrdersController_reorder: reorderWorkOrdersBodySchema,

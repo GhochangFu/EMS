@@ -12,6 +12,7 @@ import {
   assertTheBucketQueryGroupsAndOrders,
   assertTheCompareWindowAbutsTheCurrentOne,
   assertTheLadderPicksAGranularityPerRung,
+  assertParameterIndicesAreChecked,
   assertThePeakHasAStableTieBreak,
 } from "./point-aggregate-window.spec";
 
@@ -67,5 +68,11 @@ describe("F3.35 Stage A — the SQL the endpoint emits", () => {
 
   it("breaks a tied peak on the earlier bucket, deterministically", () => {
     assertThePeakHasAStableTieBreak();
+  });
+});
+
+describe("F3.35 Stage A — composing the fragments into one statement", () => {
+  it("shifts only the window's parameter indices, and refuses a non-positional one", () => {
+    assertParameterIndicesAreChecked();
   });
 });

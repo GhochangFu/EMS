@@ -287,3 +287,28 @@ export function assertThePeakHasAStableTieBreak(): void {
     "the peak must break ties on the earlier bucket, deterministically",
   );
 }
+
+/**
+ * The parameter index is the one caller-supplied value that reaches the SQL
+ * text, because the service emits the same fragment twice — once for the current
+ * window and once for the compare window — inside **one statement**, so the two
+ * share a transaction snapshot. It is a number, and it is checked.
+ */
+export function assertParameterIndicesAreChecked(): void {
+  const shifted = scalarSql("1m", 5, 6);
+  assert(shifted.includes("$5::timestamptz"), "a shifted fragment must use the index it was given");
+  assert(shifted.includes("$6::timestamptz"), "both ends must shift together");
+  assert(
+    shifted.includes("asset_id = $1") && shifted.includes("point_key = $2"),
+    "the point's own parameters must not move",
+  );
+  for (const bad of [0, -1, 1.5, Number.NaN]) {
+    let threw = false;
+    try {
+      scalarSql("1m", bad, 4);
+    } catch {
+      threw = true;
+    }
+    assert(threw, `a parameter index of ${bad} must be refused, not interpolated`);
+  }
+}
