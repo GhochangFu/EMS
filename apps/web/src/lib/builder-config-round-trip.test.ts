@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runFixturesCoverEveryContractFieldTests,
   runLiveBuilderRoundTripTests,
   runTemplateBuilderRoundTripTests,
   runUnsetFieldsAreOmittedTests,
@@ -8,6 +9,10 @@ import {
 
 /** `F3.35` Stage A — Vitest wrapper for the builder's both-directions identity (ADR 0014). */
 describe("F3.35 Stage A — a widget config survives an edit-and-resave", () => {
+  it("holds the fixtures equal to the contract, so \"every field\" is not a habit", () => {
+    runFixturesCoverEveryContractFieldTests();
+  });
+
   it("round-trips every field through the live dashboard builder", () => {
     runLiveBuilderRoundTripTests();
   });

@@ -1,3 +1,4 @@
+import { chartConfigSchema, valueTileConfigSchema } from "@bms/shared";
 import type { DashboardDto } from "@bms/shared";
 
 import { buildPutWidgetsPayload, dashboardRowsFromDto } from "./dashboard-builder-form";
@@ -24,6 +25,13 @@ import { buildDashboardsPayload, dashboardRowsFrom } from "./template-dashboard-
  * trip is the only assertion that catches both directions at once, which is why
  * it is expressed as an identity over a config carrying **every** field rather
  * than as a list of field checks that a new field can quietly escape.
+ *
+ * **`runFixturesCoverEveryContractFieldTests` is what makes "every field" true**
+ * (code review). The identity runs over the two hand-written constants below, so
+ * a tenth field added to the contract and dropped by a mapper would round-trip
+ * vacuously until somebody remembered to extend exactly the list this docblock
+ * says needs no remembering. That assertion holds the fixtures equal to the
+ * schemas' own key sets, so the reminder is a failing test rather than a habit.
  */
 
 function assert(condition: boolean, message: string): void {
@@ -94,12 +102,38 @@ function dto(): DashboardDto {
 }
 
 /**
+ * The two fixtures carry **every** field their schema declares.
+ *
+ * Without this, the identities below are only as complete as the constants
+ * somebody last remembered to extend — a new contract field dropped by a mapper
+ * would round-trip vacuously and report success. Read off `.shape` rather than
+ * restated, so adding a field to the contract fails here on the next run.
+ */
+export function runFixturesCoverEveryContractFieldTests(): void {
+  const tileFields = Object.keys(valueTileConfigSchema.shape).sort();
+  const chartFields = Object.keys(chartConfigSchema.shape).sort();
+
+  assert(
+    JSON.stringify(Object.keys(TILE_CONFIG).sort()) === JSON.stringify(tileFields),
+    "TILE_CONFIG must carry every field valueTileConfigSchema declares, or the round trip below " +
+      `passes vacuously on whatever it omits. Fixture: ${JSON.stringify(Object.keys(TILE_CONFIG).sort())}, ` +
+      `contract: ${JSON.stringify(tileFields)}`,
+  );
+  assert(
+    JSON.stringify(Object.keys(CHART_CONFIG).sort()) === JSON.stringify(chartFields),
+    "CHART_CONFIG must carry every field chartConfigSchema declares. Fixture: " +
+      `${JSON.stringify(Object.keys(CHART_CONFIG).sort())}, contract: ${JSON.stringify(chartFields)}`,
+  );
+}
+
+/**
  * The live builder: read a stored dashboard into rows, build the write payload
  * back out, and every config must be **identical**.
  *
- * The comparison is over the whole object rather than field by field, so a
- * field added to the contract later and forgotten in `configRowFromDto` fails
- * here without anyone remembering to extend a list.
+ * The comparison is over the whole object rather than field by field, and
+ * `runFixturesCoverEveryContractFieldTests` above holds the fixture equal to the
+ * contract — so a field forgotten in `configRowFromDto` fails here rather than
+ * escaping through a fixture nobody extended.
  */
 export function runLiveBuilderRoundTripTests(): void {
   const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dto()));

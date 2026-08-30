@@ -154,6 +154,46 @@ export function runBucketedChartStalenessTests(): void {
 }
 
 /**
+ * **A chart that shows the footer but plots RAW readings still ages by its
+ * series** (code review — this combination had no assertion).
+ *
+ * `config.aggregate` alone selects the reading-based clock, and `footerStats`
+ * alone must not. It is a real combination: `aggregateRequestsFor` issues a
+ * request for it, because the footer's Peak and Average are the scalar half of
+ * the same response, and its series is still raw history whose `t` is a real
+ * sample time.
+ */
+export function runFooterOnlyChartAgesByItsSeriesTests(): void {
+  const footerOnly = { ...aggregatedChart({ aggregate: undefined }) };
+
+  const fresh = widgetDataFor(
+    footerOnly,
+    // `latestByRef` is deliberately EMPTY. Reading it here would make this chart
+    // stale, so a branch that wrongly took the reading-based clock fails.
+    new Map(),
+    new Map([[REF, [{ t: FRESH_TIME, v: 12 }]]]),
+    NOW,
+    new Map([[tileKey(60), answer()]]),
+  );
+  assert(
+    fresh.status === "ready" && fresh.stale === false,
+    "a footer-only chart must age by its own raw series, not by latestByRef",
+  );
+
+  const stale = widgetDataFor(
+    footerOnly,
+    new Map([[REF, { value: 7, time: FRESH_TIME }]]),
+    new Map([[REF, [{ t: STALE_TIME, v: 12 }]]]),
+    NOW,
+    new Map([[tileKey(60), answer()]]),
+  );
+  assert(
+    stale.status === "ready" && stale.stale === true,
+    "and it must go stale on an old series even while a reading is fresh",
+  );
+}
+
+/**
  * The bucketed branch plots the endpoint's buckets; the raw branch is untouched.
  *
  * The history map is deliberately populated with a **different** value, so

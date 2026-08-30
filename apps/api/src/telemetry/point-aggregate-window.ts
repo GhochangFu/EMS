@@ -274,6 +274,56 @@ export function bucketSql(
 }
 
 /**
+ * Fills the gaps a sparse rollup leaves, so every bucket in the window is
+ * present — with `null` where there were no samples.
+ *
+ * **The query returns only materialized rows, so an outage arrives as an ABSENT
+ * bucket, not a `null` one** (browser verification). That difference is not
+ * cosmetic. `buildChartOption` sets no `connectNulls`, so ECharts breaks the
+ * line at an explicit `null` and draws a straight segment across a missing
+ * point — an hour with no telemetry would render as a clean interpolation
+ * between its neighbours. A chart that invents a line through an outage is the
+ * same class of defect as a tile showing `0` for a dead sensor.
+ *
+ * Done here rather than with `time_bucket_gapfill`: this is pure arithmetic,
+ * testable with no database, and it needs no Timescale-specific SQL in a query
+ * that already composes three CTEs. The row count it produces is exactly
+ * {@link expectedBucketCount}, which is what makes that bound meaningful in both
+ * directions rather than only as a ceiling.
+ *
+ * Buckets are aligned to the epoch by `time_bucket`, so the first filled bucket
+ * is the first aligned instant at or after `from` — the same one the `bucket >=
+ * $from` predicate admits.
+ */
+export function fillBucketGaps(
+  rows: readonly { t: string; v: number | null }[],
+  from: Date,
+  to: Date,
+  seconds: number,
+): { t: string; v: number | null }[] {
+  const stepMs = seconds * 1_000;
+  const byStart = new Map(rows.map((row) => [new Date(row.t).getTime(), row.v]));
+  const first = Math.ceil(from.getTime() / stepMs) * stepMs;
+  const filled: { t: string; v: number | null }[] = [];
+  for (let at = first; at < to.getTime(); at += stepMs) {
+    filled.push({ t: new Date(at).toISOString(), v: byStart.get(at) ?? null });
+  }
+  return filled;
+}
+
+/**
+ * The most buckets THIS window can produce at THIS level.
+ *
+ * `MAX_BUCKETS` is the global worst case, taken at the finest rung. Checking a
+ * coarse read against it leaves a hole (code review): if `point_values_1h` ever
+ * became a 15-minute aggregate, a 30-day window would return 2,880 rows —
+ * exactly at the global bound — and pass. The per-rung expectation fires.
+ */
+export function expectedBucketCount(windowMinutes: number, level: AggregateLevel): number {
+  return Math.ceil(windowMinutes / (bucketSeconds(level) / 60));
+}
+
+/**
  * Refuses an over-long bucket array rather than truncating it.
  *
  * Reachable only if the ladder and a relation disagree — a continuous
@@ -281,12 +331,13 @@ export function bucketSql(
  * state a chart would silently plot a prefix of its window, which looks exactly
  * like a sensor that stopped reporting.
  */
-export function assertBucketCount(rowCount: number): void {
-  if (rowCount > MAX_BUCKETS) {
+export function assertBucketCount(rowCount: number, expected = MAX_BUCKETS): void {
+  const bound = Math.min(expected, MAX_BUCKETS);
+  if (rowCount > bound) {
     throw new Error(
-      `point aggregate returned ${rowCount} buckets, past the ${MAX_BUCKETS} the ladder admits. ` +
-        "The chosen level's bucket width and BUCKET_SECONDS disagree; refusing rather than " +
-        "plotting a truncated window, which is indistinguishable from a dead sensor.",
+      `point aggregate returned ${rowCount} buckets, past the ${bound} this window and level ` +
+        "admit. The chosen level's bucket width and BUCKET_SECONDS disagree; refusing rather " +
+        "than plotting a truncated window, which is indistinguishable from a dead sensor.",
     );
   }
 }

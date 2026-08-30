@@ -198,7 +198,13 @@ export function formatDelta(current: number | null, baseline: number | null): Wi
   if (baseline === 0) {
     return null;
   }
-  const pct = ((current - baseline) / baseline) * 100;
+  // **`Math.abs` on the denominator** (code review). Dividing by a SIGNED
+  // baseline flips the sign of the change: `baseline = -10, current = -5` is a
+  // rise, and the naive form yields `-50`, so the tile would draw `↓ 50.0%` over
+  // a value that went up. Signed points are ordinary here — power factor, net
+  // export, and any differential reading — even though the seeded demo data
+  // happens to hold none.
+  const pct = ((current - baseline) / Math.abs(baseline)) * 100;
   const magnitude = Math.abs(pct).toFixed(1);
   if (magnitude === "0.0") {
     return { direction: "flat", text: `→ ${magnitude}% vs yesterday` };

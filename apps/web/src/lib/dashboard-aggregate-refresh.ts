@@ -59,5 +59,40 @@ export function shouldRefetchAggregates(lastAtMs: number | null, nowMs: number):
   return nowMs - lastAtMs >= AGGREGATE_REFETCH_MS;
 }
 
+/**
+ * The refs whose aggregates should be re-read now, and the updated clock.
+ *
+ * **Throttled PER REF, because the invalidation is per ref** (code review).
+ * A single page-wide timestamp looked equivalent and is not: the socket handler
+ * only invalidates the refs present in the payload it is holding, so with one
+ * shared clock the first payload of each round resets the floor and every later
+ * payload is discarded with nothing queueing it.
+ *
+ * That is the normal case here, not an edge. `notify-chunk.ts` splits one write
+ * batch across several `pg_notify` payloads at 7,000 bytes; `apps/ingest` and
+ * `apps/sim` each chunk independently; `calc-write` and `telemetry-write` emit
+ * separately; and ADR 0007 Amendment 1 has five RTUs publishing on their own
+ * cadences. Arrival order is stable, so the same point loses every round — its
+ * tile would show its page-load number for the life of the page while its
+ * sensor reported normally.
+ *
+ * The map is mutated in place: it is a `useRef` value, and writing it must not
+ * re-render.
+ */
+export function refsToRefetch(
+  refs: readonly string[],
+  lastAtByRef: Map<string, number>,
+  nowMs: number,
+): string[] {
+  const due: string[] = [];
+  for (const ref of new Set(refs)) {
+    if (shouldRefetchAggregates(lastAtByRef.get(ref) ?? null, nowMs)) {
+      due.push(ref);
+      lastAtByRef.set(ref, nowMs);
+    }
+  }
+  return due;
+}
+
 /** Re-exported so a caller need not import two modules to state the relationship. */
 export const AGGREGATE_REFETCH_BOUNDS = { floor: STALE_TICK_MS, ceiling: FRESH_MS } as const;

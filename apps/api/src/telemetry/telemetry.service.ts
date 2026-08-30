@@ -17,6 +17,8 @@ import { TENANT_DRIZZLE, TENANT_POOL } from "../database/database.tokens";
 import {
   assertBucketCount,
   bucketSql,
+  expectedBucketCount,
+  fillBucketGaps,
   levelFor,
   scalarSql,
   windowBounds,
@@ -187,9 +189,17 @@ export class TelemetryService {
       throw new Error("point aggregate returned no row; an ungrouped aggregate always yields one");
     }
 
-    const buckets = row.buckets ?? null;
+    // **`buckets: null` means "not asked for", and nothing else.** `json_agg`
+    // over zero rows is SQL `NULL`, so a window with no data at all came back
+    // indistinguishable from a tile's request — the browser check saw exactly
+    // that. A caller that named a `bucketFunction` always gets an array, even
+    // when every entry in it is `null`.
+    const buckets = bucketFunction ? (row.buckets ?? []) : null;
     if (buckets) {
-      assertBucketCount(buckets.length);
+      // Checked against what THIS window and level should yield, not only the
+      // global worst case: a coarse read cannot otherwise trip the guard, since
+      // a 30-day window returning 2,880 rows sits exactly at the global bound.
+      assertBucketCount(buckets.length, expectedBucketCount(windowMinutes, level));
     }
 
     return {
@@ -208,8 +218,17 @@ export class TelemetryService {
               stats: this.toStats(row.prev),
             }
           : null,
+      // Gap-filled, so an hour with no telemetry arrives as `v: null` rather
+      // than as an absent row. ECharts sets no `connectNulls`, so it breaks the
+      // line at a null and interpolates straight across a missing point — an
+      // outage would otherwise be drawn as data.
       buckets: buckets
-        ? buckets.map((b) => ({ t: new Date(b.t).toISOString(), v: numberOrNull(b.v) }))
+        ? fillBucketGaps(
+            buckets.map((b) => ({ t: new Date(b.t).toISOString(), v: numberOrNull(b.v) })),
+            window.from,
+            window.to,
+            bucketSeconds(level),
+          )
         : null,
     };
   }

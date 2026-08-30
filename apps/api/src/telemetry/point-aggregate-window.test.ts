@@ -4,13 +4,16 @@ import {
   assertAWindowPastTheLastRungThrows,
   assertBothQueriesReuseAvgExpr,
   assertEscalationIsUnreachableAtEveryRung,
+  assertGapsAreFilledWithNulls,
   assertMaxBucketsIsDerivedFromTheLadder,
   assertNoQueryCallsSqlAvg,
   assertOnlyTheRelationIsInterpolated,
   assertReadStartCarriesTheCompareReach,
+  assertTheBucketGuardIsCheckedPerRung,
   assertTheBucketGuardRefusesPastTheBound,
   assertTheBucketQueryGroupsAndOrders,
   assertTheCompareWindowAbutsTheCurrentOne,
+  assertTheFilledCountMatchesTheLadder,
   assertTheLadderPicksAGranularityPerRung,
   assertParameterIndicesAreChecked,
   assertThePeakHasAStableTieBreak,
@@ -32,6 +35,18 @@ describe("F3.35 Stage A — the ladder and its bucket bound", () => {
 
   it("refuses an over-long bucket array rather than truncating the window", () => {
     assertTheBucketGuardRefusesPastTheBound();
+  });
+
+  it("checks that bound per rung, so a coarse read cannot sail through the global one", () => {
+    assertTheBucketGuardIsCheckedPerRung();
+  });
+
+  it("fills a missing bucket with null rather than leaving it absent", () => {
+    assertGapsAreFilledWithNulls();
+  });
+
+  it("fills to exactly the count the ladder predicts, at every rung", () => {
+    assertTheFilledCountMatchesTheLadder();
   });
 });
 

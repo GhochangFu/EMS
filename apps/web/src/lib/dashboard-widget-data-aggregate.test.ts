@@ -4,6 +4,7 @@ import {
   runAggregateRequestListTests,
   runBucketedChartSeriesTests,
   runBucketedChartStalenessTests,
+  runFooterOnlyChartAgesByItsSeriesTests,
   runTileCompareValueTests,
   runTileReadsItsOwnStatisticTests,
   runUnresolvedAggregateStaysReadableTests,
@@ -13,6 +14,10 @@ import {
 describe("F3.35 Stage A — a bucketed chart's staleness", () => {
   it("ages by the point's last reading, not by a bucket start 55 s old", () => {
     runBucketedChartStalenessTests();
+  });
+
+  it("leaves a footer-only chart aging by its own raw series", () => {
+    runFooterOnlyChartAgesByItsSeriesTests();
   });
 });
 

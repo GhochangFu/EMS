@@ -1,5 +1,6 @@
 import {
   AGGREGATE_REFETCH_MS,
+  refsToRefetch,
   shouldRefetchAggregates,
 } from "./dashboard-aggregate-refresh";
 import { FRESH_MS, STALE_TICK_MS } from "./schematic-telemetry";
@@ -72,5 +73,57 @@ export function assertTheFloorIsInclusiveAndHolds(): void {
   assert(
     shouldRefetchAggregates(NOW - (AGGREGATE_REFETCH_MS + 1), NOW),
     "past the floor must re-read",
+  );
+}
+
+/**
+ * **The throttle is per ref, and this is the assertion that says why**
+ * (code review).
+ *
+ * One page-wide clock looked equivalent to this and was not. The socket handler
+ * invalidates only the refs in the payload it is holding, so with a shared clock
+ * the first payload of a round resets the floor and every later payload is
+ * discarded with nothing queueing it. Several payloads per round is the normal
+ * case here — `notify-chunk.ts` splits a write batch at 7,000 bytes, `ingest`
+ * and `sim` chunk independently, and five RTUs publish on their own cadences.
+ *
+ * Arrival order is stable, so the losing ref loses every round: its tile would
+ * show its page-load number for the life of the page while its sensor reported
+ * normally.
+ */
+export function assertOneRefsRefetchDoesNotSuppressAnother(): void {
+  const clock = new Map<string, number>();
+
+  const first = refsToRefetch(["a"], clock, NOW);
+  assert(first.length === 1 && first[0] === "a", "the first payload re-reads its own ref");
+
+  // The second payload of the same round, milliseconds later. Under a shared
+  // clock this returned nothing and `b` was never re-read.
+  const second = refsToRefetch(["b"], clock, NOW + 5);
+  assert(
+    second.length === 1 && second[0] === "b",
+    "a ref that has not been re-read must not be suppressed by another ref that just was",
+  );
+
+  // `a` is still inside its own floor, so it does not re-read again.
+  assert(
+    refsToRefetch(["a"], clock, NOW + 10).length === 0,
+    "a ref inside its own floor must not re-read again",
+  );
+
+  // Past the floor, it does.
+  assert(
+    refsToRefetch(["a"], clock, NOW + AGGREGATE_REFETCH_MS).length === 1,
+    "past its own floor a ref re-reads",
+  );
+}
+
+/** A payload naming the same ref twice is one re-read, not two. */
+export function assertARepeatedRefInOnePayloadIsOneRefetch(): void {
+  const clock = new Map<string, number>();
+  const due = refsToRefetch(["a", "a", "b"], clock, NOW);
+  assert(
+    due.length === 2 && due.includes("a") && due.includes("b"),
+    `a duplicated ref must collapse to one re-read, got ${JSON.stringify(due)}`,
   );
 }

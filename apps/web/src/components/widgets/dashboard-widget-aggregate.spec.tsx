@@ -146,8 +146,24 @@ export function anEmptyWindowRendersEmDashesNotNullOrInvalidDate(): void {
   );
   const text = empty.container.textContent ?? "";
   expect(text.includes("null"), "an empty window must not print the string 'null'").toBe(false);
-  expect(text.includes("Invalid Date"), "an unset peak must not print 'Invalid Date'").toBe(false);
   expect(text.includes("—"), "an empty window renders the em dash the rest of the UI uses").toBe(true);
+
+  // **A SECOND render, with an unparseable timestamp** (code review). The block
+  // above sets `peakAt: null`, so `peakLabel` is never called and its
+  // `Number.isNaN` arm goes unexercised — the "must not print Invalid Date"
+  // assertion passed without touching the guard it was named for. This is the
+  // one that reaches it: `new Date("not-a-date").toLocaleTimeString()` returns
+  // the literal string "Invalid Date", which reads to an operator like a value.
+  const malformed = render(
+    <DashboardWidget
+      widget={chartWithFooter()}
+      data={readyChart({ stats: { ...STATS, peakAt: "not-a-date" } })}
+    />,
+  );
+  expect(
+    malformed.container.textContent?.includes("Invalid Date"),
+    "an unparseable peak timestamp must render the em dash, not the string 'Invalid Date'",
+  ).toBe(false);
 }
 
 /**

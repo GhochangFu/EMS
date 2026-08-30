@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  assertARepeatedRefInOnePayloadIsOneRefetch,
+  assertOneRefsRefetchDoesNotSuppressAnother,
   assertTheFirstSampleAlwaysRefetches,
   assertTheFloorIsInclusiveAndHolds,
   assertTheThrottleSitsBetweenItsTwoBounds,
@@ -18,5 +20,13 @@ describe("F3.35 Stage A — the aggregate re-read throttle", () => {
 
   it("holds the floor on both sides, and treats it as inclusive", () => {
     assertTheFloorIsInclusiveAndHolds();
+  });
+
+  it("throttles per ref, so a second payload in the same round is not discarded", () => {
+    assertOneRefsRefetchDoesNotSuppressAnother();
+  });
+
+  it("collapses a ref repeated within one payload to a single re-read", () => {
+    assertARepeatedRefInOnePayloadIsOneRefetch();
   });
 });

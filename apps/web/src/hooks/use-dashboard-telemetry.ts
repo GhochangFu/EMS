@@ -10,7 +10,7 @@ import {
 } from "@bms/shared";
 
 import { fetchPointAggregate, fetchTelemetryRecent } from "../api/telemetry";
-import { shouldRefetchAggregates } from "../lib/dashboard-aggregate-refresh";
+import { refsToRefetch } from "../lib/dashboard-aggregate-refresh";
 import { mergeSeededAndLiveReadings } from "../lib/dashboard-telemetry-merge";
 import {
   aggregateRequestsFor,
@@ -105,7 +105,6 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
    * deduplicates again on the key.
    */
   const aggregateRequests = dashboard ? aggregateRequestsFor(dashboard) : [];
-  const aggregateKeysKey = aggregateRequests.map((request) => request.key).join("|");
   const aggregateQueries = useQueries({
     queries: aggregateRequests.map((request) => ({
       queryKey: aggregateQueryKey(request),
@@ -127,17 +126,18 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
     setLiveByRef(new Map());
   }, [refsKey]);
 
+  // `F3.35` — when each ref's aggregate was last re-read. A ref, not state:
+  // writing it must not re-render, and the socket handler closes over it so the
+  // throttle survives the renders `setLiveByRef` causes. Keyed by ref rather
+  // than page-wide — see `refsToRefetch`.
+  const lastAggregateRefetchRef = useRef<Map<string, number>>(new Map());
+
   // Review finding (HIGH) — forces a re-render every `STALE_TICK_MS` so the caller's staleness
   // gate is re-evaluated even when the socket stays silent, the same idiom
   // `schematic-telemetry-context.tsx`'s own `staleTick` uses for the seven control-room pages.
   // Without this, the only thing that could make a widget notice it had gone stale was an
   // incoming socket message — exactly the signal an outage removes. The counter itself carries
   // no information; it exists only to change this hook's return-triggering state on a timer.
-  // `F3.35` — when the last live sample triggered an aggregate re-read. A ref,
-  // not state: writing it must not re-render, and the socket handler closes over
-  // it so the throttle survives the renders `setLiveByRef` causes.
-  const lastAggregateRefetchRef = useRef<number | null>(null);
-
   const [, setStaleTick] = useState(0);
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -182,14 +182,19 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
       //
       // Invalidated PER REF, using the refs that actually reported: `mine` is
       // already filtered to `trackedRefs`, so a busy page does not re-read every
-      // widget because one sensor spoke. Throttled so a fast emitter cannot fire
-      // a 2,880-row query per sample.
-      const nowMs = Date.now();
-      if (!shouldRefetchAggregates(lastAggregateRefetchRef.current, nowMs)) {
-        return;
-      }
-      lastAggregateRefetchRef.current = nowMs;
-      for (const ref of new Set(mine.map((r) => encodePointRef(r.assetId, r.pointKey)))) {
+      // widget because one sensor spoke.
+      //
+      // **The throttle is per ref too, and that matters** (code review). One
+      // page-wide clock looked equivalent and was not: a payload arriving second
+      // in the same round would fail the floor the first one had just reset, and
+      // be discarded with nothing queueing it. Several payloads per round is the
+      // normal case — `notify-chunk.ts` splits a batch at 7,000 bytes, and five
+      // RTUs publish on their own cadences.
+      for (const ref of refsToRefetch(
+        mine.map((r) => encodePointRef(r.assetId, r.pointKey)),
+        lastAggregateRefetchRef.current,
+        Date.now(),
+      )) {
         void queryClient.invalidateQueries({ queryKey: ["telemetry", "aggregate", ref] });
       }
     });
@@ -238,11 +243,13 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
     latestByRef,
     historyByRef,
     aggregateByKey,
-    // `aggregateKeysKey` participates so a dashboard whose widgets change their
-    // aggregate configuration re-derives this list rather than reusing the
-    // previous render's. It is read here rather than left unused above.
+    // Both lists are recomputed unconditionally every render, so `.some()` over
+    // an empty array already answers `false` for a dashboard that aggregates
+    // nothing. An earlier version guarded this with a key string and a comment
+    // claiming the guard made the list re-derive; it did not, and the guard was
+    // a no-op (code review).
     isLoading:
       seedQueries.some((query) => query.isLoading) ||
-      (aggregateKeysKey.length > 0 && aggregateQueries.some((query) => query.isLoading)),
+      aggregateQueries.some((query) => query.isLoading),
   };
 }

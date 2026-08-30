@@ -131,6 +131,11 @@ function ChartFooter({
 /**
  * The peak's bucket start, at the precision its width supports.
  *
+ * **A time alone is only enough inside a day** (code review). A 30-day window
+ * reads at `1h`, so a bare `14:00` says nothing about which of the thirty days
+ * the peak fell on — the width implies an hour of a *specific* day. Anything
+ * past a day of window therefore carries the date too.
+ *
  * An unparseable timestamp renders the em dash the rest of this file already
  * uses, never `"Invalid Date"` — which is what `new Date(x).toLocaleString()`
  * prints and which reads to an operator like a value.
@@ -140,7 +145,13 @@ function peakLabel(iso: string, bucketSeconds: number | null): string {
   if (Number.isNaN(at.getTime())) {
     return "—";
   }
-  return bucketSeconds !== null && bucketSeconds >= 86_400
-    ? at.toLocaleDateString()
-    : at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (bucketSeconds !== null && bucketSeconds >= 86_400) {
+    return at.toLocaleDateString();
+  }
+  const time = at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // Minute buckets only ever cover 48 hours, so the time alone is unambiguous
+  // enough; an hourly bucket can be up to 30 days back and is not.
+  return bucketSeconds !== null && bucketSeconds >= 3_600
+    ? `${at.toLocaleDateString()} ${time}`
+    : time;
 }

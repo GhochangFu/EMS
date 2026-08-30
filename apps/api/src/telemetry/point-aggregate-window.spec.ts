@@ -5,6 +5,8 @@ import {
   aggregateExpression,
   assertBucketCount,
   bucketSql,
+  expectedBucketCount,
+  fillBucketGaps,
   granularityFor,
   levelFor,
   scalarSql,
@@ -103,6 +105,35 @@ export function assertTheBucketGuardRefusesPastTheBound(): void {
     threw = true;
   }
   assert(threw, "one bucket past the bound must throw — a truncated chart looks like a dead sensor");
+}
+
+/**
+ * **The guard is checked per rung, not only against the global worst case**
+ * (code review).
+ *
+ * `MAX_BUCKETS` is 2,880, taken at the finest rung. If `point_values_1h` ever
+ * became a 15-minute aggregate, a 30-day window would return exactly 2,880 rows
+ * and pass the global bound — the one state the guard exists to catch, sailing
+ * through it. The per-rung expectation is what fires.
+ */
+export function assertTheBucketGuardIsCheckedPerRung(): void {
+  assert(expectedBucketCount(1_440, "1m") === 1_440, "a day of minute buckets is 1,440");
+  assert(expectedBucketCount(43_200, "1h") === 720, "30 days of hourly buckets is 720");
+  assert(expectedBucketCount(525_600, "1d") === 365, "a year of daily buckets is 365");
+
+  // The scenario itself: a coarse read handing back the global worst case.
+  assertBucketCount(720, expectedBucketCount(43_200, "1h"));
+  let threw = false;
+  try {
+    assertBucketCount(MAX_BUCKETS, expectedBucketCount(43_200, "1h"));
+  } catch {
+    threw = true;
+  }
+  assert(
+    threw,
+    "2,880 rows from a 30-day hourly read must be refused; it sits exactly at the GLOBAL bound, " +
+      "which is why the global bound alone cannot catch a widened continuous aggregate",
+  );
 }
 
 /**
@@ -242,9 +273,17 @@ export function assertOnlyTheRelationIsInterpolated(): void {
       sql.includes("telemetry.point_values_5m"),
       `bucketSql("${fn}") must read the relation the level names`,
     );
+    // **A positive assertion, because the negatives it replaced could not fail**
+    // (code review). `!sql.includes('"sum"') && !/\bsum\s+AS\b/` passed happily
+    // on the exact leak it was named for: the direct interpolation
+    // `SELECT bucket AS t, ${fn}(sum_value) AS v` emits `sum(sum_value) AS v`,
+    // which has no quoted identifier and no `sum` followed by `AS`. Requiring
+    // the fragment to BE the closed-`Record` value is the check that holds:
+    // any other expression, interpolated or not, fails it.
+    const expression = aggregateExpression(fn);
     assert(
-      !sql.includes(`"${fn}"`) && !new RegExp(`\\b${fn}\\s+AS\\b`, "i").test(sql),
-      `bucketSql("${fn}") leaked the function name into the SQL text`,
+      expression !== undefined && sql.includes(expression),
+      `bucketSql("${fn}") did not emit the expression the closed Record holds for it`,
     );
   }
   assert(
@@ -310,5 +349,67 @@ export function assertParameterIndicesAreChecked(): void {
       threw = true;
     }
     assert(threw, `a parameter index of ${bad} must be refused, not interpolated`);
+  }
+}
+
+/**
+ * **A gap is a `null` bucket, not an absent one** (browser verification — the
+ * live endpoint returned 4 rows where the ladder promises 72, because the hours
+ * with no samples were simply missing).
+ *
+ * The difference decides what an operator sees. `buildChartOption` sets no
+ * `connectNulls`, so ECharts breaks the line at an explicit `null` and draws a
+ * straight segment across a missing point — an outage would render as a clean
+ * interpolation between its neighbours. A chart that invents a line through an
+ * outage is the same defect as a tile showing `0` for a dead sensor.
+ */
+export function assertGapsAreFilledWithNulls(): void {
+  const from = new Date("2026-08-30T04:00:00.000Z");
+  const to = new Date("2026-08-30T08:00:00.000Z");
+  // 05:00 is deliberately absent, which is exactly what the live rollup did.
+  const sparse = [
+    { t: "2026-08-30T04:00:00.000Z", v: 10 },
+    { t: "2026-08-30T06:00:00.000Z", v: 12 },
+    { t: "2026-08-30T07:00:00.000Z", v: 13 },
+  ];
+
+  const filled = fillBucketGaps(sparse, from, to, 3_600);
+  assert(
+    filled.length === 4,
+    `a four-hour window at hourly buckets must yield 4 rows, got ${filled.length}`,
+  );
+  assert(filled[1]?.t === "2026-08-30T05:00:00.000Z", "the missing hour must be present");
+  assert(
+    filled[1]?.v === null,
+    "the missing hour must carry a null value, so ECharts breaks the line rather than " +
+      "interpolating straight through an outage",
+  );
+  assert(
+    filled[0]?.v === 10 && filled[2]?.v === 12 && filled[3]?.v === 13,
+    "the values that were there must survive, in time order",
+  );
+}
+
+/**
+ * The filled count is exactly what {@link expectedBucketCount} predicts, at
+ * every rung.
+ *
+ * That is what makes the bound meaningful in **both** directions. Before the
+ * gap fill it was only a ceiling: a window returning four rows out of seventy-two
+ * passed it, and the browser check was the first thing to notice.
+ */
+export function assertTheFilledCountMatchesTheLadder(): void {
+  const now = new Date("2026-08-30T12:00:00.000Z");
+  for (const windowMinutes of [1_440, 4_320, 525_600]) {
+    const level = granularityFor(windowMinutes);
+    const window = windowBounds(now, windowMinutes, false);
+    const filled = fillBucketGaps([], window.from, window.to, bucketSeconds(level));
+    assert(
+      filled.length === expectedBucketCount(windowMinutes, level),
+      `a ${windowMinutes}-minute window at ${level} filled to ${filled.length} rows, ` +
+        `expected ${expectedBucketCount(windowMinutes, level)}`,
+    );
+    // And the guard accepts exactly that many, so the two agree by construction.
+    assertBucketCount(filled.length, expectedBucketCount(windowMinutes, level));
   }
 }
