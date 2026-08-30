@@ -29,6 +29,7 @@ import type * as Au from "./contracts/auth";
 import type * as D from "./contracts/dashboard";
 import type * as Db from "./contracts/dashboard-builder";
 import type * as E from "./contracts/envelopes";
+import type * as He from "./contracts/health";
 import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
@@ -110,6 +111,22 @@ export type DashboardSummaryDto = z.infer<typeof Db.dashboardSummaryDtoSchema>;
 export type PointAggregateFunction = z.infer<typeof Db.pointAggregateFunctionSchema>;
 /** A tile icon by NAME. The name→SVG-path map is frontend code (§4.8). */
 export type WidgetIcon = z.infer<typeof Db.widgetIconSchema>;
+/**
+ * `E1.3` — the asset health score (ADR 0050 + Amendment 1).
+ *
+ * Four kinds of absence stay distinguishable across these types: `score: null`,
+ * `band: null`, the unscored counts, and `skippedRuleCount`. `contracts/health.ts`
+ * says which is which and why collapsing any two of them is a defect.
+ */
+export type HealthBand = z.infer<typeof He.healthBandSchema>;
+/** One tag's contribution, carrying both counts and not only their quotient. */
+export type HealthTagScore = z.infer<typeof He.healthTagScoreSchema>;
+/** `GET /api/v1/asset-health/assets/:assetId`. */
+export type AssetHealthResponse = z.infer<typeof He.assetHealthResponseSchema>;
+/** One slice of the donut, grouped by band `code`. */
+export type HealthBandCount = z.infer<typeof He.healthBandCountSchema>;
+/** `GET /api/v1/asset-health/summary` — the plant and enterprise donut. */
+export type HealthSummaryResponse = z.infer<typeof He.healthSummaryResponseSchema>;
 /** One plotted bucket — the same `{ t, v }` shape the chart renderer already takes. */
 export type PointAggregateBucket = z.infer<typeof E.pointAggregateBucketSchema>;
 /** The scalar half: totals, extremes, the weighted mean, and when the peak fell. */
