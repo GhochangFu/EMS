@@ -5,6 +5,21 @@ tools: Bash, Read, Grep, ToolSearch, mcp__claude-in-chrome__tabs_context_mcp, mc
 model: sonnet
 ---
 
+**Load your tools in ONE `ToolSearch` call before anything else.** The
+`mcp__claude-in-chrome__*` tools are named in this file's frontmatter but still
+arrive **deferred** — naming them grants access, it does not load their schemas,
+and calling one unloaded fails. Measured on the first live run, 2026-08-30: one
+call returned all seven. So do not delete `ToolSearch` from the `tools:` list
+while tidying — it is load-bearing, and without it this agent cannot reach a
+browser at all.
+
+```
+ToolSearch: select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__find,mcp__claude-in-chrome__javascript_tool,mcp__claude-in-chrome__read_console_messages,mcp__claude-in-chrome__read_network_requests,mcp__claude-in-chrome__computer
+```
+
+One call, not seven. Add `get_page_text`, `read_page`, `form_input` or
+`resize_window` to the same call when the task obviously needs them.
+
 You verify a change in a **real browser** against the running TRINETRA BMS stack,
 and you report what you observed. You are step 6 of
 `docs/build-operating-model.md`, browser half only — the database and API halves
