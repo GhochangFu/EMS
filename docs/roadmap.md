@@ -2376,10 +2376,13 @@ keys** — the third of the five reopenings ADR 0019 predicted, after `kpis`
 `widgets[]`, and `collectContentPointRefs` walks `widgets[].pointKeys`, so the
 orphan check reaches the new half on create, update and publish.
 
-**Still open:** `F3.1d` (the builder surface) alone. `F3.1b` (the tenant-scoped
-read/write API) and `F3.1c` (the four renderers) **landed 2026-08-29** — PR
-[#210](https://github.com/GhochangFu/EMS/pull/210), squash `4d1cfcd`, and PR
-[#211](https://github.com/GhochangFu/EMS/pull/211), squash `6692af3`.
+**Nothing is still open: the `F3.1` umbrella closed 2026-08-30.** `F3.1b` (the
+tenant-scoped read/write API) and `F3.1c` (the four renderers) **landed
+2026-08-29** — PR [#210](https://github.com/GhochangFu/EMS/pull/210), squash
+`4d1cfcd`, and PR [#211](https://github.com/GhochangFu/EMS/pull/211), squash
+`6692af3` — and `F3.1d` (the builder surface and the viewer route) landed the
+next day as PR [#215](https://github.com/GhochangFu/EMS/pull/215), squash
+`2a79a42`.
 
 They were planned as *"a genuine two-agent batch on disjoint packages"*, and
 **the file-level claim held while the vocabulary-level one did not.** Neither
@@ -2410,9 +2413,9 @@ defects that **no test in the row could reach** — a gauge readout drawn across
 its own dial, and a 13-character string in a 100-unit viewBox — because both
 are geometry, and every spec in that row asserts numbers and strings.
 
-**What is still missing after both:** nothing assembles a stored dashboard into
+**What was still missing after both:** nothing assembled a stored dashboard into
 a page. The renderers take a widget and data as props; the route, the grid
-layout and the point binding are `F3.1d`.
+layout and the point binding were `F3.1d`, and they landed the next day.
 
 ### The template *Dashboards* tab (`F3.1e`, ADR 0038 Amendment 4) — done
 
@@ -2449,6 +2452,46 @@ blocked Save was the only thing between that and a destroyed stored view. **Depe
 L2, where `dashboards.location_id` and `asset_group_id` are `NO ACTION` while
 `point_id` cascades, so deleting a location a dashboard is scoped to raises a
 bare `23503`. Nothing deletes a location today.
+
+### The builder surface and the viewer route (`F3.1d`, ADR 0047 Amendment 4) — done
+
+**Done 2026-08-30**, PR [#215](https://github.com/GhochangFu/EMS/pull/215),
+squash `2a79a42`; its ADR gate landed first as PR
+[#214](https://github.com/GhochangFu/EMS/pull/214), squash `2dd1ab2`. **The
+`F3.1` umbrella closes with it**, clearing the `F3.1` blocker on `F3.2`, `F3.5`,
+`E4.2`, `F3.28` and `F3.32`. **Four of those five are now fully unblocked;
+`E4.2` is not** — it depends on `E4.1, F3.1`, and `E4.1` is still `⬜`. The row's
+own closure record is in [`BACKLOG.md`](./BACKLOG.md); four things belong here
+because they are about method rather than about dashboards.
+
+**A privilege escalation that every layer below the API agreed with.**
+`update()` authorized the merged *destination* scope and never the *stored* one
+— it asked "may you write here" and never "may you touch this row". A
+`location_admin` could list an organization-wide dashboard, which read is
+organization-wide by design, PATCH it with its own `locationId`, and re-home an
+ownerless tenant-wide row under its site; `remove()` then deleted it, because
+the stored scope was now theirs. RLS did not stop it, because every row involved
+carried the right `organization_id`. **Tenant isolation is not scope
+authorization**, and the two are easy to mistake for each other while the tests
+are green.
+
+**A count that was undercounted three times.** The 12-column canvas was restated
+in TypeScript in three places by the brief's reckoning, four by the plan's, six
+by the build's, and seven when the scan first ran. Each correction was made by
+someone looking specifically for copies. The lesson is not "search harder" — it
+is that a bound with more than one home needs an **executable** rule the day it
+is written, because every manual count of it was wrong.
+
+**ADR 0047's one open dependency question closed as *not needed*.** §Dependencies
+made the drag/grid library a conclusion of the build rather than an input. The
+conclusion is that Pointer Events plus numeric grid inputs are enough, so no
+§9.4 gate was opened for the whole umbrella.
+
+**One §4.6 check could not be completed, and is recorded rather than implied:**
+pointer drag and resize on the canvas. `left_click_drag` dispatches mouse events
+and the canvas listens for Pointer Events, so the browser automation cannot
+drive it. The numeric grid inputs the plan names as the required affordance are
+verified.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
