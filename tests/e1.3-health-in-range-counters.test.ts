@@ -125,7 +125,48 @@ describe("E1.3 in-range counter relations (ADR 0050 Amendment 1)", () => {
       expect(block).toContain("in_range_count BETWEEN 0 AND sample_count");
       expect(block).toContain(`CONSTRAINT point_in_range_${level}_rules_check`);
       expect(block).toContain("rule_count + skipped_rule_count > 0");
+
     }
+  });
+
+  it("enforces the all-skipped invariant in 0053, which 0052 only claimed", () => {
+    // `0052`'s header says `in_range_count` "IS WRITTEN AS 0" when every
+    // matching rule is unevaluatable. That was false when written: the roll-up
+    // stored `in_range_count = sample_count`, a 1.0 ratio produced by rules that
+    // do nothing, and the two constraints above both accept it.
+    //
+    // The fix is a constraint rather than only the application repair because
+    // the table outlives the writer — a report or a widget computing
+    // `sum(in_range_count)/sum(sample_count)` reproduces the inflation without
+    // ever seeing the reader's guard. And the reader's guard is genuinely not
+    // enough: it tests `max(rule_count)` across the read window, so a window
+    // mixing one all-skipped bucket with one evaluated bucket passes it.
+    //
+    // A SEPARATE migration, not an edit to `0052`: drizzle tracks applied
+    // migrations by content hash and never re-runs one, so editing `0052` would
+    // not reach any database that had already run it (§4.4, forward-only). The
+    // pre-commit hook refused the edit and was right to.
+    const journal = JSON.parse(read(JOURNAL_REL)) as {
+      entries: { idx: number; tag: string }[];
+    };
+    expect(journal.entries).toContainEqual(
+      expect.objectContaining({ idx: 53, tag: "0053_health_unevaluated_is_zero" }),
+    );
+
+    const followUp = sqlOnly(read("packages/db/drizzle/0053_health_unevaluated_is_zero.sql"));
+    // The constraint name is built with `format(...)`, so the literal in the
+    // file carries the `%s` rather than four spelled-out names.
+    expect(followUp).toContain("point_in_range_%s_unevaluated_is_zero_check");
+    expect(followUp).toContain("rule_count > 0 OR in_range_count = 0");
+    for (const level of LEVELS) {
+      expect(followUp, `0053 must cover the ${level} level`).toMatch(new RegExp(`'${level}'`));
+    }
+
+    // Idempotent without `ADD CONSTRAINT IF NOT EXISTS`, which Postgres does not
+    // have: the DO block must check `pg_constraint` first, or a re-run fails and
+    // §4.4 is broken.
+    expect(followUp).toContain("pg_constraint");
+    expect(followUp).toMatch(/IF NOT EXISTS/);
   });
 
   it("records the deletion obligation for all four relations, finest first", () => {

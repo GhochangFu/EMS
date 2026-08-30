@@ -44,6 +44,10 @@ import {
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
 import { manualReadingsBodySchema } from "../admin/telemetry-entry/manual-readings.schema";
+import {
+  assetHealthQuerySchema,
+  healthSummaryQuerySchema,
+} from "../asset-health/asset-health.schema";
 import { pointAggregateQuerySchema } from "../telemetry/telemetry.schema";
 import {
   createNotificationChannelBodySchema,
@@ -122,6 +126,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AssetPointCalcOverrideController_set: assetPointCalcOverrideBodySchema,
   AssetPointsAdminController_create: createAssetPointBodySchema,
   AssetPointsAdminController_update: updateAssetPointBodySchema,
+  AssetHealthController_forAsset: assetHealthQuerySchema,
+  AssetHealthController_summary: healthSummaryQuerySchema,
   AssetsAdminController_create: createAssetBodySchema,
   AssetsAdminController_update: updateAssetBodySchema,
   AssetTemplatesAdminController_create: createAssetTemplateBodySchema,

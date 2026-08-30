@@ -95,8 +95,22 @@ ON CONFLICT (bucket, asset_id, point_key) DO UPDATE SET
  * Rolls raw `telemetry.point_values` into `telemetry.point_in_range_1m` for
  * one time range, `[from, to)`. Both bounds are bound query parameters.
  *
- * Five things below are each silently wrong if changed; each is also asserted
+ * Six things below are each silently wrong if changed; each is also asserted
  * in `health-rollup-sql.spec.ts`.
+ *
+ * 0. **`CASE WHEN m.rule_count = 0 THEN 0` is not defensive padding — without
+ *    it this statement writes a fabricated perfect score.** When every rule
+ *    matching a tag is unevaluatable, point 2's `CASE` is NULL for all of them,
+ *    so `NOT EXISTS` is TRUE for every sample and the `FILTER` counts them all:
+ *    `in_range_count = sample_count`, a 1.0 ratio produced by rules that do
+ *    nothing. Both CHECK constraints accept it and `0052`'s header states the
+ *    opposite ("`in_range_count` IS MEANINGLESS AND IS WRITTEN AS 0").
+ *
+ *    Found by the `E1.3` security review and reproduced against the database
+ *    before fixing. The reader's guard in `health-score.ts` is NOT a substitute:
+ *    it tests `max(rule_count)` across the whole read window, so a window mixing
+ *    one all-skipped bucket with one evaluated bucket passes the guard and sums
+ *    the fabricated samples into the ratio. Keep both.
  *
  * 1. **`JOIN bms.assets a` is tenant containment, and nothing else uses
  *    `a`.** `telemetry.*` carries no Row Level Security (ADR 0043) — nothing
@@ -137,12 +151,13 @@ WITH matched AS (
 INSERT INTO ${sql.raw(RELATION["1m"])}
        ${sql.raw(COLUMNS)}
 SELECT time_bucket(${sql.raw(intervalLiteral("1m"))}, pv.time), pv.asset_id, pv.point_key,
+       CASE WHEN m.rule_count = 0 THEN 0 ELSE
        count(*) FILTER (WHERE NOT EXISTS (
          SELECT 1 FROM bms.automation_rules r2
           WHERE r2.rule_type = 'threshold' AND r2.enabled AND r2.lifecycle_status = 'published'
             AND r2.asset_id = pv.asset_id AND r2.point_key = pv.point_key
             AND ${sql.raw(firesCaseSql("pv.value", "r2.operator", "r2.threshold_value"))}
-       )) AS in_range_count,
+       )) END AS in_range_count,
        count(*) AS sample_count,
        m.rule_count, m.skipped_rule_count, now()
   FROM telemetry.point_values pv
@@ -174,6 +189,19 @@ ${sql.raw(ON_CONFLICT_UPDATE)}
  * buckets would multiply a tag's own rule count by sixty. `sum` on all four
  * columns is the shape that looks obviously right and is wrong on two of
  * them — asserted in the spec, not only stated here.
+ *
+ * **`JOIN bms.assets a` is here for the same reason it is in `rawRollupSql`,
+ * and it was missing until the `E1.3` security review.** Both the source and
+ * the target relation are `telemetry.*`, which carries no Row Level Security,
+ * so without this join one organization's tenant transaction reads and rewrites
+ * every other organization's rows — three times per tick, on every tick.
+ *
+ * No data reached a caller while it was missing: the `GROUP BY` is per
+ * `(asset_id, point_key)`, so each org's sweep wrote the values that org's own
+ * sweep would have written. It was still wrong. ADR 0050 decision 8 says a
+ * cross-tenant read in this job is a containment hole precisely because no
+ * request-scoped guard covers it, and the cost of every sweep scaled with the
+ * whole fleet rather than with the tenant.
  */
 export function levelRollupSql(
   fromLevel: AggregateLevel,
@@ -202,6 +230,7 @@ SELECT time_bucket(${sql.raw(intervalLiteral(toLevel))}, f.bucket), f.asset_id, 
        max(f.skipped_rule_count) AS skipped_rule_count,
        now()
   FROM ${sql.raw(fromRelation)} f
+  JOIN bms.assets a ON a.id = f.asset_id
  WHERE f.bucket >= ${from} AND f.bucket < ${to}
  GROUP BY 1, 2, 3
 ${sql.raw(ON_CONFLICT_UPDATE)}

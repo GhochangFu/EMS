@@ -70,6 +70,10 @@ import {
   updateNotificationChannelBodySchema,
 } from "../notifications/notifications.schema";
 import { energyReportQuerySchema } from "../reports/reports.schema";
+import {
+  assetHealthQuerySchema,
+  healthSummaryQuerySchema,
+} from "../asset-health/asset-health.schema";
 import { pointAggregateQuerySchema } from "../telemetry/telemetry.schema";
 import {
   listRuleExecutionsQuerySchema,
@@ -233,6 +237,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
  * own comment asks for, not the shortcut it exists to catch.
  */
 export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
+  assetHealthQuerySchema,
   auditExportQuerySchema,
   auditListQuerySchema,
   energyReportQuerySchema,
@@ -242,6 +247,7 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   listMaintenanceQuerySchema,
   listRuleExecutionsQuerySchema,
   locationDashboardQuerySchema,
+  healthSummaryQuerySchema,
   pointAggregateQuerySchema,
   templateStatusQuerySchema,
 };
@@ -953,12 +959,26 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // `F4.20`'s finding is that a served document describing a parameter as
   // absent is wrong, not merely thin, and a three-parameter general aggregate
   // read needs to be discoverable more than `?window=15m` did.
+  //
+  // **`E1.3` widened it to thirteen: `assetHealthQuerySchema` and
+  // `healthSummaryQuerySchema` (ADR 0050 Amendment 1).** Both are GETs with no
+  // body — one takes `windowMinutes`, the other adds an optional `locationId` —
+  // so again there is no request-body strictness to decide. They are registered
+  // rather than skipped for the same `F4.20` reason as `pointAggregateQuery`:
+  // the security review found both routes absent from the served document, and
+  // an undocumented `locationId` on a scope-narrowing parameter is exactly the
+  // kind of omission that gets a caller guessing.
+  //
+  // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
+  // — legal here, since the ADR 0030 combinator ban applies inside
+  // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
+  // ledger keys by export name, so the two are audited separately regardless.
   expect(
     Object.keys(QUERY_SCHEMAS).length,
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(11);
+  ).toBe(13);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

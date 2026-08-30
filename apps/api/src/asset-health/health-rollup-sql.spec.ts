@@ -45,9 +45,65 @@ function testRawRollupJoinsAssetsForTenantContainment(): void {
 /** Thing 2: the NOT EXISTS wraps an ELSE-less CASE — no ELSE anywhere in the statement. */
 function testRawRollupHasNoElseBranch(): void {
   const { sql } = toQuery(rawRollupSql(RANGE_FROM, RANGE_TO));
-  assert(!/\bELSE\b/i.test(sql), `the generated rollup SQL must never carry an ELSE:\n${sql}`);
   assert(/NOT EXISTS/.test(sql), "expected a NOT EXISTS wrapping the fires() predicate");
   assert(/CASE\s+r2\.operator/.test(sql), "expected the CASE to be built from firesCaseSql's operands");
+
+  // **Scoped to the OPERATOR case, not to the whole statement.** This assertion
+  // used to forbid `ELSE` anywhere, and that was too wide: the `E1.3` security
+  // review added a second, legitimate `CASE WHEN m.rule_count = 0 THEN 0 ELSE
+  // … END` around the count, and a blanket ban made the fix look like the defect.
+  //
+  // What must stay `ELSE`-less is the operator dispatch. With no `ELSE` it is
+  // SQL NULL for a rule carrying a NULL `operator`/`threshold_value`, and
+  // `WHERE … AND NULL` satisfies no `EXISTS` — so the rule neither fires nor
+  // declares the sample in range. An `ELSE false` there reads as "did not fire"
+  // and inflates the score (Amendment 1 decision 7).
+  const operatorCase = sql.slice(sql.indexOf("CASE r2.operator"));
+  const operatorCaseEnd = operatorCase.indexOf("END");
+  assert(operatorCaseEnd > 0, "could not find the end of the operator CASE");
+  assert(
+    !/\bELSE\b/i.test(operatorCase.slice(0, operatorCaseEnd)),
+    `the operator CASE must never carry an ELSE:\n${operatorCase.slice(0, operatorCaseEnd)}`,
+  );
+}
+
+/**
+ * Thing 0: the all-skipped bucket stores 0, not a fabricated perfect score.
+ *
+ * Without `CASE WHEN m.rule_count = 0 THEN 0`, a tag whose every matching rule
+ * is unevaluatable gets `NOT EXISTS` true for every sample and stores
+ * `in_range_count = sample_count` — a 1.0 ratio produced by rules that do
+ * nothing, which both other CHECK constraints accept. Found by the `E1.3`
+ * security and migration reviews and reproduced against Postgres before fixing.
+ */
+function testRawRollupWritesZeroWhenEveryRuleIsUnevaluatable(): void {
+  const { sql } = toQuery(rawRollupSql(RANGE_FROM, RANGE_TO));
+  assert(
+    /CASE\s+WHEN\s+m\.rule_count\s*=\s*0\s+THEN\s+0\s+ELSE/i.test(sql),
+    `expected the rule_count = 0 guard around in_range_count, got:\n${sql}`,
+  );
+}
+
+/**
+ * The level roll-up carries the same tenant join as the raw one.
+ *
+ * Both its source and its target are `telemetry.*`, which has no Row Level
+ * Security, so without this join one organization's tenant transaction reads and
+ * rewrites every other organization's rows — three times per tick. Missing until
+ * the `E1.3` security review found it.
+ */
+function testLevelRollupJoinsAssetsForTenantContainment(): void {
+  for (const [from, to] of [
+    ["1m", "5m"],
+    ["5m", "1h"],
+    ["1h", "1d"],
+  ] as const) {
+    const { sql } = toQuery(levelRollupSql(from, to, RANGE_FROM, RANGE_TO));
+    assert(
+      /JOIN\s+bms\.assets\s+a\s+ON\s+a\.id\s*=\s*f\.asset_id/.test(sql),
+      `${from} -> ${to} must join bms.assets for tenant containment, got:\n${sql}`,
+    );
+  }
 }
 
 /** Thing 3: an INNER JOIN matched — never a LEFT JOIN — is what excludes unruled tags. */
@@ -174,6 +230,8 @@ function testLevelRollupRejectsNonAdjacentAndDescendingPairs(): void {
 export async function runHealthRollupSqlTests(): Promise<void> {
   testRawRollupJoinsAssetsForTenantContainment();
   testRawRollupHasNoElseBranch();
+  testRawRollupWritesZeroWhenEveryRuleIsUnevaluatable();
+  testLevelRollupJoinsAssetsForTenantContainment();
   testRawRollupInnerJoinsMatched();
   testRawRollupUpsertsRatherThanIgnoring();
   testRawRollupIntervalIsDerivedNotLiteral();

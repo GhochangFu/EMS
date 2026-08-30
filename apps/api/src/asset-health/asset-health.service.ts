@@ -4,6 +4,7 @@ import { and, eq, gte, inArray, lt, max, sum } from "drizzle-orm";
 import type { AssetHealthResponse, HealthSummaryResponse, TemplateHealth } from "@bms/shared";
 import {
   type BmsDb,
+  assetPoints,
   assetTemplates,
   assets,
   pointInRange1d,
@@ -104,7 +105,11 @@ export class AssetHealthService {
     const { level, from, to } = this.resolveWindow(windowMinutes, now);
     const rows = await this.readCounters(level, [assetId], from, to);
     const health = await this.healthForAssets([assetId]);
-    const scored = scoreAsset(this.tagsFor(rows, assetId), health.get(assetId));
+    const catalog = await this.catalogPoints([assetId]);
+    const scored = scoreAsset(
+      this.tagsFor(rows, catalog.get(assetId) ?? [], assetId),
+      health.get(assetId),
+    );
 
     return {
       assetId,
@@ -150,13 +155,14 @@ export class AssetHealthService {
 
     const rows = await this.readCounters(level, inScope, from, to);
     const health = await this.healthForAssets(inScope);
+    const catalog = await this.catalogPoints(inScope);
 
     // **Every asset in scope is scored, including those with no counter rows at
     // all.** Iterating the rows instead would silently drop an asset that has no
     // telemetry or no rules from the denominator, which is the inflation ADR
     // 0050 decision 3 exists to prevent, one level up.
     const scores: AssetScore[] = inScope.map((assetId) =>
-      scoreAsset(this.tagsFor(rows, assetId), health.get(assetId)),
+      scoreAsset(this.tagsFor(rows, catalog.get(assetId) ?? [], assetId), health.get(assetId)),
     );
 
     return {
@@ -201,8 +207,29 @@ export class AssetHealthService {
     };
   }
 
-  private tagsFor(rows: readonly CounterRow[], assetId: string): TagCounts[] {
-    return rows
+  /**
+   * One asset's tags: every counter row, PLUS a zero-filled entry for each
+   * catalog point that has no counter row.
+   *
+   * **The zero-fill is what makes ADR 0050 decision 3 observable, and it was
+   * missing.** A counter row exists only for a tag some threshold rule matched
+   * (`0052`'s `rule_count + skipped_rule_count > 0`), so building `TagCounts`
+   * from the rows alone meant a genuinely unruled tag never reached
+   * `scoreAsset` and therefore never reached `unscoredTags`. Decision 3 requires
+   * the opposite — "reported, not silently dropped" — and `TagCounts`' own
+   * docblock states this precondition on the caller.
+   *
+   * Found by the `E1.3` correctness review, which also named the two dead
+   * branches it left: `skippedRuleCount: 0` was unreachable on the wire, and the
+   * web layer's "no threshold rule configured" string was unreachable outside
+   * its own spec.
+   */
+  private tagsFor(
+    rows: readonly CounterRow[],
+    catalogPointKeys: readonly string[],
+    assetId: string,
+  ): TagCounts[] {
+    const counted = rows
       .filter((row) => row.assetId === assetId)
       .map(({ pointKey, inRangeCount, sampleCount, ruleCount, skippedRuleCount }) => ({
         pointKey,
@@ -211,6 +238,40 @@ export class AssetHealthService {
         ruleCount,
         skippedRuleCount,
       }));
+
+    const seen = new Set(counted.map((tag) => tag.pointKey));
+    for (const pointKey of catalogPointKeys) {
+      if (!seen.has(pointKey)) {
+        counted.push({
+          pointKey,
+          inRangeCount: 0,
+          sampleCount: 0,
+          ruleCount: 0,
+          skippedRuleCount: 0,
+        });
+      }
+    }
+    return counted;
+  }
+
+  /** Catalog point keys per asset, so an unruled tag can be reported as one. */
+  private async catalogPoints(assetIds: readonly string[]): Promise<Map<string, string[]>> {
+    const rows = await this.db
+      .select({ assetId: assetPoints.assetId, pointKey: assetPoints.pointKey })
+      .from(assetPoints)
+      .where(inArray(assetPoints.assetId, [...assetIds]))
+      .orderBy(assetPoints.assetId, assetPoints.pointKey);
+
+    const byAsset = new Map<string, string[]>();
+    for (const row of rows) {
+      const list = byAsset.get(row.assetId);
+      if (list === undefined) {
+        byAsset.set(row.assetId, [row.pointKey]);
+      } else {
+        list.push(row.pointKey);
+      }
+    }
+    return byAsset;
   }
 
   private async readCounters(
@@ -254,7 +315,15 @@ export class AssetHealthService {
     }));
   }
 
-  /** The asset ids to score: the readable set, optionally narrowed to a plant. */
+  /**
+   * The asset ids to score: the readable set, optionally narrowed to a plant.
+   *
+   * §4.3 fleet-read reason: `bms.assets` is RLS-bearing and this runs on the
+   * BYPASSRLS pool, so the containment is that `assetIds` is what
+   * `AccessControlService.readableAssetIds` already computed for this caller —
+   * the "bypass, then trust a computed grant" shape ADR 0043 Amendment 2/3
+   * allows. `locationId` can only intersect that set, never widen it.
+   */
   private async assetsInScope(
     assetIds: readonly string[] | null,
     locationId: string | undefined,
@@ -269,14 +338,27 @@ export class AssetHealthService {
     if (locationId !== undefined) {
       filters.push(eq(assets.locationId, locationId));
     }
+    // **`orderBy` is not cosmetic.** `summariseAssets` takes a band's `label`
+    // and `minScore` from its first occurrence in this order, so without a
+    // deterministic order two identical requests can return different JSON when
+    // two templates give one band code different labels or cut-points. The
+    // correctness review found this; `scoreAsset` already holds itself to the
+    // same standard one level down.
     const rows = await this.db
       .select({ id: assets.id })
       .from(assets)
-      .where(and(...filters));
+      .where(and(...filters))
+      .orderBy(assets.id);
     return rows.map((row) => row.id);
   }
 
-  /** Each asset's `content.health`, keyed by asset id. Absent means unbanded. */
+  /**
+   * Each asset's `content.health`, keyed by asset id. Absent means unbanded.
+   *
+   * §4.3 fleet-read reason: `bms.assets` and `bms.asset_templates` are both
+   * RLS-bearing. Contained the same way as `assetsInScope` above — the ids come
+   * from the caller's own readable set, never from a request parameter.
+   */
   private async healthForAssets(
     assetIds: readonly string[],
   ): Promise<Map<string, TemplateHealth | undefined>> {
