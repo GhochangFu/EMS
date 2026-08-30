@@ -527,7 +527,7 @@ const templateHealthBandSchema = z
  * does, by there being no rule for it, and a second way to spell it that only
  * some code paths honour is worse than no way at all.
  */
-const templateHealthSchema = z
+export const templateHealthSchema = z
   .object({
     weights: z
       .record(safeKeySchema.pipe(pointKeyRef), z.number().finite().positive().max(MAX_HEALTH_WEIGHT))
