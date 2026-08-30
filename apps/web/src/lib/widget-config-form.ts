@@ -3,11 +3,19 @@ import {
   MAX_GAUGE_THRESHOLDS,
   chartSeriesKindSchema,
   gaugeRangeIsOrdered,
+  pointAggregateFunctionSchema,
+  widgetIconSchema,
   widgetToneSchema,
   widgetTypeSchema,
 } from "@bms/shared";
 import { CHART_SERIES, WIDGET_CATALOG } from "./widget-catalog";
-import type { ChartSeriesKind, DashboardWidgetSpec, WidgetType } from "@bms/shared";
+import type {
+  ChartSeriesKind,
+  DashboardWidgetSpec,
+  PointAggregateFunction,
+  WidgetIcon,
+  WidgetType,
+} from "@bms/shared";
 import type { DashboardFormProblem } from "./template-dashboard-form";
 
 /**
@@ -38,6 +46,38 @@ export const WIDGET_TYPES: readonly WidgetType[] = widgetTypeSchema.options;
 
 /** `chartSeriesKindSchema.options` from `@bms/shared` — never restated. */
 export const CHART_SERIES_VALUES: readonly ChartSeriesKind[] = chartSeriesKindSchema.options;
+
+/** `pointAggregateFunctionSchema.options` from `@bms/shared` — never restated (`F3.35`). */
+export const AGGREGATE_FUNCTIONS: readonly PointAggregateFunction[] =
+  pointAggregateFunctionSchema.options;
+
+/** `widgetIconSchema.options` from `@bms/shared` — never restated (`F3.35`). */
+export const WIDGET_ICONS: readonly WidgetIcon[] = widgetIconSchema.options;
+
+/**
+ * The four aggregate functions as an author reads them.
+ *
+ * Plain words, never the SQL name: an administrator with no programming skill
+ * composes these (Sheet 02), and "sum" beside "avg" is a column list. The
+ * `Record` over the enum makes a fifth function a compile error here rather
+ * than an unlabelled option in a select.
+ */
+export const AGGREGATE_FUNCTION_LABELS: Readonly<Record<PointAggregateFunction, string>> = {
+  sum: "Total",
+  avg: "Average",
+  min: "Lowest",
+  max: "Highest",
+};
+
+/** The six tile icons as an author reads them. Same `Record`-over-the-enum gate. */
+export const WIDGET_ICON_LABELS: Readonly<Record<WidgetIcon, string>> = {
+  alert: "Alert",
+  clipboard: "Tasks",
+  bolt: "Energy",
+  drop: "Water",
+  recycle: "Recycled",
+  gauge: "Efficiency",
+};
 
 /** Labels stay local — `F3.1c`'s `widget-catalog.ts` does not exist yet
  * (§5.4). This is a recorded residual for that item to fold in. */
@@ -78,6 +118,27 @@ export const MAX_WINDOW_MINUTES = 525_600;
 /** `chartConfigSchema.yAxisLabel` — `dashboard-builder.ts:171`. */
 export const MAX_Y_AXIS_LABEL_LENGTH = 64;
 
+/** `valueTileConfigSchema.hint` — `F3.35`. `KpiTile` renders it at 11px on one line. */
+export const MAX_HINT_LENGTH = 120;
+
+/**
+ * The window bound, checked identically for a tile and a chart.
+ *
+ * Shared rather than restated because `F3.35` gave the tile the chart's own
+ * bound: two copies would drift, and the direction that drifts silently is the
+ * one where the form admits a window the contract refuses — a save that fails
+ * with a 400 the author cannot read.
+ */
+function pushWindowProblem(raw: string, push: (field: string, message: string) => void): void {
+  if (raw.trim() === "") {
+    return;
+  }
+  const windowMinutes = Number(raw);
+  if (!Number.isInteger(windowMinutes) || windowMinutes <= 0 || windowMinutes > MAX_WINDOW_MINUTES) {
+    push("windowMinutes", `The window is a positive integer of at most ${MAX_WINDOW_MINUTES} minutes.`);
+  }
+}
+
 /** One coloured band on a radial gauge, as edited. `value` is text so a
  * partially typed number does not have to be a valid one. */
 export type ThresholdRow = { value: string; tone: WidgetTone };
@@ -100,11 +161,25 @@ export type WidgetConfigRow = {
   fillTone: WidgetTone | "";
   // value_tile
   abbreviate: boolean;
+  // value_tile — `F3.35` Stage A (ADR 0048). `""` is "not set", the `fillTone`
+  // idiom, and for `aggregate` it means "show the latest live sample" rather
+  // than a window's number: the tile's behaviour before this row.
+  aggregate: PointAggregateFunction | "";
+  compareToPrevious: boolean;
+  icon: WidgetIcon | "";
+  hint: string;
+  tone: WidgetTone | "";
   // chart
   series: ChartSeriesKind;
   windowMinutes: string;
   stacked: boolean;
   yAxisLabel: string;
+  // chart — `F3.35` Stage A. `chartAggregate` is named apart from the tile's
+  // `aggregate` because one flat row serves all four widget types, and the two
+  // fields mean different things: the tile picks WHICH statistic to show, the
+  // chart decides whether to plot buckets at all.
+  chartAggregate: PointAggregateFunction | "";
+  footerStats: boolean;
 };
 
 export function blankConfigRow(): WidgetConfigRow {
@@ -117,10 +192,17 @@ export function blankConfigRow(): WidgetConfigRow {
     fullScale: "1",
     fillTone: "",
     abbreviate: false,
+    aggregate: "",
+    compareToPrevious: false,
+    icon: "",
+    hint: "",
+    tone: "",
     series: "line",
     windowMinutes: "",
     stacked: false,
     yAxisLabel: "",
+    chartAggregate: "",
+    footerStats: false,
   };
 }
 
@@ -184,23 +266,21 @@ export function widgetConfigErrors(
     if (config.fullScale.trim() === "" || !Number.isFinite(fullScale) || fullScale <= 0) {
       push("fullScale", "A tank level needs a positive full-scale value.");
     }
+  } else if (widget.widgetType === "value_tile") {
+    // `F3.35` — the tile now carries a window too, bounded by the SAME
+    // constant the chart uses rather than a second one. A window without an
+    // aggregate is not checked, because `buildTileConfig` does not write it.
+    if (config.aggregate !== "") {
+      pushWindowProblem(config.windowMinutes, push);
+    }
+    if (config.hint.trim().length > MAX_HINT_LENGTH) {
+      push("hint", `A sub-line is at most ${MAX_HINT_LENGTH} characters.`);
+    }
   } else if (widget.widgetType === "chart") {
     if (!CHART_SERIES_VALUES.includes(config.series)) {
       push("series", "Choose what kind of chart this is.");
     }
-    if (config.windowMinutes.trim() !== "") {
-      const windowMinutes = Number(config.windowMinutes);
-      if (
-        !Number.isInteger(windowMinutes) ||
-        windowMinutes <= 0 ||
-        windowMinutes > MAX_WINDOW_MINUTES
-      ) {
-        push(
-          "windowMinutes",
-          `The window is a positive integer of at most ${MAX_WINDOW_MINUTES} minutes.`,
-        );
-      }
-    }
+    pushWindowProblem(config.windowMinutes, push);
     if (config.yAxisLabel.trim().length > MAX_Y_AXIS_LABEL_LENGTH) {
       push("yAxisLabel", `A y-axis label is at most ${MAX_Y_AXIS_LABEL_LENGTH} characters.`);
     }
@@ -264,7 +344,43 @@ export function buildTileConfig(config: WidgetConfigRow): TileConfig {
   if (config.abbreviate) {
     out.abbreviate = true;
   }
+  // `F3.35` — each field is written only when set. Every one is `.optional()`
+  // and both write surfaces compose the schema with `.strict()`, so a
+  // present-but-empty value is a 400: the `TemplateKpiRow.unit` trap this file
+  // already documents, applied to five more fields.
+  if (config.aggregate !== "") {
+    out.aggregate = config.aggregate;
+    // `windowMinutes` is only meaningful beside an aggregate — a tile showing
+    // the latest live sample has no window. Written under the same condition so
+    // a config cannot carry a window that nothing reads.
+    const windowMinutes = parseWindowMinutes(config.windowMinutes);
+    if (windowMinutes !== undefined) {
+      out.windowMinutes = windowMinutes;
+    }
+    if (config.compareToPrevious) {
+      out.compareToPrevious = true;
+    }
+  }
+  if (config.icon !== "") {
+    out.icon = config.icon;
+  }
+  const hint = config.hint.trim();
+  if (hint !== "") {
+    out.hint = hint;
+  }
+  if (config.tone !== "") {
+    out.tone = config.tone;
+  }
   return out;
+}
+
+/** `""` and an unparseable entry both mean "not set" — never `NaN`, which `.strict()` refuses. */
+function parseWindowMinutes(raw: string): number | undefined {
+  if (raw.trim() === "") {
+    return undefined;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 export function buildChartConfig(config: WidgetConfigRow): ChartConfig {
@@ -272,11 +388,9 @@ export function buildChartConfig(config: WidgetConfigRow): ChartConfig {
     ...buildCommonConfig(config),
     series: config.series,
   };
-  if (config.windowMinutes.trim() !== "") {
-    const windowMinutes = Number(config.windowMinutes);
-    if (Number.isFinite(windowMinutes)) {
-      out.windowMinutes = windowMinutes;
-    }
+  const windowMinutes = parseWindowMinutes(config.windowMinutes);
+  if (windowMinutes !== undefined) {
+    out.windowMinutes = windowMinutes;
   }
   if (config.stacked) {
     out.stacked = true;
@@ -284,6 +398,14 @@ export function buildChartConfig(config: WidgetConfigRow): ChartConfig {
   const yAxisLabel = config.yAxisLabel.trim();
   if (yAxisLabel !== "") {
     out.yAxisLabel = yAxisLabel;
+  }
+  // `F3.35` — set means "plot rolled-up buckets"; absent means the chart reads
+  // raw recent readings exactly as it did before this row.
+  if (config.chartAggregate !== "") {
+    out.aggregate = config.chartAggregate;
+  }
+  if (config.footerStats) {
+    out.footerStats = true;
   }
   return out;
 }
