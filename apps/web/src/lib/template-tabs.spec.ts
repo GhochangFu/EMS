@@ -42,9 +42,12 @@ export function runRegistryShapeTests(): void {
 /**
  * The closed sections have no tab.
  *
- * The two reserved keys are refused by `templateContentSchema`, so a tab for
- * either would always error — worse than no tab. `maintenance` is deliberately
- * omitted. **`dashboards` left this list in `F3.1e`** (ADR 0038 Amendment 4):
+ * `optimisation` is refused by `templateContentSchema`, so a tab for it would
+ * always error — worse than no tab. `maintenance` is deliberately omitted, and
+ * **`health` joined it in `E1.3`**: ADR 0050 decision 7 reopened the tier, so it
+ * is no longer refused, but ADR 0050 Amendment 1 decision 5 scopes `E1.3` to the
+ * score surfaces and a seventh tab needs an ADR 0038 amendment. It stays in this
+ * list for a changed reason, which is why the reason is written down. **`dashboards` left this list in `F3.1e`** (ADR 0038 Amendment 4):
  * it carried only an ordering when this was written, and `F3.1a` gave it
  * widgets, which is the condition decision 2 set for it becoming a tab.
  * Asserted over the ids rather than trusted to the count: six tabs is still six

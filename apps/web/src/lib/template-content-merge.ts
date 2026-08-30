@@ -63,15 +63,23 @@ export type TemplateContentPatch =
  * boundary to answer a five-string question. `template-content-merge.spec.ts`
  * pins the list so the copy cannot drift unnoticed.
  */
-const WRITABLE_KEYS = ["contentVersion", "kpis", "alarms", "maintenance", "dashboards"];
+const WRITABLE_KEYS = ["contentVersion", "kpis", "alarms", "maintenance", "dashboards", "health"];
 
 /**
- * `RESERVED_SECTIONS` from `asset-templates-content.schema.ts:142`, with the
- * owning item each one names. One shared message would point an author blocked
- * on `optimisation` at an item three waves earlier.
+ * `RESERVED_SECTIONS` from `asset-templates-content.schema.ts`, with the owning
+ * item each one names. One shared message would point an author blocked on
+ * `optimisation` at an item three waves earlier.
+ *
+ * **`health` left this map in `E1.3`** (ADR 0050 decision 7) and joined
+ * `WRITABLE_KEYS` above. The two moves go together: a key the envelope now
+ * accepts but this file still calls reserved would block a KPI tab save on a
+ * template that carries a perfectly valid health section.
+ *
+ * It has no tab of its own — `template-tabs.ts` stays at ADR 0038's six — so it
+ * is now in `maintenance`'s class: writable by the API, carried through this
+ * merge byte for byte, and edited by nothing in this UI yet.
  */
 const RESERVED_KEYS: Readonly<Record<string, string>> = {
-  health: "E1.1 (ML serving foundation)",
   optimisation: "E1.6 (optimisation advisories)",
 };
 
