@@ -4,6 +4,8 @@ import {
   runDashboardBuilderTests,
   runDashboardGridTests,
   runDashboardWidgetPointDtoTests,
+  runMetricCatalogDtoTests,
+  runMetricCatalogTests,
   runStageAFieldsSurviveStrictCompositionTests,
   runStageAOptionalityTests,
   runStageASpecUnionCarriesTheNewFieldsTests,
@@ -28,6 +30,20 @@ describe("F3.1d Unit 2 — DASHBOARD_GRID wired into dashboardWidgetIdentitySche
 describe("ADR 0047 Amendment 2 — per-type point cardinality", () => {
   it("covers every widget type and stays inside the global cap", () => {
     runWidgetPointCardinalityTests();
+  });
+});
+
+/**
+ * `F3.35` Stage C (ADR 0048 decisions 1, 2 and 4) — the metric catalog vocabulary and the two
+ * response contracts a catalog binding adds.
+ */
+describe("F3.35 Stage C — the metric catalog vocabulary", () => {
+  it("gives every key an entry, and every dataset distinct columns", () => {
+    runMetricCatalogTests();
+  });
+
+  it("parses a binding and both value shapes, and closes the cell union", () => {
+    runMetricCatalogDtoTests();
   });
 });
 

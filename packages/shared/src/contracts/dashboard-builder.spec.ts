@@ -2,12 +2,17 @@ import {
   DASHBOARD_GRID,
   MAX_WIDGET_POINTS,
   MAX_WIDGET_WINDOW_MINUTES,
+  METRIC_CATALOG,
   WIDGET_POINT_CARDINALITY,
+  WIDGET_SOURCE_CARDINALITY,
   chartConfigSchema,
   chartSeriesKindSchema,
   dashboardWidgetDtoSchema,
   dashboardWidgetPointDtoSchema,
+  dashboardWidgetSourceDtoSchema,
   dashboardWidgetSpecSchema,
+  metricCatalogKeySchema,
+  metricCatalogValueDtoSchema,
   pointAggregateFunctionSchema,
   radialGaugeConfigSchema,
   valueTileConfigSchema,
@@ -172,6 +177,9 @@ export function runDashboardBuilderTests(): void {
         unit: null,
       },
     ],
+    // `F3.35` Stage C. A chart binds no catalog source — `WIDGET_SOURCE_CARDINALITY.chart` is
+    // `{0,0}`, because a catalog entry resolves to a number or to rows and neither is a series.
+    sources: [],
     widgetType: "chart",
     config: { series: "line", windowMinutes: 1440 },
   };
@@ -224,6 +232,9 @@ export function runDashboardGridTests(): void {
     gridY: 0,
     gridH: 1,
     points: [],
+    // `F3.35` Stage C widened the identity schema. A widget as read always carries both
+    // binding arrays, and an empty one is the normal state for the kind it does not use.
+    sources: [],
     widgetType: "value_tile",
     config: {},
   };
@@ -279,32 +290,225 @@ export function runWidgetPointCardinalityTests(): void {
     );
   }
 
+  // Same argument, one binding kind over. `F3.35` Stage C's source cardinality is the second
+  // half of the same seam, and a missing entry here is the same silent hole.
+  for (const widgetType of widgetTypeSchema.options) {
+    assert(
+      WIDGET_SOURCE_CARDINALITY[widgetType] !== undefined,
+      `every widget type needs a source cardinality entry, ${widgetType} has none`,
+    );
+  }
+
   // The bound the type cannot express. A per-type maximum may be lower than the global cap and
   // never higher — otherwise `F3.1b` accepts a widget that `MAX_WIDGET_POINTS` (and the template
   // authoring surface's `MAX_WIDGET_POINT_KEYS`, reconciled against it) refuses one layer down.
   for (const widgetType of widgetTypeSchema.options) {
     const { min, max } = WIDGET_POINT_CARDINALITY[widgetType];
-    assert(min >= 1, `${widgetType} must bind at least one point, got min ${min}`);
     assert(min <= max, `${widgetType} has min ${min} above max ${max}`);
     assert(
       max <= MAX_WIDGET_POINTS,
       `${widgetType} allows ${max} points, above the global cap of ${MAX_WIDGET_POINTS}`,
     );
+
+    const source = WIDGET_SOURCE_CARDINALITY[widgetType];
+    assert(
+      source.min <= source.max,
+      `${widgetType} has source min ${source.min} above max ${source.max}`,
+    );
+  }
+
+  // **This assertion replaces `min >= 1`, which `F3.35` Stage C deleted.** Until Stage C a
+  // widget bound points and nothing else, so "binds at least one point" and "binds something"
+  // were the same sentence. Decision 2 separates them: a `value_tile` binds a point **or** a
+  // named metric, so its point `min` is legitimately 0 and the old assertion would refuse the
+  // whole feature.
+  //
+  // What is NOT weakened, and where it went: a widget type must still be able to bind
+  // something, which is what this loop keeps. The stronger per-widget rule — a stored widget
+  // binds exactly one KIND, never both and never neither — is a cross-field rule between two
+  // arrays on one arm, so it cannot live on a `z.discriminatedUnion` arm at all
+  // (`dashboards.schema.ts` records why). It is enforced on write, by
+  // `eachWidgetBindsExactlyOneKind` in `apps/api/src/dashboard-builder/dashboards.schema.ts`,
+  // and asserted in that file's spec. Deleting an assertion without naming its replacement is
+  // how a weakening reads as a refactor, so both halves are stated here.
+  for (const widgetType of widgetTypeSchema.options) {
+    const bindable =
+      WIDGET_POINT_CARDINALITY[widgetType].max + WIDGET_SOURCE_CARDINALITY[widgetType].max;
+    assert(
+      bindable >= 1,
+      `${widgetType} must be able to bind something, but allows 0 points and 0 sources`,
+    );
   }
 
   // The four values, pinned by name. Written against `MAX_WIDGET_POINTS` rather than against
   // `8`, so the pin does not become the third copy of that number.
-  for (const widgetType of ["radial_gauge", "tank_level", "value_tile"] as const) {
+  for (const widgetType of ["radial_gauge", "tank_level"] as const) {
     assert(
       WIDGET_POINT_CARDINALITY[widgetType].min === 1 &&
         WIDGET_POINT_CARDINALITY[widgetType].max === 1,
       `${widgetType} takes exactly one point, got ${JSON.stringify(WIDGET_POINT_CARDINALITY[widgetType])}`,
     );
+    assert(
+      WIDGET_SOURCE_CARDINALITY[widgetType].max === 0,
+      `${widgetType} binds no catalog source, got ${JSON.stringify(WIDGET_SOURCE_CARDINALITY[widgetType])}`,
+    );
   }
+
+  // The tile is the one type that takes either kind (ADR 0048 decision 2: "a `value_tile` binds
+  // a metric"). Both minimums are 0 because either array may legitimately be the empty one; the
+  // *exactly one* rule is the write-time rule named above.
+  assert(
+    WIDGET_POINT_CARDINALITY.value_tile.min === 0 &&
+      WIDGET_POINT_CARDINALITY.value_tile.max === 1,
+    `value_tile takes 0..1 points, got ${JSON.stringify(WIDGET_POINT_CARDINALITY.value_tile)}`,
+  );
+  assert(
+    WIDGET_SOURCE_CARDINALITY.value_tile.min === 0 &&
+      WIDGET_SOURCE_CARDINALITY.value_tile.max === 1,
+    `value_tile takes 0..1 sources, got ${JSON.stringify(WIDGET_SOURCE_CARDINALITY.value_tile)}`,
+  );
+
   assert(
     WIDGET_POINT_CARDINALITY.chart.min === 1 &&
       WIDGET_POINT_CARDINALITY.chart.max === MAX_WIDGET_POINTS,
     `chart takes 1..MAX_WIDGET_POINTS series, got ${JSON.stringify(WIDGET_POINT_CARDINALITY.chart)}`,
+  );
+  assert(
+    WIDGET_SOURCE_CARDINALITY.chart.max === 0,
+    `chart binds no catalog source, got ${JSON.stringify(WIDGET_SOURCE_CARDINALITY.chart)}`,
+  );
+}
+
+/**
+ * `F3.35` Stage C (ADR 0048 decisions 1 and 2) — the metric catalog vocabulary.
+ *
+ * The catalog is **closed and it is code**: an entry's behaviour is a SQL query and no column
+ * holds one, so an entry declared by an `INSERT` would satisfy every foreign key and then
+ * return nothing, in front of an operator, with a green console. What that costs is a third
+ * place the same list is written — the enum here, the `CHECK` in migration `0054`, and the
+ * label map in `apps/web/src/lib/metric-catalog.ts` — and what these assertions buy is that
+ * the three cannot drift apart in silence. The migration half is pinned by
+ * `tests/f3.35-metric-catalog-schema.test.ts`, which parses the `CHECK` list and compares it
+ * to `metricCatalogKeySchema.options`.
+ */
+export function runMetricCatalogTests(): void {
+  // Kept for the case the `Record` type cannot see — an entry reintroduced through a cast, or
+  // a weakening to `Partial<Record<…>>`. The same reason the cardinality loop above states.
+  for (const key of metricCatalogKeySchema.options) {
+    assert(METRIC_CATALOG[key] !== undefined, `every catalog key needs an entry, ${key} has none`);
+  }
+
+  for (const key of metricCatalogKeySchema.options) {
+    const entry = METRIC_CATALOG[key];
+
+    if (entry.shape === "dataset") {
+      // A dataset with no declared columns renders an empty table — the Stage B picker has
+      // nothing to offer and the resolve endpoint has nothing to project.
+      assert(entry.columns.length >= 1, `dataset ${key} declares no columns`);
+
+      const seen = new Set<string>();
+      for (const column of entry.columns) {
+        assert(!seen.has(column), `dataset ${key} declares the column ${column} twice`);
+        seen.add(column);
+      }
+    }
+  }
+
+  // A metric resolves to one number and declares no columns. Asserted as the absence of the
+  // key rather than as an empty array, so the two shapes stay distinguishable by `shape` alone
+  // and a reader never has to check a length to know which one they hold.
+  for (const key of metricCatalogKeySchema.options) {
+    const entry = METRIC_CATALOG[key];
+    assert(
+      entry.shape === "metric" || entry.shape === "dataset",
+      `${key} has an unknown shape ${JSON.stringify(entry.shape)}`,
+    );
+    if (entry.shape === "metric") {
+      assert(
+        !("columns" in entry),
+        `metric ${key} declares columns; a metric resolves to one number`,
+      );
+    }
+  }
+
+  // The two shapes are both populated. A vocabulary that is all metrics would let Stage B ship
+  // a `table` widget with nothing to bind — the dependency ADR 0048 decision 6 records.
+  const shapes = metricCatalogKeySchema.options.map((key) => METRIC_CATALOG[key].shape);
+  assert(shapes.includes("metric"), "the catalog declares no metric");
+  assert(shapes.includes("dataset"), "the catalog declares no dataset");
+}
+
+/**
+ * `F3.35` Stage C — the two response contracts the catalog adds.
+ *
+ * `dashboardWidgetSourceDtoSchema` is a binding as read; `metricCatalogValueDtoSchema` is the
+ * resolved value. They are separate because a binding is stored and a value is computed, and
+ * the resolve endpoint returns the second without the first.
+ */
+export function runMetricCatalogDtoTests(): void {
+  const binding = {
+    id: "55555555-5555-4555-8555-555555555555",
+    catalogKey: metricCatalogKeySchema.options[0],
+    params: { windowMinutes: 60, severity: "critical", includeCleared: false },
+    sortOrder: 0,
+  };
+  const parsedBinding = dashboardWidgetSourceDtoSchema.safeParse(binding);
+  assert(parsedBinding.success, "a well-formed source binding must parse");
+
+  // `sortOrder` carries no `.min(0)`, the rule `dashboardWidgetPointDtoSchema` states one
+  // binding kind over: `sort_order integer NOT NULL DEFAULT 0` permits a negative, so a bound
+  // here would reject a row the store is entitled to produce.
+  assert(
+    dashboardWidgetSourceDtoSchema.safeParse({ ...binding, sortOrder: -3 }).success,
+    "a negative sortOrder is a row the database can hold, so the response contract must accept it",
+  );
+
+  assert(
+    !dashboardWidgetSourceDtoSchema.safeParse({ ...binding, catalogKey: "alarms.nope" }).success,
+    "an unknown catalog key must not parse; the vocabulary is closed",
+  );
+
+  // A metric arm. `value` is nullable because an entry can legitimately resolve to nothing —
+  // `E1.3` returns a null mean score when no tag carries a published rule, and rendering that
+  // as 0 would be a fabricated number in front of an operator.
+  const metricValue = {
+    shape: "metric" as const,
+    key: metricCatalogKeySchema.options[0],
+    value: null,
+    unit: null,
+  };
+  assert(
+    metricCatalogValueDtoSchema.safeParse(metricValue).success,
+    "a metric that resolves to nothing must parse as a null value, not fail",
+  );
+
+  // A dataset arm, with the closed cell union. `z.unknown()` would produce an *optional* key
+  // and `z.any()`/`z.custom<unknown>()` behave identically — §4.8 records that this repo has
+  // already spent an afternoon on it.
+  const datasetValue = {
+    shape: "dataset" as const,
+    key: metricCatalogKeySchema.options[0],
+    columns: ["code", "message"],
+    rows: [{ code: "CH-01", message: null, active: true, count: 3 }],
+    truncated: false,
+  };
+  assert(
+    metricCatalogValueDtoSchema.safeParse(datasetValue).success,
+    "a dataset row of the four cell types must parse",
+  );
+  assert(
+    !metricCatalogValueDtoSchema.safeParse({
+      ...datasetValue,
+      rows: [{ code: { nested: true } }],
+    }).success,
+    "a nested object is not a dataset cell; the cell union is closed",
+  );
+
+  // The discriminator does the narrowing. A metric payload carrying dataset keys must fail
+  // rather than parse into the wrong arm and render an empty table.
+  assert(
+    !metricCatalogValueDtoSchema.safeParse({ ...metricValue, shape: "dataset" }).success,
+    "the shape discriminator must select the arm, so a mislabelled payload cannot pass",
   );
 }
 

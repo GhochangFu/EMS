@@ -366,7 +366,20 @@ export function dashboardFormErrors(
     }
 
     view.widgets.forEach((widget, widgetIndex) => {
-      const cardinality = WIDGET_POINT_CARDINALITY[widget.widgetType];
+      // **A template widget's minimum is its own, and it is deliberately not the live one.**
+      //
+      // `F3.35` Stage C lowered `WIDGET_POINT_CARDINALITY.value_tile.min` to 0, because ADR
+      // 0048 decision 2 lets a live tile bind a named metric instead of a point. **That
+      // relaxation must not reach this surface.** A template widget binds point *keys* against
+      // an unresolved catalog, and a catalog entry is not resolvable at instantiation — it is
+      // a SQL query over one organization's operational tables, which a template does not have
+      // and cannot name. So a template tile with no point key would instantiate into a live
+      // widget that binds nothing at all, which the live builder itself refuses.
+      //
+      // The maximum still comes from the shared record: a template must never author more
+      // bindings than the live widget accepts. Only the floor is local, and only for the tile.
+      const shared = WIDGET_POINT_CARDINALITY[widget.widgetType];
+      const cardinality = { min: Math.max(shared.min, 1), max: shared.max };
       if (widget.pointKeys.length < cardinality.min || widget.pointKeys.length > cardinality.max) {
         problems.push({
           view: viewIndex,

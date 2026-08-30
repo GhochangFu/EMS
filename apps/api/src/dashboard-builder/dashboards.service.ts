@@ -10,7 +10,13 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { dashboards, dashboardWidgetPoints, dashboardWidgets } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { DashboardDto, DashboardSummaryDto, DashboardWidgetDto, JwtPayload } from "@bms/shared";
+import type {
+  DashboardDto,
+  DashboardSummaryDto,
+  DashboardWidgetDto,
+  DashboardWidgetSourceDto,
+  JwtPayload,
+} from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
@@ -65,6 +71,7 @@ export function mapDashboardSummary(row: DashboardRow, widgetCount: number): Das
 export function mapDashboardWidget(
   row: WidgetRow,
   points: readonly ResolvedBoundPoint[],
+  sources: readonly DashboardWidgetSourceDto[] = [],
 ): DashboardWidgetDto {
   const merged = {
     id: row.id,
@@ -83,6 +90,18 @@ export function mapDashboardWidget(
       assetId: point.assetId,
       pointKey: point.pointKey,
       unit: point.unit,
+    })),
+    // `F3.35` Stage C. Defaulted to `[]` rather than left out, because the cast below is what
+    // makes an omission compile: `dashboardWidgetIdentitySchema` gained a required `sources`
+    // array, `apps/api` never parses its own response, and `checkResponse` in `apps/web` throws
+    // in dev and test on every dashboard read. So a missing key here is not a type error, not
+    // an API error, and not visible until a browser opens a dashboard. The default keeps the
+    // emitter true to the contract at every commit; Unit 3 passes the real rows.
+    sources: sources.map((source) => ({
+      id: source.id,
+      catalogKey: source.catalogKey,
+      params: source.params,
+      sortOrder: source.sortOrder,
     })),
     widgetType: row.widgetType,
     config: row.config,

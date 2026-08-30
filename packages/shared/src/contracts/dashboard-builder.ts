@@ -363,9 +363,126 @@ export const WIDGET_POINT_CARDINALITY: Record<
 > = {
   radial_gauge: { min: 1, max: 1 },
   tank_level: { min: 1, max: 1 },
-  value_tile: { min: 1, max: 1 },
+  // `F3.35` Stage C lowered this from `{min: 1}`. ADR 0048 decision 2 gives the tile a second
+  // binding kind — "a `value_tile` binds a metric" — so a tile with no point is now a legal
+  // authored state rather than a broken one. The rule that replaces the old minimum is
+  // *exactly one kind*, and it lives on write in `dashboards.schema.ts`, not here: it is a
+  // cross-field rule between `points` and `sources`, which a per-type number cannot express.
+  value_tile: { min: 0, max: 1 },
   chart: { min: 1, max: MAX_WIDGET_POINTS },
 };
+
+/**
+ * How many **catalog sources** each type may bind (`F3.35` Stage C, ADR 0048 decisions 1 and 2).
+ *
+ * The second half of `WIDGET_POINT_CARDINALITY`'s seam, and here for the same reason: `F3.1b`'s
+ * successor must refuse a two-source tile *on write*, and `apps/api` cannot import from
+ * `apps/web`. Presentation — the labels an author reads — stays in
+ * `apps/web/src/lib/metric-catalog.ts`.
+ *
+ * **Why every value but the tile's is zero.** A gauge, a tank and a chart all draw a *series
+ * over time*, and a catalog entry resolves to a number or to rows — neither is a series. Only
+ * the tile shows a single current number, which is why decision 2 names it. Stage B's `table`
+ * is the second non-zero entry, at `{min: 1, max: 1}`.
+ *
+ * The `Record` over the enum is what makes Stage B's fifth widget type a compile error here
+ * rather than a widget that silently binds no source and renders nothing.
+ */
+export const WIDGET_SOURCE_CARDINALITY: Record<
+  z.infer<typeof widgetTypeSchema>,
+  { readonly min: number; readonly max: number }
+> = {
+  radial_gauge: { min: 0, max: 0 },
+  tank_level: { min: 0, max: 0 },
+  value_tile: { min: 0, max: 1 },
+  chart: { min: 0, max: 0 },
+};
+
+/**
+ * The metric catalog's keys, closed (`F3.35` Stage C, ADR 0048 decision 1).
+ *
+ * **The catalog is code, and that is the decision, not an implementation detail.** §4.8 as ADR
+ * 0032 rewrote it asks whether a vocabulary's behaviour can be carried as data. A widget type's
+ * behaviour is a React component; a catalog entry's behaviour is a **SQL query**, and no column
+ * holds one either. An entry declared by an `INSERT` would satisfy every foreign key and then
+ * return nothing, in front of an operator, with a green console.
+ *
+ * **What bounds the list, and keeps it short.** A derived point (`asset_points.kind`, ADR
+ * 0036/0037) already lets an administrator declare a new *scalar* by formula without a release.
+ * The catalog therefore carries only what a point cannot be: **row counts over operational
+ * tables, and roll-ups across assets**. A number expressible as a formula over points is a
+ * derived point, and a reviewer should refuse it here.
+ *
+ * Must match `dashboard_widget_sources_catalog_key_check` in migration `0054` exactly —
+ * `tests/f3.35-metric-catalog-schema.test.ts` parses that `CHECK` and compares the two lists,
+ * so drift fails the build rather than a page.
+ *
+ * **`assets.health.score` is here because its formula arrived.** ADR 0048 §7 listed it as
+ * uncomputable, on the belief that the client still owed the roll-up formula from feature-sheet
+ * row 12. That formula arrived on 2026-08-22 and shipped as `E1.3` / ADR 0050, so this entry
+ * delegates to `AssetHealthService` rather than computing anything. Operational efficiency is
+ * **not** here and must not be added until the client defines its numerator (ADR 0050 §B14) —
+ * a key with no query is exactly the failure this vocabulary is closed to prevent.
+ */
+export const metricCatalogKeySchema = z.enum([
+  "alarms.active.count",
+  "alarms.active",
+  "workorders.open.count",
+  "workorders.open",
+  "assets.health.score",
+]);
+
+/**
+ * What each catalog entry resolves to (ADR 0048 decision 2).
+ *
+ * A **metric** resolves to one number; a **dataset** resolves to rows and a declared column
+ * list. One vocabulary and two shapes, rather than two vocabularies, because the alarm *count*
+ * and the alarm *table* must not be able to drift about what "active" means while both look
+ * right.
+ *
+ * `columns` lives on the dataset arm only, so `shape` alone tells a reader which they hold —
+ * no length check, and no empty array standing in for "not applicable". Stage B's column picker
+ * chooses from this list; the resolve endpoint returns every declared column and the renderer
+ * projects, so no column list travels in a request and no SQL is built from one.
+ */
+export type CatalogEntryMeta =
+  | { readonly shape: "metric" }
+  | { readonly shape: "dataset"; readonly columns: readonly string[] };
+
+/**
+ * The catalog itself — shape and declared columns, one entry per key.
+ *
+ * **No SQL and no label here.** The query belongs to `apps/api/src/metric-catalog/`, which is
+ * the only place that can hold one; the label belongs to `apps/web`, which is the only place
+ * that renders one. What lives here is what **both** sides must agree on, which is the same
+ * split `WIDGET_POINT_CARDINALITY`'s docblock draws between a validation rule and presentation.
+ *
+ * The `Record` is compiler-forced, so a sixth key fails the build at this declaration rather
+ * than resolving to `undefined` at a call site.
+ */
+export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, CatalogEntryMeta> = {
+  "alarms.active.count": { shape: "metric" },
+  "alarms.active": {
+    shape: "dataset",
+    columns: ["assetCode", "assetName", "severity", "message", "raisedAt"],
+  },
+  "workorders.open.count": { shape: "metric" },
+  "workorders.open": {
+    shape: "dataset",
+    columns: ["assetCode", "assetName", "status", "priority", "title", "dueAt"],
+  },
+  "assets.health.score": { shape: "metric" },
+};
+
+/**
+ * The ceiling on rows a dataset resolve returns.
+ *
+ * Declared here because two surfaces read it: the API clamps its `limit` to it, and the viewer
+ * pages against it. A dataset is a **six-row card** on the mock, so 200 is a safety bound and
+ * never a page size — a widget asking for more than a card can show is a defect in the widget,
+ * not a reason to raise this.
+ */
+export const MAX_DATASET_ROWS = 200;
 
 /**
  * One point binding. A row in `bms.dashboard_widget_points`, never an id inside JSON.
@@ -397,6 +514,38 @@ export const dashboardWidgetPointDtoSchema = z
   });
 
 /**
+ * One catalog binding. A row in `bms.dashboard_widget_sources` (`F3.35` Stage C, ADR 0048
+ * decision 4).
+ *
+ * **A fourth table, not a widened `dashboard_widget_points`.** ADR 0047 decision 3 made
+ * `point_id` a real foreign key with `ON DELETE CASCADE` so that retiring a sensor leaves a
+ * widget with *countable* zero bindings rather than a stale id inside `jsonb`. Making
+ * `point_id` nullable beside a `catalog_key` column would make a `NULL` mean either "a catalog
+ * binding" or "a bug", with a `CHECK` the only thing telling them apart. **A catalog key is a
+ * foreign key to nothing**, because the catalog is code — and a separate table says so instead
+ * of hiding it behind a nullable column.
+ *
+ * **`params` carries no id, and that is enforced rather than merely intended.** A binding
+ * inherits the dashboard's scope (`dashboards.location_id` / `asset_group_id`), so a location
+ * id inside `params` would be an id in `jsonb` that no foreign key covers and no orphan check
+ * can report — the ADR 0019 problem decision 4 exists to refuse, one field over. The write
+ * schemas in `apps/api/src/metric-catalog/metric-catalog.schema.ts` are `.strict()` per entry
+ * and declare no id field, and `tests/f3.35-metric-catalog-containment.test.ts` scans that file
+ * for `.uuid(`.
+ *
+ * **`sortOrder` carries no `.min(0)`**, for the reason `dashboardWidgetPointDtoSchema` states:
+ * `sort_order integer NOT NULL DEFAULT 0` permits a negative, so a bound here would reject a
+ * row the store is entitled to produce. The write bound belongs to the request schema.
+ */
+export const dashboardWidgetSourceDtoSchema = z
+  .object({
+    id: z.string().uuid(),
+    catalogKey: metricCatalogKeySchema,
+    params: z.record(z.union([z.string(), z.number(), z.boolean()])),
+    sortOrder: z.number().int(),
+  });
+
+/**
  * The widget's own fields, without type or config.
  *
  * The grid is bounded here as well as by `dashboard_widgets_grid_bounds_check`, so an author
@@ -419,6 +568,11 @@ const dashboardWidgetIdentitySchema = z
     // different case — `dashboard_widgets_grid_bounds_check` really does enforce those, so
     // stating them here cannot reject a row the store can hold.
     points: z.array(dashboardWidgetPointDtoSchema),
+    // No `.max()` either, and for the same reason. The *exactly one kind* rule — a widget binds
+    // points or sources, never both and never neither — is a cross-field rule between these two
+    // arrays, so it is enforced on write and deliberately not claimed here: a response contract
+    // states what the store can hold, and the store can hold a widget mid-edit.
+    sources: z.array(dashboardWidgetSourceDtoSchema),
   })
   .refine((widget) => widget.gridX + widget.gridW <= DASHBOARD_GRID.columns, {
     message: `a widget must fit inside the ${DASHBOARD_GRID.columns}-column canvas`,
@@ -481,3 +635,48 @@ export const dashboardSummaryDtoSchema = z
     updatedAt: z.string(),
     widgetCount: z.number().int().min(0),
   });
+
+/**
+ * One cell of a resolved dataset row.
+ *
+ * **A closed union, never `z.unknown()`.** §4.8 records what that costs and that this repo has
+ * already paid it: `z.unknown()` produces an *optional* key, and `z.any()` and
+ * `z.custom<unknown>()` behave identically — "do not spend an afternoon on it". Four types is
+ * what a SQL projection can actually return once a timestamp is serialised, so naming them is
+ * both stricter and cheaper.
+ */
+const datasetCellSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+/**
+ * A resolved catalog value, as `GET /api/v1/metric-catalog/:key` returns it (`F3.35` Stage C).
+ *
+ * `z.discriminatedUnion` on `shape`, so a mislabelled payload fails rather than narrowing into
+ * the wrong arm and rendering an empty table. Two plain `z.object` arms — no `.merge()`, no
+ * `.omit().extend()`, which ADR 0030 Amendment 1 bans inside `contracts/` because a flattened
+ * schema still typechecks and only a source scan catches it.
+ *
+ * **`value` is nullable on the metric arm, deliberately.** An entry can legitimately resolve to
+ * nothing: `E1.3` returns a null mean score when no tag carries a published threshold rule, and
+ * `F4.69` is the open row for the seed gap that makes that the current state. Rendering a null
+ * as `0` would put a fabricated number in front of an operator, which is the one failure this
+ * contract must make impossible.
+ *
+ * **`truncated` is a field rather than an inference.** A caller cannot tell a dataset that has
+ * exactly `MAX_DATASET_ROWS` rows from one that was cut off at it, and the difference decides
+ * whether the card is showing the whole answer.
+ */
+export const metricCatalogValueDtoSchema = z.discriminatedUnion("shape", [
+  z.object({
+    shape: z.literal("metric"),
+    key: metricCatalogKeySchema,
+    value: z.number().nullable(),
+    unit: z.string().nullable(),
+  }),
+  z.object({
+    shape: z.literal("dataset"),
+    key: metricCatalogKeySchema,
+    columns: z.array(z.string()),
+    rows: z.array(z.record(datasetCellSchema)),
+    truncated: z.boolean(),
+  }),
+]);

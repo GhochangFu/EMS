@@ -50,6 +50,10 @@ const IDENTITY = {
   gridW: 4,
   gridH: 4,
   points: [],
+  // `F3.35` Stage C — the second binding array. This file round-trips *config*,
+  // and a catalog binding is a row rather than a config field, so it stays empty:
+  // the key-set assertion below reads the two config schemas, not the identity.
+  sources: [],
 };
 
 /** Every field `F3.35` added to the tile, all set, all distinguishable. */

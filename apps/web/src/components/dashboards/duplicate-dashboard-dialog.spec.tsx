@@ -73,6 +73,9 @@ function widgetDto(): DashboardWidgetDto {
     gridW: 4,
     gridH: 4,
     points: [point()],
+    // `F3.35` Stage C. Required by the DTO; the `as DashboardWidgetDto` cast below hides
+    // an omission from the compiler, so a missing key surfaces as a TypeError at run time.
+    sources: [],
     widgetType: "value_tile",
     config: { unit: "kW", decimals: 1 },
   } as DashboardWidgetDto;

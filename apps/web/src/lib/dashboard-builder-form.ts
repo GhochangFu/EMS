@@ -4,6 +4,7 @@ import type {
   DashboardWidgetDto,
   DashboardWidgetPointDto,
   DashboardWidgetSpec,
+  MetricCatalogKey,
   WidgetPointRole,
   WidgetType,
 } from "@bms/shared";
@@ -56,7 +57,22 @@ export type DashboardWidgetRow = {
   gridW: number;
   gridH: number;
   points: DashboardWidgetPointRow[];
+  /**
+   * `F3.35` Stage C — the catalog bindings on this widget. Present from the moment the tile
+   * gained a second binding kind, so `dashboardBuilderErrors` can enforce *exactly one kind*.
+   * The picker that fills it is Stage C's Unit 7; validating a binding the builder cannot yet
+   * author is deliberate — the alternative is a builder that accepts a tile binding nothing.
+   */
+  sources: DashboardWidgetSourceRow[];
   config: WidgetConfigRow;
+};
+
+/** One catalog binding as the builder holds it. `params` stays a plain record — the per-entry
+    shape is the API's `.strict()` schema, and restating it here would be a second declaration
+    of a vocabulary §4.8 says is declared once. */
+export type DashboardWidgetSourceRow = {
+  catalogKey: MetricCatalogKey;
+  params: Record<string, string | number | boolean>;
 };
 
 /** The whole widget set, ready for `PUT /dashboards/:id/widgets`. Declared locally rather than
@@ -70,6 +86,14 @@ export type PointWritePayload = {
   sortOrder: number;
 };
 
+/** `F3.35` Stage C — one catalog binding as submitted. `sortOrder` is assigned from the row's
+    position rather than carried, the way the point payload derives its own. */
+export type SourceWritePayload = {
+  catalogKey: MetricCatalogKey;
+  params: Record<string, string | number | boolean>;
+  sortOrder: number;
+};
+
 type WidgetIdentityWritePayload = {
   id?: string;
   title?: string | null;
@@ -78,6 +102,7 @@ type WidgetIdentityWritePayload = {
   gridW: number;
   gridH: number;
   points: PointWritePayload[];
+  sources: SourceWritePayload[];
 };
 
 export type WidgetWritePayload = WidgetIdentityWritePayload & DashboardWidgetSpec;
@@ -99,6 +124,7 @@ export function blankDashboardWidgetRow(widgetType: WidgetType): DashboardWidget
     gridW: w,
     gridH: h,
     points: [],
+    sources: [],
     config: blankConfigRow(),
   };
 }
@@ -177,6 +203,13 @@ export function dashboardRowsFromDto(dto: DashboardDto): DashboardWidgetRow[] {
       sortOrder: point.sortOrder,
       label: pointBindingLabel(point),
     })),
+    // `F3.35` Stage C. Carried through so a re-save preserves a binding this builder version
+    // cannot yet author — dropping it here would silently delete the author's metric on the
+    // next save of an unrelated field.
+    sources: widget.sources.map((source) => ({
+      catalogKey: source.catalogKey,
+      params: source.params,
+    })),
     config: configRowFromDto(widget),
   }));
 }
@@ -251,14 +284,49 @@ export function dashboardBuilderErrors(rows: readonly DashboardWidgetRow[]): Das
       push(index, "title", `A widget title is at most ${MAX_WIDGET_TITLE_LENGTH} characters.`);
     }
 
+    const label = WIDGET_CATALOG[row.widgetType].label;
     const cardinality = WIDGET_CATALOG[row.widgetType].points;
     if (row.points.length < cardinality.min || row.points.length > cardinality.max) {
-      const label = WIDGET_CATALOG[row.widgetType].label;
       const need =
         cardinality.min === cardinality.max
           ? `exactly ${cardinality.min} bound point(s)`
           : `between ${cardinality.min} and ${cardinality.max} bound point(s)`;
       push(index, "points", `A ${label} widget needs ${need}. This one has ${row.points.length}.`);
+    }
+
+    // `F3.35` Stage C. The same bound, one binding kind over.
+    const sourceCardinality = WIDGET_CATALOG[row.widgetType].sources;
+    if (row.sources.length > sourceCardinality.max) {
+      push(
+        index,
+        "points",
+        sourceCardinality.max === 0
+          ? `A ${label} widget binds no named metric. This one has ${row.sources.length}.`
+          : `A ${label} widget binds at most ${sourceCardinality.max} named metric(s). This one has ${row.sources.length}.`,
+      );
+    }
+
+    // **The rule that replaced `WIDGET_POINT_CARDINALITY.value_tile.min === 1`.**
+    //
+    // ADR 0048 decision 2 gives the tile a second binding kind, so "binds at least one point"
+    // stopped being the same sentence as "binds something" and the per-type minimum could no
+    // longer carry it: a minimum is a bound on one array, and this is a relation between two.
+    // Its API twin is `eachWidgetBindsExactlyOneKind`, on the widgets array rather than on a
+    // `z.discriminatedUnion` arm, for the same reason.
+    //
+    // Both halves matter. **Neither** kind bound is the state the old minimum used to refuse —
+    // a widget that saves, loads and draws an empty rectangle. **Both** kinds bound is the new
+    // one: a tile with a point and a metric has two answers for one number, and picking either
+    // silently would put a number on screen that the author did not choose.
+    if (row.points.length === 0 && row.sources.length === 0) {
+      push(index, "points", `A ${label} widget needs a bound point or a named metric.`);
+    }
+    if (row.points.length > 0 && row.sources.length > 0) {
+      push(
+        index,
+        "points",
+        `A ${label} widget shows a bound point or a named metric, not both. Remove one.`,
+      );
     }
 
     if (row.gridW < DASHBOARD_GRID.minWidgetW || row.gridW > DASHBOARD_GRID.columns) {
@@ -289,6 +357,11 @@ function buildIdentity(row: DashboardWidgetRow): WidgetIdentityWritePayload {
       pointId: point.pointId,
       role: point.role,
       sortOrder: point.sortOrder,
+    })),
+    sources: row.sources.map((source, order) => ({
+      catalogKey: source.catalogKey,
+      params: source.params,
+      sortOrder: order,
     })),
   };
   if (row.id !== undefined) {

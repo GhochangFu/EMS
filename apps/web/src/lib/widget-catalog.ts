@@ -1,5 +1,5 @@
 import type { ChartSeriesKind, DashboardWidgetSpec, WidgetIcon, WidgetType } from "@bms/shared";
-import { WIDGET_POINT_CARDINALITY } from "@bms/shared";
+import { WIDGET_POINT_CARDINALITY, WIDGET_SOURCE_CARDINALITY } from "@bms/shared";
 
 import type { KpiTileStatus } from "../components/kpi-tile";
 
@@ -78,6 +78,8 @@ type WidgetCatalogEntry = {
   readonly defaultSize: { readonly w: number; readonly h: number };
   /** Imported from `@bms/shared`, never restated — ADR 0047 Amendment 2 §1: the write path and the renderer must agree about which dashboards are legal, and a rule enforced by only one of two surfaces is not enforced. */
   readonly points: { readonly min: number; readonly max: number };
+  /** `F3.35` Stage C. Imported for the same reason as `points`: the builder must refuse a binding the write path would refuse, and only the tile takes a catalog source today. */
+  readonly sources: { readonly min: number; readonly max: number };
 };
 
 /**
@@ -91,24 +93,28 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     iconPath: "M12 2a10 10 0 1 0 10 10h-2a8 8 0 1 1-8-8V2Z",
     defaultSize: { w: 3, h: 4 },
     points: WIDGET_POINT_CARDINALITY.radial_gauge,
+    sources: WIDGET_SOURCE_CARDINALITY.radial_gauge,
   },
   tank_level: {
     label: "Tank level",
     iconPath: "M6 2h12v4H6V2Zm-1 6h14v14H5V8Zm2 12h10V10H7v10Z",
     defaultSize: { w: 3, h: 4 },
     points: WIDGET_POINT_CARDINALITY.tank_level,
+    sources: WIDGET_SOURCE_CARDINALITY.tank_level,
   },
   value_tile: {
     label: "Value tile",
     iconPath: "M4 4h16v16H4V4Zm2 2v12h12V6H6Z",
     defaultSize: { w: 3, h: 2 },
     points: WIDGET_POINT_CARDINALITY.value_tile,
+    sources: WIDGET_SOURCE_CARDINALITY.value_tile,
   },
   chart: {
     label: "Chart",
     iconPath: "M4 20V4h2v14h14v2H4Zm4-4V10h2v6H8Zm5 0V6h2v10h-2Zm5 0v-8h2v8h-2Z",
     defaultSize: { w: 6, h: 4 },
     points: WIDGET_POINT_CARDINALITY.chart,
+    sources: WIDGET_SOURCE_CARDINALITY.chart,
   },
 };
 

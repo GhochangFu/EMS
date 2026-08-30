@@ -26,6 +26,9 @@ const IDENTITY = {
   gridY: 0,
   gridW: 4,
   gridH: 4,
+  // `F3.35` Stage C. Every widget as read carries both binding arrays; these
+  // fixtures bind points only, so the source array stays empty.
+  sources: [],
 };
 
 function point(overrides: Partial<DashboardWidgetPointDto> = {}): DashboardWidgetPointDto {

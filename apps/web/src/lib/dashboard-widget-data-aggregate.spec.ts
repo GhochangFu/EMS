@@ -39,6 +39,9 @@ const IDENTITY = {
   gridY: 0,
   gridW: 4,
   gridH: 4,
+  // `F3.35` Stage C — the second binding array. Empty here: these fixtures
+  // exercise Stage A's aggregation, which is a point-bound path.
+  sources: [],
 };
 
 const ASSET = "66666666-6666-4666-8666-666666666666";

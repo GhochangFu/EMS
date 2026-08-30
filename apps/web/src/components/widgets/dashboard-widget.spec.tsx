@@ -52,6 +52,9 @@ const IDENTITY = {
   // Not `as const`: that widens `points` to `readonly []`, which the DTO's
   // mutable array does not accept.
   points: [],
+  // `F3.35` Stage C. Every widget as read carries both binding arrays; none of
+  // these fixtures binds a catalog source, so this stays empty throughout.
+  sources: [],
 };
 
 const READY_AT_750: WidgetData = { status: "ready", primary: 750, series: [], stale: false };

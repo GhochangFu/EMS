@@ -103,6 +103,22 @@ export type DashboardDto = z.infer<typeof Db.dashboardDtoSchema>;
 /** A dashboard in a list, without its widgets. */
 export type DashboardSummaryDto = z.infer<typeof Db.dashboardSummaryDtoSchema>;
 
+// --- F3.35 Stage C — the metric catalog (ADR 0048 decisions 1, 2, 4) --------
+/**
+ * A catalog key. Closed, and closed for a different reason than `WidgetType`:
+ * an entry's behaviour is a **SQL query**, and no column holds one either (§4.8).
+ * A number expressible as a formula over points is a derived point, not an entry.
+ */
+export type MetricCatalogKey = z.infer<typeof Db.metricCatalogKeySchema>;
+/** One catalog binding — a row in `bms.dashboard_widget_sources`, never a key inside JSON. */
+export type DashboardWidgetSourceDto = z.infer<typeof Db.dashboardWidgetSourceDtoSchema>;
+/**
+ * A resolved catalog value: one number, or rows plus the declared columns.
+ * `value` is nullable because an entry can legitimately resolve to nothing, and
+ * rendering that as `0` would put a fabricated number in front of an operator.
+ */
+export type MetricCatalogValueDto = z.infer<typeof Db.metricCatalogValueDtoSchema>;
+
 // --- F3.35 Stage A — aggregation and presentation (ADR 0048) ----------------
 /**
  * How a window collapses to one number. Four members, and there is no `median`:
