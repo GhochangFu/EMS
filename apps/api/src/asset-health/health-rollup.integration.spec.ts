@@ -443,12 +443,17 @@ export async function teardownFixtures(pool: pg.Pool, fx: Fixtures): Promise<voi
   await pool.query("DELETE FROM telemetry.point_values WHERE asset_id = ANY($1::uuid[])", [
     [fx.assetAId, fx.assetBId],
   ]);
-  for (const level of ["1m", "5m", "1h", "1d"] as const) {
-    await pool.query(
-      `DELETE FROM telemetry.point_in_range_${level} WHERE asset_id = ANY($1::uuid[])`,
-      [[fx.assetAId, fx.assetBId]],
-    );
-  }
+  // **Four statements written out, not a loop over an interpolated table name.**
+  // `tests/adr-0024-retention-bounds.test.ts` scans every `DELETE` against
+  // `telemetry.*` for a `${` and fails on one, and it is right to: the ids here
+  // are bound, but the scan cannot tell a closed-vocabulary table name from a
+  // value, and the whole point of a blunt gate on this surface is that it does
+  // not have to. §4.4 is parameterised queries only.
+  const assetIds = [[fx.assetAId, fx.assetBId]];
+  await pool.query("DELETE FROM telemetry.point_in_range_1m WHERE asset_id = ANY($1::uuid[])", assetIds);
+  await pool.query("DELETE FROM telemetry.point_in_range_5m WHERE asset_id = ANY($1::uuid[])", assetIds);
+  await pool.query("DELETE FROM telemetry.point_in_range_1h WHERE asset_id = ANY($1::uuid[])", assetIds);
+  await pool.query("DELETE FROM telemetry.point_in_range_1d WHERE asset_id = ANY($1::uuid[])", assetIds);
   await withOrgWrite(pool, fx.orgAId, (client) =>
     client.query("DELETE FROM bms.automation_rules WHERE organization_id = $1", [fx.orgAId]),
   );
