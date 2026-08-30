@@ -582,6 +582,39 @@ function gitContext(items) {
   // Work that is still genuinely in flight fails that last test, which is what
   // keeps a real branch on the board.
   const NON_DELIVERY = /^(docs|chore|test|ci|build|style)\b/i;
+
+  // The same classification, applied to BRANCHES — and it has to be, or the two
+  // halves of this function disagree with each other.
+  //
+  // `NON_DELIVERY` declares a `docs(...)` or `chore(...)` subject not to be a
+  // delivery. Nothing said the same about a `docs/...` branch, so on 2026-08-30
+  // the board reported `F3.35` as in flight hours after its ADR merged, and it
+  // could never have cleared: `docs/F3.35-adr-0048` squash-merged, so
+  // `--no-merged` keeps it forever, and the supersede test below looks for a
+  // delivery commit naming the id — which `NON_DELIVERY` had already excluded,
+  // because that delivery was `docs(adr): … (#218)`. No delivery, no supersede,
+  // permanent false positive.
+  //
+  // It is structural rather than a one-off: an ADR-gated row is *created* by a
+  // `docs(...)` PR, so every row born the way `F3.35` and `F3.36` were would
+  // have joined the count and stayed there.
+  //
+  // **Prefix, not content, and that is forced.** The branch's own commit
+  // subjects appear as `* ` bullets inside a squash body only for a
+  // MULTI-commit PR; GitHub writes the body directly for a single commit —
+  // measured on `5a41704` (one commit, no bullet) against `2a79a42` (twenty,
+  // bulleted). So "are this branch's commits in that squash?" is not a question
+  // git can answer here, and the branch's own name is the signal that is left.
+  //
+  // **The loss is real and small.** While an ADR is genuinely being drafted on
+  // a `docs/` branch, this reports nothing in flight for that row. The board
+  // already says it the other way: 🟡 `planned` means an ADR is in flight,
+  // which is what the status filter above documents.
+  //
+  // The CHECKED-OUT branch stays exempt — see the note below it. Having a
+  // branch checked out is a deliberate statement about what is being worked on,
+  // and that reasoning does not change with its prefix.
+  const RECORD_BRANCH = /^(?:origin\/)?(?:docs|chore|test|ci|build|style)\//i;
   const deliveries = new Map();
   for (const line of git("log", "origin/main", "--pretty=%ct%x1f%s").split("\n").filter(Boolean)) {
     const [ct, subject] = line.split("\x1f");
@@ -627,6 +660,10 @@ function gitContext(items) {
 
   const superseded = new Map();
   for (const b of unmerged) {
+    // A record branch is not implementation work. Skipped before the supersede
+    // test rather than inside it, because a squash-merged record branch has no
+    // delivery commit to be superseded BY — see `RECORD_BRANCH` above.
+    if (RECORD_BRANCH.test(b)) continue;
     const tip = Number(git("log", "-1", "--pretty=%ct", b) || 0);
     for (const id of branchIds(b)) {
       const delivered = deliveries.get(id);
