@@ -188,6 +188,24 @@ export const alarmSeverities = bmsSchema.table("alarm_severities", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * The asset role vocabulary (ADR 0049 decision 5) — what part a member plays
+ * **in that group**, so it hangs off `assetGroupMembers` and not off `assets`.
+ * Open, on ADR 0032's test: a role's behaviour is "match this member", which
+ * *is* the code. Global — no `organizationId`, no RLS, the class `0047` left
+ * alone. Retire with `active = false`, never `DELETE`.
+ *
+ * Migration `0051`'s header carries the full record, including why ADR 0049's
+ * "both tenant-scoped" Consequences line does not describe this table.
+ */
+export const assetRoles = bmsSchema.table("asset_roles", {
+  code: varchar("code", { length: 64 }).primaryKey(),
+  label: varchar("label", { length: 128 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(100),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const assets = bmsSchema.table("assets", {
   id: uuid("id").primaryKey().defaultRandom(),
   // E7.1b (ADR 0043 §5): NOT NULL — migration 0047 applied the SET NOT NULL.
@@ -259,6 +277,11 @@ export const assetGroupMembers = bmsSchema.table("asset_group_members", {
   assetId: uuid("asset_id")
     .notNull()
     .references(() => assets.id),
+  // ADR 0049 decision 5 (migration 0051). Nullable: every membership written
+  // before 0051 has no role, and a default would be a claim — the reason 0029
+  // dropped `assets.domain`'s. NOT unique per (group, role): the mock's nodes
+  // are plural ("Chillers 2 of 3"), and one role still maps to one widget.
+  role: varchar("role", { length: 64 }).references(() => assetRoles.code),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
