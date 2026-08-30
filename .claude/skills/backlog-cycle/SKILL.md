@@ -74,6 +74,15 @@ Infer the mode from the request; ask only if genuinely ambiguous.
      cached page looks exactly like a failed fix.
    - Check both directions: the defect is gone, *and* the fix does not fire when
      it should not.
+   - **Send the browser half to `browser-verifier`** with the specific claims to
+     check. Its screenshots stay in its own context; `F3.37` ran this layer in
+     the main session and spent 360.2k of 363.4k message tokens on images. The
+     ladder — `find` to locate, one click, `javascript_tool` to assert — is
+     `.claude/skills/verify/SKILL.md` §4.
+   - Before opening a browser at all, ask which claims a cheaper gate already
+     holds. In `F3.37` three of five did (the jsdom spec, the integration suite,
+     `curl`), and the browser run was a weaker copy of them. Say which layers
+     you skipped and why — §4.6 asks the same of the N/A ones.
 2. Run the review agents concurrently. Three always — `code-reviewer`
    (correctness, contract drift, tests that do not gate), `security-reviewer`,
    `agents-compliance-reviewer` — plus `migration-reviewer` for anything under

@@ -51,7 +51,7 @@ the superpowers skills, made concrete):
 | 3. **Plan** — written, reviewable | Claude | **Opus**, delegated | `plan-architect` agent (Opus-pinned) | 👀 skim |
 | 4. **Build via TDD** | Claude (+ subagents) | **Sonnet** | `implementer` agent (Sonnet-pinned), `superpowers:test-driven-development` | — |
 | 5. **Review** — parallel passes | Subagents | **Opus** ×3, **Sonnet** ×1 | `code-reviewer`, `security-reviewer`, `agents-compliance-reviewer`, plus `migration-reviewer` for anything under `packages/db` | 👀 batched |
-| 6. **Verify against the running Docker stack** | Claude | **Sonnet** for the evidence, session model for the reading | `docker compose`, psql, browser | — |
+| 6. **Verify against the running Docker stack** | Claude | **Sonnet** for the evidence, session model for the reading | `docker compose`, psql, and **`browser-verifier`** for the browser half (§3) | — |
 | 7. **Approve & merge** | Human | — | — | ✅ **gate** |
 
 The human owns **steps 2 and 7** only. Everything else Claude carries.
@@ -182,6 +182,15 @@ fire when it should not.
   (`code-reviewer`, `security-reviewer`, `agents-compliance-reviewer`), and a
   fourth, `migration-reviewer`, whenever the diff touches `packages/db`. They are
   read-only and touch no files, so they never collide.
+- **The browser half of step 6** (`browser-verifier`), and here the reason is
+  cost rather than parallelism — it is the one fan-out that *saves* tokens
+  instead of spending them. `mcp__claude-in-chrome__computer` returns a
+  screenshot image on every call at roughly 1.5–2.5k tokens; `F3.37` ran this
+  layer in the main session and spent **360.2k of that session's 363.4k message
+  tokens** on images, for a row where three of five browser claims already had a
+  cheaper gate. Run inside the agent, those images never reach the caller —
+  measured at 46.4k spent inside against about 500 returned. The ladder and the
+  claim-selection rule are `.claude/skills/verify/SKILL.md` §4.
 
 ### ⛔ Do NOT fan out — the serial spine
 
@@ -199,6 +208,11 @@ Only spawn them when the fan-out is *real* (2+ genuinely independent units).
 Splitting one tightly-coupled feature across agents costs more and produces
 worse seams. **Claude will not spawn subagents unless the work clearly warrants
 it or the human asks.**
+
+**One standing exception, and it runs the other way.** A step-6 browser run goes
+to `browser-verifier` by default, without being asked, because the screenshots
+it would otherwise leave in the caller's context cost far more than the cold
+start. This is the one place where *not* spawning is the expensive choice.
 
 Two consequences of §2's routing rule land here. First, **pass `model:` on every
 spawn** — an agent with no pin inherits the session, so an unpinned fan-out on

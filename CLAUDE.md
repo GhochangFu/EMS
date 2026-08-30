@@ -100,3 +100,24 @@ documented in [`README.md`](./README.md). Full local setup:
 Seeded demo logins (local `AUTH_MODE`): `admin@bms.local` / `admin123`
 (global), `wc-admin@bms.local` (location-scoped), `wc-hvac-admin@bms.local`
 (asset-group-scoped).
+
+## Before you open a browser
+
+§4.6's browser layer is the expensive one. Every
+`mcp__claude-in-chrome__computer` call returns a screenshot image at roughly
+1.5–2.5k tokens, and `F3.37` spent **360.2k of one session's 363.4k message
+tokens** on them — for a row where three of its five browser claims were already
+gated by the jsdom spec, the integration suite, and `curl`.
+
+Read [`.claude/skills/verify/SKILL.md`](./.claude/skills/verify/SKILL.md) §4
+first. Two rules from it, because this is the one that drifts silently on a long
+session:
+
+- **Ask which claims a cheaper gate already holds**, and say which layers you
+  skipped and why — §4.6 asks the same of the N/A ones.
+- **Assert with `javascript_tool`, do not look with `computer`.** An exact
+  string match is the stronger check as well as the cheaper one. Use `find` to
+  locate a target; never screenshot to work out where to click.
+
+Send a full browser run to the `browser-verifier` agent — its screenshots stay
+in its own context and only its pass/fail table crosses back.
