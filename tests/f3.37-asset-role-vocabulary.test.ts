@@ -179,6 +179,34 @@ describe("F3.37 asset role vocabulary (ADR 0049 decision 5)", () => {
     expect(operations).toContain("assetRoleCodeSchema");
   });
 
+  /**
+   * The `F4.43` guard, in its source form.
+   *
+   * A `<select>` whose value matches no option renders its **first** option, so
+   * a hardcoded list falling behind `bms.asset_roles` does not look broken — it
+   * looks like a different value. `tests/rule-vocabulary.test.ts` and
+   * `tests/adr-0034-alarm-skill-vocabulary.test.ts` guard the same construct
+   * for the other vocabularies. The component test asserts the rendered
+   * options come from a stub; this asserts the source never grew a literal.
+   */
+  it("builds the role picker from the vocabulary fetch, not from literal options", () => {
+    const page = read("apps/web/src/pages/admin/asset-groups-page.tsx");
+
+    expect(page).toContain("fetchVocabularies");
+    expect(page).toContain("vocabulariesQueryKey");
+
+    // The only literal <option> permitted is the empty "no role" one — a role
+    // code spelled into the markup is the regression.
+    const literalOptions = [...page.matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]);
+    expect(
+      literalOptions.filter((value) => value !== ""),
+      "asset-groups-page.tsx spells a role code into an <option>. The set lives in " +
+        "bms.asset_roles and arrives through GET /api/v1/vocabularies; a hardcoded list " +
+        "that falls behind renders the FIRST option for an unknown value, which looks " +
+        "like a different role rather than like a bug. That is F4.43.",
+    ).toEqual([]);
+  });
+
   it("journals migration 0051 so drizzle does not silently skip it", () => {
     expect(
       read(JOURNAL_REL).includes("0051_asset_role_vocabulary"),

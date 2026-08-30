@@ -63,18 +63,39 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
 
   beforeAll(async () => {
     const url = connectionString as string;
-    ownerPool = await openIntegrationPool(url, "F3.37");
+    // Five connections, not the default sixteen, and this is measured rather
+    // than cautious. Four pools at the default max of 4 is 16 connections, and the api project already
+    // ran one suite short of Postgres' 100 before this file existed: adding
+    // this suite at the default turned that into SIX suites failing at setup
+    // with "Connection terminated due to connection timeout", none of them
+    // this one. Two is enough because every assertion here runs sequentially;
+    // the only concurrency is `VocabulariesService.list`'s five-query
+    // Promise.all, which queues rather than needing a client each.
+    //
+    // The headroom is genuinely tight for the whole project, not just here.
+    // That is a finding for whoever adds the next integration suite, not
+    // something this row could fix.
+    const one = { max: 1 };
+    ownerPool = await openIntegrationPool(url, "F3.37", one);
     authPool = await openIntegrationPool(
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "F3.37",
+      one,
     );
     tenantPool = await openIntegrationPool(
       process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
       "F3.37",
+      one,
     );
+    // The one pool that gets two. `VocabulariesService.list` fires five queries
+    // in a Promise.all on this pool, and `MasterDataAuditService` reads the
+    // actor here while a tenant transaction is open elsewhere. One client would
+    // still work — pg queues acquisitions — but two keeps the queue off the
+    // 5s acquisition timeout with no measurable cost.
     fleetPool = await openIntegrationPool(
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
       "F3.37",
+      { max: 2 },
     );
 
     // The location-scoped seed user's own location, and one in another
@@ -85,7 +106,11 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
          JOIN bms.user_location_access ula ON ula.location_id = l.id
          JOIN bms.users u ON u.id = ula.user_id
         WHERE u.email = $1 AND l.active = true
-        ORDER BY l.code LIMIT 1`,
+        -- F4.53: created_at first, so this resolves a SEEDED location. A
+        -- seeded row predates every suite in the run, so it is the only one no
+        -- concurrent suite can delete out from under this one. The code column
+        -- is the tiebreaker, never the sort key.
+        ORDER BY l.created_at, l.code LIMIT 1`,
       [LOCATION_ADMIN_EMAIL],
     );
     if (!scopedLoc.rows[0]) {
@@ -95,7 +120,8 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
 
     const foreignLoc = await ownerPool.query<{ id: string; organization_id: string }>(
       `SELECT id, organization_id FROM bms.locations
-        WHERE organization_id <> $1 AND active = true ORDER BY code LIMIT 1`,
+        WHERE organization_id <> $1 AND active = true
+        ORDER BY created_at, code LIMIT 1`,
       [organizationId],
     );
     if (!foreignLoc.rows[0]) {

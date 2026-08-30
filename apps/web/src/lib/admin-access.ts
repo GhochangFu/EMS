@@ -102,6 +102,13 @@ export const masterDataTabs = [
   { label: "Locations", path: "/admin/locations" },
   { label: "RTUs", path: "/admin/rtus" },
   { label: "Assets", path: "/admin/assets" },
+  // `F3.37` (ADR 0049 decision 5). Not `catalogOnly` and not `globalAdminOnly`:
+  // the API gates it on `requireMasterDataUser` plus a per-group
+  // `canManageLocation` check, which is exactly the set of roles this tab list
+  // is already filtered to. A `location_admin` sees its own location's groups
+  // and is refused the rest by the server, so hiding the tab would take the
+  // page from a role that can legitimately use it.
+  { label: "Asset Groups", path: "/admin/asset-groups" },
   // ADR 0038 decision 10: deliberately **not** `catalogOnly`. A location admin
   // cannot author a template but can instantiate one, and this page is the only
   // route to Instantiate. Marking it `catalogOnly` would hide the page from the

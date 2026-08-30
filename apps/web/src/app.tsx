@@ -37,6 +37,7 @@ import { OrganizationsAdminPage } from "./pages/admin/organizations-page";
 import { NotificationChannelsPage } from "./pages/admin/notification-channels-page";
 import { NotificationDeliveriesPage } from "./pages/admin/notification-deliveries-page";
 import { OnboardingChatPage } from "./pages/admin/onboarding-chat-page";
+import { AssetGroupsAdminPage } from "./pages/admin/asset-groups-page";
 import { PointKeysAdminPage } from "./pages/admin/point-keys-page";
 import { RtusAdminPage } from "./pages/admin/rtus-page";
 import { TelemetryImportPage } from "./pages/admin/telemetry-import-page";
@@ -492,6 +493,18 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <ManualReadingsPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/asset-groups"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <AssetGroupsAdminPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

@@ -66,6 +66,7 @@ const adminModuleGroup = {
     { label: "RTUs", path: "/admin/rtus", globalOnly: false },
     { label: "Assets", path: "/admin/assets", globalOnly: false },
     { label: "Asset Points", path: "/admin/asset-points", globalOnly: false },
+    { label: "Asset Groups", path: "/admin/asset-groups" },
     { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
   ],
 } as const;
