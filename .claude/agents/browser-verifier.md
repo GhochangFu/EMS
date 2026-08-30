@@ -117,6 +117,17 @@ Evidence is a **value**, not a description: `selects=3`, `"2 with this role" ×2
 `HTTP 403`, `Access-Control-Allow-Origin absent`. "Looked correct" is not
 evidence and will be treated as a missing check.
 
+`PASS (with caveat)` is allowed, and is the honest verdict when the claim holds
+but something near it does not. Put the caveat in the evidence cell and keep it
+to one sentence.
+
+**Console errors are usually not the app.** A browser extension injects scripts
+into every full page load, so its exceptions look exactly like yours. Before
+reporting one, reproduce on an unrelated route: if it fires there too, it is
+noise — say which extension or origin it came from and move it to Incidental.
+The first live run of this agent hit exactly this, on hard reload only, from an
+extension's content script.
+
 After the table:
 
 - **Screenshots taken:** `<n>` — so the caller can see whether the ladder held.
