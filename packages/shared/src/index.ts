@@ -110,6 +110,12 @@ export type DashboardSummaryDto = z.infer<typeof Db.dashboardSummaryDtoSchema>;
 export type PointAggregateFunction = z.infer<typeof Db.pointAggregateFunctionSchema>;
 /** A tile icon by NAME. The name→SVG-path map is frontend code (§4.8). */
 export type WidgetIcon = z.infer<typeof Db.widgetIconSchema>;
+/** One plotted bucket — the same `{ t, v }` shape the chart renderer already takes. */
+export type PointAggregateBucket = z.infer<typeof E.pointAggregateBucketSchema>;
+/** The scalar half: totals, extremes, the weighted mean, and when the peak fell. */
+export type PointAggregateStats = z.infer<typeof E.pointAggregateStatsSchema>;
+/** `GET /telemetry/points/:pointRef/aggregate`. */
+export type PointAggregateResponse = z.infer<typeof E.pointAggregateResponseSchema>;
 
 /** Builds the REST path segment for `GET .../points/:pointRef/recent`. */
 export function encodePointRef(assetId: string, pointKey: string): string {
