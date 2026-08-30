@@ -91,6 +91,55 @@ export const widgetPointRoleSchema = z.enum(["primary", "series"]);
 export const widgetToneSchema = z.enum(["ok", "info", "warning", "critical"]);
 
 /**
+ * How a window of rolled-up telemetry collapses to one number — ADR 0048 decision 3.
+ *
+ * Four members, closed. **There is deliberately no `median` and no `last`**: the
+ * ADR 0023 rollup relations store `sum_value`, `sample_count`, `min_value` and
+ * `max_value`, and nothing else is recoverable from them. A fifth member here
+ * would parse, reach `apps/api`, and find no column to read.
+ *
+ * `avg` is the one that has to be computed rather than selected —
+ * `point-aggregates.ts`'s `avgExpr` is the only correct form, because an average
+ * of bucket averages is wrong whenever the samples per bucket differ.
+ */
+export const pointAggregateFunctionSchema = z.enum(["sum", "avg", "min", "max"]);
+
+/**
+ * The icon a `value_tile` shows in its top-right corner — ADR 0048 decision 6's
+ * "the tile's icon", as a **name**, never as markup.
+ *
+ * `KpiTile`'s `icon` prop is a `ReactNode` and config cannot carry one, so this
+ * is a closed vocabulary whose name→SVG-path map lives in
+ * `apps/web/src/lib/widget-catalog.ts` beside `WIDGET_CATALOG[…].iconPath`. That
+ * is §4.8 as ADR 0032 rewrote it: an icon's behaviour is a path shipped in code,
+ * so a seventh name declared by an `INSERT` would satisfy every constraint and
+ * then render a blank square in front of an operator.
+ *
+ * The six are exactly the mock's KPI row
+ * (`docs/ion-exchange-nexus-dashboard-2026-08-29.html`). Adding a seventh is a
+ * code change by design, and `tests/f3.35-tile-icon-vocabulary.test.ts` holds
+ * this enum and that map to the same set.
+ */
+export const widgetIconSchema = z.enum([
+  "alert",
+  "clipboard",
+  "bolt",
+  "drop",
+  "recycle",
+  "gauge",
+]);
+
+/**
+ * The longest window a widget may ask for, in minutes — one year.
+ *
+ * Declared once because `F3.35` gives the tile the same bound the chart has
+ * carried since `F3.1a`. **Do not narrow it**: §4.8 forbids a response contract
+ * refusing a row the store can hold, and dashboards created before this change
+ * may already carry a `windowMinutes` up to this value.
+ */
+export const MAX_WIDGET_WINDOW_MINUTES = 525_600;
+
+/**
  * The canvas, declared once. `F3.1d`'s builder clamps to these numbers rather
  * than restating them, and `apps/api`'s write schema reads them too — the same
  * discipline `WIDGET_POINT_CARDINALITY` established (Amendment 2 §1): a bound
@@ -174,11 +223,47 @@ export const tankLevelConfigSchema = z
     fillTone: widgetToneSchema.optional(),
   });
 
-/** A plain value-and-unit tile — the `kpi-tile.tsx` shape. */
+/**
+ * A plain value-and-unit tile — the `kpi-tile.tsx` shape.
+ *
+ * **`F3.35` Stage A added six fields, and every one of them is FLAT. That is a
+ * rule, not a style.** Both write surfaces compose this schema with `.strict()`
+ * — `apps/api/src/dashboard-builder/dashboards.schema.ts` and
+ * `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts` — and
+ * **`.strict()` does not descend**. A nested `compare: z.object({ … })` would
+ * leave its inner object permissive on both write paths, which is exactly why
+ * `dashboards.schema.ts` had to restate the gauge `thresholds[]` array. Keeping
+ * every field flat is what lets those two files stay untouched.
+ *
+ * `aggregate` absent means the tile keeps its original behaviour — the latest
+ * live reading — so nothing already stored changes meaning.
+ */
 export const valueTileConfigSchema = z
   .object({
     ...commonConfigFields,
     abbreviate: z.boolean().optional(),
+    /** How to collapse the window. Absent = show the latest live sample instead. */
+    aggregate: pointAggregateFunctionSchema.optional(),
+    /** The window to aggregate over, in minutes. Only read when `aggregate` is set. */
+    windowMinutes: z.number().int().positive().max(MAX_WIDGET_WINDOW_MINUTES).optional(),
+    /**
+     * Show the *vs yesterday* delta against the immediately preceding window of
+     * the same length.
+     *
+     * **A boolean, not a second window length.** Two windows of different lengths
+     * make a percentage delta meaningless, and the mock asks for one period back.
+     */
+    compareToPrevious: z.boolean().optional(),
+    icon: widgetIconSchema.optional(),
+    /**
+     * The tile's sub-line, author-typed.
+     *
+     * **One slot, with a stated precedence**: when `compareToPrevious` is set and
+     * a delta is computable, the computed delta takes this slot and `hint` is not
+     * rendered. `KpiTile` shows it at 11px on one line and the mock shows one.
+     */
+    hint: z.string().max(120).optional(),
+    tone: widgetToneSchema.optional(),
   });
 
 /**
@@ -189,9 +274,26 @@ export const chartConfigSchema = z
   .object({
     ...commonConfigFields,
     series: chartSeriesKindSchema,
-    windowMinutes: z.number().int().positive().max(525_600).optional(),
+    windowMinutes: z.number().int().positive().max(MAX_WIDGET_WINDOW_MINUTES).optional(),
     stacked: z.boolean().optional(),
     yAxisLabel: z.string().max(64).optional(),
+    /**
+     * Plot the series as **rolled-up buckets** rather than raw readings — ADR
+     * 0048 decision 3, which names this schema alongside the tile's.
+     *
+     * Absent means the chart reads raw recent readings exactly as it did before
+     * `F3.35`, so no stored row changes meaning. Set, and the series comes from
+     * the aggregate endpoint at a granularity the window chooses.
+     */
+    aggregate: pointAggregateFunctionSchema.optional(),
+    /**
+     * Show the Peak / Average / Granularity footer under the plot.
+     *
+     * Independent of `aggregate` in the schema because the footer's statistics
+     * are the *scalar* half of the same response, which a raw-plotting chart can
+     * still ask for. The renderer decides what it needs.
+     */
+    footerStats: z.boolean().optional(),
   });
 
 /**
