@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Run the TRINETRA BMS verification suite from AGENTS.md §7 — package builds, the Vitest suite, test type-checking, and smoke checks — and report pass/fail with evidence. Use before committing non-trivial changes, before opening a merge request, whenever asked to confirm the repo is green, and at step 1 of `backlog-cycle` mode `done`.
+description: Run the TRINETRA BMS verification suite from AGENTS.md §7 — package builds, the Vitest suite, test type-checking, and smoke checks — and report pass/fail with evidence. Also carries §4 — how to run §4.6's browser layer against the running stack without spending the session's context on screenshots. Use before committing non-trivial changes, before opening a merge request, whenever asked to confirm the repo is green, whenever a change needs checking in a browser, and at step 1 of `backlog-cycle` mode `done`.
 ---
 
 # Verify
@@ -71,7 +71,112 @@ Scope this to what the change touched when a full run is impractical (e.g. a
 web-only change needs `pnpm typecheck` plus the relevant smoke), but say so
 explicitly when you narrow it.
 
+## 4. The browser layer of §4.6, and what it costs
+
 A green suite is not a deployment. Step 6 of
 [`docs/build-operating-model.md`](../../../docs/build-operating-model.md) —
-verification against the running Docker stack — is a separate step, and this
-skill does not cover it.
+verification against the running Docker stack — is a separate step. Its database
+and API halves are ordinary commands. Its **browser** half is the expensive one,
+and this section is how to run it without spending the session on it.
+
+**The measurement, `F3.37`, 2026-08-29.** That row's browser layer consumed
+**360.2k of the session's 363.4k message tokens** — 36% of a 1M window for one
+row. Every one of those tokens was `mcp__claude-in-chrome__computer`, which
+returns a screenshot image on *every* call, roughly 1.5–2.5k tokens each.
+Nothing else in the session was within two orders of magnitude. A row that
+spends its context on screenshots has none left for the review agents that
+follow it, and compaction discards the screenshots while keeping the
+conclusions — so most of that spend bought one turn of usefulness.
+
+### 4.1 Ask the cheapest layer that can answer
+
+Before opening a browser at all, ask whether a cheaper gate already proves the
+claim. From `F3.37`, a fair sample of an admin-screen row:
+
+| Claim | Cheapest gate that actually holds it | Browser? |
+|---|---|---|
+| The role `<select>` renders the API's vocabulary, not a hardcoded list | the jsdom component spec (ADR 0042) — its fixture names roles that appear in no seed, so a hardcoded list fails it | **No** |
+| The write reaches the DB, refuses an unknown code, and audits | the integration suite, plus `curl` against the running API | **No** |
+| Members come back ordered by `assets.code` | the integration suite, whose fixture inserts c, a, b | **No** |
+| The tab renders and the route resolves | — | **Yes** |
+| A hard reload still shows the written value | — | **Yes** |
+
+Two of five needed pixels. The other three had a gate already, and the browser
+run was a slower, weaker copy of it — weaker because it checked an impression of
+the screen rather than an exact value.
+
+Name the layers you skipped **and why**, the same way §4.6 requires you to name
+the N/A ones. "Not needed — the jsdom spec gates it" is a result. Silence is
+indistinguishable from not checking.
+
+### 4.2 The ladder — text tools first, `computer` last
+
+Every tool below returns text. Only `computer` returns an image.
+
+| To do this | Use | Cost |
+|---|---|---|
+| Read a value, count matching rows, check a class or attribute | `javascript_tool` | ~50–200 tokens |
+| See what is on the page | `read_page`, `filter: "interactive"` | text — narrow with `depth` or `ref_id`, it defaults to 50k chars |
+| Read the copy | `get_page_text` | text |
+| Locate something to click | `find` (natural language) | up to 20 elements with refs |
+| Prove a request fired, or its status | `read_network_requests`, `urlPattern` | text |
+| Prove nothing threw | `read_console_messages`, `pattern` | text |
+| Judge layout, styling, or something you cannot name | `computer` | **1.5–2.5k per call** |
+
+**The recipe. Do not screenshot to find out where to click.**
+
+1. `find` with a natural-language query — it returns the element and its
+   position.
+2. `computer` `left_click` at that position. One call, one image.
+3. **Assert with `javascript_tool`**, never with your reading of the image:
+
+   ```js
+   [...document.querySelectorAll('td')]
+     .filter((e) => e.textContent === '2 with this role').length
+   ```
+
+   This is the stronger check as well as the cheaper one: it is an exact string
+   match instead of an impression of one, and it costs about 1% of a screenshot.
+
+Two things that look like savings and are not:
+
+- **`browser_batch` saves round trips, not images.** A batch of four `computer`
+  actions still returns four screenshots. Use it to cut turns, and take the
+  token saving from the rows above.
+- **`read_page` is text but not small.** It defaults to a 50k-character
+  accessibility tree. Pass `ref_id` or `depth`, or prefer `find`.
+
+`resize_window` to a smaller viewport before a screenshot you genuinely need —
+the image shrinks and so does its cost.
+
+### 4.3 Send the whole browser run to a subagent
+
+**This is the largest single saving, and it is measured.** The screenshots stay
+in the subagent's context; only its report crosses back. A probe on 2026-08-30
+spent **48.7k tokens inside the agent and returned about 200** to the parent
+session.
+
+Use `browser-verifier` (`.claude/agents/browser-verifier.md`). Give it the URL,
+the credentials situation, and the **specific claims** to check — not "look at
+the page". It returns a pass/fail table.
+
+The browser MCP tools work from a subagent: `tabs_context_mcp`,
+`javascript_tool` and `find` were all confirmed against a live tab on
+2026-08-30. Do not re-derive this; if it ever stops working, the failure is
+loud (no tabs visible) rather than silent.
+
+### 4.4 Two traps that present as a login failure
+
+Both of these cost `F3.37` real time, and both look like bad credentials:
+
+- **The API's CORS allowlist names `:5173` only** (`apps/api/src/main.ts`). A
+  dev server on any other port serves the login page perfectly and has every
+  request blocked by the browser. Serve on 5173, or add the origin.
+- **A stale Vite process holds the port across sessions.** `F3.37` found one
+  from an earlier day still on 5173, pointed at the container API, which runs
+  `AUTH_MODE=oidc` and refuses local passwords. Check what owns the port before
+  you blame the page or the seed.
+
+And the standing one from `docs/local-setup.md`: `docker compose build` restarts
+nothing. Prove the new code is in the container — check the image's Created time
+against the commit — before reading anything from it.
