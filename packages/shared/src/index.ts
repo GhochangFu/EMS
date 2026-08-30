@@ -121,6 +121,9 @@ export type WidgetIcon = z.infer<typeof Db.widgetIconSchema>;
 export type HealthBand = z.infer<typeof He.healthBandSchema>;
 /** One tag's contribution, carrying both counts and not only their quotient. */
 export type HealthTagScore = z.infer<typeof He.healthTagScoreSchema>;
+/** A tag excluded from the ratio, and whether that was for want of a rule or
+ * because every matching rule was unevaluatable. */
+export type HealthUnscoredTag = z.infer<typeof He.healthUnscoredTagSchema>;
 /** `GET /api/v1/asset-health/assets/:assetId`. */
 export type AssetHealthResponse = z.infer<typeof He.assetHealthResponseSchema>;
 /** One slice of the donut, grouped by band `code`. */

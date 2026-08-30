@@ -102,6 +102,26 @@ const windowFields = {
   computedAt: z.string().datetime({ offset: true }).nullable(),
 } as const;
 
+/**
+ * A tag excluded from the ratio — absence (3), and absence (4) when every rule
+ * on it was unevaluatable.
+ *
+ * **It is an object and not a bare point key on purpose.** A tag with no rule at
+ * all and a tag whose every rule carries a NULL `operator` are both unscored,
+ * but they are different facts: the first is ADR 0050 decision 3 working as
+ * designed, and the second is a rule an operator wrote that silently does
+ * nothing. Collapsing them to a string loses the only signal that the second
+ * exists, which is the inflation Amendment 1 decision 7 exists to keep visible.
+ */
+export const healthUnscoredTagSchema = z
+  .object({
+    pointKey: z.string(),
+    /** `0` means no rule matched this tag; above `0` means every matching rule
+     * was unevaluatable. */
+    skippedRuleCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
 /** `GET /api/v1/asset-health/assets/:assetId` — one asset's score. */
 export const assetHealthResponseSchema = z
   .object({
@@ -111,9 +131,9 @@ export const assetHealthResponseSchema = z
     /** `null` when the template configures no bands. Absence (2). */
     band: healthBandSchema.nullable(),
     scoredTags: z.array(healthTagScoreSchema),
-    /** Point keys excluded for want of a rule. Absence (3) — reported, never
-     * scored 1.0, and on the current fixtures this is the majority case. */
-    unscoredTags: z.array(z.string()),
+    /** Tags excluded for want of an evaluatable rule. Absence (3) — reported,
+     * never scored 1.0, and on the current fixtures this is the majority case. */
+    unscoredTags: z.array(healthUnscoredTagSchema),
     ...windowFields,
   })
   .strict();
