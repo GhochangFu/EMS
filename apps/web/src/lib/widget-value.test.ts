@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  formatBucketWidthCoversTheFourLadderRungs,
   formatDeltaIsNullWithoutAComputablePercentage,
   formatDeltaMatchesTheMocksExactWording,
   formatDeltaSignsDirectionCorrectlyAndFlatOnATinyChange,
@@ -103,5 +104,9 @@ describe("widget-value", () => {
 
   it("fills the hint slot from at most one source, per the one-slot precedence", () => {
     toKpiTilePropsHintPrecedence();
+  });
+
+  it("names each of the four ladder bucket widths, and any width that is none of them", () => {
+    formatBucketWidthCoversTheFourLadderRungs();
   });
 });

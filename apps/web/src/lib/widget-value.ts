@@ -274,3 +274,39 @@ export function toKpiTileProps(params: {
     icon: config.icon,
   };
 }
+
+/**
+ * A bucket width in seconds, as the chart footer's granularity cell says it.
+ *
+ * **This is what the response returns instead of a level name.** Sending
+ * `"1m" | "5m" | "1h" | "1d"` would have put a second declaration of
+ * `AggregateLevel` in `packages/shared`, which §4.8 forbids — and a renderer has
+ * to turn a level into a human string either way, so the seconds are strictly
+ * more useful.
+ *
+ * The cell exists because the ladder has a visible cliff: a 2,880-minute window
+ * plots minute buckets and a 2,881-minute one plots hourly buckets. That is
+ * deterministic and a function of the author's own configured window, so it is
+ * not the retention kind of silent widening — but it must still be legible on
+ * the chart rather than inferred from its shape.
+ */
+export function formatBucketWidth(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds) || seconds <= 0) {
+    return "—";
+  }
+  if (seconds % 86_400 === 0) {
+    const days = seconds / 86_400;
+    return days === 1 ? "1 day" : `${days} days`;
+  }
+  if (seconds % 3_600 === 0) {
+    const hours = seconds / 3_600;
+    return hours === 1 ? "1 hour" : `${hours} hours`;
+  }
+  if (seconds % 60 === 0) {
+    return `${seconds / 60} min`;
+  }
+  // Not one of the four ADR 0023 widths. Says so rather than throwing: a chart
+  // that renders with an odd granularity label is better than one that does not
+  // render, and the label is the thing that makes the oddity visible.
+  return `${seconds} s`;
+}

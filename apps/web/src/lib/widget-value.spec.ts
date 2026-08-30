@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 
 import {
+  formatBucketWidth,
   formatDelta,
   formatWidgetValue,
   TANK_FILL_MAX_HEIGHT,
@@ -317,4 +318,25 @@ export function toKpiTilePropsHintPrecedence(): void {
     failedRefetch.hint,
     "an errored widget must not show a delta computed from a value it is refusing to show",
   ).toBe("Author-typed note");
+}
+
+/**
+ * The four ADR 0023 bucket widths, plus what happens to a width that is none of
+ * them.
+ *
+ * The fallback matters more than it looks: the granularity cell is the only
+ * place a reader can see that the ladder and the relation disagree, so it says
+ * an odd number rather than throwing or silently rendering an em dash.
+ */
+export function formatBucketWidthCoversTheFourLadderRungs(): void {
+  expect(formatBucketWidth(60), "the finest rung").toBe("1 min");
+  expect(formatBucketWidth(300), "the five-minute rung").toBe("5 min");
+  expect(formatBucketWidth(3_600), "the hourly rung, singular").toBe("1 hour");
+  expect(formatBucketWidth(86_400), "the daily rung, singular").toBe("1 day");
+  expect(formatBucketWidth(7_200), "a width the ladder does not use still reads sensibly").toBe(
+    "2 hours",
+  );
+  expect(formatBucketWidth(90), "a width that is no whole number of minutes says so").toBe("90 s");
+  expect(formatBucketWidth(null), "no width yet renders the em dash, never 'null'").toBe("—");
+  expect(formatBucketWidth(0), "a zero width is not a granularity").toBe("—");
 }

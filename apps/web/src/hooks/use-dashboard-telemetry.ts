@@ -1,12 +1,25 @@
-import { useQueries } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
-import { encodePointRef, type DashboardDto, type TelemetryReading } from "@bms/shared";
+import {
+  encodePointRef,
+  type DashboardDto,
+  type PointAggregateResponse,
+  type TelemetryReading,
+} from "@bms/shared";
 
-import { fetchTelemetryRecent } from "../api/telemetry";
+import { fetchPointAggregate, fetchTelemetryRecent } from "../api/telemetry";
+import { shouldRefetchAggregates } from "../lib/dashboard-aggregate-refresh";
 import { mergeSeededAndLiveReadings } from "../lib/dashboard-telemetry-merge";
-import { pointRefsFor, type HistoryByRef, type LatestByRef, type LatestReading } from "../lib/dashboard-widget-data";
+import {
+  aggregateRequestsFor,
+  pointRefsFor,
+  type AggregateByKey,
+  type HistoryByRef,
+  type LatestByRef,
+  type LatestReading,
+} from "../lib/dashboard-widget-data";
 import { STALE_TICK_MS } from "../lib/schematic-telemetry";
 import { socketBaseUrl } from "../lib/socket-url";
 import { useAuthStore } from "../stores/auth-store";
@@ -44,18 +57,64 @@ const MAX_LIVE_SAMPLES = 5000;
 export type DashboardTelemetry = {
   latestByRef: LatestByRef;
   historyByRef: HistoryByRef;
+  /** `F3.35` — one entry per distinct aggregate read, keyed by `aggregateKeyFor`. */
+  aggregateByKey: AggregateByKey;
   isLoading: boolean;
 };
+
+/** The TanStack key for one aggregate read. Every field of the request is in it, or two
+ * widgets asking the same point for different windows would share one cache entry. */
+const aggregateQueryKey = (request: {
+  ref: string;
+  windowMinutes: number;
+  compare: boolean;
+  bucketFunction?: string;
+}) =>
+  [
+    "telemetry",
+    "aggregate",
+    request.ref,
+    request.windowMinutes,
+    request.compare,
+    request.bucketFunction ?? "",
+  ] as const;
 
 export function useDashboardTelemetry(dashboard: DashboardDto | undefined): DashboardTelemetry {
   const refs = dashboard ? pointRefsFor(dashboard) : [];
   const refsKey = refs.join("|");
   const accessToken = useAuthStore((state) => state.accessToken);
+  const queryClient = useQueryClient();
 
   const seedQueries = useQueries({
     queries: refs.map((ref) => ({
       queryKey: ["telemetry", "recent", ref, HISTORY_WINDOW],
       queryFn: () => fetchTelemetryRecent(ref, HISTORY_WINDOW),
+    })),
+  });
+
+  /**
+   * `F3.35` Stage A — the second data path (ADR 0048 decision 3).
+   *
+   * **Empty for every dashboard saved before `F3.35`**, and for every one that
+   * uses no aggregation after it: `aggregateRequestsFor` returns nothing unless
+   * a widget's config asks. So the raw seed above stays the only read on the
+   * page it always was, and this is additive rather than a replacement.
+   *
+   * Requests are already deduplicated by `aggregateKeyFor` — two widgets asking
+   * the same point for the same window and function are one read — and TanStack
+   * deduplicates again on the key.
+   */
+  const aggregateRequests = dashboard ? aggregateRequestsFor(dashboard) : [];
+  const aggregateKeysKey = aggregateRequests.map((request) => request.key).join("|");
+  const aggregateQueries = useQueries({
+    queries: aggregateRequests.map((request) => ({
+      queryKey: aggregateQueryKey(request),
+      queryFn: (): Promise<PointAggregateResponse> =>
+        fetchPointAggregate(request.ref, {
+          windowMinutes: request.windowMinutes,
+          compare: request.compare,
+          bucketFunction: request.bucketFunction,
+        }),
     })),
   });
 
@@ -74,6 +133,11 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
   // Without this, the only thing that could make a widget notice it had gone stale was an
   // incoming socket message — exactly the signal an outage removes. The counter itself carries
   // no information; it exists only to change this hook's return-triggering state on a timer.
+  // `F3.35` — when the last live sample triggered an aggregate re-read. A ref,
+  // not state: writing it must not re-render, and the socket handler closes over
+  // it so the throttle survives the renders `setLiveByRef` causes.
+  const lastAggregateRefetchRef = useRef<number | null>(null);
+
   const [, setStaleTick] = useState(0);
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -109,6 +173,25 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
         }
         return next;
       });
+
+      // `F3.35` — a bucketed series is re-read, never extended. TimescaleDB
+      // serves the newest partial bucket exactly (`materialized_only = false`,
+      // ADR 0023), so a refetch is the correct value rather than an
+      // approximation of one — and recomputing a bucket's mean here would need
+      // `sample_count`, which the `{ t, v }` shape deliberately does not carry.
+      //
+      // Invalidated PER REF, using the refs that actually reported: `mine` is
+      // already filtered to `trackedRefs`, so a busy page does not re-read every
+      // widget because one sensor spoke. Throttled so a fast emitter cannot fire
+      // a 2,880-row query per sample.
+      const nowMs = Date.now();
+      if (!shouldRefetchAggregates(lastAggregateRefetchRef.current, nowMs)) {
+        return;
+      }
+      lastAggregateRefetchRef.current = nowMs;
+      for (const ref of new Set(mine.map((r) => encodePointRef(r.assetId, r.pointKey)))) {
+        void queryClient.invalidateQueries({ queryKey: ["telemetry", "aggregate", ref] });
+      }
     });
     return () => {
       socket.disconnect();
@@ -117,7 +200,7 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
     // must not reopen the socket, only a genuine change to which refs it
     // tracks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken, refsKey]);
+  }, [accessToken, refsKey, queryClient]);
 
   const latestByRef = new Map<string, LatestReading | null>();
   const historyByRef = new Map<string, readonly { readonly t: string; readonly v: number | null }[]>();
@@ -143,9 +226,23 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
     latestByRef.set(ref, latestReading ? { value: latestReading.value, time: latestReading.time } : null);
   });
 
+  const aggregateByKey = new Map<string, PointAggregateResponse | null>();
+  aggregateRequests.forEach((request, index) => {
+    // `null` for a request that has not resolved yet — `widgetDataFor` reads
+    // that as "asked for, not answered", which stays a readable `"ready"`
+    // widget with a null primary (ADR 0047 Amendment 1), not an error.
+    aggregateByKey.set(request.key, aggregateQueries[index]?.data ?? null);
+  });
+
   return {
     latestByRef,
     historyByRef,
-    isLoading: seedQueries.some((query) => query.isLoading),
+    aggregateByKey,
+    // `aggregateKeysKey` participates so a dashboard whose widgets change their
+    // aggregate configuration re-derives this list rather than reusing the
+    // previous render's. It is read here rather than left unused above.
+    isLoading:
+      seedQueries.some((query) => query.isLoading) ||
+      (aggregateKeysKey.length > 0 && aggregateQueries.some((query) => query.isLoading)),
   };
 }
