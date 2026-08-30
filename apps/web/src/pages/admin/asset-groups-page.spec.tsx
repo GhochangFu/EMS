@@ -60,9 +60,28 @@ const VOCABULARIES = {
   ],
 };
 
-/** Two of three members carry the same role — decision 6's N-minus-one case. */
+/**
+ * Two of three members carry the same role — decision 6's N-minus-one case.
+ *
+ * **Deliberately NOT in `assetCode` order.** The server orders by
+ * `assets.code`; the page must render what it was sent. A fixture already in
+ * code order is satisfied identically by "render server order" and by
+ * `[...members].sort(byAssetCode)`, so it cannot detect the client-side
+ * re-sort `rendersMembersInServerOrder` exists to forbid. The API integration
+ * fixture INSERTs `c, a, b` for the same reason; this half did not, until it
+ * was caught in review.
+ */
 const MEMBERS = {
   items: [
+    {
+      membershipId: "aaaa1111-0000-0000-0000-000000000003",
+      assetId: "asset-3",
+      assetCode: "TRF-03",
+      assetName: "Transformer 3",
+      assetDomain: "electrical",
+      role: null,
+      roleLabel: null,
+    },
     {
       membershipId: "aaaa1111-0000-0000-0000-000000000001",
       assetId: "asset-1",
@@ -80,15 +99,6 @@ const MEMBERS = {
       assetDomain: "electrical",
       role: "f337-spec-alpha",
       roleLabel: "Spec Alpha Role",
-    },
-    {
-      membershipId: "aaaa1111-0000-0000-0000-000000000003",
-      assetId: "asset-3",
-      assetCode: "TRF-03",
-      assetName: "Transformer 3",
-      assetDomain: "electrical",
-      role: null,
-      roleLabel: null,
     },
   ],
   roleCounts: { "f337-spec-alpha": 2 },
@@ -160,6 +170,40 @@ export async function rolesComeFromTheVocabularyFetch(): Promise<void> {
 }
 
 /**
+ * **The `F4.43` gate that actually gates, and the reason it exists.**
+ *
+ * `rolesComeFromTheVocabularyFetch` above proves the fetched roles are
+ * rendered. It does **not** prove there is no hardcoded fallback beside them:
+ * mutate the page to `vocabQ.data?.assetRoles ?? HARDCODED_ROLES` and that
+ * assertion still passes, because the stub resolves and the fallback branch
+ * never runs. `tests/f3.37-asset-role-vocabulary.test.ts` misses it too — the
+ * literal-`<option>` scan sees `roles.map`, not the constant behind `??`.
+ *
+ * This is the only test that executes the empty branch. An empty vocabulary
+ * must render exactly one option, "No role". Anything else is a list the
+ * component carries itself, which is the revert all of this exists to stop.
+ */
+export async function anEmptyVocabularyRendersNoRolesOfItsOwn(): Promise<void> {
+  stubApi();
+  vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue({
+    ...VOCABULARIES,
+    assetRoles: [],
+  } as never);
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
+  const select = await screen.findByRole("combobox", { name: "Role for Transformer 1" });
+
+  // Waited for, not read once: the member list resolves before the vocabulary,
+  // so an immediate read would see the empty select either way and pass for
+  // the wrong reason.
+  await waitFor(() => {
+    expect(screen.getByText("Transformer 3")).toBeInTheDocument();
+  });
+  expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual(["No role"]);
+}
+
+/**
  * The member list is rendered in the order the server sent it.
  *
  * The server orders by `assets.code`, which is the contract a section template
@@ -174,7 +218,9 @@ export async function rendersMembersInServerOrder(): Promise<void> {
   const rendered = screen
     .getAllByText(/^TRF-0\d$/)
     .map((el) => el.textContent);
-  expect(rendered).toEqual(["TRF-01", "TRF-02", "TRF-03"]);
+  // The fixture's own order, which is NOT sorted — a page that sorts by code
+  // renders TRF-01, TRF-02, TRF-03 and fails here.
+  expect(rendered).toEqual(["TRF-03", "TRF-01", "TRF-02"]);
 }
 
 /**

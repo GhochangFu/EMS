@@ -51,7 +51,7 @@ export class AssetGroupsAdminService {
     private readonly vocabularies: VocabulariesService,
   ) {}
 
-  /** Lists asset groups the caller may administer, newest schema first by code. */
+  /** Lists asset groups the caller may administer, ordered by `code`. */
   async list(jwt: JwtPayload, locationId?: string): Promise<{ items: AdminAssetGroupDto[] }> {
     await this.accessControl.requireMasterDataUser(jwt);
     const writableLocations = await this.accessControl.writableLocationIds(jwt);
@@ -198,10 +198,35 @@ export class AssetGroupsAdminService {
 
     const organizationId = membership.organizationId;
     await withTenant(this.tenantDb, organizationId, async (tx) => {
-      await tx
+      // `.returning()`, and the emptiness check below it, are the point.
+      //
+      // The GUC comes from the group alone, but `0047`'s `tenant_isolation` on
+      // `bms.asset_group_members` requires it to match **both** parents — the
+      // group's organization AND the asset's. RLS refuses by *filtering*, so a
+      // membership whose asset sits in another organization updates zero rows
+      // and raises nothing. Without this guard the audit row below still
+      // commits, describing a change that never landed, and `fetchMember`
+      // re-reads on `fleetDb` (BYPASSRLS) and answers 200 with the old value —
+      // a write that is refused, recorded, and reported as success.
+      //
+      // The same shape fires for a membership deleted between the `fleetDb`
+      // read above and this statement.
+      //
+      // Not reachable from any application path today: nothing but the seeds
+      // writes this table, and `assets.service.ts` refuses a cross-org
+      // relocation outright. It is guarded anyway because that file's own
+      // comment names this exact failure — "would update zero rows and still
+      // return a success DTO" — and this table can reach it through a second
+      // parent that `bms.assets` does not have.
+      const updated = await tx
         .update(assetGroupMembers)
         .set({ role: body.role })
-        .where(eq(assetGroupMembers.id, membershipId));
+        .where(eq(assetGroupMembers.id, membershipId))
+        .returning({ id: assetGroupMembers.id });
+
+      if (updated.length === 0) {
+        throw new NotFoundException("Asset group membership not found");
+      }
 
       // `tx`, not the default executor. `MasterDataAuditService.write`'s
       // docblock is explicit that the default fails both ways after `0048`,

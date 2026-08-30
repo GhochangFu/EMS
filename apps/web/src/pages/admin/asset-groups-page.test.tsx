@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  anEmptyVocabularyRendersNoRolesOfItsOwn,
   rendersMembersInServerOrder,
   rolesComeFromTheVocabularyFetch,
   sendsTheCodeAndClearsWithNull,
@@ -25,6 +26,10 @@ describe("F3.37 asset groups page", () => {
 
   it("builds the role options from the vocabulary fetch, never a hardcoded list", async () => {
     await rolesComeFromTheVocabularyFetch();
+  });
+
+  it("renders no role of its own when the vocabulary comes back empty", async () => {
+    await anEmptyVocabularyRendersNoRolesOfItsOwn();
   });
 
   it("renders members in the order the server sent them", async () => {

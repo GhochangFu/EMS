@@ -37,6 +37,21 @@ export type GroupFixtures = {
   /** A live role code, read from `bms.asset_roles` rather than hardcoded. */
   roleCode: string;
   secondRoleCode: string;
+  /**
+   * Every role code an assertion INSERTs, so `afterAll` can delete **exactly
+   * those** rows.
+   *
+   * `bms.asset_roles` is global — no `organization_id`, no RLS — so a leaked
+   * fixture row is visible to every organization, and one did leak: an earlier
+   * run left `f337-retired-…` behind and the table read 27 rows against the
+   * plan's expected 26. The `finally` below is not containment, because an
+   * aborted run never reaches it.
+   *
+   * Exact codes, never a `LIKE 'f337-%'` sweep:
+   * `tests/integration-fixture-isolation.test.ts` fails that, and correctly —
+   * two parallel instances of this file would delete each other's rows.
+   */
+  createdRoleCodes: string[];
 };
 
 /** `list()` returns the caller's groups and never another location's. */
@@ -193,6 +208,10 @@ export async function assertRejectsRetiredRole(
   jwt: JwtPayload,
 ): Promise<void> {
   const retired = `f337-retired-${Date.now()}`;
+  // Registered before the INSERT, so an abort between the two still leaves
+  // `afterAll` a code to delete. The `finally` below is the fast path, not the
+  // guarantee.
+  ctx.createdRoleCodes.push(retired);
   await ctx.ownerPool.query(
     "INSERT INTO bms.asset_roles (code, label, active) VALUES ($1, $2, false)",
     [retired, "F3.37 retired test role"],

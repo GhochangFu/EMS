@@ -9,6 +9,10 @@ import {
   setAdminAssetGroupMemberRole,
 } from "../../api/admin/asset-groups";
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
+import {
+  HierarchyFilterBar,
+  type HierarchySelection,
+} from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
@@ -36,10 +40,13 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
   const canWrite = isMasterDataAdmin(user.role);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selection, setSelection] = useState<HierarchySelection>({});
+
+  const locationId = selection.locationId ?? undefined;
 
   const groupsQ = useQuery({
-    queryKey: adminAssetGroupsQueryKey,
-    queryFn: () => fetchAdminAssetGroups(),
+    queryKey: adminAssetGroupsQueryKey(locationId),
+    queryFn: () => fetchAdminAssetGroups(locationId),
   });
 
   const vocabQ = useQuery({
@@ -89,6 +96,28 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
           {error}
         </div>
       ) : null}
+
+      {/*
+        §5: eight sibling `/admin/*` pages carry this bar, and the API has
+        accepted `locationId` since the first commit. Without it the parameter
+        was unreachable — a filter the server could honour and no user could
+        ask for. `rtu` is omitted from the levels: a group hangs off a location,
+        never off an RTU.
+      */}
+      <div className="mb-4">
+        <HierarchyFilterBar
+          user={user}
+          levels={["organization", "location"]}
+          selection={selection}
+          onNavigate={(next) => {
+            setSelection(next);
+            // The selected group may not survive the filter, and a stale id
+            // would keep its member list on screen beside a list that no
+            // longer contains it.
+            setSelectedGroupId(null);
+          }}
+        />
+      </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <SectionCard title="Groups">

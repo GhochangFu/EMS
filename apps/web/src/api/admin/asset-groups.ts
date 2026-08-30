@@ -19,7 +19,16 @@ import { adminFetch } from "./client";
  * different member list on the same screen (`vocabularies.ts` records the same
  * reasoning).
  */
-export const adminAssetGroupsQueryKey = ["admin", "asset-groups"] as const;
+/**
+ * Keyed on the location filter, not a bare constant.
+ *
+ * `fetchAdminAssetGroups` takes a `locationId`, so a constant key would serve
+ * the *unfiltered* list from cache the moment a filter was applied — the list
+ * would look filtered to no one and correct to everyone. Caught in review
+ * before any caller passed one.
+ */
+export const adminAssetGroupsQueryKey = (locationId?: string) =>
+  ["admin", "asset-groups", locationId ?? "all"] as const;
 
 export const adminAssetGroupMembersQueryKey = (groupId: string) =>
   ["admin", "asset-groups", groupId, "members"] as const;

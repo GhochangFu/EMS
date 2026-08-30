@@ -631,7 +631,17 @@ export const adminAssetGroupMembersResponseSchema = z.object({
  * `VocabulariesService.assertAssetRole` before the write, so an unknown value
  * is a 400 naming the live codes rather than
  * `asset_group_members_role_fkey` as a 500.
+ *
+ * **`.strict()`, and it is load-bearing.** The body has exactly one field, so
+ * an unrecognised key is a caller error by construction — there is no second
+ * thing to set. The specific mistake it catches is silent:
+ * `{"role":null,"roleCode":"chiller"}`, from a caller who meant to *set*
+ * `chiller`, would otherwise have `roleCode` stripped, **clear** the role, and
+ * answer `200`. That is the failure ADR 0029 Amendment 3 exists for, and the
+ * decision is recorded in `strict-body-ledger.spec.ts`'s `STRICTNESS_LEDGER`.
  */
-export const setAssetGroupMemberRoleBodySchema = z.object({
-  role: assetRoleCodeSchema.nullable(),
-});
+export const setAssetGroupMemberRoleBodySchema = z
+  .object({
+    role: assetRoleCodeSchema.nullable(),
+  })
+  .strict();

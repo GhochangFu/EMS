@@ -2,6 +2,7 @@ import { expect } from "vitest";
 import { z } from "zod";
 import type { ZodTypeAny } from "zod";
 
+import { setAssetGroupMemberRoleBodySchema } from "../admin/asset-groups/asset-groups.schema";
 import { assetPointCalcOverrideBodySchema } from "../admin/asset-points/asset-point-calc-override.schema";
 import {
   createAssetPointBodySchema,
@@ -189,6 +190,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   rulePreviewBodySchema,
   ruleToggleBodySchema,
   ruleUpdateBodySchema,
+  setAssetGroupMemberRoleBodySchema,
   setCredentialsBodySchema,
   setRuleNotificationsBodySchema,
   updateAssetBodySchema,
@@ -715,6 +717,13 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "ruleUpdateBodySchema/action": STRICT(CALLER_ERROR),
   "ruleUpdateBodySchema/condition|0": STRICT(CALLER_ERROR),
   "ruleUpdateBodySchema/condition|1": STRICT(CALLER_ERROR),
+  setAssetGroupMemberRoleBodySchema: STRICT(
+    "The body has exactly one field, so there is no second thing to set and an unknown key " +
+      "is a caller error by construction. The mistake it catches is silent rather than " +
+      'noisy: `{"role":null,"roleCode":"chiller"}` from a caller who meant to SET `chiller` ' +
+      "would have `roleCode` stripped, CLEAR the role instead, and answer 200 — a " +
+      "destructive read of an additive intent (`F3.37`, ADR 0049 decision 5).",
+  ),
   setCredentialsBodySchema: STRICT(ALREADY),
   setRuleNotificationsBodySchema: STRICT(CALLER_ERROR),
   updateAssetBodySchema: STRICT(CALLER_ERROR),

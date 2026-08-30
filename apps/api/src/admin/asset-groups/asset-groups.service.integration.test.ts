@@ -36,7 +36,7 @@ const connectionString = requireIntegrationDb({
     "against bms.asset_group_members' FORCE policy, that an unknown role is a 400 " +
     "naming live codes rather than the foreign key's 500, that members come back " +
     "ordered by assets.code, and that an out-of-scope membership is refused. None " +
-    "of it can be shown on the owner connection, which bypasses RLS regardless. " +
+    "of it can be shown on the fixture connection, which bypasses RLS regardless. " +
     "Fix the pipeline, do not relax this guard.",
 });
 
@@ -60,6 +60,17 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
 
   const createdAssetIds: string[] = [];
   const createdGroupIds: string[] = [];
+  /**
+   * Every membership this suite creates, so `afterAll` can delete **its own**
+   * audit rows and only those. The first version deleted by `entity_type`
+   * alone, on a `BYPASSRLS` connection: `pnpm test` then erased every real
+   * `master.asset_group_member.role.set` record in every organization. CI never
+   * saw it — its database is created per run — which is §4.6's asymmetry
+   * running in the destructive direction.
+   */
+  const createdMembershipIds: string[] = [];
+  /** Role codes an assertion INSERTs — see `GroupFixtures.createdRoleCodes`. */
+  const createdRoleCodes: string[] = [];
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -76,6 +87,12 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
     // That is a finding for whoever adds the next integration suite, not
     // something this row could fix.
     const one = { max: 1 };
+    // `ownerPool` is the FIXTURE connection, and it is NOT `bms_owner`:
+    // `requireIntegrationDb` defaults `connection` to "fleet", so this is
+    // `bms_fleet` (BYPASSRLS). The name is kept because the rename is churn,
+    // but do not "correct" it to `connection: "owner"` — `roles.ts` sets
+    // `ALTER ROLE bms_owner NOBYPASSRLS`, so the fixture INSERTs below would
+    // become FORCE-bound with no GUC and the whole suite would fail to set up.
     ownerPool = await openIntegrationPool(url, "F3.37", one);
     authPool = await openIntegrationPool(
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
@@ -173,7 +190,9 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
          VALUES ($1, $2) RETURNING id`,
         [groupId, assetId],
       );
-      return member.rows[0]?.id as string;
+      const membershipId = member.rows[0]?.id as string;
+      createdMembershipIds.push(membershipId);
+      return membershipId;
     }
 
     const groupId = await makeGroup(locationId, organizationId, "main");
@@ -213,6 +232,7 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
       foreignMembershipId,
       roleCode: roles.rows[0]?.code as string,
       secondRoleCode: roles.rows[1]?.code as string,
+      createdRoleCodes,
     };
   });
 
@@ -226,8 +246,23 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
       );
       await ownerPool.query("DELETE FROM bms.asset_groups WHERE id = ANY($1)", [createdGroupIds]);
     }
+    if (createdMembershipIds.length > 0) {
+      // Scoped to this suite's own memberships. `entity_type` alone would
+      // erase every organization's real role-change history on a developer
+      // database — see `createdMembershipIds`.
+      await ownerPool.query(
+        "DELETE FROM bms.audit_log WHERE entity_type = 'asset_group_member' AND entity_id = ANY($1)",
+        [createdMembershipIds],
+      );
+    }
+    // Exact codes, never `LIKE 'f337-%'`. bms.asset_roles is global, so a
+    // leaked fixture is visible to every organization — but a prefix sweep is
+    // worse: `tests/integration-fixture-isolation.test.ts` fails it because two
+    // parallel instances of this file would delete each other's rows.
+    if (createdRoleCodes.length > 0) {
+      await ownerPool.query("DELETE FROM bms.asset_roles WHERE code = ANY($1)", [createdRoleCodes]);
+    }
     if (createdAssetIds.length > 0) {
-      await ownerPool.query("DELETE FROM bms.audit_log WHERE entity_type = 'asset_group_member'");
       await ownerPool.query("DELETE FROM bms.assets WHERE id = ANY($1)", [createdAssetIds]);
     }
     await Promise.all([ownerPool.end(), authPool.end(), tenantPool.end(), fleetPool.end()]);
