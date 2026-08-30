@@ -230,6 +230,21 @@ export type AdminLocationDto = z.infer<typeof A.adminLocationDtoSchema>;
 export type AdminRtuDto = z.infer<typeof A.adminRtuDtoSchema>;
 export type AdminAssetDto = z.infer<typeof A.adminAssetDtoSchema>;
 export type AdminAssetPointDto = z.infer<typeof A.adminAssetPointDtoSchema>;
+/** `F3.37` (ADR 0049) — one `bms.asset_groups` row for the admin surface. */
+export type AdminAssetGroupDto = z.infer<typeof A.adminAssetGroupDtoSchema>;
+export type AdminAssetGroupListResponse = z.infer<
+  typeof A.adminAssetGroupListResponseSchema
+>;
+/** One membership, joined to its asset and its role label. */
+export type AdminAssetGroupMemberDto = z.infer<
+  typeof A.adminAssetGroupMemberDtoSchema
+>;
+export type AdminAssetGroupMembersResponse = z.infer<
+  typeof A.adminAssetGroupMembersResponseSchema
+>;
+export type SetAssetGroupMemberRoleBody = z.infer<
+  typeof A.setAssetGroupMemberRoleBodySchema
+>;
 export type AdminPointKeyDto = z.infer<typeof A.adminPointKeyDtoSchema>;
 export type AdminOrganizationSummaryDto = z.infer<
   typeof A.adminOrganizationSummaryDtoSchema

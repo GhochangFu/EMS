@@ -10,6 +10,11 @@ import { AssetTemplateInstantiationService } from "./asset-templates/asset-templ
 import { AssetTemplateMigrationService } from "./asset-templates/asset-templates-migrate.service";
 import { AssetTemplatesAdminController } from "./asset-templates/asset-templates.controller";
 import { AssetTemplatesAdminService } from "./asset-templates/asset-templates.service";
+import {
+  AssetGroupMembersAdminController,
+  AssetGroupsAdminController,
+} from "./asset-groups/asset-groups.controller";
+import { AssetGroupsAdminService } from "./asset-groups/asset-groups.service";
 import { AssetsAdminController } from "./assets/assets.controller";
 import { AssetsAdminService } from "./assets/assets.service";
 import { AuditAdminController } from "./audit/audit.controller";
@@ -42,6 +47,8 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     OrganizationsAdminController,
     LocationsAdminController,
     RtusAdminController,
+    AssetGroupsAdminController,
+    AssetGroupMembersAdminController,
     AssetsAdminController,
     AssetPointsAdminController,
     AssetPointCalcOverrideController,
@@ -65,6 +72,7 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     OrganizationsAdminService,
     LocationsAdminService,
     RtusAdminService,
+    AssetGroupsAdminService,
     AssetsAdminService,
     AssetPointsAdminService,
     AssetPointCalcOverrideService,
