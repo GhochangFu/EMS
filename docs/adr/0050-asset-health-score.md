@@ -265,3 +265,154 @@ the same day, and that erratum is still owed.
   its repair.** Decision 9. The continuous aggregates at least have refresh
   policies that re-cover recent windows; this relation has only the standing
   obligation.
+
+## Amendment 1 — four counter relations, and the five rulings the step-3 plan gate settled (2026-08-30)
+
+### Context
+
+Decision 4 says the counter is materialized "into its own relation" — singular.
+Decision 6 says the read reuses `F3.35`'s four-level ladder. Those two sentences
+are not contradictory: one relation carrying a `level` discriminator column
+satisfies both as written. They are *underdetermined*, and the step-3 plan for
+`E1.3` could not write the migration without choosing.
+
+Four other questions were underdetermined in the same way, and all five were put
+to the repository owner at the plan gate on 2026-08-30 and ruled there. This
+amendment records the rulings, because a migration header and a plan document
+are both weaker records than an ADR: `CLAUDE.md` makes the ADR authoritative on
+scope, and `E1.8` — the row that inherits this score — starts by reading this
+file.
+
+It also corrects one factual claim the plan made about grants, records two
+schema facts the original had not checked, and extends decisions 5 and 9, whose
+wording assumed a single relation.
+
+### Decision
+
+1. **Four relations, one per level:** `telemetry.point_in_range_1m`,
+   `_5m`, `_1h`, `_1d`. Names mirror ADR 0023's `point_values_1m … _1d`
+   deliberately, so the pairing is legible from the catalog alone. Each holds a
+   per-bucket `in_range_count` and `sample_count`, and the coarser levels are
+   derived from the finer by `sum`, exactly as decision 4 requires and in the
+   same order ADR 0023's aggregates stack.
+
+   Rejected: one relation with a `level` column. Three reasons, and the third is
+   the load-bearing one. (a) The four-table form gets from the table name what a
+   `level` column makes every read carry as a predicate, and a forgotten
+   predicate silently sums four levels into one wrong ratio. (b) Decision 6
+   forbids a second ladder; four relations keep a 1:1 with the four aggregates
+   the ladder already names, so `levelFor()` maps to a relation without a
+   translation table. (c) Retention and compression horizons differ per level in
+   migration `0028` and would differ here too, and a single table cannot carry
+   four horizons — the coarse levels are the ones worth keeping longest, and
+   they are the smallest.
+
+2. **The score is `0..1` on the wire, and the band cut-points are in the same
+   unit.** Not `0..100`. A ratio of counts is natively `0..1`, the conversion
+   belongs at the rendering edge where the `%` sign is added, and a mixed-unit
+   API is how a cut-point of `0.9` and a score of `90` end up compared.
+
+3. **Weights default to `1.0`; bands are required.** An
+   `asset_templates.content.health` block that omits weights scores with every
+   term weighted equally, because equal weighting is the only defensible default
+   and refusing to score would make the tier's adoption a flag day. Bands have
+   no such default — five cut-points cannot be guessed, and inventing them puts
+   a fabricated "Excellent" on an executive screen.
+
+   **An asset whose template carries no bands is scored numerically and reports
+   `band: null`. It is counted, not dropped.** This is decision 3's rule applied
+   one level up: an absent classification is reported as absent, never as a
+   wrong one, and never by removing the asset from the denominator.
+
+4. **The roll-up job ticks every 60 s and sweeps a 24-hour trailing window at
+   `1m`, widening per level.** The tick matches ADR 0037 decision 7's existing
+   loop, so the second scheduled host in `apps/api` behaves like the first. The
+   trailing window is what makes the job self-healing: a missed tick, a restart
+   or a slow sweep is repaired by the next pass rather than leaving a permanent
+   hole, and 24 hours at `1m` is 1440 buckets per tag — the same order as
+   `MAX_BUCKETS` already permits on a read.
+
+   This does **not** repair a `DELETE` older than the window. Decision 9 stands
+   and is the only thing that covers that case.
+
+5. **`E1.3` closes with the donut.** The row's web half — the asset, plant and
+   enterprise score surfaces — is in scope for `E1.3` rather than deferred to a
+   follow-on row. The original ADR is silent on the boundary, which read as
+   API-only to the plan; it is not.
+
+6. **The migration brackets its `CREATE TABLE`s in `SET ROLE bms_owner` /
+   `RESET ROLE`, and writes no explicit `GRANT`.** The plan reported that
+   `0039`'s `GRANT … ON ALL TABLES IN SCHEMA telemetry` is point-in-time and
+   would not reach a new table, and concluded that the migration must grant
+   explicitly. The first half is true and the conclusion is wrong.
+   `0041_bms_owner_and_force_rls` lines 112-119 set `ALTER DEFAULT PRIVILEGES
+   FOR ROLE bms_owner` in **both** `bms` and `telemetry`, so the grant arrives
+   automatically — but only for objects created *by that role*, and
+   `pnpm db:migrate` connects as `DATABASE_URL_SUPERUSER` (`bms_app`). The
+   bracket is what makes `bms_owner` the creator.
+
+   A hand-written `GRANT` is not merely redundant: `0050` and `0051` both record
+   in their headers that it would **hide a future breakage of the bracket**, and
+   the failure it hides surfaces "one endpoint at a time" long after the
+   migration. `bms_owner`, not `bms_rollup`: `bms_rollup` owns the ADR 0023
+   aggregates because TimescaleDB requires the aggregate's owner to refresh it,
+   and a plain table imposes no such requirement — `0045` exists precisely
+   because `bms_rollup`-owned objects then need extra grants to be readable.
+
+7. **A threshold rule with a NULL `operator` or a NULL `threshold_value` is
+   skipped and counted — never treated as not firing.** Both columns are
+   nullable in `packages/db/src/schema/bms-schema.ts` (`operator` and
+   `thresholdValue`, neither `.notNull()`), the same shape and for the same
+   reason as the `severity` column `F4.46` established. Treating an
+   unevaluatable rule as "did not fire" makes the sample in-range and inflates
+   the score, which is decision 3's defect reached by another road. The skipped
+   count is carried on the row so the inflation cannot be silent.
+
+8. **Decision 9 extends to all four relations: a re-run walks them finest
+   first,** `1m → 5m → 1h → 1d`, in addition to `0027`'s
+   `refresh_continuous_aggregate()` calls. Deriving a coarse level from a stale
+   fine one propagates the error upward, so order is not optional. This must be
+   in the migration header, as decision 9 already requires.
+
+9. **Decision 5 extends the same way: there are four currency instants, not
+   one, and the read reports the instant for the level it actually read.** A
+   `1d` figure current to 03:00 beside a `1m` figure current to 03:59 is
+   correct, and looks like an arithmetic bug unless the response says which is
+   which.
+
+10. **The four relations are plain tables, not hypertables, and the trigger for
+    revisiting that is stated rather than left to judgement.** ADR 0024's
+    compression and retention guards name a fixed list of relations in `0028`
+    and do not reach these. Converting is cheap and reversible; converting
+    early adds four chunking decisions to a row that has no production volume
+    yet. **Revisit when `telemetry.point_in_range_1m` exceeds 50 million rows,
+    or when any level's retention becomes a question anyone asks.** Until then
+    the tables grow unbounded, which is a known and accepted state, not an
+    oversight.
+
+### Consequences
+
+- **Decision 1 makes the migration wider and the read narrower.** Four
+  `CREATE TABLE`s instead of one, and a level-to-relation map that must stay in
+  step with `point-aggregate-window.ts`. The map is the thing that can drift;
+  it belongs beside `levelFor`, not beside the SQL.
+- **`band: null` is a fourth absent-value case**, after the original decision
+  3's `unscoredTags`, this amendment's decision 7 skipped rules, and ADR 0037
+  decision 9's skipped calculations. That is a pattern worth naming rather than
+  four coincidences, and the contract in
+  `packages/shared/src/contracts/health.ts` should keep each one
+  distinguishable rather than collapsing all four to one `null`.
+- **Decision 6 corrects a claim that was already acted on once.** The plan's
+  grant finding would have produced a migration that passes review, works in
+  every environment, and disarms the guard that catches the real failure. It is
+  recorded here rather than only fixed, because the next row creating a table
+  will read the plan pattern, not the migration.
+- **Decision 10 accepts unbounded growth.** At the measured 0.509 s sample gap a
+  single ruled tag produces 1440 `1m` rows per day. The current fixtures have
+  no ruled tag carrying telemetry at all, so the accepted state is presently
+  zero rows — which is exactly the condition under which an unbounded table is
+  easy to leave unnoticed. The trigger in decision 10 is the guard, and it is a
+  number so that it can be checked.
+- **`E1.3` closing with the donut (decision 5) brings the browser layer into
+  its verification**, which the API-only reading would have made N/A. AGENTS.md
+  §4.6 asks that skipped layers be named; this one is not skipped.
