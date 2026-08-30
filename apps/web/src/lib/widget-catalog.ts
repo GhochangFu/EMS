@@ -1,4 +1,4 @@
-import type { ChartSeriesKind, DashboardWidgetSpec, WidgetType } from "@bms/shared";
+import type { ChartSeriesKind, DashboardWidgetSpec, WidgetIcon, WidgetType } from "@bms/shared";
 import { WIDGET_POINT_CARDINALITY } from "@bms/shared";
 
 import type { KpiTileStatus } from "../components/kpi-tile";
@@ -110,6 +110,30 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     defaultSize: { w: 6, h: 4 },
     points: WIDGET_POINT_CARDINALITY.chart,
   },
+};
+
+/**
+ * The `value_tile` icon vocabulary (`widgetIconSchema`, ADR 0048 decision 6),
+ * mapped to an SVG path `d` string — see `WidgetCatalogEntry.iconPath`'s
+ * comment above for why a path string and not JSX.
+ *
+ * The `Record` over the imported `WidgetIcon` type is load-bearing: a
+ * seventh enum member with no entry here is a compile error at this
+ * declaration, not a blank square discovered on a running dashboard.
+ * `tests/f3.35-tile-icon-vocabulary.test.ts` holds the reverse direction —
+ * an entry here with no matching enum member — which the compiler cannot see
+ * because an extra object key is not a type error.
+ */
+export const WIDGET_ICON_PATH: Readonly<Record<WidgetIcon, string>> = {
+  alert: "M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z",
+  clipboard:
+    "M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z",
+  bolt: "M7 2v11h3v9l7-12h-4l4-8z",
+  drop: "M12 2c-5.33 4.55-8 8.48-8 11.8 0 4.98 3.8 8.2 8 8.2s8-3.22 8-8.2c0-3.32-2.67-7.25-8-11.8z",
+  recycle:
+    "M12 6V2L7 7l5 5V8c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 14c0-4.42-3.58-8-8-8zm-6 8c0-1.01.25-1.97.7-2.8L5.24 9.74A7.93 7.93 0 0 0 4 14c0 4.42 3.58 8 8 8v4l5-5-5-5v4c-3.31 0-6-2.69-6-6z",
+  gauge:
+    "M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zm-9.79 6.84a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z",
 };
 
 /**

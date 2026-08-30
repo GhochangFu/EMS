@@ -3,13 +3,17 @@ import type {
   ChartSeriesKind,
   DashboardWidgetSpec,
   TemplateDashboardView,
+  PointAggregateFunction,
   TemplateDashboardWidget,
+  WidgetIcon,
   WidgetType,
 } from "@bms/shared";
 import {
+  AGGREGATE_FUNCTIONS,
   CHART_SERIES_OPTIONS,
   CHART_SERIES_VALUES,
   MAX_WIDGET_TITLE_LENGTH,
+  WIDGET_ICONS,
   WIDGET_TONES,
   WIDGET_TYPE_LABELS,
   WIDGET_TYPES,
@@ -184,12 +188,33 @@ function widgetRowFrom(raw: unknown): TemplateDashboardWidgetRow {
         ? (config.fillTone as WidgetTone)
         : "",
       abbreviate: typeof config.abbreviate === "boolean" ? config.abbreviate : false,
+      // `F3.35` — every field `buildTileConfig`/`buildChartConfig` writes must
+      // be read back, or an edit-and-resave silently erases it. Guarded per
+      // field with a `typeof`/membership check because this reads an
+      // **unvalidated** `z.record(z.unknown())` blob, unlike
+      // `dashboard-builder-form.ts`'s already-parsed DTO.
+      //
+      // `aggregate` is stored under one key for both widget types and split
+      // into two row fields here, because one flat row serves all four types
+      // and the tile's and the chart's mean different things.
+      aggregate: AGGREGATE_FUNCTIONS.includes(config.aggregate as PointAggregateFunction)
+        ? (config.aggregate as PointAggregateFunction)
+        : "",
+      compareToPrevious:
+        typeof config.compareToPrevious === "boolean" ? config.compareToPrevious : false,
+      icon: WIDGET_ICONS.includes(config.icon as WidgetIcon) ? (config.icon as WidgetIcon) : "",
+      hint: typeof config.hint === "string" ? config.hint : "",
+      tone: WIDGET_TONES.includes(config.tone as WidgetTone) ? (config.tone as WidgetTone) : "",
       series: CHART_SERIES_VALUES.includes(config.series as ChartSeriesKind)
         ? (config.series as ChartSeriesKind)
         : "line",
       windowMinutes: typeof config.windowMinutes === "number" ? String(config.windowMinutes) : "",
       stacked: typeof config.stacked === "boolean" ? config.stacked : false,
       yAxisLabel: typeof config.yAxisLabel === "string" ? config.yAxisLabel : "",
+      chartAggregate: AGGREGATE_FUNCTIONS.includes(config.aggregate as PointAggregateFunction)
+        ? (config.aggregate as PointAggregateFunction)
+        : "",
+      footerStats: typeof config.footerStats === "boolean" ? config.footerStats : false,
     },
   };
 }

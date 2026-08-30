@@ -6,6 +6,12 @@ import {
   type TemplateDashboardWidgetRow,
   type WidgetConfigRow,
 } from "../../lib/template-dashboard-form";
+import {
+  AGGREGATE_FUNCTION_LABELS,
+  AGGREGATE_FUNCTIONS,
+  WIDGET_ICON_LABELS,
+  WIDGET_ICONS,
+} from "../../lib/widget-config-form";
 import { Field } from "./field";
 
 function WidgetEditor({
@@ -269,15 +275,118 @@ function WidgetEditor({
       ) : null}
 
       {widget.widgetType === "value_tile" ? (
-        <label className="mt-2 flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={widget.config.abbreviate}
-            disabled={!editable}
-            onChange={(event) => updateConfig({ abbreviate: event.target.checked })}
-          />
-          Abbreviate large values (1.2k, 3.4M)
-        </label>
+        <div className="mt-2 space-y-2">
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={widget.config.abbreviate}
+              disabled={!editable}
+              onChange={(event) => updateConfig({ abbreviate: event.target.checked })}
+            />
+            Abbreviate large values (1.2k, 3.4M)
+          </label>
+
+          {/*
+            `F3.35` — the same controls the live builder's inspector shows.
+            Without them here, a template could store a config the live builder
+            can edit and the template author cannot, which is the asymmetry
+            `F3.1e` exists to close rather than create.
+          */}
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Show">
+              <select
+                value={widget.config.aggregate}
+                disabled={!editable}
+                onChange={(event) =>
+                  updateConfig({ aggregate: event.target.value as WidgetConfigRow["aggregate"] })
+                }
+                className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+              >
+                <option value="">Latest reading</option>
+                {AGGREGATE_FUNCTIONS.map((fn) => (
+                  <option key={fn} value={fn}>
+                    {AGGREGATE_FUNCTION_LABELS[fn]} over a window
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {widget.config.aggregate !== "" ? (
+              <Field label="Window (minutes)" error={problemFor("windowMinutes")}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={widget.config.windowMinutes}
+                  disabled={!editable}
+                  placeholder="1440 (default)"
+                  onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
+                  className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+                />
+              </Field>
+            ) : null}
+          </div>
+
+          {widget.config.aggregate !== "" ? (
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={widget.config.compareToPrevious}
+                disabled={!editable}
+                onChange={(event) => updateConfig({ compareToPrevious: event.target.checked })}
+              />
+              Compare with the previous window (shows a delta)
+            </label>
+          ) : null}
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Icon">
+              <select
+                value={widget.config.icon}
+                disabled={!editable}
+                onChange={(event) =>
+                  updateConfig({ icon: event.target.value as WidgetConfigRow["icon"] })
+                }
+                className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+              >
+                <option value="">No icon</option>
+                {WIDGET_ICONS.map((icon) => (
+                  <option key={icon} value={icon}>
+                    {WIDGET_ICON_LABELS[icon]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Tone">
+              <select
+                value={widget.config.tone}
+                disabled={!editable}
+                onChange={(event) =>
+                  updateConfig({ tone: event.target.value as WidgetConfigRow["tone"] })
+                }
+                className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+              >
+                <option value="">Default</option>
+                {WIDGET_TONES.map((tone) => (
+                  <option key={tone} value={tone}>
+                    {tone}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+          {widget.config.aggregate !== "" && widget.config.compareToPrevious ? null : (
+            <Field label="Sub-line" error={problemFor("hint")}>
+              <input
+                type="text"
+                value={widget.config.hint}
+                disabled={!editable}
+                placeholder="e.g. Since midnight"
+                onChange={(event) => updateConfig({ hint: event.target.value })}
+                className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+              />
+            </Field>
+          )}
+        </div>
       ) : null}
 
       {widget.widgetType === "chart" ? (
@@ -320,6 +429,25 @@ function WidgetEditor({
               />
             </Field>
           </div>
+          <Field label="Plot">
+            <select
+              value={widget.config.chartAggregate}
+              disabled={!editable}
+              onChange={(event) =>
+                updateConfig({
+                  chartAggregate: event.target.value as WidgetConfigRow["chartAggregate"],
+                })
+              }
+              className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+            >
+              <option value="">Every reading</option>
+              {AGGREGATE_FUNCTIONS.map((fn) => (
+                <option key={fn} value={fn}>
+                  {AGGREGATE_FUNCTION_LABELS[fn]} per bucket
+                </option>
+              ))}
+            </select>
+          </Field>
           <label className="flex items-center gap-2 text-xs">
             <input
               type="checkbox"
@@ -328,6 +456,15 @@ function WidgetEditor({
               onChange={(event) => updateConfig({ stacked: event.target.checked })}
             />
             Stack series
+          </label>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={widget.config.footerStats}
+              disabled={!editable}
+              onChange={(event) => updateConfig({ footerStats: event.target.checked })}
+            />
+            Show peak, average and granularity below the chart
           </label>
         </div>
       ) : null}

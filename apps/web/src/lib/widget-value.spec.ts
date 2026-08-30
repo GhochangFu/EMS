@@ -1,6 +1,8 @@
 import { expect } from "vitest";
 
 import {
+  formatBucketWidth,
+  formatDelta,
   formatWidgetValue,
   TANK_FILL_MAX_HEIGHT,
   TANK_FLOOR_Y,
@@ -192,4 +194,149 @@ export function toKpiTilePropsDoesNotDoubleRenderTheUnit(): void {
   });
   expect(props.value, "the unit belongs on KpiTile's own unit prop, not baked into the formatted value").toBe("7.1");
   expect(props.unit).toBe("kW");
+}
+
+/**
+ * `F3.35` Stage A (ADR 0048 decision 6). The exact string is the Nexus
+ * mock's own (`docs/ion-exchange-nexus-dashboard-2026-08-29.html`, the KPI
+ * row) — a renderer that drops the arrow, the sign or the decimal place
+ * shows a different number than the one the mock was approved with.
+ */
+export function formatDeltaMatchesTheMocksExactWording(): void {
+  expect(formatDelta(112.75, 121.0)).toEqual({ direction: "down", text: "↓ 6.8% vs yesterday" });
+}
+
+/**
+ * A zero baseline has no percentage — dividing by it renders `Infinity%` or
+ * `NaN%`, not a delta. Missing compare data (either side `null`) is not a
+ * delta of zero either; both must return `null` rather than a fabricated
+ * reading, or `ValueTileWidget` would draw the hint slot from nothing.
+ */
+export function formatDeltaIsNullWithoutAComputablePercentage(): void {
+  expect(formatDelta(50, 0), "a zero baseline must not render Infinity% or NaN%").toBeNull();
+  expect(formatDelta(null, 100), "a missing current reading is not a delta of zero").toBeNull();
+  expect(formatDelta(100, null), "a missing baseline is not a delta of zero").toBeNull();
+  expect(
+    formatDelta(Number.POSITIVE_INFINITY, 100),
+    "a non-finite reading must not render Infinity% — NaN > 0 is false, so an unguarded NaN would silently take the down arm",
+  ).toBeNull();
+}
+
+/**
+ * Direction follows the sign for a real change; a change that *rounds* to
+ * `0.0%` must land on `"flat"` rather than picking an arrow the printed
+ * number does not support — `"↑ 0.0%"` asserts a rise the reader cannot see.
+ * The flat wording uses a third, neutral arrow, never the up or down ones.
+ */
+export function formatDeltaSignsDirectionCorrectlyAndFlatOnATinyChange(): void {
+  expect(formatDelta(130, 121)).toEqual({ direction: "up", text: "↑ 7.4% vs yesterday" });
+  const tiny = formatDelta(100.02, 100);
+  expect(tiny?.direction, "a change that rounds to 0.0% must not claim a direction the display cannot show").toBe(
+    "flat",
+  );
+  expect(tiny?.text).not.toMatch(/[↑↓]/);
+}
+
+/**
+ * `config.tone` routes through the existing `WIDGET_TONE_TO_KPI_TONE` map —
+ * not a second one — so `toKpiTilePropsMapsAllFourTonesExhaustively` above,
+ * unmodified, is what proves this mapping is exhaustive and correct.
+ */
+export function toKpiTilePropsReadsToneFromConfigThroughTheExistingMap(): void {
+  const base = { title: "Feed pH", status: "ready" as const, primary: 7.1 };
+  expect(toKpiTileProps({ ...base, config: { tone: "critical" } }).tone).toBe("critical");
+  expect(
+    toKpiTileProps({ ...base, config: { tone: "info" } }).tone,
+    "info has no distinct KpiTile colour and maps onto the neutral default",
+  ).toBe("default");
+}
+
+/**
+ * `F3.28`'s alarm-derived tone reflects a live condition and must still beat
+ * a tile's static, author-set `config.tone` — an active alarm painted over
+ * by a calmer stored default would hide the one thing the tone exists to show.
+ */
+export function toKpiTilePropsLetsACallerSuppliedToneWinOverConfigsTone(): void {
+  const props = toKpiTileProps({
+    title: "Feed pH",
+    status: "ready",
+    primary: 7.1,
+    config: { tone: "critical" },
+    tone: "warning",
+  });
+  expect(props.tone, "the caller's live tone must not be overridden by the tile's stored default").toBe("warning");
+}
+
+/**
+ * The one-slot rule (`valueTileConfigSchema.hint`'s docblock): a computable
+ * delta takes the slot over `config.hint`; with `compareToPrevious` unset,
+ * `config.hint` renders untouched; with neither set, `hint` is `undefined`
+ * rather than an empty string a renderer might still draw a blank line for.
+ */
+export function toKpiTilePropsHintPrecedence(): void {
+  const base = { title: "Total load", status: "ready" as const, primary: 112.75 };
+
+  const withDelta = toKpiTileProps({
+    ...base,
+    config: { compareToPrevious: true, hint: "Author-typed note" },
+    compareValue: 121.0,
+  });
+  expect(withDelta.hint, "a computable delta must win the slot over an author-typed hint").toBe(
+    "↓ 6.8% vs yesterday",
+  );
+
+  const compareUnset = toKpiTileProps({
+    ...base,
+    config: { hint: "Author-typed note" },
+    compareValue: 121.0,
+  });
+  expect(
+    compareUnset.hint,
+    "compareToPrevious unset must leave config.hint alone even if a compareValue happens to be present",
+  ).toBe("Author-typed note");
+
+  const neitherSet = toKpiTileProps({ ...base, config: {} });
+  expect(neitherSet.hint, "neither source set must leave hint undefined, not an empty string").toBeUndefined();
+
+  // The delta is gated on `ready`, exactly as `value` is. TanStack Query keeps
+  // the previous `data` through a refetch error, so a widget can carry a stale
+  // non-null `primary` under an `"error"` status. Ungated, the tile would read
+  // "Could not load" with a confident delta beneath it — a number an operator
+  // can act on, above a line saying the read failed. The author's own hint still
+  // renders, because it is a static label rather than a claim about the data.
+  const failedRefetch = toKpiTileProps({
+    ...base,
+    status: "error",
+    config: { compareToPrevious: true, hint: "Author-typed note" },
+    compareValue: 121.0,
+  });
+  expect(
+    failedRefetch.value,
+    "an errored widget shows no value, which is the behaviour the delta must match",
+  ).toBeNull();
+  expect(
+    failedRefetch.hint,
+    "an errored widget must not show a delta computed from a value it is refusing to show",
+  ).toBe("Author-typed note");
+}
+
+/**
+ * The four ADR 0023 bucket widths, plus what happens to a width that is none of
+ * them.
+ *
+ * The fallback matters more than it looks: the granularity cell is the only
+ * place a reader can see that the ladder and the relation disagree, so it says
+ * an odd number rather than throwing or silently rendering an em dash.
+ */
+export function formatBucketWidthCoversTheFourLadderRungs(): void {
+  expect(formatBucketWidth(60), "the finest rung").toBe("1 min");
+  expect(formatBucketWidth(300), "the five-minute rung").toBe("5 min");
+  expect(formatBucketWidth(3_600), "the hourly rung, singular").toBe("1 hour");
+  expect(formatBucketWidth(86_400), "the daily rung, singular").toBe("1 day");
+  expect(formatBucketWidth(7_200), "a width the ladder does not use still reads sensibly").toBe(
+    "2 hours",
+  );
+  expect(formatBucketWidth(90), "a width that is no whole number of minutes says so").toBe("90 s");
+  expect(formatBucketWidth(null), "no width yet renders the em dash, never 'null'").toBe("—");
+  expect(formatBucketWidth(0), "a zero width is not a granularity").toBe("—");
 }

@@ -134,6 +134,18 @@ function configRowFromDto(widget: DashboardWidgetDto): WidgetConfigRow {
       break;
     case "value_tile":
       row.abbreviate = widget.config.abbreviate ?? false;
+      // `F3.35` — a field read by `buildTileConfig` and NOT read back here is
+      // silently destroyed on every edit-and-resave: the author opens a
+      // configured tile, changes its title, saves, and the aggregate is gone
+      // with no error anywhere. The round-trip assertion in the spec is what
+      // holds these two lists equal.
+      row.aggregate = widget.config.aggregate ?? "";
+      row.windowMinutes =
+        widget.config.windowMinutes !== undefined ? String(widget.config.windowMinutes) : "";
+      row.compareToPrevious = widget.config.compareToPrevious ?? false;
+      row.icon = widget.config.icon ?? "";
+      row.hint = widget.config.hint ?? "";
+      row.tone = widget.config.tone ?? "";
       break;
     case "chart":
       row.series = widget.config.series;
@@ -141,6 +153,8 @@ function configRowFromDto(widget: DashboardWidgetDto): WidgetConfigRow {
         widget.config.windowMinutes !== undefined ? String(widget.config.windowMinutes) : "";
       row.stacked = widget.config.stacked ?? false;
       row.yAxisLabel = widget.config.yAxisLabel ?? "";
+      row.chartAggregate = widget.config.aggregate ?? "";
+      row.footerStats = widget.config.footerStats ?? false;
       break;
   }
   return row;

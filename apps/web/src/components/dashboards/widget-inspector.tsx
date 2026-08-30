@@ -3,7 +3,15 @@ import type { AdminAssetPointDto, WidgetPointRole } from "@bms/shared";
 
 import type { DashboardBuilderProblem, DashboardWidgetRow } from "../../lib/dashboard-builder-form";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
-import { MAX_WIDGET_TITLE_LENGTH, WIDGET_TONES, type WidgetConfigRow } from "../../lib/widget-config-form";
+import {
+  AGGREGATE_FUNCTION_LABELS,
+  AGGREGATE_FUNCTIONS,
+  MAX_WIDGET_TITLE_LENGTH,
+  WIDGET_ICON_LABELS,
+  WIDGET_ICONS,
+  WIDGET_TONES,
+  type WidgetConfigRow,
+} from "../../lib/widget-config-form";
 import { Field } from "../asset-templates/field";
 import { ChartSeriesPicker } from "./chart-series-picker";
 import { PointPicker } from "./point-picker";
@@ -273,14 +281,114 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
       ) : null}
 
       {row.widgetType === "value_tile" ? (
-        <label className="flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={row.config.abbreviate}
-            onChange={(event) => updateConfig({ abbreviate: event.target.checked })}
-          />
-          Abbreviate large values (1.2k, 3.4M)
-        </label>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={row.config.abbreviate}
+              onChange={(event) => updateConfig({ abbreviate: event.target.checked })}
+            />
+            Abbreviate large values (1.2k, 3.4M)
+          </label>
+
+          {/*
+            `F3.35` — the two ways to get a number, side by side rather than on
+            two screens. ADR 0048 decision 3 accepted knowingly that a builder
+            now has both a point-with-a-function and a named metric; the single
+            picker is the mitigation, and this select is the "no aggregate"
+            default that keeps the original behaviour one option away.
+          */}
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Show">
+              <select
+                value={row.config.aggregate}
+                onChange={(event) =>
+                  updateConfig({ aggregate: event.target.value as WidgetConfigRow["aggregate"] })
+                }
+                className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+              >
+                <option value="">Latest reading</option>
+                {AGGREGATE_FUNCTIONS.map((fn) => (
+                  <option key={fn} value={fn}>
+                    {AGGREGATE_FUNCTION_LABELS[fn]} over a window
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {row.config.aggregate !== "" ? (
+              <Field label="Window (minutes)" error={problemFor("windowMinutes")}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={row.config.windowMinutes}
+                  placeholder="1440 (default)"
+                  onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
+                  className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+                />
+              </Field>
+            ) : null}
+          </div>
+
+          {row.config.aggregate !== "" ? (
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={row.config.compareToPrevious}
+                onChange={(event) => updateConfig({ compareToPrevious: event.target.checked })}
+              />
+              Compare with the previous window (shows a delta)
+            </label>
+          ) : null}
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Icon">
+              <select
+                value={row.config.icon}
+                onChange={(event) =>
+                  updateConfig({ icon: event.target.value as WidgetConfigRow["icon"] })
+                }
+                className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+              >
+                <option value="">No icon</option>
+                {WIDGET_ICONS.map((icon) => (
+                  <option key={icon} value={icon}>
+                    {WIDGET_ICON_LABELS[icon]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Tone">
+              <select
+                value={row.config.tone}
+                onChange={(event) =>
+                  updateConfig({ tone: event.target.value as WidgetConfigRow["tone"] })
+                }
+                className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+              >
+                <option value="">Default</option>
+                {WIDGET_TONES.map((tone) => (
+                  <option key={tone} value={tone}>
+                    {tone}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+
+          {/* Hidden while a delta occupies the slot — the tile shows one line,
+              and a box whose value never renders is worse than an absent one. */}
+          {row.config.aggregate !== "" && row.config.compareToPrevious ? null : (
+            <Field label="Sub-line" error={problemFor("hint")}>
+              <input
+                type="text"
+                value={row.config.hint}
+                placeholder="e.g. Since midnight"
+                onChange={(event) => updateConfig({ hint: event.target.value })}
+                className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+              />
+            </Field>
+          )}
+        </div>
       ) : null}
 
       {row.widgetType === "chart" ? (
@@ -308,6 +416,24 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
               />
             </Field>
           </div>
+          <Field label="Plot">
+            <select
+              value={row.config.chartAggregate}
+              onChange={(event) =>
+                updateConfig({
+                  chartAggregate: event.target.value as WidgetConfigRow["chartAggregate"],
+                })
+              }
+              className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+            >
+              <option value="">Every reading</option>
+              {AGGREGATE_FUNCTIONS.map((fn) => (
+                <option key={fn} value={fn}>
+                  {AGGREGATE_FUNCTION_LABELS[fn]} per bucket
+                </option>
+              ))}
+            </select>
+          </Field>
           <label className="flex items-center gap-2 text-xs">
             <input
               type="checkbox"
@@ -315,6 +441,14 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
               onChange={(event) => updateConfig({ stacked: event.target.checked })}
             />
             Stack series
+          </label>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={row.config.footerStats}
+              onChange={(event) => updateConfig({ footerStats: event.target.checked })}
+            />
+            Show peak, average and granularity below the chart
           </label>
         </div>
       ) : null}

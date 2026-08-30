@@ -1,13 +1,17 @@
 import {
   DASHBOARD_GRID,
   MAX_WIDGET_POINTS,
+  MAX_WIDGET_WINDOW_MINUTES,
   WIDGET_POINT_CARDINALITY,
   chartConfigSchema,
   chartSeriesKindSchema,
   dashboardWidgetDtoSchema,
   dashboardWidgetPointDtoSchema,
   dashboardWidgetSpecSchema,
+  pointAggregateFunctionSchema,
   radialGaugeConfigSchema,
+  valueTileConfigSchema,
+  widgetIconSchema,
   widgetPointRoleSchema,
   widgetTypeSchema,
 } from "./dashboard-builder";
@@ -335,5 +339,144 @@ export function runDashboardWidgetPointDtoTests(): void {
     dashboardWidgetPointDtoSchema,
     { ...point, assetId: undefined },
     "a point binding missing assetId must be refused — without it a caller cannot build a pointRef",
+  );
+}
+
+// --- `F3.35` Stage A — aggregation, compare and presentation (ADR 0048) -------
+
+/**
+ * Every field `F3.35` added is **optional**, so a config stored before this
+ * change still parses and still means what it meant.
+ *
+ * This is the assertion that would fail if someone made `aggregate` required to
+ * "make the tile explicit". Nothing migrates a `jsonb` config column, so a
+ * required field here does not fail at deploy — it fails the first time an
+ * operator opens an old dashboard.
+ */
+export function runStageAOptionalityTests(): void {
+  expectAccepts(
+    valueTileConfigSchema,
+    { unit: "kW" },
+    "a value_tile config from before F3.35 must still parse",
+  );
+  expectAccepts(
+    chartConfigSchema,
+    { series: "line" },
+    "a chart config from before F3.35 must still parse",
+  );
+}
+
+/**
+ * The two new vocabularies are closed, and closed at the schema rather than at
+ * the renderer.
+ *
+ * `median` is the interesting refusal: it is a perfectly ordinary statistic and
+ * the obvious fifth member, and the ADR 0023 rollup relations **cannot compute
+ * it** — they store `sum_value`, `sample_count`, `min_value` and `max_value`.
+ * A fifth member would parse here, reach `apps/api`, and find no column.
+ */
+export function runStageAVocabulariesAreClosedTests(): void {
+  expectAccepts(pointAggregateFunctionSchema, "avg", "avg is one of the four");
+  expectRejects(
+    pointAggregateFunctionSchema,
+    "median",
+    "median must be refused — the rollup relations store no ordered samples to take one from",
+  );
+  expectRejects(
+    pointAggregateFunctionSchema,
+    "last",
+    "last must be refused — a bucket keeps no ordering within itself",
+  );
+  expectAccepts(widgetIconSchema, "bolt", "bolt is one of the mock's six");
+  expectRejects(
+    widgetIconSchema,
+    "wrench",
+    "an icon name with no path in WIDGET_ICON_PATH must be refused at the contract, " +
+      "not rendered as a blank square",
+  );
+}
+
+/**
+ * The tile's bounds. `windowMinutes` uses the same constant the chart has
+ * carried since `F3.1a`, so the two cannot drift; `hint` is bounded because
+ * `KpiTile` renders it at 11px on one line.
+ */
+export function runStageATileBoundsTests(): void {
+  expectAccepts(
+    valueTileConfigSchema,
+    { aggregate: "sum", windowMinutes: MAX_WIDGET_WINDOW_MINUTES },
+    "the tile must accept the same maximum window the chart accepts",
+  );
+  expectRejects(
+    valueTileConfigSchema,
+    { aggregate: "sum", windowMinutes: MAX_WIDGET_WINDOW_MINUTES + 1 },
+    "a window past the shared maximum must be refused",
+  );
+  expectRejects(
+    valueTileConfigSchema,
+    { windowMinutes: 0 },
+    "a zero-length window must be refused — it has no samples and no meaning",
+  );
+  expectRejects(
+    valueTileConfigSchema,
+    { hint: "x".repeat(121) },
+    "a hint past 120 characters must be refused",
+  );
+}
+
+/**
+ * **The propagation assertion, and the reason `apps/api` needs no edit at all.**
+ *
+ * `dashboards.schema.ts` and `asset-templates-content.schema.ts` both compose
+ * these schemas as `.strict()`. That composition is performed here, on the exact
+ * same schemas, so a field added to `packages/shared` is proved to survive both
+ * write paths rather than assumed to.
+ *
+ * It is also the guard against the nested-object mistake: `.strict()` does not
+ * descend, so had `compare` been `z.object({ … })` this assertion would still
+ * pass while the inner object stayed permissive on the wire. Keep every field
+ * flat and this assertion means what it looks like it means.
+ */
+export function runStageAFieldsSurviveStrictCompositionTests(): void {
+  expectAccepts(
+    valueTileConfigSchema.strict(),
+    {
+      unit: "kWh",
+      aggregate: "sum",
+      windowMinutes: 1_440,
+      compareToPrevious: true,
+      icon: "bolt",
+      hint: "Since midnight",
+      tone: "warning",
+    },
+    "every new tile field must survive the .strict() composition apps/api performs",
+  );
+  expectAccepts(
+    chartConfigSchema.strict(),
+    { series: "line", windowMinutes: 1_440, aggregate: "avg", footerStats: true },
+    "every new chart field must survive the .strict() composition apps/api performs",
+  );
+  expectRejects(
+    valueTileConfigSchema.strict(),
+    { aggregate: "sum", compareWindowMinutes: 1_440 },
+    "an unknown key must still be refused — the strict composition must not have been widened",
+  );
+}
+
+/**
+ * The pair goes through `dashboardWidgetSpecSchema` too. The discriminated union
+ * is what `F3.1c`'s exhaustive `switch` operates on, so a field that parses in
+ * isolation and not through the union would be authorable and unrenderable.
+ */
+export function runStageASpecUnionCarriesTheNewFieldsTests(): void {
+  expectAccepts(
+    dashboardWidgetSpecSchema,
+    { widgetType: "value_tile", config: { aggregate: "avg", windowMinutes: 60, tone: "critical" } },
+    "the spec union must carry the tile's new fields",
+  );
+  expectAccepts(
+    dashboardWidgetSpecSchema,
+    { widgetType: "chart", config: { series: "area", aggregate: "max", footerStats: true } },
+    "the spec union must carry the chart's new fields",
   );
 }

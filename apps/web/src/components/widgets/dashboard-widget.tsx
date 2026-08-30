@@ -1,4 +1,4 @@
-import type { DashboardWidgetDto } from "@bms/shared";
+import type { DashboardWidgetDto, PointAggregateStats } from "@bms/shared";
 
 import type { WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
 import { widgetTitle } from "../../lib/widget-value";
@@ -35,6 +35,21 @@ export type WidgetData =
       /** Computed by `dashboard-widget-data.ts`'s `widgetDataFor` from the SAME `isStale`/
        * `FRESH_MS` gate the seven control-room pages use — never a second threshold. */
       stale: boolean;
+      /**
+       * `F3.35` — the preceding window's number, for a `value_tile` whose config
+       * sets `compareToPrevious`. `null` is "no compare asked for, or asked for
+       * and not answered"; the delta formatter treats both as no delta rather
+       * than as a delta of zero.
+       */
+      compareValue?: number | null;
+      /**
+       * `F3.35` — the scalar statistics behind a `chart`'s footer, for the
+       * FIRST series. A multi-series chart has one footer and several plots, so
+       * one has to be the one described.
+       */
+      stats?: PointAggregateStats | null;
+      /** `F3.35` — the chosen level's bucket width, which the granularity cell reads. */
+      bucketSeconds?: number | null;
     };
 
 type DashboardWidgetProps = {
@@ -61,6 +76,12 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
   const series = data.status === "ready" ? data.series : NO_SERIES;
   const stale = data.status === "ready" ? data.stale : false;
   const resolvedNow = now ?? Date.now();
+  // `F3.35` — the three fields the aggregate read adds. Narrowed off `"ready"`
+  // like every other field above rather than read off `data` directly, so a
+  // non-ready widget cannot carry last render's numbers into this one.
+  const compareValue = data.status === "ready" ? (data.compareValue ?? null) : null;
+  const stats = data.status === "ready" ? (data.stats ?? null) : null;
+  const bucketSeconds = data.status === "ready" ? (data.bucketSeconds ?? null) : null;
 
   switch (widget.widgetType) {
     case "radial_gauge":
@@ -73,7 +94,14 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
       );
     case "value_tile":
       return (
-        <ValueTileWidget title={title} status={status} primary={primary} stale={stale} config={widget.config} />
+        <ValueTileWidget
+          title={title}
+          status={status}
+          primary={primary}
+          stale={stale}
+          config={widget.config}
+          compareValue={compareValue}
+        />
       );
     case "chart":
       return (
@@ -84,6 +112,8 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           stale={stale}
           config={widget.config}
           now={resolvedNow}
+          stats={stats}
+          bucketSeconds={bucketSeconds}
         />
       );
     default: {

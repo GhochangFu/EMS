@@ -203,6 +203,90 @@ export const locationsSummaryResponseSchema = itemsOf(locationKpiSummarySchema);
 export const loadTrendResponseSchema = z.object({ points: z.array(loadTrendPointSchema) });
 export const mapSitesResponseSchema = z.array(mapSiteDtoSchema);
 export const recentTelemetryResponseSchema = z.array(telemetryReadingSchema);
+
+/**
+ * `GET /telemetry/points/:pointRef/aggregate` — `F3.35` Stage A, ADR 0048
+ * decision 3's "one new read endpoint".
+ *
+ * The four existing aggregate reads on `@Controller("dashboard")` are fixed
+ * shapes for fixed pages. This is the first general one: an arbitrary point, an
+ * arbitrary window, answered from the ADR 0023 rollup relations.
+ *
+ * **`level` is deliberately absent.** Returning `"1m" | "5m" | "1h" | "1d"`
+ * would put a second declaration of `AggregateLevel`
+ * (`apps/api/src/telemetry/point-aggregates.ts`) in `packages/shared`, which
+ * §4.8 forbids — and `bucketSeconds` is strictly more useful to a renderer,
+ * which has to turn it into a human string either way.
+ */
+export const pointAggregateStatsSchema = z.object({
+  sum: z.number().nullable(),
+  /**
+   * The weighted mean — `sum(sum_value) / sum(sample_count)`, computed by the
+   * database.
+   *
+   * **Not the mean of `buckets[].v`**, and the two genuinely differ whenever the
+   * samples per bucket differ. That is the ADR 0023 composition property, not a
+   * rounding artefact: an average of bucket averages was wrong in 151 of 169
+   * buckets on real pilot data. A consistency check comparing the two is the
+   * defect, not the test.
+   */
+  average: z.number().nullable(),
+  min: z.number().nullable(),
+  max: z.number().nullable(),
+  /**
+   * When the peak occurred, as a **bucket start** rather than a sample time —
+   * the rollup relations keep no sample timestamps. At `1h` this degrades to the
+   * hour and at `1d` to the date, so the renderer formats it to the precision
+   * `bucketSeconds` implies. `null` when the window holds no samples.
+   */
+  peakAt: z.string().nullable(),
+  sampleCount: z.number().int(),
+});
+
+/**
+ * One plotted bucket.
+ *
+ * **`{ t, v }` is byte-for-byte `WidgetSeriesPoint`** in
+ * `apps/web/src/lib/widget-catalog.ts`, and that is a choice rather than a
+ * coincidence: it is what lets `buildChartOption` stay untouched and keeps the
+ * ECharts option builder free of a config-dependent branch.
+ *
+ * **The server resolves the function; the bucket carries the answer, not the
+ * ingredients.** Returning `sample_count` alongside so a client could compute
+ * `avg` itself would relocate the ADR 0023 mean division into the browser, where
+ * no server test looks at it. `v` is `null` for a bucket with no samples, which
+ * the existing gap path already renders.
+ */
+export const pointAggregateBucketSchema = z.object({
+  t: z.string(),
+  v: z.number().nullable(),
+});
+
+export const pointAggregateResponseSchema = z.object({
+  pointRef: z.string(),
+  from: z.string(),
+  to: z.string(),
+  /** The chosen level's bucket width. The renderer's granularity cell derives from this. */
+  bucketSeconds: z.number().int().positive(),
+  stats: pointAggregateStatsSchema,
+  /**
+   * The immediately preceding window of the same length — scalar only, and
+   * **tile-only**. Nothing overlays yesterday behind today in Stage A, so this
+   * never carries buckets. `null` unless the request asked for it.
+   */
+  compare: z
+    .object({
+      from: z.string(),
+      to: z.string(),
+      stats: pointAggregateStatsSchema,
+    })
+    .nullable(),
+  /**
+   * The plotted series — **chart-only**, and `null` unless the request named a
+   * `bucketFunction`. A tile needs one number and must not pay for 2,880 rows.
+   */
+  buckets: z.array(pointAggregateBucketSchema).nullable(),
+});
 export const energySourceMixResponseSchema = z.object({
   points: z.array(energySourceMixPointSchema),
 });

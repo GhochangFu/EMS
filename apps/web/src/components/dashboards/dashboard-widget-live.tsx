@@ -1,12 +1,19 @@
 import type { DashboardWidgetDto } from "@bms/shared";
 
-import { widgetDataFor, type HistoryByRef, type LatestByRef } from "../../lib/dashboard-widget-data";
+import {
+  widgetDataFor,
+  type AggregateByKey,
+  type HistoryByRef,
+  type LatestByRef,
+} from "../../lib/dashboard-widget-data";
 import { DashboardWidget } from "../widgets/dashboard-widget";
 
 type DashboardWidgetLiveProps = {
   widget: DashboardWidgetDto;
   latestByRef: LatestByRef;
   historyByRef: HistoryByRef;
+  /** `F3.35` — the aggregate reads this dashboard needed. Empty for a dashboard that uses none. */
+  aggregateByKey?: AggregateByKey;
   now?: number;
 };
 
@@ -17,10 +24,16 @@ type DashboardWidgetLiveProps = {
  * stays pure layout and this one line of wiring is the only thing that would
  * need to change if the mapping seam ever moved.
  */
-export function DashboardWidgetLive({ widget, latestByRef, historyByRef, now }: DashboardWidgetLiveProps) {
+export function DashboardWidgetLive({
+  widget,
+  latestByRef,
+  historyByRef,
+  aggregateByKey,
+  now,
+}: DashboardWidgetLiveProps) {
   // Resolved ONCE and reused for both the staleness gate and the chart's rolling window — two
   // clock reads in one render pass could otherwise disagree by the render's own duration.
   const resolvedNow = now ?? Date.now();
-  const data = widgetDataFor(widget, latestByRef, historyByRef, resolvedNow);
+  const data = widgetDataFor(widget, latestByRef, historyByRef, resolvedNow, aggregateByKey);
   return <DashboardWidget widget={widget} data={data} now={resolvedNow} />;
 }

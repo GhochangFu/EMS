@@ -70,6 +70,7 @@ import {
   updateNotificationChannelBodySchema,
 } from "../notifications/notifications.schema";
 import { energyReportQuerySchema } from "../reports/reports.schema";
+import { pointAggregateQuerySchema } from "../telemetry/telemetry.schema";
 import {
   listRuleExecutionsQuerySchema,
   ruleDraftBodySchema,
@@ -241,6 +242,7 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   listMaintenanceQuerySchema,
   listRuleExecutionsQuerySchema,
   locationDashboardQuerySchema,
+  pointAggregateQuerySchema,
   templateStatusQuerySchema,
 };
 
@@ -931,12 +933,21 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // are genuinely new GET query schemas, not a body schema smuggled in to
   // dodge the strictness audit below — both are plain, unstrict `organizationId`
   // filters with no request body to decide strictness for.**
+  //
+  // **`F3.35` Stage A widened it to eleven: `pointAggregateQuerySchema`
+  // (`GET /telemetry/points/:pointRef/aggregate`, ADR 0048 decision 3).** It is
+  // a GET with three query parameters and no body at all, so there is no
+  // strictness to decide — and it is registered rather than skipped because the
+  // adjacent `TelemetryController_recent` is the precedent that loses:
+  // `F4.20`'s finding is that a served document describing a parameter as
+  // absent is wrong, not merely thin, and a three-parameter general aggregate
+  // read needs to be discoverable more than `?window=15m` did.
   expect(
     Object.keys(QUERY_SCHEMAS).length,
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(10);
+  ).toBe(11);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))
