@@ -91,6 +91,23 @@ export const widgetPointRoleSchema = z.enum(["primary", "series"]);
 export const widgetToneSchema = z.enum(["ok", "info", "warning", "critical"]);
 
 /**
+ * The canvas, declared once. `F3.1d`'s builder clamps to these numbers rather
+ * than restating them, and `apps/api`'s write schema reads them too — the same
+ * discipline `WIDGET_POINT_CARDINALITY` established (Amendment 2 §1): a bound
+ * enforced only by the surface that happens to be convenient is not enforced.
+ *
+ * `0050`'s `dashboard_widgets_grid_bounds_check` is the fourth site and cannot
+ * import this — SQL has no imports. `tests/f3.1d-grid-bounds-single-source.test.ts`
+ * is the scan that keeps a FIFTH from appearing in TypeScript.
+ */
+export const DASHBOARD_GRID = {
+  columns: 12,
+  minWidgetW: 1,
+  minWidgetH: 1,
+  maxWidgetH: 24,
+} as const;
+
+/**
  * Fields every config carries. A plain object, spread into each arm — see the file docblock
  * for why this cannot be a schema.
  *
@@ -290,10 +307,10 @@ const dashboardWidgetIdentitySchema = z
     dashboardId: z.string().uuid(),
     organizationId: z.string().uuid(),
     title: z.string().max(255).nullable(),
-    gridX: z.number().int().min(0).max(11),
+    gridX: z.number().int().min(0).max(DASHBOARD_GRID.columns - 1),
     gridY: z.number().int().min(0),
-    gridW: z.number().int().min(1).max(12),
-    gridH: z.number().int().min(1).max(24),
+    gridW: z.number().int().min(DASHBOARD_GRID.minWidgetW).max(DASHBOARD_GRID.columns),
+    gridH: z.number().int().min(DASHBOARD_GRID.minWidgetH).max(DASHBOARD_GRID.maxWidgetH),
     // No `.max()`: cardinality is a per-widget row count that no row-level CHECK can see, so
     // the database does not enforce it and a response contract must not claim it does. The cap
     // is `MAX_WIDGET_POINTS`, enforced by `F3.1b` on write. The grid bounds above are a
@@ -301,8 +318,8 @@ const dashboardWidgetIdentitySchema = z
     // stating them here cannot reject a row the store can hold.
     points: z.array(dashboardWidgetPointDtoSchema),
   })
-  .refine((widget) => widget.gridX + widget.gridW <= 12, {
-    message: "a widget must fit inside the 12-column canvas",
+  .refine((widget) => widget.gridX + widget.gridW <= DASHBOARD_GRID.columns, {
+    message: `a widget must fit inside the ${DASHBOARD_GRID.columns}-column canvas`,
     path: ["gridW"],
   });
 

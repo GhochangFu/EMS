@@ -47,6 +47,42 @@ export function canCreateLocations(role: UserRole): boolean {
   return role === "admin" || role === "organization_admin";
 }
 
+/**
+ * Whether the role may author dashboards at all — decides whether the builder's forms render,
+ * not merely whether its buttons are enabled (ADR 0038 decision 10, applied by `F3.1d` §6.2).
+ *
+ * Mirrors `canPerformOperationsWrite(role, "configuration")`
+ * (`apps/api/src/auth/operations-write.ts`), which is also `DashboardBuilderController`'s own
+ * gate on `create`/`update`/`remove`/`putWidgets`. `asset_group_admin` passes this predicate —
+ * it may reach a route the API would accept — even though plan §15 Q1 records that no admin
+ * screen in this app currently routes it there and no picker endpoint would populate for it;
+ * that gap is a routing/picker question for a later row, not a reason to narrow this mirror of
+ * the API's own rule.
+ */
+export function canAuthorDashboards(role: UserRole): boolean {
+  return (
+    role === "admin" ||
+    role === "organization_admin" ||
+    role === "location_admin" ||
+    role === "asset_group_admin"
+  );
+}
+
+/**
+ * Whether the role may create or edit an ORGANIZATION-WIDE dashboard — both `locationId` and
+ * `assetGroupId` null, which therefore has no scope column and no other owner.
+ *
+ * Mirrors ADR 0047 Amendment 2 ruling 2, enforced server-side by
+ * `AccessControlService.canManageDashboard`'s own ruling-2 guard: a `location_admin` and an
+ * `asset_group_admin` author freely inside their OWN scope (`canAuthorDashboards` above already
+ * admits them), but neither may create a dashboard with no scope at all. `dashboard-scope-fields.tsx`
+ * (`F3.1d` Unit 7) reads this to decide whether the organization-wide option exists in the DOM —
+ * absent, not merely disabled, per §6.2's "forms, not buttons".
+ */
+export function canCreateOrganizationWideDashboard(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
 /** Default admin landing route for a role. */
 export function defaultAdminRoute(role: UserRole): string {
   if (role === "admin" || role === "organization_admin") {

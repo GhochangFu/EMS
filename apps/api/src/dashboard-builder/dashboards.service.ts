@@ -1,4 +1,11 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { dashboards, dashboardWidgetPoints, dashboardWidgets } from "@bms/db";
@@ -326,6 +333,8 @@ export class DashboardsService {
         tx,
       );
       return this.loadFullDto(tx, row.id);
+    }).catch((err: unknown) => {
+      throw this.translateSlugConflict(err, body.slug);
     });
   }
 
@@ -333,16 +342,29 @@ export class DashboardsService {
    * Updates a dashboard. `body` is a partial PATCH; every field is merged against the STORED
    * row before any check runs, because a PATCH that sets only `locationId` cannot see whether
    * the row already carries an `assetGroupId` — the schema alone cannot enforce singularity on
-   * a value it never receives. `canManageDashboard` runs on that merged scope BEFORE the
-   * "both set" 400 check (finding 5, review, and its own comment below): checking scope
-   * validity first would let an unauthorized caller distinguish "no such id" from "exists, and
-   * its stored scope conflicts with your PATCH" through a 400 rather than the uniform 404 every
-   * other refusal on this route promises.
+   * a value it never receives. `canManageDashboard` runs TWICE — once against the row's STORED
+   * scope, once against the merged `nextScope` — and BOTH run before the "both set" 400 check
+   * (finding 5, review, and its own comment below): checking scope validity first would let an
+   * unauthorized caller distinguish "no such id" from "exists, and its stored scope conflicts
+   * with your PATCH" through a 400 rather than the uniform 404 every other refusal on this route
+   * promises.
+   *
+   * **Why two checks, not one (review, HIGH).** A single check against `nextScope` only answers
+   * "may you write to the destination" — it never asks whether this caller may touch the row AT
+   * ALL. That let a `location_admin` list an organization-wide dashboard (read is
+   * organization-wide by design), PATCH it with its own `locationId`, and pass: the destination
+   * is theirs, so the old check passed, and an ownerless, tenant-wide row — one ADR 0047
+   * Amendment 2 ruling 2 forbids that role from ever CREATING — was re-homed under one site.
+   * `remove()` then permitted deleting it, because the stored scope was now theirs. The stored
+   * check is evaluated FIRST, because "may you touch this row at all" precedes "may you move it
+   * there" — `remove()` (below) and `putWidgets()` already authorize this way and are the
+   * in-repo precedent this method was missing.
    */
   async update(jwt: JwtPayload, id: string, body: UpdateDashboardBody): Promise<DashboardDto> {
     await this.accessControl.assertOperationsWriteRole(jwt, "configuration");
     const existing = await this.fetchRowForWrite(id);
 
+    const storedScope: DashboardScope = { locationId: existing.locationId, assetGroupId: existing.assetGroupId };
     const nextLocationId = body.locationId !== undefined ? body.locationId : existing.locationId;
     const nextAssetGroupId = body.assetGroupId !== undefined ? body.assetGroupId : existing.assetGroupId;
     const nextScope: DashboardScope = { locationId: nextLocationId, assetGroupId: nextAssetGroupId };
@@ -357,9 +379,12 @@ export class DashboardsService {
     // scope shape) before ever reaching this refusal. canManageDashboard does not itself depend
     // on the two columns being mutually exclusive, so checking it first is safe either way —
     // `resolveScopeTarget` inside it resolves this exact "both set" merged scope to `{kind:
-    // "invalid"}` rather than throwing, precisely so this call site can run before the 400
+    // "invalid"}` rather than throwing, precisely so these call sites can run before the 400
     // check below (finding 5, review — this ordering now ships with the test that would have
     // caught reverting it).
+    if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, storedScope))) {
+      throw new NotFoundException("Dashboard not found");
+    }
     if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, nextScope))) {
       throw new NotFoundException("Dashboard not found");
     }
@@ -399,6 +424,8 @@ export class DashboardsService {
       );
 
       return this.loadFullDto(tx, id);
+    }).catch((err: unknown) => {
+      throw this.translateSlugConflict(err, body.slug ?? existing.slug);
     });
   }
 
@@ -543,6 +570,29 @@ export class DashboardsService {
   }
 
   // ---- shared helpers -----------------------------------------------------
+
+  /**
+   * Turns the partial unique index violation into an answer.
+   *
+   * `dashboards_organization_slug_key` (migration `0050`) is what stops two dashboards sharing a
+   * slug within one organization, and it fires on an ordinary authoring mistake — reusing a
+   * slug, or two authors saving the same one at once. Surfacing the raw constraint name would
+   * read as a bug rather than as "pick a different slug".
+   *
+   * `asset-templates.service.ts:805-813`'s `translateDraftConflict` is the precedent this copies
+   * verbatim in shape: read the constraint off the error, translate the one name this method
+   * owns, and return every other error unchanged — including a `23505` on a different
+   * constraint, which must reach the caller exactly as the driver raised it.
+   */
+  private translateSlugConflict(err: unknown, slug: string): unknown {
+    const constraint = (err as { constraint?: string } | null)?.constraint;
+    if (constraint === "dashboards_organization_slug_key") {
+      return new ConflictException(
+        `A dashboard with slug "${slug}" already exists in this organization. Choose a different slug.`,
+      );
+    }
+    return err;
+  }
 
   private async insertPoints(
     tx: BmsTx,

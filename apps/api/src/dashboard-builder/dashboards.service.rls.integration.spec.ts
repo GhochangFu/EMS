@@ -303,3 +303,43 @@ export async function assertUnauthorizedUpdateWithScopeConflictIs404(
       "authority to know either",
   ).toEqual(nonexistentMessage);
 }
+
+/**
+ * **Review finding (HIGH) — `update()` authorized only the target scope, never the row's
+ * stored one.** A `location_admin` may list every dashboard in its organization (read is
+ * organization-wide by design), then PATCH an organization-wide one with its OWN `locationId`.
+ * The old check asked only "may you write to the destination", which such a PATCH passes, so an
+ * ownerless, tenant-wide dashboard could be re-homed under one site by a caller ADR 0047
+ * Amendment 2 ruling 2 never lets CREATE one. This asserts the re-home is refused with the same
+ * 404 every other `update()` refusal on this route uses — not a 403, which would disclose that
+ * the row exists and that this caller can reach it.
+ */
+export async function assertLocationAdminCannotRehomeOrganizationWideDashboard(
+  service: DashboardsService,
+  eskomLocationAdmin: JwtPayload,
+  organizationWideDashboardId: string,
+  eskomLocationAdminOwnLocationId: string,
+): Promise<void> {
+  await expect(
+    service.update(eskomLocationAdmin, organizationWideDashboardId, {
+      locationId: eskomLocationAdminOwnLocationId,
+    }),
+  ).rejects.toMatchObject({ status: 404 });
+}
+
+/**
+ * The narrow half of the finding above: the fix must not become a blanket refusal. A
+ * `location_admin` PATCHing a dashboard ALREADY scoped to its own location — no re-home, no
+ * scope change at all — must still succeed, proven by the returned DTO reflecting the write.
+ */
+export async function assertLocationAdminMayStillUpdateItsOwnLocationDashboard(
+  service: DashboardsService,
+  eskomLocationAdmin: JwtPayload,
+  ownLocationDashboardId: string,
+  newName: string,
+): Promise<void> {
+  const after = await service.update(eskomLocationAdmin, ownLocationDashboardId, { name: newName });
+  expect(after.name, "an authorized in-scope PATCH must still succeed and be reflected in the DTO").toBe(
+    newName,
+  );
+}

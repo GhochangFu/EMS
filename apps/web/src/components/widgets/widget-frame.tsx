@@ -5,6 +5,11 @@ import type { WidgetStatus } from "../../lib/widget-catalog";
 type WidgetFrameProps = {
   title: string;
   status: WidgetStatus;
+  /** ADR 0027 staleness (review finding, HIGH) — set only meaningfully on `status === "ready"`.
+   * A frame with a stale reading still draws it (the number is honest evidence, just old — the
+   * same call `KpiTile`'s own `stale` prop already makes), but says so, rather than presenting a
+   * dead sensor's last value as current. */
+  stale?: boolean;
   children: ReactNode;
 };
 
@@ -18,10 +23,17 @@ type WidgetFrameProps = {
  * one exception: it composes `KpiTile`, which is already its own frame (see
  * that file's docblock for why it does not use this one).
  */
-export function WidgetFrame({ title, status, children }: WidgetFrameProps) {
+export function WidgetFrame({ title, status, stale = false, children }: WidgetFrameProps) {
   return (
     <div className="flex h-full flex-col rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
-      <h3 className="mb-2 truncate text-[11px] font-medium uppercase tracking-wide text-bms-muted">{title}</h3>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="truncate text-[11px] font-medium uppercase tracking-wide text-bms-muted">{title}</h3>
+        {status === "ready" && stale ? (
+          <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+            Offline
+          </span>
+        ) : null}
+      </div>
       {renderBody(status, children)}
     </div>
   );

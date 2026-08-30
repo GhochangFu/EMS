@@ -468,11 +468,33 @@ export default defineConfig({
       // leaves no clean escape — never lower a threshold to go green — so
       // ~0.5–1.0 per axis is banked here instead of ~0.2, still catching
       // roughly 14 of the 15 stale-low points.
+      // `F3.1d` (2026-08-30) — the dashboard builder, the read-only viewer and
+      // the duplicate action. Measured against the live database on a full
+      // serial run, 234/234 files and 1155/1155 tests, **none skipped**, exit 0:
+      // 70.1 statements · 66.55 branches · 72.4 functions · 70.22 lines.
+      //
+      // **Most of what this row wrote is outside the denominator, and the rise
+      // is smaller than the row's size suggests for that reason.** `include`
+      // reaches `apps/web/src/lib/**` and nothing above it, so the four pure
+      // modules Unit 4 added (`dashboard-grid-geometry`, `dashboard-widget-data`,
+      // `dashboard-builder-form`, `dashboard-duplicate`) and Unit 1's extracted
+      // `widget-config-form` are counted, while every page, component and hook
+      // Units 6–7 and 9 wrote is invisible here. That asymmetry is the reason
+      // the plan put the row's logic in `lib/` in the first place — logic above
+      // that boundary is untested as far as this gate can tell, whatever its
+      // own specs assert.
+      //
+      // Margin held at this file's post-`F3.1c` ~0.7–1.0 per axis rather than
+      // narrowed: the two hazards documented above are unchanged — `apps/api/
+      // src/calc/**` branches reachable only from state a fresh `db:migrate` →
+      // `db:seed` may not reproduce, and `F4.33` still open — and this
+      // measurement was again taken against this machine's long-lived database
+      // rather than CI's fresh one.
       thresholds: {
-        statements: 67.8,
-        branches: 64.3,
-        functions: 70.0,
-        lines: 67.9,
+        statements: 69.4,
+        branches: 65.5,
+        functions: 71.7,
+        lines: 69.5,
       },
     },
   },

@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runAdminAccessTests,
   runAssetTemplateTabTests,
+  runDashboardAuthoringPredicateTests,
   runNotificationTabTests,
 } from "./admin-access.spec";
 
@@ -18,5 +19,9 @@ describe("admin-access", () => {
 
   it("shows the F3.8 notification tabs to admin and organization_admin only", () => {
     runNotificationTabTests();
+  });
+
+  it("gates dashboard authoring and the organization-wide scope by role", () => {
+    runDashboardAuthoringPredicateTests();
   });
 });

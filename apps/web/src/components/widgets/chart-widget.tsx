@@ -10,6 +10,7 @@ type ChartWidgetProps = {
   title: string;
   status: WidgetStatus;
   series: readonly WidgetSeries[];
+  stale?: boolean;
   config: ChartConfig;
   now: number;
 };
@@ -34,11 +35,11 @@ type ChartWidgetProps = {
  * owns the window/refresh cadence the builder surface configures — do not
  * pick a fix here.
  */
-export function ChartWidget({ title, status, series, config, now }: ChartWidgetProps) {
+export function ChartWidget({ title, status, series, stale, config, now }: ChartWidgetProps) {
   const option = useMemo<EChartsOption>(() => buildChartOption(config, series, now), [config, series, now]);
 
   return (
-    <WidgetFrame title={title} status={status}>
+    <WidgetFrame title={title} status={status} stale={stale}>
       <ReactECharts option={option} style={{ height: 220 }} notMerge lazyUpdate />
     </WidgetFrame>
   );

@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runDashboardBuilderTests,
+  runDashboardGridTests,
   runDashboardWidgetPointDtoTests,
   runWidgetPointCardinalityTests,
 } from "./dashboard-builder.spec";
@@ -10,6 +11,12 @@ import {
 describe("F3.1a — the dashboard widget vocabulary and config union", () => {
   it("closes the vocabulary, discriminates the config, and narrows through the DTO", () => {
     runDashboardBuilderTests();
+  });
+});
+
+describe("F3.1d Unit 2 — DASHBOARD_GRID wired into dashboardWidgetIdentitySchema", () => {
+  it("reads the single-source grid bounds rather than a private 11/12/24", () => {
+    runDashboardGridTests();
   });
 });
 

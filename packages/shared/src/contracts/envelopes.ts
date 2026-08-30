@@ -32,6 +32,7 @@ import {
   templateVersionDeltaDtoSchema,
   templateVersionSummaryDtoSchema,
 } from "./admin";
+import { dashboardSummaryDtoSchema } from "./dashboard-builder";
 import {
   alarmListItemSchema,
   maintenanceScheduleItemSchema,
@@ -152,6 +153,22 @@ export const templateMigrationResultResponseSchema = z.object({
   pointsCreated: z.number(),
   skippedPoints: z.array(templateMigrationSkippedPointDtoSchema),
 });
+
+// --- dashboards (`F3.1b`/`F3.1d`, ADR 0047) ---------------------------------
+//
+// `GET /dashboards` returns `{ items: DashboardSummaryDto[] }` and `DELETE
+// /dashboards/:id` returns `{ deleted: true }` (`DashboardBuilderController`),
+// but `F3.1b` shipped no envelope for either — `apps/web`'s response
+// validator requires a schema argument, so a route without one cannot be
+// called from the client at all (`assetTemplatesListResponseSchema`'s own
+// comment above records the same gap for the same reason). The gap surfaced
+// here, when `F3.1d` finally wrote the client.
+export const dashboardsListResponseSchema = itemsOf(dashboardSummaryDtoSchema);
+
+/** `DELETE /dashboards/:id` — `templateDraftDeletedResponseSchema`'s shape:
+ * the route deletes the row or throws (a 404 for a dashboard it cannot find,
+ * a 403 for one it may not manage), so it has no `false` to return. */
+export const dashboardDeletedResponseSchema = z.object({ deleted: z.literal(true) });
 
 // --- operations -------------------------------------------------------------
 

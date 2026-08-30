@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { fetchCurrentUser } from "./api/login";
 import { AlarmsPage } from "./pages/alarms-page";
 import { DashboardPage } from "./pages/dashboard-page";
+import { DashboardsPage } from "./pages/dashboards-page";
+import { DashboardViewerPage } from "./pages/dashboard-viewer-page";
 import { LocationDashboardPage } from "./pages/location-dashboard-page";
 import { MapPage } from "./pages/map-page";
 import { CracPage } from "./pages/crac-page";
@@ -23,6 +25,8 @@ import { ControlRoomEnvPage } from "./pages/control-room-env-page";
 import { AdminRoute } from "./components/admin-route";
 import { AdminHubPage } from "./pages/admin/admin-hub-page";
 import { AssetPointsAdminPage } from "./pages/admin/asset-points-page";
+import { DashboardBuilderEditPage } from "./pages/admin/dashboard-builder-edit-page";
+import { DashboardBuilderPage } from "./pages/admin/dashboard-builder-page";
 import { AssetTemplateDetailPage } from "./pages/admin/asset-template-detail-page";
 import { AssetTemplateVersionsPage } from "./pages/admin/asset-template-versions-page";
 import { AssetTemplatesAdminPage } from "./pages/admin/asset-templates-page";
@@ -125,6 +129,26 @@ export function App() {
         element={
           accessToken && user ? (
             <AlarmsPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/dashboards"
+        element={
+          accessToken && user ? (
+            <DashboardsPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/dashboards/:slug"
+        element={
+          accessToken && user ? (
+            <DashboardViewerPage user={user} />
           ) : (
             <Navigate to="/login" replace />
           )
@@ -480,6 +504,30 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <PointKeysAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/dashboards"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <DashboardBuilderPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/dashboards/:slug"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <DashboardBuilderEditPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

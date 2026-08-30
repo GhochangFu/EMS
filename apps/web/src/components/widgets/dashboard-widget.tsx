@@ -17,10 +17,25 @@ import { ValueTileWidget } from "./value-tile-widget";
  * `status` derives from `WidgetStatus` (§4.8: a vocabulary is declared
  * once) rather than restating its four members a third time — `WidgetStatus`
  * itself is `KpiTileStatus`, not a fourth independent copy.
+ *
+ * **`stale` (review finding, HIGH) sits BESIDE `status`, not folded into it.**
+ * `WidgetStatus`/`KpiTileStatus` is a closed, four-member vocabulary shared with every other
+ * `KpiTile` consumer in this app (`dashboard-page.tsx`, `control-room-*-page.tsx`, …) — widening
+ * it to a fifth member for one caller would force every existing switch on that type to grow an
+ * arm it has no use for. `KpiTile` already carries the same shape as a sibling boolean
+ * (`kpi-tile.tsx`'s own `stale` prop, already wired for the fixed dashboards), so a dashboard
+ * widget's staleness follows that precedent rather than inventing a second one.
  */
 export type WidgetData =
   | { status: Exclude<WidgetStatus, "ready"> }
-  | { status: Extract<WidgetStatus, "ready">; primary: number | null; series: readonly WidgetSeries[] };
+  | {
+      status: Extract<WidgetStatus, "ready">;
+      primary: number | null;
+      series: readonly WidgetSeries[];
+      /** Computed by `dashboard-widget-data.ts`'s `widgetDataFor` from the SAME `isStale`/
+       * `FRESH_MS` gate the seven control-room pages use — never a second threshold. */
+      stale: boolean;
+    };
 
 type DashboardWidgetProps = {
   widget: DashboardWidgetDto;
@@ -44,17 +59,33 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
   const status = data.status;
   const primary = data.status === "ready" ? data.primary : null;
   const series = data.status === "ready" ? data.series : NO_SERIES;
+  const stale = data.status === "ready" ? data.stale : false;
   const resolvedNow = now ?? Date.now();
 
   switch (widget.widgetType) {
     case "radial_gauge":
-      return <RadialGaugeWidget title={title} status={status} primary={primary} config={widget.config} />;
+      return (
+        <RadialGaugeWidget title={title} status={status} primary={primary} stale={stale} config={widget.config} />
+      );
     case "tank_level":
-      return <TankLevelWidget title={title} status={status} primary={primary} config={widget.config} />;
+      return (
+        <TankLevelWidget title={title} status={status} primary={primary} stale={stale} config={widget.config} />
+      );
     case "value_tile":
-      return <ValueTileWidget title={title} status={status} primary={primary} config={widget.config} />;
+      return (
+        <ValueTileWidget title={title} status={status} primary={primary} stale={stale} config={widget.config} />
+      );
     case "chart":
-      return <ChartWidget title={title} status={status} series={series} config={widget.config} now={resolvedNow} />;
+      return (
+        <ChartWidget
+          title={title}
+          status={status}
+          series={series}
+          stale={stale}
+          config={widget.config}
+          now={resolvedNow}
+        />
+      );
     default: {
       const unreachable: never = widget;
       return unreachable;
