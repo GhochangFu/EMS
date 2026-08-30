@@ -746,6 +746,23 @@ Process (`AGENTS.md` §10).
 - **Unblocks:** **`E5.1`** (water-treatment domain pack — P0 flagship, Ion
   Exchange's core business), plus `E5.2` and `E5.3`. `E2.2` and `E1.3` stay
   blocked on `E2.1` and `E1.1` respectively.
+
+  > **This block is `E1.7`'s record and stands as written.** Two of its claims
+  > have since gone stale, corrected here rather than edited into the sentences
+  > above — the same convention the `F2.5` bullet below uses.
+  >
+  > **`E1.3` is no longer blocked on `E1.1`** (*Unblocks*, above). The client's
+  > 2026-08-22 answer retired that edge rather than delivering it: the go-live
+  > score needs no model. `E1.3` shipped on 2026-08-30 under ADR 0050, and the
+  > five-input SOW §4.3 score that does still need `E1.1` took its own row,
+  > `E1.8`. So `health` has left *Reserved* too, and `optimisation` is the only
+  > section left there.
+  >
+  > **`dashboards` stopped carrying "ordered point keys and nothing else"**
+  > (*Anchored*, above) when `F3.1a` landed ADR 0047 — it carries typed
+  > `widgets[]` now. That claim was already stale before this sweep and was
+  > left alone, which is what identifies this block as a record rather than a
+  > live index. Noted, deliberately not edited.
 - **Owed:** ~~the AGENTS.md §2 promotion, in its own `chore(agents):` PR
   (§9.10)~~ ✅ **cleared** — §2 gained a *Template content* row, and §6 gained
   the two deferral bullets covering what ADR 0019 deliberately left closed.
@@ -1864,6 +1881,13 @@ Process (`AGENTS.md` §10).
   > sections now; and **the count is held in three places, not one**, the
   > extra two being `template-tabs.spec.ts` and `template-tab-guard.spec.ts`.
   > See *The template Dashboards tab* below.
+  >
+  > **A third change, 2026-08-30:** `health` reopened under ADR 0050 (`E1.3`),
+  > so `optimisation` is the only closed section left. **The count is still
+  > six** — `health` reopened at the schema and took no tab, because ADR 0050
+  > Amendment 1 decision 5 scoped `E1.3` to the score surfaces. It is therefore
+  > `maintenance`'s shape, not `dashboards`': accepted by the API, carried
+  > through the merge, edited by nothing here.
 - **One editor, two contexts.** A derived point's `formula` and a KPI's
   `expression` share the `bms-calc-v1` parser, so they share a component —
   but they share nothing else, so the rules are a discriminated union rather
