@@ -595,6 +595,13 @@ const DASHBOARD_WIDGET_ARM =
   "refused rather than silently dropped. Each of the four arms is strict, and cardinality " +
   "(ADR 0047 Amendment 2) is enforced on the `points` field, not by this node's own strictness.";
 
+const HEALTH_SECTION =
+  "E1.3 (ADR 0050 decision 7). The `health` tier `E1.7` rejected, reopened as its consumer " +
+  "landed. Strict at the authoring boundary for the reason the whole section exists: the " +
+  "roll-up reads `weights` and `bands` by name, so a key it does not read is not a harmless " +
+  "extra — it is an author believing they configured something. A misspelled `band` would " +
+  "otherwise be stored, returned, and silently ignored by every score it was meant to change.";
+
 const STRICT = (why: string): LedgerEntry => ({ strict: true, why });
 
 /**
@@ -666,6 +673,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
       "server adds; strictness belongs on the write side, which is this one.",
     ),
   "createAssetTemplateBodySchema/content/dashboards{}/widgets[]|3/config": STRICT(WIDGET_CONFIG),
+  "createAssetTemplateBodySchema/content/health": STRICT(HEALTH_SECTION),
+  "createAssetTemplateBodySchema/content/health/bands[]": STRICT(HEALTH_SECTION),
   "createAssetTemplateBodySchema/content/kpis[]": STRICT(ALREADY),
   "createAssetTemplateBodySchema/content/maintenance[]": STRICT(ALREADY),
   "createAssetTemplateBodySchema/points[]": STRICT(CALLER_ERROR),
@@ -777,6 +786,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
       "server adds; strictness belongs on the write side, which is this one.",
     ),
   "updateAssetTemplateBodySchema/content/dashboards{}/widgets[]|3/config": STRICT(WIDGET_CONFIG),
+  "updateAssetTemplateBodySchema/content/health": STRICT(HEALTH_SECTION),
+  "updateAssetTemplateBodySchema/content/health/bands[]": STRICT(HEALTH_SECTION),
   "updateAssetTemplateBodySchema/content/kpis[]": STRICT(ALREADY),
   "updateAssetTemplateBodySchema/content/maintenance[]": STRICT(ALREADY),
   "updateAssetTemplateBodySchema/points[]": STRICT(CALLER_ERROR),
