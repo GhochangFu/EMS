@@ -74,6 +74,8 @@ export function runAssetTemplateTabTests(): void {
         "/admin/locations",
         "/admin/rtus",
         "/admin/assets",
+        // `F3.37` (ADR 0049 decision 5) — the role a member plays in its group.
+        "/admin/asset-groups",
         TEMPLATES,
         "/admin/asset-points",
         "/admin/manual-readings",
@@ -99,7 +101,10 @@ export function runAssetTemplateTabTests(): void {
     // `notificationAdmin`, so an `organization_admin` now sees both: eleven
     // tabs, the same as `admin`. It was nine. A `location_admin` still sees
     // eight — `ChannelsService.list` returns `[]` for that role.
-    const expected = role === "location_admin" ? 8 : 11;
+    // `F3.37` added Asset Groups, which is gated by neither `catalogOnly` nor
+    // `notificationAdmin`, so every role that reaches this list sees it: 8 -> 9
+    // and 11 -> 12.
+    const expected = role === "location_admin" ? 9 : 12;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,

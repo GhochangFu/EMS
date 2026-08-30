@@ -1,5 +1,6 @@
 import type { ZodTypeAny } from "zod";
 
+import { setAssetGroupMemberRoleBodySchema } from "../admin/asset-groups/asset-groups.schema";
 import { assetPointCalcOverrideBodySchema } from "../admin/asset-points/asset-point-calc-override.schema";
 import {
   createAssetPointBodySchema,
@@ -116,6 +117,7 @@ import {
 export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AlarmsController_acknowledge: alarmAckBodySchema,
   AlarmsController_upsertEnrichment: alarmEnrichmentUpsertBodySchema,
+  AssetGroupMembersAdminController_setRole: setAssetGroupMemberRoleBodySchema,
   AssetPointCalcOverrideController_set: assetPointCalcOverrideBodySchema,
   AssetPointsAdminController_create: createAssetPointBodySchema,
   AssetPointsAdminController_update: updateAssetPointBodySchema,

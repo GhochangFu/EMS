@@ -196,9 +196,13 @@ export type AlarmSeverityDto = z.infer<typeof Op.alarmSeverityDtoSchema>;
 export type AlarmSkillDto = z.infer<typeof Op.alarmSkillDtoSchema>;
 /** A skill/trade code, as a code into `bms.alarm_skills` (ADR 0034). */
 export type AlarmSkillCode = z.infer<typeof Op.alarmSkillCodeSchema>;
+/** ADR 0049 — one row of `bms.asset_roles`. No `rank`/`tone`: a role drives no styling. */
+export type AssetRoleDto = z.infer<typeof Op.assetRoleDtoSchema>;
+/** What part a member plays in its group, as a code into `bms.asset_roles` (ADR 0049). */
+export type AssetRoleCode = z.infer<typeof Op.assetRoleCodeSchema>;
 /** The `StatusPill` palette, as a type. Closed; see `pillToneSchema`. */
 export type PillTone = z.infer<typeof Op.pillToneSchema>;
-/** `GET /api/v1/vocabularies` — all four open vocabularies, so a page renders none half-loaded. */
+/** `GET /api/v1/vocabularies` — all five open vocabularies, so a page renders none half-loaded. */
 export type VocabulariesResponse = z.infer<typeof Op.vocabulariesResponseSchema>;
 export type AutomationRuleOperator = z.infer<typeof Op.automationRuleOperatorSchema>;
 export type AutomationRuleSeverity = z.infer<typeof Op.automationRuleSeveritySchema>;
@@ -226,6 +230,21 @@ export type AdminLocationDto = z.infer<typeof A.adminLocationDtoSchema>;
 export type AdminRtuDto = z.infer<typeof A.adminRtuDtoSchema>;
 export type AdminAssetDto = z.infer<typeof A.adminAssetDtoSchema>;
 export type AdminAssetPointDto = z.infer<typeof A.adminAssetPointDtoSchema>;
+/** `F3.37` (ADR 0049) — one `bms.asset_groups` row for the admin surface. */
+export type AdminAssetGroupDto = z.infer<typeof A.adminAssetGroupDtoSchema>;
+export type AdminAssetGroupListResponse = z.infer<
+  typeof A.adminAssetGroupListResponseSchema
+>;
+/** One membership, joined to its asset and its role label. */
+export type AdminAssetGroupMemberDto = z.infer<
+  typeof A.adminAssetGroupMemberDtoSchema
+>;
+export type AdminAssetGroupMembersResponse = z.infer<
+  typeof A.adminAssetGroupMembersResponseSchema
+>;
+export type SetAssetGroupMemberRoleBody = z.infer<
+  typeof A.setAssetGroupMemberRoleBodySchema
+>;
 export type AdminPointKeyDto = z.infer<typeof A.adminPointKeyDtoSchema>;
 export type AdminOrganizationSummaryDto = z.infer<
   typeof A.adminOrganizationSummaryDtoSchema

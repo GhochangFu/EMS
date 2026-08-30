@@ -352,15 +352,46 @@ export const alarmSkillDtoSchema = z.object({
 });
 
 /**
- * `GET /api/v1/vocabularies` — all four open vocabularies in one response.
+ * An asset role code (ADR 0049 decision 5, `F3.37`). Shape only, for the same
+ * reason as the four above: the set lives in `bms.asset_roles` and is closed by
+ * `asset_group_members_role_fkey`, not by this file.
+ *
+ * **Never make this a `z.enum`.** §4.8's test as ADR 0032 rewrote it asks
+ * whether the behaviour can be carried as data. A widget type's behaviour is a
+ * React component and a metric's is a SQL query, so ADR 0047 decision 2 and ADR
+ * 0048 decision 1 both closed theirs. A role's behaviour is "match this
+ * member", which *is* the code — a role declared by an `INSERT` arrives fully
+ * functional. `tests/f3.37-asset-role-vocabulary.test.ts` holds this line
+ * against the reader who finds the fetch inconvenient and pastes the 26 codes
+ * back in. `GET /api/v1/vocabularies` is where the live set comes from.
+ */
+export const assetRoleCodeSchema = z.string().min(1).max(64);
+
+/** One row of `bms.asset_roles` (ADR 0049). No `tone`, no `rank` — a role
+ * drives no styling and carries no urgency; matches `assetDomainDtoSchema`'s
+ * shape, not `alarmSeverityDtoSchema`'s. */
+export const assetRoleDtoSchema = z.object({
+  code: assetRoleCodeSchema,
+  label: z.string(),
+  sortOrder: z.number(),
+  active: z.boolean(),
+});
+
+/**
+ * `GET /api/v1/vocabularies` — all five open vocabularies in one response.
  *
  * One endpoint rather than four because every consumer needs them together:
  * the rules page renders a concern badge beside a plant badge and a severity
  * control, and a single query means a single cache key and no half-loaded
- * render. It was two axes until ADR 0032 added `alarmSeverities`, and three
- * until ADR 0034 added `alarmSkills`; the argument for one endpoint got
- * stronger rather than weaker each time, since a page cannot classify a
- * single row until the relevant list has arrived.
+ * render. It was two axes until ADR 0032 added `alarmSeverities`, three until
+ * ADR 0034 added `alarmSkills`, and four until ADR 0049 added `assetRoles`; the
+ * argument for one endpoint got stronger rather than weaker each time, since a
+ * page cannot classify a single row until the relevant list has arrived.
+ *
+ * **Added as a plain key, never `.extend()` or `.merge()`.**
+ * `tests/adr-0030-contract-derivation.test.ts` scans this directory for both
+ * and fails the build, because a flattened intersection still typechecks
+ * everywhere it is used and so nothing else would report it.
  */
 export const vocabulariesResponseSchema = z.object({
   ruleCategories: z.array(ruleCategoryDtoSchema),
@@ -369,6 +400,8 @@ export const vocabulariesResponseSchema = z.object({
   alarmSeverities: z.array(alarmSeverityDtoSchema),
   /** ADR 0034. Ordered by `sortOrder` ascending. */
   alarmSkills: z.array(alarmSkillDtoSchema),
+  /** ADR 0049 decision 5 (`F3.37`). Ordered by `sortOrder` ascending. */
+  assetRoles: z.array(assetRoleDtoSchema),
 });
 export const automationRuleOperatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
 /**

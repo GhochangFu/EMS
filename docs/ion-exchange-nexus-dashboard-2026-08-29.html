@@ -231,6 +231,7 @@ h2.sheet-title span{color:var(--accent-ink)}
 
 /* ---------- KpiTile — components/kpi-tile.tsx ---------- */
 .kpis{display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px}
+.kpis.k5{grid-template-columns:repeat(5,minmax(0,1fr))}
 .kpi{position:relative; background:#FFF; border:1px solid var(--a-line); border-radius:8px; padding:14px;
   box-shadow:0 1px 2px rgba(26,34,48,.05); overflow:hidden; display:flex; flex-direction:column}
 .kpi::after{content:""; position:absolute; left:0; right:0; top:0; height:2px; background:var(--a-green)}
@@ -263,7 +264,9 @@ h2.sheet-title span{color:var(--accent-ink)}
 .mid{display:grid; grid-template-columns:minmax(0,1.14fr) minmax(0,1fr); gap:16px; align-items:start}
 .rightcol{display:flex; flex-direction:column; gap:16px}
 .pairs{display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); gap:16px}
-.bottom{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)) minmax(0,1.1fr) minmax(0,1.4fr); gap:16px}
+.bottom{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px}
+.bottom-b{display:grid; grid-template-columns:minmax(0,1.02fr) minmax(0,1fr) minmax(0,1.3fr); gap:16px}
+.bottom-b .panel, .bottom-b .card{overflow:hidden}
 
 /* ---------- live process diagram ---------- */
 .chain{border:1px solid var(--a-line); border-radius:6px; background:var(--a-well); padding:10px 12px 12px}
@@ -381,6 +384,33 @@ td.r{text-align:right}
   color:var(--a-faint)}
 .c-foot .v{font-size:12px; color:var(--a-ink); font-variant-numeric:tabular-nums; margin-top:2px}
 
+/* ---------- chart legend (required for 2+ series) ---------- */
+.clegend{display:flex; flex-wrap:wrap; gap:6px 14px; margin-bottom:9px; font-size:10.5px; color:var(--a-muted)}
+.clegend span{display:inline-flex; align-items:center; gap:6px; white-space:nowrap}
+.clegend i{width:9px; height:9px; border-radius:2px; flex:none}
+.clegend b{color:var(--a-ink); font-family:var(--mono); font-size:10px; font-variant-numeric:tabular-nums}
+
+/* ---------- horizontal bars — energy-top-bar-chart.tsx ---------- */
+.hbars{display:flex; flex-direction:column; gap:9px}
+.hbar{display:grid; grid-template-columns:82px minmax(0,1fr) 54px; align-items:center; gap:9px; font-size:11px}
+.hbar .lb{color:var(--a-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.hbar .tr{display:block; height:12px; background:var(--a-grid); border-radius:2px; overflow:hidden}
+.hbar .fl{display:block; height:12px; border-radius:2px; background:#1570EF}
+.hbar .vn{font-family:var(--mono); font-size:10.5px; color:var(--a-ink); text-align:right;
+  font-variant-numeric:tabular-nums}
+
+/* ---------- grouped bars ---------- */
+.gbars{display:flex; align-items:flex-end; justify-content:space-between; gap:8px; height:136px;
+  border-bottom:1px solid var(--a-line-2); padding-bottom:0}
+.gcol{flex:1 1 0; display:flex; flex-direction:column; align-items:center; gap:6px; min-width:0}
+.gpair{display:flex; align-items:flex-end; gap:3px; height:120px; width:100%; justify-content:center}
+.gpair i{width:13px; border-radius:2px 2px 0 0; display:block}
+.gcol .gx{font-family:var(--mono); font-size:9px; color:var(--a-faint); white-space:nowrap}
+
+/* ---------- large radial gauge ---------- */
+.gauge-lg{display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:8px}
+.gauge-lg .cap{font-family:var(--mono); font-size:9.5px; color:var(--a-faint); letter-spacing:.06em}
+
 /* ---------- donut ---------- */
 .donut{display:flex; flex-direction:column; align-items:center; gap:14px}
 .donut svg{flex:none}
@@ -402,6 +432,102 @@ td.r{text-align:right}
 .actors li .nm{flex:1; color:var(--a-ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .actors li .sc{font-family:var(--mono); font-weight:600; font-variant-numeric:tabular-nums}
 
+/* ---------- single-line diagram: staged rails, for the electrical sheet ---------- */
+.sld{display:flex; align-items:stretch; gap:0; overflow-x:auto; background:#F7F8FA;
+  border:1px solid var(--a-line); border-radius:6px; padding:14px 12px}
+.stage{flex:1 1 0; min-width:132px; display:flex; flex-direction:column; justify-content:center; gap:10px;
+  padding:0 3px}
+.pair-row{display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:16px; align-items:start}
+.stage-h{font-family:var(--mono); font-size:8.5px; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--a-faint); text-align:center; margin-bottom:-2px}
+.enode{border:1px solid var(--a-line-2); border-radius:5px; background:#FFF; padding:7px 8px; position:relative}
+.enode .t{display:flex; align-items:center; gap:6px; margin-bottom:3px}
+.enode .t svg{width:14px; height:14px; color:var(--a-muted); flex:none}
+.enode .t b{font-family:var(--cond); font-size:12px; font-weight:700; color:var(--a-ink); line-height:1.15;
+  flex:1; min-width:0}
+.enode .r{font-family:var(--mono); font-size:9.5px; line-height:1.5; color:var(--a-muted);
+  font-variant-numeric:tabular-nums}
+.enode .r em{font-style:normal; color:var(--a-ink)}
+.enode.warn{border-color:var(--sev-warn); background:var(--sev-warn-bg)}
+.enode.high{border-color:var(--sev-high); background:var(--sev-high-bg)}
+.enode.crit{border-color:var(--sev-crit); background:var(--sev-crit-bg); box-shadow:0 0 0 3px rgba(220,38,38,.10)}
+.enode.off{border-color:var(--sev-off-bd); background:var(--sev-off-bg)}
+.enode.warn .t svg{color:var(--sev-warn)} .enode.high .t svg{color:var(--sev-high)}
+.enode.crit .t svg{color:var(--sev-crit)} .enode.off .t svg{color:var(--sev-off-fg)}
+.enode .tag{display:block; margin-top:5px; padding-top:4px; border-top:1px solid rgba(26,34,48,.08);
+  font-family:var(--mono); font-size:8px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+  text-align:right; color:var(--a-faint)}
+.enode.crit .tag{color:var(--sev-crit-fg)} .enode.high .tag{color:var(--sev-high-fg)}
+.enode.warn .tag{color:var(--sev-warn-fg)} .enode.off .tag{color:var(--sev-off-fg)}
+.link{align-self:center; flex:none; width:20px; color:var(--a-line-2); display:grid; place-items:center}
+.link svg{width:20px; height:10px}
+.sld-legend{display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; margin-top:12px;
+  padding-top:11px; border-top:1px solid #F3F4F6}
+.sld-legend .k{font-family:var(--mono); font-size:8.5px; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--a-faint)}
+
+/* asset-class health strip — alarm-summary-card.tsx shape */
+.classes{display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:12px}
+.cls{position:relative; overflow:hidden; background:#FFF; border:1px solid var(--a-line); border-radius:8px;
+  padding:12px; box-shadow:0 1px 2px rgba(26,34,48,.05)}
+.cls::after{content:""; position:absolute; left:0; right:0; top:0; height:2px; background:var(--a-green)}
+.cls.warn::after{background:var(--sev-warn)} .cls.high::after{background:var(--sev-high)}
+.cls.crit::after{background:var(--sev-crit)} .cls.off::after{background:#9CA3AF}
+.cls .h{display:flex; align-items:center; gap:7px; font-size:10px; font-weight:700; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--a-muted)}
+.cls .h .ic{display:grid; place-items:center; width:22px; height:22px; border:1px solid currentColor;
+  border-radius:4px; background:rgba(255,255,255,.7); flex:none}
+.cls .h .ic svg{width:12px; height:12px}
+.cls .h .lb{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis}
+.cls .n{font-family:var(--cond); font-size:28px; font-weight:700; color:var(--a-ink); margin-top:10px;
+  font-variant-numeric:tabular-nums; line-height:1}
+.cls .s{margin-top:6px}
+
+/* ---------- treatment trains, for the water sheet ---------- */
+.trains{display:grid; grid-template-columns:minmax(0,.62fr) minmax(0,1fr) minmax(0,1fr); gap:12px}
+.train{border:1px solid var(--a-line); border-radius:6px; background:#F7F8FA; padding:10px; display:flex;
+  flex-direction:column}
+.train-h{display:flex; align-items:center; gap:8px; margin-bottom:10px}
+.train-h .t{font-family:var(--cond); font-size:12px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.1em; color:var(--a-green-d)}
+.train-h .sp{flex:1}
+.train-h .meta{font-family:var(--mono); font-size:9px; color:var(--a-faint)}
+.train .flow .node{min-width:62px}
+.train .flow .node .nm{font-size:11.5px}
+.train .flow .node .vl{font-size:9px}
+.train .arrow{width:12px; margin-top:16px}
+.train .arrow svg{width:12px}
+.inline-alarm{display:flex; align-items:flex-start; gap:8px; margin-top:10px; border:1px solid;
+  border-radius:5px; padding:7px 9px}
+.inline-alarm svg{width:15px; height:15px; flex:none; margin-top:1px}
+.inline-alarm .b{min-width:0}
+.inline-alarm .n{font-family:var(--cond); font-size:12px; font-weight:700; text-transform:uppercase;
+  letter-spacing:.04em; line-height:1.2}
+.inline-alarm .v{font-family:var(--mono); font-size:9.5px; margin-top:2px}
+.ia-crit{border-color:var(--sev-crit-bd); background:var(--sev-crit-bg); color:var(--sev-crit-fg)}
+.ia-crit svg{color:var(--sev-crit)}
+.ia-high{border-color:var(--sev-high-bd); background:var(--sev-high-bg); color:var(--sev-high-fg)}
+.ia-high svg{color:var(--sev-high)}
+.ia-warn{border-color:var(--sev-warn-bd); background:var(--sev-warn-bg); color:var(--sev-warn-fg)}
+.ia-warn svg{color:var(--sev-warn)}
+.ia-ok{border-color:rgba(0,166,81,.22); background:rgba(0,166,81,.07); color:var(--a-green-d)}
+.ia-ok svg{color:var(--a-green)}
+.train .flow{margin-bottom:auto}
+
+/* Key Parameters strip — the four ADR 0047 widget kinds at small size */
+.params{display:grid; grid-template-columns:repeat(9,minmax(0,1fr)); gap:10px}
+.wg{display:flex; flex-direction:column; border:1px solid var(--a-line); border-radius:8px; background:#FFF;
+  padding:10px; box-shadow:0 1px 2px rgba(26,34,48,.05); min-width:0}
+.wg .wt{font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:.03em; color:var(--a-muted);
+  line-height:1.25; min-height:25px}
+.wg .wb{flex:1; display:flex; align-items:center; justify-content:center; margin-top:8px}
+.wg .val{font-family:var(--cond); font-size:22px; font-weight:700; color:var(--a-ink);
+  font-variant-numeric:tabular-nums; line-height:1; text-align:center}
+.wg .val u{display:block; text-decoration:none; font-family:var(--body); font-size:10px; font-weight:400;
+  color:var(--a-muted); margin-top:4px; letter-spacing:.02em}
+.wg .kind{font-family:var(--mono); font-size:8px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--a-faint); margin-top:8px; padding-top:7px; border-top:1px solid #F3F4F6; text-align:center}
+
 /* ---------- app footer (h-8, bg-bms-header) ---------- */
 .a-foot{display:flex; align-items:center; justify-content:space-between; gap:12px; height:34px;
   padding:0 16px; background:var(--a-head); color:rgba(255,255,255,.7); font-size:11.5px}
@@ -411,32 +537,125 @@ td.r{text-align:right}
 .a-foot .pb b{color:#FFF}
 
 /* ============================================================
-   SHEET 02 — domain instances
+   SHEET 04 — the canvas, drawn once, and its six instances
    ============================================================ */
+.inst-wrap{display:flex; flex-direction:column; gap:16px}
+
+/* --- the canvas, exploded, drawn once across the top --- */
+.cx{border:1px solid var(--sheet-line); border-radius:2px; background:var(--paper-2); padding:16px;
+  display:grid; grid-template-columns:404px minmax(0,1fr); gap:26px; align-items:start}
+@media (max-width:1040px){ .cx{grid-template-columns:1fr} }
+.cx-t{font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--accent-ink); margin:0 0 3px}
+.cx-s{font-size:13px; color:var(--ink-2); margin:0 0 14px; max-width:78ch}
+.cx-canvas{width:100%; height:auto; display:block}
+.cx .sl{fill:var(--sheet); stroke:#C3CAD4; stroke-width:1}
+.cx .sl-a{fill:#DDE2E9; stroke:#C3CAD4; stroke-width:1}
+.cx .sl-c{fill:#FFFFFF; stroke:var(--ink-3); stroke-width:1.4}
+.cx .ld{stroke:#B6BDC8; stroke-width:1; stroke-dasharray:2 2}
+.cx .lb{font-family:var(--mono); font-size:8px; letter-spacing:.09em; fill:var(--ink-3)}
+.cx .lb-b{font-family:var(--mono); font-size:8.5px; font-weight:600; letter-spacing:.09em; fill:var(--ink-2)}
+.cx-kinds{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px}
+@media (max-width:760px){ .cx-kinds{grid-template-columns:repeat(2,1fr)} }
+.cx-kind{background:var(--sheet); border:1px solid var(--sheet-line); border-radius:2px; padding:12px}
+.cx-kind .bx{height:88px; display:grid; place-items:center; margin-bottom:9px}
+.cx-kind .bx svg{width:100%; height:88px; display:block}
+.cx-kind .nm{font-family:var(--mono); font-size:10px; font-weight:600; letter-spacing:.02em;
+  color:var(--accent-ink)}
+.cx-kind .ds{font-size:11.5px; color:var(--ink-2); margin-top:4px; line-height:1.45}
+
+/* --- six instances of that one canvas --- */
 .inst{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px}
-@media (max-width:1000px){ .inst{grid-template-columns:repeat(2,minmax(0,1fr))} }
-@media (max-width:620px){ .inst{grid-template-columns:1fr} }
-.inst-card{border:1px solid var(--sheet-line); border-radius:2px; background:var(--paper-2); padding:13px 14px;
+@media (max-width:1040px){ .inst{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:660px){ .inst{grid-template-columns:1fr} }
+.inst-card{border:1px solid var(--sheet-line); border-radius:2px; background:var(--paper-2); padding:11px 12px 10px;
   display:flex; flex-direction:column; gap:8px}
 .inst-card .top{display:flex; align-items:center; gap:8px}
 .inst-card h3{font-family:var(--display); font-weight:800; font-size:17px; text-transform:uppercase;
   letter-spacing:.01em; flex:1}
-.inst-card p{margin:0; font-size:12.5px; color:var(--ink-2)}
-.inst-card .pts{font-family:var(--mono); font-size:10px; color:var(--ink-3); letter-spacing:.03em;
+.inst-card .pts{font-family:var(--mono); font-size:9.5px; color:var(--ink-3); letter-spacing:.02em;
   border-top:1px solid var(--sheet-line); padding-top:7px; margin-top:auto}
+/* the skeleton below is one set of rules used six times — that is the argument */
+.th{background:#E9EDF2; border:1px solid #C9CFD9; border-radius:2px; padding:5px;
+  display:flex; flex-direction:column; gap:4px}
+.th i{display:block}
+.th .rb{height:7px; background:#D3D9E1; border-radius:1px}
+.th .kp{display:grid; grid-template-columns:repeat(5,1fr); gap:3px}
+.th .kp i{min-height:34px; background:#FFF; border:1px solid #D3D9E1; border-radius:1px;
+  padding:4px 5px; display:flex; flex-direction:column; justify-content:center; gap:2px; overflow:hidden}
+.th .kp s{text-decoration:none; font-family:var(--mono); font-size:7px; letter-spacing:.03em;
+  color:var(--ink-3); text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.th .kp b{font-family:var(--cond); font-size:13px; font-weight:700; color:var(--ink); line-height:1;
+  font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.th .kp b u{text-decoration:none; font-family:var(--mono); font-size:7.5px; font-weight:600;
+  color:var(--ink-3); margin-left:2px}
+.th .kp i.crit b{color:#B42318} .th .kp i.warn b{color:#B54708}
+/* `.mid` is also a product-screen layout class (line 264) — reset display here */
+.th .mid{display:block; height:150px; background:#FFF; border:1px solid #D3D9E1; border-radius:1px; padding:5px}
+.th .mid svg{width:100%; height:100%; display:block}
+.th .ch{display:grid; grid-template-columns:repeat(3,1fr); gap:3px}
+.th .ch i{height:34px; background:#FFF; border:1px solid #D3D9E1; border-radius:1px; padding:3px 5px}
+.th .ch svg{width:100%; height:100%; display:block}
+/* one node vocabulary, used by all six centrepieces */
+.th .mid .blk{fill:#F5F7F9; stroke:#9AA3B1; stroke-width:1.4}
+.th .mid .pipe{fill:none; stroke:#9AA3B1; stroke-width:1.4}
+.th .mid .alm-w{fill:#FFFAEB; stroke:#DC6803; stroke-width:2}
+.th .mid .alm-c{fill:#FEF3F2; stroke:#D92D20; stroke-width:2}
+.th .mid .lb{font-family:var(--mono); font-size:6px; letter-spacing:.04em; fill:var(--ink-3)}
+.th .mid .vl{font-family:var(--cond); font-size:9.5px; font-weight:700; fill:var(--ink)}
+.th .mid .un{font-family:var(--mono); font-size:5.5px; letter-spacing:.03em; fill:var(--ink-3)}
+.th .mid .lw{fill:#B54708} .th .mid .vw{fill:#B54708}
+.th .mid .lc{fill:#B42318} .th .mid .vc{fill:#B42318}
+.th .mid .trk{fill:#E9EDF2} .th .mid .fil{fill:#00A651}
 
 /* ============================================================
-   SHEET 03 — delivery table
+   SHEET 05 — delivery, drawn as a timeline
    ============================================================ */
-.dtable{width:100%; border-collapse:collapse; font-size:13px}
-.dtable th{font-family:var(--mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
-  color:var(--ink-3); text-align:left; padding:0 10px 8px; border-bottom:1px solid var(--sheet-line)}
-.dtable td{padding:9px 10px; border-bottom:1px solid var(--sheet-line); color:var(--ink-2); vertical-align:top}
-.dtable tbody tr:last-child td{border-bottom:none}
-.dtable td.reg{color:var(--ink); font-weight:600; white-space:nowrap}
-.dtable td.pcol{width:1%}
-.dtable code{font-family:var(--mono); font-size:11.5px; background:var(--paper-2);
-  border:1px solid var(--sheet-line); padding:1px 5px; border-radius:2px; color:var(--ink-2)}
+.cov{margin-bottom:16px}
+.cov-bar{display:flex; height:38px; border:1px solid var(--sheet-line); border-radius:2px; overflow:hidden}
+.cov-seg{display:flex; align-items:baseline; gap:8px; padding:0 13px; min-width:0;
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.11em; text-transform:uppercase; white-space:nowrap}
+.cov-seg b{font-family:var(--display); font-size:22px; font-weight:800; letter-spacing:0; line-height:38px}
+.cov-now{flex:8; background:var(--ink); color:var(--sheet)}
+.cov-m1{flex:3; background:var(--ink-3); color:#FFF}
+.cov-m3{flex:8; color:var(--ink-2);
+  background:repeating-linear-gradient(135deg,var(--paper-2) 0 5px,var(--sheet) 5px 10px)}
+.cov-cap{font-size:12px; color:var(--ink-3); margin:7px 0 0}
+.cov-cap b{color:var(--ink-2)}
+
+.gantt{border:1px solid var(--sheet-line); border-radius:2px; background:var(--paper-2);
+  --gcol:286px repeat(3,minmax(0,1fr)); min-width:920px}
+.gantt-h,.gi{display:grid; grid-template-columns:var(--gcol)}
+.gantt-h{background:var(--sheet); border-bottom:1px solid var(--sheet-line)}
+.gantt-h > div{padding:8px 11px}
+.gantt-h > div + div{border-left:1px solid var(--sheet-line)}
+.gantt-h .ph-t{font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--ink)}
+.gantt-h .ph-s{font-size:11px; color:var(--ink-3); margin-top:2px}
+.gl-t{font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--accent-ink); background:var(--sheet); padding:5px 11px;
+  border-top:1px solid var(--sheet-line); border-bottom:1px solid var(--sheet-line)}
+.gi{align-items:center; border-bottom:1px solid rgba(211,216,225,.65)}
+.gi:last-child{border-bottom:none}
+.gi-l{grid-column:1; grid-row:1; padding:6px 11px; font-size:12.5px; font-weight:600; color:var(--ink)}
+.gi-l s{display:block; font-weight:400; font-size:10.5px; color:var(--ink-3); text-decoration:none;
+  font-family:var(--mono); letter-spacing:.04em; margin-top:1px}
+.gi > .col{grid-row:1; align-self:stretch; border-left:1px solid var(--sheet-line)}
+.col.c2{grid-column:2} .col.c3{grid-column:3} .col.c4{grid-column:4}
+.gb{grid-row:1; height:21px; margin:4px 7px 4px 3px; border-radius:2px; display:flex; align-items:center;
+  padding:0 9px; font-family:var(--mono); font-size:9px; letter-spacing:.11em; text-transform:uppercase}
+.gb-now{grid-column:2/-1; background:var(--ink); color:var(--sheet)}
+.gb-m1{grid-column:3/-1; background:var(--ink-3); color:#FFF}
+.gb-m3{grid-column:4/-1; border:1px solid #B6BDC8; color:var(--ink); font-weight:600;
+  background:repeating-linear-gradient(135deg,#CFD5DE 0 5px,#E4E8EE 5px 10px)}
+.fm{font-family:var(--mono); font-size:8.5px; font-weight:600; color:var(--sheet); background:var(--ink-2);
+  border-radius:50%; width:13px; height:13px; display:inline-grid; place-items:center;
+  vertical-align:1px; margin-left:5px}
+.fn{display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:9px 30px; margin-top:14px}
+.fn > div{display:grid; grid-template-columns:15px 1fr; gap:9px; font-size:12px; color:var(--ink-2)}
+.fn .n{font-family:var(--mono); font-size:8.5px; font-weight:600; color:var(--sheet); background:var(--ink-2);
+  border-radius:50%; width:15px; height:15px; display:grid; place-items:center; margin-top:2px}
+.fn b{color:var(--ink)}
 
 .notes{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:24px 40px;
   margin:16px 22px 0; padding:16px 0 4px; border-top:1px solid var(--sheet-line); position:relative}
@@ -586,15 +805,16 @@ footer .by{flex:none; font-family:var(--mono); font-size:11px; letter-spacing:.1
       <div class="eyebrow">IONSiTE NEXUS · Dashboard Proposal · Ion Exchange (India) Ltd.</div>
       <h1>Control&nbsp;Surface</h1>
       <p>The screen an operations manager opens first: electrical and water on one canvas,
-        every reading traceable to an instrument, every alarm carrying the work order it raised.
-        <b>Drawn in the platform's own interface</b> — its shell, its type, its component set —
-        so what you approve is what gets built. Every region is marked with when it arrives.</p>
+        every reading traceable to an instrument, every alarm carrying the work order it raised — then the
+        same shell narrowed to electrical, and to water and effluent. <b>Drawn in the platform's own
+        interface</b> — its shell, its type, its component set — so what you approve is what gets built.
+        Every region is marked with when it arrives.</p>
     </div>
     <div class="mast-ref">
       <div>DOC &nbsp;<b>NEXUS-DASH-01</b></div>
       <div>SCOPE &nbsp;<b>SOW pp. 9–10</b></div>
       <div>DATE &nbsp;<b>29 AUG 2026</b></div>
-      <div>REV &nbsp;<b>B — for review</b></div>
+      <div>REV &nbsp;<b>E — for review</b></div>
     </div>
   </header>
 
@@ -625,7 +845,8 @@ footer .by{flex:none; font-family:var(--mono); font-size:11px; letter-spacing:.1
       real interface — the dark command bar and green module bar, the module rail, the white card grid on
       the light canvas, IBM Plex throughout — carrying every region your reference pages asked for.
       Nothing here is a bespoke screen: each tile is a placed widget an administrator composes, which is
-      what lets the same shape serve six domains on Sheet 02.</p>
+      what lets the same shape serve six domains — two of them drawn on Sheets 02 and 03, the rest
+      listed on Sheet 04.</p>
 
     <div class="sheet-body">
       <div class="scroller">
@@ -803,11 +1024,11 @@ footer .by{flex:none; font-family:var(--mono); font-size:11px; letter-spacing:.1
                         <div class="node"><span class="box"><svg><use href="#g-panel"/></svg></span>
                           <span class="nm">HT Panels</span><span class="vl">2 · all good</span></div>
                         <span class="arrow"><svg viewBox="0 0 18 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h14"/><path d="m11.5 1.5 3 2.5-3 2.5"/></svg></span>
-                        <div class="node crit"><span class="box"><svg><use href="#g-panel"/></svg><span class="pip"></span></span>
-                          <span class="nm">LT Panels</span><span class="vl">LT-2 · 112%</span></div>
+                        <div class="node high"><span class="box"><svg><use href="#g-panel"/></svg><span class="pip"></span></span>
+                          <span class="nm">LT Panels</span><span class="vl">LT-2 · 89%</span></div>
                         <span class="arrow"><svg viewBox="0 0 18 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h14"/><path d="m11.5 1.5 3 2.5-3 2.5"/></svg></span>
-                        <div class="node high"><span class="box"><svg><use href="#g-motor"/></svg><span class="pip"></span></span>
-                          <span class="nm">MCCs</span><span class="vl">MCC-4 · 89%</span></div>
+                        <div class="node crit"><span class="box"><svg><use href="#g-motor"/></svg><span class="pip"></span></span>
+                          <span class="nm">MCCs</span><span class="vl">MCC-4 · 112%</span></div>
                         <span class="arrow"><svg viewBox="0 0 18 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h14"/><path d="m11.5 1.5 3 2.5-3 2.5"/></svg></span>
                         <div class="node"><span class="box"><svg><use href="#g-battery"/></svg></span>
                           <span class="nm">Utilities</span><span class="vl">DG · UPS · Solar</span></div>
@@ -917,7 +1138,7 @@ footer .by{flex:none; font-family:var(--mono); font-size:11px; letter-spacing:.1
                       <table>
                         <thead><tr><th>Raised</th><th>Area / Asset</th><th>Message</th><th class="r">Severity</th></tr></thead>
                         <tbody>
-                          <tr><td class="t">10:24</td><td>LT Panel-2</td><td class="q"><span class="mv">Overload (112%)</span></td><td class="r"><span class="pill p-crit">Critical</span></td></tr>
+                          <tr><td class="t">10:23</td><td>MCC-4</td><td class="q"><span class="mv">Overload (112%)</span></td><td class="r"><span class="pill p-crit">Critical</span></td></tr>
                           <tr><td class="t">10:22</td><td>Transformer-2</td><td class="q"><span class="mv">Oil Temp High (65.3 °C)</span></td><td class="r"><span class="pill p-crit">Critical</span></td></tr>
                           <tr><td class="t">10:21</td><td>ETP · Neutralization Tank</td><td class="q"><span class="mv h">pH Low (4.8)</span></td><td class="r"><span class="pill p-high">High</span></td></tr>
                           <tr><td class="t">10:20</td><td>STP · Aeration Tank</td><td class="q"><span class="mv h">DO Low (2.1 mg/L)</span></td><td class="r"><span class="pill p-high">High</span></td></tr>
@@ -936,18 +1157,18 @@ footer .by{flex:none; font-family:var(--mono); font-size:11px; letter-spacing:.1
                       <div class="card-b">
                         <div class="alarm-id">
                           <span class="g"><svg><use href="#g-alert"/></svg></span>
-                          <span><span class="n">LT PANEL-2</span><br><span class="d">Overload (112%)</span></span>
+                          <span><span class="n">MCC-4</span><br><span class="d">Overload (112%)</span></span>
                         </div>
                         <dl class="dl">
-                          <dt>Asset Type</dt><dd>LT Panel</dd>
+                          <dt>Asset Type</dt><dd>Motor Control Centre</dd>
                           <dt>Location</dt><dd>Electrical Room-1</dd>
-                          <dt>Raised</dt><dd>10:24 · 29 Aug</dd>
+                          <dt>Raised</dt><dd>10:23 · 29 Aug</dd>
                           <dt>Current</dt><dd><span class="mv">112 %</span></dd>
                           <dt>Threshold</dt><dd>&gt; 100 %</dd>
                           <dt>State</dt><dd><span class="pill p-crit">Active</span></dd>
-                          <dt>Cause</dt><dd>Load transferred from LT-1 during DG changeover</dd>
-                          <dt>Impact</dt><dd>Feeder trip risk · 3 MCCs downstream</dd>
-                          <dt>Action</dt><dd>Shed non-essential feeders, verify DG sync</dd>
+                          <dt>Cause</dt><dd>Load transferred to LT-2 during DG changeover</dd>
+                          <dt>Impact</dt><dd>Breaker trip risk · 4 drives downstream</dd>
+                          <dt>Action</dt><dd>Shed non-essential drives, verify DG sync</dd>
                           <dt>Skill · ETR</dt><dd>LT electrician · 45 min</dd>
                         </dl>
                       </div>
@@ -1051,6 +1272,37 @@ footer .by{flex:none; font-family:var(--mono); font-size:11px; letter-spacing:.1
                 </section>
 
                 <section class="card">
+                  <div class="card-h"><h4>Energy by Source</h4><span class="sub">Today</span>
+                    <span class="sp"></span><span class="ph ph-now">NOW</span></div>
+                  <div class="card-b">
+                    <div class="clegend">
+                      <span><i style="background:#64748B"></i>Grid <b>94.1 MWh</b></span>
+                      <span><i style="background:#F59E0B"></i>DG <b>4.9 MWh</b></span>
+                      <span><i style="background:#00A651"></i>Solar <b>13.8 MWh</b></span>
+                    </div>
+                    <div class="chart-wrap">
+                      <svg viewBox="0 0 264 110" role="img" aria-label="Energy by source through the day, stacked: grid supplies most of the load, solar peaks around midday at 5.6 MW, and the DG runs 18:00 to 21:00.">
+                        <g class="gridline"><path d="M4 86h256M4 61h256M4 36h256M4 11h256"/></g>
+                        <path fill="#64748B" fill-opacity=".65" d="M4 72.9 L14.7 69.8 L25.3 66.5 L36 66.2 L46.7 63.3 L57.3 60.6 L68 60.4 L78.7 58.8 L89.3 61.1 L100 62.9 L110.7 68.3 L121.3 72.9 L132 75 L142.7 73.3 L153.3 70.6 L164 62.6 L174.7 56 L185.3 51.6 L196 52.9 L206.7 46.9 L217.3 42.8 L228 39.1 L238.7 31.1 L249.3 27.3 L260 22 L260 86 L4 86 Z"/>
+                        <path fill="#F59E0B" fill-opacity=".8" d="M196 52.9 L206.7 46.9 L217.3 42.8 L228 39.1 L238.7 31.1 L249.3 27.3 L260 22 L260 22 L249.3 27.3 L238.7 31.1 L228 33.7 L217.3 38.1 L206.7 42.3 L196 46.9 Z"/>
+                        <path fill="#00A651" fill-opacity=".75" d="M46.7 63.2 L57.3 60.4 L68 59.8 L78.7 57.3 L89.3 57.4 L100 55.6 L110.7 56.1 L121.3 55.6 L132 54.5 L142.7 52.7 L153.3 53.3 L164 50.4 L174.7 48.8 L185.3 47.9 L196 46.9 L185.3 51.6 L174.7 56 L164 62.6 L153.3 70.6 L142.7 73.3 L132 75 L121.3 72.9 L110.7 68.3 L100 62.9 L89.3 61.1 L78.7 58.8 L68 60.4 L57.3 60.6 L46.7 63.3 Z"/>
+                        <path fill="none" stroke="#4A5464" stroke-width="1.4" stroke-linejoin="round" d="M4 72.9 L14.7 69.8 L25.3 66.5 L36 66.2 L46.7 63.2 L57.3 60.4 L68 59.8 L78.7 57.3 L89.3 57.4 L100 55.6 L110.7 56.1 L121.3 55.6 L132 54.5 L142.7 52.7 L153.3 53.3 L164 50.4 L174.7 48.8 L185.3 47.9 L196 45.3 L206.7 41.8 L217.3 37.9 L228 33.7 L238.7 31.1 L249.3 27.3 L260 22"/>
+                        <text class="axis" x="4" y="9">MW</text>
+                        <text class="axis" x="4" y="98">00:00</text><text class="axis" x="92" y="98">08:00</text>
+                        <text class="axis" x="176" y="98">16:00</text><text class="axis" x="238" y="98">24:00</text>
+                      </svg>
+                    </div>
+                    <div class="c-foot">
+                      <div><div class="k">Renewable</div><div class="v">12.2% of today</div></div>
+                      <div><div class="k">DG hours</div><div class="v">3.2 h · 18:00–21:12</div></div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div class="bottom-b">
+
+                <section class="card">
                   <div class="card-h"><h4>Asset Health</h4><span class="sub">265 assets</span>
                     <span class="sp"></span><span class="ph ph-m3">+3M</span></div>
                   <div class="card-b">
@@ -1086,13 +1338,38 @@ footer .by{flex:none; font-family:var(--mono); font-size:11px; letter-spacing:.1
                 </section>
 
                 <section class="card">
+                  <div class="card-h"><h4>Top Consumers</h4><span class="sub">kWh today, by area</span>
+                    <span class="sp"></span><span class="ph ph-now">NOW</span></div>
+                  <div class="card-b">
+                    <div class="hbars" role="img" aria-label="Energy today by area: utilities 28,400 kWh, process hall 24,900, HVAC 21,300, ETP 14,600, STP 12,100, lighting and small power 11,450.">
+                      <div class="hbar"><span class="lb">Utilities</span>
+                        <span class="tr"><span class="fl" style="width:100%"></span></span><span class="vn">28,400</span></div>
+                      <div class="hbar"><span class="lb">Process Hall</span>
+                        <span class="tr"><span class="fl" style="width:87.7%"></span></span><span class="vn">24,900</span></div>
+                      <div class="hbar"><span class="lb">HVAC</span>
+                        <span class="tr"><span class="fl" style="width:75.0%"></span></span><span class="vn">21,300</span></div>
+                      <div class="hbar"><span class="lb">ETP</span>
+                        <span class="tr"><span class="fl" style="width:51.4%"></span></span><span class="vn">14,600</span></div>
+                      <div class="hbar"><span class="lb">STP</span>
+                        <span class="tr"><span class="fl" style="width:42.6%"></span></span><span class="vn">12,100</span></div>
+                      <div class="hbar"><span class="lb">Lighting</span>
+                        <span class="tr"><span class="fl" style="width:40.3%"></span></span><span class="vn">11,450</span></div>
+                    </div>
+                    <div class="c-foot">
+                      <div><div class="k">Top three</div><div class="v">65.5% of site energy</div></div>
+                      <div><div class="k">Treatment load</div><div class="v">26,700 kWh · 23.7%</div></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="card">
                   <div class="card-h"><h4>Open Work Orders</h4><span class="ph ph-now">NOW</span>
                     <span class="sp"></span><a class="link" href="#">View all</a></div>
                   <div class="card-b" style="padding:0">
                     <table class="wo-table">
                       <thead><tr><th>WO ID</th><th>Area / Asset</th><th>Priority</th><th>Status</th><th class="r">SLA</th></tr></thead>
                       <tbody>
-                        <tr><td class="t">ELEC-0829-015</td><td>LT Panel-2</td><td><span class="mv">Critical</span></td><td class="q">In Progress</td><td class="r t">30m</td></tr>
+                        <tr><td class="t">ELEC-0829-015</td><td>MCC-4</td><td><span class="mv">Critical</span></td><td class="q">In Progress</td><td class="r t">30m</td></tr>
                         <tr><td class="t">WATER-0829-009</td><td>Raw Water Pump-2</td><td><span class="mv h">High</span></td><td class="q">In Progress</td><td class="r t">45m</td></tr>
                         <tr><td class="t">STP-0829-006</td><td>STP · Aeration Tank</td><td><span class="mv h">High</span></td><td class="q">Assigned</td><td class="r t">1h</td></tr>
                         <tr><td class="t">ETP-0829-004</td><td>ETP · Neutralization</td><td><span class="mv">Critical</span></td><td class="q">In Progress</td><td class="r t">30m</td></tr>
@@ -1124,194 +1401,1489 @@ footer .by{flex:none; font-family:var(--mono); font-size:11px; letter-spacing:.1
       reading of a plant, not yours</b>, and an hour with a marker turns them into your plant.</p>
     <div class="title-block">
       <div><span class="num">01</span><b>INTEGRATED OPERATIONS OVERVIEW</b></div>
-      <div>1420 px MIN &nbsp;·&nbsp; SHEET 1 OF 3 &nbsp;·&nbsp; REV B</div>
+      <div>1420 px MIN &nbsp;·&nbsp; SHEET 1 OF 5 &nbsp;·&nbsp; REV E</div>
     </div>
   </section>
 
-  <!-- ================= SHEET 02 ================= -->
+  <!-- ================= SHEET 02 — ELECTRICAL ================= -->
   <section class="sheet">
     <div class="sheet-grid"></div>
-    <h2 class="sheet-title">Sheet 02 — <span>One Shape, Six Instances</span></h2>
-    <p class="sheet-lede">Your reference pages show the same page three times — once integrated, once for
-      electrical, once for water. That repetition is the design. Sheet 01 is not a bespoke screen; it is one
-      composition of a widget canvas, and each domain below is the same canvas bound to a different asset
-      group. Adding a seventh is configuration, not a release.</p>
+    <h2 class="sheet-title">Sheet 02 — <span>Electrical Distribution Overview</span></h2>
+    <p class="sheet-lede">Your page 9, upper half, in the platform's interface. The same shell as Sheet 01
+      with a different module selected — the roll-up narrows to one utility, and the single-line diagram
+      grows from a summary chain into the real distribution tree: two transformers, two LT rails, four
+      motor control centres, and the outgoing VFD and capacitor bank.</p>
 
     <div class="sheet-body">
-      <div class="inst">
+      <div class="scroller">
+      <div class="app">
 
-        <div class="inst-card">
-          <div class="top"><h3>Electrical</h3><span class="pk pk-now">NOW</span></div>
-          <p>Single-line diagram from incoming supply to MCC, with load, power factor and winding
-            temperature on each node. Asset-class health strip below.</p>
-          <div class="pts">TOTAL POWER · DEMAND · PF · ENERGY · ACTIVE ALARMS</div>
+        <div class="chrome"><i></i><i></i><i></i>
+          <span class="bar">IONSiTE NEXUS &nbsp;·&nbsp; Electrical Distribution Overview</span></div>
+
+        <header class="a-head">
+          <div class="a-brand">
+            <span class="a-logo"><svg><use href="#g-tri"/></svg></span>
+            <span class="a-mark">IONSi<em>T</em>E NEXUS</span>
+            <span class="a-tag">Integrated Building, Energy, Water &amp; Utility Management</span>
+          </div>
+          <div class="a-who">
+            <span class="nm"><b>P. Mitra</b><span>Operations Manager · IONSITE Industrial Park</span></span>
+            <button class="a-btn" type="button">Logout</button>
+          </div>
+        </header>
+
+        <nav class="a-nav">
+          <a href="#">Overview</a>
+          <a href="#">Sites</a>
+          <a class="on" href="#">Energy</a>
+          <a href="#">Water</a>
+          <a href="#">Settings</a>
+          <span class="sp"></span>
+          <span class="clock">29 Aug 2026 &nbsp;·&nbsp; 10:24:07 IST</span>
+        </nav>
+
+        <div class="a-body">
+          <aside class="a-side">
+            <div class="head">
+              <span class="grp-t" style="padding:0">Modules</span>
+              <button class="collapse" type="button" aria-label="Collapse sidebar">«</button>
+            </div>
+            <div class="grp">
+              <div class="grp-t">Monitoring</div>
+              <a href="#"><span class="lab">Dashboard</span></a>
+              <a href="#"><span class="lab">Alarm Centre</span><span class="n">7</span></a>
+              <a href="#"><span class="lab">Sites Map</span></a>
+              <a href="#"><span class="lab">Energy Analytics</span></a>
+            </div>
+            <div class="grp">
+              <div class="grp-t">Plant Views</div>
+              <a class="on" href="#"><span class="lab">Electrical SLD</span></a>
+              <a href="#"><span class="lab">Water &amp; Distribution</span></a>
+              <a href="#"><span class="lab">STP</span></a>
+              <a href="#"><span class="lab">ETP</span></a>
+              <a href="#"><span class="lab">HVAC · Cooling</span></a>
+            </div>
+            <div class="grp">
+              <div class="grp-t">Operations</div>
+              <a href="#"><span class="lab">Maintenance</span></a>
+              <a href="#"><span class="lab">Schedule Centre</span></a>
+              <a href="#"><span class="lab">Assets</span></a>
+            </div>
+            <div class="grp">
+              <div class="grp-t">Intelligence</div>
+              <a href="#"><span class="lab">Rule Engine</span></a>
+              <a href="#"><span class="lab">Reports</span></a>
+              <a href="#"><span class="lab">Sustainability</span></a>
+            </div>
+          </aside>
+
+          <main>
+            <section class="a-ribbon">
+              <span class="rb-pill"><svg><use href="#g-pin"/></svg><span class="k">Site</span>
+                <b>IONSITE Industrial Park</b><svg><use href="#g-caret"/></svg></span>
+              <span class="rb-pill"><svg><use href="#g-bolt"/></svg><span class="k">Scope</span>
+                <b>Electrical distribution</b> · 15 assets</span>
+              <span class="rb-pill ok"><svg style="color:#00A651"><use href="#g-shield"/></svg>
+                <span class="k">Supply</span><b>Grid · DG on standby</b></span>
+              <span class="rb-pill"><svg style="color:#DC2626"><use href="#g-alert"/></svg>
+                <span class="k">Active</span><b>7 alarms</b> · 1 critical</span>
+              <span class="rb-sp"></span>
+              <span class="rb-stamp">Telemetry 2 s ago · 4 RTUs online</span>
+            </section>
+
+            <div class="a-canvas">
+
+              <div class="ph-row">
+                <div>
+                  <div class="eb">Electrical Distribution</div>
+                  <h3>Electrical Distribution Overview</h3>
+                  <p>Real-time monitoring of electrical assets and performance</p>
+                </div>
+                <div class="ph-acts">
+                  <span class="sel"><span class="k">Period</span><b>Today</b><svg><use href="#g-caret"/></svg></span>
+                  <span class="seg"><span class="on">Diagram</span><span>List</span></span>
+                </div>
+              </div>
+
+              <div class="kpis k5">
+                <div class="kpi">
+                  <div class="top"><span class="k">Total Power</span>
+                    <span class="ph ph-now">NOW</span>
+                    <span class="ico"><svg><use href="#g-bolt"/></svg></span></div>
+                  <div class="v">5.62<u>MW</u></div>
+                  <div class="hint">↑ 3.2% vs yesterday</div>
+                </div>
+                <div class="kpi">
+                  <div class="top"><span class="k">Demand</span>
+                    <span class="ph ph-now">NOW</span>
+                    <span class="ico"><svg><use href="#g-gauge"/></svg></span></div>
+                  <div class="v">4.85<u>MW</u></div>
+                  <div class="hint">78% of contract demand</div>
+                </div>
+                <div class="kpi">
+                  <div class="top"><span class="k">Power Factor</span>
+                    <span class="ph ph-now">NOW</span>
+                    <span class="ico"><svg><use href="#g-gauge"/></svg></span></div>
+                  <div class="v">0.96</div>
+                  <div class="hint">Within target band</div>
+                </div>
+                <div class="kpi">
+                  <div class="top"><span class="k">Energy Today</span>
+                    <span class="ph ph-now">NOW</span>
+                    <span class="ico"><svg><use href="#g-bolt"/></svg></span></div>
+                  <div class="v">112.75<u>MWh</u></div>
+                  <div class="hint">↑ 6.8% vs yesterday</div>
+                </div>
+                <div class="kpi crit">
+                  <div class="top"><span class="k">Active Alarms</span>
+                    <span class="ph ph-now">NOW</span>
+                    <span class="ico"><svg><use href="#g-alert"/></svg></span></div>
+                  <div class="v">7</div>
+                  <div class="hint"><em>1 Critical</em> · <em>3 High</em> · <em>3 Warning</em></div>
+                </div>
+              </div>
+
+              <section class="card">
+                  <div class="card-h">
+                    <h4>Single-Line Diagram</h4>
+                    <span class="sub">Incoming 33 kV to motor control</span>
+                    <span class="ph ph-now">NOW</span>
+                    <span class="sp"></span>
+                    <span class="ph ph-m3">MIMIC BUILDER +3M</span>
+                  </div>
+                  <div class="card-b">
+                    <div class="sld">
+
+                      <div class="stage">
+                        <div class="stage-h">Incoming</div>
+                        <div class="enode">
+                          <div class="t"><svg><use href="#g-grid"/></svg><b>GRID</b></div>
+                          <div class="r"><em>5.12 MW</em><br>33 kV · 50.1 Hz<br>11.2 kV bus</div>
+                          <span class="tag">ON</span>
+                        </div>
+                        <div class="enode off">
+                          <div class="t"><svg><use href="#g-battery"/></svg><b>DG SET 2</b></div>
+                          <div class="r"><em>0.00 MW</em><br>Fuel 92%</div>
+                          <span class="tag">Standby</span>
+                        </div>
+                      </div>
+
+                      <span class="link"><svg viewBox="0 0 20 10" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 5h15"/><path d="m12.5 2 3 3-3 3"/></svg></span>
+
+                      <div class="stage">
+                        <div class="stage-h">HT</div>
+                        <div class="enode">
+                          <div class="t"><svg><use href="#g-panel"/></svg><b>MAIN HT PANEL</b></div>
+                          <div class="r"><em>5.12 MW</em><br>11.2 kV · 50.1 Hz<br>PF 0.96</div>
+                          <span class="tag">ON</span>
+                        </div>
+                      </div>
+
+                      <span class="link"><svg viewBox="0 0 20 10" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 5h15"/><path d="m12.5 2 3 3-3 3"/></svg></span>
+
+                      <div class="stage">
+                        <div class="stage-h">Transformers</div>
+                        <div class="enode">
+                          <div class="t"><svg><use href="#g-transformer"/></svg><b>TRANSFORMER 1</b></div>
+                          <div class="r">2.60 MVA<br>11.2 / 0.433 kV<br><em>48.7 °C</em> · Load 72%</div>
+                        </div>
+                        <div class="enode warn">
+                          <div class="t"><svg><use href="#g-transformer"/></svg><b>TRANSFORMER 2</b></div>
+                          <div class="r">2.00 MVA<br>11.2 / 0.433 kV<br><em>65.3 °C</em> · Load 68%</div>
+                          <span class="tag">Oil temp</span>
+                        </div>
+                      </div>
+
+                      <span class="link"><svg viewBox="0 0 20 10" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 5h15"/><path d="m12.5 2 3 3-3 3"/></svg></span>
+
+                      <div class="stage">
+                        <div class="stage-h">LT Panels</div>
+                        <div class="enode">
+                          <div class="t"><svg><use href="#g-panel"/></svg><b>LT PANEL-1</b></div>
+                          <div class="r"><em>2.58 MW</em><br>PF 0.97 · Load 75%</div>
+                          <span class="tag">ON</span>
+                        </div>
+                        <div class="enode high">
+                          <div class="t"><svg><use href="#g-panel"/></svg><b>LT PANEL-2</b></div>
+                          <div class="r"><em>1.85 MW</em><br>PF 0.94 · Load 89%</div>
+                          <span class="tag">High load</span>
+                        </div>
+                      </div>
+
+                      <span class="link"><svg viewBox="0 0 20 10" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 5h15"/><path d="m12.5 2 3 3-3 3"/></svg></span>
+
+                      <div class="stage">
+                        <div class="stage-h">Motor Control</div>
+                        <div class="enode">
+                          <div class="t"><svg><use href="#g-motor"/></svg><b>MCC-1</b></div>
+                          <div class="r"><em>1.15 MW</em></div><span class="tag">ON</span>
+                        </div>
+                        <div class="enode">
+                          <div class="t"><svg><use href="#g-motor"/></svg><b>MCC-2</b></div>
+                          <div class="r"><em>1.02 MW</em></div><span class="tag">ON</span>
+                        </div>
+                        <div class="enode">
+                          <div class="t"><svg><use href="#g-motor"/></svg><b>MCC-3</b></div>
+                          <div class="r"><em>0.95 MW</em></div><span class="tag">ON</span>
+                        </div>
+                        <div class="enode crit">
+                          <div class="t"><svg><use href="#g-motor"/></svg><b>MCC-4</b></div>
+                          <div class="r"><em>0.72 MW</em> · 112%</div><span class="tag">Overload</span>
+                        </div>
+                      </div>
+
+                      <span class="link"><svg viewBox="0 0 20 10" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 5h15"/><path d="m12.5 2 3 3-3 3"/></svg></span>
+
+                      <div class="stage">
+                        <div class="stage-h">Outgoing</div>
+                        <div class="enode">
+                          <div class="t"><svg><use href="#g-motor"/></svg><b>VFD PANEL</b></div>
+                          <div class="r"><em>0.41 MW</em><br>2 drives</div><span class="tag">ON</span>
+                        </div>
+                        <div class="enode">
+                          <div class="t"><svg><use href="#g-battery"/></svg><b>CAPACITOR BANK</b></div>
+                          <div class="r">PF 0.96<br>3 of 4 steps</div><span class="tag">ON</span>
+                        </div>
+                      </div>
+
+                    </div>
+
+                    <div class="sld-legend">
+                      <span class="k">Legend</span>
+                      <span class="pill p-ok">Normal</span>
+                      <span class="pill p-warn">Warning</span>
+                      <span class="pill p-high">High</span>
+                      <span class="pill p-crit">Critical</span>
+                      <span class="pill p-off">Offline</span>
+                      <span class="pill p-off">Standby</span>
+                    </div>
+                  </div>
+                </section>
+
+                <div class="pair-row">
+
+                  <section class="card">
+                    <div class="card-h">
+                      <h4>Active Alarms</h4><span class="ph ph-now">NOW</span>
+                      <span class="sp"></span>
+                      <span class="tabs"><span class="on">Active</span><span>Summary</span></span>
+                      <a class="link" href="#">View all</a>
+                    </div>
+                    <div class="card-b" style="padding:0">
+                      <table>
+                        <thead><tr><th>Raised</th><th>Asset</th><th>Message</th><th class="r">Severity</th></tr></thead>
+                        <tbody>
+                          <tr><td class="t">10:23</td><td>MCC-4</td><td class="q"><span class="mv">Overload (112%)</span></td><td class="r"><span class="pill p-crit">Critical</span></td></tr>
+                          <tr><td class="t">10:22</td><td>Transformer 2</td><td class="q"><span class="mv h">Oil Temperature High (65.3 °C)</span></td><td class="r"><span class="pill p-high">High</span></td></tr>
+                          <tr><td class="t">10:21</td><td>LT Panel-2</td><td class="q"><span class="mv h">Load High (89%)</span></td><td class="r"><span class="pill p-high">High</span></td></tr>
+                          <tr><td class="t">10:19</td><td>Transformer 1</td><td class="q"><span class="mv h">Winding Temp High (78 °C)</span></td><td class="r"><span class="pill p-high">High</span></td></tr>
+                          <tr><td class="t">10:18</td><td>Power Quality Analyzer</td><td class="q"><span class="mv w">THD High (6.8%)</span></td><td class="r"><span class="pill p-warn">Warning</span></td></tr>
+                          <tr><td class="t">10:17</td><td>DG Set 1</td><td class="q"><span class="mv w">Low Fuel Level (18%)</span></td><td class="r"><span class="pill p-warn">Warning</span></td></tr>
+                          <tr><td class="t">10:16</td><td>Capacitor Bank</td><td class="q"><span class="mv w">Capacitor Fault</span></td><td class="r"><span class="pill p-warn">Warning</span></td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section class="card">
+                    <div class="card-h"><h4>Maintenance Workflow</h4><span class="sp"></span>
+                      <span class="ph ph-now">NOW</span></div>
+                    <div class="card-b">
+                      <div class="stepper">
+                        <div class="step done"><span class="ring"><svg><use href="#g-alert"/></svg></span><span class="lb">Alarm<br>Raised</span></div>
+                        <span class="step-arrow"><svg viewBox="0 0 14 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h10"/><path d="m7.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="step done"><span class="ring"><svg><use href="#g-clipboard"/></svg></span><span class="lb">WO<br>Created</span></div>
+                        <span class="step-arrow"><svg viewBox="0 0 14 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h10"/><path d="m7.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="step done"><span class="ring"><svg><use href="#g-user"/></svg></span><span class="lb">Assigned</span></div>
+                        <span class="step-arrow"><svg viewBox="0 0 14 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h10"/><path d="m7.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="step now"><span class="ring"><svg><use href="#g-wrench"/></svg></span><span class="lb">In<br>Progress</span></div>
+                        <span class="step-arrow"><svg viewBox="0 0 14 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h10"/><path d="m7.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="step"><span class="ring"><svg><use href="#g-check"/></svg></span><span class="lb">Closed</span></div>
+                      </div>
+                      <div class="wo">
+                        <div class="wo-top"><span class="id">#ELEC-2026-0829-001</span><span class="pill p-crit">Critical</span></div>
+                        <dl class="dl">
+                          <dt>Asset</dt><dd>MCC-4</dd>
+                          <dt>Issue</dt><dd><span class="mv">Overload (112%)</span></dd>
+                          <dt>Assigned To</dt><dd>Ramesh Kumar</dd>
+                          <dt>SLA</dt><dd>30 min · 12 min remaining</dd>
+                          <dt>Created</dt><dd>10:22 · 29 Aug</dd>
+                        </dl>
+                        <div class="btn-row"><button class="btn" type="button">Open work order</button></div>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+
+              <section class="card">
+                <div class="card-h"><h4>Asset Health Summary</h4>
+                  <span class="sub">By asset class · worst state in class</span>
+                  <span class="sp"></span><span class="ph ph-m3">+3M</span></div>
+                <div class="card-b">
+                  <div class="classes">
+                    <div class="cls warn">
+                      <div class="h"><span class="ic"><svg><use href="#g-transformer"/></svg></span><span class="lb">Transformers</span></div>
+                      <div class="n">2</div><div class="s"><span class="pill p-warn">1 Warning</span></div>
+                    </div>
+                    <div class="cls">
+                      <div class="h"><span class="ic"><svg><use href="#g-panel"/></svg></span><span class="lb">HT Panels</span></div>
+                      <div class="n">2</div><div class="s"><span class="pill p-ok">All good</span></div>
+                    </div>
+                    <div class="cls high">
+                      <div class="h"><span class="ic"><svg><use href="#g-panel"/></svg></span><span class="lb">LT Panels</span></div>
+                      <div class="n">2</div><div class="s"><span class="pill p-high">1 High</span></div>
+                    </div>
+                    <div class="cls crit">
+                      <div class="h"><span class="ic"><svg><use href="#g-motor"/></svg></span><span class="lb">MCCs</span></div>
+                      <div class="n">4</div><div class="s"><span class="pill p-crit">1 Critical</span></div>
+                    </div>
+                    <div class="cls">
+                      <div class="h"><span class="ic"><svg><use href="#g-motor"/></svg></span><span class="lb">VFDs</span></div>
+                      <div class="n">2</div><div class="s"><span class="pill p-ok">All good</span></div>
+                    </div>
+                    <div class="cls warn">
+                      <div class="h"><span class="ic"><svg><use href="#g-battery"/></svg></span><span class="lb">Capacitor Banks</span></div>
+                      <div class="n">1</div><div class="s"><span class="pill p-warn">1 Warning</span></div>
+                    </div>
+                    <div class="cls off">
+                      <div class="h"><span class="ic"><svg><use href="#g-battery"/></svg></span><span class="lb">DG Sets</span></div>
+                      <div class="n">2</div><div class="s"><span class="pill p-off">1 Standby</span></div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <div class="bottom">
+
+                <section class="card">
+                  <div class="card-h"><h4>Feeder Load</h4><span class="sub">Today, per LT rail</span>
+                    <span class="sp"></span><span class="ph ph-now">NOW</span></div>
+                  <div class="card-b">
+                    <div class="clegend">
+                      <span><i style="background:#00A651"></i>LT Panel-1 <b>2.60 MW</b></span>
+                      <span><i style="background:#F59E0B"></i>LT Panel-2 <b>2.12 MW</b></span>
+                    </div>
+                    <div class="chart-wrap">
+                      <svg viewBox="0 0 264 110" role="img" aria-label="Feeder load through the day: LT Panel-1 rises to 2.60 MW, LT Panel-2 to 2.12 MW, both climbing through the afternoon.">
+                        <g class="gridline"><path d="M4 86h256M4 64h256M4 42h256M4 20h256"/></g>
+                        <path fill="none" stroke="#00A651" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" d="M4 46.3 L14.7 45 L25.3 44.5 L36 44.5 L46.7 41.3 L57.3 42.8 L68 41.8 L78.7 41.5 L89.3 39 L100 39.2 L110.7 35.5 L121.3 37.3 L132 36.3 L142.7 35.3 L153.3 35.3 L164 30.8 L174.7 33.3 L185.3 29.3 L196 27.5 L206.7 29.3 L217.3 29 L228 24.3 L238.7 24.5 L249.3 24.7 L260 21"/>
+                        <path fill="none" stroke="#F59E0B" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" d="M4 58.3 L14.7 59 L25.3 59.5 L36 60.5 L46.7 58.3 L57.3 57.8 L68 58.3 L78.7 55.5 L89.3 54 L100 53.8 L110.7 54.3 L121.3 54 L132 52 L142.7 51.3 L153.3 50.8 L164 45.5 L174.7 44.5 L185.3 47.2 L196 45.7 L206.7 41.3 L217.3 41 L228 41.8 L238.7 38.3 L249.3 35 L260 33"/>
+                        <circle cx="260" cy="21" r="3.2" fill="#00A651" stroke="#FFFFFF" stroke-width="2"/>
+                        <circle cx="260" cy="33" r="3.2" fill="#F59E0B" stroke="#FFFFFF" stroke-width="2"/>
+                        <text class="axis" x="4" y="9">MW</text>
+                        <text class="axis" x="4" y="98">00:00</text><text class="axis" x="92" y="98">08:00</text>
+                        <text class="axis" x="176" y="98">16:00</text><text class="axis" x="238" y="98">24:00</text>
+                      </svg>
+                    </div>
+                    <div class="c-foot">
+                      <div><div class="k">Imbalance</div><div class="v">18.5% between rails</div></div>
+                      <div><div class="k">LT-2 headroom</div><div class="v">11% at 89% load</div></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="card">
+                  <div class="card-h"><h4>Power Quality</h4><span class="sub">Site incomer</span>
+                    <span class="sp"></span><span class="ph ph-now">NOW</span></div>
+                  <div class="card-b">
+                    <div class="gauge-lg">
+                      <svg viewBox="0 0 160 128" width="100%" style="max-width:196px" role="img" aria-label="Power factor 0.96, inside the target band above 0.95. The dial marks 0.80 to 0.85 critical, 0.85 to 0.95 warning, 0.95 to 1.00 good.">
+                        <path d="M20 92a60 60 0 0 1 120 0" fill="none" stroke="#EAECF0" stroke-width="14" stroke-linecap="round"/>
+                        <path d="M20 92a60 60 0 0 1 120 0" fill="none" stroke="#D92D20" stroke-width="14" stroke-dasharray="47.1 400"/>
+                        <path d="M20 92a60 60 0 0 1 120 0" fill="none" stroke="#DC6803" stroke-width="14" stroke-dasharray="0 47.1 94.2 400"/>
+                        <path d="M20 92a60 60 0 0 1 120 0" fill="none" stroke="#00A651" stroke-width="14" stroke-dasharray="0 141.3 47.1 400"/>
+                        <path d="M80 92 L112.4 68.5" stroke="#1A2230" stroke-width="2.6" stroke-linecap="round" fill="none"/>
+                        <circle cx="80" cy="92" r="5" fill="#1A2230"/>
+                        <text x="18" y="106" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#7A8494">0.80</text>
+                        <text x="126" y="106" font-family="IBM Plex Mono, monospace" font-size="8.5" fill="#7A8494">1.00</text>
+                        <text x="80" y="124" text-anchor="middle" font-family="IBM Plex Sans Condensed, sans-serif" font-size="30" font-weight="700" fill="#1A2230">0.96</text>
+                      </svg>
+                      <span class="cap">Power factor · target &gt; 0.95</span>
+                    </div>
+                    <div class="c-foot">
+                      <div><div class="k">THD</div><div class="v" style="color:#78350F">6.8% · above 5%</div></div>
+                      <div><div class="k">Unbalance</div><div class="v">1.4%</div></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="card">
+                  <div class="card-h"><h4>Top Consumers</h4><span class="sub">kWh today, by MCC</span>
+                    <span class="sp"></span><span class="ph ph-now">NOW</span></div>
+                  <div class="card-b">
+                    <div class="hbars" role="img" aria-label="Energy today by motor control centre: MCC-1 9,820 kWh, MCC-4 8,640, MCC-2 7,410, MCC-3 6,180, VFD panel 3,290, capacitor bank auxiliaries 640.">
+                      <div class="hbar"><span class="lb">MCC-1</span>
+                        <span class="tr"><span class="fl" style="width:100%"></span></span><span class="vn">9,820</span></div>
+                      <div class="hbar"><span class="lb">MCC-4</span>
+                        <span class="tr"><span class="fl" style="width:88.0%; background:#D92D20"></span></span><span class="vn">8,640</span></div>
+                      <div class="hbar"><span class="lb">MCC-2</span>
+                        <span class="tr"><span class="fl" style="width:75.5%"></span></span><span class="vn">7,410</span></div>
+                      <div class="hbar"><span class="lb">MCC-3</span>
+                        <span class="tr"><span class="fl" style="width:62.9%"></span></span><span class="vn">6,180</span></div>
+                      <div class="hbar"><span class="lb">VFD Panel</span>
+                        <span class="tr"><span class="fl" style="width:33.5%"></span></span><span class="vn">3,290</span></div>
+                      <div class="hbar"><span class="lb">Cap. Bank aux</span>
+                        <span class="tr"><span class="fl" style="width:6.5%"></span></span><span class="vn">640</span></div>
+                    </div>
+                    <div class="c-foot">
+                      <div><div class="k">In alarm</div>
+                        <div class="v" style="color:#991B1B">MCC-4 · 24% of MCC load</div></div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+            </div>
+          </main>
         </div>
 
-        <div class="inst-card">
-          <div class="top"><h3>Water</h3><span class="pk pk-m3">+3M</span></div>
-          <p>Intake to distribution: raw water flow and turbidity, pump status, treatment outlet quality,
-            tank levels, zone distribution.</p>
-          <div class="pts">CONSUMPTION · RECYCLE % · TANK LEVEL · TURBIDITY NTU</div>
-        </div>
-
-        <div class="inst-card">
-          <div class="top"><h3>STP</h3><span class="pk pk-m3">+3M</span></div>
-          <p>Sewage train with the alarm rendered at the offending unit, as on your page 9 — DO low at the
-            aeration tank, not in a list somewhere else.</p>
-          <div class="pts">DO mg/L · MLSS mg/L · Cl₂ mg/L · EQ LEVEL % · TREATED KL</div>
-        </div>
-
-        <div class="inst-card">
-          <div class="top"><h3>ETP</h3><span class="pk pk-m3">+3M</span></div>
-          <p>Effluent train ending at the discharge point, where consent-band pH and COD are the numbers a
-            regulator asks for first.</p>
-          <div class="pts">pH · MLSS mg/L · TSS mg/L · COD mg/L · DISCHARGE KL/hr</div>
-        </div>
-
-        <div class="inst-card">
-          <div class="top"><h3>HVAC</h3><span class="pk pk-m3">+3M</span></div>
-          <p>Chillers, cooling tower and air handling, with chiller health and approach temperature —
-            row 4 of your feature sheet.</p>
-          <div class="pts">kW/TR · APPROACH °C · CYCLES · SUPPLY / RETURN °C</div>
-        </div>
-
-        <div class="inst-card">
-          <div class="top"><h3>Sustainability</h3><span class="pk pk-m3">+3M</span></div>
-          <p>Withdrawal, reuse, wastewater and emissions against your baselines and factors — the optional
-            module, row 15, sharing the same canvas.</p>
-          <div class="pts">kWh/UNIT · KL/UNIT · REUSE % · tCO₂e</div>
-        </div>
-
+        <footer class="a-foot">
+          <span>IONSiTE NEXUS · telemetry-driven &nbsp;·&nbsp; <span class="mono">29 Aug 2026 10:24:07 IST</span></span>
+          <span class="r"><span class="mono">v0.1</span>
+            <span class="pb">Powered By: <b>Euphoria Infotech India Limited</b></span></span>
+        </footer>
+      </div>
       </div>
     </div>
 
-    <p class="sheet-cap">Two things follow from this and are worth saying plainly. First, the domain screens
-      are <b>not six projects</b> — the cost is in the template content behind each one, which is why the
-      redline of the parameter list matters more than any layout decision. Second, an administrator with no
-      programming skill composes these, which is what row 11 of your sheet asks for; the authoring surface
-      is in build now, and it is the item marked <b>+1M</b> on Sheet 03. The same composition also drives
-      the mobile experience, so a tile placed once is a tile a technician sees in the field.</p>
+    <p class="sheet-cap"><b>This one is nearly all live.</b> The electrical templates, the alarm engine and
+      the work-order workflow run today; only the asset-class health strip waits on your roll-up formula.
+      Two notes on the legend. <b>Standby borrows the neutral grey</b> rather than getting a colour of its
+      own — a DG set on standby is not a fault, and a sixth status colour would have to be invented in every
+      component that paints one, so we reuse the neutral and let the label carry the meaning. And as on
+      Sheet 01, <b>High</b> and <b>Warning</b> share one amber in the shipped build; separating them, as
+      your legend does, is queued.</p>
     <div class="title-block">
-      <div><span class="num">02</span><b>DOMAIN INSTANCES</b></div>
-      <div>SHEET 2 OF 3 &nbsp;·&nbsp; REV B</div>
+      <div><span class="num">02</span><b>ELECTRICAL DISTRIBUTION OVERVIEW</b></div>
+      <div>1420 px MIN &nbsp;·&nbsp; SHEET 2 OF 5 &nbsp;·&nbsp; REV E</div>
+    </div>
+  </section>
+
+  <!-- ================= SHEET 03 — WATER & WASTEWATER ================= -->
+  <section class="sheet">
+    <div class="sheet-grid"></div>
+    <h2 class="sheet-title">Sheet 03 — <span>Water &amp; Wastewater Overview</span></h2>
+    <p class="sheet-lede">Your page 9, lower half. Three treatment trains side by side, each alarm drawn
+      <b>at the unit that raised it</b> rather than only in a list, and a parameter strip below built from
+      the four widget kinds the platform ships. This is the sheet that depends most on you: the shapes are
+      ours, the parameters are our reading of a plant, and an hour of redline makes them yours.</p>
+
+    <div class="sheet-body">
+      <div class="scroller">
+      <div class="app">
+
+        <div class="chrome"><i></i><i></i><i></i>
+          <span class="bar">IONSiTE NEXUS &nbsp;·&nbsp; Water &amp; Wastewater Overview</span></div>
+
+        <header class="a-head">
+          <div class="a-brand">
+            <span class="a-logo"><svg><use href="#g-tri"/></svg></span>
+            <span class="a-mark">IONSi<em>T</em>E NEXUS</span>
+            <span class="a-tag">Integrated Building, Energy, Water &amp; Utility Management</span>
+          </div>
+          <div class="a-who">
+            <span class="nm"><b>P. Mitra</b><span>Operations Manager · IONSITE Industrial Park</span></span>
+            <button class="a-btn" type="button">Logout</button>
+          </div>
+        </header>
+
+        <nav class="a-nav">
+          <a href="#">Overview</a>
+          <a href="#">Sites</a>
+          <a href="#">Energy</a>
+          <a class="on" href="#">Water</a>
+          <a href="#">Settings</a>
+          <span class="sp"></span>
+          <span class="clock">29 Aug 2026 &nbsp;·&nbsp; 10:24:07 IST</span>
+        </nav>
+
+        <div class="a-body">
+          <aside class="a-side">
+            <div class="head">
+              <span class="grp-t" style="padding:0">Modules</span>
+              <button class="collapse" type="button" aria-label="Collapse sidebar">«</button>
+            </div>
+            <div class="grp">
+              <div class="grp-t">Monitoring</div>
+              <a href="#"><span class="lab">Dashboard</span></a>
+              <a href="#"><span class="lab">Alarm Centre</span><span class="n">9</span></a>
+              <a href="#"><span class="lab">Sites Map</span></a>
+              <a href="#"><span class="lab">Energy Analytics</span></a>
+            </div>
+            <div class="grp">
+              <div class="grp-t">Plant Views</div>
+              <a href="#"><span class="lab">Electrical SLD</span></a>
+              <a class="on" href="#"><span class="lab">Water &amp; Distribution</span></a>
+              <a href="#"><span class="lab">STP</span></a>
+              <a href="#"><span class="lab">ETP</span></a>
+              <a href="#"><span class="lab">HVAC · Cooling</span></a>
+            </div>
+            <div class="grp">
+              <div class="grp-t">Operations</div>
+              <a href="#"><span class="lab">Maintenance</span></a>
+              <a href="#"><span class="lab">Schedule Centre</span></a>
+              <a href="#"><span class="lab">Assets</span></a>
+            </div>
+            <div class="grp">
+              <div class="grp-t">Intelligence</div>
+              <a href="#"><span class="lab">Rule Engine</span></a>
+              <a href="#"><span class="lab">Reports</span></a>
+              <a href="#"><span class="lab">Sustainability</span></a>
+            </div>
+          </aside>
+
+          <main>
+            <section class="a-ribbon">
+              <span class="rb-pill"><svg><use href="#g-pin"/></svg><span class="k">Site</span>
+                <b>IONSITE Industrial Park</b><svg><use href="#g-caret"/></svg></span>
+              <span class="rb-pill"><svg><use href="#g-drop"/></svg><span class="k">Scope</span>
+                <b>Water · STP · ETP</b> · 3 plants</span>
+              <span class="rb-pill ok"><svg style="color:#00A651"><use href="#g-recycle"/></svg>
+                <span class="k">Discharge</span><b>Within consent</b></span>
+              <span class="rb-pill"><svg style="color:#DC2626"><use href="#g-alert"/></svg>
+                <span class="k">Active</span><b>9 alarms</b> · 4 critical</span>
+              <span class="rb-sp"></span>
+              <span class="rb-stamp">Telemetry 3 s ago · 5 RTUs online</span>
+            </section>
+
+            <div class="a-canvas">
+
+              <div class="ph-row">
+                <div>
+                  <div class="eb">Water &amp; Wastewater</div>
+                  <h3>Water &amp; Wastewater Overview</h3>
+                  <p>Real-time monitoring of water systems, STP &amp; ETP</p>
+                </div>
+                <div class="ph-acts">
+                  <span class="sel"><span class="k">Period</span><b>Today</b><svg><use href="#g-caret"/></svg></span>
+                  <span class="seg"><span class="on">Diagram</span><span>List</span></span>
+                </div>
+              </div>
+
+              <div class="kpis k5">
+                <div class="kpi">
+                  <div class="top"><span class="k">Water Consumption Today</span>
+                    <span class="ph ph-m3">+3M</span>
+                    <span class="ico"><svg><use href="#g-drop"/></svg></span></div>
+                  <div class="v">1,245<u>KL</u></div>
+                  <div class="hint">↓ 4.3% vs yesterday</div>
+                </div>
+                <div class="kpi">
+                  <div class="top"><span class="k">STP Treated Today</span>
+                    <span class="ph ph-m3">+3M</span>
+                    <span class="ico"><svg><use href="#g-aerate"/></svg></span></div>
+                  <div class="v">980<u>KL</u></div>
+                  <div class="hint">98% efficiency</div>
+                </div>
+                <div class="kpi">
+                  <div class="top"><span class="k">ETP Treated Today</span>
+                    <span class="ph ph-m3">+3M</span>
+                    <span class="ico"><svg><use href="#g-clarify"/></svg></span></div>
+                  <div class="v">890<u>KL</u></div>
+                  <div class="hint">96% efficiency</div>
+                </div>
+                <div class="kpi crit">
+                  <div class="top"><span class="k">Active Alarms</span>
+                    <span class="ph ph-now">NOW</span>
+                    <span class="ico"><svg><use href="#g-alert"/></svg></span></div>
+                  <div class="v">9</div>
+                  <div class="hint"><em>4 Critical</em> · <em>5 High</em></div>
+                </div>
+                <div class="kpi">
+                  <div class="top"><span class="k">Water Recycle %</span>
+                    <span class="ph ph-m3">+3M</span>
+                    <span class="ico"><svg><use href="#g-recycle"/></svg></span></div>
+                  <div class="v">72<u>%</u></div>
+                  <div class="hint">↑ 5% vs yesterday</div>
+                </div>
+              </div>
+
+              <section class="card">
+                <div class="card-h"><h4>Treatment Trains</h4>
+                  <span class="sub">Alarms drawn at the unit that raised them</span>
+                  <span class="sp"></span><span class="ph ph-m3">+3M</span></div>
+                <div class="card-b">
+                  <div class="trains">
+
+                    <div class="train">
+                      <div class="train-h"><span class="t">Raw Water System</span><span class="sp"></span>
+                        <span class="meta">86 KL/hr</span></div>
+                      <div class="flow">
+                        <div class="node"><span class="box"><svg><use href="#g-tank"/></svg></span>
+                          <span class="nm">Raw Water Tank</span><span class="vl">Level 72%</span></div>
+                        <span class="arrow"><svg viewBox="0 0 18 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h14"/><path d="m11.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="node"><span class="box"><svg><use href="#g-pump"/></svg></span>
+                          <span class="nm">Raw Water Pump</span><span class="vl">2 pumps · 1 running</span></div>
+                        <span class="arrow"><svg viewBox="0 0 18 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h14"/><path d="m11.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="node"><span class="box"><svg><use href="#g-clarify"/></svg></span>
+                          <span class="nm">Clarifier</span><span class="vl">Turbidity 1.2 NTU</span></div>
+                      </div>
+                      <div class="inline-alarm ia-ok">
+                        <svg><use href="#g-shield"/></svg>
+                        <span class="b"><span class="n">No active alarms</span>
+                          <span class="v">Turbidity, level and pump status within band</span></span>
+                      </div>
+                    </div>
+
+                    <div class="train">
+                      <div class="train-h"><span class="t">STP — Sewage Treatment</span><span class="sp"></span>
+                        <span class="meta">980 KL · 98%</span></div>
+                      <div class="flow">
+                        <div class="node"><span class="box"><svg><use href="#g-tank"/></svg></span>
+                          <span class="nm">Equalization</span><span class="vl">Level 65%</span></div>
+                        <span class="arrow"><svg viewBox="0 0 12 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h9"/><path d="m6.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="node high"><span class="box"><svg><use href="#g-aerate"/></svg><span class="pip"></span></span>
+                          <span class="nm">Aeration</span><span class="vl">DO 2.1 mg/L</span></div>
+                        <span class="arrow"><svg viewBox="0 0 12 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h9"/><path d="m6.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="node"><span class="box"><svg><use href="#g-clarify"/></svg></span>
+                          <span class="nm">Sec. Clarifier</span><span class="vl">MLSS 2,850</span></div>
+                        <span class="arrow"><svg viewBox="0 0 12 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h9"/><path d="m6.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="node warn"><span class="box"><svg><use href="#g-uv"/></svg><span class="pip"></span></span>
+                          <span class="nm">Disinfection</span><span class="vl">Cl₂ 0.5 mg/L</span></div>
+                        <span class="arrow"><svg viewBox="0 0 12 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h9"/><path d="m6.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="node"><span class="box"><svg><use href="#g-tank"/></svg></span>
+                          <span class="nm">Treated Tank</span><span class="vl">Level 68%</span></div>
+                      </div>
+                      <div class="inline-alarm ia-high">
+                        <svg><use href="#g-alert"/></svg>
+                        <span class="b"><span class="n">High D.O. alarm</span>
+                          <span class="v">Aeration tank · DO 2.1 mg/L · above band</span></span>
+                      </div>
+                      <div class="inline-alarm ia-warn">
+                        <svg><use href="#g-alert"/></svg>
+                        <span class="b"><span class="n">Low chlorine alarm</span>
+                          <span class="v">Disinfection · Cl₂ 0.5 mg/L · below band</span></span>
+                      </div>
+                    </div>
+
+                    <div class="train">
+                      <div class="train-h"><span class="t">ETP — Effluent Treatment</span><span class="sp"></span>
+                        <span class="meta">890 KL · 96%</span></div>
+                      <div class="flow">
+                        <div class="node"><span class="box"><svg><use href="#g-tank"/></svg></span>
+                          <span class="nm">Equalization</span><span class="vl">Level 60%</span></div>
+                        <span class="arrow"><svg viewBox="0 0 12 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h9"/><path d="m6.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="node crit"><span class="box"><svg><use href="#g-dose"/></svg><span class="pip"></span></span>
+                          <span class="nm">pH Neutralization</span><span class="vl">pH 4.8</span></div>
+                        <span class="arrow"><svg viewBox="0 0 12 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h9"/><path d="m6.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="node"><span class="box"><svg><use href="#g-aerate"/></svg></span>
+                          <span class="nm">Biological</span><span class="vl">MLSS 3,250</span></div>
+                        <span class="arrow"><svg viewBox="0 0 12 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h9"/><path d="m6.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="node"><span class="box"><svg><use href="#g-clarify"/></svg></span>
+                          <span class="nm">Settling</span><span class="vl">TSS 45 mg/L</span></div>
+                        <span class="arrow"><svg viewBox="0 0 12 8" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M0 4h9"/><path d="m6.5 1.5 3 2.5-3 2.5"/></svg></span>
+                        <div class="node"><span class="box"><svg><use href="#g-discharge"/></svg></span>
+                          <span class="nm">Discharge</span><span class="vl">120 KL/hr</span></div>
+                      </div>
+                      <div class="inline-alarm ia-crit">
+                        <svg><use href="#g-alert"/></svg>
+                        <span class="b"><span class="n">Low pH alarm</span>
+                          <span class="v">Neutralization · pH 4.8 · outside consent band</span></span>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </section>
+
+              <section class="card">
+                <div class="card-h"><h4>Key Parameters</h4>
+                  <span class="sub">Four widget kinds — the editor ships at +1M, these points with the water pack</span>
+                  <span class="sp"></span><span class="ph ph-m1">+1M</span></div>
+                <div class="card-b">
+                  <div class="params">
+
+                    <div class="wg">
+                      <div class="wt">Raw Water Tank</div>
+                      <div class="wb">
+                        <svg viewBox="0 0 100 140" width="62" height="87" role="img" aria-label="Raw water tank level 72 percent">
+                          <rect x="8" y="10" width="84" height="120" rx="6" fill="#FFFFFF" stroke="#D8DCE3" stroke-width="2"/>
+                          <rect x="12" y="43.6" width="76" height="86.4" fill="#039855" opacity=".85"/>
+                          <text x="50" y="86" text-anchor="middle" font-family="IBM Plex Sans Condensed, sans-serif" font-size="26" font-weight="700" fill="#FFFFFF">72%</text>
+                        </svg>
+                      </div>
+                      <div class="kind">tank_level</div>
+                    </div>
+
+                    <div class="wg">
+                      <div class="wt">Treated Water Tank</div>
+                      <div class="wb">
+                        <svg viewBox="0 0 100 140" width="62" height="87" role="img" aria-label="Treated water tank level 68 percent">
+                          <rect x="8" y="10" width="84" height="120" rx="6" fill="#FFFFFF" stroke="#D8DCE3" stroke-width="2"/>
+                          <rect x="12" y="48.4" width="76" height="81.6" fill="#039855" opacity=".85"/>
+                          <text x="50" y="90" text-anchor="middle" font-family="IBM Plex Sans Condensed, sans-serif" font-size="26" font-weight="700" fill="#FFFFFF">68%</text>
+                        </svg>
+                      </div>
+                      <div class="kind">tank_level</div>
+                    </div>
+
+                    <div class="wg">
+                      <div class="wt">STP Inlet Flow</div>
+                      <div class="wb"><div class="val">1,050<u>KL / day</u></div></div>
+                      <div class="kind">value_tile</div>
+                    </div>
+
+                    <div class="wg">
+                      <div class="wt">STP Outlet Flow</div>
+                      <div class="wb"><div class="val">980<u>KL / day</u></div></div>
+                      <div class="kind">value_tile</div>
+                    </div>
+
+                    <div class="wg">
+                      <div class="wt">STP Efficiency</div>
+                      <div class="wb">
+                        <svg viewBox="0 0 100 68" width="88" height="60" role="img" aria-label="STP efficiency 98 percent">
+                          <path d="M16 58a34 34 0 0 1 68 0" fill="none" stroke="#EAECF0" stroke-width="10" stroke-linecap="round"/>
+                          <path d="M16 58a34 34 0 0 1 68 0" fill="none" stroke="#039855" stroke-width="10" stroke-linecap="round" stroke-dasharray="104.7 106.8"/>
+                          <text x="50" y="54" text-anchor="middle" font-family="IBM Plex Sans Condensed, sans-serif" font-size="24" font-weight="700" fill="#1A2230">98%</text>
+                        </svg>
+                      </div>
+                      <div class="kind">radial_gauge</div>
+                    </div>
+
+                    <div class="wg">
+                      <div class="wt">ETP Inlet Flow</div>
+                      <div class="wb"><div class="val">950<u>KL / day</u></div></div>
+                      <div class="kind">value_tile</div>
+                    </div>
+
+                    <div class="wg">
+                      <div class="wt">ETP Outlet Flow</div>
+                      <div class="wb"><div class="val">890<u>KL / day</u></div></div>
+                      <div class="kind">value_tile</div>
+                    </div>
+
+                    <div class="wg">
+                      <div class="wt">ETP Efficiency</div>
+                      <div class="wb">
+                        <svg viewBox="0 0 100 68" width="88" height="60" role="img" aria-label="ETP efficiency 96 percent">
+                          <path d="M16 58a34 34 0 0 1 68 0" fill="none" stroke="#EAECF0" stroke-width="10" stroke-linecap="round"/>
+                          <path d="M16 58a34 34 0 0 1 68 0" fill="none" stroke="#039855" stroke-width="10" stroke-linecap="round" stroke-dasharray="102.5 106.8"/>
+                          <text x="50" y="54" text-anchor="middle" font-family="IBM Plex Sans Condensed, sans-serif" font-size="24" font-weight="700" fill="#1A2230">96%</text>
+                        </svg>
+                      </div>
+                      <div class="kind">radial_gauge</div>
+                    </div>
+
+                    <div class="wg">
+                      <div class="wt">Recycle Trend</div>
+                      <div class="wb" style="flex-direction:column; gap:4px">
+                        <svg viewBox="0 0 96 34" width="96" height="34" role="img" aria-label="Water recycle percentage over the last twenty days, rising from about 58 to 72 percent.">
+                          <defs><linearGradient id="fSpark" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="#00A651" stop-opacity=".28"/>
+                            <stop offset="100%" stop-color="#00A651" stop-opacity="0"/>
+                          </linearGradient></defs>
+                          <path fill="url(#fSpark)" d="M2 15 L6.8 14.8 L11.7 15.9 L16.5 14.5 L21.4 15.5 L26.2 14.4 L31.1 13.8 L35.9 12.6 L40.7 13.1 L45.6 12.1 L50.4 11 L55.3 11.8 L60.1 10 L64.9 10.6 L69.8 9.9 L74.6 8.7 L79.5 6.7 L84.3 6.7 L89.2 5 L94 4.6 L94 31 L2 31 Z"/>
+                          <path fill="none" stroke="#00A651" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M2 15 L6.8 14.8 L11.7 15.9 L16.5 14.5 L21.4 15.5 L26.2 14.4 L31.1 13.8 L35.9 12.6 L40.7 13.1 L45.6 12.1 L50.4 11 L55.3 11.8 L60.1 10 L64.9 10.6 L69.8 9.9 L74.6 8.7 L79.5 6.7 L84.3 6.7 L89.2 5 L94 4.6"/>
+                          <circle cx="94" cy="4.6" r="2.6" fill="#00A651" stroke="#FFFFFF" stroke-width="1.6"/>
+                        </svg>
+                        <div class="val" style="font-size:18px">72<u style="margin-top:2px">% · 20 days</u></div>
+                      </div>
+                      <div class="kind">chart</div>
+                    </div>
+
+                  </div>
+                </div>
+              </section>
+
+              <div class="pair-row">
+
+                <section class="card">
+                  <div class="card-h"><h4>Treated Volume</h4><span class="sub">Last 7 days</span>
+                    <span class="sp"></span><span class="ph ph-m3">+3M</span></div>
+                  <div class="card-b">
+                    <div class="clegend">
+                      <span><i style="background:#00A651"></i>STP <b>6,720 KL</b></span>
+                      <span><i style="background:#1570EF"></i>ETP <b>6,050 KL</b></span>
+                    </div>
+                    <div class="gbars" role="img" aria-label="Treated volume over seven days: STP between 930 and 1,010 kilolitres a day, ETP between 830 and 900.">
+                      <div class="gcol"><div class="gpair"><i style="height:82%; background:#00A651"></i><i style="height:73%; background:#1570EF"></i></div><span class="gx">23</span></div>
+                      <div class="gcol"><div class="gpair"><i style="height:88%; background:#00A651"></i><i style="height:76%; background:#1570EF"></i></div><span class="gx">24</span></div>
+                      <div class="gcol"><div class="gpair"><i style="height:79%; background:#00A651"></i><i style="height:71%; background:#1570EF"></i></div><span class="gx">25</span></div>
+                      <div class="gcol"><div class="gpair"><i style="height:91%; background:#00A651"></i><i style="height:80%; background:#1570EF"></i></div><span class="gx">26</span></div>
+                      <div class="gcol"><div class="gpair"><i style="height:85%; background:#00A651"></i><i style="height:78%; background:#1570EF"></i></div><span class="gx">27</span></div>
+                      <div class="gcol"><div class="gpair"><i style="height:94%; background:#00A651"></i><i style="height:83%; background:#1570EF"></i></div><span class="gx">28</span></div>
+                      <div class="gcol"><div class="gpair"><i style="height:89%; background:#00A651"></i><i style="height:81%; background:#1570EF"></i></div><span class="gx">29</span></div>
+                    </div>
+                    <div class="c-foot">
+                      <div><div class="k">Daily mean</div><div class="v">960 KL · 864 KL</div></div>
+                      <div><div class="k">Hydraulic load</div><div class="v">84% of design</div></div>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="card">
+                  <div class="card-h"><h4>Discharge pH</h4>
+                    <span class="sub">Against the consent band — the number a regulator asks for first</span>
+                    <span class="sp"></span><span class="ph ph-m3">+3M</span></div>
+                  <div class="card-b">
+                    <div class="clegend">
+                      <span><i style="background:rgba(0,166,81,.18); border:1px solid rgba(0,166,81,.45)"></i>Consent band <b>6.5 – 8.5</b></span>
+                      <span><i style="background:#D92D20"></i>Breach <b>03:00 – 08:00</b></span>
+                    </div>
+                    <div class="chart-wrap">
+                      <svg viewBox="0 0 264 110" role="img" aria-label="Final discharge pH over the day. It leaves the 6.5 to 8.5 consent band at about 03:00, bottoms at 4.8, and returns inside the band by 08:00.">
+                        <rect x="4" y="32.9" width="256" height="12.5" fill="rgba(0,166,81,.14)"/>
+                        <line x1="4" y1="32.9" x2="260" y2="32.9" stroke="rgba(0,166,81,.5)" stroke-width="1" stroke-dasharray="3 3"/>
+                        <line x1="4" y1="45.4" x2="260" y2="45.4" stroke="rgba(0,166,81,.5)" stroke-width="1" stroke-dasharray="3 3"/>
+                        <rect x="100" y="11" width="74.7" height="75" fill="rgba(217,45,32,.07)"/>
+                        <path fill="none" stroke="#D92D20" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" d="M100 44.8 L110.7 47.2 L121.3 49.8 L132 52.3 L142.7 55.4 L153.3 56 L164 52.9 L174.7 47.9"/>
+                        <path fill="none" stroke="#039855" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" d="M4 38.5 L14.7 39.1 L25.3 39.8 L36 38.5 L46.7 37.9 L57.3 39.1 L68 40.4 L78.7 41.6 L89.3 42.9 L100 44.8"/>
+                        <path fill="none" stroke="#039855" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" d="M174.7 47.9 L185.3 43.5 L196 41 L206.7 39.8 L217.3 39.1 L228 39.8 L238.7 39.1 L249.3 38.5 L260 39.1"/>
+                        <circle cx="153.3" cy="56" r="3.4" fill="#D92D20" stroke="#FFFFFF" stroke-width="2"/>
+                        <text x="153.3" y="70" text-anchor="middle" font-family="IBM Plex Mono, monospace" font-size="8.5" font-weight="600" fill="#991B1B">pH 4.8</text>
+                        <text class="axis" x="4" y="9">pH</text>
+                        <text class="axis" x="264" y="31" text-anchor="end" fill="#039855">8.5</text>
+                        <text class="axis" x="264" y="53" text-anchor="end" fill="#039855">6.5</text>
+                        <text class="axis" x="4" y="98">00:00</text><text class="axis" x="92" y="98">08:00</text>
+                        <text class="axis" x="176" y="98">16:00</text><text class="axis" x="238" y="98">24:00</text>
+                      </svg>
+                    </div>
+                    <div class="c-foot">
+                      <div><div class="k">Time outside band</div>
+                        <div class="v" style="color:#991B1B">4 h 50 min</div></div>
+                      <div><div class="k">Minimum</div><div class="v" style="color:#991B1B">pH 4.8 at 05:40</div></div>
+                      <div><div class="k">Volume affected</div><div class="v">580 KL</div></div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+            </div>
+          </main>
+        </div>
+
+        <footer class="a-foot">
+          <span>IONSiTE NEXUS · telemetry-driven &nbsp;·&nbsp; <span class="mono">29 Aug 2026 10:24:07 IST</span></span>
+          <span class="r"><span class="mono">v0.1</span>
+            <span class="pb">Powered By: <b>Euphoria Infotech India Limited</b></span></span>
+        </footer>
+      </div>
+      </div>
+    </div>
+
+    <p class="sheet-cap"><b>The strip below the trains is the argument on this sheet.</b> Those nine tiles
+      are the four widget kinds the platform ships — <code>tank_level</code>, <code>value_tile</code>,
+      <code>radial_gauge</code> and <code>chart</code> — drawn at their real geometry and in the platform's
+      own widget palette. The kinds arrive with the tile editor at <b>+1M</b>; what they are bound to here
+      arrives with the water pack. That is the whole shape of this sheet: <b>the software is not the long
+      pole, the plant knowledge is</b>. The 1,245 KL, 980 KL, 890 KL and 72% are your own figures from the
+      reference — we have not derived a balance around them, because that is a number your process
+      engineers should set, not us.</p>
+    <div class="title-block">
+      <div><span class="num">03</span><b>WATER &amp; WASTEWATER OVERVIEW</b></div>
+      <div>1420 px MIN &nbsp;·&nbsp; SHEET 3 OF 5 &nbsp;·&nbsp; REV E</div>
+    </div>
+  </section>
+
+  <!-- ================= SHEET 04 ================= -->
+  <section class="sheet">
+    <div class="sheet-grid"></div>
+    <h2 class="sheet-title">Sheet 04 — <span>One Shape, Six Instances</span></h2>
+    <p class="sheet-lede">Your reference pages show the same page three times — integrated, electrical,
+      water. That repetition is the design. The canvas is drawn once at the top, with the four widget kinds
+      it is built from; the six thumbnails below it are that same canvas bound to six asset groups, each
+      carrying this morning's readings. Adding a seventh is configuration, not a release.</p>
+
+    <div class="sheet-body">
+      <div class="inst-wrap">
+
+        <!-- ---------- the canvas, drawn once ---------- -->
+        <div class="cx">
+          <div>
+            <p class="cx-t">The canvas — drawn once</p>
+            <p class="cx-s">Five slots. Every screen in this set, and every screen after it, is these
+              five slots filled differently.</p>
+            <svg class="cx-canvas" viewBox="0 0 348 252" role="img" aria-label="The shared dashboard canvas exploded into five labelled slots, top to bottom: a context ribbon, a row of five KPI tiles, a large domain centrepiece, a row of three charts, and a status bar.">
+              <rect x="4" y="4" width="212" height="240" rx="2" fill="#FFFFFF" stroke="#C3CAD4" stroke-width="1"/>
+
+              <rect class="sl-a" x="12" y="12" width="196" height="13" rx="1"/>
+              <rect x="18" y="15" width="34" height="7" rx="1" fill="#FFFFFF"/>
+              <rect x="58" y="15" width="28" height="7" rx="1" fill="#FFFFFF"/>
+              <rect x="92" y="15" width="40" height="7" rx="1" fill="#FFFFFF"/>
+
+              <g>
+                <rect class="sl" x="12" y="31" width="36" height="28" rx="1"/>
+                <rect x="17" y="37" width="16" height="3" fill="#C3CAD4"/><rect x="17" y="45" width="24" height="6" fill="#9AA3B1"/>
+                <rect class="sl" x="52" y="31" width="36" height="28" rx="1"/>
+                <rect x="57" y="37" width="16" height="3" fill="#C3CAD4"/><rect x="57" y="45" width="24" height="6" fill="#9AA3B1"/>
+                <rect class="sl" x="92" y="31" width="36" height="28" rx="1"/>
+                <rect x="97" y="37" width="16" height="3" fill="#C3CAD4"/><rect x="97" y="45" width="24" height="6" fill="#9AA3B1"/>
+                <rect class="sl" x="132" y="31" width="36" height="28" rx="1"/>
+                <rect x="137" y="37" width="16" height="3" fill="#C3CAD4"/><rect x="137" y="45" width="24" height="6" fill="#9AA3B1"/>
+                <rect class="sl" x="172" y="31" width="36" height="28" rx="1"/>
+                <rect x="177" y="37" width="16" height="3" fill="#C3CAD4"/><rect x="177" y="45" width="24" height="6" fill="#9AA3B1"/>
+              </g>
+
+              <rect class="sl-c" x="12" y="65" width="196" height="100" rx="1"/>
+              <g>
+                <rect x="30" y="104" width="42" height="22" rx="1" fill="#EEF1F5" stroke="#C3CAD4" stroke-width="1"/>
+                <rect x="100" y="104" width="42" height="22" rx="1" fill="#EEF1F5" stroke="#C3CAD4" stroke-width="1"/>
+                <rect x="160" y="104" width="36" height="22" rx="1" fill="#EEF1F5" stroke="#C3CAD4" stroke-width="1"/>
+                <path fill="none" stroke="#C3CAD4" stroke-width="1.2" d="M72 115h22m-4-3 4 3-4 3M142 115h14m-4-3 4 3-4 3"/>
+              </g>
+
+              <g>
+                <rect class="sl" x="12" y="171" width="62.7" height="42" rx="1"/>
+                <path fill="none" stroke="#9AA3B1" stroke-width="1.6" stroke-linejoin="round" d="M19 203 L31 196 L43 199 L55 188 L68 183"/>
+                <rect class="sl" x="78.7" y="171" width="62.7" height="42" rx="1"/>
+                <g fill="#9AA3B1"><rect x="89" y="194" width="10" height="15"/><rect x="105" y="187" width="10" height="22"/><rect x="121" y="198" width="10" height="11"/></g>
+                <rect class="sl" x="145.3" y="171" width="62.7" height="42" rx="1"/>
+                <path fill="none" stroke="#9AA3B1" stroke-width="3.4" stroke-linecap="round" d="M158 205 A 19 19 0 0 1 196 205"/>
+                <path fill="none" stroke="#5B6474" stroke-width="1.4" stroke-linecap="round" d="M177 205 L188 194"/>
+              </g>
+
+              <rect class="sl-a" x="12" y="223" width="196" height="13" rx="1"/>
+
+              <g class="ld">
+                <path d="M218 18.5h10M218 45h10M218 115h10M218 192h10M218 229.5h10"/>
+              </g>
+              <g>
+                <text class="lb-b" x="232" y="17">CONTEXT RIBBON</text>
+                <text class="lb" x="232" y="26.5">site · system · data</text>
+                <text class="lb-b" x="232" y="43.5">KPI ROW</text>
+                <text class="lb" x="232" y="53">value_tile × 5</text>
+                <text class="lb-b" x="232" y="113.5">CENTREPIECE</text>
+                <text class="lb" x="232" y="123">plant diagram or tree</text>
+                <text class="lb-b" x="232" y="190.5">CHART ROW</text>
+                <text class="lb" x="232" y="200">chart · gauge · tank</text>
+                <text class="lb-b" x="232" y="228">STATUS BAR</text>
+                <text class="lb" x="232" y="237.5">stamp · build · owner</text>
+              </g>
+            </svg>
+          </div>
+
+          <div>
+            <p class="cx-t">The four widget kinds the canvas is built from</p>
+            <p class="cx-s">An administrator places these and binds each one to a tag. There is no fifth
+              kind, and no code — which is why a seventh domain screen is an afternoon, not a release.</p>
+            <div class="cx-kinds">
+              <div class="cx-kind">
+                <div class="bx"><svg viewBox="0 0 120 88" role="img" aria-label="Value tile widget: a label, a large number and a comparison line.">
+                  <rect x="6" y="8" width="108" height="72" rx="3" fill="#FFFFFF" stroke="#C3CAD4" stroke-width="1.4"/>
+                  <rect x="6" y="8" width="108" height="3" fill="#00A651"/>
+                  <rect x="18" y="24" width="42" height="5" rx="1" fill="#C3CAD4"/>
+                  <text x="18" y="58" font-family="IBM Plex Sans Condensed, sans-serif" font-size="30" font-weight="700" fill="#1A2230">5.62</text>
+                  <text x="80" y="58" font-family="IBM Plex Mono, monospace" font-size="11" fill="#7A8494">MW</text>
+                  <rect x="18" y="66" width="58" height="4" rx="1" fill="#DDE2E9"/>
+                </svg></div>
+                <div class="nm">value_tile</div>
+                <div class="ds">One reading, its unit, and how it moved.</div>
+              </div>
+              <div class="cx-kind">
+                <div class="bx"><svg viewBox="0 0 120 88" role="img" aria-label="Radial gauge widget: a dial with a coloured band and a needle.">
+                  <path fill="none" stroke="#DDE2E9" stroke-width="11" stroke-linecap="round" d="M24 68 A 36 36 0 0 1 96 68"/>
+                  <path fill="none" stroke="#DC6803" stroke-width="11" stroke-linecap="round" d="M24 68 A 36 36 0 0 1 42.9 36.8"/>
+                  <path fill="none" stroke="#00A651" stroke-width="11" stroke-linecap="round" d="M60 32 A 36 36 0 0 1 96 68"/>
+                  <path fill="none" stroke="#1A2230" stroke-width="2.6" stroke-linecap="round" d="M60 68 L82 46"/>
+                  <circle cx="60" cy="68" r="4" fill="#1A2230"/>
+                  <text x="60" y="84" text-anchor="middle" font-family="IBM Plex Sans Condensed, sans-serif" font-size="15" font-weight="700" fill="#1A2230">0.96</text>
+                </svg></div>
+                <div class="nm">radial_gauge</div>
+                <div class="ds">A reading against a band you set.</div>
+              </div>
+              <div class="cx-kind">
+                <div class="bx"><svg viewBox="0 0 120 88" role="img" aria-label="Tank level widget: a vessel filled to 72 percent.">
+                  <rect x="40" y="6" width="40" height="76" rx="5" fill="#FFFFFF" stroke="#C3CAD4" stroke-width="2"/>
+                  <rect x="44" y="31.3" width="32" height="46.7" fill="#039855"/>
+                  <text x="60" y="62" text-anchor="middle" font-family="IBM Plex Sans Condensed, sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">72%</text>
+                  <path fill="none" stroke="#C3CAD4" stroke-width="1.2" d="M32 31.3h6M82 31.3h6"/>
+                </svg></div>
+                <div class="nm">tank_level</div>
+                <div class="ds">A vessel, at its real proportion.</div>
+              </div>
+              <div class="cx-kind">
+                <div class="bx"><svg viewBox="0 0 120 88" role="img" aria-label="Chart widget: a trend line over a faint grid with an emphasised endpoint.">
+                  <path stroke="#EAECF0" stroke-width="1" d="M6 22h108M6 44h108M6 66h108"/>
+                  <path fill="rgba(0,166,81,.12)" d="M6 62 L26 54 L44 58 L62 40 L80 34 L98 24 L114 16 L114 78 L6 78 Z"/>
+                  <path fill="none" stroke="#00A651" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" d="M6 62 L26 54 L44 58 L62 40 L80 34 L98 24 L114 16"/>
+                  <circle cx="114" cy="16" r="4" fill="#00A651" stroke="#FFFFFF" stroke-width="2"/>
+                </svg></div>
+                <div class="nm">chart</div>
+                <div class="ds">A trend, a comparison, or a band.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---------- six instances of that one canvas ---------- -->
+        <div class="inst">
+
+          <div class="inst-card">
+            <div class="top"><h3>Electrical</h3><span class="pk pk-now">NOW</span></div>
+            <div class="th">
+              <i class="rb"></i>
+              <div class="kp">
+                <i><s>Total Power</s><b>5.62<u>MW</u></b></i>
+                <i><s>Demand</s><b>4.85<u>MW</u></b></i>
+                <i><s>Pwr Factor</s><b>0.96</b></i>
+                <i><s>Energy</s><b>112.75<u>MWh</u></b></i>
+                <i class="crit"><s>Alarms</s><b>7</b></i>
+              </div>
+              <div class="mid">
+                <svg viewBox="0 0 292 94" role="img" aria-label="Centrepiece: the distribution tree with live readings — HT panel 5.12 megawatts, LT-1 2.58 and LT-2 1.85 at 89 percent load, and MCC-1 to MCC-4 at 1.15, 1.02, 0.95 and 0.72 megawatts, with MCC-4 in overload at 112 percent.">
+                  <path class="pipe" d="M146 26v4M72 30h148M72 30v4M220 30v4M72 58v4M35 62h74M35 62v4M109 62v4M220 58v4M183 62h74M183 62v4M257 62v4"/>
+                  <rect class="blk" x="108" y="2" width="76" height="24" rx="2"/>
+                  <text class="lb" x="146" y="12" text-anchor="middle">HT PANEL</text>
+                  <text class="vl" x="146" y="22" text-anchor="middle">5.12 MW</text>
+                  <rect class="blk" x="34" y="34" width="76" height="24" rx="2"/>
+                  <text class="lb" x="72" y="44" text-anchor="middle">LT-1 · 75%</text>
+                  <text class="vl" x="72" y="54" text-anchor="middle">2.58 MW</text>
+                  <rect class="alm-w" x="182" y="34" width="76" height="24" rx="2"/>
+                  <text class="lb lw" x="220" y="44" text-anchor="middle">LT-2 · 89%</text>
+                  <text class="vl vw" x="220" y="54" text-anchor="middle">1.85 MW</text>
+                  <rect class="blk" x="4" y="66" width="62" height="24" rx="2"/>
+                  <text class="lb" x="35" y="76" text-anchor="middle">MCC-1</text>
+                  <text class="vl" x="35" y="86" text-anchor="middle">1.15 MW</text>
+                  <rect class="blk" x="78" y="66" width="62" height="24" rx="2"/>
+                  <text class="lb" x="109" y="76" text-anchor="middle">MCC-2</text>
+                  <text class="vl" x="109" y="86" text-anchor="middle">1.02 MW</text>
+                  <rect class="blk" x="152" y="66" width="62" height="24" rx="2"/>
+                  <text class="lb" x="183" y="76" text-anchor="middle">MCC-3</text>
+                  <text class="vl" x="183" y="86" text-anchor="middle">0.95 MW</text>
+                  <rect class="alm-c" x="226" y="66" width="62" height="24" rx="2"/>
+                  <text class="lb lc" x="257" y="76" text-anchor="middle">MCC-4 · 112%</text>
+                  <text class="vl vc" x="257" y="86" text-anchor="middle">0.72 MW</text>
+                </svg>
+              </div>
+              <div class="ch">
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Load trend through the day">
+                  <path fill="none" stroke="#1570EF" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M3 19 L20 16 L37 18 L54 11 L71 13 L88 7 L117 5"/>
+                  <circle cx="117" cy="5" r="2.4" fill="#1570EF"/></svg></i>
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Consumption by area">
+                  <g fill="#00A651"><rect x="4" y="7" width="11" height="16"/><rect x="23" y="10" width="11" height="13"/><rect x="42" y="12" width="11" height="11"/><rect x="61" y="15" width="11" height="8"/><rect x="80" y="17" width="11" height="6"/><rect x="99" y="18" width="11" height="5"/></g></svg></i>
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Power factor against target">
+                  <path fill="none" stroke="#E9EDF2" stroke-width="4" stroke-linecap="round" d="M42 24 A 18 18 0 0 1 78 24"/>
+                  <path fill="none" stroke="#00A651" stroke-width="4" stroke-linecap="round" stroke-dasharray="44.1 56.5" d="M42 24 A 18 18 0 0 1 78 24"/></svg></i>
+              </div>
+            </div>
+            <div class="pts">TOTAL POWER · DEMAND · PF · ENERGY · ACTIVE ALARMS</div>
+          </div>
+
+          <div class="inst-card">
+            <div class="top"><h3>Water</h3><span class="pk pk-m3">+3M</span></div>
+            <div class="th">
+              <i class="rb"></i>
+              <div class="kp">
+                <i><s>Consumption</s><b>1,245<u>KL</u></b></i>
+                <i><s>Intake</s><b>86<u>KL/h</u></b></i>
+                <i><s>OHT Level</s><b>72<u>%</u></b></i>
+                <i><s>Recycle</s><b>72<u>%</u></b></i>
+                <i><s>Turbidity</s><b>1.2<u>NTU</u></b></i>
+              </div>
+              <div class="mid">
+                <svg viewBox="0 0 292 94" role="img" aria-label="Centrepiece: the distribution network with live readings — overhead tank at 72 percent, two of three pumps running, feeding four zones at 42, 26, 11 and 7 kilolitres per hour.">
+                  <path class="pipe" d="M50 47h18M106 47h22M128 14v60M128 14h12M128 34h12M128 54h12M128 74h12"/>
+                  <rect class="blk" x="4" y="10" width="46" height="74" rx="3"/>
+                  <rect x="8" y="34" width="38" height="46" fill="#039855" opacity=".9"/>
+                  <text class="lb" x="27" y="24" text-anchor="middle">OHT</text>
+                  <text class="vl" x="27" y="62" text-anchor="middle" fill="#FFFFFF">72%</text>
+                  <circle class="blk" cx="87" cy="47" r="19"/>
+                  <text class="lb" x="87" y="44" text-anchor="middle">PUMPS</text>
+                  <text class="vl" x="87" y="55" text-anchor="middle">2 / 3</text>
+                  <rect class="blk" x="140" y="6" width="148" height="16" rx="2"/>
+                  <text class="lb" x="147" y="17">PROCESS</text><text class="vl" x="281" y="18" text-anchor="end">42 KL/h</text>
+                  <rect class="blk" x="140" y="26" width="148" height="16" rx="2"/>
+                  <text class="lb" x="147" y="37">UTILITY</text><text class="vl" x="281" y="38" text-anchor="end">26 KL/h</text>
+                  <rect class="blk" x="140" y="46" width="148" height="16" rx="2"/>
+                  <text class="lb" x="147" y="57">DOMESTIC</text><text class="vl" x="281" y="58" text-anchor="end">11 KL/h</text>
+                  <rect class="blk" x="140" y="66" width="148" height="16" rx="2"/>
+                  <text class="lb" x="147" y="77">FIRE / OTHER</text><text class="vl" x="281" y="78" text-anchor="end">7 KL/h</text>
+                </svg>
+              </div>
+              <div class="ch">
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Consumption trend through the day">
+                  <path fill="none" stroke="#1570EF" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M3 20 L20 14 L37 17 L54 10 L71 15 L88 9 L117 12"/>
+                  <circle cx="117" cy="12" r="2.4" fill="#1570EF"/></svg></i>
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Consumption by zone">
+                  <g fill="#00A651"><rect x="4" y="5" width="11" height="18"/><rect x="23" y="11" width="11" height="12"/><rect x="42" y="16" width="11" height="7"/><rect x="61" y="18" width="11" height="5"/><rect x="80" y="13" width="11" height="10"/><rect x="99" y="16" width="11" height="7"/></g></svg></i>
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Tank level against capacity">
+                  <path fill="none" stroke="#E9EDF2" stroke-width="4" stroke-linecap="round" d="M42 24 A 18 18 0 0 1 78 24"/>
+                  <path fill="none" stroke="#00A651" stroke-width="4" stroke-linecap="round" stroke-dasharray="40.7 56.5" d="M42 24 A 18 18 0 0 1 78 24"/></svg></i>
+              </div>
+            </div>
+            <div class="pts">CONSUMPTION · RECYCLE % · TANK LEVEL · TURBIDITY NTU</div>
+          </div>
+
+          <div class="inst-card">
+            <div class="top"><h3>STP</h3><span class="pk pk-m3">+3M</span></div>
+            <div class="th">
+              <i class="rb"></i>
+              <div class="kp">
+                <i><s>Treated</s><b>980<u>KL</u></b></i>
+                <i><s>Hydr. Load</s><b>98<u>%</u></b></i>
+                <i class="warn"><s>DO</s><b>2.1<u>mg/L</u></b></i>
+                <i><s>MLSS</s><b>2,850</b></i>
+                <i class="warn"><s>Alarms</s><b>2</b></i>
+              </div>
+              <div class="mid">
+                <svg viewBox="0 0 292 94" role="img" aria-label="Centrepiece: the sewage treatment train with live readings — equalization 65 percent, aeration dissolved oxygen 2.1 milligrams per litre and in alarm, clarifier MLSS 2,850, disinfection chlorine 0.5, treated tank 68 percent.">
+                  <path class="pipe" d="M53 47h8m-3-3 3 3-3 3M112 47h8m-3-3 3 3-3 3M171 47h8m-3-3 3 3-3 3M230 47h8m-3-3 3 3-3 3"/>
+                  <rect class="blk" x="4" y="30" width="48" height="34" rx="2"/>
+                  <text class="lb" x="28" y="24" text-anchor="middle">EQUALIZE</text>
+                  <text class="vl" x="28" y="48" text-anchor="middle">65%</text>
+                  <text class="un" x="28" y="58" text-anchor="middle">LEVEL</text>
+                  <rect class="alm-w" x="63" y="30" width="48" height="34" rx="2"/>
+                  <text class="lb lw" x="87" y="24" text-anchor="middle">AERATION</text>
+                  <text class="vl vw" x="87" y="48" text-anchor="middle">2.1</text>
+                  <text class="un" x="87" y="58" text-anchor="middle">DO mg/L</text>
+                  <rect class="blk" x="122" y="30" width="48" height="34" rx="2"/>
+                  <text class="lb" x="146" y="24" text-anchor="middle">CLARIFIER</text>
+                  <text class="vl" x="146" y="48" text-anchor="middle">2,850</text>
+                  <text class="un" x="146" y="58" text-anchor="middle">MLSS mg/L</text>
+                  <rect class="blk" x="181" y="30" width="48" height="34" rx="2"/>
+                  <text class="lb" x="205" y="24" text-anchor="middle">DISINFECT</text>
+                  <text class="vl" x="205" y="48" text-anchor="middle">0.5</text>
+                  <text class="un" x="205" y="58" text-anchor="middle">Cl₂ mg/L</text>
+                  <rect class="blk" x="240" y="30" width="48" height="34" rx="2"/>
+                  <text class="lb" x="264" y="24" text-anchor="middle">TREATED</text>
+                  <text class="vl" x="264" y="48" text-anchor="middle">68%</text>
+                  <text class="un" x="264" y="58" text-anchor="middle">LEVEL</text>
+                  <text class="un" x="4" y="88">980 KL TODAY · 98% OF DESIGN LOAD</text>
+                </svg>
+              </div>
+              <div class="ch">
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Dissolved oxygen trend">
+                  <path fill="none" stroke="#1570EF" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M3 9 L20 11 L37 10 L54 14 L71 17 L88 19 L117 21"/>
+                  <circle cx="117" cy="21" r="2.4" fill="#1570EF"/></svg></i>
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Treated volume per day">
+                  <g fill="#00A651"><rect x="4" y="8" width="11" height="15"/><rect x="23" y="6" width="11" height="17"/><rect x="42" y="10" width="11" height="13"/><rect x="61" y="5" width="11" height="18"/><rect x="80" y="8" width="11" height="15"/><rect x="99" y="4" width="11" height="19"/></g></svg></i>
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Hydraulic load against design">
+                  <path fill="none" stroke="#E9EDF2" stroke-width="4" stroke-linecap="round" d="M42 24 A 18 18 0 0 1 78 24"/>
+                  <path fill="none" stroke="#00A651" stroke-width="4" stroke-linecap="round" stroke-dasharray="55.4 56.5" d="M42 24 A 18 18 0 0 1 78 24"/></svg></i>
+              </div>
+            </div>
+            <div class="pts">DO mg/L · MLSS mg/L · Cl₂ mg/L · EQ LEVEL % · TREATED KL</div>
+          </div>
+
+          <div class="inst-card">
+            <div class="top"><h3>ETP</h3><span class="pk pk-m3">+3M</span></div>
+            <div class="th">
+              <i class="rb"></i>
+              <div class="kp">
+                <i><s>Treated</s><b>890<u>KL</u></b></i>
+                <i><s>Hydr. Load</s><b>96<u>%</u></b></i>
+                <i class="crit"><s>Discharge pH</s><b>4.8</b></i>
+                <i><s>TSS</s><b>45<u>mg/L</u></b></i>
+                <i class="crit"><s>Alarms</s><b>1</b></i>
+              </div>
+              <div class="mid">
+                <svg viewBox="0 0 292 94" role="img" aria-label="Centrepiece: the effluent treatment train with live readings — equalization 60 percent, pH neutralization at pH 4.8 and in critical alarm, biological MLSS 3,250, settling TSS 45, discharge 120 kilolitres per hour.">
+                  <path class="pipe" d="M53 47h8m-3-3 3 3-3 3M112 47h8m-3-3 3 3-3 3M171 47h8m-3-3 3 3-3 3M230 47h8m-3-3 3 3-3 3M264 70v10M250 80h28"/>
+                  <rect class="blk" x="4" y="30" width="48" height="34" rx="2"/>
+                  <text class="lb" x="28" y="24" text-anchor="middle">EQUALIZE</text>
+                  <text class="vl" x="28" y="48" text-anchor="middle">60%</text>
+                  <text class="un" x="28" y="58" text-anchor="middle">LEVEL</text>
+                  <rect class="alm-c" x="63" y="30" width="48" height="34" rx="2"/>
+                  <text class="lb lc" x="87" y="24" text-anchor="middle">pH NEUTRAL</text>
+                  <text class="vl vc" x="87" y="48" text-anchor="middle">4.8</text>
+                  <text class="un" x="87" y="58" text-anchor="middle">pH · 6.5–8.5</text>
+                  <rect class="blk" x="122" y="30" width="48" height="34" rx="2"/>
+                  <text class="lb" x="146" y="24" text-anchor="middle">BIOLOGICAL</text>
+                  <text class="vl" x="146" y="48" text-anchor="middle">3,250</text>
+                  <text class="un" x="146" y="58" text-anchor="middle">MLSS mg/L</text>
+                  <rect class="blk" x="181" y="30" width="48" height="34" rx="2"/>
+                  <text class="lb" x="205" y="24" text-anchor="middle">SETTLING</text>
+                  <text class="vl" x="205" y="48" text-anchor="middle">45</text>
+                  <text class="un" x="205" y="58" text-anchor="middle">TSS mg/L</text>
+                  <path class="blk" d="M240 30h48l-10 34h-28z"/>
+                  <text class="lb" x="264" y="24" text-anchor="middle">DISCHARGE</text>
+                  <text class="vl" x="264" y="48" text-anchor="middle">120</text>
+                  <text class="un" x="264" y="58" text-anchor="middle">KL/hr</text>
+                  <text class="un" x="4" y="88">890 KL TODAY · 96% OF DESIGN LOAD</text>
+                </svg>
+              </div>
+              <div class="ch">
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Discharge pH against the consent band">
+                  <rect x="3" y="9" width="114" height="7" fill="rgba(0,166,81,.14)"/>
+                  <path fill="none" stroke="#039855" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M3 12 L20 13 L37 15"/>
+                  <path fill="none" stroke="#D92D20" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M37 15 L54 20 L71 22 L88 18"/>
+                  <path fill="none" stroke="#039855" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M88 18 L102 13 L117 12"/>
+                  <circle cx="71" cy="22" r="2.4" fill="#D92D20"/></svg></i>
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Treated volume per day">
+                  <g fill="#00A651"><rect x="4" y="9" width="11" height="14"/><rect x="23" y="7" width="11" height="16"/><rect x="42" y="11" width="11" height="12"/><rect x="61" y="6" width="11" height="17"/><rect x="80" y="9" width="11" height="14"/><rect x="99" y="7" width="11" height="16"/></g></svg></i>
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Hydraulic load against design">
+                  <path fill="none" stroke="#E9EDF2" stroke-width="4" stroke-linecap="round" d="M42 24 A 18 18 0 0 1 78 24"/>
+                  <path fill="none" stroke="#00A651" stroke-width="4" stroke-linecap="round" stroke-dasharray="54.2 56.5" d="M42 24 A 18 18 0 0 1 78 24"/></svg></i>
+              </div>
+            </div>
+            <div class="pts">pH · MLSS mg/L · TSS mg/L · COD mg/L · DISCHARGE KL/hr</div>
+          </div>
+
+          <div class="inst-card">
+            <div class="top"><h3>HVAC</h3><span class="pk pk-m3">+3M</span></div>
+            <div class="th">
+              <i class="rb"></i>
+              <div class="kp">
+                <i><s>Chillers</s><b>2 / 3</b></i>
+                <i><s>Chiller Load</s><b>74<u>%</u></b></i>
+                <i><s>Supply</s><b>7.2<u>°C</u></b></i>
+                <i><s>Return</s><b>12.4<u>°C</u></b></i>
+                <i class="warn"><s>CT Cycles</s><b>3.1</b></i>
+              </div>
+              <div class="mid">
+                <svg viewBox="0 0 292 94" role="img" aria-label="Centrepiece: the chilled-water loop with live readings — two of three chillers running at 74 percent, the cooling tower in alarm at 3.1 cycles of concentration, and air handling supplying 7.2 and returning 12.4 degrees across eighteen zones.">
+                  <path class="pipe" d="M84 22h26M84 68h26M110 22v46M110 45h30"/>
+                  <rect class="blk" x="4" y="6" width="80" height="32" rx="2"/>
+                  <text class="lb" x="44" y="19" text-anchor="middle">CHILLERS · 2 OF 3</text>
+                  <text class="vl" x="44" y="33" text-anchor="middle">74% LOAD</text>
+                  <rect class="alm-w" x="4" y="52" width="80" height="32" rx="2"/>
+                  <text class="lb lw" x="44" y="65" text-anchor="middle">COOLING TOWER</text>
+                  <text class="vl vw" x="44" y="79" text-anchor="middle">3.1 CYCLES</text>
+                  <text class="un" x="88" y="14">SUPPLY 7.2 °C</text>
+                  <text class="un" x="88" y="80">RETURN 12.4 °C</text>
+                  <rect class="blk" x="140" y="24" width="148" height="46" rx="2"/>
+                  <text class="lb" x="214" y="38" text-anchor="middle">AIR HANDLING · 18 ZONES</text>
+                  <text class="vl" x="214" y="54" text-anchor="middle">7.2 / 12.4 °C</text>
+                  <text class="un" x="214" y="64" text-anchor="middle">2 ZONES OFF SET-POINT</text>
+                </svg>
+              </div>
+              <div class="ch">
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Cooling load through the day">
+                  <path fill="none" stroke="#1570EF" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M3 21 L20 18 L37 12 L54 8 L71 7 L88 11 L117 16"/>
+                  <circle cx="117" cy="16" r="2.4" fill="#1570EF"/></svg></i>
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Efficiency per chiller">
+                  <g fill="#00A651"><rect x="4" y="6" width="11" height="17"/><rect x="23" y="9" width="11" height="14"/><rect x="42" y="7" width="11" height="16"/><rect x="61" y="12" width="11" height="11"/><rect x="80" y="10" width="11" height="13"/><rect x="99" y="14" width="11" height="9"/></g></svg></i>
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Efficiency against target">
+                  <path fill="none" stroke="#E9EDF2" stroke-width="4" stroke-linecap="round" d="M42 24 A 18 18 0 0 1 78 24"/>
+                  <path fill="none" stroke="#00A651" stroke-width="4" stroke-linecap="round" stroke-dasharray="33.9 56.5" d="M42 24 A 18 18 0 0 1 78 24"/></svg></i>
+              </div>
+            </div>
+            <div class="pts">kW/TR · APPROACH °C · CYCLES · SUPPLY / RETURN °C</div>
+          </div>
+
+          <div class="inst-card">
+            <div class="top"><h3>Sustainability</h3><span class="pk pk-m3">+3M</span></div>
+            <div class="th">
+              <i class="rb"></i>
+              <div class="kp">
+                <i><s>Reuse</s><b>72<u>%</u></b></i>
+                <i><s>Renewable</s><b>12.2<u>%</u></b></i>
+                <i><s>Water Today</s><b>1,245<u>KL</u></b></i>
+                <i><s>Energy Today</s><b>112.75<u>MWh</u></b></i>
+                <i><s>DG Hours</s><b>3.2<u>h</u></b></i>
+              </div>
+              <div class="mid">
+                <svg viewBox="0 0 292 94" role="img" aria-label="Centrepiece: four sustainability indicators as proportions — water reuse 72 percent, renewable share 12.2 percent, treatment load 23.7 percent of site energy, contract demand 78 percent.">
+                  <rect class="blk" x="4" y="20" width="66" height="52" rx="2"/>
+                  <text class="lb" x="37" y="14" text-anchor="middle">WATER REUSE</text>
+                  <text class="vl" x="37" y="40" text-anchor="middle">72%</text>
+                  <rect class="trk" x="12" y="48" width="50" height="6" rx="3"/>
+                  <rect class="fil" x="12" y="48" width="36" height="6" rx="3"/>
+                  <text class="un" x="37" y="66" text-anchor="middle">OF TREATED</text>
+                  <rect class="blk" x="77" y="20" width="66" height="52" rx="2"/>
+                  <text class="lb" x="110" y="14" text-anchor="middle">RENEWABLE</text>
+                  <text class="vl" x="110" y="40" text-anchor="middle">12.2%</text>
+                  <rect class="trk" x="85" y="48" width="50" height="6" rx="3"/>
+                  <rect class="fil" x="85" y="48" width="6.1" height="6" rx="3"/>
+                  <text class="un" x="110" y="66" text-anchor="middle">OF ENERGY</text>
+                  <rect class="blk" x="150" y="20" width="66" height="52" rx="2"/>
+                  <text class="lb" x="183" y="14" text-anchor="middle">TREATMENT</text>
+                  <text class="vl" x="183" y="40" text-anchor="middle">23.7%</text>
+                  <rect class="trk" x="158" y="48" width="50" height="6" rx="3"/>
+                  <rect class="fil" x="158" y="48" width="11.9" height="6" rx="3"/>
+                  <text class="un" x="183" y="66" text-anchor="middle">OF SITE LOAD</text>
+                  <rect class="blk" x="223" y="20" width="66" height="52" rx="2"/>
+                  <text class="lb" x="256" y="14" text-anchor="middle">DEMAND</text>
+                  <text class="vl" x="256" y="40" text-anchor="middle">78%</text>
+                  <rect class="trk" x="231" y="48" width="50" height="6" rx="3"/>
+                  <rect class="fil" x="231" y="48" width="39" height="6" rx="3"/>
+                  <text class="un" x="256" y="66" text-anchor="middle">OF CONTRACT</text>
+                  <text class="un" x="4" y="88">COMPUTED FROM POINTS THAT RUN TODAY · INTENSITY AND tCO₂e NEED YOUR FACTORS</text>
+                </svg>
+              </div>
+              <div class="ch">
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Reuse trend over the month">
+                  <path fill="none" stroke="#1570EF" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M3 20 L20 18 L37 15 L54 16 L71 11 L88 9 L117 7"/>
+                  <circle cx="117" cy="7" r="2.4" fill="#1570EF"/></svg></i>
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Renewable share per day">
+                  <g fill="#00A651"><rect x="4" y="14" width="11" height="9"/><rect x="23" y="11" width="11" height="12"/><rect x="42" y="13" width="11" height="10"/><rect x="61" y="8" width="11" height="15"/><rect x="80" y="10" width="11" height="13"/><rect x="99" y="6" width="11" height="17"/></g></svg></i>
+                <i><svg viewBox="0 0 120 26" role="img" aria-label="Reuse against target">
+                  <path fill="none" stroke="#E9EDF2" stroke-width="4" stroke-linecap="round" d="M42 24 A 18 18 0 0 1 78 24"/>
+                  <path fill="none" stroke="#00A651" stroke-width="4" stroke-linecap="round" stroke-dasharray="40.7 56.5" d="M42 24 A 18 18 0 0 1 78 24"/></svg></i>
+              </div>
+            </div>
+            <div class="pts">REUSE % · RENEWABLE % · kWh/UNIT · KL/UNIT · tCO₂e</div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <p class="sheet-cap">Two things follow, and both are commercial rather than technical. The domain
+      screens are <b>not six projects</b> — the cost sits in the template content behind each one, which is
+      why the redline of the parameter list matters more than any layout decision. And an administrator with
+      no programming skill composes these, which is what row 11 of your sheet asks for; that authoring
+      surface is in build now, and it is the item marked <b>+1M</b> on Sheet 05. The same composition drives
+      the mobile view, so a tile placed once is a tile a technician sees in the field.</p>
+    <div class="title-block">
+      <div><span class="num">04</span><b>DOMAIN INSTANCES</b></div>
+      <div>SHEET 4 OF 5 &nbsp;·&nbsp; REV E</div>
     </div>
   </section>
 
   <!-- ================= SHEET 03 ================= -->
   <section class="sheet">
     <div class="sheet-grid"></div>
-    <h2 class="sheet-title">Sheet 03 — <span>What Arrives, and When</span></h2>
-    <p class="sheet-lede">Region by region, against the delivery view we are bringing to the workshop. The
-      &ldquo;now&rdquo; column is not a forecast: it is what runs on the platform today and what we will
-      demonstrate live.</p>
+    <h2 class="sheet-title">Sheet 05 — <span>What Arrives, and When</span></h2>
+    <p class="sheet-lede">The bar is the whole answer. Nineteen regions are drawn on Sheets 01–03; eight of
+      them run on the platform today and can be shown live at the workshop. The timeline places the rest,
+      and the numbered notes carry the only caveats that change what you would plan around.</p>
 
     <div class="sheet-body">
+
+      <div class="cov">
+        <div class="cov-bar" role="img" aria-label="Coverage of the nineteen regions: eight run now, three arrive at plus one month, eight arrive at plus three months.">
+          <div class="cov-seg cov-now"><b>8</b><span>Now · runs today</span></div>
+          <div class="cov-seg cov-m1"><b>3</b><span>+1M · in build</span></div>
+          <div class="cov-seg cov-m3"><b>8</b><span>+3M · with the packs</span></div>
+        </div>
+        <p class="cov-cap">Eight regions are live, three are in build, and eight arrive with the domain
+          template packs. <b>In those eight the long pole is plant knowledge, not software</b> — which is
+          why the hour of redline asked for below moves the date more than anything we can do at this desk.</p>
+      </div>
+
       <div style="overflow-x:auto">
-        <table class="dtable">
-          <thead>
-            <tr><th>Region on Sheet 01</th><th class="pcol">Phase</th><th>What it needs</th><th>Feature sheet</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="reg">Shell — command bar, module rail, roles</td>
-              <td class="pcol"><span class="pk pk-now">NOW</span></td>
-              <td>Live, and drawn here exactly as it runs. Role-based access scoped to site and asset group,
-                full audit trail. SSO / enterprise identity integration is +3M.</td>
-              <td><code>Row 13</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Alarm table &amp; severity ladder</td>
-              <td class="pcol"><span class="pk pk-now">NOW</span></td>
-              <td>Live. Threshold and rule alarms with acknowledgement. One caveat: the ladder today paints
-                <b>high</b> and <b>warning</b> the same amber — separating them, as your legend does, is a
-                one-line change we have queued.</td>
-              <td><code>Row 8</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Alarm detail — cause, impact, action</td>
-              <td class="pcol"><span class="pk pk-now">NOW</span></td>
-              <td>The enrichment schema is live (cause, impact, corrective action, skill, ETR). The content
-                per alarm <em>type</em> arrives with each template pack.</td>
-              <td><code>Rows 7, 9</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Alarm → work-order workflow</td>
-              <td class="pcol"><span class="pk pk-now">NOW</span></td>
-              <td>Live. Five-step stepper, assignment, SLA clock and closure. The SLA target per priority is
-                yours to set.</td>
-              <td><code>Row 8</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Live process diagram</td>
-              <td class="pcol"><span class="pk pk-now">NOW</span></td>
-              <td>Live as a drawn diagram with live values on each node. The <b>configurable</b> mimic
-                builder — draw your own plant, bind nodes to tags — is +3M.</td>
-              <td><code>Row 10</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Energy &amp; water charts, KPI tiles</td>
-              <td class="pcol"><span class="pk pk-now">NOW</span></td>
-              <td>Live on the two-year telemetry store with hourly and daily rollups. Period-over-period
-                comparison (&ldquo;vs yesterday&rdquo;) lands with the tile editor at +1M.</td>
-              <td><code>Rows 6, 7</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Data quality &amp; system status</td>
-              <td class="pcol"><span class="pk pk-now">NOW</span></td>
-              <td>Live. Telemetry-freshness checks already run per point; the strip is the roll-up of them.</td>
-              <td><code>Rows 2, 3</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Tile editor — the canvas itself</td>
-              <td class="pcol"><span class="pk pk-m1">+1M</span></td>
-              <td>Self-service dashboard builder: KPI cards, gauges, tank levels, trends, tables and
-                comparison charts, placed and bound by an administrator. In build now.</td>
-              <td><code>Rows 5, 11</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Persistent site selector</td>
-              <td class="pcol"><span class="pk pk-m1">+1M</span></td>
-              <td>Scoping to a site is live today; it sits inside the page rather than in the context strip.
-                Moving it there is a placement change, not new capability.</td>
-              <td><code>Row 13</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Water recycle %</td>
-              <td class="pcol"><span class="pk pk-m3">+3M</span></td>
-              <td>A derived tag over treated and reused volume. The formula engine is live; the points come
-                with the water pack, so the tile lands when the pack does.</td>
-              <td><code>Rows 6, 7</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Asset health, roll-up &amp; bad actors</td>
-              <td class="pcol"><span class="pk pk-m3">+3M</span></td>
-              <td>Your own formula from row 12 — points in safe range over total points, weighted upward
-                through asset → subsystem → site → campus → enterprise, with the bad-actor list.</td>
-              <td><code>Row 12</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Operational efficiency</td>
-              <td class="pcol"><span class="pk pk-m3">+3M</span></td>
-              <td>A composite KPI. We need your definition before we compute it — this is a number people
-                act on, so it should not be our guess.</td>
-              <td><code>Rows 7, 12</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Water · STP · ETP · HVAC screens</td>
-              <td class="pcol"><span class="pk pk-m3">+3M</span></td>
-              <td>Template packs for the treatment plants and the mechanical side. Authoring starts at +1M
-                on the derived parameter list and publishes as version 2 when your plant list arrives.</td>
-              <td><code>Rows 4, 7</code></td>
-            </tr>
-            <tr>
-              <td class="reg">Mobile companion</td>
-              <td class="pcol"><span class="pk pk-m3">+3M</span></td>
-              <td>Acknowledge from the phone, my-work-orders, approvals and field data entry against the same
-                alarm and work-order records — the same composition, one column wide.</td>
-              <td><code>Row 14</code></td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="gantt">
+          <div class="gantt-h">
+            <div><div class="ph-t" style="color:var(--ink-3)">Region</div>
+              <div class="ph-s">as drawn on Sheets 01–03</div></div>
+            <div><div class="ph-t">Now</div><div class="ph-s">Runs today · demonstrable live</div></div>
+            <div><div class="ph-t">+1M</div><div class="ph-s">In build now</div></div>
+            <div><div class="ph-t">+3M</div><div class="ph-s">With the template packs</div></div>
+          </div>
+
+          <div class="gl-t">Shell &amp; access</div>
+          <div class="gi">
+            <div class="gi-l">Shell — command bar, module rail, roles<i class="fm">1</i><s>COMMAND BAR · RAIL · ROLES</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-now">Row 13</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Persistent site selector<i class="fm">2</i><s>CONTEXT STRIP</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-m1">Row 13</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Mobile companion<s>ACK · MY WORK · APPROVALS</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-m3">Row 14</div>
+          </div>
+
+          <div class="gl-t">Alarms &amp; work orders</div>
+          <div class="gi">
+            <div class="gi-l">Alarm table &amp; severity ladder<i class="fm">3</i><s>THRESHOLD + RULE · ACK</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-now">Row 8</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Alarm detail — cause, impact, action<i class="fm">4</i><s>ENRICHMENT SCHEMA</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-now">Rows 7, 9</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Alarm → work-order workflow<i class="fm">5</i><s>5-STEP · SLA CLOCK</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-now">Row 8</div>
+          </div>
+
+          <div class="gl-t">Live diagrams</div>
+          <div class="gi">
+            <div class="gi-l">Single-line diagram tree<s>SHEET 02</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-now">Rows 4, 10</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Live process diagram<i class="fm">6</i><s>SHEET 01</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-now">Row 10</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Treatment trains, alarm at the unit<s>SHEET 03</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-m3">Rows 4, 8, 10</div>
+          </div>
+
+          <div class="gl-t">Charts &amp; widgets</div>
+          <div class="gi">
+            <div class="gi-l">Charts &amp; KPI tiles<i class="fm">7</i><s>SHEETS 01 · 02 · 03</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-now">Rows 6, 7</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Tile editor — the canvas itself<s>THE AUTHORING SURFACE</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-m1">Rows 5, 11</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Key Parameters widget strip<s>SHEET 03 · 4 WIDGET KINDS</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-m1">Rows 5, 11</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Discharge pH vs consent band<i class="fm">8</i><s>SHEET 03</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-m3">Rows 7, 15</div>
+          </div>
+
+          <div class="gl-t">Health &amp; data quality</div>
+          <div class="gi">
+            <div class="gi-l">Data quality &amp; system status<s>FRESHNESS PER POINT</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-now">Rows 2, 3</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Asset health, roll-up &amp; bad actors<s>ASSET → SITE → ENTERPRISE</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-m3">Row 12</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Asset-class health strip<s>SHEET 02 · COUNT + WORST</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-m3">Row 12</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Operational efficiency<i class="fm">9</i><s>COMPOSITE KPI</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-m3">Rows 7, 12</div>
+          </div>
+
+          <div class="gl-t">Domain template packs</div>
+          <div class="gi">
+            <div class="gi-l">Water recycle %<s>DERIVED TAG</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-m3">Rows 6, 7</div>
+          </div>
+          <div class="gi">
+            <div class="gi-l">Water · STP · ETP · HVAC screens<i class="fm">10</i><s>TEMPLATE PACKS</s></div>
+            <i class="col c2"></i><i class="col c3"></i><i class="col c4"></i>
+            <div class="gb gb-m3">Rows 4, 7</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="fn">
+        <div><span class="n">1</span><span>Role-based access scoped to site and asset group, with a full
+          audit trail. <b>SSO / enterprise identity integration is +3M.</b></span></div>
+        <div><span class="n">2</span><span>Scoping to a site is live today; it sits inside the page rather
+          than in the context strip. Moving it there is a placement change, not new capability.</span></div>
+        <div><span class="n">3</span><span>The ladder today paints <b>high</b> and <b>warning</b> the same
+          amber. Separating them, as your legend does, is a one-line change we have queued.</span></div>
+        <div><span class="n">4</span><span>The enrichment schema is live — cause, impact, corrective action,
+          skill, ETR. The content per alarm <em>type</em> arrives with each template pack.</span></div>
+        <div><span class="n">5</span><span>Five-step stepper, assignment, SLA clock and closure.
+          <b>The SLA target per priority is yours to set.</b></span></div>
+        <div><span class="n">6</span><span>Live as a drawn diagram with live values on each node. The
+          <b>configurable</b> mimic builder — draw your own plant, bind nodes to tags — is +3M.</span></div>
+        <div><span class="n">7</span><span>Two-year telemetry store with hourly and daily rollups.
+          Period-over-period comparison (&ldquo;vs yesterday&rdquo;) lands with the tile editor at +1M.</span></div>
+        <div><span class="n">8</span><span>The chart type is shipped; the band limits are the CPCB question we
+          asked, and they differ by discharge route — inland surface water against sewer.</span></div>
+        <div><span class="n">9</span><span><b>We need your definition before we compute it.</b> This is a
+          number people act on, so it should not be our guess.</span></div>
+        <div><span class="n">10</span><span>Authoring starts at +1M on the derived parameter list, and
+          publishes as version 2 when your plant list arrives.</span></div>
       </div>
     </div>
 
@@ -1322,7 +2894,7 @@ footer .by{flex:none; font-family:var(--mono); font-size:11px; letter-spacing:.1
           your plant, add what is missing. That single input converts the water and effluent screens from
           our reading to yours.</p>
         <p><b>Your definition of operational efficiency</b>, and the SLA target per alarm priority. Both
-          appear on Sheet 01 and both should be your numbers.</p>
+          appear on Sheets 01 and 02, and both should be your numbers.</p>
       </div>
       <div>
         <h3>What is still open on our side</h3>
@@ -1336,8 +2908,8 @@ footer .by{flex:none; font-family:var(--mono); font-size:11px; letter-spacing:.1
     </div>
 
     <div class="title-block">
-      <div><span class="num">03</span><b>DELIVERY OVERLAY</b></div>
-      <div>SHEET 3 OF 3 &nbsp;·&nbsp; REV B</div>
+      <div><span class="num">05</span><b>DELIVERY OVERLAY</b></div>
+      <div>SHEET 5 OF 5 &nbsp;·&nbsp; REV E</div>
     </div>
   </section>
 

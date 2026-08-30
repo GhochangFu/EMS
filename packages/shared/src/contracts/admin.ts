@@ -10,6 +10,7 @@
 import { z } from "zod";
 
 import { CALC_DIALECT, CALC_TRIGGERS } from "../calc-dsl";
+import { assetRoleCodeSchema } from "./operations";
 import { pointSourceKindSchema } from "./telemetry-entry";
 
 export const masterDataActiveFilterSchema = z.enum(["true", "false", "all"]);
@@ -547,3 +548,100 @@ export const templateMigrationSkippedPointDtoSchema = z.object({
   assetCode: z.string(),
   pointKey: z.string(),
 });
+
+/**
+ * `F3.37` (ADR 0049 decision 5) — the asset-group admin surface.
+ *
+ * **Why these reads exist at all.** Before `F3.37` this API exposed no
+ * asset-group read of any kind: `AccessControlService` returns groups only as
+ * the *calling user's own scope*, and that array is empty for `admin`,
+ * `organization_admin` and `location_admin` — precisely the users who
+ * administer roles. So the role column had a write endpoint whose only input
+ * was a membership id nothing returned. `F3.8` / ADR 0041 decision 10 is the
+ * precedent that closed the same gap by shipping the surface in the row rather
+ * than after it, "because an item closed with its browser layer marked N/A is
+ * not closed".
+ *
+ * Hanging the control off the asset admin screen was foreclosed by ADR 0049
+ * decision 5's own case: the same pump is the raw-water pump in the water
+ * group and a monitored load in the electrical one, so the role sits on the
+ * *membership* and the surface has to be group-centric.
+ */
+export const adminAssetGroupDtoSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  locationId: z.string(),
+  locationName: z.string().nullable(),
+  organizationId: z.string(),
+  memberCount: z.number(),
+  createdAt: z.string(),
+});
+
+export const adminAssetGroupListResponseSchema = z.object({
+  items: z.array(adminAssetGroupDtoSchema),
+});
+
+/** One row of `bms.asset_group_members`, joined to the asset it names. */
+export const adminAssetGroupMemberDtoSchema = z.object({
+  membershipId: z.string(),
+  assetId: z.string(),
+  assetCode: z.string(),
+  assetName: z.string(),
+  assetDomain: z.string(),
+  /** `null` means no role is set — the state every membership was in before 0051. */
+  role: z.string().nullable(),
+  /** The role's label from `bms.asset_roles`, or `null` when `role` is null. */
+  roleLabel: z.string().nullable(),
+});
+
+export const adminAssetGroupMembersResponseSchema = z.object({
+  /**
+   * **Ordered by `assets.code`, and that is a contract rather than an
+   * incidental.** `assets.code` is `varchar(64) NOT NULL UNIQUE`, so it is a
+   * *total* order — which is what makes it safe. ADR 0049 put no unique index
+   * on `(asset_group_id, role)`, because the mock's own nodes are plural
+   * ("Chillers 2 of 3", "Primary Pumps 3 running") and one role still maps to
+   * one widget however many members match. A role therefore resolves to N
+   * bindings, and ordering by `id` or by insertion order would make the same
+   * stock template instantiated twice in one organization produce two
+   * different tile orders with no visible cause.
+   */
+  items: z.array(adminAssetGroupMemberDtoSchema),
+  /**
+   * How many members carry each role code, for the roles present in this group.
+   *
+   * **This is decision 6's spectrum made visible.** ADR 0049 decision 6 ruled
+   * that an unresolved role imports as a widget with zero bindings rendering
+   * "no data bound". That was written for match/no-match. With plural roles a
+   * group where two of three chillers carry the role renders a widget that
+   * *looks* right and is quietly one short. Zero bindings is visible;
+   * N-minus-one is not, unless something counts. A display concern and not a
+   * stored invariant, so it does not reopen the ADR.
+   */
+  roleCounts: z.record(z.number()),
+});
+
+/**
+ * `PATCH /api/v1/admin/asset-group-members/:id` — set or clear one membership's
+ * role.
+ *
+ * `null` clears it. The code is checked against `bms.asset_roles` by
+ * `VocabulariesService.assertAssetRole` before the write, so an unknown value
+ * is a 400 naming the live codes rather than
+ * `asset_group_members_role_fkey` as a 500.
+ *
+ * **`.strict()`, and it is load-bearing.** The body has exactly one field, so
+ * an unrecognised key is a caller error by construction — there is no second
+ * thing to set. The specific mistake it catches is silent:
+ * `{"role":null,"roleCode":"chiller"}`, from a caller who meant to *set*
+ * `chiller`, would otherwise have `roleCode` stripped, **clear** the role, and
+ * answer `200`. That is the failure ADR 0029 Amendment 3 exists for, and the
+ * decision is recorded in `strict-body-ledger.spec.ts`'s `STRICTNESS_LEDGER`.
+ */
+export const setAssetGroupMemberRoleBodySchema = z
+  .object({
+    role: assetRoleCodeSchema.nullable(),
+  })
+  .strict();
