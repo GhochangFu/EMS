@@ -6,6 +6,7 @@ import { pointValues } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import {
   decodePointRefParam,
+  encodePointRef,
   type PointAggregateFunction,
   type PointAggregateResponse,
   type PointAggregateStats,
@@ -132,7 +133,7 @@ export class TelemetryService {
    * @param now injectable for tests only; defaults to the current instant.
    */
   async pointAggregate(
-    pointRef: string,
+    point: { assetId: string; pointKey: string },
     {
       windowMinutes,
       compare,
@@ -145,13 +146,12 @@ export class TelemetryService {
       now?: Date;
     },
   ): Promise<PointAggregateResponse> {
-    let assetId: string;
-    let pointKey: string;
-    try {
-      ({ assetId, pointKey } = decodePointRefParam(pointRef));
-    } catch {
-      throw new BadRequestException("Invalid point reference");
-    }
+    // **Takes the DECODED pair, not the `pointRef` string** (security review,
+    // LOW). The controller has already decoded it to run `canReadAsset`, so
+    // taking the string here would mean decoding it twice and trusting the two
+    // results to agree. There is no Row Level Security on
+    // `telemetry.point_values_*` to catch it if they ever do not.
+    const { assetId, pointKey } = point;
 
     const window = windowBounds(now, windowMinutes, compare);
     const level = levelFor(window, windowMinutes, now);
@@ -193,7 +193,9 @@ export class TelemetryService {
     }
 
     return {
-      pointRef,
+      // Rebuilt from the decoded pair rather than echoed from the request, so
+      // the response names the point that was actually read.
+      pointRef: encodePointRef(assetId, pointKey),
       from: window.from.toISOString(),
       to: window.to.toISOString(),
       bucketSeconds: bucketSeconds(level),

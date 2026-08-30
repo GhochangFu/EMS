@@ -52,10 +52,13 @@ const RESPONSE: PointAggregateResponse = {
 
 /** Records every call so a test can assert a read did NOT happen, not only that it threw. */
 function serviceStub() {
-  const calls: { pointRef: string; options: Record<string, unknown> }[] = [];
+  const calls: { point: { assetId: string; pointKey: string }; options: Record<string, unknown> }[] = [];
   const service = {
-    pointAggregate: async (pointRef: string, options: Record<string, unknown>) => {
-      calls.push({ pointRef, options });
+    pointAggregate: async (
+      point: { assetId: string; pointKey: string },
+      options: Record<string, unknown>,
+    ) => {
+      calls.push({ point, options });
       return RESPONSE;
     },
   } as unknown as TelemetryService;
@@ -105,6 +108,12 @@ export async function assertAPointInsideScopeIsRead(): Promise<void> {
   const result = await controller.aggregate(USER, POINT_REF, {});
   assert(result.pointRef === POINT_REF, "the endpoint must return the point it was asked for");
   assert(calls.length === 1, `expected exactly one read, got ${calls.length}`);
+  // The service receives the DECODED pair, so the id the guard approved is the
+  // id the query binds — structurally, not by two decodes agreeing.
+  assert(
+    calls[0]?.point.assetId === ASSET_ID && calls[0]?.point.pointKey === "kw",
+    "the service must be handed the decoded pair the access check ran on, not the raw string",
+  );
 }
 
 /**

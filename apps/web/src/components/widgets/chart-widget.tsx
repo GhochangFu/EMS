@@ -65,8 +65,14 @@ export function ChartWidget({
 }
 
 /**
- * The `.c-foot` row from Sheet 01 — Peak with its time, Average, and the
- * granularity the buckets were read at.
+ * The `.c-foot` row from Sheet 01.
+ *
+ * **Peak and Average are the deck's own two cells. Granularity is not**
+ * (compliance review — the earlier wording read as if the deck showed all
+ * three). Sheet 01's third cell is domain-specific — *Contract · 78% of
+ * demand*, *Recycle · 72%* — and neither is computable from a point rollup:
+ * ADR 0048 decision 7 assigns both to Stage C's two client-owed inputs. The
+ * granularity cell occupies that slot in the meantime, and earns it below.
  *
  * **It describes the FIRST series.** A multi-series chart has one footer and
  * several plots, so one of them has to be the one described; the first is the

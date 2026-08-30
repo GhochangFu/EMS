@@ -1,6 +1,7 @@
 import {
   GAUGE_RANGE_MESSAGE,
   MAX_GAUGE_THRESHOLDS,
+  MAX_WIDGET_WINDOW_MINUTES,
   chartSeriesKindSchema,
   gaugeRangeIsOrdered,
   pointAggregateFunctionSchema,
@@ -112,8 +113,18 @@ export const MAX_UNIT_LENGTH = 32;
 /** `commonConfigFields.decimals` — `dashboard-builder.ts:98`. */
 export const MAX_DECIMALS = 6;
 
-/** `chartConfigSchema.windowMinutes` — `dashboard-builder.ts:169`. */
-export const MAX_WINDOW_MINUTES = 525_600;
+/**
+ * The window bound both widget configs carry — **derived, never restated**
+ * (compliance review).
+ *
+ * This is the one constant here that decides whether a save is refused, so a
+ * second copy of `525_600` is the one that matters: the direction that drifts
+ * silently is the form admitting a window the contract refuses, and the author
+ * then gets a 400 they cannot read. `tests/f3.35-aggregate-window-bounds.test.ts`
+ * holds the shared declaration equal to the API's ladder; this line puts the
+ * form on the same declaration rather than beside it.
+ */
+export const MAX_WINDOW_MINUTES = MAX_WIDGET_WINDOW_MINUTES;
 
 /** `chartConfigSchema.yAxisLabel` — `dashboard-builder.ts:171`. */
 export const MAX_Y_AXIS_LABEL_LENGTH = 64;
