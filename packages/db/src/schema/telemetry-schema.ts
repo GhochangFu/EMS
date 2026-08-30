@@ -2,6 +2,7 @@ import {
   bigint,
   doublePrecision,
   index,
+  integer,
   pgSchema,
   primaryKey,
   text,
@@ -106,3 +107,99 @@ export const pointValues1h = telemetrySchema
 export const pointValues1d = telemetrySchema
   .view("point_values_1d", aggregateColumns)
   .existing();
+
+/**
+ * ADR 0050 + Amendment 1 (`E1.3`) — the in-range counter behind the asset
+ * health score, one relation per ADR 0023 level.
+ *
+ * **These are real tables, not `.existing()` views.** The four above are
+ * TimescaleDB continuous aggregates that migration `0027` owns; these four are
+ * plain tables that migration `0052` creates and a scheduled roll-up job
+ * writes. Declaring them with `.table()` is therefore correct, and the
+ * `drizzle-kit` hazard the aggregates' docblock describes does not apply.
+ *
+ * **Why four and not one with a `level` column:** Amendment 1 decision 1, and
+ * `0052`'s header carries the full reasoning. The short form is that migration
+ * `0028` gives three different retention horizons to three telemetry relations
+ * already, and one table cannot carry four.
+ *
+ * **A row exists only for a tag that at least one threshold rule matches.** ADR
+ * 0050 decision 3 excludes an unruled tag from the roll-up rather than scoring
+ * it 1.0, so `unscoredTags` is derived from the asset's catalog points minus
+ * the tags that have rows — never from a row saying zero.
+ *
+ * Two CHECK constraints per table are owned by `0052` and deliberately not
+ * mirrored here, following the same convention as
+ * `point_values_value_finite_check` above: `sample_count > 0` with
+ * `in_range_count` inside `[0, sample_count]`, and
+ * `rule_count + skipped_rule_count > 0`.
+ */
+const inRangeColumns = {
+  bucket: timestamp("bucket", { withTimezone: true }).notNull(),
+  assetId: uuid("asset_id").notNull(),
+  pointKey: varchar("point_key", { length: 128 }).notNull(),
+  /**
+   * `bigint` with `{ mode: "number" }` for the reason `sampleCount` above is:
+   * these compose by `sum` across the four levels, `sum`/`count` are `bigint`
+   * in Postgres, and the driver returns a string unless told otherwise.
+   */
+  inRangeCount: bigint("in_range_count", { mode: "number" }).notNull(),
+  sampleCount: bigint("sample_count", { mode: "number" }).notNull(),
+  /**
+   * Rules actually evaluated for this tag in this bucket.
+   *
+   * `skippedRuleCount` counts rules that matched the tag but carried a NULL
+   * `operator` or `threshold_value` — both are nullable on
+   * `bms.automation_rules`. Amendment 1 decision 7: a skipped rule is never
+   * treated as "did not fire", because that would make the sample in-range and
+   * inflate the score.
+   *
+   * `ruleCount = 0` with `skippedRuleCount > 0` is a real state. In it
+   * `inRangeCount` is meaningless and written as 0, and the read must exclude
+   * the row from the ratio while counting the tag as unscored.
+   */
+  ruleCount: integer("rule_count").notNull(),
+  skippedRuleCount: integer("skipped_rule_count").notNull().default(0),
+  /**
+   * Amendment 1 decision 9. There are four currency instants, not one — a `1d`
+   * figure current to 03:00 beside a `1m` figure current to 03:59 is correct,
+   * and reads as an arithmetic bug unless the response says which is which.
+   */
+  computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
+} as const;
+
+export const pointInRange1m = telemetrySchema.table(
+  "point_in_range_1m",
+  inRangeColumns,
+  (t) => ({
+    pk: primaryKey({ columns: [t.bucket, t.assetId, t.pointKey] }),
+    assetBucketIdx: index("point_in_range_1m_asset_bucket_idx").on(t.assetId, t.bucket.desc()),
+  }),
+);
+
+export const pointInRange5m = telemetrySchema.table(
+  "point_in_range_5m",
+  inRangeColumns,
+  (t) => ({
+    pk: primaryKey({ columns: [t.bucket, t.assetId, t.pointKey] }),
+    assetBucketIdx: index("point_in_range_5m_asset_bucket_idx").on(t.assetId, t.bucket.desc()),
+  }),
+);
+
+export const pointInRange1h = telemetrySchema.table(
+  "point_in_range_1h",
+  inRangeColumns,
+  (t) => ({
+    pk: primaryKey({ columns: [t.bucket, t.assetId, t.pointKey] }),
+    assetBucketIdx: index("point_in_range_1h_asset_bucket_idx").on(t.assetId, t.bucket.desc()),
+  }),
+);
+
+export const pointInRange1d = telemetrySchema.table(
+  "point_in_range_1d",
+  inRangeColumns,
+  (t) => ({
+    pk: primaryKey({ columns: [t.bucket, t.assetId, t.pointKey] }),
+    assetBucketIdx: index("point_in_range_1d_asset_bucket_idx").on(t.assetId, t.bucket.desc()),
+  }),
+);

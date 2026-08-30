@@ -2,13 +2,17 @@
  * The detail page's tab registry (`F2.5`, ADR 0038 decision 2 — Unit 7).
  *
  * ADR 0038 names **exactly six** tabs, and names them so that the closed
- * sections cannot arrive by accident. Two content sections stay reserved by the
- * API:
+ * sections cannot arrive by accident:
  *
- * - the two reserved section keys (`E1.1` and `E1.6` own them) are rejected by
- *   `templateContentSchema`, so a tab for either would always error, which is
- *   worse than no tab;
- * - `maintenance` is deliberately omitted — ADR 0038 *Not in this ADR*.
+ * - `optimisation` is rejected outright by `templateContentSchema` (`E1.6` owns
+ *   it), so a tab for it would always error, which is worse than no tab;
+ * - `maintenance` is deliberately omitted — ADR 0038 *Not in this ADR*;
+ * - **`health` moved from the first class to the second in `E1.3`.** ADR 0050
+ *   decision 7 reopened the tier, so the API now accepts it and this UI carries
+ *   it through `mergeTemplateContent` untouched. It still has no tab: ADR 0050
+ *   Amendment 1 decision 5 scopes `E1.3` to the score surfaces, and a seventh
+ *   tab is an ADR 0038 amendment, not a side effect of a backlog row. Do not
+ *   add one here without it.
  *
  * **`dashboards` was the third of these until `F3.1e`, and it is now the sixth
  * tab.** This docblock used to read *"the dashboard section carries only an

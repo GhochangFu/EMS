@@ -358,6 +358,20 @@
       "when": 1788093183386,
       "tag": "0051_asset_role_vocabulary",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1788179583386,
+      "tag": "0052_health_in_range_counters",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1788265983386,
+      "tag": "0053_health_unevaluated_is_zero",
+      "breakpoints": true
     }
   ]
 }

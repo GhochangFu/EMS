@@ -70,22 +70,148 @@ export function runTemplateContentSchemaTests(): void {
   // ---- reserved sections ---------------------------------------------------
 
   // The point of rejecting rather than accepting: E5.1 must not author a shape
-  // F3.1/E1.1 will contradict. And each key names its OWN blocking item —
-  // pointing an author blocked on `optimisation` at E1.1 would send them to an
-  // item three waves earlier.
-  const healthMessage = messagesFor({ health: { model: "rul" } });
-  assert(
-    healthMessage.includes("E1.1"),
-    `rejecting "health" must name E1.1, got: ${healthMessage}`,
+  // E1.6 will contradict.
+  //
+  // `health` left this list in `E1.3` (ADR 0050 decision 7) and is contracted
+  // below. What is asserted here instead is that the reserved-key path still
+  // rejects a health section shaped like the OLD one — `E1.1`'s model reference
+  // has no place in the tier that landed, and it must fail as an unrecognized
+  // key rather than being carried into the jsonb column untyped.
+  rejects(
+    { health: { model: "rul" } },
+    "the E1.1-era health shape must not parse under the E1.3 contract",
   );
   const optimisationMessage = messagesFor({ optimisation: { advisories: [] } });
   assert(
     optimisationMessage.includes("E1.6"),
-    `rejecting "optimisation" must name E1.6, not E1.1, got: ${optimisationMessage}`,
+    `rejecting "optimisation" must name its own item, got: ${optimisationMessage}`,
   );
   assert(
     optimisationMessage.includes("deferred") || optimisationMessage.includes("not yet"),
     "a reserved-key error must read as deferral, not as a mistake by the author",
+  );
+
+  // ---- health: the tier E1.7 rejected, reopened by E1.3 ---------------------
+
+  const bands = [
+    { code: "excellent", label: "Excellent", minScore: 0.9 },
+    { code: "good", label: "Good", minScore: 0.75 },
+    { code: "critical", label: "Critical", minScore: 0 },
+  ];
+
+  const withHealth = parse({ health: { bands, weights: { RO_FEED_PRESSURE: 2 } } });
+  assert(withHealth.health?.bands.length === 3, "a valid health section must parse");
+  assert(
+    withHealth.health?.weights?.RO_FEED_PRESSURE === 2,
+    "a weight must survive the parse as a number",
+  );
+
+  // Amendment 1 decision 3: weights default, bands do not. An omitted weight is
+  // 1.0 at read time; five cut-points cannot be guessed, so their absence is an
+  // error rather than a default.
+  assert(
+    parse({ health: { bands } }).health?.weights === undefined,
+    "weights are optional and are NOT defaulted into the stored shape",
+  );
+  rejects({ health: { weights: { A: 1 } } }, "bands are required — they cannot be guessed");
+  rejects({ health: { bands: [] } }, "an empty band list is not a band list");
+
+  // Strictly descending, and the reason is that the authored order is the
+  // display order. Equal cut-points are rejected too: they are legal arithmetic
+  // but make the resolved band depend on array order, which is unstable across
+  // a re-save and invisible when it changes.
+  rejects(
+    {
+      health: {
+        bands: [
+          { code: "good", label: "Good", minScore: 0.75 },
+          { code: "excellent", label: "Excellent", minScore: 0.9 },
+          { code: "critical", label: "Critical", minScore: 0 },
+        ],
+      },
+    },
+    "ascending bands must be rejected",
+  );
+  rejects(
+    {
+      health: {
+        bands: [
+          { code: "a", label: "A", minScore: 0.5 },
+          { code: "b", label: "B", minScore: 0.5 },
+          { code: "c", label: "C", minScore: 0 },
+        ],
+      },
+    },
+    "two bands sharing a cut-point must be rejected",
+  );
+
+  // Without a band starting at 0 a score falls through every band, which would
+  // give `band: null` a second meaning. Amendment 1 decision 3 gives it one.
+  const gapMessage = messagesFor({
+    health: { bands: [{ code: "good", label: "Good", minScore: 0.5 }] },
+  });
+  assert(
+    gapMessage.includes("must start at 0"),
+    `the lowest band must be required to start at 0, got: ${gapMessage}`,
+  );
+
+  rejects(
+    {
+      health: {
+        bands: [
+          { code: "dup", label: "One", minScore: 0.5 },
+          { code: "dup", label: "Two", minScore: 0 },
+        ],
+      },
+    },
+    "band codes must be unique within a template",
+  );
+
+  // The score is 0..1 (Amendment 1 decision 2), so a cut-point authored on the
+  // percentage scale is an error and not a silently rescaled 90.
+  rejects(
+    { health: { bands: [{ code: "excellent", label: "Excellent", minScore: 90 }] } },
+    "a minScore above 1 must be rejected — bands are on the 0..1 scale",
+  );
+  rejects(
+    {
+      health: {
+        bands: [
+          { code: "a", label: "A", minScore: 0.5 },
+          { code: "b", label: "B", minScore: -0.1 },
+        ],
+      },
+    },
+    "a negative minScore must be rejected",
+  );
+
+  // Zero is rejected rather than read as "exclude this tag". Excluding a tag is
+  // what ADR 0050 decision 3 does — by there being no rule for it — and a second
+  // spelling that only some code paths honour is worse than no spelling.
+  for (const [weight, why] of [
+    [0, "zero is not a way to exclude a tag"],
+    [-1, "a negative weight is not a weight"],
+    [Number.POSITIVE_INFINITY, "a non-finite weight must be rejected"],
+    [1001, "a weight above the cap must be rejected"],
+  ] as const) {
+    rejects({ health: { bands, weights: { A: weight } } }, `weights: ${why}`);
+  }
+
+  // The reference walk reaches weight KEYS. Without it a template can weight a
+  // point it does not declare, and the roll-up then ignores the weight —
+  // shifting the score rather than failing, in the direction the author was
+  // trying to correct.
+  assert(
+    collectContentPointRefs(withHealth).includes("RO_FEED_PRESSURE"),
+    "a weight key is a point reference",
+  );
+  assert(
+    findUnresolvedContentRefs(withHealth, []).includes("RO_FEED_PRESSURE"),
+    "a weight on an undeclared point must be reported as unresolved",
+  );
+  assert(
+    findUnresolvedContentRefs(withHealth, ["RO_FEED_PRESSURE"]).length === 0,
+    "a weight on a declared point resolves",
   );
 
   // ---- alarms: bound to the live rules vocabulary ---------------------------

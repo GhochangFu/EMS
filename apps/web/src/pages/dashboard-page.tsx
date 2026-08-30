@@ -16,6 +16,7 @@ import { KpiTile } from "../components/kpi-tile";
 import { LoadTrendChart } from "../components/load-trend-chart";
 import { LocationKpiCard } from "../components/location-kpi-card";
 import { OrgLocationAccordion } from "../components/org-location-accordion";
+import { HealthSummarySection } from "../components/asset-health/health-summary-section";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 
@@ -221,6 +222,8 @@ export function DashboardPage({ user }: DashboardPageProps) {
             </>
           )}
         </SectionCard>
+
+        <HealthSummarySection />
 
         <SectionCard
           title="Campus load · last 60 minutes"

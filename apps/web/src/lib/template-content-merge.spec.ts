@@ -236,12 +236,18 @@ export function runCleanContentIsWritableTests(): void {
       alarms: [ALARM],
       maintenance: [{ title: "Quarterly service", intervalDays: 90 }],
       dashboards: { overview: { featured: ["A"] } },
+      // `E1.3`: `health` became the sixth writable key when ADR 0050 decision 7
+      // reopened the tier. It has no tab in this UI — it is in `maintenance`'s
+      // class, carried through the merge rather than edited — but a stored
+      // health section must not block a KPI-tab save, and that is what this
+      // fixture proves by holding one.
+      health: { bands: [{ code: "critical", label: "Critical", minScore: 0 }] },
     }),
   ) as StoredTemplateContent;
 
   assert(
-    Object.keys(clean).length === 5,
-    "the fixture must hold all five writable keys, or it proves less than it claims",
+    Object.keys(clean).length === 6,
+    "the fixture must hold all six writable keys, or it proves less than it claims",
   );
   assert(
     unwritableContentKeys(clean).length === 0,
@@ -256,28 +262,34 @@ export function runCleanContentIsWritableTests(): void {
  *
  * A reserved key gets the server's own wording, because "not part of the
  * contract" would send an author looking for a typo in a key that is going to
- * mean something in `E1.1`.
+ * mean something in `E1.6`.
+ *
+ * The fixture keeps its `health` key, and the assertion about it INVERTED in
+ * `E1.3`: it is now writable, so it must NOT be reported. That direction is the
+ * one worth holding — a stale `reserved` entry here would fail every save on a
+ * template that carries a valid health section, and the failure would name a
+ * backlog item the author cannot act on.
  */
 export function runUnwritableKeysAreClassifiedTests(): void {
   const stored = JSON.parse(
-    '{"kpis":[],"health":{"score":1},"optimisation":{},"someFutureKey":1,"__proto__":{"x":1}}',
+    '{"kpis":[],"health":{"bands":[]},"optimisation":{},"someFutureKey":1,"__proto__":{"x":1}}',
   ) as StoredTemplateContent;
   assert(Object.hasOwn(stored, "__proto__"), "fixture guard: __proto__ must be an own key");
 
   const problems = unwritableContentKeys(stored);
   const byKey = new Map(problems.map((problem) => [problem.key, problem]));
 
-  assert(problems.length === 4, `expected 4 problems, got ${problems.length}`);
+  assert(problems.length === 3, `expected 3 problems, got ${problems.length}`);
   assert(!byKey.has("kpis"), "a writable key is not a problem");
+  assert(!byKey.has("health"), "health is writable since E1.3 — it must not be reported");
 
-  assert(byKey.get("health")?.reason === "reserved", "health is reserved");
   assert(
-    byKey.get("health")?.message.includes("E1.1") === true,
-    `the reserved message must name the blocking item — got ${byKey.get("health")?.message}`,
+    byKey.get("optimisation")?.reason === "reserved",
+    "optimisation is reserved",
   );
   assert(
     byKey.get("optimisation")?.message.includes("E1.6") === true,
-    "each reserved key names its own item, not a shared one",
+    "a reserved key names its own item",
   );
 
   assert(byKey.get("someFutureKey")?.reason === "unknown", "an unrecognized key is unknown");
@@ -290,8 +302,11 @@ export function runUnwritableKeysAreClassifiedTests(): void {
   // be the silent-destruction defect this module exists to prevent, only harder
   // to notice.
   const merged = mergeTemplateContent(stored, { section: "kpis", value: [KPI] });
-  assert(Object.hasOwn(merged, "health"), "a reserved key is reported, not deleted");
+  assert(Object.hasOwn(merged, "optimisation"), "a reserved key is reported, not deleted");
   assert(Object.hasOwn(merged, "someFutureKey"), "an unknown key is reported, not deleted");
+  // `health` survives for a different reason since `E1.3` — it is writable and
+  // has no tab, so this merge carries it the way it carries `maintenance`.
+  assert(Object.hasOwn(merged, "health"), "a writable key with no tab is carried, not deleted");
 }
 
 /**
@@ -364,12 +379,15 @@ export function runInheritedKeyTests(): void {
     );
   }
 
-  // The real reserved sections must still classify as reserved, or the fix
-  // could have been "call everything unknown".
-  const withReal = unwritableContentKeys({ health: {}, optimisation: {} });
+  // The real reserved section must still classify as reserved, or the fix could
+  // have been "call everything unknown". `health` is in the same call on purpose
+  // and must come back with nothing to say: it left the reserved map in `E1.3`,
+  // and a test that only looked at `optimisation` would keep passing if the two
+  // keys were swapped.
+  const withReal = unwritableContentKeys({ health: { bands: [] }, optimisation: {} });
   const realByKey = new Map(withReal.map((problem) => [problem.key, problem]));
-  assert(realByKey.get("health")?.reason === "reserved", "health is still reserved");
   assert(realByKey.get("optimisation")?.reason === "reserved", "optimisation is still reserved");
+  assert(!realByKey.has("health"), "health is writable since E1.3, not reserved");
 }
 
 const DASHBOARDS: Record<string, TemplateDashboardView> = {

@@ -30,9 +30,21 @@ import type {
  * but it is no longer load-bearing, and a future move would not be blocked by
  * §9.4.
  *
- * Two sections are deliberately absent: `health` (`E1.1`) and `optimisation`
- * (`E1.6`) are *rejected* by the validator rather than accepted untyped, so
- * `E5.1` cannot author a shape those items will contradict.
+ * One section is deliberately absent: `optimisation` (`E1.6`) is *rejected* by
+ * the validator rather than accepted untyped, so `E5.1` cannot author a shape
+ * that item will contradict.
+ *
+ * **`health` was the second of those until `E1.3`.** `E1.7` rejected the tier
+ * rather than accepting it untyped, under the rule "each reopens as its
+ * consumer lands", and `health` is now the fourth of five to reopen after
+ * `kpis` (`F2.3`, ADR 0036), `alarms.philosophy` (`E2.1`, ADR 0034) and
+ * `dashboards` (`F3.1a`, ADR 0047). ADR 0050 decision 7 is that reopening.
+ * Only `optimisation` stays rejected.
+ *
+ * The old wording named `E1.1` as the blocking item. That edge was retired on
+ * 2026-08-22 by the client's own answer — `E1.3` no longer depends on the ML
+ * foundation, and the five-input SOW §4.3 score that does now has its own row
+ * (`E1.8`).
  *
  * Split out of `index.ts` rather than added to it because that file was at the
  * §4.5 1000-line cap.
@@ -168,6 +180,50 @@ export type TemplateDashboardView = {
   widgets?: TemplateDashboardWidget[];
 };
 
+/**
+ * One band of the health score, as an ordered cut-point rather than an enum.
+ *
+ * The client's five names are Excellent / Good / Fair / Poor / Critical, and
+ * they are stored as *data* per ADR 0050 decision 7 and the `prefer-dynamic
+ * -vocabularies` rule that ADR 0031/0032 set: a band set is a lookup, never an
+ * enum with a `CHECK`. A pack that wants three bands, or different names, needs
+ * no migration.
+ *
+ * `minScore` is the **inclusive lower bound** and is in `0..1`, not `0..100` —
+ * ADR 0050 Amendment 1 decision 2 puts the score itself on that scale, and a
+ * band in the other unit is how a cut-point of `0.9` ends up compared against a
+ * score of `90`. The conversion belongs at the rendering edge, with the `%`.
+ */
+export type TemplateHealthBand = {
+  code: string;
+  label: string;
+  minScore: number;
+};
+
+/**
+ * The `health` section — weights and bands, and nothing that computes.
+ *
+ * ADR 0050 decision 1 keeps aggregation out of the formula, so this carries no
+ * expression: the score is a ratio of counts the roll-up materialises, and what
+ * an author configures is how the tags are weighted against each other and
+ * where the bands fall.
+ *
+ * **`weights` is optional and `bands` is not** (Amendment 1 decision 3). An
+ * omitted weight is `1.0`, because equal weighting is the only defensible
+ * default and refusing to score without one would make the tier's adoption a
+ * flag day. Five cut-points cannot be guessed the same way, and inventing them
+ * puts a fabricated "Excellent" on an executive screen.
+ *
+ * A key of `weights` is a `template_points.point_key` on the same template, and
+ * `collectContentPointRefs` reaches it — so a weight on a point the template
+ * does not declare is caught on create, update and publish, exactly as a KPI's
+ * `pointKeys` is.
+ */
+export type TemplateHealth = {
+  weights?: Record<string, number>;
+  bands: TemplateHealthBand[];
+};
+
 export type TemplateContent = {
   /**
    * Absent on a row written before `E1.7` **means 1**; no migration backfills
@@ -178,4 +234,7 @@ export type TemplateContent = {
   alarms?: TemplateAlarm[];
   maintenance?: TemplateMaintenancePlan[];
   dashboards?: Record<string, TemplateDashboardView>;
+  /** ADR 0050 decision 7 (`E1.3`). Absent means the asset scores numerically
+   * and reports `band: null` — it is counted, never dropped. */
+  health?: TemplateHealth;
 };

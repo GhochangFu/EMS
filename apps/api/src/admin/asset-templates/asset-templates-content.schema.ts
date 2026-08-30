@@ -54,10 +54,14 @@ export const skillSchema = alarmSkillCodeSchema;
  *   ordering and nothing else until `F3.1a`; ADR 0047 gave it the widget
  *   vocabulary, so a view now also carries typed `widgets[]` whose point keys
  *   the reference check reaches.
- * - **Reserved** — `health` and `optimisation` are rejected, each naming its own
- *   blocking item. A reserved key that is silently accepted lets `E5.1` author a
- *   shape `F3.1`/`E1.1` will contradict, and the contradiction surfaces a year
- *   later with packs in the field.
+ *   `health` joined this list under ADR 0050 decision 7 (`E1.3`): the roll-up
+ *   that consumes it lands in the same branch, so the tier is contracted rather
+ *   than reserved. It carries weights and bands and nothing that computes —
+ *   ADR 0050 decision 1 keeps aggregation out of the formula.
+ * - **Reserved** — `optimisation` is rejected, naming its own blocking item. A
+ *   reserved key that is silently accepted lets `E5.1` author a shape `E1.6`
+ *   will contradict, and the contradiction surfaces a year later with packs in
+ *   the field.
  *
  * Nothing here is wired to an engine. A template alarm cannot become a
  * `bms.automation_rules` row (that needs `ruleType`/`condition`/`action`, none
@@ -166,9 +170,15 @@ const MAX_KPI_POINT_REFS = MAX_FORMULA_POINT_REFS;
  * Keys that will mean something later and mean nothing now. Each names its own
  * blocking item: one shared message would point an author blocked on
  * `optimisation` at an item three waves earlier and a priority band off.
+ *
+ * **`health` left this map in `E1.3`** (ADR 0050 decision 7). It named
+ * `E1.1 (ML serving foundation)`, and that edge was retired by the client's own
+ * 2026-08-22 answer — the five-input SOW §4.3 score that still needs `E1.1`
+ * took its own row, `E1.8`. The map keeps its plural shape on purpose:
+ * `optimisation` is not the last word here, and a single-entry map that became
+ * a bare constant would have to be rebuilt to add the next one.
  */
 const RESERVED_SECTIONS: Record<string, string> = {
-  health: "E1.1 (ML serving foundation)",
   optimisation: "E1.6 (optimisation advisories)",
 };
 
@@ -469,6 +479,104 @@ const uniqueBy = <T>(
   });
 };
 
+/**
+ * At most this many bands. Five are the client's own (Excellent / Good / Fair /
+ * Poor / Critical); the cap exists so a pack cannot author a band per percent
+ * and turn a legend into a scrollbar.
+ */
+const MAX_HEALTH_BANDS = 10;
+
+/**
+ * The largest weight a tag may carry. A weight is relative, so the ratio is
+ * what matters and the absolute bound only stops an author expressing "this one
+ * matters" as `1e9` and making every other tag round to nothing in a float sum.
+ */
+const MAX_HEALTH_WEIGHT = 1000;
+
+const templateHealthBandSchema = z
+  .object({
+    code: z.string().min(1).max(64),
+    label: z.string().min(1).max(128),
+    /**
+     * Inclusive lower bound, in `0..1` — ADR 0050 Amendment 1 decision 2. Not
+     * `0..100`: a band in the other unit is how a cut-point of `0.9` ends up
+     * compared against a score of `90`.
+     */
+    minScore: z.number().min(0).max(1),
+  })
+  .strict();
+
+/**
+ * `health` — weights and bands, and nothing that computes.
+ *
+ * The two superRefine rules below are the ones worth reading.
+ *
+ * **Bands must be ordered strictly descending by `minScore`, and the last must
+ * be `0`.** Descending because the authored order is the display order, and a
+ * band list that reads Critical-first in the UI while resolving Excellent-first
+ * in code is the kind of disagreement nobody finds by looking. Strict, because
+ * two bands sharing a cut-point make the resolved band depend on array order —
+ * legal, but silently unstable across a re-save. And a final `0` because
+ * without it a score can fall through every band, which would make `band: null`
+ * mean *two* things: "this template has no health block" and "this template's
+ * bands do not cover the score". Amendment 1 decision 3 gives `band: null` the
+ * first meaning only.
+ *
+ * **A weight must be finite and positive.** Zero is rejected rather than
+ * treated as "exclude this tag": excluding a tag is what ADR 0050 decision 3
+ * does, by there being no rule for it, and a second way to spell it that only
+ * some code paths honour is worse than no way at all.
+ */
+export const templateHealthSchema = z
+  .object({
+    weights: z
+      .record(safeKeySchema.pipe(pointKeyRef), z.number().finite().positive().max(MAX_HEALTH_WEIGHT))
+      .refine(
+        (weights) => Object.keys(weights).length <= MAX_SECTION_ENTRIES,
+        `At most ${MAX_SECTION_ENTRIES} weighted points per template`,
+      )
+      .describe(
+        "Point key to relative weight. An omitted point weighs 1.0; a weight must be " +
+          `finite, greater than 0 and at most ${MAX_HEALTH_WEIGHT}.`,
+      )
+      .optional(),
+    bands: z
+      .array(templateHealthBandSchema)
+      .min(1)
+      .max(MAX_HEALTH_BANDS)
+      .superRefine((bands, ctx) => {
+        uniqueBy(bands, (band) => band.code, ctx, "health band");
+        bands.forEach((band, index) => {
+          const previous = bands[index - 1];
+          if (previous !== undefined && band.minScore >= previous.minScore) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [index, "minScore"],
+              message:
+                `Health band "${band.code}" has minScore ${band.minScore}, which is not below ` +
+                `"${previous.code}"'s ${previous.minScore}. Bands are ordered cut-points and ` +
+                "must descend strictly.",
+            });
+          }
+        });
+        const last = bands[bands.length - 1];
+        if (last !== undefined && last.minScore !== 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [bands.length - 1, "minScore"],
+            message:
+              `The lowest health band "${last.code}" must start at 0 so every score lands in a ` +
+              `band; it starts at ${last.minScore}.`,
+          });
+        }
+      })
+      .describe(
+        "Ordered cut-points, strictly descending by `minScore`, the last starting at 0 so " +
+          "every score in 0..1 lands in exactly one band.",
+      ),
+  })
+  .strict();
+
 const contentEnvelopeSchema = z
   .object({
     contentVersion: z.literal(1).default(1),
@@ -493,6 +601,10 @@ const contentEnvelopeSchema = z
       )
       .describe(`At most ${MAX_DASHBOARD_VIEWS} dashboard views per template.`)
       .optional(),
+    /** ADR 0050 decision 7 (`E1.3`). Optional: nothing backfills a stored row,
+     * and `POST :id/draft` byte-copies published content, so a required `health`
+     * would strand every template written before this branch. */
+    health: templateHealthSchema.optional(),
   })
   .strict();
 
@@ -592,6 +704,14 @@ export function collectContentPointRefs(content: TemplateContentParsed): string[
       refs.push(...widget.pointKeys);
     }
   }
+  // `E1.3`: a weight names a point, so it is a reference like any other. Without
+  // this walk a template can weight a point it does not declare, and the weight
+  // is then silently ignored by the roll-up — which shifts the score rather than
+  // failing, and shifts it in the direction the author was trying to correct.
+  //
+  // Only the KEYS are references. The values are numbers and belong to the
+  // schema above, not here.
+  refs.push(...Object.keys(content.health?.weights ?? {}));
   return refs;
 }
 
