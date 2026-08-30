@@ -24,13 +24,15 @@ uses `🟡` for ADR/planned and no row in this repository has ever been marked
 
 `docs/ion-exchange-nexus-dashboard-2026-08-29.html` is a three-sheet client
 mock, drawn in the platform's own shell, that Ion Exchange sees at the
-workshop. **It is untracked at the time of writing** — no client deck has ever
-been committed under `docs/`, and the two mockups this repository does track
-(`ESKOM_SMOC.html`, `TRINETRA.html`) sit at the root as read-only UX reference.
-Whether this one joins them is an owner decision, recorded here rather than
-taken: until it does, a reader on `main` cannot open the source this ADR
-measures against, and every claim below is quoted rather than merely cited for
-that reason. Sheet 01 is an integrated operations overview. Sheet 02 states the
+workshop. **The owner ruled it into the repository on 2026-08-30, as a reference
+point**, and it is committed with this ADR. It is the first client deck tracked
+under `docs/`; the two mockups already tracked (`ESKOM_SMOC.html`,
+`TRINETRA.html`) sit at the root and are *product* UX reference, where this one
+is a dated client deliverable — so it keeps its date in the filename and stays
+in `docs/`, and the root convention is left alone. Every claim below still
+quotes the mock rather than merely citing it, which is how the claims were
+written before the ruling and is worth keeping: a reader should not have to open
+a 92 KB deck to check a sentence. Sheet 01 is an integrated operations overview. Sheet 02 states the
 design claim this ADR exists to keep: *"Sheet 01 is not a bespoke screen; it is
 one composition of a widget canvas."* Sheet 03 marks each region **NOW**,
 **+1M** or **+3M** against the delivery view, and lists what the tile editor
