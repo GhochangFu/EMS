@@ -416,3 +416,131 @@ wording assumed a single relation.
 - **`E1.3` closing with the donut (decision 5) brings the browser layer into
   its verification**, which the API-only reading would have made N/A. AGENTS.md
   §4.6 asks that skipped layers be named; this one is not skipped.
+
+## Amendment 2 — bucket coverage on the wire, and why the read is not clamped to the sweep's trailing window (2026-08-31)
+
+### Context
+
+`F4.72` (PR #228, merged 2026-08-31) recorded two open questions in its *Known
+and recorded, not fixed here* section, and both were put to the repository owner
+on 2026-08-31 and ruled there. This amendment records the rulings and the
+measurements that changed one of them.
+
+**The first question is real and this amendment answers it.** Amendment 1
+decision 9 puts `computedAt` on the wire as the currency of the level actually
+read, and it is the *newest* instant across the rows read. A window whose middle
+is missing therefore reports the same `computedAt` as a window that is complete.
+The response cannot disclose a hole, and a donut drawn from half a window looks
+exactly like a donut drawn from all of it.
+
+**The second question was framed on a premise that does not hold.** The PR
+recorded that "a 48-hour read at `1m` covers a window the roll-up only fills for
+24 hours", and asked whether to clamp the read or widen the sweep. Three
+measured facts retire the framing:
+
+1. **The counter rows persist.** Amendment 1 decision 10 makes all four
+   relations plain tables, and `0052_health_in_range_counters.sql` adds no
+   retention policy, no `drop_chunks` and no hypertable. Nothing deletes a
+   counter row.
+2. **`TRAILING_WINDOW_MS` bounds re-derivation, not coverage.**
+   `health-rollup.service.ts` re-derives 24 h at `1m` and `5m`, 48 h at `1h` and
+   7 d at `1d` on every 60-second tick. Buckets written by earlier ticks stay
+   written. On a system whose sweep has run for more than 48 hours, a 48-hour
+   read at `1m` is fully covered.
+3. **A clamp does not generalize past `1m`.** A rule that refuses a window
+   longer than the level's trailing window also refuses a 30-day read at `1h`
+   (48 h trailing) and a 365-day read at `1d` (7 d trailing). No level survives
+   it. The rule appeared workable only because it was posed at `1m`.
+
+What remains true is narrower, and it is the same shortfall the first question
+names: coverage is short for the first 24 hours after the feature starts, and
+after an outage longer than the level's trailing window, which no later tick
+repairs. Both are exactly what decision 1 below discloses.
+
+### Decision
+
+1. **The response carries `coveredBuckets` and `expectedBuckets`, and a
+   renderer that shows a score over an incompletely covered window must say
+   so.** Both are non-negative integers on the shared `windowFields` block in
+   `packages/shared/src/contracts/health.ts`, so the asset response and the
+   summary response carry them alike.
+
+   - `expectedBuckets` is the number of buckets the requested window contains at
+     the level actually read. It is `expectedBucketCount(windowMinutes, level)`
+     from `apps/api/src/telemetry/point-aggregate-window.ts` — the function
+     `F3.35` already derived for this arithmetic, not a second copy of it.
+   - `coveredBuckets` is the number of **distinct bucket instants inside the
+     window for which the scope read at least one counter row**. It is computed
+     from the rows the read already holds, and adds no query.
+
+   **Two integers, not a ratio.** This is the contract's existing rule, applied
+   again: `healthTagScoreSchema` carries `inRangeCount` and `sampleCount` beside
+   `score` because 1.0 over three samples and 1.0 over three thousand are
+   different facts. `1439 / 1440` and `1 / 1` are different facts in the same
+   way, and only the pair distinguishes them.
+
+   **Coverage is measured per bucket across the scope, not per tag.** One sweep
+   pass writes every ruled tag in a bucket, so a bucket with no row anywhere in
+   scope is a pass that did not happen. A gap in one tag's own telemetry is a
+   different fact and `sampleCount` already carries it — putting per-tag
+   coverage here would report an idle sensor as a roll-up outage.
+
+   **It is not a fifth absence.** The four absences the contract's docblock
+   enumerates each say that a *value* is missing. Coverage says the *window* is
+   incompletely backed while every value in it is sound. A reader that collapses
+   the two reports "no data" for a score that is correct over the buckets it
+   has.
+
+   **`coveredBuckets: 0` and `computedAt: null` must agree.** A scope with no
+   rolled-up bucket has no instant and no coverage, and a response carrying one
+   without the other is a defect, not a state.
+
+   **What coverage cannot say.** It measures the counter relations, so it cannot
+   separate a sweep outage from an enterprise-wide telemetry outage — in both,
+   the bucket is absent. That is acceptable because the reader's decision is the
+   same in both cases: do not trust this figure as a full-window figure. It is
+   stated here so that a later reader does not read a stronger claim into the
+   number.
+
+2. **The read is not clamped to the sweep's trailing window, and the sweep's
+   trailing window is not widened.** `resolveWindow` in
+   `asset-health.service.ts` keeps calling `F3.35`'s `levelFor` unchanged, and
+   the read must not import `TRAILING_WINDOW_MS`.
+
+   Rejected, with the reasons from *Context*: a clamp trades a permanent loss of
+   resolution on every 25-to-48 hour read against a condition that is transient
+   on a running system, and it collapses at `1h` and `1d`. Widening the `1m`
+   sweep to 48 h doubles the finest level's work on a 60-second tick, shortens
+   the first-day gap only, and still does not repair an outage older than the
+   window.
+
+   Also rejected for a standing reason: editing the ladder in
+   `point-aggregate-window.ts` would change merged `F3.35` behaviour and move
+   the derived `MAX_BUCKETS`, and ADR 0050 decision 6 exists so that there is
+   exactly one ladder. A second window rule in `asset-health/` would be that
+   second ladder under another name.
+
+3. **The gap the sweep never repairs is disclosed, not closed.** Amendment 1
+   decision 4 already records that a trailing window does not repair a deletion
+   older than itself, and that ADR 0050 decision 9 and Amendment 1 decision 8
+   are the only cover. Decision 1 adds no repair. It makes the same class of
+   hole visible on the wire instead of silent, which is what the original
+   question asked for.
+
+### Consequences
+
+- **Two integers arrive on both responses, and `.strict()` is restated at both
+  levels.** The round-trip fixtures must carry them, on the `F3.35` pattern that
+  asserts the fixtures cover every field the contract declares — otherwise a
+  field can be added without a fixture.
+- **The web layer gains a partial-window state.** It is distinct from the empty
+  state: `coveredBuckets: 0` is "nothing to show", and `0 < coveredBuckets <
+  expectedBuckets` is "a real score over less than the window you asked for".
+  Rendering the second as the first hides a score that is correct.
+- **A freshly seeded or freshly started deployment reports partial for its first
+  24 hours.** That is now visible rather than hidden, and it is the honest
+  reading of a system that has 24 hours of counters and was asked for 48.
+- **`E1.8` inherits both fields** together with the score it already inherits,
+  and inherits the limit in decision 1 with them.
+- **No migration.** The counters and their columns are unchanged; this is
+  contract and read-path surface only.
