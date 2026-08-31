@@ -3,12 +3,14 @@ import type {
   DashboardDto,
   DashboardWidgetDto,
   DashboardWidgetPointDto,
+  DashboardWidgetSourceDto,
+  MetricCatalogValueDto,
   PointAggregateFunction,
   PointAggregateResponse,
   PointAggregateStats,
 } from "@bms/shared";
 
-import { isStale, readingTimestampMs } from "./schematic-telemetry";
+import { STALE_TICK_MS, isStale, readingTimestampMs } from "./schematic-telemetry";
 import type { WidgetSeries, WidgetSeriesPoint } from "./widget-catalog";
 import type { WidgetData } from "../components/widgets/dashboard-widget";
 
@@ -155,6 +157,116 @@ function aggregateRequestsForWidget(widget: DashboardWidgetDto): AggregateReques
   return [];
 }
 
+// --- `F3.35` Stage C — the catalog data path (ADR 0048 decisions 1 and 2) ---
+
+/**
+ * How often the viewer re-reads `GET /dashboards/:id/catalog-values`.
+ *
+ * **A poll, and deliberately not the telemetry socket.** An alarm raise and a work order
+ * closing are not telemetry readings, so the socket never carries them and a catalog tile
+ * hung off it would sit frozen through the exact events it counts. Driving a re-read from
+ * the socket instead — refetch when any reading arrives — is worse than useless here: the
+ * handler fires per payload, `notify-chunk.ts` splits a batch at 7,000 bytes and five RTUs
+ * publish on their own cadences, so a busy page would issue a burst of count queries every
+ * few seconds. `refetchInterval` is the only mechanism whose cost is bounded by the clock
+ * rather than by how much telemetry happens to be flowing.
+ *
+ * One minute is plan §15 Q2's default, recorded here rather than left implicit. It is a
+ * *counting* cadence, not a control-room one: an operator watching alarm pressure needs the
+ * number to move within a minute, and a shorter interval buys resolution nobody reads at the
+ * cost of a `COUNT(*)` per tile per tick.
+ */
+export const CATALOG_REFRESH_MS = 60_000;
+
+/**
+ * When a resolved catalog value stops being evidence of anything.
+ *
+ * **Derived from the refresh interval, never from `FRESH_MS`, and the arithmetic is the whole
+ * point.** `FRESH_MS` is 25,000 — shorter than one refresh cycle — so aging a catalog value
+ * through `isStale` would mark every tile "Offline" for 35 seconds out of every 60 with the
+ * API answering perfectly. That is the bucketed-chart failure this file already documents
+ * twice, arriving through a third door: stale by arithmetic, with live data flowing.
+ *
+ * Two missed refreshes, plus one tick of slack. One missed refresh is not evidence of failure
+ * — a slow query or a re-render can eat it — and two consecutive misses is the first thing
+ * that cannot be explained by ordinary jitter.
+ */
+export const CATALOG_STALE_MS = CATALOG_REFRESH_MS * 2 + STALE_TICK_MS;
+
+/** Resolved catalog values keyed by `dashboard_widget_sources.id`, as the response returns them.
+ * A `sourceId` absent from the map is a binding the resolve did not answer — a widget deleted
+ * between the dashboard read and this call, per the response contract's own note. */
+export type CatalogBySourceId = ReadonlyMap<string, MetricCatalogValueDto>;
+
+/**
+ * One resolve, as `widgetDataFor` reads it.
+ *
+ * `resolvedAt` travels WITH the map rather than beside it, because the two are one answer: a
+ * map with no timestamp cannot be aged, which is the defect `LatestReading` was widened to fix
+ * one binding kind over. `null` is "not resolved yet", which reads as stale — "never answered"
+ * is no better evidence of a live API than "answered long ago".
+ */
+export type CatalogResolution = {
+  readonly bySourceId: CatalogBySourceId;
+  readonly resolvedAt: string | null;
+};
+
+/**
+ * Whether any widget on this dashboard binds a catalog entry.
+ *
+ * The gate on the whole second data path. **Empty for every dashboard saved before `F3.35`**,
+ * so the viewer's read count is unchanged for them — the same additive discipline
+ * `aggregateRequestsFor` established for Stage A, and the reason a dashboard that binds no
+ * metric issues no catalog request at all rather than one that answers `{values: []}`.
+ */
+export function dashboardBindsCatalogSources(dashboard: DashboardDto): boolean {
+  return dashboard.widgets.some((widget) => widget.sources.length > 0);
+}
+
+/**
+ * Whether a resolve is old enough to stop trusting.
+ *
+ * Reuses `readingTimestampMs` rather than parsing a date a second way, which also inherits its
+ * clamp: a `resolvedAt` in the future is clamped to `now` instead of reading as "fresh
+ * forever". Here that is clock skew between the browser and the API rather than the producer
+ * skew `F4.28` measured, but the safe direction is the same one.
+ */
+export function catalogIsStale(resolvedAt: string | null, nowMs: number): boolean {
+  if (resolvedAt === null) {
+    return true;
+  }
+  const ms = readingTimestampMs(resolvedAt, nowMs);
+  return ms === null || nowMs - ms > CATALOG_STALE_MS;
+}
+
+/**
+ * What a catalog-bound widget draws.
+ *
+ * **A dataset resolved onto a single-number widget yields `primary: null`, not a number picked
+ * out of the rows.** The write path refuses that binding (`eachSourceFitsTheWidget`) and the
+ * builder's picker never offers it, so this branch is unreachable through either surface — but
+ * a row stored before that rule existed, or by a hand-built `PUT`, must render "no value"
+ * rather than a row count dressed up as a metric. A fabricated number is the one failure the
+ * `value` contract is nullable to prevent.
+ */
+function catalogWidgetData(
+  sources: readonly DashboardWidgetSourceDto[],
+  catalog: CatalogResolution | undefined,
+  nowMs: number,
+): WidgetData {
+  // The stored `sortOrder`, not array position — the same rule the point branch follows, and
+  // for the same reason: `dashboard_widget_sources` carries no guaranteed row order.
+  const [first] = [...sources].sort((a, b) => a.sortOrder - b.sortOrder);
+  const resolved = first ? catalog?.bySourceId.get(first.id) : undefined;
+  const stale = catalogIsStale(catalog?.resolvedAt ?? null, nowMs);
+  return {
+    status: "ready",
+    primary: resolved?.shape === "metric" ? resolved.value : null,
+    series: [],
+    stale,
+  };
+}
+
 /**
  * The one statistic a tile shows, out of the four the endpoint always returns.
  *
@@ -258,9 +370,24 @@ export function widgetDataFor(
   historyByRef: HistoryByRef,
   nowMs: number,
   aggregateByKey?: AggregateByKey,
+  catalog?: CatalogResolution,
 ): WidgetData {
-  if (widget.points.length === 0) {
+  // **`F3.35` Stage C widened this condition, and reverting it is a silent regression.** The
+  // paragraph above justifies the `"empty"` branch by a CASCADED POINT binding — a retired
+  // sensor taking a live gauge to zero points — and that reason is untouched. What changed is
+  // that zero points stopped meaning zero bindings: a tile bound to a catalog entry has no
+  // points by construction (the two kinds are exclusive), so the un-widened test sent every
+  // correctly-configured metric tile to `"No data bound."` — the state ADR 0047 Amendment 1
+  // reserves for a widget that genuinely lost its binding.
+  if (widget.points.length === 0 && widget.sources.length === 0) {
     return { status: "empty" };
+  }
+
+  // Before every point branch: a widget binds points or sources, never both (the write path's
+  // `eachWidgetBindsExactlyOneKind`), so reaching here with a source means there are no points
+  // to read and the order carries no ambiguity.
+  if (widget.sources.length > 0) {
+    return catalogWidgetData(widget.sources, catalog, nowMs);
   }
 
   if (widget.widgetType === "chart") {

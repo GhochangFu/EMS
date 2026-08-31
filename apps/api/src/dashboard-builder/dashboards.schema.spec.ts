@@ -4,9 +4,13 @@ import {
   MAX_DASHBOARD_WIDGETS,
   MAX_GAUGE_THRESHOLDS,
   MAX_WIDGET_POINTS,
+  METRIC_CATALOG,
   WIDGET_POINT_CARDINALITY,
+  WIDGET_SOURCE_CARDINALITY,
+  WIDGET_SOURCE_SHAPES,
   widgetTypeSchema,
 } from "@bms/shared";
+import type { MetricCatalogKey } from "@bms/shared";
 
 import {
   createDashboardBodySchema,
@@ -364,4 +368,68 @@ export function runDashboardsSchemaGridBoundsTests(): void {
     { widgets: [{ ...validGaugeWidget, gridX: 11, gridW: 1 }] },
     "gridX 11 + gridW 1 (12) exactly fills the canvas and is accepted",
   );
+}
+
+/**
+ * `F3.35` Stage C Unit 5 — a widget binds only a catalog entry it can DRAW.
+ *
+ * **This suite exists because the cardinality check reads as if it already covered this, and
+ * does not.** `WIDGET_SOURCE_CARDINALITY.value_tile` is `{min: 0, max: 1}`, and `alarms.active`
+ * — six declared columns of rows — is exactly one binding. It passed every bound on this path,
+ * stored, resolved as a dataset, and reached a renderer that draws a single number. Nothing
+ * threw and nothing logged: the tile drew blank in front of an operator.
+ *
+ * Both directions are asserted. A rule that only refuses would also pass if it refused
+ * everything, and a `value_tile` that cannot bind `alarms.active.count` is the feature removed.
+ */
+export function runDashboardsSchemaSourceShapeTests(): void {
+  const tileWith = (catalogKey: MetricCatalogKey) => ({
+    widgetType: "value_tile" as const,
+    title: null,
+    gridX: 0,
+    gridY: 0,
+    gridW: 3,
+    gridH: 2,
+    config: {},
+    points: [],
+    sources: [{ catalogKey }],
+  });
+
+  // The fixture is only meaningful while these two facts hold. Asserted rather than assumed:
+  // if Stage B gives the tile `"dataset"`, this whole suite must be rewritten, not silently
+  // pass because the mismatch it tests stopped being a mismatch.
+  assert(
+    METRIC_CATALOG["alarms.active"].shape === "dataset" &&
+      METRIC_CATALOG["alarms.active.count"].shape === "metric",
+    "the fixture needs one dataset key and one metric key that differ",
+  );
+  assert(
+    WIDGET_SOURCE_CARDINALITY.value_tile.max === 1,
+    "a tile must accept ONE binding, or the refusal below could be the count rather than the shape",
+  );
+
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [tileWith("alarms.active")] },
+    ["widgets", 0, "sources", 0, "catalogKey"],
+    ["returns rows"],
+    "a dataset entry on a value_tile is one binding and passes the COUNT — only the shape rule refuses it",
+  );
+
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: [tileWith("alarms.active.count")] },
+    "the metric half of the same catalog entry is what a tile draws, and must still parse",
+  );
+
+  // Every type whose cardinality admits a source must declare a shape it can draw, or the
+  // picker offers a list the write path refuses in full — a form whose every option 400s.
+  for (const widgetType of widgetTypeSchema.options) {
+    const admitsSources = WIDGET_SOURCE_CARDINALITY[widgetType].max > 0;
+    assert(
+      admitsSources === (WIDGET_SOURCE_SHAPES[widgetType].length > 0),
+      `${widgetType}: a type that admits a catalog binding must name a shape it can draw, and ` +
+        "a type that admits none must name none",
+    );
+  }
 }

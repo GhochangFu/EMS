@@ -47,7 +47,7 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
     enabled: slug !== "",
   });
 
-  const { latestByRef, historyByRef, aggregateByKey } = useDashboardTelemetry(dashboardQ.data);
+  const { latestByRef, historyByRef, aggregateByKey, catalog } = useDashboardTelemetry(dashboardQ.data);
   // Read fresh on every render, so the periodic re-render `useDashboardTelemetry`'s own
   // `staleTick` drives (review finding, HIGH) actually advances the clock `widgetDataFor` ages
   // readings against — without this the tick would fire but every widget would keep comparing
@@ -104,6 +104,7 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
                 latestByRef={latestByRef}
                 historyByRef={historyByRef}
                 aggregateByKey={aggregateByKey}
+                catalog={catalog}
                 now={now}
               />
             )}

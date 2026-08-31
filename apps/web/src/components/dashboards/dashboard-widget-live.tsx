@@ -3,6 +3,7 @@ import type { DashboardWidgetDto } from "@bms/shared";
 import {
   widgetDataFor,
   type AggregateByKey,
+  type CatalogResolution,
   type HistoryByRef,
   type LatestByRef,
 } from "../../lib/dashboard-widget-data";
@@ -14,6 +15,8 @@ type DashboardWidgetLiveProps = {
   historyByRef: HistoryByRef;
   /** `F3.35` — the aggregate reads this dashboard needed. Empty for a dashboard that uses none. */
   aggregateByKey?: AggregateByKey;
+  /** `F3.35` Stage C — the resolved catalog bindings. `undefined` for a dashboard binding none. */
+  catalog?: CatalogResolution;
   now?: number;
 };
 
@@ -29,11 +32,12 @@ export function DashboardWidgetLive({
   latestByRef,
   historyByRef,
   aggregateByKey,
+  catalog,
   now,
 }: DashboardWidgetLiveProps) {
   // Resolved ONCE and reused for both the staleness gate and the chart's rolling window — two
   // clock reads in one render pass could otherwise disagree by the render's own duration.
   const resolvedNow = now ?? Date.now();
-  const data = widgetDataFor(widget, latestByRef, historyByRef, resolvedNow, aggregateByKey);
+  const data = widgetDataFor(widget, latestByRef, historyByRef, resolvedNow, aggregateByKey, catalog);
   return <DashboardWidget widget={widget} data={data} now={resolvedNow} />;
 }

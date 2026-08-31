@@ -506,6 +506,55 @@ export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, Cata
 export const MAX_DATASET_ROWS = 200;
 
 /**
+ * Which catalog **shapes** each widget type can draw (`F3.35` Stage C).
+ *
+ * **`WIDGET_SOURCE_CARDINALITY` counts; this one types, and a count alone was not enough.**
+ * `WIDGET_SOURCE_CARDINALITY.value_tile` is `{min: 0, max: 1}`, which a `dataset` entry
+ * satisfies exactly as well as a `metric` one does. So `alarms.active` — rows and six declared
+ * columns — passed every write bound onto a `value_tile`, stored, resolved as a dataset, and
+ * arrived at a renderer that draws one number. Nothing threw: the tile rendered blank. This
+ * record is what refuses it, on the write path where the count is already refused.
+ *
+ * **An empty array is a real member, not a gap.** A gauge, a tank and a chart draw a series
+ * over time and accept no catalog shape at all, which is the same statement their `{min: 0,
+ * max: 0}` cardinality makes, one axis over. Both are read: a type with `max: 0` never reaches
+ * this map, and a type listed here with `max: 0` would still bind nothing.
+ *
+ * Stage B's `table` is the first entry to accept `"dataset"`, and the `Record` over the enum
+ * is what makes forgetting to add it a compile error here rather than a table bound to a count.
+ */
+export const WIDGET_SOURCE_SHAPES: Record<
+  z.infer<typeof widgetTypeSchema>,
+  readonly CatalogEntryMeta["shape"][]
+> = {
+  radial_gauge: [],
+  tank_level: [],
+  value_tile: ["metric"],
+  chart: [],
+};
+
+/**
+ * The third binding message, for a catalog entry whose shape the widget cannot draw.
+ *
+ * Here beside `bindingRequiredMessage`/`bindingExclusiveMessage` and for the identical reason:
+ * two surfaces state this rule and one author meets both, so the builder's inline error and the
+ * API's 400 must read as one problem rather than two. The substitution differs the same way —
+ * the web passes the catalog's human label, the API has only `widgetType`.
+ *
+ * Both arms are written now although only the first can fire today. Stage B's `table` fires the
+ * second, and a message added at the same time as the widget type that needs it is a message
+ * written to match that widget type rather than to match this sentence.
+ */
+export const bindingShapeMessage = (
+  label: string,
+  catalogKey: string,
+  shape: CatalogEntryMeta["shape"],
+): string =>
+  shape === "dataset"
+    ? `A ${label} widget shows one number, and "${catalogKey}" returns rows. Choose a metric.`
+    : `A ${label} widget shows rows, and "${catalogKey}" returns one number. Choose a dataset.`;
+
+/**
  * One point binding. A row in `bms.dashboard_widget_points`, never an id inside JSON.
  *
  * **`sortOrder` carries no `.min(0)`, deliberately.** `sort_order integer NOT NULL DEFAULT 0`

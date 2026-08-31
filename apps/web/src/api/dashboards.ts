@@ -1,10 +1,16 @@
 import {
+  dashboardCatalogValuesResponseSchema,
   dashboardDeletedResponseSchema,
   dashboardDtoSchema,
   dashboardsListResponseSchema,
 } from "@bms/shared/contracts";
 import type { Contract, ContractSchema } from "@bms/shared/contracts";
-import type { DashboardDeletedResponse, DashboardDto, DashboardsListResponse } from "@bms/shared";
+import type {
+  DashboardCatalogValuesResponse,
+  DashboardDeletedResponse,
+  DashboardDto,
+  DashboardsListResponse,
+} from "@bms/shared";
 
 import { ApiError } from "../lib/api-error";
 import type { PutDashboardWidgetsPayload } from "../lib/dashboard-builder-form";
@@ -87,6 +93,30 @@ export async function fetchDashboards(organizationId?: string): Promise<Dashboar
 export async function fetchDashboard(slug: string, organizationId?: string): Promise<DashboardDto> {
   const path = `/dashboards/${encodeURIComponent(slug)}${organizationQuery(organizationId)}`;
   return dashboardsFetch(path, dashboardDtoSchema, "dashboards/:slug");
+}
+
+/**
+ * `GET /dashboards/:id/catalog-values` — every catalog binding on one dashboard, resolved
+ * (`F3.35` Stage C, ADR 0048 decisions 1 and 2).
+ *
+ * **The `id`, not the slug, and that is not an oversight of this client.** Every other read
+ * here is addressed the way its route is, and this route's own docblock explains why it takes
+ * an id: it needs the dashboard row to narrow each entry to the dashboard's location or asset
+ * group. The viewer routes by slug, so this is a *dependent* read — the caller waits for
+ * `fetchDashboard` to answer and passes `data.id`. A caller that has only a slug must do the
+ * same; there is no slug form of this route to reach for.
+ *
+ * One request per dashboard, never one per binding: the response is keyed by `sourceId` for
+ * exactly that reason.
+ */
+export async function fetchDashboardCatalogValues(
+  dashboardId: string,
+): Promise<DashboardCatalogValuesResponse> {
+  return dashboardsFetch(
+    `/dashboards/${encodeURIComponent(dashboardId)}/catalog-values`,
+    dashboardCatalogValuesResponseSchema,
+    "dashboards/:id/catalog-values",
+  );
 }
 
 /** `POST /dashboards`. A 403 here is `"You may not create a dashboard with this scope"`

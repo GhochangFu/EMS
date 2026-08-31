@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   bindingExclusiveMessage,
   bindingRequiredMessage,
+  bindingShapeMessage,
   chartConfigSchema,
   commonConfigFields,
   gaugeRangeIsOrdered,
@@ -16,8 +17,10 @@ import {
   widgetPointRoleSchema,
   metricCatalogKeySchema,
   widgetTypeSchema,
+  METRIC_CATALOG,
   WIDGET_POINT_CARDINALITY,
   WIDGET_SOURCE_CARDINALITY,
+  WIDGET_SOURCE_SHAPES,
 } from "@bms/shared";
 import type { MetricCatalogKey } from "@bms/shared";
 
@@ -286,6 +289,37 @@ const noDuplicateSources = (
 };
 
 /**
+ * A widget may bind only a catalog entry it can draw (`WIDGET_SOURCE_SHAPES`).
+ *
+ * **The cardinality check above does not imply this one, and reading it as if it did is how
+ * the hole opened.** `WIDGET_SOURCE_CARDINALITY.value_tile` is `{min: 0, max: 1}` — a count.
+ * `alarms.active` is one binding, so it passed, stored, and resolved as rows onto a renderer
+ * that draws a single number: a blank tile, no error, nothing in the console. A shape is not a
+ * count and needs its own gate.
+ *
+ * The builder filters its picker to the same record. This is the second surface, and §4.8's
+ * rule is why it exists rather than being left to the first: a bound enforced only by the
+ * surface that happens to be convenient is not enforced, and a hand-built `PUT` bypasses a form.
+ */
+const eachSourceFitsTheWidget = (
+  widgetType: z.infer<typeof widgetTypeSchema>,
+  sources: { catalogKey: MetricCatalogKey }[],
+  ctx: z.RefinementCtx,
+): void => {
+  const drawable = WIDGET_SOURCE_SHAPES[widgetType];
+  sources.forEach((source, index) => {
+    const { shape } = METRIC_CATALOG[source.catalogKey];
+    if (!drawable.includes(shape)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [index, "catalogKey"],
+        message: bindingShapeMessage(widgetType, source.catalogKey, shape),
+      });
+    }
+  });
+};
+
+/**
  * The per-type catalog-binding array, reading `WIDGET_SOURCE_CARDINALITY[type]` for the same
  * reason `pointsFieldFor` reads `WIDGET_POINT_CARDINALITY` — the 400 names the type and the
  * limit, and the number never drifts from the one the builder and the renderer read.
@@ -300,7 +334,13 @@ const sourcesFieldFor = (widgetType: z.infer<typeof widgetTypeSchema>) => {
     .array(sourceBindingWriteSchema)
     .min(min, `a ${widgetType} widget requires at least ${min} catalog binding(s)`)
     .max(max, `a ${widgetType} widget accepts at most ${max} catalog binding(s)`)
-    .superRefine(noDuplicateSources)
+    // ONE `superRefine` calling two rules, never two chained calls: ADR 0029 decision 10 wants
+    // the `.describe()` immediately after the refinement, and only the last link of a chain can
+    // carry one — so a second `.superRefine` would silently discard the description below.
+    .superRefine((sources, ctx) => {
+      noDuplicateSources(sources, ctx);
+      eachSourceFitsTheWidget(widgetType, sources, ctx);
+    })
     // `.describe()` immediately after the refinement, `.default()` after that. Ordering is
     // checked, not merely presence: a description placed before the refinement lands on the
     // inner schema and is silently discarded.
@@ -308,7 +348,9 @@ const sourcesFieldFor = (widgetType: z.infer<typeof widgetTypeSchema>) => {
       `Between ${min} and ${max} named catalog binding(s) for a ${widgetType} widget (ADR 0048 ` +
         "decision 4). Omitted means none. The same catalog entry may not be bound twice, which " +
         "is dashboard_widget_sources_widget_key_key in SQL — this gives a 400 naming the field " +
-        "rather than a 500 carrying a constraint name.",
+        "rather than a 500 carrying a constraint name. An entry whose shape this widget cannot " +
+        `draw is refused too: a ${widgetType} draws ` +
+        `${WIDGET_SOURCE_SHAPES[widgetType].join(" or ") || "no catalog shape"}.`,
     )
     .default([]);
 };
