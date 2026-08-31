@@ -505,8 +505,14 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
         over time and accept no catalog shape, so `WIDGET_SOURCE_CARDINALITY` gives them
         `max: 0` and this whole field is absent rather than empty.
       */}
+      {/*
+        No `error` here, deliberately (compliance review). Both binding kinds report through the
+        `"points"` field — the exactly-one-kind rule is a relation between the two arrays, so it
+        has no field of its own — and passing it to both `Field`s rendered the same sentence
+        twice, which reads as two problems.
+      */}
       {sourceCardinality.max > 0 ? (
-        <Field label="Named metric" error={problemFor("points")}>
+        <Field label="Named metric">
           <ul className="space-y-1">
             {row.sources.map((source, index) => (
               <li

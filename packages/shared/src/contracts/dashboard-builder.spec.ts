@@ -327,10 +327,19 @@ export function runWidgetPointCardinalityTests(): void {
   // something, which is what this loop keeps. The stronger per-widget rule — a stored widget
   // binds exactly one KIND, never both and never neither — is a cross-field rule between two
   // arrays on one arm, so it cannot live on a `z.discriminatedUnion` arm at all
-  // (`dashboards.schema.ts` records why). It is enforced on write, by
-  // `eachWidgetBindsExactlyOneKind` in `apps/api/src/dashboard-builder/dashboards.schema.ts`,
-  // and asserted in that file's spec. Deleting an assertion without naming its replacement is
-  // how a weakening reads as a refactor, so both halves are stated here.
+  // (`dashboards.schema.ts` records why). It is enforced on write, by `exactlyOneBindingKind`
+  // in `apps/api/src/dashboard-builder/dashboards.schema.ts`, and asserted by
+  // `runDashboardsSchemaSourceShapeTests` in that file's spec. Deleting an assertion without
+  // naming its replacement is how a weakening reads as a refactor, so both halves are stated
+  // here.
+  //
+  // **Both details in the previous sentence were wrong when written, and a correctness review
+  // proved it by mutation.** The helper was named `eachWidgetBindsExactlyOneKind`, which
+  // matches nothing in the repository — a reader grepping the name found no enforcement and no
+  // test. And the spec asserted nothing: disabling both of the rule's conditions left the
+  // entire api suite green, because the only fixture touching it submitted a state the rule
+  // ACCEPTS. A comment claiming a gate exists is worse than no comment, because it stops the
+  // next reader looking. The cases exist now; this note stays as the reason they do.
   for (const widgetType of widgetTypeSchema.options) {
     const bindable =
       WIDGET_POINT_CARDINALITY[widgetType].max + WIDGET_SOURCE_CARDINALITY[widgetType].max;

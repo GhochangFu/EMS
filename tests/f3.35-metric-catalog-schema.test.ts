@@ -232,20 +232,50 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
     // once in USING and once in WITH CHECK, and neither occurrence can be supplied by a
     // qualified column. `tests/f3.1a-dashboard-schema.test.ts:213-215` still carries the
     // unanchored form for migration `0050`'s three tables — same hole, different row's file.
-    const ownColumnChecks = policy
-      .split("\n")
-      .filter((line) => line.trim().startsWith(`organization_id = ${ORG}`));
+    /**
+     * **Counted PER CLAUSE, because a whole-policy count of 2 does not mean one in each.**
+     *
+     * The line-anchored count above fixed the substring hole, and this item's re-review found
+     * what it still let through: two probes stayed green at 14/14 — the own-column predicate
+     * duplicated inside `USING` and deleted from `WITH CHECK`, and the same trick with the
+     * parent `EXISTS`. The second reproduces exactly the hole `F3.1a` proved live, a `WITH
+     * CHECK` guarding only the row's own `organization_id`, which lets an ESKOM-stamped row
+     * bind a PHEWB widget id.
+     *
+     * The `USING` parent leg is the one with no behavioural cover at all in the integration
+     * suite: a correct `WITH CHECK` makes the offending row unconstructible from a tenant
+     * connection, so no live case can plant it. On that leg this count was the only gate, and
+     * a location-blind count is not a gate.
+     */
+    const withCheckAt = policy.indexOf("WITH CHECK (");
     expect(
-      ownColumnChecks.length,
-      "the own-column check must survive ALONGSIDE the parent check, in USING and in WITH CHECK",
-    ).toBe(2);
+      withCheckAt,
+      "the policy must have a WITH CHECK clause to split on — a policy with only USING leaves " +
+        "every write unguarded",
+    ).toBeGreaterThan(-1);
 
-    // Twice — once in USING, once in WITH CHECK. A read-only check leaves the write path open,
-    // which is the asymmetry `E7.1c` found: the grant was not the hole, the policy disjunct was.
-    expect(
-      policy.split("SELECT 1 FROM bms.dashboard_widgets w").length - 1,
-      "the widget parent must be checked in USING and in WITH CHECK",
-    ).toBe(2);
+    const clauses = {
+      USING: policy.slice(0, withCheckAt),
+      "WITH CHECK": policy.slice(withCheckAt),
+    };
+
+    for (const [name, clause] of Object.entries(clauses)) {
+      const ownColumnChecks = clause
+        .split("\n")
+        .filter((line) => line.trim().startsWith(`organization_id = ${ORG}`));
+      expect(
+        ownColumnChecks.length,
+        `${name} must check the row's OWN organization_id exactly once. A count over the whole ` +
+          "policy is satisfied by two in one clause and none in the other.",
+      ).toBe(1);
+
+      expect(
+        clause.split("SELECT 1 FROM bms.dashboard_widgets w").length - 1,
+        `${name} must check the widget PARENT exactly once. A read-only check leaves the write ` +
+          "path open, which is the asymmetry E7.1c found: the grant was not the hole, the " +
+          "policy disjunct was.",
+      ).toBe(1);
+    }
     expect(policy).toContain(`w.id = ${TABLE}.widget_id`);
 
     // Written explicitly rather than leaning on the parent's own policy to filter the subquery

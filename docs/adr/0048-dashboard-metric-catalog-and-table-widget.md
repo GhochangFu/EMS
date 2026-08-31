@@ -432,3 +432,73 @@ The rest of §7 stands unchanged: Sheet 01's Alarm Details and Alarm Action card
 stay pages, `F3.28` keeps the fixed page, `F3.32` keeps the process diagram, and
 the §5 dark canvas stays the owner's. Errata 1's corrections stand, and the
 `AGENTS.md` / `docs/roadmap.md` sweep is still gated on `F3.35` closing.
+
+---
+
+## Errata 3 — decision 5's migration is unbundled, and a SQL header attributed that to the owner (2026-08-31)
+
+Migration `0054_dashboard_widget_sources.sql`, in the header paragraph titled
+*"WHAT THIS MIGRATION DELIBERATELY DOES NOT DO"*, states:
+
+> The owner reversed that order on 2026-08-31, which unbundles them.
+
+**No such ruling was made, and none was needed.** The sentence attributes a
+decision to the owner that no record in `docs/adr/` or `docs/BACKLOG.md`
+carries, and that the owner did not make in the Unit 2 gate or any other.
+Errata 2 was written the same day from the same gate, so the mechanism for
+recording a real ruling was available and was used — its absence here is the
+tell.
+
+### What is actually true
+
+Decision 6's own staging table already settles the order:
+
+| Stage | Delivers | Depends on |
+|---|---|---|
+| **B** | The `table` widget type | Stage C's dataset half, for its rows |
+
+Stage B depends on Stage C. **Building C before B follows from this record and
+needs no ruling at all.** Decision 5's description of a single migration that
+"widens a `CHECK` and creates a table" was written on the assumption of the
+opposite order, and that assumption is what decision 6 contradicts — an internal
+inconsistency in the ADR as accepted, not a change of plan afterwards.
+
+### The correction
+
+1. **Decision 5's migration is two migrations.** Stage C's `0054` creates
+   `bms.dashboard_widget_sources` and deliberately does not touch
+   `dashboard_widgets_widget_type_check`. Stage B carries its own migration,
+   which widens that `CHECK`, alongside the React component that draws the
+   fifth type. Adding the value without the component would put a `widget_type`
+   in the database that nothing can render — ADR 0047 decision 2's whole
+   justification, arriving through the door the constraint exists to hold shut.
+   **That refusal is correct and is unaffected by this erratum**; only its
+   stated reason changes, from an owner ruling to decision 6's dependency.
+
+2. **Errata 1's closing sentence is now false on its face.** It reads *"The next
+   free number is `0054`, and Stage B must read it from
+   `packages/db/drizzle/`."* `0054` is Stage C's. Stage B takes the next free
+   number, which is `0055` — and its rule, *read the directory, not the record*,
+   is what saves it. Note that `0054`'s journal `when` was hand-stamped ahead of
+   the wall clock, so `0055` must be stamped above it or drizzle will run it on
+   a fresh database and silently skip it everywhere `0054` is already applied.
+
+### Why it happened, which is the reusable part
+
+The migration is **frozen by the pre-commit hook the moment it is committed**,
+and its header is the longest prose in the change. That combination is a trap:
+prose written into an unreviewable file gets the confidence of a decision record
+without the review of one. This sentence was drafted to justify a refusal that
+was already justified, and the justification reached for an authority that did
+not exist.
+
+The rule this adds to the two the earlier errata record: **a claim about a
+person's decision is not a claim about the codebase, and no test or `grep` can
+disagree with it.** Errata 1 and 2 were each a fact about the repository
+asserted from memory. This one is a fact about a human asserted from nowhere,
+which is worse — the repository can at least be re-read. Do not attribute a
+ruling in a file the owner will not review, and never in one that cannot be
+edited afterwards.
+
+Nothing else in `0054` is affected. Its table, its constraints and its
+`tenant_isolation` policy stand as reviewed.

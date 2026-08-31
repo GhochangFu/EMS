@@ -422,6 +422,59 @@ export function runDashboardsSchemaSourceShapeTests(): void {
     "the metric half of the same catalog entry is what a tile draws, and must still parse",
   );
 
+  // -------------------------------------------------------------------------
+  // `exactlyOneBindingKind` — added after a correctness review MUTATION-PROVED
+  // that nothing enforced it. Replacing both of its conditions with
+  // `if (false && …)` left the entire api suite green: the only existing
+  // fixture submits `points: []` with one source, which SATISFIES the rule and
+  // therefore cannot detect its removal. A committed docblock in
+  // `packages/shared/src/contracts/dashboard-builder.spec.ts` asserted the rule
+  // was "asserted in that file's spec" — the same false-claim failure both of
+  // ADR 0048's errata record, one layer up.
+  //
+  // Both directions, because the rule has two halves and a gate for one is not
+  // a gate for the other.
+  // -------------------------------------------------------------------------
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...tileWith("alarms.active.count"), sources: [] }] },
+    ["widgets", 0, "points"],
+    ["bound point or a named metric"],
+    "a value_tile binding NEITHER a point nor a metric parses and stores, then renders " +
+      '"No data bound." forever — WIDGET_POINT_CARDINALITY.value_tile.min dropped to 0 on this ' +
+      "branch, so this rule is the only thing refusing it",
+  );
+
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    {
+      widgets: [
+        { ...tileWith("alarms.active.count"), points: [{ pointId: POINT_A }] },
+      ],
+    },
+    ["widgets", 0, "points"],
+    ["not both"],
+    "a value_tile binding BOTH kinds has two answers for one number, and widgetDataFor takes " +
+      "the catalog branch first — so the bound point is silently discarded",
+  );
+
+  // `noDuplicateSources` was untested too. `dashboard_widget_sources_widget_key_key` would
+  // catch it as a bare 23505; this is what turns that into a 400 naming the field.
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    {
+      widgets: [
+        {
+          ...tileWith("alarms.active.count"),
+          sources: [{ catalogKey: "alarms.active.count" }, { catalogKey: "alarms.active.count" }],
+        },
+      ],
+    },
+    ["widgets", 0, "sources", 1, "catalogKey"],
+    ["may not be bound twice"],
+    "the same catalog entry bound twice on one widget must be a 400, not a 23505",
+  );
+
   // Every type whose cardinality admits a source must declare a shape it can draw, or the
   // picker offers a list the write path refuses in full — a form whose every option 400s.
   for (const widgetType of widgetTypeSchema.options) {

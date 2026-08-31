@@ -15,6 +15,7 @@ import {
   assertDatasetShapeAndClamp,
   assertDeletedWidgetDropsItsBinding,
   assertHealthScoreDelegates,
+  assertUnnarrowedScopeStaysInsideTheOrganization,
   assertLocationScopeNarrowsTheCount,
   assertNoBindingsResolvesEmpty,
 } from "./metric-catalog.integration.spec";
@@ -61,6 +62,11 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
   let tenantPool: pg.Pool;
   let fleetDb: BmsDb;
   let service: MetricCatalogService;
+  // A second service whose `AssetHealthService` is a capturing stub. It exists to observe the
+  // SCOPE the health resolver is handed, which is the only organization bound that entry has —
+  // see `assertUnnarrowedScopeStaysInsideTheOrganization`.
+  let capturingService: MetricCatalogService;
+  let capturedHealthScope: readonly string[] | null | undefined;
 
   let orgId = "";
   let assetA = "";
@@ -101,6 +107,20 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
       fleetDb,
       undefined as unknown as ConstructorParameters<typeof MetricCatalogService>[2],
       new AssetHealthService(fleetDb),
+    );
+
+    // The capturing twin. `summary` records the ids it was given and answers the null score
+    // `E1.3` genuinely returns against seeded data, so nothing downstream changes shape.
+    capturingService = new MetricCatalogService(
+      createDb(tenantPool),
+      fleetDb,
+      undefined as unknown as ConstructorParameters<typeof MetricCatalogService>[2],
+      {
+        summary: async (assetIds: readonly string[] | null) => {
+          capturedHealthScope = assetIds;
+          return { score: null, bands: [], assetCount: 0, scoredCount: 0 };
+        },
+      } as unknown as AssetHealthService,
     );
 
     const org = await fleetPool.query<{ id: string }>(
@@ -144,6 +164,7 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
     };
     assetA = await mkAsset(locationA, "A");
     assetB = await mkAsset(locationB, "B");
+
 
     const severity = await fleetPool.query<{ code: string }>(
       `SELECT code FROM bms.alarm_severities ORDER BY rank LIMIT 1`,
@@ -271,6 +292,27 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
 
   it("delegates the health score to E1.3 rather than recomputing it", async () => {
     await assertHealthScoreDelegates(service, orgId, healthDashboardId);
+  });
+
+  it("keeps an un-narrowed dashboard's scope inside the organization for an unrestricted admin", async () => {
+    capturedHealthScope = undefined;
+    await assertUnnarrowedScopeStaysInsideTheOrganization(
+      capturingService,
+      () => capturedHealthScope,
+      orgId,
+      healthDashboardId,
+      [assetA, assetB],
+      // Asked LIVE, of the ids the resolver actually produced — never against a snapshot taken
+      // in `beforeAll`, which a parallel suite's committed asset invalidates mid-run.
+      async (scope) => {
+        if (scope.length === 0) return [];
+        const rows = await fleetPool.query<{ id: string }>(
+          `SELECT id FROM bms.assets WHERE id = ANY($1::uuid[]) AND organization_id <> $2`,
+          [[...scope], orgId],
+        );
+        return rows.rows.map((row) => row.id);
+      },
+    );
   });
 
   it("drops a binding whose widget has been deleted", async () => {

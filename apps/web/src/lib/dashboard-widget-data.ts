@@ -193,10 +193,29 @@ export const CATALOG_REFRESH_MS = 60_000;
  */
 export const CATALOG_STALE_MS = CATALOG_REFRESH_MS * 2 + STALE_TICK_MS;
 
-/** Resolved catalog values keyed by `dashboard_widget_sources.id`, as the response returns them.
- * A `sourceId` absent from the map is a binding the resolve did not answer — a widget deleted
- * between the dashboard read and this call, per the response contract's own note. */
-export type CatalogBySourceId = ReadonlyMap<string, MetricCatalogValueDto>;
+/**
+ * Resolved catalog values keyed by {@link catalogBindingKey} — the widget id and the catalog
+ * key, never the binding's row id.
+ *
+ * **`sourceId` looked like the obvious key and was the wrong one** (correctness review,
+ * Medium). `putWidgets` REPLACES a widget's bindings rather than editing them, and
+ * `dashboard_widget_sources.id` is `defaultRandom()`, so a title edit mints a new id for an
+ * unchanged binding. The catalog query polls every minute; the dashboard query does not poll.
+ * On a display that never receives focus the two drift apart, every lookup misses, and every
+ * tile renders a confident "no value" with `stale: false`. The point path was never exposed to
+ * this because `pointRef` is a natural key; this is the catalog path catching up.
+ *
+ * A key absent from the map is a binding the resolve did not answer — a widget deleted between
+ * the dashboard read and this call, per the response contract's own note.
+ */
+export type CatalogByBinding = ReadonlyMap<string, MetricCatalogValueDto>;
+
+/** The stable identity of one binding: the widget that holds it and the entry it names.
+ * `dashboard_widget_sources_widget_key_key` makes the pair unique, and `putWidgets` preserves a
+ * widget's own `id` across a replace, so it survives what `sourceId` does not. */
+export function catalogBindingKey(widgetId: string, catalogKey: string): string {
+  return `${widgetId}|${catalogKey}`;
+}
 
 /**
  * One resolve, as `widgetDataFor` reads it.
@@ -207,7 +226,7 @@ export type CatalogBySourceId = ReadonlyMap<string, MetricCatalogValueDto>;
  * is no better evidence of a live API than "answered long ago".
  */
 export type CatalogResolution = {
-  readonly bySourceId: CatalogBySourceId;
+  readonly byBinding: CatalogByBinding;
   readonly resolvedAt: string | null;
 };
 
@@ -258,6 +277,7 @@ export function catalogIsStale(resolvedAt: string | null, nowMs: number): boolea
  * decision rather than left for a reader to discover as an omission.
  */
 function catalogWidgetData(
+  widgetId: string,
   sources: readonly DashboardWidgetSourceDto[],
   catalog: CatalogResolution | undefined,
   nowMs: number,
@@ -265,7 +285,9 @@ function catalogWidgetData(
   // The stored `sortOrder`, not array position — the same rule the point branch follows, and
   // for the same reason: `dashboard_widget_sources` carries no guaranteed row order.
   const [first] = [...sources].sort((a, b) => a.sortOrder - b.sortOrder);
-  const resolved = first ? catalog?.bySourceId.get(first.id) : undefined;
+  const resolved = first
+    ? catalog?.byBinding.get(catalogBindingKey(widgetId, first.catalogKey))
+    : undefined;
   const stale = catalogIsStale(catalog?.resolvedAt ?? null, nowMs);
   return {
     status: "ready",
@@ -392,10 +414,10 @@ export function widgetDataFor(
   }
 
   // Before every point branch: a widget binds points or sources, never both (the write path's
-  // `eachWidgetBindsExactlyOneKind`), so reaching here with a source means there are no points
+  // `exactlyOneBindingKind`), so reaching here with a source means there are no points
   // to read and the order carries no ambiguity.
   if (widget.sources.length > 0) {
-    return catalogWidgetData(widget.sources, catalog, nowMs);
+    return catalogWidgetData(widget.id, widget.sources, catalog, nowMs);
   }
 
   if (widget.widgetType === "chart") {

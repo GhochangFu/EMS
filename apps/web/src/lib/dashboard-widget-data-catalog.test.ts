@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runBindingSurvivesARegeneratedSourceIdTests,
   runCatalogBindingSelectionTests,
   runCatalogBoundTileIsNotEmptyTests,
   runCatalogGateTests,
@@ -20,6 +21,10 @@ describe("F3.35 Stage C — a catalog-bound widget", () => {
 
   it("renders no value for a dataset resolved onto a single-number widget", () => {
     runDatasetOnATileRendersNoValueTests();
+  });
+
+  it("still resolves after an unrelated save regenerated the binding's row id", () => {
+    runBindingSurvivesARegeneratedSourceIdTests();
   });
 });
 

@@ -16,6 +16,7 @@ import { mergeSeededAndLiveReadings } from "../lib/dashboard-telemetry-merge";
 import {
   CATALOG_REFRESH_MS,
   aggregateRequestsFor,
+  catalogBindingKey,
   dashboardBindsCatalogSources,
   pointRefsFor,
   type AggregateByKey,
@@ -282,8 +283,15 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
   // catalog branch at all.
   const catalog: CatalogResolution | undefined = bindsCatalog
     ? {
-        bySourceId: new Map(
-          (catalogQuery.data?.values ?? []).map((entry) => [entry.sourceId, entry.resolved]),
+        // Keyed by `(widgetId, catalogKey)`, NOT by `entry.sourceId` — a widget save
+        // regenerates the row id, and this query and the dashboard query refresh on different
+        // schedules, so an id-keyed map silently empties on a page that never regains focus.
+        // `catalogBindingKey`'s docblock carries the failure in full.
+        byBinding: new Map(
+          (catalogQuery.data?.values ?? []).map((entry) => [
+            catalogBindingKey(entry.widgetId, entry.catalogKey),
+            entry.resolved,
+          ]),
         ),
         resolvedAt: catalogQuery.data?.resolvedAt ?? null,
       }

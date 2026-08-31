@@ -59,7 +59,16 @@ export function MetricSourcePicker({ widgetType, bound, onAdd }: MetricSourcePic
           Add a named metric…
         </option>
         {keys.map((key) => (
-          <option key={key} value={key} disabled={isBound(key)}>
+          // `title` carries the description: a `<select>` cannot render a sub-line, and a
+          // declared field nothing shows is a field that drifts. The compliance review's
+          // choice was "render it or drop it"; the description says what the number actually
+          // counts, which is worth keeping.
+          <option
+            key={key}
+            value={key}
+            disabled={isBound(key)}
+            title={METRIC_CATALOG_PRESENTATION[key].description}
+          >
             {METRIC_CATALOG_PRESENTATION[key].label}
             {isBound(key) ? " (already bound)" : ""}
           </option>

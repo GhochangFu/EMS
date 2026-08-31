@@ -143,6 +143,77 @@ export async function assertHealthScoreDelegates(
   ).toBe(true);
 }
 
+/**
+ * An un-narrowed dashboard read by an unrestricted admin still resolves inside the ORGANIZATION.
+ *
+ * **This is the assertion `assertHealthScoreDelegates` could not make, and its absence hid a
+ * cross-tenant defect** (security and correctness review, High). That function calls
+ * `resolveForDashboard(…, null)` against a dashboard with `location_id = null` — exactly the
+ * state in which `resolveAssetScope` used to return `null` — and then asserts "null, or between
+ * 0 and 1". A weighted mean over every organization in the deployment satisfies that, so the
+ * suite ran the defect and reported success.
+ *
+ * A value assertion cannot separate the two here: this fixture is single-organization by
+ * deliberate design (see the test file's docblock), and `E1.3` scores nothing against seeded
+ * data anyway (`F4.69`). So this observes the SCOPE rather than the score — a capturing stub in
+ * place of `AssetHealthService` records the id list the resolver hands it, which is the only
+ * bound that entry has. `AssetHealthService` injects the `BYPASSRLS` fleet pool and its
+ * `assetsInScope(null, …)` filters on `assets.active` alone, so a `null` here is a
+ * deployment-wide read.
+ *
+ * `capturedScope` must be the organization's active assets: never `null`, and never a list
+ * containing an asset this organization does not own.
+ */
+export async function assertUnnarrowedScopeStaysInsideTheOrganization(
+  serviceWithCapturingHealth: MetricCatalogService,
+  capturedScope: () => readonly string[] | null | undefined,
+  organizationId: string,
+  healthDashboardId: string,
+  fixtureAssetIds: readonly string[],
+  /**
+   * Given the resolved scope, returns the ids in it that do NOT belong to this organization.
+   *
+   * **A live query, not a snapshot, and the difference is a real failure this assertion hit.**
+   * The first version compared the scope against a list of the organization's assets read in
+   * `beforeAll`. That passed alone and failed under the full suite: a parallel suite committed
+   * two ESKOM assets after the snapshot, so the live scope legitimately contained ids the
+   * snapshot did not, and the assertion reported a cross-tenant leak that had not happened.
+   * `F4.66`'s rule, one step removed — a count over a shared table is unstable, and so is a
+   * SET read from one.
+   */
+  foreignIdsIn: (scope: readonly string[]) => Promise<readonly string[]>,
+): Promise<void> {
+  await serviceWithCapturingHealth.resolveForDashboard(organizationId, healthDashboardId, null);
+  const scope = capturedScope();
+
+  expect(
+    scope,
+    "the health resolver must be handed an explicit id list. `null` means `assetsInScope` " +
+      "filters on `assets.active` alone, on the BYPASSRLS fleet pool — every organization's " +
+      "assets, answered as this dashboard's number",
+  ).not.toBeNull();
+  expect(scope, "the health resolver was never called at all").toBeDefined();
+  if (!scope) return;
+
+  for (const id of fixtureAssetIds) {
+    expect(
+      scope.includes(id),
+      `the organization's own asset ${id} is missing from the resolved scope — the fix must not ` +
+        "narrow an un-narrowed dashboard to nothing",
+    ).toBe(true);
+  }
+
+  // The containment, which is the half that catches the original defect. `null` fails the
+  // assertion above; a DEPLOYMENT-WIDE list would pass it and fail here.
+  const foreign = await foreignIdsIn(scope);
+  expect(
+    foreign,
+    `${foreign.length} asset(s) outside this organization reached the health resolver's scope. ` +
+      "That is the defect in its original form: another tenant's assets folded into this " +
+      "dashboard's number, on a service that injects the BYPASSRLS fleet pool.",
+  ).toEqual([]);
+}
+
 /** A binding whose widget is gone simply does not come back. */
 export async function assertDeletedWidgetDropsItsBinding(
   service: MetricCatalogService,

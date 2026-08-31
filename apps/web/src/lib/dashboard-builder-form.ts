@@ -65,8 +65,9 @@ export type DashboardWidgetRow = {
   /**
    * `F3.35` Stage C — the catalog bindings on this widget. Present from the moment the tile
    * gained a second binding kind, so `dashboardBuilderErrors` can enforce *exactly one kind*.
-   * The picker that fills it is Stage C's Unit 7; validating a binding the builder cannot yet
-   * author is deliberate — the alternative is a builder that accepts a tile binding nothing.
+   * The picker that fills it shipped in Stage C's Unit 6 (`metric-source-picker.tsx`). This
+   * field was validated one unit before the builder could author it, deliberately — the
+   * alternative was a builder that accepts a tile binding nothing.
    */
   sources: DashboardWidgetSourceRow[];
   config: WidgetConfigRow;
@@ -316,7 +317,7 @@ export function dashboardBuilderErrors(rows: readonly DashboardWidgetRow[]): Das
     // ADR 0048 decision 2 gives the tile a second binding kind, so "binds at least one point"
     // stopped being the same sentence as "binds something" and the per-type minimum could no
     // longer carry it: a minimum is a bound on one array, and this is a relation between two.
-    // Its API twin is `eachWidgetBindsExactlyOneKind`, on the widgets array rather than on a
+    // Its API twin is `exactlyOneBindingKind`, on the widgets array rather than on a
     // `z.discriminatedUnion` arm, for the same reason.
     //
     // Both halves matter. **Neither** kind bound is the state the old minimum used to refuse —

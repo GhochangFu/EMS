@@ -292,6 +292,55 @@ export function runDashboardsServiceUnitTests(): void {
     "a change to a binding's params must be an UPDATE — " +
       `got updates=${JSON.stringify(paramsChanged.updates.map((w) => w.id))}`,
   );
+
+  // -------------------------------------------------------------------------
+  // `stableParams`' KEY SORT, which a correctness review mutation-proved was
+  // enforced by nothing: removing the `.sort()` left every case above green.
+  // It could not have caught it — the three fixtures carry `{}`, `{}` and a
+  // ONE-key object, and with fewer than two keys the order is unobservable.
+  //
+  // The sort exists because `jsonb` normalises key order and a request body
+  // does not, so a plain `JSON.stringify` would mark every parameter-carrying
+  // widget changed on EVERY save: an endless UPDATE that deletes and reinserts
+  // bindings nobody edited, regenerating their row ids each time.
+  // -------------------------------------------------------------------------
+  const twoKeyStored = sourceStored.map((widget) => ({
+    ...widget,
+    sources: [
+      { catalogKey: "alarms.active.count", params: { alpha: 1, beta: 2 }, sortOrder: 0 },
+    ],
+  }));
+  const keysReordered = diffWidgets(twoKeyStored, [
+    {
+      ...(rebound as unknown as Record<string, unknown>),
+      // The SAME parameters, in the order a request body happens to serialise them — which is
+      // not the order Postgres returned them in.
+      sources: [
+        { catalogKey: "alarms.active.count", params: { beta: 2, alpha: 1 }, sortOrder: 0 },
+      ],
+    } as unknown as WidgetWriteBody,
+  ]);
+  assert(
+    keysReordered.updates.length === 0 && keysReordered.unchangedIds.length === 1,
+    "the same params with their KEYS in a different order must be UNCHANGED — jsonb does not " +
+      "preserve key order, so without the sort every save of a parameter-carrying widget is a " +
+      `pointless delete-and-reinsert. got updates=${JSON.stringify(keysReordered.updates.map((w) => w.id))}`,
+  );
+
+  // The other half: a genuinely different VALUE under the same two keys is still a change, so
+  // the sort cannot have been implemented by discarding the values.
+  const valueChanged = diffWidgets(twoKeyStored, [
+    {
+      ...(rebound as unknown as Record<string, unknown>),
+      sources: [
+        { catalogKey: "alarms.active.count", params: { alpha: 1, beta: 99 }, sortOrder: 0 },
+      ],
+    } as unknown as WidgetWriteBody,
+  ]);
+  assert(
+    valueChanged.updates.length === 1,
+    "a different VALUE under the same keys must still be an UPDATE",
+  );
 }
 
 // ---------------------------------------------------------------------------
