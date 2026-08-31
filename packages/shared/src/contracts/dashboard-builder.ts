@@ -399,6 +399,27 @@ export const WIDGET_SOURCE_CARDINALITY: Record<
 };
 
 /**
+ * The two halves of the exactly-one-binding-kind rule, as message templates.
+ *
+ * **Here rather than in each surface, because two surfaces state the same rule and an author
+ * meets both.** `apps/web`'s builder shows the first as an inline error while the author types;
+ * `apps/api`'s `putDashboardWidgetsBodySchema` answers a 400 carrying the second if the form is
+ * bypassed. Written independently, the two texts drift, and a 400 whose wording differs from the
+ * inline error the author already read presents as a second, unrelated problem.
+ *
+ * The substitution differs on purpose and is not drift: the web passes the catalog's human label
+ * ("Value Tile"), the API has only `widgetType` ("value_tile"). One template, two nouns.
+ *
+ * The rule itself is `WIDGET_POINT_CARDINALITY` and `WIDGET_SOURCE_CARDINALITY` read together —
+ * a widget binds a point or a catalog entry, never both, and never neither.
+ */
+export const bindingRequiredMessage = (label: string): string =>
+  `A ${label} widget needs a bound point or a named metric.`;
+
+export const bindingExclusiveMessage = (label: string): string =>
+  `A ${label} widget shows a bound point or a named metric, not both. Remove one.`;
+
+/**
  * The metric catalog's keys, closed (`F3.35` Stage C, ADR 0048 decision 1).
  *
  * **The catalog is code, and that is the decision, not an implementation detail.** §4.8 as ADR
@@ -525,22 +546,23 @@ export const dashboardWidgetPointDtoSchema = z
  * foreign key to nothing**, because the catalog is code — and a separate table says so instead
  * of hiding it behind a nullable column.
  *
- * **`params` must carry no id, and NOTHING ENFORCES THAT YET — it is a Unit 3 gate, not an
- * accomplished fact.** This paragraph claimed the opposite until this item's migration review
- * checked it: the two files it named as the enforcement,
- * `apps/api/src/metric-catalog/metric-catalog.schema.ts` and
- * `tests/f3.35-metric-catalog-containment.test.ts`, do not exist on this branch. **Written
- * forward, before the code, is how a specification reads; written in the past tense it is a
- * false claim in a committed file, and a reader has no way to tell which they are holding.**
+ * **`params` carries no id.** A binding inherits the dashboard's scope
+ * (`dashboards.location_id` / `asset_group_id`), so a location id inside `params` would be an id
+ * in `jsonb` that no foreign key covers and no orphan check can report — the ADR 0019 problem
+ * decision 4 exists to refuse, one field over.
  *
- * The requirement itself stands and is the reason the table exists. A binding inherits the
- * dashboard's scope (`dashboards.location_id` / `asset_group_id`), so a location id inside
- * `params` would be an id in `jsonb` that no foreign key covers and no orphan check can
- * report — the ADR 0019 problem decision 4 exists to refuse, one field over. **The only bound
- * today is `dashboard_widget_sources_params_object_check` in migration `0054`, which refuses a
- * scalar or an array at the top level and accepts `{"locationId": "<any uuid>"}`.** Nothing is
- * exposed while no service writes this table. Unit 3 must land a `.strict()` write schema per
- * entry that declares no id field, and a static scan that fails the build on `.uuid(` in it.
+ * **What holds it, and what does not.** The database's
+ * `dashboard_widget_sources_params_object_check` (migration `0054`) is a *floor*: it refuses a
+ * scalar or an array at the top level and accepts `{"locationId": "<any uuid>"}`. The control is
+ * `METRIC_CATALOG_PARAMS_WRITE` in `apps/api/src/dashboard-builder/dashboards.schema.ts` — one
+ * `.strict()` schema per catalog entry, none declaring an id — and
+ * `tests/f3.35-metric-catalog-containment.test.ts`, which scans that map and fails the build on
+ * `.uuid(`, on the id spellings that evade it, and on any entry losing `.strict()`.
+ *
+ * **This paragraph once named two files that did not exist**, in the past tense, and this item's
+ * migration review caught it. Written forward it is a specification; written backward it is a
+ * false claim in a committed file, and nothing in the text tells a reader which they hold. If a
+ * sentence here says a thing is enforced, open the file it names.
  *
  * **`sortOrder` carries no `.min(0)`**, for the reason `dashboardWidgetPointDtoSchema` states:
  * `sort_order integer NOT NULL DEFAULT 0` permits a negative, so a bound here would reject a

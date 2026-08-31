@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { dashboards, dashboardWidgetPoints, dashboardWidgets } from "@bms/db";
+import { dashboards, dashboardWidgetPoints, dashboardWidgetSources, dashboardWidgets } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   DashboardDto,
@@ -24,6 +24,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withOrganizationReadScope } from "../database/tenant-read-scope";
 import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBoundPoint } from "./dashboard-point-scope";
+import { resolveWidgetSources, type ResolvedWidgetSource } from "./dashboard-source-scope";
 import type { CreateDashboardBody, PutDashboardWidgetsBody, UpdateDashboardBody, WidgetWriteBody } from "./dashboards.schema";
 
 type DashboardRow = typeof dashboards.$inferSelect;
@@ -120,6 +121,9 @@ export type StoredWidgetForDiff = {
   readonly gridH: number;
   readonly config: unknown;
   readonly points: readonly { pointId: string; role: string; sortOrder: number }[];
+  /** `F3.35` Stage C. In the diff for the same reason `points` is: a widget whose ONLY change
+   * is its catalog binding must land in `updates`, not in `unchangedIds`. */
+  readonly sources: readonly { catalogKey: string; params: unknown; sortOrder: number }[];
 };
 
 export type WidgetSyncDiff = {
@@ -131,6 +135,37 @@ export type WidgetSyncDiff = {
 
 function pointSortKey(a: { pointId: string; role: string }, b: { pointId: string; role: string }): number {
   return a.pointId === b.pointId ? a.role.localeCompare(b.role) : a.pointId.localeCompare(b.pointId);
+}
+
+function sourceSortKey(a: { catalogKey: string }, b: { catalogKey: string }): number {
+  return a.catalogKey.localeCompare(b.catalogKey);
+}
+
+/**
+ * `params`, serialised with its keys sorted.
+ *
+ * **Not `JSON.stringify` directly, and the difference is not pedantry.** The stored side comes
+ * back from `jsonb`, which normalises key order (by length, then bytewise); the submitted side
+ * is a request body in the author's own order. So `{"b":1,"a":2}` saved and re-submitted
+ * unchanged would serialise two different ways, the diff would call it a change, and every save
+ * of an untouched dashboard would rewrite every widget carrying parameters.
+ *
+ * `config` above is compared with a bare `JSON.stringify` and has the same exposure. It is not
+ * changed here — that is `F3.1b`'s field and a behaviour change to it belongs with a test that
+ * demonstrates the symptom — but do not copy that line for a new field.
+ *
+ * A flat sort is exact for this value: `params` is
+ * `Record<string, string | number | boolean>`, so there is no nested object whose keys could
+ * also be reordered.
+ */
+function stableParams(params: unknown): string {
+  if (params === null || typeof params !== "object" || Array.isArray(params)) {
+    return JSON.stringify(params ?? null);
+  }
+  const entries = Object.entries(params as Record<string, unknown>).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  return JSON.stringify(entries);
 }
 
 function widgetContentEqual(stored: StoredWidgetForDiff, submitted: WidgetWriteBody): boolean {
@@ -149,11 +184,26 @@ function widgetContentEqual(stored: StoredWidgetForDiff, submitted: WidgetWriteB
   const storedPoints = [...stored.points].sort(pointSortKey);
   const submittedPoints = [...submitted.points].sort(pointSortKey);
   if (storedPoints.length !== submittedPoints.length) return false;
-  return storedPoints.every(
+  const pointsEqual = storedPoints.every(
     (point, index) =>
       point.pointId === submittedPoints[index]?.pointId &&
       point.role === submittedPoints[index]?.role &&
       point.sortOrder === submittedPoints[index]?.sortOrder,
+  );
+  if (!pointsEqual) return false;
+
+  // `F3.35` Stage C. Without this block a widget whose ONLY change is its catalog binding
+  // compares equal, lands in `unchangedIds`, and `putWidgets` writes nothing — the PUT answers
+  // 200 carrying the old binding, and the author's rebind is silently discarded. Covered in
+  // `dashboards.service.spec.ts`, which was written failing before this ran.
+  const storedSources = [...stored.sources].sort(sourceSortKey);
+  const submittedSources = [...(submitted.sources ?? [])].sort(sourceSortKey);
+  if (storedSources.length !== submittedSources.length) return false;
+  return storedSources.every(
+    (source, index) =>
+      source.catalogKey === submittedSources[index]?.catalogKey &&
+      source.sortOrder === submittedSources[index]?.sortOrder &&
+      stableParams(source.params) === stableParams(submittedSources[index]?.params),
   );
 }
 
@@ -502,6 +552,18 @@ export class DashboardsService {
         list.push(point);
         pointsByWidget.set(point.widgetId, list);
       }
+      // `F3.35` Stage C. Read on the SAME transaction as the points, and fed into the diff for
+      // the same reason: without it a widget whose only change is its catalog binding compares
+      // equal, is skipped, and the PUT answers 200 carrying the old binding.
+      const storedSources =
+        storedIds.length > 0 ? await resolveWidgetSources(tx, existing.organizationId, storedIds) : [];
+      const sourcesByWidget = new Map<string, ResolvedWidgetSource[]>();
+      for (const source of storedSources) {
+        const list = sourcesByWidget.get(source.widgetId) ?? [];
+        list.push(source);
+        sourcesByWidget.set(source.widgetId, list);
+      }
+
       const forDiff: StoredWidgetForDiff[] = storedWidgets.map((widget) => ({
         id: widget.id,
         widgetType: widget.widgetType,
@@ -515,6 +577,11 @@ export class DashboardsService {
           pointId: point.pointId,
           role: point.role,
           sortOrder: point.sortOrder,
+        })),
+        sources: (sourcesByWidget.get(widget.id) ?? []).map((source) => ({
+          catalogKey: source.catalogKey,
+          params: source.params,
+          sortOrder: source.sortOrder,
         })),
       }));
 
@@ -545,6 +612,10 @@ export class DashboardsService {
           .where(eq(dashboardWidgets.id, widget.id));
         await tx.delete(dashboardWidgetPoints).where(eq(dashboardWidgetPoints.widgetId, widget.id));
         await this.insertPoints(tx, existing.organizationId, widget.id, widget.points);
+        // Replaced, never edited in place — the same shape as the point bindings above, and why
+        // `bms.dashboard_widget_sources` carries no `updated_at`.
+        await tx.delete(dashboardWidgetSources).where(eq(dashboardWidgetSources.widgetId, widget.id));
+        await this.insertSources(tx, existing.organizationId, widget.id, widget.sources);
       }
 
       for (const widget of diff.inserts) {
@@ -563,6 +634,7 @@ export class DashboardsService {
           })
           .returning();
         await this.insertPoints(tx, existing.organizationId, row.id, widget.points);
+        await this.insertSources(tx, existing.organizationId, row.id, widget.sources);
       }
 
       await tx.update(dashboards).set({ updatedAt: new Date() }).where(eq(dashboards.id, id));
@@ -634,6 +706,39 @@ export class DashboardsService {
   }
 
   /**
+   * `F3.35` Stage C — the catalog bindings for one widget.
+   *
+   * **`organizationId` comes from the dashboard row this service already fetched, never from the
+   * request.** `putWidgets` reads it off `existing`, which `canManageDashboard` has already
+   * authorized. That is what makes the absence of an `assertBoundSourcesInOrganization`
+   * counterpart correct rather than an oversight: the point path needs one because a submitted
+   * `pointId` names a row that may belong to another tenant, and a catalog key names an entry in
+   * code with no foreign row to be outside anything.
+   *
+   * `params` is stored as submitted, after `METRIC_CATALOG_PARAMS_WRITE` has parsed it per entry
+   * — which today means it is `{}`, because no resolve service reads a parameter yet.
+   */
+  private async insertSources(
+    tx: BmsTx,
+    organizationId: string,
+    widgetId: string,
+    sources: readonly { catalogKey: string; params: Record<string, unknown>; sortOrder: number }[],
+  ): Promise<void> {
+    if (sources.length === 0) {
+      return;
+    }
+    await tx.insert(dashboardWidgetSources).values(
+      sources.map((source) => ({
+        organizationId,
+        widgetId,
+        catalogKey: source.catalogKey,
+        params: source.params,
+        sortOrder: source.sortOrder,
+      })),
+    );
+  }
+
+  /**
    * The pre-write current-row read, on `fleetDb` before the org is resolved — the same
    * pre-GUC shape `assets.service.ts:189-191` uses. `canManageDashboard` (called by every
    * caller of this method) is the isolation control for the row this returns.
@@ -673,6 +778,18 @@ export class DashboardsService {
       pointsByWidget.set(point.widgetId, list);
     }
 
+    // `F3.35` Stage C. `tx` here may be a `fleetDb` transaction — `getBySlug` resolves through
+    // `withOrganizationReadScope`, whose multi-organization branch runs on the fleet pool, and
+    // `bms_fleet` holds BYPASSRLS. `resolveWidgetSources` carries its own organization
+    // predicate for that reason; see its file docblock.
+    const sources = await resolveWidgetSources(tx, effective.organizationId, widgetIds);
+    const sourcesByWidget = new Map<string, ResolvedWidgetSource[]>();
+    for (const source of sources) {
+      const list = sourcesByWidget.get(source.widgetId) ?? [];
+      list.push(source);
+      sourcesByWidget.set(source.widgetId, list);
+    }
+
     return {
       id: effective.id,
       organizationId: effective.organizationId,
@@ -683,7 +800,18 @@ export class DashboardsService {
       assetGroupId: effective.assetGroupId,
       createdAt: effective.createdAt.toISOString(),
       updatedAt: effective.updatedAt.toISOString(),
-      widgets: widgetRows.map((widget) => mapDashboardWidget(widget, pointsByWidget.get(widget.id) ?? [])),
+      widgets: widgetRows.map((widget) =>
+        mapDashboardWidget(
+          widget,
+          pointsByWidget.get(widget.id) ?? [],
+          (sourcesByWidget.get(widget.id) ?? []).map((source) => ({
+            id: source.id,
+            catalogKey: source.catalogKey as DashboardWidgetSourceDto["catalogKey"],
+            params: source.params as DashboardWidgetSourceDto["params"],
+            sortOrder: source.sortOrder,
+          })),
+        ),
+      ),
     };
   }
 }

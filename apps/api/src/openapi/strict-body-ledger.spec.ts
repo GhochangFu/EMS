@@ -601,6 +601,10 @@ const DASHBOARD_WIDGET_ARM =
   "refused rather than silently dropped. Each of the four arms is strict, and cardinality " +
   "(ADR 0047 Amendment 2) is enforced on the `points` field, not by this node's own strictness.";
 
+const DASHBOARD_CATALOG_BINDING =
+  "F3.35 (ADR 0048 decision 4). DASHBOARD_WIDGET_ARM's reason, plus: a dropped sibling of " +
+  "`params` is a parameter stored misspelled. `params` is validated per catalog entry and no " +
+  "entry may declare a uuid (`tests/f3.35-metric-catalog-containment.test.ts`).";
 const HEALTH_SECTION =
   "E1.3 (ADR 0050 decision 7). The `health` tier `E1.7` rejected, reopened as its consumer " +
   "landed. Strict at the authoring boundary for the reason the whole section exists: the " +
@@ -712,6 +716,7 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "putDashboardWidgetsBodySchema/widgets[]|0/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
   "putDashboardWidgetsBodySchema/widgets[]|0/config/thresholds[]": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
   "putDashboardWidgetsBodySchema/widgets[]|0/points[]": STRICT(CALLER_ERROR),
+  "putDashboardWidgetsBodySchema/widgets[]|0/sources[]": STRICT(DASHBOARD_CATALOG_BINDING),
   "putDashboardWidgetsBodySchema/widgets[]|1": STRICT(DASHBOARD_WIDGET_ARM),
   "putDashboardWidgetsBodySchema/widgets[]|1/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
   "putDashboardWidgetsBodySchema/widgets[]|2": STRICT(DASHBOARD_WIDGET_ARM),

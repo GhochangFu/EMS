@@ -1,4 +1,9 @@
-import { DASHBOARD_GRID, MAX_DASHBOARD_WIDGETS } from "@bms/shared";
+import {
+  bindingExclusiveMessage,
+  bindingRequiredMessage,
+  DASHBOARD_GRID,
+  MAX_DASHBOARD_WIDGETS,
+} from "@bms/shared";
 import type {
   DashboardDto,
   DashboardWidgetDto,
@@ -318,15 +323,15 @@ export function dashboardBuilderErrors(rows: readonly DashboardWidgetRow[]): Das
     // a widget that saves, loads and draws an empty rectangle. **Both** kinds bound is the new
     // one: a tile with a point and a metric has two answers for one number, and picking either
     // silently would put a number on screen that the author did not choose.
+    //
+    // The text comes from `@bms/shared`, not from here. `putDashboardWidgetsBodySchema` states
+    // the same rule and answers a 400 with the same template, so an author who bypasses this
+    // form reads one problem rather than two — see the messages' own docblock.
     if (row.points.length === 0 && row.sources.length === 0) {
-      push(index, "points", `A ${label} widget needs a bound point or a named metric.`);
+      push(index, "points", bindingRequiredMessage(label));
     }
     if (row.points.length > 0 && row.sources.length > 0) {
-      push(
-        index,
-        "points",
-        `A ${label} widget shows a bound point or a named metric, not both. Remove one.`,
-      );
+      push(index, "points", bindingExclusiveMessage(label));
     }
 
     if (row.gridW < DASHBOARD_GRID.minWidgetW || row.gridW > DASHBOARD_GRID.columns) {
