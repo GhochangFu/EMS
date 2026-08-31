@@ -502,3 +502,77 @@ edited afterwards.
 
 Nothing else in `0054` is affected. Its table, its constraints and its
 `tenant_isolation` policy stand as reviewed.
+
+## Amendment 1 — two owner rulings at Stage B's close (2026-08-31)
+
+Both were put to the owner at the end of Stage B and answered in one sentence:
+*"keep the template exclusion, stage B closes F3.35"*. Recorded as an amendment
+rather than an erratum because neither corrects this record — the first decides
+a question it never asked, and the second closes it.
+
+Errata 3 exists because a decision was attributed to the owner that the owner
+never made. These two were made, in the `F3.35` Stage B gate, and are written
+here rather than only in a commit body so the next reader finds them where they
+look for scope.
+
+### Ruling 1 — a template cannot author a `table`, and that stands
+
+Stage B excluded `table` from template authoring. This ADR does not decide the
+question: decision 5 adds the fifth widget type and decision 6 stages the work,
+but nothing here says whether a *template* dashboard carries the whole widget
+vocabulary. ADR 0047 does not say either, and it was checked.
+
+**The fact that forced the question.** A template binds `template_points.point_key`
+**strings**, because it has no asset yet (decision 4's asymmetry, one level
+removed). It has no equivalent for a catalog binding:
+`bms.dashboard_widget_sources` is keyed by `widget_id`, and a template widget is
+not a widget row. A `table` binds no point (`WIDGET_POINT_CARDINALITY.table` is
+`{min: 0, max: 0}`) and requires exactly one source
+(`WIDGET_SOURCE_CARDINALITY.table` is `{min: 1, max: 1}`). So a template `table`
+could carry no binding of either kind, and `F3.2` would instantiate a widget the
+live write path refuses on its next save — a permanently empty card.
+
+The alternative was an arm that authors that card anyway and leaves `F3.2` to
+discover it. Ruled against.
+
+**What it does NOT decide.** Not that templates never carry a catalog binding.
+When they can, the exclusion is one `Exclude` in
+`packages/shared/src/asset-template-content.ts` and the derivation in
+`apps/web/src/lib/widget-config-form.ts` agrees again on its own. The rule it
+states is narrower than "no tables in templates": **a widget type is
+template-authorable when it can be fully bound by point keys.** A sixth type
+with a required source is excluded by the same rule without a new ruling.
+
+**Two sentences elsewhere were falsified and have been amended in place**, not
+deleted — `TemplateDashboardWidget`'s docblock claimed the shared union's
+derivation stopped a new widget type reaching one surface and missing the other.
+The mechanism survives; the consequence does not.
+
+### Ruling 2 — Stage B closes `F3.35`
+
+Decision 6 requires all three stages live for the client workshop. All three are:
+Stage A (aggregation config, the `@Controller("telemetry")` aggregate read, the
+vs-yesterday delta, chart footer stats, the tile's icon/sub-line/tone), Stage C
+(the catalog, `bms.dashboard_widget_sources`, the resolve endpoint, the picker)
+and Stage B (the `table` type, migration `0055`, the renderer, the column
+picker). Verified in the tree before the ruling was accepted rather than taken
+on the staging table's word.
+
+**What this closure does not include, and neither is a defect:**
+
+1. **Two catalog entries remain uncomputable, exactly as §7 says.** Operational
+   efficiency has no entry, and must not gain one until the client defines its
+   numerator (ADR 0050 §B14) — a key with no query is the failure this closed
+   vocabulary exists to prevent. `assets.health.score` *is* computable; Errata 2
+   records why.
+2. **Status pills for `severity` and `priority` are owed, not built.** §5 and the
+   mock both draw them, and Stage B ships readable column headings but plain-text
+   cells. Doing it properly needs a richer `columns` declaration in
+   `METRIC_CATALOG` — a shape change to decision 2, and therefore its own record.
+   Deciding tone from a hand-written list that reads the column is the §4.8 trap
+   decision 1 already closed once.
+
+**The `chore(agents):` sweep is now due**, and §10.1 makes it ADR 0048 alone —
+do not batch it. Its targets are listed in this record's Consequences, and that
+paragraph's own instruction applies: re-run the greps at sweep time rather than
+trusting the list.

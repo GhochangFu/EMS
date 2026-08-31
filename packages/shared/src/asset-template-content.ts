@@ -172,8 +172,15 @@ export type TemplateMaintenancePlan = {
  * `WIDGET_SOURCE_CARDINALITY` at run time, so a sixth type with a required source is caught
  * even though a `Record<WidgetType, {min: number}>` cannot be read at the type level.
  *
- * **This is reversible and is not a scope ruling.** Whenever templates gain a way to carry a
- * catalog binding, delete the `Exclude` and the spec's derivation agrees again.
+ * **Ruled by the owner on 2026-08-31 — ADR 0048 Amendment 1, ruling 1.** It was written first
+ * as an implementation choice and flagged as one, because this ADR does not decide whether a
+ * template carries the whole widget vocabulary and neither does ADR 0047. The owner kept it.
+ *
+ * **Still reversible, and the rule is narrower than "no tables in templates".** What was ruled
+ * is that a widget type is template-authorable when it can be **fully bound by point keys** —
+ * so whenever templates gain a way to carry a catalog binding, delete the `Exclude` and the
+ * spec's derivation agrees again with no second ruling. A sixth type with a required source is
+ * excluded by the same rule rather than by a new decision.
  */
 export type TemplateDashboardWidget = {
   pointKeys: string[];
