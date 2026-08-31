@@ -20,6 +20,7 @@ import {
   widgetTypeSchema,
   METRIC_CATALOG,
   columnNotDeclaredMessage,
+  duplicateColumnMessage,
   WIDGET_POINT_CARDINALITY,
   WIDGET_SOURCE_CARDINALITY,
   WIDGET_SOURCE_SHAPES,
@@ -551,6 +552,14 @@ const eachTableColumnIsDeclared = (
     // The cardinality rule already refused a table with no source, and `eachSourceFitsTheWidget`
     // already refused one bound to a metric. Both issues are reported on the same parse, so this
     // returns rather than reporting a THIRD issue about a source that was never valid.
+    //
+    // **This guard is load-bearing, not defensive, and the correctness review proved it.** Zod's
+    // array `.min()` calls `status.dirty()` rather than aborting, and `ZodEffects` skips a
+    // refinement only on `aborted` — so a `PUT` carrying `sources: []` AND `config.columns`
+    // reaches this line with `binding === undefined`. Without the guard, `binding.catalogKey`
+    // throws a `TypeError` out of `safeParse`: a 500 where `sourcesFieldFor`'s `min: 1` should
+    // have answered 400. Reproduced by deleting the guard, and `dashboards.schema.spec.ts` now
+    // sends exactly that payload — the suite reached every other branch here and never this one.
     const [binding] = widget.sources;
     if (binding === undefined) {
       return;
@@ -560,6 +569,14 @@ const eachTableColumnIsDeclared = (
       return;
     }
     const declared = new Set(entry.columns);
+    // Duplicates are refused here rather than left to the renderer (security review, Low). The
+    // two sibling arrays already do this — `noDuplicateBindings` for `points`,
+    // `noDuplicateSources` for `sources` — and the asymmetry was an omission, not a decision.
+    // `projectColumns` preserves duplicates faithfully, so `table-widget.tsx` would key two
+    // `<th>` and two `<td>` on one column name: a React duplicate-key warning and a doubled
+    // column. Unreachable from the picker, whose `toggle` cannot produce it; reachable from any
+    // hand-built `PUT`.
+    const seen = new Set<string>();
     chosen.forEach((column, columnIndex) => {
       if (!declared.has(column)) {
         ctx.addIssue({
@@ -567,7 +584,17 @@ const eachTableColumnIsDeclared = (
           path: [index, "config", "columns", columnIndex],
           message: columnNotDeclaredMessage(column, binding.catalogKey),
         });
+        return;
       }
+      if (seen.has(column)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, "config", "columns", columnIndex],
+          message: duplicateColumnMessage(column),
+        });
+        return;
+      }
+      seen.add(column);
     });
   });
 };

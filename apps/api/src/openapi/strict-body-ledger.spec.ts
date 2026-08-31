@@ -506,12 +506,21 @@ export function testTheWalkHandlesEveryConstructItMeets(): void {
 /* The ledger                                                                  */
 /* -------------------------------------------------------------------------- */
 
-// The reasons and the ledger itself live in `strict-body-ledger.data.ts` — moved there when
-// `F3.35` Stage B's two new object nodes took this file over the AGENTS.md §4.5 1000-line cap.
-// The walker and the four checks below are what ADR 0014 means by a `.spec`; a lookup table
-// that grows by one entry per object node is not, and would push this file over again.
-export { STRICTNESS_LEDGER, type LedgerEntry } from "./strict-body-ledger.data";
-import { STRICTNESS_LEDGER } from "./strict-body-ledger.data";
+// The reasons and the ledger itself live in `src/testing/strict-body-ledger.data.ts` — moved
+// there when `F3.35` Stage B's two new object nodes took this file over the AGENTS.md §4.5
+// 1000-line cap. The walker and the four checks below are what ADR 0014 means by a `.spec`; a
+// lookup table that grows by one entry per object node is not, and would push this file over
+// again on the next widget type.
+//
+// **`src/testing/`, not beside this file, and the compliance review caught it there.**
+// `tsconfig.build.json` excludes `**/*spec.ts`, `**/*.test.ts` and `src/testing/**` — and a
+// `.data.ts` in `src/openapi/` matches NONE of them, so `nest build` emitted
+// `dist/openapi/strict-body-ledger.data.js` into the runtime image. Reproduced before the move.
+// That is the identical failure `F4.28` recorded for `integration-db-gate.js`, which is why
+// `src/testing/` exists at all. It also keeps the file out of the coverage denominator, where
+// a lookup table that is merely imported reads as ~100% covered.
+export { STRICTNESS_LEDGER, type LedgerEntry } from "../testing/strict-body-ledger.data";
+import { STRICTNESS_LEDGER } from "../testing/strict-body-ledger.data";
 
 
 /**

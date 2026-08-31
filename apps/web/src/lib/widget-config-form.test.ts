@@ -4,6 +4,7 @@ import {
   runBlankConfigRowTests,
   runConfigBuilderTests,
   runFieldBoundConstantsTests,
+  runTemplateWidgetTypeDerivationTests,
   runVocabularyDerivationTests,
   runWidgetConfigErrorsTests,
 } from "./widget-config-form.spec";
@@ -12,6 +13,10 @@ import {
 describe("widget config form", () => {
   it("derives every vocabulary constant from @bms/shared and the widget catalog", () => {
     runVocabularyDerivationTests();
+  });
+
+  it("keeps TEMPLATE_WIDGET_TYPES and TemplateAuthorableWidgetType saying one thing", () => {
+    runTemplateWidgetTypeDerivationTests();
   });
 
   it("pins the field bound constants this file exports", () => {

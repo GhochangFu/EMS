@@ -1,6 +1,6 @@
-import type { TableConfig, WidgetStatus } from "../../lib/widget-catalog";
+import type { DatasetRow, TableConfig, WidgetStatus } from "../../lib/widget-catalog";
 import { projectColumns, tableCellText } from "../../lib/table-widget-cells";
-import type { DatasetRow } from "./dashboard-widget";
+import { metricCatalogColumnLabel } from "../../lib/metric-catalog";
 import { WidgetFrame } from "./widget-frame";
 
 type TableWidgetProps = {
@@ -64,7 +64,7 @@ export function TableWidget({
                     scope="col"
                     className="whitespace-nowrap border-b border-gray-200 px-2 py-1.5 font-medium text-bms-muted"
                   >
-                    {column}
+                    {metricCatalogColumnLabel(column)}
                   </th>
                 ))}
               </tr>

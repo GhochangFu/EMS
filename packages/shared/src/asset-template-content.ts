@@ -145,11 +145,17 @@ export type TemplateMaintenancePlan = {
  * decision 3 rejects ids inside JSON. A *template* dashboard has no asset yet, so it binds
  * `template_points.point_key` **strings**, exactly as `featured[]` already does, and existence
  * is proved by `collectContentPointRefs` → `assertContentRefsResolve` on create, update and
- * publish rather than by a constraint. Same widget vocabulary, same config union; only the
- * reference differs.
+ * publish rather than by a constraint. Same config union, and — until `F3.35` Stage B — the
+ * same widget vocabulary; see the `table` paragraph below for the one type that is now
+ * excluded, and why the reference difference is exactly what excludes it.
  *
- * The type and grid halves are derived from the shared union rather than restated, so a fifth
- * widget type or a changed config shape cannot reach one surface and miss the other.
+ * The type and grid halves are derived from the shared union rather than restated, so a changed
+ * config shape cannot reach one surface and miss the other. **That sentence used to say the
+ * same of a fifth widget type, and `F3.35` Stage B made it false**: `table` reaches the live
+ * builder and deliberately does not reach here. The MECHANISM the sentence prescribes survives —
+ * the `Exclude` below still derives from the shared union rather than restating a list — but a
+ * type can now be excluded on purpose, so the derivation proves agreement about config shape
+ * rather than about membership.
  *
  * **`table` is excluded, and the exclusion is the point rather than an oversight** (`F3.35`
  * Stage B). Read the asymmetry above once more: a template binds point-key *strings* because it

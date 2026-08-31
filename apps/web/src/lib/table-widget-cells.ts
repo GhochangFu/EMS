@@ -1,4 +1,4 @@
-import type { DatasetRow } from "../components/widgets/dashboard-widget";
+import type { DatasetRow } from "./widget-catalog";
 
 /**
  * `F3.35` Stage B — the pure half of `table-widget.tsx`.

@@ -10,6 +10,7 @@ import {
   WIDGET_SOURCE_SHAPES,
   bindingShapeMessage,
   columnNotDeclaredMessage,
+  duplicateColumnMessage,
   widgetTypeSchema,
 } from "@bms/shared";
 import type { MetricCatalogKey } from "@bms/shared";
@@ -241,7 +242,9 @@ export function runDashboardsSchemaTests(): void {
   );
 
   // -------------------------------------------------------------------------
-  // 12. `F3.35` Stage B — the table widget's bindings and its column projection.
+  // 5b. `F3.35` Stage B — the table widget's bindings and its column projection.
+  //     Numbered `5b` rather than appended as `12`: the numbers in this file are navigation, and
+  //     these assertions belong beside the binding rules at 5, not after the grid rules at 11.
   // -------------------------------------------------------------------------
   expectAccepts(widgetWriteSchema, validTableWidget, "a table bound to a dataset must parse");
 
@@ -304,6 +307,36 @@ export function runDashboardsSchemaTests(): void {
     putDashboardWidgetsBodySchema,
     { widgets: [{ ...validTableWidget, config: { columns: [] } }] },
     "an empty column list means every declared column and must parse",
+  );
+
+  // **A table carrying columns AND no source — the branch the whole suite missed.**
+  //
+  // Every other column assertion above parses `validTableWidget`, which always has a source; the
+  // two "no source" and "metric source" assertions parse `widgetWriteSchema`, the ARM, where the
+  // array-level `superRefine` never runs. So `eachTableColumnIsDeclared`'s
+  // `binding === undefined` guard was reached by no test at all.
+  //
+  // It is not defensive. Zod's array `.min()` calls `status.dirty()` rather than aborting, and
+  // `ZodEffects` skips a refinement only on `aborted` — so this payload DOES reach that line.
+  // Delete the guard and `binding.catalogKey` throws out of `safeParse`: a 500 where the
+  // cardinality rule should answer 400.
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validTableWidget, sources: [], config: { columns: ["assetCode"] } }] },
+    ["widgets", 0, "sources"],
+    [],
+    "a table with columns but no source must be refused for its CARDINALITY, not crash",
+  );
+
+  // The same column twice. `noDuplicateBindings` guards `points` and `noDuplicateSources` guards
+  // `sources`; this array had no such rule, so a hand-built PUT produced a doubled column and a
+  // duplicate React key (security review, Low).
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validTableWidget, config: { columns: ["severity", "severity"] } }] },
+    ["widgets", 0, "config", "columns", 1],
+    [duplicateColumnMessage("severity")],
+    "the same column chosen twice must be refused, naming the second occurrence",
   );
 
   // The rule must not fire on a widget that is not a table — `config.columns` exists on no

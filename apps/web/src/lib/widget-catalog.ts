@@ -1,4 +1,10 @@
-import type { ChartSeriesKind, DashboardWidgetSpec, WidgetIcon, WidgetType } from "@bms/shared";
+import type {
+  ChartSeriesKind,
+  DashboardWidgetSpec,
+  MetricCatalogValueDto,
+  WidgetIcon,
+  WidgetType,
+} from "@bms/shared";
 import { WIDGET_POINT_CARDINALITY, WIDGET_SOURCE_CARDINALITY } from "@bms/shared";
 
 import type { KpiTileStatus } from "../components/kpi-tile";
@@ -38,6 +44,18 @@ export type WidgetTone = NonNullable<
  * `LoadTrendChart` uses the same shape as its own `status` prop too.
  */
 export type WidgetStatus = KpiTileStatus;
+
+/**
+ * One resolved dataset row, as the catalog endpoint returns it (`F3.35` Stage B).
+ *
+ * Derived from the response contract, never restated. **Here rather than in
+ * `components/widgets/dashboard-widget.tsx`, where it started**: `table-widget-cells.ts` needs
+ * it, and a `lib` module importing a type out of `components` inverts the layering. It also has
+ * a measurable consequence — `lib/**` is in the coverage denominator and `components/**` is not
+ * — so the import direction decides whether the pure helpers are counted. `WidgetSeries` and
+ * `WidgetStatus` are already here for the same reason.
+ */
+export type DatasetRow = Extract<MetricCatalogValueDto, { shape: "dataset" }>["rows"][number];
 
 /** One bound series' worth of samples, ordered by time, as a widget receives it. */
 export type WidgetSeriesPoint = { readonly t: string; readonly v: number | null };

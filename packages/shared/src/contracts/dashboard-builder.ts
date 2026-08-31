@@ -612,6 +612,15 @@ export const WIDGET_SOURCE_SHAPES: Record<
  * second, and a message added at the same time as the widget type that needs it is a message
  * written to match that widget type rather than to match this sentence.
  */
+export const bindingShapeMessage = (
+  label: string,
+  catalogKey: string,
+  shape: CatalogEntryMeta["shape"],
+): string =>
+  shape === "dataset"
+    ? `A ${label} widget shows one number, and "${catalogKey}" returns rows. Choose a metric.`
+    : `A ${label} widget shows rows, and "${catalogKey}" returns one number. Choose a dataset.`;
+
 /**
  * The fourth binding message: a `table` projecting a column its dataset does not declare
  * (`F3.35` Stage B).
@@ -629,14 +638,15 @@ export const WIDGET_SOURCE_SHAPES: Record<
 export const columnNotDeclaredMessage = (column: string, catalogKey: string): string =>
   `"${catalogKey}" does not have a column named "${column}". Choose from the columns it returns.`;
 
-export const bindingShapeMessage = (
-  label: string,
-  catalogKey: string,
-  shape: CatalogEntryMeta["shape"],
-): string =>
-  shape === "dataset"
-    ? `A ${label} widget shows one number, and "${catalogKey}" returns rows. Choose a metric.`
-    : `A ${label} widget shows rows, and "${catalogKey}" returns one number. Choose a dataset.`;
+/**
+ * The fifth binding message: the same column chosen twice on one table.
+ *
+ * Beside the other four because the same author meets it on both surfaces, and here rather than
+ * only in `apps/api` for the reason `noDuplicateSources` is: a duplicate is a constraint-shaped
+ * refusal, and it should read as one sentence whichever surface says it.
+ */
+export const duplicateColumnMessage = (column: string): string =>
+  `"${column}" is already chosen. Each column appears once.`;
 
 /**
  * One point binding. A row in `bms.dashboard_widget_points`, never an id inside JSON.

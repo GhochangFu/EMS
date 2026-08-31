@@ -159,4 +159,64 @@ describe("F3.35 Stage C — the metric catalog's labels", () => {
       ).toBe(admits);
     }
   });
+
+  /**
+   * `F3.35` Stage B — every dataset column a card can head has a readable label, and no label
+   * here is orphaned.
+   *
+   * **The compiler catches neither direction, which is why this is a source scan.**
+   * `METRIC_CATALOG_COLUMN_LABELS` is `Record<string, string>` — `CatalogEntryMeta` types
+   * `columns` as `readonly string[]`, so there is no literal union to build a `Record` over, and
+   * making one would mean an `as const` on `METRIC_CATALOG`, which is an ADR 0048 shape change.
+   *
+   * Without this, a column added to a dataset renders its raw field name as a heading
+   * (`metricCatalogColumnLabel` falls back deliberately, so nothing throws and nothing is
+   * blank) — and an operator reads `assetCode` where AGENTS.md §5 and the Nexus mock both say
+   * *"Asset ID"*.
+   */
+  it("labels every dataset column the catalog declares, and labels nothing else", () => {
+    const contract = read("packages/shared/src/contracts/dashboard-builder.ts");
+    const catalog = /export const METRIC_CATALOG: Record<[\s\S]*?> = \{([\s\S]*?)\n\};/.exec(
+      contract,
+    );
+    if (!catalog) {
+      throw new Error(
+        `could not find METRIC_CATALOG's declaration in dashboard-builder.ts. Update this parser ` +
+          "rather than deleting the guard.",
+      );
+    }
+    const declared = new Set(
+      [...(catalog[1] as string).matchAll(/columns:\s*\[([^\]]*)\]/g)].flatMap((match) =>
+        (match[1] as string)
+          .split(",")
+          .map((name) => name.trim().replace(/^"|"$/g, ""))
+          .filter(Boolean),
+      ),
+    );
+    expect(declared.size, "no dataset columns parsed — the walk is broken").toBeGreaterThan(0);
+
+    const labels =
+      /export const METRIC_CATALOG_COLUMN_LABELS: Readonly<[\s\S]*?> = \{([\s\S]*?)\n\};/.exec(
+        read("apps/web/src/lib/metric-catalog.ts"),
+      );
+    if (!labels) {
+      throw new Error(
+        `could not find METRIC_CATALOG_COLUMN_LABELS in metric-catalog.ts. Update this parser ` +
+          "rather than deleting the guard.",
+      );
+    }
+    const labelled = new Set(
+      [...(labels[1] as string).matchAll(/^\s*(\w+):/gm)].map((match) => match[1] as string),
+    );
+    expect(labelled.size, "no column labels parsed — the walk is broken").toBeGreaterThan(0);
+
+    expect(
+      [...declared].filter((column) => !labelled.has(column)).sort(),
+      "every column a dataset declares must have a heading an operator can read",
+    ).toEqual([]);
+    expect(
+      [...labelled].filter((column) => !declared.has(column)).sort(),
+      "a label for a column no dataset declares is dead — it can never head anything",
+    ).toEqual([]);
+  });
 });

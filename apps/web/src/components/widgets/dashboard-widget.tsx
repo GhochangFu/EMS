@@ -1,10 +1,6 @@
-import type {
-  DashboardWidgetDto,
-  MetricCatalogValueDto,
-  PointAggregateStats,
-} from "@bms/shared";
+import type { DashboardWidgetDto, PointAggregateStats } from "@bms/shared";
 
-import type { WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
+import type { DatasetRow, WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
 import { widgetTitle } from "../../lib/widget-value";
 import { ChartWidget } from "./chart-widget";
 import { RadialGaugeWidget } from "./radial-gauge-widget";
@@ -84,8 +80,9 @@ export type WidgetRowsData = {
   stale: boolean;
 };
 
-/** One resolved dataset row, as the catalog endpoint returns it. Derived, never restated. */
-export type DatasetRow = Extract<MetricCatalogValueDto, { shape: "dataset" }>["rows"][number];
+/** Re-exported from `lib/widget-catalog.ts`, which is where it now lives — see its docblock
+ * for why a `lib` helper must not reach into `components` for a type. */
+export type { DatasetRow };
 
 /**
  * The one place the rows arm is recognised.

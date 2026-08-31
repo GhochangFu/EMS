@@ -85,3 +85,45 @@ export function catalogKeysFor(widgetType: WidgetType): MetricCatalogKey[] {
     drawable.includes(METRIC_CATALOG[key].shape),
   );
 }
+
+/**
+ * A dataset column, as an operator reads it (`F3.35` Stage B, AGENTS.md §5).
+ *
+ * **`assetCode` is a field name, not a column heading.** The Nexus mock's own tables head their
+ * columns *"WO ID"*, *"Area / Asset"*, *"Priority"*, *"Status"*, *"SLA"* — and Sheet 02's claim
+ * is that an administrator with no programming skill composes these cards. A header row reading
+ * `assetCode  assetName  raisedAt` puts the API's field names in front of that person.
+ *
+ * **Here, not in `METRIC_CATALOG`.** A label is presentation, and presentation is the frontend's
+ * — the same split `METRIC_CATALOG_PRESENTATION` above draws for the entries themselves, and the
+ * reason `packages/shared` carries the column NAMES (both sides must agree on those) but not
+ * their labels.
+ *
+ * **Keyed by plain string, and gated by a test rather than by the compiler.** `CatalogEntryMeta`
+ * types `columns` as `readonly string[]`, so there is no literal union to build a `Record` over —
+ * making one would mean an `as const` on `METRIC_CATALOG`, which is an ADR 0048 shape change.
+ * `tests/f3.35-metric-catalog-labels.test.ts` holds both directions instead: every declared
+ * column has a label, and no label here is orphaned.
+ */
+export const METRIC_CATALOG_COLUMN_LABELS: Readonly<Record<string, string>> = {
+  assetCode: "Asset ID",
+  assetName: "Asset",
+  severity: "Severity",
+  message: "Message",
+  raisedAt: "Raised",
+  status: "Status",
+  priority: "Priority",
+  title: "Title",
+  dueAt: "Due",
+};
+
+/**
+ * The heading for one dataset column.
+ *
+ * **Falls back to the raw name rather than to an empty string.** An unlabelled column is a gap
+ * in the map above, and the test named there fails on it — but if one ever reaches a running
+ * card, `assetCode` is a poor heading and a blank one is a broken table.
+ */
+export function metricCatalogColumnLabel(column: string): string {
+  return METRIC_CATALOG_COLUMN_LABELS[column] ?? column;
+}

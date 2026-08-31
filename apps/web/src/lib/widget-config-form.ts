@@ -59,7 +59,14 @@ export const WIDGET_TYPES: readonly WidgetType[] = widgetTypeSchema.options;
  * somebody remembered this line. The type predicate is what carries the runtime rule back into
  * the type system: `WIDGET_SOURCE_CARDINALITY` is `Record<WidgetType, { min: number }>`, so no
  * conditional type can read `min`, and `TemplateAuthorableWidgetType` states the same exclusion
- * at compile time. `tests/f3.35-table-widget-schema.test.ts` holds the two together.
+ * at compile time.
+ *
+ * **`runTemplateWidgetTypeDerivationTests` in this file's spec holds the two together.** An
+ * earlier version of this sentence cited `tests/f3.35-table-widget-schema.test.ts`, which does
+ * not mention either symbol — it compares `widgetTypeSchema` to migration `0055`. The
+ * correctness review caught the citation and the gap behind it: with nothing holding the
+ * compile-time `Exclude` to this runtime predicate, changing `min === 0` to `max === 0` here
+ * silently drops `value_tile` from the template authoring UI with a fully green suite.
  */
 export const TEMPLATE_WIDGET_TYPES: readonly TemplateAuthorableWidgetType[] = WIDGET_TYPES.filter(
   (type): type is TemplateAuthorableWidgetType => WIDGET_SOURCE_CARDINALITY[type].min === 0,

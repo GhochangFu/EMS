@@ -14,8 +14,8 @@ import type {
 } from "@bms/shared";
 
 import { STALE_TICK_MS, isStale, readingTimestampMs } from "./schematic-telemetry";
-import type { WidgetSeries, WidgetSeriesPoint } from "./widget-catalog";
-import type { DatasetRow, WidgetData } from "../components/widgets/dashboard-widget";
+import type { DatasetRow, WidgetSeries, WidgetSeriesPoint } from "./widget-catalog";
+import type { WidgetData } from "../components/widgets/dashboard-widget";
 
 /** Module-level, so an unanswered dataset does not hand a fresh array to React each render. */
 const EMPTY_ROWS: readonly DatasetRow[] = [];
@@ -319,9 +319,17 @@ function catalogWidgetData(
   // it, and `runDatasetOnATileRendersNoValueTests` is the test that says what must happen then:
   // no value, never a row count dressed up as a metric. `WIDGET_SOURCE_SHAPES` is the same
   // record the write path reads, so the two cannot disagree about which pairing is drawable.
-  const entry = METRIC_CATALOG[first?.catalogKey as MetricCatalogKey] as
-    | CatalogEntryMeta
-    | undefined;
+  //
+  // Narrowed rather than double-asserted (compliance review). The previous form cast through
+  // `first?.catalogKey as MetricCatalogKey`, which claims `undefined` is a catalog key, and then
+  // cast the lookup back to `| undefined` to undo the first lie. An early return removes both.
+  //
+  // `entry` can still be `undefined` at runtime with `first` present: a newer server may return
+  // a `catalogKey` this client's `METRIC_CATALOG` does not hold, and §4.8 has `checkResponse`
+  // log and pass rather than throw. That widget falls to the scalar arm below — recorded as a
+  // known Low, not silently assumed impossible.
+  const entry: CatalogEntryMeta | undefined =
+    first === undefined ? undefined : METRIC_CATALOG[first.catalogKey as MetricCatalogKey];
   if (entry?.shape === "dataset" && WIDGET_SOURCE_SHAPES[widgetType].includes("dataset")) {
     const answered = resolved?.shape === "dataset" ? resolved : undefined;
     return {
