@@ -21,6 +21,7 @@ import { createDb } from "./client";
 import { backfillAssetLocations, seedAssetGroups } from "./asset-groups-seed";
 import { seedAutomationRules, seedEskomLadderRules } from "./automation-rules-seed";
 import { seedRuledPointCatalog } from "./ruled-point-catalog-seed";
+import { seedAssetTemplateHealth } from "./asset-template-health-seed";
 import {
   seedDemoAlarms,
   seedDemoWorkOrders,
@@ -194,6 +195,11 @@ async function main(): Promise<void> {
       // rule's point is what makes a tag scoreable (`E1.3`) and pickable
       // (`F3.35`); before it, `bms.asset_points` held no row for any ESKOM asset.
       await seedRuledPointCatalog(pool, eskomOrgId);
+      // `F4.75` — after the catalog, because the templates declare the points
+      // the call above writes. This is what gives a scored asset a *band*: the
+      // score was demonstrable from `F4.69` on, but `bms.asset_templates` held
+      // no row, so every asset reported `band: null` and the donut drew nothing.
+      await seedAssetTemplateHealth(pool, eskomOrgId);
     });
 
     // ── Post-tenant ───────────────────────────────────────────────────────
