@@ -151,3 +151,43 @@ export function donutRendersEachBandsCountAndShare(): void {
   expect(screen.getByText("Good")).toBeTruthy();
   expect(screen.getByText(`86 · ${((86 / 265) * 100).toFixed(1)}%`)).toBeTruthy();
 }
+
+/**
+ * `F4.74` — no bands anywhere is a steady state, and it must read as one.
+ *
+ * This is the shape the running stack was in on 2026-08-31: 71 assets scored, a
+ * real 95% mean, and **every** one of them unbanded because no template
+ * configures cut-points. The pie drew nothing, which reads as a broken chart
+ * rather than as the answer Amendment 1 decision 3 specifies.
+ *
+ * The figures are asserted alongside the sentence on purpose: an empty state
+ * that also hid the counts would trade one silent surface for another.
+ */
+export function donutSaysWhyItHasNoSlices(): void {
+  render(
+    <HealthSummaryDonut
+      summary={summary({
+        bandCounts: [],
+        scoredAssetCount: 71,
+        unbandedAssetCount: 71,
+        unscoredAssetCount: 77,
+        assetCount: 148,
+      })}
+    />,
+  );
+  expect(
+    screen.getByText("No band cut-points configured"),
+    "a donut with no slices says why, rather than drawing an empty canvas",
+  ).toBeTruthy();
+  expect(screen.getByText("Unbanded").nextElementSibling?.textContent).toBe("71");
+  expect(screen.getByText("Mean score").nextElementSibling?.textContent).toBe("68%");
+}
+
+/** The negative control: a donut that HAS bands must never carry that sentence. */
+export function donutWithBandsNeverSaysItHasNone(): void {
+  render(<HealthSummaryDonut summary={summary()} />);
+  expect(
+    screen.queryByText(/no band cut-points/i),
+    "the empty-state sentence must not render beside real slices",
+  ).toBeNull();
+}

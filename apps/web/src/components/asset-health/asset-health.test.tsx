@@ -9,7 +9,9 @@ import {
   assetCardShowsGranularityAndCurrency,
   donutRendersEachBandsCountAndShare,
   donutRendersUnbandedAndUnscoredAsSeparateFigures,
+  donutSaysWhyItHasNoSlices,
   donutShowsGranularityAndCurrency,
+  donutWithBandsNeverSaysItHasNone,
 } from "./asset-health.spec";
 
 /**
@@ -48,5 +50,13 @@ describe("E1.3 asset health surface", () => {
 
   it("renders each band's count and its share of the total asset count", () => {
     donutRendersEachBandsCountAndShare();
+  });
+
+  it("says why it has no slices, instead of drawing an empty canvas", () => {
+    donutSaysWhyItHasNoSlices();
+  });
+
+  it("never says it has no bands when it has them", () => {
+    donutWithBandsNeverSaysItHasNone();
   });
 });

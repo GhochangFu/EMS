@@ -32,6 +32,19 @@ const SLICE_COLORS = ["#16a34a", "#65a30d", "#eab308", "#f97316", "#dc2626"];
  * `chart-widget.tsx`'s `ChartFooter` already uses, so a person reading this
  * donut beside a live chart sees the same "what is this current to" idiom
  * rather than a second one invented here (ADR 0050 Amendment 1 decision 9).
+ *
+ * **An empty `bandCounts` renders a sentence, not an empty canvas** (`F4.74`).
+ * A pie with `data: []` draws nothing inside a 200 px box, which is
+ * indistinguishable from a chart that failed — and it was read as exactly that
+ * on the running stack on 2026-08-31, while the figures below it were correct.
+ * The blank is not transient either: Amendment 1 decision 3 gives bands no
+ * default, so an asset whose template configures none is scored, counted and
+ * **permanently** unbanded. A surface that goes quiet in a steady state has to
+ * say which state it is in.
+ *
+ * **The figures stay.** This replaces the pie only, never the footer — the same
+ * rule `health-summary-section.tsx` follows one level up, where an empty scope
+ * is its own sentence rather than a reason to drop the component.
  */
 export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSummaryDonutProps) {
   // Memoised on the two primitives, not on `healthDonutSlices`'s return value
@@ -66,7 +79,20 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
   return (
     <div className="flex h-full flex-col rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
       <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wide text-bms-muted">{title}</h3>
-      <ReactECharts option={option} style={{ height: 200 }} notMerge lazyUpdate />
+      {slices.length === 0 ? (
+        <div
+          className="flex flex-col items-center justify-center gap-1 px-4 text-center"
+          style={{ height: 200 }}
+        >
+          <p className="text-xs font-medium text-bms-ink">No band cut-points configured</p>
+          <p className="text-[11px] leading-snug text-bms-muted">
+            Bands come from an asset template&rsquo;s health tier. The figures below are real; only
+            the slices are missing.
+          </p>
+        </div>
+      ) : (
+        <ReactECharts option={option} style={{ height: 200 }} notMerge lazyUpdate />
+      )}
       <dl className="mt-2 grid grid-cols-1 gap-y-1 text-xs text-bms-ink">
         {slices.map((slice) => (
           <div key={slice.code} className="flex items-center justify-between gap-2">
