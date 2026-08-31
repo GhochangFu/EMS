@@ -335,7 +335,56 @@ function stepHvac(assetId) {
   ];
 }
 
+/**
+ * `F4.73` — the asset read runs inside a tenant context, once per organization.
+ *
+ * **Why this is no longer one query.** `bms.assets` has carried a
+ * `tenant_isolation` policy since migration `0047`, and `DATABASE_URL` names
+ * `bms_owner`, which `0041` binds with `FORCE ROW LEVEL SECURITY`. A `SELECT`
+ * with no tenant context therefore matches **zero rows** — not an error, an
+ * empty result — and this process reported that as
+ * `No assets in bms.assets — run pnpm db:seed`, naming the one remedy that
+ * cannot help. Measured 2026-08-31: `count(*)` on `bms.assets` is `0` as
+ * `bms_owner` with no context and `148` as the superuser.
+ *
+ * **The mechanism is ADR 0043 decision 10's, unchanged.**
+ * `select set_config('app.current_organization', $1, true)` inside a
+ * transaction. `is_local = true`, so the setting dies at `COMMIT` and cannot
+ * leak into the next caller on a pooled connection — and it must be inside a
+ * transaction for that to be true, which is why `begin` comes first rather than
+ * for tidiness. The organization id is a bind parameter and never a
+ * concatenated `SET LOCAL`, for the same reason `withTenant` uses one.
+ *
+ * **Only the read needs it.** The tick writes `telemetry.point_values`, and ADR
+ * 0043 decision 9 makes `telemetry.*` a stated permanent exception with no
+ * policy, so `tick()` opens no transaction for a context it does not need.
+ * `bms.organizations` carries no policy either — it *is* the tenant table — so
+ * the organization list is read without one.
+ *
+ * **The cap is applied across organizations, never per organization.**
+ * `SIM_ASSET_COUNT` means "the first N assets by code"; a `limit` inside the
+ * per-organization query would silently mean N *per tenant*, and would grow the
+ * simulator's load every time a tenant is added.
+ */
 async function loadAssets() {
+  const organizations = await pool.query(`select id from bms.organizations order by code asc`);
+  const organizationIds = organizations.rows.map((row) => row.id);
+  if (organizationIds.length === 0) {
+    throw new Error("No organizations in bms.organizations — run pnpm db:seed");
+  }
+
+  const rows = [];
+  for (const organizationId of organizationIds) {
+    rows.push(...(await loadAssetsForOrganization(organizationId)));
+  }
+  // Sorted here rather than per query: the passes are each ordered, and
+  // concatenating ordered lists does not give an ordered list.
+  rows.sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+  return assetLimit === null ? rows : rows.slice(0, assetLimit);
+}
+
+/** One organization's simulated assets, read inside that organization's context. */
+async function loadAssetsForOrganization(organizationId) {
   const filters = [
     `coalesce(meta->>'telemetryEnabled', 'true') <> 'false'`,
     `coalesce(meta->>'telemetrySource', 'sim') <> 'mqtt'`,
@@ -345,16 +394,24 @@ async function loadAssets() {
     params.push(siteNames);
     filters.push(`site_name = any($${params.length}::text[])`);
   }
-  const where = filters.length > 0 ? `where ${filters.join(" and ")}` : "";
-  const limit = assetLimit === null ? "" : `limit $${params.length + 1}`;
-  if (assetLimit !== null) {
-    params.push(assetLimit);
+  const where = `where ${filters.join(" and ")}`;
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query(`select set_config('app.current_organization', $1, true)`, [organizationId]);
+    const res = await client.query(
+      `select id, code, domain, site_name from bms.assets ${where} order by code asc`,
+      params,
+    );
+    await client.query("commit");
+    return res.rows;
+  } catch (err) {
+    await client.query("rollback").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
-  const res = await pool.query(
-    `select id, code, domain, site_name from bms.assets ${where} order by code asc ${limit}`,
-    params,
-  );
-  return res.rows;
 }
 
 async function tick(rows) {
@@ -429,7 +486,13 @@ async function main() {
   startMetricsServer();
   const assetRows = await loadAssets();
   if (assetRows.length === 0) {
-    throw new Error("No assets in bms.assets — run pnpm db:seed");
+    // `F4.73`: every read above runs inside a tenant context, so an empty result
+    // now means the data is empty or the filter excluded it — never a policy
+    // refusal, which is what this message used to hide.
+    throw new Error(
+      "No assets visible in bms.assets — run pnpm db:seed" +
+        (siteNames.length > 0 ? `, or check SIM_SITE_NAMES (${siteNames.join(", ")})` : ""),
+    );
   }
   const hvacN = assetRows.filter((r) => r.domain === "hvac").length;
   const itN = assetRows.filter((r) => r.domain === "it").length;
