@@ -4,6 +4,7 @@ import {
   formatHealthComputedAt,
   formatHealthScorePercent,
   healthBandDisplay,
+  healthWindowCoverage,
   unscoredTagMessage,
 } from "../../lib/asset-health-view";
 import { formatBucketWidth } from "../../lib/widget-value";
@@ -27,6 +28,7 @@ type AssetHealthCardProps = {
  */
 export function AssetHealthCard({ title = "Asset Health", data }: AssetHealthCardProps) {
   const hasScore = data.score !== null;
+  const coverage = healthWindowCoverage(data.coveredBuckets, data.expectedBuckets);
 
   return (
     <div className="flex h-full flex-col rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
@@ -83,7 +85,20 @@ export function AssetHealthCard({ title = "Asset Health", data }: AssetHealthCar
           <dt className="font-medium uppercase tracking-wide">Current to</dt>
           <dd className="text-bms-ink">{formatHealthComputedAt(data.computedAt)}</dd>
         </div>
+        {/* `F4.72` — the pair, always shown. `computedAt` is the NEWEST instant
+            read, so on its own it reports a half-covered window exactly as it
+            reports a whole one (ADR 0050 Amendment 2 decision 1). */}
+        <div className="flex items-baseline gap-1">
+          <dt className="font-medium uppercase tracking-wide">Coverage</dt>
+          <dd className="tabular-nums text-bms-ink">{coverage.detail}</dd>
+        </div>
       </dl>
+
+      {coverage.warning !== null ? (
+        <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] leading-snug text-amber-900">
+          {coverage.warning}
+        </p>
+      ) : null}
     </div>
   );
 }

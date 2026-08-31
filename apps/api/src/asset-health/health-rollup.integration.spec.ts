@@ -6,6 +6,7 @@ import { createDb } from "@bms/db";
 
 import { withTenant } from "../database/tenant-context";
 import type { AggregateLevel } from "../telemetry/point-aggregates";
+import { AssetHealthService } from "./asset-health.service";
 import { levelRollupSql, rawRollupSql } from "./health-rollup-sql";
 
 /**
@@ -51,6 +52,7 @@ const TAG_X = "e13hr_tagX"; // item 7a — an org-A rule pointing at org B's ass
 const TAG_X_CONTROL = "e13hr_tagX_ctrl"; // item 7a positive control, on org A's own asset
 const TAG_Y = "e13hr_tagY"; // item 7b — a materialized 1m row already sitting on org B's asset
 const TAG_Y_CONTROL = "e13hr_tagY_ctrl"; // item 7b positive control, on org A's own asset
+const TAG_Z_FOREIGN = "e13hr_tagZ_foreign"; // item 8 — org B's row INSIDE org A's tested window
 
 /**
  * Far enough from any other suite's fixture window (`F4.1`'s is 2026-06-01)
@@ -627,5 +629,188 @@ export async function assertTenantJoinContainsRawAndLevelRollups(
   assert(
     levelControl !== undefined,
     "the level roll-up positive control must have a row — otherwise the negative assertion above is vacuous",
+  );
+}
+
+/**
+ * Item 8 — `F4.72`: `coveredBuckets` is a union across the scope, executed.
+ *
+ * **The read half of the feature, asserted beside the writer that made its
+ * rows.** `AssetHealthService.readCounters` groups by `(asset_id, point_key)`,
+ * so its coverage subquery is the only place the bucket instants survive; it
+ * runs against a real Postgres nowhere else, and `asset-health.service.spec.ts`
+ * builds its rows by hand and therefore cannot see this at all. Two facts only
+ * a database can settle:
+ *
+ * 1. **The statement is valid SQL.** A subquery in the select list of a grouped
+ *    query is exactly the shape Postgres rejects when a column reference binds
+ *    to the outer relation instead of the inner one. Rendering it to text
+ *    proves nothing about that.
+ * 2. **The count is a union, not a maximum and not a sum.** The fixtures above
+ *    already separate the three, without being built for it:
+ *
+ *    | tag     | 1m buckets on asset A, inside `[BASE, BASE+2h)` |
+ *    |---------|------------------------------------------------|
+ *    | `TAG_A` | 1 — `BASE` (`WINDOW_1`)                        |
+ *    | `TAG_B` | 1 — `BASE`, all-skipped, still a row           |
+ *    | `TAG_D` | 5 — `BASE+1h` .. `+1h4m` (`WINDOW_6`)          |
+ *
+ *    So the maximum across tags is **5**, the sum of the per-tag counts is
+ *    **7**, and the union — the answer Amendment 2 decision 1 defines — is
+ *    **6**. `TAG_X_CONTROL` sits at `BASE+2h` exactly and `TAG_Y_CONTROL` at
+ *    `BASE+3h`; both are outside the half-open window, which is itself worth
+ *    asserting because `bucket < to` is what keeps them out.
+ *
+ * The service is constructed on this suite's own pool rather than through Nest.
+ * `bms.assets` and `bms.asset_points` are FORCE ROW LEVEL SECURITY and this
+ * pool sets no `app.current_organization`, so `healthForAssets` and
+ * `catalogPoints` answer nothing — which is fine and deliberate. The window
+ * fields under test come from `telemetry.point_in_range_1m`, which carries no
+ * policy, and a scoreless response is the honest one for a caller with no
+ * tenant context.
+ */
+export async function assertCoveredBucketsIsTheUnionAcrossTheScope(
+  pool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const service = new AssetHealthService(createDb(pool));
+  // `now` at BASE+2h with a 120-minute window gives `[BASE, BASE+2h)` at the
+  // `1m` rung — `granularityFor(120)` is `1m`, and 2 hours is nowhere near the
+  // retention horizon that could coarsen it.
+  const result = await service.forAsset(fx.assetAId, 120, new Date(BASE.getTime() + 2 * HOUR));
+
+  assert(
+    result.bucketSeconds === 60,
+    `a 120-minute window must be read at the 1m rung, got ${result.bucketSeconds}s buckets`,
+  );
+  assert(
+    result.expectedBuckets === 120,
+    `120 minutes of 1m buckets expects 120, got ${result.expectedBuckets}`,
+  );
+  assert(
+    result.coveredBuckets === 6,
+    `coveredBuckets must be the UNION of the scope's distinct bucket instants (6). ` +
+      `5 would be the maximum across tags, 7 the sum of their per-tag counts. Got ` +
+      `${result.coveredBuckets}.`,
+  );
+  assert(
+    result.coveredBuckets <= result.expectedBuckets,
+    `coverage may never exceed the window's own bucket count — ${result.coveredBuckets} > ` +
+      `${result.expectedBuckets} means the level's bucket width and F3.35's ladder disagree`,
+  );
+  assert(
+    result.computedAt !== null,
+    "a covered window must report an instant — `telemetry.point_in_range_*` declares " +
+      "`computed_at NOT NULL`, so coveredBuckets > 0 and computedAt: null cannot both be right",
+  );
+
+  // The other direction: a window the roll-up has not reached reports no
+  // coverage AND no instant, together. `BASE - 2h` predates every fixture row.
+  const uncovered = await service.forAsset(fx.assetAId, 120, new Date(BASE.getTime() - 2 * HOUR));
+  assert(
+    uncovered.coveredBuckets === 0,
+    `an untouched window covers no bucket, got ${uncovered.coveredBuckets}`,
+  );
+  assert(
+    uncovered.computedAt === null,
+    `coveredBuckets: 0 and computedAt: null must arrive together, got ${String(uncovered.computedAt)}`,
+  );
+  assert(
+    uncovered.expectedBuckets === 120,
+    `the requested window still expects 120 buckets, got ${uncovered.expectedBuckets}`,
+  );
+
+  // **Cross-scope exclusion, and it needs a row INSIDE the window to mean
+  // anything** (security review). Org B's own fixture row sits at `BASE+2h`,
+  // which `bucket < to` already excludes — so without this insert, a subquery
+  // whose predicate had been WIDENED to every asset would still read 6 and the
+  // assertion above would stay green. This row is on org B's asset, at an
+  // instant inside `[BASE, BASE+2h)` that is not one of asset A's six.
+  const foreignBucket = new Date(BASE.getTime() + 30 * MINUTE);
+  await insertInRange1mRow(pool, {
+    bucket: foreignBucket,
+    assetId: fx.assetBId,
+    pointKey: TAG_Z_FOREIGN,
+    inRangeCount: 1,
+    sampleCount: 1,
+    ruleCount: 1,
+    skippedRuleCount: 0,
+  });
+
+  const stillContained = await service.forAsset(
+    fx.assetAId,
+    120,
+    new Date(BASE.getTime() + 2 * HOUR),
+  );
+  assert(
+    stillContained.coveredBuckets === 6,
+    `coverage must count only the scope's own buckets. Org B has a row at an instant inside ` +
+      `this window that org A does not, so a predicate widened past the asset restriction reads ` +
+      `7 here. Got ${stillContained.coveredBuckets}.`,
+  );
+  // The positive control: the same relation, the same window, a different
+  // scope, a different answer. Without it the assertion above could pass on a
+  // subquery that counted nothing at all.
+  const foreignScope = await service.forAsset(
+    fx.assetBId,
+    120,
+    new Date(BASE.getTime() + 2 * HOUR),
+  );
+  assert(
+    foreignScope.coveredBuckets === 1,
+    `org B's own scope must see its own single bucket in this window, or the assertion above ` +
+      `is vacuous. Got ${foreignScope.coveredBuckets}.`,
+  );
+}
+
+/**
+ * Item 9 — `F4.72` / ADR 0050 Amendment 3: a whole window is reachable, and it
+ * is the read's bucket alignment that makes it so.
+ *
+ * **This is the test whose absence hid a shipped defect.** `alignedWindow`
+ * ends the sweep at `floorToBucket(now)` (ADR 0050 decision 5), so the newest
+ * bucket ever written is one width older than that. An unaligned read took
+ * `to = now` and admitted the in-flight bucket, which the writer is forbidden
+ * to write — so `coveredBuckets` could never equal `expectedBuckets` at any
+ * rung, and the partial-window banner would have been permanently on.
+ *
+ * The jsdom fixture could not catch it: it asserts a complete window from a
+ * hand-written `1 / 1`, a state the server arithmetic forbade. Only real rows
+ * read through the real window arithmetic can tell the two apart.
+ *
+ * **`now` is deliberately off the bucket boundary** — `BASE + 1m + 30s`. That
+ * is what makes this a test of the ALIGNMENT rather than of the fixtures:
+ *
+ * - unaligned, `to` would be `BASE+1m30s` and `from` `BASE+30s`, whose only
+ *   aligned instant is `BASE+1m` — a bucket nothing wrote. Covered 0 of 1.
+ * - aligned, `to` is `BASE+1m` and `from` `BASE`, whose only aligned instant is
+ *   `BASE` — where `TAG_A` and `TAG_B` both have rows. Covered 1 of 1.
+ */
+export async function assertAWholeWindowIsReachable(
+  pool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const service = new AssetHealthService(createDb(pool));
+  const unaligned = new Date(BASE.getTime() + MINUTE + 30_000);
+  const result = await service.forAsset(fx.assetAId, 1, unaligned);
+
+  assert(
+    result.expectedBuckets === 1,
+    `a 1-minute window at the 1m rung expects exactly 1 bucket, got ${result.expectedBuckets}`,
+  );
+  assert(
+    result.coveredBuckets === 1,
+    `the read must align its window to the bucket boundary the SWEEP writes to. Unaligned, this ` +
+      `window covers the in-flight bucket that the roll-up is forbidden to write, and reads 0. ` +
+      `Got ${result.coveredBuckets}.`,
+  );
+  assert(
+    result.windowTo === new Date(BASE.getTime() + MINUTE).toISOString(),
+    `windowTo must be the aligned instant, so the pair on the wire describes the window the two ` +
+      `integers were counted over. Got ${result.windowTo}.`,
+  );
+  assert(
+    result.computedAt !== null,
+    "a covered window reports an instant",
   );
 }

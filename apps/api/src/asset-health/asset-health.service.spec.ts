@@ -30,17 +30,26 @@ function assert(condition: boolean, message: string): void {
 type Chain = {
   from: () => Chain;
   leftJoin: () => Chain;
-  where: () => Chain;
+  where: (predicate?: unknown) => Chain;
   orderBy: () => Chain;
   groupBy: () => Chain;
   then: (resolve: (rows: unknown[]) => void) => void;
 };
 
-function chainOf(rows: unknown[]): Chain {
+/**
+ * `where` records its argument rather than discarding it — `F4.72` needs the
+ * OUTER predicate to compare against the one embedded in the coverage
+ * subquery, and a predicate the harness throws away is a predicate no test can
+ * hold to.
+ */
+function chainOf(rows: unknown[], recordWhere: (predicate: unknown) => void): Chain {
   const chain: Chain = {
     from: () => chain,
     leftJoin: () => chain,
-    where: () => chain,
+    where: (predicate?: unknown) => {
+      recordWhere(predicate);
+      return chain;
+    },
     orderBy: () => chain,
     groupBy: () => chain,
     then: (resolve) => resolve(rows),
@@ -55,12 +64,16 @@ function chainOf(rows: unknown[]): Chain {
  * {@link assertRuleTalliesUseMaxNotSum} inspects. A call past the end of
  * `responses` throws, naming the index, instead of silently returning `[]`.
  */
-function scriptedDb(responses: readonly unknown[][]): { db: BmsDb; calls: { fields: unknown }[] } {
-  const calls: { fields: unknown }[] = [];
+function scriptedDb(responses: readonly unknown[][]): {
+  db: BmsDb;
+  calls: { fields: unknown; where?: unknown }[];
+} {
+  const calls: { fields: unknown; where?: unknown }[] = [];
   const db = {
     select: (fields: unknown) => {
       const index = calls.length;
-      calls.push({ fields });
+      const call: { fields: unknown; where?: unknown } = { fields };
+      calls.push(call);
       if (index >= responses.length) {
         throw new Error(
           `scriptedDb: unscripted select() call #${index} — only ${responses.length} ` +
@@ -68,7 +81,9 @@ function scriptedDb(responses: readonly unknown[][]): { db: BmsDb; calls: { fiel
             "call site is wrong, or this case needs one more scripted response.",
         );
       }
-      return chainOf(responses[index] as unknown[]);
+      return chainOf(responses[index] as unknown[], (predicate) => {
+        call.where = predicate;
+      });
     },
   } as unknown as BmsDb;
   return { db, calls };
@@ -304,4 +319,175 @@ export async function assertComputedAtIsNewestRowInstantOrNull(): Promise<void> 
     const result = await service.forAsset(ASSET_A, 1_440, NOW);
     assert(result.computedAt === null, `computedAt must be null when no rows were read, got ${String(result.computedAt)}`);
   }
+}
+
+/**
+ * **`F4.72` assertion 1 — `expectedBuckets` is `F3.35`'s arithmetic, at the
+ * level actually read.**
+ *
+ * The three rungs are exercised together with `bucketSeconds`, because the pair
+ * is what a reader checks the number against: 1,440 buckets of 60 seconds is a
+ * day; 1,440 buckets of 86,400 seconds is not. A copy of the ladder inside
+ * `asset-health/` would pass one of these and fail the others, which is exactly
+ * the second ladder ADR 0050 decision 6 forbids.
+ */
+export async function assertExpectedBucketsFollowsTheLadderAtEveryRung(): Promise<void> {
+  const cases = [
+    { windowMinutes: 1_440, bucketSeconds: 60, expectedBuckets: 1_440 }, // 24 h at 1m
+    { windowMinutes: 2_880, bucketSeconds: 60, expectedBuckets: 2_880 }, // 48 h at 1m — the last 1m rung
+    { windowMinutes: 43_200, bucketSeconds: 3_600, expectedBuckets: 720 }, // 30 d at 1h
+    { windowMinutes: 525_600, bucketSeconds: 86_400, expectedBuckets: 365 }, // 365 d at 1d
+  ];
+
+  for (const expected of cases) {
+    const { db } = scriptedDb([[], [], []]);
+    const service = new AssetHealthService(db);
+    const result = await service.forAsset(ASSET_A, expected.windowMinutes, NOW);
+    assert(
+      result.bucketSeconds === expected.bucketSeconds,
+      `${expected.windowMinutes} minutes must be read at ${expected.bucketSeconds}s buckets, ` +
+        `got ${result.bucketSeconds}`,
+    );
+    assert(
+      result.expectedBuckets === expected.expectedBuckets,
+      `${expected.windowMinutes} minutes at ${expected.bucketSeconds}s must expect ` +
+        `${expected.expectedBuckets} buckets, got ${result.expectedBuckets}`,
+    );
+  }
+}
+
+/**
+ * **`F4.72` assertion 2 — coverage is asked of the database, over the SAME
+ * predicate the scores came from.**
+ *
+ * Two facts, and both are the ones a mutation would break silently:
+ *
+ * 1. The `coveredBuckets` field is a `count(distinct ...)` over the bucket
+ *    column. A regression to `count(*)`, or to a per-tag count, still returns a
+ *    plausible integer — nothing downstream would look wrong.
+ * 2. The subquery's predicate is character-for-character the outer read's
+ *    predicate. Two predicates that drift would measure coverage over a
+ *    different window from the scores, and both numbers would still look
+ *    reasonable. `service.ts` builds `scope` once for this reason; this holds it
+ *    to that.
+ *
+ * `PgDialect().sqlToQuery` renders without a connection, the same mechanism
+ * {@link assertRuleTalliesUseMaxNotSum} already uses. Parameter numbering
+ * restarts at `$1` for each independent render, so the outer predicate's text
+ * appears verbatim inside the subquery's.
+ */
+export async function assertCoverageCountsDistinctBucketsOverTheSamePredicate(): Promise<void> {
+  const dialect = new PgDialect();
+  const render = (expr: unknown): string => dialect.sqlToQuery(expr as unknown as SQL).sql;
+
+  const { db, calls } = scriptedDb([[], [], []]);
+  const service = new AssetHealthService(db);
+  await service.forAsset(ASSET_A, 1_440, NOW);
+
+  const counterRead = calls[0];
+  const fields = counterRead?.fields as Record<string, unknown>;
+  const coverage = render(fields.coveredBuckets).replace(/\s+/g, " ").trim();
+
+  // **Anchored to the count expression, not to the whole subquery.** The
+  // rendered text always contains `"bucket" >= $2` in its WHERE clause, so a
+  // bare `/"bucket"/` over the whole string matches whatever column the count
+  // actually takes — the correctness review demonstrated
+  // `count(distinct computed_at)` passing it. Split at the FROM so only the
+  // projection is examined.
+  const projection = coverage.split(/\sfrom\s/i)[0] ?? "";
+  assert(
+    /count\(\s*distinct\b/i.test(projection),
+    `coveredBuckets must count DISTINCT instants, got ${projection}`,
+  );
+  assert(
+    /count\(\s*distinct\s+[^)]*"bucket"/i.test(projection),
+    `coveredBuckets must count the BUCKET column specifically — counting any other column ` +
+      `returns a plausible integer that means something else. Got ${projection}`,
+  );
+  assert(
+    !/point_key/i.test(projection),
+    `coveredBuckets must not count or group by point_key — one sweep pass writes every ruled ` +
+      `tag in a bucket, so a per-tag count reports an idle sensor as a roll-up outage. Got ${projection}`,
+  );
+
+  // **Equality, not containment.** A substring check passes for any predicate
+  // that merely CONTAINS the scope, so `or(scope, <anything>)` survives it —
+  // the security review ran that mutation and every assertion here stayed
+  // green, while the subquery counted buckets for every asset in the
+  // deployment. `telemetry.*` carries no Row Level Security, so predicate
+  // IDENTITY is the containment; nothing weaker will do.
+  const outerWhere = render(counterRead?.where).replace(/\s+/g, " ").trim();
+  const innerWhere = (coverage.split(/\swhere\s/i)[1] ?? "").replace(/\)\s*$/, "").trim();
+  assert(
+    outerWhere.length > 0,
+    "the counter read must carry a where predicate at all — without one, coverage is measured " +
+      "over a window nobody asked for",
+  );
+  assert(
+    innerWhere === outerWhere,
+    "the coverage subquery's predicate must be EXACTLY the counter read's, or coverage is " +
+      "measured over a different scope or window from the scores — and a widened one leaks " +
+      `another tenant's buckets into an integer on the wire. Outer: ${outerWhere}. Inner: ${innerWhere}`,
+  );
+}
+
+/**
+ * **`F4.72` assertion 3 — coverage is the value the query returned, never the
+ * number of rows it returned.**
+ *
+ * Three tag rows all carrying the same scope-wide count of six must report six.
+ * Counting the rows instead gives three, which is the plausible-looking wrong
+ * answer this pins: it is per-tag, it is smaller, and nothing else in the
+ * response contradicts it.
+ */
+export async function assertCoveredBucketsIsTheScopeCountNotTheRowCount(): Promise<void> {
+  const row = (pointKey: string): Record<string, unknown> => ({
+    assetId: ASSET_A,
+    pointKey,
+    inRangeCount: "1",
+    sampleCount: "1",
+    ruleCount: "1",
+    skippedRuleCount: "0",
+    computedAt: new Date("2026-08-29T11:59:00.000Z"),
+    coveredBuckets: "6",
+  });
+
+  const { db } = scriptedDb([[row("kw"), row("temp"), row("pf")], [], []]);
+  const service = new AssetHealthService(db);
+  const result = await service.forAsset(ASSET_A, 1_440, NOW);
+
+  assert(
+    result.coveredBuckets === 6,
+    `coveredBuckets must be the scope-wide count the query returned (6), not the row count (3) ` +
+      `nor anything else; got ${result.coveredBuckets}`,
+  );
+  assert(
+    result.expectedBuckets === 1_440,
+    `expectedBuckets must still be the window's own count, got ${result.expectedBuckets}`,
+  );
+}
+
+/**
+ * **`F4.72` assertion 4 — an empty scope reports zero coverage beside a real
+ * expectation, and `computedAt: null` with it.**
+ *
+ * Amendment 2 decision 1 requires those two to agree. `expectedBuckets` stays
+ * non-zero because the window the caller asked for is a fact about the request,
+ * not about what was found in it — zeroing it would make "asked for a day, got
+ * nothing" indistinguishable from "asked for nothing".
+ */
+export async function assertEmptyScopeReportsZeroCoverageAndNoInstant(): Promise<void> {
+  const { db } = scriptedDb([]);
+  const service = new AssetHealthService(db);
+  const result = await service.summary([], undefined, 1_440, NOW);
+
+  assert(result.coveredBuckets === 0, `an empty scope covers no bucket, got ${result.coveredBuckets}`);
+  assert(
+    result.expectedBuckets === 1_440,
+    `the requested window still expects 1440 buckets, got ${result.expectedBuckets}`,
+  );
+  assert(
+    result.computedAt === null,
+    `coveredBuckets: 0 and computedAt: null must arrive together, got ${String(result.computedAt)}`,
+  );
 }

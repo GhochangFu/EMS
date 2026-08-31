@@ -544,3 +544,92 @@ repairs. Both are exactly what decision 1 below discloses.
   and inherits the limit in decision 1 with them.
 - **No migration.** The counters and their columns are unchanged; this is
   contract and read-path surface only.
+
+## Amendment 3 — the read aligns to the sweep's bucket boundary, because a whole window was unreachable by one (2026-08-31)
+
+### Context
+
+This is an **erratum on Amendment 2 decision 1**, found by the `F4.72`
+correctness review before that row merged, and ruled by the repository owner on
+2026-08-31.
+
+Amendment 2 decision 1 defines `expectedBuckets` as
+`expectedBucketCount(windowMinutes, level)` over the **requested** window. The
+requested window ends at `now`. The sweep's does not.
+
+`alignedWindow` in `health-rollup.service.ts` ends at
+`floor(now / width) * width`, and its docblock states the rule this ADR's
+decision 5 gave it: *"`to` is the start of the newest COMPLETE bucket, not
+`now`"* — rolling up a bucket that is still filling would write a count over a
+partial sample set, which the next tick would overwrite with a larger one. The
+newest bucket the sweep can ever write is therefore one width older than
+`floor(now / width) * width`.
+
+`resolveWindow` did not align. It took `to = now`, and `readCounters` admits
+`bucket < to`, so the read window always contained the **in-flight** bucket —
+the one the writer is forbidden to write. A window of `N` buckets could
+therefore cover at most `N - 1` of them, at **every** rung.
+
+The consequences were not cosmetic:
+
+1. `coveredBuckets === expectedBuckets` was unreachable, so the `complete`
+   state in `healthWindowCoverage` was dead code and the partial-window banner
+   was **permanently on** for every healthy deployment. A warning that never
+   turns off carries no information — the same defect `F4.74` fixed one
+   component over, arriving by the opposite route.
+2. It contradicted this ADR's own Amendment 2 Consequences, which name a
+   deployment's *first 24 hours* and an outage longer than a trailing window as
+   the two real cases. A permanent off-by-one is a third, and it was not
+   disclosed anywhere.
+3. The jsdom negative control could not see it. It asserted a whole window from
+   a hand-written `1 / 1` fixture — a state the server arithmetic forbade — so
+   the test whose stated purpose was *"without this, a banner rendered
+   unconditionally would make every healthy read look degraded"* was green while
+   exactly that shipped.
+
+### Decision
+
+1. **`resolveWindow` in `asset-health.service.ts` aligns its `to` down to the
+   bucket boundary of the level actually read**, and derives `from` from that
+   aligned instant. `windowFrom`, `windowTo`, `coveredBuckets` and
+   `expectedBuckets` then all describe one window, and that window is the one
+   the sweep is able to fill.
+
+   Amendment 2 decision 1's formula is unchanged — `expectedBucketCount` still
+   takes `windowMinutes` and the level. What changed is the window it counts
+   over, so this is an erratum on the *reading* of decision 1, not a new
+   formula.
+
+   **No score changes.** The in-flight bucket carries no counter row by
+   construction, so excluding it removes nothing from any numerator or
+   denominator. Only the two coverage integers and `windowFrom`/`windowTo` move,
+   and each moves by less than one bucket.
+
+2. **The boundary rule has exactly one implementation.** `floorToBucket(instant,
+   level)` moves to `apps/api/src/telemetry/point-aggregate-window.ts` —
+   `F3.35`'s pure window module — and both `alignedWindow` and `resolveWindow`
+   call it. Two copies of a boundary rule is how a writer and a reader come to
+   disagree about which bucket is the newest, which is this amendment's whole
+   subject.
+
+3. **This is not a second ladder**, and Amendment 2 decision 2 still stands.
+   `levelFor` is still `F3.35`'s and is still chosen from the **unaligned**
+   window, so the retention guard keeps asking how far back the request truly
+   reaches. The read still does not import `TRAILING_WINDOW_MS`, no rung moves,
+   and `MAX_BUCKETS` is untouched.
+
+### Consequences
+
+- **A fully swept deployment now reports a whole window**, so the banner turns
+  off and its presence again means something.
+- **`windowTo` is no longer `now`.** A consumer comparing it against its own
+  clock sees a lag of up to one bucket — 60 seconds at `1m`, a day at `1d`. That
+  is the honest figure: it is the newest instant the roll-up could have written.
+  `computedAt` remains the currency of the rows actually read and is unchanged.
+- **The gate is an integration assertion, not a fixture.** `item 9` in
+  `health-rollup.integration.spec.ts` reads real rows through the real window
+  arithmetic with a deliberately **unaligned** `now`, so it fails if the
+  alignment is removed. A hand-written fixture cannot hold this claim — that is
+  what let the defect through the first time.
+- **No migration, and no contract field added or removed.** Amendment 2's two
+  integers are unchanged in name, type and meaning.

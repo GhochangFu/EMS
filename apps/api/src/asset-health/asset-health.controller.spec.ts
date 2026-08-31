@@ -49,6 +49,8 @@ const FOR_ASSET_RESPONSE: AssetHealthResponse = {
   windowTo: "2026-08-29T00:00:00.000Z",
   bucketSeconds: 60,
   computedAt: null,
+  coveredBuckets: 0,
+  expectedBuckets: 1_440,
 };
 
 const SUMMARY_RESPONSE: HealthSummaryResponse = {
@@ -62,6 +64,8 @@ const SUMMARY_RESPONSE: HealthSummaryResponse = {
   windowTo: "2026-08-29T00:00:00.000Z",
   bucketSeconds: 60,
   computedAt: null,
+  coveredBuckets: 0,
+  expectedBuckets: 1_440,
 };
 
 /** A distinct array reference, so a test can assert `===`, not merely `toEqual([])`. */

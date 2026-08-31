@@ -94,12 +94,55 @@ export const healthTagScoreSchema = z
  * It is nullable because a scope with no rolled-up bucket has no instant to
  * report — that is absence (1)'s companion, and inventing `now` there would
  * claim currency the roll-up has not established.
+ *
+ * ---
+ *
+ * **`coveredBuckets` and `expectedBuckets` are Amendment 2 decision 1, and they
+ * are not a fifth absence.** `computedAt` is the NEWEST instant across the rows
+ * read, so a window whose middle is missing reports the same currency as a
+ * window that is complete, and a donut drawn from half a window looks identical
+ * to one drawn from all of it. These two integers are what makes that hole
+ * visible.
+ *
+ * `expectedBuckets` is how many buckets the requested window contains at the
+ * level actually read. `coveredBuckets` is how many distinct bucket instants
+ * inside that window the scope read at least one counter row for.
+ *
+ * **Two integers and never a ratio.** `healthTagScoreSchema` carries
+ * `inRangeCount` beside `sampleCount` for the same reason: `1439 / 1440` and
+ * `1 / 1` are different facts, and only the pair distinguishes them.
+ *
+ * **Coverage is counted per bucket across the whole scope, never per tag.** One
+ * sweep pass writes every ruled tag in a bucket, so a bucket with no row
+ * anywhere in scope is a pass that did not happen. A gap in one tag's own
+ * telemetry is a different fact and `sampleCount` already carries it — per-tag
+ * coverage here would report an idle sensor as a roll-up outage.
+ *
+ * **The four absences each say a VALUE is missing. Coverage says the WINDOW is
+ * incompletely backed while every value in it is sound.** A reader that
+ * collapses the two reports "no data" for a score that is correct over the
+ * buckets it has. So `coveredBuckets: 0` is "nothing to show", and
+ * `0 < coveredBuckets < expectedBuckets` is "a real score over less than the
+ * window you asked for" — two states, two renderings.
+ *
+ * **`coveredBuckets: 0` and `computedAt: null` must agree.** A scope with no
+ * rolled-up bucket has neither an instant nor any coverage, and a response
+ * carrying one without the other is a defect rather than a state.
+ *
+ * **What coverage cannot say.** It measures the counter relations, so it cannot
+ * separate a sweep outage from an enterprise-wide telemetry outage — the bucket
+ * is absent in both. That is acceptable because the reader's decision is the
+ * same either way: do not read this figure as a full-window figure.
  */
 const windowFields = {
   windowFrom: z.string().datetime({ offset: true }),
   windowTo: z.string().datetime({ offset: true }),
   bucketSeconds: z.number().int().positive(),
   computedAt: z.string().datetime({ offset: true }).nullable(),
+  /** Distinct bucket instants in the window that the scope read a row for. */
+  coveredBuckets: z.number().int().nonnegative(),
+  /** Buckets the requested window contains at the level actually read. */
+  expectedBuckets: z.number().int().nonnegative(),
 } as const;
 
 /**

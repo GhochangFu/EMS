@@ -68,6 +68,79 @@ export function formatHealthComputedAt(computedAt: string | null): string {
   return at.toLocaleString();
 }
 
+/**
+ * How much of the requested window the figures beside it actually rest on.
+ *
+ * `state` is three-valued because `F4.72` (ADR 0050 Amendment 2 decision 1)
+ * says two of the three must not render as each other. `coveredBuckets: 0` is
+ * `"empty"` — nothing has been scored. `0 < coveredBuckets < expectedBuckets`
+ * is `"partial"` — a REAL score, correct over the buckets it has, covering less
+ * of the window than the reader asked for. Rendering the second as the first
+ * hides a score that is right.
+ */
+export type HealthWindowCoverage = {
+  readonly state: "unknown" | "empty" | "partial" | "complete";
+  /** The pair, always printable — two integers, never a ratio. */
+  readonly detail: string;
+  /** `null` when complete: there is nothing to warn about. */
+  readonly warning: string | null;
+};
+
+/**
+ * The coverage state, from the two integers the contract carries.
+ *
+ * **The two integers are printed as a pair and never divided.** That is the
+ * contract's own rule (`inRangeCount` beside `sampleCount`): `1439 / 1440` and
+ * `1 / 1` are different facts and a single percentage loses which one you hold.
+ *
+ * `coveredBuckets >= expectedBuckets` is complete rather than an error. Covered
+ * exceeding expected would mean the level's bucket width and the ladder
+ * disagree, which is `assertBucketCount`'s job on the server; a renderer that
+ * turned it into a warning would report a server defect as a data gap.
+ */
+export function healthWindowCoverage(
+  coveredBuckets: number,
+  expectedBuckets: number,
+): HealthWindowCoverage {
+  // **An API image older than this contract sends neither field, and both
+  // arrive here `undefined`.** `checkResponse` (`../api/validate.ts`) logs and
+  // returns the ORIGINAL payload in production rather than throwing — ADR 0030
+  // decision 5, so an operator's page keeps rendering during a rolling deploy.
+  // Every comparison against `undefined` is false, so without this guard the
+  // function falls through to `partial` and draws an amber banner reading
+  // "covers undefined of undefined buckets" on every healthy asset.
+  //
+  // It is its own state rather than a silent `complete`: not knowing the
+  // coverage and knowing it is whole are different facts, which is the rule the
+  // contract's four absences already follow. The em dash is this file's own
+  // idiom for a value that is not there.
+  if (!Number.isFinite(coveredBuckets) || !Number.isFinite(expectedBuckets)) {
+    return { state: "unknown", detail: "—", warning: null };
+  }
+  const detail = `${coveredBuckets} / ${expectedBuckets} buckets`;
+  if (coveredBuckets >= expectedBuckets) {
+    return { state: "complete", detail, warning: null };
+  }
+  if (coveredBuckets <= 0) {
+    return {
+      state: "empty",
+      detail,
+      warning: "No rolled-up bucket in this window — nothing here has been scored yet.",
+    };
+  }
+  return {
+    state: "partial",
+    detail,
+    // **Not "the score is real".** This state is reachable with `score: null` —
+    // counter rows exist for a tag whose every rule is unevaluatable, so
+    // coverage is non-zero while `scoreAsset` returns null. The card would then
+    // print an em dash above a sentence insisting on a score.
+    warning:
+      `Partial window: this figure covers ${coveredBuckets} of ${expectedBuckets} buckets. ` +
+      "What it counts is correct; the window behind it is not yet whole.",
+  };
+}
+
 /** One donut slice, plus its share of the WHOLE asset count. */
 export type HealthDonutSlice = {
   readonly code: string;
