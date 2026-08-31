@@ -3,6 +3,7 @@ import type { DashboardDto, DashboardWidgetDto, DashboardWidgetPointDto } from "
 
 import { pointRefsFor, widgetDataFor, type HistoryByRef, type LatestByRef } from "./dashboard-widget-data";
 import { FRESH_MS } from "./schematic-telemetry";
+import { isScalarData } from "../components/widgets/dashboard-widget";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -26,6 +27,9 @@ const IDENTITY = {
   gridY: 0,
   gridW: 4,
   gridH: 4,
+  // `F3.35` Stage C. Every widget as read carries both binding arrays; these
+  // fixtures bind points only, so the source array stays empty.
+  sources: [],
 };
 
 function point(overrides: Partial<DashboardWidgetPointDto> = {}): DashboardWidgetPointDto {
@@ -111,13 +115,13 @@ export function runSingleValueWidgetTests(): void {
   const withReading: LatestByRef = new Map([[ref, { value: 42, time: FRESH_TIME }]]);
   const ready = widgetDataFor(valueTileWidget([p]), withReading, new Map(), NOW);
   assert(ready.status === "ready", "a bound point makes the widget ready");
-  assert(ready.status === "ready" && ready.primary === 42, "primary is the resolved latest reading");
-  assert(ready.status === "ready" && ready.series.length === 0, "a non-chart widget carries no series");
+  assert(isScalarData(ready) && ready.primary === 42, "primary is the resolved latest reading");
+  assert(isScalarData(ready) && ready.series.length === 0, "a non-chart widget carries no series");
 
   // Bound but not yet read — distinct from zero bindings, and also "ready".
   const notYetRead = widgetDataFor(valueTileWidget([p]), new Map(), new Map(), NOW);
   assert(
-    notYetRead.status === "ready" && notYetRead.primary === null,
+    isScalarData(notYetRead) && notYetRead.primary === null,
     "a bound point absent from latestByRef is a live binding with no reading yet — ready, primary null",
   );
 
@@ -131,7 +135,7 @@ export function runSingleValueWidgetTests(): void {
   ]);
   const preferred = widgetDataFor(valueTileWidget([seriesRole, primaryRole]), latest, new Map(), NOW);
   assert(
-    preferred.status === "ready" && preferred.primary === 10,
+    isScalarData(preferred) && preferred.primary === 10,
     "the primary-role binding is preferred over array order",
   );
 }
@@ -153,7 +157,7 @@ export function runStalenessTests(): void {
 
   const stale = widgetDataFor(valueTileWidget([p]), new Map([[ref, { value: 7, time: STALE_TIME }]]), new Map(), NOW);
   assert(
-    stale.status === "ready" && stale.primary === 7 && stale.stale === true,
+    isScalarData(stale) && stale.primary === 7 && stale.stale === true,
     "a reading older than FRESH_MS is stale, but the last value is still returned — the frame " +
       "decides how to say so, this function decides only the fact",
   );
@@ -203,7 +207,9 @@ export function runChartSeriesOrderingTests(): void {
 
   const data = widgetDataFor(widget, new Map(), history, NOW);
   assert(data.status === "ready", "a chart with bindings is ready");
-  if (data.status !== "ready") return;
+  // `isScalarData`, not `status !== "ready"` — since Stage B a `table`'s rows arm is also
+  // "ready" and carries no `series`, so `status` alone stopped narrowing to one shape.
+  if (!isScalarData(data)) return;
 
   assert(
     data.series.length === 2,
@@ -220,7 +226,7 @@ export function runChartSeriesOrderingTests(): void {
 
   const missingHistory = widgetDataFor(chartWidget([first]), new Map(), new Map(), NOW);
   assert(
-    missingHistory.status === "ready" && missingHistory.series[0]?.points.length === 0,
+    isScalarData(missingHistory) && missingHistory.series[0]?.points.length === 0,
     "a point absent from historyByRef contributes an empty series rather than throwing",
   );
 }

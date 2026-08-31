@@ -1,10 +1,11 @@
 import type { DashboardWidgetDto, PointAggregateStats } from "@bms/shared";
 
-import type { WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
+import type { DatasetRow, WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
 import { widgetTitle } from "../../lib/widget-value";
 import { ChartWidget } from "./chart-widget";
 import { RadialGaugeWidget } from "./radial-gauge-widget";
 import { TankLevelWidget } from "./tank-level-widget";
+import { TableWidget } from "./table-widget";
 import { ValueTileWidget } from "./value-tile-widget";
 
 /**
@@ -50,7 +51,67 @@ export type WidgetData =
       stats?: PointAggregateStats | null;
       /** `F3.35` — the chosen level's bucket width, which the granularity cell reads. */
       bucketSeconds?: number | null;
-    };
+    }
+  | WidgetRowsData;
+
+/**
+ * What a `table` widget draws (`F3.35` Stage B) — the third `WidgetData` shape, beside "not
+ * ready" and "one number plus series".
+ *
+ * **A separate arm rather than optional `rows?`/`columns?` on the scalar arm**, and the reason
+ * is the one `stale`'s docblock above gives one axis over: four of the five widget types have
+ * no rows, so optional fields would make every renderer type-check against a shape it ignores
+ * and would hand `TableWidget` two fields it must defend against being `undefined`. Here the
+ * fields are required, and only the arm that has them can be read for them.
+ *
+ * **No `kind` discriminant, deliberately.** Sixteen sites construct the scalar ready arm, twelve
+ * of them in specs, and a required tag would have edited every one to say what its own fields
+ * already say. `isRowsData` names the `in` narrowing once so no call site writes the check.
+ *
+ * `truncated` is carried rather than inferred, for `metricCatalogValueDtoSchema`'s own reason: a
+ * caller cannot tell a dataset holding exactly `MAX_DATASET_ROWS` rows from one cut off at it,
+ * and the difference decides whether the card is showing the whole answer.
+ */
+export type WidgetRowsData = {
+  status: Extract<WidgetStatus, "ready">;
+  columns: readonly string[];
+  rows: readonly DatasetRow[];
+  truncated: boolean;
+  stale: boolean;
+};
+
+/** Re-exported from `lib/widget-catalog.ts`, which is where it now lives — see its docblock
+ * for why a `lib` helper must not reach into `components` for a type. */
+export type { DatasetRow };
+
+/**
+ * The one place the rows arm is recognised.
+ *
+ * `"rows" in data` rather than a tag, and named here so the narrowing is written once — a
+ * consumer that inlined it would be a second declaration of which arm is which, and the two
+ * would drift the day a scalar arm gains an unrelated `rows` field.
+ */
+export function isRowsData(data: WidgetData): data is WidgetRowsData {
+  return data.status === "ready" && "rows" in data;
+}
+
+/** The scalar ready arm — everything `"ready"` that is not a dataset. */
+export type WidgetScalarData = Exclude<
+  Extract<WidgetData, { status: Extract<WidgetStatus, "ready"> }>,
+  WidgetRowsData
+>;
+
+/**
+ * The counterpart to `isRowsData`, and the reason it exists is worth stating.
+ *
+ * Before Stage B, `data.status === "ready"` narrowed to exactly one object type, so every
+ * caller read `.primary` straight off it. Two ready arms end that: `status` alone no longer
+ * decides which fields exist. This is the one check a caller writes instead, so the answer to
+ * "which ready arm is this" is given in one place rather than at twenty call sites.
+ */
+export function isScalarData(data: WidgetData): data is WidgetScalarData {
+  return data.status === "ready" && !("rows" in data);
+}
 
 type DashboardWidgetProps = {
   widget: DashboardWidgetDto;
@@ -60,6 +121,10 @@ type DashboardWidgetProps = {
 };
 
 const NO_SERIES: readonly WidgetSeries[] = [];
+// Module-level constants, like `NO_SERIES` above: a fresh `[]` on every render is a new
+// reference, which defeats the memoisation of any child that compares props by identity.
+const NO_COLUMNS: readonly string[] = [];
+const NO_ROWS: readonly DatasetRow[] = [];
 
 /**
  * The exhaustive dispatcher (ADR 0047 decision 2). Two compiler gates, not
@@ -72,16 +137,21 @@ const NO_SERIES: readonly WidgetSeries[] = [];
 export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
   const title = widgetTitle(widget.title, widget.widgetType);
   const status = data.status;
-  const primary = data.status === "ready" ? data.primary : null;
-  const series = data.status === "ready" ? data.series : NO_SERIES;
+  // `F3.35` Stage B — narrowed to the SCALAR ready arm once, rather than each field repeating
+  // `data.status === "ready"`. The rows arm is also `"ready"` and carries none of these fields,
+  // so the old per-field check no longer narrows on its own.
+  const scalar = isScalarData(data) ? data : null;
+  const rowsData = isRowsData(data) ? data : null;
+  const primary = scalar?.primary ?? null;
+  const series = scalar?.series ?? NO_SERIES;
   const stale = data.status === "ready" ? data.stale : false;
   const resolvedNow = now ?? Date.now();
-  // `F3.35` — the three fields the aggregate read adds. Narrowed off `"ready"`
-  // like every other field above rather than read off `data` directly, so a
-  // non-ready widget cannot carry last render's numbers into this one.
-  const compareValue = data.status === "ready" ? (data.compareValue ?? null) : null;
-  const stats = data.status === "ready" ? (data.stats ?? null) : null;
-  const bucketSeconds = data.status === "ready" ? (data.bucketSeconds ?? null) : null;
+  // `F3.35` — the three fields the aggregate read adds. Narrowed like every other field above
+  // rather than read off `data` directly, so a non-ready widget cannot carry last render's
+  // numbers into this one.
+  const compareValue = scalar?.compareValue ?? null;
+  const stats = scalar?.stats ?? null;
+  const bucketSeconds = scalar?.bucketSeconds ?? null;
 
   switch (widget.widgetType) {
     case "radial_gauge":
@@ -114,6 +184,18 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           now={resolvedNow}
           stats={stats}
           bucketSeconds={bucketSeconds}
+        />
+      );
+    case "table":
+      return (
+        <TableWidget
+          title={title}
+          status={status}
+          stale={stale}
+          config={widget.config}
+          columns={rowsData?.columns ?? NO_COLUMNS}
+          rows={rowsData?.rows ?? NO_ROWS}
+          truncated={rowsData?.truncated ?? false}
         />
       );
     default: {

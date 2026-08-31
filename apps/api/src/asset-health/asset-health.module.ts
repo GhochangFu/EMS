@@ -27,13 +27,25 @@ import { HealthRollupService } from "./health-rollup.service";
  * would be the point at which extracting the loop shape stops being premature.
  *
  * `DatabaseModule`'s tokens are `@Global()`, so only `AuthModule` is imported —
- * for `AccessControlService`. Nothing is exported: no other module consumes a
- * health service yet, and the roll-up is not something another module should
- * be able to trigger.
+ * for `AccessControlService`.
+ *
+ * **`AssetHealthService` is exported since `F3.35` Stage C; `HealthRollupService`
+ * is deliberately not.** This docblock previously read "nothing is exported: no
+ * other module consumes a health service yet", and the second half of that
+ * sentence stopped being true when the metric catalog gained
+ * `assets.health.score` (ADR 0048 decision 1, ADR 0048 Errata 2).
+ * `MetricCatalogService` calls `summary(...)` rather than reimplementing the
+ * roll-up, which is the whole point of the entry.
+ *
+ * The asymmetry is the rule, not an accident: the QUESTION is exportable, the
+ * SCHEDULE is not. `HealthRollupService` owns a loop with no request to
+ * authorize, and a second module able to trigger it could refresh another
+ * tenant's counters on a whim. Export a reader; never export the writer.
  */
 @Module({
   imports: [AuthModule],
   controllers: [AssetHealthController],
   providers: [AssetHealthService, HealthRollupService],
+  exports: [AssetHealthService],
 })
 export class AssetHealthModule {}

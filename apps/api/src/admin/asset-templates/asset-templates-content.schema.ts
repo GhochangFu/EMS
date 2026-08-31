@@ -365,9 +365,20 @@ const widgetPointKeys = (widgetType: WidgetType) =>
  *
  * **The config schemas are still the shared ones** — the vocabulary is declared once. What is
  * restated here is only the type→config pairing, and `templateDashboardWidgetVariants` is
- * exported so the spec can assert its arm count against `widgetTypeSchema.options.length`: a
- * fifth widget type added to `@bms/shared` and not to this file fails the build rather than
- * being quietly unusable in templates.
+ * exported so the spec can check its arms against the shared vocabulary: a widget type added to
+ * `@bms/shared` and not to this file fails the build rather than being quietly unusable in
+ * templates.
+ *
+ * **The arms are the types a template can fully bind, which since `F3.35` Stage B is not all of
+ * them.** `table` is absent deliberately — see `TemplateDashboardWidget`'s docblock in
+ * `packages/shared/src/asset-template-content.ts` for the whole argument. In short: a template
+ * binds point-key strings and cannot express a `bms.dashboard_widget_sources` row, and a
+ * `table` binds no point and requires exactly one source. An arm here would let an author
+ * create a widget that `F3.2` instantiates into a card that can never render.
+ *
+ * The spec derives the expected arm list from `WIDGET_SOURCE_CARDINALITY` rather than counting
+ * to four, so this stays honest when a sixth type lands: a type needing a source is expected to
+ * be absent, and any other type is expected to be present.
  */
 export const templateDashboardWidgetVariants = z.discriminatedUnion("widgetType", [
   z

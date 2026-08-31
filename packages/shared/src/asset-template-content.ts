@@ -145,11 +145,42 @@ export type TemplateMaintenancePlan = {
  * decision 3 rejects ids inside JSON. A *template* dashboard has no asset yet, so it binds
  * `template_points.point_key` **strings**, exactly as `featured[]` already does, and existence
  * is proved by `collectContentPointRefs` → `assertContentRefsResolve` on create, update and
- * publish rather than by a constraint. Same widget vocabulary, same config union; only the
- * reference differs.
+ * publish rather than by a constraint. Same config union, and — until `F3.35` Stage B — the
+ * same widget vocabulary; see the `table` paragraph below for the one type that is now
+ * excluded, and why the reference difference is exactly what excludes it.
  *
- * The type and grid halves are derived from the shared union rather than restated, so a fifth
- * widget type or a changed config shape cannot reach one surface and miss the other.
+ * The type and grid halves are derived from the shared union rather than restated, so a changed
+ * config shape cannot reach one surface and miss the other. **That sentence used to say the
+ * same of a fifth widget type, and `F3.35` Stage B made it false**: `table` reaches the live
+ * builder and deliberately does not reach here. The MECHANISM the sentence prescribes survives —
+ * the `Exclude` below still derives from the shared union rather than restating a list — but a
+ * type can now be excluded on purpose, so the derivation proves agreement about config shape
+ * rather than about membership.
+ *
+ * **`table` is excluded, and the exclusion is the point rather than an oversight** (`F3.35`
+ * Stage B). Read the asymmetry above once more: a template binds point-key *strings* because it
+ * has no asset yet. It has no equivalent for a **catalog source** — `bms.dashboard_widget_sources`
+ * is keyed by `widget_id`, and a template widget is not a widget row. A `table` binds no point
+ * (`WIDGET_POINT_CARDINALITY.table` is `{min: 0, max: 0}`) and requires exactly one source
+ * (`WIDGET_SOURCE_CARDINALITY.table` is `{min: 1, max: 1}`), so a template `table` could carry
+ * no binding of either kind. `F3.2` would then instantiate a widget that the live write path
+ * refuses on its next save, and that an author sees as a permanently empty card.
+ *
+ * So the rule is not "every widget type is template-authorable" — it is **"a widget type is
+ * template-authorable when it can be fully bound by point keys"**. `Exclude` states that here
+ * at compile time; `asset-templates-content.schema.spec.ts` derives the same list from
+ * `WIDGET_SOURCE_CARDINALITY` at run time, so a sixth type with a required source is caught
+ * even though a `Record<WidgetType, {min: number}>` cannot be read at the type level.
+ *
+ * **Ruled by the owner on 2026-08-31 — ADR 0048 Amendment 1, ruling 1.** It was written first
+ * as an implementation choice and flagged as one, because this ADR does not decide whether a
+ * template carries the whole widget vocabulary and neither does ADR 0047. The owner kept it.
+ *
+ * **Still reversible, and the rule is narrower than "no tables in templates".** What was ruled
+ * is that a widget type is template-authorable when it can be **fully bound by point keys** —
+ * so whenever templates gain a way to carry a catalog binding, delete the `Exclude` and the
+ * spec's derivation agrees again with no second ruling. A sixth type with a required source is
+ * excluded by the same rule rather than by a new decision.
  */
 export type TemplateDashboardWidget = {
   pointKeys: string[];
@@ -158,7 +189,16 @@ export type TemplateDashboardWidget = {
   gridY: number;
   gridW: number;
   gridH: number;
-} & DashboardWidgetSpec;
+} & Exclude<DashboardWidgetSpec, { widgetType: "table" }>;
+
+/**
+ * The widget types a template can author, derived from the exclusion above rather than listed.
+ *
+ * Named so the three surfaces that need it — the shared type, `apps/web`'s row type, and the
+ * builder's type picker — say the same thing once. Writing `Exclude<WidgetType, "table">` at
+ * each site would be three declarations of one rule, which is what §4.8 exists to prevent.
+ */
+export type TemplateAuthorableWidgetType = TemplateDashboardWidget["widgetType"];
 
 /**
  * Which points matter for this asset type, in what order — and, since `F3.1a`, how they are

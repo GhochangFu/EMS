@@ -138,9 +138,14 @@ export class AssetHealthService {
     const { level, from, to } = this.resolveWindow(windowMinutes, now);
     const inScope = await this.assetsInScope(assetIds, locationId);
 
-    // An empty scope is answered without touching the counter relations. Not an
-    // optimisation: `inArray(x, [])` generates `in ()`, which is a syntax error
-    // in Postgres, and drizzle does not rewrite it.
+    // An empty scope is answered without touching the counter relations.
+    //
+    // **The reason this comment used to give was wrong, and the guard is still right.** It
+    // claimed `inArray(x, [])` emits `in ()`, a Postgres syntax error. Drizzle 0.38.4 —
+    // `node_modules/drizzle-orm/sql/expressions/conditions.cjs` — returns ``sql`false` `` for an
+    // empty array, so the query would run and answer nothing. The guard therefore saves the
+    // round trip rather than preventing a crash, and it also returns the correct SHAPE: a null
+    // score with zeroed bands, which a `false` predicate would not produce on its own.
     if (inScope.length === 0) {
       return {
         score: null,

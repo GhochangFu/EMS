@@ -120,6 +120,9 @@ export function runDashboardsServiceUnitTests(): void {
       gridH: 4,
       config: { series: "line" },
       points: [{ pointId: POINT_A, role: "primary", sortOrder: 0 }],
+      // `F3.35` Stage C. Required, not optional — an omission here is a TypeError at run time
+      // rather than a type error, exactly as Unit 1's six fixtures were.
+      sources: [],
     },
     {
       id: WIDGET_B,
@@ -131,6 +134,7 @@ export function runDashboardsServiceUnitTests(): void {
       gridH: 2,
       config: {},
       points: [{ pointId: POINT_A, role: "primary", sortOrder: 0 }],
+      sources: [],
     },
     {
       id: WIDGET_C,
@@ -142,6 +146,7 @@ export function runDashboardsServiceUnitTests(): void {
       gridH: 2,
       config: {},
       points: [],
+      sources: [],
     },
   ];
 
@@ -197,6 +202,144 @@ export function runDashboardsServiceUnitTests(): void {
   assert(
     diff.unchangedIds.length === 1 && diff.unchangedIds[0] === WIDGET_A,
     `the untouched widget (A) must keep its id and generate no update — got ${JSON.stringify(diff.unchangedIds)}`,
+  );
+
+  // -------------------------------------------------------------------------
+  // `F3.35` Stage C — the diff must see a CATALOG binding change.
+  //
+  // This is the correctness risk of Unit 3, and it fails silently in the one
+  // direction that matters. A widget whose only change is its catalog entry has
+  // an identical type, title, grid and config; if `sources` is absent from
+  // `widgetContentEqual`, that widget lands in `unchangedIds`, `putWidgets`
+  // writes nothing, and the `PUT` answers 200 carrying the OLD binding. The
+  // author sees their change accepted and the tile keeps resolving the previous
+  // metric.
+  // -------------------------------------------------------------------------
+  const sourceStored: StoredWidgetForDiff[] = [
+    {
+      id: WIDGET_B,
+      widgetType: "value_tile",
+      title: "Alarms",
+      gridX: 6,
+      gridY: 0,
+      gridW: 3,
+      gridH: 2,
+      config: {},
+      points: [],
+      sources: [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
+    },
+  ];
+
+  const rebound: WidgetWriteBody = {
+    id: WIDGET_B,
+    widgetType: "value_tile",
+    title: "Alarms",
+    gridX: 6,
+    gridY: 0,
+    gridW: 3,
+    gridH: 2,
+    config: {},
+    points: [],
+    sources: [{ catalogKey: "workorders.open.count", params: {}, sortOrder: 0 }],
+  } as unknown as WidgetWriteBody;
+
+  const reboundDiff = diffWidgets(sourceStored, [rebound]);
+  assert(
+    reboundDiff.updates.length === 1 && reboundDiff.updates[0]?.id === WIDGET_B,
+    "a widget whose only change is its catalog binding must be an UPDATE, not unchanged — " +
+      `got updates=${JSON.stringify(reboundDiff.updates.map((w) => w.id))} unchanged=${JSON.stringify(reboundDiff.unchangedIds)}`,
+  );
+
+  // The mirror, and it is not symmetry: without a sort before the comparison, two identical
+  // binding sets in a different array order would diff as a change, and every re-save of an
+  // untouched dashboard would rewrite every widget. `pointSortKey` exists for this on the point
+  // side.
+  const reorderedStored: StoredWidgetForDiff[] = [
+    {
+      ...(sourceStored[0] as StoredWidgetForDiff),
+      sources: [
+        { catalogKey: "workorders.open.count", params: {}, sortOrder: 1 },
+        { catalogKey: "alarms.active.count", params: {}, sortOrder: 0 },
+      ],
+    },
+  ];
+  const reorderedSubmission: WidgetWriteBody = {
+    ...(rebound as unknown as Record<string, unknown>),
+    sources: [
+      { catalogKey: "alarms.active.count", params: {}, sortOrder: 0 },
+      { catalogKey: "workorders.open.count", params: {}, sortOrder: 1 },
+    ],
+  } as unknown as WidgetWriteBody;
+
+  const reorderedDiff = diffWidgets(reorderedStored, [reorderedSubmission]);
+  assert(
+    reorderedDiff.unchangedIds.length === 1 && reorderedDiff.updates.length === 0,
+    "the same catalog bindings in a different array order must be UNCHANGED — " +
+      `got updates=${JSON.stringify(reorderedDiff.updates.map((w) => w.id))} unchanged=${JSON.stringify(reorderedDiff.unchangedIds)}`,
+  );
+
+  // And `params` participates: same key, different parameters is a real change. Empty today
+  // (METRIC_CATALOG_PARAMS_WRITE declares no fields yet), so this guards the comparison rather
+  // than a shipping behaviour — and it is what makes Unit 5's first parameter safe to add.
+  const paramsChanged = diffWidgets(sourceStored, [
+    {
+      ...(rebound as unknown as Record<string, unknown>),
+      sources: [{ catalogKey: "alarms.active.count", params: { severity: "critical" }, sortOrder: 0 }],
+    } as unknown as WidgetWriteBody,
+  ]);
+  assert(
+    paramsChanged.updates.length === 1,
+    "a change to a binding's params must be an UPDATE — " +
+      `got updates=${JSON.stringify(paramsChanged.updates.map((w) => w.id))}`,
+  );
+
+  // -------------------------------------------------------------------------
+  // `stableParams`' KEY SORT, which a correctness review mutation-proved was
+  // enforced by nothing: removing the `.sort()` left every case above green.
+  // It could not have caught it — the three fixtures carry `{}`, `{}` and a
+  // ONE-key object, and with fewer than two keys the order is unobservable.
+  //
+  // The sort exists because `jsonb` normalises key order and a request body
+  // does not, so a plain `JSON.stringify` would mark every parameter-carrying
+  // widget changed on EVERY save: an endless UPDATE that deletes and reinserts
+  // bindings nobody edited, regenerating their row ids each time.
+  // -------------------------------------------------------------------------
+  const twoKeyStored = sourceStored.map((widget) => ({
+    ...widget,
+    sources: [
+      { catalogKey: "alarms.active.count", params: { alpha: 1, beta: 2 }, sortOrder: 0 },
+    ],
+  }));
+  const keysReordered = diffWidgets(twoKeyStored, [
+    {
+      ...(rebound as unknown as Record<string, unknown>),
+      // The SAME parameters, in the order a request body happens to serialise them — which is
+      // not the order Postgres returned them in.
+      sources: [
+        { catalogKey: "alarms.active.count", params: { beta: 2, alpha: 1 }, sortOrder: 0 },
+      ],
+    } as unknown as WidgetWriteBody,
+  ]);
+  assert(
+    keysReordered.updates.length === 0 && keysReordered.unchangedIds.length === 1,
+    "the same params with their KEYS in a different order must be UNCHANGED — jsonb does not " +
+      "preserve key order, so without the sort every save of a parameter-carrying widget is a " +
+      `pointless delete-and-reinsert. got updates=${JSON.stringify(keysReordered.updates.map((w) => w.id))}`,
+  );
+
+  // The other half: a genuinely different VALUE under the same two keys is still a change, so
+  // the sort cannot have been implemented by discarding the values.
+  const valueChanged = diffWidgets(twoKeyStored, [
+    {
+      ...(rebound as unknown as Record<string, unknown>),
+      sources: [
+        { catalogKey: "alarms.active.count", params: { alpha: 1, beta: 99 }, sortOrder: 0 },
+      ],
+    } as unknown as WidgetWriteBody,
+  ]);
+  assert(
+    valueChanged.updates.length === 1,
+    "a different VALUE under the same keys must still be an UPDATE",
   );
 }
 

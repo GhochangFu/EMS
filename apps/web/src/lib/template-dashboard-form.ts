@@ -6,7 +6,7 @@ import type {
   PointAggregateFunction,
   TemplateDashboardWidget,
   WidgetIcon,
-  WidgetType,
+  TemplateAuthorableWidgetType,
 } from "@bms/shared";
 import {
   AGGREGATE_FUNCTIONS,
@@ -16,6 +16,7 @@ import {
   WIDGET_ICONS,
   WIDGET_TONES,
   WIDGET_TYPE_LABELS,
+  TEMPLATE_WIDGET_TYPES,
   WIDGET_TYPES,
   blankConfigRow,
   buildChartConfig,
@@ -31,7 +32,15 @@ import type { ThresholdRow, WidgetConfigRow, WidgetTone } from "./widget-config-
  * (`dashboard-widget-editor.tsx`), which imported these from this file
  * before `F3.1d` Unit 1 moved their declaration to `widget-config-form.ts`.
  */
-export { CHART_SERIES_OPTIONS, WIDGET_TONES, WIDGET_TYPE_LABELS, WIDGET_TYPES };
+// `TEMPLATE_WIDGET_TYPES` is re-exported beside `WIDGET_TYPES` so the template
+// authoring UI can offer the narrowed list without importing two modules (`F3.35` Stage B).
+export {
+  CHART_SERIES_OPTIONS,
+  TEMPLATE_WIDGET_TYPES,
+  WIDGET_TONES,
+  WIDGET_TYPE_LABELS,
+  WIDGET_TYPES,
+};
 export type { WidgetConfigRow };
 
 /**
@@ -108,7 +117,14 @@ export const MAX_VIEW_NAME_LENGTH = 64;
 const UNSAFE_VIEW_NAMES = ["__proto__", "constructor", "prototype"];
 
 export type TemplateDashboardWidgetRow = {
-  widgetType: WidgetType;
+  /**
+   * Narrowed to the template-authorable subset (`F3.35` Stage B). A template binds point-key
+   * strings and cannot carry a catalog source, so `table` — which requires exactly one — is not
+   * a state this form can produce. `TemplateDashboardWidget`'s docblock in
+   * `packages/shared/src/asset-template-content.ts` holds the argument; narrowing here rather
+   * than at `buildWidgetPayload` is what keeps that switch exhaustive with no unreachable arm.
+   */
+  widgetType: TemplateAuthorableWidgetType;
   title: string;
   pointKeys: string[];
   gridX: number;
@@ -124,8 +140,15 @@ export type TemplateDashboardViewRow = {
   widgets: TemplateDashboardWidgetRow[];
 };
 
-/** A new widget of the chosen type, with defaults valid for that type. */
-export function blankWidgetRow(widgetType: WidgetType): TemplateDashboardWidgetRow {
+/**
+ * A new widget of the chosen type, with defaults valid for that type.
+ *
+ * Takes `TemplateAuthorableWidgetType` rather than `WidgetType` (`F3.35` Stage B): the type
+ * picker that calls this offers `TEMPLATE_WIDGET_TYPES`, and a `table` has no template
+ * representation at all. Narrowing the PARAMETER is what makes calling it with one a compile
+ * error at the call site rather than a row this form cannot save.
+ */
+export function blankWidgetRow(widgetType: TemplateAuthorableWidgetType): TemplateDashboardWidgetRow {
   return {
     widgetType,
     title: "",
@@ -153,8 +176,15 @@ export function blankDashboardView(): TemplateDashboardViewRow {
  */
 function widgetRowFrom(raw: unknown): TemplateDashboardWidgetRow {
   const widget = (raw ?? {}) as Partial<TemplateDashboardWidget> & { config?: unknown };
-  const widgetType: WidgetType = WIDGET_TYPES.includes(widget.widgetType as WidgetType)
-    ? (widget.widgetType as WidgetType)
+  // `TEMPLATE_WIDGET_TYPES`, not `WIDGET_TYPES` (`F3.35` Stage B). Stored template content is
+  // unvalidated JSON, so a `table` widget CAN appear here — written before this narrowing, or
+  // by hand. It falls back to `value_tile` exactly as any other unrecognised value does, which
+  // is the `kpiRowsFrom` precedent this function already follows: a malformed field reads as a
+  // safe default rather than throwing while rendering.
+  const widgetType: TemplateAuthorableWidgetType = TEMPLATE_WIDGET_TYPES.includes(
+    widget.widgetType as TemplateAuthorableWidgetType,
+  )
+    ? (widget.widgetType as TemplateAuthorableWidgetType)
     : "value_tile";
   const config = (widget.config ?? {}) as Record<string, unknown>;
   const thresholds = Array.isArray(config.thresholds)
@@ -215,6 +245,13 @@ function widgetRowFrom(raw: unknown): TemplateDashboardWidgetRow {
         ? (config.aggregate as PointAggregateFunction)
         : "",
       footerStats: typeof config.footerStats === "boolean" ? config.footerStats : false,
+      // `F3.35` Stage B. A template cannot author a `table`, so this is always empty here —
+      // read from stored content anyway rather than hardcoded, because `widgetRowFrom` parses
+      // unvalidated JSON and a `table` written by hand must round-trip to a safe default like
+      // every other unrecognised value, not lose a field the row type requires.
+      tableColumns: Array.isArray(config.columns)
+        ? (config.columns as unknown[]).filter((c): c is string => typeof c === "string")
+        : [],
     },
   };
 }
@@ -366,7 +403,20 @@ export function dashboardFormErrors(
     }
 
     view.widgets.forEach((widget, widgetIndex) => {
-      const cardinality = WIDGET_POINT_CARDINALITY[widget.widgetType];
+      // **A template widget's minimum is its own, and it is deliberately not the live one.**
+      //
+      // `F3.35` Stage C lowered `WIDGET_POINT_CARDINALITY.value_tile.min` to 0, because ADR
+      // 0048 decision 2 lets a live tile bind a named metric instead of a point. **That
+      // relaxation must not reach this surface.** A template widget binds point *keys* against
+      // an unresolved catalog, and a catalog entry is not resolvable at instantiation — it is
+      // a SQL query over one organization's operational tables, which a template does not have
+      // and cannot name. So a template tile with no point key would instantiate into a live
+      // widget that binds nothing at all, which the live builder itself refuses.
+      //
+      // The maximum still comes from the shared record: a template must never author more
+      // bindings than the live widget accepts. Only the floor is local, and only for the tile.
+      const shared = WIDGET_POINT_CARDINALITY[widget.widgetType];
+      const cardinality = { min: Math.max(shared.min, 1), max: shared.max };
       if (widget.pointKeys.length < cardinality.min || widget.pointKeys.length > cardinality.max) {
         problems.push({
           view: viewIndex,

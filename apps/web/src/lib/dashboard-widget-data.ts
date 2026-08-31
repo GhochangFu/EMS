@@ -1,16 +1,24 @@
-import { encodePointRef } from "@bms/shared";
+import { METRIC_CATALOG, WIDGET_SOURCE_SHAPES, encodePointRef } from "@bms/shared";
 import type {
+  CatalogEntryMeta,
   DashboardDto,
   DashboardWidgetDto,
   DashboardWidgetPointDto,
+  DashboardWidgetSourceDto,
+  MetricCatalogKey,
+  MetricCatalogValueDto,
   PointAggregateFunction,
   PointAggregateResponse,
   PointAggregateStats,
+  WidgetType,
 } from "@bms/shared";
 
-import { isStale, readingTimestampMs } from "./schematic-telemetry";
-import type { WidgetSeries, WidgetSeriesPoint } from "./widget-catalog";
+import { STALE_TICK_MS, isStale, readingTimestampMs } from "./schematic-telemetry";
+import type { DatasetRow, WidgetSeries, WidgetSeriesPoint } from "./widget-catalog";
 import type { WidgetData } from "../components/widgets/dashboard-widget";
+
+/** Module-level, so an unanswered dataset does not hand a fresh array to React each render. */
+const EMPTY_ROWS: readonly DatasetRow[] = [];
 
 /**
  * Maps `F3.1b`'s response onto `WidgetData` — the seam `dashboard-widget.tsx`'s
@@ -155,6 +163,192 @@ function aggregateRequestsForWidget(widget: DashboardWidgetDto): AggregateReques
   return [];
 }
 
+// --- `F3.35` Stage C — the catalog data path (ADR 0048 decisions 1 and 2) ---
+
+/**
+ * How often the viewer re-reads `GET /dashboards/:id/catalog-values`.
+ *
+ * **A poll, and deliberately not the telemetry socket.** An alarm raise and a work order
+ * closing are not telemetry readings, so the socket never carries them and a catalog tile
+ * hung off it would sit frozen through the exact events it counts. Driving a re-read from
+ * the socket instead — refetch when any reading arrives — is worse than useless here: the
+ * handler fires per payload, `notify-chunk.ts` splits a batch at 7,000 bytes and five RTUs
+ * publish on their own cadences, so a busy page would issue a burst of count queries every
+ * few seconds. `refetchInterval` is the only mechanism whose cost is bounded by the clock
+ * rather than by how much telemetry happens to be flowing.
+ *
+ * One minute is plan §15 Q2's default, recorded here rather than left implicit. It is a
+ * *counting* cadence, not a control-room one: an operator watching alarm pressure needs the
+ * number to move within a minute, and a shorter interval buys resolution nobody reads at the
+ * cost of a `COUNT(*)` per tile per tick.
+ */
+export const CATALOG_REFRESH_MS = 60_000;
+
+/**
+ * When a resolved catalog value stops being evidence of anything.
+ *
+ * **Derived from the refresh interval, never from `FRESH_MS`, and the arithmetic is the whole
+ * point.** `FRESH_MS` is 25,000 — shorter than one refresh cycle — so aging a catalog value
+ * through `isStale` would mark every tile "Offline" for 35 seconds out of every 60 with the
+ * API answering perfectly. That is the bucketed-chart failure this file already documents
+ * twice, arriving through a third door: stale by arithmetic, with live data flowing.
+ *
+ * Two missed refreshes, plus one tick of slack. One missed refresh is not evidence of failure
+ * — a slow query or a re-render can eat it — and two consecutive misses is the first thing
+ * that cannot be explained by ordinary jitter.
+ */
+export const CATALOG_STALE_MS = CATALOG_REFRESH_MS * 2 + STALE_TICK_MS;
+
+/**
+ * Resolved catalog values keyed by {@link catalogBindingKey} — the widget id and the catalog
+ * key, never the binding's row id.
+ *
+ * **`sourceId` looked like the obvious key and was the wrong one** (correctness review,
+ * Medium). `putWidgets` REPLACES a widget's bindings rather than editing them, and
+ * `dashboard_widget_sources.id` is `defaultRandom()`, so a title edit mints a new id for an
+ * unchanged binding. The catalog query polls every minute; the dashboard query does not poll.
+ * On a display that never receives focus the two drift apart, every lookup misses, and every
+ * tile renders a confident "no value" with `stale: false`. The point path was never exposed to
+ * this because `pointRef` is a natural key; this is the catalog path catching up.
+ *
+ * A key absent from the map is a binding the resolve did not answer — a widget deleted between
+ * the dashboard read and this call, per the response contract's own note.
+ */
+export type CatalogByBinding = ReadonlyMap<string, MetricCatalogValueDto>;
+
+/** The stable identity of one binding: the widget that holds it and the entry it names.
+ * `dashboard_widget_sources_widget_key_key` makes the pair unique, and `putWidgets` preserves a
+ * widget's own `id` across a replace, so it survives what `sourceId` does not. */
+export function catalogBindingKey(widgetId: string, catalogKey: string): string {
+  return `${widgetId}|${catalogKey}`;
+}
+
+/**
+ * One resolve, as `widgetDataFor` reads it.
+ *
+ * `resolvedAt` travels WITH the map rather than beside it, because the two are one answer: a
+ * map with no timestamp cannot be aged, which is the defect `LatestReading` was widened to fix
+ * one binding kind over. `null` is "not resolved yet", which reads as stale — "never answered"
+ * is no better evidence of a live API than "answered long ago".
+ */
+export type CatalogResolution = {
+  readonly byBinding: CatalogByBinding;
+  readonly resolvedAt: string | null;
+};
+
+/**
+ * Whether any widget on this dashboard binds a catalog entry.
+ *
+ * The gate on the whole second data path. **Empty for every dashboard saved before `F3.35`**,
+ * so the viewer's read count is unchanged for them — the same additive discipline
+ * `aggregateRequestsFor` established for Stage A, and the reason a dashboard that binds no
+ * metric issues no catalog request at all rather than one that answers `{values: []}`.
+ */
+export function dashboardBindsCatalogSources(dashboard: DashboardDto): boolean {
+  return dashboard.widgets.some((widget) => widget.sources.length > 0);
+}
+
+/**
+ * Whether a resolve is old enough to stop trusting.
+ *
+ * Reuses `readingTimestampMs` rather than parsing a date a second way, which also inherits its
+ * clamp: a `resolvedAt` in the future is clamped to `now` instead of reading as "fresh
+ * forever". Here that is clock skew between the browser and the API rather than the producer
+ * skew `F4.28` measured, but the safe direction is the same one.
+ */
+export function catalogIsStale(resolvedAt: string | null, nowMs: number): boolean {
+  if (resolvedAt === null) {
+    return true;
+  }
+  const ms = readingTimestampMs(resolvedAt, nowMs);
+  return ms === null || nowMs - ms > CATALOG_STALE_MS;
+}
+
+/**
+ * What a catalog-bound widget draws.
+ *
+ * **A dataset resolved onto a single-number widget yields `primary: null`, not a number picked
+ * out of the rows.** The write path refuses that binding (`eachSourceFitsTheWidget`) and the
+ * builder's picker never offers it, so this branch is unreachable through either surface — but
+ * a row stored before that rule existed, or by a hand-built `PUT`, must render "no value"
+ * rather than a row count dressed up as a metric. A fabricated number is the one failure the
+ * `value` contract is nullable to prevent.
+ *
+ * **The resolved `unit` is deliberately dropped, and this is the note saying so.** The metric
+ * arm carries a `unit`, and `ValueTileWidget` renders `config.unit` — the author's, not the
+ * resolver's. Nothing is lost today: every metric resolver returns `null` for it, because a
+ * count of alarms and a 0..1 health score have no unit to state. Carrying it would mean
+ * widening `WidgetData` with a field that exists for one binding kind, so the author's own
+ * label wins until a catalog entry actually has a unit worth showing. Written forward as a
+ * decision rather than left for a reader to discover as an omission.
+ */
+function catalogWidgetData(
+  widgetId: string,
+  widgetType: WidgetType,
+  sources: readonly DashboardWidgetSourceDto[],
+  catalog: CatalogResolution | undefined,
+  nowMs: number,
+): WidgetData {
+  // The stored `sortOrder`, not array position — the same rule the point branch follows, and
+  // for the same reason: `dashboard_widget_sources` carries no guaranteed row order.
+  const [first] = [...sources].sort((a, b) => a.sortOrder - b.sortOrder);
+  const resolved = first
+    ? catalog?.byBinding.get(catalogBindingKey(widgetId, first.catalogKey))
+    : undefined;
+  const stale = catalogIsStale(catalog?.resolvedAt ?? null, nowMs);
+
+  // `F3.35` Stage B — a dataset binding produces the ROWS arm, not a number.
+  //
+  // **Keyed off the binding's DECLARED shape, not off the shape that came back**, and the
+  // difference shows up in the state that matters most. `METRIC_CATALOG` is code and the client
+  // holds it, so the moment a binding exists this branch already knows the answer will be rows
+  // and which columns it will have — before the first resolve returns. Keying off `resolved`
+  // instead would send an unanswered table down the scalar path, where `TableWidget` receives no
+  // columns and renders "No columns to show. Edit this widget" — telling an author to repair a
+  // configuration that is perfectly correct, every time the page loads.
+  //
+  // So an unanswered dataset renders its real header with no rows and the stale badge, which is
+  // what "waiting" honestly looks like. The resolved columns still win when they arrive: they
+  // are what the rows are actually keyed by, and a card must never label a column with a name
+  // its own cells were not read under.
+  //
+  // **Both halves of the condition are required, and the second one is a regression this
+  // assertion caught.** Keying off the declared shape ALONE sent a `value_tile` bound to
+  // `alarms.active` into the rows arm — a widget that draws one number, handed columns. The
+  // write path refuses that pairing, but a dashboard stored before the rule existed still holds
+  // it, and `runDatasetOnATileRendersNoValueTests` is the test that says what must happen then:
+  // no value, never a row count dressed up as a metric. `WIDGET_SOURCE_SHAPES` is the same
+  // record the write path reads, so the two cannot disagree about which pairing is drawable.
+  //
+  // Narrowed rather than double-asserted (compliance review). The previous form cast through
+  // `first?.catalogKey as MetricCatalogKey`, which claims `undefined` is a catalog key, and then
+  // cast the lookup back to `| undefined` to undo the first lie. An early return removes both.
+  //
+  // `entry` can still be `undefined` at runtime with `first` present: a newer server may return
+  // a `catalogKey` this client's `METRIC_CATALOG` does not hold, and §4.8 has `checkResponse`
+  // log and pass rather than throw. That widget falls to the scalar arm below — recorded as a
+  // known Low, not silently assumed impossible.
+  const entry: CatalogEntryMeta | undefined =
+    first === undefined ? undefined : METRIC_CATALOG[first.catalogKey as MetricCatalogKey];
+  if (entry?.shape === "dataset" && WIDGET_SOURCE_SHAPES[widgetType].includes("dataset")) {
+    const answered = resolved?.shape === "dataset" ? resolved : undefined;
+    return {
+      status: "ready",
+      columns: answered?.columns ?? entry.columns,
+      rows: answered?.rows ?? EMPTY_ROWS,
+      truncated: answered?.truncated ?? false,
+      stale,
+    };
+  }
+
+  return {
+    status: "ready",
+    primary: resolved?.shape === "metric" ? resolved.value : null,
+    series: [],
+    stale,
+  };
+}
+
 /**
  * The one statistic a tile shows, out of the four the endpoint always returns.
  *
@@ -258,9 +452,24 @@ export function widgetDataFor(
   historyByRef: HistoryByRef,
   nowMs: number,
   aggregateByKey?: AggregateByKey,
+  catalog?: CatalogResolution,
 ): WidgetData {
-  if (widget.points.length === 0) {
+  // **`F3.35` Stage C widened this condition, and reverting it is a silent regression.** The
+  // paragraph above justifies the `"empty"` branch by a CASCADED POINT binding — a retired
+  // sensor taking a live gauge to zero points — and that reason is untouched. What changed is
+  // that zero points stopped meaning zero bindings: a tile bound to a catalog entry has no
+  // points by construction (the two kinds are exclusive), so the un-widened test sent every
+  // correctly-configured metric tile to `"No data bound."` — the state ADR 0047 Amendment 1
+  // reserves for a widget that genuinely lost its binding.
+  if (widget.points.length === 0 && widget.sources.length === 0) {
     return { status: "empty" };
+  }
+
+  // Before every point branch: a widget binds points or sources, never both (the write path's
+  // `exactlyOneBindingKind`), so reaching here with a source means there are no points
+  // to read and the order carries no ambiguity.
+  if (widget.sources.length > 0) {
+    return catalogWidgetData(widget.id, widget.widgetType, widget.sources, catalog, nowMs);
   }
 
   if (widget.widgetType === "chart") {

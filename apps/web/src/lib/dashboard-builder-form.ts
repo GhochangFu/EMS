@@ -1,9 +1,15 @@
-import { DASHBOARD_GRID, MAX_DASHBOARD_WIDGETS } from "@bms/shared";
+import {
+  bindingExclusiveMessage,
+  bindingRequiredMessage,
+  DASHBOARD_GRID,
+  MAX_DASHBOARD_WIDGETS,
+} from "@bms/shared";
 import type {
   DashboardDto,
   DashboardWidgetDto,
   DashboardWidgetPointDto,
   DashboardWidgetSpec,
+  MetricCatalogKey,
   WidgetPointRole,
   WidgetType,
 } from "@bms/shared";
@@ -13,6 +19,7 @@ import {
   MAX_WIDGET_TITLE_LENGTH,
   blankConfigRow,
   buildChartConfig,
+  buildTableConfig,
   buildGaugeConfig,
   buildTankConfig,
   buildTileConfig,
@@ -56,7 +63,23 @@ export type DashboardWidgetRow = {
   gridW: number;
   gridH: number;
   points: DashboardWidgetPointRow[];
+  /**
+   * `F3.35` Stage C — the catalog bindings on this widget. Present from the moment the tile
+   * gained a second binding kind, so `dashboardBuilderErrors` can enforce *exactly one kind*.
+   * The picker that fills it shipped in Stage C's Unit 6 (`metric-source-picker.tsx`). This
+   * field was validated one unit before the builder could author it, deliberately — the
+   * alternative was a builder that accepts a tile binding nothing.
+   */
+  sources: DashboardWidgetSourceRow[];
   config: WidgetConfigRow;
+};
+
+/** One catalog binding as the builder holds it. `params` stays a plain record — the per-entry
+    shape is the API's `.strict()` schema, and restating it here would be a second declaration
+    of a vocabulary §4.8 says is declared once. */
+export type DashboardWidgetSourceRow = {
+  catalogKey: MetricCatalogKey;
+  params: Record<string, string | number | boolean>;
 };
 
 /** The whole widget set, ready for `PUT /dashboards/:id/widgets`. Declared locally rather than
@@ -70,6 +93,14 @@ export type PointWritePayload = {
   sortOrder: number;
 };
 
+/** `F3.35` Stage C — one catalog binding as submitted. `sortOrder` is assigned from the row's
+    position rather than carried, the way the point payload derives its own. */
+export type SourceWritePayload = {
+  catalogKey: MetricCatalogKey;
+  params: Record<string, string | number | boolean>;
+  sortOrder: number;
+};
+
 type WidgetIdentityWritePayload = {
   id?: string;
   title?: string | null;
@@ -78,6 +109,7 @@ type WidgetIdentityWritePayload = {
   gridW: number;
   gridH: number;
   points: PointWritePayload[];
+  sources: SourceWritePayload[];
 };
 
 export type WidgetWritePayload = WidgetIdentityWritePayload & DashboardWidgetSpec;
@@ -99,6 +131,7 @@ export function blankDashboardWidgetRow(widgetType: WidgetType): DashboardWidget
     gridW: w,
     gridH: h,
     points: [],
+    sources: [],
     config: blankConfigRow(),
   };
 }
@@ -156,6 +189,17 @@ function configRowFromDto(widget: DashboardWidgetDto): WidgetConfigRow {
       row.chartAggregate = widget.config.aggregate ?? "";
       row.footerStats = widget.config.footerStats ?? false;
       break;
+    case "table":
+      // `F3.35` Stage B, and it is here for the reason the `value_tile` arm above states: a
+      // field `buildTableConfig` writes and this switch does not read back is destroyed on
+      // every edit-and-resave. An author picks four columns, later renames the widget, saves,
+      // and the card silently widens to every column with nothing reporting it.
+      //
+      // `?? []` collapses absent to empty, which is the same state — `tableConfigSchema`'s
+      // docblock rules that both mean "every declared column", and `buildTableConfig` writes
+      // only the absent form back, so the round trip is stable rather than merely lossless.
+      row.tableColumns = [...(widget.config.columns ?? [])];
+      break;
   }
   return row;
 }
@@ -176,6 +220,13 @@ export function dashboardRowsFromDto(dto: DashboardDto): DashboardWidgetRow[] {
       role: point.role,
       sortOrder: point.sortOrder,
       label: pointBindingLabel(point),
+    })),
+    // `F3.35` Stage C. Carried through so a re-save preserves a binding this builder version
+    // cannot yet author — dropping it here would silently delete the author's metric on the
+    // next save of an unrelated field.
+    sources: widget.sources.map((source) => ({
+      catalogKey: source.catalogKey,
+      params: source.params,
     })),
     config: configRowFromDto(widget),
   }));
@@ -251,14 +302,49 @@ export function dashboardBuilderErrors(rows: readonly DashboardWidgetRow[]): Das
       push(index, "title", `A widget title is at most ${MAX_WIDGET_TITLE_LENGTH} characters.`);
     }
 
+    const label = WIDGET_CATALOG[row.widgetType].label;
     const cardinality = WIDGET_CATALOG[row.widgetType].points;
     if (row.points.length < cardinality.min || row.points.length > cardinality.max) {
-      const label = WIDGET_CATALOG[row.widgetType].label;
       const need =
         cardinality.min === cardinality.max
           ? `exactly ${cardinality.min} bound point(s)`
           : `between ${cardinality.min} and ${cardinality.max} bound point(s)`;
       push(index, "points", `A ${label} widget needs ${need}. This one has ${row.points.length}.`);
+    }
+
+    // `F3.35` Stage C. The same bound, one binding kind over.
+    const sourceCardinality = WIDGET_CATALOG[row.widgetType].sources;
+    if (row.sources.length > sourceCardinality.max) {
+      push(
+        index,
+        "points",
+        sourceCardinality.max === 0
+          ? `A ${label} widget binds no named metric. This one has ${row.sources.length}.`
+          : `A ${label} widget binds at most ${sourceCardinality.max} named metric(s). This one has ${row.sources.length}.`,
+      );
+    }
+
+    // **The rule that replaced `WIDGET_POINT_CARDINALITY.value_tile.min === 1`.**
+    //
+    // ADR 0048 decision 2 gives the tile a second binding kind, so "binds at least one point"
+    // stopped being the same sentence as "binds something" and the per-type minimum could no
+    // longer carry it: a minimum is a bound on one array, and this is a relation between two.
+    // Its API twin is `exactlyOneBindingKind`, on the widgets array rather than on a
+    // `z.discriminatedUnion` arm, for the same reason.
+    //
+    // Both halves matter. **Neither** kind bound is the state the old minimum used to refuse —
+    // a widget that saves, loads and draws an empty rectangle. **Both** kinds bound is the new
+    // one: a tile with a point and a metric has two answers for one number, and picking either
+    // silently would put a number on screen that the author did not choose.
+    //
+    // The text comes from `@bms/shared`, not from here. `putDashboardWidgetsBodySchema` states
+    // the same rule and answers a 400 with the same template, so an author who bypasses this
+    // form reads one problem rather than two — see the messages' own docblock.
+    if (row.points.length === 0 && row.sources.length === 0) {
+      push(index, "points", bindingRequiredMessage(label));
+    }
+    if (row.points.length > 0 && row.sources.length > 0) {
+      push(index, "points", bindingExclusiveMessage(label));
     }
 
     if (row.gridW < DASHBOARD_GRID.minWidgetW || row.gridW > DASHBOARD_GRID.columns) {
@@ -290,6 +376,11 @@ function buildIdentity(row: DashboardWidgetRow): WidgetIdentityWritePayload {
       role: point.role,
       sortOrder: point.sortOrder,
     })),
+    sources: row.sources.map((source, order) => ({
+      catalogKey: source.catalogKey,
+      params: source.params,
+      sortOrder: order,
+    })),
   };
   if (row.id !== undefined) {
     identity.id = row.id;
@@ -299,6 +390,33 @@ function buildIdentity(row: DashboardWidgetRow): WidgetIdentityWritePayload {
     identity.title = title;
   }
   return identity;
+}
+
+/**
+ * The patch that removes one catalog source from a widget (`F3.35` Stage B).
+ *
+ * **A function rather than two lines inside `WidgetInspector`, because it carries a decision
+ * and a `.tsx` handler is outside the coverage denominator** — the split `ValueTileWidget`'s
+ * docblock makes about `toKpiTileProps`, applied to a write path.
+ *
+ * The decision: **removing the source clears the column projection with it.** The columns
+ * belong to the dataset that was bound, not to the widget. Left behind, an author who rebinds a
+ * table from `alarms.active` to `workorders.open` keeps the first dataset's column names, and
+ * `eachTableColumnIsDeclared` answers 400 for a change they never made — pointing at a field
+ * the picker no longer shows them.
+ *
+ * Cleared unconditionally rather than only for a table: `tableColumns` is meaningless on every
+ * other widget type and is already empty there, so a type check here would be a branch that can
+ * only ever agree with itself.
+ */
+export function widgetRowAfterRemovingSource(
+  row: DashboardWidgetRow,
+  index: number,
+): Partial<DashboardWidgetRow> {
+  return {
+    sources: row.sources.filter((_, position) => position !== index),
+    config: { ...row.config, tableColumns: [] },
+  };
 }
 
 /** Builds the whole `PUT /dashboards/:id/widgets` body — `buildWidgetPayload`'s shape in
@@ -317,6 +435,8 @@ export function buildPutWidgetsPayload(rows: readonly DashboardWidgetRow[]): Put
           return { ...identity, widgetType: "value_tile", config: buildTileConfig(row.config) };
         case "chart":
           return { ...identity, widgetType: "chart", config: buildChartConfig(row.config) };
+        case "table":
+          return { ...identity, widgetType: "table", config: buildTableConfig(row.config) };
       }
     }),
   };

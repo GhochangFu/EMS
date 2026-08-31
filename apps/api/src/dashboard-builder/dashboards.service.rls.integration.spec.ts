@@ -6,6 +6,7 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import type { CountingDb, CountingDbMethod } from "../testing/counting-db";
+import { putDashboardWidgetsBodySchema } from "./dashboards.schema";
 import type { DashboardsService } from "./dashboards.service";
 
 /**
@@ -98,20 +99,37 @@ export async function assertPutWidgetsDtoReflectsTheWrite(
   const before = await service.getBySlug(actor, await slugFor(fleetDb, dashboardId));
   expect(before.widgets.length, "fixture must start with zero widgets").toBe(0);
 
-  const after = await service.putWidgets(actor, dashboardId, {
-    widgets: [
-      {
-        widgetType: "value_tile",
-        title: "Total kW",
-        gridX: 0,
-        gridY: 0,
-        gridW: 3,
-        gridH: 2,
-        config: {},
-        points: [{ pointId }],
-      },
-    ],
-  } as Parameters<DashboardsService["putWidgets"]>[2]);
+  // PARSED, not cast, and `F3.35` Stage C is why the cast had to go.
+  //
+  // This read `{...} as Parameters<DashboardsService["putWidgets"]>[2]`, which claimed a body
+  // the schema had never seen. `putWidgets` takes an ALREADY-PARSED body, so every default the
+  // schema fills — `points[].role`, `points[].sortOrder`, and now `sources` — was simply absent
+  // at run time. Adding `sources` to the widget arms turned that from latent into a live
+  // `TypeError: Cannot read properties of undefined (reading 'length')` inside `insertSources`,
+  // and the cast then stopped compiling at all: the fabricated shape no longer overlapped the
+  // union it was pretending to be.
+  //
+  // Parsing is the fix rather than widening to `as unknown as`. It costs one call, it fills the
+  // defaults the service is entitled to assume, and it means this fixture cannot drift from the
+  // request contract again — the next field with a default arrives filled instead of undefined.
+  const after = await service.putWidgets(
+    actor,
+    dashboardId,
+    putDashboardWidgetsBodySchema.parse({
+      widgets: [
+        {
+          widgetType: "value_tile",
+          title: "Total kW",
+          gridX: 0,
+          gridY: 0,
+          gridW: 3,
+          gridH: 2,
+          config: {},
+          points: [{ pointId }],
+        },
+      ],
+    }),
+  );
 
   expect(after.widgets.length, "the returned DTO must show the new widget count").toBe(1);
   expect(

@@ -52,6 +52,9 @@ const IDENTITY = {
   // Not `as const`: that widens `points` to `readonly []`, which the DTO's
   // mutable array does not accept.
   points: [],
+  // `F3.35` Stage C. Every widget as read carries both binding arrays; none of
+  // these fixtures binds a catalog source, so this stays empty throughout.
+  sources: [],
 };
 
 const READY_AT_750: WidgetData = { status: "ready", primary: 750, series: [], stale: false };
@@ -76,6 +79,11 @@ function sampleWidget(widgetType: WidgetType, title: string | null = "Feed pump 
       return { ...IDENTITY, title, widgetType, config: { unit: "kW", decimals: 1 } };
     case "chart":
       return { ...IDENTITY, title, widgetType, config: { series: "line" } };
+    case "table":
+      // No `columns`, which is the DEFAULT authored state — `tableConfigSchema` reads absent as
+      // "every column the bound dataset declares", so this is the smallest config its arm
+      // accepts, exactly like the four above.
+      return { ...IDENTITY, title, widgetType, config: {} };
     default: {
       const unreachable: never = widgetType;
       return unreachable;
@@ -96,9 +104,10 @@ const WIDGET_TYPES = Object.keys(WIDGET_CATALOG) as WidgetType[];
 export function everyCatalogTypeDrawsItsTitle(): void {
   expect(
     WIDGET_TYPES.length,
-    "the catalog holds four widget types (ADR 0047 decision 2). A zero means the walk is broken and the " +
-      "loop below asserts nothing; a five means a type was added — widen this number and say so.",
-  ).toBe(4);
+    "the catalog holds five widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
+      "decision 5, `F3.35` Stage B). A zero means the walk is broken and the loop below asserts " +
+      "nothing; a six means a type was added — widen this number and say so.",
+  ).toBe(5);
 
   for (const widgetType of WIDGET_TYPES) {
     const { unmount } = render(<DashboardWidget widget={sampleWidget(widgetType)} data={READY_AT_750} />);

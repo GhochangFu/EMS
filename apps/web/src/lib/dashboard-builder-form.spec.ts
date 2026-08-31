@@ -5,6 +5,7 @@ import { WIDGET_CATALOG } from "./widget-catalog";
 import {
   blankDashboardWidgetRow,
   buildPutWidgetsPayload,
+  widgetRowAfterRemovingSource,
   builderHasChanged,
   dashboardBuilderErrors,
   dashboardBuilderProblemSubject,
@@ -43,6 +44,11 @@ function widgetDto(overrides: Partial<DashboardWidgetDto> = {}): DashboardWidget
     gridW: 4,
     gridH: 4,
     points: [point()],
+    // `F3.35` Stage C. Required by the DTO, and the `as DashboardWidgetDto` below is what let
+    // it be omitted silently — the same cast-hides-an-omission shape `mapDashboardWidget` in
+    // `apps/api` records. The failure was a TypeError inside `dashboardRowsFromDto`, not a
+    // type error, which is why it surfaced only when the suite ran.
+    sources: [],
     widgetType: "value_tile",
     config: { unit: "kW", decimals: 1 },
     ...overrides,
@@ -118,6 +124,114 @@ export function runDashboardRowsFromDtoTests(): void {
 }
 
 /** `dashboardBuilderErrors` — cardinality and grid-fit, read from the shared catalog/constant. */
+/**
+ * `F3.35` Stage B — a table's column projection survives an edit-and-resave.
+ *
+ * **This is the assertion `configRowFromDto`'s own comment names, and it was written because
+ * the two halves are ASYMMETRIC and the asymmetry looks harmless.** `buildTableConfig` writes
+ * `columns` only when the list is non-empty; `configRowFromDto` reads `columns ?? []`. Both are
+ * deliberate — absent and empty are one state — but that is exactly the shape where a field
+ * gets written and never read back, and the failure is silent: an author picks four columns,
+ * later renames the widget, saves, and the card widens to every column with nothing reporting
+ * why.
+ *
+ * The fixture uses a NON-declared order (`severity` before `assetCode`) so a `.sort()` anywhere
+ * in the round trip fails here rather than looking correct.
+ */
+export function runTableColumnRoundTripTests(): void {
+  const chosen = ["severity", "assetCode"];
+  const table = widgetDto({
+    id: "table-1",
+    widgetType: "table",
+    config: { columns: chosen },
+    points: [],
+    sources: [{ id: "s-1", catalogKey: "alarms.active", params: {}, sortOrder: 0 }],
+  });
+
+  const [row] = dashboardRowsFromDto(dashboardDto([table]));
+  assert(row !== undefined, "the stored table must read back as a row");
+  assert(
+    JSON.stringify(row?.config.tableColumns) === JSON.stringify(chosen),
+    `the chosen columns must read back in the author's order, got ${JSON.stringify(row?.config.tableColumns)}`,
+  );
+
+  // And back out again. This is the half that catches the silent loss: the payload built from
+  // the row the builder just loaded must carry the same projection the server stored.
+  const payload = buildPutWidgetsPayload([row!]);
+  const written = payload.widgets[0];
+  assert(
+    written?.widgetType === "table",
+    `the rebuilt payload must still be a table, got ${String(written?.widgetType)}`,
+  );
+  assert(
+    written?.widgetType === "table" &&
+      JSON.stringify(written.config.columns) === JSON.stringify(chosen),
+    `an edit-and-resave must preserve the column projection, got ${JSON.stringify(
+      written?.widgetType === "table" ? written.config.columns : undefined,
+    )}`,
+  );
+
+  // The empty case collapses to ABSENT rather than `[]`, so one authored state has one stored
+  // encoding. Two encodings of "every column" would make the first `columns.length === 0` check
+  // written on the read side a bug for the other one.
+  const noColumns = widgetDto({
+    id: "table-2",
+    widgetType: "table",
+    config: {},
+    points: [],
+    sources: [{ id: "s-2", catalogKey: "alarms.active", params: {}, sortOrder: 0 }],
+  });
+  const [bare] = dashboardRowsFromDto(dashboardDto([noColumns]));
+  assert(bare?.config.tableColumns.length === 0, "an absent column list reads back as empty");
+  const bareWritten = buildPutWidgetsPayload([bare!]).widgets[0];
+  assert(
+    bareWritten?.widgetType === "table" && bareWritten.config.columns === undefined,
+    "an empty projection must be written as ABSENT, not as an empty array",
+  );
+}
+
+/**
+ * `F3.35` Stage B — removing a catalog source clears the column projection with it.
+ *
+ * The trap this guards is a 400 an author cannot act on: rebind a table from `alarms.active` to
+ * `workorders.open` with the old columns still stored, and `eachTableColumnIsDeclared` refuses
+ * the save naming a column the picker no longer offers.
+ */
+export function runRemovingASourceClearsColumnsTests(): void {
+  const table = widgetDto({
+    id: "table-3",
+    widgetType: "table",
+    config: { columns: ["severity", "assetCode"] },
+    points: [],
+    sources: [{ id: "s-3", catalogKey: "alarms.active", params: {}, sortOrder: 0 }],
+  });
+  const [row] = dashboardRowsFromDto(dashboardDto([table]));
+  assert(row?.config.tableColumns.length === 2, "the fixture must start with a projection");
+
+  const patch = widgetRowAfterRemovingSource(row!, 0);
+  assert(patch.sources?.length === 0, "the source must be removed");
+  assert(
+    patch.config?.tableColumns.length === 0,
+    `the column projection must be cleared with its dataset, got ${JSON.stringify(patch.config?.tableColumns)}`,
+  );
+
+  // Removing a source must not disturb the rest of the config — clearing the columns is the
+  // only side effect, so an author does not lose a unit or a decimals setting by rebinding.
+  const withUnit = dashboardRowsFromDto(
+    dashboardDto([
+      widgetDto({
+        id: "table-4",
+        widgetType: "table",
+        config: { unit: "kW", columns: ["severity"] },
+        points: [],
+        sources: [{ id: "s-4", catalogKey: "alarms.active", params: {}, sortOrder: 0 }],
+      }),
+    ]),
+  )[0];
+  const kept = widgetRowAfterRemovingSource(withUnit!, 0);
+  assert(kept.config?.unit === "kW", "removing a source must not clear unrelated config fields");
+}
+
 export function runDashboardBuilderErrorsTests(): void {
   const valid = dashboardRowsFromDto(dashboardDto([widgetDto()]));
   assert(dashboardBuilderErrors(valid).length === 0, "a valid single-widget set reports no problems");
@@ -130,10 +244,57 @@ export function runDashboardBuilderErrorsTests(): void {
     "more than MAX_DASHBOARD_WIDGETS rows reports a widgets-level problem",
   );
 
-  const noPoints = [blankDashboardWidgetRow("value_tile")];
+  // `F3.35` Stage C changed WHY this is a problem, not whether it is one. Before Stage C the
+  // tile was below `WIDGET_POINT_CARDINALITY.value_tile.min`, which was 1. Now that minimum is
+  // 0, because ADR 0048 decision 2 lets a tile bind a named metric instead — and this row binds
+  // neither, which is the state the *exactly one kind* rule refuses.
+  const noBindings = [blankDashboardWidgetRow("value_tile")];
   assert(
-    dashboardBuilderErrors(noPoints).some((p) => p.field === "points"),
-    "a value_tile below its minimum cardinality (1) reports a points problem",
+    dashboardBuilderErrors(noBindings).some((p) => p.field === "points"),
+    "a value_tile binding neither a point nor a metric reports a points problem",
+  );
+
+  // The other half of the same rule, and the one the old minimum could never have caught: two
+  // answers for one number. Picking either silently would put a value on screen the author did
+  // not choose.
+  const bothKinds: DashboardWidgetRow[] = [
+    {
+      ...blankDashboardWidgetRow("value_tile"),
+      points: [{ pointId: "p", role: "primary", sortOrder: 0, label: "kw" }],
+      sources: [{ catalogKey: "alarms.active.count", params: {} }],
+    },
+  ];
+  assert(
+    dashboardBuilderErrors(bothKinds).some((p) => p.field === "points"),
+    "a value_tile binding both a point and a metric reports a points problem",
+  );
+
+  // A metric-bound tile with no point is now legal, which is the whole point of the relaxation.
+  // Asserted positively so a future tightening of the minimum fails here rather than silently
+  // making the source picker unusable.
+  const metricOnly: DashboardWidgetRow[] = [
+    {
+      ...blankDashboardWidgetRow("value_tile"),
+      sources: [{ catalogKey: "alarms.active.count", params: {} }],
+    },
+  ];
+  assert(
+    dashboardBuilderErrors(metricOnly).every((p) => p.field !== "points"),
+    "a value_tile bound to a named metric alone is legal and reports no points problem",
+  );
+
+  // A type whose source cardinality is `{0,0}` must refuse a source outright, or the builder
+  // would offer a binding the write path rejects with a 400 the author cannot act on.
+  const gaugeWithSource: DashboardWidgetRow[] = [
+    {
+      ...blankDashboardWidgetRow("radial_gauge"),
+      points: [{ pointId: "p", role: "primary", sortOrder: 0, label: "kw" }],
+      sources: [{ catalogKey: "alarms.active.count", params: {} }],
+    },
+  ];
+  assert(
+    dashboardBuilderErrors(gaugeWithSource).some((p) => p.field === "points"),
+    "a radial_gauge binding a named metric reports a problem; only the tile takes one",
   );
 
   const tooWide: DashboardWidgetRow[] = [{ ...blankDashboardWidgetRow("value_tile"), gridX: 10, gridW: 5 }];

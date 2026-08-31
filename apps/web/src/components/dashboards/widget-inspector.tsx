@@ -1,7 +1,9 @@
-import { DASHBOARD_GRID } from "@bms/shared";
-import type { AdminAssetPointDto, WidgetPointRole } from "@bms/shared";
+import { DASHBOARD_GRID, METRIC_CATALOG } from "@bms/shared";
+import type { AdminAssetPointDto, MetricCatalogKey, WidgetPointRole } from "@bms/shared";
 
+import { widgetRowAfterRemovingSource } from "../../lib/dashboard-builder-form";
 import type { DashboardBuilderProblem, DashboardWidgetRow } from "../../lib/dashboard-builder-form";
+import { metricCatalogLabel } from "../../lib/metric-catalog";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 import {
   AGGREGATE_FUNCTION_LABELS,
@@ -14,7 +16,9 @@ import {
 } from "../../lib/widget-config-form";
 import { Field } from "../asset-templates/field";
 import { ChartSeriesPicker } from "./chart-series-picker";
+import { MetricSourcePicker } from "./metric-source-picker";
 import { PointPicker } from "./point-picker";
+import { TableColumnPicker } from "./table-column-picker";
 
 type WidgetInspectorProps = {
   row: DashboardWidgetRow;
@@ -48,6 +52,13 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
   const problemFor = (field: string): string | undefined =>
     problems.find((problem) => problem.field === field)?.message;
   const cardinality = WIDGET_CATALOG[row.widgetType].points;
+  const sourceCardinality = WIDGET_CATALOG[row.widgetType].sources;
+  // The bound entry, but only when it is a DATASET — the column picker has nothing to offer for
+  // a metric, and `WIDGET_SOURCE_SHAPES` already guarantees a table never holds one. Computed
+  // here rather than inside the JSX so the condition below reads as one question.
+  const boundDataset = row.sources
+    .map((source) => source.catalogKey)
+    .find((key) => METRIC_CATALOG[key].shape === "dataset");
 
   function updateConfig(patch: Partial<WidgetConfigRow>): void {
     onChange({ config: { ...row.config, ...patch } });
@@ -74,6 +85,29 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
         .filter((_, position) => position !== index)
         .map((point, position) => ({ ...point, sortOrder: position })),
     });
+  }
+
+  /**
+   * `F3.35` Stage C — adding a named metric.
+   *
+   * **`params: {}` and nothing else, deliberately.** Every entry's write schema is
+   * `z.object({}).strict()` today, so any field added here would be refused with a 400 the
+   * author cannot act on — and a scope id in particular is the ADR 0019 problem the binding
+   * contract exists to refuse: a binding inherits the DASHBOARD's scope, so an id in `params`
+   * would be a second, contradictory answer sitting in jsonb that no foreign key covers.
+   */
+  function addSource(catalogKey: MetricCatalogKey): void {
+    onChange({ sources: [...row.sources, { catalogKey, params: {} }] });
+  }
+
+  /** `F3.35` Stage B — the decision (and why it clears the columns) is
+   * `widgetRowAfterRemovingSource`'s, in `dashboard-builder-form.ts`, where it is tested. */
+  function removeSource(index: number): void {
+    onChange(widgetRowAfterRemovingSource(row, index));
+  }
+
+  function setTableColumns(tableColumns: string[]): void {
+    onChange({ config: { ...row.config, tableColumns } });
   }
 
   return (
@@ -467,10 +501,72 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
             </li>
           ))}
         </ul>
-        {row.points.length < cardinality.max ? (
+        {/*
+          `F3.35` Stage C — the picker disappears when a NAMED METRIC is bound, as well as at
+          the cardinality maximum. A widget binds points or a metric, never both
+          (`bindingExclusiveMessage`), so offering both pickers at once would let an author
+          build a state the form refuses on the very next render — an error they were invited
+          to make. `dashboardBuilderErrors` still enforces it, because a widget can arrive from
+          the server in that state; this only stops the form from producing one.
+        */}
+        {row.points.length < cardinality.max && row.sources.length === 0 ? (
           <PointPicker organizationId={organizationId} onAdd={addPoint} />
         ) : null}
       </Field>
+
+      {/*
+        Rendered only for a type that can bind one — a gauge, a tank and a chart draw a series
+        over time and accept no catalog shape, so `WIDGET_SOURCE_CARDINALITY` gives them
+        `max: 0` and this whole field is absent rather than empty.
+      */}
+      {/*
+        No `error` here, deliberately (compliance review). Both binding kinds report through the
+        `"points"` field — the exactly-one-kind rule is a relation between the two arrays, so it
+        has no field of its own — and passing it to both `Field`s rendered the same sentence
+        twice, which reads as two problems.
+      */}
+      {sourceCardinality.max > 0 ? (
+        <Field label="Named metric">
+          <ul className="space-y-1">
+            {row.sources.map((source, index) => (
+              <li
+                key={`${source.catalogKey}-${index}`}
+                className="flex items-center justify-between rounded border border-gray-100 px-2 py-1 text-xs"
+              >
+                <span>{metricCatalogLabel(source.catalogKey)}</span>
+                <button
+                  type="button"
+                  onClick={() => removeSource(index)}
+                  aria-label={`Remove ${metricCatalogLabel(source.catalogKey)}`}
+                  className="text-red-700"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+          {row.sources.length < sourceCardinality.max && row.points.length === 0 ? (
+            <MetricSourcePicker
+              widgetType={row.widgetType}
+              bound={row.sources.map((source) => source.catalogKey)}
+              onAdd={addSource}
+            />
+          ) : null}
+          {/*
+            The column picker (ADR 0048 decision 2), shown only once a dataset is actually
+            bound — its legal choices ARE that dataset's declared columns, so there is nothing
+            to offer before then. Rendered inside the same `Field` because binding the source
+            and projecting its columns are one decision an author makes in one place.
+          */}
+          {boundDataset !== undefined ? (
+            <TableColumnPicker
+              catalogKey={boundDataset}
+              chosen={row.config.tableColumns}
+              onChange={setTableColumns}
+            />
+          ) : null}
+        </Field>
+      ) : null}
     </section>
   );
 }

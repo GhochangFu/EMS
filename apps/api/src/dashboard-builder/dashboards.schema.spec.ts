@@ -4,9 +4,16 @@ import {
   MAX_DASHBOARD_WIDGETS,
   MAX_GAUGE_THRESHOLDS,
   MAX_WIDGET_POINTS,
+  METRIC_CATALOG,
   WIDGET_POINT_CARDINALITY,
+  WIDGET_SOURCE_CARDINALITY,
+  WIDGET_SOURCE_SHAPES,
+  bindingShapeMessage,
+  columnNotDeclaredMessage,
+  duplicateColumnMessage,
   widgetTypeSchema,
 } from "@bms/shared";
+import type { MetricCatalogKey } from "@bms/shared";
 
 import {
   createDashboardBodySchema,
@@ -84,6 +91,22 @@ const validGaugeWidget = {
   gridH: 4,
   config: { min: 0, max: 100 },
   points: [{ pointId: POINT_A }],
+};
+
+/**
+ * A `table` bound to a dataset (`F3.35` Stage B). `sources` is required at `{min: 1, max: 1}`
+ * and `points` at `{min: 0, max: 0}`, so this is the only shape a table can legally take.
+ */
+const validTableWidget = {
+  widgetType: "table" as const,
+  title: "Active alarms",
+  gridX: 0,
+  gridY: 0,
+  gridW: 6,
+  gridH: 5,
+  config: {},
+  points: [],
+  sources: [{ catalogKey: "alarms.active" as const, params: {} }],
 };
 
 const validChartWidget = {
@@ -216,6 +239,113 @@ export function runDashboardsSchemaTests(): void {
     ["config", "max"],
     [GAUGE_RANGE_MESSAGE],
     "an inverted gauge range must be refused",
+  );
+
+  // -------------------------------------------------------------------------
+  // 5b. `F3.35` Stage B — the table widget's bindings and its column projection.
+  //     Numbered `5b` rather than appended as `12`: the numbers in this file are navigation, and
+  //     these assertions belong beside the binding rules at 5, not after the grid rules at 11.
+  // -------------------------------------------------------------------------
+  expectAccepts(widgetWriteSchema, validTableWidget, "a table bound to a dataset must parse");
+
+  // A METRIC on a table is the mirror of the dataset-on-a-tile hole Stage C closed. The
+  // cardinality is satisfied — one source, exactly as required — and only `WIDGET_SOURCE_SHAPES`
+  // refuses it. Without that record a table would bind `alarms.active.count`, resolve to the
+  // number 7, and arrive at a renderer that draws rows.
+  expectRejectsAt(
+    widgetWriteSchema,
+    { ...validTableWidget, sources: [{ catalogKey: "alarms.active.count", params: {} }] },
+    ["sources", 0, "catalogKey"],
+    [bindingShapeMessage("table", "alarms.active.count", "metric")],
+    "a metric bound to a table must be refused by shape, not merely by count",
+  );
+
+  // A table with NO source. `WIDGET_SOURCE_CARDINALITY.table.min` is 1 — unlike the tile's 0,
+  // because a tile may bind a point instead and a table has no second way to get rows.
+  expectRejects(
+    widgetWriteSchema,
+    { ...validTableWidget, sources: [] },
+    "a table with no catalog binding must be refused — it has no other way to get rows",
+  );
+
+  // A POINT on a table. `WIDGET_POINT_CARDINALITY.table.max` is 0: a point is a series over
+  // time, which has no rows and no columns to project.
+  expectRejects(
+    widgetWriteSchema,
+    { ...validTableWidget, points: [{ pointId: POINT_A }] },
+    "a table cannot bind a point",
+  );
+
+  // The column projection. An undeclared name is refused AT THE COLUMN, because an author who
+  // chose six columns must be told which one is wrong.
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    {
+      widgets: [
+        { ...validTableWidget, config: { columns: ["assetCode", "notAColumn"] } },
+      ],
+    },
+    ["widgets", 0, "config", "columns", 1],
+    [columnNotDeclaredMessage("notAColumn", "alarms.active")],
+    "a column the bound dataset does not declare must be refused, naming the column",
+  );
+
+  // Declared columns pass, in any order the author chose — the order IS the projection.
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    {
+      widgets: [
+        { ...validTableWidget, config: { columns: ["severity", "assetCode"] } },
+      ],
+    },
+    "a reordered subset of the declared columns must parse — the author's order is the choice",
+  );
+
+  // Empty and absent are one state, and both are legal: a table is created before its columns
+  // are picked, and refusing this would make the widget unsaveable at the moment it is made.
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validTableWidget, config: { columns: [] } }] },
+    "an empty column list means every declared column and must parse",
+  );
+
+  // **A table carrying columns AND no source — the branch the whole suite missed.**
+  //
+  // Every other column assertion above parses `validTableWidget`, which always has a source; the
+  // two "no source" and "metric source" assertions parse `widgetWriteSchema`, the ARM, where the
+  // array-level `superRefine` never runs. So `eachTableColumnIsDeclared`'s
+  // `binding === undefined` guard was reached by no test at all.
+  //
+  // It is not defensive. Zod's array `.min()` calls `status.dirty()` rather than aborting, and
+  // `ZodEffects` skips a refinement only on `aborted` — so this payload DOES reach that line.
+  // Delete the guard and `binding.catalogKey` throws out of `safeParse`: a 500 where the
+  // cardinality rule should answer 400.
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validTableWidget, sources: [], config: { columns: ["assetCode"] } }] },
+    ["widgets", 0, "sources"],
+    [],
+    "a table with columns but no source must be refused for its CARDINALITY, not crash",
+  );
+
+  // The same column twice. `noDuplicateBindings` guards `points` and `noDuplicateSources` guards
+  // `sources`; this array had no such rule, so a hand-built PUT produced a doubled column and a
+  // duplicate React key (security review, Low).
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validTableWidget, config: { columns: ["severity", "severity"] } }] },
+    ["widgets", 0, "config", "columns", 1],
+    [duplicateColumnMessage("severity")],
+    "the same column chosen twice must be refused, naming the second occurrence",
+  );
+
+  // The rule must not fire on a widget that is not a table — `config.columns` exists on no
+  // other arm, and a rule that walked every widget looking for a `columns` key would be a rule
+  // waiting for an unrelated arm to gain one.
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: [validGaugeWidget, validTableWidget] },
+    "a dashboard mixing a gauge and a table must parse",
   );
 
   // -------------------------------------------------------------------------
@@ -364,4 +494,121 @@ export function runDashboardsSchemaGridBoundsTests(): void {
     { widgets: [{ ...validGaugeWidget, gridX: 11, gridW: 1 }] },
     "gridX 11 + gridW 1 (12) exactly fills the canvas and is accepted",
   );
+}
+
+/**
+ * `F3.35` Stage C Unit 5 — a widget binds only a catalog entry it can DRAW.
+ *
+ * **This suite exists because the cardinality check reads as if it already covered this, and
+ * does not.** `WIDGET_SOURCE_CARDINALITY.value_tile` is `{min: 0, max: 1}`, and `alarms.active`
+ * — six declared columns of rows — is exactly one binding. It passed every bound on this path,
+ * stored, resolved as a dataset, and reached a renderer that draws a single number. Nothing
+ * threw and nothing logged: the tile drew blank in front of an operator.
+ *
+ * Both directions are asserted. A rule that only refuses would also pass if it refused
+ * everything, and a `value_tile` that cannot bind `alarms.active.count` is the feature removed.
+ */
+export function runDashboardsSchemaSourceShapeTests(): void {
+  const tileWith = (catalogKey: MetricCatalogKey) => ({
+    widgetType: "value_tile" as const,
+    title: null,
+    gridX: 0,
+    gridY: 0,
+    gridW: 3,
+    gridH: 2,
+    config: {},
+    points: [],
+    sources: [{ catalogKey }],
+  });
+
+  // The fixture is only meaningful while these two facts hold. Asserted rather than assumed:
+  // if Stage B gives the tile `"dataset"`, this whole suite must be rewritten, not silently
+  // pass because the mismatch it tests stopped being a mismatch.
+  assert(
+    METRIC_CATALOG["alarms.active"].shape === "dataset" &&
+      METRIC_CATALOG["alarms.active.count"].shape === "metric",
+    "the fixture needs one dataset key and one metric key that differ",
+  );
+  assert(
+    WIDGET_SOURCE_CARDINALITY.value_tile.max === 1,
+    "a tile must accept ONE binding, or the refusal below could be the count rather than the shape",
+  );
+
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [tileWith("alarms.active")] },
+    ["widgets", 0, "sources", 0, "catalogKey"],
+    ["returns rows"],
+    "a dataset entry on a value_tile is one binding and passes the COUNT — only the shape rule refuses it",
+  );
+
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: [tileWith("alarms.active.count")] },
+    "the metric half of the same catalog entry is what a tile draws, and must still parse",
+  );
+
+  // -------------------------------------------------------------------------
+  // `exactlyOneBindingKind` — added after a correctness review MUTATION-PROVED
+  // that nothing enforced it. Replacing both of its conditions with
+  // `if (false && …)` left the entire api suite green: the only existing
+  // fixture submits `points: []` with one source, which SATISFIES the rule and
+  // therefore cannot detect its removal. A committed docblock in
+  // `packages/shared/src/contracts/dashboard-builder.spec.ts` asserted the rule
+  // was "asserted in that file's spec" — the same false-claim failure both of
+  // ADR 0048's errata record, one layer up.
+  //
+  // Both directions, because the rule has two halves and a gate for one is not
+  // a gate for the other.
+  // -------------------------------------------------------------------------
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...tileWith("alarms.active.count"), sources: [] }] },
+    ["widgets", 0, "points"],
+    ["bound point or a named metric"],
+    "a value_tile binding NEITHER a point nor a metric parses and stores, then renders " +
+      '"No data bound." forever — WIDGET_POINT_CARDINALITY.value_tile.min dropped to 0 on this ' +
+      "branch, so this rule is the only thing refusing it",
+  );
+
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    {
+      widgets: [
+        { ...tileWith("alarms.active.count"), points: [{ pointId: POINT_A }] },
+      ],
+    },
+    ["widgets", 0, "points"],
+    ["not both"],
+    "a value_tile binding BOTH kinds has two answers for one number, and widgetDataFor takes " +
+      "the catalog branch first — so the bound point is silently discarded",
+  );
+
+  // `noDuplicateSources` was untested too. `dashboard_widget_sources_widget_key_key` would
+  // catch it as a bare 23505; this is what turns that into a 400 naming the field.
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    {
+      widgets: [
+        {
+          ...tileWith("alarms.active.count"),
+          sources: [{ catalogKey: "alarms.active.count" }, { catalogKey: "alarms.active.count" }],
+        },
+      ],
+    },
+    ["widgets", 0, "sources", 1, "catalogKey"],
+    ["may not be bound twice"],
+    "the same catalog entry bound twice on one widget must be a 400, not a 23505",
+  );
+
+  // Every type whose cardinality admits a source must declare a shape it can draw, or the
+  // picker offers a list the write path refuses in full — a form whose every option 400s.
+  for (const widgetType of widgetTypeSchema.options) {
+    const admitsSources = WIDGET_SOURCE_CARDINALITY[widgetType].max > 0;
+    assert(
+      admitsSources === (WIDGET_SOURCE_SHAPES[widgetType].length > 0),
+      `${widgetType}: a type that admits a catalog binding must name a shape it can draw, and ` +
+        "a type that admits none must name none",
+    );
+  }
 }

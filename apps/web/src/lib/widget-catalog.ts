@@ -1,5 +1,11 @@
-import type { ChartSeriesKind, DashboardWidgetSpec, WidgetIcon, WidgetType } from "@bms/shared";
-import { WIDGET_POINT_CARDINALITY } from "@bms/shared";
+import type {
+  ChartSeriesKind,
+  DashboardWidgetSpec,
+  MetricCatalogValueDto,
+  WidgetIcon,
+  WidgetType,
+} from "@bms/shared";
+import { WIDGET_POINT_CARDINALITY, WIDGET_SOURCE_CARDINALITY } from "@bms/shared";
 
 import type { KpiTileStatus } from "../components/kpi-tile";
 
@@ -16,6 +22,7 @@ export type RadialGaugeConfig = Extract<DashboardWidgetSpec, { widgetType: "radi
 export type TankLevelConfig = Extract<DashboardWidgetSpec, { widgetType: "tank_level" }>["config"];
 export type ValueTileConfig = Extract<DashboardWidgetSpec, { widgetType: "value_tile" }>["config"];
 export type ChartConfig = Extract<DashboardWidgetSpec, { widgetType: "chart" }>["config"];
+export type TableConfig = Extract<DashboardWidgetSpec, { widgetType: "table" }>["config"];
 
 /**
  * The presentation tone of a gauge threshold band or a tank's fill —
@@ -37,6 +44,18 @@ export type WidgetTone = NonNullable<
  * `LoadTrendChart` uses the same shape as its own `status` prop too.
  */
 export type WidgetStatus = KpiTileStatus;
+
+/**
+ * One resolved dataset row, as the catalog endpoint returns it (`F3.35` Stage B).
+ *
+ * Derived from the response contract, never restated. **Here rather than in
+ * `components/widgets/dashboard-widget.tsx`, where it started**: `table-widget-cells.ts` needs
+ * it, and a `lib` module importing a type out of `components` inverts the layering. It also has
+ * a measurable consequence — `lib/**` is in the coverage denominator and `components/**` is not
+ * — so the import direction decides whether the pure helpers are counted. `WidgetSeries` and
+ * `WidgetStatus` are already here for the same reason.
+ */
+export type DatasetRow = Extract<MetricCatalogValueDto, { shape: "dataset" }>["rows"][number];
 
 /** One bound series' worth of samples, ordered by time, as a widget receives it. */
 export type WidgetSeriesPoint = { readonly t: string; readonly v: number | null };
@@ -78,12 +97,14 @@ type WidgetCatalogEntry = {
   readonly defaultSize: { readonly w: number; readonly h: number };
   /** Imported from `@bms/shared`, never restated — ADR 0047 Amendment 2 §1: the write path and the renderer must agree about which dashboards are legal, and a rule enforced by only one of two surfaces is not enforced. */
   readonly points: { readonly min: number; readonly max: number };
+  /** `F3.35` Stage C. Imported for the same reason as `points`: the builder must refuse a binding the write path would refuse, and only the tile takes a catalog source today. */
+  readonly sources: { readonly min: number; readonly max: number };
 };
 
 /**
- * The four widget types, closed (ADR 0047 decision 2). Label, icon and
- * default size are presentation and belong here; `points` is a validation
- * rule and is imported rather than restated (Amendment 2 §1).
+ * The five widget types, closed (ADR 0047 decision 2; `table` by ADR 0048 decision 5). Label,
+ * icon and default size are presentation and belong here; `points` and `sources` are validation
+ * rules and are imported rather than restated (Amendment 2 §1).
  */
 export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = {
   radial_gauge: {
@@ -91,24 +112,40 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     iconPath: "M12 2a10 10 0 1 0 10 10h-2a8 8 0 1 1-8-8V2Z",
     defaultSize: { w: 3, h: 4 },
     points: WIDGET_POINT_CARDINALITY.radial_gauge,
+    sources: WIDGET_SOURCE_CARDINALITY.radial_gauge,
   },
   tank_level: {
     label: "Tank level",
     iconPath: "M6 2h12v4H6V2Zm-1 6h14v14H5V8Zm2 12h10V10H7v10Z",
     defaultSize: { w: 3, h: 4 },
     points: WIDGET_POINT_CARDINALITY.tank_level,
+    sources: WIDGET_SOURCE_CARDINALITY.tank_level,
   },
   value_tile: {
     label: "Value tile",
     iconPath: "M4 4h16v16H4V4Zm2 2v12h12V6H6Z",
     defaultSize: { w: 3, h: 2 },
     points: WIDGET_POINT_CARDINALITY.value_tile,
+    sources: WIDGET_SOURCE_CARDINALITY.value_tile,
   },
   chart: {
     label: "Chart",
     iconPath: "M4 20V4h2v14h14v2H4Zm4-4V10h2v6H8Zm5 0V6h2v10h-2Zm5 0v-8h2v8h-2Z",
     defaultSize: { w: 6, h: 4 },
     points: WIDGET_POINT_CARDINALITY.chart,
+    sources: WIDGET_SOURCE_CARDINALITY.chart,
+  },
+  table: {
+    label: "Table",
+    // A header rule over three body rows — the six-row card of the mock, drawn small enough to
+    // read at 24px. Grid lines rather than a filled block, so it is not the `value_tile` square.
+    iconPath: "M3 4h18v16H3V4Zm2 2v2h14V6H5Zm0 4v3h6v-3H5Zm8 0v3h6v-3h-6Zm-8 5v3h6v-3H5Zm8 0v3h6v-3h-6Z",
+    // Wider and taller than every other default: a table is the only type whose content is rows
+    // and columns, and a 3x2 card would show one row under a header. Six rows is what the mock
+    // draws and what `defaultSize` should make an author land on without resizing.
+    defaultSize: { w: 6, h: 5 },
+    points: WIDGET_POINT_CARDINALITY.table,
+    sources: WIDGET_SOURCE_CARDINALITY.table,
   },
 };
 

@@ -67,10 +67,26 @@ import { z } from "zod";
  */
 
 /**
- * The four widget types, closed. Must match `dashboard_widgets_widget_type_check` in migration
- * `0050` exactly; the spec pins both lists so drift fails the build rather than a page.
+ * The five widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5).
+ *
+ * **Two migrations declare this list, not one, and only the second is current.** `0050` froze
+ * the original four in `dashboard_widgets_widget_type_check`; `F3.35` Stage B's `0055` drops
+ * and re-adds that constraint with `table`. A committed migration is frozen by the pre-commit
+ * hook, so `0050` still reads four and always will — which makes "match `0050`" the wrong
+ * instruction and is why this sentence replaced it.
+ *
+ * `tests/f3.35-table-widget-schema.test.ts` compares this enum against `0055`'s widened list,
+ * and `tests/f3.1a-dashboard-schema.test.ts` keeps pinning `0050` to its historical four. Both
+ * are correct at once: the first asks what the database enforces now, the second what that
+ * migration froze then.
  */
-export const widgetTypeSchema = z.enum(["radial_gauge", "tank_level", "value_tile", "chart"]);
+export const widgetTypeSchema = z.enum([
+  "radial_gauge",
+  "tank_level",
+  "value_tile",
+  "chart",
+  "table",
+]);
 
 /**
  * The generic `chart` type's series (ADR 0047 decision 4).
@@ -297,6 +313,42 @@ export const chartConfigSchema = z
   });
 
 /**
+ * A ceiling on `tableConfigSchema.columns`, and deliberately not the real bound.
+ *
+ * The real bound is the bound dataset's own `METRIC_CATALOG[key].columns`, which is a
+ * cross-field rule between `config` and `sources` and therefore lives on the write path
+ * (`dashboards.schema.ts`), exactly where `eachSourceFitsTheWidget` lives. This number only
+ * refuses an absurd payload before that rule runs, so it is set above the longest declared
+ * list (six, `workorders.open`) with headroom rather than at it — tightening it to six would
+ * make a future seven-column dataset fail here with a message about a limit instead of there
+ * with a message about the dataset.
+ */
+export const MAX_TABLE_COLUMNS = 12;
+
+/**
+ * The `table` widget (`F3.35` Stage B, ADR 0048 decision 5).
+ *
+ * **`columns` is a projection, never a query.** The resolve endpoint returns every column the
+ * catalog declares and the renderer picks from them (ADR 0048 decision 2), so no column name
+ * travels in a request and no SQL is built from one. That is why this is a plain string array
+ * and not an enum: the legal values depend on which dataset the widget binds, which this
+ * schema cannot see.
+ *
+ * **Absent or empty means every declared column**, and that is load-bearing rather than
+ * lenient. `WIDGET_SOURCE_CARDINALITY.table` is `{min: 1, max: 1}`, so an author binds the
+ * dataset and picks columns in one save; a config that refused an empty list would make the
+ * widget unsaveable at the moment it is created. It also keeps a stored table working when a
+ * released catalog change adds a column — the card widens instead of going blank.
+ *
+ * Flat, for the reason `valueTileConfigSchema`'s docblock gives: both write surfaces compose
+ * these with `.strict()`, and `.strict()` does not descend.
+ */
+export const tableConfigSchema = z.object({
+  ...commonConfigFields,
+  columns: z.array(z.string().max(64)).max(MAX_TABLE_COLUMNS).optional(),
+});
+
+/**
  * Type and config as one value.
  *
  * **The discriminant is `widgetType`, which is the column, and it is stored once.**
@@ -310,6 +362,7 @@ export const dashboardWidgetSpecSchema = z.discriminatedUnion("widgetType", [
   z.object({ widgetType: z.literal("tank_level"), config: tankLevelConfigSchema }),
   z.object({ widgetType: z.literal("value_tile"), config: valueTileConfigSchema }),
   z.object({ widgetType: z.literal("chart"), config: chartConfigSchema }),
+  z.object({ widgetType: z.literal("table"), config: tableConfigSchema }),
 ]);
 
 /**
@@ -363,9 +416,237 @@ export const WIDGET_POINT_CARDINALITY: Record<
 > = {
   radial_gauge: { min: 1, max: 1 },
   tank_level: { min: 1, max: 1 },
-  value_tile: { min: 1, max: 1 },
+  // `F3.35` Stage C lowered this from `{min: 1}`. ADR 0048 decision 2 gives the tile a second
+  // binding kind — "a `value_tile` binds a metric" — so a tile with no point is now a legal
+  // authored state rather than a broken one. The rule that replaces the old minimum is
+  // *exactly one kind*, and it lives on write in `dashboards.schema.ts`, not here: it is a
+  // cross-field rule between `points` and `sources`, which a per-type number cannot express.
+  value_tile: { min: 0, max: 1 },
   chart: { min: 1, max: MAX_WIDGET_POINTS },
+  // `F3.35` Stage B. A table draws a catalog **dataset** and nothing else: a bound point is a
+  // series over time, which has no rows and no columns to project. `{min: 0, max: 0}` here and
+  // `{min: 1, max: 1}` in `WIDGET_SOURCE_CARDINALITY` are the two halves of that one statement,
+  // and together they make the exactly-one-binding-kind rule resolve to "a source, always".
+  table: { min: 0, max: 0 },
 };
+
+/**
+ * How many **catalog sources** each type may bind (`F3.35` Stage C, ADR 0048 decisions 1 and 2).
+ *
+ * The second half of `WIDGET_POINT_CARDINALITY`'s seam, and here for the same reason: `F3.1b`'s
+ * successor must refuse a two-source tile *on write*, and `apps/api` cannot import from
+ * `apps/web`. Presentation — the labels an author reads — stays in
+ * `apps/web/src/lib/metric-catalog.ts`.
+ *
+ * **Why every value but the tile's is zero.** A gauge, a tank and a chart all draw a *series
+ * over time*, and a catalog entry resolves to a number or to rows — neither is a series. Only
+ * the tile shows a single current number, which is why decision 2 names it. Stage B's `table`
+ * is the second non-zero entry, at `{min: 1, max: 1}`.
+ *
+ * The `Record` over the enum is what makes Stage B's fifth widget type a compile error here
+ * rather than a widget that silently binds no source and renders nothing.
+ */
+export const WIDGET_SOURCE_CARDINALITY: Record<
+  z.infer<typeof widgetTypeSchema>,
+  { readonly min: number; readonly max: number }
+> = {
+  radial_gauge: { min: 0, max: 0 },
+  tank_level: { min: 0, max: 0 },
+  value_tile: { min: 0, max: 1 },
+  chart: { min: 0, max: 0 },
+  // `F3.35` Stage B, and the `min: 1` is the difference from every entry above it. A tile may
+  // bind a point INSTEAD of a metric, so its minimum is zero; a table has no second way to get
+  // rows, so a table with no source is not a partially-authored widget but an empty card.
+  table: { min: 1, max: 1 },
+};
+
+/**
+ * The two halves of the exactly-one-binding-kind rule, as message templates.
+ *
+ * **Here rather than in each surface, because two surfaces state the same rule and an author
+ * meets both.** `apps/web`'s builder shows the first as an inline error while the author types;
+ * `apps/api`'s `putDashboardWidgetsBodySchema` answers a 400 carrying the second if the form is
+ * bypassed. Written independently, the two texts drift, and a 400 whose wording differs from the
+ * inline error the author already read presents as a second, unrelated problem.
+ *
+ * The substitution differs on purpose and is not drift: the web passes the catalog's human label
+ * ("Value Tile"), the API has only `widgetType` ("value_tile"). One template, two nouns.
+ *
+ * The rule itself is `WIDGET_POINT_CARDINALITY` and `WIDGET_SOURCE_CARDINALITY` read together —
+ * a widget binds a point or a catalog entry, never both, and never neither.
+ */
+export const bindingRequiredMessage = (label: string): string =>
+  `A ${label} widget needs a bound point or a named metric.`;
+
+export const bindingExclusiveMessage = (label: string): string =>
+  `A ${label} widget shows a bound point or a named metric, not both. Remove one.`;
+
+/**
+ * The metric catalog's keys, closed (`F3.35` Stage C, ADR 0048 decision 1).
+ *
+ * **The catalog is code, and that is the decision, not an implementation detail.** §4.8 as ADR
+ * 0032 rewrote it asks whether a vocabulary's behaviour can be carried as data. A widget type's
+ * behaviour is a React component; a catalog entry's behaviour is a **SQL query**, and no column
+ * holds one either. An entry declared by an `INSERT` would satisfy every foreign key and then
+ * return nothing, in front of an operator, with a green console.
+ *
+ * **What bounds the list, and keeps it short.** A derived point (`asset_points.kind`, ADR
+ * 0036/0037) already lets an administrator declare a new *scalar* by formula without a release.
+ * The catalog therefore carries only what a point cannot be: **row counts over operational
+ * tables, and roll-ups across assets**. A number expressible as a formula over points is a
+ * derived point, and a reviewer should refuse it here.
+ *
+ * Must match `dashboard_widget_sources_catalog_key_check` in migration `0054` exactly —
+ * `tests/f3.35-metric-catalog-schema.test.ts` parses that `CHECK` and compares the two lists,
+ * so drift fails the build rather than a page.
+ *
+ * **`assets.health.score` is here because its formula arrived.** ADR 0048 §7 listed it as
+ * uncomputable, on the belief that the client still owed the roll-up formula from feature-sheet
+ * row 12. That formula arrived on 2026-08-22 and shipped as `E1.3` / ADR 0050, so this entry
+ * delegates to `AssetHealthService` rather than computing anything. Operational efficiency is
+ * **not** here and must not be added until the client defines its numerator (ADR 0050 §B14) —
+ * a key with no query is exactly the failure this vocabulary is closed to prevent.
+ */
+export const metricCatalogKeySchema = z.enum([
+  "alarms.active.count",
+  "alarms.active",
+  "workorders.open.count",
+  "workorders.open",
+  "assets.health.score",
+]);
+
+/**
+ * What each catalog entry resolves to (ADR 0048 decision 2).
+ *
+ * A **metric** resolves to one number; a **dataset** resolves to rows and a declared column
+ * list. One vocabulary and two shapes, rather than two vocabularies, because the alarm *count*
+ * and the alarm *table* must not be able to drift about what "active" means while both look
+ * right.
+ *
+ * `columns` lives on the dataset arm only, so `shape` alone tells a reader which they hold —
+ * no length check, and no empty array standing in for "not applicable". Stage B's column picker
+ * chooses from this list; the resolve endpoint returns every declared column and the renderer
+ * projects, so no column list travels in a request and no SQL is built from one.
+ */
+export type CatalogEntryMeta =
+  | { readonly shape: "metric" }
+  | { readonly shape: "dataset"; readonly columns: readonly string[] };
+
+/**
+ * The catalog itself — shape and declared columns, one entry per key.
+ *
+ * **No SQL and no label here.** The query belongs to `apps/api/src/metric-catalog/`, which is
+ * the only place that can hold one; the label belongs to `apps/web`, which is the only place
+ * that renders one. What lives here is what **both** sides must agree on, which is the same
+ * split `WIDGET_POINT_CARDINALITY`'s docblock draws between a validation rule and presentation.
+ *
+ * The `Record` is compiler-forced, so a sixth key fails the build at this declaration rather
+ * than resolving to `undefined` at a call site.
+ */
+export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, CatalogEntryMeta> = {
+  "alarms.active.count": { shape: "metric" },
+  "alarms.active": {
+    shape: "dataset",
+    columns: ["assetCode", "assetName", "severity", "message", "raisedAt"],
+  },
+  "workorders.open.count": { shape: "metric" },
+  "workorders.open": {
+    shape: "dataset",
+    columns: ["assetCode", "assetName", "status", "priority", "title", "dueAt"],
+  },
+  "assets.health.score": { shape: "metric" },
+};
+
+/**
+ * The ceiling on rows a dataset resolve returns.
+ *
+ * Declared here because two surfaces read it: the API clamps its `limit` to it, and the viewer
+ * pages against it. A dataset is a **six-row card** on the mock, so 200 is a safety bound and
+ * never a page size — a widget asking for more than a card can show is a defect in the widget,
+ * not a reason to raise this.
+ */
+export const MAX_DATASET_ROWS = 200;
+
+/**
+ * Which catalog **shapes** each widget type can draw (`F3.35` Stage C).
+ *
+ * **`WIDGET_SOURCE_CARDINALITY` counts; this one types, and a count alone was not enough.**
+ * `WIDGET_SOURCE_CARDINALITY.value_tile` is `{min: 0, max: 1}`, which a `dataset` entry
+ * satisfies exactly as well as a `metric` one does. So `alarms.active` — rows and six declared
+ * columns — passed every write bound onto a `value_tile`, stored, resolved as a dataset, and
+ * arrived at a renderer that draws one number. Nothing threw: the tile rendered blank. This
+ * record is what refuses it, on the write path where the count is already refused.
+ *
+ * **An empty array is a real member, not a gap.** A gauge, a tank and a chart draw a series
+ * over time and accept no catalog shape at all, which is the same statement their `{min: 0,
+ * max: 0}` cardinality makes, one axis over. Both are read: a type with `max: 0` never reaches
+ * this map, and a type listed here with `max: 0` would still bind nothing.
+ *
+ * Stage B's `table` is the first entry to accept `"dataset"`, and the `Record` over the enum
+ * is what makes forgetting to add it a compile error here rather than a table bound to a count.
+ */
+export const WIDGET_SOURCE_SHAPES: Record<
+  z.infer<typeof widgetTypeSchema>,
+  readonly CatalogEntryMeta["shape"][]
+> = {
+  radial_gauge: [],
+  tank_level: [],
+  value_tile: ["metric"],
+  chart: [],
+  // `F3.35` Stage B — the first entry to accept `"dataset"`, and it accepts ONLY that. The
+  // mirror of the tile's hole: `alarms.active.count` satisfies `{min: 1, max: 1}` above exactly
+  // as well as `alarms.active` does, and would arrive at a renderer that draws rows with one
+  // number and no columns. Refused here, on the write path, where the count is already refused.
+  table: ["dataset"],
+};
+
+/**
+ * The third binding message, for a catalog entry whose shape the widget cannot draw.
+ *
+ * Here beside `bindingRequiredMessage`/`bindingExclusiveMessage` and for the identical reason:
+ * two surfaces state this rule and one author meets both, so the builder's inline error and the
+ * API's 400 must read as one problem rather than two. The substitution differs the same way —
+ * the web passes the catalog's human label, the API has only `widgetType`.
+ *
+ * Both arms are written now although only the first can fire today. Stage B's `table` fires the
+ * second, and a message added at the same time as the widget type that needs it is a message
+ * written to match that widget type rather than to match this sentence.
+ */
+export const bindingShapeMessage = (
+  label: string,
+  catalogKey: string,
+  shape: CatalogEntryMeta["shape"],
+): string =>
+  shape === "dataset"
+    ? `A ${label} widget shows one number, and "${catalogKey}" returns rows. Choose a metric.`
+    : `A ${label} widget shows rows, and "${catalogKey}" returns one number. Choose a dataset.`;
+
+/**
+ * The fourth binding message: a `table` projecting a column its dataset does not declare
+ * (`F3.35` Stage B).
+ *
+ * Here with the other three because two surfaces state it and one author meets both — and this
+ * one is reachable in ordinary use rather than only by a hand-written payload. An author picks
+ * four columns of `alarms.active`, then rebinds the widget to `workorders.open`: the source is
+ * legal, its shape is legal, and the stored projection now names columns the new dataset has
+ * never heard of. The builder catches it as the author rebinds; the API catches the same state
+ * arriving from anywhere else.
+ *
+ * The message names the column AND the entry, because "that column does not exist" is not
+ * actionable when the author is looking at a picker that offered it a moment ago.
+ */
+export const columnNotDeclaredMessage = (column: string, catalogKey: string): string =>
+  `"${catalogKey}" does not have a column named "${column}". Choose from the columns it returns.`;
+
+/**
+ * The fifth binding message: the same column chosen twice on one table.
+ *
+ * Beside the other four because the same author meets it on both surfaces, and here rather than
+ * only in `apps/api` for the reason `noDuplicateSources` is: a duplicate is a constraint-shaped
+ * refusal, and it should read as one sentence whichever surface says it.
+ */
+export const duplicateColumnMessage = (column: string): string =>
+  `"${column}" is already chosen. Each column appears once.`;
 
 /**
  * One point binding. A row in `bms.dashboard_widget_points`, never an id inside JSON.
@@ -397,6 +678,48 @@ export const dashboardWidgetPointDtoSchema = z
   });
 
 /**
+ * One catalog binding. A row in `bms.dashboard_widget_sources` (`F3.35` Stage C, ADR 0048
+ * decision 4).
+ *
+ * **A fourth table, not a widened `dashboard_widget_points`.** ADR 0047 decision 3 made
+ * `point_id` a real foreign key with `ON DELETE CASCADE` so that retiring a sensor leaves a
+ * widget with *countable* zero bindings rather than a stale id inside `jsonb`. Making
+ * `point_id` nullable beside a `catalog_key` column would make a `NULL` mean either "a catalog
+ * binding" or "a bug", with a `CHECK` the only thing telling them apart. **A catalog key is a
+ * foreign key to nothing**, because the catalog is code — and a separate table says so instead
+ * of hiding it behind a nullable column.
+ *
+ * **`params` carries no id.** A binding inherits the dashboard's scope
+ * (`dashboards.location_id` / `asset_group_id`), so a location id inside `params` would be an id
+ * in `jsonb` that no foreign key covers and no orphan check can report — the ADR 0019 problem
+ * decision 4 exists to refuse, one field over.
+ *
+ * **What holds it, and what does not.** The database's
+ * `dashboard_widget_sources_params_object_check` (migration `0054`) is a *floor*: it refuses a
+ * scalar or an array at the top level and accepts `{"locationId": "<any uuid>"}`. The control is
+ * `METRIC_CATALOG_PARAMS_WRITE` in `apps/api/src/dashboard-builder/dashboards.schema.ts` — one
+ * `.strict()` schema per catalog entry, none declaring an id — and
+ * `tests/f3.35-metric-catalog-containment.test.ts`, which scans that map and fails the build on
+ * `.uuid(`, on the id spellings that evade it, and on any entry losing `.strict()`.
+ *
+ * **This paragraph once named two files that did not exist**, in the past tense, and this item's
+ * migration review caught it. Written forward it is a specification; written backward it is a
+ * false claim in a committed file, and nothing in the text tells a reader which they hold. If a
+ * sentence here says a thing is enforced, open the file it names.
+ *
+ * **`sortOrder` carries no `.min(0)`**, for the reason `dashboardWidgetPointDtoSchema` states:
+ * `sort_order integer NOT NULL DEFAULT 0` permits a negative, so a bound here would reject a
+ * row the store is entitled to produce. The write bound belongs to the request schema.
+ */
+export const dashboardWidgetSourceDtoSchema = z
+  .object({
+    id: z.string().uuid(),
+    catalogKey: metricCatalogKeySchema,
+    params: z.record(z.union([z.string(), z.number(), z.boolean()])),
+    sortOrder: z.number().int(),
+  });
+
+/**
  * The widget's own fields, without type or config.
  *
  * The grid is bounded here as well as by `dashboard_widgets_grid_bounds_check`, so an author
@@ -419,6 +742,11 @@ const dashboardWidgetIdentitySchema = z
     // different case — `dashboard_widgets_grid_bounds_check` really does enforce those, so
     // stating them here cannot reject a row the store can hold.
     points: z.array(dashboardWidgetPointDtoSchema),
+    // No `.max()` either, and for the same reason. The *exactly one kind* rule — a widget binds
+    // points or sources, never both and never neither — is a cross-field rule between these two
+    // arrays, so it is enforced on write and deliberately not claimed here: a response contract
+    // states what the store can hold, and the store can hold a widget mid-edit.
+    sources: z.array(dashboardWidgetSourceDtoSchema),
   })
   .refine((widget) => widget.gridX + widget.gridW <= DASHBOARD_GRID.columns, {
     message: `a widget must fit inside the ${DASHBOARD_GRID.columns}-column canvas`,
@@ -481,3 +809,100 @@ export const dashboardSummaryDtoSchema = z
     updatedAt: z.string(),
     widgetCount: z.number().int().min(0),
   });
+
+/**
+ * One cell of a resolved dataset row.
+ *
+ * **A closed union, never `z.unknown()`.** §4.8 records what that costs and that this repo has
+ * already paid it: `z.unknown()` produces an *optional* key, and `z.any()` and
+ * `z.custom<unknown>()` behave identically — "do not spend an afternoon on it". Four types is
+ * what a SQL projection can actually return once a timestamp is serialised, so naming them is
+ * both stricter and cheaper.
+ */
+const datasetCellSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+/**
+ * A resolved catalog value, as `GET /api/v1/metric-catalog/:key` returns it (`F3.35` Stage C).
+ *
+ * `z.discriminatedUnion` on `shape`, so a mislabelled payload fails rather than narrowing into
+ * the wrong arm and rendering an empty table. Two plain `z.object` arms — no `.merge()`, no
+ * `.omit().extend()`, which ADR 0030 Amendment 1 bans inside `contracts/` because a flattened
+ * schema still typechecks and only a source scan catches it.
+ *
+ * **`value` is nullable on the metric arm, deliberately.** An entry can legitimately resolve to
+ * nothing: `E1.3` returns a null mean score when no tag carries a published threshold rule, and
+ * `F4.69` is the open row for the seed gap that makes that the current state. Rendering a null
+ * as `0` would put a fabricated number in front of an operator, which is the one failure this
+ * contract must make impossible.
+ *
+ * **`truncated` is a field rather than an inference.** A caller cannot tell a dataset that has
+ * exactly `MAX_DATASET_ROWS` rows from one that was cut off at it, and the difference decides
+ * whether the card is showing the whole answer.
+ */
+export const metricCatalogValueDtoSchema = z.discriminatedUnion("shape", [
+  z.object({
+    shape: z.literal("metric"),
+    key: metricCatalogKeySchema,
+    value: z.number().nullable(),
+    unit: z.string().nullable(),
+  }),
+  z.object({
+    shape: z.literal("dataset"),
+    key: metricCatalogKeySchema,
+    columns: z.array(z.string()),
+    rows: z.array(z.record(datasetCellSchema)),
+    truncated: z.boolean(),
+  }),
+]);
+
+/**
+ * `GET /dashboards/:id/catalog-values` — every catalog binding on one dashboard, resolved.
+ *
+ * **Keyed by `sourceId`, and one request per dashboard rather than one per entry.** The viewer
+ * holds one socket per page (ADR 0048's Consequences), and a per-entry route would be N round
+ * trips for a page that already knows all N bindings from its own read.
+ *
+ * **The route lives on `/dashboards` because scope does.** A dashboard may be scoped to a
+ * location or an asset group, and every entry has to be narrowed to it — a site dashboard whose
+ * tile reads `alarms.active.count` must show the site's count, not the organization's. That
+ * narrowing needs the dashboard row, which a `/metric-catalog/:key` route could never see. ADR
+ * 0048 decision 3's "one new endpoint on `@Controller("telemetry")`" is the POINT-AGGREGATE
+ * endpoint, shipped in Stage A; do not let that sentence pull this one onto that controller.
+ *
+ * A binding whose widget was deleted between the dashboard read and this call simply does not
+ * appear. The viewer renders "no value" for a `sourceId` it does not get back, which is the same
+ * state ADR 0047 decision 3 requires for a widget whose point bindings have cascaded to zero.
+ */
+export const dashboardCatalogValueDtoSchema = z.object({
+  /**
+   * The binding's own row id. Present because it is the truth about which row answered, and
+   * **deliberately not what a viewer keys on** — see `widgetId`.
+   */
+  sourceId: z.string().uuid(),
+  /**
+   * The NATURAL key, and the pair a viewer must match on (correctness review, Medium).
+   *
+   * **`sourceId` is regenerated by every widget save.** `putWidgets` replaces a widget's
+   * bindings rather than editing them — `DELETE` by `widget_id` then re-`INSERT` — and
+   * `dashboard_widget_sources.id` is `defaultRandom()`, so renaming a tile mints a new
+   * `sourceId` for an unchanged binding. The viewer holds two queries that refresh on
+   * different schedules: the catalog read polls every minute, the dashboard read does not poll
+   * at all. On a wall display that never receives focus, the catalog answers with new
+   * `sourceId`s while the page still holds the old ones, and every tile silently falls to "no
+   * value" — `status: "ready"`, `stale: false`, a confident wrong answer.
+   *
+   * `(widgetId, catalogKey)` survives that, because `putWidgets` preserves a widget's `id`
+   * across a replace and `dashboard_widget_sources_widget_key_key` makes the key unique per
+   * widget. It is the same property the point path already relies on: `pointRef` is
+   * `assetId:pointKey`, a natural key, which is why that path was never exposed to this.
+   */
+  widgetId: z.string().uuid(),
+  catalogKey: metricCatalogKeySchema,
+  resolved: metricCatalogValueDtoSchema,
+});
+
+export const dashboardCatalogValuesResponseSchema = z.object({
+  values: z.array(dashboardCatalogValueDtoSchema),
+  /** When the resolve ran, so a viewer can show staleness without a second clock. */
+  resolvedAt: z.string().datetime(),
+});

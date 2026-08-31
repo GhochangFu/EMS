@@ -1,4 +1,4 @@
-import { useQueries, useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
@@ -9,13 +9,18 @@ import {
   type TelemetryReading,
 } from "@bms/shared";
 
+import { fetchDashboardCatalogValues } from "../api/dashboards";
 import { fetchPointAggregate, fetchTelemetryRecent } from "../api/telemetry";
 import { refsToRefetch } from "../lib/dashboard-aggregate-refresh";
 import { mergeSeededAndLiveReadings } from "../lib/dashboard-telemetry-merge";
 import {
+  CATALOG_REFRESH_MS,
   aggregateRequestsFor,
+  catalogBindingKey,
+  dashboardBindsCatalogSources,
   pointRefsFor,
   type AggregateByKey,
+  type CatalogResolution,
   type HistoryByRef,
   type LatestByRef,
   type LatestReading,
@@ -59,6 +64,14 @@ export type DashboardTelemetry = {
   historyByRef: HistoryByRef;
   /** `F3.35` — one entry per distinct aggregate read, keyed by `aggregateKeyFor`. */
   aggregateByKey: AggregateByKey;
+  /**
+   * `F3.35` Stage C — the resolved catalog bindings, with the timestamp they were resolved at.
+   *
+   * `undefined` for a dashboard that binds none, which is every dashboard saved before this
+   * row — not an empty map, so `widgetDataFor` can tell "this page asked nothing" from "this
+   * page asked and the answer has not arrived".
+   */
+  catalog: CatalogResolution | undefined;
   isLoading: boolean;
 };
 
@@ -115,6 +128,32 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
           bucketFunction: request.bucketFunction,
         }),
     })),
+  });
+
+  /**
+   * `F3.35` Stage C — the third data path (ADR 0048 decisions 1 and 2).
+   *
+   * **A poll, not the socket, and the reason is in `CATALOG_REFRESH_MS`'s own docblock**: an
+   * alarm raise is not a telemetry reading, so the socket below never carries one, and hanging
+   * a re-read off it would both miss the events this counts and burst on the ones it does not.
+   *
+   * **One request per dashboard and only when something binds a metric.** `enabled` is the same
+   * additive gate `aggregateRequestsFor` applies one path over — a dashboard saved before this
+   * row issues no catalog request at all, rather than one that answers `{values: []}`.
+   *
+   * Addressed by `dashboard.id` while the viewer routes by slug: the route needs the row to
+   * narrow every entry to the dashboard's own location or asset group, so this is necessarily a
+   * dependent read and the `enabled` gate is what keeps it from firing with an `undefined` id.
+   */
+  const bindsCatalog = dashboard !== undefined && dashboardBindsCatalogSources(dashboard);
+  const dashboardId = dashboard?.id;
+  const catalogQuery = useQuery({
+    queryKey: ["dashboards", "catalog-values", dashboardId],
+    queryFn: () => fetchDashboardCatalogValues(dashboardId as string),
+    enabled: bindsCatalog && dashboardId !== undefined,
+    // `refetchIntervalInBackground` is left at its default `false`: a hidden tab stops polling
+    // and resumes on focus, so a forgotten wall of tabs does not each run a COUNT every minute.
+    refetchInterval: CATALOG_REFRESH_MS,
   });
 
   // Readings the socket has delivered since this ref set was last tracked,
@@ -239,17 +278,44 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
     aggregateByKey.set(request.key, aggregateQueries[index]?.data ?? null);
   });
 
+  // `undefined` while the page binds no metric, so `widgetDataFor` can tell "nothing was asked"
+  // from "asked and unanswered" — the second reads as stale, and the first never reaches a
+  // catalog branch at all.
+  const catalog: CatalogResolution | undefined = bindsCatalog
+    ? {
+        // Keyed by `(widgetId, catalogKey)`, NOT by `entry.sourceId` — a widget save
+        // regenerates the row id, and this query and the dashboard query refresh on different
+        // schedules, so an id-keyed map silently empties on a page that never regains focus.
+        // `catalogBindingKey`'s docblock carries the failure in full.
+        byBinding: new Map(
+          (catalogQuery.data?.values ?? []).map((entry) => [
+            catalogBindingKey(entry.widgetId, entry.catalogKey),
+            entry.resolved,
+          ]),
+        ),
+        resolvedAt: catalogQuery.data?.resolvedAt ?? null,
+      }
+    : undefined;
+
   return {
     latestByRef,
     historyByRef,
     aggregateByKey,
+    catalog,
     // Both lists are recomputed unconditionally every render, so `.some()` over
     // an empty array already answers `false` for a dashboard that aggregates
     // nothing. An earlier version guarded this with a key string and a comment
     // claiming the guard made the list re-derive; it did not, and the guard was
     // a no-op (code review).
+    // `catalogQuery.isLoading` is `false` while the query is disabled: TanStack Query v5
+    // (`apps/web/package.json` pins `^5.62.8`) defines `isLoading` as `isPending &&
+    // isFetching`, and a disabled query is pending but not fetching. So a dashboard that binds
+    // no metric is unaffected by this term. Nothing on the viewer page reads `isLoading` today,
+    // which is why this is stated with its version rather than left as an assumption someone
+    // later has to re-derive.
     isLoading:
       seedQueries.some((query) => query.isLoading) ||
-      aggregateQueries.some((query) => query.isLoading),
+      aggregateQueries.some((query) => query.isLoading) ||
+      catalogQuery.isLoading,
   };
 }

@@ -8,6 +8,7 @@ import {
   type LatestByRef,
 } from "./dashboard-widget-data";
 import { FRESH_MS } from "./schematic-telemetry";
+import { isScalarData } from "../components/widgets/dashboard-widget";
 
 /**
  * `F3.35` Stage A — the second data path (ADR 0048 decision 3).
@@ -39,6 +40,9 @@ const IDENTITY = {
   gridY: 0,
   gridW: 4,
   gridH: 4,
+  // `F3.35` Stage C — the second binding array. Empty here: these fixtures
+  // exercise Stage A's aggregation, which is a point-bound path.
+  sources: [],
 };
 
 const ASSET = "66666666-6666-4666-8666-666666666666";
@@ -210,21 +214,21 @@ export function runBucketedChartSeriesTests(): void {
     new Map([[chartKey(), answer({ buckets: buckets(3, 0) })]]),
   );
   assert(
-    bucketed.status === "ready" && bucketed.series[0]?.points.length === 3,
+    isScalarData(bucketed) && bucketed.series[0]?.points.length === 3,
     "a chart with an aggregate must plot the endpoint's buckets",
   );
   assert(
-    bucketed.status === "ready" && bucketed.series[0]?.points[0]?.v === 10,
+    isScalarData(bucketed) && bucketed.series[0]?.points[0]?.v === 10,
     "the plotted values must be the buckets', not the history's",
   );
   assert(
-    bucketed.status === "ready" && bucketed.stats?.average === 12.1 && bucketed.bucketSeconds === 60,
+    isScalarData(bucketed) && bucketed.stats?.average === 12.1 && bucketed.bucketSeconds === 60,
     "the footer's statistics and the bucket width must ride along on the same response",
   );
 
   const raw = widgetDataFor(rawChart(), new Map(), new Map([[REF, [{ t: FRESH_TIME, v: 999 }]]]), NOW);
   assert(
-    raw.status === "ready" && raw.series[0]?.points[0]?.v === 999,
+    isScalarData(raw) && raw.series[0]?.points[0]?.v === 999,
     "a chart with NO aggregate must still read historyByRef — the regression direction",
   );
 }
@@ -240,13 +244,13 @@ export function runBucketedChartSeriesTests(): void {
 export function runUnresolvedAggregateStaysReadableTests(): void {
   const tile = widgetDataFor(aggregatedTile(), new Map(), new Map(), NOW, new Map());
   assert(
-    tile.status === "ready" && tile.primary === null,
+    isScalarData(tile) && tile.primary === null,
     "a tile whose aggregate has not resolved stays ready with a null primary",
   );
 
   const chart = widgetDataFor(aggregatedChart(), new Map(), new Map(), NOW, new Map());
   assert(
-    chart.status === "ready" && chart.series[0]?.points.length === 0,
+    isScalarData(chart) && chart.series[0]?.points.length === 0,
     "a chart whose aggregate has not resolved stays ready with an empty series",
   );
 }
@@ -274,7 +278,7 @@ export function runTileReadsItsOwnStatisticTests(): void {
       new Map([[tileKey(), answer()]]),
     );
     assert(
-      data.status === "ready" && data.primary === expected,
+      isScalarData(data) && data.primary === expected,
       `a tile with aggregate "${fn}" must show ${expected}`,
     );
   }
@@ -287,7 +291,7 @@ export function runTileReadsItsOwnStatisticTests(): void {
     new Map(),
   );
   assert(
-    raw.status === "ready" && raw.primary === 7,
+    isScalarData(raw) && raw.primary === 7,
     "a tile with NO aggregate must still show the latest reading — the regression direction",
   );
 }
@@ -316,13 +320,13 @@ export function runTileCompareValueTests(): void {
     ]),
   );
   assert(
-    withCompare.status === "ready" && withCompare.compareValue === 121,
+    isScalarData(withCompare) && withCompare.compareValue === 121,
     "the preceding window's number must reach the tile",
   );
 
   const without = widgetDataFor(aggregatedTile(), latest, new Map(), NOW, new Map());
   assert(
-    without.status === "ready" && (without.compareValue ?? null) === null,
+    isScalarData(without) && (without.compareValue ?? null) === null,
     "a tile that asked for no compare must carry no compare value",
   );
 }

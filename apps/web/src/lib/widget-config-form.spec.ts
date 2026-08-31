@@ -8,11 +8,14 @@ import {
   widgetToneSchema,
   widgetTypeSchema,
   MAX_GAUGE_THRESHOLDS,
+  WIDGET_SOURCE_CARDINALITY,
 } from "@bms/shared";
+import type { TemplateAuthorableWidgetType } from "@bms/shared";
 
 import { CHART_SERIES, WIDGET_CATALOG } from "./widget-catalog";
 import {
   CHART_SERIES_OPTIONS,
+  TEMPLATE_WIDGET_TYPES,
   CHART_SERIES_VALUES,
   MAX_DECIMALS,
   MAX_UNIT_LENGTH,
@@ -71,6 +74,64 @@ export function runVocabularyDerivationTests(): void {
 }
 
 /** Every field bound this file exports is pinned against the shared contract it mirrors. */
+/**
+ * `TEMPLATE_WIDGET_TYPES` (runtime) and `TemplateAuthorableWidgetType` (compile time) are one
+ * rule, and nothing held them together until this test.
+ *
+ * The gap the correctness review named: the type hardcodes `Exclude<…, "table">` while the value
+ * derives from `WIDGET_SOURCE_CARDINALITY[type].min === 0`. Change that predicate to
+ * `max === 0` and `value_tile` — `{min: 0, max: 1}` — drops out of the template authoring UI's
+ * type picker. Every stored template value tile stops being offerable, `blankWidgetRow`
+ * still compiles, the API's own independent copy of the filter stays green, and nothing fails.
+ *
+ * Both directions are asserted, plus non-vacuity on each end: a predicate that excluded
+ * everything, or nothing, would satisfy a one-sided check.
+ */
+export function runTemplateWidgetTypeDerivationTests(): void {
+  const expected = widgetTypeSchema.options.filter(
+    (type) => WIDGET_SOURCE_CARDINALITY[type].min === 0,
+  );
+
+  assert(
+    JSON.stringify([...TEMPLATE_WIDGET_TYPES].sort()) === JSON.stringify([...expected].sort()),
+    `TEMPLATE_WIDGET_TYPES must be exactly the types bindable by point keys — expected ` +
+      `[${[...expected].sort().join(", ")}], got [${[...TEMPLATE_WIDGET_TYPES].sort().join(", ")}]`,
+  );
+
+  // Non-vacuity, both ends. If the predicate excluded every type the comparison above would be
+  // `[] === []`, and if it excluded none it would silently stop being a restriction at all.
+  assert(
+    TEMPLATE_WIDGET_TYPES.length > 0,
+    "the template picker must offer something — an empty list makes this whole check vacuous",
+  );
+  assert(
+    TEMPLATE_WIDGET_TYPES.length < widgetTypeSchema.options.length,
+    "the derivation must actually EXCLUDE a type; if it excludes none it is not a restriction " +
+      "and `table` has silently become template-authorable",
+  );
+
+  // The compile-time half, tied to the runtime half rather than merely coexisting with it. A
+  // `Record` over `TemplateAuthorableWidgetType` forces a key per member of the TYPE; reading
+  // each key back out of the VALUE list is what fails when the two disagree.
+  const perType: Record<TemplateAuthorableWidgetType, true> = {
+    radial_gauge: true,
+    tank_level: true,
+    value_tile: true,
+    chart: true,
+  };
+  for (const type of Object.keys(perType) as TemplateAuthorableWidgetType[]) {
+    assert(
+      (TEMPLATE_WIDGET_TYPES as readonly string[]).includes(type),
+      `${type} is inside TemplateAuthorableWidgetType but outside TEMPLATE_WIDGET_TYPES — the ` +
+        "compile-time exclusion and the runtime predicate have drifted",
+    );
+  }
+  assert(
+    TEMPLATE_WIDGET_TYPES.length === Object.keys(perType).length,
+    "every runtime member must also be a compile-time member",
+  );
+}
+
 export function runFieldBoundConstantsTests(): void {
   assert(MAX_WIDGET_TITLE_LENGTH === 255, "a widget title is capped at 255 characters");
   assert(MAX_UNIT_LENGTH === 32, "a unit is capped at 32 characters");

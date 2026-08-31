@@ -241,7 +241,10 @@ tightens.
   renderer; `F3.28` consumes them on `/cr-overview`. Where the same delta
   appears twice, `F3.35` builds it and `F3.28` uses it.
 - **`F3.32`** keeps the process diagram.
-- **The two metrics the client still owes.** `assets.health.score` needs the
+- **The two metrics the client still owes**
+  (**one of the two had already arrived when this was written — see
+  [Errata 2](#errata-2--the-health-score-formula-had-already-arrived-2026-08-31)**).
+  `assets.health.score` needs the
   roll-up formula from feature-sheet row 12, and operational efficiency needs a
   definition. **Stage C builds the catalog machinery without them and cannot
   compute those two entries.** Sheet 03 already names both as client inputs. If
@@ -345,3 +348,231 @@ catalog that do not exist. Checked on 2026-08-30 by re-running the searches this
 ADR's Consequences prescribe: neither `AGENTS.md` nor `docs/roadmap.md` mentions
 `F3.35`, ADR 0048 or `dashboard_widget_sources` at all, so the sweep is an
 addition rather than a softening and nothing false is sitting there meanwhile.
+
+## Errata 2 — the health-score formula had already arrived (2026-08-31)
+
+§7 lists `assets.health.score` among "the two metrics the client still owes" and
+says **"Stage C builds the catalog machinery without them and cannot compute
+those two entries."** That was false for one of the two on the day it was
+written. **The client supplied the roll-up formula on 2026-08-22** — eight days
+before this ADR was accepted — and ADR 0050's own Context quotes it: *"tag-level
+goodness = data points in safe range / total data points, rolled up with
+user-configurable weights, topped by bad-actor identification."*
+
+`E1.3` then built it (PRs #227–#232, closed 2026-08-30), so a health score is a
+live service by the time Stage C needs one.
+
+**Stage C therefore ships `assets.health.score` as a real metric**, delegating to
+`E1.3`'s service rather than computing anything of its own. Ruled by the owner on
+2026-08-31, at the Unit 1 gate. `metricCatalogKeySchema` carries the key and
+migration `0054_dashboard_widget_sources.sql`'s
+`dashboard_widget_sources_catalog_key_check` names it.
+
+**Operational efficiency is unchanged and still owed.** It has no definition, it
+is not in the catalog, and the rest of that bullet — Sheet 03, the workshop, the
+`E5.1` shape — stands for it alone. §7's list narrows from two metrics to one; it
+does not empty.
+
+### What the metric will actually resolve to, which is not the same question
+
+Three facts about `E1.3`'s read surface were checked before this key was frozen,
+and each shapes Stage C's resolve rather than this decision:
+
+1. **The scalar exists.** `healthSummaryResponseSchema.score` is
+   `z.number().min(0).max(1).nullable()` — a weighted mean over the scored
+   assets. The catalog's metric arm already declares `value: z.number().nullable()`,
+   so the two agree without widening either.
+2. **Scope is readable asset ids plus an optional `locationId`, and there is no
+   asset-group filter.** A dashboard may be scoped to an asset group
+   (`bms.dashboards.asset_group_id`), and `GET /asset-health/summary` has no
+   matching narrowing. Stage C resolves the group to asset ids and intersects
+   rather than widening that endpoint — the boundary stays an authorization
+   question with no id to forge, which is the property the controller's own
+   docblock is built around.
+3. **`F4.69` gates the demo, not the build.** No seeded asset carries both
+   telemetry and a published threshold rule, so `score` is `null` against seeded
+   data and the tile renders "no value" — correct behaviour under ADR 0050
+   decision 3, and indistinguishable to anyone looking from a feature that does
+   not work. **If this metric is to be shown at the workshop, `F4.69` is on that
+   path.** Recorded here because neither `F4.69`'s row nor ADR 0050's
+   Consequences could know the catalog would bind this key.
+
+### Why the timing mattered here and would not have elsewhere
+
+A migration is forward-only and a committed one is frozen by the pre-commit hook,
+so `dashboard_widget_sources_catalog_key_check` fixes the catalog vocabulary the
+moment `0054` lands. Deciding this *after* Unit 2 would have cost a second
+migration to add one key. The ruling is recorded in this ADR rather than in a
+build note because the vocabulary is the ADR's, not the branch's.
+
+### Why it happened, which is the reusable part
+
+§7 was written from **Sheet 03's client-input list** rather than from
+`docs/adr/` and `docs/BACKLOG.md`. The answer had landed, `E1.3` was already
+gated on it, and ADR 0050 recorded the date in its own Context — so the fact was
+in the repository, in the one directory this ADR did not read.
+
+**A "still owed" list is a claim about the world, and nothing tests it.** Every
+other claim in this record is about the codebase, where a test or a `grep` can
+disagree. This one aged silently between drafting and acceptance, and it aged
+*backwards* — the ADR was accepted eight days after the sentence stopped being
+true.
+
+The check that would have caught it is one this ADR already prescribes for a
+different section. Its Consequences say the sweep list "was built by grep, not
+from the draft", after ADR 0047's first sweep missed a target the ADR itself
+named. **The same practice applies one section earlier: before recording an item
+as owed, grep `docs/adr/` and `docs/BACKLOG.md` for it.** Both errata on this
+record are the same failure — a fact about the repository asserted from memory
+while the repository said otherwise.
+
+### What is not corrected here
+
+The rest of §7 stands unchanged: Sheet 01's Alarm Details and Alarm Action cards
+stay pages, `F3.28` keeps the fixed page, `F3.32` keeps the process diagram, and
+the §5 dark canvas stays the owner's. Errata 1's corrections stand, and the
+`AGENTS.md` / `docs/roadmap.md` sweep is still gated on `F3.35` closing.
+
+---
+
+## Errata 3 — decision 5's migration is unbundled, and a SQL header attributed that to the owner (2026-08-31)
+
+Migration `0054_dashboard_widget_sources.sql`, in the header paragraph titled
+*"WHAT THIS MIGRATION DELIBERATELY DOES NOT DO"*, states:
+
+> The owner reversed that order on 2026-08-31, which unbundles them.
+
+**No such ruling was made, and none was needed.** The sentence attributes a
+decision to the owner that no record in `docs/adr/` or `docs/BACKLOG.md`
+carries, and that the owner did not make in the Unit 2 gate or any other.
+Errata 2 was written the same day from the same gate, so the mechanism for
+recording a real ruling was available and was used — its absence here is the
+tell.
+
+### What is actually true
+
+Decision 6's own staging table already settles the order:
+
+| Stage | Delivers | Depends on |
+|---|---|---|
+| **B** | The `table` widget type | Stage C's dataset half, for its rows |
+
+Stage B depends on Stage C. **Building C before B follows from this record and
+needs no ruling at all.** Decision 5's description of a single migration that
+"widens a `CHECK` and creates a table" was written on the assumption of the
+opposite order, and that assumption is what decision 6 contradicts — an internal
+inconsistency in the ADR as accepted, not a change of plan afterwards.
+
+### The correction
+
+1. **Decision 5's migration is two migrations.** Stage C's `0054` creates
+   `bms.dashboard_widget_sources` and deliberately does not touch
+   `dashboard_widgets_widget_type_check`. Stage B carries its own migration,
+   which widens that `CHECK`, alongside the React component that draws the
+   fifth type. Adding the value without the component would put a `widget_type`
+   in the database that nothing can render — ADR 0047 decision 2's whole
+   justification, arriving through the door the constraint exists to hold shut.
+   **That refusal is correct and is unaffected by this erratum**; only its
+   stated reason changes, from an owner ruling to decision 6's dependency.
+
+2. **Errata 1's closing sentence is now false on its face.** It reads *"The next
+   free number is `0054`, and Stage B must read it from
+   `packages/db/drizzle/`."* `0054` is Stage C's. Stage B takes the next free
+   number, which is `0055` — and its rule, *read the directory, not the record*,
+   is what saves it. Note that `0054`'s journal `when` was hand-stamped ahead of
+   the wall clock, so `0055` must be stamped above it or drizzle will run it on
+   a fresh database and silently skip it everywhere `0054` is already applied.
+
+### Why it happened, which is the reusable part
+
+The migration is **frozen by the pre-commit hook the moment it is committed**,
+and its header is the longest prose in the change. That combination is a trap:
+prose written into an unreviewable file gets the confidence of a decision record
+without the review of one. This sentence was drafted to justify a refusal that
+was already justified, and the justification reached for an authority that did
+not exist.
+
+The rule this adds to the two the earlier errata record: **a claim about a
+person's decision is not a claim about the codebase, and no test or `grep` can
+disagree with it.** Errata 1 and 2 were each a fact about the repository
+asserted from memory. This one is a fact about a human asserted from nowhere,
+which is worse — the repository can at least be re-read. Do not attribute a
+ruling in a file the owner will not review, and never in one that cannot be
+edited afterwards.
+
+Nothing else in `0054` is affected. Its table, its constraints and its
+`tenant_isolation` policy stand as reviewed.
+
+## Amendment 1 — two owner rulings at Stage B's close (2026-08-31)
+
+Both were put to the owner at the end of Stage B and answered in one sentence:
+*"keep the template exclusion, stage B closes F3.35"*. Recorded as an amendment
+rather than an erratum because neither corrects this record — the first decides
+a question it never asked, and the second closes it.
+
+Errata 3 exists because a decision was attributed to the owner that the owner
+never made. These two were made, in the `F3.35` Stage B gate, and are written
+here rather than only in a commit body so the next reader finds them where they
+look for scope.
+
+### Ruling 1 — a template cannot author a `table`, and that stands
+
+Stage B excluded `table` from template authoring. This ADR does not decide the
+question: decision 5 adds the fifth widget type and decision 6 stages the work,
+but nothing here says whether a *template* dashboard carries the whole widget
+vocabulary. ADR 0047 does not say either, and it was checked.
+
+**The fact that forced the question.** A template binds `template_points.point_key`
+**strings**, because it has no asset yet (decision 4's asymmetry, one level
+removed). It has no equivalent for a catalog binding:
+`bms.dashboard_widget_sources` is keyed by `widget_id`, and a template widget is
+not a widget row. A `table` binds no point (`WIDGET_POINT_CARDINALITY.table` is
+`{min: 0, max: 0}`) and requires exactly one source
+(`WIDGET_SOURCE_CARDINALITY.table` is `{min: 1, max: 1}`). So a template `table`
+could carry no binding of either kind, and `F3.2` would instantiate a widget the
+live write path refuses on its next save — a permanently empty card.
+
+The alternative was an arm that authors that card anyway and leaves `F3.2` to
+discover it. Ruled against.
+
+**What it does NOT decide.** Not that templates never carry a catalog binding.
+When they can, the exclusion is one `Exclude` in
+`packages/shared/src/asset-template-content.ts` and the derivation in
+`apps/web/src/lib/widget-config-form.ts` agrees again on its own. The rule it
+states is narrower than "no tables in templates": **a widget type is
+template-authorable when it can be fully bound by point keys.** A sixth type
+with a required source is excluded by the same rule without a new ruling.
+
+**Two sentences elsewhere were falsified and have been amended in place**, not
+deleted — `TemplateDashboardWidget`'s docblock claimed the shared union's
+derivation stopped a new widget type reaching one surface and missing the other.
+The mechanism survives; the consequence does not.
+
+### Ruling 2 — Stage B closes `F3.35`
+
+Decision 6 requires all three stages live for the client workshop. All three are:
+Stage A (aggregation config, the `@Controller("telemetry")` aggregate read, the
+vs-yesterday delta, chart footer stats, the tile's icon/sub-line/tone), Stage C
+(the catalog, `bms.dashboard_widget_sources`, the resolve endpoint, the picker)
+and Stage B (the `table` type, migration `0055`, the renderer, the column
+picker). Verified in the tree before the ruling was accepted rather than taken
+on the staging table's word.
+
+**What this closure does not include, and neither is a defect:**
+
+1. **Two catalog entries remain uncomputable, exactly as §7 says.** Operational
+   efficiency has no entry, and must not gain one until the client defines its
+   numerator (ADR 0050 §B14) — a key with no query is the failure this closed
+   vocabulary exists to prevent. `assets.health.score` *is* computable; Errata 2
+   records why.
+2. **Status pills for `severity` and `priority` are owed, not built.** §5 and the
+   mock both draw them, and Stage B ships readable column headings but plain-text
+   cells. Doing it properly needs a richer `columns` declaration in
+   `METRIC_CATALOG` — a shape change to decision 2, and therefore its own record.
+   Deciding tone from a hand-written list that reads the column is the §4.8 trap
+   decision 1 already closed once.
+
+**The `chore(agents):` sweep is now due**, and §10.1 makes it ADR 0048 alone —
+do not batch it. Its targets are listed in this record's Consequences, and that
+paragraph's own instruction applies: re-run the greps at sweep time rather than
+trusting the list.

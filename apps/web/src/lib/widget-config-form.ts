@@ -2,6 +2,7 @@ import {
   GAUGE_RANGE_MESSAGE,
   MAX_GAUGE_THRESHOLDS,
   MAX_WIDGET_WINDOW_MINUTES,
+  WIDGET_SOURCE_CARDINALITY,
   chartSeriesKindSchema,
   gaugeRangeIsOrdered,
   pointAggregateFunctionSchema,
@@ -14,6 +15,7 @@ import type {
   ChartSeriesKind,
   DashboardWidgetSpec,
   PointAggregateFunction,
+  TemplateAuthorableWidgetType,
   WidgetIcon,
   WidgetType,
 } from "@bms/shared";
@@ -44,6 +46,31 @@ export const WIDGET_TONES: readonly WidgetTone[] = widgetToneSchema.options;
 
 /** `widgetTypeSchema.options` from `@bms/shared` — never restated. */
 export const WIDGET_TYPES: readonly WidgetType[] = widgetTypeSchema.options;
+
+/**
+ * The subset a **template** dashboard may author (`F3.35` Stage B).
+ *
+ * A template binds point-key strings and has no way to carry a catalog source, so a widget type
+ * that requires one cannot be authored there — the whole argument is in
+ * `TemplateDashboardWidget`'s docblock in `packages/shared/src/asset-template-content.ts`.
+ *
+ * **Derived from `WIDGET_SOURCE_CARDINALITY`, not from a literal `["radial_gauge", …]` list**,
+ * so a sixth widget type joins or is excluded by its own cardinality rather than by whether
+ * somebody remembered this line. The type predicate is what carries the runtime rule back into
+ * the type system: `WIDGET_SOURCE_CARDINALITY` is `Record<WidgetType, { min: number }>`, so no
+ * conditional type can read `min`, and `TemplateAuthorableWidgetType` states the same exclusion
+ * at compile time.
+ *
+ * **`runTemplateWidgetTypeDerivationTests` in this file's spec holds the two together.** An
+ * earlier version of this sentence cited `tests/f3.35-table-widget-schema.test.ts`, which does
+ * not mention either symbol — it compares `widgetTypeSchema` to migration `0055`. The
+ * correctness review caught the citation and the gap behind it: with nothing holding the
+ * compile-time `Exclude` to this runtime predicate, changing `min === 0` to `max === 0` here
+ * silently drops `value_tile` from the template authoring UI with a fully green suite.
+ */
+export const TEMPLATE_WIDGET_TYPES: readonly TemplateAuthorableWidgetType[] = WIDGET_TYPES.filter(
+  (type): type is TemplateAuthorableWidgetType => WIDGET_SOURCE_CARDINALITY[type].min === 0,
+);
 
 /** `chartSeriesKindSchema.options` from `@bms/shared` — never restated. */
 export const CHART_SERIES_VALUES: readonly ChartSeriesKind[] = chartSeriesKindSchema.options;
@@ -191,6 +218,11 @@ export type WidgetConfigRow = {
   // chart decides whether to plot buckets at all.
   chartAggregate: PointAggregateFunction | "";
   footerStats: boolean;
+  // table — `F3.35` Stage B. The author's chosen projection, in the order they
+  // picked it. Empty means "every column the bound dataset declares", which is
+  // also what an absent `columns` means in the stored config — see
+  // `buildTableConfig` for why the two must not both be representable there.
+  tableColumns: string[];
 };
 
 export function blankConfigRow(): WidgetConfigRow {
@@ -214,6 +246,7 @@ export function blankConfigRow(): WidgetConfigRow {
     yAxisLabel: "",
     chartAggregate: "",
     footerStats: false,
+    tableColumns: [],
   };
 }
 
@@ -304,6 +337,7 @@ type GaugeConfig = Extract<DashboardWidgetSpec, { widgetType: "radial_gauge" }>[
 type TankConfig = Extract<DashboardWidgetSpec, { widgetType: "tank_level" }>["config"];
 type TileConfig = Extract<DashboardWidgetSpec, { widgetType: "value_tile" }>["config"];
 type ChartConfig = Extract<DashboardWidgetSpec, { widgetType: "chart" }>["config"];
+type TableConfig = Extract<DashboardWidgetSpec, { widgetType: "table" }>["config"];
 
 /** `unit`/`decimals` are common to every arm's config and are added only when
  * set — every config schema is `.optional()` on both and `.strict()`, so a
@@ -417,6 +451,27 @@ export function buildChartConfig(config: WidgetConfigRow): ChartConfig {
   }
   if (config.footerStats) {
     out.footerStats = true;
+  }
+  return out;
+}
+
+/**
+ * The `table` config (`F3.35` Stage B).
+ *
+ * **An empty `columns` is written as ABSENT, not as `[]`.** `tableConfigSchema` reads both the
+ * same way — every declared column — but the row model carries `tableColumns: string[]`, and an
+ * author who has picked nothing must produce the same stored config as one who never opened the
+ * picker. Writing `[]` would leave two encodings of one state in `bms.dashboard_widgets.config`,
+ * and the first person to write `config.columns.length === 0` on the read side would then be
+ * writing a bug for the other encoding.
+ *
+ * The order the author picked is preserved, because the renderer projects columns in the order
+ * this array gives — that is the whole column picker, and sorting here would silently discard it.
+ */
+export function buildTableConfig(config: WidgetConfigRow): TableConfig {
+  const out: TableConfig = { ...buildCommonConfig(config) };
+  if (config.tableColumns.length > 0) {
+    out.columns = [...config.tableColumns];
   }
   return out;
 }
