@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID } from "@bms/shared";
+import { DASHBOARD_GRID, METRIC_CATALOG } from "@bms/shared";
 import type { AdminAssetPointDto, MetricCatalogKey, WidgetPointRole } from "@bms/shared";
 
 import type { DashboardBuilderProblem, DashboardWidgetRow } from "../../lib/dashboard-builder-form";
@@ -17,6 +17,7 @@ import { Field } from "../asset-templates/field";
 import { ChartSeriesPicker } from "./chart-series-picker";
 import { MetricSourcePicker } from "./metric-source-picker";
 import { PointPicker } from "./point-picker";
+import { TableColumnPicker } from "./table-column-picker";
 
 type WidgetInspectorProps = {
   row: DashboardWidgetRow;
@@ -51,6 +52,12 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
     problems.find((problem) => problem.field === field)?.message;
   const cardinality = WIDGET_CATALOG[row.widgetType].points;
   const sourceCardinality = WIDGET_CATALOG[row.widgetType].sources;
+  // The bound entry, but only when it is a DATASET — the column picker has nothing to offer for
+  // a metric, and `WIDGET_SOURCE_SHAPES` already guarantees a table never holds one. Computed
+  // here rather than inside the JSX so the condition below reads as one question.
+  const boundDataset = row.sources
+    .map((source) => source.catalogKey)
+    .find((key) => METRIC_CATALOG[key].shape === "dataset");
 
   function updateConfig(patch: Partial<WidgetConfigRow>): void {
     onChange({ config: { ...row.config, ...patch } });
@@ -92,8 +99,24 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
     onChange({ sources: [...row.sources, { catalogKey, params: {} }] });
   }
 
+  /**
+   * `F3.35` Stage B — removing a source clears the column projection with it.
+   *
+   * **The columns belong to the dataset that was bound, not to the widget.** Leaving them
+   * behind means the author rebinds to `workorders.open` and the widget still carries
+   * `alarms.active`'s column names: `eachTableColumnIsDeclared` then answers 400 for a change
+   * the author never made, pointing at a field the picker no longer shows. Clearing here is
+   * what makes the rebind a rebind rather than a trap.
+   */
   function removeSource(index: number): void {
-    onChange({ sources: row.sources.filter((_, position) => position !== index) });
+    onChange({
+      sources: row.sources.filter((_, position) => position !== index),
+      config: { ...row.config, tableColumns: [] },
+    });
+  }
+
+  function setTableColumns(tableColumns: string[]): void {
+    onChange({ config: { ...row.config, tableColumns } });
   }
 
   return (
@@ -536,6 +559,19 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
               widgetType={row.widgetType}
               bound={row.sources.map((source) => source.catalogKey)}
               onAdd={addSource}
+            />
+          ) : null}
+          {/*
+            The column picker (ADR 0048 decision 2), shown only once a dataset is actually
+            bound — its legal choices ARE that dataset's declared columns, so there is nothing
+            to offer before then. Rendered inside the same `Field` because binding the source
+            and projecting its columns are one decision an author makes in one place.
+          */}
+          {boundDataset !== undefined ? (
+            <TableColumnPicker
+              catalogKey={boundDataset}
+              chosen={row.config.tableColumns}
+              onChange={setTableColumns}
             />
           ) : null}
         </Field>
