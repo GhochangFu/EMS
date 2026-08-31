@@ -108,7 +108,7 @@
 > control-room pages already use. **No drag or grid library was gated** — the
 > canvas runs on Pointer Events, so ADR 0047's one open §9.4 question closed as
 > *not needed*.
-> **The asset health score is in** (**ADR 0050** with Amendments 1 and 2,
+> **The asset health score is in** (**ADR 0050** with Amendments 1, 2 and 3,
 > `E1.3`, 2026-08-30) — a tag's share of samples inside every published threshold
 > rule, materialized by a scheduled job into four counter relations, one per ADR
 > 0023 level, and read as an asset score, a plant donut and an enterprise donut.
@@ -121,16 +121,34 @@
 > for each of the 239 points a published threshold rule names, and the simulator
 > writes to them again — it had written nothing since migration `0047` until
 > `F4.73` gave it a tenant context. Measured on merge: 239 counter pairs where
-> there had been one. **`F4.69` is still open**, on reading the donut rather than
-> on the data. **Amendment 2 (2026-08-31) rules the read**, and one half of it is
-> ruled but *not built*: the response will carry `coveredBuckets` /
-> `expectedBuckets`, because `computedAt` is the newest instant read and cannot
-> disclose a hole in the middle of a window — `F4.72` owns that and nothing on
-> `main` returns those fields yet. The other half is settled: **the read is not
-> clamped to the sweep's trailing window**, because the counter tables carry no
-> retention and a clamp collapses at `1h` and `1d`. And **`health` is the fourth
-> of ADR 0019's five content tiers to reopen**; only `optimisation` is still
-> closed.
+> there had been one. **`F4.69` is closed** — it shipped in PR #237 and was
+> recorded closed in #243, alongside `F4.74`. This paragraph still called it open
+> until the `F4.72` sweep re-read it; that is a live-claim correction rather than
+> a promotion.
+> **Amendment 2 (2026-08-31) rules the read, and `F4.72` built it the same day**
+> (PR #246): both responses now carry `coveredBuckets` and `expectedBuckets`, on
+> the shared `windowFields` block, because `computedAt` is the *newest* instant
+> read and so cannot disclose a hole in the middle of a window. Two integers and
+> never a ratio, and coverage counts buckets **across the scope, never per tag** —
+> one sweep pass writes every ruled tag in a bucket, so a per-tag count reports an
+> idle sensor as a roll-up outage. The other half of Amendment 2 is settled the
+> other way: **the read is not clamped to the sweep's trailing window**, because
+> the counter tables carry no retention and a clamp collapses at `1h` and `1d`.
+> **Amendment 3 is the one to read before touching either window.** `F4.72`'s own
+> review found that `complete` was structurally unreachable: `alignedWindow` ends
+> the sweep at the newest COMPLETE bucket (decision 5), while the read ended at
+> `now` and `bucket < to` then admitted the in-flight bucket the writer is
+> forbidden to write. `coveredBuckets` could never equal `expectedBuckets` at any
+> rung, so the partial-window banner would have been permanently on for every
+> healthy deployment. **The read now floors its `to` with `floorToBucket`, which
+> lives in `point-aggregate-window.ts` and is the writer's rule too** — do not
+> add a second copy, because two copies of a boundary rule is exactly how a
+> writer and a reader come to disagree about which bucket is the newest. `levelFor`
+> is still chosen from the *unaligned* window, so the retention guard is unchanged
+> and this is not a second ladder. One consequence worth knowing: **`windowTo` is
+> no longer `now`**, so a consumer comparing it against its own clock sees a lag
+> of up to one bucket. And **`health` is the fourth of ADR 0019's five content
+> tiers to reopen**; only `optimisation` is still closed.
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
