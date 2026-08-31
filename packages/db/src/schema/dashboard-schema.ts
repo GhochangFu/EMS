@@ -175,3 +175,76 @@ export const dashboardWidgetPoints = bmsSchema.table(
     ),
   }),
 );
+
+/**
+ * A widget's **named catalog** bindings — `F3.35` Stage C, migration `0054`, ADR 0048 decision 4.
+ *
+ * The second binding kind. A widget binds either a point (`dashboardWidgetPoints`) or a named
+ * catalog entry, and `dashboardWidgetPoints` is untouched by this addition.
+ *
+ * **A fourth table rather than a wider third.** Widening `dashboardWidgetPoints` — `pointId`
+ * nullable plus a `catalogKey` column and a `CHECK` that exactly one is set — buys one join and
+ * makes a NULL `pointId` mean either "a catalog binding" or "a bug", with the `CHECK` the only
+ * thing telling them apart. Putting the key inside `config` needs no migration and puts a
+ * binding back into `jsonb`, which is what ADR 0047 decision 3 rejected: nothing could then
+ * report which dashboards use a retired catalog entry without scanning JSON.
+ *
+ * **`catalogKey` references nothing, and that is the decision.** The catalog is code (ADR 0048
+ * decision 1). Do not add a lookup table here by symmetry with `assetRoles` — that is the
+ * opposite case under §4.8 as ADR 0032 rewrote it. A role's behaviour is "match this member",
+ * which a row carries fully; a catalog entry's behaviour is a SQL query, and no column holds
+ * one. An entry declared by an `INSERT` would satisfy every constraint and then return nothing,
+ * in front of an operator, with a green console.
+ *
+ * **The vocabulary is frozen by `dashboard_widget_sources_catalog_key_check` in migration
+ * `0054`**, which names the same five keys as `metricCatalogKeySchema`. Migrations are
+ * forward-only, so a sixth entry costs a code change *and* a migration — decision 1's rule with
+ * its real price. Anything expressible as a formula over points must be a derived point
+ * (`assetPoints.kind`, ADR 0036/0037) instead.
+ *
+ * **The unique key is `(widgetId, catalogKey)`, deliberately not `(widgetId)`.** Every entry in
+ * `WIDGET_SOURCE_CARDINALITY` maxes at 1 today, and expressing that here as a unique index would
+ * turn a one-line change to that shared record into a second forward migration the day a widget
+ * binds two sources. Cardinality stays where `dashboardWidgetPoints` already puts it — enforced
+ * on write against the shared catalog. What this key holds is the one duplicate that is
+ * meaningless under any cardinality: the same key bound twice to one widget.
+ *
+ * No explicit index: `dashboard_widget_sources_widget_key_key` leads with `widgetId`, so it
+ * serves both the per-widget read and the cascade from `dashboardWidgets`. That is why
+ * `dashboardWidgetPoints` needs its separate `point_idx` and this table needs nothing — that
+ * table's second cascade arrives through `pointId`, which no unique key covers.
+ *
+ * Following this file's own convention, `CHECK` constraints are not mirrored here (the migration
+ * owns them, and `tests/f3.35-metric-catalog-schema.test.ts` pins each by name) while the
+ * `UNIQUE` is mirrored *and named*, or drizzle derives a name and `\d` and this file describe one
+ * object under two.
+ */
+export const dashboardWidgetSources = bmsSchema.table(
+  "dashboard_widget_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // ADR 0043/0045, and ADR 0048 decision 4 in as many words: tenant-scoped from the migration
+    // that creates it. E7.1b's 0046/0047 are the recorded cost of retrofitting.
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    widgetId: uuid("widget_id")
+      .notNull()
+      .references(() => dashboardWidgets.id, { onDelete: "cascade" }),
+    catalogKey: varchar("catalog_key", { length: 64 }).notNull(),
+    // Bounded by `metricCatalogParamsSchema`'s record in
+    // `@bms/shared/contracts/dashboard-builder`, not by the database. The migration adds only a
+    // floor — `jsonb_typeof(params) = 'object'` — which refuses a scalar or an array at the top
+    // level and nothing else. `dashboardWidgets.config` carries no such check because it is read
+    // by a renderer; `params` reaches the resolve endpoint's query, which is the difference.
+    params: jsonb("params").notNull().default({}),
+    // No lower bound, matching `dashboardWidgetPoints.sortOrder`: the response contract
+    // deliberately carries no `.min(0)`, because rejecting a row the database is entitled to
+    // produce throws in dev and test and logs on every production read.
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    widgetKeyUnique: unique("dashboard_widget_sources_widget_key_key").on(t.widgetId, t.catalogKey),
+  }),
+);
