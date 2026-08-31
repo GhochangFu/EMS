@@ -2517,6 +2517,91 @@ and the canvas listens for Pointer Events, so the browser automation cannot
 drive it. The numeric grid inputs the plan names as the required affordance are
 verified.
 
+### Builder parity with the Nexus mock (`F3.35`, ADR 0048) — done
+
+Closed 2026-08-31 under
+**[ADR 0048](./adr/0048-dashboard-metric-catalog-and-table-widget.md)**, ruled at
+the §10 gate before any implementation code — seven decisions, all as
+recommended, three of which changed what the draft assumed.
+
+**The finding that shaped it was not "more widget types".** Measuring
+`docs/ion-exchange-nexus-dashboard-2026-08-29.html` against the closed `F3.1`
+turned up two missing commitments and one structural gap, and the gap is the
+load-bearing one: **half of Sheet 01's numbers are not telemetry points at all.**
+Total Active Alarms is an alarm row count, Open Work Orders a work-order row
+count, Asset Health a roll-up formula. Every widget bound `bms.asset_points`, and
+`use-dashboard-telemetry.ts` had one data path — so a `donut` and a `table` would
+still have had nothing to read.
+
+**So a widget gained a second binding kind.** A **named catalog entry** resolves
+either to one number (a *metric*) or to rows plus declared columns (a *dataset*),
+and lives in a fourth tenant-scoped table, `bms.dashboard_widget_sources`.
+`bms.dashboard_widget_points` is untouched: a catalog key is a **foreign key to
+nothing**, because the catalog is code, and a fourth table says so rather than
+making `point_id` nullable — which would leave a `NULL` meaning either "a catalog
+binding" or "a bug", with a `CHECK` the only thing telling them apart.
+
+**The catalog is a second closed vocabulary, and §4.8 now carries it as the
+sharper worked example.** `widgetType` is closed because its behaviour is a React
+component; a catalog entry's behaviour is a **SQL query**, and no column holds
+either. What bounds the list is the part worth carrying: a *derived point* (ADR
+0036/0037) already lets an administrator declare a new scalar by formula with no
+release, so the catalog carries only what a point cannot be — row counts over
+operational tables and roll-ups across assets — and a reviewer should refuse an
+entry that could have been a derived point.
+
+**Three stages, and they shipped C → B, not A → B → C.** The ADR contradicts
+itself here and the contradiction is recorded rather than smoothed: decision 5
+describes one migration that widens a `CHECK` *and* creates a table, which
+assumes B before C, while decision 6's own staging table says Stage B depends on
+Stage C's dataset half for its rows. Decision 6 wins. Errata 3 records that, and
+also corrects a sentence in migration `0054`'s frozen header which attributed the
+unbundling to an owner ruling that was never made — the reusable rule being that
+**a claim about a person's decision is one no test or `grep` can disagree with,
+so it must never be written into a file the owner will not review.**
+
+**Three migration numbers were named and two were wrong.** Decision 5 said
+`0051`; `F3.37` took it the day the ADR was accepted. Errata 1 said `0054`; Stage
+C took that. Stage B shipped `0055`. The rule that survives all three: **an ADR
+names a migration's job, never its number.** `0055` widens the `CHECK` with
+`DROP` plus `ADD` rather than the `IF NOT EXISTS` guard `0053` uses, because the
+constraint already existed carrying `0050`'s four values — an existence check
+finds it, concludes there is nothing to do, and skips the widening while
+reporting success.
+
+**A template cannot author a `table`** (ADR 0048 Amendment 1, ruled by the
+owner). Neither ADR 0047 nor ADR 0048 decided whether a template carries the
+whole vocabulary; the fact that forced it is decision 4's asymmetry one level
+removed. A template binds point-key **strings** because it has no asset yet, and
+has no equivalent for a catalog binding. The rule ruled is narrower than "no
+tables in templates": **a widget type is template-authorable when it can be fully
+bound by point keys.**
+
+**ADR 0048's one open §9.4 gate closed as *not needed*.** §Dependencies stated
+outright that the natural reading of "a table widget" is a data-grid library, and
+named it as a gate the build would have to open if it concluded it needed one. It
+did not: a six-row card with a column picker is a `<table>`, the way `F3.1d`'s
+canvas turned out to be Pointer Events. **Two ADRs in a row have now made a
+dependency question a conclusion of the build rather than an input**, and both
+answered *no*.
+
+**A four-agent review found nine defects CI did not, three of them false
+greens** — a test-only module emitted into the production API image because a
+`.data.ts` matched none of `tsconfig.build.json`'s excludes (the `F4.28` failure
+again); a renderer no test ever rendered with data, so its whole column picker
+could be disconnected with a green suite; and a guard no test reached whose
+removal turns a 400 into a 500, because zod's array `.min()` marks *dirty* rather
+than aborting and the refinement still runs. The pattern across all three is the
+same: **a green suite is evidence about the tests, not about the code.**
+
+**Two things stay owed and neither is a defect.** Operational efficiency has no
+catalog entry and must not gain one until the client defines its numerator — a
+key with no query is exactly the failure this closed vocabulary prevents. Status
+pills for `severity` and `priority` need a richer `columns` declaration in
+`METRIC_CATALOG`, which is a shape change to decision 2 and therefore its own
+record; deciding tone from a hand-written list that reads the column is the §4.8
+trap decision 1 already closed once.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
