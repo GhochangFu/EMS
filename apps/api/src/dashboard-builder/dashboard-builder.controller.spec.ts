@@ -68,7 +68,11 @@ function callCounter(resolveWith: unknown = dto) {
 function controllerWith(options: {
   service?: Partial<ServiceStub>;
   writeRoleRejects?: boolean;
-}): { controller: DashboardBuilderController; service: ServiceStub } {
+}): {
+  controller: DashboardBuilderController;
+  service: ServiceStub;
+  metricCatalog: { catalogValues: ReturnType<typeof callCounter> };
+} {
   const service: ServiceStub = {
     list: callCounter({ items: [] }),
     getBySlug: callCounter(dto),
@@ -86,13 +90,21 @@ function controllerWith(options: {
             new ForbiddenException("Changing rules and maintenance schedules requires an administrator role"),
           )
         : Promise.resolve(undefined),
-  } as unknown as ConstructorParameters<typeof DashboardBuilderController>[1];
+  } as unknown as ConstructorParameters<typeof DashboardBuilderController>[2];
+
+  // `F3.35` Stage C. A counting stub rather than `{}`: the catalog route is a READ with no
+  // `assertOperationsWriteRole` gate, so the write-role cases below must NOT reach it, and a
+  // stub that records its calls is what lets a later case assert that.
+  const metricCatalog = {
+    catalogValues: callCounter({ values: [], resolvedAt: new Date(0).toISOString() }),
+  };
 
   const controller = new DashboardBuilderController(
     service as unknown as ConstructorParameters<typeof DashboardBuilderController>[0],
+    metricCatalog as unknown as ConstructorParameters<typeof DashboardBuilderController>[1],
     accessControl,
   );
-  return { controller, service };
+  return { controller, service, metricCatalog };
 }
 
 const validCreateBody = { organizationId: ORG_ID, slug: "overview", name: "Overview" };

@@ -118,6 +118,10 @@ export type DashboardWidgetSourceDto = z.infer<typeof Db.dashboardWidgetSourceDt
  * rendering that as `0` would put a fabricated number in front of an operator.
  */
 export type MetricCatalogValueDto = z.infer<typeof Db.metricCatalogValueDtoSchema>;
+export type DashboardCatalogValueDto = z.infer<typeof Db.dashboardCatalogValueDtoSchema>;
+export type DashboardCatalogValuesResponse = z.infer<
+  typeof Db.dashboardCatalogValuesResponseSchema
+>;
 
 // --- F3.35 Stage A — aggregation and presentation (ADR 0048) ----------------
 /**

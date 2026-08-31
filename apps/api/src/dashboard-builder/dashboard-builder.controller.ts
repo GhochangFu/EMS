@@ -28,6 +28,7 @@ import {
   updateDashboardBodySchema,
 } from "./dashboards.schema";
 import { DashboardsService } from "./dashboards.service";
+import { MetricCatalogService } from "./metric-catalog.service";
 
 const idParamSchema = z.string().uuid();
 
@@ -53,6 +54,7 @@ const idParamSchema = z.string().uuid();
 export class DashboardBuilderController {
   constructor(
     private readonly dashboards: DashboardsService,
+    private readonly metricCatalog: MetricCatalogService,
     private readonly accessControl: AccessControlService,
   ) {}
 
@@ -60,6 +62,28 @@ export class DashboardBuilderController {
   async list(@CurrentUser() user: JwtPayload, @Query() query: unknown) {
     const { organizationId } = parse(listDashboardsQuerySchema, query);
     return this.dashboards.list(user, organizationId);
+  }
+
+  /**
+   * `F3.35` Stage C — every catalog binding on one dashboard, resolved (ADR 0048 decisions 1
+   * and 2).
+   *
+   * **Declared BEFORE `@Get(":slug")`, and that is load-bearing.** Nest matches routes in
+   * declaration order, and a two-segment path cannot match the single-segment `:slug` — but a
+   * reader moving this below it would not see a failure in any unit test, only a 404 for every
+   * catalog read at run time. Kept adjacent to the read it belongs with.
+   *
+   * **On `/dashboards`, not on `@Controller("telemetry")`.** ADR 0048 decision 3's "one new
+   * endpoint on telemetry" is the POINT-AGGREGATE endpoint, shipped in Stage A. This one needs
+   * the dashboard row to narrow every entry to the dashboard's location or asset group, which a
+   * telemetry route could never see.
+   *
+   * No `assertOperationsWriteRole` — this is a read, gated by `readableOrganizationIds` and
+   * `readableAssetIds` inside the service, exactly as `getBySlug` is.
+   */
+  @Get(":id/catalog-values")
+  async catalogValues(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
+    return this.metricCatalog.catalogValues(user, parse(idParamSchema, id));
   }
 
   @Get(":slug")

@@ -1,10 +1,12 @@
 import { Module } from "@nestjs/common";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { AssetHealthModule } from "../asset-health/asset-health.module";
 import { AuthModule } from "../auth/auth.module";
 import { DatabaseModule } from "../database/database.module";
 import { DashboardBuilderController } from "./dashboard-builder.controller";
 import { DashboardsService } from "./dashboards.service";
+import { MetricCatalogService } from "./metric-catalog.service";
 
 /**
  * `F3.1b` — the dashboard read/write API (ADR 0047). Follows
@@ -19,9 +21,16 @@ import { DashboardsService } from "./dashboards.service";
  * this configurable-dashboard surface are deliberately two modules, not one, following D1's
  * naming split.
  */
+/**
+ * `AssetHealthModule` is imported for `F3.35` Stage C's `assets.health.score`, which delegates
+ * to `AssetHealthService.summary(...)` rather than reimplementing ADR 0050's roll-up. It is a
+ * whole-module import rather than a provider copy because `AssetHealthService` is not stateless
+ * the way `MasterDataAuditService` is — it holds the window/level resolution `E1.3` owns, and a
+ * second instance would be a second place that decides which rollup level a window maps to.
+ */
 @Module({
-  imports: [DatabaseModule, AuthModule],
+  imports: [DatabaseModule, AuthModule, AssetHealthModule],
   controllers: [DashboardBuilderController],
-  providers: [DashboardsService, MasterDataAuditService],
+  providers: [DashboardsService, MetricCatalogService, MasterDataAuditService],
 })
 export class DashboardBuilderModule {}

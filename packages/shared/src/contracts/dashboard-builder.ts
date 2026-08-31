@@ -711,3 +711,32 @@ export const metricCatalogValueDtoSchema = z.discriminatedUnion("shape", [
     truncated: z.boolean(),
   }),
 ]);
+
+/**
+ * `GET /dashboards/:id/catalog-values` — every catalog binding on one dashboard, resolved.
+ *
+ * **Keyed by `sourceId`, and one request per dashboard rather than one per entry.** The viewer
+ * holds one socket per page (ADR 0048's Consequences), and a per-entry route would be N round
+ * trips for a page that already knows all N bindings from its own read.
+ *
+ * **The route lives on `/dashboards` because scope does.** A dashboard may be scoped to a
+ * location or an asset group, and every entry has to be narrowed to it — a site dashboard whose
+ * tile reads `alarms.active.count` must show the site's count, not the organization's. That
+ * narrowing needs the dashboard row, which a `/metric-catalog/:key` route could never see. ADR
+ * 0048 decision 3's "one new endpoint on `@Controller("telemetry")`" is the POINT-AGGREGATE
+ * endpoint, shipped in Stage A; do not let that sentence pull this one onto that controller.
+ *
+ * A binding whose widget was deleted between the dashboard read and this call simply does not
+ * appear. The viewer renders "no value" for a `sourceId` it does not get back, which is the same
+ * state ADR 0047 decision 3 requires for a widget whose point bindings have cascaded to zero.
+ */
+export const dashboardCatalogValueDtoSchema = z.object({
+  sourceId: z.string().uuid(),
+  resolved: metricCatalogValueDtoSchema,
+});
+
+export const dashboardCatalogValuesResponseSchema = z.object({
+  values: z.array(dashboardCatalogValueDtoSchema),
+  /** When the resolve ran, so a viewer can show staleness without a second clock. */
+  resolvedAt: z.string().datetime(),
+});
