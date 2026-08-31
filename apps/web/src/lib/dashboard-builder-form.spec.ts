@@ -5,6 +5,7 @@ import { WIDGET_CATALOG } from "./widget-catalog";
 import {
   blankDashboardWidgetRow,
   buildPutWidgetsPayload,
+  widgetRowAfterRemovingSource,
   builderHasChanged,
   dashboardBuilderErrors,
   dashboardBuilderProblemSubject,
@@ -123,6 +124,114 @@ export function runDashboardRowsFromDtoTests(): void {
 }
 
 /** `dashboardBuilderErrors` — cardinality and grid-fit, read from the shared catalog/constant. */
+/**
+ * `F3.35` Stage B — a table's column projection survives an edit-and-resave.
+ *
+ * **This is the assertion `configRowFromDto`'s own comment names, and it was written because
+ * the two halves are ASYMMETRIC and the asymmetry looks harmless.** `buildTableConfig` writes
+ * `columns` only when the list is non-empty; `configRowFromDto` reads `columns ?? []`. Both are
+ * deliberate — absent and empty are one state — but that is exactly the shape where a field
+ * gets written and never read back, and the failure is silent: an author picks four columns,
+ * later renames the widget, saves, and the card widens to every column with nothing reporting
+ * why.
+ *
+ * The fixture uses a NON-declared order (`severity` before `assetCode`) so a `.sort()` anywhere
+ * in the round trip fails here rather than looking correct.
+ */
+export function runTableColumnRoundTripTests(): void {
+  const chosen = ["severity", "assetCode"];
+  const table = widgetDto({
+    id: "table-1",
+    widgetType: "table",
+    config: { columns: chosen },
+    points: [],
+    sources: [{ id: "s-1", catalogKey: "alarms.active", params: {}, sortOrder: 0 }],
+  });
+
+  const [row] = dashboardRowsFromDto(dashboardDto([table]));
+  assert(row !== undefined, "the stored table must read back as a row");
+  assert(
+    JSON.stringify(row?.config.tableColumns) === JSON.stringify(chosen),
+    `the chosen columns must read back in the author's order, got ${JSON.stringify(row?.config.tableColumns)}`,
+  );
+
+  // And back out again. This is the half that catches the silent loss: the payload built from
+  // the row the builder just loaded must carry the same projection the server stored.
+  const payload = buildPutWidgetsPayload([row!]);
+  const written = payload.widgets[0];
+  assert(
+    written?.widgetType === "table",
+    `the rebuilt payload must still be a table, got ${String(written?.widgetType)}`,
+  );
+  assert(
+    written?.widgetType === "table" &&
+      JSON.stringify(written.config.columns) === JSON.stringify(chosen),
+    `an edit-and-resave must preserve the column projection, got ${JSON.stringify(
+      written?.widgetType === "table" ? written.config.columns : undefined,
+    )}`,
+  );
+
+  // The empty case collapses to ABSENT rather than `[]`, so one authored state has one stored
+  // encoding. Two encodings of "every column" would make the first `columns.length === 0` check
+  // written on the read side a bug for the other one.
+  const noColumns = widgetDto({
+    id: "table-2",
+    widgetType: "table",
+    config: {},
+    points: [],
+    sources: [{ id: "s-2", catalogKey: "alarms.active", params: {}, sortOrder: 0 }],
+  });
+  const [bare] = dashboardRowsFromDto(dashboardDto([noColumns]));
+  assert(bare?.config.tableColumns.length === 0, "an absent column list reads back as empty");
+  const bareWritten = buildPutWidgetsPayload([bare!]).widgets[0];
+  assert(
+    bareWritten?.widgetType === "table" && bareWritten.config.columns === undefined,
+    "an empty projection must be written as ABSENT, not as an empty array",
+  );
+}
+
+/**
+ * `F3.35` Stage B — removing a catalog source clears the column projection with it.
+ *
+ * The trap this guards is a 400 an author cannot act on: rebind a table from `alarms.active` to
+ * `workorders.open` with the old columns still stored, and `eachTableColumnIsDeclared` refuses
+ * the save naming a column the picker no longer offers.
+ */
+export function runRemovingASourceClearsColumnsTests(): void {
+  const table = widgetDto({
+    id: "table-3",
+    widgetType: "table",
+    config: { columns: ["severity", "assetCode"] },
+    points: [],
+    sources: [{ id: "s-3", catalogKey: "alarms.active", params: {}, sortOrder: 0 }],
+  });
+  const [row] = dashboardRowsFromDto(dashboardDto([table]));
+  assert(row?.config.tableColumns.length === 2, "the fixture must start with a projection");
+
+  const patch = widgetRowAfterRemovingSource(row!, 0);
+  assert(patch.sources?.length === 0, "the source must be removed");
+  assert(
+    patch.config?.tableColumns.length === 0,
+    `the column projection must be cleared with its dataset, got ${JSON.stringify(patch.config?.tableColumns)}`,
+  );
+
+  // Removing a source must not disturb the rest of the config — clearing the columns is the
+  // only side effect, so an author does not lose a unit or a decimals setting by rebinding.
+  const withUnit = dashboardRowsFromDto(
+    dashboardDto([
+      widgetDto({
+        id: "table-4",
+        widgetType: "table",
+        config: { unit: "kW", columns: ["severity"] },
+        points: [],
+        sources: [{ id: "s-4", catalogKey: "alarms.active", params: {}, sortOrder: 0 }],
+      }),
+    ]),
+  )[0];
+  const kept = widgetRowAfterRemovingSource(withUnit!, 0);
+  assert(kept.config?.unit === "kW", "removing a source must not clear unrelated config fields");
+}
+
 export function runDashboardBuilderErrorsTests(): void {
   const valid = dashboardRowsFromDto(dashboardDto([widgetDto()]));
   assert(dashboardBuilderErrors(valid).length === 0, "a valid single-widget set reports no problems");

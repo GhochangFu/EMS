@@ -7,6 +7,8 @@ import {
   runDashboardBuilderErrorsTests,
   runDashboardBuilderProblemSubjectTests,
   runDashboardRowsFromDtoTests,
+  runRemovingASourceClearsColumnsTests,
+  runTableColumnRoundTripTests,
   runUnselectedDashboardBuilderProblemsTests,
 } from "./dashboard-builder-form.spec";
 
@@ -18,6 +20,14 @@ describe("dashboard builder form", () => {
 
   it("reads a stored dashboard's widgets back into editable rows", () => {
     runDashboardRowsFromDtoTests();
+  });
+
+  it("preserves a table's column projection across an edit-and-resave", () => {
+    runTableColumnRoundTripTests();
+  });
+
+  it("clears the column projection when its dataset binding is removed", () => {
+    runRemovingASourceClearsColumnsTests();
   });
 
   it("validates cardinality and grid fit from the shared catalog and constant", () => {

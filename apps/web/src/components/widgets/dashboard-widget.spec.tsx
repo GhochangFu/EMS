@@ -104,9 +104,10 @@ const WIDGET_TYPES = Object.keys(WIDGET_CATALOG) as WidgetType[];
 export function everyCatalogTypeDrawsItsTitle(): void {
   expect(
     WIDGET_TYPES.length,
-    "the catalog holds four widget types (ADR 0047 decision 2). A zero means the walk is broken and the " +
-      "loop below asserts nothing; a five means a type was added — widen this number and say so.",
-  ).toBe(4);
+    "the catalog holds five widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
+      "decision 5, `F3.35` Stage B). A zero means the walk is broken and the loop below asserts " +
+      "nothing; a six means a type was added — widen this number and say so.",
+  ).toBe(5);
 
   for (const widgetType of WIDGET_TYPES) {
     const { unmount } = render(<DashboardWidget widget={sampleWidget(widgetType)} data={READY_AT_750} />);

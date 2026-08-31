@@ -410,7 +410,25 @@ describe.skipIf(!has)("F3.35 Stage C — bms.dashboard_widget_sources against a 
     expect(owner.rows[0]?.owner, "the SET ROLE bracket must have owned the table").toBe("bms_owner");
   });
 
-  it("leaves the widget vocabulary at four types — `table` is Stage B's", async () => {
+  /**
+   * **This assertion was inverted by `F3.35` Stage B, and the inversion is the point.**
+   *
+   * It read "leaves the widget vocabulary at four types — `table` is Stage B's", and proved the
+   * DATABASE still refused `'table'` after migration `0054`. That was correct while Stage C
+   * stood alone: `0054` deliberately did not widen `dashboard_widgets_widget_type_check`,
+   * because a `widget_type` the database accepts and no component draws is ADR 0047 decision
+   * 2's whole justification arriving through the door the constraint holds shut.
+   *
+   * Stage B shipped that component, and migration `0055` widened the constraint. So the
+   * behaviour under test is now the opposite one — and it is still worth asserting behaviourally
+   * rather than deleting, for the reason the original gave: a widened CHECK and an unwidened one
+   * are indistinguishable from any insert of the types that already rendered. Only an insert of
+   * `'table'` tells them apart, and only against a real database.
+   *
+   * `tests/f3.35-table-widget-schema.test.ts` is the static half — it holds `0055`'s IN list
+   * equal to `widgetTypeSchema`. This is the half that proves the migration actually RAN.
+   */
+  it("accepts `table` now that Stage B's 0055 widened the vocabulary", async () => {
     await inTx(async (run) => {
       const dash = await run(
         `INSERT INTO bms.dashboards (organization_id, slug, name)
@@ -418,15 +436,25 @@ describe.skipIf(!has)("F3.35 Stage C — bms.dashboard_widget_sources against a 
         [orgA, `f335-vocab-${RUN}`],
       );
 
-      // Migration 0054 must not have widened `dashboard_widgets_widget_type_check`. The static
-      // test proves the file does not name that constraint; this proves the DATABASE still
-      // refuses the value, which is what would actually break — a widened CHECK and an
-      // unwidened one are indistinguishable from any insert of the four types that render.
+      const inserted = await run(
+        `INSERT INTO bms.dashboard_widgets
+           (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h)
+         VALUES ($1, $2, 'table', 0, 0, 3, 3) RETURNING widget_type`,
+        [orgA, dash.rows[0]?.id],
+      );
+      expect(
+        inserted.rows[0]?.widget_type,
+        "0055 must have run — an unwidened CHECK refuses this insert",
+      ).toBe("table");
+
+      // The other half, and it is not symmetry: a constraint DROPPED rather than widened would
+      // pass the assertion above and accept anything at all. `0055` replaces a four-value list
+      // with a five-value one, so an unlisted type must still be refused.
       await refuses(
         run,
         `INSERT INTO bms.dashboard_widgets
            (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h)
-         VALUES ($1, $2, 'table', 0, 0, 3, 3)`,
+         VALUES ($1, $2, 'donut', 0, 0, 3, 3)`,
         [orgA, dash.rows[0]?.id],
         "dashboard_widgets_widget_type_check",
       );

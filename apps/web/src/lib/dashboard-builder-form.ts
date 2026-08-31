@@ -392,6 +392,33 @@ function buildIdentity(row: DashboardWidgetRow): WidgetIdentityWritePayload {
   return identity;
 }
 
+/**
+ * The patch that removes one catalog source from a widget (`F3.35` Stage B).
+ *
+ * **A function rather than two lines inside `WidgetInspector`, because it carries a decision
+ * and a `.tsx` handler is outside the coverage denominator** — the split `ValueTileWidget`'s
+ * docblock makes about `toKpiTileProps`, applied to a write path.
+ *
+ * The decision: **removing the source clears the column projection with it.** The columns
+ * belong to the dataset that was bound, not to the widget. Left behind, an author who rebinds a
+ * table from `alarms.active` to `workorders.open` keeps the first dataset's column names, and
+ * `eachTableColumnIsDeclared` answers 400 for a change they never made — pointing at a field
+ * the picker no longer shows them.
+ *
+ * Cleared unconditionally rather than only for a table: `tableColumns` is meaningless on every
+ * other widget type and is already empty there, so a type check here would be a branch that can
+ * only ever agree with itself.
+ */
+export function widgetRowAfterRemovingSource(
+  row: DashboardWidgetRow,
+  index: number,
+): Partial<DashboardWidgetRow> {
+  return {
+    sources: row.sources.filter((_, position) => position !== index),
+    config: { ...row.config, tableColumns: [] },
+  };
+}
+
 /** Builds the whole `PUT /dashboards/:id/widgets` body — `buildWidgetPayload`'s shape in
  * `template-dashboard-form.ts`, over the live widget's richer `points` array instead of
  * `pointKeys`. */

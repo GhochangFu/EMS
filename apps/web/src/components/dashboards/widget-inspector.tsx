@@ -1,6 +1,7 @@
 import { DASHBOARD_GRID, METRIC_CATALOG } from "@bms/shared";
 import type { AdminAssetPointDto, MetricCatalogKey, WidgetPointRole } from "@bms/shared";
 
+import { widgetRowAfterRemovingSource } from "../../lib/dashboard-builder-form";
 import type { DashboardBuilderProblem, DashboardWidgetRow } from "../../lib/dashboard-builder-form";
 import { metricCatalogLabel } from "../../lib/metric-catalog";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
@@ -99,20 +100,10 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
     onChange({ sources: [...row.sources, { catalogKey, params: {} }] });
   }
 
-  /**
-   * `F3.35` Stage B — removing a source clears the column projection with it.
-   *
-   * **The columns belong to the dataset that was bound, not to the widget.** Leaving them
-   * behind means the author rebinds to `workorders.open` and the widget still carries
-   * `alarms.active`'s column names: `eachTableColumnIsDeclared` then answers 400 for a change
-   * the author never made, pointing at a field the picker no longer shows. Clearing here is
-   * what makes the rebind a rebind rather than a trap.
-   */
+  /** `F3.35` Stage B — the decision (and why it clears the columns) is
+   * `widgetRowAfterRemovingSource`'s, in `dashboard-builder-form.ts`, where it is tested. */
   function removeSource(index: number): void {
-    onChange({
-      sources: row.sources.filter((_, position) => position !== index),
-      config: { ...row.config, tableColumns: [] },
-    });
+    onChange(widgetRowAfterRemovingSource(row, index));
   }
 
   function setTableColumns(tableColumns: string[]): void {
