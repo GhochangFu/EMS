@@ -20,6 +20,7 @@ import { seedPheCatalog } from "./phe-pilot-seed";
 import { createDb } from "./client";
 import { backfillAssetLocations, seedAssetGroups } from "./asset-groups-seed";
 import { seedAutomationRules, seedEskomLadderRules } from "./automation-rules-seed";
+import { seedRuledPointCatalog } from "./ruled-point-catalog-seed";
 import {
   seedDemoAlarms,
   seedDemoWorkOrders,
@@ -188,6 +189,11 @@ async function main(): Promise<void> {
       // ESKOM electrical asset to exist, including ESK-MANUAL-01, which the
       // call just above this one creates.
       await seedEskomLadderRules(db, eskomOrgId);
+      // `F4.69` — last inside this bracket, because it derives from the rules
+      // every call above it writes. A catalog row for each published threshold
+      // rule's point is what makes a tag scoreable (`E1.3`) and pickable
+      // (`F3.35`); before it, `bms.asset_points` held no row for any ESKOM asset.
+      await seedRuledPointCatalog(pool, eskomOrgId);
     });
 
     // ── Post-tenant ───────────────────────────────────────────────────────
