@@ -125,6 +125,27 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
     // at all, and nothing else in this suite would notice.
     const indexes = journal.entries.map((entry) => entry.idx);
     expect(new Set(indexes).size, "journal indexes must be unique").toBe(indexes.length);
+
+    // A NOTE FOR WHOEVER WRITES `0055`, because the trap is silent from that side.
+    //
+    // `when: 1788352383386` is 2026-09-02T12:33Z — AHEAD of the wall clock on the day this
+    // landed. It continues a synthetic +1 day step from `0053`, and the journal has been
+    // drifting forward for several migrations (`0053` was already ~43 h ahead). Only `0054`
+    // is this row's to answer for, and correcting it alone would put it BELOW `0053` and
+    // break the increasing invariant, so it stands.
+    //
+    // The consequence: drizzle-kit stamps `when: +new Date()`, and the migrator runs a file
+    // only when `folderMillis` exceeds the last applied `created_at`. A `0055` stamped from
+    // the real clock before 2026-09-02T12:33Z is OLDER than this entry and would never run on
+    // any database that already has `0054` — the dev box and the PHE pilot included. Hand-
+    // stamp a `when` above this one. `scripts/checks/drizzle-journal.mjs` fails a
+    // non-increasing `when` in the pre-commit hook, so the mistake is loud rather than silent,
+    // but it is easier to avoid than to diagnose.
+    const previous = journal.entries.find((entry) => entry.idx === 53);
+    expect(
+      Number(previous?.when),
+      "0054 must stamp later than 0053, or drizzle skips it",
+    ).toBeLessThan(1788352383386);
   });
 
   it("is not scanning an empty or misnamed file", () => {
@@ -198,9 +219,26 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
     const policy = policyBlock(read(MIGRATION_REL), TABLE);
     const ORG = "nullif(current_setting('app.current_organization', true), '')::uuid";
 
-    expect(policy, "the own-column check survives ALONGSIDE the parent check").toContain(
-      `organization_id = ${ORG}`,
-    );
+    // ANCHORED TO THE START OF A LINE, AND THE OBVIOUS SPELLING IS VACUOUS.
+    //
+    // `expect(policy).toContain(`organization_id = ${ORG}`)` is what this assertion said
+    // first, and this item's migration review mutation-proved that it gates nothing: the
+    // PARENT leg reads `AND w.organization_id = nullif(...)::uuid`, which CONTAINS that
+    // needle as a substring. Deleting both own-column predicates left `toContain` true, the
+    // parent-EXISTS count at 2, and every other assertion in this block green — a policy
+    // keyed on the parent alone passed the test that exists to refuse it.
+    //
+    // Counting anchored lines instead states the real requirement: the own column is checked
+    // once in USING and once in WITH CHECK, and neither occurrence can be supplied by a
+    // qualified column. `tests/f3.1a-dashboard-schema.test.ts:213-215` still carries the
+    // unanchored form for migration `0050`'s three tables — same hole, different row's file.
+    const ownColumnChecks = policy
+      .split("\n")
+      .filter((line) => line.trim().startsWith(`organization_id = ${ORG}`));
+    expect(
+      ownColumnChecks.length,
+      "the own-column check must survive ALONGSIDE the parent check, in USING and in WITH CHECK",
+    ).toBe(2);
 
     // Twice — once in USING, once in WITH CHECK. A read-only check leaves the write path open,
     // which is the asymmetry `E7.1c` found: the grant was not the hole, the policy disjunct was.
@@ -334,7 +372,23 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
     // per-widget ordered read and the ON DELETE CASCADE from `bms.dashboard_widgets`. That is
     // exactly why `dashboard_widget_points` needed a SEPARATE `point_idx` and this table needs
     // no second index: that table's cascade arrives through its *other* foreign key.
-    expect(migration).not.toMatch(/CREATE INDEX IF NOT EXISTS dashboard_widget_sources_widget_idx/);
+    //
+    // ANY index, not one name. Asserting only that `dashboard_widget_sources_widget_idx` is
+    // absent lets every other name through, so the stated decision — "no explicit index" —
+    // would be held by nothing. This item's migration review flagged the named form as
+    // near-vacuous.
+    expect(sqlOnly(migration), "this table's reads are served by its unique key").not.toMatch(
+      /CREATE INDEX/i,
+    );
+
+    // AND THE READ THIS DOES NOT SERVE, recorded because the migration header gets it wrong
+    // and a committed migration cannot be corrected. The header calls the unique key enough
+    // for "both reads this table has". There are three. `catalog_key` is the TRAILING column
+    // of `(widget_id, catalog_key)`, so `WHERE catalog_key = 'x'` — the retirement query the
+    // header's own opening paragraph gives as the reason this table exists at all — gets no
+    // usable prefix and full-scans. Harmless at these row counts and not worth a `0055`; if
+    // it ever stops being harmless, the fix is a forward migration adding
+    // `(catalog_key)`, not a rewrite of this decision.
   });
 
   it("leaves dashboard_widget_points untouched", () => {

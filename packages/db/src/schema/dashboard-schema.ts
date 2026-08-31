@@ -210,9 +210,38 @@ export const dashboardWidgetPoints = bmsSchema.table(
  * meaningless under any cardinality: the same key bound twice to one widget.
  *
  * No explicit index: `dashboard_widget_sources_widget_key_key` leads with `widgetId`, so it
- * serves both the per-widget read and the cascade from `dashboardWidgets`. That is why
+ * serves the per-widget read and the cascade from `dashboardWidgets`. That is why
  * `dashboardWidgetPoints` needs its separate `point_idx` and this table needs nothing — that
  * table's second cascade arrives through `pointId`, which no unique key covers.
+ *
+ * **The migration header calls that "both reads this table has", and there are three.** The
+ * third is `WHERE catalog_key = 'x'` — "which dashboards use this catalog entry", the
+ * retirement query the header's own opening paragraph gives as the reason a fourth table beats
+ * a key inside `jsonb`. `catalogKey` is the *trailing* column, so that query gets no usable
+ * prefix and full-scans. Harmless at these row counts, and a committed migration cannot be
+ * corrected — recorded here instead. If it stops being harmless the fix is a forward migration
+ * adding `(catalog_key)`, not a rewrite of the decision.
+ *
+ * ---
+ *
+ * **TWO THINGS THIS TABLE'S POLICY DOES NOT DO.** Both are service-side and both were found by
+ * this item's migration review. `tenant_isolation` is written and forced, which makes it easy
+ * to read the table as self-defending. It is not.
+ *
+ * 1. **`bms_fleet` holds `BYPASSRLS`** (`packages/db/src/roles.ts:77`), so the policy does not
+ *    bind `fleetDb` at all — for reads or writes, in either direction. ADR 0048 states this for
+ *    its own table; migrations `0050` and `0054` are both silent, and `0054`'s header argues
+ *    fail-closed entirely from NOT NULL columns and the unset GUC, which is true of `bms_owner`
+ *    and `bms_tenant` and says nothing about the role that ignores the policy.
+ *    `dashboards.service.ts` already handles this for its own reads — `fetchRowForWrite` uses
+ *    `fleetDb` and names `canManageDashboard` as the isolation control. Every read of THIS
+ *    table on the fleet pool needs the same explicit guard.
+ * 2. **The policy gives organization isolation and no dashboard scope.** A dashboard may be
+ *    scoped to a location or an asset group, and nothing here or in the policy sees the
+ *    grandparent's scope — so a site dashboard binding `alarms.active.count` resolves
+ *    **organization-wide** unless the resolve service filters. `dashboard-point-scope.ts`
+ *    exists because `F3.1b` hit exactly this for point bindings; the source side has no
+ *    analogue yet.
  *
  * Following this file's own convention, `CHECK` constraints are not mirrored here (the migration
  * owns them, and `tests/f3.35-metric-catalog-schema.test.ts` pins each by name) while the
@@ -232,8 +261,10 @@ export const dashboardWidgetSources = bmsSchema.table(
       .notNull()
       .references(() => dashboardWidgets.id, { onDelete: "cascade" }),
     catalogKey: varchar("catalog_key", { length: 64 }).notNull(),
-    // Bounded by `metricCatalogParamsSchema`'s record in
-    // `@bms/shared/contracts/dashboard-builder`, not by the database. The migration adds only a
+    // Bounded by the `z.record(z.union([z.string(), z.number(), z.boolean()]))` on
+    // `dashboardWidgetSourceDtoSchema` in `@bms/shared/contracts/dashboard-builder` — the
+    // record is declared inline there and has no name of its own, so do not go looking for
+    // one. The migration adds only a
     // floor — `jsonb_typeof(params) = 'object'` — which refuses a scalar or an array at the top
     // level and nothing else. `dashboardWidgets.config` carries no such check because it is read
     // by a renderer; `params` reaches the resolve endpoint's query, which is the difference.

@@ -525,13 +525,22 @@ export const dashboardWidgetPointDtoSchema = z
  * foreign key to nothing**, because the catalog is code — and a separate table says so instead
  * of hiding it behind a nullable column.
  *
- * **`params` carries no id, and that is enforced rather than merely intended.** A binding
- * inherits the dashboard's scope (`dashboards.location_id` / `asset_group_id`), so a location
- * id inside `params` would be an id in `jsonb` that no foreign key covers and no orphan check
- * can report — the ADR 0019 problem decision 4 exists to refuse, one field over. The write
- * schemas in `apps/api/src/metric-catalog/metric-catalog.schema.ts` are `.strict()` per entry
- * and declare no id field, and `tests/f3.35-metric-catalog-containment.test.ts` scans that file
- * for `.uuid(`.
+ * **`params` must carry no id, and NOTHING ENFORCES THAT YET — it is a Unit 3 gate, not an
+ * accomplished fact.** This paragraph claimed the opposite until this item's migration review
+ * checked it: the two files it named as the enforcement,
+ * `apps/api/src/metric-catalog/metric-catalog.schema.ts` and
+ * `tests/f3.35-metric-catalog-containment.test.ts`, do not exist on this branch. **Written
+ * forward, before the code, is how a specification reads; written in the past tense it is a
+ * false claim in a committed file, and a reader has no way to tell which they are holding.**
+ *
+ * The requirement itself stands and is the reason the table exists. A binding inherits the
+ * dashboard's scope (`dashboards.location_id` / `asset_group_id`), so a location id inside
+ * `params` would be an id in `jsonb` that no foreign key covers and no orphan check can
+ * report — the ADR 0019 problem decision 4 exists to refuse, one field over. **The only bound
+ * today is `dashboard_widget_sources_params_object_check` in migration `0054`, which refuses a
+ * scalar or an array at the top level and accepts `{"locationId": "<any uuid>"}`.** Nothing is
+ * exposed while no service writes this table. Unit 3 must land a `.strict()` write schema per
+ * entry that declares no id field, and a static scan that fails the build on `.uuid(` in it.
  *
  * **`sortOrder` carries no `.min(0)`**, for the reason `dashboardWidgetPointDtoSchema` states:
  * `sort_order integer NOT NULL DEFAULT 0` permits a negative, so a bound here would reject a

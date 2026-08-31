@@ -399,8 +399,12 @@ describe.skipIf(!has)("F3.35 Stage C — bms.dashboard_widget_sources against a 
       expect(granted.rows[0]?.ok, `${role} must reach bms.dashboard_widget_sources`).toBe(true);
     }
 
+    // `relnamespace` is filtered, not assumed. `pg_class.relname` is unique per SCHEMA, not
+    // per database, so a same-named table anywhere else makes `rows[0]` a coin toss and this
+    // assertion nondeterministic — flagged by this item's migration review.
     const owner = await pool.query<{ owner: string }>(
-      `SELECT pg_get_userbyid(relowner) AS owner FROM pg_class WHERE relname = $1`,
+      `SELECT pg_get_userbyid(relowner) AS owner FROM pg_class
+       WHERE relname = $1 AND relnamespace = 'bms'::regnamespace`,
       ["dashboard_widget_sources"],
     );
     expect(owner.rows[0]?.owner, "the SET ROLE bracket must have owned the table").toBe("bms_owner");
