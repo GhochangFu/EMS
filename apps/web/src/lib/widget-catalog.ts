@@ -16,6 +16,7 @@ export type RadialGaugeConfig = Extract<DashboardWidgetSpec, { widgetType: "radi
 export type TankLevelConfig = Extract<DashboardWidgetSpec, { widgetType: "tank_level" }>["config"];
 export type ValueTileConfig = Extract<DashboardWidgetSpec, { widgetType: "value_tile" }>["config"];
 export type ChartConfig = Extract<DashboardWidgetSpec, { widgetType: "chart" }>["config"];
+export type TableConfig = Extract<DashboardWidgetSpec, { widgetType: "table" }>["config"];
 
 /**
  * The presentation tone of a gauge threshold band or a tank's fill —
@@ -83,9 +84,9 @@ type WidgetCatalogEntry = {
 };
 
 /**
- * The four widget types, closed (ADR 0047 decision 2). Label, icon and
- * default size are presentation and belong here; `points` is a validation
- * rule and is imported rather than restated (Amendment 2 §1).
+ * The five widget types, closed (ADR 0047 decision 2; `table` by ADR 0048 decision 5). Label,
+ * icon and default size are presentation and belong here; `points` and `sources` are validation
+ * rules and are imported rather than restated (Amendment 2 §1).
  */
 export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = {
   radial_gauge: {
@@ -115,6 +116,18 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     defaultSize: { w: 6, h: 4 },
     points: WIDGET_POINT_CARDINALITY.chart,
     sources: WIDGET_SOURCE_CARDINALITY.chart,
+  },
+  table: {
+    label: "Table",
+    // A header rule over three body rows — the six-row card of the mock, drawn small enough to
+    // read at 24px. Grid lines rather than a filled block, so it is not the `value_tile` square.
+    iconPath: "M3 4h18v16H3V4Zm2 2v2h14V6H5Zm0 4v3h6v-3H5Zm8 0v3h6v-3h-6Zm-8 5v3h6v-3H5Zm8 0v3h6v-3h-6Z",
+    // Wider and taller than every other default: a table is the only type whose content is rows
+    // and columns, and a 3x2 card would show one row under a header. Six rows is what the mock
+    // draws and what `defaultSize` should make an author land on without resizing.
+    defaultSize: { w: 6, h: 5 },
+    points: WIDGET_POINT_CARDINALITY.table,
+    sources: WIDGET_SOURCE_CARDINALITY.table,
   },
 };
 

@@ -8,6 +8,8 @@ import {
   WIDGET_POINT_CARDINALITY,
   WIDGET_SOURCE_CARDINALITY,
   WIDGET_SOURCE_SHAPES,
+  bindingShapeMessage,
+  columnNotDeclaredMessage,
   widgetTypeSchema,
 } from "@bms/shared";
 import type { MetricCatalogKey } from "@bms/shared";
@@ -88,6 +90,22 @@ const validGaugeWidget = {
   gridH: 4,
   config: { min: 0, max: 100 },
   points: [{ pointId: POINT_A }],
+};
+
+/**
+ * A `table` bound to a dataset (`F3.35` Stage B). `sources` is required at `{min: 1, max: 1}`
+ * and `points` at `{min: 0, max: 0}`, so this is the only shape a table can legally take.
+ */
+const validTableWidget = {
+  widgetType: "table" as const,
+  title: "Active alarms",
+  gridX: 0,
+  gridY: 0,
+  gridW: 6,
+  gridH: 5,
+  config: {},
+  points: [],
+  sources: [{ catalogKey: "alarms.active" as const, params: {} }],
 };
 
 const validChartWidget = {
@@ -220,6 +238,81 @@ export function runDashboardsSchemaTests(): void {
     ["config", "max"],
     [GAUGE_RANGE_MESSAGE],
     "an inverted gauge range must be refused",
+  );
+
+  // -------------------------------------------------------------------------
+  // 12. `F3.35` Stage B — the table widget's bindings and its column projection.
+  // -------------------------------------------------------------------------
+  expectAccepts(widgetWriteSchema, validTableWidget, "a table bound to a dataset must parse");
+
+  // A METRIC on a table is the mirror of the dataset-on-a-tile hole Stage C closed. The
+  // cardinality is satisfied — one source, exactly as required — and only `WIDGET_SOURCE_SHAPES`
+  // refuses it. Without that record a table would bind `alarms.active.count`, resolve to the
+  // number 7, and arrive at a renderer that draws rows.
+  expectRejectsAt(
+    widgetWriteSchema,
+    { ...validTableWidget, sources: [{ catalogKey: "alarms.active.count", params: {} }] },
+    ["sources", 0, "catalogKey"],
+    [bindingShapeMessage("table", "alarms.active.count", "metric")],
+    "a metric bound to a table must be refused by shape, not merely by count",
+  );
+
+  // A table with NO source. `WIDGET_SOURCE_CARDINALITY.table.min` is 1 — unlike the tile's 0,
+  // because a tile may bind a point instead and a table has no second way to get rows.
+  expectRejects(
+    widgetWriteSchema,
+    { ...validTableWidget, sources: [] },
+    "a table with no catalog binding must be refused — it has no other way to get rows",
+  );
+
+  // A POINT on a table. `WIDGET_POINT_CARDINALITY.table.max` is 0: a point is a series over
+  // time, which has no rows and no columns to project.
+  expectRejects(
+    widgetWriteSchema,
+    { ...validTableWidget, points: [{ pointId: POINT_A }] },
+    "a table cannot bind a point",
+  );
+
+  // The column projection. An undeclared name is refused AT THE COLUMN, because an author who
+  // chose six columns must be told which one is wrong.
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    {
+      widgets: [
+        { ...validTableWidget, config: { columns: ["assetCode", "notAColumn"] } },
+      ],
+    },
+    ["widgets", 0, "config", "columns", 1],
+    [columnNotDeclaredMessage("notAColumn", "alarms.active")],
+    "a column the bound dataset does not declare must be refused, naming the column",
+  );
+
+  // Declared columns pass, in any order the author chose — the order IS the projection.
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    {
+      widgets: [
+        { ...validTableWidget, config: { columns: ["severity", "assetCode"] } },
+      ],
+    },
+    "a reordered subset of the declared columns must parse — the author's order is the choice",
+  );
+
+  // Empty and absent are one state, and both are legal: a table is created before its columns
+  // are picked, and refusing this would make the widget unsaveable at the moment it is made.
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: [{ ...validTableWidget, config: { columns: [] } }] },
+    "an empty column list means every declared column and must parse",
+  );
+
+  // The rule must not fire on a widget that is not a table — `config.columns` exists on no
+  // other arm, and a rule that walked every widget looking for a `columns` key would be a rule
+  // waiting for an unrelated arm to gain one.
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    { widgets: [validGaugeWidget, validTableWidget] },
+    "a dashboard mixing a gauge and a table must parse",
   );
 
   // -------------------------------------------------------------------------

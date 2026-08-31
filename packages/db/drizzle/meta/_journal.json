@@ -379,6 +379,13 @@
       "when": 1788352383386,
       "tag": "0054_dashboard_widget_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1788438783386,
+      "tag": "0055_dashboard_widget_table_type",
+      "breakpoints": true
     }
   ]
 }

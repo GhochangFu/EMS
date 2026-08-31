@@ -67,10 +67,26 @@ import { z } from "zod";
  */
 
 /**
- * The four widget types, closed. Must match `dashboard_widgets_widget_type_check` in migration
- * `0050` exactly; the spec pins both lists so drift fails the build rather than a page.
+ * The five widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5).
+ *
+ * **Two migrations declare this list, not one, and only the second is current.** `0050` froze
+ * the original four in `dashboard_widgets_widget_type_check`; `F3.35` Stage B's `0055` drops
+ * and re-adds that constraint with `table`. A committed migration is frozen by the pre-commit
+ * hook, so `0050` still reads four and always will — which makes "match `0050`" the wrong
+ * instruction and is why this sentence replaced it.
+ *
+ * `tests/f3.35-table-widget-schema.test.ts` compares this enum against `0055`'s widened list,
+ * and `tests/f3.1a-dashboard-schema.test.ts` keeps pinning `0050` to its historical four. Both
+ * are correct at once: the first asks what the database enforces now, the second what that
+ * migration froze then.
  */
-export const widgetTypeSchema = z.enum(["radial_gauge", "tank_level", "value_tile", "chart"]);
+export const widgetTypeSchema = z.enum([
+  "radial_gauge",
+  "tank_level",
+  "value_tile",
+  "chart",
+  "table",
+]);
 
 /**
  * The generic `chart` type's series (ADR 0047 decision 4).
@@ -297,6 +313,42 @@ export const chartConfigSchema = z
   });
 
 /**
+ * A ceiling on `tableConfigSchema.columns`, and deliberately not the real bound.
+ *
+ * The real bound is the bound dataset's own `METRIC_CATALOG[key].columns`, which is a
+ * cross-field rule between `config` and `sources` and therefore lives on the write path
+ * (`dashboards.schema.ts`), exactly where `eachSourceFitsTheWidget` lives. This number only
+ * refuses an absurd payload before that rule runs, so it is set above the longest declared
+ * list (six, `workorders.open`) with headroom rather than at it — tightening it to six would
+ * make a future seven-column dataset fail here with a message about a limit instead of there
+ * with a message about the dataset.
+ */
+export const MAX_TABLE_COLUMNS = 12;
+
+/**
+ * The `table` widget (`F3.35` Stage B, ADR 0048 decision 5).
+ *
+ * **`columns` is a projection, never a query.** The resolve endpoint returns every column the
+ * catalog declares and the renderer picks from them (ADR 0048 decision 2), so no column name
+ * travels in a request and no SQL is built from one. That is why this is a plain string array
+ * and not an enum: the legal values depend on which dataset the widget binds, which this
+ * schema cannot see.
+ *
+ * **Absent or empty means every declared column**, and that is load-bearing rather than
+ * lenient. `WIDGET_SOURCE_CARDINALITY.table` is `{min: 1, max: 1}`, so an author binds the
+ * dataset and picks columns in one save; a config that refused an empty list would make the
+ * widget unsaveable at the moment it is created. It also keeps a stored table working when a
+ * released catalog change adds a column — the card widens instead of going blank.
+ *
+ * Flat, for the reason `valueTileConfigSchema`'s docblock gives: both write surfaces compose
+ * these with `.strict()`, and `.strict()` does not descend.
+ */
+export const tableConfigSchema = z.object({
+  ...commonConfigFields,
+  columns: z.array(z.string().max(64)).max(MAX_TABLE_COLUMNS).optional(),
+});
+
+/**
  * Type and config as one value.
  *
  * **The discriminant is `widgetType`, which is the column, and it is stored once.**
@@ -310,6 +362,7 @@ export const dashboardWidgetSpecSchema = z.discriminatedUnion("widgetType", [
   z.object({ widgetType: z.literal("tank_level"), config: tankLevelConfigSchema }),
   z.object({ widgetType: z.literal("value_tile"), config: valueTileConfigSchema }),
   z.object({ widgetType: z.literal("chart"), config: chartConfigSchema }),
+  z.object({ widgetType: z.literal("table"), config: tableConfigSchema }),
 ]);
 
 /**
@@ -370,6 +423,11 @@ export const WIDGET_POINT_CARDINALITY: Record<
   // cross-field rule between `points` and `sources`, which a per-type number cannot express.
   value_tile: { min: 0, max: 1 },
   chart: { min: 1, max: MAX_WIDGET_POINTS },
+  // `F3.35` Stage B. A table draws a catalog **dataset** and nothing else: a bound point is a
+  // series over time, which has no rows and no columns to project. `{min: 0, max: 0}` here and
+  // `{min: 1, max: 1}` in `WIDGET_SOURCE_CARDINALITY` are the two halves of that one statement,
+  // and together they make the exactly-one-binding-kind rule resolve to "a source, always".
+  table: { min: 0, max: 0 },
 };
 
 /**
@@ -396,6 +454,10 @@ export const WIDGET_SOURCE_CARDINALITY: Record<
   tank_level: { min: 0, max: 0 },
   value_tile: { min: 0, max: 1 },
   chart: { min: 0, max: 0 },
+  // `F3.35` Stage B, and the `min: 1` is the difference from every entry above it. A tile may
+  // bind a point INSTEAD of a metric, so its minimum is zero; a table has no second way to get
+  // rows, so a table with no source is not a partially-authored widget but an empty card.
+  table: { min: 1, max: 1 },
 };
 
 /**
@@ -531,6 +593,11 @@ export const WIDGET_SOURCE_SHAPES: Record<
   tank_level: [],
   value_tile: ["metric"],
   chart: [],
+  // `F3.35` Stage B — the first entry to accept `"dataset"`, and it accepts ONLY that. The
+  // mirror of the tile's hole: `alarms.active.count` satisfies `{min: 1, max: 1}` above exactly
+  // as well as `alarms.active` does, and would arrive at a renderer that draws rows with one
+  // number and no columns. Refused here, on the write path, where the count is already refused.
+  table: ["dataset"],
 };
 
 /**
@@ -545,6 +612,23 @@ export const WIDGET_SOURCE_SHAPES: Record<
  * second, and a message added at the same time as the widget type that needs it is a message
  * written to match that widget type rather than to match this sentence.
  */
+/**
+ * The fourth binding message: a `table` projecting a column its dataset does not declare
+ * (`F3.35` Stage B).
+ *
+ * Here with the other three because two surfaces state it and one author meets both — and this
+ * one is reachable in ordinary use rather than only by a hand-written payload. An author picks
+ * four columns of `alarms.active`, then rebinds the widget to `workorders.open`: the source is
+ * legal, its shape is legal, and the stored projection now names columns the new dataset has
+ * never heard of. The builder catches it as the author rebinds; the API catches the same state
+ * arriving from anywhere else.
+ *
+ * The message names the column AND the entry, because "that column does not exist" is not
+ * actionable when the author is looking at a picker that offered it a moment ago.
+ */
+export const columnNotDeclaredMessage = (column: string, catalogKey: string): string =>
+  `"${catalogKey}" does not have a column named "${column}". Choose from the columns it returns.`;
+
 export const bindingShapeMessage = (
   label: string,
   catalogKey: string,

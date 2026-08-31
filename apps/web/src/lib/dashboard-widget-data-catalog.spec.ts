@@ -1,3 +1,4 @@
+import { METRIC_CATALOG } from "@bms/shared";
 import type {
   DashboardDto,
   DashboardWidgetDto,
@@ -5,6 +6,8 @@ import type {
   DashboardWidgetSourceDto,
   MetricCatalogValueDto,
 } from "@bms/shared";
+
+import { isRowsData, isScalarData } from "../components/widgets/dashboard-widget";
 
 import {
   CATALOG_STALE_MS,
@@ -106,6 +109,131 @@ const COUNT_OF = (value: number | null): MetricCatalogValueDto => ({
   unit: null,
 });
 
+// ---------------------------------------------------------------------------
+// `F3.35` Stage B — the dataset half.
+// ---------------------------------------------------------------------------
+
+const DATASET_SOURCE: DashboardWidgetSourceDto = {
+  id: SOURCE_ID,
+  catalogKey: "alarms.active",
+  params: {},
+  sortOrder: 0,
+};
+
+const DATASET_BINDING = catalogBindingKey(IDENTITY.id, DATASET_SOURCE.catalogKey);
+
+/** The columns `METRIC_CATALOG["alarms.active"]` declares — imported, never restated. */
+const DECLARED_COLUMNS = (() => {
+  const entry = METRIC_CATALOG["alarms.active"];
+  if (entry.shape !== "dataset") {
+    throw new Error("alarms.active must be a dataset — this fixture is meaningless otherwise");
+  }
+  return entry.columns;
+})();
+
+function tableWith(sources: DashboardWidgetSourceDto[]): DashboardWidgetDto {
+  return {
+    ...IDENTITY,
+    widgetType: "table",
+    config: {},
+    sources,
+  } as DashboardWidgetDto;
+}
+
+const ALARM_ROWS: MetricCatalogValueDto = {
+  shape: "dataset",
+  key: "alarms.active",
+  columns: [...DECLARED_COLUMNS],
+  rows: [
+    {
+      assetCode: "RO-01",
+      assetName: "RO Feed Pump",
+      severity: "critical",
+      message: "Feed pressure above design limit",
+      raisedAt: "2026-01-01T00:05:00.000Z",
+    },
+  ],
+  truncated: false,
+};
+
+/**
+ * A table bound to a dataset reaches the renderer as ROWS, not as a number.
+ *
+ * The regression direction is precise: before Stage B, `catalogWidgetData` returned the scalar
+ * arm unconditionally, so a table resolved perfectly and then rendered `primary: null` into a
+ * component that draws no numbers — a blank card, with the rows sitting unread in the response.
+ */
+export function runDatasetBindingProducesRowsTests(): void {
+  const data = widgetDataFor(
+    tableWith([DATASET_SOURCE]),
+    EMPTY_LATEST,
+    EMPTY_HISTORY,
+    NOW,
+    undefined,
+    resolution([[DATASET_BINDING, ALARM_ROWS]]),
+  );
+
+  assert(isRowsData(data), `a dataset binding must produce the rows arm, got ${data.status}`);
+  if (!isRowsData(data)) return;
+
+  assert(
+    data.rows.length === 1 && data.rows[0]?.assetCode === "RO-01",
+    "the resolved rows must reach the renderer unchanged",
+  );
+  assert(
+    JSON.stringify(data.columns) === JSON.stringify([...DECLARED_COLUMNS]),
+    `the resolved columns must reach the renderer, got ${JSON.stringify(data.columns)}`,
+  );
+  assert(data.truncated === false, "truncated must be carried, not inferred from row count");
+
+  // The other half, and it is not symmetry: `isScalarData` and `isRowsData` must disagree about
+  // every value. A guard that answered true to both would let a caller read `primary` off a
+  // dataset and get `undefined` typed as `number | null`.
+  assert(
+    !isScalarData(data),
+    "the rows arm must not also satisfy isScalarData — the two guards partition `ready`",
+  );
+}
+
+/**
+ * An UNANSWERED dataset still renders its header, and this is the assertion that argued the
+ * implementation into keying off the declared shape.
+ *
+ * Keyed off the resolved answer instead, an unanswered table falls to the scalar arm, arrives at
+ * `TableWidget` with no columns, and draws "No columns to show. Edit this widget and choose at
+ * least one" — telling an author to repair a configuration that is correct, on every page load
+ * before the first resolve returns. `METRIC_CATALOG` is code and the client holds it, so the
+ * columns are knowable with no round trip at all.
+ */
+export function runUnansweredDatasetKeepsItsHeaderTests(): void {
+  const data = widgetDataFor(
+    tableWith([DATASET_SOURCE]),
+    EMPTY_LATEST,
+    EMPTY_HISTORY,
+    NOW,
+    undefined,
+    undefined,
+  );
+
+  assert(
+    isRowsData(data),
+    "an unanswered dataset binding must still produce the rows arm, or the card tells the " +
+      "author to fix a configuration that is not broken",
+  );
+  if (!isRowsData(data)) return;
+
+  assert(
+    JSON.stringify(data.columns) === JSON.stringify([...DECLARED_COLUMNS]),
+    `the DECLARED columns must render before the first resolve, got ${JSON.stringify(data.columns)}`,
+  );
+  assert(data.rows.length === 0, "an unanswered dataset has no rows");
+  assert(
+    data.stale === true,
+    "an unanswered resolve is stale — 'never contacted' is no better evidence of a live API " +
+      "than 'contacted long ago'",
+  );
+}
+
 /**
  * A catalog-bound widget is NOT the empty state, and the number reaches the renderer.
  *
@@ -131,7 +259,7 @@ export function runCatalogBoundTileIsNotEmptyTests(): void {
       'renders "No data bound.", which is the state reserved for a widget that lost its binding',
   );
   assert(
-    data.status === "ready" && data.primary === 7,
+    isScalarData(data) && data.primary === 7,
     "the resolved count must reach the renderer as `primary`",
   );
 
@@ -187,7 +315,7 @@ export function runCatalogStalenessTests(): void {
   // "contacted long ago". Same rule `isStale(null, …)` states one binding kind over.
   const unresolved = widgetDataFor(widget, EMPTY_LATEST, EMPTY_HISTORY, NOW, undefined, undefined);
   assert(
-    unresolved.status === "ready" && unresolved.stale === true && unresolved.primary === null,
+    isScalarData(unresolved) && unresolved.stale === true && unresolved.primary === null,
     "an unanswered resolve must stay READABLE with a null primary and a stale flag — not the " +
       "empty state, and not a fabricated number",
   );
@@ -235,7 +363,7 @@ export function runDatasetOnATileRendersNoValueTests(): void {
   );
 
   assert(
-    data.status === "ready" && data.primary === null,
+    isScalarData(data) && data.primary === null,
     "a dataset on a single-number widget must render no value — a row count dressed up as a " +
       "metric is a number the author never chose",
   );
@@ -259,7 +387,7 @@ export function runCatalogBindingSelectionTests(): void {
     ]),
   );
   assert(
-    data.status === "ready" && data.primary === 3,
+    isScalarData(data) && data.primary === 3,
     "the binding with the lowest stored sortOrder is the one read — array position is not row " +
       "order, and `dashboard_widget_sources` guarantees none",
   );
@@ -275,7 +403,7 @@ export function runCatalogBindingSelectionTests(): void {
     resolution([]),
   );
   assert(
-    dropped.status === "ready" && dropped.primary === null,
+    isScalarData(dropped) && dropped.primary === null,
     "a binding the resolve did not answer renders no value, not an error",
   );
 }
@@ -306,7 +434,7 @@ export function runBindingSurvivesARegeneratedSourceIdTests(): void {
     resolution([[catalogBindingKey(IDENTITY.id, SOURCE.catalogKey), COUNT_OF(11)]]),
   );
   assert(
-    afterResave.status === "ready" && afterResave.primary === 11,
+    isScalarData(afterResave) && afterResave.primary === 11,
     "a binding whose row id was regenerated by an unrelated save must still resolve — keying on " +
       "`sourceId` makes every tile read `null` after any widget edit, with `stale: false`",
   );
@@ -322,7 +450,7 @@ export function runBindingSurvivesARegeneratedSourceIdTests(): void {
     resolution([[catalogBindingKey(OTHER_SOURCE_ID, SOURCE.catalogKey), COUNT_OF(999)]]),
   );
   assert(
-    otherWidgetsAnswer.status === "ready" && otherWidgetsAnswer.primary === null,
+    isScalarData(otherWidgetsAnswer) && otherWidgetsAnswer.primary === null,
     "another widget's answer for the same catalog entry must NOT resolve here — two tiles may " +
       "bind the same key, and the widget id is what separates them",
   );

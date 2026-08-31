@@ -6,7 +6,9 @@ import {
   runCatalogBoundTileIsNotEmptyTests,
   runCatalogGateTests,
   runCatalogStalenessTests,
+  runDatasetBindingProducesRowsTests,
   runDatasetOnATileRendersNoValueTests,
+  runUnansweredDatasetKeepsItsHeaderTests,
 } from "./dashboard-widget-data-catalog.spec";
 
 /** `F3.35` Stage C — Vitest wrapper for the catalog data path (ADR 0014). */
@@ -25,6 +27,16 @@ describe("F3.35 Stage C — a catalog-bound widget", () => {
 
   it("still resolves after an unrelated save regenerated the binding's row id", () => {
     runBindingSurvivesARegeneratedSourceIdTests();
+  });
+});
+
+describe("F3.35 Stage B — a table bound to a dataset", () => {
+  it("reaches the renderer as rows and columns, not as a number", () => {
+    runDatasetBindingProducesRowsTests();
+  });
+
+  it("renders its declared header before the first resolve answers", () => {
+    runUnansweredDatasetKeepsItsHeaderTests();
   });
 });
 

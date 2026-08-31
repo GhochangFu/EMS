@@ -53,13 +53,15 @@ export function runDashboardBuilderTests(): void {
   // over it.
   // -------------------------------------------------------------------------
   assert(
-    widgetTypeSchema.options.length === 4,
-    `the widget vocabulary is four types (ADR 0047 decision 4), got ${widgetTypeSchema.options.length}`,
+    widgetTypeSchema.options.length === 5,
+    `the widget vocabulary is five types (ADR 0047 decision 4; ADR 0048 decision 5 added ` +
+      `"table"), got ${widgetTypeSchema.options.length}`,
   );
   assert(
     JSON.stringify(widgetTypeSchema.options) ===
-      JSON.stringify(["radial_gauge", "tank_level", "value_tile", "chart"]),
-    `widget types must match migration 0050's CHECK exactly, got ${JSON.stringify(widgetTypeSchema.options)}`,
+      JSON.stringify(["radial_gauge", "tank_level", "value_tile", "chart", "table"]),
+    `widget types must match migration 0055's widened CHECK exactly — NOT 0050's, which froze ` +
+      `the original four and cannot be edited, got ${JSON.stringify(widgetTypeSchema.options)}`,
   );
 
   // Decision 4's generic type: one component, four series. This is the lever that keeps a

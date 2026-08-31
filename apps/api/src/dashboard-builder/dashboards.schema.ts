@@ -5,6 +5,7 @@ import {
   bindingRequiredMessage,
   bindingShapeMessage,
   chartConfigSchema,
+  tableConfigSchema,
   commonConfigFields,
   gaugeRangeIsOrdered,
   gaugeThresholdSchema,
@@ -18,6 +19,7 @@ import {
   metricCatalogKeySchema,
   widgetTypeSchema,
   METRIC_CATALOG,
+  columnNotDeclaredMessage,
   WIDGET_POINT_CARDINALITY,
   WIDGET_SOURCE_CARDINALITY,
   WIDGET_SOURCE_SHAPES,
@@ -440,6 +442,15 @@ export const widgetWriteSchema = z.discriminatedUnion("widgetType", [
       sources: sourcesFieldFor("chart"),
     })
     .strict(),
+  z
+    .object({
+      ...widgetIdentityWriteFields,
+      widgetType: z.literal("table"),
+      config: tableConfigSchema.strict(),
+      points: pointsFieldFor("table"),
+      sources: sourcesFieldFor("table"),
+    })
+    .strict(),
 ]);
 
 const eachWidgetFitsTheGrid = (
@@ -506,6 +517,61 @@ const exactlyOneBindingKind = (
   });
 };
 
+/**
+ * A `table`'s chosen columns must be declared by the dataset it binds (`F3.35` Stage B).
+ *
+ * **A widget-level rule, because it reads two fields that no single field schema can see at
+ * once.** `sourcesFieldFor` is handed `sources` alone and `tableConfigSchema` is handed `config`
+ * alone; the legal column set is `METRIC_CATALOG[sources[0].catalogKey].columns`, which needs
+ * both. So it lives here beside `exactlyOneBindingKind`, which is a widget-level rule for the
+ * same structural reason.
+ *
+ * **Reachable in ordinary use, not just from a hand-written payload.** An author picks columns
+ * of `alarms.active`, then rebinds the widget to `workorders.open`. Both source and shape stay
+ * legal, and the stored projection now names columns the new dataset does not have. Unrefused,
+ * that renders a card of empty cells with nothing reporting why.
+ *
+ * The path points at the offending column, not at the widget: an author who chose six columns
+ * needs to be told which one is wrong.
+ */
+const eachTableColumnIsDeclared = (
+  widgets: z.infer<typeof widgetWriteSchema>[],
+  ctx: z.RefinementCtx,
+): void => {
+  widgets.forEach((widget, index) => {
+    if (widget.widgetType !== "table") {
+      return;
+    }
+    const chosen = widget.config.columns;
+    // Absent or empty is "every declared column" (`tableConfigSchema`), which is always legal —
+    // and checking it anyway would refuse the state a table is created in.
+    if (chosen === undefined || chosen.length === 0) {
+      return;
+    }
+    // The cardinality rule already refused a table with no source, and `eachSourceFitsTheWidget`
+    // already refused one bound to a metric. Both issues are reported on the same parse, so this
+    // returns rather than reporting a THIRD issue about a source that was never valid.
+    const [binding] = widget.sources;
+    if (binding === undefined) {
+      return;
+    }
+    const entry = METRIC_CATALOG[binding.catalogKey];
+    if (entry.shape !== "dataset") {
+      return;
+    }
+    const declared = new Set(entry.columns);
+    chosen.forEach((column, columnIndex) => {
+      if (!declared.has(column)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, "config", "columns", columnIndex],
+          message: columnNotDeclaredMessage(column, binding.catalogKey),
+        });
+      }
+    });
+  });
+};
+
 const widgetsWriteFieldSchema = z
   .array(widgetWriteSchema)
   .max(MAX_DASHBOARD_WIDGETS)
@@ -516,6 +582,7 @@ const widgetsWriteFieldSchema = z
   .superRefine((widgets, ctx) => {
     eachWidgetFitsTheGrid(widgets, ctx);
     exactlyOneBindingKind(widgets, ctx);
+    eachTableColumnIsDeclared(widgets, ctx);
   })
   .describe(
     `At most ${MAX_DASHBOARD_WIDGETS} widgets. Each must fit inside the ${DASHBOARD_GRID.columns}-column ` +
@@ -524,7 +591,10 @@ const widgetsWriteFieldSchema = z
       "rather than a 500 carrying a constraint name. Each widget must also bind exactly one " +
       "KIND of source (ADR 0048 decision 4): a point or a named catalog entry, never both and " +
       "never neither — a widget binding neither draws an empty rectangle, and one binding both " +
-      "has two answers for one number.",
+      "has two answers for one number. A table widget's config.columns must name only columns " +
+      "the dataset it binds declares (ADR 0048 decision 2): the resolve returns every declared " +
+      "column and the renderer projects, so an undeclared name would draw a column of empty " +
+      "cells rather than fail.",
   );
 
 export const putDashboardWidgetsBodySchema = z

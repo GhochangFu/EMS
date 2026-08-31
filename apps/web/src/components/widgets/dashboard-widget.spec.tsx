@@ -79,6 +79,11 @@ function sampleWidget(widgetType: WidgetType, title: string | null = "Feed pump 
       return { ...IDENTITY, title, widgetType, config: { unit: "kW", decimals: 1 } };
     case "chart":
       return { ...IDENTITY, title, widgetType, config: { series: "line" } };
+    case "table":
+      // No `columns`, which is the DEFAULT authored state — `tableConfigSchema` reads absent as
+      // "every column the bound dataset declares", so this is the smallest config its arm
+      // accepts, exactly like the four above.
+      return { ...IDENTITY, title, widgetType, config: {} };
     default: {
       const unreachable: never = widgetType;
       return unreachable;

@@ -1,18 +1,24 @@
-import { encodePointRef } from "@bms/shared";
+import { METRIC_CATALOG, WIDGET_SOURCE_SHAPES, encodePointRef } from "@bms/shared";
 import type {
+  CatalogEntryMeta,
   DashboardDto,
   DashboardWidgetDto,
   DashboardWidgetPointDto,
   DashboardWidgetSourceDto,
+  MetricCatalogKey,
   MetricCatalogValueDto,
   PointAggregateFunction,
   PointAggregateResponse,
   PointAggregateStats,
+  WidgetType,
 } from "@bms/shared";
 
 import { STALE_TICK_MS, isStale, readingTimestampMs } from "./schematic-telemetry";
 import type { WidgetSeries, WidgetSeriesPoint } from "./widget-catalog";
-import type { WidgetData } from "../components/widgets/dashboard-widget";
+import type { DatasetRow, WidgetData } from "../components/widgets/dashboard-widget";
+
+/** Module-level, so an unanswered dataset does not hand a fresh array to React each render. */
+const EMPTY_ROWS: readonly DatasetRow[] = [];
 
 /**
  * Maps `F3.1b`'s response onto `WidgetData` — the seam `dashboard-widget.tsx`'s
@@ -278,6 +284,7 @@ export function catalogIsStale(resolvedAt: string | null, nowMs: number): boolea
  */
 function catalogWidgetData(
   widgetId: string,
+  widgetType: WidgetType,
   sources: readonly DashboardWidgetSourceDto[],
   catalog: CatalogResolution | undefined,
   nowMs: number,
@@ -289,6 +296,43 @@ function catalogWidgetData(
     ? catalog?.byBinding.get(catalogBindingKey(widgetId, first.catalogKey))
     : undefined;
   const stale = catalogIsStale(catalog?.resolvedAt ?? null, nowMs);
+
+  // `F3.35` Stage B — a dataset binding produces the ROWS arm, not a number.
+  //
+  // **Keyed off the binding's DECLARED shape, not off the shape that came back**, and the
+  // difference shows up in the state that matters most. `METRIC_CATALOG` is code and the client
+  // holds it, so the moment a binding exists this branch already knows the answer will be rows
+  // and which columns it will have — before the first resolve returns. Keying off `resolved`
+  // instead would send an unanswered table down the scalar path, where `TableWidget` receives no
+  // columns and renders "No columns to show. Edit this widget" — telling an author to repair a
+  // configuration that is perfectly correct, every time the page loads.
+  //
+  // So an unanswered dataset renders its real header with no rows and the stale badge, which is
+  // what "waiting" honestly looks like. The resolved columns still win when they arrive: they
+  // are what the rows are actually keyed by, and a card must never label a column with a name
+  // its own cells were not read under.
+  //
+  // **Both halves of the condition are required, and the second one is a regression this
+  // assertion caught.** Keying off the declared shape ALONE sent a `value_tile` bound to
+  // `alarms.active` into the rows arm — a widget that draws one number, handed columns. The
+  // write path refuses that pairing, but a dashboard stored before the rule existed still holds
+  // it, and `runDatasetOnATileRendersNoValueTests` is the test that says what must happen then:
+  // no value, never a row count dressed up as a metric. `WIDGET_SOURCE_SHAPES` is the same
+  // record the write path reads, so the two cannot disagree about which pairing is drawable.
+  const entry = METRIC_CATALOG[first?.catalogKey as MetricCatalogKey] as
+    | CatalogEntryMeta
+    | undefined;
+  if (entry?.shape === "dataset" && WIDGET_SOURCE_SHAPES[widgetType].includes("dataset")) {
+    const answered = resolved?.shape === "dataset" ? resolved : undefined;
+    return {
+      status: "ready",
+      columns: answered?.columns ?? entry.columns,
+      rows: answered?.rows ?? EMPTY_ROWS,
+      truncated: answered?.truncated ?? false,
+      stale,
+    };
+  }
+
   return {
     status: "ready",
     primary: resolved?.shape === "metric" ? resolved.value : null,
@@ -417,7 +461,7 @@ export function widgetDataFor(
   // `exactlyOneBindingKind`), so reaching here with a source means there are no points
   // to read and the order carries no ambiguity.
   if (widget.sources.length > 0) {
-    return catalogWidgetData(widget.id, widget.sources, catalog, nowMs);
+    return catalogWidgetData(widget.id, widget.widgetType, widget.sources, catalog, nowMs);
   }
 
   if (widget.widgetType === "chart") {

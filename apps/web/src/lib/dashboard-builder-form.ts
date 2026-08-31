@@ -19,6 +19,7 @@ import {
   MAX_WIDGET_TITLE_LENGTH,
   blankConfigRow,
   buildChartConfig,
+  buildTableConfig,
   buildGaugeConfig,
   buildTankConfig,
   buildTileConfig,
@@ -187,6 +188,17 @@ function configRowFromDto(widget: DashboardWidgetDto): WidgetConfigRow {
       row.yAxisLabel = widget.config.yAxisLabel ?? "";
       row.chartAggregate = widget.config.aggregate ?? "";
       row.footerStats = widget.config.footerStats ?? false;
+      break;
+    case "table":
+      // `F3.35` Stage B, and it is here for the reason the `value_tile` arm above states: a
+      // field `buildTableConfig` writes and this switch does not read back is destroyed on
+      // every edit-and-resave. An author picks four columns, later renames the widget, saves,
+      // and the card silently widens to every column with nothing reporting it.
+      //
+      // `?? []` collapses absent to empty, which is the same state — `tableConfigSchema`'s
+      // docblock rules that both mean "every declared column", and `buildTableConfig` writes
+      // only the absent form back, so the round trip is stable rather than merely lossless.
+      row.tableColumns = [...(widget.config.columns ?? [])];
       break;
   }
   return row;
@@ -396,6 +408,8 @@ export function buildPutWidgetsPayload(rows: readonly DashboardWidgetRow[]): Put
           return { ...identity, widgetType: "value_tile", config: buildTileConfig(row.config) };
         case "chart":
           return { ...identity, widgetType: "chart", config: buildChartConfig(row.config) };
+        case "table":
+          return { ...identity, widgetType: "table", config: buildTableConfig(row.config) };
       }
     }),
   };

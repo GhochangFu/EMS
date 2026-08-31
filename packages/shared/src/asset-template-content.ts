@@ -150,6 +150,24 @@ export type TemplateMaintenancePlan = {
  *
  * The type and grid halves are derived from the shared union rather than restated, so a fifth
  * widget type or a changed config shape cannot reach one surface and miss the other.
+ *
+ * **`table` is excluded, and the exclusion is the point rather than an oversight** (`F3.35`
+ * Stage B). Read the asymmetry above once more: a template binds point-key *strings* because it
+ * has no asset yet. It has no equivalent for a **catalog source** — `bms.dashboard_widget_sources`
+ * is keyed by `widget_id`, and a template widget is not a widget row. A `table` binds no point
+ * (`WIDGET_POINT_CARDINALITY.table` is `{min: 0, max: 0}`) and requires exactly one source
+ * (`WIDGET_SOURCE_CARDINALITY.table` is `{min: 1, max: 1}`), so a template `table` could carry
+ * no binding of either kind. `F3.2` would then instantiate a widget that the live write path
+ * refuses on its next save, and that an author sees as a permanently empty card.
+ *
+ * So the rule is not "every widget type is template-authorable" — it is **"a widget type is
+ * template-authorable when it can be fully bound by point keys"**. `Exclude` states that here
+ * at compile time; `asset-templates-content.schema.spec.ts` derives the same list from
+ * `WIDGET_SOURCE_CARDINALITY` at run time, so a sixth type with a required source is caught
+ * even though a `Record<WidgetType, {min: number}>` cannot be read at the type level.
+ *
+ * **This is reversible and is not a scope ruling.** Whenever templates gain a way to carry a
+ * catalog binding, delete the `Exclude` and the spec's derivation agrees again.
  */
 export type TemplateDashboardWidget = {
   pointKeys: string[];
@@ -158,7 +176,16 @@ export type TemplateDashboardWidget = {
   gridY: number;
   gridW: number;
   gridH: number;
-} & DashboardWidgetSpec;
+} & Exclude<DashboardWidgetSpec, { widgetType: "table" }>;
+
+/**
+ * The widget types a template can author, derived from the exclusion above rather than listed.
+ *
+ * Named so the three surfaces that need it — the shared type, `apps/web`'s row type, and the
+ * builder's type picker — say the same thing once. Writing `Exclude<WidgetType, "table">` at
+ * each site would be three declarations of one rule, which is what §4.8 exists to prevent.
+ */
+export type TemplateAuthorableWidgetType = TemplateDashboardWidget["widgetType"];
 
 /**
  * Which points matter for this asset type, in what order — and, since `F3.1a`, how they are

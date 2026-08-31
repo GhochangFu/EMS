@@ -1,4 +1,9 @@
-import { WIDGET_POINT_CARDINALITY, widgetTypeSchema } from "@bms/shared";
+import {
+  WIDGET_POINT_CARDINALITY,
+  WIDGET_SOURCE_CARDINALITY,
+  widgetTypeSchema,
+} from "@bms/shared";
+import type { TemplateAuthorableWidgetType } from "@bms/shared";
 
 import {
   MAX_CONTENT_BYTES,
@@ -424,9 +429,33 @@ export function runTemplateContentSchemaTests(): void {
   // be built by intersecting the shared union. So assert the arm counts match:
   // a fifth widget type added to @bms/shared and not to this file would
   // otherwise be quietly unusable in a template, with nothing failing.
+  //
+  // `F3.35` Stage B replaced a raw count with a DERIVATION, because the two lists stopped being
+  // the same list. A template binds point-key strings and cannot express a
+  // `bms.dashboard_widget_sources` row, so a widget type that REQUIRES a source — `table`, at
+  // `{min: 1, max: 1}` — must not have an arm here. A count of four would still have passed
+  // once `table` landed, silently, which is the failure this guard exists to prevent.
+  //
+  // Derived at run time rather than in the type system on purpose: `WIDGET_SOURCE_CARDINALITY`
+  // is `Record<WidgetType, { min: number }>`, so `min` is `number` and no conditional type can
+  // read it. `TemplateDashboardWidget`'s `Exclude` states the same rule at compile time; this
+  // is what keeps the two agreeing when a sixth widget type arrives.
+  const templateAuthorable = widgetTypeSchema.options.filter(
+    (type) => WIDGET_SOURCE_CARDINALITY[type].min === 0,
+  );
+  const armTypes = templateDashboardWidgetVariants.options.map(
+    (option) => option.shape.widgetType.value,
+  );
   assert(
-    templateDashboardWidgetVariants.options.length === widgetTypeSchema.options.length,
-    `every shared widget type needs a template arm — shared has ${widgetTypeSchema.options.length}, this file has ${templateDashboardWidgetVariants.options.length}`,
+    [...armTypes].sort().join(",") === [...templateAuthorable].sort().join(","),
+    `a template arm exists for exactly the widget types bindable by point keys — expected ` +
+      `[${[...templateAuthorable].sort().join(", ")}], found [${[...armTypes].sort().join(", ")}]`,
+  );
+  // Both halves are asserted, or "expected" could be empty and the comparison vacuous.
+  assert(
+    templateAuthorable.length > 0 && templateAuthorable.length < widgetTypeSchema.options.length,
+    "the derivation must actually exclude something and keep something — if it excludes every " +
+      "type or none, WIDGET_SOURCE_CARDINALITY is not being read and this guard proves nothing",
   );
   //
   // This block replaces two assertions that required `widgets` to be REFUSED.
@@ -679,14 +708,23 @@ export function runTemplateContentSchemaTests(): void {
   );
 
   // The completeness loop. Not a substitute for the four explicit cases above
-  // — it is the guard that a fifth widget type cannot arrive untested. The
+  // — it is the guard that a new widget type cannot arrive untested. The
   // anti-vacuity count proves the loop actually ran, so an empty scan cannot
   // read as compliance.
+  //
+  // `F3.35` Stage B narrowed what it iterates. It runs over the types a TEMPLATE can author,
+  // not over every type in the vocabulary: `table` requires a catalog source, templates cannot
+  // carry one, and asserting that a template accepts a `table` would assert the opposite of
+  // what this file decided. The derivation is the same one the arm check above uses, so the
+  // two cannot disagree.
+  const templateAuthorableForLoop = widgetTypeSchema.options.filter(
+    (type): type is TemplateAuthorableWidgetType => WIDGET_SOURCE_CARDINALITY[type].min === 0,
+  );
   let cardinalityLoopIterations = 0;
-  for (const widgetType of widgetTypeSchema.options) {
+  for (const widgetType of templateAuthorableForLoop) {
     cardinalityLoopIterations += 1;
     const { max } = WIDGET_POINT_CARDINALITY[widgetType];
-    const configFor: Record<(typeof widgetTypeSchema.options)[number], Record<string, unknown>> = {
+    const configFor: Record<TemplateAuthorableWidgetType, Record<string, unknown>> = {
       radial_gauge: { min: 0, max: 100 },
       tank_level: { fullScale: 100 },
       value_tile: {},
@@ -718,10 +756,34 @@ export function runTemplateContentSchemaTests(): void {
     );
   }
   assert(
-    cardinalityLoopIterations === widgetTypeSchema.options.length &&
-      cardinalityLoopIterations === 4,
-    `the completeness loop must run once per widget type, ran ${cardinalityLoopIterations} times`,
+    cardinalityLoopIterations === templateAuthorableForLoop.length &&
+      cardinalityLoopIterations > 0 &&
+      cardinalityLoopIterations < widgetTypeSchema.options.length,
+    `the completeness loop must run once per template-authorable widget type and must exclude ` +
+      `at least one, ran ${cardinalityLoopIterations} of ${widgetTypeSchema.options.length}`,
   );
+
+  // The exclusion itself, asserted rather than assumed (`F3.35` Stage B). Everything above
+  // proves the loop SKIPS `table`; only this proves the schema REFUSES it. Without it the
+  // narrowing would be a convention that the runtime never enforced, and a template written by
+  // hand would carry a widget no instantiated dashboard can bind.
+  for (const widgetType of widgetTypeSchema.options) {
+    if (WIDGET_SOURCE_CARDINALITY[widgetType].min === 0) {
+      continue;
+    }
+    rejects(
+      {
+        dashboards: {
+          overview: {
+            featured: ["A"],
+            widgets: [{ widgetType, config: {}, pointKeys: [], ...gridFields }],
+          },
+        },
+      },
+      `${widgetType} requires a catalog source, which a template cannot carry — it must be ` +
+        "refused here rather than instantiated into a card that can never render",
+    );
+  }
 
   // ---- limits --------------------------------------------------------------
 

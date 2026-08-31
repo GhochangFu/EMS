@@ -1,7 +1,7 @@
 import {
   MAX_DASHBOARD_WIDGETS,
   MAX_FEATURED_POINTS,
-  WIDGET_TYPES,
+  TEMPLATE_WIDGET_TYPES,
   WIDGET_TYPE_LABELS,
   blankWidgetRow,
   moveArrayItem,
@@ -50,7 +50,7 @@ function DashboardViewEditor({
     });
   }
 
-  function addWidget(widgetType: (typeof WIDGET_TYPES)[number]) {
+  function addWidget(widgetType: (typeof TEMPLATE_WIDGET_TYPES)[number]) {
     onChange({ widgets: [...view.widgets, blankWidgetRow(widgetType)] });
   }
 
@@ -162,7 +162,10 @@ function DashboardViewEditor({
         ))}
         {editable && view.widgets.length < MAX_DASHBOARD_WIDGETS ? (
           <div className="flex flex-wrap items-center gap-2">
-            {WIDGET_TYPES.map((widgetType) => (
+            {/* `TEMPLATE_WIDGET_TYPES`, not `WIDGET_TYPES` (`F3.35` Stage B): a template
+                binds point-key strings and cannot carry a catalog source, so `table` — which
+                requires exactly one — is not offerable here. */}
+            {TEMPLATE_WIDGET_TYPES.map((widgetType) => (
               <button
                 key={widgetType}
                 type="button"
