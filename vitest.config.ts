@@ -12,6 +12,39 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
+    /**
+     * `F4.71` — a ceiling on concurrent workers, because the integration suites share one
+     * Postgres and nothing bounded them.
+     *
+     * **The evidence this is set on, rather than a preference.** `F3.35` added five test files
+     * and `main` went from green to failing four runs in five. The failing test *rotated* —
+     * `dashboards.service.rls.integration` on CI three times, `aggregate-retention.integration`
+     * locally, `reports.service.rls.integration` and `rules.service.rls.integration` earlier the
+     * same day — which is the signature of contention rather than of a defect in any one file.
+     * It reproduces on the FULL suite and not on `--project api` alone (127 of 127), so the
+     * collision is across projects: `apps/api` holds 53 `*.integration.test.ts` files, the
+     * `repo` project holds more, and every one of them talks to the same database.
+     *
+     * **What the failures were, and why a worker cap is the lever.** The sharpest one is a
+     * `WITH CHECK` refusal (SQLSTATE 42501) on `bms.dashboards`, raised because the asset group
+     * the row referenced was not visible at insert time. That is a *data* race between suites,
+     * not a timeout — a second suite's transaction is what makes a committed parent disappear
+     * from a concurrent reader's view. Fewer concurrent writers is the smallest change that
+     * addresses it without rewriting fixture ownership across dozens of files.
+     *
+     * **This is a mitigation and the row stays open.** `F4.71` asks for the real measurement —
+     * whether the failure rate moves with parallelism, and which suites actually collide — and
+     * this cap is what keeps `main` green while that work happens. Do not close `F4.71` on the
+     * strength of this line, and do not raise the number without re-running the suite enough
+     * times to mean something: a single green run is not evidence, and neither is a single red.
+     *
+     * **The number is 2, and 4 was the first answer and a wrong one.** Vitest's default is
+     * `availableParallelism() - 1`, so on the 2-to-4 vCPU `ubuntu-latest` runner the effective
+     * default is already 1 to 3 — a cap of 4 would have RAISED concurrency on CI while lowering
+     * it on an 8-core development machine, which is precisely backwards for the environment that
+     * was failing. 2 is below the default on both, so it binds where it has to.
+     */
+    maxWorkers: 2,
     projects: [
       "apps/api",
       "apps/web",
