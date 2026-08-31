@@ -324,6 +324,27 @@ export function expectedBucketCount(windowMinutes: number, level: AggregateLevel
 }
 
 /**
+ * The start of the bucket an instant falls in — `time_bucket`'s own alignment,
+ * in TypeScript.
+ *
+ * **Extracted here by `F4.72` so there is exactly one copy of it.** It was
+ * inline in `alignedWindow` (`apps/api/src/asset-health/health-rollup.service.ts`),
+ * and `F4.72` needed the same arithmetic on the read side. Two copies of a
+ * boundary rule is how a writer and a reader come to disagree about which
+ * bucket is the newest one, which is precisely the defect `F4.72`'s review
+ * found: the sweep never writes the in-flight bucket, the read admitted it, and
+ * so a fully covered window was unreachable by one.
+ *
+ * `bucketSeconds` is the same width table the roll-up and the ladder use, so
+ * this cannot drift from either. Pure, and `now` is an argument — the rule
+ * `tests/repo-invariants.test.ts` enforces for every builder in this file.
+ */
+export function floorToBucket(instant: Date, level: AggregateLevel): Date {
+  const widthMs = bucketSeconds(level) * 1_000;
+  return new Date(Math.floor(instant.getTime() / widthMs) * widthMs);
+}
+
+/**
  * Refuses an over-long bucket array rather than truncating it.
  *
  * Reachable only if the ladder and a relation disagree — a continuous

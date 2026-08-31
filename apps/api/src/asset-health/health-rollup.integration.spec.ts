@@ -52,6 +52,7 @@ const TAG_X = "e13hr_tagX"; // item 7a — an org-A rule pointing at org B's ass
 const TAG_X_CONTROL = "e13hr_tagX_ctrl"; // item 7a positive control, on org A's own asset
 const TAG_Y = "e13hr_tagY"; // item 7b — a materialized 1m row already sitting on org B's asset
 const TAG_Y_CONTROL = "e13hr_tagY_ctrl"; // item 7b positive control, on org A's own asset
+const TAG_Z_FOREIGN = "e13hr_tagZ_foreign"; // item 8 — org B's row INSIDE org A's tested window
 
 /**
  * Far enough from any other suite's fixture window (`F4.1`'s is 2026-06-01)
@@ -717,5 +718,99 @@ export async function assertCoveredBucketsIsTheUnionAcrossTheScope(
   assert(
     uncovered.expectedBuckets === 120,
     `the requested window still expects 120 buckets, got ${uncovered.expectedBuckets}`,
+  );
+
+  // **Cross-scope exclusion, and it needs a row INSIDE the window to mean
+  // anything** (security review). Org B's own fixture row sits at `BASE+2h`,
+  // which `bucket < to` already excludes — so without this insert, a subquery
+  // whose predicate had been WIDENED to every asset would still read 6 and the
+  // assertion above would stay green. This row is on org B's asset, at an
+  // instant inside `[BASE, BASE+2h)` that is not one of asset A's six.
+  const foreignBucket = new Date(BASE.getTime() + 30 * MINUTE);
+  await insertInRange1mRow(pool, {
+    bucket: foreignBucket,
+    assetId: fx.assetBId,
+    pointKey: TAG_Z_FOREIGN,
+    inRangeCount: 1,
+    sampleCount: 1,
+    ruleCount: 1,
+    skippedRuleCount: 0,
+  });
+
+  const stillContained = await service.forAsset(
+    fx.assetAId,
+    120,
+    new Date(BASE.getTime() + 2 * HOUR),
+  );
+  assert(
+    stillContained.coveredBuckets === 6,
+    `coverage must count only the scope's own buckets. Org B has a row at an instant inside ` +
+      `this window that org A does not, so a predicate widened past the asset restriction reads ` +
+      `7 here. Got ${stillContained.coveredBuckets}.`,
+  );
+  // The positive control: the same relation, the same window, a different
+  // scope, a different answer. Without it the assertion above could pass on a
+  // subquery that counted nothing at all.
+  const foreignScope = await service.forAsset(
+    fx.assetBId,
+    120,
+    new Date(BASE.getTime() + 2 * HOUR),
+  );
+  assert(
+    foreignScope.coveredBuckets === 1,
+    `org B's own scope must see its own single bucket in this window, or the assertion above ` +
+      `is vacuous. Got ${foreignScope.coveredBuckets}.`,
+  );
+}
+
+/**
+ * Item 9 — `F4.72` / ADR 0050 Amendment 3: a whole window is reachable, and it
+ * is the read's bucket alignment that makes it so.
+ *
+ * **This is the test whose absence hid a shipped defect.** `alignedWindow`
+ * ends the sweep at `floorToBucket(now)` (ADR 0050 decision 5), so the newest
+ * bucket ever written is one width older than that. An unaligned read took
+ * `to = now` and admitted the in-flight bucket, which the writer is forbidden
+ * to write — so `coveredBuckets` could never equal `expectedBuckets` at any
+ * rung, and the partial-window banner would have been permanently on.
+ *
+ * The jsdom fixture could not catch it: it asserts a complete window from a
+ * hand-written `1 / 1`, a state the server arithmetic forbade. Only real rows
+ * read through the real window arithmetic can tell the two apart.
+ *
+ * **`now` is deliberately off the bucket boundary** — `BASE + 1m + 30s`. That
+ * is what makes this a test of the ALIGNMENT rather than of the fixtures:
+ *
+ * - unaligned, `to` would be `BASE+1m30s` and `from` `BASE+30s`, whose only
+ *   aligned instant is `BASE+1m` — a bucket nothing wrote. Covered 0 of 1.
+ * - aligned, `to` is `BASE+1m` and `from` `BASE`, whose only aligned instant is
+ *   `BASE` — where `TAG_A` and `TAG_B` both have rows. Covered 1 of 1.
+ */
+export async function assertAWholeWindowIsReachable(
+  pool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const service = new AssetHealthService(createDb(pool));
+  const unaligned = new Date(BASE.getTime() + MINUTE + 30_000);
+  const result = await service.forAsset(fx.assetAId, 1, unaligned);
+
+  assert(
+    result.expectedBuckets === 1,
+    `a 1-minute window at the 1m rung expects exactly 1 bucket, got ${result.expectedBuckets}`,
+  );
+  assert(
+    result.coveredBuckets === 1,
+    `the read must align its window to the bucket boundary the SWEEP writes to. Unaligned, this ` +
+      `window covers the in-flight bucket that the roll-up is forbidden to write, and reads 0. ` +
+      `Got ${result.coveredBuckets}.`,
+  );
+  assert(
+    result.windowTo === new Date(BASE.getTime() + MINUTE).toISOString(),
+    `windowTo must be the aligned instant, so the pair on the wire describes the window the two ` +
+      `integers were counted over. Got ${result.windowTo}.`,
+  );
+  assert(
+    result.computedAt !== null,
+    "a covered window reports an instant",
   );
 }

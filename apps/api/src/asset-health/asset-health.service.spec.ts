@@ -388,30 +388,46 @@ export async function assertCoverageCountsDistinctBucketsOverTheSamePredicate():
   const fields = counterRead?.fields as Record<string, unknown>;
   const coverage = render(fields.coveredBuckets).replace(/\s+/g, " ").trim();
 
+  // **Anchored to the count expression, not to the whole subquery.** The
+  // rendered text always contains `"bucket" >= $2` in its WHERE clause, so a
+  // bare `/"bucket"/` over the whole string matches whatever column the count
+  // actually takes — the correctness review demonstrated
+  // `count(distinct computed_at)` passing it. Split at the FROM so only the
+  // projection is examined.
+  const projection = coverage.split(/\sfrom\s/i)[0] ?? "";
   assert(
-    /count\(distinct\b/i.test(coverage),
-    `coveredBuckets must count DISTINCT bucket instants, got ${coverage}`,
+    /count\(\s*distinct\b/i.test(projection),
+    `coveredBuckets must count DISTINCT instants, got ${projection}`,
   );
   assert(
-    /"bucket"/.test(coverage),
-    `coveredBuckets must count the bucket column, not rows or tags, got ${coverage}`,
+    /count\(\s*distinct\s+[^)]*"bucket"/i.test(projection),
+    `coveredBuckets must count the BUCKET column specifically — counting any other column ` +
+      `returns a plausible integer that means something else. Got ${projection}`,
   );
   assert(
-    !/point_key/i.test(coverage.split("where")[0] ?? ""),
-    `coveredBuckets must not group or count by point_key — one sweep pass writes every ruled ` +
-      `tag in a bucket, so a per-tag count reports an idle sensor as a roll-up outage. Got ${coverage}`,
+    !/point_key/i.test(projection),
+    `coveredBuckets must not count or group by point_key — one sweep pass writes every ruled ` +
+      `tag in a bucket, so a per-tag count reports an idle sensor as a roll-up outage. Got ${projection}`,
   );
 
+  // **Equality, not containment.** A substring check passes for any predicate
+  // that merely CONTAINS the scope, so `or(scope, <anything>)` survives it —
+  // the security review ran that mutation and every assertion here stayed
+  // green, while the subquery counted buckets for every asset in the
+  // deployment. `telemetry.*` carries no Row Level Security, so predicate
+  // IDENTITY is the containment; nothing weaker will do.
   const outerWhere = render(counterRead?.where).replace(/\s+/g, " ").trim();
+  const innerWhere = (coverage.split(/\swhere\s/i)[1] ?? "").replace(/\)\s*$/, "").trim();
   assert(
     outerWhere.length > 0,
     "the counter read must carry a where predicate at all — without one, coverage is measured " +
       "over a window nobody asked for",
   );
   assert(
-    coverage.includes(outerWhere),
-    "the coverage subquery must use the SAME predicate the counter read uses, or coverage is " +
-      `measured over a different window from the scores. Outer: ${outerWhere}. Subquery: ${coverage}`,
+    innerWhere === outerWhere,
+    "the coverage subquery's predicate must be EXACTLY the counter read's, or coverage is " +
+      "measured over a different scope or window from the scores — and a widened one leaks " +
+      `another tenant's buckets into an integer on the wire. Outer: ${outerWhere}. Inner: ${innerWhere}`,
   );
 }
 

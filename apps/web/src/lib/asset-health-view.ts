@@ -79,7 +79,7 @@ export function formatHealthComputedAt(computedAt: string | null): string {
  * hides a score that is right.
  */
 export type HealthWindowCoverage = {
-  readonly state: "empty" | "partial" | "complete";
+  readonly state: "unknown" | "empty" | "partial" | "complete";
   /** The pair, always printable — two integers, never a ratio. */
   readonly detail: string;
   /** `null` when complete: there is nothing to warn about. */
@@ -102,6 +102,21 @@ export function healthWindowCoverage(
   coveredBuckets: number,
   expectedBuckets: number,
 ): HealthWindowCoverage {
+  // **An API image older than this contract sends neither field, and both
+  // arrive here `undefined`.** `checkResponse` (`../api/validate.ts`) logs and
+  // returns the ORIGINAL payload in production rather than throwing — ADR 0030
+  // decision 5, so an operator's page keeps rendering during a rolling deploy.
+  // Every comparison against `undefined` is false, so without this guard the
+  // function falls through to `partial` and draws an amber banner reading
+  // "covers undefined of undefined buckets" on every healthy asset.
+  //
+  // It is its own state rather than a silent `complete`: not knowing the
+  // coverage and knowing it is whole are different facts, which is the rule the
+  // contract's four absences already follow. The em dash is this file's own
+  // idiom for a value that is not there.
+  if (!Number.isFinite(coveredBuckets) || !Number.isFinite(expectedBuckets)) {
+    return { state: "unknown", detail: "—", warning: null };
+  }
   const detail = `${coveredBuckets} / ${expectedBuckets} buckets`;
   if (coveredBuckets >= expectedBuckets) {
     return { state: "complete", detail, warning: null };
@@ -116,9 +131,13 @@ export function healthWindowCoverage(
   return {
     state: "partial",
     detail,
+    // **Not "the score is real".** This state is reachable with `score: null` —
+    // counter rows exist for a tag whose every rule is unevaluatable, so
+    // coverage is non-zero while `scoreAsset` returns null. The card would then
+    // print an em dash above a sentence insisting on a score.
     warning:
       `Partial window: this figure covers ${coveredBuckets} of ${expectedBuckets} buckets. ` +
-      "The score is real; the window behind it is not yet whole.",
+      "What it counts is correct; the window behind it is not yet whole.",
   };
 }
 

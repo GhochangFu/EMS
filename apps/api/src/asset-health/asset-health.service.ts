@@ -18,6 +18,7 @@ import { FLEET_DRIZZLE } from "../database/database.tokens";
 import { type AggregateLevel, bucketSeconds } from "../telemetry/point-aggregates";
 import {
   expectedBucketCount,
+  floorToBucket,
   levelFor,
   windowBounds,
 } from "../telemetry/point-aggregate-window";
@@ -185,12 +186,47 @@ export class AssetHealthService {
     };
   }
 
+  /**
+   * The level, and the window ENDING AT THE NEWEST COMPLETE BUCKET.
+   *
+   * **The alignment is ADR 0050 Amendment 3, and without it a whole window was
+   * unreachable by exactly one bucket.** `alignedWindow` in
+   * `health-rollup.service.ts` ends the sweep at `floorToBucket(now)` — ADR 0050
+   * decision 5, because rolling up a bucket that is still filling writes a count
+   * over a partial sample set. So the newest bucket the sweep EVER writes is one
+   * width older than that.
+   *
+   * An unaligned read took `to = now`, and `bucket < to` then admitted the
+   * in-flight bucket — the one the writer is forbidden to write. A window of `N`
+   * buckets could therefore only ever cover `N - 1` of them, `coveredBuckets`
+   * could never equal `expectedBuckets`, and `F4.72`'s partial-window banner
+   * would have been permanently on for every healthy deployment. A warning that
+   * never turns off carries no information, which is the same defect `F4.74`
+   * fixed one component over.
+   *
+   * Aligning `to` makes the read's window and the writer's window agree about
+   * where a bucket ends. It changes no score: the in-flight bucket carries no
+   * counter row by construction, so excluding it removes nothing from the
+   * numerator or the denominator.
+   *
+   * **This is not a second ladder** (ADR 0050 decision 6, Amendment 2 decision
+   * 2). `levelFor` is still `F3.35`'s, chosen from the unaligned window exactly
+   * as before, and `floorToBucket` is the writer's own boundary rule imported
+   * rather than restated. Nothing here reads `TRAILING_WINDOW_MS`, and no rung
+   * moves.
+   */
   private resolveWindow(
     windowMinutes: number,
     now: Date,
   ): { level: AggregateLevel; from: Date; to: Date } {
     const window = windowBounds(now, windowMinutes, false);
-    return { level: levelFor(window, windowMinutes, now), from: window.from, to: window.to };
+    const level = levelFor(window, windowMinutes, now);
+    // The level is chosen from the unaligned window first — the retention guard
+    // asks how old the request reaches, and flooring `now` can only make that
+    // reach older by less than one bucket. Aligning first would put a second
+    // window rule ahead of `F3.35`'s.
+    const to = floorToBucket(window.to, level);
+    return { level, from: new Date(to.getTime() - windowMinutes * 60_000), to };
   }
 
   /**
@@ -366,9 +402,15 @@ export class AssetHealthService {
         skippedRuleCount: max(relation.skippedRuleCount),
         computedAt: max(relation.computedAt),
         // The relation is named again inside the subquery rather than aliased,
-        // so every column reference binds to the INNER `FROM` item — `bucket`
-        // is not in the outer `GROUP BY` and an outer reference would be
-        // rejected by Postgres rather than silently answering something else.
+        // so its column references bind to the INNER `FROM` item: Postgres
+        // searches the innermost query level first, and an inner range table
+        // under the same correlation name shadows the outer one. That is the
+        // mechanism — not the fact that `bucket` is absent from the outer
+        // `GROUP BY`. An outer reference to `bucket` would indeed be rejected,
+        // but `asset_id` and `point_key` ARE grouped, so an outward binding of
+        // either would be accepted silently. `EXPLAIN` on the running database
+        // shows the inner item aliased `point_in_range_1m_1` inside an InitPlan,
+        // with the `asset_id` restriction applied there (security review).
         coveredBuckets: sql<string>`(
           select count(distinct ${relation.bucket})
           from ${relation}

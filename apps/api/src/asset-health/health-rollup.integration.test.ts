@@ -3,6 +3,7 @@ import type pg from "pg";
 
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
+  assertAWholeWindowIsReachable,
   assertAllSkippedStateWritesZero,
   assertCoveredBucketsIsTheUnionAcrossTheScope,
   assertInRangeCountIsCorrect,
@@ -86,5 +87,9 @@ describe.skipIf(!connectionString)("E1.3 — health roll-up SQL, executed", () =
 
   it("counts coveredBuckets as the union across the scope, not per tag (item 8)", async () => {
     await assertCoveredBucketsIsTheUnionAcrossTheScope(pool as pg.Pool, fx);
+  });
+
+  it("reaches a whole window, because the read aligns to the sweep's boundary (item 9)", async () => {
+    await assertAWholeWindowIsReachable(pool as pg.Pool, fx);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  anAbsentCoveragePairSaysNothingRatherThanUndefined,
   bandNullReadsAsUnconfiguredNotNoData,
   computedAtNullSaysNotYetComputedNeverANow,
   coverageBeyondTheExpectedCountReadsAsComplete,
@@ -9,6 +10,7 @@ import {
   nullScoreAndZeroScoreRenderDifferently,
   partialWindowIsItsOwnStateNotTheEmptyOne,
   scoreIsMultipliedByOneHundredOnlyHere,
+  thePartialSentenceDoesNotClaimAScore,
   unscoredTagMessageDistinguishesSkippedFromNeverMatched,
 } from "./asset-health-view.spec";
 
@@ -48,5 +50,13 @@ describe("asset-health-view", () => {
 
   it("reads coverage past the expected count as complete, not as a warning", () => {
     coverageBeyondTheExpectedCountReadsAsComplete();
+  });
+
+  it("says nothing rather than 'undefined' when the API sends no coverage pair", () => {
+    anAbsentCoveragePairSaysNothingRatherThanUndefined();
+  });
+
+  it("does not claim a score in the partial sentence, which score: null can reach", () => {
+    thePartialSentenceDoesNotClaimAScore();
   });
 });

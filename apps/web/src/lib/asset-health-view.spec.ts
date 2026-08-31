@@ -155,3 +155,53 @@ export function coverageBeyondTheExpectedCountReadsAsComplete(): void {
   expect(over.state).toBe("complete");
   expect(over.warning).toBe(null);
 }
+
+/**
+ * An API image older than this contract must not produce an amber banner
+ * reading "covers undefined of undefined buckets".
+ *
+ * This is reachable in production and only there: `checkResponse` throws in
+ * dev and test, but logs and returns the ORIGINAL payload in production (ADR
+ * 0030 decision 5), so both fields arrive `undefined` during any rolling
+ * deploy where the API image lags the web bundle. Every comparison against
+ * `undefined` is false, which without a guard lands on `partial` — the loudest
+ * of the three states, on every healthy asset at once.
+ *
+ * The cast is the point of the test: the runtime case the types forbid is
+ * exactly the one the network can deliver.
+ */
+export function anAbsentCoveragePairSaysNothingRatherThanUndefined(): void {
+  const absent = healthWindowCoverage(
+    undefined as unknown as number,
+    undefined as unknown as number,
+  );
+  expect(absent.state, "an absent pair is its own state, not a silent complete").toBe("unknown");
+  expect(absent.warning, "an unknown coverage must not warn about a window it cannot see").toBe(null);
+  expect(absent.detail, "the em dash is this file's idiom for a value that is not there").toBe("—");
+  expect(absent.detail).not.toContain("undefined");
+  expect(absent.detail).not.toContain("NaN");
+
+  // One field alone is the same fact: a payload half-way through a contract
+  // change tells you nothing about coverage either.
+  const half = healthWindowCoverage(399, undefined as unknown as number);
+  expect(half.state).toBe("unknown");
+  expect(half.warning).toBe(null);
+}
+
+/**
+ * The partial sentence must not claim a score, because the state is reachable
+ * with `score: null`.
+ *
+ * Counter rows exist for a tag whose every matching rule is unevaluatable, so
+ * coverage is non-zero while `scoreAsset` returns null. A card in that state
+ * would print an em dash above a sentence insisting the score is real.
+ */
+export function thePartialSentenceDoesNotClaimAScore(): void {
+  const partial = healthWindowCoverage(399, 1_440);
+  expect(partial.warning).not.toBe(null);
+  expect(
+    partial.warning?.toLowerCase(),
+    "the sentence must not assert a score that may be null",
+  ).not.toContain("the score is real");
+  expect(partial.warning, "it still names both integers").toContain("399 of 1440 buckets");
+}

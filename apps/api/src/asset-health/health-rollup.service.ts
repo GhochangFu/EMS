@@ -10,7 +10,8 @@ import { type BmsDb, organizations } from "@bms/db";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
-import { type AggregateLevel, bucketSeconds } from "../telemetry/point-aggregates";
+import type { AggregateLevel } from "../telemetry/point-aggregates";
+import { floorToBucket } from "../telemetry/point-aggregate-window";
 import { sleep } from "../telemetry/sleep";
 
 import { levelRollupSql, rawRollupSql } from "./health-rollup-sql";
@@ -94,8 +95,10 @@ export const LEVEL_STEPS: readonly (readonly [AggregateLevel, AggregateLevel])[]
  * true.
  */
 export function alignedWindow(level: AggregateLevel, now: Date): { from: Date; to: Date } {
-  const widthMs = bucketSeconds(level) * 1000;
-  const to = new Date(Math.floor(now.getTime() / widthMs) * widthMs);
+  // `floorToBucket` rather than the arithmetic inline (`F4.72`): the READ needs
+  // the identical boundary, and two copies of it is how a writer and a reader
+  // come to disagree about which bucket is the newest.
+  const to = floorToBucket(now, level);
   return { from: new Date(to.getTime() - TRAILING_WINDOW_MS[level]), to };
 }
 
