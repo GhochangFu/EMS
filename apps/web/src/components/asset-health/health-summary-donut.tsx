@@ -8,6 +8,7 @@ import {
   formatHealthComputedAt,
   formatHealthScorePercent,
   healthDonutSlices,
+  healthWindowCoverage,
 } from "../../lib/asset-health-view";
 import { formatBucketWidth } from "../../lib/widget-value";
 
@@ -55,6 +56,13 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
     () => healthDonutSlices(summary.bandCounts, summary.assetCount),
     [summary.bandCounts, summary.assetCount],
   );
+
+  // **A different axis from `slices.length`, and deliberately not folded into
+  // it** (`F4.72`). "No band cut-points configured" is about the template
+  // vocabulary; this is about how much of the requested window the figures rest
+  // on. A donut can have every slice and a half-covered window, or no slice and
+  // a whole one, so neither sentence may replace the other.
+  const coverage = healthWindowCoverage(summary.coveredBuckets, summary.expectedBuckets);
 
   const option = useMemo<EChartsOption>(
     () => ({
@@ -132,7 +140,17 @@ export function HealthSummaryDonut({ title = "Asset Health", summary }: HealthSu
           <dt className="font-medium uppercase tracking-wide">Current to</dt>
           <dd className="text-bms-ink">{formatHealthComputedAt(summary.computedAt)}</dd>
         </div>
+        <div className="flex items-baseline gap-1">
+          <dt className="font-medium uppercase tracking-wide">Coverage</dt>
+          <dd className="tabular-nums text-bms-ink">{coverage.detail}</dd>
+        </div>
       </dl>
+
+      {coverage.warning !== null ? (
+        <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] leading-snug text-amber-900">
+          {coverage.warning}
+        </p>
+      ) : null}
     </div>
   );
 }

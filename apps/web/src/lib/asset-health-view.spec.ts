@@ -5,6 +5,7 @@ import {
   formatHealthScorePercent,
   healthBandDisplay,
   healthDonutSlices,
+  healthWindowCoverage,
   unscoredTagMessage,
 } from "./asset-health-view";
 
@@ -91,4 +92,66 @@ export function computedAtNullSaysNotYetComputedNeverANow(): void {
   expect(real).not.toBe("—");
   // An unparseable timestamp must not print the literal "Invalid Date".
   expect(formatHealthComputedAt("not-a-date")).toBe("—");
+}
+
+/**
+ * `F4.72` — the three coverage states, and the one that must never be rendered
+ * as another.
+ *
+ * ADR 0050 Amendment 2 decision 1: `coveredBuckets: 0` is "nothing to show" and
+ * `0 < coveredBuckets < expectedBuckets` is "a real score over less than the
+ * window you asked for". The second rendered as the first hides a score that is
+ * correct over the buckets it has.
+ */
+export function partialWindowIsItsOwnStateNotTheEmptyOne(): void {
+  const empty = healthWindowCoverage(0, 1_440);
+  const partial = healthWindowCoverage(720, 1_440);
+  const complete = healthWindowCoverage(1_440, 1_440);
+
+  expect(empty.state).toBe("empty");
+  expect(partial.state, "a half-covered window is partial, never empty").toBe("partial");
+  expect(complete.state).toBe("complete");
+
+  expect(
+    partial.warning,
+    "a partial window warns, or the reader cannot tell it from a whole one",
+  ).not.toBe(null);
+  expect(complete.warning, "a whole window has nothing to warn about").toBe(null);
+  expect(
+    partial.warning,
+    "the partial sentence must not be the empty one — that is the collapse the ADR forbids",
+  ).not.toBe(empty.warning);
+}
+
+/**
+ * The pair is printed as a pair. The contract carries two integers rather than
+ * a ratio for the reason `inRangeCount`/`sampleCount` does — `1439 / 1440` and
+ * `1 / 1` are different facts, and a single percentage loses which one is held.
+ */
+export function coverageIsPrintedAsTwoIntegersNeverARatio(): void {
+  const nearlyWhole = healthWindowCoverage(1_439, 1_440);
+  const oneOfOne = healthWindowCoverage(1, 1);
+
+  expect(nearlyWhole.detail).toBe("1439 / 1440 buckets");
+  expect(oneOfOne.detail).toBe("1 / 1 buckets");
+  expect(
+    nearlyWhole.detail,
+    "two windows that round to the same percentage must still print differently",
+  ).not.toBe(oneOfOne.detail);
+  // Neither string may be the quotient the ADR refuses to put on the wire.
+  expect(nearlyWhole.detail).not.toContain("%");
+  expect(nearlyWhole.detail).not.toContain("99.9");
+}
+
+/**
+ * Covered past expected reads as complete, not as a warning.
+ *
+ * That state means the level's bucket width and `F3.35`'s ladder disagree,
+ * which is `assertBucketCount`'s job on the server. A renderer that warned here
+ * would report a server defect to an operator as a data gap.
+ */
+export function coverageBeyondTheExpectedCountReadsAsComplete(): void {
+  const over = healthWindowCoverage(1_441, 1_440);
+  expect(over.state).toBe("complete");
+  expect(over.warning).toBe(null);
 }

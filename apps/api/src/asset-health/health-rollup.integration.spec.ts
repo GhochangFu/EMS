@@ -6,6 +6,7 @@ import { createDb } from "@bms/db";
 
 import { withTenant } from "../database/tenant-context";
 import type { AggregateLevel } from "../telemetry/point-aggregates";
+import { AssetHealthService } from "./asset-health.service";
 import { levelRollupSql, rawRollupSql } from "./health-rollup-sql";
 
 /**
@@ -627,5 +628,94 @@ export async function assertTenantJoinContainsRawAndLevelRollups(
   assert(
     levelControl !== undefined,
     "the level roll-up positive control must have a row — otherwise the negative assertion above is vacuous",
+  );
+}
+
+/**
+ * Item 8 — `F4.72`: `coveredBuckets` is a union across the scope, executed.
+ *
+ * **The read half of the feature, asserted beside the writer that made its
+ * rows.** `AssetHealthService.readCounters` groups by `(asset_id, point_key)`,
+ * so its coverage subquery is the only place the bucket instants survive; it
+ * runs against a real Postgres nowhere else, and `asset-health.service.spec.ts`
+ * builds its rows by hand and therefore cannot see this at all. Two facts only
+ * a database can settle:
+ *
+ * 1. **The statement is valid SQL.** A subquery in the select list of a grouped
+ *    query is exactly the shape Postgres rejects when a column reference binds
+ *    to the outer relation instead of the inner one. Rendering it to text
+ *    proves nothing about that.
+ * 2. **The count is a union, not a maximum and not a sum.** The fixtures above
+ *    already separate the three, without being built for it:
+ *
+ *    | tag     | 1m buckets on asset A, inside `[BASE, BASE+2h)` |
+ *    |---------|------------------------------------------------|
+ *    | `TAG_A` | 1 — `BASE` (`WINDOW_1`)                        |
+ *    | `TAG_B` | 1 — `BASE`, all-skipped, still a row           |
+ *    | `TAG_D` | 5 — `BASE+1h` .. `+1h4m` (`WINDOW_6`)          |
+ *
+ *    So the maximum across tags is **5**, the sum of the per-tag counts is
+ *    **7**, and the union — the answer Amendment 2 decision 1 defines — is
+ *    **6**. `TAG_X_CONTROL` sits at `BASE+2h` exactly and `TAG_Y_CONTROL` at
+ *    `BASE+3h`; both are outside the half-open window, which is itself worth
+ *    asserting because `bucket < to` is what keeps them out.
+ *
+ * The service is constructed on this suite's own pool rather than through Nest.
+ * `bms.assets` and `bms.asset_points` are FORCE ROW LEVEL SECURITY and this
+ * pool sets no `app.current_organization`, so `healthForAssets` and
+ * `catalogPoints` answer nothing — which is fine and deliberate. The window
+ * fields under test come from `telemetry.point_in_range_1m`, which carries no
+ * policy, and a scoreless response is the honest one for a caller with no
+ * tenant context.
+ */
+export async function assertCoveredBucketsIsTheUnionAcrossTheScope(
+  pool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const service = new AssetHealthService(createDb(pool));
+  // `now` at BASE+2h with a 120-minute window gives `[BASE, BASE+2h)` at the
+  // `1m` rung — `granularityFor(120)` is `1m`, and 2 hours is nowhere near the
+  // retention horizon that could coarsen it.
+  const result = await service.forAsset(fx.assetAId, 120, new Date(BASE.getTime() + 2 * HOUR));
+
+  assert(
+    result.bucketSeconds === 60,
+    `a 120-minute window must be read at the 1m rung, got ${result.bucketSeconds}s buckets`,
+  );
+  assert(
+    result.expectedBuckets === 120,
+    `120 minutes of 1m buckets expects 120, got ${result.expectedBuckets}`,
+  );
+  assert(
+    result.coveredBuckets === 6,
+    `coveredBuckets must be the UNION of the scope's distinct bucket instants (6). ` +
+      `5 would be the maximum across tags, 7 the sum of their per-tag counts. Got ` +
+      `${result.coveredBuckets}.`,
+  );
+  assert(
+    result.coveredBuckets <= result.expectedBuckets,
+    `coverage may never exceed the window's own bucket count — ${result.coveredBuckets} > ` +
+      `${result.expectedBuckets} means the level's bucket width and F3.35's ladder disagree`,
+  );
+  assert(
+    result.computedAt !== null,
+    "a covered window must report an instant — `telemetry.point_in_range_*` declares " +
+      "`computed_at NOT NULL`, so coveredBuckets > 0 and computedAt: null cannot both be right",
+  );
+
+  // The other direction: a window the roll-up has not reached reports no
+  // coverage AND no instant, together. `BASE - 2h` predates every fixture row.
+  const uncovered = await service.forAsset(fx.assetAId, 120, new Date(BASE.getTime() - 2 * HOUR));
+  assert(
+    uncovered.coveredBuckets === 0,
+    `an untouched window covers no bucket, got ${uncovered.coveredBuckets}`,
+  );
+  assert(
+    uncovered.computedAt === null,
+    `coveredBuckets: 0 and computedAt: null must arrive together, got ${String(uncovered.computedAt)}`,
+  );
+  assert(
+    uncovered.expectedBuckets === 120,
+    `the requested window still expects 120 buckets, got ${uncovered.expectedBuckets}`,
   );
 }

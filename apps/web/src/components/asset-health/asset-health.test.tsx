@@ -3,15 +3,20 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aWholeWindowCarriesNoCoverageWarning,
   assetCardDistinguishesSkippedRulesFromNeverMatchedTags,
   assetCardRendersNullScoreAndZeroScoreDifferently,
   assetCardRendersUnconfiguredBandAlongsideTheRealScore,
   assetCardShowsGranularityAndCurrency,
+  bothSurfacesDiscloseAPartiallyCoveredWindow,
   donutRendersEachBandsCountAndShare,
   donutRendersUnbandedAndUnscoredAsSeparateFigures,
+  donutSaysBothWhyItHasNoSlicesAndThatTheWindowIsPartial,
   donutSaysWhyItHasNoSlices,
   donutShowsGranularityAndCurrency,
   donutWithBandsNeverSaysItHasNone,
+  fixturesCoverEveryContractField,
+  noCoveredBucketReadsAsEmptyNotPartial,
 } from "./asset-health.spec";
 
 /**
@@ -58,5 +63,25 @@ describe("E1.3 asset health surface", () => {
 
   it("never says it has no bands when it has them", () => {
     donutWithBandsNeverSaysItHasNone();
+  });
+
+  it("builds fixtures carrying every field the two contracts declare", () => {
+    fixturesCoverEveryContractField();
+  });
+
+  it("discloses a partially covered window on the card and on the donut", () => {
+    bothSurfacesDiscloseAPartiallyCoveredWindow();
+  });
+
+  it("carries no coverage warning when the window is whole", () => {
+    aWholeWindowCarriesNoCoverageWarning();
+  });
+
+  it("says both why it has no slices and that the window is partial", () => {
+    donutSaysBothWhyItHasNoSlicesAndThatTheWindowIsPartial();
+  });
+
+  it("reads no covered bucket as empty, never as partial", () => {
+    noCoveredBucketReadsAsEmptyNotPartial();
   });
 });

@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
 import type { AssetHealthResponse, HealthSummaryResponse } from "@bms/shared";
+import { assetHealthResponseSchema, healthSummaryResponseSchema } from "@bms/shared/contracts";
 
 import { AssetHealthCard } from "./asset-health-card";
 import { HealthSummaryDonut } from "./health-summary-donut";
@@ -27,6 +28,10 @@ const WINDOW = {
   windowTo: "2026-08-30T00:00:00.000Z",
   bucketSeconds: 86_400,
   computedAt: "2026-08-30T00:05:00.000Z" as string | null,
+  // A whole window by default (`F4.72`), so every test above that does not care
+  // about coverage renders no warning and asserts on the surface it means to.
+  coveredBuckets: 1,
+  expectedBuckets: 1,
 };
 
 function assetHealth(overrides: Partial<AssetHealthResponse> = {}): AssetHealthResponse {
@@ -190,4 +195,120 @@ export function donutWithBandsNeverSaysItHasNone(): void {
     screen.queryByText(/no band cut-points/i),
     "the empty-state sentence must not render beside real slices",
   ).toBeNull();
+}
+
+/**
+ * The two fixtures carry **every** field their contract declares.
+ *
+ * `builder-config-round-trip.spec.ts`'s guard, applied to this surface — ADR
+ * 0050 Amendment 2's Consequences ask for it by name. Without it these fixtures
+ * are only as complete as whoever last remembered to extend them, and a new
+ * contract field the components never read would pass every test below on a
+ * fixture that never carried it. `F4.72` added two such fields; this is what
+ * makes the third one fail here instead.
+ *
+ * Read off `.shape` rather than restated, so the list cannot drift.
+ */
+export function fixturesCoverEveryContractField(): void {
+  const assetFields = Object.keys(assetHealthResponseSchema.shape).sort();
+  const summaryFields = Object.keys(healthSummaryResponseSchema.shape).sort();
+
+  expect(
+    Object.keys(assetHealth()).sort(),
+    "the asset fixture must carry every field assetHealthResponseSchema declares, or the " +
+      "renders below pass vacuously on whatever it omits",
+  ).toEqual(assetFields);
+  expect(
+    Object.keys(summary()).sort(),
+    "the summary fixture must carry every field healthSummaryResponseSchema declares",
+  ).toEqual(summaryFields);
+}
+
+/**
+ * `F4.72` — a half-covered window says so, on both surfaces.
+ *
+ * The card and the donut are asserted together because the contract carries the
+ * two integers on the shared `windowFields` block precisely so that the asset
+ * read and the summary read cannot disagree about them.
+ */
+export function bothSurfacesDiscloseAPartiallyCoveredWindow(): void {
+  const card = render(
+    <AssetHealthCard data={assetHealth({ coveredBuckets: 720, expectedBuckets: 1_440 })} />,
+  );
+  expect(screen.getByText("Coverage"), "the pair is labelled on the card").toBeTruthy();
+  expect(screen.getByText("720 / 1440 buckets")).toBeTruthy();
+  expect(
+    card.container.textContent?.includes("Partial window"),
+    "a card over half a window must say so — computedAt alone reports it as whole",
+  ).toBe(true);
+  card.unmount();
+
+  render(
+    <HealthSummaryDonut summary={summary({ coveredBuckets: 12, expectedBuckets: 1_440 })} />,
+  );
+  expect(screen.getByText("12 / 1440 buckets")).toBeTruthy();
+  expect(screen.getByText(/Partial window/)).toBeTruthy();
+}
+
+/**
+ * The negative control, and the one a reviewer will ask for: a whole window
+ * carries no warning at all.
+ *
+ * Without this, a banner rendered unconditionally would pass the test above and
+ * make every healthy read look like a degraded one.
+ */
+export function aWholeWindowCarriesNoCoverageWarning(): void {
+  const card = render(<AssetHealthCard data={assetHealth()} />);
+  expect(card.container.textContent?.includes("Partial window")).toBe(false);
+  expect(card.container.textContent?.includes("No rolled-up bucket")).toBe(false);
+  card.unmount();
+
+  const donut = render(<HealthSummaryDonut summary={summary()} />);
+  expect(donut.container.textContent?.includes("Partial window")).toBe(false);
+}
+
+/**
+ * Coverage and bands are different axes, and the donut must not fold one into
+ * the other (ADR 0050 Amendment 2 decision 1 versus `F4.74`).
+ *
+ * A donut with no band cut-points AND a partial window has to say both things:
+ * the slices are missing because no template configures them, and the figures
+ * rest on part of the window. Either sentence swallowing the other loses a fact
+ * the operator needs.
+ */
+export function donutSaysBothWhyItHasNoSlicesAndThatTheWindowIsPartial(): void {
+  render(
+    <HealthSummaryDonut
+      summary={summary({ bandCounts: [], coveredBuckets: 100, expectedBuckets: 1_440 })}
+    />,
+  );
+  expect(
+    screen.getByText("No band cut-points configured"),
+    "the band sentence survives a partial window",
+  ).toBeTruthy();
+  expect(
+    screen.getByText(/Partial window/),
+    "the coverage sentence survives an empty band vocabulary",
+  ).toBeTruthy();
+}
+
+/**
+ * `coveredBuckets: 0` is the empty state, and it is NOT the partial one.
+ *
+ * This is the pairing Amendment 2 decision 1 requires: no covered bucket and no
+ * `computedAt` arrive together, and the sentence says nothing has been scored
+ * rather than that a real score covers part of a window.
+ */
+export function noCoveredBucketReadsAsEmptyNotPartial(): void {
+  const card = render(
+    <AssetHealthCard
+      data={assetHealth({ coveredBuckets: 0, expectedBuckets: 1_440, computedAt: null })}
+    />,
+  );
+  expect(screen.getByText(/No rolled-up bucket/)).toBeTruthy();
+  expect(
+    card.container.textContent?.includes("Partial window"),
+    "an uncovered window must not read as a partially covered one",
+  ).toBe(false);
+  expect(screen.getByText("Not yet computed"), "the two absences agree").toBeTruthy();
 }

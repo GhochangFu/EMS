@@ -68,6 +68,60 @@ export function formatHealthComputedAt(computedAt: string | null): string {
   return at.toLocaleString();
 }
 
+/**
+ * How much of the requested window the figures beside it actually rest on.
+ *
+ * `state` is three-valued because `F4.72` (ADR 0050 Amendment 2 decision 1)
+ * says two of the three must not render as each other. `coveredBuckets: 0` is
+ * `"empty"` — nothing has been scored. `0 < coveredBuckets < expectedBuckets`
+ * is `"partial"` — a REAL score, correct over the buckets it has, covering less
+ * of the window than the reader asked for. Rendering the second as the first
+ * hides a score that is right.
+ */
+export type HealthWindowCoverage = {
+  readonly state: "empty" | "partial" | "complete";
+  /** The pair, always printable — two integers, never a ratio. */
+  readonly detail: string;
+  /** `null` when complete: there is nothing to warn about. */
+  readonly warning: string | null;
+};
+
+/**
+ * The coverage state, from the two integers the contract carries.
+ *
+ * **The two integers are printed as a pair and never divided.** That is the
+ * contract's own rule (`inRangeCount` beside `sampleCount`): `1439 / 1440` and
+ * `1 / 1` are different facts and a single percentage loses which one you hold.
+ *
+ * `coveredBuckets >= expectedBuckets` is complete rather than an error. Covered
+ * exceeding expected would mean the level's bucket width and the ladder
+ * disagree, which is `assertBucketCount`'s job on the server; a renderer that
+ * turned it into a warning would report a server defect as a data gap.
+ */
+export function healthWindowCoverage(
+  coveredBuckets: number,
+  expectedBuckets: number,
+): HealthWindowCoverage {
+  const detail = `${coveredBuckets} / ${expectedBuckets} buckets`;
+  if (coveredBuckets >= expectedBuckets) {
+    return { state: "complete", detail, warning: null };
+  }
+  if (coveredBuckets <= 0) {
+    return {
+      state: "empty",
+      detail,
+      warning: "No rolled-up bucket in this window — nothing here has been scored yet.",
+    };
+  }
+  return {
+    state: "partial",
+    detail,
+    warning:
+      `Partial window: this figure covers ${coveredBuckets} of ${expectedBuckets} buckets. ` +
+      "The score is real; the window behind it is not yet whole.",
+  };
+}
+
 /** One donut slice, plus its share of the WHOLE asset count. */
 export type HealthDonutSlice = {
   readonly code: string;

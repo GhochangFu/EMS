@@ -215,7 +215,18 @@ export function scoreAsset(
  */
 export function summariseAssets(
   scores: readonly AssetScore[],
-): Omit<HealthSummaryResponse, "windowFrom" | "windowTo" | "bucketSeconds" | "computedAt"> {
+): Omit<
+  HealthSummaryResponse,
+  // Every field on the contract's shared `windowFields` block. This function is
+  // handed only scores, so it can produce none of them — including `F4.72`'s two
+  // coverage integers, which describe the read's window rather than its scores.
+  | "windowFrom"
+  | "windowTo"
+  | "bucketSeconds"
+  | "computedAt"
+  | "coveredBuckets"
+  | "expectedBuckets"
+> {
   const assetCount = scores.length;
 
   const scored: (AssetScore & { score: number })[] = [];

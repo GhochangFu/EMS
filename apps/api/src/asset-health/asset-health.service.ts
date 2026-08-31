@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, lt, max, sum } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, max, sql, sum } from "drizzle-orm";
 
 import type { AssetHealthResponse, HealthSummaryResponse, TemplateHealth } from "@bms/shared";
 import {
@@ -16,7 +16,11 @@ import {
 import { templateHealthSchema } from "../admin/asset-templates/asset-templates-content.schema";
 import { FLEET_DRIZZLE } from "../database/database.tokens";
 import { type AggregateLevel, bucketSeconds } from "../telemetry/point-aggregates";
-import { levelFor, windowBounds } from "../telemetry/point-aggregate-window";
+import {
+  expectedBucketCount,
+  levelFor,
+  windowBounds,
+} from "../telemetry/point-aggregate-window";
 
 import { type AssetScore, type TagCounts, scoreAsset, summariseAssets } from "./health-score";
 
@@ -103,7 +107,7 @@ export class AssetHealthService {
    */
   async forAsset(assetId: string, windowMinutes: number, now: Date): Promise<AssetHealthResponse> {
     const { level, from, to } = this.resolveWindow(windowMinutes, now);
-    const rows = await this.readCounters(level, [assetId], from, to);
+    const { rows, coveredBuckets } = await this.readCounters(level, [assetId], from, to);
     const health = await this.healthForAssets([assetId]);
     const catalog = await this.catalogPoints([assetId]);
     const scored = scoreAsset(
@@ -117,7 +121,7 @@ export class AssetHealthService {
       band: scored.band,
       scoredTags: scored.scoredTags,
       unscoredTags: scored.unscoredTags,
-      ...this.windowFields(level, from, to, rows),
+      ...this.windowFields({ level, from, to, windowMinutes, rows, coveredBuckets }),
     };
   }
 
@@ -154,11 +158,16 @@ export class AssetHealthService {
         unbandedAssetCount: 0,
         unscoredAssetCount: 0,
         bandCounts: [],
-        ...this.windowFields(level, from, to, []),
+        // `coveredBuckets: 0` beside a non-zero `expectedBuckets` is the honest
+        // reading of a scope with nothing in it, and it agrees with the
+        // `computedAt: null` this same call produces — the pairing Amendment 2
+        // decision 1 requires. `HealthSummarySection` gates on `assetCount === 0`
+        // BEFORE the donut, so this never reaches the partial-window banner.
+        ...this.windowFields({ level, from, to, windowMinutes, rows: [], coveredBuckets: 0 }),
       };
     }
 
-    const rows = await this.readCounters(level, inScope, from, to);
+    const { rows, coveredBuckets } = await this.readCounters(level, inScope, from, to);
     const health = await this.healthForAssets(inScope);
     const catalog = await this.catalogPoints(inScope);
 
@@ -172,7 +181,7 @@ export class AssetHealthService {
 
     return {
       ...summariseAssets(scores),
-      ...this.windowFields(level, from, to, rows),
+      ...this.windowFields({ level, from, to, windowMinutes, rows, coveredBuckets }),
     };
   }
 
@@ -185,30 +194,52 @@ export class AssetHealthService {
   }
 
   /**
-   * `bucketSeconds` and `computedAt`, per Amendment 1 decision 9.
+   * `bucketSeconds` and `computedAt` (Amendment 1 decision 9), and the two
+   * coverage integers (Amendment 2 decision 1).
    *
    * `computedAt` is the newest instant across the rows actually read — the
    * currency of THIS level, not of the ladder. It is `null` when nothing was
    * read, because a scope the roll-up has not covered has no instant to report
    * and `now` would claim a currency that does not exist.
+   *
+   * **`computedAt` alone cannot disclose a hole**, which is the whole of
+   * Amendment 2: it is the NEWEST instant, so a window missing its middle
+   * reports exactly what a complete window reports. `coveredBuckets` beside
+   * `expectedBuckets` is what makes that visible.
+   *
+   * `expectedBuckets` is `F3.35`'s `expectedBucketCount`, imported rather than
+   * re-derived — ADR 0050 decision 6 keeps one ladder, and a second copy of this
+   * arithmetic beside it is how a second ladder starts.
+   *
+   * The two are consistent by construction: `telemetry.point_in_range_*` declares
+   * `computed_at timestamptz NOT NULL`, so a non-empty read always yields an
+   * instant, and an empty one yields `coveredBuckets: 0` and `computedAt: null`
+   * together.
    */
-  private windowFields(
-    level: AggregateLevel,
-    from: Date,
-    to: Date,
-    rows: readonly CounterRow[],
-  ): Pick<AssetHealthResponse, "windowFrom" | "windowTo" | "bucketSeconds" | "computedAt"> {
+  private windowFields(args: {
+    level: AggregateLevel;
+    from: Date;
+    to: Date;
+    windowMinutes: number;
+    rows: readonly CounterRow[];
+    coveredBuckets: number;
+  }): Pick<
+    AssetHealthResponse,
+    "windowFrom" | "windowTo" | "bucketSeconds" | "computedAt" | "coveredBuckets" | "expectedBuckets"
+  > {
     let newest: Date | null = null;
-    for (const row of rows) {
+    for (const row of args.rows) {
       if (row.computedAt !== null && (newest === null || row.computedAt > newest)) {
         newest = row.computedAt;
       }
     }
     return {
-      windowFrom: from.toISOString(),
-      windowTo: to.toISOString(),
-      bucketSeconds: bucketSeconds(level),
+      windowFrom: args.from.toISOString(),
+      windowTo: args.to.toISOString(),
+      bucketSeconds: bucketSeconds(args.level),
       computedAt: newest?.toISOString() ?? null,
+      coveredBuckets: args.coveredBuckets,
+      expectedBuckets: expectedBucketCount(args.windowMinutes, args.level),
     };
   }
 
@@ -279,13 +310,49 @@ export class AssetHealthService {
     return byAsset;
   }
 
+  /**
+   * The per-tag counters, and the scope's bucket coverage beside them.
+   *
+   * **`scope` is built once and given to BOTH the outer read and the coverage
+   * subquery.** Two predicates that drift would measure coverage over a
+   * different window from the one the scores came from — a defect with no
+   * symptom, because both numbers would still look reasonable.
+   *
+   * **Why a subquery rather than a fold in JavaScript.** This read groups by
+   * `(asset_id, point_key)`, so `bucket` is collapsed before any row reaches
+   * TypeScript. Adding `bucket` to the `GROUP BY` and folding here would make
+   * the summary read scale as `assets x ruled tags x buckets` — at the default
+   * 1,440 minutes on `1m` that is a four-figure multiplier on a dashboard tile,
+   * and Amendment 1 decision 10 accepts unbounded growth in these tables.
+   * `array_agg(DISTINCT bucket)` is the same explosion in bytes.
+   *
+   * It is ONE statement and one round trip, which is what Amendment 2 decision 1
+   * means by "adds no query", and it is the shape `scalarSql`'s `peak_at`
+   * already uses in `point-aggregate-window.ts`. The subquery is uncorrelated,
+   * so Postgres evaluates it once as an InitPlan and every returned row carries
+   * the same value.
+   *
+   * `count(DISTINCT bucket) OVER ()` is not an option: Postgres does not
+   * implement `DISTINCT` in window functions.
+   *
+   * **The count is a union across the scope, not a maximum across tags.** Those
+   * two agree only while every ruled tag is written by every sweep pass, which
+   * is a premise about the writer rather than a fact about the rows — and the
+   * `1m` fixtures in `health-rollup.integration.spec.ts` already separate them
+   * (five buckets on the busiest tag, six distinct buckets in the scope).
+   */
   private async readCounters(
     level: AggregateLevel,
     assetIds: readonly string[],
     from: Date,
     to: Date,
-  ): Promise<CounterRow[]> {
+  ): Promise<{ rows: CounterRow[]; coveredBuckets: number }> {
     const relation = COUNTER_RELATION[level];
+    const scope = and(
+      inArray(relation.assetId, [...assetIds]),
+      gte(relation.bucket, from),
+      lt(relation.bucket, to),
+    );
     const rows = await this.db
       .select({
         assetId: relation.assetId,
@@ -298,26 +365,35 @@ export class AssetHealthService {
         ruleCount: max(relation.ruleCount),
         skippedRuleCount: max(relation.skippedRuleCount),
         computedAt: max(relation.computedAt),
+        // The relation is named again inside the subquery rather than aliased,
+        // so every column reference binds to the INNER `FROM` item — `bucket`
+        // is not in the outer `GROUP BY` and an outer reference would be
+        // rejected by Postgres rather than silently answering something else.
+        coveredBuckets: sql<string>`(
+          select count(distinct ${relation.bucket})
+          from ${relation}
+          where ${scope}
+        )`,
       })
       .from(relation)
-      .where(
-        and(
-          inArray(relation.assetId, [...assetIds]),
-          gte(relation.bucket, from),
-          lt(relation.bucket, to),
-        ),
-      )
+      .where(scope)
       .groupBy(relation.assetId, relation.pointKey);
 
-    return rows.map((row) => ({
-      assetId: row.assetId,
-      pointKey: row.pointKey,
-      inRangeCount: asCount(row.inRangeCount),
-      sampleCount: asCount(row.sampleCount),
-      ruleCount: asCount(row.ruleCount),
-      skippedRuleCount: asCount(row.skippedRuleCount),
-      computedAt: row.computedAt === null ? null : new Date(row.computedAt),
-    }));
+    return {
+      rows: rows.map((row) => ({
+        assetId: row.assetId,
+        pointKey: row.pointKey,
+        inRangeCount: asCount(row.inRangeCount),
+        sampleCount: asCount(row.sampleCount),
+        ruleCount: asCount(row.ruleCount),
+        skippedRuleCount: asCount(row.skippedRuleCount),
+        computedAt: row.computedAt === null ? null : new Date(row.computedAt),
+      })),
+      // No group means no bucket carried a row, which is a coverage of zero —
+      // the same state the subquery would have reported had a row survived to
+      // carry it.
+      coveredBuckets: asCount(rows[0]?.coveredBuckets),
+    };
   }
 
   /**

@@ -2,8 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   assertComputedAtIsNewestRowInstantOrNull,
+  assertCoverageCountsDistinctBucketsOverTheSamePredicate,
+  assertCoveredBucketsIsTheScopeCountNotTheRowCount,
   assertEmptyScopeNeverTouchesTheCounterRelation,
+  assertEmptyScopeReportsZeroCoverageAndNoInstant,
   assertEveryAssetInScopeIsScoredEvenWithNoCounterRows,
+  assertExpectedBucketsFollowsTheLadderAtEveryRung,
   assertMalformedHealthYieldsNullBandNotThrow,
   assertRuleTalliesUseMaxNotSum,
   assertUnruledCatalogPointAppearsInUnscoredTags,
@@ -33,5 +37,21 @@ describe("asset-health.service", () => {
 
   it("reports computedAt as the newest row instant, or null when none were read", async () => {
     await assertComputedAtIsNewestRowInstantOrNull();
+  });
+
+  it("derives expectedBuckets from F3.35's ladder at every rung", async () => {
+    await assertExpectedBucketsFollowsTheLadderAtEveryRung();
+  });
+
+  it("counts distinct buckets over the same predicate the scores came from", async () => {
+    await assertCoverageCountsDistinctBucketsOverTheSamePredicate();
+  });
+
+  it("reports the scope-wide covered count, not the number of tag rows", async () => {
+    await assertCoveredBucketsIsTheScopeCountNotTheRowCount();
+  });
+
+  it("reports zero coverage and no instant together on an empty scope", async () => {
+    await assertEmptyScopeReportsZeroCoverageAndNoInstant();
   });
 });

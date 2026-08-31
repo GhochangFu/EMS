@@ -4,6 +4,7 @@ import type pg from "pg";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertAllSkippedStateWritesZero,
+  assertCoveredBucketsIsTheUnionAcrossTheScope,
   assertInRangeCountIsCorrect,
   assertLevelRollupSumsCountsAndMaxesRuleTallies,
   assertMalformedRuleIsSkippedNotTreatedAsNotFiring,
@@ -81,5 +82,9 @@ describe.skipIf(!connectionString)("E1.3 — health roll-up SQL, executed", () =
 
   it("contains the raw and level roll-ups to the caller's own tenant (item 7)", async () => {
     await assertTenantJoinContainsRawAndLevelRollups(pool as pg.Pool, fx);
+  });
+
+  it("counts coveredBuckets as the union across the scope, not per tag (item 8)", async () => {
+    await assertCoveredBucketsIsTheUnionAcrossTheScope(pool as pg.Pool, fx);
   });
 });
