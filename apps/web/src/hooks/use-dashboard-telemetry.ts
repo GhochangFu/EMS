@@ -299,8 +299,12 @@ export function useDashboardTelemetry(dashboard: DashboardDto | undefined): Dash
     // nothing. An earlier version guarded this with a key string and a comment
     // claiming the guard made the list re-derive; it did not, and the guard was
     // a no-op (code review).
-    // `catalogQuery.isLoading` is `false` while the query is disabled — a disabled query is
-    // pending but not fetching — so a dashboard that binds no metric is unaffected by this term.
+    // `catalogQuery.isLoading` is `false` while the query is disabled: TanStack Query v5
+    // (`apps/web/package.json` pins `^5.62.8`) defines `isLoading` as `isPending &&
+    // isFetching`, and a disabled query is pending but not fetching. So a dashboard that binds
+    // no metric is unaffected by this term. Nothing on the viewer page reads `isLoading` today,
+    // which is why this is stated with its version rather than left as an assumption someone
+    // later has to re-derive.
     isLoading:
       seedQueries.some((query) => query.isLoading) ||
       aggregateQueries.some((query) => query.isLoading) ||

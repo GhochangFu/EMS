@@ -1,7 +1,8 @@
 import { DASHBOARD_GRID } from "@bms/shared";
-import type { AdminAssetPointDto, WidgetPointRole } from "@bms/shared";
+import type { AdminAssetPointDto, MetricCatalogKey, WidgetPointRole } from "@bms/shared";
 
 import type { DashboardBuilderProblem, DashboardWidgetRow } from "../../lib/dashboard-builder-form";
+import { metricCatalogLabel } from "../../lib/metric-catalog";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 import {
   AGGREGATE_FUNCTION_LABELS,
@@ -14,6 +15,7 @@ import {
 } from "../../lib/widget-config-form";
 import { Field } from "../asset-templates/field";
 import { ChartSeriesPicker } from "./chart-series-picker";
+import { MetricSourcePicker } from "./metric-source-picker";
 import { PointPicker } from "./point-picker";
 
 type WidgetInspectorProps = {
@@ -48,6 +50,7 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
   const problemFor = (field: string): string | undefined =>
     problems.find((problem) => problem.field === field)?.message;
   const cardinality = WIDGET_CATALOG[row.widgetType].points;
+  const sourceCardinality = WIDGET_CATALOG[row.widgetType].sources;
 
   function updateConfig(patch: Partial<WidgetConfigRow>): void {
     onChange({ config: { ...row.config, ...patch } });
@@ -74,6 +77,23 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
         .filter((_, position) => position !== index)
         .map((point, position) => ({ ...point, sortOrder: position })),
     });
+  }
+
+  /**
+   * `F3.35` Stage C — adding a named metric.
+   *
+   * **`params: {}` and nothing else, deliberately.** Every entry's write schema is
+   * `z.object({}).strict()` today, so any field added here would be refused with a 400 the
+   * author cannot act on — and a scope id in particular is the ADR 0019 problem the binding
+   * contract exists to refuse: a binding inherits the DASHBOARD's scope, so an id in `params`
+   * would be a second, contradictory answer sitting in jsonb that no foreign key covers.
+   */
+  function addSource(catalogKey: MetricCatalogKey): void {
+    onChange({ sources: [...row.sources, { catalogKey, params: {} }] });
+  }
+
+  function removeSource(index: number): void {
+    onChange({ sources: row.sources.filter((_, position) => position !== index) });
   }
 
   return (
@@ -467,10 +487,53 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
             </li>
           ))}
         </ul>
-        {row.points.length < cardinality.max ? (
+        {/*
+          `F3.35` Stage C — the picker disappears when a NAMED METRIC is bound, as well as at
+          the cardinality maximum. A widget binds points or a metric, never both
+          (`bindingExclusiveMessage`), so offering both pickers at once would let an author
+          build a state the form refuses on the very next render — an error they were invited
+          to make. `dashboardBuilderErrors` still enforces it, because a widget can arrive from
+          the server in that state; this only stops the form from producing one.
+        */}
+        {row.points.length < cardinality.max && row.sources.length === 0 ? (
           <PointPicker organizationId={organizationId} onAdd={addPoint} />
         ) : null}
       </Field>
+
+      {/*
+        Rendered only for a type that can bind one — a gauge, a tank and a chart draw a series
+        over time and accept no catalog shape, so `WIDGET_SOURCE_CARDINALITY` gives them
+        `max: 0` and this whole field is absent rather than empty.
+      */}
+      {sourceCardinality.max > 0 ? (
+        <Field label="Named metric" error={problemFor("points")}>
+          <ul className="space-y-1">
+            {row.sources.map((source, index) => (
+              <li
+                key={`${source.catalogKey}-${index}`}
+                className="flex items-center justify-between rounded border border-gray-100 px-2 py-1 text-xs"
+              >
+                <span>{metricCatalogLabel(source.catalogKey)}</span>
+                <button
+                  type="button"
+                  onClick={() => removeSource(index)}
+                  aria-label={`Remove ${metricCatalogLabel(source.catalogKey)}`}
+                  className="text-red-700"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+          {row.sources.length < sourceCardinality.max && row.points.length === 0 ? (
+            <MetricSourcePicker
+              widgetType={row.widgetType}
+              bound={row.sources.map((source) => source.catalogKey)}
+              onAdd={addSource}
+            />
+          ) : null}
+        </Field>
+      ) : null}
     </section>
   );
 }

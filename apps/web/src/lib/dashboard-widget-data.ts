@@ -248,6 +248,14 @@ export function catalogIsStale(resolvedAt: string | null, nowMs: number): boolea
  * a row stored before that rule existed, or by a hand-built `PUT`, must render "no value"
  * rather than a row count dressed up as a metric. A fabricated number is the one failure the
  * `value` contract is nullable to prevent.
+ *
+ * **The resolved `unit` is deliberately dropped, and this is the note saying so.** The metric
+ * arm carries a `unit`, and `ValueTileWidget` renders `config.unit` — the author's, not the
+ * resolver's. Nothing is lost today: every metric resolver returns `null` for it, because a
+ * count of alarms and a 0..1 health score have no unit to state. Carrying it would mean
+ * widening `WidgetData` with a field that exists for one binding kind, so the author's own
+ * label wins until a catalog entry actually has a unit worth showing. Written forward as a
+ * decision rather than left for a reader to discover as an omission.
  */
 function catalogWidgetData(
   sources: readonly DashboardWidgetSourceDto[],
