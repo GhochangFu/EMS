@@ -241,7 +241,10 @@ tightens.
   renderer; `F3.28` consumes them on `/cr-overview`. Where the same delta
   appears twice, `F3.35` builds it and `F3.28` uses it.
 - **`F3.32`** keeps the process diagram.
-- **The two metrics the client still owes.** `assets.health.score` needs the
+- **The two metrics the client still owes**
+  (**one of the two had already arrived when this was written — see
+  [Errata 2](#errata-2--the-health-score-formula-had-already-arrived-2026-08-31)**).
+  `assets.health.score` needs the
   roll-up formula from feature-sheet row 12, and operational efficiency needs a
   definition. **Stage C builds the catalog machinery without them and cannot
   compute those two entries.** Sheet 03 already names both as client inputs. If
@@ -345,3 +348,87 @@ catalog that do not exist. Checked on 2026-08-30 by re-running the searches this
 ADR's Consequences prescribe: neither `AGENTS.md` nor `docs/roadmap.md` mentions
 `F3.35`, ADR 0048 or `dashboard_widget_sources` at all, so the sweep is an
 addition rather than a softening and nothing false is sitting there meanwhile.
+
+## Errata 2 — the health-score formula had already arrived (2026-08-31)
+
+§7 lists `assets.health.score` among "the two metrics the client still owes" and
+says **"Stage C builds the catalog machinery without them and cannot compute
+those two entries."** That was false for one of the two on the day it was
+written. **The client supplied the roll-up formula on 2026-08-22** — eight days
+before this ADR was accepted — and ADR 0050's own Context quotes it: *"tag-level
+goodness = data points in safe range / total data points, rolled up with
+user-configurable weights, topped by bad-actor identification."*
+
+`E1.3` then built it (PRs #227–#232, closed 2026-08-30), so a health score is a
+live service by the time Stage C needs one.
+
+**Stage C therefore ships `assets.health.score` as a real metric**, delegating to
+`E1.3`'s service rather than computing anything of its own. Ruled by the owner on
+2026-08-31, at the Unit 1 gate. `metricCatalogKeySchema` carries the key and
+migration `0054_dashboard_widget_sources.sql`'s
+`dashboard_widget_sources_catalog_key_check` names it.
+
+**Operational efficiency is unchanged and still owed.** It has no definition, it
+is not in the catalog, and the rest of that bullet — Sheet 03, the workshop, the
+`E5.1` shape — stands for it alone. §7's list narrows from two metrics to one; it
+does not empty.
+
+### What the metric will actually resolve to, which is not the same question
+
+Three facts about `E1.3`'s read surface were checked before this key was frozen,
+and each shapes Stage C's resolve rather than this decision:
+
+1. **The scalar exists.** `healthSummaryResponseSchema.score` is
+   `z.number().min(0).max(1).nullable()` — a weighted mean over the scored
+   assets. The catalog's metric arm already declares `value: z.number().nullable()`,
+   so the two agree without widening either.
+2. **Scope is readable asset ids plus an optional `locationId`, and there is no
+   asset-group filter.** A dashboard may be scoped to an asset group
+   (`bms.dashboards.asset_group_id`), and `GET /asset-health/summary` has no
+   matching narrowing. Stage C resolves the group to asset ids and intersects
+   rather than widening that endpoint — the boundary stays an authorization
+   question with no id to forge, which is the property the controller's own
+   docblock is built around.
+3. **`F4.69` gates the demo, not the build.** No seeded asset carries both
+   telemetry and a published threshold rule, so `score` is `null` against seeded
+   data and the tile renders "no value" — correct behaviour under ADR 0050
+   decision 3, and indistinguishable to anyone looking from a feature that does
+   not work. **If this metric is to be shown at the workshop, `F4.69` is on that
+   path.** Recorded here because neither `F4.69`'s row nor ADR 0050's
+   Consequences could know the catalog would bind this key.
+
+### Why the timing mattered here and would not have elsewhere
+
+A migration is forward-only and a committed one is frozen by the pre-commit hook,
+so `dashboard_widget_sources_catalog_key_check` fixes the catalog vocabulary the
+moment `0054` lands. Deciding this *after* Unit 2 would have cost a second
+migration to add one key. The ruling is recorded in this ADR rather than in a
+build note because the vocabulary is the ADR's, not the branch's.
+
+### Why it happened, which is the reusable part
+
+§7 was written from **Sheet 03's client-input list** rather than from
+`docs/adr/` and `docs/BACKLOG.md`. The answer had landed, `E1.3` was already
+gated on it, and ADR 0050 recorded the date in its own Context — so the fact was
+in the repository, in the one directory this ADR did not read.
+
+**A "still owed" list is a claim about the world, and nothing tests it.** Every
+other claim in this record is about the codebase, where a test or a `grep` can
+disagree. This one aged silently between drafting and acceptance, and it aged
+*backwards* — the ADR was accepted eight days after the sentence stopped being
+true.
+
+The check that would have caught it is one this ADR already prescribes for a
+different section. Its Consequences say the sweep list "was built by grep, not
+from the draft", after ADR 0047's first sweep missed a target the ADR itself
+named. **The same practice applies one section earlier: before recording an item
+as owed, grep `docs/adr/` and `docs/BACKLOG.md` for it.** Both errata on this
+record are the same failure — a fact about the repository asserted from memory
+while the repository said otherwise.
+
+### What is not corrected here
+
+The rest of §7 stands unchanged: Sheet 01's Alarm Details and Alarm Action cards
+stay pages, `F3.28` keeps the fixed page, `F3.32` keeps the process diagram, and
+the §5 dark canvas stays the owner's. Errata 1's corrections stand, and the
+`AGENTS.md` / `docs/roadmap.md` sweep is still gated on `F3.35` closing.
