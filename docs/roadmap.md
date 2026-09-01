@@ -2602,6 +2602,81 @@ pills for `severity` and `priority` need a richer `columns` declaration in
 record; deciding tone from a hand-written list that reads the column is the §4.8
 trap decision 1 already closed once.
 
+### The asset role vocabulary and section dashboard templates (`F3.37` ‖ `F3.36`, ADR 0049 + Amendments 1 and 2) — done
+
+`F3.37` closed 2026-08-30 (PR #224); `F3.36` closed 2026-09-01. One ADR, two
+rows, because a role vocabulary is master data three rows want — `F3.36` resolves
+templates through it, `F3.28`'s per-class health strip needs to know which asset
+is which part of a train, and `F3.32`'s mimic nodes must bind a named position
+rather than a `uuid`. Carrying it inside `F3.36` was offered and declined: a
+master-data vocabulary designed inside a dashboard row gets shaped for its first
+consumer and the other two then work around it. **The cost accepted with that
+split was a serial dependency where there had been none.**
+
+**What ships.** `bms.dashboard_templates` (migration `0056`), tenant-scoped from
+its own file, running ADR 0039's lifecycle whole. A widget binds an **asset-group
+role plus a point key**, never an asset id, so one authored canvas instantiates
+against any asset group — the mock's *"the same canvas bound to a different asset
+group"*. The role lives on `bms.asset_group_members`, into the global
+`bms.asset_roles` (migration `0051`, 26 seeded codes). Six defaults ship as a
+stock catalog in the repository, imported per organization rather than seeded.
+
+**Three decisions worth carrying, each because the cheaper option was real.**
+A template flag on `bms.dashboards` would have reused the builder *and* the
+duplicate dialog and was declined for versioning. Putting section templates
+inside `asset_templates` was declined on a fact, not a preference: a template
+widget references point *keys*, and a point key resolves against one asset's
+points. And the role sits on the membership rather than the asset, because the
+same pump is the raw-water pump in one group and a monitored load in another.
+
+**Amendment 1 exists because a review predicted a specific future mistake.** The
+ADR's Consequences said both of its tables were tenant-scoped. That is true of
+`bms.dashboard_templates` and false of `bms.asset_roles`, which `F3.37` built
+global — and an implementer reading the sentence as written would have added
+`organization_id` in the next migration. A correction that lives only in a
+migration header is invisible to the next row, which reads the ADR.
+
+**Amendment 2 records two owner rulings taken at `F3.36`'s plan gate**, before
+any implementation code. First: **instantiation never succeeds silently.** It
+returns a per-widget report — `bound`, `truncated`, `partial`, `unresolved`, with
+`matchedMembers` and `boundPoints` — because `F3.37` had already paid for that
+distinction one level down, shipping `roleCounts` precisely because *"two-of-three
+renders a widget that looks right and is one short"*. Second: the section column
+is closed by a **new global `bms.dashboard_sections`**, not by extending
+`bms.asset_domains`. That was against the recommendation, and the reason it went
+the other way is worth keeping: extending the plant-domain vocabulary would have
+added three options to every organization's asset, template and rules pickers.
+The accepted costs are recorded rather than absorbed — two vocabularies now
+overlap and will drift, and the effort moved 8–12 to 9–13.
+
+**What the reviews found that the suite did not.** Four review agents ran nine
+defects out of a green branch. The sharpest was inside the row's own centrepiece:
+the resolution report summed across bindings, so a widget whose second role
+matched *nothing* reported `bound` — the silent success Amendment 2 exists to
+prevent, arriving through the code that implements it. Two authorization gaps
+were reachable by a seeded account and invisible from the browser, because the
+web layer hides the controls and never sends the request. And three assertions
+were false green, including Amendment 2's own tie-break, which stayed green with
+the ordering reversed; it is now mutation-tested.
+
+**Registering the six routes in the OpenAPI registry made two silent gates bite**
+— the strict-body ledger walks only what the registry reaches, so five `.strict()`
+bodies were recorded by nothing.
+
+**The browser found two more**, both of the kind only a person at the screen
+sees: the report promised an unresolved widget *"renders 'no data bound'"*, which
+is false for a `value_tile` that renders an em dash indistinguishable from
+"bound, no telemetry yet"; and the instantiate picker offered six identical
+`Electrical` options, so the verifier had to resolve its target by `uuid`.
+
+**Two things stay owed and neither is a defect.** The stock catalog ships no
+`radial_gauge` and no `tank_level`, though the mock draws both and `0051` already
+seeds the roles they would bind — recorded in the catalog file rather than left
+for a reader to mistake for a constraint. And a strict write-side mirror of the
+widget spec is owed: `sectionTemplateContentSchema` is both the request shape and
+the read contract for a `jsonb` column, so it cannot be `.strict()` without
+making one stored extra key throw on every read.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
