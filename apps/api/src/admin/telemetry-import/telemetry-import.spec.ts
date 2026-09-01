@@ -103,9 +103,11 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
   }
 
   const { rows: keyRows } = await pool.query<{ code: string; unit: string | null }>(
+    // `F3.39`: fleet-wide catalog, so no organization predicate. `created_at`
+    // first is F4.53's "oldest wins", and it matters more now that other suites
+    // register transient codes in this shared table.
     `SELECT code, unit FROM bms.point_keys
-      WHERE organization_id = $1 AND active = true ORDER BY created_at, code LIMIT 5`,
-    [grant.organization_id],
+      WHERE active = true ORDER BY created_at, code LIMIT 5`,
   );
   const freshAssetPointKey = keyRows[0];
   if (!freshAssetPointKey) {

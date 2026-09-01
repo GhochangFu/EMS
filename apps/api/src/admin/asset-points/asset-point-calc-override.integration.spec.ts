@@ -598,12 +598,26 @@ export async function assertComputedRowCannotBeReKeyed(
 
   // Anti-vacuity: the refusal is keyed on the point key *changing*, not on the
   // row being computed. An update that leaves the key alone must get past this
-  // guard and fail further down instead — here on the catalog lookup, because a
-  // template's derived key is not an organisation catalog point key.
-  await expectRejection(
-    () => mappingSvc.update(fx.adminJwt, created?.id ?? "", { sensorCode: "F26-SENSOR" }),
-    /catalog/,
-    "an update that does not change the point key",
-    400,
+  // guard.
+  //
+  // **`F3.39` changed how that is observed, not what it proves.** This used to
+  // expect a 400 from the catalog lookup, on the premise that "a template's
+  // derived key is not an organisation catalog point key". Migration `0057`
+  // makes `asset_points.point_key` a foreign key into `bms.point_keys`, so that
+  // premise is now false BY CONSTRUCTION: a row whose key is absent from the
+  // catalog cannot exist, and the override above could not have created one.
+  // The update therefore succeeds, and its success is the same evidence — a
+  // guard keyed on "the row is computed" rather than on "the key changed"
+  // would still refuse it.
+  const updated = await mappingSvc.update(fx.adminJwt, created?.id ?? "", {
+    sensorCode: "F26-SENSOR",
+  });
+  assert(
+    updated.pointKey === DERIVED_KEY,
+    `an update that does not change the point key must be allowed through, got ${updated.pointKey}`,
+  );
+  assert(
+    updated.sourceKind === "computed",
+    "the row must still be computed after an update that only touches the sensor code",
   );
 }

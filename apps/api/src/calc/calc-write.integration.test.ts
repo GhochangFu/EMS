@@ -39,10 +39,18 @@ describe.skipIf(!connectionString)("F2.4 — calc write service", () => {
     // migration `0057`, so these invented codes must exist before the service
     // writes rows for them. See `registerFixturePointKeys` for why the fixture
     // is what was wrong rather than the constraint.
+    // `CALCWRITE_E_OK` is the "valid pair" of the overflow case, and the
+    // 120-character key beside it is deliberately NOT registered: the service
+    // rejects it on length before any insert, which is the behaviour under
+    // test. Registering it would prove nothing and could not be cleaned up by
+    // code — `point_keys.code` is varchar(128), so it would fit and linger.
     releasePointKeys = await registerFixturePointKeys(created, [
       "CALCWRITE_A",
       "CALCWRITE_B",
       "CALCWRITE_C",
+      "CALCWRITE_D1",
+      "CALCWRITE_D2",
+      "CALCWRITE_E_OK",
     ]);
     fx = await loadFixtures(created);
     await cleanup(created);
