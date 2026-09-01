@@ -133,16 +133,24 @@ describe.skipIf(!connectionString)("E7.1b — template_points own-column isolati
   });
 
   afterAll(async () => {
-    // template_points cascade on the template FK, so dropping the template on the
-    // fleet (BYPASSRLS) pool clears both points regardless of their org.
-    if (ownerPool && templateId) {
-      await ownerPool.query("DELETE FROM bms.asset_templates WHERE id = $1", [templateId]);
+    // The sweep is bracketed and the pools close in the `finally`. If the
+    // template DELETE raises — a foreign key this suite does not own, a lost
+    // connection — the un-bracketed form would skip both `removeFixtureKeys()`
+    // and the teardown, leaking two connections AND the catalog rows on top of
+    // whatever actually failed.
+    try {
+      // template_points cascade on the template FK, so dropping the template on
+      // the fleet (BYPASSRLS) pool clears both points regardless of their org.
+      if (ownerPool && templateId) {
+        await ownerPool.query("DELETE FROM bms.asset_templates WHERE id = $1", [templateId]);
+      }
+      // After the cascade, because `0058` makes those rows reference these codes.
+      if (removeFixtureKeys) {
+        await removeFixtureKeys();
+      }
+    } finally {
+      await Promise.all([ownerPool, tenantPool].filter(Boolean).map((p) => p.end()));
     }
-    // After the cascade, because `0058` makes those rows reference these codes.
-    if (removeFixtureKeys) {
-      await removeFixtureKeys();
-    }
-    await Promise.all([ownerPool, tenantPool].filter(Boolean).map((p) => p.end()));
   });
 
   it("isolates each template_points row by its own org, not the parent template's", async () => {

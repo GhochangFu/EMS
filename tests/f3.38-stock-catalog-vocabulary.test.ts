@@ -65,9 +65,15 @@ const sqlOnly = (source: string): string =>
  *
  * Read from the `*_POINT_KEYS` arrays rather than listed here, because listing
  * them would be the copy this file exists to prevent. `point-keys-seed.ts`
- * builds `ESKOM_CATALOG` and `PHE_CATALOG` from exactly these arrays, so a key
- * in this set is a key an organization's catalog can hold, and a key outside it
- * is one no organization can ever hold.
+ * builds `GLOBAL_CATALOG` from exactly these arrays, so a key in this set is a
+ * key the catalog can hold, and a key outside it is one nothing can seed.
+ *
+ * **`F3.39` replaced the two per-organization lists this paragraph used to
+ * name.** The set of codes did not move — `GLOBAL_CATALOG` is the union, and the
+ * union was already exactly what the larger of the two held — but there is no
+ * per-organization catalog any more, so "a key an organization's catalog can
+ * hold" named a distinction that no longer exists. A code is held once, for the
+ * whole fleet, or not at all.
  */
 const pointKeyVocabulary = (source: string): ReadonlySet<string> => {
   const keys = new Set<string>();

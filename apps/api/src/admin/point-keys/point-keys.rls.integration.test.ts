@@ -115,7 +115,7 @@ describe.skipIf(!connectionString)("F3.39 — the point key catalog is fleet-wid
   });
 
   it("shows every organization the same complete catalog", async () => {
-    await assertEveryOrganizationSeesEveryCode(ownerPool);
+    await assertEveryOrganizationSeesEveryCode(ownerPool, tenantPool);
   });
 
   it("refuses an asset_points row whose point_key is in no vocabulary", async () => {

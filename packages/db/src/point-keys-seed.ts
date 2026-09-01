@@ -102,6 +102,24 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
 ];
 
 /**
+ * Every code this seed writes, in declaration order.
+ *
+ * Exported so a fixture that names a catalog code can prove the code is **stock
+ * vocabulary** rather than a row some integration suite registered and is about
+ * to delete. A database lookup cannot tell those apart; this list can, and it
+ * grows with the `*_POINT_KEYS` arrays instead of duplicating them.
+ *
+ * **`F3.42`'s post-merge sweep is why the distinction is worth an export.**
+ * `access-fixtures-seed.ts` chose its point with `ORDER BY created_at, code
+ * LIMIT 1` over the whole table, which was bounded only while `bms.point_keys`
+ * carried an organization predicate. `0057` removed it, so the answer became
+ * whatever the database's own history put first — a transient fixture code was
+ * reachable, and on a fresh database a PHE pilot code won. That fixture names
+ * its code now, and this list is what keeps the name honest.
+ */
+export const STOCK_POINT_KEY_CODES: readonly string[] = GLOBAL_CATALOG.map((row) => row.code);
+
+/**
  * Seeds the fleet-wide point key catalog.
  *
  * **`F3.39` — no tenant context, because there is no tenant.** This used to run

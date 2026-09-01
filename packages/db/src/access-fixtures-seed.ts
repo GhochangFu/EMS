@@ -1,5 +1,7 @@
 import pg from "pg";
 
+import { STOCK_POINT_KEY_CODES } from "./point-keys-seed";
+
 /**
  * Fixtures for states the schema permits but the rest of the seed never
  * produces (backlog `F4.10`).
@@ -25,6 +27,32 @@ import pg from "pg";
 /** Codes are referenced by `F4.10`'s assertions and by `assignEskomAssetRtus`. */
 export const DECOMMISSIONED_LOCATION_CODE = "ESK-DECOMM-01";
 export const MANUAL_ASSET_CODE = "ESK-MANUAL-01";
+
+/**
+ * The hand-read meter's one point. **A NAME, NEVER A POSITION.**
+ *
+ * This was `ORDER BY created_at, code LIMIT 1` over the whole of
+ * `bms.point_keys` until `F3.42`'s post-merge sweep, and the row it returned
+ * depended on the order the database happened to be filled in. `F3.39` removed
+ * the organization predicate that used to bound it, and `seedPheCatalog` runs
+ * before `seedPointKeyCatalog`, so a FRESH database gave this fixture
+ * `battery_charge_pct` — a PHE pilot code with a NULL unit — while every
+ * database seeded earlier kept `backup_min`. Measured both ways on two
+ * databases. No error is raised in either case, which is exactly why a
+ * cold-start check passed over it, and the row is persistent, so every shipped
+ * database carries whichever answer its own history produced.
+ *
+ * **Why this code and not simply the first one in the catalog.** `ESK-MANUAL-01`
+ * has `domain = 'electrical'`, so the simulator's `ELECTRICAL_POINT_KEYS` are
+ * all written to it by `seedRuledPointCatalog`. Taking the catalog's first code
+ * hands the fixture `voltage_l1_v` and it wins the upsert race, leaving the
+ * ruled-point catalog one row short and the "hand-read meter" holding a point
+ * the simulator drives — measured, not predicted. `backup_min` is stock
+ * vocabulary (`CONTROL_ROOM_UPS_POINT_KEYS`) that no electrical asset's
+ * simulator writes, so the fixture owns its point outright. It is also what the
+ * reference database has always had, so naming it changes no existing row.
+ */
+export const MANUAL_POINT_KEY = "backup_min";
 
 export async function seedAccessControlFixtures(pool: pg.Pool): Promise<void> {
   const org = await pool.query<{ id: string }>(
@@ -89,19 +117,36 @@ export async function seedAccessControlFixtures(pool: pg.Pool): Promise<void> {
   // One point, so the asset is not merely gateway-less but demonstrably
   // *readable* without a gateway. ADR 0018's CHECK requires a `manual` point to
   // carry no rtu_id, which is exactly the pairing this proves.
+  // The stock check FIRST, because it is the more informative of the two and it
+  // needs no database. A code that has left the arrays fails both guards, and
+  // the catalog one would report only "not in bms.point_keys", which sends a
+  // reader looking at the database rather than at the list that moved.
+  if (!STOCK_POINT_KEY_CODES.includes(MANUAL_POINT_KEY)) {
+    throw new Error(
+      `seedAccessControlFixtures: ${MANUAL_POINT_KEY} is not in STOCK_POINT_KEY_CODES. ` +
+        "The fixture would bind a code the catalog seed does not own — one an " +
+        "integration suite registered and is about to delete, most likely.",
+    );
+  }
+
   const pointKey = await pool.query<{ code: string; unit: string | null }>(
-    // `F3.39`: the catalog is fleet-wide, so no organization predicate — and
-    // `ORDER BY created_at` becomes load-bearing rather than cosmetic. `F4.53`'s
-    // "oldest wins": ordering by `code` alone would let a transient fixture code
-    // another suite registers and deletes (`CALCWRITE_A`, `E71B_AP_D`) sort
-    // first, and this seed would adopt a row that is about to vanish. The
-    // organization predicate used to make that unreachable; nothing does now.
-    `SELECT code, unit FROM bms.point_keys
-      WHERE active = true ORDER BY created_at, code LIMIT 1`,
+    `SELECT code, unit FROM bms.point_keys WHERE code = $1 AND active = true`,
+    [MANUAL_POINT_KEY],
   );
   const key = pointKey.rows[0];
+  // Loud, where the positional read simply returned whatever it found. A named
+  // code that is absent means the stock catalog no longer holds it, and this
+  // fixture silently not existing is the failure mode the whole file was
+  // written to close — `scopeFromSource`'s `active = true` filter and ADR 0018's
+  // nullable `rtu_id` were both empirically unprovable until it ran.
   if (!key) {
-    return;
+    throw new Error(
+      `seedAccessControlFixtures: ${MANUAL_POINT_KEY} is not an active row in ` +
+        "bms.point_keys, so the hand-read meter fixture has no point. Either " +
+        "seedPointKeyCatalog did not run before this, or the code left the stock " +
+        `vocabulary — in which case pick another from STOCK_POINT_KEY_CODES that no ` +
+        "electrical asset's simulator writes, and update MANUAL_POINT_KEY.",
+    );
   }
   await pool.query(
     `
@@ -112,4 +157,5 @@ export async function seedAccessControlFixtures(pool: pg.Pool): Promise<void> {
     `,
     [assetId, key.code, `MANUAL_${key.code.toUpperCase()}`, key.unit, organizationId],
   );
+
 }

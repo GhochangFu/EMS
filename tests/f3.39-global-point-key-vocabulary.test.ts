@@ -478,7 +478,24 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       const seed = tsOnly(read(SEED_REL));
       for (const [arrayName, domain] of Object.entries(ARRAY_DOMAIN)) {
         expect(
-          new RegExp(`${arrayName}[\\s\\S]{0,240}?"${domain}"`).test(seed),
+          // Anchored on the `keysForDomain(` call, and only on the array that
+          // OPENS it. Two reasons, and the bare name satisfies neither.
+          //
+          // `ELECTRICAL_POINT_KEYS` is a substring of
+          // `CONTROL_ROOM_ELECTRICAL_POINT_KEYS`, so an unanchored search finds
+          // the wrong array first. The lookbehind alone fixes that and is still
+          // not enough: the seed names `ELECTRICAL_POINT_KEYS` a SECOND time
+          // inside the `.filter()` that subtracts it from the control-room
+          // array, and `"electrical"` follows that occurrence within 240
+          // characters. Re-file the real call under another domain and this pin
+          // would keep passing on the filter's mention, which is the one thing
+          // it exists to prevent.
+          //
+          // `\\s*` and not a literal space: the control-room entry wraps its
+          // array onto the next line, so the anchor has to cross a newline.
+          new RegExp(
+            `keysForDomain\\(\\s*(?<![A-Z_])${arrayName}[\\s\\S]{0,240}?"${domain}"`,
+          ).test(seed),
           `${SEED_REL} no longer files ${arrayName} under the "${domain}" domain. ` +
             "Update ARRAY_DOMAIN in this file with it, or the clash check below runs " +
             "against a mapping the seed abandoned.",
@@ -524,8 +541,22 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
         sql.split(";").filter((s) => s.trim().length > 0).length,
         "migration 0057 holds almost no statements",
       ).toBeGreaterThanOrEqual(6);
-      expect(read(SERVICE_REL).length).toBeGreaterThan(2000);
-      expect(read(PAGE_REL).length).toBeGreaterThan(2000);
+      // `tsOnly(…)`, not `read(…)`, and that is the whole point of the check.
+      // Every "this token is gone" scan above reads the STRIPPED source, so the
+      // length that proves they had something to scan must be the stripped
+      // length too. `tsOnly` deletes from the first `/*` to the next `*/`: one
+      // stray `/*` in a string literal, closed by any later doc comment, blanks
+      // the span between them. Every `.toBe(false)` would then pass for free
+      // and a guard on `read(…)` would report the file as healthy, because the
+      // raw file IS healthy — it is the text the scans see that is empty.
+      expect(
+        tsOnly(read(SERVICE_REL)).length,
+        `${SERVICE_REL} strips to almost nothing — the scans above ran on empty text`,
+      ).toBeGreaterThan(2000);
+      expect(
+        tsOnly(read(PAGE_REL)).length,
+        `${PAGE_REL} strips to almost nothing — the scans above ran on empty text`,
+      ).toBeGreaterThan(2000);
     });
   });
 });

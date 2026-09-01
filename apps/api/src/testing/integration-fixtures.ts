@@ -175,29 +175,6 @@ export async function createFixtureAssets(
 }
 
 /**
- * Resolves a **seeded** asset by exact code, for the committed-fixture suites.
- *
- * The counterpart of {@link createFixtureAssets}, for the suites that cannot use
- * it. A rollback-isolated suite builds its own asset and never shares a row; a
- * suite whose subject is a continuous aggregate has no such option, because a
- * refresh cannot see uncommitted rows. It must read a row somebody else wrote, so
- * the only question left is *which* — and the answer has to be a name, never a
- * position. The docstring above says why `ORDER BY` narrows that race instead of
- * closing it; `tests/integration-fixture-isolation.test.ts` gates both halves.
- *
- * **`E7.1b`, and the reason this takes a `pg.Pool` rather than a `BmsDb`.** The
- * callers are owner-pool suites: `bms.assets` is `tenant_isolation`-policied and
- * FORCEd as of `0047`, so the owner sees no asset at all without a tenant GUC.
- * `bms.organizations` is not policied, so the search runs organization by
- * organization until the code turns up. The GUC is cleared and the connection
- * released in a `finally`, so a pooled connection never goes back carrying it.
- *
- * **The loop stops on the code, not on the first row it can see.** Organization
- * ids are `gen_random_uuid()`, so `ORDER BY id` is a different order on every
- * database — stopping early would make the answer depend on which organization
- * happened to sort first, which is the same positional defect one level up.
- */
-/**
  * Registers synthetic point-key codes in `bms.point_keys`, and returns a
  * function that removes them again.
  *
@@ -245,6 +222,30 @@ export async function registerFixturePointKeys(
   };
 }
 
+/**
+ * Resolves a **seeded** asset by exact code, for the committed-fixture suites.
+ *
+ * The counterpart of {@link createFixtureAssets}, for the suites that cannot use
+ * it. A rollback-isolated suite builds its own asset and never shares a row; a
+ * suite whose subject is a continuous aggregate has no such option, because a
+ * refresh cannot see uncommitted rows. It must read a row somebody else wrote, so
+ * the only question left is *which* — and the answer has to be a name, never a
+ * position. {@link createFixtureAssets}'s docstring says why `ORDER BY` narrows
+ * that race instead of closing it; `tests/integration-fixture-isolation.test.ts`
+ * gates both halves.
+ *
+ * **`E7.1b`, and the reason this takes a `pg.Pool` rather than a `BmsDb`.** The
+ * callers are owner-pool suites: `bms.assets` is `tenant_isolation`-policied and
+ * FORCEd as of `0047`, so the owner sees no asset at all without a tenant GUC.
+ * `bms.organizations` is not policied, so the search runs organization by
+ * organization until the code turns up. The GUC is cleared and the connection
+ * released in a `finally`, so a pooled connection never goes back carrying it.
+ *
+ * **The loop stops on the code, not on the first row it can see.** Organization
+ * ids are `gen_random_uuid()`, so `ORDER BY id` is a different order on every
+ * database — stopping early would make the answer depend on which organization
+ * happened to sort first, which is the same positional defect one level up.
+ */
 export async function resolveSeededAssetByCode(pool: pg.Pool, code: string): Promise<string> {
   const client = await pool.connect();
   let assetId: string | undefined;
