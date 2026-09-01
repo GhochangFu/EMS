@@ -92,6 +92,26 @@ export function canMutate(status: TemplateLifecycleStatus): boolean {
   return TEMPLATE_MUTABLE_STATUSES.includes(status);
 }
 
+/**
+ * The statuses a **new draft** may be opened from — `createDraftFrom`.
+ *
+ * Declared rather than derived, even though it currently holds the same single
+ * member as "can be archived". That coincidence is not the rule: a draft is
+ * already editable and needs no branch, and an archived version is frozen for
+ * the rows pinned to it. Writing `canTransition(status, "archived")` at the call
+ * site would work today and mean something else the day the lifecycle grows.
+ */
+export const TEMPLATE_BRANCHABLE_STATUSES: readonly TemplateLifecycleStatus[] = ["published"];
+
+export function canOpenDraftFrom(status: TemplateLifecycleStatus): boolean {
+  return TEMPLATE_BRANCHABLE_STATUSES.includes(status);
+}
+
+/** Refusal for branching a version that is not published. */
+export function branchRefusedMessage(status: TemplateLifecycleStatus): string {
+  return `Only a published template can open a new draft; this one is ${status}`;
+}
+
 /** The actions a non-draft version refuses. `published` is here because
  * publishing is only legal from a draft, so its refusal reads the same way. */
 export type TemplateDraftRequiredVerb = "edited" | "published" | "deleted";
