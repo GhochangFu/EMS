@@ -103,6 +103,14 @@ carry `organization_id`: `locations`, `user_organization_access`, `point_keys`,
 `asset_templates`, `onboarding_sessions`. Every other tenant-bearing table
 inherits its tenant through a join, or not at all.
 
+> ⚠️ **This count is four as of 2026-09-01.** Migration `0057` drops
+> `bms.point_keys.organization_id` — see
+> [ADR 0051 Amendment 2](0051-global-template-vocabulary.md#amendment-2--two-clauses-corrected-against-what-shipped-and-the-records-0057-falsified-2026-09-01).
+> It is a dated measurement in a Context section rather than a decision, so it
+> takes this notice and no amendment of its own; nothing else in this ADR
+> depends on the number. `E7.1b`'s `0046`/`0047` separately gave `rtus`,
+> `assets` and `asset_points` the column, which the paragraph above predates.
+
 **Two configuration surfaces have no tenant at all.**
 `bms.automation_rules` has no organization column and its `code` is globally
 unique. `bms.notification_channels` (ADR 0041) is the same: no organization

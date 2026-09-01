@@ -273,3 +273,120 @@ existing row by code and discarded whatever the draft declared beside it.
 
 - **No new backlog row.** This lands as a `fix(api):` change against a closed
   row (`F3.39`), and its scope gate is this amendment.
+
+## Amendment 2 — two clauses corrected against what shipped, and the records 0057 falsified (2026-09-01)
+
+### Context
+
+The `migration-reviewer` sweep run after `F3.39` merged read migration `0057`
+against this record and found the two disagreeing in three places. It raised no
+Critical and no High: the SQL, the journal, the forward-only rule, the role
+bracket, idempotency, survivor determinism and the behaviour of the new foreign
+key under row-level security were all verified sound against the running
+database. What it found is a **record** defect, and this amendment is the fix.
+
+An ADR that describes something other than what shipped is worse than no ADR,
+because the next reader has no way to know which half to trust. Both corrections
+below are stated as *what shipped, and what did not* rather than as a rewrite,
+so a reader can see exactly which clause moved.
+
+### Decision
+
+#### 1. Decision 2's primary-key clause did not ship; the rest of decision 2 did
+
+Decision 2 reads: *"Drop `organization_id`, its unique index, its policy and its
+FORCE flag; `code` becomes the primary key."*
+
+**The first half shipped exactly.** Migration `0057` drops the column, the
+`(organization_id, code)` unique index, the `tenant_isolation` policy and the
+`FORCE` flag, and `bms.point_keys` is now readable by every organization.
+
+**`code` did not become the primary key, and must not.** `id` stays the primary
+key and `code` takes a unique index (`point_keys_code_unique`). A foreign-key
+target needs only a unique index, and four callers key on `id`:
+`GET`/`PATCH /api/v1/admin/point-keys/:id`, the audit `entityId`, and
+`tests/integration-fixture-isolation.test.ts`. `bms.asset_roles` uses `code` as
+its primary key because it was born that way and has no id-keyed caller; this
+table has four. The `0057` header records the correction; this record now does
+too.
+
+#### 2. Decision 3's orphans were admitted with their domain, and with a NULL unit
+
+Decision 3 reads: *"The 16 orphans of fact 4 are admitted to the global
+vocabulary in the same migration, with their domain and unit."*
+
+**The admission shipped, in the same migration and before the constraint**, as
+the consequence about a database seeded before this ADR requires.
+
+**`domain` shipped; `unit` did not.** Step 4 takes `domain` from the owning
+asset — a fact the database already holds, and measured single-valued, no orphan
+code spanning two asset domains — and writes `NULL::varchar(32)` for the unit.
+The reason is in the `0057` header and is accepted here rather than reversed:
+these codes arrive from `phe-pilot-seed.ts`'s TeleCash sensor map, which carries
+no units, and **a guessed unit is a claim rather than a record.** A NULL unit is
+already the normal case for a boolean-valued point (`breaker_main`, `pf`).
+
+The cost is real and is now recorded in two places. Four codes carry a NULL unit
+today — `battery_charge_pct`, `chlorine_pump_on`, `controller_power_status`,
+`network_strength` — and under
+[Amendment 1](#amendment-1--onboarding-may-extend-the-global-catalog-and-is-refused-when-the-draft-contradicts-it-2026-09-01)
+decision 3 an onboarding draft that declares a unit for one of them is refused
+until a global administrator fills it in. Filling those four is ordinary master-
+data work for whoever knows the instruments; it is not a code change and it is
+not owed by this record.
+
+#### 3. `0057` amends ADR 0010, ADR 0015 and ADR 0043 in part, and those records now say so
+
+This ADR's `## Dependencies` section says `None`, and that is correct — it means
+new npm packages, and there are none. What was missing is any record that making
+`bms.point_keys` global **falsifies sentences in three earlier ADRs**, each of
+which a reader may still reach first. Every passage below now carries an inline
+notice pointing here. Nothing in those records is rewritten: the original text
+stands, as the reasoning that was true when it was written.
+
+**[ADR 0010](0010-hierarchical-master-data.md)** — the catalog is no longer
+per-organization, so its context paragraph, decisions 1, 2, 5 and 6, and its
+first consequence bullet are amended in part. Decision 2 is amended twice over:
+`organization_admin` no longer manages a catalog of its own, and `F3.39`
+narrowed the admin surface to the global `admin` role, with Amendment 1 above
+permitting the onboarding extension only.
+
+**[ADR 0015](0015-asset-template-schema.md)** — three passages, of which the
+second and third are more than wording:
+
+- §"What already exists" item 1 says `bms.asset_points.point_key` is *"a
+  `varchar(128)`, **not a FK**"* and that validity is enforced in the service
+  layer against a row *"with matching `organization_id`"*. Both halves are now
+  false: `0057` adds `asset_points_point_key_point_keys_code_fk`, and
+  `resolveCatalogPointKey` looks the code up alone.
+- §3 reason 2 rejects a composite foreign key from `template_points` on the
+  ground that *"`bms.point_keys` is unique on `(organization_id, code)`"*, which
+  would force a denormalized `organization_id` onto the child row. **That premise
+  is gone, so the reasoning is void** — `code` is unique by itself and a plain
+  single-column FK is now possible with no denormalization, which is exactly what
+  `0057` added to `asset_points`. Whether `template_points.point_key` should gain
+  the same constraint is an **open question and a scope decision**, not a
+  conclusion this amendment draws.
+- §7 says templates are org-scoped *"exactly like `bms.point_keys`"*. Templates
+  are still org-scoped; the comparison no longer holds.
+
+**[ADR 0043](0043-multi-tenant-architecture.md)** — its context measurement that
+*"only **five** tables carry `organization_id`"* is now four. That is a dated
+measurement inside a Context section rather than a decision, so it takes an
+inline notice and **not** an Amendment 7.
+
+### Consequences
+
+- **The three earlier records keep their original text.** A dated notice beside
+  a false sentence teaches the next reader why it was written and what changed;
+  a silent edit teaches nothing and loses the reasoning.
+
+- **`template_points` is left with an open question, deliberately.** Adding the
+  FK would be a schema change on a table `F3.36` writes, gated by §10 like any
+  other. Recording it as open is the honest state; building it here would be
+  scope this amendment was not asked for.
+
+- **Nothing in this amendment changes runtime behaviour**, so it has no test to
+  add. What gates it is the `repo` Vitest project and the anchors: a notice that
+  points at a heading it cannot resolve is the failure mode of this kind of
+  change.
