@@ -32,6 +32,7 @@ import type {
   TemplateWidgetResolutionOutcome,
 } from "@bms/shared";
 
+import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
@@ -87,7 +88,16 @@ import { DashboardTemplatesService } from "./dashboard-templates.service";
 
 interface ResolvedMemberPoint {
   readonly pointId: string;
+  /** The asset's `code`, which is what Amendment 2 decision 2's tie-break sorts
+   * on. It held a uuid until the `F3.36` correctness review; see
+   * `loadMembersByRole`. */
   readonly assetCode: string;
+}
+
+/** One member of the target group, carrying the column the tie-break needs. */
+interface GroupMember {
+  readonly assetId: string;
+  readonly code: string;
 }
 
 @Injectable()
@@ -95,6 +105,7 @@ export class DashboardTemplatesInstantiateService {
   constructor(
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
+    private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
     private readonly templates: DashboardTemplatesService,
   ) {}
@@ -105,7 +116,13 @@ export class DashboardTemplatesInstantiateService {
     body: InstantiateSectionTemplateBody,
   ): Promise<InstantiateSectionTemplateResponse> {
     const template = await this.templates.fetchRow(templateId);
-    await this.templates.assertCanAuthor(jwt, template.organizationId);
+    // READABILITY, not authorship — ADR 0015 Amendment 1B, restated in
+    // `AccessControlService.canManageTemplate`'s own docblock: *"This method is
+    // not consulted by instantiation, and must not be … Instantiation instead
+    // requires template readability plus a check on the TARGET."* A location
+    // admin deploys a published organization template into their own scope
+    // without being able to author one. That is model-once-deploy-many.
+    await this.templates.assertCanRead(jwt, template.organizationId);
 
     // Only a published version instantiates. A draft is still being authored,
     // and an archived one is retired — instantiating either would pin a
@@ -131,12 +148,36 @@ export class DashboardTemplatesInstantiateService {
       throw new ForbiddenException("Asset group is outside your access scope");
     }
 
+    /**
+     * **The TARGET-side check, and it was missing.**
+     *
+     * The organization match above is not authorization: it only proves the
+     * group and the template belong to the same tenant. Without this, a
+     * `location_admin` at one site could instantiate into an asset group at any
+     * other site of the same organization — and the asymmetry proved it was
+     * wrong rather than merely untidy: `canManageDashboard` refuses that exact
+     * row, so the caller created a dashboard they could not then edit or delete
+     * through `/dashboards`.
+     *
+     * This is the predicate `DashboardsService.create` already applies to the
+     * same write, so the two doors into `bms.dashboards` now agree. Found by the
+     * `F3.36` security review.
+     */
+    if (
+      !(await this.accessControl.canManageDashboard(jwt, template.organizationId, {
+        locationId: null,
+        assetGroupId: body.assetGroupId,
+      }))
+    ) {
+      throw new ForbiddenException("Asset group is outside your access scope");
+    }
+
     const content = sectionTemplateContentSchema.parse(template.content);
     if (content.widgets.length === 0) {
       throw new BadRequestException("This template has no widgets to instantiate");
     }
 
-    const members = await this.loadMembersByRole(body.assetGroupId);
+    const members = await this.loadMembersByRole(body.assetGroupId, template.organizationId);
     const pointsByAsset = await this.loadActivePoints(template.organizationId);
 
     const plans = content.widgets.map((widget) =>
@@ -210,7 +251,7 @@ export class DashboardTemplatesInstantiateService {
         {
           actor: jwt,
           organizationId: template.organizationId,
-          action: "instantiate",
+          action: "master.dashboard.instantiate",
           entityType: "dashboard",
           entityId: dashboardRow.id,
           reason: `from template ${template.code} v${template.version}`,
@@ -219,6 +260,18 @@ export class DashboardTemplatesInstantiateService {
       );
 
       return dashboardRow;
+    }).catch((err) => {
+      // Drizzle THROWS on a 23505, so the `if (!dashboardRow)` guard above is
+      // unreachable and a repeated slug reached the client as a 500 carrying a
+      // constraint name. `DashboardsService.translateSlugConflict` is the
+      // precedent this copies. Found by the `F3.36` correctness review.
+      const constraint = (err as { constraint?: string } | null)?.constraint;
+      if (constraint === "dashboards_organization_slug_key") {
+        throw new ConflictException(
+          `A dashboard with slug "${body.slug}" already exists in this organization. Choose a different slug.`,
+        );
+      }
+      throw err;
     });
 
     const dashboard = await this.readBack(created.id, template.organizationId);
@@ -236,19 +289,39 @@ export class DashboardTemplatesInstantiateService {
    * Members with no role are skipped — a membership with a NULL role plays no
    * named part and no template widget can name it.
    */
-  private async loadMembersByRole(assetGroupId: string): Promise<Map<string, string[]>> {
+  private async loadMembersByRole(
+    assetGroupId: string,
+    organizationId: string,
+  ): Promise<Map<string, GroupMember[]>> {
     const rows = await this.fleetDb
       .select({ role: assetGroupMembers.role, assetId: assets.id, code: assets.code })
       .from(assetGroupMembers)
       .innerJoin(assets, eq(assetGroupMembers.assetId, assets.id))
-      .where(eq(assetGroupMembers.assetGroupId, assetGroupId))
+      // `bms_fleet` holds `BYPASSRLS`, so this predicate is the ONLY isolation
+      // control on this read — `dashboard-point-scope.ts` states the rule and
+      // calls a foreign `assetId` leaving the module "a cross-tenant telemetry
+      // read waiting to happen". The organization filter was missing: a foreign
+      // member yielded no binding only because `loadActivePoints` filters, which
+      // makes containment transitive on a predicate one file away. Added by the
+      // `F3.36` security review.
+      .where(
+        and(
+          eq(assetGroupMembers.assetGroupId, assetGroupId),
+          eq(assets.organizationId, organizationId),
+        ),
+      )
       .orderBy(asc(assets.code));
 
-    const byRole = new Map<string, string[]>();
+    const byRole = new Map<string, GroupMember[]>();
     for (const row of rows) {
       if (!row.role) continue;
       const list = byRole.get(row.role) ?? [];
-      list.push(row.assetId);
+      // The CODE is carried, not only the id. It used to be selected and then
+      // discarded, and the field that survived was named `assetCode` while
+      // holding a uuid — so the next reader who sorted on it would have sorted
+      // by uuid and silently lost Amendment 2 decision 2's tie-break. Found by
+      // the `F3.36` correctness review.
+      list.push({ assetId: row.assetId, code: row.code });
       byRole.set(row.role, list);
     }
     return byRole;
@@ -272,15 +345,30 @@ export class DashboardTemplatesInstantiateService {
   /**
    * Resolve one widget's bindings, and say what became of them.
    *
-   * **The outcome is decided by two counts, not by a chain of special cases.**
-   * `matchedMembers` is how many members the widget's roles matched;
-   * `boundPoints` is how many points were actually bound. Everything else falls
-   * out of comparing them against the type's cap, which is what keeps the four
-   * outcomes from drifting apart as the widget catalog grows.
+   * **PER BINDING, then combined — and that is a correction.** The first version
+   * summed across bindings and decided the outcome from the sums, which reported
+   * a widget as `bound` when one of its roles matched nothing at all: a chart
+   * binding `chiller/kVA` (three members, all resolving) and `cooling-tower/kW`
+   * (no such member) summed to `matched 3, bound 3` and read as complete. That
+   * is precisely the silent success Amendment 2 decision 1 exists to prevent,
+   * and the widget then never appeared in the list decision 6 calls *"a page
+   * that can list exactly which ones need it"*. Found by the `F3.36` correctness
+   * review.
+   *
+   * Two further defects had the same root and are fixed here:
+   *
+   * - **`matchedMembers` double-counted.** Two bindings naming one role over
+   *   three members reported six. The DTO says *"how many asset-group members
+   *   the widget's roles matched"*, so it is the size of the UNION.
+   * - **The tie-break was per binding.** Ordering was binding index first and
+   *   `assets.code` second, so a `max = 1` widget naming two roles bound the
+   *   first *binding's* first member. Amendment 2 decision 2 says the first
+   *   member by `assets.code`, full stop — so the candidates are sorted
+   *   globally before the cap is applied.
    */
   private planWidget(
     widget: SectionTemplateWidget,
-    membersByRole: Map<string, string[]>,
+    membersByRole: Map<string, GroupMember[]>,
     pointsByAsset: Map<string, string>,
   ): {
     widget: SectionTemplateWidget;
@@ -291,23 +379,43 @@ export class DashboardTemplatesInstantiateService {
     const cap = WIDGET_POINT_CARDINALITY[widget.widgetType].max;
     const assetRoleCodes = widget.bindings.map((binding) => binding.assetRoleCode);
 
-    let matchedMembers = 0;
-    const resolved: ResolvedMemberPoint[] = [];
+    const matchedAssetIds = new Set<string>();
+    const candidates: ResolvedMemberPoint[] = [];
+    const seenPointIds = new Set<string>();
+    /** Did EVERY binding resolve every member it matched? */
+    let everyBindingWhole = true;
 
     for (const binding of widget.bindings) {
-      const memberIds = membersByRole.get(binding.assetRoleCode) ?? [];
-      matchedMembers += memberIds.length;
-      for (const assetId of memberIds) {
-        const pointId = pointsByAsset.get(`${assetId}::${binding.pointKey}`);
-        if (pointId) {
-          resolved.push({ pointId, assetCode: assetId });
-        }
+      const members = membersByRole.get(binding.assetRoleCode) ?? [];
+      let resolvedForThisBinding = 0;
+
+      for (const member of members) {
+        matchedAssetIds.add(member.assetId);
+        const pointId = pointsByAsset.get(`${member.assetId}::${binding.pointKey}`);
+        if (!pointId) continue;
+        resolvedForThisBinding += 1;
+        // Two bindings can name the same (role, pointKey) pair, which would
+        // insert one point twice and violate
+        // `dashboard_widget_points_widget_point_role_key` — a 500 carrying a
+        // constraint name. The contract refuses the duplicate at authoring
+        // time; this makes the resolver idempotent regardless.
+        if (seenPointIds.has(pointId)) continue;
+        seenPointIds.add(pointId);
+        candidates.push({ pointId, assetCode: member.code });
+      }
+
+      // A binding that matched members but resolved fewer points is short; a
+      // binding that matched nothing at all is short by everything.
+      if (resolvedForThisBinding < members.length || members.length === 0) {
+        everyBindingWhole = false;
       }
     }
 
-    // The cap bites AFTER resolution, so `truncated` is reported against what
-    // actually matched rather than against the authored binding count.
-    const points = resolved.slice(0, cap);
+    // Amendment 2 decision 2's tie-break, applied to the whole candidate set
+    // rather than within a binding. `assets.code` is NOT NULL UNIQUE, so this
+    // is a total order and "the first" is a deterministic answer.
+    candidates.sort((a, b) => a.assetCode.localeCompare(b.assetCode));
+    const points = candidates.slice(0, cap);
 
     return {
       widget,
@@ -316,9 +424,15 @@ export class DashboardTemplatesInstantiateService {
       resolution: {
         widgetKey: widget.key,
         assetRoleCodes,
-        matchedMembers,
+        matchedMembers: matchedAssetIds.size,
         boundPoints: points.length,
-        outcome: this.outcomeOf(assetRoleCodes.length, matchedMembers, resolved.length, points.length),
+        outcome: this.outcomeOf({
+          roleCount: assetRoleCodes.length,
+          matchedMembers: matchedAssetIds.size,
+          candidates: candidates.length,
+          boundPoints: points.length,
+          everyBindingWhole,
+        }),
       },
     };
   }
@@ -327,21 +441,39 @@ export class DashboardTemplatesInstantiateService {
    * The four outcomes of Amendment 2, in the order they are decided.
    *
    * A widget with no role bindings at all — a metric-catalog tile, which four of
-   * Sheet 02's five Electrical KPI tiles are — is `bound`, not `unresolved`. It
+   * Sheet 04's five Electrical KPI tiles are — is `bound`, not `unresolved`. It
    * asked for no role and got none, which is success; reporting it as a
    * shortfall would put an amber flag beside every correctly-bound tile and
    * teach the reader to ignore the report.
    */
-  private outcomeOf(
-    roleCount: number,
-    matchedMembers: number,
-    resolvedPoints: number,
-    boundPoints: number,
-  ): TemplateWidgetResolutionOutcome {
-    if (roleCount === 0) return "bound";
-    if (matchedMembers === 0) return "unresolved";
-    if (boundPoints < resolvedPoints) return "truncated";
-    if (resolvedPoints < matchedMembers) return "partial";
+  private outcomeOf(counts: {
+    roleCount: number;
+    matchedMembers: number;
+    candidates: number;
+    boundPoints: number;
+    /** False when ANY binding matched no members, or matched more members than
+     * it could resolve points for. This is the input the summed version did not
+     * have, and its absence is what let a widget with one dead role report
+     * `bound`. */
+    everyBindingWhole: boolean;
+  }): TemplateWidgetResolutionOutcome {
+    // Asked for no role, got none. Success, and flagging it would put an amber
+    // marker beside every correctly-bound metric tile.
+    if (counts.roleCount === 0) return "bound";
+
+    // No role matched anything at all.
+    if (counts.matchedMembers === 0) return "unresolved";
+
+    // The cap dropped points that HAD resolved. Ranked above `partial` because
+    // the administrator's remedy differs: the widget cannot hold them all, so
+    // the fix is another widget rather than another point. `matchedMembers` and
+    // `boundPoints` still show the size of the gap either way.
+    if (counts.boundPoints < counts.candidates) return "truncated";
+
+    // Some binding came up short — either it matched members that carry no such
+    // point, or it matched nothing while a sibling binding did.
+    if (!counts.everyBindingWhole) return "partial";
+
     return "bound";
   }
 
@@ -363,7 +495,7 @@ export class DashboardTemplatesInstantiateService {
     const widgetRows = await this.fleetDb
       .select()
       .from(dashboardWidgets)
-      .where(eq(dashboardWidgets.dashboardId, dashboardId))
+      .where(and(eq(dashboardWidgets.dashboardId, dashboardId), eq(dashboardWidgets.organizationId, organizationId)))
       .orderBy(asc(dashboardWidgets.gridY), asc(dashboardWidgets.gridX));
 
     const widgets = [];
@@ -380,7 +512,7 @@ export class DashboardTemplatesInstantiateService {
         })
         .from(dashboardWidgetPoints)
         .innerJoin(assetPoints, eq(dashboardWidgetPoints.pointId, assetPoints.id))
-        .where(eq(dashboardWidgetPoints.widgetId, widget.id))
+        .where(and(eq(dashboardWidgetPoints.widgetId, widget.id), eq(dashboardWidgetPoints.organizationId, organizationId)))
         .orderBy(asc(dashboardWidgetPoints.sortOrder));
 
       const sources = await this.fleetDb
@@ -391,7 +523,7 @@ export class DashboardTemplatesInstantiateService {
           sortOrder: dashboardWidgetSources.sortOrder,
         })
         .from(dashboardWidgetSources)
-        .where(eq(dashboardWidgetSources.widgetId, widget.id))
+        .where(and(eq(dashboardWidgetSources.widgetId, widget.id), eq(dashboardWidgetSources.organizationId, organizationId)))
         .orderBy(asc(dashboardWidgetSources.sortOrder));
 
       widgets.push({

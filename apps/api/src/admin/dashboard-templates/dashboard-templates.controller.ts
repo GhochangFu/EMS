@@ -78,9 +78,19 @@ export class DashboardTemplatesController {
     }
   }
 
-  /** BEFORE `@Get(":id")` — see the class docblock. */
+  /**
+   * BEFORE `@Get(":id")` — see the class docblock.
+   *
+   * **The role check is not decorative.** Every other route on this controller
+   * reaches `requireMasterDataUser` or `assertCanAuthor` through its service;
+   * this one reads a constant, so without the guard any authenticated
+   * principal — a `viewer` included — could enumerate the shipped catalog:
+   * widget layouts, metric-catalog keys and asset-role codes. Found by the
+   * `F3.36` security review.
+   */
   @Get("stock")
-  listStock() {
+  async listStock(@CurrentUser() user: JwtPayload) {
+    await this.stock.assertCanList(user);
     return this.stock.list();
   }
 

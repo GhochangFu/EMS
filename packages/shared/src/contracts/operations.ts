@@ -384,7 +384,7 @@ export const assetRoleDtoSchema = z.object({
  * **A bounded string and never a `z.enum`**, for the reason §4.8's test as ADR
  * 0032 rewrote it gives: a section's behaviour is "group these templates", which
  * *is* the code, so a section declared by an `INSERT` arrives fully functional.
- * Sheet 02 states the product half — *"adding a seventh is configuration, not a
+ * Sheet 04 states the product half — *"adding a seventh is configuration, not a
  * release"*. The set is closed by the table and by
  * `dashboard_templates_section_fkey`, and `DashboardTemplatesService.assertSection`
  * is the boundary that turns an unknown code into a 400 naming the live options.
@@ -410,7 +410,7 @@ export const dashboardSectionDtoSchema = z.object({
 });
 
 /**
- * `GET /api/v1/vocabularies` — all five open vocabularies in one response.
+ * `GET /api/v1/vocabularies` — all six open vocabularies in one response.
  *
  * One endpoint rather than four because every consumer needs them together:
  * the rules page renders a concern badge beside a plant badge and a severity

@@ -133,7 +133,15 @@ describe.skipIf(!connectionString)(
         eskomOrgId,
         phewbOrgId,
       );
-      await assertAuditRowCommitted(ownerPool, created.id, eskomOrgId, "create");
+      await assertAuditRowCommitted(
+        ownerPool,
+        created.id,
+        eskomOrgId,
+        // Namespaced, like every other admin service. The audit read filters on
+        // exact equality, so a bare verb is invisible to an auditor querying
+        // master.dashboard_template.create — found by the F3.36 security review.
+        "master.dashboard_template.create",
+      );
     }, 60_000);
 
     it("a PHEWB dashboard cannot be stamped with an ESKOM template_id — refused by the policy", async () => {

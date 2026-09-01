@@ -88,6 +88,7 @@ export function canTransition(
  */
 export const TEMPLATE_MUTABLE_STATUSES: readonly TemplateLifecycleStatus[] = ["draft"];
 
+/** Whether a version may still be edited or deleted in place. */
 export function canMutate(status: TemplateLifecycleStatus): boolean {
   return TEMPLATE_MUTABLE_STATUSES.includes(status);
 }
@@ -103,6 +104,7 @@ export function canMutate(status: TemplateLifecycleStatus): boolean {
  */
 export const TEMPLATE_BRANCHABLE_STATUSES: readonly TemplateLifecycleStatus[] = ["published"];
 
+/** Whether a NEW draft may be branched from this version. */
 export function canOpenDraftFrom(status: TemplateLifecycleStatus): boolean {
   return TEMPLATE_BRANCHABLE_STATUSES.includes(status);
 }

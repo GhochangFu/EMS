@@ -82,7 +82,29 @@ import type { StockDashboardTemplateDto } from "@bms/shared";
 // Shared literals — read, never restated as a bare number beside a grid field.
 // ---------------------------------------------------------------------------
 
-/** Row of five KPI tiles, then one chart and one table below it — Sheet 02's
+/**
+ * **TWO OF THE MOCK'S FOUR WIDGET KINDS ARE NOT USED HERE, AND THAT IS A GAP
+ * RATHER THAN A DECISION.**
+ *
+ * The six entries ship `value_tile`, `chart` and `table`. They ship no
+ * `radial_gauge` and no `tank_level`, though the mock draws both explicitly —
+ * OHT 72%, EQUALIZE 65% LEVEL, TREATED 68% LEVEL, and Power Factor 0.96 "within
+ * target band" — and migration `0051` already seeds the roles they would bind
+ * (`oht-tank`, `treated-tank`, `equalization`), all currently unused. Migration
+ * `0056`'s own Water description says "tanks".
+ *
+ * Nothing forces the omission: ADR 0047 and ADR 0048 ship both widget types.
+ * Recorded here rather than silently left, because a reader comparing this file
+ * to the mock will otherwise assume a constraint that does not exist. Adding a
+ * tank to the Water and STP defaults is a content change with its own review,
+ * not one to fold into the row that first noticed it. Found by the `F3.36`
+ * compliance review.
+ *
+ * The single-line diagram is a different case and stays out: no widget type
+ * draws one, and that is `F3.32`.
+ */
+
+/** Row of five KPI tiles, then one chart and one table below it — Sheet 04's
  * Electrical screen, "the same canvas bound to a different asset group". */
 const TILE_ROW_Y = 0;
 const TILE_W = 2;

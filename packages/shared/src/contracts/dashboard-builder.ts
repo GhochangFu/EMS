@@ -226,10 +226,19 @@ export const gaugeRangeIsOrdered = (config: { min: number; max: number }): boole
 
 export const GAUGE_RANGE_MESSAGE = "max must be greater than min";
 
-export const radialGaugeConfigSchema = radialGaugeConfigObjectSchema.refine(gaugeRangeIsOrdered, {
-  message: GAUGE_RANGE_MESSAGE,
-  path: ["max"],
-});
+export const radialGaugeConfigSchema = radialGaugeConfigObjectSchema
+  .refine(gaugeRangeIsOrdered, {
+    message: GAUGE_RANGE_MESSAGE,
+    path: ["max"],
+  })
+  // AFTER the refinement — ADR 0029 Amendment 1 fact F. This refinement was
+  // unreachable from the OpenAPI registry until `F3.36` registered a route whose
+  // body embeds a widget config, so the gap surfaced there rather than here.
+  // Same shape as the `envelopes.ts` list-schema gap the same row found: not an
+  // API change, just a description that had never been needed.
+  .describe(
+    `A radial gauge's configuration. One rule the document cannot express: ${GAUGE_RANGE_MESSAGE}.`,
+  );
 
 /** A tank level: an SVG fill illustration plus a percentage, the §7 *Key Parameters* shape. */
 export const tankLevelConfigSchema = z

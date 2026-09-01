@@ -123,6 +123,41 @@ const HEALTH_SECTION =
   "extra — it is an author believing they configured something. A misspelled `band` would " +
   "otherwise be stored, returned, and silently ignored by every score it was meant to change.";
 
+
+/**
+ * `F3.36` (ADR 0049) — the section template canvas, inside `content`.
+ *
+ * **Left open, and the reason is that this schema is BOTH halves of the
+ * contract.** `sectionTemplateContentSchema` shapes the request body AND is the
+ * read contract for `bms.dashboard_templates.content`, a `jsonb` column. A
+ * response contract must not refuse a row the store can hold, so strictness
+ * here would turn one stored extra key into a read that throws for every
+ * caller — including the instantiate path, which parses the same stored object.
+ *
+ * The unknown key is still refused where it is a caller error: all four
+ * top-level bodies are `.strict()`, so a misspelling at the body root is a 400.
+ * What stays permissive is a key nested inside an authored canvas.
+ *
+ * The widget `config` nodes are the shared `dashboardWidgetSpecSchema` arms,
+ * which `dashboardDtoSchema` also reads;
+ * `putDashboardWidgetsBodySchema` is strict there only because `apps/api`
+ * declares its OWN write-side config schemas. Giving the shared arms
+ * `.strict()` would reach every dashboard read in the product, which is wider
+ * than this row.
+ *
+ * **The honest cost:** a misspelled key inside a template widget is stored and
+ * ignored, which is the failure `HEALTH_SECTION` above refuses for
+ * `asset_templates.content`. Closing it properly means a strict write-side
+ * mirror of the widget spec, as `apps/api` already keeps for dashboards — a
+ * row of its own, not a change smuggled into this one.
+ */
+const SECTION_TEMPLATE_CONTENT =
+  "F3.36 (ADR 0049). `sectionTemplateContentSchema` is both the request shape and the read " +
+  "contract for the `content` jsonb column, so strictness here would make one stored extra " +
+  "key throw on every read. The four top-level bodies are strict, so a caller error at the " +
+  "body root is still a 400. A strict write-side mirror of the widget spec is owed as its " +
+  "own row.";
+
 const STRICT = (why: string): LedgerEntry => ({ strict: true, why });
 
 /**
@@ -200,6 +235,40 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "createAssetTemplateBodySchema/content/maintenance[]": STRICT(ALREADY),
   "createAssetTemplateBodySchema/points[]": STRICT(CALLER_ERROR),
   createDashboardBodySchema: STRICT(CALLER_ERROR),
+  createDashboardTemplateBodySchema: STRICT(CALLER_ERROR),
+  "createDashboardTemplateBodySchema/content": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&left": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&left/bindings[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&left/sources[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|0": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|0/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|0/config/thresholds[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|1": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|1/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|2": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|2/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|3": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|3/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|4": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "createDashboardTemplateBodySchema/content/widgets[]&right|4/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  importStockTemplateBodySchema: STRICT(CALLER_ERROR),
+  instantiateSectionTemplateBodySchema: STRICT(CALLER_ERROR),
+  updateDashboardTemplateBodySchema: STRICT(CALLER_ERROR),
+  "updateDashboardTemplateBodySchema/content": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&left": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&left/bindings[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&left/sources[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|0": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|0/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|0/config/thresholds[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|1": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|1/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|2": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|2/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|3": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|3/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|4": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  "updateDashboardTemplateBodySchema/content/widgets[]&right|4/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   createLocationBodySchema: STRICT(CALLER_ERROR),
   createMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),
   createNotificationChannelBodySchema: STRICT(CALLER_ERROR),

@@ -5,6 +5,7 @@ import { dashboardTemplates } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { DashboardTemplateDto, JwtPayload, StockDashboardTemplateDto } from "@bms/shared";
 
+import { AccessControlService } from "../../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
@@ -44,9 +45,21 @@ import { STOCK_DASHBOARD_TEMPLATE_CATALOG } from "./stock-catalog";
 export class DashboardTemplatesStockService {
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
+    private readonly accessControl: AccessControlService,
     private readonly templates: DashboardTemplatesService,
     private readonly audit: MasterDataAuditService,
   ) {}
+
+  /**
+   * The catalog is master data, so listing it needs a master-data role.
+   *
+   * A separate method rather than a check inside `list()`, because `list()`
+   * reads no database and takes no actor — making it async purely to hold a
+   * guard would hide that. The controller calls this first.
+   */
+  async assertCanList(jwt: JwtPayload): Promise<void> {
+    await this.accessControl.requireMasterDataUser(jwt);
+  }
 
   /** What the repository ships. Reads no database — this is code. */
   list(): { items: StockDashboardTemplateDto[] } {
@@ -87,6 +100,8 @@ export class DashboardTemplatesStockService {
     // the failure mode of a missing section is a foreign-key 500.
     await this.templates.assertSection(entry.section);
 
+    const createdBy = await this.templates.resolveCreatedBy(jwt);
+
     const created = await withTenant(this.tenantDb, organizationId, async (tx) => {
       const [{ next } = { next: 1 }] = await tx
         .select({ next: sql<number>`COALESCE(MAX(${dashboardTemplates.version}), 0)::int + 1` })
@@ -113,6 +128,7 @@ export class DashboardTemplatesStockService {
           content: entry.content,
           stockCode: entry.code,
           stockVersion: entry.stockVersion,
+          createdBy,
         })
         .returning();
       if (!row) {
@@ -123,7 +139,7 @@ export class DashboardTemplatesStockService {
         {
           actor: jwt,
           organizationId,
-          action: "import",
+          action: "master.dashboard_template.import",
           entityType: "dashboard_template",
           entityId: row.id,
           reason: `stock ${entry.code} v${entry.stockVersion}`,
@@ -131,6 +147,12 @@ export class DashboardTemplatesStockService {
         tx,
       );
       return row;
+    }).catch((err) => {
+      // A second import of the same code while the first is still a draft hits
+      // `dashboard_templates_org_code_draft_unique`, which drizzle THROWS on —
+      // so the `if (!row)` guard above is unreachable and the caller met a 500
+      // carrying a constraint name. Found by the `F3.36` correctness review.
+      throw DashboardTemplatesService.translateConflict(err, entry.code);
     });
 
     return this.templates.map(created);

@@ -30,11 +30,13 @@ import { DashboardTemplatesService } from "./dashboard-templates.service";
  * `F3.36` Part E4 — Vitest entry point. Owns the fixtures and cleanup.
  *
  * **The fixture is built so the four outcomes are genuinely distinguishable.**
- * Three assets share the `chiller` role; two carry a `kW` point and all three
+ * Four assets share the `chiller` role; three carry a `kW` point and all four
  * carry `kVA`. The same role therefore yields `truncated` on a one-point widget,
  * `partial` on a many-point widget bound to `kW`, and `bound` on one bound to
  * `kVA` — the separations Amendment 2 had to rule, which a happy-path fixture
- * would collapse into one.
+ * would collapse into one. A sixth widget, `mixed-chart`, names two roles where
+ * one resolves fully and the other matches nothing: the case the first resolver
+ * reported as `bound`.
  *
  * **Cleanup is by id, and only the ids this suite created.** `F3.37`'s review
  * found an `afterAll` that erased every organization's real history on a
@@ -57,7 +59,7 @@ const REPORT_SLUG = `f336-report-${RUN}`;
 const FOREIGN_SLUG = `f336-foreign-${RUN}`;
 const DRAFT_SLUG = `f336-draftinst-${RUN}`;
 
-/** Five widgets, one per outcome the report must be able to tell apart. */
+/** Six widgets: one per outcome, plus the mixed-role regression case. */
 const TEMPLATE_CONTENT = {
   widgets: [
     {
@@ -92,6 +94,23 @@ const TEMPLATE_CONTENT = {
       gridW: 6,
       gridH: 4,
       bindings: [{ assetRoleCode: "chiller", pointKey: "kVA", pointRole: "series", sortOrder: 0 }],
+      sources: [],
+      widgetType: "chart",
+      config: { series: "line" },
+    },
+    {
+      // Two roles: one resolves every member it matched, the other matches
+      // nothing. The summed resolver called this `bound`; it is `partial`.
+      key: "mixed-chart",
+      title: "Chillers and cooling tower",
+      gridX: 0,
+      gridY: 8,
+      gridW: 6,
+      gridH: 4,
+      bindings: [
+        { assetRoleCode: "chiller", pointKey: "kVA", pointRole: "series", sortOrder: 0 },
+        { assetRoleCode: "cooling-tower", pointKey: "kW", pointRole: "series", sortOrder: 1 },
+      ],
       sources: [],
       widgetType: "chart",
       config: { series: "line" },
@@ -138,6 +157,7 @@ describe.skipIf(!connectionString)(
     let eskomGroupId: string;
     let phewbGroupId: string;
     let publishedTemplateId: string;
+    let firstChillerAssetId: string;
     let draftTemplateId: string;
 
     const templateIds: string[] = [];
@@ -157,7 +177,13 @@ describe.skipIf(!connectionString)(
         audit,
         vocabularies,
       );
-      return new DashboardTemplatesInstantiateService(fleetDb, tenantDb, audit, templates);
+      return new DashboardTemplatesInstantiateService(
+        fleetDb,
+        tenantDb,
+        accessControl,
+        audit,
+        templates,
+      );
     };
 
     beforeAll(async () => {
@@ -204,7 +230,7 @@ describe.skipIf(!connectionString)(
 
       // Three chillers. Codes are ordered so "the first by assets.code" is a
       // stated expectation rather than whatever the planner returns.
-      for (const suffix of ["a", "b", "c"]) {
+      for (const suffix of ["a", "b", "c", "d"]) {
         const asset = await ownerPool.query<{ id: string }>(
           `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
            VALUES ($1, $2, $3, $4, 'F3.36 fixture site', 'hvac') RETURNING id`,
@@ -212,18 +238,24 @@ describe.skipIf(!connectionString)(
         );
         const assetId = asset.rows[0]?.id ?? "";
         assetIds.push(assetId);
+        if (suffix === "a") firstChillerAssetId = assetId;
         await ownerPool.query(
           `INSERT INTO bms.asset_group_members (asset_group_id, asset_id, role)
            VALUES ($1, $2, 'chiller')`,
           [eskomGroupId, assetId],
         );
-        // Every chiller carries kVA; only a and b carry kW — which is what
-        // separates `partial` from `bound` on two otherwise identical charts.
+        // Every chiller carries kVA.
         await ownerPool.query(
           `INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key, unit)
            VALUES ($1, $2, 'kVA', $3, 'kVA')`,
           [eskomOrgId, assetId, `${GROUP_CODE}-${suffix}-kva`],
         );
+        // `c` is the one member WITHOUT a kW point, which is what separates
+        // `partial` from `bound` on two otherwise identical charts. `d` is the
+        // fourth member, added so the over-match case has three resolving
+        // members against a max=1 widget — Amendment 2 decision 2 then has its
+        // own fixture instead of sharing decision 3's, which is the conflation
+        // the `F3.36` correctness review pointed out.
         if (suffix !== "c") {
           await ownerPool.query(
             `INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key, unit)
@@ -311,6 +343,7 @@ describe.skipIf(!connectionString)(
         publishedTemplateId,
         eskomGroupId,
         REPORT_SLUG,
+        firstChillerAssetId,
       );
       dashboardIds.push(dashboardId);
 

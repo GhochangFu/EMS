@@ -14,11 +14,34 @@ import type { DashboardTemplatesInstantiateService } from "./dashboard-templates
  * the Vitest entry point (ADR 0014) and owns the fixtures and cleanup.
  *
  * **Every outcome gets its own fixture, and the fixtures are built so that the
- * four are genuinely distinguishable.** Three members share one role and only
- * two of them carry the `kW` point, so the same role produces `truncated` on a
- * one-point widget and `partial` on a many-point one — which is the pair
- * Amendment 2 had to rule and the pair a happy-path test would never separate.
+ * four are genuinely distinguishable.** Four members share the `chiller` role
+ * and only three carry the `kW` point, so the same role produces `truncated` on
+ * a one-point widget and `partial` on a many-point one — the pair Amendment 2
+ * had to rule and the pair a happy-path fixture would collapse into one.
+ *
+ * Two assertions here exist because the `F3.36` correctness review found them
+ * missing, and both were **false green** rather than wrong: the `assets.code`
+ * tie-break was asserted by nothing (deleting the `ORDER BY` left the suite
+ * green), and `boundPoints` was never compared against the rows actually
+ * written. A third, `mixed-chart`, pins a real defect the review found — a
+ * widget whose second role matched nothing reported `bound`.
  */
+
+/**
+ * The fixture's widget keys and their titles.
+ *
+ * The read-back dashboard widget carries no template key, so the title is the
+ * only join between a resolution entry and the rows that were written. Declared
+ * here rather than inferred, so a renamed widget fails loudly.
+ */
+const TITLE_BY_WIDGET_KEY: Readonly<Record<string, string>> = {
+  "chiller-gauge": "Lead chiller load",
+  "chiller-chart": "Chiller load trend",
+  "chiller-full": "Chiller apparent power",
+  "mixed-chart": "Chillers and cooling tower",
+  "tower-tile": "Cooling tower",
+  "alarms-tile": "Active alarms",
+};
 
 const resolutionFor = (
   response: InstantiateSectionTemplateResponse,
@@ -44,6 +67,9 @@ export async function assertResolutionReportCoversEveryOutcome(
   templateId: string,
   assetGroupId: string,
   slug: string,
+  /** The asset whose `code` sorts FIRST among the members — what Amendment 2
+   * decision 2's tie-break must pick. */
+  expectedFirstAssetId: string,
 ): Promise<{ dashboardId: string }> {
   const response = await service.instantiate(actor, templateId, {
     assetGroupId,
@@ -54,13 +80,37 @@ export async function assertResolutionReportCoversEveryOutcome(
   expect(
     response.resolutions.length,
     "one resolution entry per widget — Amendment 2 decision 1",
-  ).toBe(5);
+  ).toBe(6);
+
+  /**
+   * **Every reported `boundPoints` must equal the rows actually written.**
+   *
+   * The report is computed from the plan, BEFORE the insert. Nothing compared
+   * the two, so a change to the insert loop that dropped rows would leave the
+   * whole suite green while the report claimed points that do not exist. Found
+   * by the `F3.36` correctness review.
+   *
+   * The read-back widget carries no template key, so the fixture's titles are
+   * the join — they are unique by construction, and `TITLE_BY_WIDGET_KEY` is
+   * asserted exhaustive below so a renamed widget cannot quietly drop out.
+   */
+  for (const [widgetKey, title] of Object.entries(TITLE_BY_WIDGET_KEY)) {
+    const reported = resolutionFor(response, widgetKey);
+    const written = response.dashboard.widgets.find((w) => w.title === title);
+    expect(written, `no widget titled "${title}" came back`).toBeDefined();
+    expect(
+      written?.points.length,
+      `widget "${widgetKey}" reported boundPoints ${reported.boundPoints} but ` +
+        `${written?.points.length} point rows were written. The report is computed from the ` +
+        "plan and the rows come from the insert; nothing else compares them.",
+    ).toBe(reported.boundPoints);
+  }
 
   // 1. Three members carry the role, two carry the point, the widget holds one.
   //    The cap bites, so this is `truncated` (Amendment 2 decision 2) and the
   //    bound member is the FIRST by assets.code.
   const gauge = resolutionFor(response, "chiller-gauge");
-  expect(gauge.matchedMembers, "three members carry the chiller role").toBe(3);
+  expect(gauge.matchedMembers, "four members carry the chiller role").toBe(4);
   expect(gauge.boundPoints, "a radial_gauge holds exactly one point").toBe(1);
   expect(
     gauge.outcome,
@@ -69,11 +119,31 @@ export async function assertResolutionReportCoversEveryOutcome(
       "right and is one short'.",
   ).toBe("truncated");
 
+  /**
+   * **WHICH member won, not merely how many.**
+   *
+   * Amendment 2 decision 2 rules the tie-break as *the first member by
+   * `assets.code`* — and nothing asserted it. Deleting `.orderBy(asc(assets.code))`
+   * from `loadMembersByRole` left the entire suite green, so the one ruling this
+   * row exists to implement was ungated. §4.4: assume the new guard has this
+   * defect and mutate the code to prove it fails. Found by the `F3.36`
+   * correctness review.
+   */
+  const gaugeWidget = response.dashboard.widgets.find(
+    (w) => w.title === TITLE_BY_WIDGET_KEY["chiller-gauge"],
+  );
+  expect(
+    gaugeWidget?.points[0]?.assetId,
+    "the single bound point must belong to the member whose assets.code sorts FIRST — " +
+      "Amendment 2 decision 2. assets.code is NOT NULL UNIQUE, so this is a total order and " +
+      "the answer is deterministic rather than whatever the planner returned.",
+  ).toBe(expectedFirstAssetId);
+
   // 2. Same role, same point key, a widget that holds eight. Nothing is
   //    truncated; the shortfall is that one member has no such point.
   const chart = resolutionFor(response, "chiller-chart");
-  expect(chart.matchedMembers).toBe(3);
-  expect(chart.boundPoints, "only two of the three members carry a kW point").toBe(2);
+  expect(chart.matchedMembers).toBe(4);
+  expect(chart.boundPoints, "only three of the four members carry a kW point").toBe(3);
   expect(
     chart.outcome,
     "a role that matches N members of which only M carry the point key is `partial` — " +
@@ -83,13 +153,34 @@ export async function assertResolutionReportCoversEveryOutcome(
 
   // 3. Same role, a point key every member carries. Nothing is short.
   const full = resolutionFor(response, "chiller-full");
-  expect(full.matchedMembers).toBe(3);
-  expect(full.boundPoints).toBe(3);
+  expect(full.matchedMembers).toBe(4);
+  expect(full.boundPoints).toBe(4);
   expect(
     full.outcome,
     "every matching member bound is `bound` — migration 0051's header: one role still maps to " +
       "one widget however many members match.",
   ).toBe("bound");
+
+  /**
+   * **The regression case: one role of two matched nothing.**
+   *
+   * `chiller/kVA` resolves all four members; `cooling-tower/kW` matches none.
+   * The first implementation summed across bindings and decided from the sums,
+   * so this reported `matched 4, bound 4, bound` — a widget that is one whole
+   * ROLE short, described as complete. That is the silent success Amendment 2
+   * decision 1 exists to prevent, and the widget then never appeared in the list
+   * decision 6 calls "a page that can list exactly which ones need it". Found by
+   * the `F3.36` correctness review; this assertion is what keeps it fixed.
+   */
+  const mixed = resolutionFor(response, "mixed-chart");
+  expect(mixed.assetRoleCodes).toEqual(["chiller", "cooling-tower"]);
+  expect(mixed.matchedMembers, "the union of members, not the sum per binding").toBe(4);
+  expect(mixed.boundPoints).toBe(4);
+  expect(
+    mixed.outcome,
+    "a widget with a dead role is `partial`, never `bound` — even when its OTHER role resolved " +
+      "every member it matched.",
+  ).toBe("partial");
 
   // 4. A role no member carries. ADR 0049 decision 6: the widget arrives with
   //    zero bindings and the import SUCCEEDS.
@@ -117,7 +208,7 @@ export async function assertResolutionReportCoversEveryOutcome(
     response.dashboard.widgets.length,
     "every widget is created, including the unresolved one — F3.1c renders zero bindings as " +
       "'no data bound', which is a state the schema can report and a person can fix.",
-  ).toBe(5);
+  ).toBe(6);
 
   return { dashboardId: response.dashboard.id };
 }

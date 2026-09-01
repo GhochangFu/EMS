@@ -16,6 +16,13 @@ import {
   updateAssetTemplateBodySchema,
 } from "../admin/asset-templates/asset-templates.schema";
 import {
+  createDashboardTemplateBodySchema,
+  importStockTemplateBodySchema,
+  instantiateSectionTemplateBodySchema,
+  listDashboardTemplatesQuerySchema,
+  updateDashboardTemplateBodySchema,
+} from "../admin/dashboard-templates/dashboard-templates.schema";
+import {
   createAssetBodySchema,
   updateAssetBodySchema,
 } from "../admin/assets/assets.schema";
@@ -175,6 +182,14 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   createAssetPointBodySchema,
   createAssetTemplateBodySchema,
   createDashboardBodySchema,
+  // `F3.36` (ADR 0049). All four are `.strict()` — the PATCH body most
+  // deliberately, because `F3.37`'s review found a permissive one that let a
+  // field be stripped and silently cleared a value at 200, and `content` here is
+  // the whole authored canvas.
+  createDashboardTemplateBodySchema,
+  importStockTemplateBodySchema,
+  instantiateSectionTemplateBodySchema,
+  updateDashboardTemplateBodySchema,
   createLocationBodySchema,
   createMaintenanceScheduleBodySchema,
   createNotificationChannelBodySchema,
@@ -237,6 +252,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
  * own comment asks for, not the shortcut it exists to catch.
  */
 export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
+  listDashboardTemplatesQuerySchema,
   assetHealthQuerySchema,
   auditExportQuerySchema,
   auditListQuerySchema,
@@ -679,6 +695,11 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // an undocumented `locationId` on a scope-narrowing parameter is exactly the
   // kind of omission that gets a caller guessing.
   //
+  // 13 -> 14: `F3.36` registered `listDashboardTemplatesQuerySchema`, a genuine
+  // query schema (organizationId, status, section — all optional filters, and
+  // `.strict()`). Widened deliberately, and said so, per this assertion's own
+  // instruction.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -688,7 +709,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(13);
+  ).toBe(14);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

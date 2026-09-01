@@ -6,9 +6,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 
-import { dashboardSections, dashboardTemplates, organizations } from "@bms/db";
+import { dashboardSections, dashboardTemplates, organizations, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 // ADR 0049 decision 2 — one declaration of the template lifecycle, shared with
 // `asset-templates.service.ts`. `tests/f3.36-template-lifecycle-single-source.test.ts`
@@ -35,6 +35,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { METRIC_CATALOG_PARAMS_WRITE } from "../../dashboard-builder/dashboards.schema";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -129,7 +130,7 @@ export class DashboardTemplatesService {
 
   async getById(jwt: JwtPayload, id: string): Promise<DashboardTemplateDto> {
     const template = await this.fetchRow(id);
-    await this.assertCanAuthor(jwt, template.organizationId);
+    await this.assertCanRead(jwt, template.organizationId);
     return this.map(template);
   }
 
@@ -142,18 +143,39 @@ export class DashboardTemplatesService {
     // stored object is re-proved at publish — see `publish`.
     this.assertContentFits(content);
 
+    const createdBy = await this.resolveCreatedBy(jwt);
+
     const created = await withTenant(this.tenantDb, body.organizationId, async (tx) => {
+      // `MAX(version) + 1`, not a hardcoded 1. `createDraftFrom` and the stock
+      // import both compute it, and `AssetTemplatesAdminService.create` does
+      // too — ADR 0049 decision 2 rules FULL lifecycle parity, so two `create`
+      // methods answering differently for the same input is a contract
+      // divergence. It was also the direct cause of a 500: creating a template
+      // whose code the organization already held violated
+      // `dashboard_templates_org_code_version_unique`. Found by the `F3.36`
+      // correctness review.
+      const [{ next } = { next: 1 }] = await tx
+        .select({ next: sql<number>`COALESCE(MAX(${dashboardTemplates.version}), 0)::int + 1` })
+        .from(dashboardTemplates)
+        .where(
+          and(
+            eq(dashboardTemplates.organizationId, body.organizationId),
+            eq(dashboardTemplates.code, body.code),
+          ),
+        );
+
       const [row] = await tx
         .insert(dashboardTemplates)
         .values({
           organizationId: body.organizationId,
           code: body.code,
-          version: 1,
+          version: next,
           name: body.name,
           section: body.section,
           description: body.description ?? null,
           status: "draft",
           content,
+          createdBy,
         })
         .returning();
       if (!row) {
@@ -164,13 +186,15 @@ export class DashboardTemplatesService {
         {
           actor: jwt,
           organizationId: body.organizationId,
-          action: "create",
+          action: "master.dashboard_template.create",
           entityType: "dashboard_template",
           entityId: row.id,
         },
         tx,
       );
       return row;
+    }).catch((err) => {
+      throw DashboardTemplatesService.translateConflict(err, body.code);
     });
 
     return this.map(created);
@@ -215,7 +239,7 @@ export class DashboardTemplatesService {
         {
           actor: jwt,
           organizationId: template.organizationId,
-          action: "update",
+          action: "master.dashboard_template.update",
           entityType: "dashboard_template",
           entityId: id,
         },
@@ -267,6 +291,25 @@ export class DashboardTemplatesService {
             `Widget "${widget.key}" binds unknown catalog entry "${source.catalogKey}"`,
           );
         }
+        // `params` must pass the SAME per-entry schema the dashboard write path
+        // applies. The contract docblock claimed this happened and nothing did
+        // it — found by the `F3.36` security review.
+        //
+        // Every entry's schema is `z.object({}).strict()` today, so this refuses
+        // any non-empty `params`, exactly as `PUT /dashboards/:id/widgets` does.
+        // The risk it closes is not hypothetical in shape: an author could
+        // otherwise persist `{"locationId": "<foreign uuid>"}` into
+        // `dashboard_widget_sources.params`, which `dashboards.schema.ts` calls
+        // "an id inside jsonb that no foreign key covers and no orphan check can
+        // report". Latent only because no resolve path reads a param yet.
+        const paramsSchema = METRIC_CATALOG_PARAMS_WRITE[source.catalogKey];
+        const parsed = paramsSchema.safeParse(source.params);
+        if (!parsed.success) {
+          throw new BadRequestException(
+            `Widget "${widget.key}" binds catalog entry "${source.catalogKey}" with invalid params: ` +
+              JSON.stringify(parsed.error.flatten()),
+          );
+        }
       }
     }
 
@@ -285,7 +328,7 @@ export class DashboardTemplatesService {
         {
           actor: jwt,
           organizationId: template.organizationId,
-          action: "publish",
+          action: "master.dashboard_template.publish",
           entityType: "dashboard_template",
           entityId: id,
         },
@@ -317,7 +360,7 @@ export class DashboardTemplatesService {
         {
           actor: jwt,
           organizationId: template.organizationId,
-          action: "archive",
+          action: "master.dashboard_template.archive",
           entityType: "dashboard_template",
           entityId: id,
         },
@@ -344,6 +387,7 @@ export class DashboardTemplatesService {
   async createDraftFrom(jwt: JwtPayload, id: string): Promise<DashboardTemplateDto> {
     const template = await this.fetchRow(id);
     await this.assertCanAuthor(jwt, template.organizationId);
+    const createdBy = await this.resolveCreatedBy(jwt);
     // Only a published version may be branched: a draft is already editable,
     // and an archived one is frozen for the dashboards pinned to it.
     if (!canOpenDraftFrom(template.status as TemplateLifecycleStatus)) {
@@ -376,6 +420,7 @@ export class DashboardTemplatesService {
           content: template.content,
           stockCode: template.stockCode,
           stockVersion: template.stockVersion,
+          createdBy,
         })
         .returning();
       if (!row) {
@@ -386,7 +431,7 @@ export class DashboardTemplatesService {
         {
           actor: jwt,
           organizationId: template.organizationId,
-          action: "create",
+          action: "master.dashboard_template.create",
           entityType: "dashboard_template",
           entityId: row.id,
           reason: `draft from version ${template.version}`,
@@ -394,6 +439,8 @@ export class DashboardTemplatesService {
         tx,
       );
       return row;
+    }).catch((err) => {
+      throw DashboardTemplatesService.translateConflict(err, template.code);
     });
 
     return this.map(created);
@@ -408,12 +455,24 @@ export class DashboardTemplatesService {
     this.assertDraft(template, "deleted");
 
     await withTenant(this.tenantDb, template.organizationId, async (tx) => {
-      await tx.delete(dashboardTemplates).where(eq(dashboardTemplates.id, id));
+      // `.returning()` and the row check are what make this delete match the
+      // other three mutations. Without them a concurrent delete between
+      // `fetchRow` and here commits an audit row for a deletion that did not
+      // happen — the same defect `F3.37`'s review found on an UPDATE, arriving
+      // through the one verb that had no row count. Found by the `F3.36`
+      // security review.
+      const deleted = await tx
+        .delete(dashboardTemplates)
+        .where(eq(dashboardTemplates.id, id))
+        .returning({ id: dashboardTemplates.id });
+      if (deleted.length === 0) {
+        throw new NotFoundException("Dashboard template not found");
+      }
       await this.audit.write(
         {
           actor: jwt,
           organizationId: template.organizationId,
-          action: "delete",
+          action: "master.dashboard_template.delete",
           entityType: "dashboard_template",
           entityId: id,
         },
@@ -425,6 +484,24 @@ export class DashboardTemplatesService {
   // -------------------------------------------------------------------------
   // Shared internals — also used by the stock and instantiate services.
   // -------------------------------------------------------------------------
+
+  /**
+   * The authoring user's row id, for `dashboard_templates.created_by`.
+   *
+   * **Nothing wrote this column and the DTO advertised it**, so every template
+   * reported `createdBy: null` while the response contract and the migration
+   * both claimed otherwise. Copied from
+   * `AssetTemplatesAdminService.resolveCreatedBy`. Found by the `F3.36`
+   * correctness review.
+   */
+  async resolveCreatedBy(jwt: JwtPayload): Promise<string | null> {
+    const [row] = await this.fleetDb
+      .select({ id: users.id })
+      .from(users)
+      .where(or(eq(users.id, jwt.sub), eq(users.email, jwt.email)))
+      .limit(1);
+    return row?.id ?? null;
+  }
 
   async fetchRow(id: string): Promise<TemplateRow> {
     const [row] = await this.fleetDb
@@ -439,7 +516,44 @@ export class DashboardTemplatesService {
     return row.template;
   }
 
+  /**
+   * Author permission: org-scoped, `location_admin` excluded — ADR 0015 §7, the
+   * same rule `AssetTemplatesService.assertCanAuthor` applies.
+   *
+   * **This used `canManageOrganization` and that was an authorization gap.**
+   * That predicate resolves through `writableOrganizationIds`, which for a
+   * `location_admin` returns `locationDerivedOrganizationIds` — so ONE location
+   * grant returned `true` for the whole organization, and
+   * `wc-admin@bms.local` could create, edit, publish, archive, delete and import
+   * organization-wide section templates. `canManageTemplate` is the predicate
+   * that excludes the role, and its own docblock says why: authoring a template
+   * is an organization-wide act.
+   *
+   * The gap was invisible from the browser, which is what made it worth a
+   * comment: `apps/web/src/lib/template-authoring-access.ts` claims to "mirror
+   * the server exactly" and hides the controls from `location_admin`, so the
+   * request was never sent. Found by the `F3.36` security review.
+   */
   async assertCanAuthor(jwt: JwtPayload, organizationId: string): Promise<void> {
+    const user = await this.accessControl.requireMasterDataUser(jwt);
+    if (user.role === "location_admin") {
+      throw new ForbiddenException("Location admins cannot author dashboard templates");
+    }
+    if (!(await this.accessControl.canManageTemplate(jwt, organizationId))) {
+      throw new ForbiddenException("Organization is outside your access scope");
+    }
+  }
+
+  /**
+   * Read permission: `canManageOrganization`, deliberately wider than
+   * `assertCanAuthor`.
+   *
+   * A `location_admin` may LIST and OPEN a template — that is
+   * model-once-deploy-many, the property ADR 0015 Amendment 1B exists to
+   * preserve. Only authoring is refused. Splitting the two is what stops the
+   * authoring fix above from taking the read away as a side effect.
+   */
+  async assertCanRead(jwt: JwtPayload, organizationId: string): Promise<void> {
     await this.accessControl.requireMasterDataUser(jwt);
     if (!(await this.accessControl.canManageOrganization(jwt, organizationId))) {
       throw new ForbiddenException("Organization is outside your access scope");
@@ -474,6 +588,31 @@ export class DashboardTemplatesService {
           .join(", ")}`,
       );
     }
+  }
+
+  /**
+   * Turn a named unique violation into the 409 it is, instead of a 500.
+   *
+   * **Every `if (!row)` guard around a `.returning()` insert was dead code.**
+   * Drizzle THROWS on a `23505`; it never returns an empty array. So a duplicate
+   * `code`, a second concurrent draft or a repeated slug all reached the client
+   * as a 500 carrying a raw constraint name. `AssetTemplatesAdminService.translateDraftConflict`
+   * and `DashboardsService.translateSlugConflict` are the two precedents this
+   * copies. Found by the `F3.36` correctness review.
+   */
+  static translateConflict(err: unknown, code: string): unknown {
+    const constraint = (err as { constraint?: string } | null)?.constraint;
+    if (constraint === "dashboard_templates_org_code_draft_unique") {
+      return new ConflictException(
+        `A draft of template "${code}" already exists in this organization. Publish or delete it first.`,
+      );
+    }
+    if (constraint === "dashboard_templates_org_code_version_unique") {
+      return new ConflictException(
+        `A version of template "${code}" already exists in this organization at that number.`,
+      );
+    }
+    return err;
   }
 
   /** The widget cap, which no row-level `CHECK` can see. */

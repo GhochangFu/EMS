@@ -18,7 +18,7 @@ import { templateLifecycleStatusSchema } from "./template-lifecycle";
  *
  * A **section template** is a versioned, publishable canvas whose widgets bind
  * an **asset-group role plus a point key** rather than an asset id, so one
- * authored canvas instantiates against any asset group — Sheet 02's *"the same
+ * authored canvas instantiates against any asset group — Sheet 04's *"the same
  * canvas bound to a different asset group"*.
  *
  * ---
@@ -98,7 +98,7 @@ export const sectionTemplateBindingSchema = z.object({
  * A metric-catalog binding, which resolves with **no role at all**.
  *
  * A catalog entry inherits the instantiated dashboard's own scope, so it needs
- * no member to match — which is why four of Sheet 02's five Electrical KPI tiles
+ * no member to match — which is why four of Sheet 04's five Electrical KPI tiles
  * are this shape, and why `F3.36` depends on `F3.35`.
  *
  * `params` mirrors `dashboardWidgetSourceDtoSchema.params`. The write path
@@ -140,10 +140,49 @@ export const sectionTemplateWidgetIdentitySchema = z
     bindings: z.array(sectionTemplateBindingSchema).default([]),
     sources: z.array(sectionTemplateSourceSchema).default([]),
   })
-  .refine((widget) => widget.gridX + widget.gridW <= DASHBOARD_GRID.columns, {
-    message: `a widget must fit inside the ${DASHBOARD_GRID.columns}-column canvas`,
-    path: ["gridW"],
-  });
+  /**
+   * Two rules in ONE `superRefine`, deliberately not two chained `.refine`s.
+   *
+   * Each `.refine` is its own `ZodEffects` node, and ADR 0029's gate demands a
+   * `.describe()` on **every** such node — a chain of two therefore needs two
+   * descriptions, and the outer one silently covers only itself. One node with
+   * one description is the honest shape.
+   *
+   * **Rule 2 exists because of a real defect.** Two bindings naming the same
+   * `(assetRoleCode, pointKey)` pair both resolve to the same point, and
+   * instantiation would insert it twice under one `pointRole` — violating
+   * `dashboard_widget_points_widget_point_role_key` and rolling the whole
+   * instantiate back with a raw constraint name in front of an administrator.
+   * It is two keystrokes away in the authoring UI:
+   * `AssetRoleBindingPicker.add()` clears the point key and keeps the role.
+   * `dashboards.schema.ts` holds `noDuplicateBindings` for the same reason one
+   * level down. Found by the `F3.36` correctness review.
+   */
+  .superRefine((widget, ctx) => {
+    if (widget.gridX + widget.gridW > DASHBOARD_GRID.columns) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `a widget must fit inside the ${DASHBOARD_GRID.columns}-column canvas`,
+        path: ["gridW"],
+      });
+    }
+    const pairs = widget.bindings.map((b) => `${b.assetRoleCode}::${b.pointKey}`);
+    if (new Set(pairs).size !== pairs.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "a widget must not bind the same asset role and point key twice",
+        path: ["bindings"],
+      });
+    }
+  })
+  // AFTER the refinement, never before — ADR 0029 Amendment 1 fact F: a
+  // description attached before it lands on the inner schema and is silently
+  // discarded. zod-to-json-schema emits NOTHING for a refinement (fact C), so
+  // without this the generated document is strictly more permissive than the API
+  // and a caller who trusted it meets a 400 the document calls impossible.
+  .describe(
+    `A section template widget. Two rules the document cannot express: the widget must fit inside the ${DASHBOARD_GRID.columns}-column canvas (gridX + gridW), and no two bindings may name the same asset role and point key.`,
+  );
 
 /**
  * One widget of a section template.
@@ -184,7 +223,11 @@ export const sectionTemplateContentSchema = z
       }
       seen.add(widget.key);
     });
-  });
+  })
+  // After the refinement — ADR 0029 Amendment 1 fact F.
+  .describe(
+    "The authored canvas. One rule the document cannot express: widget keys must be unique within a template, because the instantiation resolution report addresses widgets by key.",
+  );
 
 // ---------------------------------------------------------------------------
 // The template rows

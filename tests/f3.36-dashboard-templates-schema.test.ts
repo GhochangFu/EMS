@@ -212,7 +212,7 @@ describe("F3.36 dashboard templates (ADR 0049 decision 1, Amendment 1 decision 3
       "migration 0056 closes section with a CHECK. ADR 0049 Amendment 2 decision 5 makes " +
         "it a lookup table, as ADR 0031/0032 ruled for rule categories and alarm " +
         "severities and as 0051 ruled for roles. A CHECK would need a migration to add a " +
-        "seventh section, which is exactly what Sheet 02's 'adding a seventh is " +
+        "seventh section, which is exactly what Sheet 04's 'adding a seventh is " +
         "configuration, not a release' refuses.",
     ).toBe(false);
     expect(checkOnSection.test("CHECK (section IN ('electrical'))")).toBe(true);
