@@ -51,6 +51,7 @@ const RESOLVER_REL = "apps/api/src/admin/asset-points/resolve-catalog-point-key.
 const OWNER_RLS_REL = "apps/api/src/database/bms-owner-rls.integration.spec.ts";
 const PAGE_REL = "apps/web/src/pages/admin/point-keys-page.tsx";
 const CONSTANTS_REL = "packages/shared/src/constants.ts";
+const PILOT_SEED_REL = "packages/db/src/phe-pilot-seed.ts";
 
 /**
  * Comments stripped. `f3.1a` learned this the hard way: `RESET ROLE;` in a
@@ -323,6 +324,49 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
         "point-keys-seed.ts still arbitrates its upsert on (organization_id, code). " +
           "That index is dropped by 0057; the arbiter is (code).",
       ).toBe(false);
+    });
+
+    /**
+     * **The cold-start gate, and the only one that catches it.**
+     *
+     * Migration `0057` admits the orphan codes from `bms.asset_points`. On an
+     * EMPTY database that table has no rows, so it admits none — and then
+     * `phe-pilot-seed.ts` inserts asset_points for 15 codes no other seed path
+     * writes. The first `pnpm db:seed` on a fresh volume fails with
+     * `asset_points_point_key_point_keys_code_fk` and `compose up` never
+     * completes. Measured on a scratch database, not reasoned about.
+     *
+     * Nothing else sees this: `pnpm build`, `typecheck:tests` and every suite
+     * that runs against the ALREADY-seeded stack are all green, because there
+     * the codes exist. This asserts the pilot seed registers its own codes
+     * before the rows that reference them, so a new sensor code added to
+     * `bmsPointKeyForSensor` cannot reintroduce the failure.
+     */
+    it("the PHE pilot seed registers its own codes before mapping them", () => {
+      const pilot = tsOnly(read(PILOT_SEED_REL));
+
+      const register = at(pilot, /INSERT\s+INTO\s+bms\.point_keys/i);
+      const map = at(pilot, /INSERT\s+INTO\s+bms\.asset_points/i);
+
+      expect(
+        register,
+        "phe-pilot-seed.ts never writes bms.point_keys. Its TeleCash sensor map is the " +
+          "only source of 15 codes, and 0057's orphan sweep finds nothing on a cold " +
+          "start, so the first db:seed on an empty volume violates the new foreign key.",
+      ).toBeGreaterThanOrEqual(0);
+      expect(map, "phe-pilot-seed.ts no longer writes bms.asset_points").toBeGreaterThanOrEqual(0);
+      expect(
+        register < map,
+        "phe-pilot-seed.ts maps an asset point before registering its code. The foreign " +
+          "key 0057 adds is checked per statement, so the order is the fix.",
+      ).toBe(true);
+
+      expect(
+        /ON CONFLICT \(code\) DO UPDATE[\s\S]{0,200}?COALESCE/i.test(pilot),
+        "phe-pilot-seed.ts overwrites an existing point key's unit instead of filling a " +
+          "NULL one. This seed re-runs on every compose up and 0057 admitted these codes " +
+          "with a NULL unit, so EXCLUDED.unit would revert an admin's edit at each boot.",
+      ).toBe(true);
     });
 
     it("point_keys leaves the FORCE-RLS list the owner suite scans", () => {

@@ -395,6 +395,46 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
           continue;
         }
         const pointKey = bmsPointKeyForSensor(sensor.SensorCode, sensor.DataKey);
+
+        // `F3.39` / ADR 0051 decision 4 — REGISTER THE CODE BEFORE THE ROW
+        // THAT REFERENCES IT. `asset_points.point_key` is a foreign key into
+        // `bms.point_keys` from migration `0057`, and this seed maps 15 codes
+        // that no other seed path writes: `kwh_total`, `kva`, six `voltage_v*`,
+        // three `current_i*`, `chlorine_pump_on`, `battery_charge_pct`,
+        // `network_strength` and `controller_power_status`. They come from
+        // `bmsPointKeyForSensor`'s TeleCash map, which is their only source of
+        // truth.
+        //
+        // **This is not belt-and-braces for what `0057` already did.** That
+        // migration admits the orphans on a database that HAS them; a cold
+        // start has none, because `bms.asset_points` is still empty when it
+        // runs. Without this the very first `pnpm db:seed` on an empty volume
+        // fails here with `asset_points_point_key_point_keys_code_fk` and
+        // `compose up` never completes. Measured on a scratch database before
+        // this block existed, not reasoned about.
+        //
+        // Written inline rather than hoisted to a one-time pass on purpose: the
+        // dependency is one statement above the row that needs it, so it cannot
+        // be moved or deleted without the reason being visible.
+        //
+        // `name` uses `initcap(replace(...))`, which is the exact expression
+        // `0057` uses, so a repaired row and a seeded one are indistinguishable.
+        // `COALESCE` on conflict, never `EXCLUDED.unit`: this seed re-runs on
+        // every `compose up`, `0057` admitted these codes with a NULL unit, and
+        // an admin who fills one in must not have it reverted at the next boot.
+        await pool.query(
+          `
+          INSERT INTO bms.point_keys (code, name, domain, unit, active)
+          -- \`$1\` is cast on both uses: without it Postgres deduces varchar
+          -- from the column and text from \`replace()\` and refuses the
+          -- statement with "inconsistent types deduced for parameter $1".
+          VALUES ($1::text, initcap(replace($1::text, '_', ' ')), $2, nullif($3::text, ''), true)
+          ON CONFLICT (code) DO UPDATE SET
+            unit = COALESCE(bms.point_keys.unit, EXCLUDED.unit)
+          `,
+          [pointKey, assetValues.domain, unitLabel(sensor.UnitCode)],
+        );
+
         await pool.query(
           `
           -- ADR 0018: provenance binds at the point. These are measured points
