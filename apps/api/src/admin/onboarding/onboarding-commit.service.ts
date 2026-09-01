@@ -137,14 +137,25 @@ export class OnboardingCommitService {
         })
         .returning();
 
+      // `F3.39` / ADR 0051 decision 2 — the point key catalog is fleet-wide, so
+      // this reads and writes it by `code` alone.
+      //
+      // **This IS a write to global master data by an organization's onboarding
+      // flow, and it is deliberate rather than overlooked.** The admin surface
+      // narrows to the global `admin` role in the same row, but blocking
+      // onboarding here would block a new organization from ever declaring a
+      // measurement its plant reads and no existing tenant does — which is the
+      // opposite of what ADR 0051 decides. A code names a quantity, not an
+      // estate, so a genuinely new one belongs in the shared vocabulary. The
+      // existing select-then-insert already makes a repeat commit idempotent,
+      // and by code alone it is now idempotent across organizations too:
+      // whichever tenant declares `ph` first, the second reuses that row.
       const pointKeyIds: string[] = [];
       for (const pk of draft.pointKeys ?? []) {
         const [existing] = await tx
           .select({ id: pointKeys.id })
           .from(pointKeys)
-          .where(
-            sql`${pointKeys.organizationId} = ${session.organizationId} AND ${pointKeys.code} = ${pk.code}`,
-          )
+          .where(sql`${pointKeys.code} = ${pk.code}`)
           .limit(1);
         if (existing) {
           pointKeyIds.push(existing.id);
@@ -153,7 +164,6 @@ export class OnboardingCommitService {
         const [created] = await tx
           .insert(pointKeys)
           .values({
-            organizationId: session.organizationId,
             code: pk.code,
             name: pk.name,
             domain: pk.domain ?? null,

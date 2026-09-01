@@ -21,7 +21,12 @@ export function canWriteOrganizations(role: UserRole): boolean {
 
 /** Whether the role may create or edit the global/org point key catalog. */
 export function canWritePointKeys(role: UserRole): boolean {
-  return role === "admin" || role === "organization_admin";
+  // `F3.39` / ADR 0051: `organization_admin` was dropped from this list. The
+  // point-key catalog became fleet-wide master data in migration `0057`, and
+  // `PointKeysAdminService` gates every mutation on the global `admin` role.
+  // Leaving an organization administrator's Edit button on screen would only
+  // buy them a 403 — the read gate widened, the write gate narrowed.
+  return role === "admin";
 }
 
 /**

@@ -90,9 +90,9 @@ export async function seedAccessControlFixtures(pool: pg.Pool): Promise<void> {
   // *readable* without a gateway. ADR 0018's CHECK requires a `manual` point to
   // carry no rtu_id, which is exactly the pairing this proves.
   const pointKey = await pool.query<{ code: string; unit: string | null }>(
+    // `F3.39`: the catalog is fleet-wide, so no organization predicate.
     `SELECT code, unit FROM bms.point_keys
-      WHERE organization_id = $1 AND active = true ORDER BY code LIMIT 1`,
-    [organizationId],
+      WHERE active = true ORDER BY code LIMIT 1`,
   );
   const key = pointKey.rows[0];
   if (!key) {

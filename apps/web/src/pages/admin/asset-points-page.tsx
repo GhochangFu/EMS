@@ -76,7 +76,6 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     }
   }, [assetId, assetSummaryQ.data]);
 
-  const catalogOrgId = assetSummaryQ.data?.organizationId ?? selection.organizationId;
 
   // ---- F2.6: per-asset calc overrides (ADR 0039 decisions 6-8) -------------
   //
@@ -121,9 +120,11 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
   const overrideBusy = setOverrideM.isPending || clearOverrideM.isPending;
 
   const catalogQ = useQuery({
-    queryKey: ["admin", "point-keys", "true", catalogOrgId],
-    queryFn: () => fetchAdminPointKeys("true", catalogOrgId),
-    enabled: Boolean(catalogOrgId) && modalOpen,
+    // `F3.39`: one fleet-wide catalog, so no organization in the key and no
+    // organization to wait for before fetching it.
+    queryKey: ["admin", "point-keys", "true"],
+    queryFn: () => fetchAdminPointKeys("true"),
+    enabled: modalOpen,
   });
 
   const listQ = useQuery({
@@ -185,17 +186,17 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
       <PageHeader
         eyebrow="Administration"
         title="Asset Points"
-        subtitle="Map source data keys to organization catalog point keys per asset"
+        subtitle="Map source data keys to catalog point keys per asset"
         actions={
           <div className="flex gap-2">
-            {catalogOrgId ? (
-              <Link
-                to={`/admin/point-keys?organizationId=${catalogOrgId}`}
-                className="rounded border border-gray-200 px-3 py-2 text-xs font-semibold text-bms-ink"
-              >
-                Manage catalog
-              </Link>
-            ) : null}
+            {/* `F3.39`: the catalog is fleet-wide, so the link carries no
+                organization and is always available. */}
+            <Link
+              to="/admin/point-keys"
+              className="rounded border border-gray-200 px-3 py-2 text-xs font-semibold text-bms-ink"
+            >
+              Manage catalog
+            </Link>
             <button
               type="button"
               className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"

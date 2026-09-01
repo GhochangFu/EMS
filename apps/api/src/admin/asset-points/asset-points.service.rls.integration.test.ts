@@ -202,8 +202,10 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
         .returning({ id: assets.id });
       templatedAssetId = templatedAsset.id;
 
+      // `F3.39`: no `organizationId` — `bms.point_keys` is fleet-wide since
+      // migration `0057`. The fixture code stays unique per run, so a
+      // catalog row shared across organizations changes nothing here.
       await tx.insert(pointKeys).values({
-        organizationId,
         code: CATALOG_CODE,
         name: "E7.1b AP Catalog Key",
         unit: "kW",

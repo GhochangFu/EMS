@@ -1,10 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import type { AdminPointKeyDto, MasterDataActiveFilter } from "@bms/shared";
 
-import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import {
   createAdminPointKey,
   deactivateAdminPointKey,
@@ -13,34 +11,35 @@ import {
   updateAdminPointKey,
 } from "../../api/admin/point-keys";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
-import {
-  HierarchyFilterBar,
-  type HierarchySelection,
-} from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
-import { canWritePointKeys, isGlobalAdmin } from "../../lib/admin-access";
+import { canWritePointKeys } from "../../lib/admin-access";
 import type { AuthUser } from "../../stores/auth-store";
 
 type PointKeysAdminPageProps = { user: AuthUser };
 
-/** Admin screen for org-scoped point key catalog entries. */
+/**
+ * Admin screen for the fleet-wide point key catalog.
+ *
+ * **`F3.39` / ADR 0051 — this screen lost its organization axis entirely.** The
+ * organization column, the `HierarchyFilterBar`, the `?organizationId=` deep
+ * link and the create form's organization picker all named a column migration
+ * `0057` drops. What is left is one list for the whole fleet, which is what
+ * makes a stock dashboard template's `pointKey` resolvable anywhere.
+ *
+ * `canWritePointKeys` narrowed to the global `admin` in the same row, so an
+ * organization administrator reads this screen and cannot edit it.
+ */
 export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
-  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const canWrite = canWritePointKeys(user.role);
-  const initialOrgId = searchParams.get("organizationId") ?? "";
   const [activeFilter, setActiveFilter] = useState<MasterDataActiveFilter>("all");
-  const [selection, setSelection] = useState<HierarchySelection>({
-    organizationId: initialOrgId || undefined,
-  });
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminPointKeyDto | null>(null);
   const [form, setForm] = useState({
-    organizationId: initialOrgId,
     code: "",
     name: "",
     domain: "",
@@ -49,16 +48,9 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
   });
   const [error, setError] = useState<string | null>(null);
 
-  const orgsQ = useQuery({
-    queryKey: ["admin", "organizations", "true"],
-    queryFn: () => fetchAdminOrganizations("true"),
-  });
-
-  const orgFilter = selection.organizationId ?? "";
-
   const listQ = useQuery({
-    queryKey: ["admin", "point-keys", activeFilter, orgFilter],
-    queryFn: () => fetchAdminPointKeys(activeFilter, orgFilter || undefined),
+    queryKey: ["admin", "point-keys", activeFilter],
+    queryFn: () => fetchAdminPointKeys(activeFilter),
   });
 
   const filtered = useMemo(() => {
@@ -84,7 +76,6 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
         });
       }
       return createAdminPointKey({
-        organizationId: form.organizationId,
         code: form.code,
         name: form.name,
         domain: form.domain || undefined,
@@ -110,13 +101,8 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
   });
 
   function openCreate(): void {
-    const defaultOrg =
-      orgFilter ||
-      (!isGlobalAdmin(user.role) ? orgsQ.data?.items[0]?.id : "") ||
-      "";
     setEditing(null);
     setForm({
-      organizationId: defaultOrg,
       code: "",
       name: "",
       domain: "",
@@ -132,7 +118,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
       <PageHeader
         eyebrow="Administration"
         title="Point Keys"
-        subtitle="Organization catalog of telemetry point keys used in asset mappings"
+        subtitle="Fleet-wide catalog of telemetry point keys used in asset mappings"
         actions={
           canWrite ? (
             <button
@@ -148,13 +134,6 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
       <SectionCard title="Point key catalog" bodyClassName="p-3 space-y-3">
         <div className="flex flex-wrap gap-3">
           <ActiveFilterBar value={activeFilter} onChange={setActiveFilter} />
-          <HierarchyFilterBar
-            user={user}
-            levels={["organization"]}
-            selection={selection}
-            onNavigate={setSelection}
-            syncRoutes={false}
-          />
           <input
             className="rounded border px-3 py-1.5 text-sm"
             placeholder="Search"
@@ -165,7 +144,6 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b text-left text-xs uppercase text-bms-muted">
-              <th className="px-2 py-2">Org</th>
               <th className="px-2 py-2">Code</th>
               <th className="px-2 py-2">Name</th>
               <th className="px-2 py-2">Domain</th>
@@ -177,7 +155,6 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
           <tbody>
             {filtered.map((item) => (
               <tr key={item.id} className="border-b border-gray-100">
-                <td className="px-2 py-2">{item.organizationCode}</td>
                 <td className="px-2 py-2 font-mono">{item.code}</td>
                 <td className="px-2 py-2">{item.name}</td>
                 <td className="px-2 py-2">{item.domain ?? "—"}</td>
@@ -197,7 +174,6 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                         onClick={() => {
                           setEditing(item);
                           setForm({
-                            organizationId: item.organizationId,
                             code: item.code,
                             name: item.name,
                             domain: item.domain ?? "",
@@ -240,27 +216,6 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
               {editing ? "Edit point key" : "Add point key"}
             </h2>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {!editing ? (
-                <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
-                  Organization
-                  <select
-                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
-                    value={form.organizationId}
-                    required
-                    disabled={!isGlobalAdmin(user.role)}
-                    onChange={(event) =>
-                      setForm({ ...form, organizationId: event.target.value })
-                    }
-                  >
-                    <option value="">Select organization</option>
-                    {(orgsQ.data?.items ?? []).map((org) => (
-                      <option key={org.id} value={org.id}>
-                        {org.code} · {org.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
               <label className="block text-xs font-semibold text-bms-muted">
                 Code
                 <input

@@ -52,10 +52,11 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
   }
 
   const { rows: keyRows } = await pool.query<{ code: string; unit: string | null }>(
+    // `F3.39`: fleet-wide catalog, so no organization predicate. The
+    // `created_at, code` ordering stays — it is F4.53's "oldest wins".
     `SELECT code, unit FROM bms.point_keys
-      WHERE organization_id = $1 AND active = true
+      WHERE active = true
       ORDER BY created_at, code LIMIT 1`,
-    [asset.organization_id],
   );
   const activePointKey = keyRows[0];
   if (!activePointKey) {
@@ -98,7 +99,10 @@ export async function runResolveCatalogPointKeyTests(
   );
   if (!unknown.ok) {
     assert(
-      /Point key must exist in the organization catalog and be active/.test(unknown.reason),
+      // `F3.39`: "the organization catalog" became "the catalog" when `0057`
+      // merged bms.point_keys fleet-wide. The rest is still verbatim from the
+      // original service, which is what this assertion exists to hold.
+      /Point key must exist in the catalog and be active/.test(unknown.reason),
       `rejection message must be preserved verbatim from the original service: got "${unknown.reason}"`,
     );
   }

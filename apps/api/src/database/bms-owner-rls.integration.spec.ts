@@ -18,11 +18,19 @@ import type pg from "pg";
  * turn this red for the wrong reason.
  */
 
-/** The five tables migration `0040` protects and `0041` puts `FORCE` on. */
+/**
+ * The tables migration `0040` protects and `0041` puts `FORCE` on.
+ *
+ * **`F3.39` — `point_keys` left this list, and it is the only member ever to
+ * do so.** Migration `0057` drops its policy, its FORCE flag and its
+ * `organization_id`, moving it into the global-vocabulary class beside
+ * `bms.asset_roles` and `bms.dashboard_sections` (ADR 0051 decision 2). Leaving
+ * it here would have asserted the exact opposite of what the database now does.
+ * The removal is deliberate; do not restore it by symmetry with `0040`.
+ */
 export const FORCED_TABLES = [
   "locations",
   "user_organization_access",
-  "point_keys",
   "asset_templates",
   "onboarding_sessions",
 ] as const;

@@ -358,12 +358,13 @@ export const userOrganizationAccess = bmsSchema.table("user_organization_access"
     .defaultNow(),
 });
 
-/** Org-scoped telemetry point key catalog for asset mapping. */
+/**
+ * Fleet-wide telemetry point key catalog. **`F3.39` — no `organizationId`**:
+ * `0057` makes this a global vocabulary beside `asset_roles`, and
+ * `asset_points.point_key` references `code`. That migration's header is why.
+ */
 export const pointKeys = bmsSchema.table("point_keys", {
   id: uuid("id").primaryKey().defaultRandom(),
-  organizationId: uuid("organization_id")
-    .notNull()
-    .references(() => organizations.id),
   code: varchar("code", { length: 128 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   domain: varchar("domain", { length: 64 }),

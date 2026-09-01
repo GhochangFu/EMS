@@ -183,7 +183,7 @@ export class AssetTemplateInstantiationService {
     // published six months ago can name a key deactivated last week. Only
     // measured points become rows (§6 step 5): a derived point is computed by
     // the calc engine (`F2.6`), and there is no honest `source_data_key` for it.
-    const catalogUnits = await this.assertCatalogActive(template.organizationId, points, template);
+    const catalogUnits = await this.assertCatalogActive(points, template);
     const measured = points.filter((point) => point.kind === "measured");
     this.assertBatchFits(body.assets.length, measured.length);
 
@@ -385,7 +385,6 @@ export class AssetTemplateInstantiationService {
    * point key" cannot tell whether to fix the catalog or the template.
    */
   private async assertCatalogActive(
-    organizationId: string,
     points: PointRow[],
     template: TemplateRow,
   ): Promise<Map<string, string | null>> {
@@ -393,13 +392,11 @@ export class AssetTemplateInstantiationService {
     const rows = await this.fleetDb
       .select({ code: pointKeys.code, unit: pointKeys.unit })
       .from(pointKeys)
-      .where(
-        and(
-          eq(pointKeys.organizationId, organizationId),
-          eq(pointKeys.active, true),
-          inArray(pointKeys.code, codes),
-        ),
-      );
+      // `F3.39`: no organization predicate — `bms.point_keys` is fleet-wide
+      // after migration `0057`, and a template's point keys resolve the same
+      // way in every organization. That is the property ADR 0051 decision 2
+      // exists to give a stock dashboard template.
+      .where(and(eq(pointKeys.active, true), inArray(pointKeys.code, codes)));
 
     const units = new Map(rows.map((row) => [row.code, row.unit]));
     const missing = codes.filter((code) => !units.has(code));

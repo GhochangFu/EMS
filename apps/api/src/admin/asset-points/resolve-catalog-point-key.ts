@@ -8,9 +8,15 @@ export type ResolveCatalogPointKeyResult =
   | { readonly ok: false; readonly reason: string };
 
 /**
- * Checks that a point key exists in its asset's organization catalog and is
- * active — the invariant `AssetPointsAdminService.create`/`update` held
- * privately before this extraction.
+ * Checks that a point key exists in the fleet-wide catalog and is active — the
+ * invariant `AssetPointsAdminService.create`/`update` held privately before
+ * this extraction.
+ *
+ * **`F3.39` — the rejection message changed, and it is the only message this
+ * row moves.** It said "the organization catalog"; migration `0057` merged
+ * `bms.point_keys` to one fleet-wide list, so that phrase named a thing that
+ * no longer exists and would have sent an operator looking for a per-tenant
+ * catalog screen. `resolve-catalog-point-key.spec.ts` moves with it.
  *
  * **Non-throwing, deliberately.** The original threw `BadRequestException`,
  * fine for a single mapped-point request. `F1.9` (bulk import) needs to
@@ -38,21 +44,21 @@ export async function resolveCatalogPointKey(
     };
   }
 
+  // `F3.39` / ADR 0051 decision 2: the catalog is fleet-wide, so the lookup is
+  // by code alone. The asset's organization is still read above — the caller
+  // needs it, and an asset with no organization still cannot map a point.
+  //
+  // The message keeps saying "the catalog" rather than "the organization
+  // catalog", which is now the only accurate description of it.
   const [catalogRow] = await db
     .select({ unit: pointKeys.unit })
     .from(pointKeys)
-    .where(
-      and(
-        eq(pointKeys.organizationId, assetRow.organizationId),
-        eq(pointKeys.code, pointKey),
-        eq(pointKeys.active, true),
-      ),
-    )
+    .where(and(eq(pointKeys.code, pointKey), eq(pointKeys.active, true)))
     .limit(1);
   if (!catalogRow) {
     return {
       ok: false,
-      reason: "Point key must exist in the organization catalog and be active",
+      reason: "Point key must exist in the catalog and be active",
     };
   }
 

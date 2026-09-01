@@ -200,7 +200,22 @@ export class AccessControlService {
     return ids === null || ids.includes(locationId);
   }
 
-  /** Whether the user may manage point keys for the given organization. */
+  /**
+   * Whether the user may manage point keys for the given organization.
+   *
+   * **`F3.39` — NOTHING CALLS THIS ANY MORE, AND IT MUST NOT BE CALLED AGAIN
+   * FOR POINT KEYS.** ADR 0051 made `bms.point_keys` fleet-wide, so the
+   * question it answers has no referent there: `PointKeysAdminService` gates on
+   * `isGlobalAdmin` instead, and reusing this would hand every `org_admin`
+   * write access to global master data.
+   *
+   * It survives as the *template* two live methods document themselves against
+   * — `canManageNotificationChannel` ("the one deviation is the nullable
+   * parameter") and `canManageAssetTemplate` ("delegates to the same rule") —
+   * and `access-control.service.test.ts` compares a channel write to its shape.
+   * Those comparisons are still accurate about org-scoped master data, which
+   * point keys have simply stopped being. Delete it only together with them.
+   */
   async canManagePointKey(jwt: JwtPayload, organizationId: string): Promise<boolean> {
     const user = await this.resolveDbUser(jwt);
     this.assertMasterDataRole(user.role);

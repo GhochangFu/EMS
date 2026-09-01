@@ -513,7 +513,7 @@ export class AssetTemplateMigrationService {
     const toMigrate = selected.filter((a) => a.templateId !== target.id);
 
     const targetPoints = await this.loadPoints(target.id);
-    const catalogUnits = await this.catalogUnits(target.organizationId, targetPoints);
+    const catalogUnits = await this.catalogUnits(targetPoints);
 
     // Bounded collector — see `MAX_REPORTED_REFUSALS`. The count keeps rising
     // after the list stops, so "is this migration refused" and "how badly" stay
@@ -761,7 +761,6 @@ export class AssetTemplateMigrationService {
    * A missing unit falls back to null, which is what the column already means.
    */
   private async catalogUnits(
-    organizationId: string,
     points: StoredTemplatePoint[],
   ): Promise<Map<string, string | null>> {
     const codes = [...new Set(points.map((p) => p.pointKey))];
@@ -771,7 +770,8 @@ export class AssetTemplateMigrationService {
     const rows = await this.fleetDb
       .select({ code: pointKeys.code, unit: pointKeys.unit })
       .from(pointKeys)
-      .where(and(eq(pointKeys.organizationId, organizationId), inArray(pointKeys.code, codes)));
+      // `F3.39`: fleet-wide catalog, so the lookup is by code alone.
+      .where(inArray(pointKeys.code, codes));
     return new Map(rows.map((row) => [row.code, row.unit]));
   }
 

@@ -173,11 +173,24 @@ export async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
  * would not be deterministic.
  */
 export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
+  // `F3.39`: the catalog is fleet-wide, so the two codes no longer come from a
+  // GROUP BY on `organization_id`. The `created_at, code` ordering above is
+  // unchanged and still load-bearing for exactly the reason stated — it is what
+  // keeps a foreign transient key from being adopted. The organization is now
+  // picked separately, oldest first, on the same "a seeded row predates every
+  // suite" reasoning.
   const { rows } = await pool.query<{ organization_id: string; codes: string[] }>(
-    `SELECT organization_id, (ARRAY_AGG(code ORDER BY created_at, code))[1:2] AS codes
-       FROM bms.point_keys WHERE active = true
-      GROUP BY organization_id HAVING COUNT(*) >= 2
-      ORDER BY MIN(created_at), organization_id LIMIT 1`,
+    `WITH catalog AS (
+       SELECT (ARRAY_AGG(code ORDER BY created_at, code))[1:2] AS codes,
+              COUNT(*) AS n
+         FROM bms.point_keys WHERE active = true
+     )
+     SELECT o.id AS organization_id, c.codes
+       FROM bms.organizations o
+       CROSS JOIN catalog c
+      WHERE c.n >= 2
+      ORDER BY o.created_at, o.id
+      LIMIT 1`,
   );
   const row = rows[0];
   if (!row) {

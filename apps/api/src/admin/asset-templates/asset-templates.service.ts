@@ -167,7 +167,7 @@ export class AssetTemplatesAdminService {
     body: CreateAssetTemplateBody,
   ): Promise<AdminAssetTemplateDto> {
     await this.assertCanAuthor(jwt, body.organizationId);
-    await this.assertPointKeysActive(body.organizationId, body.points);
+    await this.assertPointKeysActive(body.points);
     // ADR 0031 Amendment 1. Checked here rather than at instantiation because
     // that is where the value is *chosen*: a template stores this domain and
     // stamps it onto every asset built from it, so a bad code caught later
@@ -248,7 +248,7 @@ export class AssetTemplatesAdminService {
     this.assertDraft(template, "edited");
 
     if (body.points) {
-      await this.assertPointKeysActive(template.organizationId, body.points);
+      await this.assertPointKeysActive(body.points);
     }
     if (body.domain !== undefined) {
       await this.vocabularies.assertAssetDomain(body.domain);
@@ -332,7 +332,7 @@ export class AssetTemplatesAdminService {
         "A template with no points would instantiate assets with no telemetry mapping",
       );
     }
-    await this.assertPointKeysActive(template.organizationId, points);
+    await this.assertPointKeysActive(points);
     const storedContent = this.parseStoredContent(template);
     this.assertContentRefsResolve(storedContent, points);
 
@@ -580,7 +580,6 @@ export class AssetTemplatesAdminService {
    * hand to find which one was deactivated.
    */
   private async assertPointKeysActive(
-    organizationId: string,
     points: { pointKey: string }[],
   ): Promise<void> {
     if (points.length === 0) {
@@ -590,13 +589,8 @@ export class AssetTemplatesAdminService {
     const rows = await this.fleetDb
       .select({ code: pointKeys.code })
       .from(pointKeys)
-      .where(
-        and(
-          eq(pointKeys.organizationId, organizationId),
-          eq(pointKeys.active, true),
-          inArray(pointKeys.code, codes),
-        ),
-      );
+      // `F3.39`: fleet-wide catalog, so the lookup is by code alone.
+      .where(and(eq(pointKeys.active, true), inArray(pointKeys.code, codes)));
 
     const active = new Set(rows.map((row) => row.code));
     const missing = codes.filter((code) => !active.has(code));

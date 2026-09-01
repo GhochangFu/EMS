@@ -29,17 +29,13 @@ import { PointKeysAdminService } from "./point-keys.service";
 export class PointKeysAdminController {
   constructor(private readonly service: PointKeysAdminService) {}
 
+  /**
+   * `F3.39`: no `organizationId` filter. The catalog is fleet-wide after
+   * migration `0057`, so there is nothing left to filter on.
+   */
   @Get()
-  async list(
-    @CurrentUser() user: JwtPayload,
-    @Query("organizationId") organizationId?: string,
-    @Query("active") active?: string,
-  ) {
-    return this.service.list(
-      user,
-      organizationId ? idParamSchema.parse(organizationId) : undefined,
-      parseActiveFilter(active),
-    );
+  async list(@CurrentUser() user: JwtPayload, @Query("active") active?: string) {
+    return this.service.list(user, parseActiveFilter(active));
   }
 
   @Get(":id")

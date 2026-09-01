@@ -179,8 +179,9 @@ async function main(): Promise<void> {
     // `identityDb`.
     await seedPheOrganizationAdmin(identityDb, pool);
 
-    // Writes `bms.point_keys` for both organizations, so it sets its own tenant
-    // context around each catalog rather than taking one from here.
+    // `F3.39`: one fleet-wide catalog, so no tenant context at all — neither
+    // one taken from here nor one it opens itself. `bms.point_keys` lost its
+    // policy, its FORCE flag and its `organization_id` in migration `0057`.
     await seedPointKeyCatalog(pool);
 
     // ── ESKOM, after the point-key catalog it depends on ───────────────────

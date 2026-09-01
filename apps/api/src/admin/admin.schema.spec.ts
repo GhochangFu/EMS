@@ -27,11 +27,23 @@ export function runAdminSchemaTests(): void {
   });
   assert(point.pointKey === "kw", "asset point key parsed");
 
+  // `F3.39`: no `organizationId` — the catalog is fleet-wide since `0057`.
   const catalogKey = createPointKeyBodySchema.parse({
-    organizationId: "00000000-0000-4000-8000-000000000001",
     code: "kw",
     name: "Active Power",
     domain: "electrical",
   });
   assert(catalogKey.code === "kw", "point key catalog code parsed");
+
+  // The body is `.strict()` (ADR 0029), so a client that keeps sending the old
+  // field is told rather than silently ignored. This is the half of the
+  // contract change a `z.infer` type cannot express.
+  assert(
+    createPointKeyBodySchema.safeParse({
+      organizationId: "00000000-0000-4000-8000-000000000001",
+      code: "kw",
+      name: "Active Power",
+    }).success === false,
+    "createPointKeyBodySchema must reject a body that still carries organizationId",
+  );
 }
