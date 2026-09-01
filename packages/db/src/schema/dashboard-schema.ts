@@ -1,4 +1,13 @@
-import { integer, jsonb, timestamp, unique, uuid, varchar, text } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  integer,
+  jsonb,
+  timestamp,
+  unique,
+  uuid,
+  varchar,
+  text,
+} from "drizzle-orm/pg-core";
 
 import {
   assetGroups,
@@ -6,6 +15,7 @@ import {
   bmsSchema,
   locations,
   organizations,
+  users,
 } from "./bms-schema";
 
 /**
@@ -24,6 +34,109 @@ import {
  * mirrored and *are* named, because drizzle otherwise derives a name and then `\d` and this
  * file describe one object under two names — the trap `alarm_severities_rank_key` documents.
  */
+
+/**
+ * The section vocabulary — `F3.36`, migration `0056`, ADR 0049 Amendment 2 decision 5.
+ *
+ * Sheet 02's six domain instances: Electrical · Water · STP · ETP · HVAC · Sustainability.
+ *
+ * **GLOBAL. No `organizationId`, no row-level security, no policy** — the sixth table of the
+ * class migration `0047` deliberately left alone, beside `assetDomains`, `ruleCategories`,
+ * `alarmSeverities`, `alarmSkills` and `assetRoles`. The load-bearing reason is ADR 0049
+ * Amendment 1 decision 2(b) applied to a second vocabulary: decision 3's stock catalog only
+ * works if a **section** code means the same thing in every organization, because each stock
+ * entry names its section and a per-tenant vocabulary would resolve it differently per tenant.
+ * A nullable `organizationId` is the shape decision 3 rejected outright, on `E7.1c` and ADR
+ * 0043 Amendment 5. `tests/f3.36-dashboard-templates-schema.test.ts` fails the build if the
+ * migration gives this table an `organization_id`, an RLS flip or a policy.
+ *
+ * **Open, not closed** — §4.8's test as ADR 0032 rewrote it. A section's behaviour is "group
+ * these templates", which *is* the code, so a section declared by an `INSERT` arrives fully
+ * functional. That is `assetRoles`' case, not `dashboardWidgets.widgetType`'s.
+ *
+ * **This is deliberately NOT `bms.asset_domains`.** Extending that vocabulary with `stp`, `etp`
+ * and `sustainability` was the recommendation at the `F3.36` plan gate and the owner declined
+ * it, because those three codes would then appear in the plant-domain picker `assets`,
+ * `assetTemplates` and the rules surface all read. Amendment 2 decision 6 records the accepted
+ * cost: the two vocabularies overlap in meaning and will drift. **Do not add a foreign key
+ * between them and do not "align" one to the other** — a section is a screen, a domain is what
+ * an asset is.
+ */
+export const dashboardSections = bmsSchema.table("dashboard_sections", {
+  code: varchar("code", { length: 64 }).primaryKey(),
+  label: varchar("label", { length: 128 }).notNull(),
+  description: text("description"),
+  sortOrder: integer("sort_order").notNull().default(100),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * A section dashboard template — `F3.36`, migration `0056`, ADR 0049 decision 1.
+ *
+ * One row per template **version**: `(organizationId, code, version)` is the identity, and
+ * `dashboards.templateId` pins the exact version a dashboard was instantiated from. Publishing
+ * v2 therefore cannot disturb the plants already running v1, which is the whole point of
+ * decision 2 — and without the stamp nobody can tell which those plants are.
+ *
+ * **A second table rather than a flag on `dashboards`, and the cheap option is worth naming
+ * because it will look attractive again.** An `isTemplate` flag plus a status would have reused
+ * the builder *and* the duplicate dialog `F3.1d` shipped, needing no new authoring surface at
+ * all. It was declined **for versioning**: a published template and the dashboards copied from
+ * it would drift with no record of which version a copy came from, and `assetTemplates` already
+ * solves that properly. Putting a section template inside `assetTemplates` was declined on a
+ * fact rather than a preference — a template widget references point **keys**, and a point key
+ * resolves against *one* asset's points, so a canvas spanning many assets of different types
+ * has no single asset whose keys resolve.
+ *
+ * **Tenant-scoped from the creating migration** (ADR 0043/0045, and ADR 0049 Amendment 1
+ * decision 3 confirming the original Consequences bullet holds in full *for this table*).
+ * `E7.1b`'s `0046`/`0047` are the recorded cost of the other order.
+ *
+ * **Two version stamps, two columns, two reasons.** `version` is this row's own tenant-local
+ * lifecycle version (decision 2). `stockCode`/`stockVersion` say which release of the
+ * repository catalog the row was **imported** from (decision 3), so *"a plant onboarded later
+ * receives the stock current at its import"* is answerable from the row itself. Collapsing them
+ * loses the distinction the moment an organization edits an imported template.
+ * `dashboard_templates_stock_stamp_check` holds that both are set or neither is.
+ *
+ * **`content` binds an asset-group role plus a point key, never an asset id** (decision 4), so
+ * one authored canvas instantiates against any asset group. Its shape is
+ * `sectionTemplateContentSchema` in `@bms/shared/contracts/dashboard-templates`, not a column
+ * here — the same division `dashboardWidgets.config` uses.
+ *
+ * Following this file's convention, `CHECK` constraints are not mirrored here (the migration
+ * owns them, and `tests/f3.36-dashboard-templates-schema.test.ts` pins the shape) while the
+ * `UNIQUE` indexes live in the migration because one is **partial**
+ * (`WHERE status = 'draft'`), which drizzle's `unique()` cannot express.
+ */
+export const dashboardTemplates = bmsSchema.table("dashboard_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // ADR 0043/0045: tenant-scoped in the creating migration, never retrofitted.
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id),
+  code: varchar("code", { length: 64 }).notNull(),
+  version: integer("version").notNull().default(1),
+  name: varchar("name", { length: 255 }).notNull(),
+  section: varchar("section", { length: 64 })
+    .notNull()
+    .references(() => dashboardSections.code),
+  description: text("description"),
+  // Declared once in `@bms/shared/contracts/template-lifecycle` and read by both this table's
+  // service and `assetTemplates`'; `tests/f3.36-template-lifecycle-single-source.test.ts` fails
+  // a second copy. The SQL `CHECK` in migration 0056 is a permanent, principled exception —
+  // SQL has no imports, exactly as `f3.1d` records for the grid bounds.
+  status: varchar("status", { length: 32 }).notNull().default("draft"),
+  content: jsonb("content").notNull().default({}),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  stockCode: varchar("stock_code", { length: 64 }),
+  stockVersion: integer("stock_version"),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 /**
  * A dashboard: identity, tenant, and at most one scope axis.
@@ -61,6 +174,19 @@ export const dashboards = bmsSchema.table(
     description: text("description"),
     locationId: uuid("location_id").references(() => locations.id),
     assetGroupId: uuid("asset_group_id").references(() => assetGroups.id),
+    // ADR 0049 decision 2 — the version stamp on the instance. Nullable, because a hand-built
+    // dashboard has no template. No `onDelete`, matching `assets.templateId`: a delete of a
+    // template row that live dashboards still reference should fail loudly. There is no second
+    // `templateVersion` column — the key points at the version *row*, whose identity is
+    // `(organizationId, code, version)`, and a second column would be a third description of
+    // one fact.
+    //
+    // Migration `0056` re-creates `tenant_isolation` on this table to check the new parent.
+    // That is not housekeeping: `0050`'s security review PROVED on the running stack that
+    // Postgres runs referential-integrity checks with row security off, so a foreign key never
+    // consults the parent's policy — a `templateId` with no policy leg would let a tenant stamp
+    // its dashboard with another organization's template id.
+    templateId: uuid("template_id").references(() => dashboardTemplates.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
