@@ -237,13 +237,38 @@ services:
     env_file:
       - .env
     environment:
-      # ADR 0045 decision 3: value change only. The ingest worker writes
-      # `telemetry.point_values` and reads `bms.rtus`,
-      # `bms.rtu_connection_configs`, `bms.protocol_catalog`, `bms.assets` and
-      # `bms.asset_points` — none of the five tables `E7.1a` puts `FORCE ROW
-      # LEVEL SECURITY` on, verified rather than assumed. `E7.1b` extends the
-      # policy set and revisits this.
-      DATABASE_URL: postgres://bms_owner:bms_owner_dev@postgres:5432/bms
+      # **Stopgap, and the comment it replaces was wrong.** The previous value
+      # was `bms_owner`, under a comment claiming none of the tables the ingest
+      # reads carry `FORCE ROW LEVEL SECURITY`, "verified rather than assumed",
+      # and that `E7.1b` would revisit it. `E7.1b` landed (`0047`) and put
+      # `tenant_isolation` + `FORCE` on `bms.rtus`, `bms.assets`,
+      # `bms.asset_points` and `bms.rtu_connection_configs` — all four tables
+      # `BINDING_QUERY` joins. Nobody revisited the line, and `E7.1b`'s backlog
+      # row never mentions the ingest at all.
+      #
+      # `bms_owner` is not `SUPERUSER` and does not hold `BYPASSRLS`, so `FORCE`
+      # binds it. The host sets no `app.current_organization` — it is a
+      # fleet-wide worker with no single tenant to set — so the policy compares
+      # against NULL and the binding query returns **zero rows**. `planEndpoints`
+      # then builds no endpoint, no supervisor starts, and the broker is never
+      # dialled: `endpoints=0 skipped=0` on the health page, silently, from
+      # 2026-08-27 until this line changed.
+      #
+      # `bms_fleet` holds `BYPASSRLS` (`0039:33`), which restores the read.
+      # **This is a narrowing, not a widening** — `bms_owner` owns both schemas
+      # and can `ALTER TABLE ... NO FORCE ROW LEVEL SECURITY`, which ADR 0045
+      # itself calls "far too wide" when refusing to grant it to the API pools.
+      #
+      # It is still the wrong role: `bms_fleet` is the API's cross-tenant pool,
+      # granted on 41 `bms` tables including `audit_log` and
+      # `user_organization_access`, so a later grant change for the API silently
+      # moves the ingest too. The ingest needs `SELECT` on four tables and
+      # `INSERT` on `telemetry.point_values` and nothing else — measured, not
+      # copied: the `bms.protocol_catalog` named in the old comment is never
+      # read, and `adapter/registry.ts:12` records that it was rejected. A
+      # dedicated `bms_ingest` role carrying exactly that grant set is owed, and
+      # needs an ADR 0045 amendment at the §10 gate.
+      DATABASE_URL: postgres://bms_fleet:bms_fleet_dev@postgres:5432/bms
       MQTT_HOST: phe.thinkiot.co.in
       MQTT_PORT: 8883
       # The pilot's only working credential path. `bms.rtu_connection_configs` is
