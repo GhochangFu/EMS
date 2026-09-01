@@ -8,7 +8,7 @@ import {
   metricCatalogKeySchema,
   widgetPointRoleSchema,
 } from "./dashboard-builder";
-import { assetRoleCodeSchema } from "./operations";
+import { assetRoleCodeSchema, dashboardSectionCodeSchema } from "./operations";
 import { templateLifecycleStatusSchema } from "./template-lifecycle";
 
 /**
@@ -50,34 +50,17 @@ import { templateLifecycleStatusSchema } from "./template-lifecycle";
 // ---------------------------------------------------------------------------
 
 /**
- * A code into `bms.dashboard_sections`.
+ * The section vocabulary lives in `./operations`, beside `assetRoleDtoSchema`
+ * and the four global vocabularies before it, and is re-exported here so a
+ * reader of this module finds it where they expect.
  *
- * **A bounded string and never a `z.enum`** — ADR 0049 Amendment 2 decision 5
- * makes the section vocabulary a lookup table, on §4.8's test as ADR 0032
- * rewrote it: a section's behaviour is "group these templates", which *is* the
- * code, so a section declared by an `INSERT` arrives fully functional. Sheet 02
- * says the same thing in product terms — *"adding a seventh is configuration,
- * not a release"*.
- *
- * The set is closed by the table and by `dashboard_templates_section_fkey`, not
- * by this file. The API boundary that turns an unknown code into a 400 is the
- * same one `assetRoleCodeSchema` uses. Do not paste the six seeded codes in
- * here because fetching them felt inconvenient — that is the revert
- * `tests/f3.37-asset-role-vocabulary.test.ts` was written to catch, one
- * vocabulary over.
+ * **It is not declared here on purpose.** It is served by
+ * `GET /api/v1/vocabularies` like every other global vocabulary, so
+ * `vocabulariesResponseSchema` needs it — and declaring it in this file would
+ * make `operations.ts` import this module while this module imports
+ * `operations.ts` for `assetRoleCodeSchema`. Do not "tidy" it back.
  */
-export const dashboardSectionCodeSchema = z.string().min(1).max(64);
-
-/** One row of `bms.dashboard_sections`. Matches `assetRoleDtoSchema`'s shape —
- * no `tone` and no `rank`, because a section drives no styling and carries no
- * urgency. */
-export const dashboardSectionDtoSchema = z.object({
-  code: dashboardSectionCodeSchema,
-  label: z.string(),
-  description: z.string().nullable(),
-  sortOrder: z.number(),
-  active: z.boolean(),
-});
+export { dashboardSectionCodeSchema, dashboardSectionDtoSchema } from "./operations";
 
 // ---------------------------------------------------------------------------
 // What a template widget binds

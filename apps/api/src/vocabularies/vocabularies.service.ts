@@ -1,5 +1,12 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { alarmSeverities, alarmSkills, assetDomains, assetRoles, ruleCategories } from "@bms/db";
+import {
+  alarmSeverities,
+  alarmSkills,
+  assetDomains,
+  assetRoles,
+  dashboardSections,
+  ruleCategories,
+} from "@bms/db";
 import { asc, eq } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
@@ -8,6 +15,7 @@ import type {
   AlarmSkillDto,
   AssetDomainDto,
   AssetRoleDto,
+  DashboardSectionDto,
   RuleCategoryDto,
   VocabulariesResponse,
 } from "@bms/shared";
@@ -15,9 +23,11 @@ import type {
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 
 /**
- * Five open vocabularies — rule concerns and plant domains (ADR 0031
+ * Six open vocabularies — rule concerns and plant domains (ADR 0031
  * Amendment 1), alarm severity (ADR 0032), alarm skill (ADR 0034), and the
- * asset role a group membership plays (ADR 0049 decision 5, `F3.37`).
+ * asset role a group membership plays (ADR 0049 decision 5, `F3.37`), and the
+ * dashboard section a template belongs to (ADR 0049 Amendment 2 decision 5,
+ * `F3.36`).
  *
  * **Why this service exists at all.** Both vocabularies used to be `z.enum`s, so
  * a bad value was rejected by the request schema with a clear 400 naming the
@@ -48,7 +58,7 @@ export class VocabulariesService {
    * stops being offered for new work while existing rows keep resolving.
    */
   async list(): Promise<VocabulariesResponse> {
-    const [categories, domains, severities, skills, roles] = await Promise.all([
+    const [categories, domains, severities, skills, roles, sections] = await Promise.all([
       this.db
         .select({
           code: ruleCategories.code,
@@ -114,6 +124,26 @@ export class VocabulariesService {
         .from(assetRoles)
         .where(eq(assetRoles.active, true))
         .orderBy(asc(assetRoles.sortOrder), asc(assetRoles.code)),
+      // ADR 0049 Amendment 2 decision 5 (`F3.36`): the sixth global vocabulary,
+      // ordered by sortOrder like assetDomains, alarmSkills and assetRoles — a
+      // section carries no urgency, so no rank column.
+      //
+      // Served HERE and not from the dashboard-template endpoint, because a
+      // section picker fed from somewhere else would be the one vocabulary a
+      // reader has to go looking for — and `F4.43`'s failure, a hardcoded list
+      // that falls behind and silently renders the wrong option, starts with
+      // exactly that inconvenience.
+      this.db
+        .select({
+          code: dashboardSections.code,
+          label: dashboardSections.label,
+          description: dashboardSections.description,
+          sortOrder: dashboardSections.sortOrder,
+          active: dashboardSections.active,
+        })
+        .from(dashboardSections)
+        .where(eq(dashboardSections.active, true))
+        .orderBy(asc(dashboardSections.sortOrder), asc(dashboardSections.code)),
     ]);
 
     return {
@@ -126,6 +156,7 @@ export class VocabulariesService {
       alarmSeverities: severities as AlarmSeverityDto[],
       alarmSkills: skills as AlarmSkillDto[],
       assetRoles: roles as AssetRoleDto[],
+      dashboardSections: sections as DashboardSectionDto[],
     };
   }
 
