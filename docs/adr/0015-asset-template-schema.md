@@ -9,6 +9,14 @@ Accepted (2026-08-04). Backlog item `F2.1` (Wave 0, P0, ⭐ enabler).
 Two clauses of §6/§7 were unbuildable as written. §1–§5 (the schema, which
 shipped in `F2.1`) are unchanged.
 
+> ⚠️ **Amended in part again on 2026-09-01 by
+> [ADR 0051 Amendment 2](0051-global-template-vocabulary.md#amendment-2--two-clauses-corrected-against-what-shipped-and-the-records-0057-falsified-2026-09-01).**
+> `bms.point_keys` is fleet-wide since migration `0057`, and
+> `bms.asset_points.point_key` now has a foreign key to `point_keys(code)`.
+> Three passages are affected — §"What already exists" item 1, §3 reason 2, and
+> §7's opening comparison — and each carries a notice in place. **§3 reason 2 is
+> the one to read**: its premise is gone, so its conclusion no longer follows.
+
 All four open questions raised during drafting are resolved — see
 **Resolved decisions** at the end. No open questions remain; this ADR is
 buildable as written.
@@ -47,6 +55,15 @@ the existing code constrain any template design and are load-bearing below:
    `bms.point_keys` with matching `organization_id`, matching `code`, **and
    `active = true`**. It also returns the catalog `unit` as the fallback when the
    caller does not supply one. This is ADR 0010 §5 in code.
+
+   > ⚠️ **Both halves of this are now false.** Migration `0057` adds
+   > `asset_points_point_key_point_keys_code_fk`, so `point_key` **is** a foreign
+   > key, and `resolveCatalogPointKey` (now
+   > `apps/api/src/admin/asset-points/resolve-catalog-point-key.ts`) matches on
+   > `code` and `active = true` alone — the catalog is fleet-wide. It still reads
+   > the asset's organization, because the caller needs it and an asset with no
+   > organization still cannot map a point, and it still returns the catalog
+   > `unit` as the fallback. See the Status notice.
 2. **`bms.asset_points.source_data_key` is `NOT NULL`.** There is no way to
    create an asset point without a source key.
 3. **`bms.assets.code` is globally unique**, not unique per location
@@ -202,6 +219,15 @@ Three reasons:
    so the FK is technically possible — but only by carrying the org on the child
    row as well as on `asset_templates`, creating a second source of truth that
    can drift. Rejected on those grounds, not on FK dogma.
+
+   > ⚠️ **The premise is gone, so this reasoning is void.** Since migration
+   > `0057`, `bms.point_keys` is unique on `code` alone, and a plain
+   > single-column foreign key needs no denormalized `organization_id` at all —
+   > which is exactly the constraint `0057` added to `bms.asset_points`.
+   > **Whether `template_points.point_key` should gain the same foreign key is
+   > an open question and a scope decision** (AGENTS.md §10), not a conclusion
+   > [ADR 0051 Amendment 2](0051-global-template-vocabulary.md#amendment-2--two-clauses-corrected-against-what-shipped-and-the-records-0057-falsified-2026-09-01)
+   > draws. Reasons 1 and 3 are unaffected and still stand on their own.
 3. **Domain packs must be authorable as data.** `E5.1` and `F3.22` need a
    template to be expressible as a JSON/YAML pack that imports into any org.
    Code references survive that round trip; uuids do not.
@@ -333,6 +359,11 @@ Net: 40 asset rows + 400 asset-point rows from one call.
 
 Templates are **org-scoped**, exactly like `bms.point_keys`. `AccessControlService`
 reaches them with the predicates it already has:
+
+> ⚠️ **The comparison no longer holds.** Templates are still org-scoped;
+> `bms.point_keys` is fleet-wide since migration `0057`. The predicates in the
+> table below are unaffected — `canManagePointKey` is the one that moved, and it
+> is `F3.39` that narrowed it to the global `admin` role. See the Status notice.
 
 | Operation | Predicate |
 |---|---|
