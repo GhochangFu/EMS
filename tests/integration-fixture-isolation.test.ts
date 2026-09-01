@@ -168,6 +168,30 @@ describe("integration fixture isolation", () => {
  * module, or a `LIKE` argument built at run time reads as non-unique and is
  * flagged — fail-closed, which is the right direction, but it means the fix for
  * a flagged file is sometimes to inline rather than to change behaviour.
+ *
+ * **AND THE SHAPE IT CANNOT SEE AT ALL: `WHERE code = ANY($1)`.** Every pattern
+ * below keys on `WHERE code LIKE`, so the same defect written with `= ANY` and
+ * an explicit list is invisible to the whole file. `F3.42`'s post-merge sweep
+ * found one — `asset-points.service.rls.integration.test.ts` deleted two shared
+ * catalog codes it had not necessarily inserted, so a concurrent instance's
+ * `afterAll` raised `23503` on rows the other instance still referenced. That
+ * one is fixed (it uses `registerFixturePointKeys`, which removes only what it
+ * inserted), but the rule still cannot see the shape, and three files carry it:
+ *
+ * - `apps/api/src/admin/dashboard-templates/dashboard-templates-instantiate.integration.test.ts`
+ *   sweeps the literal codes `kW` and `kVA`.
+ * - `apps/api/src/telemetry/rollup-conversion.integration.spec.ts` sweeps the
+ *   constants `PLAIN_CODE` and `SOLAR_CODE`.
+ * - `apps/api/src/admin/asset-groups/asset-groups.service.integration.test.ts`
+ *   sweeps `createdRoleCodes` — and this one is SAFE, which is the reason the
+ *   rule was not simply extended here.
+ *
+ * That third file is the whole difficulty. "Deletes only what this run
+ * inserted" is the correct exemption and it is not a property a regex can read:
+ * it needs the array to be traced from its declaration through every `push` to
+ * the delete. Extending the pattern without that test would flag the one
+ * correct file and pass the two defective ones, which is worse than the gap.
+ * Its own row is owed; until then this paragraph is the record.
  */
 describe("committed fixture prefixes are per-run", () => {
   /**

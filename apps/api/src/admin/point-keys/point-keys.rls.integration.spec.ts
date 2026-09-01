@@ -195,9 +195,26 @@ export async function assertCreateAuditRowIsOrgLess(
  * code is visible with no tenant context at all, and — the half that would
  * otherwise go unchecked — a code seeded for one organization is now visible
  * from every organization's context.
+ *
+ * **TWO POOLS, AND THE SECOND ONE IS THE WHOLE GATE.** The per-organization
+ * loop ran on `ownerPool` until the `F3.42` post-merge sweep, and it proved
+ * nothing at all. `requireIntegrationDb` defaults to `connection: "fleet"`, so
+ * that pool is `bms_fleet`, whose `rolbypassrls` is `t` — measured, along with
+ * `bms.point_keys.relrowsecurity = f` and zero policies. A reader that bypasses
+ * row security cannot be filtered by a policy whether one exists or not, so
+ * `set_config('app.current_organization', …)` could not change the count and
+ * the loop was invariant under the exact mutation it was written to catch.
+ *
+ * `tenantPool` is `bms_tenant`, which is NOT `BYPASSRLS`. Restore `0057`'s
+ * dropped `tenant_isolation` policy and this loop goes red on the first
+ * organization, which is what "the boundary is gone" has to mean to be a test.
+ * The counts and the duplicate check stay on `ownerPool` on purpose — they are
+ * the ground truth the tenant reads are compared against, and a bypassing
+ * reader is the right thing to establish ground truth with.
  */
 export async function assertEveryOrganizationSeesEveryCode(
   ownerPool: pg.Pool,
+  tenantPool: pg.Pool,
 ): Promise<void> {
   const { rows: all } = await ownerPool.query<{ n: string }>(
     "SELECT COUNT(*)::text AS n FROM bms.point_keys",
@@ -214,7 +231,7 @@ export async function assertEveryOrganizationSeesEveryCode(
   assert(orgs.length >= 2, "F3.39: need two organizations to prove the merge.");
 
   for (const org of orgs) {
-    const client = await ownerPool.connect();
+    const client = await tenantPool.connect();
     try {
       await client.query("BEGIN");
       await client.query("SELECT set_config('app.current_organization', $1, true)", [org.id]);
@@ -223,8 +240,9 @@ export async function assertEveryOrganizationSeesEveryCode(
       );
       expect(
         Number(rows[0]?.n ?? "0"),
-        `organization ${org.id} sees a partial catalog. After 0057 the table has no ` +
-          "policy, so a tenant context must make no difference to what it returns.",
+        `organization ${org.id} sees a partial catalog on the bms_tenant connection. ` +
+          "After 0057 the table has no policy, so a tenant context must make no " +
+          "difference to what a NOBYPASSRLS reader returns.",
       ).toBe(total);
       await client.query("ROLLBACK");
     } finally {
@@ -287,7 +305,25 @@ export async function assertAssetPointsRejectsAnUnlistedKey(
       "bms.asset_points accepted a point_key that is in no vocabulary. 0057's foreign " +
         "key is missing, or it was added before the orphans were admitted and never " +
         "validated.",
-    ).rejects.toThrow(/foreign key|violates/i);
+      // SQLSTATE and the constraint name, not the message text. This read
+      // `/foreign key|violates/i` until the `F3.42` post-merge sweep, and that
+      // regex is satisfied by a CHECK violation, a NOT NULL violation and a
+      // row-level-security violation as well — every one of which this exact
+      // statement can raise, because `bms.asset_points` is FORCE-policied and
+      // carries `asset_points_source_ref_check`. So the assertion passed on the
+      // insert failing for ANY reason, while its own message names one.
+      //
+      // `23503` is `foreign_key_violation` and cannot be raised by the other
+      // three. `constraint` pins WHICH key: `asset_points` also references
+      // `assets` and `rtus`, and a fixture drift that broke one of those would
+      // otherwise read as the vocabulary holding.
+      //
+      // `.rejects.toThrow` cannot do this — it matches the message, and pg puts
+      // the offending value in `detail`, not `message`.
+    ).rejects.toMatchObject({
+      code: "23503",
+      constraint: "asset_points_point_key_point_keys_code_fk",
+    });
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
     client.release();

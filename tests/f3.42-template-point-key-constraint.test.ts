@@ -54,6 +54,36 @@ const sqlOnly = (source: string): string =>
     .filter((line) => !line.trim().startsWith("--"))
     .join("\n");
 
+/**
+ * The same rule as `sqlOnly`, for TypeScript — and this file needed it for the
+ * migration and not for the service, which is exactly the gap the `F3.42`
+ * post-merge sweep found. The scan below looked for the bare name
+ * `assertPointKeysActive` in the RAW service source, and
+ * `asset-templates.service.ts:677` names the method in a doc comment. The gate
+ * could have been deleted from all three of its call sites with this test
+ * still green, on the strength of a sentence describing it.
+ */
+const tsOnly = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+
+/**
+ * The body of one member of `AssetTemplatesAdminService`, from its signature to
+ * the next member declared at the same indent.
+ *
+ * Crude, and sufficient for the one question counting cannot answer: is the
+ * call inside THIS method. Three calls exist; a count stays green if the
+ * `publish` gate is deleted and a second one appears in `create`.
+ */
+const methodBody = (service: string, signature: string): string => {
+  const start = service.indexOf(signature);
+  if (start === -1) {
+    return "";
+  }
+  const rest = service.slice(start + signature.length);
+  const end = rest.search(/\n {2}(?:private|protected|public|async)\b/);
+  return end === -1 ? rest : rest.slice(0, end);
+};
+
 /** The index of the first match, or `-1`. Ordering assertions read these. */
 const at = (haystack: string, needle: RegExp): number => haystack.search(needle);
 
@@ -170,9 +200,38 @@ describe("F3.42 template_points is held to the point-key catalog (ADR 0051 Amend
      * and the tempting cleanup — "the database enforces it now" — deletes the
      * half a constraint cannot express.
      */
-    it("keeps assertPointKeysActive, which still filters on active", () => {
-      const service = read(TEMPLATES_SERVICE_REL);
-      expect(service, "assertPointKeysActive was removed").toContain("assertPointKeysActive");
+    it("keeps assertPointKeysActive at all three call sites, still filtering on active", () => {
+      const service = tsOnly(read(TEMPLATES_SERVICE_REL));
+      expect(service, "assertPointKeysActive was removed").toContain(
+        "private async assertPointKeysActive",
+      );
+
+      /**
+       * **Each call site named, because deleting one is silent.** The method
+       * stays referenced by the other two, so `noUnusedLocals` does not fire,
+       * and the only behavioural test of the gate
+       * (`asset-templates.lifecycle.integration.spec.ts`,
+       * `assertPointKeyCatalogIsEnforced`) exercises `create` with an ABSENT
+       * code — a case `0058` now refuses at the database anyway.
+       *
+       * `publish` is the site that matters most and the one no constraint can
+       * replace. Author a draft while a code is active, deactivate the code,
+       * publish: the catalog row still exists, so the foreign key is satisfied,
+       * and `active = true` is the only thing that refuses it.
+       */
+      for (const signature of [
+        "async create(",
+        "async update(",
+        "async publish(jwt: JwtPayload, id: string)",
+      ]) {
+        expect(
+          methodBody(service, signature),
+          `${signature} no longer calls assertPointKeysActive. Nothing else goes red when ` +
+            "one of the three is deleted — not the compiler, not the integration suite — " +
+            "so this assertion is the whole gate.",
+        ).toContain("await this.assertPointKeysActive(");
+      }
+
       expect(
         service,
         "the gate no longer filters on active = true. A foreign key holds existence against " +
@@ -181,7 +240,10 @@ describe("F3.42 template_points is held to the point-key catalog (ADR 0051 Amend
     });
 
     it("stops calling the fleet-wide catalog an organization's", () => {
-      const service = read(TEMPLATES_SERVICE_REL);
+      // Stripped on both sides. The negative must not be satisfied by deleting a
+      // comment that quotes the old wording, and the positive must not be
+      // satisfied by a comment that quotes the new one.
+      const service = tsOnly(read(TEMPLATES_SERVICE_REL));
       expect(
         service,
         "the thrown message still says \"this organization's\". There has been no organization " +

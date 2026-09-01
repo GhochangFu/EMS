@@ -8,6 +8,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { withTenant } from "../../database/tenant-context";
+import { registerFixturePointKeys } from "../../testing/integration-fixtures";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
 import { AssetPointCalcOverrideService } from "./asset-point-calc-override.service";
@@ -64,7 +65,20 @@ const TEMPLATED_ASSET_CODE = `${ASSET_PREFIX}TAS`;
 // one too.** `0057` gave `asset_points.point_key` a foreign key, which
 // `setOverride`'s eager row for `DERIVED_KEY` needs; `0058` gives
 // `template_points.point_key` the same one, and BOTH keys go into that table.
-// So both must exist in the catalog, and the `afterAll` sweep must remove both.
+//
+// **THEY ARE SHARED, SO THEY GO THROUGH `registerFixturePointKeys` AND NOT
+// THROUGH THIS SUITE'S OWN INSERT.** Being fixed strings rather than per-run
+// tokens is what makes them safe to name in `template_points` — and also what
+// makes them a row two concurrent instances of this file both want. This suite
+// used to insert them with `onConflictDoNothing` and then delete them
+// unconditionally in `afterAll`, which is not symmetric: instance B inserts
+// nothing because A got there first, and then A's sweep deletes rows B's
+// `template_points` still reference. That raises `23503` out of `afterAll`,
+// before the pool teardown below it, so the run loses four connections as well
+// as the suite. `registerFixturePointKeys` removes only what it actually
+// inserted, which is the whole reason it exists — six other suites already use
+// it and this one hand-rolled the same job. `CATALOG_CODE` needs none of this;
+// it carries a per-run token.
 const MEASURED_KEY = "E71B_AP_M";
 const DERIVED_KEY = "E71B_AP_D";
 
@@ -78,6 +92,8 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
   let tenantPool: pg.Pool;
   let fleetPool: pg.Pool;
   let ctx: RlsFixtures;
+  /** Set by `registerFixturePointKeys`; removes only the codes it inserted. */
+  let removeSharedPointKeys: (() => Promise<void>) | undefined;
 
   const jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
 
@@ -136,6 +152,17 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
     const fleetDb = createDb(fleetPool);
     const authDb = createDb(authPool);
 
+    // The two SHARED codes, before the transaction rather than inside it, and
+    // on the owner pool. See their constants for why they cannot be swept
+    // unconditionally. This has to precede the `template_points` insert below
+    // that names them — `0058`'s foreign key is checked per row, so a
+    // registration that merely looks complete but runs late fails exactly like
+    // a missing one.
+    removeSharedPointKeys = await registerFixturePointKeys(ownerPool, [
+      MEASURED_KEY,
+      DERIVED_KEY,
+    ]);
+
     // Seed the parents inside one tenant GUC. `asset_templates` and `point_keys`
     // are policied (FORCE); the GUC = org makes their WITH CHECK pass. `assets`
     // and `template_points` are not policied until 0047 and ignore the GUC.
@@ -146,39 +173,20 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
       //
       // `F3.39`: no `organizationId` — `bms.point_keys` is fleet-wide since
       // migration `0057`. `CATALOG_CODE` stays unique per run, so a catalog row
-      // shared across organizations changes nothing here.
+      // shared across organizations changes nothing here — and it is the only
+      // code this block still writes, because `MEASURED_KEY` and `DERIVED_KEY`
+      // are shared and went through `registerFixturePointKeys` above.
       //
-      // DERIVED_KEY and MEASURED_KEY join it, and that is not tidiness. `0057`
-      // makes `asset_points.point_key` a foreign key, and the second assertion
-      // in this suite has `setOverride` eagerly create an asset_points row for
-      // DERIVED_KEY. `F3.42`'s `0058` makes `template_points.point_key` a
-      // foreign key too, and the template below declares BOTH keys — which is
-      // why this block moved above it rather than staying at the end.
-      //
-      // `onConflictDoNothing`: these two codes carry no per-run token, so a run
-      // that crashed before `afterAll` would otherwise leave a row that makes
-      // every later run fail on the unique index `0057` added.
-      await tx
-        .insert(pointKeys)
-        .values([
-          {
-            code: CATALOG_CODE,
-            name: "E7.1b AP Catalog Key",
-            unit: "kW",
-            active: true,
-          },
-          {
-            code: DERIVED_KEY,
-            name: "E7.1b AP Derived Key",
-            active: true,
-          },
-          {
-            code: MEASURED_KEY,
-            name: "E7.1b AP Measured Key",
-            active: true,
-          },
-        ])
-        .onConflictDoNothing();
+      // No `onConflictDoNothing`, because `CATALOG_CODE` carries a per-run
+      // token: a conflict here would be a real defect and must be loud. The two
+      // codes that DID need conflict handling are the shared ones, and they are
+      // registered above by the helper that also owns their removal.
+      await tx.insert(pointKeys).values({
+        code: CATALOG_CODE,
+        name: "E7.1b AP Catalog Key",
+        unit: "kW",
+        active: true,
+      });
 
       const [tpl] = await tx
         .insert(assetTemplates)
@@ -271,37 +279,46 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
   });
 
   afterAll(async () => {
-    // children first, on the BYPASSRLS fleet connection. audit_log has no FK on
-    // entity_id, so it is cleared first by joining back to this suite's assets.
-    if (ownerPool) {
-      await ownerPool.query(
-        `DELETE FROM bms.audit_log WHERE entity_id IN
-           (SELECT ap.id FROM bms.asset_points ap
-              JOIN bms.assets a ON a.id = ap.asset_id
-             WHERE a.code LIKE $1)`,
-        [`${ASSET_PREFIX}%`],
+    // The whole sweep sits in a `try`, and the pools close in the `finally`.
+    // Every statement below can raise — a foreign key this suite does not own,
+    // a lost connection, a database that went away — and without the bracket a
+    // single throw leaks all four pools as well as failing the run. That turns
+    // one legible cleanup error into a hung worker.
+    try {
+      // children first, on the BYPASSRLS fleet connection. audit_log has no FK
+      // on entity_id, so it is cleared first by joining back to this suite's
+      // assets.
+      if (ownerPool) {
+        await ownerPool.query(
+          `DELETE FROM bms.audit_log WHERE entity_id IN
+             (SELECT ap.id FROM bms.asset_points ap
+                JOIN bms.assets a ON a.id = ap.asset_id
+               WHERE a.code LIKE $1)`,
+          [`${ASSET_PREFIX}%`],
+        );
+        await ownerPool.query(
+          `DELETE FROM bms.asset_points
+            WHERE asset_id IN (SELECT id FROM bms.assets WHERE code LIKE $1)`,
+          [`${ASSET_PREFIX}%`],
+        );
+        await ownerPool.query(`DELETE FROM bms.assets WHERE code LIKE $1`, [`${ASSET_PREFIX}%`]);
+        // template_points cascade on the FK when the template goes.
+        await ownerPool.query(`DELETE FROM bms.asset_templates WHERE code LIKE $1`, [
+          `${ASSET_PREFIX}%`,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.point_keys WHERE code LIKE $1`, [
+          `${CATALOG_CODE}%`,
+        ]);
+        // The shared codes last, and only if THIS run inserted them. After the
+        // templates above, because `0058` makes `template_points.point_key`
+        // reference them, and a concurrent instance's rows may still do so.
+        await removeSharedPointKeys?.();
+      }
+    } finally {
+      await Promise.all(
+        [ownerPool, authPool, tenantPool, fleetPool].filter(Boolean).map((p) => p.end()),
       );
-      await ownerPool.query(
-        `DELETE FROM bms.asset_points
-          WHERE asset_id IN (SELECT id FROM bms.assets WHERE code LIKE $1)`,
-        [`${ASSET_PREFIX}%`],
-      );
-      await ownerPool.query(`DELETE FROM bms.assets WHERE code LIKE $1`, [`${ASSET_PREFIX}%`]);
-      // template_points cascade on the FK when the template goes.
-      await ownerPool.query(`DELETE FROM bms.asset_templates WHERE code LIKE $1`, [
-        `${ASSET_PREFIX}%`,
-      ]);
-      await ownerPool.query(`DELETE FROM bms.point_keys WHERE code LIKE $1`, [`${CATALOG_CODE}%`]);
-      // `F3.39`/`F3.42`: both fixture keys are catalog rows now — see their
-      // constants. After the templates above, because `0058` makes
-      // `template_points.point_key` reference them.
-      await ownerPool.query(`DELETE FROM bms.point_keys WHERE code = ANY($1)`, [
-        [DERIVED_KEY, MEASURED_KEY],
-      ]);
     }
-    await Promise.all(
-      [ownerPool, authPool, tenantPool, fleetPool].filter(Boolean).map((p) => p.end()),
-    );
   });
 
   it("maps a catalog point key onto an asset, stamping org, and survives the lifecycle", async () => {
