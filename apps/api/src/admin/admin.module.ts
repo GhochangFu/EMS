@@ -10,6 +10,10 @@ import { AssetTemplateInstantiationService } from "./asset-templates/asset-templ
 import { AssetTemplateMigrationService } from "./asset-templates/asset-templates-migrate.service";
 import { AssetTemplatesAdminController } from "./asset-templates/asset-templates.controller";
 import { AssetTemplatesAdminService } from "./asset-templates/asset-templates.service";
+import { DashboardTemplatesInstantiateService } from "./dashboard-templates/dashboard-templates-instantiate.service";
+import { DashboardTemplatesStockService } from "./dashboard-templates/dashboard-templates-stock.service";
+import { DashboardTemplatesController } from "./dashboard-templates/dashboard-templates.controller";
+import { DashboardTemplatesService } from "./dashboard-templates/dashboard-templates.service";
 import {
   AssetGroupMembersAdminController,
   AssetGroupsAdminController,
@@ -54,6 +58,7 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     AssetPointCalcOverrideController,
     PointKeysAdminController,
     AssetTemplatesAdminController,
+    DashboardTemplatesController,
     AuditAdminController,
     OnboardingController,
     ManualReadingsController,
@@ -80,6 +85,9 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     AssetTemplatesAdminService,
     AssetTemplateInstantiationService,
     AssetTemplateMigrationService,
+    DashboardTemplatesService,
+    DashboardTemplatesStockService,
+    DashboardTemplatesInstantiateService,
     AuditAdminService,
     TelemetryWriteService,
     TelemetryImportService,
