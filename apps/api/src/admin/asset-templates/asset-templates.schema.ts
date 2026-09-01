@@ -6,6 +6,10 @@ import {
   MAX_CALC_INTERVAL_SECONDS,
   MAX_INPUT_AGE_SECONDS_BOUND,
   MIN_CALC_INTERVAL_SECONDS,
+  // ADR 0049 decision 2 — one declaration of the template lifecycle, read by
+  // both template tables. Never a second z.enum here; §4.8 re-export rather
+  // than restate, held by tests/f3.36-template-lifecycle-single-source.test.ts.
+  templateLifecycleStatusSchema,
   validateFormula,
 } from "@bms/shared";
 import { z } from "zod";
@@ -339,4 +343,4 @@ export type InstantiationTargetInput = InstantiateAssetsBody["target"];
  * about the document. Their real problem is that they duplicate
  * `admin.schema.ts`'s `idParamSchema`, which is a different item's to fix.
  */
-export const templateStatusQuerySchema = z.enum(["draft", "published", "archived"]);
+export const templateStatusQuerySchema = templateLifecycleStatusSchema;

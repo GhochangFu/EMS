@@ -10,6 +10,7 @@
 import { z } from "zod";
 
 import { CALC_DIALECT, CALC_TRIGGERS } from "../calc-dsl";
+import { templateLifecycleStatusSchema } from "./template-lifecycle";
 import { assetRoleCodeSchema } from "./operations";
 import { pointSourceKindSchema } from "./telemetry-entry";
 
@@ -195,8 +196,16 @@ export const auditLogListResponseSchema = z.object({
 // Asset templates (ADR 0015 / ADR 0019)
 // ---------------------------------------------------------------------------
 
-/** Lifecycle of an asset template version (ADR 0015). */
-export const assetTemplateStatusSchema = z.enum(["draft", "published", "archived"]);
+/**
+ * Lifecycle of an asset template version (ADR 0015).
+ *
+ * **Re-exported, never restated** — ADR 0049 decision 2 declares the vocabulary
+ * once in `./template-lifecycle`, because `bms.dashboard_templates` runs the
+ * same lifecycle and a second `z.enum` here would drift the day either gains a
+ * fourth state. §4.8: re-export rather than restate.
+ * `tests/f3.36-template-lifecycle-single-source.test.ts` holds it.
+ */
+export const assetTemplateStatusSchema = templateLifecycleStatusSchema;
 
 /**
  * Whether instantiation emits an `asset_points` row for this point.

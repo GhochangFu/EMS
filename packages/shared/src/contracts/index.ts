@@ -32,4 +32,5 @@ export * from "./onboarding";
 export * from "./operations";
 export * from "./telemetry-entry";
 export * from "./telemetry-import";
+export * from "./template-lifecycle";
 export type { Assignable, Measured, Strict } from "./equality";

@@ -10,6 +10,17 @@ import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 
 import { assetTemplates, organizations, pointKeys, templatePoints, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+// ADR 0049 decision 2 — the template lifecycle is declared once, in
+// `@bms/shared/contracts/template-lifecycle`, and both template tables read it.
+// The refusal messages moved there unchanged, so the two services cannot drift
+// into two different sentences for the same refusal.
+// `tests/f3.36-template-lifecycle-single-source.test.ts` fails a second copy.
+import {
+  archiveRefusedMessage,
+  canMutate,
+  canTransition,
+  draftRequiredMessage,
+} from "@bms/shared";
 import type {
   AdminAssetTemplateDto,
   AdminAssetTemplateSummaryDto,
@@ -18,6 +29,8 @@ import type {
   CalcDialect,
   CalcTrigger,
   JwtPayload,
+  TemplateDraftRequiredVerb,
+  TemplateLifecycleStatus,
   TemplatePointKind,
 } from "@bms/shared";
 
@@ -311,7 +324,7 @@ export class AssetTemplatesAdminService {
   async publish(jwt: JwtPayload, id: string): Promise<AdminAssetTemplateDto> {
     const { template } = await this.fetchRow(id);
     await this.assertCanAuthor(jwt, template.organizationId);
-    this.assertDraft(template, "published");
+    this.assertTransition(template, "published");
 
     const points = await this.loadPoints(id);
     if (points.length === 0) {
@@ -367,11 +380,7 @@ export class AssetTemplatesAdminService {
   async archive(jwt: JwtPayload, id: string): Promise<AdminAssetTemplateDto> {
     const { template } = await this.fetchRow(id);
     await this.assertCanAuthor(jwt, template.organizationId);
-    if (template.status !== "published") {
-      throw new ConflictException(
-        `Only a published template can be archived; this one is ${template.status}`,
-      );
-    }
+    this.assertTransition(template, "archived");
 
     const now = new Date();
     await withTenant(this.tenantDb, template.organizationId, async (tx) => {
@@ -532,13 +541,34 @@ export class AssetTemplatesAdminService {
     }
   }
 
-  private assertDraft(template: TemplateRow, verb: string): void {
-    if (template.status !== "draft") {
+  /**
+   * Only a draft may be edited or deleted — a lifecycle rule, not a transition,
+   * because editing a draft leaves it a draft. `canMutate` and the message both
+   * come from the one declaration (ADR 0049 decision 2); a hand-rolled
+   * `status !== "draft"` here would satisfy the letter of that decision and
+   * none of it.
+   */
+  private assertDraft(template: TemplateRow, verb: TemplateDraftRequiredVerb): void {
+    if (!canMutate(template.status as TemplateLifecycleStatus)) {
       throw new ConflictException(
-        `A ${template.status} template cannot be ${verb}. Create a new draft version instead — ` +
-          "published versions are immutable so that assets built from them never change.",
+        draftRequiredMessage(template.status as TemplateLifecycleStatus, verb),
       );
     }
+  }
+
+  /**
+   * A lifecycle transition, checked against the one declaration.
+   *
+   * The two refusal strings are asserted on byte for byte by
+   * `asset-templates.lifecycle.integration.spec.ts`, which is why they live in
+   * `template-lifecycle.ts` rather than being rebuilt here.
+   */
+  private assertTransition(template: TemplateRow, to: TemplateLifecycleStatus): void {
+    const from = template.status as TemplateLifecycleStatus;
+    if (canTransition(from, to)) return;
+    throw new ConflictException(
+      to === "archived" ? archiveRefusedMessage(from) : draftRequiredMessage(from, "published"),
+    );
   }
 
   /**
