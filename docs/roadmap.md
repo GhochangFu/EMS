@@ -2677,6 +2677,61 @@ widget spec is owed: `sectionTemplateContentSchema` is both the request shape an
 the read contract for a `jsonb` column, so it cannot be `.strict()` without
 making one stored extra key throw on every read.
 
+### The global point-key vocabulary (`F3.38` · `F3.39` · `F3.42`, ADR 0051 + Amendments 1–4) — done
+
+`F3.38` closed 2026-09-01 (PR #254), `F3.39` PR #258, `F3.42` PR #261. One ADR,
+three rows, and the thing they settle is what a stock dashboard template is
+allowed to name: **what the platform guarantees globally**, not what one
+organization's catalog happens to hold.
+
+**`F3.38` is why the ADR exists.** `F3.36` shipped a stock catalog whose eight
+`pointKey` values matched no vocabulary any organization held, so it could never
+resolve — for every organization, from the day it landed. The catalog was
+authored against the mock rather than against the seed, and nothing compared the
+two. The gate is now static: `tests/f3.38-stock-catalog-vocabulary.test.ts`
+reads the shipped catalog and the shipped vocabulary and refuses a name that is
+in one and not the other.
+
+**`F3.39` removed the axis that made the defect possible.** `bms.point_keys` was
+unique on `(organization_id, code)`, so the same code could mean different
+things in two organizations — and PHEWB's catalog was a strict subset of
+ESKOM's, which is a split that described nothing: a code names a *measurement*,
+not an estate. Migration `0057` dedupes, drops `organization_id`, makes `code`
+unique fleet-wide, and gives `asset_points.point_key` a foreign key into it. The
+order is load-bearing and was the first draft's omission — the unique index
+aborts on 15 duplicate pairs unless the dedupe runs first, on a database that has
+already lost the column it would need to pick a survivor by.
+
+**Sixteen orphans were admitted rather than refused**, because an `asset_points`
+orphan is a measurement a device actually carries and refusing it would refuse a
+fact. `F3.42`'s `0058` gives `template_points.point_key` the same foreign key and
+deliberately does **not** admit its orphans: a template point key is *authored
+text*, and `F3.38`'s whole failure was eight camelCase names typed into a
+catalog. Auto-admitting one would make a typo permanent fleet-wide vocabulary,
+which is the defect this ADR exists to close arriving through the other door.
+The constraint only became askable because `0057` removed ADR 0015 §3 reason 2's
+premise; the old rejection was sound and is simply no longer implied.
+
+**Four amendments, and two of them are corrections rather than extensions.**
+Amendment 1 lets the onboarding commit path *create* a code at
+`organization_admin` — extend, never edit — and refuses any draft that names an
+existing code while declaring a `unit` or `domain` the catalog does not hold. An
+unset catalog field is a conflict, not a gap to fill: every organization shares
+the row. Amendment 2 corrects decisions 2 and 3 against what actually shipped
+(`code` did not become the primary key; the admitted orphans carry a NULL unit)
+and adds inline notices to ADR 0010, 0015 and 0043 on every sentence `0057`
+falsified. Amendment 3 is `F3.42`. Amendment 4 closes the half nothing enforced:
+the catalog carries no policy, so its grants were its only containment, and
+migration `0059` revokes `UPDATE` and `DELETE` from `bms_tenant` — `INSERT` and
+`SELECT` survive, because one is Amendment 1's authorised path and the other is
+how every tenant reads the vocabulary at all.
+
+**What stays owed.** The six other platform-vocabulary tables still grant
+`bms_tenant` all four verbs. That is deliberate while none of them has a
+tenant-pool writer, and adding one is the trigger for a matching revoke —
+recorded in Amendment 4's Consequences and in `AGENTS.md` §4.4, because nothing
+enforces it automatically.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
