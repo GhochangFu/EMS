@@ -365,8 +365,44 @@ describe.skipIf(!connectionString)(
         );
         await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1::uuid[])`, [assetIds]);
       }
-      for (const id of [createdGroupId, createdPhewbGroupId]) {
-        if (id) await ownerPool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [id]);
+      /**
+       * **Delete every dashboard pointing at a group this suite created, not
+       * only the ones this suite created.**
+       *
+       * The group delete failed on CI with
+       * `dashboards_asset_group_id_fkey … is still referenced from table
+       * "dashboards"`, after every test had passed. The cause is a cross-suite
+       * race `F3.37`'s closure already recorded: on a CLEAN database, another
+       * suite adopts "the oldest asset group in the organization", and on CI
+       * this fixture's group was the only one there. That suite's dashboard is
+       * not in `dashboardIds`, so a delete keyed on this suite's own ids leaves
+       * it behind and the parent delete then fails.
+       *
+       * Still narrow — scoped to the two group ids this suite created, never a
+       * blanket delete. `F3.37`'s review found an `afterAll` that erased every
+       * organization's real history on a developer database, and the fix for a
+       * cleanup that misses rows is never to widen it past what the suite owns.
+       */
+      const createdGroupIds = [createdGroupId, createdPhewbGroupId].filter(
+        (id): id is string => Boolean(id),
+      );
+      if (createdGroupIds.length > 0) {
+        await ownerPool.query(
+          `DELETE FROM bms.audit_log WHERE entity_id IN (
+             SELECT id FROM bms.dashboards WHERE asset_group_id = ANY($1::uuid[]))`,
+          [createdGroupIds],
+        );
+        await ownerPool.query(
+          `DELETE FROM bms.dashboards WHERE asset_group_id = ANY($1::uuid[])`,
+          [createdGroupIds],
+        );
+        await ownerPool.query(
+          `DELETE FROM bms.asset_group_members WHERE asset_group_id = ANY($1::uuid[])`,
+          [createdGroupIds],
+        );
+        await ownerPool.query(`DELETE FROM bms.asset_groups WHERE id = ANY($1::uuid[])`, [
+          createdGroupIds,
+        ]);
       }
       await Promise.all([ownerPool, tenantPool, authPool].filter(Boolean).map((p) => p.end()));
     }, 60_000);
