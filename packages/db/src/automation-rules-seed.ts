@@ -2,7 +2,9 @@ import { and, eq } from "drizzle-orm";
 
 import type { BmsDb } from "./client";
 import type { SeededAsset } from "./eskom-assets-seed";
-import { assets, automationRules, locations, organizations } from "./schema/bms-schema";
+// The barrel, not `./schema/bms-schema`: `automationRules` moved to
+// `schema/alarms-schema.ts` when the core file was split at the §4.5 cap.
+import { assets, automationRules, locations, organizations } from "./schema";
 
 /**
  * Rule Engine seed rows, split out of `seed.ts` to keep it under the

@@ -8,7 +8,10 @@ import {
   maintenanceTaskTemplates,
   workOrderTasks,
   workOrders,
-} from "./schema/bms-schema";
+  // The barrel, not `./schema/bms-schema`: every name above moved out of the
+  // core file when it was split at the §4.5 cap — `alarms` to
+  // `schema/alarms-schema.ts`, the rest to `schema/maintenance-schema.ts`.
+} from "./schema";
 
 /**
  * Demo alarm, work-order and maintenance rows, split out of `seed.ts` to keep
