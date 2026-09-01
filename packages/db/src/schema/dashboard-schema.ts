@@ -40,9 +40,13 @@ import {
  *
  * Sheet 02's six domain instances: Electrical · Water · STP · ETP · HVAC · Sustainability.
  *
- * **GLOBAL. No `organizationId`, no row-level security, no policy** — the sixth table of the
- * class migration `0047` deliberately left alone, beside `assetDomains`, `ruleCategories`,
- * `alarmSeverities`, `alarmSkills` and `assetRoles`. The load-bearing reason is ADR 0049
+ * **GLOBAL. No `organizationId`, no row-level security, no policy** — the sixth member of the
+ * global-vocabulary class, beside `assetDomains`, `ruleCategories`, `alarmSeverities`,
+ * `alarmSkills` and `assetRoles`. **Migration `0047` left FOUR of those alone**, not five:
+ * `assetRoles` joined the class in `0051`, after `0047` shipped, and `dashboardSections` joins
+ * it here. `0056`'s own header says "the sixth table of the class `0047` deliberately left
+ * alone", which reads as though `0047` had six — the migration is frozen and applied, so the
+ * correction lives here rather than in a file that cannot change. The load-bearing reason is ADR 0049
  * Amendment 1 decision 2(b) applied to a second vocabulary: decision 3's stock catalog only
  * works if a **section** code means the same thing in every organization, because each stock
  * entry names its section and a per-tenant vocabulary would resolve it differently per tenant.
