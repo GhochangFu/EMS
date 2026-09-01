@@ -24,6 +24,7 @@ export * from "./admin";
 export * from "./auth";
 export * from "./dashboard";
 export * from "./dashboard-builder";
+export * from "./dashboard-templates";
 export * from "./envelopes";
 export * from "./health";
 export type * from "./schema-types";
