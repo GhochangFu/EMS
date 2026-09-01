@@ -2,13 +2,13 @@
 
 ## Status
 
-Proposed — drafted 2026-09-01.
-
-**Decision 1 is the repository owner's ruling of the same day**, given in these
-words: *"template should be such that they can be used across organizations
-already have and for the future orgs as well."* Decisions 2–7 are what that
-requirement forces on the schema, and they are the part still owed the
+Accepted — 2026-09-01, by the repository owner, at the
 `build-operating-model.md` step 2 gate.
+
+**Decision 1 is the owner's own ruling of the same day**, given in these words:
+*"template should be such that they can be used across organizations already
+have and for the future orgs as well."* Decisions 2–7 are what that requirement
+forces on the schema, and they were accepted together with it.
 
 ## Context
 
