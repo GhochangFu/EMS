@@ -548,9 +548,25 @@ function InstantiateDialog({
                 className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
               >
                 <option value="">Select an asset group…</option>
+                {/**
+                 * **The location qualifier is not decoration.** This rendered
+                 * `group.name` alone, and a multi-location organization names
+                 * its groups by function — PHEWB has six groups all called
+                 * "Electrical", one per site. The picker offered six identical
+                 * options and an administrator could not tell which site they
+                 * were about to instantiate into. Found by the `F3.36` browser
+                 * verification, which hit the ambiguity itself and had to
+                 * resolve the target by uuid.
+                 *
+                 * `memberCount` is shown too, because the roles a template
+                 * resolves against live on the memberships: a group with no
+                 * members produces an all-`unresolved` report, and seeing the
+                 * count beforehand is what stops that being a surprise.
+                 */}
                 {groups.map((group) => (
                   <option key={group.id} value={group.id}>
-                    {group.name}
+                    {group.locationName ? `${group.name} — ${group.locationName}` : group.name}
+                    {` (${group.memberCount} member${group.memberCount === 1 ? "" : "s"})`}
                   </option>
                 ))}
               </select>
@@ -616,19 +632,43 @@ function InstantiateDialog({
   );
 }
 
+/**
+ * **`unresolved` no longer promises a specific rendering, and that is a
+ * correction.** It read *"renders 'no data bound'"*, which is true of a chart,
+ * a gauge and a tank — they draw through `WidgetFrame`, whose `empty` status is
+ * that exact string — and **false of a `value_tile`**, which deliberately does
+ * not use `WidgetFrame` (`value-tile-widget.tsx` records the reason: `KpiTile`
+ * is already the frame for that shape) and renders an em dash instead.
+ *
+ * An em dash is indistinguishable from "bound correctly, no telemetry yet",
+ * which is the opposite of what the administrator was just told. Found by the
+ * `F3.36` browser verification, on a real instantiated dashboard.
+ *
+ * The label now says what is true of every type — the widget has no bindings and
+ * needs one — and leaves the rendering to the renderer. Making the tile show an
+ * empty-binding state is a `F3.1c` change with its own review, not one to fold
+ * into the row that noticed it.
+ */
 const OUTCOME_LABELS: Record<TemplateWidgetResolutionDto["outcome"], string> = {
   bound: "Bound — every matched member is wired up",
   truncated: "Truncated — more members matched than the widget can hold",
   partial: "Partial — some matched members carry no point with this key",
-  unresolved: "Unresolved — no member matched; renders \"no data bound\"",
+  unresolved: "Unresolved — no member matched; this widget has no bindings and needs one",
 };
 
 /**
  * The resolution report, always shown after a successful instantiate — ADR
- * 0049 Amendment 2 decision 1. Every widget that resolved as `partial` or
- * `truncated` is named by `widgetKey`, with `matchedMembers` and
- * `boundPoints`, so an administrator can find and fix exactly the ones that
- * need it (decision 6).
+ * 0049 Amendment 2 decision 1.
+ *
+ * **Two parts, and the naming happens in the second one.** The amber banner
+ * carries a COUNT of the widgets needing attention; the table below it is what
+ * names each widget by `widgetKey` and shows its `matchedMembers` and
+ * `boundPoints`. This docblock used to credit the banner with the naming, which
+ * a reader could have taken as licence to drop the table — found by the `F3.36`
+ * browser verification, which read both and noticed the mismatch.
+ *
+ * The table is therefore not decoration: it is how decision 6's *"a page that
+ * can list exactly which ones need it"* is actually satisfied.
  */
 function ResolutionReport({ result }: { result: InstantiateSectionTemplateResponse }) {
   const needsAttention = result.resolutions.filter(
