@@ -164,6 +164,8 @@ describe.skipIf(!connectionString)(
     const dashboardIds: string[] = [];
     const assetIds: string[] = [];
     let createdGroupId: string | undefined;
+    /** Set only when the seed supplied no PHEWB asset group and this suite made one. */
+    let createdPhewbGroupId: string | undefined;
 
     const makeInstantiate = (): DashboardTemplatesInstantiateService => {
       const tenantDb = createDb(tenantPool);
@@ -265,11 +267,47 @@ describe.skipIf(!connectionString)(
         }
       }
 
+      /**
+       * **A fresh `pnpm db:seed` gives PHEWB locations but NO asset groups.**
+       *
+       * This read used to fall back to `""`, which turned the foreign-group
+       * assertion into `invalid input syntax for type uuid: ""` — a 500 from
+       * Postgres rather than the 403 the test claims to prove. It passed on
+       * every developer database, which accumulates PHEWB groups from the pilot
+       * seed and from other suites' fixtures, and failed on the only database
+       * that is actually clean: CI's.
+       *
+       * `dashboards.service.rls.integration.test.ts` documents this exact trap
+       * and carries this exact fallback. A seeded row is still preferred
+       * (`F4.53` — the oldest row is the one no concurrent suite can delete out
+       * from under the fixture); this is what to do when the seed has none.
+       */
+      const phewbLocation = await ownerPool.query<{ id: string }>(
+        `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, id LIMIT 1`,
+        [phewbOrgId],
+      );
+      const phewbLocationId = phewbLocation.rows[0]?.id;
+      if (!phewbLocationId) {
+        throw new Error("F3.36: PHEWB has no location — run pnpm db:seed");
+      }
+
       const phewbGroup = await ownerPool.query<{ id: string }>(
         `SELECT id FROM bms.asset_groups WHERE organization_id = $1 ORDER BY created_at, id LIMIT 1`,
         [phewbOrgId],
       );
       phewbGroupId = phewbGroup.rows[0]?.id ?? "";
+      if (!phewbGroupId) {
+        const created = await ownerPool.query<{ id: string }>(
+          `INSERT INTO bms.asset_groups (organization_id, location_id, code, name)
+           VALUES ($1, $2, $3, 'F3.36 foreign-group fixture') RETURNING id`,
+          [phewbOrgId, phewbLocationId, `f336-foreign-${RUN}`],
+        );
+        phewbGroupId = created.rows[0]?.id ?? "";
+        createdPhewbGroupId = phewbGroupId;
+      }
+      if (!phewbGroupId) {
+        throw new Error("F3.36: could not read or create a PHEWB asset group");
+      }
 
       const published = await ownerPool.query<{ id: string }>(
         `INSERT INTO bms.dashboard_templates
@@ -327,8 +365,8 @@ describe.skipIf(!connectionString)(
         );
         await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1::uuid[])`, [assetIds]);
       }
-      if (createdGroupId) {
-        await ownerPool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [createdGroupId]);
+      for (const id of [createdGroupId, createdPhewbGroupId]) {
+        if (id) await ownerPool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [id]);
       }
       await Promise.all([ownerPool, tenantPool, authPool].filter(Boolean).map((p) => p.end()));
     }, 60_000);
