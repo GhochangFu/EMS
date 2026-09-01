@@ -92,6 +92,10 @@ describe.skipIf(!connectionString)("TelemetryWriteService", () => {
       sourceRefRejected =
         err instanceof Error && /asset_points_source_ref_check/.test(String((err as { message?: string }).message));
     }
+    // Removed as soon as the probe is done: `bms.point_keys` is fleet-wide
+    // after `F3.39`, so a code left behind here joins every other suite's view
+    // of the catalog and would sit in the seeded estate for good.
+    await pool.query(`DELETE FROM bms.point_keys WHERE code = 'f18-check-probe'`);
     if (!sourceRefRejected) {
       throw new Error("asset_points_source_ref_check must reject source_kind='measured' with rtu_id NULL");
     }

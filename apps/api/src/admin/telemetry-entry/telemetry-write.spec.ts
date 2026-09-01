@@ -144,8 +144,18 @@ export async function loadFixtures(pool: pg.Pool, prefix: string = TEST_ASSET_PR
     // `F3.39`: fleet-wide catalog, so no organization predicate. The
     // `created_at` ordering is F4.53's "oldest wins" and matters more now that
     // other suites register transient codes in the same shared table.
+    //
+    // **`unit IS NOT NULL` is new, and it is not tidying.** The unit-mismatch
+    // case below writes a deliberately wrong unit and asserts the row is
+    // rejected; a catalog key with NO declared unit has nothing to mismatch
+    // against, so the case passes vacuously — or rather, it fails, which is how
+    // this was found. The organization predicate used to make it unreachable:
+    // `wc-admin`'s catalog came from `UNIT_BY_KEY`, where an unset unit is `""`
+    // and not NULL. Fleet-wide, the oldest rows are `phe-pilot-seed`'s, and
+    // three of those (`network_strength`, `controller_power_status`,
+    // `chlorine_pump_on`) carry a genuine NULL.
     `SELECT code, unit FROM bms.point_keys
-      WHERE active = true ORDER BY created_at, code LIMIT 5`,
+      WHERE active = true AND unit IS NOT NULL ORDER BY created_at, code LIMIT 5`,
   );
   const freshAssetPointKey = keyRows[0];
   if (!freshAssetPointKey) {
