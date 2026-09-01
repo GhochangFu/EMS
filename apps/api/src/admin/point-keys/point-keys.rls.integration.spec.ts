@@ -3,6 +3,7 @@ import pg from "pg";
 
 import type { JwtPayload } from "@bms/shared";
 
+import { resolveSeededAssetByCode } from "../../testing/integration-fixtures";
 import type { PointKeysAdminService } from "./point-keys.service";
 
 /**
@@ -108,8 +109,11 @@ export async function assertOrganizationAdminIsRefusedEveryWrite(
   orgAdminJwt: JwtPayload,
 ): Promise<void> {
   const { svc, ownerPool } = ctx;
+  // `ORDER BY created_at` first — `F4.53`'s "oldest wins". `F3.39` makes this
+  // table shared, and several suites now register a transient code in it, so
+  // ordering by `code` alone could adopt a row another suite is about to delete.
   const { rows } = await ownerPool.query<{ id: string }>(
-    "SELECT id FROM bms.point_keys WHERE active = true ORDER BY code LIMIT 1",
+    "SELECT id FROM bms.point_keys WHERE active = true ORDER BY created_at, code LIMIT 1",
   );
   const existingId = rows[0]?.id;
   assert(
@@ -250,15 +254,17 @@ export async function assertEveryOrganizationSeesEveryCode(
 export async function assertAssetPointsRejectsAnUnlistedKey(
   ownerPool: pg.Pool,
 ): Promise<void> {
+  // Named by code, never positional: `integration-fixture-isolation` forbids
+  // resolving a `bms.assets` row by position, because seven suites commit and
+  // delete prefixed fixture assets and a bare `LIMIT 1` adopts whichever sits
+  // first in the heap. The org read that follows is id-scoped.
+  const assetId = await resolveSeededAssetByCode(ownerPool, "CR-XFMR-100KVA");
   const { rows } = await ownerPool.query<{ id: string; organization_id: string }>(
-    `SELECT a.id, a.organization_id
-       FROM bms.assets a
-      WHERE a.organization_id IS NOT NULL
-      ORDER BY a.code
-      LIMIT 1`,
+    `SELECT id, organization_id FROM bms.assets WHERE id = $1`,
+    [assetId],
   );
   const asset = rows[0];
-  assert(Boolean(asset), "F3.39: no seeded asset to test the foreign key against.");
+  assert(Boolean(asset?.organization_id), "F3.39: the seeded asset carries no organization.");
 
   const client = await ownerPool.connect();
   try {

@@ -30,6 +30,26 @@ export function canWritePointKeys(role: UserRole): boolean {
 }
 
 /**
+ * Whether the role may open the point-key catalog page at all.
+ *
+ * **`F3.39` — this split off `canWritePointKeys`, which it used to be.** The
+ * `catalogOnly` tab flag gated visibility on the write predicate, which was
+ * coherent while the two answered the same question. They no longer do: the
+ * write narrowed to the global `admin` and the read widened to the whole fleet,
+ * so reusing the write predicate would hide a page an organization
+ * administrator may legitimately read, and `PointKeysAdminService.list` would
+ * happily serve.
+ *
+ * The membership is deliberately what `canWritePointKeys` had before this row,
+ * so no tab appears or disappears for anyone. Widening it to `location_admin`
+ * — whom `requireMasterDataUser` does admit — is a product decision this row
+ * does not take.
+ */
+export function canReadPointKeyCatalog(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
+/**
  * Whether the role may administer notification channels and read the delivery
  * ledger (`E7.1d`, ADR 0043 Consequences).
  *
@@ -135,9 +155,9 @@ export const masterDataTabs = [
   // have led it to a 403. `E7.1c` replaced that gate with
   // `canManageNotificationChannel`, so the 403 is gone and the tab is owed.
   //
-  // Still NOT `catalogOnly`, whose body is identical today: that flag answers
-  // "may write the point-key catalog", a different question the API gates
-  // through a different method.
+  // Still NOT `catalogOnly`. That flag now answers "may READ the fleet-wide
+  // point-key catalog" (`F3.39`); the bodies were identical until this row and
+  // are not any more.
   { label: "Notifications", path: "/admin/notification-channels", notificationAdmin: true },
   { label: "Deliveries", path: "/admin/notification-deliveries", notificationAdmin: true },
 ] as const;
@@ -146,7 +166,9 @@ export const masterDataTabs = [
 export function visibleMasterDataTabs(role: UserRole) {
   return masterDataTabs.filter((tab) => {
     if ("catalogOnly" in tab && tab.catalogOnly) {
-      return canWritePointKeys(role);
+      // `F3.39`: a READ gate. See `canReadPointKeyCatalog` for why this stopped
+      // being `canWritePointKeys` when those two questions diverged.
+      return canReadPointKeyCatalog(role);
     }
     if ("globalAdminOnly" in tab && tab.globalAdminOnly) {
       return isGlobalAdmin(role);

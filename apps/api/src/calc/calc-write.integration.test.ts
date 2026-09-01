@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { loadFixtures, type Fixtures } from "../admin/asset-templates/asset-templates.instantiate.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { registerFixturePointKeys } from "../testing/integration-fixtures";
 import {
   assertFirstValueCreatesMappingWithComputedProvenance,
   assertNoAuditLogRowIsProduced,
@@ -29,10 +30,20 @@ const connectionString = requireIntegrationDb({
 describe.skipIf(!connectionString)("F2.4 — calc write service", () => {
   let pool: pg.Pool | undefined;
   let fx: Fixtures;
+  let releasePointKeys: (() => Promise<void>) | undefined;
 
   beforeAll(async () => {
     const created = await openIntegrationPool(connectionString as string, "F2.4");
     pool = created;
+    // `F3.39`: `asset_points.point_key` references `point_keys(code)` from
+    // migration `0057`, so these invented codes must exist before the service
+    // writes rows for them. See `registerFixturePointKeys` for why the fixture
+    // is what was wrong rather than the constraint.
+    releasePointKeys = await registerFixturePointKeys(created, [
+      "CALCWRITE_A",
+      "CALCWRITE_B",
+      "CALCWRITE_C",
+    ]);
     fx = await loadFixtures(created);
     await cleanup(created);
   });
@@ -40,6 +51,8 @@ describe.skipIf(!connectionString)("F2.4 — calc write service", () => {
   afterAll(async () => {
     if (pool) {
       await cleanup(pool);
+      // After `cleanup`, which removes the asset_points rows that reference them.
+      await releasePointKeys?.();
       await pool.end();
     }
   });

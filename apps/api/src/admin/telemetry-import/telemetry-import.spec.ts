@@ -492,6 +492,12 @@ export async function runTelemetryImportServiceTests(
   // ---- the CHECK boundary rejects what the service must never be able to write
   // (direct SQL, bypassing the service entirely — proves the CONSTRAINT)
 
+  // `F3.39`: register the probe's code first — `0057` makes `point_key` a
+  // foreign key, and an FK violation is not the rejection this probe is about.
+  await pool.query(
+    `INSERT INTO bms.point_keys (code, name, active)
+     VALUES ('f19-import-check-probe', 'F19 Import Check Probe', true) ON CONFLICT DO NOTHING`,
+  );
   let sourceRefRejected = false;
   try {
     await pool.query(

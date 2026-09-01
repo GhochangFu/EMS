@@ -90,9 +90,14 @@ export async function seedAccessControlFixtures(pool: pg.Pool): Promise<void> {
   // *readable* without a gateway. ADR 0018's CHECK requires a `manual` point to
   // carry no rtu_id, which is exactly the pairing this proves.
   const pointKey = await pool.query<{ code: string; unit: string | null }>(
-    // `F3.39`: the catalog is fleet-wide, so no organization predicate.
+    // `F3.39`: the catalog is fleet-wide, so no organization predicate — and
+    // `ORDER BY created_at` becomes load-bearing rather than cosmetic. `F4.53`'s
+    // "oldest wins": ordering by `code` alone would let a transient fixture code
+    // another suite registers and deletes (`CALCWRITE_A`, `E71B_AP_D`) sort
+    // first, and this seed would adopt a row that is about to vanish. The
+    // organization predicate used to make that unreachable; nothing does now.
     `SELECT code, unit FROM bms.point_keys
-      WHERE active = true ORDER BY code LIMIT 1`,
+      WHERE active = true ORDER BY created_at, code LIMIT 1`,
   );
   const key = pointKey.rows[0];
   if (!key) {

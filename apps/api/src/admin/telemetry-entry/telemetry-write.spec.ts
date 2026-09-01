@@ -125,9 +125,9 @@ export async function loadFixtures(pool: pg.Pool, prefix: string = TEST_ASSET_PR
        FROM bms.asset_points ap
        JOIN bms.assets a ON a.id = ap.asset_id
        JOIN bms.locations l ON l.id = a.location_id
+       -- \`F3.39\`: the catalog is fleet-wide, so the join is on code alone.
        JOIN bms.point_keys pk
-         ON pk.organization_id = l.organization_id
-        AND pk.code = ap.point_key
+         ON pk.code = ap.point_key
         AND pk.active = true
       WHERE ap.source_kind = 'measured' AND ap.active = true
       LIMIT 1`,
@@ -141,9 +141,11 @@ export async function loadFixtures(pool: pg.Pool, prefix: string = TEST_ASSET_PR
   }
 
   const { rows: keyRows } = await pool.query<{ code: string; unit: string | null }>(
+    // `F3.39`: fleet-wide catalog, so no organization predicate. The
+    // `created_at` ordering is F4.53's "oldest wins" and matters more now that
+    // other suites register transient codes in the same shared table.
     `SELECT code, unit FROM bms.point_keys
-      WHERE organization_id = $1 AND active = true ORDER BY created_at, code LIMIT 5`,
-    [grant.organization_id],
+      WHERE active = true ORDER BY created_at, code LIMIT 5`,
   );
   const freshAssetPointKey = keyRows[0];
   if (!freshAssetPointKey) {

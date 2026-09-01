@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 
 import { loadFixtures, type Fixtures } from "../admin/asset-templates/asset-templates.instantiate.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { registerFixturePointKeys } from "../testing/integration-fixtures";
 import {
   assertAllNullRowIsIdenticalToNoRow,
   assertEachAssetResolvesAgainstItsOwnPin,
@@ -35,10 +36,17 @@ const connectionString = requireIntegrationDb({
 describe.skipIf(!connectionString)("F2.6 — calc resolution merge", () => {
   let pool: pg.Pool | undefined;
   let fx: Fixtures;
+  let releasePointKeys: (() => Promise<void>) | undefined;
 
   beforeAll(async () => {
     const created = await openIntegrationPool(connectionString as string, "F2.6");
     pool = created;
+    // `F3.39`: see `registerFixturePointKeys` — `0057` makes point_key a
+    // foreign key, and these codes are in no catalog.
+    releasePointKeys = await registerFixturePointKeys(created, [
+      "F26_MERGE_DERIVED",
+      "F26_MERGE_MEASURED",
+    ]);
     fx = await loadFixtures(created);
     await cleanup(created);
   });
@@ -46,6 +54,7 @@ describe.skipIf(!connectionString)("F2.6 — calc resolution merge", () => {
   afterAll(async () => {
     if (pool) {
       await cleanup(pool);
+      await releasePointKeys?.();
       await pool.end();
     }
   });
