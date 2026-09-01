@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { expect } from "vitest";
 
+import { repoRoot } from "../../testing/repo-root";
+
 /**
  * `F3.36` Part E3 — the one thing about this controller that is invisible in
  * review and fails in a way that reads like a client bug.
@@ -16,14 +18,20 @@ import { expect } from "vitest";
  * what it matched. What can be checked is the declaration order the router reads.
  */
 /**
- * Resolved from `process.cwd()`, which Vitest sets to `apps/api` — the idiom the
- * sibling `stock-catalog.spec.ts` uses. `import.meta.dirname` does not compile
- * here: `apps/api`'s tsconfig targets `module: "node"` (node10), and `tsc`
- * refuses the meta-property outright.
+ * Resolved through `repoRoot()`, which walks up to the workspace manifest.
+ *
+ * **This used to be `join(process.cwd(), …)` and that was a real defect.** It is
+ * correct under `pnpm --filter api exec vitest run`, whose cwd is `apps/api`,
+ * and wrong under `pnpm test` — the ROOT runner CI actually invokes, where cwd
+ * is already the repository root. The suite passed every targeted run and failed
+ * with `ENOENT` on the only runner that matters.
+ *
+ * `import.meta.dirname` is not available here: `apps/api` compiles with
+ * `"module": "commonjs"` and `tsc` refuses the meta-property (`TS1343`).
  */
 const CONTROLLER = join(
-  process.cwd(),
-  "src/admin/dashboard-templates/dashboard-templates.controller.ts",
+  repoRoot(),
+  "apps/api/src/admin/dashboard-templates/dashboard-templates.controller.ts",
 );
 
 export function runDashboardTemplatesControllerTests(): void {

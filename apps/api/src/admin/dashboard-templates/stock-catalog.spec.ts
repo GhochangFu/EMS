@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import {
   DASHBOARD_GRID,
   metricCatalogKeySchema,
@@ -10,6 +7,7 @@ import {
   WIDGET_SOURCE_CARDINALITY,
 } from "@bms/shared";
 
+import { readRepoFile } from "../../testing/repo-root";
 import { STOCK_DASHBOARD_TEMPLATE_CATALOG } from "./stock-catalog";
 
 /**
@@ -38,8 +36,7 @@ import { STOCK_DASHBOARD_TEMPLATE_CATALOG } from "./stock-catalog";
  * esnext` line). `pnpm --filter api exec vitest run` sets the working
  * directory to `apps/api`, so two levels up is the repo root.
  */
-const repoRoot = join(process.cwd(), "..", "..");
-const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
+const read = readRepoFile;
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {

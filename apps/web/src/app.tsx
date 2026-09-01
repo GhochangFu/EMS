@@ -30,6 +30,8 @@ import { DashboardBuilderPage } from "./pages/admin/dashboard-builder-page";
 import { AssetTemplateDetailPage } from "./pages/admin/asset-template-detail-page";
 import { AssetTemplateVersionsPage } from "./pages/admin/asset-template-versions-page";
 import { AssetTemplatesAdminPage } from "./pages/admin/asset-templates-page";
+import { DashboardTemplateDetailPage } from "./pages/admin/dashboard-template-detail-page";
+import { DashboardTemplatesAdminPage } from "./pages/admin/dashboard-templates-page";
 import { AssetsAdminPage } from "./pages/admin/assets-page";
 import { LocationsAdminPage } from "./pages/admin/locations-page";
 import { ManualReadingsPage } from "./pages/admin/manual-readings-page";
@@ -469,6 +471,30 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <AssetTemplateVersionsPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/dashboard-templates"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <DashboardTemplatesAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/dashboard-templates/:templateId"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <DashboardTemplateDetailPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

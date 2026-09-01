@@ -77,6 +77,9 @@ export function runAssetTemplateTabTests(): void {
         // `F3.37` (ADR 0049 decision 5) — the role a member plays in its group.
         "/admin/asset-groups",
         TEMPLATES,
+        // `F3.36` Part F (ADR 0049) — ungated, like Asset Groups: authoring is
+        // hidden inside the page by `canAuthorTemplates`, not by the tab.
+        "/admin/dashboard-templates",
         "/admin/asset-points",
         "/admin/manual-readings",
         "/admin/point-keys",
@@ -103,8 +106,9 @@ export function runAssetTemplateTabTests(): void {
     // eight — `ChannelsService.list` returns `[]` for that role.
     // `F3.37` added Asset Groups, which is gated by neither `catalogOnly` nor
     // `notificationAdmin`, so every role that reaches this list sees it: 8 -> 9
-    // and 11 -> 12.
-    const expected = role === "location_admin" ? 9 : 12;
+    // and 11 -> 12. `F3.36` Part F added Dashboard Templates the same
+    // ungated way: 9 -> 10 and 12 -> 13.
+    const expected = role === "location_admin" ? 10 : 13;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,

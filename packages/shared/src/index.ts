@@ -498,6 +498,14 @@ export type AssetPointCalcConfigListResponse = z.infer<
 export type TemplateVersionsListResponse = z.infer<
   typeof E.templateVersionsListResponseSchema
 >;
+/** `F3.36` Part F (ADR 0049) — the section template list. Rows omit `content`. */
+export type DashboardTemplatesListResponse = z.infer<
+  typeof E.dashboardTemplatesListResponseSchema
+>;
+/** `F3.36` Part F (ADR 0049 decision 3) — the repository's stock catalog. */
+export type StockDashboardTemplatesListResponse = z.infer<
+  typeof E.stockDashboardTemplatesListResponseSchema
+>;
 /** `F2.6` (ADR 0039) — decision 2's preview. Writes nothing. */
 export type TemplateMigrationPreviewResponse = z.infer<
   typeof E.templateMigrationPreviewResponseSchema

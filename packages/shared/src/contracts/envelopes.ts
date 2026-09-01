@@ -33,6 +33,7 @@ import {
   templateVersionSummaryDtoSchema,
 } from "./admin";
 import { dashboardSummaryDtoSchema } from "./dashboard-builder";
+import { dashboardTemplateSummaryDtoSchema, stockDashboardTemplateDtoSchema } from "./dashboard-templates";
 import {
   alarmListItemSchema,
   maintenanceScheduleItemSchema,
@@ -109,6 +110,20 @@ export const templateDraftDeletedResponseSchema = z.object({ deleted: z.literal(
  */
 export const assetPointCalcConfigListResponseSchema = itemsOf(assetPointCalcConfigDtoSchema);
 export const templateVersionsListResponseSchema = itemsOf(templateVersionSummaryDtoSchema);
+
+/**
+ * Section dashboard templates (`F3.36` Part F, ADR 0049) — the same gap the
+ * block above already names for asset templates. `GET /admin/dashboard-templates`
+ * and `GET /admin/dashboard-templates/stock` had no envelope here until the web
+ * surface needed one, for the identical reason: `adminFetch` requires a schema
+ * argument, so a client for either route could not be written at all.
+ *
+ * `dashboardTemplateSummaryDtoSchema`, not the full `dashboardTemplateDtoSchema`
+ * — the list route omits `content`, exactly as the asset-template list omits
+ * `points`.
+ */
+export const dashboardTemplatesListResponseSchema = itemsOf(dashboardTemplateSummaryDtoSchema);
+export const stockDashboardTemplatesListResponseSchema = itemsOf(stockDashboardTemplateDtoSchema);
 
 /**
  * `POST /admin/asset-templates/:id/migration-preview` — decision 2's "no blind
