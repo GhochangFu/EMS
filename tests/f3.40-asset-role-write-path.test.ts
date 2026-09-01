@@ -126,7 +126,7 @@ describe("F3.40 the write path is wired, gated, and keyed by code", () => {
     // `z.string().uuid()`, so the obvious copy from `PointKeysAdminController`
     // would reject every real code with a 400 the compiler cannot see.
     expect(controller).not.toContain("idParamSchema");
-    expect(controller).toContain("assetRoleCodeSchema.parse(code)");
+    expect(controller).toContain("assetRoleCodeParamSchema.parse(code)");
 
     // Anti-vacuity twin: the scan does find `idParamSchema` when it is there.
     expect(codeOnly("  idParamSchema.parse(id);")).toContain("idParamSchema");
@@ -181,6 +181,24 @@ describe("F3.40 the write path is wired, gated, and keyed by code", () => {
 
     // And the create body still declares it, or the assertion above passes
     // because the field was renamed out from under it.
-    expect(schema).toContain("code: assetRoleCodeSchema");
+    expect(schema).toContain("code: assetRoleCodeParamSchema");
+  });
+
+  it("declares the code bound locally, and at the same width as the contract", () => {
+    // The param is parsed with THIS package's zod on purpose: a `ZodError`
+    // built by `@bms/shared`'s module instance failed `instanceof ZodError` in
+    // the controller and escaped the 400 mapping as a 500. Declaring it here
+    // removes the cross-package `instanceof`, and the cost is that the bound is
+    // now written twice — so this asserts the two agree.
+    expect(schema).toContain("export const assetRoleCodeParamSchema = z.string().min(1).max(64)");
+    expect(schema).not.toContain('from "@bms/shared"');
+
+    const operations = codeOnly(read("packages/shared/src/contracts/operations.ts"));
+    expect(
+      operations,
+      "assetRoleCodeSchema's bound moved. asset-roles.schema.ts states the same width " +
+        "for the same column and nothing else joins them — move both, or the route and " +
+        "the contract disagree about what fits in code varchar(64).",
+    ).toContain("export const assetRoleCodeSchema = z.string().min(1).max(64)");
   });
 });

@@ -47,6 +47,10 @@ import {
   updatePointKeyBodySchema,
 } from "../admin/point-keys/point-keys.schema";
 import {
+  createAssetRoleBodySchema,
+  updateAssetRoleBodySchema,
+} from "../admin/vocabularies/asset-roles.schema";
+import {
   createRtuBodySchema,
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
@@ -133,6 +137,16 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AssetPointCalcOverrideController_set: assetPointCalcOverrideBodySchema,
   AssetPointsAdminController_create: createAssetPointBodySchema,
   AssetPointsAdminController_update: updateAssetPointBodySchema,
+  // `F3.40` (ADR 0051 decision 5), registered for the second reason the `F3.36`
+  // comment below states rather than the first: an unregistered route reads as
+  // "no body" in the document, AND `strict-body-ledger.spec.ts` walks only what
+  // is reachable from here, so these two `.strict()` bodies would carry no
+  // recorded decision and a later reader removing `.strict()` would break no
+  // gate. `AssetRolesAdminController_list` is deliberately absent, matching
+  // `PointKeysAdminController_list` — the registry describes bodies, and
+  // `parseActiveFilter` is not one.
+  AssetRolesAdminController_create: createAssetRoleBodySchema,
+  AssetRolesAdminController_update: updateAssetRoleBodySchema,
   AssetHealthController_forAsset: assetHealthQuerySchema,
   AssetHealthController_summary: healthSummaryQuerySchema,
   AssetsAdminController_create: createAssetBodySchema,

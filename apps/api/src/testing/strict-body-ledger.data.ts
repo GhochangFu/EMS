@@ -184,6 +184,11 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   createAssetBodySchema: STRICT(CALLER_ERROR),
   createAssetPointBodySchema: STRICT(CALLER_ERROR),
   createAssetTemplateBodySchema: STRICT(CALLER_ERROR),
+  // `F3.40`. The field a caller most plausibly sends and this table does not
+  // have is `organizationId` — `bms.asset_roles` is global vocabulary — and
+  // dropping it silently would let a tenant administrator believe they had
+  // scoped a fleet-wide code.
+  createAssetRoleBodySchema: STRICT(CALLER_ERROR),
   "createAssetTemplateBodySchema/content": STRICT(ALREADY),
   "createAssetTemplateBodySchema/content/alarms[]": STRICT(ALREADY),
   "createAssetTemplateBodySchema/content/alarms[]/philosophy": STRICT(ALREADY),
@@ -399,6 +404,11 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   ),
   updateOrganizationBodySchema: STRICT(CALLER_ERROR),
   updatePointKeyBodySchema: STRICT(CALLER_ERROR),
+  // `F3.40`. `code` is deliberately absent from this body — it is the primary
+  // key and the target of `asset_group_members_role_fkey` — so a caller sending
+  // one is asking for a rename the route does not do. Open, that read as
+  // success and renamed nothing.
+  updateAssetRoleBodySchema: STRICT(CALLER_ERROR),
   updateRtuBodySchema: STRICT(CALLER_ERROR),
   updateWorkOrderStatusBodySchema: STRICT(CALLER_ERROR),
 };

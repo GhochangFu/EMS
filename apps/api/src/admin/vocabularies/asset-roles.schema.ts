@@ -1,6 +1,30 @@
 import { z } from "zod";
 
-import { assetRoleCodeSchema } from "@bms/shared";
+/**
+ * The `:code` path parameter, and the bound every request body's `code` reuses.
+ *
+ * **DECLARED HERE WITH THIS PACKAGE'S OWN `z`, NOT IMPORTED FROM `@bms/shared`,
+ * AND THAT IS A CORRECTNESS FIX RATHER THAN A PREFERENCE.** The first draft
+ * parsed the param with `assetRoleCodeSchema` straight out of the contracts
+ * package. Both packages resolve the same `zod` on disk, but they do not always
+ * resolve the same MODULE INSTANCE — under Vitest `apps/api` loads zod as ESM
+ * while `@bms/shared` arrives from its CJS `dist`, so the `ZodError` thrown by
+ * a shared schema failed `err instanceof ZodError` in
+ * `asset-roles.controller.ts` and escaped the 400 mapping as a 500. Measured:
+ * `controller.update("", …)` threw a raw `ZodError`, not a
+ * `BadRequestException`.
+ *
+ * A shared schema nested INSIDE a local `z.object` is safe — the outer object
+ * builds the error — which is why only the bare param parse was affected and
+ * why the body path returned 400 correctly over HTTP. Declaring the bound once
+ * here removes the distinction rather than relying on it.
+ *
+ * The bound is `min(1).max(64)`, the same as `assetRoleCodeSchema` and the same
+ * as `code varchar(64)`. `point-keys.schema.ts` declares its own bound locally
+ * for the same reason, so this is the house pattern and not a new one.
+ * `tests/f3.40-asset-role-write-path.test.ts` holds the two together.
+ */
+export const assetRoleCodeParamSchema = z.string().min(1).max(64);
 
 /**
  * `F3.40` / ADR 0051 decision 5 — the request bodies for the asset role write
@@ -37,8 +61,16 @@ export const createAssetRoleBodySchema = z
      * `tests/f3.38-stock-catalog-vocabulary.test.ts`'s migration parser
      * (`/\('([a-z][a-z-]*)',\s*'/`), so the same mistake made in a migration
      * would go unseen there.
+     *
+     * **That parser rejects digits too, and this route admitting them is still
+     * safe** — said here because the two rules disagree and the disagreement
+     * should not look like an oversight. The parser reads MIGRATIONS, never
+     * rows created through this route, so a runtime `co2-scrubber` is outside
+     * its subject by construction. A digit-bearing code written into a future
+     * migration would be skipped by the parser and break that file's exact
+     * `.toBe(28)` loudly, which is the safe failure direction.
      */
-    code: assetRoleCodeSchema.regex(
+    code: assetRoleCodeParamSchema.regex(
       /^[a-z][a-z0-9-]*$/,
       "an asset role code is lower-case letters, digits and hyphens, and starts with a letter — like `cooling-tower`",
     ),

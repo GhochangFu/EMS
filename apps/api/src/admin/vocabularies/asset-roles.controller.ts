@@ -11,13 +11,13 @@ import {
 } from "@nestjs/common";
 import { ZodError } from "zod";
 
-import { assetRoleCodeSchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { parseActiveFilter } from "../admin.schema";
 import {
+  assetRoleCodeParamSchema,
   createAssetRoleBodySchema,
   updateAssetRoleBodySchema,
 } from "./asset-roles.schema";
@@ -37,8 +37,10 @@ import { AssetRolesAdminService } from "./asset-roles.service";
  * column. `admin.schema.ts`'s `idParamSchema` is `z.string().uuid()`, so
  * reusing it here — the obvious copy from `PointKeysAdminController`, whose
  * table does have a uuid — would reject every real code with a 400 that the
- * compiler cannot see. `assetRoleCodeSchema` is the contracts package's own
- * bound for this column.
+ * compiler cannot see. `assetRoleCodeParamSchema` is the same bound the
+ * contracts package states, declared in `asset-roles.schema.ts` with THIS
+ * package's `zod` so that a failed parse throws a `ZodError` the `catch` below
+ * recognises; see that file's header for the 500 this replaced.
  */
 @Controller("admin/vocabularies/asset-roles")
 @UseGuards(JwtAuthGuard)
@@ -76,7 +78,7 @@ export class AssetRolesAdminController {
     try {
       return await this.service.update(
         user,
-        assetRoleCodeSchema.parse(code),
+        assetRoleCodeParamSchema.parse(code),
         updateAssetRoleBodySchema.parse(body),
       );
     } catch (err) {
