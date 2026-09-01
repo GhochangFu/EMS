@@ -173,6 +173,117 @@ export async function assertFleetIsDeniedPasswordHashAtRuntime(pool: pg.Pool): P
 }
 
 /**
+ * ADR 0051 Amendment 1 decision 1 — a tenant may **extend** the fleet-wide
+ * point-key catalog and may not **edit** it, and migration `0059` is what makes
+ * the database say so.
+ *
+ * This assertion exists because `bms.point_keys` is the one table where the
+ * grant is the whole control. `0057` made the catalog global by dropping its
+ * `tenant_isolation` policy and FORCE flag, and `0041:112`'s default privilege
+ * had already given `bms_tenant` all four verbs on every `bms` table. Nothing
+ * else was left to stop an `UPDATE`, and one — `SET active = false` — retires a
+ * code for every organization at once, refusing every other tenant's template
+ * publish through `assertPointKeysActive` until a global administrator undoes
+ * it.
+ *
+ * **All four verbs are asserted, not just the two removed.** A revoke that took
+ * SELECT would break every tenant's read of the vocabulary, and one that took
+ * INSERT would break the onboarding extension Amendment 1 exists to permit —
+ * both silently, since neither is what this row was watching for.
+ */
+export async function assertTenantCannotEditPointKeys(pool: pg.Pool): Promise<void> {
+  const held = async (verb: string): Promise<boolean> => {
+    const { rows } = await pool.query<{ ok: boolean }>(
+      `select has_table_privilege('bms_tenant', 'bms.point_keys', $1) as ok`,
+      [verb],
+    );
+    return rows[0]?.ok === true;
+  };
+
+  // `has_table_privilege` rather than `information_schema.table_privileges`:
+  // the information schema lists only grants whose grantor or grantee is a
+  // currently enabled role, so it reports an empty set both for a revoked
+  // privilege and for one this connection simply cannot see. It also follows
+  // role membership, so a privilege reached through some other role is caught.
+  expect(await held("UPDATE"), "bms_tenant can UPDATE bms.point_keys").toBe(false);
+  expect(await held("DELETE"), "bms_tenant can DELETE bms.point_keys").toBe(false);
+  expect(await held("SELECT"), "bms_tenant lost SELECT on bms.point_keys").toBe(true);
+  expect(
+    await held("INSERT"),
+    "bms_tenant lost INSERT on bms.point_keys — that is ADR 0051 Amendment 1's " +
+      "authorised onboarding extension path, not an oversight",
+  ).toBe(true);
+
+  // Positive control on a sibling table `0059` does not touch. Without it, a
+  // revoke applied to the whole schema by mistake reads identically to the
+  // narrow one this row intends.
+  const { rows: control } = await pool.query<{ ok: boolean }>(
+    `select has_table_privilege('bms_tenant', 'bms.asset_roles', 'UPDATE') as ok`,
+  );
+  expect(
+    control[0]?.ok,
+    "bms_tenant lost UPDATE on bms.asset_roles too. 0059 must narrow one table, " +
+      "and the rest of the global-vocabulary class has no tenant-pool writer to " +
+      "justify the same treatment yet.",
+  ).toBe(true);
+}
+
+/**
+ * The catalogue says the two verbs are gone; this says the server refuses the
+ * statement. Different claims, and only the second is the control.
+ */
+export async function assertTenantIsRefusedAPointKeyEditAtRuntime(pool: pg.Pool): Promise<void> {
+  // **One denial per transaction, which is why this is two blocks and not one.**
+  // A refused statement aborts the transaction, so a second `expect` inside the
+  // same `asRole` receives `current transaction is aborted` instead of
+  // `permission denied` — a failure that looks like the revoke not biting when
+  // it is only the first refusal still standing. Measured, not predicted: the
+  // one-block version of this failed exactly that way.
+  //
+  // `where false` on both statements. The claim is that the privilege check
+  // refuses the statement, and PostgreSQL checks table privileges before it
+  // plans the predicate — so a held privilege reaches zero rows and passes
+  // quietly rather than editing the shared catalog under a test.
+  await asRole(pool, "bms_tenant", async (client) => {
+    // Positive control first, so the refusal is about the verb and not about
+    // the table, the schema or a missing USAGE.
+    //
+    // `count(*)` and not `select code … limit 1`, which is what this was until
+    // `F4.53` caught it: a bare `LIMIT 1` in a scanned `.spec` resolves a row
+    // positionally, and the rule does not care that this one throws its row
+    // away. `count(*)` needs the same SELECT privilege and the same schema
+    // USAGE, and resolves nothing — the shape `assertTenantReachesTelemetry`
+    // below already uses.
+    await client.query("select count(*) from bms.point_keys");
+
+    await expect(
+      client.query("update bms.point_keys set active = false where false"),
+      "bms_tenant updated bms.point_keys. Migration 0059's REVOKE did not bite.",
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  await asRole(pool, "bms_tenant", async (client) => {
+    await client.query("select count(*) from bms.point_keys");
+
+    await expect(
+      client.query("delete from bms.point_keys where false"),
+      "bms_tenant deleted from bms.point_keys. Migration 0059's REVOKE did not bite.",
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  // And the verb that must SURVIVE, proved the same way. A revoke that took
+  // INSERT would break ADR 0051 Amendment 1's onboarding extension path, and
+  // the two refusals above would still pass. `where false` has no INSERT form,
+  // so this rolls back inside `asRole` like every other block here.
+  await asRole(pool, "bms_tenant", async (client) => {
+    await client.query(
+      `insert into bms.point_keys (code, name, active)
+       values ('f-0059-insert-probe', 'F 0059 Insert Probe', true)`,
+    );
+  });
+}
+
+/**
  * `GRANT ... ON ALL TABLES IN SCHEMA telemetry` names the hypertable parent and
  * the continuous-aggregate views. Chunks live in `_timescaledb_internal` and the
  * aggregates read a materialisation hypertable, neither of which the grant

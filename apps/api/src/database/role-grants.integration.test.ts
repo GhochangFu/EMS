@@ -9,8 +9,10 @@ import {
   assertFleetIsDeniedPasswordHashAtRuntime,
   assertNoRoleCanInsertOrDeleteUsers,
   assertRolesExist,
+  assertTenantCannotEditPointKeys,
   assertTenantCannotReadPasswordHash,
   assertTenantIsDeniedPasswordHashAtRuntime,
+  assertTenantIsRefusedAPointKeyEditAtRuntime,
   assertTenantReachesTelemetry,
 } from "./role-grants.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
@@ -87,6 +89,10 @@ describe.skipIf(!connectionString)("F4.16 — role grant matrix", () => {
     await assertAuthCanUpdateOnlyLastLogin(pool as pg.Pool);
   });
 
+  it("lets bms_tenant extend the point-key catalog but not edit it (ADR 0051 A1)", async () => {
+    await assertTenantCannotEditPointKeys(pool as pg.Pool);
+  });
+
   describe("the server refuses the query, not merely the catalogue entry", () => {
     it("denies bms_tenant a select of password_hash while allowing the row", async () => {
       await assertTenantIsDeniedPasswordHashAtRuntime(pool as pg.Pool);
@@ -94,6 +100,10 @@ describe.skipIf(!connectionString)("F4.16 — role grant matrix", () => {
 
     it("denies bms_fleet the same column despite BYPASSRLS", async () => {
       await assertFleetIsDeniedPasswordHashAtRuntime(pool as pg.Pool);
+    });
+
+    it("refuses bms_tenant an update and a delete of bms.point_keys", async () => {
+      await assertTenantIsRefusedAPointKeyEditAtRuntime(pool as pg.Pool);
     });
   });
 
