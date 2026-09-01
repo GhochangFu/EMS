@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 
 import { loadFixtures, type Fixtures } from "../admin/asset-templates/asset-templates.instantiate.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { registerFixturePointKeys } from "../testing/integration-fixtures";
 import { asRole } from "../testing/role-urls";
 import {
   assertCacheIsNotReReadWithinTtl,
@@ -11,6 +12,7 @@ import {
   assertLoaderGoesDarkOnBareTenantPool,
   assertLoaderResolvesValidRowsAndSkipsInvalidOnes,
   cleanup,
+  FIXTURE_DERIVED_POINT_KEYS,
 } from "./calc-definitions.integration.spec";
 
 /**
@@ -30,6 +32,7 @@ describe.skipIf(!connectionString)("F2.4 — calc definition loader", () => {
   let pool: pg.Pool | undefined;
   let tenantPool: pg.Pool | undefined;
   let fx: Fixtures;
+  let removeFixtureKeys: (() => Promise<void>) | undefined;
 
   beforeAll(async () => {
     const created = await openIntegrationPool(connectionString as string, "F2.4");
@@ -42,11 +45,21 @@ describe.skipIf(!connectionString)("F2.4 — calc definition loader", () => {
     );
     fx = await loadFixtures(created);
     await cleanup(created);
+    // `F3.42`: `0058` makes `template_points.point_key` a foreign key, and the
+    // derived rows each case seeds carry invented codes. The product reaches
+    // this state through `replacePoints`, which gates every code against the
+    // catalog first; a fixture that writes the row itself must register it.
+    removeFixtureKeys = await registerFixturePointKeys(created, FIXTURE_DERIVED_POINT_KEYS);
   });
 
   afterAll(async () => {
     if (pool) {
       await cleanup(pool);
+      // After `cleanup`, which removes the template_points rows that reference
+      // these codes.
+      if (removeFixtureKeys) {
+        await removeFixtureKeys();
+      }
       await pool.end();
     }
     if (tenantPool) {

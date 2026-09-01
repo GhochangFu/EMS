@@ -57,13 +57,14 @@ const CATALOG_CODE = `E71B_AP_${randomUUID().replace(/-/g, "").slice(0, 12)}_CAT
 const TEMPLATE_CODE = `${ASSET_PREFIX}TPL`;
 const HAND_ASSET_CODE = `${ASSET_PREFIX}MAP`;
 const TEMPLATED_ASSET_CODE = `${ASSET_PREFIX}TAS`;
-// `template_points.point_key`, which carries no FK and cascades with the
-// template, so these need no per-run token of their own.
+// `template_points.point_key`, which cascades with the template, so these need
+// no per-run token of their own.
 //
-// **`F3.39`: `DERIVED_KEY` is the exception now.** `setOverride` eagerly
-// creates a real `bms.asset_points` row for it, and `0057` makes that column a
-// foreign key into `bms.point_keys` — so unlike `MEASURED_KEY` it must exist in
-// the catalog, and the `afterAll` sweep must remove it.
+// **`F3.39` made `DERIVED_KEY` a catalog row, and `F3.42` makes `MEASURED_KEY`
+// one too.** `0057` gave `asset_points.point_key` a foreign key, which
+// `setOverride`'s eager row for `DERIVED_KEY` needs; `0058` gives
+// `template_points.point_key` the same one, and BOTH keys go into that table.
+// So both must exist in the catalog, and the `afterAll` sweep must remove both.
 const MEASURED_KEY = "E71B_AP_M";
 const DERIVED_KEY = "E71B_AP_D";
 
@@ -141,6 +142,44 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
     let mappingAssetId = "";
     let templatedAssetId = "";
     await withTenant(tenantDb, organizationId, async (tx) => {
+      // **The catalog rows come FIRST, and that order is the constraint's.**
+      //
+      // `F3.39`: no `organizationId` — `bms.point_keys` is fleet-wide since
+      // migration `0057`. `CATALOG_CODE` stays unique per run, so a catalog row
+      // shared across organizations changes nothing here.
+      //
+      // DERIVED_KEY and MEASURED_KEY join it, and that is not tidiness. `0057`
+      // makes `asset_points.point_key` a foreign key, and the second assertion
+      // in this suite has `setOverride` eagerly create an asset_points row for
+      // DERIVED_KEY. `F3.42`'s `0058` makes `template_points.point_key` a
+      // foreign key too, and the template below declares BOTH keys — which is
+      // why this block moved above it rather than staying at the end.
+      //
+      // `onConflictDoNothing`: these two codes carry no per-run token, so a run
+      // that crashed before `afterAll` would otherwise leave a row that makes
+      // every later run fail on the unique index `0057` added.
+      await tx
+        .insert(pointKeys)
+        .values([
+          {
+            code: CATALOG_CODE,
+            name: "E7.1b AP Catalog Key",
+            unit: "kW",
+            active: true,
+          },
+          {
+            code: DERIVED_KEY,
+            name: "E7.1b AP Derived Key",
+            active: true,
+          },
+          {
+            code: MEASURED_KEY,
+            name: "E7.1b AP Measured Key",
+            active: true,
+          },
+        ])
+        .onConflictDoNothing();
+
       const [tpl] = await tx
         .insert(assetTemplates)
         .values({
@@ -207,28 +246,6 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
         .returning({ id: assets.id });
       templatedAssetId = templatedAsset.id;
 
-      // `F3.39`: no `organizationId` — `bms.point_keys` is fleet-wide since
-      // migration `0057`. The fixture code stays unique per run, so a
-      // catalog row shared across organizations changes nothing here.
-      //
-      // DERIVED_KEY joins it, and that is not tidiness: `0057` makes
-      // `asset_points.point_key` a foreign key, and the second assertion in
-      // this suite has `setOverride` eagerly create an asset_points row for
-      // exactly that key. Without the catalog row the insert violates the
-      // constraint before it can stamp the organization the test is about.
-      await tx.insert(pointKeys).values([
-        {
-          code: CATALOG_CODE,
-          name: "E7.1b AP Catalog Key",
-          unit: "kW",
-          active: true,
-        },
-        {
-          code: DERIVED_KEY,
-          name: "E7.1b AP Derived Key",
-          active: true,
-        },
-      ]);
     });
 
     ctx = {
@@ -275,8 +292,12 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
         `${ASSET_PREFIX}%`,
       ]);
       await ownerPool.query(`DELETE FROM bms.point_keys WHERE code LIKE $1`, [`${CATALOG_CODE}%`]);
-      // `F3.39`: the derived key is a catalog row now — see its constant.
-      await ownerPool.query(`DELETE FROM bms.point_keys WHERE code = $1`, [DERIVED_KEY]);
+      // `F3.39`/`F3.42`: both fixture keys are catalog rows now — see their
+      // constants. After the templates above, because `0058` makes
+      // `template_points.point_key` reference them.
+      await ownerPool.query(`DELETE FROM bms.point_keys WHERE code = ANY($1)`, [
+        [DERIVED_KEY, MEASURED_KEY],
+      ]);
     }
     await Promise.all(
       [ownerPool, authPool, tenantPool, fleetPool].filter(Boolean).map((p) => p.end()),

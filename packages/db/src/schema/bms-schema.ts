@@ -433,11 +433,11 @@ export const assetTemplates = bmsSchema.table("asset_templates", {
 /**
  * Points a template declares (ADR 0015).
  *
- * `pointKey` is a code resolved against the org's `point_keys` catalog, exactly
- * like `assetPoints.pointKey` — deliberately not a FK. A composite FK would
- * need a denormalized `organization_id` here, creating a second source of truth
- * that can drift, and domain packs (E5.1) must round-trip through JSON, which
- * code references survive and uuids do not.
+ * `pointKey` is a code resolved against the fleet-wide `point_keys` catalog,
+ * exactly like `assetPoints.pointKey`, and **`F3.42` gives it the same foreign
+ * key** — ADR 0051 Amendment 3, migration `0058`. ADR 0015 §3's reason for
+ * refusing one is void since `0057`: `code` is unique alone, so no denormalized
+ * `organization_id` is needed here. Domain packs still round-trip through JSON.
  */
 export const templatePoints = bmsSchema.table("template_points", {
   id: uuid("id").primaryKey().defaultRandom(),

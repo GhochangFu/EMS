@@ -390,3 +390,101 @@ inline notice and **not** an Amendment 7.
   add. What gates it is the `repo` Vitest project and the anchors: a notice that
   points at a heading it cannot resolve is the failure mode of this kind of
   change.
+
+## Amendment 3 — the same foreign key on template_points, and why an authored orphan must not be admitted (2026-09-01)
+
+### Status
+
+Accepted — 2026-09-01, by the repository owner, at the
+`build-operating-model.md` step 2 gate. It closes the open question
+[Amendment 2](#amendment-2--two-clauses-corrected-against-what-shipped-and-the-records-0057-falsified-2026-09-01)
+decision 3 recorded against ADR 0015 §3 reason 2. The question was put with
+three alternatives and a recommendation; the recommendation was ruled.
+
+### Context
+
+ADR 0015 §3 reason 2 rejected a foreign key from `bms.template_points` because
+`bms.point_keys` was unique on `(organization_id, code)`, so the constraint
+would have forced a denormalized `organization_id` onto the child row. Migration
+`0057` removed that premise. `code` is unique by itself, and a plain
+single-column foreign key needs no denormalization at all.
+
+Four facts, measured on the running stack on 2026-09-01 rather than inferred.
+
+**1. The constraint applies cleanly today.** `bms.template_points` holds 15 rows
+carrying 14 distinct codes, and **zero** of them are absent from
+`bms.point_keys`. Unlike `0057`, no reconciliation step is needed here.
+
+**2. There is exactly one production write path, and it is gated three times.**
+`AssetTemplatesService.replacePoints` is the only `INSERT`; there is no `UPDATE`
+of `point_key` anywhere, because `replacePoints` deletes and re-inserts. Its
+three callers — create, update and publish — each call
+`assertPointKeysActive` first.
+
+**3. That gate checks strictly more than a foreign key can, on one axis.** It
+requires `active = true`, which no constraint can express: a retired code keeps
+its row. It also names every offending code, where a constraint violation names
+only itself.
+
+**4. And there is already a writer that passes no gate at all.**
+`packages/db/src/asset-template-health-seed.ts` writes `bms.template_points` by
+raw SQL. It happens to be correct today — fact 1 — but nothing enforces that,
+which is precisely the shape of this ADR's own fact 4 about `asset_points`: an
+unenforced vocabulary is not a constraint on what may be written, and eventually
+stops describing what is written.
+
+### Decision
+
+1. **`bms.template_points.point_key` gains a foreign key** to
+   `bms.point_keys(code)`, in migration `0058`, named
+   `template_points_point_key_point_keys_code_fk` to match `0057`'s constraint
+   on `bms.asset_points`.
+
+2. **`assertPointKeysActive` stays, and is not weakened to match.** The two
+   controls check different things and neither subsumes the other: the database
+   holds *existence*, against every writer including the ones that do not go
+   through the service; the service holds *active* and names the offending
+   codes. ADR 0015's own line — *"Validity is checked twice, and this is
+   required, not belt-and-braces"* — is the reasoning, and it survives its
+   §3 reason 2 being void.
+
+3. **An orphan aborts the migration with its codes named. It is NOT admitted to
+   the vocabulary.** This is a deliberate asymmetry with decision 3 of this ADR,
+   which admitted `asset_points`' sixteen orphans, and the difference is what
+   the row holds. An `asset_points` orphan is a **measurement a device
+   actually carries** — refusing it would refuse a fact. A `template_points`
+   orphan is **authored text**, and `F3.38`'s entire failure was eight camelCase
+   names typed into the stock catalog that matched no vocabulary. Auto-admitting
+   an authored orphan would turn each such typo into permanent global
+   vocabulary, which is the defect this ADR exists to close, arriving by the
+   other door.
+
+4. **The abort is explicit, not a bare constraint violation.** `0058` raises
+   before the `ALTER`, naming every `(template, code)` pair that would fail, for
+   the reason `assertPointKeysActive` names its codes: an operator told only
+   `template_points_point_key_point_keys_code_fk` has to bisect their templates
+   by hand. The fix is theirs to choose — correct the template, or register the
+   code.
+
+### Consequences
+
+- **`F3.42` is the row**, and `0051` is its gate; no separate ADR.
+
+- **On this database the migration is a no-op plus a constraint**, so the risk
+  is carried entirely by installs whose templates were authored before it. For
+  those the outcome is a failed migration with a list, which is the loud
+  outcome, and correct: a template naming a measurement the platform does not
+  have cannot resolve a widget, which is `F3.38` restated.
+
+- **`assertPointKeysActive`'s message is stale and moves with this row.** It
+  still says *"Not in this organization's active point-key catalog"*; there is
+  no organization catalog since `0057`. `resolveCatalogPointKey`'s equivalent
+  message was corrected in `F3.39` and this one was missed.
+
+- **The `template_points` half of ADR 0015 §3 is now settled**, and its inline
+  notice points here rather than at an open question.
+
+- **No per-organization escape is created.** A template that needs a code the
+  platform lacks asks for it — decision 5's write path, or
+  [Amendment 1](#amendment-1--onboarding-may-extend-the-global-catalog-and-is-refused-when-the-draft-contradicts-it-2026-09-01)'s
+  onboarding extension. That is the same answer this ADR gives everywhere else.

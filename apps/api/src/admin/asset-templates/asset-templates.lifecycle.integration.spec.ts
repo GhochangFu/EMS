@@ -162,7 +162,9 @@ export async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
  * line 256, and that code sorts early. This suite then adopted a foreign,
  * transient key and validated a template against it *after* its owner had
  * cleaned up — `Not in this organization's active point-key catalog`, on a
- * template that was correct. It reddened CI on `main` at `7543253`.
+ * template that was correct. It reddened CI on `main` at `7543253`. (That is
+ * the message as it read then; `F3.42` shortened it to `Not in the active
+ * point-key catalog`, there being no organization catalog since `0057`.)
  *
  * `F4.67` is the same mechanism on `bms.assets` and its fix was the same idea;
  * it was ordering by `code` there too, which is why closing it did not stop

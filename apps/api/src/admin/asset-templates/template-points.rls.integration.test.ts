@@ -7,6 +7,7 @@ import { createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
+import { registerFixturePointKeys } from "../../testing/integration-fixtures";
 import { asRole } from "../../testing/role-urls";
 import {
   assertDivergentTemplatePointIsolatedByOwnOrg,
@@ -56,6 +57,7 @@ describe.skipIf(!connectionString)("E7.1b — template_points own-column isolati
   let templateId = "";
   let matchingPointId = "";
   let divergentPointId = "";
+  let removeFixtureKeys: (() => Promise<void>) | undefined;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -103,9 +105,18 @@ describe.skipIf(!connectionString)("E7.1b — template_points own-column isolati
     );
     templateId = tpl.rows[0]!.id;
 
+    // `F3.42`: both codes must exist in the fleet-wide catalog before the rows
+    // below. Migration `0058` makes `template_points.point_key` a foreign key
+    // into `bms.point_keys`, and these are invented per-run codes — the product
+    // reaches this state through `replacePoints`, which registers nothing but
+    // gates every code through `assertPointKeysActive` first.
+    removeFixtureKeys = await registerFixturePointKeys(ownerPool, [MATCHING_KEY, DIVERGENT_KEY]);
+
     // Two points under it: one stamped the parent's org (A, what the service
-    // does), one stamped the OTHER org (B, a divergence the service cannot make
-    // — template_points.point_key is not a composite FK, so nothing rejects it).
+    // does), one stamped the OTHER org (B, a divergence the service cannot
+    // make — the org is not part of the point-key reference, so `0058`'s
+    // single-column foreign key does not reject it, which is the whole point of
+    // the assertion below).
     const matching = await ownerPool.query<{ id: string }>(
       `INSERT INTO bms.template_points (organization_id, template_id, point_key)
          VALUES ($1, $2, $3) RETURNING id`,
@@ -126,6 +137,10 @@ describe.skipIf(!connectionString)("E7.1b — template_points own-column isolati
     // fleet (BYPASSRLS) pool clears both points regardless of their org.
     if (ownerPool && templateId) {
       await ownerPool.query("DELETE FROM bms.asset_templates WHERE id = $1", [templateId]);
+    }
+    // After the cascade, because `0058` makes those rows reference these codes.
+    if (removeFixtureKeys) {
+      await removeFixtureKeys();
     }
     await Promise.all([ownerPool, tenantPool].filter(Boolean).map((p) => p.end()));
   });

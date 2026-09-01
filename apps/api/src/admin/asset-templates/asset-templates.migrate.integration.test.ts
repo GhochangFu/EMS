@@ -83,7 +83,19 @@ describe.skipIf(!connectionString)("F2.6 — template version migration", () => 
     // `F3.39`: the template points this suite invents (`KW`, `VOLTS`) reach
     // bms.asset_points, whose point_key references point_keys(code) from
     // migration `0057`. See `registerFixturePointKeys`.
-    releasePointKeys = await registerFixturePointKeys(created, ["KW", "VOLTS", "KWH"]);
+    //
+    // **`F3.42` adds the other three.** `0058` gives `template_points.point_key`
+    // the same foreign key, so a code needs a catalog row even when it never
+    // reaches an asset — `PF`, `PANEL_A` and `PANEL_B` are declared by fixture
+    // templates and instantiate onto nothing.
+    releasePointKeys = await registerFixturePointKeys(created, [
+      "KW",
+      "VOLTS",
+      "KWH",
+      "PF",
+      "PANEL_A",
+      "PANEL_B",
+    ]);
     // Fixtures are cross-organization by design and set up on the owner
     // connection on purpose — seeding is not the behaviour under test.
     fx = await loadFixtures(created);
