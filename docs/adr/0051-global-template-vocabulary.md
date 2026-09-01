@@ -488,3 +488,82 @@ stops describing what is written.
   platform lacks asks for it — decision 5's write path, or
   [Amendment 1](#amendment-1--onboarding-may-extend-the-global-catalog-and-is-refused-when-the-draft-contradicts-it-2026-09-01)'s
   onboarding extension. That is the same answer this ADR gives everywhere else.
+
+## Amendment 4 — the database draws Amendment 1's line, not only the code (2026-09-01)
+
+### Status
+
+Accepted — 2026-09-01, by the repository owner, at the
+`build-operating-model.md` step 2 gate. Raised by the `F3.42` post-merge
+security review, which found that
+[Amendment 1](#amendment-1--onboarding-may-extend-the-global-catalog-and-is-refused-when-the-draft-contradicts-it-2026-09-01)
+decision 1's "may *extend*, cannot *edit*" boundary had no enforcement below the
+service layer. The question was put with three alternatives and a
+recommendation; the recommendation was ruled.
+
+### Context
+
+Four facts, all measured on the running stack on 2026-09-01.
+
+1. **`bms.point_keys` carries no policy.** `0057` dropped its
+   `tenant_isolation` policy and its `FORCE` flag to make the catalog global —
+   `relrowsecurity = f`, zero rows in `pg_policies`.
+
+2. **`bms_tenant` held all four verbs on it.** `0041:112`'s
+   `ALTER DEFAULT PRIVILEGES ... GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES
+   TO bms_tenant, bms_fleet` reaches every `bms` table. With the policy gone,
+   the grant was the entire control, and it permitted the two verbs decision 1
+   forbids.
+
+3. **The reachable surface is one table, not the class.** `asset_domains`,
+   `rule_categories`, `alarm_severities`, `alarm_skills`, `asset_roles` and
+   `dashboard_sections` share the grant and the absent policy, and none has a
+   tenant-pool writer. `bms.point_keys` has one: `OnboardingCommitService`
+   inserts inside `withTenant(this.tenantDb, …)`, which Amendment 1 authorises.
+
+4. **Nothing legitimate uses the two verbs on that connection.** Every
+   production `UPDATE` and `DELETE` of the catalog runs on `fleetDb`
+   (`point-keys.service.ts:129`, `:160`, `:181`); every test cleanup runs on an
+   owner or fleet pool.
+
+An `UPDATE bms.point_keys SET active = false` on the tenant pool retires a code
+fleet-wide. `AssetTemplatesService.assertPointKeysActive` then refuses every
+*other* organization's template edit and publish on that code, and
+`TelemetryWriteService` resolves an unmapped point's unit from the catalog row.
+Only a global administrator can undo it.
+
+### Decision
+
+1. **Migration `0059` revokes `UPDATE` and `DELETE` on `bms.point_keys` from
+   `bms_tenant`.** It runs as `bms_owner`, which is the grantor — a superuser
+   issuing the same statement removes nothing and reports success.
+
+2. **`SELECT` and `INSERT` survive, and that is asserted rather than assumed.**
+   `INSERT` is decision 1's authorised extension path; `SELECT` is how every
+   tenant reads the vocabulary. `0059` raises if either is missing, and
+   `role-grants.integration.spec.ts` proves all four verbs at runtime with
+   `SET LOCAL ROLE`.
+
+3. **The revoke narrows one table, not the global-vocabulary class.** Context
+   fact 3 is the reason. A second table earns the same treatment when it grows a
+   tenant-pool writer, not before.
+
+4. **The onboarding insert stays on the tenant connection.** Moving it to
+   `fleetDb` would revoke `INSERT` too, and it would trade this exposure for
+   orphan catalog rows whenever a commit fails after it — the write currently
+   shares the estate's transaction.
+
+### Consequences
+
+- **The class is now uneven on purpose.** Six global-vocabulary tables still
+  grant `bms_tenant` all four verbs. That is defensible only while none of them
+  has a tenant-pool writer, so adding one is the trigger for a matching revoke —
+  and nothing enforces that today beyond this sentence.
+
+- **`AGENTS.md` §4.4's platform-vocabulary list does not name `bms.point_keys`,
+  and that omission is how the grant stayed unexamined.** The list is where a
+  reviewer looks to ask which tables rely on grants alone. It is owed a
+  `chore(agents):` PR along with the rest of the ADR 0051 sweep.
+
+- **A tenant that needs a code changed still asks.** The answer is decision 5's
+  global-admin write path, which is unchanged and still unbuilt.
