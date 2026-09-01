@@ -171,7 +171,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [
-            { assetRoleCode: "incoming-supply", pointKey: "kW", pointRole: "primary", sortOrder: 0 },
+            { assetRoleCode: "incoming-supply", pointKey: "kw", pointRole: "primary", sortOrder: 0 },
           ],
           sources: [],
           widgetType: "value_tile",
@@ -184,17 +184,26 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridY: TILE_ROW_Y,
           gridW: TILE_W,
           gridH: TILE_H,
+          // `F3.38`: this bound `loadPercent`, which existed in no vocabulary.
+          // The nearest real code is `load_pct`, but it belongs to
+          // `CONTROL_ROOM_UPS_POINT_KEYS` and no seeded electrical asset
+          // registers it — renaming to it would have moved the key into the
+          // vocabulary and left the widget resolving nothing, which is the same
+          // empty tile with a better-looking diff. `kw` is what every seeded
+          // electrical asset actually carries, so the tile reads a load in kW.
+          // The unit moved with the key: a kW value under a `%` label is wrong
+          // in the one way nothing reports.
           bindings: [
             {
               assetRoleCode: "transformer",
-              pointKey: "loadPercent",
+              pointKey: "kw",
               pointRole: "primary",
               sortOrder: 0,
             },
           ],
           sources: [],
           widgetType: "value_tile",
-          config: { icon: "bolt", unit: "%" },
+          config: { icon: "bolt", unit: "kW" },
         },
         // `ht-panel` is one of `0051`'s own named plural nodes ("HT Panels 2 ·
         // all good"), so this is the multi-match case stated rather than left
@@ -209,7 +218,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: HALF_CANVAS_W,
           gridH: LOWER_ROW_H,
           bindings: [
-            { assetRoleCode: "ht-panel", pointKey: "kW", pointRole: "series", sortOrder: 0 },
+            { assetRoleCode: "ht-panel", pointKey: "kw", pointRole: "series", sortOrder: 0 },
           ],
           sources: [],
           widgetType: "chart",
@@ -286,7 +295,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [
-            { assetRoleCode: "raw-intake", pointKey: "flowRate", pointRole: "primary", sortOrder: 0 },
+            { assetRoleCode: "raw-intake", pointKey: "flow_rate", pointRole: "primary", sortOrder: 0 },
           ],
           sources: [],
           widgetType: "value_tile",
@@ -300,7 +309,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [
-            { assetRoleCode: "pump-house", pointKey: "kW", pointRole: "primary", sortOrder: 0 },
+            { assetRoleCode: "pump-house", pointKey: "kw", pointRole: "primary", sortOrder: 0 },
           ],
           sources: [],
           widgetType: "value_tile",
@@ -317,7 +326,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: HALF_CANVAS_W,
           gridH: LOWER_ROW_H,
           bindings: [
-            { assetRoleCode: "pump-house", pointKey: "flowRate", pointRole: "series", sortOrder: 0 },
+            { assetRoleCode: "pump-house", pointKey: "flow_rate", pointRole: "series", sortOrder: 0 },
           ],
           sources: [],
           widgetType: "chart",
@@ -396,7 +405,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [
             {
               assetRoleCode: "inlet-screen",
-              pointKey: "flowRate",
+              pointKey: "flow_rate",
               pointRole: "primary",
               sortOrder: 0,
             },
@@ -415,7 +424,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [
             {
               assetRoleCode: "aeration",
-              pointKey: "dissolvedOxygen",
+              pointKey: "dissolved_oxygen",
               pointRole: "primary",
               sortOrder: 0,
             },
@@ -438,7 +447,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [
             {
               assetRoleCode: "aeration",
-              pointKey: "dissolvedOxygen",
+              pointKey: "dissolved_oxygen",
               pointRole: "series",
               sortOrder: 0,
             },
@@ -518,7 +527,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [
-            { assetRoleCode: "neutralization", pointKey: "pH", pointRole: "primary", sortOrder: 0 },
+            { assetRoleCode: "neutralization", pointKey: "ph", pointRole: "primary", sortOrder: 0 },
           ],
           sources: [],
           widgetType: "value_tile",
@@ -623,11 +632,15 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [
-            { assetRoleCode: "chiller", pointKey: "tons", pointRole: "primary", sortOrder: 0 },
+            { assetRoleCode: "chiller", pointKey: "cooling_kw", pointRole: "primary", sortOrder: 0 },
           ],
+          // `F3.38`: `tons` existed in no vocabulary. `cooling_kw` is the HVAC
+          // set's own capacity code, so the unit moved from `TR` to `kW` with
+          // it — tons of refrigeration and kilowatts are different quantities,
+          // and the label is the only thing a reader has to tell them apart.
           sources: [],
           widgetType: "value_tile",
-          config: { icon: "gauge", unit: "TR" },
+          config: { icon: "gauge", unit: "kW" },
         },
         {
           key: "ahu-fcu-tile",
@@ -639,7 +652,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [
             {
               assetRoleCode: "ahu-fcu",
-              pointKey: "supplyAirTemp",
+              pointKey: "supply_air_temp_c",
               pointRole: "primary",
               sortOrder: 0,
             },
@@ -659,7 +672,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: HALF_CANVAS_W,
           gridH: LOWER_ROW_H,
           bindings: [
-            { assetRoleCode: "chiller", pointKey: "tons", pointRole: "series", sortOrder: 0 },
+            { assetRoleCode: "chiller", pointKey: "cooling_kw", pointRole: "series", sortOrder: 0 },
           ],
           sources: [],
           widgetType: "chart",
