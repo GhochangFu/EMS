@@ -280,3 +280,178 @@ path before the branch merged.
   ruling recorded only in the artifact it changed is invisible to the next row,
   which reads the ADR. When a plan gate contradicts its own ADR, the amendment
   is part of the work, not a follow-up.
+
+## Amendment 2 — what an over-matched role does, and what closes the section column (2026-09-01)
+
+### Context
+
+`F3.36`'s step-3 plan was written on 2026-09-01, before any implementation code,
+and it found **two gaps** in this record. Neither is a contradiction of the kind
+Amendment 1 corrected; both are questions the original six decisions did not
+reach. Amendment 1's closing line is why they are settled here rather than in a
+migration header: *"When a plan gate contradicts its own ADR, the amendment is
+part of the work, not a follow-up."* A gap is the same case as a contradiction —
+the next reader reads this record, not the plan.
+
+Both were put to the owner as separate questions with alternatives and a
+recommendation, on the practice this ADR's own acceptance used. **The first was
+ruled as recommended. The second was not**, and the declined recommendation is
+recorded below with the cost the owner accepted, because a ruling that only
+records the winner teaches the next reader nothing.
+
+#### Gap 1 — decision 6 rules only the zero-match case
+
+Decision 6 says an **unresolved** role imports as a widget with zero bindings.
+It does not say what happens when a role matches **more** members than the widget
+can hold, nor when it matches N members of which only M carry the widget's point
+key. `F3.37` had already paid for this distinction one level down: its closure
+records that it shipped `roleCounts` precisely because *"two-of-three renders a
+widget that looks right and is one short."* A widget that silently binds one of
+three chillers is that failure, moved up one level.
+
+#### Gap 2 — decision 1 does not say what closes "the section it belongs to"
+
+Decision 1 gives `bms.dashboard_templates` *"the section it belongs to"* and
+stops there. Migration `0051`'s header deferred the question here in as many
+words: a foreign key to `bms.asset_domains` *"would have forced two new rows
+(`stp`, `etp`) into the vocabulary `assets.domain` and `asset_templates.domain`
+read, which changes the plant-domain picker for every organization — a product
+decision about the asset domain vocabulary, not a display tweak inside this
+row."* `bms.asset_domains` holds five codes (`electrical`, `hvac`, `it`,
+`environment`, `water`); Sheet 02 names six sections, three of which
+(`stp`, `etp`, `sustainability`) have no code.
+
+### Decision
+
+#### 1. Instantiation returns a per-widget resolution report, and never a silent success
+
+**This is the load-bearing half of gap 1, and it is stated first on purpose.**
+Every instantiate returns, per widget, the role codes it resolved, how many
+members matched, how many points were bound, and a single `outcome`. A future
+reader who wants to change the tie-break in decision 2 below may do so; **the
+reporting requirement is not theirs to drop.** It is what makes decision 6's
+"no data bound" a state an administrator can find rather than one they must
+notice.
+
+#### 2. An over-match binds the first member by `assets.code`, and reports `truncated`
+
+When a role matches more members than `WIDGET_POINT_CARDINALITY[type].max`
+allows — three chillers into a `radial_gauge`, whose `max` is 1 — instantiation
+binds the **first member ordered by `assets.code`** and reports
+`matchedMembers: 3, boundPoints: 1, outcome: "truncated"`.
+
+`assets.code` is `NOT NULL UNIQUE`, so it is a total order and the answer is
+deterministic rather than whatever the planner returned. `F3.37` established that
+order for `members()` and this reuses it rather than inventing a second one.
+
+**A widget whose `max` is greater than 1 is not a new case.** Migration `0051`'s
+header already ruled it: *"One role still maps to one widget however many members
+match"* — a `chart` binds every matching member's point, up to its `max`, and
+that is `outcome: "bound"`. Only the `max = 1` types needed a ruling.
+
+**The declined alternative, and why.** Leaving an over-matched widget unbound
+(`outcome: "unresolved"`, the administrator maps it by hand) was offered. It is
+decision 4's rejected "named slots" option used as decision 6's fallback, and it
+is defensible — no arbitrary pick is made. It was declined because a default
+template that arrives needing manual work per plant is the thing decision 4
+called *"the opposite of a default that works on arrival."* Refusing the
+instantiate outright was also offered and declined, on decision 6's own reasoning:
+refusing gives a plant with five of six sections nothing at all.
+
+#### 3. A partial match binds what resolves, and reports `partial`
+
+When a role matches N members but only M of them carry the widget's `pointKey`,
+instantiation binds the M and reports `matchedMembers: N, boundPoints: M,
+outcome: "partial"`. It never refuses.
+
+This applies [ADR 0047](0047-configurable-dashboards.md)'s rule rather than
+making a fresh choice: `WIDGET_POINT_CARDINALITY`'s `min` is *"an authoring rule
+and never a stored invariant"*, because a read path that refuses a widget with
+too few bindings turns a retired sensor into a missing dashboard. What is new
+here is only that the shortfall must be **reported**, per decision 1 above.
+
+#### 4. `outcome` is a **closed** vocabulary of four
+
+`bound` · `truncated` · `partial` · `unresolved`. A `z.enum`, and no lookup
+table.
+
+**§4.8's test as ADR 0032 rewrote it is what decides it, and it lands the
+opposite way from decision 5's role vocabulary** — say so here, because this ADR
+now contains one open vocabulary and one closed one and the reasoning must not
+leak between them. Ask whether the behaviour can be carried as data. **A role's
+behaviour is "match this member", which is the code itself, so it is open. An
+`outcome`'s behaviour is a distinct affordance the UI renders for each of the
+four, so a fifth code declared by an `INSERT` would arrive with nothing to draw
+it.** That is `dashboard_widget_points.role`'s case, not `asset_roles`'. The
+value is never stored, so it needs no `CHECK`.
+
+#### 5. The section column is closed by a new **global** `bms.dashboard_sections` table
+
+`bms.dashboard_templates.section` is `NOT NULL REFERENCES
+bms.dashboard_sections(code)`. The table is **global** — no `organization_id`, no
+row-level security, no policy — joining `asset_domains`, `rule_categories`,
+`alarm_severities`, `alarm_skills` and `asset_roles` as a vocabulary the class
+migration `0047` deliberately leaves alone. It is seeded with the six sections
+Sheet 02 names: `electrical`, `water`, `stp`, `etp`, `hvac`, `sustainability`.
+
+**Global for the reason Amendment 1 gave for `bms.asset_roles`, applied to a
+second vocabulary.** Amendment 1 decision 2(b): *"decision 3's stock catalog only
+works if a role code means the same thing in every organization."* A section code
+is in exactly that position — the six stock entries each name their section, so a
+per-tenant section vocabulary would break the import identically. The ruling
+therefore follows from an existing decision rather than standing on its own.
+
+**The column is named `section`, not `domain`.** It no longer references
+`bms.asset_domains`, and `domain` is the plant-domain vocabulary's name
+throughout `assets` and `asset_templates`; reusing it would tell every future
+reader the wrong thing. `section` is this ADR's own word for it.
+
+**`bms.asset_domains` is unchanged and stays at five codes.** No `stp`, no `etp`,
+no `sustainability`. The plant-domain picker on `assets`, `asset_templates` and
+the rules surface is untouched by `F3.36`.
+
+#### 6. The recommendation declined, and the cost accepted
+
+**The recommendation was to extend `bms.asset_domains` with the three missing
+codes** and point `dashboard_templates.domain` at it, column-for-column with
+`asset_templates.domain` — one vocabulary, and §4.8's worked example names a
+plant domain as the canonical open one. **The owner ruled for the separate
+table**, and that is the decision.
+
+Two costs come with it and are accepted rather than unnoticed:
+
+1. **Two vocabularies now overlap in meaning.** `bms.asset_domains` and
+   `bms.dashboard_sections` share four codes (`electrical`, `water`, `hvac`, and
+   `environment`/`sustainability` in spirit) and will drift. §4.8 records this
+   shape as the `F4.45` failure — *"an asymmetry that will not resolve is often
+   two vocabularies wearing one name"* — and here the asymmetry is real and
+   deliberate: a **section** is a screen Sheet 02 draws, a **domain** is what an
+   asset is. They are not the same axis and were never going to stay aligned.
+   **A future row that needs them reconciled should reconcile them explicitly,
+   not by quietly repointing one foreign key.**
+2. **`F3.36`'s effort moves 8–12 → 9–13** — one more table, one more seed, one
+   more global-vocabulary gate. Recorded here on the `F3.37` precedent, where the
+   correction 3–4 → 6–8 was written down with its cause rather than absorbed.
+
+### Consequences
+
+- **`bms.dashboard_sections` needs its own gate, and `F3.36` is the only place it
+  can live.** `tests/f3.37-asset-role-vocabulary.test.ts` assertion 1 is the
+  precedent: it fails the build if `bms.asset_roles` gains an `organization_id`,
+  an `ENABLE ROW LEVEL SECURITY` or a policy. The mirror assertion for
+  `dashboard_sections` belongs in `tests/f3.36-dashboard-templates-schema.test.ts`.
+  Without it, one migration creates a tenant-scoped table and a global table side
+  by side with a gate on only the first, and the next reader cannot tell the
+  global one was deliberate.
+- **`tests/adr-0043-tenant-columns.test.ts` is not edited for either table.** Its
+  `TENANT_TABLES` and `NO_COLUMN` lists are both scanned against migration
+  `0046`'s text, so a table born in `0056` cannot appear in either. Checked, not
+  assumed — and written down, because a reviewer who knows `NO_COLUMN` is the
+  global-vocabulary list will otherwise add `dashboard_sections` to it and turn
+  the suite red.
+- **The `F3.36` closure sweep has one more target than the grep list this ADR
+  carries: Amendment 2.** The list was built by grep at authoring time and could
+  name neither amendment. Add `dashboard_sections` and `section` to the searches.
+- **Decision 6 is unchanged.** A role that matches nothing still imports as a
+  widget with zero bindings, rendering "no data bound". Amendment 2 extends the
+  cases either side of it; it does not re-read it.

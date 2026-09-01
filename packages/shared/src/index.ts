@@ -28,6 +28,7 @@ import type * as A from "./contracts/admin";
 import type * as Au from "./contracts/auth";
 import type * as D from "./contracts/dashboard";
 import type * as Db from "./contracts/dashboard-builder";
+import type * as Dt from "./contracts/dashboard-templates";
 import type * as E from "./contracts/envelopes";
 import type * as He from "./contracts/health";
 import type * as N from "./contracts/notifications";
@@ -102,6 +103,46 @@ export type DashboardWidgetDto = z.infer<typeof Db.dashboardWidgetDtoSchema>;
 export type DashboardDto = z.infer<typeof Db.dashboardDtoSchema>;
 /** A dashboard in a list, without its widgets. */
 export type DashboardSummaryDto = z.infer<typeof Db.dashboardSummaryDtoSchema>;
+
+// --- F3.36 — section dashboard templates (ADR 0049 + Amendments 1, 2) -------
+/**
+ * A code into `bms.dashboard_sections`. **Open**, like an asset role and unlike
+ * a widget type: a section's behaviour is "group these templates", which is the
+ * code itself, so a section declared by an `INSERT` arrives fully functional
+ * (ADR 0049 Amendment 2 decision 5).
+ */
+export type DashboardSectionCode = z.infer<typeof Dt.dashboardSectionCodeSchema>;
+/** One row of the global `bms.dashboard_sections` vocabulary. */
+export type DashboardSectionDto = z.infer<typeof Dt.dashboardSectionDtoSchema>;
+/** A role-plus-point-key binding — never an asset id (ADR 0049 decision 4). */
+export type SectionTemplateBinding = z.infer<typeof Dt.sectionTemplateBindingSchema>;
+/** A metric-catalog binding, which resolves with no role at all. */
+export type SectionTemplateSource = z.infer<typeof Dt.sectionTemplateSourceSchema>;
+/** One widget of a section template, narrowing on `widgetType`. */
+export type SectionTemplateWidget = z.infer<typeof Dt.sectionTemplateWidgetSchema>;
+/** A template's whole authored canvas. */
+export type SectionTemplateContent = z.infer<typeof Dt.sectionTemplateContentSchema>;
+/** A section template version, with its content. */
+export type DashboardTemplateDto = z.infer<typeof Dt.dashboardTemplateDtoSchema>;
+/** A section template in a list, without its content. */
+export type DashboardTemplateSummaryDto = z.infer<typeof Dt.dashboardTemplateSummaryDtoSchema>;
+/** One entry of the repository stock catalog, before it is imported. */
+export type StockDashboardTemplateDto = z.infer<typeof Dt.stockDashboardTemplateDtoSchema>;
+/**
+ * What became of one widget's bindings at instantiation. **Closed**, and for the
+ * opposite reason to `DashboardSectionCode`: each outcome is a distinct
+ * affordance the UI draws, so a fifth would arrive with nothing to render it.
+ */
+export type TemplateWidgetResolutionOutcome = z.infer<
+  typeof Dt.templateWidgetResolutionOutcomeSchema
+>;
+/** Per-widget report — ADR 0049 Amendment 2 decision 1: instantiation never
+ * succeeds silently. */
+export type TemplateWidgetResolutionDto = z.infer<typeof Dt.templateWidgetResolutionDtoSchema>;
+/** The instantiate response: the dashboard created, and every widget's outcome. */
+export type InstantiateSectionTemplateResponse = z.infer<
+  typeof Dt.instantiateSectionTemplateResponseSchema
+>;
 
 // --- F3.35 Stage C — the metric catalog (ADR 0048 decisions 1, 2, 4) --------
 /**
@@ -456,6 +497,14 @@ export type AssetPointCalcConfigListResponse = z.infer<
 /** `F2.6` (ADR 0039) — every version of one template code. */
 export type TemplateVersionsListResponse = z.infer<
   typeof E.templateVersionsListResponseSchema
+>;
+/** `F3.36` Part F (ADR 0049) — the section template list. Rows omit `content`. */
+export type DashboardTemplatesListResponse = z.infer<
+  typeof E.dashboardTemplatesListResponseSchema
+>;
+/** `F3.36` Part F (ADR 0049 decision 3) — the repository's stock catalog. */
+export type StockDashboardTemplatesListResponse = z.infer<
+  typeof E.stockDashboardTemplatesListResponseSchema
 >;
 /** `F2.6` (ADR 0039) — decision 2's preview. Writes nothing. */
 export type TemplateMigrationPreviewResponse = z.infer<

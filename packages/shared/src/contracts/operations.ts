@@ -378,7 +378,39 @@ export const assetRoleDtoSchema = z.object({
 });
 
 /**
- * `GET /api/v1/vocabularies` — all five open vocabularies in one response.
+ * A code into `bms.dashboard_sections` — `F3.36`, ADR 0049 Amendment 2
+ * decision 5.
+ *
+ * **A bounded string and never a `z.enum`**, for the reason §4.8's test as ADR
+ * 0032 rewrote it gives: a section's behaviour is "group these templates", which
+ * *is* the code, so a section declared by an `INSERT` arrives fully functional.
+ * Sheet 04 states the product half — *"adding a seventh is configuration, not a
+ * release"*. The set is closed by the table and by
+ * `dashboard_templates_section_fkey`, and `DashboardTemplatesService.assertSection`
+ * is the boundary that turns an unknown code into a 400 naming the live options.
+ *
+ * It lives **here**, beside `assetRoleDtoSchema`, rather than in
+ * `./dashboard-templates`: this is a global vocabulary served by
+ * `GET /api/v1/vocabularies` like the five before it, and putting it in the
+ * dashboard-template module would make that file import this one *and* this one
+ * import it back.
+ */
+export const dashboardSectionCodeSchema = z.string().min(1).max(64);
+
+/** One row of `bms.dashboard_sections`. Matches `assetRoleDtoSchema`'s shape —
+ * no `tone`, no `rank` — plus a `description`, because a section is a screen an
+ * administrator picks from a list and the label alone does not say what is on
+ * it. */
+export const dashboardSectionDtoSchema = z.object({
+  code: dashboardSectionCodeSchema,
+  label: z.string(),
+  description: z.string().nullable(),
+  sortOrder: z.number(),
+  active: z.boolean(),
+});
+
+/**
+ * `GET /api/v1/vocabularies` — all six open vocabularies in one response.
  *
  * One endpoint rather than four because every consumer needs them together:
  * the rules page renders a concern badge beside a plant badge and a severity
@@ -402,6 +434,19 @@ export const vocabulariesResponseSchema = z.object({
   alarmSkills: z.array(alarmSkillDtoSchema),
   /** ADR 0049 decision 5 (`F3.37`). Ordered by `sortOrder` ascending. */
   assetRoles: z.array(assetRoleDtoSchema),
+  /**
+   * ADR 0049 Amendment 2 decision 5 (`F3.36`). Ordered by `sortOrder`
+   * ascending, like `assetDomains` and `assetRoles` — a section carries no
+   * urgency, so no `rank` column.
+   *
+   * **It is served here rather than from the template endpoint on purpose.**
+   * `bms.dashboard_sections` is the sixth global vocabulary, and the five before
+   * it all arrive through `GET /api/v1/vocabularies`. A section picker fed from
+   * somewhere else would be the one vocabulary a reader has to go looking for,
+   * and `F4.43`'s failure — a hardcoded list that falls behind and silently
+   * renders the wrong option — starts with exactly that inconvenience.
+   */
+  dashboardSections: z.array(dashboardSectionDtoSchema),
 });
 export const automationRuleOperatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
 /**

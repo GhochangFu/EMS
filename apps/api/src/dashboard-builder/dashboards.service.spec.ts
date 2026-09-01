@@ -37,6 +37,9 @@ const dashboardRow = {
   description: null,
   locationId: null,
   assetGroupId: null,
+  // `F3.36` / ADR 0049 decision 2 — the template version stamp. NULL is the hand-built
+  // dashboard, which is what this fixture is.
+  templateId: null,
   createdAt: new Date("2026-08-01T00:00:00.000Z"),
   updatedAt: new Date("2026-08-02T00:00:00.000Z"),
 };

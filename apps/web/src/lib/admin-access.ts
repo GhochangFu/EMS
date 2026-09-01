@@ -115,6 +115,11 @@ export const masterDataTabs = [
   // one role ADR 0015 §7 exists to serve. The authoring controls inside are
   // hidden separately by `canAuthorTemplates`.
   { label: "Asset Templates", path: "/admin/asset-templates" },
+  // `F3.36` Part F (ADR 0049). Ungated, like Asset Groups above: every
+  // master-data role that reaches this list may reach the page. Authoring
+  // (create/edit/publish/archive) is hidden inside it by
+  // `canAuthorTemplates`, exactly as the Asset Templates screen already does.
+  { label: "Dashboard Templates", path: "/admin/dashboard-templates" },
   { label: "Asset Points", path: "/admin/asset-points" },
   { label: "Manual Entry", path: "/admin/manual-readings" },
   { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },

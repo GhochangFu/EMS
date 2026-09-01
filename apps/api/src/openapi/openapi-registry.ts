@@ -14,6 +14,13 @@ import {
   updateAssetTemplateBodySchema,
 } from "../admin/asset-templates/asset-templates.schema";
 import {
+  createDashboardTemplateBodySchema,
+  importStockTemplateBodySchema,
+  instantiateSectionTemplateBodySchema,
+  listDashboardTemplatesQuerySchema,
+  updateDashboardTemplateBodySchema,
+} from "../admin/dashboard-templates/dashboard-templates.schema";
+import {
   createAssetBodySchema,
   updateAssetBodySchema,
 } from "../admin/assets/assets.schema";
@@ -136,6 +143,18 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AssetTemplatesAdminController_migrate: migrateAssetsBodySchema,
   AssetTemplatesAdminController_previewMigration: migrateAssetsBodySchema,
   AssetTemplatesAdminController_update: updateAssetTemplateBodySchema,
+  // `F3.36` (ADR 0049). Registered for TWO reasons, and the second is the one
+  // that bites: an unregistered route reads as "no body" in the generated
+  // document, AND `strict-body-ledger.spec.ts` walks only what is reachable
+  // from here — so the five `.strict()` bodies below were recorded by nothing,
+  // and a later reader removing `.strict()` from the PATCH body would have
+  // broken no gate. That removal is exactly the `F3.37` finding the ledger
+  // exists for. Found by the `F3.36` correctness and compliance reviews.
+  DashboardTemplatesController_create: createDashboardTemplateBodySchema,
+  DashboardTemplatesController_importStock: importStockTemplateBodySchema,
+  DashboardTemplatesController_instantiateTemplate: instantiateSectionTemplateBodySchema,
+  DashboardTemplatesController_list: listDashboardTemplatesQuerySchema,
+  DashboardTemplatesController_update: updateDashboardTemplateBodySchema,
   AuditAdminController_export: auditExportQuerySchema,
   AuditAdminController_list: auditListQuerySchema,
   AuthController_login: loginBodySchema,
