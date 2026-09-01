@@ -176,3 +176,100 @@ None. No new npm package in any workspace.
   vocabulary is added — a tenant that needs a code the platform lacks asks for
   it, exactly as decision 5's write path allows. Re-introducing per-tenant codes
   would restore fact 1 and with it the defect this ADR exists to close.
+
+## Amendment 1 — onboarding may extend the global catalog, and is refused when the draft contradicts it (2026-09-01)
+
+### Context
+
+Decision 5 gates the asset-role write path to the global `admin` role, and gives
+its reason in a sentence that reads wider than the endpoint it was written for:
+*"the table is global and unpoliced, so a tenant administrator must not edit
+fleet-wide master data."* `F3.39` made `bms.point_keys` a table of exactly that
+class. `OnboardingCommitService.commit` writes it at `organization_admin`, on
+the tenant connection, inside the wizard's transaction. The `security-reviewer`
+sweep run after `F3.39` merged raised the contradiction as a High, and it is
+right that the two sentences disagree.
+
+**What had not been measured is the half that decides the correction: what the
+shared row governs once it exists.** `telemetry-write.service.ts` resolves a
+reading's unit as
+
+```ts
+const authoritativeUnit = existingMapping ? existingMapping.unit : catalog.unit;
+```
+
+An `asset_points` mapping **shadows** the catalog, so the catalog's unit labels
+a reading only where no mapping for that asset and point exists yet. The
+exposure is therefore narrow, and real: one organization's declared unit can
+relabel or reject **another organization's first reading** for a point it has
+not yet mapped, and the affected tenant cannot correct it, because `F3.39`
+narrowed the point-key admin surface to the global `admin` role in the same row.
+A reader who checks that line must find this record already saying so; it is not
+the case that the catalog labels every reading.
+
+Blocking the write is the wrong correction. A code names a quantity — `kw`,
+`ph`, `voltage_vry` — not an estate, and refusing a new one at onboarding would
+stop a new organization declaring a measurement its plant reads and no existing
+tenant does. That is the opposite of decision 1, which is the ruling this whole
+ADR exists to serve. What must stop is the **silent** part: the loop reused an
+existing row by code and discarded whatever the draft declared beside it.
+
+### Decision
+
+1. **The onboarding commit path may create a global point-key code, at
+   `organization_admin`.** Decision 5's ruling is scoped here to what it was
+   written for — the vocabulary **admin** endpoints, which stay gated to the
+   global `admin` role, unchanged and unbuilt. A tenant administrator still
+   cannot *edit* fleet-wide master data. Through onboarding, they may *extend*
+   it, under decision 2.
+
+2. **A draft that contradicts an existing code is refused, and nothing is
+   inherited silently.** When a draft point key names a code the catalog already
+   holds, and declares a `unit` or a `domain` that is not the one on the catalog
+   row, the commit fails with a `400` naming the code, the declared value and
+   the catalog's. It neither reuses the row nor overwrites it. A draft that
+   declares neither field asserts nothing, so it can contradict nothing and
+   reuses the row exactly as before.
+
+3. **A catalog field left unset is a conflict, not a gap the draft may fill.**
+   Writing a unit onto a NULL is the same escalation as writing over a value:
+   every organization shares the row. The refusal names the reconciliation.
+
+4. **`unit` is compared exactly and `domain` case-folded.** A unit is a symbol
+   and `kW` is not `kw`. `point_keys.domain` is a bare unconstrained string —
+   the comment on `onboardingDraftPointKeySchema` in
+   `packages/shared/src/contracts/onboarding.ts` says so — and refusing a commit
+   over `Electrical` against `electrical` would be noise. `domain` is included
+   for consistency of the shared row, **not** because it carries decision 2's
+   telemetry consequence: only `unit` reaches the line quoted above.
+
+### Consequences
+
+- **This is fail-closed, and it will refuse drafts that are not malicious.**
+  Four codes carry a NULL unit today — `battery_charge_pct`,
+  `chlorine_pump_on`, `controller_power_status` and `network_strength`, all
+  decision 3 orphans — so a draft declaring a unit for any of them is refused
+  until a global administrator fills it in. That is the accepted cost of
+  decision 3. **It also surfaces a gap in the original record**, which promised
+  the orphans would be admitted *"with their domain and unit"* while migration
+  `0057` wrote domain and left unit NULL. That gap is not ruled on here.
+
+- **The check runs inside the commit transaction**, unlike the ADR 0031
+  Amendment 1 domain check that precedes it. That one was moved out because a
+  foreign-key failure reports a constraint name to the operator; this one raises
+  its own message either way, and reading the catalog in the transaction that
+  writes it leaves no window between the two.
+
+- **The comparison is a pure function with its own gate**
+  (`onboarding-point-key-conflict.ts`). `apps/api`'s Vitest project includes
+  `src/**/*.test.ts` and the integration suites self-skip without
+  `DATABASE_URL`, so a rule proved only there gates nothing on the developer
+  machine where the next edit to it will be made. The integration suite keeps
+  one assertion, for the wiring.
+
+- **The same code declared twice in one draft is refused with a different
+  message**, naming the duplicate declaration rather than a catalog row that
+  this very loop created two statements earlier.
+
+- **No new backlog row.** This lands as a `fix(api):` change against a closed
+  row (`F3.39`), and its scope gate is this amendment.

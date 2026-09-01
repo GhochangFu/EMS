@@ -30,6 +30,11 @@ import { withTenant } from "../../database/tenant-context";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import {
+  conflictingPointKeyDeclaration,
+  pointKeyConflictMessage,
+  type CatalogPointKey,
+} from "./onboarding-point-key-conflict";
 import { readEncryptedCredentials } from "./onboarding-redaction";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -141,24 +146,60 @@ export class OnboardingCommitService {
       // this reads and writes it by `code` alone.
       //
       // **This IS a write to global master data by an organization's onboarding
-      // flow, and it is deliberate rather than overlooked.** The admin surface
-      // narrows to the global `admin` role in the same row, but blocking
-      // onboarding here would block a new organization from ever declaring a
-      // measurement its plant reads and no existing tenant does — which is the
-      // opposite of what ADR 0051 decides. A code names a quantity, not an
-      // estate, so a genuinely new one belongs in the shared vocabulary. The
-      // existing select-then-insert already makes a repeat commit idempotent,
-      // and by code alone it is now idempotent across organizations too:
-      // whichever tenant declares `ph` first, the second reuses that row.
+      // flow, and ADR 0051 Amendment 1 decision 1 permits it.** Blocking it
+      // would block a new organization from ever declaring a measurement its
+      // plant reads and no existing tenant does — the opposite of what ADR 0051
+      // decides. A code names a quantity, not an estate, so a genuinely new one
+      // belongs in the shared vocabulary. Decision 5's global-`admin` gate is
+      // unchanged and covers the vocabulary *admin* endpoints: a tenant
+      // administrator may extend the catalog here, never edit it.
+      //
+      // **Amendment 1 decision 2 is what makes that safe: nothing is inherited
+      // silently.** Reusing a row by code while discarding what the draft
+      // declared beside it is an escalation, because the catalog's unit is
+      // authoritative for a reading whose asset/point pair has no mapping row
+      // yet (`telemetry-write.service.ts` — `existingMapping ?
+      // existingMapping.unit : catalog.unit`). One organization could therefore
+      // relabel or reject another's *first* reading for a point it has not
+      // mapped, and the affected tenant could not correct it: `F3.39` narrowed
+      // the point-key admin surface to the global `admin` role. So a draft that
+      // declares a `unit` or `domain` the catalog does not hold is refused, and
+      // a draft that declares neither reuses the row exactly as before.
+      //
+      // The check runs inside the transaction, unlike the ADR 0031 Amendment 1
+      // domain check above it. That one moved out because a foreign-key failure
+      // reports a constraint name; this one raises its own message either way,
+      // and reading the catalog in the transaction that writes it leaves no
+      // window between the two.
       const pointKeyIds: string[] = [];
+      const declaredInThisDraft = new Map<string, { id: string; row: CatalogPointKey }>();
       for (const pk of draft.pointKeys ?? []) {
+        // The same code twice in one draft. Compared against what this draft
+        // already resolved rather than against the catalog, so the message
+        // blames the duplicate declaration and not a row created two statements
+        // earlier by this very loop.
+        const already = declaredInThisDraft.get(pk.code);
+        if (already) {
+          const clash = conflictingPointKeyDeclaration(pk, already.row);
+          if (clash) {
+            throw new BadRequestException(pointKeyConflictMessage(pk.code, clash, "draft"));
+          }
+          pointKeyIds.push(already.id);
+          continue;
+        }
+
         const [existing] = await tx
-          .select({ id: pointKeys.id })
+          .select({ id: pointKeys.id, domain: pointKeys.domain, unit: pointKeys.unit })
           .from(pointKeys)
           .where(sql`${pointKeys.code} = ${pk.code}`)
           .limit(1);
         if (existing) {
+          const clash = conflictingPointKeyDeclaration(pk, existing);
+          if (clash) {
+            throw new BadRequestException(pointKeyConflictMessage(pk.code, clash, "catalog"));
+          }
           pointKeyIds.push(existing.id);
+          declaredInThisDraft.set(pk.code, { id: existing.id, row: existing });
           continue;
         }
         const [created] = await tx
@@ -173,6 +214,10 @@ export class OnboardingCommitService {
           })
           .returning();
         pointKeyIds.push(created.id);
+        declaredInThisDraft.set(pk.code, {
+          id: created.id,
+          row: { domain: created.domain, unit: created.unit },
+        });
       }
 
       const rtuIds: string[] = [];

@@ -114,3 +114,56 @@ export async function assertCommitStampsOrgOnEveryTenantRow(
     assetPointIds: result.assetPointIds,
   };
 }
+
+/** What the ADR 0051 Amendment 1 refusal needs, beyond the commit itself. */
+export type CommitConflictFixtures = {
+  commitSvc: OnboardingCommitService;
+  ownerPool: pg.Pool;
+  /** A commit-ready draft that redeclares `pointKeyCode` with a new unit. */
+  sessionId: string;
+  /** A catalog code that exists already, registered with no unit. */
+  pointKeyCode: string;
+  /** The location code that draft would write, if it got that far. */
+  locationCode: string;
+};
+
+/**
+ * ADR 0051 Amendment 1 decisions 2 and 3 — the wiring assertion.
+ *
+ * The rule itself is proved by `onboarding-point-key-conflict.spec.ts`, which
+ * needs no database and therefore runs on every machine. What only a real
+ * commit can show is the three things around it: that the service consults the
+ * catalog row rather than just its id, that the refusal is a `400` and not a
+ * constraint error, and that the transaction rolls back — the location the
+ * commit inserts two statements earlier must not survive the throw.
+ */
+export async function assertCommitRefusesAContradictingPointKey(
+  ctx: CommitConflictFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { commitSvc, ownerPool, sessionId, pointKeyCode, locationCode } = ctx;
+
+  await expect(
+    commitSvc.commit(jwt, sessionId),
+    "a draft declaring a unit the catalog leaves unset is refused",
+  ).rejects.toThrow(/already exists in the fleet-wide catalog/);
+
+  const { rows: keyRows } = await ownerPool.query<{ unit: string | null }>(
+    `SELECT unit FROM bms.point_keys WHERE code = $1`,
+    [pointKeyCode],
+  );
+  expect(keyRows.length, "the catalog row is still there").toBe(1);
+  expect(
+    keyRows[0].unit,
+    "the refused draft did not fill the unit every organization shares",
+  ).toBeNull();
+
+  const { rows: locationRows } = await ownerPool.query<{ id: string }>(
+    `SELECT id FROM bms.locations WHERE code = $1`,
+    [locationCode],
+  );
+  expect(
+    locationRows.length,
+    "the location inserted before the point-key loop rolled back with it",
+  ).toBe(0);
+}
