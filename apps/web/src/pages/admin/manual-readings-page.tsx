@@ -36,11 +36,11 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
   const [result, setResult] = useState<TelemetryWriteResponse | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Scoped to the selected asset's own organization (fact 8/9).
+  // Was scoped to the selected asset's own organization (fact 8/9). `F3.39`
+  // merged bms.point_keys fleet-wide, so there is one catalog and no scope.
   const catalogQ = useQuery({
-    queryKey: ["admin", "point-keys", "true", selection.organizationId],
-    queryFn: () => fetchAdminPointKeys("true", selection.organizationId),
-    enabled: Boolean(selection.organizationId),
+    queryKey: ["admin", "point-keys", "true"],
+    queryFn: () => fetchAdminPointKeys("true"),
   });
 
   const catalogUnit = catalogQ.data?.items.find((item) => item.code === pointKey)?.unit ?? null;

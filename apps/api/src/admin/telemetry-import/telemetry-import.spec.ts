@@ -103,9 +103,17 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
   }
 
   const { rows: keyRows } = await pool.query<{ code: string; unit: string | null }>(
+    // `F3.39`: fleet-wide catalog, so no organization predicate. `created_at`
+    // first is F4.53's "oldest wins", and it matters more now that other suites
+    // register transient codes in this shared table.
+    //
+    // `unit IS NOT NULL` for the reason `telemetry-write.spec.ts` records at
+    // its own copy of this query: fleet-wide, the oldest rows are the PHE
+    // pilot's and three of them carry a genuine NULL unit, which makes every
+    // unit-mismatch case vacuous. This suite shares that shape, so it takes the
+    // same predicate rather than waiting to be bitten by it.
     `SELECT code, unit FROM bms.point_keys
-      WHERE organization_id = $1 AND active = true ORDER BY created_at, code LIMIT 5`,
-    [grant.organization_id],
+      WHERE active = true AND unit IS NOT NULL ORDER BY created_at, code LIMIT 5`,
   );
   const freshAssetPointKey = keyRows[0];
   if (!freshAssetPointKey) {
@@ -492,6 +500,12 @@ export async function runTelemetryImportServiceTests(
   // ---- the CHECK boundary rejects what the service must never be able to write
   // (direct SQL, bypassing the service entirely — proves the CONSTRAINT)
 
+  // `F3.39`: register the probe's code first — `0057` makes `point_key` a
+  // foreign key, and an FK violation is not the rejection this probe is about.
+  await pool.query(
+    `INSERT INTO bms.point_keys (code, name, active)
+     VALUES ('f19-import-check-probe', 'F19 Import Check Probe', true) ON CONFLICT DO NOTHING`,
+  );
   let sourceRefRejected = false;
   try {
     await pool.query(
@@ -503,6 +517,9 @@ export async function runTelemetryImportServiceTests(
     sourceRefRejected =
       err instanceof Error && /asset_points_source_ref_check/.test(String((err as { message?: string }).message));
   }
+  // Removed as soon as the probe is done — see the identical line in
+  // `telemetry-write.integration.test.ts`: the catalog is fleet-wide now.
+  await pool.query(`DELETE FROM bms.point_keys WHERE code = 'f19-import-check-probe'`);
   assert(sourceRefRejected, "asset_points_source_ref_check must reject source_kind='measured' with rtu_id NULL");
 
   let financeRejected = false;

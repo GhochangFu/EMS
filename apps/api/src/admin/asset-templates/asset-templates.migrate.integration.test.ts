@@ -6,6 +6,7 @@ import { createDb } from "@bms/db";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
+import { registerFixturePointKeys } from "../../testing/integration-fixtures";
 import { asRole } from "../../testing/role-urls";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
@@ -52,6 +53,7 @@ describe.skipIf(!connectionString)("F2.6 — template version migration", () => 
   let fleetPool: pg.Pool | undefined;
   let svc: AssetTemplateMigrationService;
   let fx: Fixtures;
+  let releasePointKeys: (() => Promise<void>) | undefined;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -78,6 +80,10 @@ describe.skipIf(!connectionString)("F2.6 — template version migration", () => 
       new AccessControlService(createDb(authPool), fleetDb),
       new MasterDataAuditService(tenantDb, fleetDb),
     );
+    // `F3.39`: the template points this suite invents (`KW`, `VOLTS`) reach
+    // bms.asset_points, whose point_key references point_keys(code) from
+    // migration `0057`. See `registerFixturePointKeys`.
+    releasePointKeys = await registerFixturePointKeys(created, ["KW", "VOLTS", "KWH"]);
     // Fixtures are cross-organization by design and set up on the owner
     // connection on purpose — seeding is not the behaviour under test.
     fx = await loadFixtures(created);
@@ -87,6 +93,7 @@ describe.skipIf(!connectionString)("F2.6 — template version migration", () => 
   afterAll(async () => {
     if (pool) {
       await cleanup(pool);
+      await releasePointKeys?.();
     }
     await Promise.all([pool?.end(), authPool?.end(), tenantPool?.end(), fleetPool?.end()]);
   });

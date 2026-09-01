@@ -7,14 +7,13 @@ import type { AdminPointKeyDto, MasterDataActiveFilter, PointKeysListResponse } 
 import { activeQuery, adminFetch } from "./client";
 
 
+/**
+ * `F3.39` / ADR 0051 — one fleet-wide catalog, so no `organizationId` filter.
+ */
 export async function fetchAdminPointKeys(
   active: MasterDataActiveFilter = "all",
-  organizationId?: string,
 ): Promise<PointKeysListResponse> {
   const params = new URLSearchParams(activeQuery(active));
-  if (organizationId) {
-    params.set("organizationId", organizationId);
-  }
   return adminFetch(`/admin/point-keys?${params}`, pointKeysListResponseSchema);
 }
 
@@ -23,7 +22,6 @@ export async function fetchAdminPointKey(id: string): Promise<AdminPointKeyDto> 
 }
 
 export async function createAdminPointKey(input: {
-  organizationId: string;
   code: string;
   name: string;
   domain?: string;

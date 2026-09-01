@@ -87,9 +87,9 @@ SELECT DISTINCT ON (r.asset_id, r.point_key)
   true
 FROM bms.automation_rules r
 JOIN bms.assets a ON a.id = r.asset_id
+-- \`F3.39\`: the catalog is fleet-wide, so the join is on code alone.
 LEFT JOIN bms.point_keys pk
-  ON pk.organization_id = r.organization_id
- AND pk.code = r.point_key
+  ON pk.code = r.point_key
  AND pk.active = true
 WHERE ${RULED_POINT_PREDICATE}
 ORDER BY r.asset_id, r.point_key, pk.unit NULLS LAST

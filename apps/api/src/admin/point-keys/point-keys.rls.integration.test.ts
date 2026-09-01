@@ -10,133 +10,115 @@ import { openIntegrationPool, requireIntegrationDb } from "../../testing/integra
 import { asRole } from "../../testing/role-urls";
 import { PointKeysAdminService } from "./point-keys.service";
 import {
-  assertCreateAuditRowStampsOrganization,
-  assertPolicyRefusesMismatchedOrg,
-  assertRefusesOutOfScopeOrganization,
-  assertWriteLifecycleSurvivesRealRls,
+  assertAssetPointsRejectsAnUnlistedKey,
+  assertCreateAuditRowIsOrgLess,
+  assertEveryOrganizationSeesEveryCode,
+  assertGlobalAdminLifecycle,
+  assertOrganizationAdminIsRefusedEveryWrite,
 } from "./point-keys.rls.integration.spec";
 
 /**
- * `F4.16` Task 8 — Vitest entry point. Assertions live in the sibling `.spec`
- * (ADR 0014); this file owns the database lifecycle. See
- * `locations.rls.integration.test.ts` for the full rationale; this is the
- * same shape against the other zero-coverage RLS write path.
+ * `F3.39` — Vitest entry point. Assertions live in the sibling `.spec`
+ * (ADR 0014); this file owns the database lifecycle.
+ *
+ * This was `F4.16` Task 8, proving that `withTenant` really scoped a write to
+ * `bms.point_keys`. Migration `0057` removes the policy that made that true, so
+ * the suite now proves the inverse — see the `.spec` header for each swap. It
+ * keeps the same four real, non-owner connections: the service reads and writes
+ * on `bms_fleet` now, but the point of building it from real roles rather than
+ * the owner connection is unchanged, and `bms_owner` remains the observer
+ * precisely because FORCE used to bind it on this table.
  */
 const connectionString = requireIntegrationDb({
-  item: "F4.16",
-  label: "PointKeysAdminService against real, non-owner roles",
+  item: "F3.39",
+  label: "PointKeysAdminService against a global point key catalog",
   because:
-    "point-keys.service.ts has no other test file at all. Constructing the service with " +
-    "real bms_auth/bms_tenant/bms_fleet connections is the only proof that withTenant " +
-    "actually enforces row-level security on create/update/deactivate/reactivate, rather " +
-    "than passing only because the owner connection bypasses it regardless.",
+    "0057 drops the tenant policy, the FORCE flag and the organization_id from " +
+    "bms.point_keys, and narrows the write path to the global admin role. Nothing else " +
+    "asserts either half: a repo scan can see the SQL and the guard clause, but only a " +
+    "real database can show that bms_owner reads the table with no GUC set, that the " +
+    "org-less audit row survives Amendment 5's WITH CHECK, and that the new foreign key " +
+    "on asset_points actually refuses an unlisted code.",
 });
 
+const GLOBAL_ADMIN_EMAIL = "admin@bms.local";
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
 const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000002";
 
-function jwtFor(email: string): JwtPayload {
-  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role: "organization_admin" };
+function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
+  return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role };
 }
 
-describe.skipIf(!connectionString)("F4.16 — PointKeysAdminService under real RLS", () => {
+describe.skipIf(!connectionString)("F3.39 — the point key catalog is fleet-wide", () => {
   let ownerPool: pg.Pool;
   let authPool: pg.Pool;
   let tenantPool: pg.Pool;
   let fleetPool: pg.Pool;
   let svc: PointKeysAdminService;
-  let organizationId: string;
-  let secondOrganizationId: string;
   const createdIds: string[] = [];
 
-  const jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL);
+  const adminJwt = jwtFor(GLOBAL_ADMIN_EMAIL, "admin");
+  const orgAdminJwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
 
   beforeAll(async () => {
     const url = connectionString as string;
-    ownerPool = await openIntegrationPool(url, "F4.16");
+    ownerPool = await openIntegrationPool(url, "F3.39");
     authPool = await openIntegrationPool(
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
-      "F4.16",
+      "F3.39",
     );
     tenantPool = await openIntegrationPool(
       process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
-      "F4.16",
+      "F3.39",
     );
     fleetPool = await openIntegrationPool(
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
-      "F4.16",
+      "F3.39",
     );
-
-    const { rows } = await ownerPool.query<{ id: string }>(
-      `SELECT uoa.organization_id AS id
-         FROM bms.user_organization_access uoa
-         JOIN bms.users u ON u.id = uoa.user_id
-        WHERE u.email = $1
-        LIMIT 1`,
-      [ORGANIZATION_ADMIN_EMAIL],
-    );
-    if (!rows[0]) {
-      throw new Error(
-        `F4.16: ${ORGANIZATION_ADMIN_EMAIL} has no organization grant — run pnpm db:seed.`,
-      );
-    }
-    organizationId = rows[0].id;
-
-    const { rows: others } = await ownerPool.query<{ id: string }>(
-      "SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1",
-      [organizationId],
-    );
-    if (!others[0]) {
-      throw new Error("F4.16: need a second organization to prove cross-org refusal.");
-    }
-    secondOrganizationId = others[0].id;
 
     const tenantDb = createDb(tenantPool);
     const fleetDb = createDb(fleetPool);
     svc = new PointKeysAdminService(
       fleetDb,
-      tenantDb,
       new AccessControlService(createDb(authPool), fleetDb),
       new MasterDataAuditService(tenantDb, fleetDb),
     );
   });
 
   afterAll(async () => {
-    // Defensive fallback only — the happy-path test below deletes its own row
-    // immediately. A no-op DELETE on an already-gone id is harmless, so this
-    // only matters if that test threw before reaching its own cleanup.
+    // Defensive fallback only — each test deletes its own row immediately. A
+    // no-op DELETE on an already-gone id is harmless, so this only matters if a
+    // test threw before reaching its own cleanup.
     if (createdIds.length > 0) {
+      await ownerPool.query("DELETE FROM bms.audit_log WHERE entity_id = ANY($1)", [createdIds]);
       await ownerPool.query("DELETE FROM bms.point_keys WHERE id = ANY($1)", [createdIds]);
     }
     await Promise.all([ownerPool.end(), authPool.end(), tenantPool.end(), fleetPool.end()]);
   });
 
-  it("creates, reads, updates, deactivates and reactivates a point key under real RLS", async () => {
-    const id = await assertWriteLifecycleSurvivesRealRls(
-      { svc, ownerPool, organizationId },
-      jwt,
-    );
+  it("lets a global admin create, read, update, deactivate and reactivate a code", async () => {
+    const id = await assertGlobalAdminLifecycle({ svc, ownerPool }, adminJwt);
     createdIds.push(id);
-    // Deleted here, not deferred to afterAll — see locations.rls.integration.
-    // test.ts's identical comment for why: this row ends active=true and
-    // would otherwise stay visible to concurrently-running integration
+    // Deleted here rather than deferred to afterAll: this row ends active=true
+    // and would otherwise stay visible to concurrently-running integration
     // suites for the whole file's duration instead of just this test's.
+    await ownerPool.query("DELETE FROM bms.audit_log WHERE entity_id = $1", [id]);
     await ownerPool.query("DELETE FROM bms.point_keys WHERE id = $1", [id]);
   });
 
-  it("refuses an organization_admin creating a point key outside their granted organization", async () => {
-    await assertRefusesOutOfScopeOrganization({ svc, ownerPool, organizationId }, jwt);
+  it("refuses an organization_admin every write to the fleet-wide catalog", async () => {
+    await assertOrganizationAdminIsRefusedEveryWrite({ svc, ownerPool }, orgAdminJwt);
   });
 
-  it("stamps the create audit row with the point key's own organization (E7.1c item D)", async () => {
-    await assertCreateAuditRowStampsOrganization({ svc, ownerPool, organizationId }, jwt);
+  it("writes the create audit row with no organization, on the fleet connection", async () => {
+    await assertCreateAuditRowIsOrgLess({ svc, ownerPool }, adminJwt);
   });
 
-  it("refuses a write whose row claims a different organization than SET LOCAL names (WITH CHECK)", async () => {
-    await assertPolicyRefusesMismatchedOrg(
-      createDb(tenantPool),
-      organizationId,
-      secondOrganizationId,
-    );
+  it("shows every organization the same complete catalog", async () => {
+    await assertEveryOrganizationSeesEveryCode(ownerPool);
+  });
+
+  it("refuses an asset_points row whose point_key is in no vocabulary", async () => {
+    await assertAssetPointsRejectsAnUnlistedKey(ownerPool);
   });
 });

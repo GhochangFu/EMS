@@ -6,6 +6,7 @@ import { createDb } from "@bms/db";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
+import { registerFixturePointKeys } from "../../testing/integration-fixtures";
 import { loadFixtures, type Fixtures } from "../asset-templates/asset-templates.instantiate.integration.spec";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetPointCalcOverrideService } from "./asset-point-calc-override.service";
@@ -42,10 +43,17 @@ describe.skipIf(!connectionString)("F2.6 — asset point calc overrides", () => 
   let pool: pg.Pool | undefined;
   let svc: AssetPointCalcOverrideService;
   let fx: Fixtures;
+  let releasePointKeys: (() => Promise<void>) | undefined;
 
   beforeAll(async () => {
     const created = await openIntegrationPool(connectionString as string, "F2.6");
     pool = created;
+    // `F3.39`: `asset_points.point_key` references `point_keys(code)` from
+    // migration `0057`. See `registerFixturePointKeys`.
+    releasePointKeys = await registerFixturePointKeys(created, [
+      "F26_OVR_DERIVED",
+      "F26_OVR_MEASURED",
+    ]);
     const db = createDb(created);
     svc = new AssetPointCalcOverrideService(
       db,
@@ -60,6 +68,7 @@ describe.skipIf(!connectionString)("F2.6 — asset point calc overrides", () => 
   afterAll(async () => {
     if (pool) {
       await cleanup(pool);
+      await releasePointKeys?.();
       await pool.end();
     }
   });

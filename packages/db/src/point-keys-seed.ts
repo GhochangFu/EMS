@@ -9,9 +9,6 @@ import {
   HVAC_POINT_KEYS,
 } from "@bms/shared";
 
-import { getOrganizationId } from "./hierarchy-seed";
-import { withOrganization } from "./seed-tenant";
-
 type PointKeySeed = {
   code: string;
   name: string;
@@ -75,7 +72,22 @@ function keysForDomain(
   }));
 }
 
-const ESKOM_CATALOG: PointKeySeed[] = [
+/**
+ * `F3.39` / ADR 0051 decision 2 — ONE catalog, not one per organization.
+ *
+ * This was two lists: an `ESKOM_CATALOG` of 34 codes and a `PHE_CATALOG` of 15,
+ * the second a strict subset of the first built from the same two arrays. That
+ * split described nothing — a code names a measurement, not an estate — and it
+ * broke the one thing a stock dashboard template needs, which is that a
+ * `pointKey` means the same quantity in every organization. Migration `0057`
+ * drops `point_keys.organization_id`, so there is no longer an axis to split on.
+ *
+ * The union is exactly what `ESKOM_CATALOG` already held, so nothing is added
+ * here and nothing is lost. What PHEWB gains is the 19 codes it was denied for
+ * no reason — including `frequency_hz`, which its pilot meters have been
+ * reading all along while its own catalog did not name it.
+ */
+const GLOBAL_CATALOG: PointKeySeed[] = [
   ...keysForDomain(ELECTRICAL_POINT_KEYS, "electrical"),
   ...keysForDomain(HVAC_POINT_KEYS, "hvac"),
   ...keysForDomain(CONTROL_ROOM_UPS_POINT_KEYS, "electrical"),
@@ -89,49 +101,36 @@ const ESKOM_CATALOG: PointKeySeed[] = [
   ),
 ];
 
-const PHE_CATALOG: PointKeySeed[] = [
-  ...keysForDomain(ELECTRICAL_POINT_KEYS, "electrical"),
-  ...keysForDomain(HVAC_POINT_KEYS, "hvac"),
-];
-
 /**
- * Seeds org-scoped point key catalog rows for demo organizations.
+ * Seeds the fleet-wide point key catalog.
  *
- * `E7.1a`: `bms.point_keys` is one of the five tables that carry
- * `FORCE ROW LEVEL SECURITY`, and this is the one seed module that writes to
- * both organizations in a single call. It therefore sets its own tenant context
- * around each catalog rather than taking one from `seed.ts` — the loop already
- * had the per-organization shape, so the transaction boundary lands on it.
+ * **`F3.39` — no tenant context, because there is no tenant.** This used to run
+ * inside `withOrganization` once per organization: `bms.point_keys` was one of
+ * the five tables carrying `FORCE ROW LEVEL SECURITY` (`E7.1a`), so a write
+ * needed `app.current_organization` set and an explicit `organization_id` bind
+ * for the policy's `WITH CHECK` to compare against. Migration `0057` removes
+ * the policy, the FORCE flag and the column, so both are gone: a context that
+ * nothing reads and a bind for a column that does not exist.
  *
- * The `organization_id` bind parameter stays, and it is not redundant: it makes
- * the row's tenant explicit at the insert site, and the policy's `WITH CHECK`
- * then rejects any mismatch between it and the surrounding context rather than
- * letting the two drift.
+ * The upsert arbiter moves with the index — `(organization_id, code)` was
+ * dropped by `0057` and `(code)` replaces it.
+ *
+ * `description` is deliberately not written and not overwritten. A repaired
+ * orphan row from `0057` carries a NULL one and an admin may fill it in; this
+ * seed re-runs on every `compose up` and must not revert that.
  */
 export async function seedPointKeyCatalog(pool: pg.Pool): Promise<void> {
-  const eskomOrgId = await getOrganizationId(pool, "ESKOM");
-  const phewbOrgId = await getOrganizationId(pool, "PHEWB");
-
-  for (const [organizationId, catalog] of [
-    [eskomOrgId, ESKOM_CATALOG],
-    [phewbOrgId, PHE_CATALOG],
-  ] as const) {
-    await withOrganization(pool, organizationId, async () => {
-      for (const row of catalog) {
-        await pool.query(
-          `
-          INSERT INTO bms.point_keys (
-            organization_id, code, name, domain, unit, active
-          )
-          VALUES ($1, $2, $3, $4, $5, true)
-          ON CONFLICT (organization_id, code) DO UPDATE SET
-            name = EXCLUDED.name,
-            domain = EXCLUDED.domain,
-            unit = EXCLUDED.unit
-          `,
-          [organizationId, row.code, row.name, row.domain, row.unit],
-        );
-      }
-    });
+  for (const row of GLOBAL_CATALOG) {
+    await pool.query(
+      `
+      INSERT INTO bms.point_keys (code, name, domain, unit, active)
+      VALUES ($1, $2, $3, $4, true)
+      ON CONFLICT (code) DO UPDATE SET
+        name = EXCLUDED.name,
+        domain = EXCLUDED.domain,
+        unit = EXCLUDED.unit
+      `,
+      [row.code, row.name, row.domain, row.unit],
+    );
   }
 }

@@ -84,10 +84,27 @@ export async function assertCommitStampsOrgOnEveryTenantRow(
   await assertAllStamped(ownerPool, "rtus", result.rtuIds, organizationId);
   await assertAllStamped(ownerPool, "assets", result.assetIds, organizationId);
   await assertAllStamped(ownerPool, "asset_points", result.assetPointIds, organizationId);
-  // The two F4.16 already stamped — this guards against a regression that would
-  // drop them when the E7.1b stamps were added alongside.
+  // The one F4.16 table still stamped — this guards against a regression that
+  // would drop it when the E7.1b stamps were added alongside.
   await assertAllStamped(ownerPool, "locations", [result.locationId], organizationId);
-  await assertAllStamped(ownerPool, "point_keys", result.pointKeyIds, organizationId);
+
+  // **`F3.39` — `point_keys` left this list, and its assertion is inverted
+  // rather than deleted.** Migration `0057` drops the column, so a commit
+  // cannot stamp an organization on a catalog row and the old assertion tested
+  // a mechanism that no longer exists. What is worth holding instead is that
+  // the commit still CREATES the codes it declares: the FK `0057` adds means an
+  // asset_points row cannot exist without one, so a commit that silently
+  // stopped writing them would fail loudly here rather than three tables later.
+  expect(result.pointKeyIds.length, "the commit created its declared point key").toBe(1);
+  const { rows: keyRows } = await ownerPool.query<{ id: string }>(
+    `SELECT id FROM bms.point_keys WHERE id = ANY($1)`,
+    [result.pointKeyIds],
+  );
+  expect(
+    keyRows.length,
+    "every point key the commit reported must exist, readable with no tenant context — " +
+      "bms.point_keys carries no policy after 0057",
+  ).toBe(result.pointKeyIds.length);
 
   return {
     locationId: result.locationId,

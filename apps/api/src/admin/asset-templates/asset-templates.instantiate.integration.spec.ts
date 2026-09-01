@@ -154,13 +154,13 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
   }
 
   const { rows: keyRows } = await pool.query<{ code: string; unit: string | null }>(
+    // `F3.39`: fleet-wide catalog, so no organization predicate.
     `SELECT code, unit FROM bms.point_keys
-      WHERE organization_id = $1 AND active = true ORDER BY created_at, code LIMIT 4`,
-    [grant.organization_id],
+      WHERE active = true ORDER BY created_at, code LIMIT 4`,
   );
   if (keyRows.length < 4) {
     throw new Error(
-      `F2.2 fixtures missing — the organization has ${keyRows.length} active point keys, ` +
+      `F2.2 fixtures missing — the catalog has ${keyRows.length} active point keys, ` +
         "needs 4. Without them the derived-exclusion and unit-fallback cases collapse.",
     );
   }

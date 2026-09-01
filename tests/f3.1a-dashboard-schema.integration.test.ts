@@ -176,6 +176,16 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
       [orgA, locationId, `F31A-${RUN}`, `F3.1a ${RUN}`, "F3.1a", domain.rows[0]?.code],
     );
+    // `F3.39`: `asset_points.point_key` references `point_keys(code)` from
+    // migration `0057`, so the code must exist before the row that names it.
+    // Written inside the same rolled-back transaction as everything else here,
+    // so it needs no cleanup of its own and cannot leak into another suite's
+    // view of the now-shared catalog.
+    await run(
+      `INSERT INTO bms.point_keys (code, name, active)
+       VALUES ($1, $2, true) ON CONFLICT DO NOTHING`,
+      [`f31a_${RUN}`, `F3.1a ${RUN}`],
+    );
     const point = await run(
       `INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key)
        VALUES ($1, $2, $3, $4) RETURNING id`,

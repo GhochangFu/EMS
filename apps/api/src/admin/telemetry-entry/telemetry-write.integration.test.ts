@@ -70,6 +70,14 @@ describe.skipIf(!connectionString)("TelemetryWriteService", () => {
     if (!pool) throw new Error("pool not initialised");
     // Direct SQL, bypassing the service entirely — this proves the CONSTRAINT,
     // not the Zod enum or the service's own logic.
+    // `F3.39`: register the probe's code first. `0057` makes `point_key` a
+    // foreign key, and an FK violation is NOT the rejection this probe is
+    // about — without the catalog row the insert still fails, but for the wrong
+    // reason, and `asset_points_source_ref_check` would go untested.
+    await pool.query(
+      `INSERT INTO bms.point_keys (code, name, active)
+       VALUES ('f18-check-probe', 'F18 Check Probe', true) ON CONFLICT DO NOTHING`,
+    );
     let sourceRefRejected = false;
     try {
       await pool.query(
@@ -84,6 +92,10 @@ describe.skipIf(!connectionString)("TelemetryWriteService", () => {
       sourceRefRejected =
         err instanceof Error && /asset_points_source_ref_check/.test(String((err as { message?: string }).message));
     }
+    // Removed as soon as the probe is done: `bms.point_keys` is fleet-wide
+    // after `F3.39`, so a code left behind here joins every other suite's view
+    // of the catalog and would sit in the seeded estate for good.
+    await pool.query(`DELETE FROM bms.point_keys WHERE code = 'f18-check-probe'`);
     if (!sourceRefRejected) {
       throw new Error("asset_points_source_ref_check must reject source_kind='measured' with rtu_id NULL");
     }

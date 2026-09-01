@@ -246,6 +246,18 @@ describe.skipIf(!connectionString)(
            VALUES ($1, $2, 'chiller')`,
           [eskomGroupId, assetId],
         );
+        // `F3.39`: `asset_points.point_key` references `point_keys(code)` from
+        // migration `0057`. This suite's bindings use `kW` and `kVA` — its own
+        // codes, in that casing, distinct from the seeded snake_case `kw`
+        // because the resolution being tested is exact-match. They must exist
+        // in the now-fleet-wide catalog before any row names them; `afterAll`
+        // removes them.
+        await ownerPool.query(
+          `INSERT INTO bms.point_keys (code, name, active) VALUES
+             ('kW', 'F3.36 Fixture kW', true),
+             ('kVA', 'F3.36 Fixture kVA', true)
+           ON CONFLICT DO NOTHING`,
+        );
         // Every chiller carries kVA.
         await ownerPool.query(
           `INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key, unit)
@@ -365,6 +377,12 @@ describe.skipIf(!connectionString)(
         );
         await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1::uuid[])`, [assetIds]);
       }
+      // `F3.39`: after the asset_points that reference them. Exact codes, never
+      // a LIKE — the catalog is fleet-wide now, so a wide delete here would
+      // erase another organization's real vocabulary.
+      await ownerPool.query(`DELETE FROM bms.point_keys WHERE code = ANY($1::text[])`, [
+        ["kW", "kVA"],
+      ]);
       /**
        * **Delete every dashboard pointing at a group this suite created, not
        * only the ones this suite created.**

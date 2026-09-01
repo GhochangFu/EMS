@@ -393,6 +393,13 @@
       "when": 1788525183386,
       "tag": "0056_dashboard_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1788611583386,
+      "tag": "0057_global_point_key_vocabulary",
+      "breakpoints": true
     }
   ]
 }

@@ -54,8 +54,10 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
   }, [template.id, template.status]);
 
   const catalogQ = useQuery({
-    queryKey: ["admin", "point-keys", "true", template.organizationId],
-    queryFn: () => fetchAdminPointKeys("true", template.organizationId),
+    // `F3.39`: the catalog is fleet-wide, so it is neither fetched nor cached
+    // per organization. The key drops its organization segment with the filter.
+    queryKey: ["admin", "point-keys", "true"],
+    queryFn: () => fetchAdminPointKeys("true"),
   });
   const catalog = catalogQ.data?.items ?? [];
 

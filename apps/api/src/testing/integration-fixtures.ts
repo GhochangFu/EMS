@@ -197,6 +197,54 @@ export async function createFixtureAssets(
  * database — stopping early would make the answer depend on which organization
  * happened to sort first, which is the same positional defect one level up.
  */
+/**
+ * Registers synthetic point-key codes in `bms.point_keys`, and returns a
+ * function that removes them again.
+ *
+ * **`F3.39` — why every fixture that writes `bms.asset_points` now needs this.**
+ * Migration `0057` adds `asset_points.point_key REFERENCES point_keys(code)`
+ * (ADR 0051 decision 4). Six integration suites build their state by inserting
+ * `asset_points` rows directly, with invented codes — `F26_MERGE_DERIVED`,
+ * `F26_OVR_DERIVED`, `CALCWRITE_A` — that exist in no catalog. Every one of
+ * those inserts now violates the constraint.
+ *
+ * **That is the constraint working, not a false positive, and the fixtures are
+ * the thing that was wrong.** The product cannot reach that state: a point key
+ * arrives on an `asset_points` row through the mapping surface, which
+ * `resolveCatalogPointKey` gates against the catalog, or through a template,
+ * which `AssetTemplatesService.assertPointKeysActive` gates against the same
+ * catalog. These fixtures bypassed both by writing the row themselves, so they
+ * had been asserting behaviour against a state no operator could produce.
+ * Registering the code is what the product does before the row exists.
+ *
+ * `ON CONFLICT DO NOTHING`, and the cleanup deletes only what it inserted: two
+ * suites can run concurrently against one database and must not remove each
+ * other's codes, which is the same reasoning `integration-fixture-isolation`
+ * applies to every other shared table.
+ */
+export async function registerFixturePointKeys(
+  pool: pg.Pool,
+  codes: readonly string[],
+): Promise<() => Promise<void>> {
+  const inserted: string[] = [];
+  for (const code of codes) {
+    const { rowCount } = await pool.query(
+      `INSERT INTO bms.point_keys (code, name, active)
+       VALUES ($1::text, initcap(replace($1::text, '_', ' ')), true)
+       ON CONFLICT DO NOTHING`,
+      [code],
+    );
+    if (rowCount === 1) {
+      inserted.push(code);
+    }
+  }
+  return async () => {
+    if (inserted.length > 0) {
+      await pool.query(`DELETE FROM bms.point_keys WHERE code = ANY($1)`, [inserted]);
+    }
+  };
+}
+
 export async function resolveSeededAssetByCode(pool: pg.Pool, code: string): Promise<string> {
   const client = await pool.connect();
   let assetId: string | undefined;

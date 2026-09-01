@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { asc, eq } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 
 import { pointKeys } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -26,8 +26,15 @@ export type OrgPointKeySummary = {
 export class OnboardingCatalogService {
   constructor(@Inject(FLEET_DRIZZLE) private readonly db: BmsDb) {}
 
-  /** Returns active point keys for an organization. */
-  async listPointKeys(organizationId: string): Promise<OrgPointKeySummary[]> {
+  /**
+   * Returns the point keys the onboarding chat may offer.
+   *
+   * `F3.39`: the catalog is fleet-wide after migration `0057`, so this is no
+   * longer per-organization. `organizationId` is kept in the signature because
+   * every other method on this service takes it and the chat passes one session
+   * scope around; the filter it used to drive is gone with the column.
+   */
+  async listPointKeys(_organizationId: string): Promise<OrgPointKeySummary[]> {
     const rows = await this.db
       .select({
         code: pointKeys.code,
@@ -36,7 +43,6 @@ export class OnboardingCatalogService {
         domain: pointKeys.domain,
       })
       .from(pointKeys)
-      .where(eq(pointKeys.organizationId, organizationId))
       .orderBy(asc(pointKeys.code));
     return rows.filter((row) => row.code.length > 0);
   }

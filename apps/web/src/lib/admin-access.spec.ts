@@ -7,6 +7,7 @@ import {
   visibleMasterDataTabs,
   canCreateLocations,
   canWriteOrganizations,
+  canReadPointKeyCatalog,
   canWritePointKeys,
   defaultAdminRoute,
   isGlobalAdmin,
@@ -46,8 +47,19 @@ export function runAdminAccessTests(): void {
   assert(!canWriteOrganizations("organization_admin"), "org admin cannot write organizations");
   assert(canCreateLocations("organization_admin"), "org admin can create locations");
   assert(!canCreateLocations("location_admin"), "location admin cannot create locations");
-  assert(canWritePointKeys("organization_admin"), "org admin can write point keys");
+  // `F3.39` / ADR 0051 — the write gate narrowed as the read gate widened. The
+  // catalog is fleet-wide master data since migration `0057`, so an
+  // organization administrator reads it and cannot edit it. This assertion was
+  // `canWritePointKeys("organization_admin")` and is inverted rather than
+  // deleted, because "org_admin may still write the catalog" is precisely the
+  // regression that would hand one tenant edit rights over every other's
+  // vocabulary.
+  assert(!canWritePointKeys("organization_admin"), "org admin cannot write point keys");
+  assert(canWritePointKeys("admin"), "global admin can write point keys");
   assert(!canWritePointKeys("location_admin"), "location admin cannot write point keys");
+  assert(canReadPointKeyCatalog("organization_admin"), "org admin can read the catalog");
+  assert(canReadPointKeyCatalog("admin"), "global admin can read the catalog");
+  assert(!canReadPointKeyCatalog("location_admin"), "location admin does not get the tab");
   assert(defaultAdminRoute("admin") === "/admin/organizations", "admin default route");
   assert(defaultAdminRoute("organization_admin") === "/admin/organizations", "org admin default route");
   assert(canAccessOnboarding("organization_admin"), "org admin can onboard");
