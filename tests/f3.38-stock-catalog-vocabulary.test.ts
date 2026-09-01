@@ -40,13 +40,42 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  *
  * **The two halves of a binding, and both are checked.** A binding names an
  * `assetRoleCode` and a `pointKey`. The role side has a closed source of truth
- * in migration `0051`; the point side has one in the `*_POINT_KEYS` arrays that
+ * in the migrations `ROLE_MIGRATION_RELS` names — `0051` and, since `F3.40`,
+ * `0060`; the point side has one in the `*_POINT_KEYS` arrays that
  * `packages/db/src/point-keys-seed.ts` builds `bms.point_keys` from. Checking
  * one and not the other leaves half the binding free to drift.
  */
 const STOCK_REL = "apps/api/src/admin/dashboard-templates/stock-catalog.ts";
 const CONSTANTS_REL = "packages/shared/src/constants.ts";
-const ROLES_MIGRATION_REL = "packages/db/drizzle/0051_asset_role_vocabulary.sql";
+/**
+ * EVERY migration that seeds `bms.asset_roles`, in application order, not just
+ * the first.
+ *
+ * `F3.40` added the second. The comment on the count assertion below already
+ * named this as the correct fix — *"If a LATER migration adds a role code and
+ * the check below starts rejecting a legitimate `assetRoleCode`, the fix is to
+ * read that migration here too — never to loosen this assertion"* — and this is
+ * that fix, made when the second migration landed rather than when a binding
+ * first failed.
+ *
+ * A THIRD ENTRY BELONGS HERE THE DAY A THIRD MIGRATION SEEDS A ROLE, and the
+ * total below moves with it. That total is exact on purpose: it is the
+ * anti-vacuity control for the whole role scan, and `toBeGreaterThanOrEqual`
+ * would let the parser go blind on one file while the other kept it green.
+ *
+ * `0060` onward may also be *edited* by `POST /api/v1/admin/vocabularies/asset-roles`
+ * at runtime, which no source scan can see. That is stated rather than guarded:
+ * this file checks that the catalog binds codes the REPOSITORY seeds, which is
+ * what a fresh database holds, and a code added through the API is by
+ * construction a code someone chose deliberately.
+ */
+const ROLE_MIGRATION_RELS = [
+  "packages/db/drizzle/0051_asset_role_vocabulary.sql",
+  "packages/db/drizzle/0060_asset_role_estate_shapes.sql",
+] as const;
+
+/** The seeded role codes, spelled as one list for an assertion message. */
+const ROLE_MIGRATIONS_LABEL = ROLE_MIGRATION_RELS.join(" + ");
 
 /**
  * Comments stripped before any assertion reads the SQL — the `f3.1a` lesson
@@ -85,7 +114,14 @@ const pointKeyVocabulary = (source: string): ReadonlySet<string> => {
   return keys;
 };
 
-/** The 26 role codes migration `0051` seeds into `bms.asset_roles`. */
+/**
+ * The role codes the repository seeds into `bms.asset_roles` — 26 from `0051`
+ * and 2 from `0060`.
+ *
+ * Takes the migrations already concatenated, so one regex serves however many
+ * files `ROLE_MIGRATION_RELS` names. Both share the shape the regex matches:
+ * `code` is the first quoted string of each parenthesised row.
+ */
 const roleVocabulary = (sql: string): ReadonlySet<string> => {
   const codes = new Set<string>();
   for (const row of sql.matchAll(/\('([a-z][a-z-]*)',\s*'/g)) {
@@ -159,7 +195,9 @@ const KEYS_AWAITING_A_VOCABULARY: readonly string[] = [
 describe("F3.38 the stock template catalog binds names that exist", () => {
   const stock = read(STOCK_REL);
   const vocabulary = pointKeyVocabulary(read(CONSTANTS_REL));
-  const roles = roleVocabulary(sqlOnly(read(ROLES_MIGRATION_REL)));
+  const roles = roleVocabulary(
+    ROLE_MIGRATION_RELS.map((rel) => sqlOnly(read(rel))).join("\n"),
+  );
   const { pointKeys, roleCodes } = scanCatalog(stock);
 
   /**
@@ -179,12 +217,14 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
       "every pointKey was attributed to one section — the section tracker is broken",
     ).toBeGreaterThanOrEqual(4);
     expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(30);
-    // 26 is migration `0051`'s seeded count, and that migration is frozen, so
-    // this number is stable by construction. If a LATER migration adds a role
-    // code and the check below starts rejecting a legitimate `assetRoleCode`,
-    // the fix is to read that migration here too — never to loosen this
-    // assertion, which is the anti-vacuity control for the whole role scan.
-    expect(roles.size, `no role codes parsed out of ${ROLES_MIGRATION_REL}`).toBe(26);
+    // 28 is 26 from `0051` plus 2 from `0060`, and both migrations are frozen,
+    // so this number is stable by construction. If a LATER migration adds a
+    // role code and the check below starts rejecting a legitimate
+    // `assetRoleCode`, the fix is to add that migration to
+    // `ROLE_MIGRATION_RELS` and move this number with it — never to loosen
+    // this assertion, which is the anti-vacuity control for the whole role
+    // scan. `F3.40` is the first time that instruction was followed.
+    expect(roles.size, `no role codes parsed out of ${ROLE_MIGRATIONS_LABEL}`).toBe(28);
   });
 
   /**
@@ -209,15 +249,15 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     ).toEqual([]);
   });
 
-  it("every stock assetRoleCode is a code migration 0051 seeds", () => {
+  it("every stock assetRoleCode is a code the role migrations seed", () => {
     const unknown = roleCodes
       .filter((entry) => !roles.has(entry.value))
       .map((entry) => `${entry.section} → ${entry.value}`);
 
     expect(
       [...new Set(unknown)].sort(),
-      `${STOCK_REL} binds an assetRoleCode that is not one of the 26 rows in ` +
-        `${ROLES_MIGRATION_REL}. bms.asset_group_members.role carries a foreign key to ` +
+      `${STOCK_REL} binds an assetRoleCode that is not one of the ${roles.size} rows in ` +
+        `${ROLE_MIGRATIONS_LABEL}. bms.asset_group_members.role carries a foreign key to ` +
         "bms.asset_roles, so no membership can ever hold this code and the widget " +
         "resolves nothing.",
     ).toEqual([]);

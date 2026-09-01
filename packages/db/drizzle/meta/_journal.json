@@ -414,6 +414,13 @@
       "when": 1788784383386,
       "tag": "0059_tenant_cannot_edit_point_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1788870783386,
+      "tag": "0060_asset_role_estate_shapes",
+      "breakpoints": true
     }
   ]
 }

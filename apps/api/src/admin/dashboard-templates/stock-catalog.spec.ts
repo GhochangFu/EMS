@@ -18,9 +18,10 @@ import { STOCK_DASHBOARD_TEMPLATE_CATALOG } from "./stock-catalog";
  *
  * **Two vocabularies are read out of their migrations AT TEST TIME, never
  * retyped.** `packages/db/drizzle/0056_dashboard_templates.sql` seeds the six
- * `bms.dashboard_sections` codes and `packages/db/drizzle/0051_asset_role_vocabulary.sql`
- * seeds the 26 `bms.asset_roles` codes — parsing them here is what keeps this
- * catalog and those two seeded tables from drifting apart silently, the same
+ * `bms.dashboard_sections` codes, while `bms.asset_roles` is seeded by TWO
+ * migrations since `F3.40` — `0051`'s 26 codes and `0060`'s `meter` and `pump`
+ * — and `seededRoles()` takes the union. Parsing them here is what keeps this
+ * catalog and those seeded tables from drifting apart silently, the same
  * discipline `tests/f3.37-asset-role-vocabulary.test.ts` and
  * `tests/f3.35-metric-catalog-schema.test.ts` already hold for their own
  * vocabularies.
@@ -76,8 +77,17 @@ function seededCodes(migration: string, table: string): string[] {
 const seededSections = (): string[] =>
   seededCodes(read("packages/db/drizzle/0056_dashboard_templates.sql"), "dashboard_sections");
 
-const seededRoles = (): string[] =>
-  seededCodes(read("packages/db/drizzle/0051_asset_role_vocabulary.sql"), "asset_roles");
+/**
+ * `bms.asset_roles` is seeded by MORE THAN ONE migration since `F3.40`, so this
+ * reads every one of them and takes the union. `0051` seeds 26 codes and `0060`
+ * adds `meter` and `pump`. Reading only the first would make a catalog entry
+ * bound to either of those two look like an unknown code, which is the reverse
+ * of what this check exists to catch.
+ */
+const seededRoles = (): string[] => [
+  ...seededCodes(read("packages/db/drizzle/0051_asset_role_vocabulary.sql"), "asset_roles"),
+  ...seededCodes(read("packages/db/drizzle/0060_asset_role_estate_shapes.sql"), "asset_roles"),
+];
 
 export function runStockCatalogTests(): void {
   // ---- every entry parses under the frozen contract ------------------------

@@ -156,7 +156,11 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
       "SELECT code FROM bms.asset_roles WHERE active = true ORDER BY sort_order LIMIT 2",
     );
     if (roles.rows.length < 2) {
-      throw new Error("F3.37: migration 0051 seeds 26 roles — run pnpm db:migrate.");
+      // 28 = `0051`'s 26 plus `0060`'s `meter` and `pump` (`F3.40`). The
+      // fixture needs only two, and takes the two lowest `sort_order` — `0060`
+      // appends at 170/180, below no band boundary and above every code this
+      // picks, so the growth does not move what this reads.
+      throw new Error("F3.37: migrations 0051 and 0060 seed 28 roles — run pnpm db:migrate.");
     }
 
     const stamp = Date.now();

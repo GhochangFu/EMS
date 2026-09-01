@@ -27,6 +27,8 @@ import { LocationsAdminController } from "./locations/locations.controller";
 import { LocationsAdminService } from "./locations/locations.service";
 import { PointKeysAdminController } from "./point-keys/point-keys.controller";
 import { PointKeysAdminService } from "./point-keys/point-keys.service";
+import { AssetRolesAdminController } from "./vocabularies/asset-roles.controller";
+import { AssetRolesAdminService } from "./vocabularies/asset-roles.service";
 import { MasterDataAuditService } from "./master-data-audit.service";
 import { OnboardingController } from "./onboarding/onboarding.controller";
 import { OnboardingCatalogService } from "./onboarding/onboarding-catalog.service";
@@ -57,6 +59,7 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     AssetPointsAdminController,
     AssetPointCalcOverrideController,
     PointKeysAdminController,
+    AssetRolesAdminController,
     AssetTemplatesAdminController,
     DashboardTemplatesController,
     AuditAdminController,
@@ -82,6 +85,7 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     AssetPointsAdminService,
     AssetPointCalcOverrideService,
     PointKeysAdminService,
+    AssetRolesAdminService,
     AssetTemplatesAdminService,
     AssetTemplateInstantiationService,
     AssetTemplateMigrationService,

@@ -11,7 +11,26 @@ type AuditInput = {
   actor: Pick<JwtPayload, "sub" | "email">;
   action: string;
   entityType: string;
-  entityId: string;
+  /**
+   * `F3.40` — `string | null`, because `bms.audit_log.entity_id` is `uuid` and
+   * not every audited entity is keyed by one.
+   *
+   * The column has always been nullable; every caller before `F3.40` happened
+   * to audit a table with a `uuid` primary key, so the type could be narrower
+   * than the column without anyone noticing. `bms.asset_roles` is the first
+   * that is not: `0051` made `code varchar(64)` its primary key deliberately,
+   * and passing `'meter'` here would reach Postgres as `22P02 invalid input
+   * syntax for type uuid` — a 500 on a write that had already succeeded.
+   *
+   * **Pass `null` and put the key in `payload`.** A vocabulary edit is
+   * identified by `entityType` plus the code in its payload, which is what the
+   * audit read surface already renders; inventing a synthetic uuid, or widening
+   * the column to text, would both cost more than they buy. Do not relax this
+   * to `string | undefined` — `undefined` would make the field skippable, and
+   * a caller that simply forgets it is exactly what the `E7.1c` note below
+   * refuses for `organizationId`.
+   */
+  entityId: string | null;
   /**
    * E7.1c (item D) — required, not optional. `bms.audit_log.organization_id`
    * keeps a legitimate `NULL` (ADR 0043 decision 5: a platform event belongs
