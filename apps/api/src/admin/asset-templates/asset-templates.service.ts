@@ -572,12 +572,24 @@ export class AssetTemplatesAdminService {
   }
 
   /**
-   * Every point key must resolve to an **active** row in the org's catalog
-   * (ADR 0010 §5), and the error names every offending code.
+   * Every point key must resolve to an **active** row in the fleet-wide catalog
+   * (ADR 0010 §5, as amended), and the error names every offending code.
    *
    * Naming them matters: instantiation re-validates through the same rule, and
    * a caller told only "invalid point key" has to bisect a 40-point template by
    * hand to find which one was deactivated.
+   *
+   * **`F3.42` — this stays, beside migration `0058`'s foreign key, because the
+   * two check different things.** The constraint holds *existence* against
+   * every writer, including the seed, which does not come through here. This
+   * holds `active = true`, which no foreign key can express — a retired code
+   * keeps its row — and it names the codes, which a constraint violation cannot.
+   * ADR 0051 Amendment 3 decision 2.
+   *
+   * The message said "this organization's active point-key catalog" until
+   * `F3.42`. There has been no organization catalog since `0057`;
+   * `resolveCatalogPointKey`'s equivalent was corrected in `F3.39` and this one
+   * was missed.
    */
   private async assertPointKeysActive(
     points: { pointKey: string }[],
@@ -596,7 +608,7 @@ export class AssetTemplatesAdminService {
     const missing = codes.filter((code) => !active.has(code));
     if (missing.length > 0) {
       throw new BadRequestException(
-        `Not in this organization's active point-key catalog: ${missing.join(", ")}`,
+        `Not in the active point-key catalog: ${missing.join(", ")}`,
       );
     }
   }

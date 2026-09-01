@@ -20,6 +20,22 @@ import { CalcDefinitionsService } from "./calc-definitions.service";
 const TEST_TEMPLATE_CODE = "F24-CALCDEF-TEST";
 const TEST_ASSET_PREFIX = "F24-CALCDEF-TEST-";
 
+/**
+ * `F3.42` — the derived codes this fixture invents, exported so the lifecycle
+ * file can register them in `bms.point_keys` first. Migration `0058` makes
+ * `template_points.point_key` a foreign key and these exist in no catalog; the
+ * measured input is `fx.pointKeys[0]`, a real catalog row, so it needs nothing.
+ *
+ * Kept beside the literals rather than replacing all eleven of them: a code
+ * added below and forgotten here fails loudly on the constraint, so the two
+ * cannot drift silently.
+ */
+export const FIXTURE_DERIVED_POINT_KEYS = [
+  "CALCDEF_VALID_STREAMING",
+  "CALCDEF_VALID_SCHEDULED",
+  "CALCDEF_NO_TRIGGER",
+];
+
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);

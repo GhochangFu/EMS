@@ -400,6 +400,13 @@
       "when": 1788611583386,
       "tag": "0057_global_point_key_vocabulary",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1788697983386,
+      "tag": "0058_template_points_point_key_fk",
+      "breakpoints": true
     }
   ]
 }

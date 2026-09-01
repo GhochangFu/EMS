@@ -224,10 +224,13 @@ Three reasons:
    > `0057`, `bms.point_keys` is unique on `code` alone, and a plain
    > single-column foreign key needs no denormalized `organization_id` at all —
    > which is exactly the constraint `0057` added to `bms.asset_points`.
-   > **Whether `template_points.point_key` should gain the same foreign key is
-   > an open question and a scope decision** (AGENTS.md §10), not a conclusion
-   > [ADR 0051 Amendment 2](0051-global-template-vocabulary.md#amendment-2--two-clauses-corrected-against-what-shipped-and-the-records-0057-falsified-2026-09-01)
-   > draws. Reasons 1 and 3 are unaffected and still stand on their own.
+   > **`template_points.point_key` gains the same foreign key**, ruled at the
+   > §10 gate on 2026-09-01 and recorded as
+   > [ADR 0051 Amendment 3](0051-global-template-vocabulary.md#amendment-3--the-same-foreign-key-on-template_points-and-why-an-authored-orphan-must-not-be-admitted-2026-09-01)
+   > — migration `0058`, backlog row `F3.42`. `assertPointKeysActive` stays
+   > beside it: the database holds *existence* against every writer, the service
+   > holds *active* and names the offending codes. Reasons 1 and 3 are
+   > unaffected and still stand on their own.
 3. **Domain packs must be authorable as data.** `E5.1` and `F3.22` need a
    template to be expressible as a JSON/YAML pack that imports into any org.
    Code references survive that round trip; uuids do not.
