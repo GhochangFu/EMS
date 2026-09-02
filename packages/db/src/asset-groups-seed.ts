@@ -51,9 +51,17 @@ export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
  * cases are deliberately left to that picker rather than guessed here:
  *
  * 1. **PHEWB's electrical assets** are two meters (`PHE-MFM-*`) and four pumps
- *    (`PHE-PUMP-*`) per site. A meter is not a train position and there is no
- *    electrical `pump` role, so which of the 26 codes they fill is an owner's
- *    ruling, not a reading.
+ *    (`PHE-PUMP-*`) per site. A meter is not a train position, so which code
+ *    they fill is an owner's ruling, not a reading.
+ *
+ *    **`F3.40` removed half of that sentence, and deliberately did not remove
+ *    the rest.** Migration `0060` added the `meter` and `pump` codes, so "there
+ *    is no electrical `pump` role" is no longer true and the vocabulary now
+ *    holds a name for every one of these six assets. What is still owed is the
+ *    ruling itself — which asset fills which code — and that belongs to
+ *    `F3.41`, the row that builds the template these roles bind. Seeding a
+ *    reading here ahead of it would be the same coin toss this header refuses
+ *    for HVAC below.
  * 2. **`ht-panel`** matches nothing: the seeded estate steps 11 kV incomer →
  *    100 kVA transformer → 415 V bus, so it holds no HT panel. The stock
  *    electrical template's "HT Panel Load" chart therefore resolves nothing for

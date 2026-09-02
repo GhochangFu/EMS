@@ -49,6 +49,10 @@ import {
   updatePointKeyBodySchema,
 } from "../admin/point-keys/point-keys.schema";
 import {
+  createAssetRoleBodySchema,
+  updateAssetRoleBodySchema,
+} from "../admin/vocabularies/asset-roles.schema";
+import {
   createRtuBodySchema,
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
@@ -190,6 +194,14 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   importStockTemplateBodySchema,
   instantiateSectionTemplateBodySchema,
   updateDashboardTemplateBodySchema,
+  // `F3.40`. Both are `.strict()`, and the decision is the same one
+  // `createPointKeyBodySchema` records for the sibling global vocabulary: a
+  // caller sending a field this table does not have — `organizationId`, the
+  // obvious one — must get a 400 rather than have it dropped. `code` is absent
+  // from the update body on purpose; it is the primary key and the target of
+  // `asset_group_members_role_fkey`, so a rename is not an edit.
+  createAssetRoleBodySchema,
+  updateAssetRoleBodySchema,
   createLocationBodySchema,
   createMaintenanceScheduleBodySchema,
   createNotificationChannelBodySchema,

@@ -18,7 +18,10 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  * **What is NOT tested here, and why: the vocabulary's contents.** They are
  * rows, so a list asserted here would be a copy of migration `0051` — exactly
  * the duplication this design removes (`adr-0034`'s header states the rule).
- * The 26-row count belongs to the §4.6 database check. What remains checkable
+ * The row count belongs to the §4.6 database check — and since `F3.40` it is
+ * not even a constant of the repository: `0060` added two codes and
+ * `POST /api/v1/admin/vocabularies/asset-roles` can add more without a release,
+ * which is the point of that row. What remains checkable
  * from the repo is the *shape* nobody should quietly change back.
  */
 const MIGRATION_REL = "packages/db/drizzle/0051_asset_role_vocabulary.sql";
@@ -167,7 +170,7 @@ describe("F3.37 asset role vocabulary (ADR 0049 decision 5)", () => {
       "operations.ts declares assetRoleCodeSchema as a z.enum. The set is closed by " +
         "bms.asset_roles and asset_group_members_role_fkey, not by that file, and " +
         "VocabulariesService.assertAssetRole is the boundary that turns an unknown code " +
-        "into a 400. This guards the revert: pasting the 26 seeded codes back in " +
+        "into a 400. This guards the revert: pasting the seeded codes back in " +
         "because fetching them felt inconvenient.",
     ).toBe(false);
 
