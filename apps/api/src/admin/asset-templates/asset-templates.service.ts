@@ -49,6 +49,7 @@ import type {
   TemplatePointBody,
   UpdateAssetTemplateBody,
 } from "./asset-templates.schema";
+import type { StockImportStamp } from "./stock-catalog/types";
 
 /**
  * The template **version lifecycle** (ADR 0015 §5). Instantiation — building
@@ -161,10 +162,19 @@ export class AssetTemplatesAdminService {
    * A brand-new code starts at 1. Version numbers are monotonic but may have
    * gaps: an abandoned and deleted draft consumes its number permanently, and
    * renumbering would break the only thing a pin guarantees.
+   *
+   * `stamp` (`F2.13`, ADR 0052 decisions 4 and 5) is what a stock import
+   * passes and a hand-authored draft does not: it sets `stock_code` /
+   * `stock_version` and switches the audit to `master.asset_template.import`.
+   * One optional argument rather than a second method, so every guard below —
+   * point keys active, domain, alarm vocabularies, content references — runs
+   * on an import exactly as it runs on a form submission. The stock service
+   * never inserts.
    */
   async create(
     jwt: JwtPayload,
     body: CreateAssetTemplateBody,
+    stamp?: StockImportStamp,
   ): Promise<AdminAssetTemplateDto> {
     await this.assertCanAuthor(jwt, body.organizationId);
     await this.assertPointKeysActive(body.points);
@@ -202,6 +212,9 @@ export class AssetTemplatesAdminService {
           description: body.description ?? null,
           status: "draft",
           content: body.content ?? {},
+          // Both or neither — `asset_templates_stock_stamp_check` holds it.
+          stockCode: stamp?.stockCode ?? null,
+          stockVersion: stamp?.stockVersion ?? null,
           createdBy,
         })
         .returning();
@@ -213,13 +226,17 @@ export class AssetTemplatesAdminService {
       // Safe inside the `.catch` below: translateDraftConflict only rewrites
       // a `23505` on `asset_templates_org_code_draft_unique` and returns any
       // other error (including one from this insert) unchanged.
+      //
+      // ONE row either way: an import is audited as an import, not as a
+      // create followed by an import.
       await this.audit.write(
         {
           actor: jwt,
-          action: "master.asset_template.create",
+          action: stamp ? "master.asset_template.import" : "master.asset_template.create",
           entityType: "asset_template",
           entityId: row.id,
           organizationId: body.organizationId,
+          reason: stamp ? `stock ${stamp.stockCode} v${stamp.stockVersion}` : undefined,
           payload: { code: body.code, version: row.version, points: body.points.length },
         },
         tx,
@@ -447,6 +464,12 @@ export class AssetTemplatesAdminService {
           description: template.description,
           status: "draft",
           content: template.content as Record<string, unknown>,
+          // ADR 0052 decision 7: the stamp is copied forward, exactly as the
+          // dashboard service does, or "which stock did this come from"
+          // becomes unanswerable the first time an organization edits an
+          // import.
+          stockCode: template.stockCode,
+          stockVersion: template.stockVersion,
           createdBy,
         })
         .returning();
