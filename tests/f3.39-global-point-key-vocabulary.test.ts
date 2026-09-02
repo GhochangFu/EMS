@@ -590,6 +590,82 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
     });
 
     /**
+     * **Neither seed that writes `bms.point_keys` may overwrite a unit.**
+     *
+     * `bms.point_keys` is fleet-wide and unpoliced since `0057`, and ADR 0051
+     * Amendment 1 names a global administrator's correction as the remedy for a
+     * code the platform mislabels — `PATCH /api/v1/admin/point-keys/:id` carries
+     * `unit`. Both seeds re-run on every `compose up`, so an outright
+     * `unit = EXCLUDED.unit` silently undoes that correction at the next boot.
+     *
+     * `phe-pilot-seed.ts` had always got this right and `point-keys-seed.ts` had
+     * always got it wrong; the disagreement was invisible because the codes
+     * barely overlapped. `F3.41` made twelve of them overlap, and
+     * `seedPointKeyCatalog` runs LAST, so the wrong one would have won. Found by
+     * the `security-reviewer` sweep, and pinned here because nothing else can
+     * see it: both statements are strings, both are valid SQL, and the failure
+     * is a value quietly reverting between boots.
+     */
+    it("no point-key seed overwrites a unit an administrator may have set", () => {
+      let statementsSeen = 0;
+      for (const rel of [SEED_REL, PILOT_SEED_REL]) {
+        const source = tsOnly(read(rel));
+        // **Scoped to the `bms.point_keys` upsert, not the whole file.**
+        // `phe-pilot-seed.ts` also upserts `bms.asset_points`, and `unit =
+        // EXCLUDED.unit` is CORRECT there — that column is the seed's own
+        // mapping, derived from the vendor catalog, and nothing else writes it.
+        // A file-wide scan would fail on that line and teach the next reader to
+        // weaken this check.
+        // **Escaped backticks are removed BEFORE the block is sliced, and that
+        // is not tidying.** `phe-pilot-seed.ts` carries an SQL comment on the
+        // line immediately after its INSERT that quotes `` \`$1\` ``, so
+        // slicing at the first backtick ended the block after 76 characters —
+        // before `ON CONFLICT`. The check found the statement, reported two
+        // statements seen, and inspected nothing in that file: change it to
+        // `unit = EXCLUDED.unit` and this stayed green. Caught by the
+        // `migration-reviewer` sweep on the commit that introduced it, which is
+        // why the reaching-ON-CONFLICT assertion below now exists as well.
+        const unescaped = source.replace(/\\`/g, "'");
+        for (const start of [...unescaped.matchAll(/INSERT INTO bms\.point_keys\b/g)]) {
+          statementsSeen += 1;
+          // To the end of the enclosing template literal — every one of these
+          // statements is written as a backtick string.
+          const rest = unescaped.slice(start.index!);
+          const end = rest.indexOf("`");
+          const block = rest.slice(0, end >= 0 ? end : rest.length);
+          // The second anti-vacuity control, and the one that would have caught
+          // the escaped-backtick bug: a block that does not reach its own
+          // `ON CONFLICT` cannot contain the assignment being checked, so a
+          // pass would mean nothing.
+          expect(
+            block.includes("ON CONFLICT"),
+            `${rel}: the sliced bms.point_keys statement stops before its ON CONFLICT ` +
+              `clause (${block.length} chars), so the check below inspects nothing. Fix ` +
+              "the slice, do not delete this assertion.",
+          ).toBe(true);
+          const overwriting = [...block.matchAll(/\bunit\s*=\s*([^,\n]+)/g)]
+            .map((m) => m[1]!.trim())
+            .filter((rhs) => rhs.startsWith("EXCLUDED.unit"));
+          expect(
+            overwriting,
+            `${rel} assigns unit = EXCLUDED.unit outright on bms.point_keys. Both seeds ` +
+              "re-run on every `compose up`, and that table is fleet-wide and unpoliced " +
+              "since 0057, so this reverts a global administrator's PATCH at the next " +
+              "boot — the correction ADR 0051 Amendment 1 names as the remedy for a " +
+              "mislabelled code. Use COALESCE(bms.point_keys.unit, EXCLUDED.unit), as " +
+              "both seeds now do.",
+          ).toEqual([]);
+        }
+      }
+      // Anti-vacuity: two upserts exist today, one per seed. A rename that made
+      // the scan find none would otherwise pass for free.
+      expect(
+        statementsSeen,
+        `no INSERT INTO bms.point_keys found in ${SEED_REL} or ${PILOT_SEED_REL} — the scan is blind`,
+      ).toBeGreaterThanOrEqual(2);
+    });
+
+    /**
      * Anti-vacuity. Every assertion above is a `false`/`[]` expectation on a
      * scan, and a scan that finds nothing passes for free. If the constants are
      * renamed away or the migration is emptied, this is what fails.

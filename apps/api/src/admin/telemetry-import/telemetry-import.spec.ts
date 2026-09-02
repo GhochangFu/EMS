@@ -109,9 +109,16 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
     //
     // `unit IS NOT NULL` for the reason `telemetry-write.spec.ts` records at
     // its own copy of this query: fleet-wide, the oldest rows are the PHE
-    // pilot's and three of them carry a genuine NULL unit, which makes every
+    // pilot's and some of them carry a genuine NULL unit, which makes every
     // unit-mismatch case vacuous. This suite shares that shape, so it takes the
     // same predicate rather than waiting to be bitten by it.
+    //
+    // **The predicate stops at NULL and must not also exclude `""`.**
+    // `telemetry-write.service.ts` guards on `authoritativeUnit !== null`, so
+    // an empty-string unit is still compared and a wrong one is still rejected.
+    // `F3.41` moved `chlorine_pump_on` from NULL to `""` when it joined
+    // `METERED_PUMPING_POINT_KEYS`, so this comment no longer names a count —
+    // the count was the part that went stale, and the rule did not.
     `SELECT code, unit FROM bms.point_keys
       WHERE active = true AND unit IS NOT NULL ORDER BY created_at, code LIMIT 5`,
   );

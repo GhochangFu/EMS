@@ -194,6 +194,14 @@ async function main(): Promise<void> {
       // `verifyHierarchySeed`'s three PHE membership counts are what hold this
       // order — put these back above `seedPheCatalog` and it fails with 0 of 36.
       await backfillAssetLocations(pool);
+      // **`assignEskomAssetRtus` now runs AFTER the catalog that writes PHE's
+      // own `rtu_id`, and cannot disturb it — but only because of a predicate
+      // that is not visible from here.** `hierarchy-seed.ts` filters
+      // `WHERE o.code = 'ESKOM' AND a.code NOT LIKE 'PHE-%'`, and `0047` scopes
+      // `bms.locations` to PHEWB inside this bracket, so its driving SELECT
+      // returns zero rows and the loop never runs an UPDATE. Two independent
+      // reasons, either sufficient. Named by the `migration-reviewer` sweep,
+      // because "a pure relocation" is only true given that predicate.
       await assignEskomAssetRtus(pool);
       await seedAssetGroups(pool, phewbOrgId);
     });
