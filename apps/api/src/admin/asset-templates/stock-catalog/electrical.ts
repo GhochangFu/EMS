@@ -1,5 +1,6 @@
 import { ELECTRICAL_DG_SET } from "./electrical-dg-set";
 import { ELECTRICAL_FEEDER } from "./electrical-feeder";
+import { ELECTRICAL_SOLAR_PV } from "./electrical-solar-pv";
 import { ELECTRICAL_TRANSFORMER } from "./electrical-transformer";
 import { ELECTRICAL_UPS } from "./electrical-ups";
 import type { StockAssetTemplateEntry } from "./types";
@@ -11,10 +12,10 @@ import type { StockAssetTemplateEntry } from "./types";
  * 1000-line cap (plan §4.3: ~1550-1800 projected lines). This file
  * aggregates; it authors nothing. `electrical-transformer.ts` joined the array
  * below when Task 4 authored it, `electrical-dg-set.ts` when Task 5 did
- * and `electrical-ups.ts` when Task 6 did; the two remaining class modules
- * (`electrical-solar-pv.ts`, `electrical-apfc.ts`) are still empty-but-typed
- * placeholders — see each module's own docblock — and join it only once
- * Tasks 7-8 author them.
+ * `electrical-ups.ts` when Task 6 did and `electrical-solar-pv.ts` when Task 7
+ * did; the last class module (`electrical-apfc.ts`) is still an
+ * empty-but-typed placeholder — see its own docblock — and joins it only once
+ * Task 8 authors it.
  *
  * **SOURCE.** `docs/electrical-derived-taglist-v1.md` §§1-6 — the v1 point
  * basis for all six electrical asset classes (ADR 0051 Amendment 6).
@@ -82,13 +83,17 @@ import type { StockAssetTemplateEntry } from "./types";
  * the tag list does not name (`cell_voltage_spread_v`, plan §12 ruling 2), the
  * only two `safetyCritical` plans in the pack, and `load_pct` as a measured
  * core point where three other classes defer the same code.
- * `electrical-solar-pv`, `electrical-apfc` — `F2.12`, §§5-6 respectively
- * (Tasks 7-8).
+ * `electrical-solar-pv` — `F2.12` Task 7, §5: 26 points (9 core + 15 extended
+ * + 1 manual + 1 derived), 7 alarms, 1 KPI, 4 maintenance plans; §5's
+ * `grid_export_kw` is not declared (the point of connection is another asset's
+ * §1 meter) and two of its alarm bullets are deferred, each reasoned in that
+ * module's docblock. `electrical-apfc` — `F2.12`, §6 (Task 8).
  */
 export const ELECTRICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
-  // Tag-list section order — §1-§4, then §§5-6 as Tasks 7-8 land.
+  // Tag-list section order — §1-§5, then §6 as Task 8 lands.
   ELECTRICAL_FEEDER,
   ELECTRICAL_TRANSFORMER,
   ELECTRICAL_DG_SET,
   ELECTRICAL_UPS,
+  ELECTRICAL_SOLAR_PV,
 ];
