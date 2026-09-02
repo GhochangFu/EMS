@@ -9,7 +9,7 @@ import { getOrganizationId } from "./hierarchy-seed";
 import { ENABLED_SET_VERSION, resolveIngestEnabled } from "./ingest-enabled-set";
 import { assets, locations } from "./schema/bms-schema";
 
-type PheCatalogRow = {
+export type PheCatalogRow = {
   EdgeRTUId: number;
   RTUCode: string;
   MqttTopic: string;
@@ -34,7 +34,7 @@ type PheCatalogRow = {
   UnitCode: string | null;
 };
 
-type PheCatalogFile = {
+export type PheCatalogFile = {
   org: { orgId: number; orgCode: string; orgName: string };
   pilotEdgeRtuId: number;
   rows: PheCatalogRow[];
@@ -69,7 +69,16 @@ export function bmsPointKeyForSensor(sensorCode: string, dataKey: string): strin
   return bySensor[sensorCode] ?? dataKey.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
 }
 
-function deviceDomain(deviceCode: string, modelCode: string): string {
+/**
+ * Which `bms.assets.domain` a PHE device lands in.
+ *
+ * Exported since `F3.41` so `asset-groups-seed.spec.ts` can run the real 48
+ * device codes through the real pair of functions rather than restating them.
+ * The MFM and both PUMP shapes are `electrical`, which is why all six per site
+ * land in the same `electrical` asset group and one section template can serve
+ * them.
+ */
+export function deviceDomain(deviceCode: string, modelCode: string): string {
   if (deviceCode.startsWith("PUMP") || modelCode.startsWith("PUMP")) {
     return "electrical";
   }
@@ -89,7 +98,8 @@ function stationSlug(stationName: string): string {
     .replace(/^-|-$/g, "")}`;
 }
 
-function assetCode(deviceCode: string): string {
+/** The `bms.assets.code` a PHE device takes. Exported with `deviceDomain`. */
+export function assetCode(deviceCode: string): string {
   return `PHE-${deviceCode}`;
 }
 
@@ -117,7 +127,7 @@ function unitLabel(unitCode: string | null): string | null {
  */
 const CATALOG_CANDIDATES = ["src/phe-catalog.json", "packages/db/src/phe-catalog.json"];
 
-function loadCatalog(): PheCatalogFile {
+export function loadPheCatalog(): PheCatalogFile {
   const path = CATALOG_CANDIDATES.map((c) => resolve(process.cwd(), c)).find((p) =>
     existsSync(p),
   );
@@ -134,7 +144,7 @@ function loadCatalog(): PheCatalogFile {
 
 /** Seeds PHEWB catalog: Station → location, EdgeRTU → rtus, devices → assets. */
 export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
-  const catalog = loadCatalog();
+  const catalog = loadPheCatalog();
   const phewbOrgId = await getOrganizationId(pool, "PHEWB");
   const stationIds = [...new Set(catalog.rows.map((r) => r.StationId))];
 
