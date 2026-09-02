@@ -2732,6 +2732,81 @@ tenant-pool writer, and adding one is the trigger for a matching revoke —
 recorded in Amendment 4's Consequences and in `AGENTS.md` §4.4, because nothing
 enforces it automatically.
 
+### The asset role vocabulary grows and gains a write path (`F3.40`, ADR 0051 decision 5) — done
+
+`F3.40` closed 2026-09-02 (PR #267, squash `8d0c81e`). Migration `0060` adds two
+codes and the row adds `POST`/`PATCH /api/v1/admin/vocabularies/asset-roles`,
+gated to the global `admin` alone.
+
+**The two halves are one row on purpose.** `0051`'s 26 codes name a substation
+train — incoming supply, transformer, HT and LT panels, MCCs — plus the water,
+STP, ETP and HVAC trains. They name none of the shapes the estate actually
+holds, which is why `F3.38` left PHE WB's six electrical assets per site with a
+NULL role rather than guessing. Shipping only the codes would have repeated
+`F3.37`'s own effort correction: the codes are a migration, and the write path is
+what stops the shape after next needing a release.
+
+**What was measured, not inferred.** PHEWB runs four device shapes at six sites,
+two of each per site: `PHE-MFM` (16 electrical keys — `kw`, `pf`, `kwh_total`,
+the three-phase voltage and current set), `PHE-PUMP-M` (`breaker_main`),
+`PHE-PUMP-C` (`chlorine_pump_on`) and `PHE-AIRSP1051M` (battery, network,
+controller power). The first is a meter and the next two are pumps.
+
+**The two codes NOT added are the decision.** One `pump` and not also
+`dosing-pump`: the two pump shapes carry different points and are the same
+*shape*, `0051` step 4 made the junction's role index deliberately NOT UNIQUE so
+one role may match several members, and `F3.41` binds both keys on it — splitting
+would commit `F3.41` to a second widget nobody has asked for. And nothing for
+`PHE-AIRSP1051M`, which fits no role either: `0051`'s header states the asymmetry
+that governs, since an unused role is easy to add and a wrong one is hard to
+retire when the foreign key carries no `ON DELETE`. The next shape is a `POST`.
+
+**`sort_order` appends at 170/180 rather than inserting.** `0051` banded
+Electrical 110-160 with Water at 210. Inserting at 115 or 155 would assert that a
+meter sits between the incoming supply and the transformer — a claim about the
+train these shapes do not make. Appending claims only that they are electrical.
+
+**Three single-migration role readers, and the row named two.** `f3.38`'s
+`.toBe(26)` and `asset-groups.service.integration.test.ts`'s fixture
+precondition were both in scope; `stock-catalog.spec.ts`'s `seededRoles()` was
+not, and leaving it would have made `F3.41`'s first `meter` binding look like an
+unknown code. All three now read `0051` **and** `0060`, and the count moved to 28
+rather than being loosened — `f3.38`'s own comment had already prescribed exactly
+that fix for exactly this case.
+
+**Four reviewers ran, and the chain found what no single pass would have.**
+Security found nothing; the migration review ruled it safe. The compliance review
+found the two routes reached no OpenAPI registry entry, so both `.strict()`
+bodies carried no recorded decision and no gate — verbatim the `F3.37` failure
+the registry's own header records. Writing the controller coverage it also asked
+for is what exposed a defect none of them named: a bad `:code` was a 400 that
+became a 500 under Vitest, because a `ZodError` built by `@bms/shared`'s module
+instance fails `instanceof ZodError` in `apps/api`. The correctness review then
+found two more, both fixed at the class per §4.5 — an `update` that lost a
+concurrent edit and could silently un-retire a role, and `?active=` answering
+**500 on all seven admin list routes** because `parseActiveFilter` did
+`parse(value ?? "all")` and `??` does not catch the empty string Express sends
+for `?active=`.
+
+**What stays owed, and none of it is filed.** `asset-groups.controller.ts:55`
+carries the same cross-package `instanceof ZodError` shape and is the only other
+one in `apps/api`, harmless in the CJS container and wrong under Vitest. §4.4's
+grant rule is unguarded, so a future tenant-pool writer that forgets its revoke
+fails no gate. And the drizzle journal's `when` values run about 6.5 days ahead
+of the wall clock, so a generated `0061` would take a smaller timestamp than
+`0059` and `0060`, look correctly journalled, and never run on dev, CI or the PHE
+pilot while still running on a fresh database.
+
+**One delta from decision 5 awaits the owner's ruling.** Decision 5 says gated to
+the global `admin` role *only*, and the `GET` this row added sits at
+`requireMasterDataUser`. Both reviewers judged it in scope — `GET
+/api/v1/vocabularies` serves active codes only, so without an admin read a
+retired role can never be named again and retirement through the API is one-way.
+
+**Unblocks `F3.41`**, which needs the owner's ruling on which of PHE WB's six
+assets per site fills `meter` and which fills `pump`. The vocabulary now holds a
+name for every one of them, so that ruling is a reading rather than a compromise.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
