@@ -39,10 +39,14 @@ export const EXTENDED = { tier: "extended" } as const;
  */
 export const MANUAL = { tier: "manual" } as const;
 
-/** Overrides `derived()` accepts beyond its streaming default. */
-type DerivedOverrides = Partial<
-  Pick<StockTemplatePoint, "maxInputAgeSeconds" | "calcIntervalSeconds" | "calcTrigger">
->;
+/**
+ * The one override `derived()` accepts. Deliberately not `calcTrigger` or
+ * `calcIntervalSeconds`: the helper's guarantee is that a derived point is
+ * streaming with a null interval — the pair the schema refuses — and a type
+ * that admits either override would let a caller break that guarantee and
+ * compile (the `F2.12` code review found the first draft did).
+ */
+type DerivedOverrides = Partial<Pick<StockTemplatePoint, "maxInputAgeSeconds">>;
 
 /**
  * A derived point's shared shape (plan §5): `kind: "derived"`,
