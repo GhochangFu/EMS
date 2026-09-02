@@ -1,0 +1,188 @@
+{
+  "_about": {
+    "what": "Sheet 02 - Electrical Distribution Overview, from docs/ion-exchange-nexus-dashboard-2026-08-29.html, expressed as the two request bodies the dashboard builder itself sends.",
+    "scope": "ESKOM / RSMOC Western Cape - the site with the most active alarms (27) and the most electrical points (21 kw, 21 pf).",
+    "notForProduction": "A demo definition only. It is deliberately NOT in packages/db seeds, so it never reaches a production or a freshly seeded database. Replay it by hand when a local database needs it.",
+    "howToReplay": [
+      "1. POST /api/v1/dashboards with the `create` body. Keep the returned id.",
+      "2. PUT /api/v1/dashboards/<id>/widgets with the `widgets` body.",
+      "3. Both calls need a bearer token. AUTH_MODE=oidc has no direct grant, so take the token from the web app's localStorage after a browser login.",
+      "4. The pointId values below are seed-specific. A re-seeded database gives new ids - re-read them from bms.asset_points before replay."
+    ],
+    "chartWindow": "Feeder Load Trend uses windowMinutes 60, not the sheet's Period: Today. The simulator writes from the moment it starts, so a 1440-minute window plots a day of empty axis beside a few minutes of data. Widen it to 1440 once the site has a day of history.",
+    "notBuildable": {
+      "singleLineDiagram": "F3.32, the mimic builder. The proposal itself stamps this block MIMIC BUILDER +3M.",
+      "maintenanceWorkflowFunnel": "No widget type exists for it.",
+      "energyTodayMWh": "ESKOM carries no kwh_total point - only PHEWB does. Replaced by Average Load Today (kW) rather than binding an MWh label to a kW reading."
+    }
+  },
+  "create": {
+    "organizationId": "1ddf7041-7ee8-432c-b6c5-58ea50cf6d6c",
+    "slug": "ionsite-electrical-overview",
+    "name": "Electrical Distribution Overview",
+    "description": "Sheet 02 of the IONSiTE NEXUS proposal, built with the dashboard builder. Local demo dashboard.",
+    "locationId": "1a885c4f-bd07-44b0-b887-8b04054fe350"
+  },
+  "widgets": {
+    "widgets": [
+      {
+        "title": "Total Power",
+        "widgetType": "value_tile",
+        "gridX": 0,
+        "gridY": 0,
+        "gridW": 2,
+        "gridH": 3,
+        "config": {
+          "unit": "kW",
+          "decimals": 1,
+          "compareToPrevious": true,
+          "aggregate": "avg",
+          "windowMinutes": 5,
+          "icon": "bolt",
+          "tone": "info"
+        },
+        "points": [
+          { "pointId": "a3a7fbb6-6f21-4541-bf31-2366853bac6a", "role": "primary", "sortOrder": 0 }
+        ],
+        "sources": []
+      },
+      {
+        "title": "Peak Demand",
+        "widgetType": "value_tile",
+        "gridX": 2,
+        "gridY": 0,
+        "gridW": 2,
+        "gridH": 3,
+        "config": {
+          "unit": "kW",
+          "decimals": 1,
+          "aggregate": "max",
+          "windowMinutes": 1440,
+          "hint": "Peak of the last 24 hours",
+          "icon": "gauge",
+          "tone": "info"
+        },
+        "points": [
+          { "pointId": "a3a7fbb6-6f21-4541-bf31-2366853bac6a", "role": "primary", "sortOrder": 0 }
+        ],
+        "sources": []
+      },
+      {
+        "title": "Average Load Today",
+        "widgetType": "value_tile",
+        "gridX": 4,
+        "gridY": 0,
+        "gridW": 2,
+        "gridH": 3,
+        "config": {
+          "unit": "kW",
+          "decimals": 1,
+          "aggregate": "avg",
+          "windowMinutes": 1440,
+          "compareToPrevious": true,
+          "icon": "bolt",
+          "tone": "info"
+        },
+        "points": [
+          { "pointId": "a3a7fbb6-6f21-4541-bf31-2366853bac6a", "role": "primary", "sortOrder": 0 }
+        ],
+        "sources": []
+      },
+      {
+        "title": "Bus Voltage",
+        "widgetType": "value_tile",
+        "gridX": 6,
+        "gridY": 0,
+        "gridW": 2,
+        "gridH": 3,
+        "config": {
+          "unit": "V",
+          "decimals": 0,
+          "hint": "415 V nominal",
+          "icon": "bolt",
+          "tone": "ok"
+        },
+        "points": [
+          { "pointId": "a6c519bc-3a30-4363-8783-8593a87615e2", "role": "primary", "sortOrder": 0 }
+        ],
+        "sources": []
+      },
+      {
+        "title": "Active Alarms",
+        "widgetType": "value_tile",
+        "gridX": 8,
+        "gridY": 0,
+        "gridW": 4,
+        "gridH": 3,
+        "config": {
+          "decimals": 0,
+          "hint": "Unacknowledged, this site",
+          "icon": "alert",
+          "tone": "critical"
+        },
+        "points": [],
+        "sources": [{ "catalogKey": "alarms.active.count", "params": {}, "sortOrder": 0 }]
+      },
+      {
+        "title": "Power Factor",
+        "widgetType": "radial_gauge",
+        "gridX": 0,
+        "gridY": 3,
+        "gridW": 4,
+        "gridH": 6,
+        "config": {
+          "min": 0,
+          "max": 1,
+          "decimals": 2,
+          "thresholds": [
+            { "value": 0.85, "tone": "critical" },
+            { "value": 0.92, "tone": "warning" },
+            { "value": 1, "tone": "ok" }
+          ]
+        },
+        "points": [
+          { "pointId": "19ac7aa7-3d78-4ed8-bc8a-b717fe04b88d", "role": "primary", "sortOrder": 0 }
+        ],
+        "sources": []
+      },
+      {
+        "title": "Feeder Load Trend",
+        "widgetType": "chart",
+        "gridX": 4,
+        "gridY": 3,
+        "gridW": 8,
+        "gridH": 6,
+        "config": {
+          "series": "line",
+          "unit": "kW",
+          "decimals": 1,
+          "windowMinutes": 60,
+          "aggregate": "avg",
+          "footerStats": true,
+          "yAxisLabel": "kW"
+        },
+        "points": [
+          { "pointId": "ae73465c-ef9a-420b-b34e-ddc0c2ea0a70", "role": "series", "sortOrder": 0 },
+          { "pointId": "57fd3b9b-8437-4112-8076-3355b5b306e6", "role": "series", "sortOrder": 1 },
+          { "pointId": "5fd7a7b4-63a7-4533-a957-ec6881a3713e", "role": "series", "sortOrder": 2 },
+          { "pointId": "6eeeedd5-095d-451d-b700-ba22320c4884", "role": "series", "sortOrder": 3 },
+          { "pointId": "5d6e9679-1036-4640-bfe1-1bf30c13919a", "role": "series", "sortOrder": 4 }
+        ],
+        "sources": []
+      },
+      {
+        "title": "Active Alarms",
+        "widgetType": "table",
+        "gridX": 0,
+        "gridY": 9,
+        "gridW": 12,
+        "gridH": 7,
+        "config": {
+          "columns": ["raisedAt", "assetName", "severity", "message"]
+        },
+        "points": [],
+        "sources": [{ "catalogKey": "alarms.active", "params": {}, "sortOrder": 0 }]
+      }
+    ]
+  }
+}
