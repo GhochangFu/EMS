@@ -260,8 +260,11 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
       new Set(pointKeys.map((entry) => entry.section)).size,
       "every pointKey was attributed to one section — the section tracker is broken",
     ).toBeGreaterThanOrEqual(5);
-    // 46 = 34 before + `METERED_PUMPING_POINT_KEYS`'s 12.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(46);
+    // 185 = 46 before + `F2.11`'s `ELECTRICAL_CLASS_POINT_KEYS`'s 139
+    // (ADR 0051 Amendment 6). Moved to the actual rather than left at 46, for
+    // the same reason `F3.41` moved this bound from 30 — slack here would
+    // have stayed green with the new array parsed as nothing at all.
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(185);
     // 28 is 26 from `0051` plus 2 from `0060`, and both migrations are frozen,
     // so this number is stable by construction. If a LATER migration adds a
     // role code and the check below starts rejecting a legitimate
