@@ -8,6 +8,7 @@ import {
   runGridErrorTests,
   runIncompleteDerivedPointTests,
   runKindChangeTests,
+  runPointMetaSurvivesARoundTripTests,
   runSeedTests,
 } from "./template-points-grid.spec";
 
@@ -15,6 +16,10 @@ import {
 describe("template points grid", () => {
   it("carries every calc field through a load-and-save round trip", () => {
     runCalcFieldsSurviveARoundTripTests();
+  });
+
+  it("carries meta.tier through a load-and-save round trip, omitting the key for an untiered point (F2.13)", () => {
+    runPointMetaSurvivesARoundTripTests();
   });
 
   it("seeds rows from the template and appends after the highest sortOrder", () => {

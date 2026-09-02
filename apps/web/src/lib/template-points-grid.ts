@@ -1,7 +1,7 @@
 import { parseFormula } from "@bms/shared";
 import type { AdminAssetTemplateDto, AdminTemplatePointDto } from "@bms/shared";
 
-import type { TemplatePointInput } from "../api/admin/asset-templates";
+import type { TemplatePointInput, TemplatePointTier } from "../api/admin/asset-templates";
 
 /**
  * The Points tab's grid rules (`F2.5`, ADR 0038 Unit 9b).
@@ -28,6 +28,13 @@ import type { TemplatePointInput } from "../api/admin/asset-templates";
  * Every row therefore carries all twelve. The five this tab does not edit are
  * passed through untouched, and `setPointKind` is the **only** thing that
  * clears them.
+ *
+ * **`F2.13` added a thirteenth, `meta.tier`, carried the same way.** It is
+ * provenance (ADR 0052 decision 2 — every stock-imported point declares its
+ * tier), so `setPointKind` does not clear it either. Its wire shape is
+ * different from the calc fields': the key is **omitted** for a point with no
+ * tier rather than sent as `null`, because `templatePointBodySchema.meta` is
+ * optional-but-closed — `{ tier }` once present, `null` and `{}` both refused.
  *
  * ## Point identity does not survive a save, and nothing depends on it
  *
@@ -58,6 +65,10 @@ export type TemplatePointKindValue = "measured" | "derived";
  * becomes `null` in `buildPointsPayload` rather than an empty string.
  *
  * The five calc fields keep their wire types. They are carried, not edited.
+ *
+ * `meta` is normalised on seed: the read side may hold `null` or `{}` (the
+ * column default) for a point with no tier, and both become `null` here so
+ * that `buildPointsPayload` has one case to omit.
  */
 export type TemplatePointRow = {
   pointKey: string;
@@ -72,6 +83,7 @@ export type TemplatePointRow = {
   calcTrigger: AdminTemplatePointDto["calcTrigger"];
   calcIntervalSeconds: number | null;
   maxInputAgeSeconds: number | null;
+  meta: { tier: TemplatePointTier } | null;
 };
 
 /** Seeds the grid from the loaded template, in the order the server returned. */
@@ -89,6 +101,7 @@ export function pointRowsFrom(template: AdminAssetTemplateDto): TemplatePointRow
     calcTrigger: point.calcTrigger,
     calcIntervalSeconds: point.calcIntervalSeconds,
     maxInputAgeSeconds: point.maxInputAgeSeconds,
+    meta: point.meta?.tier ? { tier: point.meta.tier } : null,
   }));
 }
 
@@ -108,6 +121,7 @@ export function blankPointRow(rows: readonly TemplatePointRow[]): TemplatePointR
     calcTrigger: null,
     calcIntervalSeconds: null,
     maxInputAgeSeconds: null,
+    meta: null,
   };
 }
 
@@ -323,6 +337,8 @@ export function buildPointsPayload(rows: readonly TemplatePointRow[]): TemplateP
     calcTrigger: row.calcTrigger,
     calcIntervalSeconds: row.calcIntervalSeconds,
     maxInputAgeSeconds: row.maxInputAgeSeconds,
+    // Omitted, not nulled, for a point with no tier — see the module docblock.
+    ...(row.meta ? { meta: row.meta } : {}),
   }));
 }
 
