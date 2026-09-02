@@ -161,6 +161,35 @@ function checkEntry(entry: StockAssetTemplateEntry): void {
     `${entry.code}: the DTO projection dropped points — ` +
       `${listed.success ? listed.data.points.length : "?"} listed vs ${entry.points.length} authored`,
   );
+
+  // **And the same keys — in both directions.** `stockAssetTemplateDtoSchema`
+  // is a non-strict `z.object`, so `list()`'s `.parse` *strips* any key the
+  // shared schema lacks and stays green. A count check catches only the
+  // shared-permits/API-refuses direction; this catches the other one: `F2.12`
+  // adds a field to `templatePointBodySchema` and forgets the DTO mirror in
+  // `packages/shared/src/contracts/admin.ts`, and `GET stock` silently omits
+  // what the import writes. Found by the `F2.13` code review.
+  if (listed.success) {
+    assertSameKeys(entry.code, "entry", entry, listed.data);
+    entry.points.forEach((point, i) => {
+      assertSameKeys(`${entry.code}.points[${i}]`, "point", point, listed.data.points[i]);
+    });
+  }
+}
+
+/** Key-set equality, so a stripped-by-parse field is a failure, not a silence. */
+function assertSameKeys(where: string, what: string, authored: object, listed: object): void {
+  const a = Object.keys(authored).sort();
+  const l = Object.keys(listed).sort();
+  const onlyAuthored = a.filter((k) => !l.includes(k));
+  const onlyListed = l.filter((k) => !a.includes(k));
+  assert(
+    onlyAuthored.length === 0 && onlyListed.length === 0,
+    `${where}: the listed ${what} projection and the authored ${what} disagree on keys — ` +
+      `stripped by the DTO parse: [${onlyAuthored.join(", ")}]; ` +
+      `present only in the projection: [${onlyListed.join(", ")}]. ` +
+      "Mirror the field in stockAssetTemplateDtoSchema / stockTemplatePointDtoSchema.",
+  );
 }
 
 // ---------------------------------------------------------------------------

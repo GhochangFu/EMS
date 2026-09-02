@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect } from "vitest";
 
 import { repoRoot } from "../../testing/repo-root";
+import { decoratorAt, methodBody } from "../../testing/source-scan";
 
 /**
  * `F3.36` Part E3 — the one thing about this controller that is invisible in
@@ -37,8 +38,13 @@ const CONTROLLER = join(
 export function runDashboardTemplatesControllerTests(): void {
   const source = readFileSync(CONTROLLER, "utf8");
 
-  const stockAt = source.indexOf('@Get("stock")');
-  const idAt = source.indexOf('@Get(":id")');
+  // **Anchored to a line start, never a bare `indexOf`** — see
+  // `testing/source-scan.ts`. The class docblock quotes both decorators in the
+  // same order some forty lines before the real ones, so the original
+  // `indexOf` matched the comment and this check passed with the routes in
+  // either order. Found by the `F2.13` code review on the asset-template twin.
+  const stockAt = decoratorAt(source, '@Get("stock")');
+  const idAt = decoratorAt(source, '@Get(":id")');
 
   expect(stockAt, 'the controller must declare @Get("stock")').toBeGreaterThan(-1);
   expect(idAt, 'the controller must declare @Get(":id")').toBeGreaterThan(-1);
@@ -55,6 +61,30 @@ export function runDashboardTemplatesControllerTests(): void {
   // The same trap one level down: `POST stock/:code/import` must not be
   // swallowed by `POST :id/...`. The literal segment leads, so it is safe by
   // construction — asserted so a later reorder cannot quietly break it.
-  const stockImportAt = source.indexOf('@Post("stock/:code/import")');
+  const stockImportAt = decoratorAt(source, '@Post("stock/:code/import")');
   expect(stockImportAt, "the controller must declare the stock import route").toBeGreaterThan(-1);
+  const firstIdPostAt = decoratorAt(source, '@Post(":id');
+  expect(firstIdPostAt, 'the controller must declare a @Post(":id/…") route').toBeGreaterThan(-1);
+  expect(
+    stockImportAt,
+    '@Post("stock/:code/import") must be declared BEFORE the first @Post(":id/…"). Three ' +
+      "segments against two is safe by segment count today; the order makes it safe against a " +
+      'future three-segment @Post(":id/:verb/:x") as well, which the comment above promises.',
+  ).toBeLessThan(firstIdPostAt);
+
+  // The guard on `GET stock` is proven here, not only exercised: the
+  // integration suite calls the *service*, so a refactor dropping the line
+  // from the handler leaves every other gate green while any authenticated
+  // principal enumerates the catalog — the `F3.36` security finding itself.
+  const listStock = methodBody(source, "async listStock(", "@Get(");
+  expect(
+    listStock,
+    "listStock must call this.stock.assertCanList(user) before it returns the catalog",
+  ).toContain("this.stock.assertCanList(user)");
+
+  const importStock = methodBody(source, "async importStock(", "@Post(");
+  expect(
+    importStock,
+    "importStock must parse :code with stockCodeParamSchema before using it",
+  ).toContain("stockCodeParamSchema.parse(code)");
 }

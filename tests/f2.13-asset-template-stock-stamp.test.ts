@@ -121,7 +121,8 @@ describe("F2.13 asset_templates stock stamp (ADR 0052, mirrors 0056)", () => {
 
     expect(
       journal.entries.length,
-      "the journal must parse at least 61 entries (0 through 0060, inclusive of 0061).",
+      "the journal must parse at least 61 entries — idx 0 through 61 with the pre-existing gap " +
+        "at idx 20, so 0000…0061 is 61 entries, not 62. Move the bound when 0062 lands.",
     ).toBeGreaterThanOrEqual(61);
 
     const stem = (migrationFile ?? "").replace(/\.sql$/, "");

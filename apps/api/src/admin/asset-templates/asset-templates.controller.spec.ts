@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { expect } from "vitest";
 
 import { repoRoot } from "../../testing/repo-root";
+import { decoratorAt, methodBody } from "../../testing/source-scan";
 
 /**
  * `F2.13` — the one thing about this controller that is invisible in review and
@@ -32,8 +33,11 @@ const CONTROLLER = join(
 export function runAssetTemplatesControllerTests(): void {
   const source = readFileSync(CONTROLLER, "utf8");
 
-  const stockAt = source.indexOf('@Get("stock")');
-  const idAt = source.indexOf('@Get(":id")');
+  // **Anchored to a line start, never a bare `indexOf`** — see
+  // `testing/source-scan.ts`: the class docblock quotes both decorators in the
+  // same order, so a bare `indexOf` found the comment and passed either way.
+  const stockAt = decoratorAt(source, '@Get("stock")');
+  const idAt = decoratorAt(source, '@Get(":id")');
 
   expect(stockAt, 'the controller must declare @Get("stock")').toBeGreaterThan(-1);
   expect(idAt, 'the controller must declare @Get(":id")').toBeGreaterThan(-1);
@@ -51,8 +55,16 @@ export function runAssetTemplatesControllerTests(): void {
   // and no `@Post(":id/…")` route has three, so it is safe by construction —
   // asserted so a later reorder or a new `@Post(":id/:verb/:x")` cannot
   // quietly break it.
-  const stockImportAt = source.indexOf('@Post("stock/:code/import")');
+  const stockImportAt = decoratorAt(source, '@Post("stock/:code/import")');
   expect(stockImportAt, "the controller must declare the stock import route").toBeGreaterThan(-1);
+  const firstIdPostAt = decoratorAt(source, '@Post(":id');
+  expect(firstIdPostAt, 'the controller must declare a @Post(":id/…") route').toBeGreaterThan(-1);
+  expect(
+    stockImportAt,
+    '@Post("stock/:code/import") must be declared BEFORE the first @Post(":id/…"). Three ' +
+      "segments against two is safe by segment count today; the order makes it safe against a " +
+      'future three-segment @Post(":id/:verb/:x") as well, which the comment above promises.',
+  ).toBeLessThan(firstIdPostAt);
 
   // **The guard on `GET stock` is proven here, not only exercised.** The
   // integration suite's `assertListNeedsAMasterDataRole` calls the *service*
@@ -77,16 +89,3 @@ export function runAssetTemplatesControllerTests(): void {
   ).toContain("stockCodeParamSchema.parse(code)");
 }
 
-/**
- * The text of one handler: from its `async name(` to the next route decorator.
- * A source scan, for the same reason the route-order check is one (see the
- * file docblock) — and it fails loudly if either anchor is missing, so a rename
- * cannot turn the assertion vacuous.
- */
-function methodBody(source: string, start: string, nextDecorator: string): string {
-  const from = source.indexOf(start);
-  expect(from, `the controller must declare ${start}`).toBeGreaterThan(-1);
-  const to = source.indexOf(nextDecorator, from + start.length);
-  expect(to, `a route decorator must follow ${start}`).toBeGreaterThan(from);
-  return source.slice(from, to);
-}
