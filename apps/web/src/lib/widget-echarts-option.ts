@@ -125,6 +125,34 @@ export function buildChartOption(config: ChartConfig, series: readonly WidgetSer
       type: "value",
       ...(config.yAxisLabel ? { name: config.yAxisLabel } : {}),
     },
+    // `series[].name` below is not self-rendering: ECharts draws a key only
+    // when the option carries a `legend` component, so a chart bound to five
+    // feeders drew five lines with no way to tell them apart. Found on the
+    // running stack — the option was correct about the names and silent about
+    // showing them, which no assertion on `series[].name` can catch.
+    //
+    // Only for more than one series. A single-series chart is already named by
+    // the widget's own title, and the legend costs a row of a tile that may be
+    // one grid cell tall.
+    //
+    // `type: "scroll"` because the binding cap is MAX_WIDGET_POINTS, not a
+    // number that fits on one line — the default legend wraps into the plot
+    // and pushes the chart out of the card. The grid reserves the bottom band
+    // the legend then occupies; without it ECharts draws the legend over the
+    // x-axis labels rather than below them.
+    ...(ordered.length > 1
+      ? {
+          legend: {
+            type: "scroll" as const,
+            bottom: 0,
+            itemWidth: 12,
+            itemHeight: 8,
+            textStyle: { fontSize: 10 },
+            data: ordered.map((s) => s.name),
+          },
+          grid: { top: 16, left: 8, right: 16, bottom: 28, containLabel: true },
+        }
+      : {}),
     series: ordered.map((s) => ({
       name: s.name,
       type: seriesShape.type,

@@ -3,8 +3,10 @@ import { describe, it } from "vitest";
 import {
   chartAreaSeriesIsLineWithAreaStyle,
   chartBarAndScatterMapDirectly,
+  chartLegendNamesEverySeriesInOrderWhenThereIsMoreThanOne,
   chartLineSeriesHasNoAreaStyle,
   chartNSeriesProduceNEntriesOrderedBySortOrder,
+  chartSingleSeriesGetsNoLegend,
   chartStackedSetsStackOnEverySeriesAbsentSetsNone,
   chartWindowMinutesSetsTheXAxisLowerBoundRelativeToNow,
   chartYAxisLabelSetsNameAbsentOmitsIt,
@@ -80,5 +82,13 @@ describe("widget-echarts-option: buildChartOption", () => {
 
   it("produces one series entry per binding, ordered by sortOrder", () => {
     chartNSeriesProduceNEntriesOrderedBySortOrder();
+  });
+
+  it("names every series in a legend, ordered like the series, when there is more than one", () => {
+    chartLegendNamesEverySeriesInOrderWhenThereIsMoreThanOne();
+  });
+
+  it("draws no legend for a single series", () => {
+    chartSingleSeriesGetsNoLegend();
   });
 });
