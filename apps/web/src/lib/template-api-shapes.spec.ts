@@ -61,6 +61,7 @@ const MEASURED_POINT = {
   maxInputAgeSeconds: null,
   required: true,
   sortOrder: 0,
+  meta: null,
   createdAt: "2026-08-10T09:00:00.000Z",
 };
 
@@ -88,6 +89,7 @@ const DERIVED_POINT = {
   maxInputAgeSeconds: 900,
   required: false,
   sortOrder: 1,
+  meta: { tier: "extended" },
   createdAt: "2026-08-10T09:00:00.000Z",
 };
 

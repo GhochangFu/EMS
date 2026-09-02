@@ -826,6 +826,10 @@ export class AssetTemplatesAdminService {
         maxInputAgeSeconds: point.maxInputAgeSeconds ?? null,
         required: point.required ?? true,
         sortOrder: point.sortOrder ?? index,
+        // F2.13 / ADR 0052 decision 2 — the tier marking, re-stamped on every
+        // write exactly like every other point field. `{}` for a point with
+        // no provenance, matching the column's own DB default.
+        meta: point.meta ?? {},
       })),
     );
   }
@@ -934,6 +938,9 @@ export class AssetTemplatesAdminService {
       maxInputAgeSeconds: point.maxInputAgeSeconds,
       required: point.required,
       sortOrder: point.sortOrder,
+      // F2.13 / ADR 0052 decision 2. `point.meta` is jsonb — cast rather than
+      // trusted, the same reason `mapTemplate` casts `content`.
+      meta: point.meta as AdminTemplatePointDto["meta"],
       createdAt: point.createdAt.toISOString(),
     };
   }

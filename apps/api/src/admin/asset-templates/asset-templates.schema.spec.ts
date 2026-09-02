@@ -42,6 +42,35 @@ export function runAssetTemplateSchemaTests(): void {
       "would otherwise reject it as a 500 rather than a 400",
   );
 
+  // ---- F2.13 / ADR 0052 decision 2, ADR 0040 open question 4: meta.tier -----
+  //
+  // `bms.template_points.meta jsonb` has existed since `0024`; nothing could
+  // write it until this row. A closed shape, not `z.record` — `meta` is
+  // provenance with exactly one known key today.
+
+  const withTier = templatePointBodySchema.safeParse({
+    pointKey: "X",
+    meta: { tier: "core" },
+  });
+  assert(withTier.success, "meta.tier: \"core\" must parse");
+  assert(
+    withTier.success && withTier.data.meta?.tier === "core",
+    "the parsed point must carry the tier back",
+  );
+
+  assert(
+    !templatePointBodySchema.safeParse({ pointKey: "X", meta: { tier: "gold" } }).success,
+    'meta.tier must be one of "core" | "extended" | "manual" — "gold" must be refused',
+  );
+  assert(
+    !templatePointBodySchema.safeParse({ pointKey: "X", meta: { note: "x" } }).success,
+    "an unrecognized meta key must be refused — meta is a closed shape, not a free-form bag",
+  );
+  assert(
+    templatePointBodySchema.safeParse({ pointKey: "X" }).success,
+    "an absent meta must still parse — most points carry no provenance",
+  );
+
   // ---- ADR 0036 decision 5: derived points must carry a formula -------------
 
   assert(

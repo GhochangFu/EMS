@@ -42,6 +42,7 @@ function point(overrides: Record<string, unknown> = {}) {
     maxInputAgeSeconds: null,
     required: true,
     sortOrder: 0,
+    meta: null,
     createdAt: "2026-08-21T00:00:00.000Z",
     ...overrides,
   };

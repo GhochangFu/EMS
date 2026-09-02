@@ -60,6 +60,7 @@ function template(alarms: unknown[]): AdminAssetTemplateDto {
         maxInputAgeSeconds: null,
         required: true,
         sortOrder: 0,
+        meta: { tier: "core" },
         createdAt: "2026-09-02T00:00:00.000Z",
       },
     ],

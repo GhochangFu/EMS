@@ -219,6 +219,22 @@ export const assetTemplateStatusSchema = templateLifecycleStatusSchema;
  */
 export const templatePointKindSchema = z.enum(["measured", "derived"]);
 
+/**
+ * `F2.13` / ADR 0052 decision 2, ADR 0040 open question 4 — the tier marking
+ * a point carries (tag-list `C` -> `core`, `X` -> `extended`), what makes a
+ * client's redline mechanical. `.partial()`, not a bare `{ tier }` object:
+ * `bms.template_points.meta jsonb NOT NULL DEFAULT {}` may hold `{}` — the
+ * column's own default, for a point with no provenance yet — not only the
+ * full shape `apps/api`'s write-side `templatePointBodySchema` requires when
+ * `meta` is supplied at all. Read-side, so it must not reject a row the
+ * database holds, matching every other field on `adminTemplatePointDtoSchema`.
+ */
+const templatePointMetaDtoSchema = z
+  .object({ tier: z.enum(["core", "extended", "manual"]) })
+  .partial()
+  .strict()
+  .nullable();
+
 export const adminTemplatePointDtoSchema = z.object({
   id: z.string(),
   templateId: z.string(),
@@ -243,6 +259,7 @@ export const adminTemplatePointDtoSchema = z.object({
   maxInputAgeSeconds: z.number().nullable(),
   required: z.boolean(),
   sortOrder: z.number(),
+  meta: templatePointMetaDtoSchema,
   createdAt: z.string(),
 });
 
@@ -325,6 +342,13 @@ export const stockTemplatePointDtoSchema = z.object({
   maxInputAgeSeconds: z.number().int().nullable(),
   required: z.boolean(),
   sortOrder: z.number().int(),
+  // F2.13 / ADR 0052 decision 2 — every stock point declares its tier. The
+  // WRITE shape here (matching `apps/api`'s `templatePointBodySchema.meta`
+  // exactly: the whole object optional, `tier` required once present) rather
+  // than `templatePointMetaDtoSchema`'s lenient read-side `.partial()` — a
+  // catalog entry is authored fresh, never a stored row that might predate
+  // this field.
+  meta: z.object({ tier: z.enum(["core", "extended", "manual"]) }).strict().optional(),
 });
 
 /**
