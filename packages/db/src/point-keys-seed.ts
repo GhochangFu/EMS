@@ -301,8 +301,16 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
   // resolve-catalog-point-key.spec.ts,
   // asset-templates.instantiate.integration.spec.ts,
   // asset-templates.lifecycle.integration.spec.ts). Appending this array
-  // last gives its 139 rows the newest `created_at` on every database,
-  // existing and fresh, so none of those fixture windows move.
+  // last gives 138 of its 139 rows the newest `created_at` on every database,
+  // existing and fresh, so no NEW row enters a head window. The exception is
+  // `battery_charge_pct`: it already holds a row that `seedPheCatalog` wrote
+  // earlier, `ON CONFLICT ... DO UPDATE` leaves `created_at` alone, and on a
+  // cold start that row is the OLDEST in the table. Its unit filling
+  // `NULL` → `"%"` therefore moves it INTO the two `unit IS NOT NULL ...
+  // LIMIT 5` windows (telemetry-write.spec.ts, telemetry-import.spec.ts) at
+  // position 0 and evicts the fifth row — harmless, since `"%"` is a real
+  // unit and both specs need four, but a reader who trusts "none move" would
+  // be wrong by exactly one row. Verified on a scratch cold start (F2.11).
   ...keysForDomain(ELECTRICAL_CLASS_POINT_KEYS, "electrical"),
 ];
 
@@ -366,11 +374,23 @@ export const STOCK_POINT_KEY_CODES: readonly string[] = GLOBAL_CATALOG.map((row)
  * operator input, and an admin can always re-`PATCH` the code through
  * `/api/v1/admin/point-keys/:id`.
  *
- * `name` and `domain` stay assigned outright: neither is administrator-editable
- * (the `PATCH` body carries `unit`, not `domain`), so nothing is reverted, and
- * a domain that drifts from `ARRAY_DOMAIN` is a defect the clash check in
+ * `name` and `domain` stay assigned outright, AND THAT IS A COST TOO — this
+ * paragraph used to claim neither was administrator-editable, which is false:
+ * `updatePointKeyBodySchema` in `apps/api/src/admin/point-keys/point-keys.schema.ts`
+ * is a `.partial()` over `name`, `domain`, `unit` and `description`, so a
+ * global administrator's `PATCH` of a `name` is reverted on the next
+ * `compose up`, with the `master.point_key.update` audit row left asserting
+ * a change the table no longer holds. Found by the `F2.11` security and
+ * migration reviews (2026-09-02); pre-existing since `F3.39`, and `F2.11`
+ * multiplies the exposure from 46 rows to 185, most of them `titleCase`
+ * names ("Dga H2 Ppm", "Oltc In Progress") an administrator is likely to
+ * correct. Left as-is here because the seed MUST be able to correct a
+ * `domain` — `ARRAY_DOMAIN`'s clash check in
  * `tests/f3.39-global-point-key-vocabulary.test.ts` is entitled to assume the
- * seed has corrected.
+ * seed corrects a drifted one, and ADR 0051 Amendment 6 decision 3 is
+ * implemented by exactly this assignment. Whether `name` should be
+ * `COALESCE`d like `unit`, or the `PATCH` body narrowed, is an owner decision
+ * filed as a backlog row by the `F2.11` closure sweep.
  */
 export async function seedPointKeyCatalog(pool: pg.Pool): Promise<void> {
   for (const row of GLOBAL_CATALOG) {

@@ -146,9 +146,12 @@ export type ControlRoomElectricalPointKey =
  * **`battery_charge_pct` no longer stays on those two paths.** `F2.11` / ADR
  * 0051 Amendment 6 promotes it into `ELECTRICAL_CLASS_POINT_KEYS` below, as
  * §4's *Battery charge remaining, %*. Its domain moves `environment` →
- * `electrical` (Amendment 6 decision 3 is unconditional — the filing domain
- * follows the asset, and the registering asset is a `PHE-AIRSP1051M-*`
- * gateway either way, so the ruling is the flip itself), and its unit fills
+ * `electrical` (Amendment 6 decision 3 is unconditional, and for this one
+ * code it OVERRIDES the "filing domain follows the asset" heuristic that
+ * justifies it: the only real registrant is a `PHE-AIRSP1051M-*` gateway,
+ * which `deviceDomain()` files under `environment`. The owner accepted the
+ * flip with that tension named — plan §9 Q3. Do not read this sentence as
+ * the rule for the next promoted code; decision 3 is), and its unit fills
  * `NULL` → `"%"` through `seedPointKeyCatalog`'s
  * `COALESCE(bms.point_keys.unit, EXCLUDED.unit)` — the only value this row
  * can ever write for a code that arrives with no unit of its own.
