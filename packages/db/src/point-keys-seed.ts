@@ -7,6 +7,7 @@ import {
   CONTROL_ROOM_UPS_POINT_KEYS,
   ELECTRICAL_POINT_KEYS,
   HVAC_POINT_KEYS,
+  METERED_PUMPING_POINT_KEYS,
 } from "@bms/shared";
 
 type PointKeySeed = {
@@ -51,6 +52,25 @@ const UNIT_BY_KEY: Record<string, string> = {
   smoke_state: "",
   frequency_hz: "Hz",
   kwh_today: "kWh",
+  // `F3.41` — `METERED_PUMPING_POINT_KEYS`. Every unit is read from
+  // `phe-catalog.json`'s own `UnitCode` column rather than inferred from the
+  // code's name, so the catalog row and the `asset_points` row `phe-pilot-seed`
+  // writes beside it agree. `chlorine_pump_on` is a binary and takes `""`, the
+  // way `pf` and `breaker_main` above already spell an unset unit — NOT a
+  // missing entry, which would seed NULL and overwrite the real value on every
+  // `compose up`.
+  kwh_total: "kWh",
+  kva: "kVA",
+  current_ir: "A",
+  current_iy: "A",
+  current_ib: "A",
+  voltage_vry: "V",
+  voltage_vyb: "V",
+  voltage_vbr: "V",
+  voltage_vrn: "V",
+  voltage_vyn: "V",
+  voltage_vbn: "V",
+  chlorine_pump_on: "",
 };
 
 function titleCase(code: string): string {
@@ -99,6 +119,20 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
     ),
     "electrical",
   ),
+  // `F3.41` — the real-ingest metered-pumping set, LAST and unfiltered.
+  //
+  // Last so the `.filter()` above, which subtracts `ELECTRICAL_POINT_KEYS` from
+  // the control-room array, keeps reading exactly what it read before. This
+  // array needs no such filter: its twelve codes are disjoint from all six
+  // arrays above, which `tests/f3.39-global-point-key-vocabulary.test.ts`'s
+  // clash check proves rather than this comment asserting it.
+  //
+  // Filed under `electrical` because `deviceDomain()` in `phe-pilot-seed.ts`
+  // files the MFM and both PUMP shapes that carry these codes under
+  // `electrical`. A disagreement here would give one code two domains, and
+  // after `F3.39`'s single-pass `ON CONFLICT (code) DO UPDATE` the later array
+  // would win silently — which is the drift that clash check exists for.
+  ...keysForDomain(METERED_PUMPING_POINT_KEYS, "electrical"),
 ];
 
 /**

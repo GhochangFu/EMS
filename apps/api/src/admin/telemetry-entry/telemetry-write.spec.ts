@@ -145,15 +145,28 @@ export async function loadFixtures(pool: pg.Pool, prefix: string = TEST_ASSET_PR
     // `created_at` ordering is F4.53's "oldest wins" and matters more now that
     // other suites register transient codes in the same shared table.
     //
-    // **`unit IS NOT NULL` is new, and it is not tidying.** The unit-mismatch
-    // case below writes a deliberately wrong unit and asserts the row is
-    // rejected; a catalog key with NO declared unit has nothing to mismatch
-    // against, so the case passes vacuously — or rather, it fails, which is how
-    // this was found. The organization predicate used to make it unreachable:
-    // `wc-admin`'s catalog came from `UNIT_BY_KEY`, where an unset unit is `""`
-    // and not NULL. Fleet-wide, the oldest rows are `phe-pilot-seed`'s, and
-    // three of those (`network_strength`, `controller_power_status`,
-    // `chlorine_pump_on`) carry a genuine NULL.
+    // **`unit IS NOT NULL` is not tidying.** The unit-mismatch case below writes
+    // a deliberately wrong unit and asserts the row is rejected; a catalog key
+    // with a NULL unit has nothing to mismatch against, so the case passes
+    // vacuously — or rather, it fails, which is how this was found. The
+    // organization predicate used to make it unreachable: `wc-admin`'s catalog
+    // came from `UNIT_BY_KEY`, where an unset unit is `""` and not NULL.
+    // Fleet-wide, the oldest rows are `phe-pilot-seed`'s, and some of those
+    // carry a genuine NULL.
+    //
+    // **NULL and `""` are different here, and only NULL is the problem.**
+    // `telemetry-write.service.ts` guards the comparison on
+    // `authoritativeUnit !== null`, so an empty-string unit is still compared
+    // and a wrong unit is still rejected. That is why this predicate stops at
+    // NULL and does not also exclude `""` — a code whose unit is `""` gates
+    // exactly as well as one whose unit is `kW`.
+    //
+    // **`F3.41` moved `chlorine_pump_on` out of the NULL set**, so this comment
+    // no longer names it. It joined `METERED_PUMPING_POINT_KEYS`, which gave it
+    // a `UNIT_BY_KEY` entry of `""` — the binary spelling `pf` and
+    // `breaker_main` already use. `network_strength` and
+    // `controller_power_status` are still NULL: they are `environment` domain
+    // and stayed out of that array deliberately.
     `SELECT code, unit FROM bms.point_keys
       WHERE active = true AND unit IS NOT NULL ORDER BY created_at, code LIMIT 5`,
   );
