@@ -127,6 +127,16 @@ function unitLabel(unitCode: string | null): string | null {
  */
 const CATALOG_CANDIDATES = ["src/phe-catalog.json", "packages/db/src/phe-catalog.json"];
 
+/**
+ * Reads `phe-catalog.json`, the vendor's frozen export of PHE WB's estate.
+ *
+ * Exported since `F3.41` for the same reason `assetCode` and `deviceDomain`
+ * are: `asset-groups-seed.spec.ts` runs the real 48 device codes through the
+ * real functions rather than restating six of them as a fixture. Resolves
+ * against `CATALOG_CANDIDATES` above, so it works from the repository root and
+ * from `packages/db` alike — and throws rather than returning an empty catalog,
+ * which would read as "the fleet is gone".
+ */
 export function loadPheCatalog(): PheCatalogFile {
   const path = CATALOG_CANDIDATES.map((c) => resolve(process.cwd(), c)).find((p) =>
     existsSync(p),

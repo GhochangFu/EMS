@@ -567,8 +567,11 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       const units = new Set(
         [...table![1]!.matchAll(/^\s*([a-z0-9_]+):/gm)].map((m) => m[1]!),
       );
-      // Anti-vacuity for this case alone: 34 was the count before `F3.41`.
-      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(34);
+      // Anti-vacuity for this case alone, at the actual rather than at the
+      // pre-`F3.41` count of 34 — this file argues at length for moving a bound
+      // to its actual, and leaving one slack in the same commit would be the
+      // inconsistency a later reader copies.
+      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(46);
 
       const missing: string[] = [];
       for (const arrayName of Object.keys(ARRAY_DOMAIN)) {

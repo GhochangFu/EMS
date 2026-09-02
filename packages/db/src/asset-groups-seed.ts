@@ -82,7 +82,7 @@ export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
  *    simply carry no such point. A `chart` reports `partial` at 4 matched / 2
  *    bound, which is the honest word and the honest number. This is why
  *    `electrical-metered-pumping` puts both binaries on charts, and on two
- *    charts rather than one — see its docblock in `stock-catalog.ts`.
+ *    charts rather than one — see its docblock in `stock-catalog-electrical.ts`.
  *
  *    This is the same call case 2 below already makes for ESKOM's `ht-panel`,
  *    so the two readings now agree instead of one of them being a deferral.
