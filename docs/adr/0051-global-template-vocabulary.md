@@ -698,14 +698,18 @@ six land in the same per-location `electrical` asset group. The two gateways are
   carrying one. The third count is the half nothing else would catch — a branch
   that roled everything would satisfy the first two.
 
-## Amendment 6 — the electrical class keys join the global vocabulary, on the derived tag list's authority (2026-09-02) — PROPOSED
+## Amendment 6 — the electrical class keys join the global vocabulary, on the derived tag list's authority (2026-09-02)
 
 ### Status
 
-**Proposed — drafted 2026-09-02, awaiting the owner's gate.** Nothing is built
-against it until it is Accepted. It is the gate for `F2.11` (the vocabulary
-promotion) and the first of three gates for `F2.12` (the class templates
-themselves); the other two are named under *Consequences*.
+**Accepted — 2026-09-02, by the repository owner, at the
+`build-operating-model.md` step 2 gate, the same day it was drafted.** All
+three open questions were ruled as drafted — see the foot of this amendment.
+It is the gate for `F2.11` (the vocabulary promotion) and the first of three
+gates for `F2.12` (the class templates themselves); the other two are named
+under *Consequences*, and **both were ruled at the same sitting**: ADR 0019
+Amendment 2 is Accepted as drafted, and the stock asset-template delivery
+mechanism takes the `F3.36` shape, to be recorded in its own ADR.
 
 **It discharges the §5 *Tag-list citation* gate for the electrical classes.**
 `docs/BACKLOG.md` §5 records, on 2026-09-02, that *"for the electrical
@@ -856,7 +860,7 @@ template content, and `F2.12`'s to author. That distinction is the one
 
 - **This amendment authors no template.** `F2.12` does, and it waits on two
   more gates this amendment does not settle:
-  **(a)** [ADR 0019 Amendment 2](0019-template-content-model.md#amendment-2--thresholdvalue-becomes-conditional-b7-setpoints-are-per-site--proposed)
+  **(a)** [ADR 0019 Amendment 2](0019-template-content-model.md#amendment-2--thresholdvalue-becomes-conditional-b7-setpoints-are-per-site)
   — Proposed since 2026-08-22 — because the tag list's alarm rows carry a
   parameter and a meaning and **no limit numbers**, per B7/B8, and today's
   contract requires `thresholdValue: number` on every one;
@@ -876,18 +880,21 @@ template content, and `F2.12`'s to author. That distinction is the one
   belongs. A code v2 retires is deactivated (`active = false`), never dropped:
   `0057`'s foreign keys carry no `ON DELETE` by design.
 
-### Open questions for the gate
+### Open questions for the gate — all three answered 2026-09-02
 
 1. **Decision 7 — exclude `dga_lab_result`, or promote it as a coded manual
    point** (normal / caution / fault as 0 / 1 / 2)? Drafted as excluded: a
    three-value code invents a scale the lab report does not carry, and the four
    numeric DGA rows already hold the values a consumer would derive it from.
+   **Ruled: excluded.** 139 codes.
 
 2. **Decision 3 — `electrical` for `ambient_temp_c`, or `environment` beside
    `temperature_c`?** Drafted as `electrical`, because the asset that registers
    it is a transformer, a UPS or an inverter, and the filing domain follows the
-   asset the way `deviceDomain()` files PHE's codes.
+   asset the way `deviceDomain()` files PHE's codes. **Ruled: `electrical`.**
+   One array, one domain.
 
 3. **Decision 8 — promote the derived prose codes now, or per formula in
    `F2.12`?** Drafted as per formula: a promoted code with no formula behind it
    is exactly the decorative vocabulary fact 4 of this ADR exists to end.
+   **Ruled: per formula, in `F2.12`.**
