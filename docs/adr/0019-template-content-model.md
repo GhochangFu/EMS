@@ -602,7 +602,9 @@ which is precisely the class of guessing this ADR exists to prevent.
    disclaimer); this amendment only requires that seeding **never invents a
    number** for a pair-absent row.
 5. **Surface changes owed in the feature PR:** the content schema in
-   `apps/api/src/admin/asset-templates/asset-templates.schema.ts`; the `F2.5`
+   `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts`
+   (the alarm schema lives there, not in `asset-templates.schema.ts` as an
+   earlier draft of this line said — corrected at `F2.13`'s closure); the `F2.5`
    Alarms tab, whose form currently requires the threshold field
    (`apps/web/src/components/asset-templates/alarms-tab.tsx`) and must allow
    the pair to be empty together — with copy saying "value set per site at
