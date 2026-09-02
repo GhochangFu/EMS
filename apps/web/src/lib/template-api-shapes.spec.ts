@@ -40,6 +40,8 @@ const TEMPLATE_BASE = {
   content: {},
   publishedAt: "2026-08-14T09:00:00.000Z",
   archivedAt: null,
+  stockCode: null,
+  stockVersion: null,
   createdAt: "2026-08-10T09:00:00.000Z",
   updatedAt: "2026-08-14T09:00:00.000Z",
 };

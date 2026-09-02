@@ -909,6 +909,10 @@ export class AssetTemplatesAdminService {
       content: (template.content ?? {}) as Record<string, unknown>,
       publishedAt: template.publishedAt?.toISOString() ?? null,
       archivedAt: template.archivedAt?.toISOString() ?? null,
+      // F2.13 / ADR 0052 — which stock release this row was imported from, or
+      // both null for a hand-authored template.
+      stockCode: template.stockCode,
+      stockVersion: template.stockVersion,
       createdAt: template.createdAt.toISOString(),
       updatedAt: template.updatedAt.toISOString(),
     };

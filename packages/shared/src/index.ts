@@ -398,6 +398,10 @@ export type AdminAssetTemplateDto = z.infer<typeof A.adminAssetTemplateDtoSchema
 export type AdminAssetTemplateSummaryDto = z.infer<
   typeof A.adminAssetTemplateSummaryDtoSchema
 >;
+/** `F2.13` / ADR 0052 — one point of a stock catalog entry, the write shape. */
+export type StockTemplatePointDto = z.infer<typeof A.stockTemplatePointDtoSchema>;
+/** `F2.13` / ADR 0052 — one entry of the asset-template stock catalog. */
+export type StockAssetTemplateDto = z.infer<typeof A.stockAssetTemplateDtoSchema>;
 export type InstantiatedAssetDto = z.infer<typeof A.instantiatedAssetDtoSchema>;
 /** The result of one instantiate call — the whole batch or nothing. */
 export type AssetInstantiationResultDto = z.infer<
@@ -505,6 +509,10 @@ export type DashboardTemplatesListResponse = z.infer<
 /** `F3.36` Part F (ADR 0049 decision 3) — the repository's stock catalog. */
 export type StockDashboardTemplatesListResponse = z.infer<
   typeof E.stockDashboardTemplatesListResponseSchema
+>;
+/** `F2.13` (ADR 0052) — the repository's asset-template stock catalog. */
+export type StockAssetTemplatesListResponse = z.infer<
+  typeof E.stockAssetTemplatesListResponseSchema
 >;
 /** `F2.6` (ADR 0039) — decision 2's preview. Writes nothing. */
 export type TemplateMigrationPreviewResponse = z.infer<

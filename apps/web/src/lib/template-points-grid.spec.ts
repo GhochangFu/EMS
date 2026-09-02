@@ -82,6 +82,8 @@ function template(points: unknown[]): AdminAssetTemplateDto {
     content: {},
     publishedAt: null,
     archivedAt: null,
+    stockCode: null,
+    stockVersion: null,
     createdAt: "2026-08-21T00:00:00.000Z",
     updatedAt: "2026-08-21T00:00:00.000Z",
     points,

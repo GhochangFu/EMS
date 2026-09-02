@@ -26,6 +26,7 @@ import {
   adminPointKeyDtoSchema,
   adminRtuDtoSchema,
   assetPointCalcConfigDtoSchema,
+  stockAssetTemplateDtoSchema,
   templateMigrationAssetDtoSchema,
   templateMigrationRefusalDtoSchema,
   templateMigrationSkippedPointDtoSchema,
@@ -124,6 +125,12 @@ export const templateVersionsListResponseSchema = itemsOf(templateVersionSummary
  */
 export const dashboardTemplatesListResponseSchema = itemsOf(dashboardTemplateSummaryDtoSchema);
 export const stockDashboardTemplatesListResponseSchema = itemsOf(stockDashboardTemplateDtoSchema);
+
+/**
+ * `GET /admin/asset-templates/stock` — `F2.13` / ADR 0052, the asset-template
+ * sibling of `stockDashboardTemplatesListResponseSchema` immediately above.
+ */
+export const stockAssetTemplatesListResponseSchema = itemsOf(stockAssetTemplateDtoSchema);
 
 /**
  * `POST /admin/asset-templates/:id/migration-preview` — decision 2's "no blind
