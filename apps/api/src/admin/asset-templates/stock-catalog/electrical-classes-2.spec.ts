@@ -304,6 +304,212 @@ function checkSolarPv(): void {
   }
 }
 
+const APFC_CODE = "electrical-apfc";
+
+/**
+ * Tag list §6's 14 table rows, in the document's own order — the whole class,
+ * with nothing undeclared and nothing derived. `sortOrder` is the index.
+ *
+ * §6's table interleaves the tiers too, and by only one row: `target_pf` (X) is
+ * row 3, ahead of `actual_pf` and `steps_on_count` (both C). Plan §5.5 lists
+ * them grouped core-then-extended, which describes the tiers and not the order.
+ */
+const APFC_POINT_KEYS: readonly string[] = [
+  "apfc_status",
+  "apfc_alarm",
+  "target_pf",
+  "actual_pf",
+  "steps_on_count",
+  "step_state",
+  "kvar_connected",
+  "kvar_required",
+  "bus_voltage_v",
+  "thd_v_pct",
+  "panel_temp_c",
+  "step_operation_count",
+  "capacitor_current_a",
+  "step_fault_state",
+];
+
+/**
+ * §6's **six** alarm bullets, one row each — the second section after §3 whose
+ * bullets map 1:1 onto rows.
+ *
+ * **The order is plan §5.5's and not §6's bullet order**, and the difference is
+ * deliberate: §6 lists *PF below target · step fault · panel temperature high ·
+ * THD high · over-compensation · switching rate high*, and the plan moves
+ * `over_compensation` up beside `pf_below_target` so the two rows that bind
+ * `actual_pf` sit together. The transformer entry took the same liberty with
+ * §2's bullets. A bullet list is prose and carries no `sortOrder`; a table row
+ * does, which is why point order is asserted against the document and alarm
+ * order against the plan.
+ */
+const APFC_ALARM_CODES: readonly string[] = [
+  "pf_below_target",
+  "over_compensation",
+  "step_fault",
+  "panel_temp_high",
+  "thd_high",
+  "switching_rate_high",
+];
+
+/**
+ * `electrical-apfc` against `docs/electrical-derived-taglist-v1.md` §6
+ * (plan §5.5). The smallest entry in the row, and deliberately checked as hard
+ * as the largest: 14 points, no manual rows, no derived points, and the one KPI
+ * in the catalog that carries **no `unit` key at all**.
+ */
+function checkApfc(): void {
+  const entry = requireStockEntry(APFC_CODE);
+
+  assert(
+    entry.assetType === "apfc",
+    `${APFC_CODE}.assetType must be "apfc" (plan §12 ruling 3, and the repository's ` +
+      `feeder / ro_skid / test_rig convention) — got "${entry.assetType}"`,
+  );
+  assert(
+    entry.domain === "electrical",
+    `${APFC_CODE}.domain must be "electrical" — assertAssetDomain checks it against ` +
+      `bms.asset_domains at import time; got "${entry.domain}"`,
+  );
+  assert(
+    entry.stockVersion === 1,
+    `${APFC_CODE} is a first release — stockVersion 1, got ${String(entry.stockVersion)}`,
+  );
+
+  // ---- 14 points, 4 core + 10 extended + 0 manual + 0 derived -------------
+
+  assert(
+    entry.points.length === 14,
+    `tag list §6 has 14 rows, all of them declared, and none of its four derived codes is ` +
+      `expressible — 14 points. Got ${entry.points.length}`,
+  );
+
+  const tierCount = (tier: string): number =>
+    entry.points.filter((point) => point.meta?.tier === tier).length;
+  assert(tierCount("core") === 4, `§6 marks 4 rows tier C; the entry marks ${tierCount("core")} core`);
+  assert(
+    tierCount("extended") === 10,
+    `§6 marks 10 rows tier X; the entry marks ${tierCount("extended")} extended`,
+  );
+  assert(
+    tierCount("manual") === 0,
+    `§6 has no M column entries — an APFC controller instruments every row it names. The entry ` +
+      `marks ${tierCount("manual")} manual`,
+  );
+  assert(
+    entry.points.every((point) => point.kind === "measured"),
+    `${APFC_CODE} authors a derived point and must not: all four of §6's derived codes are ` +
+      "deferred (rated kVAr per step, a time window, tan/acos, the tariff band), so this is the " +
+      "one class in the row with no formula at all. " +
+      `Got: ${entry.points.filter((point) => point.kind !== "measured").map((point) => point.pointKey).join(", ")}`,
+  );
+
+  entry.points.forEach((point, index) => {
+    assert(
+      point.sortOrder === index,
+      `${APFC_CODE} points must be in the tag list's own order — ${point.pointKey} has ` +
+        `sortOrder ${point.sortOrder} at index ${index}`,
+    );
+  });
+
+  const declaredKeys = entry.points.map((point) => point.pointKey);
+  assert(
+    declaredKeys.join(",") === APFC_POINT_KEYS.join(","),
+    `${APFC_CODE} declares the wrong keys or the wrong order. §6's table puts target_pf (X) at ` +
+      `row 3, ahead of two C rows, so plan §5.5's core-then-extended grouping is not the order. ` +
+      `Expected §6's table order:\n  ${APFC_POINT_KEYS.join(", ")}\nGot:\n  ${declaredKeys.join(", ")}`,
+  );
+
+  const keySet = new Set(declaredKeys);
+  assert(keySet.size === 14, `${APFC_CODE}: no point key may repeat`);
+
+  for (const code of DEFERRED_DERIVED_CODES[APFC_CODE]) {
+    assert(
+      !keySet.has(code),
+      `${APFC_CODE} declares "${code}", one of §6's deferred derived codes. ` +
+        `${deferralReason(APFC_CODE)}`,
+    );
+  }
+
+  // ---- 6 alarms, two of them on the same point ---------------------------
+
+  const alarms = alarmsOf(entry);
+  assert(
+    alarms.length === 6,
+    `§6 carries six alarm bullets and every one of them becomes a row — nothing splits and ` +
+      `nothing is deferred; the entry carries ${alarms.length}`,
+  );
+  assert(
+    alarms.map((alarm) => alarm.code).join(",") === APFC_ALARM_CODES.join(","),
+    `${APFC_CODE} alarm codes must be §6's, in plan §5.5's order (over_compensation moved up ` +
+      `beside pf_below_target, the row it shares a point with):\n  ${APFC_ALARM_CODES.join(", ")}\n` +
+      `Got:\n  ${alarms.map((alarm) => alarm.code).join(", ")}`,
+  );
+
+  const onActualPf = alarms.filter((alarm) => alarm.pointKey === "actual_pf").map((alarm) => alarm.code);
+  assert(
+    onActualPf.join(",") === "pf_below_target,over_compensation",
+    "exactly two §6 alarms bind actual_pf — pf_below_target (lagging, the tariff penalty) and " +
+      "over_compensation (leading, which some tariffs penalise as heavily). They are two meanings " +
+      "at two bands on one point, exactly as the feeder binds voltage_vry twice for under- and " +
+      `over-voltage. Got: ${onActualPf.join(", ") || "(none)"}`,
+  );
+
+  // ---- 1 KPI, and the missing `unit` is the assertion --------------------
+
+  const kpis = kpisOf(entry);
+  assert(kpis.length === 1, `plan §5.5 authors 1 KPI; the entry carries ${kpis.length}`);
+  const pfGap = kpis[0];
+  assert(pfGap?.code === "pf_gap", `the one KPI must be pf_gap; got "${String(pfGap?.code)}"`);
+  assert(
+    pfGap?.expression === "{target_pf} - {actual_pf}",
+    `pf_gap's expression must be exactly "{target_pf} - {actual_pf}"; got ` +
+      `"${String(pfGap?.expression)}". Negative means leading.`,
+  );
+  assert(
+    pfGap !== undefined && !Object.hasOwn(pfGap, "unit"),
+    "pf_gap must carry NO unit key at all — power factor is dimensionless, templateKpiSchema's " +
+      "unit is optional, and omitting it is the honest encoding rather than an oversight. The " +
+      'alternatives are both worse: "" is a unit nobody can render and "pf" is not a unit. This ' +
+      "is asserted because an absent optional field looks exactly like a forgotten one, and the " +
+      `next author would add it. Got: ${JSON.stringify(pfGap)}`,
+  );
+
+  // ---- 3 maintenance plans ------------------------------------------------
+
+  const plans = maintenanceOf(entry);
+  assert(plans.length === 3, `plan §5.5 authors 3 maintenance plans; the entry carries ${plans.length}`);
+  assert(
+    plans.filter((plan) => plan.safetyCritical === true).length === 0,
+    `no §6 plan is safetyCritical — capacitor work is done with the bank isolated and discharged, ` +
+      "and none of these tasks removes a protection the asset provides the way the UPS discharge " +
+      `and bypass transfer tests do. Got ${plans.filter((plan) => plan.safetyCritical === true).length}`,
+  );
+
+  for (const plan of plans) {
+    assert(
+      typeof plan.intervalDays === "number" && plan.intervalDays >= 1 && plan.intervalDays <= 730,
+      `${APFC_CODE} maintenance "${plan.title}" has intervalDays ${String(plan.intervalDays)} — ` +
+        "templateMaintenancePlanSchema caps it at 730, so a 3- or 5-year task cannot be authored " +
+        "here at all and must not be rounded into range",
+    );
+  }
+
+  // ---- provenance ---------------------------------------------------------
+
+  const description = entry.description ?? "";
+  for (const needle of ["electrical-derived-taglist-v1.md", "§6", "PROVISIONAL"]) {
+    assert(
+      description.includes(needle),
+      `${APFC_CODE}.description must contain "${needle}" — the stamp plus the citation is the ` +
+        "provenance (ADR 0052 decision 6), the section is what makes the citation checkable, and " +
+        "PROVISIONAL is plan §12 ruling 1: this content is derived from published practice and is " +
+        `not client-confirmed. Got: "${description}"`,
+    );
+  }
+}
+
 /**
  * Every per-class block in this file. Called by `stock-catalog.test.ts` beside
  * `runStockAssetTemplateCatalogTests` and `runElectricalClassEntryTests` — one
@@ -311,4 +517,5 @@ function checkSolarPv(): void {
  */
 export function runElectricalClassEntryTests2(): void {
   checkSolarPv();
+  checkApfc();
 }

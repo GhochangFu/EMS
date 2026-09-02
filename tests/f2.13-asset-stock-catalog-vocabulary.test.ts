@@ -223,15 +223,27 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
    * all of them green. These are lower bounds read off the catalog as it stands.
    */
   it("the scan actually found the catalog and the vocabulary", () => {
-    // 44 = the feeder's 33 declared points + its 11 alarm pointKey references,
-    // plus 0 KPI members — the feeder is still the only authored entry.
-    // 247 / 168 once F2.12 pass C lands the five classes — move it in Task 8's commit.
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(44);
-    // 33 distinct keys, so a copy-pasted repetition cannot satisfy the bound above alone.
-    // 247 / 168 once F2.12 pass C lands the five classes — move it in Task 8's commit.
-    expect(new Set(pointKeys).size, "fewer distinct keys than the feeder declares").toBeGreaterThanOrEqual(33);
+    // 248 = 172 declared points (feeder 33 + transformer 30 + DG 38 + UPS 31 +
+    // PV 26 + APFC 14) + 64 alarm pointKey references (11 + 15 + 13 + 12 + 7 +
+    // 6, matched by scanCatalog) + 12 KPI pointKeys members (0 + 6 + 2 + 0 + 2
+    // + 2, matched by scanKpiPointKeys). MEASURED off the six class modules in
+    // F2.12 Task 8, not copied from the plan: plan §4.4 predicted 247 from 63
+    // alarm references, and the UPS carries 12 rather than 11 because §4's
+    // "battery replace / self-test failed" bullet splits into two rows binding
+    // two different declared points. Plan §8's own figure of 248 reconciles.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(248);
+    // 168 distinct, so a copy-pasted repetition cannot satisfy the bound above
+    // alone: 33 feeder + 30 transformer + 38 DG + 29 UPS (battery_v and
+    // ambient_temp_c repeat) + 25 PV (ambient_temp_c) + 13 APFC (thd_v_pct,
+    // which the feeder declares). Measured, and equal to plan §4.4's
+    // prediction — a distinct count below this is a DROPPED OR MISSPELLED point
+    // row, not slack, because checkEntry already forces every alarm and KPI
+    // reference to be a key its own entry declares.
+    expect(new Set(pointKeys).size, "fewer distinct keys than the six classes declare").toBeGreaterThanOrEqual(168);
     // 191 — the same number f3.38 and f3.39 hold, F2.11's 139
     // ELECTRICAL_CLASS_POINT_KEYS plus the six codes F2.12 pass A promoted.
+    // Already at its final value: pass A moved it, and Task 8 re-measured it
+    // (191) rather than assuming the promotion had landed.
     expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(191);
   });
 

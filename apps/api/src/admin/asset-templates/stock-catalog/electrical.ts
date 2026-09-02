@@ -1,3 +1,4 @@
+import { ELECTRICAL_APFC } from "./electrical-apfc";
 import { ELECTRICAL_DG_SET } from "./electrical-dg-set";
 import { ELECTRICAL_FEEDER } from "./electrical-feeder";
 import { ELECTRICAL_SOLAR_PV } from "./electrical-solar-pv";
@@ -10,12 +11,11 @@ import type { StockAssetTemplateEntry } from "./types";
  * this row splits the pack into one module per class (Task 1), because the
  * five remaining classes push a single `electrical.ts` well past the §4.5
  * 1000-line cap (plan §4.3: ~1550-1800 projected lines). This file
- * aggregates; it authors nothing. `electrical-transformer.ts` joined the array
- * below when Task 4 authored it, `electrical-dg-set.ts` when Task 5 did
- * `electrical-ups.ts` when Task 6 did and `electrical-solar-pv.ts` when Task 7
- * did; the last class module (`electrical-apfc.ts`) is still an
- * empty-but-typed placeholder — see its own docblock — and joins it only once
- * Task 8 authors it.
+ * aggregates; it authors nothing. **All six class modules are authored and
+ * listed** — the feeder by `F2.13`, and the transformer, DG set, UPS, solar PV
+ * and APFC by `F2.12` Tasks 4-8 in that order. A seventh pack
+ * (`water.ts` for `E5.1`, `mechanical.ts` for `E5.2`, `facility.ts` for
+ * `E5.3`) is aggregated by `stock-catalog.ts`, not by this file.
  *
  * **SOURCE.** `docs/electrical-derived-taglist-v1.md` §§1-6 — the v1 point
  * basis for all six electrical asset classes (ADR 0051 Amendment 6).
@@ -87,13 +87,23 @@ import type { StockAssetTemplateEntry } from "./types";
  * + 1 manual + 1 derived), 7 alarms, 1 KPI, 4 maintenance plans; §5's
  * `grid_export_kw` is not declared (the point of connection is another asset's
  * §1 meter) and two of its alarm bullets are deferred, each reasoned in that
- * module's docblock. `electrical-apfc` — `F2.12`, §6 (Task 8).
+ * module's docblock. `electrical-apfc` — `F2.12` Task 8, §6: 14 points (4 core
+ * + 10 extended), 6 alarms, 1 KPI (`pf_gap`, with no `unit` key — power factor
+ * is dimensionless), 3 maintenance plans; the only class with **no derived
+ * point at all**, because all four of §6's derived codes need a rated kVAr per
+ * step, a tariff band, a time window or trigonometry.
+ *
+ * **PACK TOTALS after `F2.12`**: 6 entries, 172 points, 64 alarms, 5 KPIs and
+ * 21 maintenance plans. The three anti-vacuity bounds in
+ * `tests/f2.13-asset-stock-catalog-vocabulary.test.ts` are read off these files
+ * and moved with them.
  */
 export const ELECTRICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
-  // Tag-list section order — §1-§5, then §6 as Task 8 lands.
+  // Tag-list section order — §1 through §6, and the order GET /stock lists in.
   ELECTRICAL_FEEDER,
   ELECTRICAL_TRANSFORMER,
   ELECTRICAL_DG_SET,
   ELECTRICAL_UPS,
   ELECTRICAL_SOLAR_PV,
+  ELECTRICAL_APFC,
 ];
