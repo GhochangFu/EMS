@@ -8,8 +8,11 @@ import { AssetPointsAdminController } from "./asset-points/asset-points.controll
 import { AssetPointsAdminService } from "./asset-points/asset-points.service";
 import { AssetTemplateInstantiationService } from "./asset-templates/asset-templates-instantiate.service";
 import { AssetTemplateMigrationService } from "./asset-templates/asset-templates-migrate.service";
+import { AssetTemplatesStockService } from "./asset-templates/asset-templates-stock.service";
 import { AssetTemplatesAdminController } from "./asset-templates/asset-templates.controller";
 import { AssetTemplatesAdminService } from "./asset-templates/asset-templates.service";
+import { STOCK_ASSET_TEMPLATE_CATALOG_TOKEN } from "./asset-templates/asset-templates.tokens";
+import { STOCK_ASSET_TEMPLATE_CATALOG } from "./asset-templates/stock-catalog/stock-catalog";
 import { DashboardTemplatesInstantiateService } from "./dashboard-templates/dashboard-templates-instantiate.service";
 import { DashboardTemplatesStockService } from "./dashboard-templates/dashboard-templates-stock.service";
 import { DashboardTemplatesController } from "./dashboard-templates/dashboard-templates.controller";
@@ -89,6 +92,11 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     AssetTemplatesAdminService,
     AssetTemplateInstantiationService,
     AssetTemplateMigrationService,
+    // F2.13 / ADR 0052. The catalog is repository data behind a token so the
+    // integration suite can hand the service a fixture catalog instead — see
+    // asset-templates.tokens.ts for the three cases that need one.
+    AssetTemplatesStockService,
+    { provide: STOCK_ASSET_TEMPLATE_CATALOG_TOKEN, useValue: STOCK_ASSET_TEMPLATE_CATALOG },
     DashboardTemplatesService,
     DashboardTemplatesStockService,
     DashboardTemplatesInstantiateService,

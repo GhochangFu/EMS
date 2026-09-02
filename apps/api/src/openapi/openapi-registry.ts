@@ -152,6 +152,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AssetsAdminController_create: createAssetBodySchema,
   AssetsAdminController_update: updateAssetBodySchema,
   AssetTemplatesAdminController_create: createAssetTemplateBodySchema,
+  // `F2.13` (ADR 0052 decision 4) — the same body schema the dashboard import
+  // takes, reused by identity, so the ledger records one decision for it.
+  AssetTemplatesAdminController_importStock: importStockTemplateBodySchema,
   AssetTemplatesAdminController_instantiate: instantiateAssetsBodySchema,
   AssetTemplatesAdminController_list: templateStatusQuerySchema,
   AssetTemplatesAdminController_migrate: migrateAssetsBodySchema,

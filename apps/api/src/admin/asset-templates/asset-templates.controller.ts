@@ -19,6 +19,9 @@ import type { JwtPayload } from "@bms/shared";
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema } from "../admin.schema";
+// Reused by identity, not moved: `tests/adr-0029-openapi-contract.test.ts`
+// forbids DECLARING a body schema in a controller, not importing one.
+import { importStockTemplateBodySchema } from "../dashboard-templates/dashboard-templates.schema";
 import {
   createAssetTemplateBodySchema,
   instantiateAssetsBodySchema,
@@ -28,8 +31,27 @@ import {
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { migrateAssetsBodySchema } from "./asset-templates-migrate.schema";
 import { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
+import { AssetTemplatesStockService } from "./asset-templates-stock.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 
+/**
+ * The asset template admin surface — `F2.1`, ADR 0015; the stock routes are
+ * `F2.13`, ADR 0052 decision 4.
+ *
+ * ---
+ *
+ * **`@Get("stock")` IS DECLARED BEFORE `@Get(":id")`, AND THE ORDER IS
+ * LOAD-BEARING.**
+ *
+ * Nest matches routes in declaration order. Declared after `:id`, the literal
+ * `/stock` is swallowed by the parameterised route and arrives at `getById` as
+ * the string `"stock"`, where `idParamSchema` refuses it — so the catalog
+ * endpoint fails as *"invalid uuid"*, which reads like a client bug and is not
+ * one. `asset-templates.controller.spec.ts` asserts the order rather than
+ * trusting it, because nothing else in the file makes it visible.
+ * `dashboard-templates.controller.ts` carries the same paragraph for the same
+ * trap.
+ */
 @Controller("admin/asset-templates")
 @UseGuards(JwtAuthGuard)
 export class AssetTemplatesAdminController {
@@ -37,6 +59,7 @@ export class AssetTemplatesAdminController {
     private readonly service: AssetTemplatesAdminService,
     private readonly instantiation: AssetTemplateInstantiationService,
     private readonly migration: AssetTemplateMigrationService,
+    private readonly stock: AssetTemplatesStockService,
   ) {}
 
   @Get()
@@ -52,9 +75,45 @@ export class AssetTemplatesAdminController {
     );
   }
 
+  /**
+   * BEFORE `@Get(":id")` — see the class docblock.
+   *
+   * **The role check is not decorative.** Every other route here reaches
+   * `requireMasterDataUser` or `assertCanAuthor` through its service; this one
+   * reads a constant, so without the guard any authenticated principal — a
+   * `viewer` included — could enumerate the shipped catalog.
+   */
+  @Get("stock")
+  async listStock(@CurrentUser() user: JwtPayload) {
+    await this.stock.assertCanList(user);
+    return this.stock.list();
+  }
+
   @Get(":id")
   async getById(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
     return this.service.getById(user, idParamSchema.parse(id));
+  }
+
+  /**
+   * `F2.13` — imports one stock entry into `organizationId` as a stamped
+   * draft. Three segments, so no collision with the two-segment
+   * `@Post(":id/…")` routes below.
+   */
+  @Post("stock/:code/import")
+  async importStock(
+    @Param("code") code: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      const parsed = importStockTemplateBodySchema.parse(body);
+      return await this.stock.import(user, code, parsed.organizationId);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
   }
 
   @Post()

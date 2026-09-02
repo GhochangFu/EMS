@@ -553,8 +553,12 @@ export class AssetTemplatesAdminService {
     return row?.id ?? null;
   }
 
-  /** Author permission: org-scoped, `location_admin` excluded (ADR 0015 §7). */
-  private async assertCanAuthor(jwt: JwtPayload, organizationId: string): Promise<void> {
+  /**
+   * Author permission: org-scoped, `location_admin` excluded (ADR 0015 §7).
+   * Public since `F2.13` so `AssetTemplatesStockService.import` can refuse an
+   * actor BEFORE naming the available codes; `create` checks it again.
+   */
+  async assertCanAuthor(jwt: JwtPayload, organizationId: string): Promise<void> {
     const user = await this.accessControl.requireMasterDataUser(jwt);
     if (user.role === "location_admin") {
       throw new ForbiddenException("Location admins cannot author asset templates");
