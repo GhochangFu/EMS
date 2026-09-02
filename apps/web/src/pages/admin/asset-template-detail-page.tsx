@@ -325,6 +325,8 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
             <StatusPill label={template.status} tone={statusTone(template.status)} />
             <span>
               {template.assetType} · {template.domain} · {template.points.length} points
+              {/* F2.13 / ADR 0052 — how an administrator tells an import from a hand-authored row. */}
+              {template.stockCode ? ` · stock ${template.stockCode} v${template.stockVersion}` : ""}
             </span>
           </span>
         }

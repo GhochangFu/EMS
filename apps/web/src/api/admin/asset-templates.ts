@@ -17,6 +17,7 @@ import {
   adminAssetTemplateDtoSchema,
   assetInstantiationResultDtoSchema,
   assetTemplatesListResponseSchema,
+  stockAssetTemplatesListResponseSchema,
   templateDraftDeletedResponseSchema,
   templateMigrationPreviewResponseSchema,
   templateMigrationResultResponseSchema,
@@ -30,6 +31,7 @@ import type {
   AssetTemplateStatus,
   CalcDialect,
   CalcTrigger,
+  StockAssetTemplatesListResponse,
   TemplateDraftDeletedResponse,
   TemplateMigrationPreviewResponse,
   TemplateMigrationResultResponse,
@@ -41,6 +43,7 @@ import { adminFetch } from "./client";
 
 export type {
   AssetTemplatesListResponse,
+  StockAssetTemplatesListResponse,
   TemplateDraftDeletedResponse,
   TemplateMigrationPreviewResponse,
   TemplateMigrationResultResponse,
@@ -244,6 +247,32 @@ export async function deleteAdminAssetTemplateDraft(
   return adminFetch(`/admin/asset-templates/${id}`, templateDraftDeletedResponseSchema, {
     method: "DELETE",
   });
+}
+
+/**
+ * `F2.13` — `GET /admin/asset-templates/stock`: the repository's stock
+ * catalog (ADR 0052 decision 4). Master-data role required; the route is
+ * declared before `GET :id` on the server, which is why it does not 400 as an
+ * invalid uuid.
+ */
+export async function fetchAdminStockAssetTemplates(): Promise<StockAssetTemplatesListResponse> {
+  return adminFetch("/admin/asset-templates/stock", stockAssetTemplatesListResponseSchema);
+}
+
+/**
+ * `F2.13` — imports one stock entry into `organizationId`, landing as a new
+ * stamped draft at the next version (ADR 0052 decision 4). The response is
+ * the draft with its points, the same shape `createAdminAssetTemplate` returns.
+ */
+export async function importAdminStockAssetTemplate(
+  code: string,
+  organizationId: string,
+): Promise<AdminAssetTemplateDto> {
+  return adminFetch(
+    `/admin/asset-templates/stock/${code}/import`,
+    adminAssetTemplateDtoSchema,
+    { method: "POST", headers: jsonHeaders, body: JSON.stringify({ organizationId }) },
+  );
 }
 
 /**

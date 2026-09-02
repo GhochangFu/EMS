@@ -19,16 +19,28 @@
  * flat rows **before** grouping, for the reason `template-list-grouping.ts`
  * records — a group whose every version is filtered out must disappear rather
  * than render a header that reads "this template has no versions".
+ *
+ * ## The stock catalog card (`F2.13`, ADR 0052 decision 10)
+ *
+ * The same import control `dashboard-templates-page.tsx` has: the repository's
+ * entries from `GET stock`, one organization picker, one click to import into
+ * it — and, unlike the dashboard page, the click **lands on the new draft**,
+ * because that is where the author's next action is. Gated on
+ * `canAuthorTemplates`, as the dashboard card is: an import is an authoring
+ * act (ADR 0015 §7 excludes `location_admin`), and the catalog is master data
+ * the server refuses to list to anyone else anyway.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import type { AssetTemplateStatus } from "@bms/shared";
 
 import {
   createAdminAssetTemplate,
   fetchAdminAssetTemplates,
+  fetchAdminStockAssetTemplates,
+  importAdminStockAssetTemplate,
 } from "../../api/admin/asset-templates";
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { apiErrorMessage } from "../../lib/api-error-message";
@@ -65,23 +77,36 @@ const emptyForm = {
 /** Admin screen listing asset template versions, grouped by code. */
 export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const mayAuthor = canAuthorTemplates(user.role);
   const [status, setStatus] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const [importOrgId, setImportOrgId] = useState("");
+  const [importError, setImportError] = useState<string | null>(null);
 
   const listQ = useQuery({
     queryKey: ["admin", "asset-templates", status],
     queryFn: () => fetchAdminAssetTemplates(status === "all" ? undefined : status),
   });
 
-  // Both only feed the create form, so neither is fetched until it opens.
+  // F2.13: the stock card is rendered for an author only, and the server
+  // refuses the list to anyone else — so the fetch is gated the same way
+  // rather than left to 403 for a viewer on every visit.
+  const stockQ = useQuery({
+    queryKey: ["admin", "asset-templates", "stock"],
+    queryFn: fetchAdminStockAssetTemplates,
+    enabled: mayAuthor,
+  });
+
+  // Organizations feed the create form AND the stock card's picker, so they
+  // are fetched for any author rather than only once the modal opens.
   const orgsQ = useQuery({
     queryKey: ["admin", "organizations", "true"],
     queryFn: () => fetchAdminOrganizations("true"),
-    enabled: modalOpen && mayAuthor,
+    enabled: mayAuthor,
   });
   // ADR 0031 Amendment 1 made `domain` a vocabulary row rather than an enum.
   // `vocabulariesQueryKey` is shared on purpose — this must not become a fourth
@@ -128,6 +153,20 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
     // whole answer. Replacing it with "Could not create template" would hide it.
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
+
+  const importM = useMutation({
+    mutationFn: (code: string) => importAdminStockAssetTemplate(code, importOrgId),
+    onSuccess: (created) => {
+      setImportError(null);
+      void queryClient.invalidateQueries({ queryKey: ["admin", "asset-templates"] });
+      // ADR 0052 decision 10 — "landing on the new draft". The draft is a new
+      // row; staying here would leave the author hunting for it in the list.
+      navigate(`/admin/asset-templates/${created.id}`);
+    },
+    onError: (cause: Error) => setImportError(apiErrorMessage(cause)),
+  });
+
+  const stockRows = stockQ.data?.items ?? [];
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -248,6 +287,70 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
           ))}
         </div>
       </SectionCard>
+
+      {mayAuthor ? (
+        <SectionCard
+          title="Stock catalog"
+          subtitle="Repository class templates every organization can import (ADR 0052)"
+          actions={
+            <select
+              aria-label="Import into organization"
+              value={importOrgId}
+              onChange={(event) => setImportOrgId(event.target.value)}
+              className="rounded border border-gray-200 px-2 py-1 text-xs"
+            >
+              <option value="">Select an organization…</option>
+              {(orgsQ.data?.items ?? []).map((org) => (
+                <option key={org.id} value={org.id}>
+                  {org.code} — {org.name}
+                </option>
+              ))}
+            </select>
+          }
+        >
+          {importError ? (
+            <p className="mb-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
+              {importError}
+            </p>
+          ) : null}
+          {stockQ.isPending ? <p className="text-sm text-bms-muted">Loading the stock catalog…</p> : null}
+          {stockQ.isError ? (
+            <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              {apiErrorMessage(stockQ.error)}
+            </p>
+          ) : null}
+          {!stockQ.isPending && !stockQ.isError && stockRows.length === 0 ? (
+            <p className="text-sm text-bms-muted">The stock catalog is empty — nothing to import.</p>
+          ) : null}
+          <ul className="divide-y divide-gray-100">
+            {stockRows.map((entry) => (
+              <li key={entry.code} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <div>
+                  <div className="text-sm font-semibold text-bms-ink">{entry.name}</div>
+                  <div className="text-[11px] text-bms-muted">
+                    {entry.code} · {entry.domain} · stock v{entry.stockVersion}
+                  </div>
+                  <div className="text-[11px] text-bms-muted">
+                    {entry.assetType} · {entry.points.length} point{entry.points.length === 1 ? "" : "s"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  aria-label={`Import ${entry.name}`}
+                  disabled={importOrgId === "" || importM.isPending}
+                  onClick={() => {
+                    setImportError(null);
+                    importM.mutate(entry.code);
+                  }}
+                  className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+                >
+                  {importM.isPending && importM.variables === entry.code ? "Importing…" : "Import"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+      ) : null}
 
       {modalOpen && mayAuthor ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
