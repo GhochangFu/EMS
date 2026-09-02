@@ -6,6 +6,22 @@ export const activeFilterSchema = z.enum(["true", "false", "all"]).default("all"
 export const idParamSchema = z.string().uuid();
 
 /**
+ * The `:code` segment of a stock-catalog import route (`F2.13`, ADR 0052
+ * decision 4). A stock code is a lowercase kebab identifier such as
+ * `electrical-feeder`, and the catalog lookup is a JavaScript compare, so this
+ * bound is not about SQL — it is about the **error message**: an unknown code is
+ * echoed back in the 400 and in pino's request line, and without a bound an
+ * authorized author could put a multi-kilobyte path segment into both. Found
+ * by the `F2.13` security review; `dashboard-templates.controller.ts` had the
+ * same gap and takes the same schema.
+ */
+export const stockCodeParamSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9-]+$/, "a stock code is lowercase letters, digits and hyphens");
+
+/**
  * `?active=` on the seven admin list routes.
  *
  * **A BAD VALUE IS A 400 HERE, NOT A `ZodError` AT THE CALLER.** Every one of

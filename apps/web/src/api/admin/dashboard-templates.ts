@@ -210,7 +210,7 @@ export async function importAdminStockDashboardTemplate(
   organizationId: string,
 ): Promise<DashboardTemplateDto> {
   return adminFetch(
-    `/admin/dashboard-templates/stock/${code}/import`,
+    `/admin/dashboard-templates/stock/${encodeURIComponent(code)}/import`,
     dashboardTemplateDtoSchema,
     { method: "POST", headers: jsonHeaders, body: JSON.stringify({ organizationId }) },
   );

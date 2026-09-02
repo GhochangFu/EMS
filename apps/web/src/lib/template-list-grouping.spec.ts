@@ -45,6 +45,8 @@ function summary(seed: SummarySeed): AdminAssetTemplateSummaryDto {
     content: {},
     publishedAt: null,
     archivedAt: null,
+    stockCode: null,
+    stockVersion: null,
     createdAt: seed.createdAt ?? "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     pointCount: 4,

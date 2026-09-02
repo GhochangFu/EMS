@@ -56,6 +56,14 @@ export const templatePointBodySchema = z
     maxInputAgeSeconds: z.number().int().min(1).max(MAX_INPUT_AGE_SECONDS_BOUND).nullish(),
     required: z.boolean().default(true),
     sortOrder: z.number().int().min(0).default(0),
+    // F2.13 / ADR 0052 decision 2, ADR 0040 open question 4 — the tier
+    // marking that makes a client's redline mechanical (C -> core, X ->
+    // extended). `bms.template_points.meta jsonb` has carried this since
+    // `0024`; nothing could write it until now. A CLOSED shape, not
+    // `z.record(z.unknown())` — `meta` is provenance with exactly one known
+    // key today, and a free-form jsonb bag on an authoring surface is the
+    // drift ADR 0019 §3 refuses.
+    meta: z.object({ tier: z.enum(["core", "extended", "manual"]) }).strict().optional(),
   })
   // `.strict()` must sit on the object, before `.superRefine` — a
   // `ZodEffects` (what `.superRefine`/`.refine`/`.transform` return) has no

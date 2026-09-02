@@ -239,6 +239,7 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "createAssetTemplateBodySchema/content/kpis[]": STRICT(ALREADY),
   "createAssetTemplateBodySchema/content/maintenance[]": STRICT(ALREADY),
   "createAssetTemplateBodySchema/points[]": STRICT(CALLER_ERROR),
+  "createAssetTemplateBodySchema/points[]/meta": STRICT(CALLER_ERROR),
   createDashboardBodySchema: STRICT(CALLER_ERROR),
   createDashboardTemplateBodySchema: STRICT(CALLER_ERROR),
   "createDashboardTemplateBodySchema/content": { strict: false, because: SECTION_TEMPLATE_CONTENT },
@@ -392,6 +393,7 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "updateAssetTemplateBodySchema/content/kpis[]": STRICT(ALREADY),
   "updateAssetTemplateBodySchema/content/maintenance[]": STRICT(ALREADY),
   "updateAssetTemplateBodySchema/points[]": STRICT(CALLER_ERROR),
+  "updateAssetTemplateBodySchema/points[]/meta": STRICT(CALLER_ERROR),
   updateLocationBodySchema: STRICT(CALLER_ERROR),
   updateMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),
   updateNotificationChannelBodySchema: STRICT(

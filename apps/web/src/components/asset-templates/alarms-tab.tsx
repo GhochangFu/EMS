@@ -30,7 +30,7 @@
  */
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type { AdminAssetTemplateDto, AutomationRuleOperator, TemplateAlarm } from "@bms/shared";
+import type { AdminAssetTemplateDto, TemplateAlarm } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
@@ -232,14 +232,17 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
 
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <Field label="Fires when the value is">
+                {/* ADR 0019 Amendment 2: `operator` and `thresholdValue` are a
+                    paired optional group, so this select needs an explicit
+                    empty option — "not set" is a legitimate authored state
+                    (an alarm philosophy row), not an omission to guess past. */}
                 <select
                   value={alarm.operator}
                   disabled={!editable}
-                  onChange={(event) =>
-                    update(index, { operator: event.target.value as AutomationRuleOperator })
-                  }
+                  onChange={(event) => update(index, { operator: event.target.value })}
                   className={fieldClass(!editable, undefined)}
                 >
+                  <option value="">Not set — philosophy only</option>
                   {ALARM_OPERATORS.map((operator) => (
                     <option key={operator} value={operator}>
                       {OPERATOR_LABELS[operator]}
@@ -248,19 +251,29 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
                 </select>
               </Field>
               <Field label="Threshold" error={problemFor("thresholdValue")}>
-                {/* `inputMode="decimal"` on a text input, as the rule builder
-                    does: a `type="number"` box reports an empty string for
-                    several kinds of invalid input, which would make a typo
-                    indistinguishable from a cleared field. */}
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={alarm.thresholdValue}
-                  disabled={!editable}
-                  placeholder="12"
-                  onChange={(event) => update(index, { thresholdValue: event.target.value })}
-                  className={fieldClass(!editable, problemFor("thresholdValue"))}
-                />
+                {/* Pair-absent (both empty): no input at all — a threshold
+                    means nothing without a comparator, so the row explains
+                    itself instead of showing an editable empty box. Choosing
+                    an operator above is what makes this input reappear. */}
+                {alarm.operator === "" && alarm.thresholdValue === "" ? (
+                  <p className="w-full rounded border border-dashed border-gray-200 px-2 py-1.5 text-xs text-bms-muted">
+                    value set per site at commissioning
+                  </p>
+                ) : (
+                  // `inputMode="decimal"` on a text input, as the rule builder
+                  // does: a `type="number"` box reports an empty string for
+                  // several kinds of invalid input, which would make a typo
+                  // indistinguishable from a cleared field.
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={alarm.thresholdValue}
+                    disabled={!editable}
+                    placeholder="12"
+                    onChange={(event) => update(index, { thresholdValue: event.target.value })}
+                    className={fieldClass(!editable, problemFor("thresholdValue"))}
+                  />
+                )}
               </Field>
               <Field label="Category" error={problemFor("category")}>
                 <select

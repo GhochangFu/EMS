@@ -44,6 +44,7 @@ function derived(overrides: Partial<TemplatePointRow> = {}): TemplatePointRow {
     calcTrigger: "streaming",
     calcIntervalSeconds: null,
     maxInputAgeSeconds: null,
+    meta: null,
     ...overrides,
   };
 }

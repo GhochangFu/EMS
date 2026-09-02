@@ -294,6 +294,42 @@ export function runTemplateContentSchemaTests(): void {
     "philosophy is strict — E2.1 owns this vocabulary and `etr` is per-incident, not per-class",
   );
 
+  // ---- ADR 0019 Amendment 2: operator/thresholdValue are a paired optional group ----
+  //
+  // `withAlarm` above already covers "both present -> valid". The four cases
+  // the task exists to prove: both present (above), both absent (the reason
+  // this task exists), thresholdValue alone, operator alone.
+  const alarmWithoutPair = {
+    code: alarm.code,
+    pointKey: alarm.pointKey,
+    severity: alarm.severity,
+    message: alarm.message,
+  };
+
+  const pairAbsent = parse({ alarms: [alarmWithoutPair] });
+  assert(
+    pairAbsent.alarms?.[0]?.operator === undefined &&
+      pairAbsent.alarms?.[0]?.thresholdValue === undefined,
+    "both operator and thresholdValue absent must parse — an alarm philosophy row, ADR 0019 " +
+      "Amendment 2 decisions 1 and 2",
+  );
+
+  const thresholdOnlyMessage = messagesFor({
+    alarms: [{ ...alarmWithoutPair, thresholdValue: 12.5 }],
+  });
+  assert(
+    thresholdOnlyMessage.includes("half a rule"),
+    `thresholdValue alone must be refused, naming both-or-neither in words, got: ${thresholdOnlyMessage}`,
+  );
+
+  const operatorOnlyMessage = messagesFor({
+    alarms: [{ ...alarmWithoutPair, operator: "gt" }],
+  });
+  assert(
+    operatorOnlyMessage.includes("half a rule"),
+    `operator alone must be refused, naming both-or-neither in words, got: ${operatorOnlyMessage}`,
+  );
+
   // ---- maintenance: bound to the live schedule vocabulary -------------------
 
   const maintenance = parse({

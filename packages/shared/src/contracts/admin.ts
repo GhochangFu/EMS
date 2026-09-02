@@ -219,6 +219,22 @@ export const assetTemplateStatusSchema = templateLifecycleStatusSchema;
  */
 export const templatePointKindSchema = z.enum(["measured", "derived"]);
 
+/**
+ * `F2.13` / ADR 0052 decision 2, ADR 0040 open question 4 — the tier marking
+ * a point carries (tag-list `C` -> `core`, `X` -> `extended`), what makes a
+ * client's redline mechanical. `.partial()`, not a bare `{ tier }` object:
+ * `bms.template_points.meta jsonb NOT NULL DEFAULT {}` may hold `{}` — the
+ * column's own default, for a point with no provenance yet — not only the
+ * full shape `apps/api`'s write-side `templatePointBodySchema` requires when
+ * `meta` is supplied at all. Read-side, so it must not reject a row the
+ * database holds, matching every other field on `adminTemplatePointDtoSchema`.
+ */
+const templatePointMetaDtoSchema = z
+  .object({ tier: z.enum(["core", "extended", "manual"]) })
+  .partial()
+  .strict()
+  .nullable();
+
 export const adminTemplatePointDtoSchema = z.object({
   id: z.string(),
   templateId: z.string(),
@@ -243,6 +259,7 @@ export const adminTemplatePointDtoSchema = z.object({
   maxInputAgeSeconds: z.number().nullable(),
   required: z.boolean(),
   sortOrder: z.number(),
+  meta: templatePointMetaDtoSchema,
   createdAt: z.string(),
 });
 
@@ -273,6 +290,14 @@ export const adminAssetTemplateDtoSchema = z.object({
   content: z.record(z.unknown()),
   publishedAt: z.string().nullable(),
   archivedAt: z.string().nullable(),
+  /**
+   * `F2.13` / ADR 0052 — which stock release this row was imported from, or
+   * both `null` for a hand-authored template. Column for column with
+   * `dashboard-templates.ts`'s `dashboardTemplateSummaryDtoSchema.stockCode`
+   * / `.stockVersion`.
+   */
+  stockCode: z.string().max(64).nullable(),
+  stockVersion: z.number().int().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   points: z.array(adminTemplatePointDtoSchema),
@@ -287,6 +312,88 @@ export const adminAssetTemplateSummaryDtoSchema = z.intersection(
   adminAssetTemplateDtoSchema.omit({ points: true }),
   z.object({ pointCount: z.number() }),
 );
+
+/**
+ * One point of a stock catalog entry — `F2.13` / ADR 0052 decision 2.
+ *
+ * **The write shape, not the read shape.** `adminTemplatePointDtoSchema`
+ * carries `id` / `templateId` / `createdAt`, which repository data — a
+ * TypeScript literal in `apps/api`'s catalog — has none of; this schema is
+ * what an entry's `points` array actually looks like before it is ever
+ * imported into a row.
+ *
+ * **Drift risk and control.** This restates `apps/api`'s
+ * `templatePointBodySchema` shape, in a different package, so the two can
+ * drift. The control is Task 4's build-time spec: every catalog entry is
+ * parsed through `createAssetTemplateBodySchema` (the API's own body
+ * schema) in addition to this one, so a field this schema permits and the
+ * API body rejects fails the build rather than shipping silently.
+ */
+export const stockTemplatePointDtoSchema = z.object({
+  pointKey: z.string().min(1).max(128),
+  label: z.string().max(255).nullable(),
+  unit: z.string().max(32).nullable(),
+  sourceDataKeyPattern: z.string().max(128).nullable(),
+  formula: z.string().max(1000).nullable(),
+  formulaDialect: z.literal(CALC_DIALECT).nullable(),
+  kind: templatePointKindSchema,
+  calcTrigger: z.enum(CALC_TRIGGERS).nullable(),
+  calcIntervalSeconds: z.number().int().nullable(),
+  maxInputAgeSeconds: z.number().int().nullable(),
+  required: z.boolean(),
+  sortOrder: z.number().int(),
+  // F2.13 / ADR 0052 decision 2 — every stock point declares its tier. The
+  // WRITE shape here (matching `apps/api`'s `templatePointBodySchema.meta`
+  // exactly: the whole object optional, `tier` required once present) rather
+  // than `templatePointMetaDtoSchema`'s lenient read-side `.partial()` — a
+  // catalog entry is authored fresh, never a stored row that might predate
+  // this field.
+  meta: z.object({ tier: z.enum(["core", "extended", "manual"]) }).strict().optional(),
+});
+
+/**
+ * One entry of the asset-template stock catalog as listed — ADR 0052.
+ *
+ * The catalog lives **outside the tenant tables** and is *imported* into a
+ * real row the organization then owns. It carries no `organizationId` and
+ * no `id`, because it is repository data rather than a row: the import
+ * creates the row. Mirrors `dashboard-templates.ts`'s
+ * `stockDashboardTemplateDtoSchema` exactly, one asset-template field
+ * (`assetType`) standing in for that schema's `section`.
+ *
+ * Each entry carries its **own** `stockVersion`, not one catalog-wide
+ * number, so improving one class's default does not renumber the others.
+ *
+ * **`content` is `z.record(z.unknown())`, matching
+ * `adminAssetTemplateDtoSchema.content` for the identical reason.**
+ * `templateContentSchema` — the tiered ADR 0019 contract for KPIs, alarms,
+ * philosophy and point ordering — lives in
+ * `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts`,
+ * not in `@bms/shared` (ADR 0019 §8 ratifies that split: a Zod schema there
+ * would be a runtime dependency, which AGENTS.md §9.4 gates). `@bms/shared`
+ * cannot derive from a contract it is not permitted to depend on, so this
+ * field stays a bare record here exactly as it does on the read-side DTO.
+ * The `stockDashboardTemplateDtoSchema` sibling can carry
+ * `sectionTemplateContentSchema` in full only because that one contract
+ * happens to live in `@bms/shared` already.
+ *
+ * **No `.readonly()`**, matching `stockDashboardTemplateDtoSchema` exactly.
+ * Immutability is taken at the catalog array in `apps/api`
+ * (`STOCK_ASSET_TEMPLATE_CATALOG: readonly StockAssetTemplateEntry[]`),
+ * where it is actually enforceable — a `.readonly()` here would describe a
+ * DTO the wire has already copied, and say nothing true about the source
+ * array. Say so here, or someone "fixes" it.
+ */
+export const stockAssetTemplateDtoSchema = z.object({
+  code: z.string().min(1).max(64),
+  name: z.string().min(1).max(255),
+  assetType: z.string().min(1).max(64),
+  domain: z.string().min(1).max(64),
+  description: z.string().nullable(),
+  stockVersion: z.number().int().positive(),
+  content: z.record(z.unknown()),
+  points: z.array(stockTemplatePointDtoSchema),
+});
 
 /**
  * One asset built by `F2.2` instantiation (ADR 0015 §6).

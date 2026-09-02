@@ -17,6 +17,7 @@ import {
   adminAssetTemplateDtoSchema,
   assetInstantiationResultDtoSchema,
   assetTemplatesListResponseSchema,
+  stockAssetTemplatesListResponseSchema,
   templateDraftDeletedResponseSchema,
   templateMigrationPreviewResponseSchema,
   templateMigrationResultResponseSchema,
@@ -24,11 +25,13 @@ import {
 } from "@bms/shared/contracts";
 import type {
   AdminAssetTemplateDto,
+  AdminTemplatePointDto,
   AssetInstantiationResultDto,
   AssetTemplatesListResponse,
   AssetTemplateStatus,
   CalcDialect,
   CalcTrigger,
+  StockAssetTemplatesListResponse,
   TemplateDraftDeletedResponse,
   TemplateMigrationPreviewResponse,
   TemplateMigrationResultResponse,
@@ -40,11 +43,19 @@ import { adminFetch } from "./client";
 
 export type {
   AssetTemplatesListResponse,
+  StockAssetTemplatesListResponse,
   TemplateDraftDeletedResponse,
   TemplateMigrationPreviewResponse,
   TemplateMigrationResultResponse,
   TemplateVersionsListResponse,
 };
+
+/**
+ * `meta.tier`'s vocabulary — derived from the read-side DTO rather than
+ * restated, so a fourth tier added to the shared contract reaches here without
+ * a second edit.
+ */
+export type TemplatePointTier = NonNullable<NonNullable<AdminTemplatePointDto["meta"]>["tier"]>;
 
 /**
  * One point in a create or update body.
@@ -59,6 +70,11 @@ export type {
  * `templatePointsBodySchema` replaces the whole array on every `PATCH`. A
  * client that omits one from its type deletes that value from every point it
  * sends back.
+ *
+ * **`meta` is optional and, when present, closed** — `{ tier }` and nothing
+ * else, matching `templatePointBodySchema.meta` (`F2.13`). It is not nullable
+ * on the wire: a point with no tier omits the key, and `replacePoints` writes
+ * the column's own `{}` default. Sending `null` or `{}` is a 400.
  */
 export interface TemplatePointInput {
   pointKey: string;
@@ -73,6 +89,7 @@ export interface TemplatePointInput {
   maxInputAgeSeconds?: number | null;
   required?: boolean;
   sortOrder?: number;
+  meta?: { tier: TemplatePointTier };
 }
 
 export interface CreateAssetTemplateInput {
@@ -230,6 +247,32 @@ export async function deleteAdminAssetTemplateDraft(
   return adminFetch(`/admin/asset-templates/${id}`, templateDraftDeletedResponseSchema, {
     method: "DELETE",
   });
+}
+
+/**
+ * `F2.13` — `GET /admin/asset-templates/stock`: the repository's stock
+ * catalog (ADR 0052 decision 4). Master-data role required; the route is
+ * declared before `GET :id` on the server, which is why it does not 400 as an
+ * invalid uuid.
+ */
+export async function fetchAdminStockAssetTemplates(): Promise<StockAssetTemplatesListResponse> {
+  return adminFetch("/admin/asset-templates/stock", stockAssetTemplatesListResponseSchema);
+}
+
+/**
+ * `F2.13` — imports one stock entry into `organizationId`, landing as a new
+ * stamped draft at the next version (ADR 0052 decision 4). The response is
+ * the draft with its points, the same shape `createAdminAssetTemplate` returns.
+ */
+export async function importAdminStockAssetTemplate(
+  code: string,
+  organizationId: string,
+): Promise<AdminAssetTemplateDto> {
+  return adminFetch(
+    `/admin/asset-templates/stock/${encodeURIComponent(code)}/import`,
+    adminAssetTemplateDtoSchema,
+    { method: "POST", headers: jsonHeaders, body: JSON.stringify({ organizationId }) },
+  );
 }
 
 /**

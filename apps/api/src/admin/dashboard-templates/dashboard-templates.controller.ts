@@ -18,7 +18,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
-import { idParamSchema } from "../admin.schema";
+import { idParamSchema, stockCodeParamSchema } from "../admin.schema";
 import { DashboardTemplatesInstantiateService } from "./dashboard-templates-instantiate.service";
 import { DashboardTemplatesStockService } from "./dashboard-templates-stock.service";
 import {
@@ -99,6 +99,33 @@ export class DashboardTemplatesController {
     return this.service.getById(user, idParamSchema.parse(id));
   }
 
+  /**
+   * Declared before every `@Post(":id/…")`, like its `@Get` twin above: three
+   * segments against two is safe by count today, and the order keeps it safe
+   * against a future three-segment `@Post(":id/:verb/:x")`. The spec asserts
+   * the order. Moved here from below `draft` in `F2.13`.
+   */
+  @Post("stock/:code/import")
+  async importStock(
+    @Param("code") code: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      // `:code` is bounded before it reaches the lookup or the 400 message —
+      // the `F2.13` security review found the gap on the asset-template
+      // sibling, and AGENTS.md §4.5 fixes the class, not the instance.
+      const stockCode = stockCodeParamSchema.parse(code);
+      const parsed = importStockTemplateBodySchema.parse(body);
+      return await this.stock.import(user, stockCode, parsed.organizationId);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
   @Post()
   async create(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
     try {
@@ -148,23 +175,6 @@ export class DashboardTemplatesController {
   @Post(":id/draft")
   async draft(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
     return this.service.createDraftFrom(user, idParamSchema.parse(id));
-  }
-
-  @Post("stock/:code/import")
-  async importStock(
-    @Param("code") code: string,
-    @Body() body: unknown,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    try {
-      const parsed = importStockTemplateBodySchema.parse(body);
-      return await this.stock.import(user, code, parsed.organizationId);
-    } catch (err) {
-      if (err instanceof ZodError) {
-        throw new BadRequestException(err.flatten());
-      }
-      throw err;
-    }
   }
 
   @Post(":id/instantiate")

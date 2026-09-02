@@ -42,6 +42,7 @@ function point(overrides: Record<string, unknown> = {}) {
     maxInputAgeSeconds: null,
     required: true,
     sortOrder: 0,
+    meta: null,
     createdAt: "2026-08-21T00:00:00.000Z",
     ...overrides,
   };
@@ -82,6 +83,8 @@ function template(points: unknown[]): AdminAssetTemplateDto {
     content: {},
     publishedAt: null,
     archivedAt: null,
+    stockCode: null,
+    stockVersion: null,
     createdAt: "2026-08-21T00:00:00.000Z",
     updatedAt: "2026-08-21T00:00:00.000Z",
     points,
@@ -128,6 +131,62 @@ export function runCalcFieldsSurviveARoundTripTests(): void {
     !pointsHaveChanged(pointRowsFrom(row), row),
     "loading and immediately saving must be a no-op — it deletes and reinserts every row",
   );
+}
+
+/**
+ * `F2.13` — `meta.tier` is carried too, or the Points tab erases it.
+ *
+ * `replacePoints` writes `meta: point.meta ?? {}` on every save, so a payload
+ * with no `meta` resets every point's tier to nothing. Every stock-imported
+ * template (ADR 0052 decision 2) carries a tier on all of its points, and one
+ * save of the Points tab would silently strip all 33 — a valid request, 200,
+ * and the client's redline marking gone. Found while building pass B of
+ * `F2.13`; this row is what makes the tier authorable, so it is the row that
+ * must not lose it.
+ *
+ * The write shape is closed: `templatePointBodySchema.meta` is optional but,
+ * when present, `{ tier }` and nothing else. So a point with no tier must
+ * **omit the key**, never send `meta: null` (refused) or `meta: {}` (refused
+ * — `tier` is required once the object is present).
+ */
+export function runPointMetaSurvivesARoundTripTests(): void {
+  const row = template([
+    point({ meta: { tier: "core" } }),
+    derivedPoint({ meta: null }),
+    point({ id: "p3", pointKey: "CHW_RETURN_T", sortOrder: 2, meta: {} }),
+  ]);
+  const rows = pointRowsFrom(row);
+  const payload = buildPointsPayload(rows);
+
+  assert(
+    JSON.stringify(payload[0].meta) === JSON.stringify({ tier: "core" }),
+    `meta.tier lost on the round trip — got ${JSON.stringify(payload[0].meta)}`,
+  );
+  assert(
+    !("meta" in payload[1]),
+    `a point with meta: null must omit the key, not send ${JSON.stringify(payload[1].meta)}`,
+  );
+  assert(
+    !("meta" in payload[2]),
+    "a point whose stored meta is {} (the column default) has no tier and must omit the key — " +
+      `sending {} is refused because tier is required once meta is present; got ${JSON.stringify(payload[2].meta)}`,
+  );
+
+  // Untouched, the tiered grid is still a no-op save.
+  assert(
+    !pointsHaveChanged(rows, row),
+    "loading a tiered template and saving must be a no-op",
+  );
+
+  // A kind change keeps the tier: it is provenance, not calc configuration.
+  const measured = setPointKind(rows[0], "derived");
+  assert(
+    JSON.stringify(measured.meta) === JSON.stringify({ tier: "core" }),
+    "setPointKind must not clear meta — the tier is not one of the five calc fields",
+  );
+
+  // A new row has no tier; the server's default `{}` is what it will hold.
+  assert(blankPointRow(rows).meta === null, "a blank row carries no tier");
 }
 
 /** Seeding turns the nullable read fields into the strings the DOM holds. */

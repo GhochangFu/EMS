@@ -1,0 +1,80 @@
+import { ELECTRICAL_STOCK_ASSET_TEMPLATES } from "./electrical";
+import type { StockAssetTemplateEntry } from "./types";
+
+/**
+ * `F2.13` — the stock asset-template catalog (ADR 0052 decision 1).
+ *
+ * **This is repository data, not a database seed.** The delivery mechanism
+ * `bms.dashboard_templates` already has (`../dashboard-templates/stock-catalog.ts`,
+ * ADR 0049 decision 3), given to `bms.asset_templates`: an entry is *imported*
+ * into a real row the organization then owns, never seeded per organization
+ * (decision 9 — `db:seed` gains nothing, `BASELINE-*` are untouched) and never
+ * a NULL-organization row (ADR 0015 resolved decision 3, re-declined by ADR
+ * 0052 option C).
+ *
+ * ---
+ *
+ * **WHY A TYPESCRIPT MODULE UNDER `apps/api`, NOT JSON, AND NOT
+ * `packages/shared`.** ADR 0052 decision 1's three reasons, the same three the
+ * dashboard catalog records:
+ *
+ *  1. **The reader is the API in a container.** `apps/api` runs from `dist/`,
+ *     a cwd nobody tests a runtime file read against; a module import has no
+ *     cwd.
+ *  2. **A TS module is typechecked**, so a malformed entry is a BUILD error —
+ *     `pnpm typecheck` refuses it — rather than a 500 the first time an
+ *     administrator opens the catalog. `StockAssetTemplateEntry` is the create
+ *     body itself, so the entry cannot drift from what `create` accepts.
+ *  3. **A `.ts` diff is reviewed as code**, with the `git blame` and the PR
+ *     review a logic change gets, rather than waved through as "just data".
+ *
+ * It stays out of `packages/shared` because the browser reaches the catalog
+ * only through `GET /admin/asset-templates/stock` — six packs' worth of
+ * template content never enters the web bundle.
+ *
+ * ---
+ *
+ * **ONE MODULE PER PACK.** This file aggregates; it authors nothing. The packs,
+ * each under the §4.5 line cap and each carrying its own docblock of sources
+ * and deferrals:
+ *
+ *  - `electrical.ts` — `F2.13` ships the feeder/incomer class; `F2.12` adds
+ *    transformer, DG set, UPS, solar PV and APFC to the same file.
+ *  - `water.ts` — `E5.1`.
+ *  - `mechanical.ts` — `E5.2`.
+ *  - `facility.ts` — `E5.3`.
+ *
+ * **A NEW PACK FILE MUST JOIN `STOCK_ASSET_RELS` IN
+ * `tests/f2.13-asset-stock-catalog-vocabulary.test.ts`, with that file's
+ * anti-vacuity bounds moved to the new actuals.** That guard reads the pack
+ * files as TEXT and scans every `pointKey:` against the `*_POINT_KEYS` arrays
+ * in `packages/shared/src/constants.ts`; it cannot follow the spread below, so
+ * a pack left off the list has its keys checked against no vocabulary at all,
+ * and every assertion there stays green while checking less. `tests/f3.38`
+ * carries the same instruction for the dashboard catalog. This paragraph is
+ * written before the second file exists rather than after, on purpose.
+ *
+ * ---
+ *
+ * **EACH ENTRY CARRIES ITS OWN `stockVersion`.** Never one exported constant
+ * spread across the packs: improving the STP template to release 2 must not
+ * renumber the transformer (decision 2). A bump is recorded in the pack's
+ * docblock (decision 6) and reaches an organization only by re-import
+ * (decision 4) → publish → migrate (decision 7); it touches no row by itself.
+ *
+ * **WHAT THIS FILE DOES NOT DO.** It reads no database and must not gain an
+ * import from `packages/db` to check its keys — that is `stock-catalog.spec.ts`
+ * at build time (both schemas), `tests/f2.13-asset-stock-catalog-vocabulary`
+ * at build time (the vocabulary), and `AssetTemplatesAdminService.create` at
+ * run time (`assertPointKeysActive`, `assertAssetDomain`, the alarm
+ * vocabularies, the content reference check) — decision 5: nothing the
+ * catalog says can bypass a rule the form enforces.
+ *
+ * **`readonly` here is the immutability.** `stockAssetTemplateDtoSchema` in
+ * `@bms/shared` deliberately carries no `.readonly()`; the wire has already
+ * copied a DTO, and the array below is the only place a caller could mutate
+ * the source.
+ */
+export const STOCK_ASSET_TEMPLATE_CATALOG: readonly StockAssetTemplateEntry[] = [
+  ...ELECTRICAL_STOCK_ASSET_TEMPLATES,
+];

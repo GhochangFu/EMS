@@ -421,6 +421,13 @@
       "when": 1788870783386,
       "tag": "0060_asset_role_estate_shapes",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1788957183386,
+      "tag": "0061_asset_template_stock_stamp",
+      "breakpoints": true
     }
   ]
 }

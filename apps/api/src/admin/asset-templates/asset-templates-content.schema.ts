@@ -203,19 +203,55 @@ const alarmPhilosophySchema = z
  * fields — affected assets, energy/water/production impact, ETR — remain
  * properties of a **live alarm instance**, not of an asset class, so a
  * template still cannot carry them. That is a boundary, not a subset.
+ *
+ * **`operator` and `thresholdValue` are a paired optional group — ADR 0019
+ * Amendment 2, decisions 1 and 2.** Both present makes this row a
+ * site-independent proto-rule. Both absent makes it an alarm PHILOSOPHY row
+ * — parameter, meaning, severity, category, philosophy, the ISA-18.2
+ * rationalization record for the asset class — for a meaning whose limit is
+ * set per site at commissioning (B7) and cannot be guessed at authoring
+ * time. One present without the other is refused by the `superRefine` below:
+ * an operator with no number, or a number with no comparator, is half a
+ * rule.
+ *
+ * **The ADR's own file reference is stale**: decision 5 names
+ * `asset-templates.schema.ts`; the alarm schema actually lives here, in
+ * `asset-templates-content.schema.ts`. Corrected here rather than in the ADR
+ * text, which is a historical record.
  */
 const templateAlarmSchema = z
   .object({
     code: z.string().min(1).max(64),
     pointKey: pointKeyRef,
-    operator: operatorSchema,
-    thresholdValue: z.number().finite(),
+    operator: operatorSchema.optional(),
+    thresholdValue: z.number().finite().optional(),
     severity: severitySchema,
     message: z.string().min(1).max(500),
     category: categorySchema.optional(),
     philosophy: alarmPhilosophySchema.optional(),
   })
-  .strict();
+  // `.strict()` must sit on the object, before `.superRefine` — a
+  // `ZodEffects` has no `.strict()`. Nothing may separate `.superRefine(...)`
+  // from the `.describe(...)` below it (tests/adr-0029-openapi-contract.test.ts).
+  .strict()
+  .superRefine((alarm, ctx) => {
+    const hasOperator = alarm.operator !== undefined;
+    const hasThreshold = alarm.thresholdValue !== undefined;
+    if (hasOperator !== hasThreshold) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["thresholdValue"],
+        message:
+          "An operator with no number, or a number with no comparator, is half a rule — " +
+          "supply both operator and thresholdValue, or neither.",
+      });
+    }
+  })
+  .describe(
+    "`operator` and `thresholdValue` are a paired optional group: supply both to author a " +
+      "site-independent proto-rule, or neither to author an alarm philosophy row with its " +
+      "limit set per site at commissioning. One without the other is refused.",
+  );
 
 /**
  * `pointKeys` is separate from `expression` on purpose: it is what makes the
