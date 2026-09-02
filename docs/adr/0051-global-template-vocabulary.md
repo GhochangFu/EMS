@@ -697,3 +697,197 @@ six land in the same per-location `electrical` asset group. The two gateways are
   memberships, 36 of them carrying a role, and **0** environment memberships
   carrying one. The third count is the half nothing else would catch — a branch
   that roled everything would satisfy the first two.
+
+## Amendment 6 — the electrical class keys join the global vocabulary, on the derived tag list's authority (2026-09-02) — PROPOSED
+
+### Status
+
+**Proposed — drafted 2026-09-02, awaiting the owner's gate.** Nothing is built
+against it until it is Accepted. It is the gate for `F2.11` (the vocabulary
+promotion) and the first of three gates for `F2.12` (the class templates
+themselves); the other two are named under *Consequences*.
+
+**It discharges the §5 *Tag-list citation* gate for the electrical classes.**
+`docs/BACKLOG.md` §5 records, on 2026-09-02, that *"for the electrical
+classes, the ADR or ADR 0051 amendment that promotes the new keys into the
+global vocabulary must cite the electrical file"*. This is that amendment, and
+[`docs/electrical-derived-taglist-v1.md`](../electrical-derived-taglist-v1.md)
+(PR #270) is the file: **the v1 point basis for every electrical class
+template, derived from published practice and not from a client export.** The
+citation is what makes v1's assumptions auditable when the real A1 tag list
+lands and v2 supersedes them. The water, mechanical and facility packs still
+owe theirs.
+
+### Context
+
+The electrical domain is the one the platform was born with, and that is why
+it has never had a class definition. `BASELINE-ELECTRICAL` is seeded from
+whatever points the demo assets already carry (`asset-template-health-seed.ts`
+reads `bms.asset_points`, by design), `apps/sim` writes `ELECTRICAL_POINT_KEYS`,
+and `F3.41` promoted the twelve codes PHE WB's meters really publish. Three
+sources, none of them a statement of what a transformer, a DG set or a UPS *is*.
+The SOW's page 9 names the classes the client expects to see — Transformers ·
+HT Panels · LT Panels · MCCs · VFDs · DG — and page 10 adds DG / UPS / Solar /
+Capacitor under Utilities.
+
+The tag list answers that with six class tables: feeder/incomer (the base
+class every panel and sub-meter is), transformer, DG set, UPS, solar PV, and
+APFC. **Measured on 2026-09-02, not inferred:**
+
+| Measure | Count | How |
+| --- | --- | --- |
+| Table rows across the six classes | 169 | `^\| \`code\`` lines in the file |
+| Distinct codes | 165 | four recurrences: `ambient_temp_c` in §2, §4 and §5; `thd_v_pct` in §1 and §6; `battery_v` in §3 and §4 |
+| Already in a `*_POINT_KEYS` array | 25 | set intersection with `packages/shared/src/constants.ts` |
+| **New to the platform** | **140** | the remainder |
+| By tier | 160 C/X · 7 M · 2 D | the file's own Tier column |
+
+**Why promotion has to come before authoring, rather than with it.**
+Amendment 3 gave `bms.template_points.point_key` a foreign key to
+`bms.point_keys(code)` (migration `0058`) and ruled that an authored orphan is
+refused, never admitted. So a class template cannot declare a code the
+vocabulary does not hold, and the only order in which `F2.12` can be built is
+vocabulary first. `F3.41` is the precedent for exactly this shape — twelve
+codes promoted through a `*_POINT_KEYS` array and `UNIT_BY_KEY`, no SQL file,
+decision 3 having ruled them admissible — and it recorded the one trap on that
+path: a code with no `UNIT_BY_KEY` entry seeds `NULL` and reverts a global
+administrator's correction on every `compose up`.
+
+**What the vocabulary answers, and what it does not.** The vocabulary answers
+*does the platform know this code*. Which class carries which code is
+template content, and `F2.12`'s to author. That distinction is the one
+`F3.41` drew when it kept the metered-pumping codes out of
+`ELECTRICAL_POINT_KEYS`, and it decides the shape of decision 2 below.
+
+### Decision
+
+1. **The new codes of the tag list are promoted into the global vocabulary,
+   across every tier, with this file cited as their basis.** `C` and `X` rows
+   are ordinary measured points. The seven `M` rows are points too — they land
+   through `F1.8` manual entry, which writes an `asset_points` row like any
+   other. The two in-table `D` rows (`lv_load_pct`, `grid_export_kw`) are
+   derived template points, and `0058` constrains those the same way. One
+   exclusion, decision 7.
+
+2. **One array, `ELECTRICAL_CLASS_POINT_KEYS`, holding only the new codes — not
+   six per-class arrays.** Two reasons, one of them a constraint.
+   `tests/f3.39-global-point-key-vocabulary.test.ts`'s clash check requires
+   the `*_POINT_KEYS` arrays to be disjoint, because `seedPointKeyCatalog`
+   writes them in one `ON CONFLICT (code) DO UPDATE` pass and a code in two
+   arrays would take whichever domain came last, silently. Per-class arrays
+   would recur on three codes among themselves and on all 25 reused codes
+   against the existing arrays. And class membership is content: a
+   transformer template declares `top_oil_temp_c` *and* `kw` *and*
+   `voltage_vry`; the vocabulary's job ends at knowing each of them. The array
+   is **not** added to `ELECTRICAL_POINT_KEYS`, whose docblock says "keep in
+   sync with simulator" — nothing simulated writes these.
+
+3. **Domain `electrical` for every promoted code**, including the four
+   temperatures at electrical equipment (`ambient_temp_c`, `canopy_temp_c`,
+   `panel_temp_c`, `cabinet_temp_c`). `domain` is the filing domain, not an
+   exclusivity: a code is global since decision 2 of this ADR, and any pack may
+   declare it. `E5.2`'s AHU and chiller tables will reuse `ambient_temp_c`
+   without a second row.
+
+4. **Every promoted code gets an explicit `UNIT_BY_KEY` entry, read from the
+   tag list's Unit column** — `""` for 0/1, enum, code, tap and count rows, the
+   way `pf`, `breaker_main` and `outlets_used` already spell an unset unit, and
+   never a missing entry. Spellings follow the entries already there: `kVAr`
+   where the file writes `kVAR`, so `kvarh_total`, `kvar_connected` and
+   `kvar_required` take `kVAr`/`kVArh`; `°C`; `%`. The 25 reused codes keep
+   the units they have.
+
+5. **One code, one meaning — ruled for the recurrences.** `load_pct` means
+   *load as a percentage of rating* on a UPS, a feeder, a transformer and a DG
+   alike; `battery_v` is the voltage of whichever battery the asset carries;
+   `ambient_temp_c` is ambient at the asset. The class prefixes the file uses
+   are kept as listed — the DG's `gen_*`, the UPS's `input_*`/`output_*`, the
+   PV's `ac_*`/`dc_*` — because each separates the generating or converting
+   side from the §1 meter at the point of connection, and those are different
+   quantities. That is why a PV plant carries `energy_total_kwh` (yield)
+   beside `kwh_total` (import): generated and consumed are not one meaning.
+
+6. **Seed, not migration — `F3.41`'s path.** The array joins `GLOBAL_CATALOG`
+   in `packages/db/src/point-keys-seed.ts` and `seedPointKeyCatalog` writes
+   the rows on every `compose up`, `unit` `COALESCE`d as it has been since
+   `F3.41`. No SQL file. (`0060` added roles by migration because
+   `bms.asset_roles` is migration-seeded; `bms.point_keys` has been
+   seed-seeded since `0057`, and this stays on that side.)
+
+7. **One row is not promoted: `dga_lab_result`.** Its unit is `text`, and
+   `telemetry.point_values.value` is a finite `double precision` (`F4.32`), so
+   a text result cannot be a point at all. It stays a lab record — `F1.13`
+   eLogBook or a maintenance note — and the numeric DGA rows (`dga_h2_ppm`,
+   `dga_c2h2_ppm`, `dga_ch4_ppm`, `dga_co_ppm`) carry what a point can. **139
+   codes are promoted.** Enum- and code-valued rows (`dg_mode`, `ups_status`,
+   `inv_status`, `relay_trip_code`, `silica_gel_state` and the like) are
+   promoted: they carry a numeric code in `value`, and the vendor-enum-to-number
+   map is the ingest normaliser's, exactly as `bmsPointKeyForSensor` maps
+   PHE's sensor codes today.
+
+8. **The prose "Derived:" lists under each class are not promoted here.** Each
+   of those (`load_pct` on a feeder, `demand_vs_contract_pct`,
+   `hot_spot_estimate_c`, `performance_ratio_pct`, `specific_fuel_l_kwh` …) is
+   a derived template point that needs a `bms-calc-v1` formula, and most of
+   them reference an asset attribute — rating, contract demand, installed kWp —
+   that the grammar cannot name (ADR 0036; the fork `F2.9` records), or a
+   model it cannot express (the IEC 60076-7 hot-spot, the Duval triangle).
+   `F2.12` promotes each derived code it can actually author a formula for, in
+   its plan, and a code with no formula is not vocabulary.
+
+### Consequences
+
+- **Two guards move, and one must not.** `tests/f3.38`'s vocabulary
+  anti-vacuity bound goes from 46 to at least 185 (46 + 139), as `F3.41` moved
+  it from 30 to 46; `tests/f3.39`'s unit-coverage and clash checks hold with
+  one array and need no change; and **`KEYS_AWAITING_A_VOCABULARY` is
+  untouched** — `flow_rate`, `ph`, `cod` and `dissolved_oxygen` are in no
+  electrical table, checked by set intersection, so the `stillOutside` clock
+  keeps ticking for `E5.1`.
+
+- **`bms.point_keys` grows from 49 to 188 on a cold start.** The global
+  administrator's `/admin/point-keys` list grows with it. The dashboard
+  builder's point picker walks the *asset's* registered points, not the
+  vocabulary, so it does not.
+
+- **A database that never runs the seed does not receive them.** Same as
+  `F3.41`; Compose runs `db:seed` on every `up`, and `F2.11` proves the cold
+  start on a scratch database the way `F3.41` did.
+
+- **This amendment authors no template.** `F2.12` does, and it waits on two
+  more gates this amendment does not settle:
+  **(a)** [ADR 0019 Amendment 2](0019-template-content-model.md#amendment-2--thresholdvalue-becomes-conditional-b7-setpoints-are-per-site--proposed)
+  — Proposed since 2026-08-22 — because the tag list's alarm rows carry a
+  parameter and a meaning and **no limit numbers**, per B7/B8, and today's
+  contract requires `thresholdValue: number` on every one;
+  **(b)** the stock asset-template delivery mechanism, which **no ADR
+  settles**: asset templates are per-organization (ADR 0015 resolved decision
+  3), and `asset-templates.controller.ts` has no `stock` and no `import` route
+  where `dashboard-templates.controller.ts` has both (ADR 0049 decision 3). So
+  there is no path today by which authored class content reaches every
+  organization, existing and future — the property decision 1 of this ADR
+  demands of a dashboard template and that every domain pack needs of an asset
+  template. Recorded as a §5 row; it is one decision for `F2.12`, `E5.1`,
+  `E5.2` and `E5.3` together.
+
+- **v2 is a new template version, not a re-promotion.** When the real A1 tag
+  list corrects a name, the code stays and the ingest mapping (`source_data_key`)
+  moves — the layer fact 4 of this ADR identified as where a client's naming
+  belongs. A code v2 retires is deactivated (`active = false`), never dropped:
+  `0057`'s foreign keys carry no `ON DELETE` by design.
+
+### Open questions for the gate
+
+1. **Decision 7 — exclude `dga_lab_result`, or promote it as a coded manual
+   point** (normal / caution / fault as 0 / 1 / 2)? Drafted as excluded: a
+   three-value code invents a scale the lab report does not carry, and the four
+   numeric DGA rows already hold the values a consumer would derive it from.
+
+2. **Decision 3 — `electrical` for `ambient_temp_c`, or `environment` beside
+   `temperature_c`?** Drafted as `electrical`, because the asset that registers
+   it is a transformer, a UPS or an inverter, and the filing domain follows the
+   asset the way `deviceDomain()` files PHE's codes.
+
+3. **Decision 8 — promote the derived prose codes now, or per formula in
+   `F2.12`?** Drafted as per formula: a promoted code with no formula behind it
+   is exactly the decorative vocabulary fact 4 of this ADR exists to end.
