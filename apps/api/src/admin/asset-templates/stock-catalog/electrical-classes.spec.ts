@@ -646,6 +646,308 @@ function checkDgSet(): void {
   }
 }
 
+const UPS_CODE = "electrical-ups";
+
+/**
+ * Tag list §4's **29 table rows, in the document's own order**, then the two
+ * authored derived codes — 31 keys, `sortOrder` is the index. §4's table
+ * interleaves the tiers too: `ups_alarm_code` (X) is row 3, ahead of
+ * `on_battery` (C), and the six `X` metering rows sit between C rows.
+ * Transcribed top to bottom from §4 and not from plan §5.3's tier grouping.
+ */
+const UPS_POINT_KEYS: readonly string[] = [
+  "ups_status",
+  "ups_alarm",
+  "ups_alarm_code",
+  "on_battery",
+  "on_bypass",
+  "input_voltage_v",
+  "input_frequency_hz",
+  "output_voltage_v",
+  "output_freq_hz",
+  "output_current_a",
+  "output_kw",
+  "output_kva",
+  "load_pct",
+  "battery_v",
+  "battery_current_a",
+  "battery_temp_c",
+  "battery_charge_pct",
+  "backup_min",
+  "battery_time_on_s",
+  "battery_replace_flag",
+  "battery_last_test",
+  "health_pct",
+  "rectifier_ok",
+  "inverter_ok",
+  "fan_ok",
+  "ambient_temp_c",
+  "cell_voltage_min_v",
+  "cell_voltage_max_v",
+  "impedance_test_result",
+  "load_headroom_pct",
+  "cell_voltage_spread_v",
+];
+
+/**
+ * §4's **nine** alarm bullets become **twelve** rows: *"battery replace /
+ * self-test failed"* splits into two and *"rectifier / inverter / fan fault"*
+ * into three — six different failures with six different responses, each
+ * binding a different declared point. 9 + 1 + 2 = 12.
+ *
+ * **Plan §5.3's header says 11 and its own table lists these twelve codes.**
+ * Its derivation sentence counted only the rectifier/inverter/fan split and
+ * missed the battery one, so the header is an arithmetic slip and the table is
+ * right — the same class of prose slip Task 4 found in §5.1. The row content
+ * decides: `battery_replace_flag` and `battery_last_test` are two declared
+ * points, and collapsing them would leave one of them bound by nothing.
+ */
+const UPS_ALARM_CODES: readonly string[] = [
+  "on_battery",
+  "low_runtime",
+  "on_bypass",
+  "overload",
+  "battery_temp_high",
+  "battery_replace",
+  "battery_self_test_failed",
+  "rectifier_fault",
+  "inverter_fault",
+  "fan_fault",
+  "input_voltage_out_of_range",
+  "cell_voltage_spread_high",
+];
+
+/**
+ * `electrical-ups` against `docs/electrical-derived-taglist-v1.md` §4
+ * (plan §5.3). The only entry in the row that ships **no** `content.kpis` key,
+ * and the only one carrying a point key the source document does not name.
+ */
+function checkUps(): void {
+  const entry = requireStockEntry(UPS_CODE);
+
+  assert(
+    entry.assetType === "ups",
+    `${UPS_CODE}.assetType must be "ups" (plan §12 ruling 3, and the repository's ` +
+      `feeder / ro_skid / test_rig convention) — got "${entry.assetType}"`,
+  );
+  assert(
+    entry.domain === "electrical",
+    `${UPS_CODE}.domain must be "electrical" — assertAssetDomain checks it against ` +
+      `bms.asset_domains at import time; got "${entry.domain}"`,
+  );
+  assert(
+    entry.stockVersion === 1,
+    `${UPS_CODE} is a first release — stockVersion 1, got ${String(entry.stockVersion)}`,
+  );
+
+  // ---- 31 points, 12 core + 16 extended + 1 manual + 2 derived ------------
+
+  assert(
+    entry.points.length === 31,
+    `tag list §4 has 29 rows, all of them declared, plus the two derived codes bms-calc-v1 can ` +
+      `express — 31 points (plan §12 ruling 2's count). Got ${entry.points.length}`,
+  );
+
+  const tierCount = (tier: string): number =>
+    entry.points.filter((point) => point.meta?.tier === tier).length;
+  const derivedPoints = entry.points.filter((point) => point.kind === "derived");
+  assert(tierCount("core") === 12, `§4 marks 12 rows tier C; the entry marks ${tierCount("core")} core`);
+  assert(
+    tierCount("extended") === 16,
+    `§4 marks 16 rows tier X — the sixteenth is health_pct, tier X/D, authored MEASURED because ` +
+      "the vendor supplies it where it exists and no bms-calc-v1 formula reconstructs it (the " +
+      `same ruling kwh_today took on the feeder). The entry marks ${tierCount("extended")} extended`,
+  );
+  assert(
+    tierCount("manual") === 1,
+    `§4's one M row is impedance_test_result; the entry marks ${tierCount("manual")} manual`,
+  );
+  assert(
+    derivedPoints.length === 2,
+    `§4's five derived codes reduce to one bms-calc-v1 can express (load_headroom_pct), plus ` +
+      `cell_voltage_spread_v which plan §12 ruling 2 promoted; the entry authors ` +
+      `${derivedPoints.length}: ${derivedPoints.map((point) => point.pointKey).join(", ")}`,
+  );
+
+  entry.points.forEach((point, index) => {
+    assert(
+      point.sortOrder === index,
+      `${UPS_CODE} points must be in the tag list's own order — ${point.pointKey} has ` +
+        `sortOrder ${point.sortOrder} at index ${index}`,
+    );
+  });
+
+  const declaredKeys = entry.points.map((point) => point.pointKey);
+  assert(
+    declaredKeys.join(",") === UPS_POINT_KEYS.join(","),
+    `${UPS_CODE} declares the wrong keys or the wrong order. §4's table INTERLEAVES the tiers, so ` +
+      `plan §5.3's core-then-extended grouping is not the order. Expected §4's table order:\n` +
+      `  ${UPS_POINT_KEYS.join(", ")}\nGot:\n  ${declaredKeys.join(", ")}`,
+  );
+
+  const keySet = new Set(declaredKeys);
+  assert(keySet.size === 31, `${UPS_CODE}: no point key may repeat`);
+
+  for (const code of DEFERRED_DERIVED_CODES[UPS_CODE]) {
+    assert(
+      !keySet.has(code),
+      `${UPS_CODE} declares "${code}", one of §4's deferred derived codes. ` +
+        `${deferralReason(UPS_CODE)}`,
+    );
+  }
+
+  // `load_pct` is on the feeder's, the transformer's and the DG's deferral
+  // lists and is a MEASURED CORE point here — RFC 1628 reports
+  // upsOutputPercentLoad directly, so this class needs no rating attribute.
+  // That asymmetry is exactly why DEFERRED_DERIVED_CODES is a per-entry Record.
+  const loadPct = entry.points.find((point) => point.pointKey === "load_pct");
+  assert(
+    loadPct?.kind === "measured" && loadPct.required === true,
+    `${UPS_CODE} must declare load_pct as a required MEASURED point — a UPS reports it directly ` +
+      "(RFC 1628 upsOutputPercentLoad), unlike a feeder, a transformer or a DG set, where the " +
+      `same code needs the rating attribute and is deferred. Got kind="${String(loadPct?.kind)}", ` +
+      `required=${String(loadPct?.required)}`,
+  );
+
+  // ---- the two authored formulas, exactly as written ----------------------
+
+  const formulaOf = (pointKey: string): string | undefined =>
+    entry.points.find((point) => point.pointKey === pointKey)?.formula ?? undefined;
+  for (const [pointKey, formula] of [
+    ["load_headroom_pct", "100 - {load_pct}"],
+    ["cell_voltage_spread_v", "{cell_voltage_max_v} - {cell_voltage_min_v}"],
+  ] as const) {
+    assert(
+      formulaOf(pointKey) === formula,
+      `${pointKey}'s formula must be exactly "${formula}" — got "${String(formulaOf(pointKey))}". A ` +
+        '"simplification" of a shipped formula is a silent behaviour change on every organization ' +
+        "that imported it, so it is asserted literally.",
+    );
+  }
+  for (const point of derivedPoints) {
+    assert(
+      point.maxInputAgeSeconds === null,
+      `${point.pointKey} must take the default input age (null), got ` +
+        `${String(point.maxInputAgeSeconds)} — both §4 formulas read points the UPS itself ` +
+        "publishes on one poll",
+    );
+    assert(
+      point.meta === undefined,
+      `${point.pointKey} must carry no meta.tier — the C/X/M column says what the plant has ` +
+        "FITTED, and a computed point is fitted by nobody",
+    );
+  }
+
+  // ---- the one manual row -------------------------------------------------
+
+  const manualKeys = entry.points
+    .filter((point) => point.meta?.tier === "manual")
+    .map((point) => point.pointKey);
+  assert(
+    manualKeys.join(",") === "impedance_test_result",
+    "§4's one M row is impedance_test_result — a battery impedance or conductance survey reaches " +
+      `the platform through F1.8 / F1.9, never through a data key. Got: ${manualKeys.join(", ") || "(none)"}`,
+  );
+
+  // ---- 12 alarms, every one a philosophy row ------------------------------
+
+  const alarms = alarmsOf(entry);
+  assert(
+    alarms.length === 12,
+    `§4's nine alarm bullets become 12 rows: "battery replace / self-test failed" splits into two ` +
+      `and "rectifier / inverter / fan fault" into three. Plan §5.3's header says 11 and its own ` +
+      `table lists 12 — the header missed the battery split. The entry carries ${alarms.length}`,
+  );
+  assert(
+    alarms.map((alarm) => alarm.code).join(",") === UPS_ALARM_CODES.join(","),
+    `${UPS_CODE} alarm codes must be §4's, in order:\n  ${UPS_ALARM_CODES.join(", ")}\nGot:\n` +
+      `  ${alarms.map((alarm) => alarm.code).join(", ")}`,
+  );
+
+  const bindingOf = (code: string): string | undefined =>
+    alarms.find((alarm) => alarm.code === code)?.pointKey;
+  assert(
+    bindingOf("overload") === "load_pct",
+    `the overload alarm must bind load_pct directly; got ${String(bindingOf("overload"))}. This is ` +
+      "the one class where it can: a UPS reports its own percentage load, so unlike the feeder " +
+      "(which binds current_a) and the DG (gen_kw) this entry needs no rating attribute.",
+  );
+  assert(
+    bindingOf("cell_voltage_spread_high") === "cell_voltage_spread_v",
+    `the cell_voltage_spread_high alarm must bind cell_voltage_spread_v; got ` +
+      `${String(bindingOf("cell_voltage_spread_high"))}. §4's prose derived list names NO spread ` +
+      "code — this is the one point key in the row the tag list did not name, promoted by the " +
+      "owner at the plan gate (plan §12 ruling 2) precisely so the weak-block alarm binds a " +
+      "parameter of its own. An alarm whose parameter is not a point is an alarm nobody can " +
+      "rationalize. Asked rather than assumed, because a point key is seeded, foreign-keyed by " +
+      "0058 and permanent.",
+  );
+  assert(
+    bindingOf("battery_replace") === "battery_replace_flag" &&
+      bindingOf("battery_self_test_failed") === "battery_last_test",
+    "§4's one battery-replace bullet becomes two rows because it names two declared points with " +
+      "two different responses: battery_replace_flag (order a battery) and battery_last_test " +
+      `(investigate the test). Got ${String(bindingOf("battery_replace"))} and ` +
+      `${String(bindingOf("battery_self_test_failed"))}`,
+  );
+
+  // ---- NO KPIs, and the key itself must be absent -------------------------
+
+  assert(
+    !Object.hasOwn(entry.content ?? {}, "kpis"),
+    `${UPS_CODE} carries a content.kpis key and must not. The spread was planned as a ` +
+      "battery_cell_spread_v KPI; plan §12 ruling 2 made it a POINT, and a KPI restating a " +
+      "declared point is redundant. The key is asserted ABSENT rather than empty because an " +
+      "empty array passes a length check while still shipping a promise of content — the same " +
+      "deferral guard the feeder carries.",
+  );
+  assert(kpisOf(entry).length === 0, `${UPS_CODE} must carry no KPI (plan §5.3)`);
+
+  // ---- 4 maintenance plans, two of them safetyCritical --------------------
+
+  const plans = maintenanceOf(entry);
+  assert(plans.length === 4, `plan §5.3 authors 4 maintenance plans; the entry carries ${plans.length}`);
+
+  const safetyCritical = plans.filter((plan) => plan.safetyCritical === true);
+  assert(
+    safetyCritical.length === 2,
+    `exactly two §4 plans are safetyCritical — the battery autonomy (discharge) test and the ` +
+      `bypass transfer test, the two tasks that put the load at risk while they run. Got ` +
+      `${safetyCritical.length}: ${safetyCritical.map((plan) => plan.title).join("; ") || "(none)"}`,
+  );
+  for (const needle of ["discharge", "Bypass transfer"]) {
+    assert(
+      safetyCritical.some((plan) => typeof plan.title === "string" && plan.title.includes(needle)),
+      `no safetyCritical §4 plan mentions "${needle}". During the discharge test the load is on ` +
+        "battery for the duration; during the bypass transfer test it is unprotected. Both are " +
+        "planned work that removes the protection the asset exists to provide, which is what " +
+        `safetyCritical means here. Got: ${safetyCritical.map((plan) => plan.title).join("; ")}`,
+    );
+  }
+
+  for (const plan of plans) {
+    assert(
+      typeof plan.intervalDays === "number" && plan.intervalDays >= 1 && plan.intervalDays <= 730,
+      `${UPS_CODE} maintenance "${plan.title}" has intervalDays ${String(plan.intervalDays)} — ` +
+        "templateMaintenancePlanSchema caps it at 730, so a 3- or 5-year task cannot be authored " +
+        "here at all and must not be rounded into range",
+    );
+  }
+
+  // ---- provenance ---------------------------------------------------------
+
+  const description = entry.description ?? "";
+  for (const needle of ["electrical-derived-taglist-v1.md", "§4", "PROVISIONAL"]) {
+    assert(
+      description.includes(needle),
+      `${UPS_CODE}.description must contain "${needle}" — the stamp plus the citation is the ` +
+        "provenance (ADR 0052 decision 6), the section is what makes the citation checkable, and " +
+        "PROVISIONAL is plan §12 ruling 1: this content is derived from published practice and is " +
+        `not client-confirmed. Got: "${description}"`,
+    );
+  }
+}
+
 /**
  * Every per-class block. Called by `stock-catalog.test.ts` beside
  * `runStockAssetTemplateCatalogTests` — one wrapper, two runners.
@@ -653,4 +955,5 @@ function checkDgSet(): void {
 export function runElectricalClassEntryTests(): void {
   checkTransformer();
   checkDgSet();
+  checkUps();
 }
