@@ -153,9 +153,11 @@ tables would need a NULL escape.
    `assertAssetDomain`, the alarm vocabularies, and the content reference check
    — and nothing the catalog says can bypass a rule the form enforces. The
    content comes from the catalog module and from nowhere else. The test that
-   holds this is the one `dashboard-templates-stock.service` already carries:
-   mutate a peer organization's row of the same `code`, import, and assert the
-   result is the catalog's.
+   holds this: mutate a peer organization's row of the same `code`, import,
+   and assert the result is the catalog's. `F2.13` wrote it for this catalog
+   (`asset-templates-stock.integration.spec.ts`); the dashboard stock service
+   never had one — an earlier draft of this sentence said it "already
+   carries" the test, which was false, and `F4.77` owes it there.
 
 6. **The stamp is the provenance. ADR 0040 decision 6 is discharged by it.**
    `stock_version = 1` on a water row *is* "derived-v1", with the entry's
@@ -198,7 +200,12 @@ tables would need a NULL escape.
 
 None. No npm package. One forward-only migration (`0061`), two nullable
 columns and a `CHECK` on a table with live rows — `migration-reviewer` reviews
-it, and it needs no `SET ROLE` bracket because it drops no policy.
+it. It takes the `SET ROLE bms_owner` / `RESET ROLE` bracket: `0060`'s header
+records that the repository default is to take it always, so the `ALTER` and
+the `CHECK` land owned by `bms_owner`, and the journal insert that follows the
+`RESET` runs as `bms_app`. An earlier draft of this sentence said the bracket
+was not needed "because it drops no policy" — permissive, not prohibitive, and
+the default branch applies. Do not "fix" `0061` by removing it.
 
 ## Consequences
 
