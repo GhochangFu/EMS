@@ -459,7 +459,19 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       );
     }
 
-    /** Array → the domain `point-keys-seed.ts` files it under. */
+    /**
+     * Array → the domain `point-keys-seed.ts` files it under.
+     *
+     * **An array missing from this table escapes every check below, silently.**
+     * Both the pin and the clash test iterate `Object.entries(ARRAY_DOMAIN)`,
+     * never `arraysByName`, so a seventh array added to `constants.ts` and not
+     * added here is neither pinned to its `keysForDomain` call nor compared
+     * against the other six for a domain clash. `F3.41` added
+     * `METERED_PUMPING_POINT_KEYS` and this entry in the same commit for that
+     * reason — the entry is what makes the array's `keysForDomain` call
+     * mandatory rather than optional, which is how the array reaches
+     * `GLOBAL_CATALOG` at all.
+     */
     const ARRAY_DOMAIN: Record<string, string> = {
       ELECTRICAL_POINT_KEYS: "electrical",
       HVAC_POINT_KEYS: "hvac",
@@ -467,6 +479,7 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       CONTROL_ROOM_IT_POINT_KEYS: "it",
       CONTROL_ROOM_ENVIRONMENT_POINT_KEYS: "environment",
       CONTROL_ROOM_ELECTRICAL_POINT_KEYS: "electrical",
+      METERED_PUMPING_POINT_KEYS: "electrical",
     };
 
     /**
@@ -526,6 +539,136 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
     });
 
     /**
+     * **A code with no `UNIT_BY_KEY` entry is seeded with a NULL unit, and the
+     * seed that writes it runs LAST.**
+     *
+     * `keysForDomain` writes `UNIT_BY_KEY[code] ?? null`, and
+     * `seedPointKeyCatalog`'s upsert is a plain
+     * `ON CONFLICT (code) DO UPDATE SET … unit = EXCLUDED.unit`. Its sibling in
+     * `phe-pilot-seed.ts` is deliberately
+     * `unit = COALESCE(bms.point_keys.unit, EXCLUDED.unit)` — an admin's fill
+     * must survive a re-seed — but `seedPointKeyCatalog` runs **after** it in
+     * `seed.ts`, so the plain assignment wins. A code that reaches
+     * `GLOBAL_CATALOG` without a unit therefore overwrites a real, correct unit
+     * with NULL on **every `compose up`**, and nothing reports it.
+     *
+     * `F3.41` is why this exists: it added twelve codes that carry real units
+     * (`kWh`, `kVA`, `A`, `V`) and two that are genuinely unitless. The check
+     * passed for all 34 codes before that commit, so it lands green and can
+     * only ever fail on the mistake it names.
+     *
+     * Parsed rather than imported, for the same reason `arraysByName` is: the
+     * top-level `tests/` project has no workspace dependency on `@bms/db`.
+     */
+    it("every catalogued point key has a UNIT_BY_KEY entry", () => {
+      const seed = tsOnly(read(SEED_REL));
+      const table = /const UNIT_BY_KEY: Record<string, string> = \{([\s\S]*?)\n\};/.exec(seed);
+      expect(table, `no UNIT_BY_KEY table parsed out of ${SEED_REL}`).not.toBeNull();
+      const units = new Set(
+        [...table![1]!.matchAll(/^\s*([a-z0-9_]+):/gm)].map((m) => m[1]!),
+      );
+      // Anti-vacuity for this case alone, at the actual rather than at the
+      // pre-`F3.41` count of 34 — this file argues at length for moving a bound
+      // to its actual, and leaving one slack in the same commit would be the
+      // inconsistency a later reader copies.
+      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(46);
+
+      const missing: string[] = [];
+      for (const arrayName of Object.keys(ARRAY_DOMAIN)) {
+        for (const code of arraysByName.get(arrayName) ?? []) {
+          if (!units.has(code)) {
+            missing.push(`${code} (${arrayName})`);
+          }
+        }
+      }
+      expect(
+        [...new Set(missing)].sort(),
+        `${SEED_REL} catalogues a point key with no UNIT_BY_KEY entry, so keysForDomain ` +
+          "seeds it with a NULL unit. seedPointKeyCatalog runs last in seed.ts and its " +
+          "upsert assigns `unit = EXCLUDED.unit` outright, so on every `compose up` this " +
+          "reverts whatever unit phe-pilot-seed.ts or an administrator put there. Give " +
+          'the code its unit — or the empty string, the way `pf` and `breaker_main` ' +
+          "already spell an unset one.",
+      ).toEqual([]);
+    });
+
+    /**
+     * **Neither seed that writes `bms.point_keys` may overwrite a unit.**
+     *
+     * `bms.point_keys` is fleet-wide and unpoliced since `0057`, and ADR 0051
+     * Amendment 1 names a global administrator's correction as the remedy for a
+     * code the platform mislabels — `PATCH /api/v1/admin/point-keys/:id` carries
+     * `unit`. Both seeds re-run on every `compose up`, so an outright
+     * `unit = EXCLUDED.unit` silently undoes that correction at the next boot.
+     *
+     * `phe-pilot-seed.ts` had always got this right and `point-keys-seed.ts` had
+     * always got it wrong; the disagreement was invisible because the codes
+     * barely overlapped. `F3.41` made twelve of them overlap, and
+     * `seedPointKeyCatalog` runs LAST, so the wrong one would have won. Found by
+     * the `security-reviewer` sweep, and pinned here because nothing else can
+     * see it: both statements are strings, both are valid SQL, and the failure
+     * is a value quietly reverting between boots.
+     */
+    it("no point-key seed overwrites a unit an administrator may have set", () => {
+      let statementsSeen = 0;
+      for (const rel of [SEED_REL, PILOT_SEED_REL]) {
+        const source = tsOnly(read(rel));
+        // **Scoped to the `bms.point_keys` upsert, not the whole file.**
+        // `phe-pilot-seed.ts` also upserts `bms.asset_points`, and `unit =
+        // EXCLUDED.unit` is CORRECT there — that column is the seed's own
+        // mapping, derived from the vendor catalog, and nothing else writes it.
+        // A file-wide scan would fail on that line and teach the next reader to
+        // weaken this check.
+        // **Escaped backticks are removed BEFORE the block is sliced, and that
+        // is not tidying.** `phe-pilot-seed.ts` carries an SQL comment on the
+        // line immediately after its INSERT that quotes `` \`$1\` ``, so
+        // slicing at the first backtick ended the block after 76 characters —
+        // before `ON CONFLICT`. The check found the statement, reported two
+        // statements seen, and inspected nothing in that file: change it to
+        // `unit = EXCLUDED.unit` and this stayed green. Caught by the
+        // `migration-reviewer` sweep on the commit that introduced it, which is
+        // why the reaching-ON-CONFLICT assertion below now exists as well.
+        const unescaped = source.replace(/\\`/g, "'");
+        for (const start of [...unescaped.matchAll(/INSERT INTO bms\.point_keys\b/g)]) {
+          statementsSeen += 1;
+          // To the end of the enclosing template literal — every one of these
+          // statements is written as a backtick string.
+          const rest = unescaped.slice(start.index!);
+          const end = rest.indexOf("`");
+          const block = rest.slice(0, end >= 0 ? end : rest.length);
+          // The second anti-vacuity control, and the one that would have caught
+          // the escaped-backtick bug: a block that does not reach its own
+          // `ON CONFLICT` cannot contain the assignment being checked, so a
+          // pass would mean nothing.
+          expect(
+            block.includes("ON CONFLICT"),
+            `${rel}: the sliced bms.point_keys statement stops before its ON CONFLICT ` +
+              `clause (${block.length} chars), so the check below inspects nothing. Fix ` +
+              "the slice, do not delete this assertion.",
+          ).toBe(true);
+          const overwriting = [...block.matchAll(/\bunit\s*=\s*([^,\n]+)/g)]
+            .map((m) => m[1]!.trim())
+            .filter((rhs) => rhs.startsWith("EXCLUDED.unit"));
+          expect(
+            overwriting,
+            `${rel} assigns unit = EXCLUDED.unit outright on bms.point_keys. Both seeds ` +
+              "re-run on every `compose up`, and that table is fleet-wide and unpoliced " +
+              "since 0057, so this reverts a global administrator's PATCH at the next " +
+              "boot — the correction ADR 0051 Amendment 1 names as the remedy for a " +
+              "mislabelled code. Use COALESCE(bms.point_keys.unit, EXCLUDED.unit), as " +
+              "both seeds now do.",
+          ).toEqual([]);
+        }
+      }
+      // Anti-vacuity: two upserts exist today, one per seed. A rename that made
+      // the scan find none would otherwise pass for free.
+      expect(
+        statementsSeen,
+        `no INSERT INTO bms.point_keys found in ${SEED_REL} or ${PILOT_SEED_REL} — the scan is blind`,
+      ).toBeGreaterThanOrEqual(2);
+    });
+
+    /**
      * Anti-vacuity. Every assertion above is a `false`/`[]` expectation on a
      * scan, and a scan that finds nothing passes for free. If the constants are
      * renamed away or the migration is emptied, this is what fails.
@@ -534,9 +677,14 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       expect(
         arraysByName.size,
         `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`,
-      ).toBeGreaterThanOrEqual(6);
+      ).toBeGreaterThanOrEqual(7);
       const codes = new Set([...arraysByName.values()].flat());
-      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(30);
+      // 46 is the actual after `F3.41` added `METERED_PUMPING_POINT_KEYS`'s 12
+      // codes to the 34 that were here. Moved to the actual rather than left at
+      // 30, where it was slack by four and would have stayed green with the new
+      // array parsed as nothing at all — which is the exact failure this whole
+      // `describe` block exists to make impossible.
+      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(46);
       expect(
         sql.split(";").filter((s) => s.trim().length > 0).length,
         "migration 0057 holds almost no statements",

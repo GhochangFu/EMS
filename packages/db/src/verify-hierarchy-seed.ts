@@ -126,6 +126,9 @@ export async function verifyHierarchySeed(
       phe_points: string;
       orphan_assets: string;
       loc_mismatch: string;
+      phe_elec_members: string;
+      phe_elec_roled: string;
+      phe_env_roled: string;
     }>(`
       SELECT
         (SELECT COUNT(*)::text FROM bms.locations l
@@ -145,7 +148,34 @@ export async function verifyHierarchySeed(
         (SELECT COUNT(*)::text FROM bms.assets WHERE location_id IS NULL) AS orphan_assets,
         (SELECT COUNT(*)::text FROM bms.assets a
           INNER JOIN bms.rtus r ON r.id = a.rtu_id
-          WHERE a.location_id IS DISTINCT FROM r.location_id) AS loc_mismatch
+          WHERE a.location_id IS DISTINCT FROM r.location_id) AS loc_mismatch,
+        -- F3.41. THE THREE COUNTS BELOW ARE WHAT PROVE THE SEED ORDER, and they
+        -- are the only gate that can. Until this row, PHEWB's seedAssetGroups
+        -- pass ran BEFORE seedPheCatalog created the assets it derives from, so
+        -- on a fresh database it matched nothing and PHE WB got no group, no
+        -- membership and no role. That was invisible on a developer machine —
+        -- which has been re-seeded many times and therefore holds the rows
+        -- already — and invisible in CI, which seeds once and asserted none of
+        -- this.
+        --
+        -- NO BACKTICK MAY APPEAR IN THIS COMMENT. The whole SELECT is a
+        -- JavaScript template literal, so a backtick here closes it and the
+        -- file fails to transform with "Expected ) but found ..." pointing at a
+        -- line that looks like ordinary prose.
+        (SELECT COUNT(*)::text FROM bms.asset_group_members agm
+          INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+          INNER JOIN bms.assets a ON a.id = agm.asset_id
+          WHERE ag.code = 'electrical' AND a.code LIKE 'PHE-%') AS phe_elec_members,
+        (SELECT COUNT(*)::text FROM bms.asset_group_members agm
+          INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+          INNER JOIN bms.assets a ON a.id = agm.asset_id
+          WHERE ag.code = 'electrical' AND a.code LIKE 'PHE-%'
+            AND agm.role IS NOT NULL) AS phe_elec_roled,
+        (SELECT COUNT(*)::text FROM bms.asset_group_members agm
+          INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+          INNER JOIN bms.assets a ON a.id = agm.asset_id
+          WHERE ag.code = 'environment' AND a.code LIKE 'PHE-%'
+            AND agm.role IS NOT NULL) AS phe_env_roled
     `);
     const row = res.rows[0];
     expect("PHEWB locations", row?.phe_locs, 6);
@@ -159,6 +189,18 @@ export async function verifyHierarchySeed(
     expect("PHE asset_points", row?.phe_points, 252);
     expect("PHEWB assets without location_id", row?.orphan_assets, 0);
     expect("PHEWB asset/RTU location mismatch", row?.loc_mismatch, 0);
+    // `F3.41`. 36 = 6 stations × (2 MFM + 2 PUMP-M + 2 PUMP-C). Fixed seed
+    // cardinalities read off `phe-catalog.json`, which is a frozen repository
+    // file — NOT lifetime counters that drift with use.
+    expect("PHE electrical group members", row?.phe_elec_members, 36);
+    // Every one of them carries a role after the owner's 2026-09-02 ruling:
+    // 12 `meter` and 24 `pump`. A NULL here means `demoRoleForAsset` stopped
+    // matching, or the group pass ran before the assets existed again.
+    expect("PHE electrical members carrying a role", row?.phe_elec_roled, 36);
+    // And the other half of the ruling, which nothing else would catch: the 12
+    // `PHE-AIRSP1051M-*` gateways are `environment` domain and must stay
+    // unroled. Without this line a branch that roled everything would pass.
+    expect("PHE environment members carrying a role", row?.phe_env_roled, 0);
   });
 
   if (errors.length > 0) {

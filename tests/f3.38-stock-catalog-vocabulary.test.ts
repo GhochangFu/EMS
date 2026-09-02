@@ -45,7 +45,28 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  * `packages/db/src/point-keys-seed.ts` builds `bms.point_keys` from. Checking
  * one and not the other leaves half the binding free to drift.
  */
-const STOCK_REL = "apps/api/src/admin/dashboard-templates/stock-catalog.ts";
+/**
+ * **EVERY file the stock catalog is spread across, not just the first.**
+ *
+ * The catalog was one file until it reached AGENTS.md §4.5's 1000-line cap and
+ * split; `stock-catalog.ts` now spreads `ELECTRICAL_STOCK_TEMPLATES` from
+ * `stock-catalog-electrical.ts`. This scan reads the files as TEXT, so it
+ * cannot follow that spread — a half left out of this list has its `pointKey`
+ * and `assetRoleCode` values checked against no vocabulary at all, and every
+ * assertion below stays green while checking less.
+ *
+ * **A THIRD FILE BELONGS HERE THE DAY THE CATALOG GAINS ONE**, and the
+ * anti-vacuity lower bounds move with it. This is the same instruction
+ * `ROLE_MIGRATION_RELS` below carries for its own second file, and for the same
+ * reason.
+ */
+const STOCK_RELS = [
+  "apps/api/src/admin/dashboard-templates/stock-catalog.ts",
+  "apps/api/src/admin/dashboard-templates/stock-catalog-electrical.ts",
+] as const;
+
+/** The files as one list, for an assertion message. */
+const STOCK_LABEL = STOCK_RELS.join(" + ");
 const CONSTANTS_REL = "packages/shared/src/constants.ts";
 /**
  * EVERY migration that seeds `bms.asset_roles`, in application order, not just
@@ -193,12 +214,22 @@ const KEYS_AWAITING_A_VOCABULARY: readonly string[] = [
 ];
 
 describe("F3.38 the stock template catalog binds names that exist", () => {
-  const stock = read(STOCK_REL);
+  const stockSources = STOCK_RELS.map((rel) => read(rel));
+  /** The catalog as one blob, for the two whole-text unit checks at the end. */
+  const stock = stockSources.join("\n");
   const vocabulary = pointKeyVocabulary(read(CONSTANTS_REL));
   const roles = roleVocabulary(
     ROLE_MIGRATION_RELS.map((rel) => sqlOnly(read(rel))).join("\n"),
   );
-  const { pointKeys, roleCodes } = scanCatalog(stock);
+  // **Scanned per file, not over the joined blob.** `scanCatalog` tracks the
+  // current `section:` line by line and carries it forward, so concatenating
+  // would attribute the second file's opening lines to whatever section the
+  // first file happened to end on. That would not fail anything — it would
+  // just name the wrong template in a failure message, which is the one thing
+  // this section tagging exists to get right.
+  const scans = stockSources.map((source) => scanCatalog(source));
+  const pointKeys = scans.flatMap((scan) => scan.pointKeys);
+  const roleCodes = scans.flatMap((scan) => scan.roleCodes);
 
   /**
    * Anti-vacuity, and it is not decoration.
@@ -208,15 +239,29 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
    * of failure this file was written to end. These four numbers are lower
    * bounds read off the catalog as it stands, so they survive an author adding
    * a template and fail loudly if the scan goes blind.
+   *
+   * **`F3.41` moved all four to the new actuals rather than leaving the slack.**
+   * The catalog gained `electrical-metered-pumping` (8 bindings) and split
+   * across two files, and `constants.ts` gained
+   * `METERED_PUMPING_POINT_KEYS`'s 12 codes. Left at 12/12/4/30 every one of
+   * them would have stayed green with the SECOND catalog file parsed as
+   * nothing and the new array parsed as nothing — which is precisely the
+   * "scan goes blind" failure they exist to catch, arriving in the same commit
+   * that made it possible.
    */
   it("the scan actually found the catalog", () => {
-    expect(pointKeys.length, `no pointKey found in ${STOCK_REL} — the scan is blind`).toBeGreaterThanOrEqual(12);
-    expect(roleCodes.length, `no assetRoleCode found in ${STOCK_REL} — the scan is blind`).toBeGreaterThanOrEqual(12);
+    // 23 = 15 before + 8 in the new entry, over both files in `STOCK_RELS`.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(23);
+    expect(roleCodes.length, `no assetRoleCode found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(23);
+    // Five: electrical, water, stp, etp, hvac. `sustainability` holds no point
+    // binding at all and must not — the assertion at the end of this file's
+    // sibling spec is what keeps it that way.
     expect(
       new Set(pointKeys.map((entry) => entry.section)).size,
       "every pointKey was attributed to one section — the section tracker is broken",
-    ).toBeGreaterThanOrEqual(4);
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(30);
+    ).toBeGreaterThanOrEqual(5);
+    // 46 = 34 before + `METERED_PUMPING_POINT_KEYS`'s 12.
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(46);
     // 28 is 26 from `0051` plus 2 from `0060`, and both migrations are frozen,
     // so this number is stable by construction. If a LATER migration adds a
     // role code and the check below starts rejecting a legitimate
@@ -240,7 +285,7 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
 
     expect(
       [...new Set(unknown)].sort(),
-      `${STOCK_REL} binds a pointKey that exists in no *_POINT_KEYS array, so ` +
+      `${STOCK_LABEL} binds a pointKey that exists in no *_POINT_KEYS array, so ` +
         "bms.point_keys can never hold it and no asset can ever register it. The " +
         "resolver matches `${assetId}::${pointKey}` exactly: a camelCase key never " +
         "finds its snake_case row, and the widget reports `unresolved` with nothing " +
@@ -256,7 +301,7 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
 
     expect(
       [...new Set(unknown)].sort(),
-      `${STOCK_REL} binds an assetRoleCode that is not one of the ${roles.size} rows in ` +
+      `${STOCK_LABEL} binds an assetRoleCode that is not one of the ${roles.size} rows in ` +
         `${ROLE_MIGRATIONS_LABEL}. bms.asset_group_members.role carries a foreign key to ` +
         "bms.asset_roles, so no membership can ever hold this code and the widget " +
         "resolves nothing.",
@@ -294,14 +339,14 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
   it("no widget still advertises a unit its rebound key does not produce", () => {
     expect(
       stock.includes('unit: "TR"'),
-      `${STOCK_REL} still labels a widget "TR" (tons of refrigeration). The chiller ` +
+      `${STOCK_LABEL} still labels a widget "TR" (tons of refrigeration). The chiller ` +
         "widgets now bind cooling_kw, whose unit is kW.",
     ).toBe(false);
 
     const percentUnitOnKw = /pointKey:\s*"kw"[\s\S]{0,400}?unit:\s*"%"/.test(stock);
     expect(
       percentUnitOnKw,
-      `${STOCK_REL} binds kw under a "%" unit. loadPercent was rebound to kw because ` +
+      `${STOCK_LABEL} binds kw under a "%" unit. loadPercent was rebound to kw because ` +
         "no seeded electrical asset registers load_pct; the transformer tile therefore " +
         "reads kW, not a percentage.",
     ).toBe(false);

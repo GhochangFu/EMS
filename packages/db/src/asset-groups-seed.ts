@@ -47,21 +47,45 @@ export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
  * `CR-UTILITY-11KV` is "Control Room Utility 11 kV Incomer"; `CR-XFMR-100KVA`
  * is "Control Room Transformer 100 kVA"; `CR-Q1`…`CR-Q12` are breakers on the
  * board. Where a name does not decide the role, this returns `null` and the
- * membership keeps its NULL — an admin sets it through `F3.37`'s picker. Two
- * cases are deliberately left to that picker rather than guessed here:
+ * membership keeps its NULL — an admin sets it through `F3.37`'s picker.
  *
- * 1. **PHEWB's electrical assets** are two meters (`PHE-MFM-*`) and four pumps
- *    (`PHE-PUMP-*`) per site. A meter is not a train position, so which code
- *    they fill is an owner's ruling, not a reading.
+ * 1. **PHEWB's electrical assets carry a ruling rather than a reading, and
+ *    `F3.41` is where it landed.** They are two meters (`PHE-MFM-*`) and four
+ *    pumps (two mains `PHE-PUMP-M-*`, two chlorine dosing `PHE-PUMP-C-*`) per
+ *    site. A meter is not a train position, so which code they fill was never a
+ *    reading of a name the way `CR-XFMR-100KVA` is. `F3.40` added the `meter`
+ *    and `pump` codes in migration `0060`; this is the other half.
  *
- *    **`F3.40` removed half of that sentence, and deliberately did not remove
- *    the rest.** Migration `0060` added the `meter` and `pump` codes, so "there
- *    is no electrical `pump` role" is no longer true and the vocabulary now
- *    holds a name for every one of these six assets. What is still owed is the
- *    ruling itself — which asset fills which code — and that belongs to
- *    `F3.41`, the row that builds the template these roles bind. Seeding a
- *    reading here ahead of it would be the same coin toss this header refuses
- *    for HVAC below.
+ *    **THE RULING, given by the repository owner on 2026-09-02 at the
+ *    `build-operating-model.md` step 2 gate:** `PHE-MFM-*` fills `meter`, and
+ *    **both** pump shapes fill `pump`. No `dosing-pump`, and therefore no
+ *    migration — `0051` step 4 made the junction's role index deliberately NOT
+ *    UNIQUE so one role may match several members, and `F3.40`'s own closure
+ *    had already recorded the same reading of the same catalog. The two
+ *    `PHE-AIRSP1051M-*` gateways per site stay NULL: they are `environment`
+ *    domain and fit no electrical role, which is `F3.40`'s asymmetry argument —
+ *    an unused role is easy to add and a wrong one is hard to retire.
+ *
+ *    **THE CONSEQUENCE THE OWNER ACCEPTED, RECORDED BESIDE THE BRANCH THAT
+ *    CAUSES IT.** One `pump` role matches four members per site carrying two
+ *    **disjoint** point sets: `PHE-PUMP-M-*` registers only `breaker_main` and
+ *    `PHE-PUMP-C-*` only `chlorine_pump_on`. So a `breaker_main` binding
+ *    resolves on two of the four matched members and not on the other two, and
+ *    a `chlorine_pump_on` binding does the reverse.
+ *
+ *    That is a **reported** state and not a silent one — but which state it
+ *    reports depends on the widget, and `outcomeOf` in
+ *    `dashboard-templates-instantiate.service.ts` is why. It tests `truncated`
+ *    **before** `partial`, so a cap-1 `value_tile` reports `truncated`, whose
+ *    stated remedy is "the widget cannot hold them all — use another widget".
+ *    That would be false here: the widget holds them fine, and two members
+ *    simply carry no such point. A `chart` reports `partial` at 4 matched / 2
+ *    bound, which is the honest word and the honest number. This is why
+ *    `electrical-metered-pumping` puts both binaries on charts, and on two
+ *    charts rather than one — see its docblock in `stock-catalog-electrical.ts`.
+ *
+ *    This is the same call case 2 below already makes for ESKOM's `ht-panel`,
+ *    so the two readings now agree instead of one of them being a deferral.
  * 2. **`ht-panel`** matches nothing: the seeded estate steps 11 kV incomer →
  *    100 kVA transformer → 415 V bus, so it holds no HT panel. The stock
  *    electrical template's "HT Panel Load" chart therefore resolves nothing for
@@ -72,7 +96,7 @@ export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
  * `CR-HVAC-1`/`CR-HVAC-2` decide nothing between `chiller` and `ahu-fcu`, and a
  * coin toss seeded as master data is worse than a NULL an admin must fill.
  */
-function demoRoleForAsset(code: string, domain: string): string | null {
+export function demoRoleForAsset(code: string, domain: string): string | null {
   if (domain !== "electrical") {
     return null;
   }
@@ -90,6 +114,27 @@ function demoRoleForAsset(code: string, domain: string): string | null {
   }
   if (code.includes("LIGHT-AUX") || code.startsWith("PV-INV")) {
     return "utilities";
+  }
+  // `F3.41` — the owner's ruling, LAST so the diff is an addition rather than a
+  // reordering of live branches.
+  //
+  // Anchored on the `PHE-` prefix, not on a bare substring, and the position is
+  // safe in both directions rather than only one. No branch above can claim a
+  // PHE code: `"PHE-PUMP-M-000000000"` holds no `UTILITY`, no `XFMR`, no
+  // `MAIN-BUS` and no `MDB` — the `P-U-M-P-M` run does not produce one — no
+  // `LIGHT-AUX`, and starts with neither `TX-` nor `PV-INV`; `/^CR-Q\d+$/` is
+  // anchored. And no ESKOM code begins `PHE-`, so these two cannot claim one
+  // either. `asset-groups-seed.spec.ts` checks both directions per code rather
+  // than leaving this comment as the only statement of it.
+  if (code.startsWith("PHE-MFM-")) {
+    return "meter";
+  }
+  // ONE branch for both pump shapes, because the ruling gives them one code.
+  // Splitting it into `pump` and `dosing-pump` is a migration and reopens a
+  // decision `F3.40` closed — its closure states "One `pump` code and not also
+  // `dosing-pump`" and gives the reason.
+  if (code.startsWith("PHE-PUMP-")) {
+    return "pump";
   }
   return null;
 }

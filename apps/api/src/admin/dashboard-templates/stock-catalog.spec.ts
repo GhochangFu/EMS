@@ -105,11 +105,11 @@ export function runStockCatalogTests(): void {
     );
   }
 
-  // ---- exactly six entries, unique codes, the literal list itself ----------
+  // ---- exactly seven entries, unique codes, the literal list itself --------
 
   assert(
-    STOCK_DASHBOARD_TEMPLATE_CATALOG.length === 6,
-    `expected exactly six stock templates, found ${STOCK_DASHBOARD_TEMPLATE_CATALOG.length}`,
+    STOCK_DASHBOARD_TEMPLATE_CATALOG.length === 7,
+    `expected exactly seven stock templates, found ${STOCK_DASHBOARD_TEMPLATE_CATALOG.length}`,
   );
 
   const codes = STOCK_DASHBOARD_TEMPLATE_CATALOG.map((entry) => entry.code);
@@ -117,14 +117,26 @@ export function runStockCatalogTests(): void {
 
   // A LITERAL LIST, ON PURPOSE — the opposite call from `0051`'s own header.
   // `0051` refuses to retype its 26 role codes anywhere outside the
-  // migration, because a role is a ROW a later INSERT can add to. This
-  // file is the six codes' ONLY source, so this literal list is not a copy
-  // of a vocabulary this test does not own — it IS the specification, and a
-  // seventh landing here with this line unchanged is exactly the silent
+  // migration, because a role is a ROW a later INSERT can add to. The catalog
+  // files are these codes' ONLY source, so this literal list is not a copy
+  // of a vocabulary this test does not own — it IS the specification, and an
+  // eighth landing here with this line unchanged is exactly the silent
   // addition that discipline exists to catch one layer over.
+  //
+  // **`F3.41` EXTENDED IT AND DID NOT RELAX IT**, which is what its backlog row
+  // asks for in those words. `electrical-metered-pumping` is INSERTED rather
+  // than appended, because `codes.sort()` is lexicographic and `m` sorts before
+  // `o` — appending it would fail this assertion while being perfectly correct,
+  // and the temptation would then be to weaken the comparison.
+  //
+  // **Two entries now share one section**, which is ADR 0051 decision 6: the
+  // catalog is keyed by section × plant shape, so a second `electrical` entry
+  // is the feature rather than a duplicate. Nothing above or below asserts one
+  // entry per section, and nothing should.
   assert(
     codes.sort().join(",") ===
       [
+        "electrical-metered-pumping",
         "electrical-overview",
         "etp-overview",
         "hvac-overview",

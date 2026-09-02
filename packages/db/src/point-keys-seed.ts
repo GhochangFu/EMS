@@ -7,6 +7,7 @@ import {
   CONTROL_ROOM_UPS_POINT_KEYS,
   ELECTRICAL_POINT_KEYS,
   HVAC_POINT_KEYS,
+  METERED_PUMPING_POINT_KEYS,
 } from "@bms/shared";
 
 type PointKeySeed = {
@@ -51,6 +52,25 @@ const UNIT_BY_KEY: Record<string, string> = {
   smoke_state: "",
   frequency_hz: "Hz",
   kwh_today: "kWh",
+  // `F3.41` — `METERED_PUMPING_POINT_KEYS`. Every unit is read from
+  // `phe-catalog.json`'s own `UnitCode` column rather than inferred from the
+  // code's name, so the catalog row and the `asset_points` row `phe-pilot-seed`
+  // writes beside it agree. `chlorine_pump_on` is a binary and takes `""`, the
+  // way `pf` and `breaker_main` above already spell an unset unit — NOT a
+  // missing entry, which would seed NULL and overwrite the real value on every
+  // `compose up`.
+  kwh_total: "kWh",
+  kva: "kVA",
+  current_ir: "A",
+  current_iy: "A",
+  current_ib: "A",
+  voltage_vry: "V",
+  voltage_vyb: "V",
+  voltage_vbr: "V",
+  voltage_vrn: "V",
+  voltage_vyn: "V",
+  voltage_vbn: "V",
+  chlorine_pump_on: "",
 };
 
 function titleCase(code: string): string {
@@ -99,6 +119,20 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
     ),
     "electrical",
   ),
+  // `F3.41` — the real-ingest metered-pumping set, LAST and unfiltered.
+  //
+  // Last so the `.filter()` above, which subtracts `ELECTRICAL_POINT_KEYS` from
+  // the control-room array, keeps reading exactly what it read before. This
+  // array needs no such filter: its twelve codes are disjoint from all six
+  // arrays above, which `tests/f3.39-global-point-key-vocabulary.test.ts`'s
+  // clash check proves rather than this comment asserting it.
+  //
+  // Filed under `electrical` because `deviceDomain()` in `phe-pilot-seed.ts`
+  // files the MFM and both PUMP shapes that carry these codes under
+  // `electrical`. A disagreement here would give one code two domains, and
+  // after `F3.39`'s single-pass `ON CONFLICT (code) DO UPDATE` the later array
+  // would win silently — which is the drift that clash check exists for.
+  ...keysForDomain(METERED_PUMPING_POINT_KEYS, "electrical"),
 ];
 
 /**
@@ -136,6 +170,36 @@ export const STOCK_POINT_KEY_CODES: readonly string[] = GLOBAL_CATALOG.map((row)
  * `description` is deliberately not written and not overwritten. A repaired
  * orphan row from `0057` carries a NULL one and an admin may fill it in; this
  * seed re-runs on every `compose up` and must not revert that.
+ *
+ * **`unit` is `COALESCE`d for exactly the same reason, since `F3.41`.** It used
+ * to be a plain `unit = EXCLUDED.unit`, which reverted an administrator's fill
+ * on every `compose up` — and `bms.point_keys` is fleet-wide and unpoliced
+ * since `0057`, so the administrator in question is a global one and ADR 0051
+ * Amendment 1 names their correction as the remedy for a code the platform
+ * mislabels. `phe-pilot-seed.ts` had already made this call for the codes it
+ * writes, in those words: *"an admin who fills one in must not have it reverted
+ * at the next boot."* The two seeds disagreed, and `seedPointKeyCatalog` runs
+ * **last**, so the plain assignment won.
+ *
+ * `F3.41` is what made that reachable rather than theoretical: it added twelve
+ * PHE codes to `GLOBAL_CATALOG` that until then reached the table only through
+ * `phe-pilot-seed.ts`'s protective upsert, so a branch about a dashboard
+ * template would have quietly removed a protection from twelve rows. Found by
+ * the `security-reviewer` sweep.
+ *
+ * **THE COST, STATED RATHER THAN DISCOVERED LATER: this seed can no longer
+ * CORRECT a unit.** Change a value in `UNIT_BY_KEY` and existing databases keep
+ * the old one; only a fresh row takes the new. That is the same trade
+ * `phe-pilot-seed.ts` and `description` above already accept, and it is the
+ * right way round — a seed that overwrites is a seed that silently undoes
+ * operator input, and an admin can always re-`PATCH` the code through
+ * `/api/v1/admin/point-keys/:id`.
+ *
+ * `name` and `domain` stay assigned outright: neither is administrator-editable
+ * (the `PATCH` body carries `unit`, not `domain`), so nothing is reverted, and
+ * a domain that drifts from `ARRAY_DOMAIN` is a defect the clash check in
+ * `tests/f3.39-global-point-key-vocabulary.test.ts` is entitled to assume the
+ * seed has corrected.
  */
 export async function seedPointKeyCatalog(pool: pg.Pool): Promise<void> {
   for (const row of GLOBAL_CATALOG) {
@@ -146,7 +210,7 @@ export async function seedPointKeyCatalog(pool: pg.Pool): Promise<void> {
       ON CONFLICT (code) DO UPDATE SET
         name = EXCLUDED.name,
         domain = EXCLUDED.domain,
-        unit = EXCLUDED.unit
+        unit = COALESCE(bms.point_keys.unit, EXCLUDED.unit)
       `,
       [row.code, row.name, row.domain, row.unit],
     );

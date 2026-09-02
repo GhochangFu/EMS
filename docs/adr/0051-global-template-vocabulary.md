@@ -250,7 +250,18 @@ existing row by code and discarded whatever the draft declared beside it.
   `chlorine_pump_on`, `controller_power_status` and `network_strength`, all
   decision 3 orphans — so a draft declaring a unit for any of them is refused
   until a global administrator fills it in. That is the accepted cost of
-  decision 3. **It also surfaces a gap in the original record**, which promised
+  decision 3.
+
+  **Correction, 2026-09-02: three, not four.** `F3.41` put
+  `chlorine_pump_on` in `METERED_PUMPING_POINT_KEYS`, which gave it a
+  `UNIT_BY_KEY` entry of `""` — the spelling `pf` and `breaker_main` already
+  carry for a binary — so the seed now writes an empty string rather than
+  leaving NULL. A draft declaring a unit for it is therefore **refused on a
+  mismatch** instead of being refused for want of a unit, and one declaring no
+  unit is accepted. The refusal is stricter, not looser, and the reasoning of
+  this paragraph is unchanged for the remaining three. Recorded here rather
+  than left, because the count is quoted as a fact and a reader checking it
+  would otherwise find the record wrong. No decision of this amendment moves. **It also surfaces a gap in the original record**, which promised
   the orphans would be admitted *"with their domain and unit"* while migration
   `0057` wrote domain and left unit NULL. That gap is not ruled on here.
 
@@ -334,6 +345,15 @@ decision 3 an onboarding draft that declares a unit for one of them is refused
 until a global administrator fills it in. Filling those four is ordinary master-
 data work for whoever knows the instruments; it is not a code change and it is
 not owed by this record.
+
+**Correction, 2026-09-02: three, not four** — see the same correction under
+Amendment 1's Consequences. `F3.41` gave `chlorine_pump_on` a `UNIT_BY_KEY`
+entry of `""`, the spelling this paragraph itself names as normal for a
+boolean-valued point (`breaker_main`, `pf`). Nothing about the refusal rule
+moves: `onboarding-point-key-conflict.ts`'s `stated()` folds `""` to `null`, so
+a draft declaring a unit for it is still refused. The paragraph above stays
+correct for `battery_charge_pct`, `controller_power_status` and
+`network_strength`.
 
 #### 3. `0057` amends ADR 0010, ADR 0015 and ADR 0043 in part, and those records now say so
 
