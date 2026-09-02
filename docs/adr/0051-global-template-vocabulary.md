@@ -168,6 +168,14 @@ None. No new npm package in any workspace.
   reading of the plant that the owner still owes, and the metered-pumping stock
   template of decision 6 is a build.
 
+  **Both halves are now closed, 2026-09-02.** The ruling is
+  [Amendment 5](#amendment-5--the-estates-shapes-take-the-roles-0060-created-2026-09-02)
+  — `PHE-MFM-*` fills `meter`, both pump shapes fill `pump`, the gateways stay
+  unroled — and the build is `F3.41`, which shipped
+  `electrical-metered-pumping` as the catalog's seventh entry. This paragraph is
+  kept rather than rewritten, because what it predicted is exactly what
+  happened.
+
 - **`F3.38` is unaffected and should merge on its own.** It repairs the spelling
   and seeds the ESKOM roles; this ADR stops the class returning. Neither waits
   for the other.
@@ -587,3 +595,105 @@ Only a global administrator can undo it.
 
 - **A tenant that needs a code changed still asks.** The answer is decision 5's
   global-admin write path, which is unchanged and still unbuilt.
+
+## Amendment 5 — the estate's shapes take the roles 0060 created (2026-09-02)
+
+### Status
+
+Accepted — 2026-09-02, by the repository owner, at the
+`build-operating-model.md` step 2 gate, and again on the same day when the
+question of recording it was put back with three alternatives and a
+recommendation. This amendment is that recommendation.
+
+**It records a ruling that had already shipped.** `F3.41` merged as PR #271
+(squash `6248448`) carrying the ruling in `packages/db/src/asset-groups-seed.ts`,
+in `docs/plans/f3.41-metered-pumping-stock-template.md`, and in the
+`docs/BACKLOG.md` closure row. The gap this amendment closes is that the ADR
+itself still asked the question: its own *Consequences* said *"which role each
+fills is a reading of the plant that the owner still owes"*, so a reader
+checking the record for the answer found the question instead. Amendments 1–4
+all record rulings from this same gate; leaving this one out would have been the
+first to break that pattern. Raised by the `F3.41` migration review, which named
+the gap and explicitly declined to settle it.
+
+### Context
+
+Decision 5 added `meter` and `pump` to `bms.asset_roles` in migration `0060`
+(`F3.40`), because the 26 codes of `0051` name a substation train and do not
+name the shapes the estate actually holds. It did not say which asset fills
+which code. That is a reading of the plant, not of the schema, and this record
+named it as the owner's.
+
+**PHE WB's estate, measured from `packages/db/src/phe-catalog.json` rather than
+inferred.** 48 devices over six stations, eight per station:
+
+| device | per station | point keys it registers |
+| --- | --- | --- |
+| `PHE-MFM-*` | 2 | 16 electrical keys — `kw`, `voltage_l1_v`, `pf`, `kwh_total`, `kva`, `kvar`, `frequency_hz`, three `current_i*`, six `voltage_v*` |
+| `PHE-PUMP-M-*` | 2 | `breaker_main`, and nothing else |
+| `PHE-PUMP-C-*` | 2 | `chlorine_pump_on`, and nothing else |
+| `PHE-AIRSP1051M-*` | 2 | `battery_charge_pct`, `network_strength`, `controller_power_status` |
+
+`deviceDomain()` files the meter and both pump shapes as `electrical`, so all
+six land in the same per-location `electrical` asset group. The two gateways are
+`environment`.
+
+### Decision
+
+1. **`PHE-MFM-*` fills `meter`.**
+
+2. **Both pump shapes fill `pump`** — `PHE-PUMP-M-*` and `PHE-PUMP-C-*` alike.
+   **No `dosing-pump`, and therefore no migration.** `0051` step 4 made the
+   junction's role index deliberately NOT UNIQUE so one role may match several
+   members, which is what lets a single code carry two shapes; and `F3.40`'s
+   closure had already recorded the same reading of the same catalog, in those
+   words: *"One `pump` code and not also `dosing-pump`."*
+
+3. **The two `PHE-AIRSP1051M-*` gateways per site stay unroled.** They are
+   `environment` domain and fit no electrical role. This is `0060`'s own
+   asymmetry argument applied a second time: an unused role is easy to add and a
+   wrong one is hard to retire, because the foreign key carries no `ON DELETE`
+   by design.
+
+### Consequences
+
+- **THE CONSEQUENCE THE OWNER ACCEPTED, AND THE REASON THIS AMENDMENT IS NOT
+  MERELY A LOOKUP TABLE.** One `pump` role matches **four** members per site
+  carrying two **disjoint** point sets. A `breaker_main` binding resolves on the
+  two `PHE-PUMP-M-*` members and reports short on the two `PHE-PUMP-C-*`; a
+  `chlorine_pump_on` binding does the reverse. **Every pump binding resolves on
+  half of what it matches, by construction, on every site, forever.** That is
+  not a defect to be fixed later; it is the price of decision 2, and it was put
+  to the owner before the ruling rather than discovered after it.
+
+- **It is a reported state, and which state depends on the widget.**
+  `outcomeOf` in `dashboard-templates-instantiate.service.ts` tests `truncated`
+  **before** `partial`. A cap-1 `value_tile` therefore reports `truncated`,
+  whose stated remedy is *"the widget cannot hold them all — use another
+  widget"*, and that sentence is false here: the widget holds them fine, and two
+  of the four matched members carry no such point. A `chart` reports `partial`
+  at four matched and two bound, which is the honest word and the honest number.
+  **This is why `electrical-metered-pumping` puts both binary points on charts,
+  and on two charts rather than one** — a single chart binding both keys reports
+  four matched and four bound, where the counts read as complete and only the
+  outcome word disagrees. A later reader who moves either binding onto a tile
+  will get an amber flag that misdescribes its own cause.
+
+- **A future `dosing-pump` is a migration and reopens this decision.** It is not
+  forbidden — decision 5's write path exists precisely so a shape can be added
+  without a release — but splitting `pump` would re-key twelve live memberships
+  and change what every existing `pump` binding resolves. Whoever proposes it
+  should say what changed about the estate, not about the tidiness of the
+  vocabulary.
+
+- **This ruling closes the question `0051`'s own Consequences left open.** That
+  paragraph said the metered-pumping stock template "is a build"; `F3.41` built
+  it, and the roles it binds are the ones ruled here.
+
+- **Nothing in the schema moves.** No migration, no column, no constraint, no
+  seed row of `bms.asset_roles`. The ruling is written into
+  `demoRoleForAsset` in `packages/db/src/asset-groups-seed.ts`, and
+  `packages/db/src/verify-hierarchy-seed.ts` holds it: 36 PHE electrical
+  memberships, 36 of them carrying a role, and **0** environment memberships
+  carrying one. The third count is the half nothing else would catch — a branch
+  that roled everything would satisfy the first two.
