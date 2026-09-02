@@ -367,10 +367,290 @@ function checkTransformer(): void {
   }
 }
 
+const DG_SET_CODE = "electrical-dg-set";
+
+/**
+ * Tag list §3's **36 table rows, in the document's own order**, then the two
+ * authored derived codes — 38 keys, `sortOrder` is the index.
+ *
+ * **Transcribed from the document top to bottom, not from plan §5.2's
+ * core-then-extended grouping**, because §3's table interleaves the tiers:
+ * `dg_alarm_code` (X) is row 6, ahead of `mains_available` (C); `oil_temp_c`
+ * and `exhaust_temp_c` (X) sit between `coolant_temp_c` and `fuel_level_pct`
+ * (both C). Reading the plan's grouping as an order would reorder 11 rows and
+ * every one of them would still pass a count check.
+ */
+const DG_SET_POINT_KEYS: readonly string[] = [
+  "dg_status",
+  "dg_mode",
+  "dg_on_load",
+  "dg_alarm",
+  "dg_shutdown",
+  "dg_alarm_code",
+  "mains_available",
+  "engine_speed_rpm",
+  "oil_pressure_bar",
+  "coolant_temp_c",
+  "oil_temp_c",
+  "exhaust_temp_c",
+  "fuel_level_pct",
+  "bulk_fuel_level_pct",
+  "fuel_rate_lph",
+  "fuel_totalizer_l",
+  "battery_v",
+  "charger_alternator_v",
+  "coolant_level_low",
+  "run_hours_h",
+  "start_count",
+  "failed_start_count",
+  "gen_voltage_vry",
+  "gen_voltage_vyb",
+  "gen_voltage_vbr",
+  "gen_current_ir",
+  "gen_current_iy",
+  "gen_current_ib",
+  "gen_frequency_hz",
+  "gen_kw",
+  "gen_kva",
+  "gen_pf",
+  "gen_kwh_total",
+  "service_due_h",
+  "emergency_stop_state",
+  "canopy_temp_c",
+  "specific_fuel_l_kwh",
+  "unplanned_run_flag",
+];
+
+/**
+ * §3's **thirteen** alarm bullets, one row each. §3 is the only section whose
+ * bullets map 1:1 onto rows: nothing splits, nothing is deferred, and the
+ * `overload` bullet survives here — unlike the transformer — because §3 embeds
+ * its own `gen_kw` metering row.
+ */
+const DG_SET_ALARM_CODES: readonly string[] = [
+  "shutdown",
+  "fail_to_start",
+  "oil_pressure_low",
+  "coolant_temp_high",
+  "overspeed",
+  "fuel_level_low",
+  "battery_voltage_low",
+  "charger_fault",
+  "overload",
+  "frequency_out_of_band",
+  "unplanned_run",
+  "service_due",
+  "emergency_stop",
+];
+
+/**
+ * `electrical-dg-set` against `docs/electrical-derived-taglist-v1.md` §3
+ * (plan §5.2). The largest entry in the row — 36 table rows — and the only one
+ * that authors two derived codes.
+ */
+function checkDgSet(): void {
+  const entry = requireStockEntry(DG_SET_CODE);
+
+  assert(
+    entry.assetType === "dg_set",
+    `${DG_SET_CODE}.assetType must be "dg_set" (plan §12 ruling 3, and the repository's ` +
+      `feeder / ro_skid / test_rig convention) — got "${entry.assetType}"`,
+  );
+  assert(
+    entry.domain === "electrical",
+    `${DG_SET_CODE}.domain must be "electrical" — assertAssetDomain checks it against ` +
+      `bms.asset_domains at import time; got "${entry.domain}"`,
+  );
+  assert(
+    entry.stockVersion === 1,
+    `${DG_SET_CODE} is a first release — stockVersion 1, got ${String(entry.stockVersion)}`,
+  );
+
+  // ---- 38 points, 21 core + 15 extended + 0 manual + 2 derived ------------
+
+  assert(
+    entry.points.length === 38,
+    `tag list §3 has 36 rows, all of them declared, plus the two derived codes bms-calc-v1 can ` +
+      `express — 38 points. Got ${entry.points.length}`,
+  );
+
+  const tierCount = (tier: string): number =>
+    entry.points.filter((point) => point.meta?.tier === tier).length;
+  const derivedPoints = entry.points.filter((point) => point.kind === "derived");
+  assert(tierCount("core") === 21, `§3 marks 21 rows tier C; the entry marks ${tierCount("core")} core`);
+  assert(
+    tierCount("extended") === 15,
+    `§3 marks 15 rows tier X; the entry marks ${tierCount("extended")} extended`,
+  );
+  assert(
+    tierCount("manual") === 0,
+    `§3 has no M column entries at all — every row is instrumented by the controller. The entry ` +
+      `marks ${tierCount("manual")} manual`,
+  );
+  assert(
+    derivedPoints.length === 2,
+    `§3's seven derived codes reduce to two bms-calc-v1 can express (specific_fuel_l_kwh, ` +
+      `unplanned_run_flag); the entry authors ${derivedPoints.length}: ` +
+      `${derivedPoints.map((point) => point.pointKey).join(", ")}`,
+  );
+
+  entry.points.forEach((point, index) => {
+    assert(
+      point.sortOrder === index,
+      `${DG_SET_CODE} points must be in the tag list's own order — ${point.pointKey} has ` +
+        `sortOrder ${point.sortOrder} at index ${index}`,
+    );
+  });
+
+  const declaredKeys = entry.points.map((point) => point.pointKey);
+  assert(
+    declaredKeys.join(",") === DG_SET_POINT_KEYS.join(","),
+    `${DG_SET_CODE} declares the wrong keys or the wrong order. §3's table INTERLEAVES the tiers, ` +
+      `so plan §5.2's core-then-extended grouping is not the order. Expected §3's table order:\n` +
+      `  ${DG_SET_POINT_KEYS.join(", ")}\nGot:\n  ${declaredKeys.join(", ")}`,
+  );
+
+  const keySet = new Set(declaredKeys);
+  assert(keySet.size === 38, `${DG_SET_CODE}: no point key may repeat`);
+
+  for (const code of DEFERRED_DERIVED_CODES[DG_SET_CODE]) {
+    assert(
+      !keySet.has(code),
+      `${DG_SET_CODE} declares "${code}", one of §3's deferred derived codes. ` +
+        `${deferralReason(DG_SET_CODE)}`,
+    );
+  }
+
+  // ---- the two authored formulas, exactly as written ----------------------
+
+  const formulaOf = (pointKey: string): string | undefined =>
+    entry.points.find((point) => point.pointKey === pointKey)?.formula ?? undefined;
+  for (const [pointKey, formula] of [
+    ["specific_fuel_l_kwh", "{fuel_rate_lph} / {gen_kw}"],
+    ["unplanned_run_flag", "{dg_status} * {mains_available}"],
+  ] as const) {
+    assert(
+      formulaOf(pointKey) === formula,
+      `${pointKey}'s formula must be exactly "${formula}" — got "${String(formulaOf(pointKey))}". A ` +
+        '"simplification" of a shipped formula is a silent behaviour change on every organization ' +
+        "that imported it, so it is asserted literally. specific_fuel_l_kwh is UNDEFINED at zero " +
+        "output (the set running unloaded): evaluate.ts returns non_finite and skips the reading, " +
+        "which is correct — a clamp or a max(…, 0.001) guard would turn no data into a plausible " +
+        "number. unplanned_run_flag is a boolean AND written as a product of two 0/1 codes, which " +
+        "is the only way this grammar has of writing one.",
+    );
+  }
+  for (const point of derivedPoints) {
+    assert(
+      point.maxInputAgeSeconds === null,
+      `${point.pointKey} must take the default input age (null), got ` +
+        `${String(point.maxInputAgeSeconds)} — both §3 formulas read points the AMF controller ` +
+        "publishes on one scan, unlike the transformer's site ambient sensor",
+    );
+    assert(
+      point.meta === undefined,
+      `${point.pointKey} must carry no meta.tier — the C/X/M column says what the plant has ` +
+        "FITTED, and a computed point is fitted by nobody",
+    );
+  }
+
+  // ---- 13 alarms, every one a philosophy row ------------------------------
+
+  const alarms = alarmsOf(entry);
+  assert(
+    alarms.length === 13,
+    `§3 carries thirteen alarm bullets and every one of them becomes a row — nothing splits and ` +
+      `nothing is deferred; the entry carries ${alarms.length}`,
+  );
+  assert(
+    alarms.map((alarm) => alarm.code).join(",") === DG_SET_ALARM_CODES.join(","),
+    `${DG_SET_CODE} alarm codes must be §3's, in order:\n  ${DG_SET_ALARM_CODES.join(", ")}\nGot:\n` +
+      `  ${alarms.map((alarm) => alarm.code).join(", ")}`,
+  );
+
+  const bindingOf = (code: string): string | undefined =>
+    alarms.find((alarm) => alarm.code === code)?.pointKey;
+  assert(
+    bindingOf("overload") === "gen_kw",
+    `the overload alarm must bind gen_kw, not load_pct; got ${String(bindingOf("overload"))}. This ` +
+      "is the same ruling the feeder took on 2026-09-02 for the same reason: load_pct = kW ÷ " +
+      "rating, the rating is an asset attribute bms-calc-v1 cannot read, and load_pct is therefore " +
+      "on §3's deferred list. Unlike the transformer, §3 does embed a metering row to bind.",
+  );
+  assert(
+    bindingOf("unplanned_run") === "unplanned_run_flag",
+    `the unplanned_run alarm must bind unplanned_run_flag; got ` +
+      `${String(bindingOf("unplanned_run"))}. This binding is WHY unplanned_run_flag is a point and ` +
+      "not a KPI: an alarm binds a pointKey, so without the derived point §3's " +
+      '"DG running with mains available" bullet has no parameter to bind to at all.',
+  );
+
+  // ---- 1 KPI --------------------------------------------------------------
+
+  const kpis = kpisOf(entry);
+  assert(kpis.length === 1, `plan §5.2 authors 1 KPI; the entry carries ${kpis.length}`);
+  assert(
+    kpis[0]?.code === "failed_start_ratio_pct",
+    `the one KPI must be failed_start_ratio_pct; got "${String(kpis[0]?.code)}"`,
+  );
+  assert(
+    !alarms.some((alarm) => alarm.pointKey === "start_count"),
+    `${DG_SET_CODE} binds an alarm to start_count. failed_start_count and start_count are both ` +
+      "LIFETIME counters, so failed_start_ratio_pct is a lifetime ratio and not a rate — which is " +
+      "exactly why it is a KPI and never an alarm. The fail_to_start alarm binds " +
+      "failed_start_count, whose rise is the event; the ratio is a trend an operator reads.",
+  );
+
+  // ---- 5 maintenance plans ------------------------------------------------
+
+  const plans = maintenanceOf(entry);
+  assert(plans.length === 5, `plan §5.2 authors 5 maintenance plans; the entry carries ${plans.length}`);
+  assert(
+    plans.filter((plan) => plan.safetyCritical === true).length === 0,
+    `no §3 plan is safetyCritical — a DG service is routine engine work, not a task that puts the ` +
+      "load at risk the way the UPS discharge and bypass transfer tests do. Got " +
+      `${plans.filter((plan) => plan.safetyCritical === true).length}`,
+  );
+
+  const engineService = plans.find((plan) => plan.category === "runtime_based");
+  assert(
+    engineService !== undefined && engineService.generationMode === "runtime",
+    `${DG_SET_CODE} must carry exactly one runtime_based plan generated in "runtime" mode — the ` +
+      "engine service, due every 250 run hours (run_hours_h) OR six months, whichever comes " +
+      "first. Got category/mode " +
+      `${String(engineService?.category)}/${String(engineService?.generationMode)}. Its intervalDays ` +
+      "is the calendar backstop templateMaintenancePlanSchema requires; a runtime plan still needs " +
+      "one, and dropping it to \"calendar\" loses the OEM interval this class is scheduled on.",
+  );
+
+  for (const plan of plans) {
+    assert(
+      typeof plan.intervalDays === "number" && plan.intervalDays >= 1 && plan.intervalDays <= 730,
+      `${DG_SET_CODE} maintenance "${plan.title}" has intervalDays ${String(plan.intervalDays)} — ` +
+        "templateMaintenancePlanSchema caps it at 730, so a 3- or 5-year task cannot be authored " +
+        "here at all and must not be rounded into range",
+    );
+  }
+
+  // ---- provenance ---------------------------------------------------------
+
+  const description = entry.description ?? "";
+  for (const needle of ["electrical-derived-taglist-v1.md", "§3", "PROVISIONAL"]) {
+    assert(
+      description.includes(needle),
+      `${DG_SET_CODE}.description must contain "${needle}" — the stamp plus the citation is the ` +
+        "provenance (ADR 0052 decision 6), the section is what makes the citation checkable, and " +
+        "PROVISIONAL is plan §12 ruling 1: this content is derived from published practice and is " +
+        `not client-confirmed. Got: "${description}"`,
+    );
+  }
+}
+
 /**
  * Every per-class block. Called by `stock-catalog.test.ts` beside
  * `runStockAssetTemplateCatalogTests` — one wrapper, two runners.
  */
 export function runElectricalClassEntryTests(): void {
   checkTransformer();
+  checkDgSet();
 }

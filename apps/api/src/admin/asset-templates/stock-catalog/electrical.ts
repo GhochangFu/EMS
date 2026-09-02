@@ -1,3 +1,4 @@
+import { ELECTRICAL_DG_SET } from "./electrical-dg-set";
 import { ELECTRICAL_FEEDER } from "./electrical-feeder";
 import { ELECTRICAL_TRANSFORMER } from "./electrical-transformer";
 import type { StockAssetTemplateEntry } from "./types";
@@ -8,10 +9,11 @@ import type { StockAssetTemplateEntry } from "./types";
  * five remaining classes push a single `electrical.ts` well past the §4.5
  * 1000-line cap (plan §4.3: ~1550-1800 projected lines). This file
  * aggregates; it authors nothing. `electrical-transformer.ts` joined the array
- * below when Task 4 authored it; the four remaining class modules
- * (`electrical-dg-set.ts`, `electrical-ups.ts`, `electrical-solar-pv.ts`,
- * `electrical-apfc.ts`) are still empty-but-typed placeholders — see each
- * module's own docblock — and join it only once Tasks 5-8 author them.
+ * below when Task 4 authored it and `electrical-dg-set.ts` when Task 5 did;
+ * the three remaining class modules (`electrical-ups.ts`,
+ * `electrical-solar-pv.ts`, `electrical-apfc.ts`) are still empty-but-typed
+ * placeholders — see each module's own docblock — and join it only once
+ * Tasks 6-8 author them.
  *
  * **SOURCE.** `docs/electrical-derived-taglist-v1.md` §§1-6 — the v1 point
  * basis for all six electrical asset classes (ADR 0051 Amendment 6).
@@ -69,12 +71,17 @@ import type { StockAssetTemplateEntry } from "./types";
  * (9 core + 16 extended + 4 manual + 1 derived), 15 alarms, 2 KPIs, 5
  * maintenance plans; §2's `dga_lab_result` and `lv_load_pct` are not declared
  * and the class cannot express an `overload` at all, each reasoned in that
- * module's docblock. `electrical-dg-set`, `electrical-ups`,
- * `electrical-solar-pv`, `electrical-apfc` — `F2.12`, §§3-6 respectively
- * (Tasks 5-8).
+ * module's docblock. `electrical-dg-set` — `F2.12` Task 5, §3: 38 points
+ * (21 core + 15 extended + 2 derived), 13 alarms, 1 KPI, 5 maintenance plans;
+ * §3 declares every one of its 36 rows, has no `M` column at all, and embeds
+ * its own `gen_*` metering — which is why its `overload` alarm binds `gen_kw`
+ * where the transformer has nothing to bind. `electrical-ups`,
+ * `electrical-solar-pv`, `electrical-apfc` — `F2.12`, §§4-6 respectively
+ * (Tasks 6-8).
  */
 export const ELECTRICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
-  // Tag-list section order — §1, §2, then §§3-6 as Tasks 5-8 land.
+  // Tag-list section order — §1, §2, §3, then §§4-6 as Tasks 6-8 land.
   ELECTRICAL_FEEDER,
   ELECTRICAL_TRANSFORMER,
+  ELECTRICAL_DG_SET,
 ];
