@@ -58,17 +58,11 @@ const stripDepGlyphs = (dep) => dep.replace(DEP_GLYPH_RE, "").replace(/\s+/g, " 
 // Constraints on STARTING an item that no `Depends` cell can express.
 // Every entry cites where in the repo the constraint is written down; if the
 // citation stops being true, delete the entry rather than leaving it to rot.
+// E5.1 carried a `kind: "client"` entry here from 2026-08-09 until 2026-09-02,
+// when the owner lifted the client block (PR #277; ADR 0040 Accepted): v1 is
+// authored from docs/e5.1-derived-taglist-v1.md and the client's answers land
+// as template v2. Its citation stopped being true, so the entry is gone.
 const GATES = [
-  {
-    ids: ["E5.1"],
-    kind: "client",
-    reason:
-      "Dependency-clear (F2.1 ✅, E1.7 ✅) but blocked on an unanswered client " +
-      "question set. Not startable.",
-    clientReason:
-      "Design is unblocked and ready to begin — held pending confirmation of the scope details raised with Ion Exchange.",
-    source: "BACKLOG.md §1b slot 8 · §2 Track B row · docs/e5.1-client-questions.md",
-  },
   {
     ids: ["F1.2", "F1.3", "F1.4", "F1.5", "F1.6", "E5.4", "E6.1"],
     kind: "adr",
