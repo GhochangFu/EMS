@@ -843,16 +843,39 @@ template content, and `F2.12`'s to author. That distinction is the one
 
 - **Two guards move, and one must not.** `tests/f3.38`'s vocabulary
   anti-vacuity bound goes from 46 to at least 185 (46 + 139), as `F3.41` moved
-  it from 30 to 46; `tests/f3.39`'s unit-coverage and clash checks hold with
-  one array and need no change; and **`KEYS_AWAITING_A_VOCABULARY` is
-  untouched** — `flow_rate`, `ph`, `cod` and `dissolved_oxygen` are in no
-  electrical table, checked by set intersection, so the `stillOutside` clock
-  keeps ticking for `E5.1`.
+  it from 30 to 46; `tests/f3.39`'s unit-coverage and clash checks ~~hold with
+  one array and need no change~~ — **corrected by `F2.11`'s closure
+  (2026-09-02): they needed the `ARRAY_DOMAIN` entry for the new array, without
+  which that file's own docblock says the array "escapes every check below,
+  silently", plus three bounds moved to their actuals (46 → 185 twice, 7 → 8)**;
+  and **`KEYS_AWAITING_A_VOCABULARY` is untouched** — `flow_rate`, `ph`, `cod`
+  and `dissolved_oxygen` are in no electrical table, checked by set
+  intersection, so the `stillOutside` clock keeps ticking for `E5.1`.
 
-- **`bms.point_keys` grows from 49 to 188 on a cold start.** The global
-  administrator's `/admin/point-keys` list grows with it. The dashboard
-  builder's point picker walks the *asset's* registered points, not the
-  vocabulary, so it does not.
+- **`bms.point_keys` grows from 49 to ~~188~~ 187 on a cold start** —
+  **corrected by `F2.11`'s closure (2026-09-02)**. The arithmetic here assumed
+  all 139 codes were new rows; `battery_charge_pct` already held one, written
+  by `phe-pilot-seed.ts` and admitted by `0057`'s orphan sweep, so 139 codes
+  add 138 rows. Its domain flips `environment` → `electrical` and its unit
+  fills `NULL` → `%` on the next seed, both by decision 3 and both accepted by
+  the owner with the tension named: the code's only real registrant is a
+  `PHE-AIRSP1051M-*` gateway that `deviceDomain()` files under `environment`,
+  so decision 3 overrides its own "filing domain follows the asset" rationale
+  for this one code. Measured on the running stack and on a scratch cold start.
+  The global administrator's `/admin/point-keys` list grows with it. The
+  dashboard builder's point picker walks the *asset's* registered points, not
+  the vocabulary, so it does not.
+
+- **Four seeded units differ from the tag list's spelling, and onboarding
+  enforces the seeded one** — recorded by `F2.11`'s migration review
+  (2026-09-02) for `F2.12` and for whoever runs the first client onboarding.
+  Decision 4 normalises `kVAR` → `kVAr`, `kVARh` → `kVArh`, and the owner ruled
+  `rpm` → `RPM` to match `fan_rpm`. `onboarding-commit.service.ts` refuses a
+  draft that declares a catalogued code with a different unit or domain, so a
+  client CSV transcribed from `docs/electrical-derived-taglist-v1.md` with
+  `rpm` or `kVAR` receives a 400 naming a global administrator, and an
+  `ambient_temp_c` declared under `hvac` is refused the same way. The seeded
+  unit is write-once (`COALESCE`), so the spellings are permanent.
 
 - **A database that never runs the seed does not receive them.** Same as
   `F3.41`; Compose runs `db:seed` on every `up`, and `F2.11` proves the cold
