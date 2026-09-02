@@ -2,13 +2,15 @@
 
 ## Status
 
-**Proposed — drafted 2026-09-02, awaiting the owner's gate.** The shape was
-ruled the same day, at the sitting that accepted ADR 0040, ADR 0019 Amendment 2
-and ADR 0051 Amendment 6: of three options put to the owner — the `F3.36`
-shape, a per-organization seed, or NULL-organization rows — **the `F3.36`
-shape was chosen**. This document records that ruling as decisions, adds the
-consequences the ruling did not spell out, and carries the three questions
-still open at the foot. Nothing is built until they are ruled.
+**Accepted — 2026-09-02, by the repository owner, at the
+`build-operating-model.md` step 2 gate, the same day it was drafted.** The
+shape was ruled first, at the sitting that accepted ADR 0040, ADR 0019
+Amendment 2 and ADR 0051 Amendment 6: of three options put to the owner — the
+`F3.36` shape, a per-organization seed, or NULL-organization rows — **the
+`F3.36` shape was chosen**. This document records that ruling as decisions
+and adds the consequences the ruling did not spell out. Its three open
+questions were then ruled as drafted — see the foot of this document. The
+build is `F2.13`.
 
 **One decision for four rows.** `F2.12` (the electrical class templates),
 `E5.1` (water), `E5.2` (mechanical) and `E5.3` (facility) each author asset
@@ -241,22 +243,24 @@ it, and it needs no `SET ROLE` bracket because it drops no policy.
   template's `dashboards` section) and the section stock catalog's (ADR 0049,
   keyed by section × shape) — not this one's.
 
-## Open questions for the gate
+## Open questions for the gate — all three answered 2026-09-02
 
 1. **Decision 3 — the stamp as two columns with a `CHECK`, or embedded in
    `content`?** Drafted as columns, mirroring `0056`, because the stamp is
    queried (list "every organization still on stock release 1") and `content`
    is the ADR 0019 contract, which should not carry provenance beside KPIs.
-   The cost is one migration.
+   The cost is one migration. **Ruled: two columns with a `CHECK`.**
+   Migration `0061`.
 
 2. **Decision 4 — may an organization administrator import, or the global
    `admin` alone?** Drafted as `canManageTemplate` for the target
    organization (both), because an import writes into one organization only
    and is the same act as creating a draft there. ADR 0051 decision 5's
    global-`admin`-only gate was for a **global** table; this is not one.
+   **Ruled: both — the global `admin` or that organization's administrator.**
 
 3. **Decision 10 — the web import control in `F2.13`, or in the first
    content row that needs it (`F2.12`)?** Drafted in `F2.13`, so the mechanism
    row closes with all four §4.6 layers verified and `F2.12` inherits a
    button rather than building one. The alternative leaves `F2.13` closable
-   only by `curl`.
+   only by `curl`. **Ruled: in `F2.13`, with the mechanism.**
