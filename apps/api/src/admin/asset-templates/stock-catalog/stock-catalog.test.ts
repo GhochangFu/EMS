@@ -1,30 +1,24 @@
 import { describe, it } from "vitest";
 
-import { runElectricalClassEntryTests2 } from "./electrical-classes-2.spec";
-import { runElectricalClassEntryTests } from "./electrical-classes.spec";
 import { runStockAssetTemplateCatalogTests } from "./stock-catalog.spec";
 
 /**
- * Vitest entry point — assertions live in the sibling `.spec` files (ADR 0014).
+ * Vitest entry point for `stock-catalog.spec.ts` — assertions live in the
+ * `.spec` sibling (ADR 0014).
  *
- * **Three runners, one wrapper.** `F2.12` pass C moved the per-class blocks
- * into `electrical-classes.spec.ts` because `stock-catalog.spec.ts` was at 820
- * lines against the §4.5 cap, and split them again at `electrical-classes-2`
- * (Task 7) when four blocks took the first file to 959. A second or third
- * `.test.ts` would have split the catalog's Vitest surface as well as its
- * source, for no gain: these are two kinds of claim about one catalog — the
- * mechanism's, and the tag list's — and they belong under one entry point.
+ * **One wrapper per spec, by name.** `F2.12` pass C moved the per-class blocks
+ * out of `stock-catalog.spec.ts` (820 lines against the §4.5 cap) into
+ * `electrical-classes.spec.ts`, and split those again at
+ * `electrical-classes-2.spec.ts` when four blocks reached 959 lines. Tasks 4
+ * and 7 wired both runners into *this* file, which looked tidier and is what
+ * `tests/repo-invariants.test.ts` exists to refuse: it pairs `foo.spec.ts` with
+ * `foo.test.ts` **by name**, because Vitest excludes `.spec` files from
+ * coverage, so a spec reached only through another wrapper's import runs while
+ * contributing nothing to the coverage gate. Each of the three specs now has
+ * its own name-sibling.
  */
 describe("stock asset-template catalog (F2.13, ADR 0052)", () => {
   it("ships entries that parse under both contracts, and the feeder class matches its tag list", () => {
     runStockAssetTemplateCatalogTests();
-  });
-
-  it("ships each electrical class exactly as its tag-list section describes it", () => {
-    runElectricalClassEntryTests();
-  });
-
-  it("ships the solar PV and APFC classes exactly as their tag-list sections describe them", () => {
-    runElectricalClassEntryTests2();
   });
 });
