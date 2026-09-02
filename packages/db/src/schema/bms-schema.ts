@@ -431,6 +431,16 @@ export const assetTemplates = bmsSchema.table("asset_templates", {
   content: jsonb("content").notNull().default({}),
   publishedAt: timestamp("published_at", { withTimezone: true }),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
+  // F2.13 / ADR 0052, migration 0061 — mirrors dashboard-schema.ts's
+  // dashboardTemplates.stockCode/stockVersion. TWO VERSION STAMPS, TWO
+  // COLUMNS, TWO REASONS: `version` above is this row's own tenant-local
+  // lifecycle version — revising a template must not disturb the plants
+  // already running the previous one. `stockVersion` is which release of the
+  // repository catalog the row was IMPORTED from, so "a plant onboarded later
+  // receives the stock current at its import" is answerable from the row
+  // itself. Both nullable: a hand-authored template has no stock stamp.
+  stockCode: varchar("stock_code", { length: 64 }),
+  stockVersion: integer("stock_version"),
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
