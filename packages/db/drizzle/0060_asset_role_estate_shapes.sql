@@ -57,6 +57,21 @@
 -- This insert joins nothing that `pnpm db:seed` creates, so it is safe inside
 -- `db:migrate`, which always runs first. Do not add a mirror seeding path to
 -- `seed.ts`.
+-- ADR 0045 / AGENTS.md §4.4 — THIS FILE TAKES THE ROLE, and says so because
+-- nothing machine-checks which branch a migration picked.
+--
+-- The default branch applies: `bms_owner` owns `bms.asset_roles` from `0051`,
+-- and every statement below is an ordinary write the owner may make. Nothing
+-- here needs the connecting superuser — there is no cross-role
+-- `ALTER … OWNER TO` and no role-membership `GRANT`, which are the two cases
+-- `0042`–`0045` state as the exception.
+--
+-- `RESET ROLE` is the half that bites: a forgotten one leaks past `COMMIT` into
+-- the session, so drizzle's own journal `INSERT` and every later file in the
+-- same run would execute as `bms_owner`, which holds no grant on the `drizzle`
+-- schema.
+SET ROLE bms_owner;
+
 INSERT INTO bms.asset_roles (code, label, sort_order) VALUES
   ('meter', 'Meters', 170),
   ('pump',  'Pumps',  180)
@@ -87,3 +102,5 @@ BEGIN
     RAISE EXCEPTION 'migration 0060: bms.asset_roles has no active row for code ''pump''';
   END IF;
 END $$;
+
+RESET ROLE;
