@@ -162,6 +162,22 @@ export function runOptionalKeysAreOmittedTests(): void {
   const [padded] = buildAlarmPayload([row({ category: "  ", cause: "   ", skill: " " })]);
   assert(!("category" in padded), "a whitespace category is absent");
   assert(!("philosophy" in padded), "a philosophy of only whitespace is omitted entirely");
+
+  // ADR 0019 Amendment 2 — the pair-absent row itself. `isOperator("")` is
+  // false and `parseThreshold("")` is null, so both branches in
+  // buildAlarmPayload should skip, but nothing above exercises the FALSE
+  // side of the operator branch — every other case in this file leaves
+  // `row()`'s default `operator: "gt"` untouched. `in`, not `=== undefined`,
+  // for the same reason the comment atop this function gives.
+  const [pairless] = buildAlarmPayload([row({ operator: "", thresholdValue: "" })]);
+  assert(
+    !("operator" in pairless),
+    `a pair-absent row sends no operator — got ${JSON.stringify(pairless)}`,
+  );
+  assert(
+    !("thresholdValue" in pairless),
+    `…and no thresholdValue — got ${JSON.stringify(pairless)}`,
+  );
 }
 
 /** The five operators are the contract's, and each has a label. */
@@ -365,4 +381,22 @@ export function runChangeDetectionTests(): void {
   );
   assert(alarmsHaveChanged([], stored), "removing the last alarm is a change");
   assert(!alarmsHaveChanged([], undefined), "no rows and no stored section is no change");
+
+  // ADR 0019 Amendment 2, and the reason it matters beyond the pair itself:
+  // the stock feeder entry's 11 alarms are ALL pair-absent, so this is the
+  // check that the Alarms tab does not open dirty on every stock import —
+  // seeding a pair-absent row and building it right back must be exact
+  // inverses.
+  const storedPairAbsent: TemplateAlarm[] = [
+    {
+      code: "OVERLOAD",
+      pointKey: "CHW_SUPPLY_T",
+      severity: "critical",
+      message: "Load above the feeder's rating",
+    },
+  ];
+  assert(
+    !alarmsHaveChanged(alarmRowsFrom(storedPairAbsent), storedPairAbsent),
+    "seeding a pair-absent row and sending it back must not read as a change",
+  );
 }
