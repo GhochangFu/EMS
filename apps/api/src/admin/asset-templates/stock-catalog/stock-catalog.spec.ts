@@ -38,7 +38,12 @@ import type { StockAssetTemplateEntry } from "./types";
  * severity nobody seeds fails here first.
  */
 
-function assert(condition: boolean, message: string): void {
+/**
+ * Exported for `electrical-classes.spec.ts` — `F2.12` pass C puts the
+ * per-class blocks in a sibling file (this one is at the §4.5 cap) and they
+ * assert the same way rather than growing a second vocabulary of helpers.
+ */
+export function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
@@ -104,7 +109,7 @@ const STOCK_ENTRY_CODES = [
   "electrical-solar-pv",
   "electrical-apfc",
 ] as const;
-type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
+export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
 
 /**
  * The tag list's "Derived:" codes that this row does **not** author, **per
@@ -123,7 +128,7 @@ type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
  * "32 deferred" is this per-entry sum; plan §2's ledger of 30 is the distinct
  * count. Both are right; they count different things.
  */
-const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly string[]>> = {
+export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly string[]>> = {
   // §1 — rating, contract demand, tariff band, production/KL, Σ of feeders.
   "electrical-feeder": [
     "load_pct",
@@ -185,16 +190,16 @@ const DEFERRAL_REASON =
   "reason for each one.";
 
 /** The shared reason plus the class's own list, so the failure names both. */
-const deferralReason = (code: StockEntryCode): string =>
+export const deferralReason = (code: StockEntryCode): string =>
   `${DEFERRAL_REASON} Deferred for ${code}: ${DEFERRED_DERIVED_CODES[code].join(", ")}.`;
 
-type Alarm = { code: string; pointKey: string; severity: string; category?: string } & Record<
+export type Alarm = { code: string; pointKey: string; severity: string; category?: string } & Record<
   string,
   unknown
 >;
 
 /** A `content.kpis[]` entry, as stored. `unit` is optional by design. */
-type Kpi = {
+export type Kpi = {
   code: string;
   name: string;
   pointKeys: string[];
@@ -211,7 +216,7 @@ type Kpi = {
  * *output* type, and `templateMaintenancePlanSchema`'s `.default()` lands on
  * the output side.
  */
-type MaintenancePlan = {
+export type MaintenancePlan = {
   title: string;
   category?: string;
   generationMode?: string;
@@ -219,19 +224,19 @@ type MaintenancePlan = {
 } & Record<string, unknown>;
 
 /** The alarms of an entry, as stored — `content` is a bare record on the DTO side. */
-function alarmsOf(entry: StockAssetTemplateEntry): Alarm[] {
+export function alarmsOf(entry: StockAssetTemplateEntry): Alarm[] {
   const content = (entry.content ?? {}) as { alarms?: Alarm[] };
   return content.alarms ?? [];
 }
 
 /** The KPIs of an entry, as stored. */
-function kpisOf(entry: StockAssetTemplateEntry): Kpi[] {
+export function kpisOf(entry: StockAssetTemplateEntry): Kpi[] {
   const content = (entry.content ?? {}) as { kpis?: Kpi[] };
   return content.kpis ?? [];
 }
 
 /** The maintenance plans of an entry, as stored. */
-function maintenanceOf(entry: StockAssetTemplateEntry): MaintenancePlan[] {
+export function maintenanceOf(entry: StockAssetTemplateEntry): MaintenancePlan[] {
   const content = (entry.content ?? {}) as { maintenance?: MaintenancePlan[] };
   return content.maintenance ?? [];
 }
@@ -514,6 +519,27 @@ function assertSameKeys(where: string, what: string, authored: object, listed: o
       `present only in the projection: [${onlyListed.join(", ")}]. ` +
       "Mirror the field in stockAssetTemplateDtoSchema / stockTemplatePointDtoSchema.",
   );
+}
+
+/**
+ * The shipped entry a per-class block is about — exported for
+ * `electrical-classes.spec.ts`, which holds those blocks from `F2.12` pass C
+ * on. A missing entry throws here rather than returning `undefined`, so a
+ * class module that was authored but never added to `electrical.ts`'s index
+ * fails with a message naming what the catalog does ship, instead of the block
+ * quietly returning early and asserting nothing about it.
+ */
+export function requireStockEntry(code: string): StockAssetTemplateEntry {
+  const entry = STOCK_ASSET_TEMPLATE_CATALOG.find((candidate) => candidate.code === code);
+  if (!entry) {
+    const shipped = STOCK_ASSET_TEMPLATE_CATALOG.map((candidate) => candidate.code).join(", ");
+    throw new Error(
+      `the catalog must ship "${code}" (plan §5) — found only: ${shipped || "(nothing)"}. An ` +
+        "authored class module reaches the catalog only through ELECTRICAL_STOCK_ASSET_TEMPLATES " +
+        "in electrical.ts; until it is listed there, GET /admin/asset-templates/stock cannot see it.",
+    );
+  }
+  return entry;
 }
 
 // ---------------------------------------------------------------------------

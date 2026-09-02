@@ -1,4 +1,5 @@
 import { ELECTRICAL_FEEDER } from "./electrical-feeder";
+import { ELECTRICAL_TRANSFORMER } from "./electrical-transformer";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -6,11 +7,11 @@ import type { StockAssetTemplateEntry } from "./types";
  * this row splits the pack into one module per class (Task 1), because the
  * five remaining classes push a single `electrical.ts` well past the §4.5
  * 1000-line cap (plan §4.3: ~1550-1800 projected lines). This file
- * aggregates; it authors nothing. The five remaining class modules
- * (`electrical-transformer.ts`, `electrical-dg-set.ts`, `electrical-ups.ts`,
- * `electrical-solar-pv.ts`, `electrical-apfc.ts`) ship in this pass as
- * empty-but-typed placeholders — see each module's own docblock — and join
- * the array below only once Tasks 4-8 author them.
+ * aggregates; it authors nothing. `electrical-transformer.ts` joined the array
+ * below when Task 4 authored it; the four remaining class modules
+ * (`electrical-dg-set.ts`, `electrical-ups.ts`, `electrical-solar-pv.ts`,
+ * `electrical-apfc.ts`) are still empty-but-typed placeholders — see each
+ * module's own docblock — and join it only once Tasks 5-8 author them.
  *
  * **SOURCE.** `docs/electrical-derived-taglist-v1.md` §§1-6 — the v1 point
  * basis for all six electrical asset classes (ADR 0051 Amendment 6).
@@ -64,10 +65,16 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  * **VERSION HISTORY**, per entry, each `v1` (2026-09-02), PROVISIONAL —
  * derived from published practice, not client-confirmed: `electrical-feeder`
- * — `F2.13`, §1. `electrical-transformer`, `electrical-dg-set`,
- * `electrical-ups`, `electrical-solar-pv`, `electrical-apfc` — `F2.12`, §§2-6
- * respectively (Tasks 4-8).
+ * — `F2.13`, §1. `electrical-transformer` — `F2.12` Task 4, §2: 30 points
+ * (9 core + 16 extended + 4 manual + 1 derived), 15 alarms, 2 KPIs, 5
+ * maintenance plans; §2's `dga_lab_result` and `lv_load_pct` are not declared
+ * and the class cannot express an `overload` at all, each reasoned in that
+ * module's docblock. `electrical-dg-set`, `electrical-ups`,
+ * `electrical-solar-pv`, `electrical-apfc` — `F2.12`, §§3-6 respectively
+ * (Tasks 5-8).
  */
 export const ELECTRICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
+  // Tag-list section order — §1, §2, then §§3-6 as Tasks 5-8 land.
   ELECTRICAL_FEEDER,
+  ELECTRICAL_TRANSFORMER,
 ];
