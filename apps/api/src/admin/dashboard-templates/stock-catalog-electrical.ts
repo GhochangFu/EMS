@@ -61,6 +61,19 @@ export const TILE_H = 4;
 export const BELOW_TILES_Y = TILE_H;
 export const HALF_CANVAS_W = 6;
 export const LOWER_ROW_H = 8;
+/**
+ * A third row, used by `electrical-metered-pumping` alone — derived from the
+ * two literals above rather than written as `12`, so it moves if either does.
+ *
+ * `0050`'s `dashboard_widgets_grid_bounds_check` bounds `grid_x + grid_w` and
+ * `grid_h` and puts **no ceiling on `grid_y`**, so a third row is legal. Read
+ * out of the migration rather than assumed from the other entries all fitting
+ * in two rows.
+ *
+ * Not exported: no non-electrical entry uses a third row today, and exporting
+ * an unused symbol would trip `noUnusedLocals` nowhere and simply mislead.
+ */
+const THIRD_ROW_Y = BELOW_TILES_Y + LOWER_ROW_H;
 
 export const ELECTRICAL_STOCK_TEMPLATES = [
   // -------------------------------------------------------------------------
@@ -178,6 +191,257 @@ export const ELECTRICAL_STOCK_TEMPLATES = [
           title: "Active Alarms",
           gridX: HALF_CANVAS_W,
           gridY: BELOW_TILES_Y,
+          gridW: HALF_CANVAS_W,
+          gridH: LOWER_ROW_H,
+          bindings: [],
+          sources: [{ catalogKey: "alarms.active", params: {}, sortOrder: 0 }],
+          widgetType: "table",
+          config: {},
+        },
+      ],
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // Electrical, second shape — a metered pumping station: meters and pumps,
+  // no substation train. ADR 0051 decision 6.
+  // -------------------------------------------------------------------------
+  /**
+   * `F3.41` — the catalog's first **second entry for one section**, and that is
+   * the feature rather than a duplicate.
+   *
+   * **THE PLANT SHAPE THIS SERVES.** `electrical-overview` above draws a
+   * substation train: an 11 kV incomer, a 100 kVA transformer, HT and LT panels,
+   * MCCs. PHE WB's six village pumping stations hold none of those. Each carries
+   * two multifunction meters (`PHE-MFM-*`) and four pumps — two mains
+   * (`PHE-PUMP-M-*`) and two chlorine dosing (`PHE-PUMP-C-*`). "Electrical" at a
+   * substation and "electrical" at a village pumping station are different
+   * trains, not different clients, which is ADR 0051 decision 6 in one line:
+   * *"A new shape is a catalog entry, not a per-tenant fork."*
+   *
+   * Decision 7 keeps the per-tenant import copy (`F3.36`) as the escape hatch
+   * for a genuinely unique site. It is **not** the answer to a shape that
+   * recurs — the ADR's own test is that if the same edit is made twice for the
+   * same reason, the reason is a shape and belongs here.
+   *
+   * ---
+   *
+   * **WHY BOTH BINARY PUMP POINTS ARE ON CHARTS, AND ON TWO CHARTS.**
+   *
+   * The owner's 2026-09-02 ruling gives both pump shapes the single `pump`
+   * role (`asset-groups-seed.ts` carries it and the reason). So one `pump`
+   * binding matches **four** members per site carrying two **disjoint** point
+   * sets: `PHE-PUMP-M-*` registers only `breaker_main`, `PHE-PUMP-C-*` only
+   * `chlorine_pump_on`. Every binding here therefore resolves on half of what
+   * it matches, by construction.
+   *
+   * That is a reported state, not a silent one — but **which** state gets
+   * reported depends on the widget, and `outcomeOf` in
+   * `dashboard-templates-instantiate.service.ts` is why. It tests `truncated`
+   * **before** `partial`:
+   *
+   *  - a cap-1 `value_tile` gives matched 4, candidates 2, bound 1, so `1 < 2`
+   *    fires first and the report says **`truncated`**, whose stated remedy is
+   *    *"the widget cannot hold them all — use another widget"*. That is false
+   *    here. The widget holds them fine; two members carry no such point;
+   *
+   *  - a `chart` (cap 8) gives matched 4, bound 2, so it reports **`partial`**,
+   *    and the two numbers show the size of the gap as well as its existence.
+   *
+   * **Two charts and not one** for the same reason one step further: a single
+   * chart binding both keys reports matched 4 / bound 4 / `partial`, where the
+   * counts read as complete and only the outcome word disagrees.
+   *
+   * ---
+   *
+   * **THE THREE METER TILES REPORT `truncated`, AND THAT IS CORRECT.** Two
+   * meters cannot fit a cap-1 tile, so the report says so, and the remedy it
+   * names — another widget — is exactly what `meter-current-chart` below is.
+   * `water-overview`'s `pump-house-tile` already does this against a role
+   * `0051` itself names as plural. Amber here is a correct report, not a defect
+   * to design around.
+   *
+   * ---
+   *
+   * **NO `unit` ON A BINARY, AND NONE ON THE POWER FACTOR.** `breaker_main` and
+   * `chlorine_pump_on` are on/off — the vendor's `UnitCode` is `NA`,
+   * `unitLabel()` returns null and `UNIT_BY_KEY` spells both `""` — and `pf` is
+   * dimensionless. `commonConfigFields.unit` is optional, so leaving it off is
+   * the contract's own answer rather than a workaround. A unit on a binary is
+   * precisely the silent-wrong class `tests/f3.38-stock-catalog-vocabulary.test.ts`
+   * ends its file checking for.
+   *
+   * **`widgetIconSchema` HOLDS NO PUMP ICON AND IS NOT EXTENDED.** Electrical
+   * readings take `bolt`; the dimensionless power factor takes `gauge`; the
+   * charts carry no icon at all.
+   */
+  {
+    code: "electrical-metered-pumping",
+    name: "Electrical — Metered Pumping",
+    section: "electrical",
+    description:
+      "A metered pumping station: multifunction meters and mains/dosing pumps, the shape a " +
+      "village water supply runs rather than a substation train.",
+    stockVersion: 1,
+    content: {
+      widgets: [
+        {
+          key: "alarms-tile",
+          title: "Active Alarms",
+          gridX: 0,
+          gridY: TILE_ROW_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { icon: "alert" },
+        },
+        {
+          key: "workorders-tile",
+          title: "Open Work Orders",
+          gridX: 2,
+          gridY: TILE_ROW_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "workorders.open.count", params: {}, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { icon: "clipboard" },
+        },
+        {
+          key: "health-tile",
+          title: "Health Score",
+          gridX: 4,
+          gridY: TILE_ROW_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "assets.health.score", params: {}, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { icon: "gauge" },
+        },
+        // The three meter tiles. `kw`, `voltage_l1_v` and `pf` are the three
+        // readings a pumping station is actually operated on, and all three are
+        // codes the MFM registers today — `TKW`, `APV` and `APF` in the vendor
+        // catalog. Not `kwh_total`: a lifetime energy total is a report, not a
+        // live tile.
+        {
+          key: "meter-kw-tile",
+          title: "Metered Load",
+          gridX: 6,
+          gridY: TILE_ROW_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [
+            { assetRoleCode: "meter", pointKey: "kw", pointRole: "primary", sortOrder: 0 },
+          ],
+          sources: [],
+          widgetType: "value_tile",
+          config: { icon: "bolt", unit: "kW" },
+        },
+        {
+          key: "meter-voltage-tile",
+          title: "Phase Voltage",
+          gridX: 8,
+          gridY: TILE_ROW_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [
+            {
+              assetRoleCode: "meter",
+              pointKey: "voltage_l1_v",
+              pointRole: "primary",
+              sortOrder: 0,
+            },
+          ],
+          sources: [],
+          widgetType: "value_tile",
+          config: { icon: "bolt", unit: "V" },
+        },
+        // Six tiles across the 12-column canvas fills the `x = 10` slot the
+        // other six entries leave empty. This entry's own reading, not a style
+        // change to them.
+        {
+          key: "meter-pf-tile",
+          title: "Power Factor",
+          gridX: 10,
+          gridY: TILE_ROW_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [
+            { assetRoleCode: "meter", pointKey: "pf", pointRole: "primary", sortOrder: 0 },
+          ],
+          sources: [],
+          widgetType: "value_tile",
+          config: { icon: "gauge" },
+        },
+        // The remedy `truncated` names for the three tiles above, made concrete:
+        // three series over both matched meters, so nothing is dropped. `chart`
+        // allows up to `MAX_WIDGET_POINTS` bindings, and three is well inside
+        // it.
+        {
+          key: "meter-current-chart",
+          title: "Phase Currents",
+          gridX: 0,
+          gridY: BELOW_TILES_Y,
+          gridW: HALF_CANVAS_W,
+          gridH: LOWER_ROW_H,
+          bindings: [
+            { assetRoleCode: "meter", pointKey: "current_ir", pointRole: "series", sortOrder: 0 },
+            { assetRoleCode: "meter", pointKey: "current_iy", pointRole: "series", sortOrder: 1 },
+            { assetRoleCode: "meter", pointKey: "current_ib", pointRole: "series", sortOrder: 2 },
+          ],
+          sources: [],
+          widgetType: "chart",
+          config: { series: "line", windowMinutes: 1440, footerStats: true, unit: "A" },
+        },
+        // The two `pump` charts. One binding each, and charts rather than tiles
+        // — see this entry's docblock for the `outcomeOf` ordering that decides
+        // it. Expect `partial` at 4 matched / 2 bound on both, per site.
+        {
+          key: "pump-run-chart",
+          title: "Pump Run State",
+          gridX: HALF_CANVAS_W,
+          gridY: BELOW_TILES_Y,
+          gridW: HALF_CANVAS_W,
+          gridH: LOWER_ROW_H,
+          bindings: [
+            {
+              assetRoleCode: "pump",
+              pointKey: "breaker_main",
+              pointRole: "series",
+              sortOrder: 0,
+            },
+          ],
+          sources: [],
+          widgetType: "chart",
+          config: { series: "line", windowMinutes: 1440 },
+        },
+        {
+          key: "dosing-run-chart",
+          title: "Chlorine Dosing State",
+          gridX: 0,
+          gridY: THIRD_ROW_Y,
+          gridW: HALF_CANVAS_W,
+          gridH: LOWER_ROW_H,
+          bindings: [
+            {
+              assetRoleCode: "pump",
+              pointKey: "chlorine_pump_on",
+              pointRole: "series",
+              sortOrder: 0,
+            },
+          ],
+          sources: [],
+          widgetType: "chart",
+          config: { series: "line", windowMinutes: 1440 },
+        },
+        {
+          key: "alarms-table",
+          title: "Active Alarms",
+          gridX: HALF_CANVAS_W,
+          gridY: THIRD_ROW_Y,
           gridW: HALF_CANVAS_W,
           gridH: LOWER_ROW_H,
           bindings: [],

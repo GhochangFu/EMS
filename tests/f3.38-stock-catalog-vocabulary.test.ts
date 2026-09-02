@@ -239,15 +239,29 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
    * of failure this file was written to end. These four numbers are lower
    * bounds read off the catalog as it stands, so they survive an author adding
    * a template and fail loudly if the scan goes blind.
+   *
+   * **`F3.41` moved all four to the new actuals rather than leaving the slack.**
+   * The catalog gained `electrical-metered-pumping` (8 bindings) and split
+   * across two files, and `constants.ts` gained
+   * `METERED_PUMPING_POINT_KEYS`'s 12 codes. Left at 12/12/4/30 every one of
+   * them would have stayed green with the SECOND catalog file parsed as
+   * nothing and the new array parsed as nothing — which is precisely the
+   * "scan goes blind" failure they exist to catch, arriving in the same commit
+   * that made it possible.
    */
   it("the scan actually found the catalog", () => {
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(12);
-    expect(roleCodes.length, `no assetRoleCode found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(12);
+    // 23 = 15 before + 8 in the new entry, over both files in `STOCK_RELS`.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(23);
+    expect(roleCodes.length, `no assetRoleCode found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(23);
+    // Five: electrical, water, stp, etp, hvac. `sustainability` holds no point
+    // binding at all and must not — the assertion at the end of this file's
+    // sibling spec is what keeps it that way.
     expect(
       new Set(pointKeys.map((entry) => entry.section)).size,
       "every pointKey was attributed to one section — the section tracker is broken",
-    ).toBeGreaterThanOrEqual(4);
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(30);
+    ).toBeGreaterThanOrEqual(5);
+    // 46 = 34 before + `METERED_PUMPING_POINT_KEYS`'s 12.
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(46);
     // 28 is 26 from `0051` plus 2 from `0060`, and both migrations are frozen,
     // so this number is stable by construction. If a LATER migration adds a
     // role code and the check below starts rejecting a legitimate
