@@ -921,3 +921,68 @@ template content, and `F2.12`'s to author. That distinction is the one
    `F2.12`?** Drafted as per formula: a promoted code with no formula behind it
    is exactly the decorative vocabulary fact 4 of this ADR exists to end.
    **Ruled: per formula, in `F2.12`.**
+
+---
+
+## Amendment 7 — one derived code the tag list does not name joins the vocabulary, on the owner's ruling at the F2.12 plan gate (2026-09-02)
+
+### Status
+
+**Accepted — 2026-09-02, by the repository owner, at the F2.12 plan gate
+(`docs/plans/f2.12-electrical-class-templates.md` §11 question 2 / §12 ruling
+2), recorded here on 2026-09-03 because the `F2.12` compliance review found
+that a plan ruling is not this repository's channel for a vocabulary
+addition — every prior addition is an amendment to this ADR.** The owner's
+answer was given through the plan gate's question, verbatim: *"Promote it
+(Recommended)"*. This amendment adds no decision the owner did not make; it
+moves the record to where the next reader looks for it.
+
+### Context
+
+Amendment 6 decision 8 authorized `F2.12` to promote, *in its plan*, each of
+the tag list's prose "Derived:" codes it could author a `bms-calc-v1` formula
+for. The plan found five and promoted them (`oil_rise_over_ambient_c`,
+`specific_fuel_l_kwh`, `unplanned_run_flag`, `load_headroom_pct`,
+`inverter_efficiency_pct`). It also found one alarm in
+[`docs/electrical-derived-taglist-v1.md`](../electrical-derived-taglist-v1.md)
+§4 — *"cell voltage spread high (weak block)"* — whose parameter is not a
+point: the document gives `cell_voltage_min_v` and `cell_voltage_max_v` and
+names no spread code in its Derived list. A template alarm must bind a
+declared `pointKey` (`assertContentRefsResolve`), so without a spread point
+the alarm had to bind `cell_voltage_min_v` and describe the pair in its
+message — an alarm nobody can set a limit on.
+
+### Decision
+
+1. **`cell_voltage_spread_v` joins `ELECTRICAL_CLASS_POINT_KEYS`** (the §4 UPS
+   section), unit `V`, domain `electrical`, seeded from `UNIT_BY_KEY` like the
+   other 144 — a sixth `F2.12` promotion beside the five decision 8 named.
+2. **It is authored as a derived template point on `electrical-ups`**, formula
+   `{cell_voltage_max_v} - {cell_voltage_min_v}`, `bms-calc-v1`, streaming,
+   `required: false`, no `meta.tier` (a computed point is fitted by nobody).
+   The UPS alarm `cell_voltage_spread_high` binds it. The `battery_cell_spread_v`
+   KPI the plan first drafted is dropped as redundant.
+3. **The authority is the owner's ruling, not the tag list.** That is the
+   difference from decision 8's five, and the reason this is an amendment
+   rather than a footnote: a point key is seeded, foreign-keyed by `0058` and
+   permanent, and this one enters the global vocabulary on a judgement the
+   document does not carry. The document's v2 redline candidate — *add a
+   spread code to §4's Derived list* — is recorded in the UPS module's
+   docblock, so the next tag-list revision can ratify or rename it.
+4. **The rule for the next unnamed code is the same as this one's**: an
+   owner ruling at a plan gate is sufficient to *build* it, and an amendment
+   to this ADR is owed *with* the feature PR, not after — because the
+   compliance review will, correctly, refuse to let a plan note stand in for
+   the ADR channel.
+
+### Consequences
+
+- `bms.point_keys` holds **193** rows on a cold start after `F2.12` (187 +
+  six), not the 192 that five promotions would give; `tests/f3.38`,
+  `tests/f3.39` and `tests/f2.13-asset-stock-catalog-vocabulary.test.ts`
+  bound the vocabulary at **191**.
+- `onboarding-commit.service.ts` refuses a client draft declaring
+  `cell_voltage_spread_v` with a unit other than `V` or a domain other than
+  `electrical`, the same as for every catalogued code (Amendment 1).
+- The plan's first-draft claim that *"no new ADR is owed"* was wrong by this
+  one code, and the plan's §12 says so.
