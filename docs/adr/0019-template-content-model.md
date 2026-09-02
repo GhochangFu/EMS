@@ -544,13 +544,22 @@ specified as `pointKeys: string[](1..20)`. Documenting, not deciding.
 
 ---
 
-## Amendment 2 — `thresholdValue` becomes conditional (B7: setpoints are per-site) — PROPOSED
+## Amendment 2 — `thresholdValue` becomes conditional (B7: setpoints are per-site)
 
-**Status: Proposed — drafted 2026-08-22, awaiting the owner's gate.** Unlike
-Amendment 1, which recorded hardening already reviewed into the
-implementation, this amendment is a **contract change** and nothing may be
-built against it until it is Accepted. It is the prerequisite for ADR 0040
-(`E5.1` provisional authoring) decision 4.
+**Status: Accepted — 2026-09-02, by the repository owner, at the
+`build-operating-model.md` step 2 gate, as drafted.** The one open question
+below was ruled for the pairing: `thresholdValue` and `operator` are present
+together or absent together. It was drafted 2026-08-22 as Proposed, and it
+waited eleven days because the row that needed it, `E5.1`, was itself waiting
+on the client; on 2026-09-02 the owner lifted that block (PR #277) and ruled
+this amendment at the same sitting as ADR 0051 Amendment 6, since the
+electrical class templates (`F2.12`) need it for the same reason the water
+pack does — the derived tag lists carry alarm meanings and no numbers.
+Unlike Amendment 1, which recorded hardening already reviewed into the
+implementation, this amendment is a **contract change**: the surface changes
+of decision 5 land in the first feature PR that authors a pair-absent row.
+It is the prerequisite for ADR 0040 (`E5.1` provisional authoring) decision
+4.
 
 *Note on numbering: the 2026-08-17 clarification annex and two 2026-08-22
 client documents refer to this change as "Amendment 1" — written before
