@@ -188,7 +188,8 @@ export type MeteredPumpingPointKey = (typeof METERED_PUMPING_POINT_KEYS)[number]
 /**
  * `F2.11` / ADR 0051 Amendment 6 — the electrical class point keys, 139 codes
  * across the six electrical asset classes (feeder/incomer, transformer, DG
- * set, UPS, solar PV, APFC).
+ * set, UPS, solar PV, APFC). `F2.12` appended six more (145 total) — see the
+ * "SIX DERIVED CODES PROMOTED BY `F2.12`" paragraph below.
  *
  * **Citation.** `docs/electrical-derived-taglist-v1.md` is the source, and
  * ADR 0051 Amendment 6 (Accepted 2026-09-02) is the gate that promotes it:
@@ -257,7 +258,7 @@ export type MeteredPumpingPointKey = (typeof METERED_PUMPING_POINT_KEYS)[number]
  * matching every uppercase `POINT_KEYS` array declaration. A sibling file re-exported from
  * `index.ts` would be invisible to both, with nothing failing: the array
  * would be neither clash-checked nor unit-coverage-checked, and
- * `tests/f3.38`'s vocabulary would silently not contain these 139 codes.
+ * `tests/f3.38`'s vocabulary would silently not contain these 145 codes.
  *
  * **`battery_charge_pct` is here, and it already has a row.** It reaches
  * `bms.point_keys` today through `phe-pilot-seed.ts`'s inline registration
@@ -266,6 +267,39 @@ export type MeteredPumpingPointKey = (typeof METERED_PUMPING_POINT_KEYS)[number]
  * unit to `"%"` through `seedPointKeyCatalog`'s `COALESCE` — see the
  * correction to `METERED_PUMPING_POINT_KEYS`'s docblock, just above, and
  * `packages/db/src/point-keys-seed.ts`'s `UNIT_BY_KEY` section comment.
+ *
+ * **SIX DERIVED CODES PROMOTED BY `F2.12`, 139 → 145.** ADR 0051 Amendment 6
+ * decision 8 pre-authorizes promoting *"each derived code it can actually
+ * author a formula for, in its plan"* — five of the tag list's own named
+ * "Derived:" codes turned out to be expressible over measured points in
+ * their own class, and each is appended to the end of its own class section
+ * above with a `// F2.12: derived, formula in electrical-<class>.ts`
+ * comment:
+ *
+ *  - `oil_rise_over_ambient_c` (§2 transformer) —
+ *    `{top_oil_temp_c} - {ambient_temp_c}`, `°C`.
+ *  - `specific_fuel_l_kwh` (§3 DG set) — `{fuel_rate_lph} / {gen_kw}`,
+ *    `L/kWh`.
+ *  - `unplanned_run_flag` (§3 DG set) — `{dg_status} * {mains_available}`,
+ *    unitless (`""`) — a boolean expressed as a product of two `0/1` codes,
+ *    the only way the grammar has of writing one.
+ *  - `load_headroom_pct` (§4 UPS) — `100 - {load_pct}`, `%`.
+ *  - `inverter_efficiency_pct` (§5 solar PV) —
+ *    `{ac_power_kw} / {dc_power_kw} * 100`, `%`.
+ *
+ * The sixth, `cell_voltage_spread_v` (§4 UPS) —
+ * `{cell_voltage_max_v} - {cell_voltage_min_v}`, `V` — is **not** named by
+ * the tag list's own "Derived:" list. It was ruled in by the owner at the
+ * `F2.12` plan gate on 2026-09-02 (plan §12 ruling 2), because the UPS's
+ * "cell voltage spread high (weak block)" alarm has no other parameter to
+ * bind: the tag list gives `cell_voltage_min_v` and `cell_voltage_max_v` but
+ * names no spread code, and an alarm whose parameter is not a point is an
+ * alarm nobody can rationalize.
+ *
+ * Each formula's output code needed promoting here, not just authoring as a
+ * `kind: "derived"` template point, because `assertPointKeysActive`
+ * (`asset-templates.service.ts`) checks every point's key — derived
+ * included — against `bms.point_keys` where `active = true`.
  */
 export const ELECTRICAL_CLASS_POINT_KEYS = [
   // §1 feeder / incomer — 15
@@ -284,7 +318,7 @@ export const ELECTRICAL_CLASS_POINT_KEYS = [
   "relay_trip_code",
   "earth_fault_state",
   "meter_comms_ok",
-  // §2 transformer — 30
+  // §2 transformer — 31
   "top_oil_temp_c",
   "winding_temp_c",
   "winding_temp_r_c",
@@ -315,7 +349,8 @@ export const ELECTRICAL_CLASS_POINT_KEYS = [
   "oil_moisture_lab_ppm",
   "silica_gel_state",
   "insulation_resistance_mohm",
-  // §3 DG set — 35
+  "oil_rise_over_ambient_c", // F2.12: derived, formula in electrical-transformer.ts
+  // §3 DG set — 37
   "dg_status",
   "dg_mode",
   "dg_on_load",
@@ -351,7 +386,9 @@ export const ELECTRICAL_CLASS_POINT_KEYS = [
   "service_due_h",
   "emergency_stop_state",
   "canopy_temp_c",
-  // §4 UPS — 21
+  "specific_fuel_l_kwh", // F2.12: derived, formula in electrical-dg-set.ts
+  "unplanned_run_flag", // F2.12: derived, formula in electrical-dg-set.ts
+  // §4 UPS — 23
   "ups_status",
   "ups_alarm",
   "ups_alarm_code",
@@ -373,7 +410,9 @@ export const ELECTRICAL_CLASS_POINT_KEYS = [
   "cell_voltage_min_v",
   "cell_voltage_max_v",
   "impedance_test_result",
-  // §5 solar PV — 25
+  "load_headroom_pct", // F2.12: derived, formula in electrical-ups.ts
+  "cell_voltage_spread_v", // F2.12: derived, formula in electrical-ups.ts
+  // §5 solar PV — 26
   "inv_status",
   "inv_fault",
   "inv_event_code",
@@ -399,6 +438,7 @@ export const ELECTRICAL_CLASS_POINT_KEYS = [
   "insulation_resistance_kohm",
   "grid_export_kw",
   "soiling_loss_pct",
+  "inverter_efficiency_pct", // F2.12: derived, formula in electrical-solar-pv.ts
   // §6 capacitor bank / APFC — 13
   "apfc_status",
   "apfc_alarm",

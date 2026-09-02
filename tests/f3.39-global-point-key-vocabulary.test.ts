@@ -571,9 +571,10 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // Anti-vacuity for this case alone, at the actual rather than at the
       // pre-`F2.11` count of 46 — this file argues at length for moving a bound
       // to its actual, and leaving one slack in the same commit would be the
-      // inconsistency a later reader copies. 185 = 46 + `F2.11`'s 139
-      // (ADR 0051 Amendment 6).
-      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(185);
+      // inconsistency a later reader copies. 191 = 185 + `F2.12`'s six
+      // promoted derived codes (ADR 0051 Amendment 6 decision 8, plan §12
+      // ruling 2).
+      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(191);
 
       const missing: string[] = [];
       for (const arrayName of Object.keys(ARRAY_DOMAIN)) {
@@ -681,13 +682,13 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
         `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`,
       ).toBeGreaterThanOrEqual(8);
       const codes = new Set([...arraysByName.values()].flat());
-      // 185 is the actual after `F2.11` added `ELECTRICAL_CLASS_POINT_KEYS`'s
-      // 139 codes (ADR 0051 Amendment 6) to the 46 that were here. Moved to
-      // the actual rather than left at 46, where it was slack by 139 and
-      // would have stayed green with the new array parsed as nothing at all
-      // — which is the exact failure this whole `describe` block exists to
-      // make impossible.
-      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(185);
+      // 191 is the actual after `F2.12` appended its six promoted derived
+      // codes (ADR 0051 Amendment 6 decision 8, plan §12 ruling 2) to the 185
+      // that were here after `F2.11`. Moved to the actual rather than left at
+      // 185, where it would have stayed green with the six new codes parsed
+      // as nothing at all — which is the exact failure this whole `describe`
+      // block exists to make impossible.
+      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(191);
       expect(
         sql.split(";").filter((s) => s.trim().length > 0).length,
         "migration 0057 holds almost no statements",

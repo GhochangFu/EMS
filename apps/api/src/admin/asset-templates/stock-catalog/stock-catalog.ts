@@ -34,25 +34,34 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  * ---
  *
- * **ONE MODULE PER PACK.** This file aggregates; it authors nothing. The packs,
+ * **ONE MODULE PER PACK — and, since `F2.12`, one module per CLASS inside the
+ * electrical pack.** This file aggregates; it authors nothing. The packs,
  * each under the §4.5 line cap and each carrying its own docblock of sources
  * and deferrals:
  *
- *  - `electrical.ts` — `F2.13` ships the feeder/incomer class; `F2.12` adds
- *    transformer, DG set, UPS, solar PV and APFC to the same file.
+ *  - `electrical.ts` — the pack index only, since `F2.12` (plan Task 1). The
+ *    six electrical classes are their own modules —
+ *    `electrical-feeder.ts` (`F2.13`, §1), `electrical-transformer.ts` (§2),
+ *    `electrical-dg-set.ts` (§3), `electrical-ups.ts` (§4),
+ *    `electrical-solar-pv.ts` (§5) and `electrical-apfc.ts` (§6), plus the
+ *    shared `point-fields.ts` — because appending all five remaining classes
+ *    to one `electrical.ts` was projected at ~1550-1800 lines (plan §4.3),
+ *    well past the cap AGENTS.md §4.5 reads whole-file.
  *  - `water.ts` — `E5.1`.
  *  - `mechanical.ts` — `E5.2`.
  *  - `facility.ts` — `E5.3`.
  *
- * **A NEW PACK FILE MUST JOIN `STOCK_ASSET_RELS` IN
+ * **A NEW PACK FILE — OR, INSIDE THE ELECTRICAL PACK, A NEW CLASS MODULE —
+ * MUST JOIN `STOCK_ASSET_RELS` IN
  * `tests/f2.13-asset-stock-catalog-vocabulary.test.ts`, with that file's
- * anti-vacuity bounds moved to the new actuals.** That guard reads the pack
+ * anti-vacuity bounds moved to the new actuals.** That guard reads the source
  * files as TEXT and scans every `pointKey:` against the `*_POINT_KEYS` arrays
  * in `packages/shared/src/constants.ts`; it cannot follow the spread below, so
- * a pack left off the list has its keys checked against no vocabulary at all,
- * and every assertion there stays green while checking less. `tests/f3.38`
- * carries the same instruction for the dashboard catalog. This paragraph is
- * written before the second file exists rather than after, on purpose.
+ * a pack OR a class module left off the list has its keys checked against no
+ * vocabulary at all, and every assertion there stays green while checking
+ * less. `tests/f3.38` carries the same instruction for the dashboard catalog.
+ * This paragraph named the electrical pack's split before it existed, on
+ * purpose; it now names the per-class split the same way.
  *
  * ---
  *

@@ -129,6 +129,7 @@ const UNIT_BY_KEY: Record<string, string> = {
   oil_moisture_lab_ppm: "ppm",
   silica_gel_state: "",
   insulation_resistance_mohm: "MΩ",
+  oil_rise_over_ambient_c: "°C", // F2.12: derived, formula in electrical-transformer.ts
   // §3 DG set
   dg_status: "",
   dg_mode: "",
@@ -165,6 +166,8 @@ const UNIT_BY_KEY: Record<string, string> = {
   service_due_h: "h",
   emergency_stop_state: "",
   canopy_temp_c: "°C",
+  specific_fuel_l_kwh: "L/kWh", // F2.12: derived, formula in electrical-dg-set.ts
+  unplanned_run_flag: "", // F2.12: derived, formula in electrical-dg-set.ts
   // §4 UPS
   ups_status: "",
   ups_alarm: "",
@@ -187,6 +190,8 @@ const UNIT_BY_KEY: Record<string, string> = {
   cell_voltage_min_v: "V",
   cell_voltage_max_v: "V",
   impedance_test_result: "",
+  load_headroom_pct: "%", // F2.12: derived, formula in electrical-ups.ts
+  cell_voltage_spread_v: "V", // F2.12: derived, formula in electrical-ups.ts
   // §5 solar PV
   inv_status: "",
   inv_fault: "",
@@ -213,6 +218,7 @@ const UNIT_BY_KEY: Record<string, string> = {
   insulation_resistance_kohm: "kΩ",
   grid_export_kw: "kW",
   soiling_loss_pct: "%",
+  inverter_efficiency_pct: "%", // F2.12: derived, formula in electrical-solar-pv.ts
   // §6 capacitor bank / APFC
   apfc_status: "",
   apfc_alarm: "",

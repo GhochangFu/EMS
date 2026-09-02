@@ -1,5 +1,10 @@
-import { stockAssetTemplateDtoSchema } from "@bms/shared";
+import { CALC_DIALECT, parseFormula, stockAssetTemplateDtoSchema, validateFormula } from "@bms/shared";
 
+import {
+  maintenanceCategorySchema,
+  maintenanceGenerationModeSchema,
+  maintenancePrioritySchema,
+} from "../../../maintenance/maintenance.schema";
 import { readRepoFile } from "../../../testing/repo-root";
 import { createAssetTemplateBodySchema } from "../asset-templates.schema";
 import { STOCK_ASSET_TEMPLATE_CATALOG } from "./stock-catalog";
@@ -18,7 +23,10 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `@bms/shared` (`stockAssetTemplateDtoSchema`, what the list route
  *    returns) and `apps/api` (`createAssetTemplateBodySchema`, what the import
  *    writes through). A field one permits and the other refuses fails HERE,
- *    not on the first import.
+ *    not on the first import. `F2.12` Task 3 widened this half: the alarm,
+ *    tier, provenance, derived-point, KPI and maintenance-vocabulary claims
+ *    below were `electrical-feeder`'s and are now every entry's, so the five
+ *    classes pass C authors land against them the moment they join the pack.
  *  - **Entry-specific, for `electrical-feeder`** — each one is a claim about
  *    `docs/electrical-derived-taglist-v1.md` §1, not about the code. If the
  *    tag list changes, these change with it, in the same PR.
@@ -30,7 +38,12 @@ import type { StockAssetTemplateEntry } from "./types";
  * severity nobody seeds fails here first.
  */
 
-function assert(condition: boolean, message: string): void {
+/**
+ * Exported for `electrical-classes.spec.ts` — `F2.12` pass C puts the
+ * per-class blocks in a sibling file (this one is at the §4.5 cap) and they
+ * assert the same way rather than growing a second vocabulary of helpers.
+ */
+export function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
@@ -69,44 +82,186 @@ const seededCategories = (): ReadonlySet<string> =>
     "rule_categories",
   );
 
+/**
+ * Memoized, because `F2.12` moved the alarm vocabulary checks into
+ * `checkEntry`, which runs over every entry and both fixtures — otherwise each
+ * call re-reads and re-parses two migration files. The memo caches the parsed
+ * set, never the decision to check: `seededCodes` still throws on no match, so
+ * a reshaped insert is still a failure and not a vacuously empty set.
+ */
+let severityMemo: ReadonlySet<string> | undefined;
+const severityVocabulary = (): ReadonlySet<string> => (severityMemo ??= seededSeverities());
+let categoryMemo: ReadonlySet<string> | undefined;
+const categoryVocabulary = (): ReadonlySet<string> => (categoryMemo ??= seededCategories());
+
 /** A synthetic organization for the create-body parse. Never written anywhere. */
 const SYNTHETIC_ORGANIZATION_ID = "00000000-0000-4000-8000-00000000f213";
 
 const FEEDER_CODE = "electrical-feeder";
 const TAG_LIST_REL = "electrical-derived-taglist-v1.md";
 
+/** The six electrical classes of `docs/electrical-derived-taglist-v1.md`. */
+const STOCK_ENTRY_CODES = [
+  "electrical-feeder",
+  "electrical-transformer",
+  "electrical-dg-set",
+  "electrical-ups",
+  "electrical-solar-pv",
+  "electrical-apfc",
+] as const;
+export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
+
 /**
- * The six "Derived:" codes §1 of the tag list carries in prose, every one
- * deferred — ADR 0051 Amendment 6 decision 8: a code with no `bms-calc-v1`
+ * The tag list's "Derived:" codes that this row does **not** author, **per
+ * entry** — ADR 0051 Amendment 6 decision 8: a code with no `bms-calc-v1`
  * formula is not vocabulary. Listed so the failure message names them and the
  * next author reads WHY rather than deleting the assertion.
+ *
+ * **A `Record` and not one flat list, and that is load-bearing.** `load_pct`
+ * is deferred on the feeder, the transformer and the DG set — each needs the
+ * asset's rating — and is a **measured core point on the UPS**, which reports
+ * it directly (RFC 1628 `upsOutputPercentLoad`). A catalog-wide "no entry
+ * declares a deferred code" check would therefore fail on a correct entry.
+ * Each list is checked against its own entry and no other.
+ *
+ * 32 entries across 30 distinct codes (`load_pct` three times). Plan §4.1's
+ * "32 deferred" is this per-entry sum; plan §2's ledger of 30 is the distinct
+ * count. Both are right; they count different things.
  */
-const DEFERRED_DERIVED_CODES = [
-  "load_pct",
-  "demand_vs_contract_pct",
-  "pf_penalty_flag",
-  "kwh_per_unit_output",
-  "specific_energy_kwh_kl",
-  "losses_pct",
-] as const;
+export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly string[]>> = {
+  // §1 — rating, contract demand, tariff band, production/KL, Σ of feeders.
+  "electrical-feeder": [
+    "load_pct",
+    "demand_vs_contract_pct",
+    "pf_penalty_flag",
+    "kwh_per_unit_output",
+    "specific_energy_kwh_kl",
+    "losses_pct",
+  ],
+  // §2 — another asset's LV meter, the rating, and three models the grammar
+  // has no functions for (IEC 60076-7, C57.91 ageing, a Duval-triangle lookup).
+  "electrical-transformer": [
+    "lv_load_pct",
+    "load_pct",
+    "hot_spot_estimate_c",
+    "loss_of_life_pct_day",
+    "duval_triangle_zone",
+    "tap_changes_per_day",
+  ],
+  // §3 — the rating, the tank capacity (`fuel_level_pct` is a percentage), and
+  // three that need a time window the grammar has no state for.
+  "electrical-dg-set": [
+    "load_pct",
+    "fuel_hours_remaining_h",
+    "starts_per_day",
+    "availability_pct",
+    "underload_hours",
+  ],
+  // §4 — the site minimum, an attribute, and two per-window counts.
+  "electrical-ups": [
+    "runtime_margin_min",
+    "battery_events_per_month",
+    "battery_age_months",
+    "charge_cycle_count",
+  ],
+  // §5 — the point of connection is another asset's §1 meter; the rest need
+  // installed kWp, the whole string set, the site load or an emission factor.
+  "electrical-solar-pv": [
+    "grid_export_kw",
+    "performance_ratio_pct",
+    "specific_yield_kwh_kwp_day",
+    "capacity_utilization_pct",
+    "string_current_deviation_pct",
+    "self_consumption_pct",
+    "co2_avoided_kg",
+  ],
+  // §6 — rated kVAr per step, a time window, `tan`/`acos`, and the tariff band.
+  "electrical-apfc": ["pf_correction_kvar", "steps_per_day", "capacitor_health_pct", "pf_penalty_hours"],
+};
 
 const DEFERRAL_REASON =
-  `ADR 0051 Amendment 6 decision 8: a code with no formula is not vocabulary. The six ` +
-  `"Derived:" codes of tag list §1 — ${DEFERRED_DERIVED_CODES.join(", ")} — each need an asset ` +
-  "attribute (rating, contract demand, tariff band, production, KL throughput) or a cross-asset " +
-  "sum that bms-calc-v1 cannot name (ADR 0036; F2.9 records the fork). They are deferred, not " +
-  "authored with a placeholder formula. Zero derived points and no `kpis` in this entry until " +
-  "a formula exists for one of them.";
+  "ADR 0051 Amendment 6 decision 8: a code with no formula is not vocabulary. Every deferred " +
+  "code needs an asset or site attribute (rating, contract demand, tariff band, installed kWp, " +
+  "tank capacity, rated kVAr per step), a value on another asset that bms-calc-v1 cannot name " +
+  "(a Σ of feeders, an LV meter, the point of connection, the site load), a time window the " +
+  "grammar has no state for (per-day, per-month, hours-in-state), or a model it has no " +
+  "functions for (IEC 60076-7, C57.91, a Duval triangle). They are deferred and NAMED, never " +
+  "authored with a placeholder formula (ADR 0036; F2.9 records the fork) — plan §2 carries the " +
+  "reason for each one.";
 
-type Alarm = { code: string; pointKey: string; severity: string; category?: string } & Record<
+/** The shared reason plus the class's own list, so the failure names both. */
+export const deferralReason = (code: StockEntryCode): string =>
+  `${DEFERRAL_REASON} Deferred for ${code}: ${DEFERRED_DERIVED_CODES[code].join(", ")}.`;
+
+export type Alarm = { code: string; pointKey: string; severity: string; category?: string } & Record<
   string,
   unknown
 >;
 
+/** A `content.kpis[]` entry, as stored. `unit` is optional by design. */
+export type Kpi = {
+  code: string;
+  name: string;
+  pointKeys: string[];
+  expression: string;
+  dialect: string;
+} & Record<string, unknown>;
+
+/**
+ * A `content.maintenance[]` entry, as stored. The three vocabulary fields are
+ * optional on THIS type and not on the authored one: `maintenanceOf` reaches
+ * `content` through a cast, so the type here is a claim rather than a check
+ * and the assertions below treat a missing field as a failure. On the authored
+ * side all three are required — `CreateAssetTemplateBody` is `z.infer`, the
+ * *output* type, and `templateMaintenancePlanSchema`'s `.default()` lands on
+ * the output side.
+ */
+export type MaintenancePlan = {
+  title: string;
+  category?: string;
+  generationMode?: string;
+  priority?: string;
+} & Record<string, unknown>;
+
 /** The alarms of an entry, as stored — `content` is a bare record on the DTO side. */
-function alarmsOf(entry: StockAssetTemplateEntry): Alarm[] {
+export function alarmsOf(entry: StockAssetTemplateEntry): Alarm[] {
   const content = (entry.content ?? {}) as { alarms?: Alarm[] };
   return content.alarms ?? [];
+}
+
+/** The KPIs of an entry, as stored. */
+export function kpisOf(entry: StockAssetTemplateEntry): Kpi[] {
+  const content = (entry.content ?? {}) as { kpis?: Kpi[] };
+  return content.kpis ?? [];
+}
+
+/** The maintenance plans of an entry, as stored. */
+export function maintenanceOf(entry: StockAssetTemplateEntry): MaintenancePlan[] {
+  const content = (entry.content ?? {}) as { maintenance?: MaintenancePlan[] };
+  return content.maintenance ?? [];
+}
+
+/**
+ * One maintenance vocabulary field, against the enum `apps/api` already owns.
+ * **Imported from `maintenance.schema`, never restated** (§4.8) — the same
+ * discipline the severity and category parsers hold from the migration side.
+ *
+ * `undefined` FAILS rather than passing. The three fields carry a schema
+ * default, and a default lands on `z.infer`'s output type, so the authored
+ * literal must carry all three — a missing one means the cast in
+ * `maintenanceOf` is lying about the shape.
+ */
+function assertMaintenanceVocabulary(
+  where: string,
+  field: string,
+  value: unknown,
+  options: readonly string[],
+): void {
+  assert(
+    typeof value === "string" && options.includes(value),
+    `${where}: maintenance ${field} "${String(value)}" is not one of the vocabulary ` +
+      `apps/api/src/maintenance/maintenance.schema owns (${options.join(", ")})`,
+  );
 }
 
 /**
@@ -175,6 +330,180 @@ function checkEntry(entry: StockAssetTemplateEntry): void {
       assertSameKeys(`${entry.code}.points[${i}]`, "point", point, listed.data.points[i]);
     });
   }
+
+  // ADR 0052 decision 6: the stamp plus the citation IS the provenance. Every
+  // entry cites its source document by name; there is no meta.provenance to
+  // fall back on. Feeder-only until F2.12 Task 3.
+  assert(
+    typeof entry.description === "string" && entry.description.includes(TAG_LIST_REL),
+    `${entry.code}.description must cite ${TAG_LIST_REL} by name — the stamp plus the citation is ` +
+      "the provenance (ADR 0052 decision 6); there is no meta.provenance to fall back on",
+  );
+
+  const declaredKeys = new Set(entry.points.map((point) => point.pointKey));
+  const measuredKeys = new Set(
+    entry.points.filter((point) => point.kind === "measured").map((point) => point.pointKey),
+  );
+
+  for (const point of entry.points) {
+    const tier = point.meta?.tier;
+
+    // **meta.tier is present if and only if kind === "measured"** (plan §5).
+    // This REPLACES F2.13's `(required && core) || (!required && extended)`,
+    // which could not express a `manual` row and would have refused all seven
+    // of them. It is a generalisation, not a weakening: it says strictly more,
+    // because it now also constrains derived points.
+    assert(
+      (point.kind === "measured") === (tier !== undefined),
+      `${entry.code}.${point.pointKey}: meta.tier is present if and only if kind is "measured" — ` +
+        `got kind="${point.kind}", tier=${String(tier)}. The tag list's C/X/M column says what the ` +
+        "plant has FITTED, and a computed point is fitted by nobody.",
+    );
+
+    if (point.kind === "measured") {
+      assert(
+        point.required === (tier === "core"),
+        `${entry.code}.${point.pointKey}: required=${point.required} but tier="${String(tier)}" — ` +
+          "tier C is core AND required; X and M are extended/manual AND optional (ADR 0040 " +
+          "decision 3, and the tag list's own column)",
+      );
+      continue;
+    }
+
+    // A derived point, well-formed at build time — the same rules
+    // `templatePointsBodySchema`'s superRefine makes at import time, which is
+    // the whole reason this spec file exists.
+    assert(
+      typeof point.formula === "string" && point.formula.length > 0,
+      `${entry.code}.${point.pointKey}: a derived point must carry a non-empty formula`,
+    );
+    assert(
+      point.formulaDialect === CALC_DIALECT,
+      `${entry.code}.${point.pointKey}: formulaDialect must be "${CALC_DIALECT}", got ${String(point.formulaDialect)}`,
+    );
+    assert(
+      point.calcTrigger === "streaming",
+      `${entry.code}.${point.pointKey}: a stock derived point is computed on arrival — calcTrigger ` +
+        `must be "streaming", got ${String(point.calcTrigger)}`,
+    );
+    assert(
+      point.calcIntervalSeconds === null,
+      `${entry.code}.${point.pointKey}: a streaming point must not carry calcIntervalSeconds ` +
+        `(${String(point.calcIntervalSeconds)}) — templatePointBodySchema refuses the pair outright`,
+    );
+
+    const formula = typeof point.formula === "string" ? point.formula : "";
+    if (!validateFormula(formula, measuredKeys).ok) {
+      const parsed = parseFormula(formula);
+      const detail = parsed.ok
+        ? `it references ${parsed.refs
+            .filter((ref) => !measuredKeys.has(ref))
+            .map((ref) => `"${ref}"`)
+            .join(", ")}, which this entry does not declare as a MEASURED point`
+        : `it does not parse under ${CALC_DIALECT}: ${parsed.errors
+            .map((error) => `${error.code} at ${error.position}`)
+            .join("; ")}`;
+      throw new Error(
+        `${entry.code}.${point.pointKey}: formula "${formula}" is not usable — ${detail}. A derived ` +
+          "point may only reference a measured point the same template declares (ADR 0036 " +
+          "decision 7); assertPointKeysActive and the calc engine both depend on it.",
+      );
+    }
+  }
+
+  // Every alarm is a philosophy row, bound to a key the entry declares, with a
+  // severity and a category the migrations seed. All four were feeder-only
+  // until F2.12 Task 3; every one is a property of a STOCK catalog under B7,
+  // not of one class.
+  const severities = severityVocabulary();
+  const categories = categoryVocabulary();
+  for (const alarm of alarmsOf(entry)) {
+    assert(
+      !("thresholdValue" in alarm) && !("operator" in alarm),
+      `${entry.code} alarm "${alarm.code}" carries thresholdValue/operator. B7: limit values are ` +
+        "set per site at commissioning, so every row here is a philosophy row — no number, no " +
+        'comparator. Someone "helpfully" filling one in is exactly what this assertion refuses.',
+    );
+    assert(
+      declaredKeys.has(alarm.pointKey),
+      `${entry.code} alarm "${alarm.code}" binds "${alarm.pointKey}", which the entry does not ` +
+        "declare — the same claim assertContentRefsResolve makes at import time, made here at " +
+        "build time",
+    );
+    assert(
+      typeof alarm.message === "string" && alarm.message.length > 0,
+      `${entry.code} alarm "${alarm.code}" has no message — the message IS the meaning, because ` +
+        "the threshold pair is deliberately absent",
+    );
+    assert(
+      severities.has(alarm.severity),
+      `${entry.code} alarm "${alarm.code}" has severity "${alarm.severity}", which 0030 does not ` +
+        `seed (${[...severities].join(", ")})`,
+    );
+    assert(
+      typeof alarm.category === "string" && categories.has(alarm.category),
+      `${entry.code} alarm "${alarm.code}" has category "${String(alarm.category)}", which 0029 ` +
+        `does not seed (${[...categories].join(", ")})`,
+    );
+  }
+
+  // Every KPI, both directions — `templateKpiSchema`'s superRefine at build
+  // time, plus the one claim no schema makes: a KPI's pointKeys must be keys
+  // THIS entry declares. `collectContentPointRefs` feeds that check to
+  // `assertContentRefsResolve` at import time, on a running database.
+  for (const kpi of kpisOf(entry)) {
+    assert(
+      kpi.dialect === CALC_DIALECT,
+      `${entry.code} KPI "${kpi.code}" has dialect "${kpi.dialect}" — a stock KPI is always ` +
+        `"${CALC_DIALECT}". "unvalidated" is an affordance for hand-authored content, not for a ` +
+        "catalog whose expressions ship to every organization unread.",
+    );
+    for (const key of kpi.pointKeys) {
+      assert(
+        declaredKeys.has(key),
+        `${entry.code} KPI "${kpi.code}" names pointKey "${key}", which the entry does not declare ` +
+          "— the same claim assertContentRefsResolve makes at import time, made here at build time",
+      );
+    }
+    const validated = validateFormula(kpi.expression, kpi.pointKeys);
+    assert(
+      validated.ok,
+      `${entry.code} KPI "${kpi.code}" expression "${kpi.expression}" is not a ${CALC_DIALECT} ` +
+        "formula over its own pointKeys — every {ref} in expression must appear in pointKeys",
+    );
+    if (validated.ok) {
+      const used = new Set(validated.refs);
+      const unused = kpi.pointKeys.filter((key) => !used.has(key));
+      assert(
+        unused.length === 0,
+        `${entry.code} KPI "${kpi.code}" lists pointKeys its expression never uses ` +
+          `(${unused.join(", ")}) — pointKeys is what makes a KPI queryable, so an unused member ` +
+          "is a promise of a binding that does not exist",
+      );
+    }
+  }
+
+  // Every maintenance plan's three vocabulary fields, imported rather than
+  // restated (§4.8).
+  //
+  // **Stated plainly, because the next reader will ask**: this loop cannot
+  // currently fail before `createAssetTemplateBodySchema` does — that parse
+  // runs first and `templateMaintenancePlanSchema` holds the same three enums.
+  // It is reached (the fixture carries a plan) and it earns its place two
+  // ways: the failure NAMES the vocabulary and the module that owns it instead
+  // of returning a Zod field-error blob, and it keeps holding the line if
+  // `content` is ever loosened to a passthrough record on the create body.
+  for (const plan of maintenanceOf(entry)) {
+    const where = `${entry.code} maintenance "${plan.title}"`;
+    assertMaintenanceVocabulary(where, "category", plan.category, maintenanceCategorySchema.options);
+    assertMaintenanceVocabulary(
+      where,
+      "generationMode",
+      plan.generationMode,
+      maintenanceGenerationModeSchema.options,
+    );
+    assertMaintenanceVocabulary(where, "priority", plan.priority, maintenancePrioritySchema.options);
+  }
 }
 
 /** Key-set equality, so a stripped-by-parse field is a failure, not a silence. */
@@ -192,18 +521,76 @@ function assertSameKeys(where: string, what: string, authored: object, listed: o
   );
 }
 
+/**
+ * The shipped entry a per-class block is about — exported for
+ * `electrical-classes.spec.ts`, which holds those blocks from `F2.12` pass C
+ * on. A missing entry throws here rather than returning `undefined`, so a
+ * class module that was authored but never added to `electrical.ts`'s index
+ * fails with a message naming what the catalog does ship, instead of the block
+ * quietly returning early and asserting nothing about it.
+ */
+export function requireStockEntry(code: string): StockAssetTemplateEntry {
+  const entry = STOCK_ASSET_TEMPLATE_CATALOG.find((candidate) => candidate.code === code);
+  if (!entry) {
+    const shipped = STOCK_ASSET_TEMPLATE_CATALOG.map((candidate) => candidate.code).join(", ");
+    throw new Error(
+      `the catalog must ship "${code}" (plan §5) — found only: ${shipped || "(nothing)"}. An ` +
+        "authored class module reaches the catalog only through ELECTRICAL_STOCK_ASSET_TEMPLATES " +
+        "in electrical.ts; until it is listed there, GET /admin/asset-templates/stock cannot see it.",
+    );
+  }
+  return entry;
+}
+
 // ---------------------------------------------------------------------------
 // Inline fixtures — anti-vacuity that survives an empty catalog.
 // ---------------------------------------------------------------------------
 
+/**
+ * **The fixture carries a KPI and a maintenance plan on purpose.** `F2.12`
+ * Task 3 added the KPI and maintenance-vocabulary claims to `checkEntry`, and
+ * the only shipped entry today — the feeder — deliberately has neither (its
+ * deferral guard forbids `content.kpis`). Without these two rows both loops
+ * would run zero times, go green, and pass C would author five KPIs and 21
+ * plans against checks that had never executed once. That is the same reason
+ * this file has fixtures at all: an empty catalog must not turn `checkEntry`
+ * into a `for` over nothing.
+ *
+ * The `description` cites the tag list because the provenance claim is generic
+ * from Task 3 on.
+ */
 const VALID_FIXTURE: StockAssetTemplateEntry = {
   code: "f213-spec-valid",
   name: "Spec fixture — valid",
   assetType: "test_rig",
   domain: "electrical",
-  description: "A minimal entry the checks must accept.",
+  description: "A minimal entry the checks must accept — docs/electrical-derived-taglist-v1.md §1.",
   stockVersion: 1,
-  content: { contentVersion: 1 },
+  content: {
+    contentVersion: 1,
+    kpis: [
+      {
+        code: "kw_now",
+        name: "Active power now",
+        unit: "kW",
+        pointKeys: ["kw"],
+        expression: "{kw}",
+        dialect: "bms-calc-v1",
+        higherIsBetter: false,
+      },
+    ],
+    maintenance: [
+      {
+        title: "Fixture plan",
+        category: "preventive",
+        generationMode: "calendar",
+        priority: "medium",
+        safetyCritical: false,
+        estimatedMinutes: 30,
+        intervalDays: 30,
+      },
+    ],
+  },
   points: [
     {
       pointKey: "kw",
@@ -220,6 +607,26 @@ const VALID_FIXTURE: StockAssetTemplateEntry = {
       sortOrder: 0,
       meta: { tier: "core" },
     },
+    // A derived point for the same reason as the KPI above: the feeder has
+    // none (its deferral guard forbids them), so without this row the whole
+    // derived branch of `checkEntry` — dialect, trigger, interval, and the
+    // refs-resolve-to-a-measured-point rule — would run zero times and pass C
+    // would author its six formulas against a check that never executed.
+    // No `meta.tier`: a computed point is fitted by nobody.
+    {
+      pointKey: "kw_scaled",
+      label: "Active power, scaled",
+      unit: "kW",
+      kind: "derived",
+      sourceDataKeyPattern: null,
+      formula: "{kw} * 1.05",
+      formulaDialect: "bms-calc-v1",
+      calcTrigger: "streaming",
+      calcIntervalSeconds: null,
+      maxInputAgeSeconds: null,
+      required: false,
+      sortOrder: 1,
+    },
   ],
 };
 
@@ -227,6 +634,56 @@ const POINTLESS_FIXTURE: StockAssetTemplateEntry = {
   ...VALID_FIXTURE,
   code: "f213-spec-pointless",
   points: [],
+};
+
+/**
+ * The negative fixture for the KPI half — it proves the check can FAIL, which
+ * `VALID_FIXTURE` alone cannot, on the `POINTLESS_FIXTURE` precedent.
+ *
+ * The defect is deliberately the one **no schema catches**: a `pointKeys`
+ * member the entry does not declare. `templateKpiSchema` validates the
+ * expression against `pointKeys` and both directions between them, but it
+ * never sees `points` — the declaration check is
+ * `assertContentRefsResolve`'s, and that runs at import time against a running
+ * database. An unused-member or bad-dialect fixture would be refused by
+ * `createAssetTemplateBodySchema` first and would prove nothing about this
+ * file. Here the entry declares `kw` and the KPI names `kva`.
+ */
+/**
+ * The negative fixture for the derived half, and the same discipline: the
+ * defect is one **no schema catches**. `"scheduled"` is one of the two legal
+ * `calcTrigger` values and it carries a `calcIntervalSeconds` — a perfectly
+ * legitimate hand-authored shape. It is not a legitimate STOCK shape: a stock
+ * derived point is computed on arrival, so the catalog's own rule is
+ * `streaming` with no interval, and this fixture is what proves that rule can
+ * fail rather than merely being written down.
+ */
+const SCHEDULED_DERIVED_FIXTURE: StockAssetTemplateEntry = {
+  ...VALID_FIXTURE,
+  code: "f213-spec-derived-scheduled",
+  points: VALID_FIXTURE.points.map((point) =>
+    point.kind === "derived"
+      ? { ...point, calcTrigger: "scheduled" as const, calcIntervalSeconds: 300 }
+      : point,
+  ),
+};
+
+const UNDECLARED_KPI_FIXTURE: StockAssetTemplateEntry = {
+  ...VALID_FIXTURE,
+  code: "f213-spec-kpi-undeclared",
+  content: {
+    contentVersion: 1,
+    kpis: [
+      {
+        code: "kva_now",
+        name: "Apparent power now",
+        unit: "kVA",
+        pointKeys: ["kva"],
+        expression: "{kva}",
+        dialect: "bms-calc-v1",
+      },
+    ],
+  },
 };
 
 export function runStockAssetTemplateCatalogTests(): void {
@@ -245,6 +702,41 @@ export function runStockAssetTemplateCatalogTests(): void {
     `an entry with points: [] must be refused by checkEntry, naming the rule — got ${String(pointlessRefused)}`,
   );
 
+  let scheduledDerivedRefused: string | null = null;
+  try {
+    checkEntry(SCHEDULED_DERIVED_FIXTURE);
+  } catch (err) {
+    scheduledDerivedRefused = err instanceof Error ? err.message : String(err);
+  }
+  assert(
+    scheduledDerivedRefused !== null && /calcTrigger/.test(scheduledDerivedRefused),
+    "a scheduled derived point must be refused by checkEntry, naming the rule — got " +
+      String(scheduledDerivedRefused),
+  );
+
+  let undeclaredKpiRefused: string | null = null;
+  try {
+    checkEntry(UNDECLARED_KPI_FIXTURE);
+  } catch (err) {
+    undeclaredKpiRefused = err instanceof Error ? err.message : String(err);
+  }
+  assert(
+    undeclaredKpiRefused !== null && /does not declare/.test(undeclaredKpiRefused),
+    "a KPI naming a point key its entry does not declare must be refused by checkEntry, naming " +
+      `the rule — got ${String(undeclaredKpiRefused)}`,
+  );
+
+  // The two migration-parsed vocabularies are checked for EVERY entry now, so
+  // their own anti-vacuity check belongs here rather than in the feeder block.
+  const severities = severityVocabulary();
+  const categories = categoryVocabulary();
+  for (const expected of ["info", "warning", "critical"]) {
+    assert(severities.has(expected), `0030 no longer seeds severity "${expected}" — the parser or the migration moved`);
+  }
+  for (const expected of ["safety", "energy", "comfort", "operations"]) {
+    assert(categories.has(expected), `0029 no longer seeds category "${expected}" — the parser or the migration moved`);
+  }
+
   // ---- every shipped entry, generically -----------------------------------
 
   for (const entry of STOCK_ASSET_TEMPLATE_CATALOG) {
@@ -256,6 +748,33 @@ export function runStockAssetTemplateCatalogTests(): void {
     new Set(codes).size === codes.length,
     `duplicate stock template code across the aggregated catalog: ${codes.join(",")}`,
   );
+
+  // ---- the deferred codes, per entry and never catalog-wide ---------------
+  //
+  // Deliberately NOT in `checkEntry`: each entry is checked against its OWN
+  // list, because `load_pct` is deferred on three classes and a measured core
+  // point on the UPS. An entry pass C has not authored yet is simply not
+  // reached; its list is here so the day it lands it lands against this check.
+  for (const entry of STOCK_ASSET_TEMPLATE_CATALOG) {
+    // The reverse direction is the one that fails silently: a mistyped key
+    // ("electrical-dgset") would leave that class checked against nothing,
+    // forever, and nothing else in this file would notice.
+    assert(
+      Object.hasOwn(DEFERRED_DERIVED_CODES, entry.code),
+      `${entry.code} has no entry in DEFERRED_DERIVED_CODES, so its deferred derived codes are ` +
+        `checked against nothing. Add one — an empty list is a legitimate value, with a comment ` +
+        `naming the row that will fill it. Known: ${STOCK_ENTRY_CODES.join(", ")}.`,
+    );
+    const deferred = DEFERRED_DERIVED_CODES[entry.code as StockEntryCode] ?? [];
+    const keys = new Set(entry.points.map((point) => point.pointKey));
+    for (const code of deferred) {
+      assert(
+        !keys.has(code),
+        `${entry.code} declares "${code}", one of its deferred derived codes. ` +
+          `${deferralReason(entry.code as StockEntryCode)}`,
+      );
+    }
+  }
 
   // ---- the feeder class, against its tag list -----------------------------
 
@@ -281,15 +800,15 @@ export function runStockAssetTemplateCatalogTests(): void {
   const feederKeys = new Set(feeder.points.map((point) => point.pointKey));
   assert(feederKeys.size === 33, "no point key may repeat");
 
-  // The tier marking matches the C/X split exactly (ADR 0040 decision 3).
-  for (const point of feeder.points) {
-    const tier = point.meta?.tier;
-    assert(tier !== undefined, `${point.pointKey} carries no meta.tier — every stock point declares one`);
-    assert(
-      (point.required && tier === "core") || (!point.required && tier === "extended"),
-      `${point.pointKey}: required=${point.required} but tier=${String(tier)} — C is core+required, X is extended+optional`,
-    );
-  }
+  // The tier marking is `checkEntry`'s from F2.12 Task 3 on — the iff rule
+  // there subsumes the C/X pair this block used to assert, and says more (it
+  // also constrains `manual` rows and derived points, which the old rule could
+  // not express). What stays feeder-specific is §1's own claim: no M row.
+  const manual = feeder.points.filter((point) => point.meta?.tier === "manual");
+  assert(
+    manual.length === 0,
+    `tag list §1 has no M column — ${FEEDER_CODE} marks ${manual.map((p) => p.pointKey).join(", ")} manual`,
+  );
 
   // kwh_today is C/D and authored MEASURED (plan §5): no bms-calc-v1 formula
   // can express energy-today, and a placeholder is the guessing ADR 0019 refuses.
@@ -307,32 +826,15 @@ export function runStockAssetTemplateCatalogTests(): void {
   );
   assert(
     !Object.hasOwn(feeder.content ?? {}, "kpis"),
-    `${FEEDER_CODE} carries content.kpis. ${DEFERRAL_REASON}`,
+    `${FEEDER_CODE} carries content.kpis. ${deferralReason(FEEDER_CODE)}`,
   );
-  for (const code of DEFERRED_DERIVED_CODES) {
-    assert(
-      !feederKeys.has(code),
-      `${FEEDER_CODE} declares "${code}", one of the six deferred derived codes. ${DEFERRAL_REASON}`,
-    );
-  }
 
-  // Eleven philosophy rows, every one pair-absent (ADR 0019 Amendment 2).
+  // Eleven philosophy rows. Pair-absence, the binding, the message, the
+  // severity and the category are `checkEntry`'s from F2.12 Task 3 on — every
+  // one of them is a property of a STOCK catalog, not of this class. The count
+  // is §1's own claim and stays here.
   const alarms = alarmsOf(feeder);
   assert(alarms.length === 11, `plan §5 authors 11 alarm rows; the entry carries ${alarms.length}`);
-  for (const alarm of alarms) {
-    assert(
-      !("thresholdValue" in alarm) && !("operator" in alarm),
-      `alarm "${alarm.code}" carries thresholdValue/operator. B7: limit values are set per site at ` +
-        "commissioning, so every row here is a philosophy row — no number, no comparator. Someone " +
-        '"helpfully" filling one in is exactly what this assertion exists to refuse.',
-    );
-    assert(
-      feederKeys.has(alarm.pointKey),
-      `alarm "${alarm.code}" binds "${alarm.pointKey}", which the entry does not declare — the same ` +
-        "claim assertContentRefsResolve makes at import time, made here at build time",
-    );
-    assert(typeof alarm.message === "string" && alarm.message.length > 0, `alarm "${alarm.code}" has no message`);
-  }
 
   // The overload row binds current_a, not the deferred load_pct (ruled 2026-09-02).
   const overload = alarms.find((alarm) => alarm.code === "overload");
@@ -341,30 +843,4 @@ export function runStockAssetTemplateCatalogTests(): void {
     `the overload alarm must bind current_a (load_pct is deferred); got ${String(overload?.pointKey)}`,
   );
 
-  // Severity and category are drawn from the seeded vocabularies.
-  const severities = seededSeverities();
-  const categories = seededCategories();
-  for (const expected of ["info", "warning", "critical"]) {
-    assert(severities.has(expected), `0030 no longer seeds severity "${expected}" — the parser or the migration moved`);
-  }
-  for (const expected of ["safety", "energy", "comfort", "operations"]) {
-    assert(categories.has(expected), `0029 no longer seeds category "${expected}" — the parser or the migration moved`);
-  }
-  for (const alarm of alarms) {
-    assert(
-      severities.has(alarm.severity),
-      `alarm "${alarm.code}" has severity "${alarm.severity}", which 0030 does not seed (${[...severities].join(", ")})`,
-    );
-    assert(
-      typeof alarm.category === "string" && categories.has(alarm.category),
-      `alarm "${alarm.code}" has category "${String(alarm.category)}", which 0029 does not seed (${[...categories].join(", ")})`,
-    );
-  }
-
-  // ADR 0052 decision 6: the stamp plus the citation IS the provenance.
-  assert(
-    typeof feeder.description === "string" && feeder.description.includes(TAG_LIST_REL),
-    `${FEEDER_CODE}.description must cite ${TAG_LIST_REL} by name — the stamp plus the citation is ` +
-      "the provenance (ADR 0052 decision 6); there is no meta.provenance to fall back on",
-  );
 }
