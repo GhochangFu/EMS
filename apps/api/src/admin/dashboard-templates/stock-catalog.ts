@@ -1,5 +1,15 @@
 import type { StockDashboardTemplateDto } from "@bms/shared";
 
+import {
+  BELOW_TILES_Y,
+  ELECTRICAL_STOCK_TEMPLATES,
+  HALF_CANVAS_W,
+  LOWER_ROW_H,
+  TILE_H,
+  TILE_ROW_Y,
+  TILE_W,
+} from "./stock-catalog-electrical";
+
 /**
  * `F3.36` Part D — the stock dashboard template catalog (ADR 0049 decision 3).
  *
@@ -76,6 +86,21 @@ import type { StockDashboardTemplateDto } from "@bms/shared";
  * **THE ELECTRICAL SINGLE-LINE DIAGRAM IS NOT HERE.** No widget type draws
  * one — that is `F3.32`, a different unit entirely. Do not add a `mimic`
  * widget type by symmetry with the mock's own Electrical screen.
+ *
+ * ---
+ *
+ * **THE CATALOG IS NOW TWO FILES.** The electrical entries and the shared
+ * canvas literals moved to `stock-catalog-electrical.ts` when this file reached
+ * AGENTS.md §4.5's 1000-line cap; that file's docblock records where the cut
+ * falls and why. Everything above this paragraph is a property of the catalog
+ * as a whole and applies to both halves — in particular the rule that neither
+ * may import from `packages/db`, and that the codes are a literal list in the
+ * spec.
+ *
+ * **`tests/f3.38-stock-catalog-vocabulary.test.ts` scans both files as text**
+ * and its `STOCK_RELS` docblock says so. A third catalog file must be added to
+ * that list, or its entries' `pointKey` and `assetRoleCode` values are checked
+ * against no vocabulary at all and nothing reports it.
  */
 
 // ---------------------------------------------------------------------------
@@ -104,141 +129,18 @@ import type { StockDashboardTemplateDto } from "@bms/shared";
  * draws one, and that is `F3.32`.
  */
 
-/** Row of five KPI tiles, then one chart and one table below it — Sheet 04's
- * Electrical screen, "the same canvas bound to a different asset group". */
-const TILE_ROW_Y = 0;
-const TILE_W = 2;
-const TILE_H = 4;
-const BELOW_TILES_Y = TILE_H;
-const HALF_CANVAS_W = 6;
-const LOWER_ROW_H = 8;
-
+/**
+ * The catalog itself: the electrical entries, then the five other sections.
+ *
+ * **The electrical half lives in `stock-catalog-electrical.ts`**, which also
+ * owns the shared canvas literals imported above. That file's docblock records
+ * where the cut falls and why — in short, this file reached AGENTS.md §4.5's
+ * 1000-line cap and `section` was the only axis a reader already navigates by.
+ * Spread rather than re-listed, so the two halves cannot disagree about what is
+ * in the catalog.
+ */
 export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
-  // -------------------------------------------------------------------------
-  // Electrical — incoming supply, transformers, HT/LT panels, MCCs, utilities.
-  // -------------------------------------------------------------------------
-  {
-    code: "electrical-overview",
-    name: "Electrical Overview",
-    section: "electrical",
-    description:
-      "Incoming supply, transformers, HT/LT panels and MCCs, the same canvas Sheet 02 draws " +
-      "for the Electrical train.",
-    stockVersion: 1,
-    content: {
-      widgets: [
-        {
-          key: "alarms-tile",
-          title: "Active Alarms",
-          gridX: 0,
-          gridY: TILE_ROW_Y,
-          gridW: TILE_W,
-          gridH: TILE_H,
-          bindings: [],
-          sources: [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
-          widgetType: "value_tile",
-          config: { icon: "alert" },
-        },
-        {
-          key: "workorders-tile",
-          title: "Open Work Orders",
-          gridX: 2,
-          gridY: TILE_ROW_Y,
-          gridW: TILE_W,
-          gridH: TILE_H,
-          bindings: [],
-          sources: [{ catalogKey: "workorders.open.count", params: {}, sortOrder: 0 }],
-          widgetType: "value_tile",
-          config: { icon: "clipboard" },
-        },
-        {
-          key: "health-tile",
-          title: "Health Score",
-          gridX: 4,
-          gridY: TILE_ROW_Y,
-          gridW: TILE_W,
-          gridH: TILE_H,
-          bindings: [],
-          sources: [{ catalogKey: "assets.health.score", params: {}, sortOrder: 0 }],
-          widgetType: "value_tile",
-          config: { icon: "gauge" },
-        },
-        {
-          key: "incoming-tile",
-          title: "Incoming Supply",
-          gridX: 6,
-          gridY: TILE_ROW_Y,
-          gridW: TILE_W,
-          gridH: TILE_H,
-          bindings: [
-            { assetRoleCode: "incoming-supply", pointKey: "kw", pointRole: "primary", sortOrder: 0 },
-          ],
-          sources: [],
-          widgetType: "value_tile",
-          config: { icon: "bolt", unit: "kW" },
-        },
-        {
-          key: "transformer-tile",
-          title: "Transformer Load",
-          gridX: 8,
-          gridY: TILE_ROW_Y,
-          gridW: TILE_W,
-          gridH: TILE_H,
-          // `F3.38`: this bound `loadPercent`, which existed in no vocabulary.
-          // The nearest real code is `load_pct`, but it belongs to
-          // `CONTROL_ROOM_UPS_POINT_KEYS` and no seeded electrical asset
-          // registers it — renaming to it would have moved the key into the
-          // vocabulary and left the widget resolving nothing, which is the same
-          // empty tile with a better-looking diff. `kw` is what every seeded
-          // electrical asset actually carries, so the tile reads a load in kW.
-          // The unit moved with the key: a kW value under a `%` label is wrong
-          // in the one way nothing reports.
-          bindings: [
-            {
-              assetRoleCode: "transformer",
-              pointKey: "kw",
-              pointRole: "primary",
-              sortOrder: 0,
-            },
-          ],
-          sources: [],
-          widgetType: "value_tile",
-          config: { icon: "bolt", unit: "kW" },
-        },
-        // `ht-panel` is one of `0051`'s own named plural nodes ("HT Panels 2 ·
-        // all good"), so this is the multi-match case stated rather than left
-        // to a fixture: one authored binding, many members resolved at
-        // instantiation. `pointRole: "series"` because a chart plots a value
-        // over time per matched member, the renderer's "series" slot.
-        {
-          key: "ht-panel-chart",
-          title: "HT Panel Load",
-          gridX: 0,
-          gridY: BELOW_TILES_Y,
-          gridW: HALF_CANVAS_W,
-          gridH: LOWER_ROW_H,
-          bindings: [
-            { assetRoleCode: "ht-panel", pointKey: "kw", pointRole: "series", sortOrder: 0 },
-          ],
-          sources: [],
-          widgetType: "chart",
-          config: { series: "line", windowMinutes: 1440, footerStats: true },
-        },
-        {
-          key: "alarms-table",
-          title: "Active Alarms",
-          gridX: HALF_CANVAS_W,
-          gridY: BELOW_TILES_Y,
-          gridW: HALF_CANVAS_W,
-          gridH: LOWER_ROW_H,
-          bindings: [],
-          sources: [{ catalogKey: "alarms.active", params: {}, sortOrder: 0 }],
-          widgetType: "table",
-          config: {},
-        },
-      ],
-    },
-  },
+  ...ELECTRICAL_STOCK_TEMPLATES,
 
   // -------------------------------------------------------------------------
   // Water — raw intake, pump house, treatment, tanks, distribution.
