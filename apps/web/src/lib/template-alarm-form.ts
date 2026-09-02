@@ -32,16 +32,40 @@ import type { PointGridProblem } from "./template-points-grid";
  *
  * ## `thresholdValue` is where zero and empty must not be confused
  *
- * It is `z.number().finite()` and **required**. `Number("")` is `0`, and `0` is
- * a perfectly good threshold — so an empty box cannot be allowed to become one.
- * The row keeps the raw text and `parseThreshold` returns `null` for anything
- * that is not a finite number, which `alarmFormErrors` reports as missing.
+ * It is `z.number().finite()`. `Number("")` is `0`, and `0` is a perfectly
+ * good threshold — so an empty box cannot be allowed to become one. The row
+ * keeps the raw text and `parseThreshold` returns `null` for anything that is
+ * not a finite number, which `alarmFormErrors` reports as missing.
+ *
+ * ## `operator` and `thresholdValue` are a paired optional group (ADR 0019
+ * Amendment 2)
+ *
+ * `templateAlarmSchema` no longer requires either: both absent is an alarm
+ * PHILOSOPHY row (a meaning whose limit is set per site at commissioning),
+ * both present is a site-independent proto-rule, and one without the other
+ * is refused. `row.operator` is `string`, not `AutomationRuleOperator`, for
+ * exactly this reason — `""` is the row's "not set" state, matching
+ * `row.thresholdValue`'s empty string, and the `<select>` in `alarms-tab.tsx`
+ * offers an explicit empty option so an author can express it. `alarmFormErrors`
+ * accepts the pair empty, refuses a half-pair in the server's own words, and
+ * `buildAlarmPayload` omits both keys rather than sending a guessed value for
+ * either.
  */
 
 /** `contentEnvelopeSchema` caps every section at 200 entries. */
 export const MAX_ALARM_ENTRIES = 200;
 
 const LIMITS = { code: 64, message: 500, philosophy: 2000 } as const;
+
+/**
+ * ADR 0019 Amendment 2 decision 1's wording, matched here so the client
+ * refuses a half-pair in the server's own words rather than a paraphrase —
+ * `templateAlarmSchema`'s `superRefine` in `asset-templates-content.schema.ts`
+ * is the other half of this sentence.
+ */
+const HALF_PAIR_MESSAGE =
+  "An operator with no number, or a number with no comparator, is half a rule — " +
+  "set both, or clear both.";
 
 /**
  * The five comparisons, worded as `rule-builder-panel.tsx` words them.
@@ -70,7 +94,12 @@ export const ALARM_OPERATORS = automationRuleOperatorSchema.options;
 export type TemplateAlarmRow = {
   code: string;
   pointKey: string;
-  operator: AutomationRuleOperator;
+  /**
+   * `string`, not `AutomationRuleOperator` — `""` is a legitimate "not set"
+   * state (ADR 0019 Amendment 2), matching `thresholdValue`'s own empty
+   * string. `isOperator` narrows it wherever a real operator is needed.
+   */
+  operator: string;
   thresholdValue: string;
   severity: string;
   message: string;
@@ -95,9 +124,13 @@ export function alarmRowsFrom(alarms: readonly TemplateAlarm[] | undefined): Tem
     return {
       code: text(alarm?.code),
       pointKey: text(alarm?.pointKey),
-      // An unrecognised operator reads as `gt`. The alternative is a select
-      // with no selection, which saves back as whatever happens to be first.
-      operator: isOperator(alarm?.operator) ? alarm.operator : "gt",
+      // Absent — no `operator` key at all — seeds as "": ADR 0019 Amendment 2
+      // made that a legitimate authored state (a pair-absent alarm philosophy
+      // row), so the select's new empty option is what should show, not a
+      // guessed default. A DEFINED but unrecognised operator (garbled or
+      // pre-dating the vocabulary) still falls back to `gt` — the alternative
+      // is a select bound to a value it does not offer.
+      operator: alarm?.operator === undefined ? "" : isOperator(alarm.operator) ? alarm.operator : "gt",
       // `String(0)` is `"0"`, which is what makes a stored zero survive the
       // round trip. `?? ""` would not — `0 ?? ""` is `0`, but a non-number
       // would reach the input as an object.
@@ -199,14 +232,18 @@ export function alarmFormErrors(
       push("pointKey", `"${pointKey}" is not a point this template declares.`);
     }
 
-    // The one place an empty box and a zero must not be confused.
-    if (parseThreshold(row.thresholdValue) === null) {
-      push(
-        "thresholdValue",
-        row.thresholdValue.trim() === ""
-          ? "An alarm needs a threshold."
-          : "A threshold must be a number.",
-      );
+    // `operator` and `thresholdValue` are a paired optional group (ADR 0019
+    // Amendment 2). Both empty is an alarm philosophy row — nothing to
+    // report. One empty and the other not is a half-pair, refused in the
+    // server's own words. Both non-empty falls through to the ordinary
+    // "is this actually a number" check — the one place an empty box and a
+    // zero must not be confused.
+    const thresholdProvided = row.thresholdValue.trim() !== "";
+    const operatorProvided = row.operator.trim() !== "";
+    if (thresholdProvided !== operatorProvided) {
+      push("thresholdValue", HALF_PAIR_MESSAGE);
+    } else if (thresholdProvided && parseThreshold(row.thresholdValue) === null) {
+      push("thresholdValue", "A threshold must be a number.");
     }
 
     if (row.severity.trim() === "") {
@@ -258,22 +295,34 @@ export function alarmFormErrors(
  * when all four of its fields are empty — an empty object would be a record
  * claiming class knowledge was captured when none was.
  *
- * A row whose threshold does not parse sends `NaN`, which `.finite()` refuses.
- * That is unreachable behind the disabled Save, and it is deliberately not
- * papered over with a `?? 0`: a silent zero is an armed alarm nobody asked for,
- * and this is the one field where the safe-looking fallback is the dangerous
- * one.
+ * **`operator` and `thresholdValue` are both omitted, or both sent — never
+ * one alone** (ADR 0019 Amendment 2). A pair-absent row (both empty) sends
+ * neither key, which is what makes it an alarm philosophy row on the wire.
+ * A row whose threshold does not parse — including one left empty while its
+ * operator is somehow set, which is unreachable behind the disabled Save —
+ * omits `thresholdValue` rather than sending `NaN` or papering over it with
+ * `?? 0`: a silent zero is an armed alarm nobody asked for, and this is the
+ * one field where the safe-looking fallback is the dangerous one.
  */
 export function buildAlarmPayload(rows: readonly TemplateAlarmRow[]): TemplateAlarm[] {
   return rows.map((row) => {
     const alarm: TemplateAlarm = {
       code: row.code.trim(),
       pointKey: row.pointKey.trim(),
-      operator: row.operator,
-      thresholdValue: parseThreshold(row.thresholdValue) ?? Number.NaN,
       severity: row.severity.trim(),
       message: row.message.trim(),
     };
+
+    // Sent independently of each other, deliberately: a half-pair reaching
+    // here is unreachable behind the disabled Save, and the safe response to
+    // an unreachable state is still "send only what is real", never a guess.
+    if (isOperator(row.operator)) {
+      alarm.operator = row.operator;
+    }
+    const parsedThreshold = parseThreshold(row.thresholdValue);
+    if (parsedThreshold !== null) {
+      alarm.thresholdValue = parsedThreshold;
+    }
 
     const category = row.category.trim();
     if (category !== "") {

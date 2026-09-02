@@ -64,11 +64,38 @@ export function runThresholdZeroVersusEmptyTests(): void {
   assert(parseThreshold("Infinity") === null, "infinity is not finite");
   assert(parseThreshold("abc") === null, "a non-number is not a threshold");
 
-  const empty = alarmFormErrors([row({ thresholdValue: "" })], DECLARED, VOCAB);
-  assert(empty.length === 1 && empty[0].field === "thresholdValue", "an empty threshold is refused");
+  // ADR 0019 Amendment 2: `operator` and `thresholdValue` are a paired
+  // optional group. An empty threshold used to be refused unconditionally —
+  // it is now refused only when the operator is NOT also empty.
+  const pairAbsent = alarmFormErrors(
+    [row({ thresholdValue: "", operator: "" })],
+    DECLARED,
+    VOCAB,
+  );
   assert(
-    empty[0].message.includes("needs a threshold"),
-    `an empty box is missing, not malformed — got ${empty[0].message}`,
+    pairAbsent.length === 0,
+    `an empty threshold and an empty operator together are accepted — got ${JSON.stringify(pairAbsent)}`,
+  );
+
+  const thresholdMissing = alarmFormErrors([row({ thresholdValue: "" })], DECLARED, VOCAB);
+  assert(
+    thresholdMissing.length === 1 && thresholdMissing[0].field === "thresholdValue",
+    "an empty threshold with an operator set is refused",
+  );
+  assert(
+    thresholdMissing[0].message.includes("half a rule"),
+    `the refusal names both-or-neither in words, matching the server — got ${thresholdMissing[0].message}`,
+  );
+
+  // The mirror: an operator cleared while a threshold is set is refused too.
+  const operatorMissing = alarmFormErrors([row({ operator: "" })], DECLARED, VOCAB);
+  assert(
+    operatorMissing.length === 1 && operatorMissing[0].field === "thresholdValue",
+    "a threshold with no operator is refused, mirroring the threshold-missing case",
+  );
+  assert(
+    operatorMissing[0].message.includes("half a rule"),
+    `the refusal names both-or-neither in words, matching the server — got ${operatorMissing[0].message}`,
   );
 
   const junk = alarmFormErrors([row({ thresholdValue: "abc" })], DECLARED, VOCAB);
@@ -204,9 +231,19 @@ export function runMalformedStoredEntryTests(): void {
   assert(rows.length === 3, "every stored entry produces a row");
   assert(rows.every((entry) => typeof entry.thresholdValue === "string"), "the threshold is always text");
   assert(rows.every((entry) => typeof entry.cause === "string"), "philosophy fields are always text");
+  // Rows 0 and 1 carry no `operator` key at all — ADR 0019 Amendment 2 made
+  // that a legitimate authored state (a pair-absent alarm philosophy row), so
+  // it now seeds as "" rather than a guessed default.
   assert(
-    rows.every((entry) => (ALARM_OPERATORS as readonly string[]).includes(entry.operator)),
-    "an unrecognised operator falls back to a real one rather than leaving the select unset",
+    rows[0].operator === "" && rows[1].operator === "",
+    `an absent operator seeds as empty, not a guessed default — got ${JSON.stringify([rows[0].operator, rows[1].operator])}`,
+  );
+  // Row 2's operator is DEFINED but garbled ("sideways" is not one of the
+  // five) — that still falls back to a real one rather than binding the
+  // <select> to a value it does not offer.
+  assert(
+    (ALARM_OPERATORS as readonly string[]).includes(rows[2].operator),
+    "a garbled but present operator falls back to a real one rather than leaving the select unset",
   );
   // A string threshold in storage is not a number, so it does not survive — and
   // that is right: it would otherwise reach `.finite()` as a string.

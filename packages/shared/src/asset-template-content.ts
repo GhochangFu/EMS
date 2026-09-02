@@ -63,12 +63,24 @@ export type TemplateAlarmPhilosophy = {
 };
 
 /**
- * A threshold plus the class-level knowledge about it.
+ * A threshold plus the class-level knowledge about it — or just the class-level
+ * knowledge, `operator`/`thresholdValue` withheld.
  *
  * Bound to the live rule vocabulary — `AutomationRuleOperator` has no `neq` and
- * severity is three values — so a template cannot author an alarm the engine
- * cannot run. `philosophy` is `E2.1`'s vocabulary and `E2.1` is not built; it
- * may still be renamed or restructured.
+ * severity is three values — so a template authoring the pair cannot author a
+ * threshold the engine cannot run. `philosophy` is `E2.1`'s vocabulary and
+ * `E2.1` is not built; it may still be renamed or restructured.
+ *
+ * **`operator` and `thresholdValue` are a paired optional group (ADR 0019
+ * Amendment 2 decisions 1 and 2).** One without the other is refused by
+ * `templateAlarmSchema`'s `superRefine` — an operator with no number, or a
+ * number with no comparator, is half a rule. With the pair present, the row
+ * is a site-independent proto-rule. **With the pair absent, the row is an
+ * alarm PHILOSOPHY row** — parameter, meaning, severity, category,
+ * philosophy — the ISA-18.2 rationalization record for the asset class, for
+ * a meaning whose limit is set per site at commissioning (B7) and cannot be
+ * guessed at authoring time (§`docs/electrical-derived-taglist-v1.md`'s ten
+ * bullets are all shaped this way).
  *
  * Nothing converts one of these into a `bms.automation_rules` row. That needs
  * `ruleType`/`condition`/`action`, which a template does not carry.
@@ -76,8 +88,8 @@ export type TemplateAlarmPhilosophy = {
 export type TemplateAlarm = {
   code: string;
   pointKey: string;
-  operator: AutomationRuleOperator;
-  thresholdValue: number;
+  operator?: AutomationRuleOperator;
+  thresholdValue?: number;
   severity: AutomationRuleSeverity;
   message: string;
   /**
