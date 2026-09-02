@@ -150,18 +150,31 @@ async function main(): Promise<void> {
     // ── Cross-organization derivation ─────────────────────────────────────
     // Every statement joins or writes `bms.locations`/`assets`/`asset_groups`,
     // all of which `0047` now policy-filters, so one pass per organization
-    // replaces the single unfiltered pass. On a fresh database PHEWB has no
-    // locations yet and its pass matches nothing; on a re-seed it matches the
-    // rows the old single statement would have. `seedAssetGroups` moved inside
-    // this loop for the same reason — `asset_groups` gained a NOT-NULL org and a
-    // policy, so the group/member writes need the org's context and its stamp.
-    for (const organizationId of [eskomOrgId, phewbOrgId]) {
-      await withOrganization(pool, organizationId, async () => {
-        await backfillAssetLocations(pool);
-        await assignEskomAssetRtus(pool);
-        await seedAssetGroups(pool, organizationId);
-      });
-    }
+    // replaces the single unfiltered pass. `seedAssetGroups` moved inside that
+    // per-organization bracket for the same reason — `asset_groups` gained a
+    // NOT-NULL org and a policy, so the group/member writes need the org's
+    // context and its stamp.
+    //
+    // **`F3.41` SPLIT THE LOOP, AND THE REASON IS THE SENTENCE IT REPLACES.**
+    // This used to run `for (const organizationId of [eskomOrgId, phewbOrgId])`
+    // HERE, above `seedPheCatalog`, and conceded the consequence in its own
+    // words: *"On a fresh database PHEWB has no locations yet and its pass
+    // matches nothing; on a re-seed it matches the rows the old single
+    // statement would have."* That was tolerable while the pass only derived
+    // `location_id`. It stopped being tolerable when `F3.41` made the pass the
+    // thing that writes PHE WB's asset-group ROLES, because a role that exists
+    // only after a second seed is a feature that works on a developer machine
+    // and nowhere else — CI seeds exactly once against a fresh schema
+    // (`.github/workflows/ci.yml`, "Validate seed against a fresh schema"), and
+    // so does the PHE pilot.
+    //
+    // ESKOM's pass stays exactly where it was: `seedScopedDemoUsers` below
+    // depends on ESKOM's groups already existing, and says so.
+    await withOrganization(pool, eskomOrgId, async () => {
+      await backfillAssetLocations(pool);
+      await assignEskomAssetRtus(pool);
+      await seedAssetGroups(pool, eskomOrgId);
+    });
 
     // Identity: org-less users + grants on `identityDb`, after the groups the
     // scope grant references exist. Not wrapped in `withOrganization` — the rows
@@ -172,6 +185,17 @@ async function main(): Promise<void> {
     await withOrganization(pool, phewbOrgId, async () => {
       await seedPheCatalog(db, pool);
       await cleanupLegacyPheRtuLocations(pool);
+      // `F3.41` — PHEWB's derivation pass, AFTER the catalog that creates the
+      // locations and assets it derives from. All three calls moved, not two:
+      // dropping `assignEskomAssetRtus` from this pass is probably harmless and
+      // is certainly a second change, and keeping it makes this a pure
+      // relocation, so the only thing that changed is *when* the pass runs.
+      //
+      // `verifyHierarchySeed`'s three PHE membership counts are what hold this
+      // order — put these back above `seedPheCatalog` and it fails with 0 of 36.
+      await backfillAssetLocations(pool);
+      await assignEskomAssetRtus(pool);
+      await seedAssetGroups(pool, phewbOrgId);
     });
     // The PHEWB organization admin is another org-less identity row: superuser,
     // outside the tenant context. `pool` is passed only for its `organizations`
