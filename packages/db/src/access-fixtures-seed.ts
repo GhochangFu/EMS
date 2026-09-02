@@ -36,7 +36,8 @@ export const MANUAL_ASSET_CODE = "ESK-MANUAL-01";
  * depended on the order the database happened to be filled in. `F3.39` removed
  * the organization predicate that used to bound it, and `seedPheCatalog` runs
  * before `seedPointKeyCatalog`, so a FRESH database gave this fixture
- * `battery_charge_pct` — a PHE pilot code with a NULL unit — while every
+ * `battery_charge_pct` — a PHE pilot code that carried a NULL unit until
+ * `F2.11` promoted it and filled `"%"` — while every
  * database seeded earlier kept `backup_min`. Measured both ways on two
  * databases. No error is raised in either case, which is exactly why a
  * cold-start check passed over it, and the row is persistent, so every shipped

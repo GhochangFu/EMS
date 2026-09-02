@@ -5,6 +5,7 @@ import {
   CONTROL_ROOM_ENVIRONMENT_POINT_KEYS,
   CONTROL_ROOM_IT_POINT_KEYS,
   CONTROL_ROOM_UPS_POINT_KEYS,
+  ELECTRICAL_CLASS_POINT_KEYS,
   ELECTRICAL_POINT_KEYS,
   HVAC_POINT_KEYS,
   METERED_PUMPING_POINT_KEYS,
@@ -71,6 +72,161 @@ const UNIT_BY_KEY: Record<string, string> = {
   voltage_vyn: "V",
   voltage_vbn: "V",
   chlorine_pump_on: "",
+  // `F2.11` — `ELECTRICAL_CLASS_POINT_KEYS`. Every unit is read from
+  // `docs/electrical-derived-taglist-v1.md`'s own Unit column, per ADR 0051
+  // Amendment 6 decision 4 — `0/1`, `enum`, `code`, `tap`, `count` and `—`
+  // all map to `""`, the way `pf`, `breaker_main` and `outlets_used` above
+  // already spell an unset unit, and NEVER a missing entry, which would
+  // seed NULL and revert a global administrator's correction on every
+  // `compose up`. `kVAR`/`kVARh` in the source file are spelled `kVAr`/
+  // `kVArh` here to match `kvar` above, and `rpm` is spelled `RPM` to match
+  // `fan_rpm` above (owner ruling 2026-09-02).
+  //
+  // §1 feeder / incomer
+  current_in: "A",
+  kvah_total: "kVAh",
+  kvarh_total: "kVArh",
+  demand_kw: "kW",
+  max_demand_kw: "kW",
+  max_demand_kva: "kVA",
+  thd_v_pct: "%",
+  thd_i_pct: "%",
+  voltage_unbalance_pct: "%",
+  current_unbalance_pct: "%",
+  breaker_trip: "",
+  breaker_spring_charged: "",
+  relay_trip_code: "",
+  earth_fault_state: "",
+  meter_comms_ok: "",
+  // §2 transformer
+  top_oil_temp_c: "°C",
+  winding_temp_c: "°C",
+  winding_temp_r_c: "°C",
+  winding_temp_y_c: "°C",
+  winding_temp_b_c: "°C",
+  ambient_temp_c: "°C",
+  oil_level_pct: "%",
+  oil_level_low: "",
+  buchholz_alarm: "",
+  buchholz_trip: "",
+  prv_operated: "",
+  oti_alarm: "",
+  oti_trip: "",
+  wti_alarm: "",
+  wti_trip: "",
+  tap_position: "",
+  oltc_in_progress: "",
+  oltc_operation_count: "",
+  cooling_fan_status: "",
+  cooling_pump_status: "",
+  dga_h2_ppm: "ppm",
+  dga_c2h2_ppm: "ppm",
+  dga_ch4_ppm: "ppm",
+  dga_co_ppm: "ppm",
+  oil_moisture_ppm: "ppm",
+  lv_load_pct: "%",
+  oil_bdv_kv: "kV",
+  oil_moisture_lab_ppm: "ppm",
+  silica_gel_state: "",
+  insulation_resistance_mohm: "MΩ",
+  // §3 DG set
+  dg_status: "",
+  dg_mode: "",
+  dg_on_load: "",
+  dg_alarm: "",
+  dg_shutdown: "",
+  dg_alarm_code: "",
+  mains_available: "",
+  engine_speed_rpm: "RPM",
+  oil_pressure_bar: "bar",
+  coolant_temp_c: "°C",
+  oil_temp_c: "°C",
+  exhaust_temp_c: "°C",
+  fuel_level_pct: "%",
+  bulk_fuel_level_pct: "%",
+  fuel_rate_lph: "L/hr",
+  fuel_totalizer_l: "L",
+  charger_alternator_v: "V",
+  coolant_level_low: "",
+  run_hours_h: "h",
+  start_count: "",
+  failed_start_count: "",
+  gen_voltage_vry: "V",
+  gen_voltage_vyb: "V",
+  gen_voltage_vbr: "V",
+  gen_current_ir: "A",
+  gen_current_iy: "A",
+  gen_current_ib: "A",
+  gen_frequency_hz: "Hz",
+  gen_kw: "kW",
+  gen_kva: "kVA",
+  gen_pf: "",
+  gen_kwh_total: "kWh",
+  service_due_h: "h",
+  emergency_stop_state: "",
+  canopy_temp_c: "°C",
+  // §4 UPS
+  ups_status: "",
+  ups_alarm: "",
+  ups_alarm_code: "",
+  on_battery: "",
+  on_bypass: "",
+  input_voltage_v: "V",
+  input_frequency_hz: "Hz",
+  output_current_a: "A",
+  output_kw: "kW",
+  output_kva: "kVA",
+  battery_current_a: "A",
+  battery_charge_pct: "%",
+  battery_time_on_s: "s",
+  battery_replace_flag: "",
+  battery_last_test: "",
+  rectifier_ok: "",
+  inverter_ok: "",
+  fan_ok: "",
+  cell_voltage_min_v: "V",
+  cell_voltage_max_v: "V",
+  impedance_test_result: "",
+  // §5 solar PV
+  inv_status: "",
+  inv_fault: "",
+  inv_event_code: "",
+  dc_voltage_v: "V",
+  dc_current_a: "A",
+  dc_power_kw: "kW",
+  ac_power_kw: "kW",
+  ac_kva: "kVA",
+  ac_pf: "",
+  ac_frequency_hz: "Hz",
+  ac_voltage_vry: "V",
+  ac_voltage_vyb: "V",
+  ac_voltage_vbr: "V",
+  ac_current_ir: "A",
+  ac_current_iy: "A",
+  ac_current_ib: "A",
+  energy_total_kwh: "kWh",
+  energy_today_kwh: "kWh",
+  cabinet_temp_c: "°C",
+  irradiance_wm2: "W/m²",
+  module_temp_c: "°C",
+  string_current_a: "A",
+  insulation_resistance_kohm: "kΩ",
+  grid_export_kw: "kW",
+  soiling_loss_pct: "%",
+  // §6 capacitor bank / APFC
+  apfc_status: "",
+  apfc_alarm: "",
+  target_pf: "",
+  actual_pf: "",
+  steps_on_count: "",
+  step_state: "",
+  kvar_connected: "kVAr",
+  kvar_required: "kVAr",
+  bus_voltage_v: "V",
+  panel_temp_c: "°C",
+  step_operation_count: "",
+  capacitor_current_a: "A",
+  step_fault_state: "",
 };
 
 function titleCase(code: string): string {
@@ -133,6 +289,29 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
   // after `F3.39`'s single-pass `ON CONFLICT (code) DO UPDATE` the later array
   // would win silently — which is the drift that clash check exists for.
   ...keysForDomain(METERED_PUMPING_POINT_KEYS, "electrical"),
+  // `F2.11` — the electrical class point keys (ADR 0051 Amendment 6), LAST
+  // and unfiltered, for the same two reasons `F3.41`'s array above is last.
+  //
+  // (a) The `.filter()` above, which subtracts `ELECTRICAL_POINT_KEYS` from
+  // the control-room array, keeps reading exactly what it read before.
+  //
+  // (b) `created_at` ordering. Five fixtures pick their point key with
+  // `ORDER BY created_at, code` over the whole table
+  // (telemetry-write.spec.ts, telemetry-import.spec.ts,
+  // resolve-catalog-point-key.spec.ts,
+  // asset-templates.instantiate.integration.spec.ts,
+  // asset-templates.lifecycle.integration.spec.ts). Appending this array
+  // last gives 138 of its 139 rows the newest `created_at` on every database,
+  // existing and fresh, so no NEW row enters a head window. The exception is
+  // `battery_charge_pct`: it already holds a row that `seedPheCatalog` wrote
+  // earlier, `ON CONFLICT ... DO UPDATE` leaves `created_at` alone, and on a
+  // cold start that row is the OLDEST in the table. Its unit filling
+  // `NULL` → `"%"` therefore moves it INTO the two `unit IS NOT NULL ...
+  // LIMIT 5` windows (telemetry-write.spec.ts, telemetry-import.spec.ts) at
+  // position 0 and evicts the fifth row — harmless, since `"%"` is a real
+  // unit and both specs need four, but a reader who trusts "none move" would
+  // be wrong by exactly one row. Verified on a scratch cold start (F2.11).
+  ...keysForDomain(ELECTRICAL_CLASS_POINT_KEYS, "electrical"),
 ];
 
 /**
@@ -195,11 +374,23 @@ export const STOCK_POINT_KEY_CODES: readonly string[] = GLOBAL_CATALOG.map((row)
  * operator input, and an admin can always re-`PATCH` the code through
  * `/api/v1/admin/point-keys/:id`.
  *
- * `name` and `domain` stay assigned outright: neither is administrator-editable
- * (the `PATCH` body carries `unit`, not `domain`), so nothing is reverted, and
- * a domain that drifts from `ARRAY_DOMAIN` is a defect the clash check in
+ * `name` and `domain` stay assigned outright, AND THAT IS A COST TOO — this
+ * paragraph used to claim neither was administrator-editable, which is false:
+ * `updatePointKeyBodySchema` in `apps/api/src/admin/point-keys/point-keys.schema.ts`
+ * is a `.partial()` over `name`, `domain`, `unit` and `description`, so a
+ * global administrator's `PATCH` of a `name` is reverted on the next
+ * `compose up`, with the `master.point_key.update` audit row left asserting
+ * a change the table no longer holds. Found by the `F2.11` security and
+ * migration reviews (2026-09-02); pre-existing since `F3.39`, and `F2.11`
+ * multiplies the exposure from 46 rows to 185, most of them `titleCase`
+ * names ("Dga H2 Ppm", "Oltc In Progress") an administrator is likely to
+ * correct. Left as-is here because the seed MUST be able to correct a
+ * `domain` — `ARRAY_DOMAIN`'s clash check in
  * `tests/f3.39-global-point-key-vocabulary.test.ts` is entitled to assume the
- * seed has corrected.
+ * seed corrects a drifted one, and ADR 0051 Amendment 6 decision 3 is
+ * implemented by exactly this assignment. Whether `name` should be
+ * `COALESCE`d like `unit`, or the `PATCH` body narrowed, is an owner decision
+ * filed as a backlog row by the `F2.11` closure sweep.
  */
 export async function seedPointKeyCatalog(pool: pg.Pool): Promise<void> {
   for (const row of GLOBAL_CATALOG) {

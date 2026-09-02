@@ -480,6 +480,7 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       CONTROL_ROOM_ENVIRONMENT_POINT_KEYS: "environment",
       CONTROL_ROOM_ELECTRICAL_POINT_KEYS: "electrical",
       METERED_PUMPING_POINT_KEYS: "electrical",
+      ELECTRICAL_CLASS_POINT_KEYS: "electrical",
     };
 
     /**
@@ -568,10 +569,11 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
         [...table![1]!.matchAll(/^\s*([a-z0-9_]+):/gm)].map((m) => m[1]!),
       );
       // Anti-vacuity for this case alone, at the actual rather than at the
-      // pre-`F3.41` count of 34 — this file argues at length for moving a bound
+      // pre-`F2.11` count of 46 — this file argues at length for moving a bound
       // to its actual, and leaving one slack in the same commit would be the
-      // inconsistency a later reader copies.
-      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(46);
+      // inconsistency a later reader copies. 185 = 46 + `F2.11`'s 139
+      // (ADR 0051 Amendment 6).
+      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(185);
 
       const missing: string[] = [];
       for (const arrayName of Object.keys(ARRAY_DOMAIN)) {
@@ -677,14 +679,15 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       expect(
         arraysByName.size,
         `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`,
-      ).toBeGreaterThanOrEqual(7);
+      ).toBeGreaterThanOrEqual(8);
       const codes = new Set([...arraysByName.values()].flat());
-      // 46 is the actual after `F3.41` added `METERED_PUMPING_POINT_KEYS`'s 12
-      // codes to the 34 that were here. Moved to the actual rather than left at
-      // 30, where it was slack by four and would have stayed green with the new
-      // array parsed as nothing at all — which is the exact failure this whole
-      // `describe` block exists to make impossible.
-      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(46);
+      // 185 is the actual after `F2.11` added `ELECTRICAL_CLASS_POINT_KEYS`'s
+      // 139 codes (ADR 0051 Amendment 6) to the 46 that were here. Moved to
+      // the actual rather than left at 46, where it was slack by 139 and
+      // would have stayed green with the new array parsed as nothing at all
+      // — which is the exact failure this whole `describe` block exists to
+      // make impossible.
+      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(185);
       expect(
         sql.split(";").filter((s) => s.trim().length > 0).length,
         "migration 0057 holds almost no statements",

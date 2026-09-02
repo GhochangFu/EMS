@@ -164,9 +164,12 @@ export async function loadFixtures(pool: pg.Pool, prefix: string = TEST_ASSET_PR
     // **`F3.41` moved `chlorine_pump_on` out of the NULL set**, so this comment
     // no longer names it. It joined `METERED_PUMPING_POINT_KEYS`, which gave it
     // a `UNIT_BY_KEY` entry of `""` — the binary spelling `pf` and
-    // `breaker_main` already use. `network_strength` and
-    // `controller_power_status` are still NULL: they are `environment` domain
-    // and stayed out of that array deliberately.
+    // `breaker_main` already use. **`F2.11` moved `battery_charge_pct` out of
+    // the NULL set too** — it joined `ELECTRICAL_CLASS_POINT_KEYS` (ADR 0051
+    // Amendment 6 decision 3), which gave it a `UNIT_BY_KEY` entry of `"%"` and
+    // flipped its domain `environment` → `electrical`. `network_strength` and
+    // `controller_power_status` are the two still NULL: they remain
+    // `environment` domain and stayed out of both arrays deliberately.
     `SELECT code, unit FROM bms.point_keys
       WHERE active = true AND unit IS NOT NULL ORDER BY created_at, code LIMIT 5`,
   );
