@@ -18,7 +18,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
-import { idParamSchema } from "../admin.schema";
+import { idParamSchema, stockCodeParamSchema } from "../admin.schema";
 // Reused by identity, not moved: `tests/adr-0029-openapi-contract.test.ts`
 // forbids DECLARING a body schema in a controller, not importing one.
 import { importStockTemplateBodySchema } from "../dashboard-templates/dashboard-templates.schema";
@@ -98,6 +98,9 @@ export class AssetTemplatesAdminController {
    * `F2.13` — imports one stock entry into `organizationId` as a stamped
    * draft. Three segments, so no collision with the two-segment
    * `@Post(":id/…")` routes below.
+   *
+   * `:code` is parsed like `:id` is — inside the `try`, so a malformed segment
+   * is a 400 rather than an echo of whatever arrived (`stockCodeParamSchema`).
    */
   @Post("stock/:code/import")
   async importStock(
@@ -106,8 +109,9 @@ export class AssetTemplatesAdminController {
     @CurrentUser() user: JwtPayload,
   ) {
     try {
+      const stockCode = stockCodeParamSchema.parse(code);
       const parsed = importStockTemplateBodySchema.parse(body);
-      return await this.stock.import(user, code, parsed.organizationId);
+      return await this.stock.import(user, stockCode, parsed.organizationId);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

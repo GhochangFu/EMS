@@ -269,7 +269,7 @@ export async function importAdminStockAssetTemplate(
   organizationId: string,
 ): Promise<AdminAssetTemplateDto> {
   return adminFetch(
-    `/admin/asset-templates/stock/${code}/import`,
+    `/admin/asset-templates/stock/${encodeURIComponent(code)}/import`,
     adminAssetTemplateDtoSchema,
     { method: "POST", headers: jsonHeaders, body: JSON.stringify({ organizationId }) },
   );

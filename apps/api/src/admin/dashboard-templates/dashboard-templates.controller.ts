@@ -18,7 +18,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
-import { idParamSchema } from "../admin.schema";
+import { idParamSchema, stockCodeParamSchema } from "../admin.schema";
 import { DashboardTemplatesInstantiateService } from "./dashboard-templates-instantiate.service";
 import { DashboardTemplatesStockService } from "./dashboard-templates-stock.service";
 import {
@@ -157,8 +157,12 @@ export class DashboardTemplatesController {
     @CurrentUser() user: JwtPayload,
   ) {
     try {
+      // `:code` is bounded before it reaches the lookup or the 400 message —
+      // the `F2.13` security review found the gap on the asset-template
+      // sibling, and AGENTS.md §4.5 fixes the class, not the instance.
+      const stockCode = stockCodeParamSchema.parse(code);
       const parsed = importStockTemplateBodySchema.parse(body);
-      return await this.stock.import(user, code, parsed.organizationId);
+      return await this.stock.import(user, stockCode, parsed.organizationId);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

@@ -53,4 +53,40 @@ export function runAssetTemplatesControllerTests(): void {
   // quietly break it.
   const stockImportAt = source.indexOf('@Post("stock/:code/import")');
   expect(stockImportAt, "the controller must declare the stock import route").toBeGreaterThan(-1);
+
+  // **The guard on `GET stock` is proven here, not only exercised.** The
+  // integration suite's `assertListNeedsAMasterDataRole` calls the *service*
+  // method, so a refactor that drops the `assertCanList` line from the handler
+  // leaves every other gate green while any authenticated principal — a
+  // `viewer` included — enumerates the shipped catalog. That is the `F3.36`
+  // security finding on the dashboard route, and the `F2.13` security review
+  // asked for this assertion so it cannot recur silently.
+  const listStock = methodBody(source, "async listStock(", "@Get(");
+  expect(
+    listStock,
+    "listStock must call this.stock.assertCanList(user) before it returns the catalog",
+  ).toContain("this.stock.assertCanList(user)");
+
+  // And `:code` is parsed before it reaches the catalog lookup or the 400
+  // message — a bounded, lowercase-kebab segment (`stockCodeParamSchema`),
+  // the way every `:id` on this controller goes through `idParamSchema`.
+  const importStock = methodBody(source, "async importStock(", "@Post(");
+  expect(
+    importStock,
+    "importStock must parse :code with stockCodeParamSchema before using it",
+  ).toContain("stockCodeParamSchema.parse(code)");
+}
+
+/**
+ * The text of one handler: from its `async name(` to the next route decorator.
+ * A source scan, for the same reason the route-order check is one (see the
+ * file docblock) — and it fails loudly if either anchor is missing, so a rename
+ * cannot turn the assertion vacuous.
+ */
+function methodBody(source: string, start: string, nextDecorator: string): string {
+  const from = source.indexOf(start);
+  expect(from, `the controller must declare ${start}`).toBeGreaterThan(-1);
+  const to = source.indexOf(nextDecorator, from + start.length);
+  expect(to, `a route decorator must follow ${start}`).toBeGreaterThan(from);
+  return source.slice(from, to);
 }
