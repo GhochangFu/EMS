@@ -136,12 +136,22 @@ export type ControlRoomElectricalPointKey =
  * electrical and RTU-health codes that any organization may want" — so this
  * needs no ADR and no owner gate.
  *
- * **Twelve of the fifteen orphan codes, not all fifteen.**
- * `battery_charge_pct`, `network_strength` and `controller_power_status` are
- * the `PHE-AIRSP1051M-*` gateway's own health points, `environment` domain
- * rather than `electrical`. They would need a second array filed under a second
- * domain, no widget binds them, and nothing regresses by leaving them on the
- * two paths above.
+ * **Twelve of the fifteen orphan codes, not all fifteen — and one of the
+ * three has since left.** `network_strength` and `controller_power_status`
+ * are the `PHE-AIRSP1051M-*` gateway's own health points, `environment`
+ * domain rather than `electrical`. They would need a second array filed
+ * under a second domain, no widget binds them, and nothing regresses by
+ * leaving them on the two paths above.
+ *
+ * **`battery_charge_pct` no longer stays on those two paths.** `F2.11` / ADR
+ * 0051 Amendment 6 promotes it into `ELECTRICAL_CLASS_POINT_KEYS` below, as
+ * §4's *Battery charge remaining, %*. Its domain moves `environment` →
+ * `electrical` (Amendment 6 decision 3 is unconditional — the filing domain
+ * follows the asset, and the registering asset is a `PHE-AIRSP1051M-*`
+ * gateway either way, so the ruling is the flip itself), and its unit fills
+ * `NULL` → `"%"` through `seedPointKeyCatalog`'s
+ * `COALESCE(bms.point_keys.unit, EXCLUDED.unit)` — the only value this row
+ * can ever write for a code that arrives with no unit of its own.
  *
  * **The six `voltage_v*` codes enter the vocabulary with no widget binding
  * them, deliberately.** They are part of the meter's real key set and belong
@@ -171,3 +181,235 @@ export const METERED_PUMPING_POINT_KEYS = [
 ] as const;
 
 export type MeteredPumpingPointKey = (typeof METERED_PUMPING_POINT_KEYS)[number];
+
+/**
+ * `F2.11` / ADR 0051 Amendment 6 — the electrical class point keys, 139 codes
+ * across the six electrical asset classes (feeder/incomer, transformer, DG
+ * set, UPS, solar PV, APFC).
+ *
+ * **Citation.** `docs/electrical-derived-taglist-v1.md` is the source, and
+ * ADR 0051 Amendment 6 (Accepted 2026-09-02) is the gate that promotes it:
+ * *"the v1 point basis for every electrical class template, derived from
+ * published practice and not from a client export."* That provenance is
+ * what makes v1's assumptions auditable when the real A1 tag list lands and
+ * v2 supersedes them.
+ *
+ * **Why one array and not six per class** (decision 2).
+ * `tests/f3.39-global-point-key-vocabulary.test.ts`'s clash check requires
+ * the `*_POINT_KEYS` arrays to be disjoint, because `seedPointKeyCatalog`
+ * writes them in one `ON CONFLICT (code) DO UPDATE` pass and a code in two
+ * arrays would take whichever domain came last, silently. Six per-class
+ * arrays would recur on three codes among themselves and on all 25 reused
+ * codes against the existing arrays. And class membership is content, not
+ * vocabulary — a transformer template declares `top_oil_temp_c` *and* `kw`
+ * *and* `voltage_vry`; the vocabulary's job ends at knowing each of them.
+ *
+ * **Why not `ELECTRICAL_POINT_KEYS`.** That array's own docblock says "keep
+ * in sync with simulator", and nothing simulated writes these — the same
+ * distinction `METERED_PUMPING_POINT_KEYS` above draws for the real PHE
+ * meters.
+ *
+ * **`dga_lab_result` is excluded** (decision 7). Its unit is `text`, and
+ * `telemetry.point_values.value` is a finite `double precision` (`F4.32`),
+ * so a text result cannot be a point at all. It stays a lab record — `F1.13`
+ * eLogBook or a maintenance note. The four numeric DGA rows (`dga_h2_ppm`,
+ * `dga_c2h2_ppm`, `dga_ch4_ppm`, `dga_co_ppm`) carry what a point can.
+ * **139 codes, not 140.**
+ *
+ * **Enum- and code-valued rows are promoted** (decision 7's second half).
+ * `dg_mode`, `ups_status`, `inv_status`, `relay_trip_code`,
+ * `silica_gel_state` and the like carry a numeric code in `value`; the
+ * vendor-enum-to-number map is the ingest normaliser's, exactly as
+ * `bmsPointKeyForSensor` maps PHE's sensor codes today.
+ *
+ * **Three codes recur across classes** — `ambient_temp_c` (§2, §4, §5),
+ * `thd_v_pct` (§1, §6), `battery_v` (§3, §4) — and decision 5 rules them
+ * one code, one meaning: `load_pct` means *load as a percentage of rating*
+ * on a UPS, a feeder, a transformer and a DG alike, and `ambient_temp_c` is
+ * ambient at the asset, whichever asset that is. Each recurring code is
+ * promoted once, filed under the earliest class that lists it — except
+ * `battery_v`, which is not promoted at all: it is one of the 25 reused
+ * codes below. The class prefixes the tag list uses are kept as listed —
+ * the DG's `gen_*`, the UPS's `input_*`/`output_*`, the PV's
+ * `ac_*`/`dc_*` — because each separates the generating or converting side
+ * from the §1 meter at the point of connection, and those are different
+ * quantities.
+ *
+ * **Deliberately absent — the 25 codes already in a `*_POINT_KEYS` array**,
+ * reused verbatim rather than re-declared, which is what keeps the clash
+ * check green: `backup_min`, `battery_temp_c`, `battery_v`, `breaker_main`,
+ * `current_a`, `current_ib`, `current_ir`, `current_iy`, `frequency_hz`,
+ * `health_pct`, `kva`, `kvar`, `kw`, `kwh_today`, `kwh_total`, `load_pct`,
+ * `output_freq_hz`, `output_voltage_v`, `pf`, `voltage_vbn`, `voltage_vbr`,
+ * `voltage_vrn`, `voltage_vry`, `voltage_vyb`, `voltage_vyn`.
+ *
+ * **Every code here needs a `UNIT_BY_KEY` entry in
+ * `packages/db/src/point-keys-seed.ts`**, enforced by
+ * `tests/f3.39-global-point-key-vocabulary.test.ts` — `keysForDomain` writes
+ * `UNIT_BY_KEY[code] ?? null`, so a missing entry seeds `NULL`.
+ *
+ * **The array must stay in THIS file.** Both `tests/f3.38`'s
+ * `pointKeyVocabulary` and `tests/f3.39`'s `arraysByName` read
+ * `packages/shared/src/constants.ts` as text, with a regex anchored on
+ * matching every uppercase `POINT_KEYS` array declaration. A sibling file re-exported from
+ * `index.ts` would be invisible to both, with nothing failing: the array
+ * would be neither clash-checked nor unit-coverage-checked, and
+ * `tests/f3.38`'s vocabulary would silently not contain these 139 codes.
+ *
+ * **`battery_charge_pct` is here, and it already has a row.** It reaches
+ * `bms.point_keys` today through `phe-pilot-seed.ts`'s inline registration
+ * and migration `0057`'s orphan sweep, filed `environment` with a NULL
+ * unit. Joining this array flips its domain to `electrical` and fills its
+ * unit to `"%"` through `seedPointKeyCatalog`'s `COALESCE` — see the
+ * correction to `METERED_PUMPING_POINT_KEYS`'s docblock, just above, and
+ * `packages/db/src/point-keys-seed.ts`'s `UNIT_BY_KEY` section comment.
+ */
+export const ELECTRICAL_CLASS_POINT_KEYS = [
+  // §1 feeder / incomer — 15
+  "current_in",
+  "kvah_total",
+  "kvarh_total",
+  "demand_kw",
+  "max_demand_kw",
+  "max_demand_kva",
+  "thd_v_pct",
+  "thd_i_pct",
+  "voltage_unbalance_pct",
+  "current_unbalance_pct",
+  "breaker_trip",
+  "breaker_spring_charged",
+  "relay_trip_code",
+  "earth_fault_state",
+  "meter_comms_ok",
+  // §2 transformer — 30
+  "top_oil_temp_c",
+  "winding_temp_c",
+  "winding_temp_r_c",
+  "winding_temp_y_c",
+  "winding_temp_b_c",
+  "ambient_temp_c",
+  "oil_level_pct",
+  "oil_level_low",
+  "buchholz_alarm",
+  "buchholz_trip",
+  "prv_operated",
+  "oti_alarm",
+  "oti_trip",
+  "wti_alarm",
+  "wti_trip",
+  "tap_position",
+  "oltc_in_progress",
+  "oltc_operation_count",
+  "cooling_fan_status",
+  "cooling_pump_status",
+  "dga_h2_ppm",
+  "dga_c2h2_ppm",
+  "dga_ch4_ppm",
+  "dga_co_ppm",
+  "oil_moisture_ppm",
+  "lv_load_pct",
+  "oil_bdv_kv",
+  "oil_moisture_lab_ppm",
+  "silica_gel_state",
+  "insulation_resistance_mohm",
+  // §3 DG set — 35
+  "dg_status",
+  "dg_mode",
+  "dg_on_load",
+  "dg_alarm",
+  "dg_shutdown",
+  "dg_alarm_code",
+  "mains_available",
+  "engine_speed_rpm",
+  "oil_pressure_bar",
+  "coolant_temp_c",
+  "oil_temp_c",
+  "exhaust_temp_c",
+  "fuel_level_pct",
+  "bulk_fuel_level_pct",
+  "fuel_rate_lph",
+  "fuel_totalizer_l",
+  "charger_alternator_v",
+  "coolant_level_low",
+  "run_hours_h",
+  "start_count",
+  "failed_start_count",
+  "gen_voltage_vry",
+  "gen_voltage_vyb",
+  "gen_voltage_vbr",
+  "gen_current_ir",
+  "gen_current_iy",
+  "gen_current_ib",
+  "gen_frequency_hz",
+  "gen_kw",
+  "gen_kva",
+  "gen_pf",
+  "gen_kwh_total",
+  "service_due_h",
+  "emergency_stop_state",
+  "canopy_temp_c",
+  // §4 UPS — 21
+  "ups_status",
+  "ups_alarm",
+  "ups_alarm_code",
+  "on_battery",
+  "on_bypass",
+  "input_voltage_v",
+  "input_frequency_hz",
+  "output_current_a",
+  "output_kw",
+  "output_kva",
+  "battery_current_a",
+  "battery_charge_pct",
+  "battery_time_on_s",
+  "battery_replace_flag",
+  "battery_last_test",
+  "rectifier_ok",
+  "inverter_ok",
+  "fan_ok",
+  "cell_voltage_min_v",
+  "cell_voltage_max_v",
+  "impedance_test_result",
+  // §5 solar PV — 25
+  "inv_status",
+  "inv_fault",
+  "inv_event_code",
+  "dc_voltage_v",
+  "dc_current_a",
+  "dc_power_kw",
+  "ac_power_kw",
+  "ac_kva",
+  "ac_pf",
+  "ac_frequency_hz",
+  "ac_voltage_vry",
+  "ac_voltage_vyb",
+  "ac_voltage_vbr",
+  "ac_current_ir",
+  "ac_current_iy",
+  "ac_current_ib",
+  "energy_total_kwh",
+  "energy_today_kwh",
+  "cabinet_temp_c",
+  "irradiance_wm2",
+  "module_temp_c",
+  "string_current_a",
+  "insulation_resistance_kohm",
+  "grid_export_kw",
+  "soiling_loss_pct",
+  // §6 capacitor bank / APFC — 13
+  "apfc_status",
+  "apfc_alarm",
+  "target_pf",
+  "actual_pf",
+  "steps_on_count",
+  "step_state",
+  "kvar_connected",
+  "kvar_required",
+  "bus_voltage_v",
+  "panel_temp_c",
+  "step_operation_count",
+  "capacitor_current_a",
+  "step_fault_state",
+] as const;
+
+export type ElectricalClassPointKey = (typeof ELECTRICAL_CLASS_POINT_KEYS)[number];

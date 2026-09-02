@@ -480,6 +480,7 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       CONTROL_ROOM_ENVIRONMENT_POINT_KEYS: "environment",
       CONTROL_ROOM_ELECTRICAL_POINT_KEYS: "electrical",
       METERED_PUMPING_POINT_KEYS: "electrical",
+      ELECTRICAL_CLASS_POINT_KEYS: "electrical",
     };
 
     /**
