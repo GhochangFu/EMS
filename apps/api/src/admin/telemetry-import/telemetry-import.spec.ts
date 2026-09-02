@@ -117,8 +117,10 @@ export async function loadFixtures(pool: pg.Pool): Promise<Fixtures> {
     // `telemetry-write.service.ts` guards on `authoritativeUnit !== null`, so
     // an empty-string unit is still compared and a wrong one is still rejected.
     // `F3.41` moved `chlorine_pump_on` from NULL to `""` when it joined
-    // `METERED_PUMPING_POINT_KEYS`, so this comment no longer names a count —
-    // the count was the part that went stale, and the rule did not.
+    // `METERED_PUMPING_POINT_KEYS`, and `F2.11` moved `battery_charge_pct` from
+    // NULL to `"%"` when it joined `ELECTRICAL_CLASS_POINT_KEYS` (ADR 0051
+    // Amendment 6 decision 3) — so this comment no longer names a count. The
+    // count is what keeps going stale; the rule does not.
     `SELECT code, unit FROM bms.point_keys
       WHERE active = true AND unit IS NOT NULL ORDER BY created_at, code LIMIT 5`,
   );
