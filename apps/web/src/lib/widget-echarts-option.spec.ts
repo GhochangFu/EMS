@@ -207,6 +207,8 @@ export function gaugeNeedleValueIsClampedIntoRange(): void {
 type ChartOptionShape = {
   readonly xAxis: { readonly type: string; readonly min: string };
   readonly yAxis: { readonly type: string; readonly name?: string };
+  readonly legend?: { readonly data: readonly string[]; readonly type?: string };
+  readonly grid?: { readonly bottom?: number; readonly containLabel?: boolean };
   readonly series: readonly {
     readonly name: string;
     readonly type: string;
@@ -313,4 +315,46 @@ export function chartWindowMinutesSetsTheXAxisLowerBoundRelativeToNow(): void {
 export function chartNSeriesProduceNEntriesOrderedBySortOrder(): void {
   const out = asChart(buildChartOption({ series: "line" }, threeChartSeries(), CHART_NOW)).series;
   expect(out.map((s) => s.name)).toEqual(["first", "second", "third"]);
+}
+
+/**
+ * A multi-series chart must name its series on the face of the widget.
+ *
+ * `series[].name` alone does nothing visible: ECharts draws no legend unless
+ * the option carries a `legend` component, so five feeder bindings rendered as
+ * five indistinguishable lines and the reader had no way to tell which was
+ * which. Found on the running stack, not by this suite — the option was
+ * *correct* about names and silent about showing them, which is why the
+ * assertion is on `legend.data` rather than on `series[].name` again.
+ *
+ * The legend is ordered like the series, and for the same reason: ECharts
+ * assigns a series' colour by its position, so a legend in any other order
+ * labels the wrong colour.
+ */
+export function chartLegendNamesEverySeriesInOrderWhenThereIsMoreThanOne(): void {
+  const option = asChart(buildChartOption({ series: "line" }, threeChartSeries(), CHART_NOW));
+  expect(
+    option.legend,
+    "series[].name draws nothing without a legend component — five lines in one colour order with no key",
+  ).toBeDefined();
+  expect(
+    option.legend?.data,
+    "a legend ordered differently from the series labels the wrong colour",
+  ).toEqual(["first", "second", "third"]);
+  expect(
+    option.grid?.bottom,
+    "a bottom legend with no grid reservation is drawn over the x-axis labels",
+  ).toBeGreaterThan(0);
+}
+
+/**
+ * One series needs no legend: the widget's own title already names it, and the
+ * legend costs a row of a tile that is only a few grid cells tall.
+ */
+export function chartSingleSeriesGetsNoLegend(): void {
+  const option = asChart(buildChartOption({ series: "line" }, oneChartSeries(), CHART_NOW));
+  expect(
+    option.legend,
+    "a one-series legend repeats the widget title and eats the plot's height",
+  ).toBeUndefined();
 }
