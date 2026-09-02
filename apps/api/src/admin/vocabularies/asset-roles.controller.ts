@@ -40,7 +40,13 @@ import { AssetRolesAdminService } from "./asset-roles.service";
  * compiler cannot see. `assetRoleCodeParamSchema` is the same bound the
  * contracts package states, declared in `asset-roles.schema.ts` with THIS
  * package's `zod` so that a failed parse throws a `ZodError` the `catch` below
- * recognises; see that file's header for the 500 this replaced.
+ * recognises. Under Vitest it did not: `apps/api` loads zod as ESM while
+ * `@bms/shared` arrives from its CJS `dist`, so the two `ZodError` classes
+ * differed and the error escaped the mapping. The built container is CJS on
+ * both sides and returned 400 correctly, so this was a test-environment 500
+ * rather than a shipped one — stated precisely, because "it was a 500" would
+ * send the next reader looking for a production defect that never existed. See
+ * `asset-roles.schema.ts`'s header.
  */
 @Controller("admin/vocabularies/asset-roles")
 @UseGuards(JwtAuthGuard)

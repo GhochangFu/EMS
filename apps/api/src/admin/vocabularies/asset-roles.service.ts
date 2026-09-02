@@ -169,11 +169,14 @@ export class AssetRolesAdminService {
     body: UpdateAssetRoleBody,
   ): Promise<AssetRoleDto> {
     await this.requireGlobalAdmin(jwt);
-    const existing = await this.fetchRow(code);
+    // The 404 check, and nothing more. The row it returns is deliberately NOT
+    // used to build the `SET` — see below.
+    await this.fetchRow(code);
 
     // `.partial()` accepts `{}`, which would write nothing and still leave an
     // audit row claiming an edit. A caller that sent an empty body meant
-    // something, and a 400 says so.
+    // something, and a 400 says so. It also keeps `mapUpdateSet` from throwing
+    // on a `SET` with no assignments, now that the `SET` is the body itself.
     if (Object.keys(body).length === 0) {
       throw new BadRequestException(
         "Send at least one of label, sortOrder or active",
@@ -181,14 +184,24 @@ export class AssetRolesAdminService {
     }
 
     await this.fleetDb.transaction(async (tx) => {
-      await tx
-        .update(assetRoles)
-        .set({
-          label: body.label ?? existing.label,
-          sortOrder: body.sortOrder ?? existing.sortOrder,
-          active: body.active ?? existing.active,
-        })
-        .where(eq(assetRoles.code, code));
+      // `.set(body)` WRITES ONLY THE NAMED FIELDS. The first draft merged the
+      // body over the row read above — `label ?? existing.label` and so on —
+      // which is a read-modify-write across a transaction boundary and loses a
+      // concurrent edit:
+      //
+      //   T0  admin B sends `{ label: "Pumps (all)" }`; the read returns
+      //       `active: true`.
+      //   T1  admin A sends `{ active: false }` and commits. `pump` is retired
+      //       and leaves every picker.
+      //   T2  B's transaction commits `active = true`, because that is what B
+      //       read at T0.
+      //
+      // `pump` is live again, B never asked for it, and nothing raises. Writing
+      // only what the caller named removes the window rather than narrowing it;
+      // an unnamed column is not in the statement at all. Drizzle's
+      // `mapUpdateSet` drops `undefined` keys, so an explicit `null` still
+      // reaches the column and an absent key never does.
+      await tx.update(assetRoles).set(body).where(eq(assetRoles.code, code));
 
       await this.audit.write(
         {

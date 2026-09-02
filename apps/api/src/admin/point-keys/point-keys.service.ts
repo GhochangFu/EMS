@@ -122,19 +122,32 @@ export class PointKeysAdminService {
     body: UpdatePointKeyBody,
   ): Promise<AdminPointKeyDto> {
     await this.requireGlobalAdmin(jwt);
-    const existing = await this.fetchRow(id);
+    // The 404 check. Its row is deliberately not used to build the `SET`.
+    await this.fetchRow(id);
 
     await this.fleetDb.transaction(async (tx) => {
-      await tx
-        .update(pointKeys)
-        .set({
-          name: body.name ?? existing.name,
-          domain: body.domain !== undefined ? body.domain : existing.domain,
-          unit: body.unit !== undefined ? body.unit : existing.unit,
-          description:
-            body.description !== undefined ? body.description : existing.description,
-        })
-        .where(eq(pointKeys.id, id));
+      // `F3.40`'s review found this shape here as well as in
+      // `AssetRolesAdminService`, and AGENTS.md §4.5 asks for the class rather
+      // than the instance. Merging the body over a row read OUTSIDE the
+      // transaction is a read-modify-write that loses a concurrent edit: an
+      // administrator patching only `description` re-writes `name`, `domain`
+      // and `unit` to whatever they read a moment earlier, silently undoing
+      // another administrator's committed change. Writing only the named
+      // fields removes the window instead of narrowing it.
+      //
+      // `mapUpdateSet` drops `undefined` keys and keeps `null` ones, so the
+      // three nullable columns still clear when a caller sends an explicit
+      // `null` — which is what the `!== undefined` ladder above existed for.
+      //
+      // THE EMPTY-BODY CONTRACT IS UNCHANGED, deliberately. `mapUpdateSet`
+      // throws on a `SET` with no assignments, so the write is skipped rather
+      // than attempted; `PATCH` with `{}` stays a 200 that changes nothing and
+      // still writes its audit row, exactly as before. `AssetRolesAdminService`
+      // answers 400 there because it is a new route and could choose; changing
+      // this shipped one is a decision for its own row.
+      if (Object.keys(body).length > 0) {
+        await tx.update(pointKeys).set(body).where(eq(pointKeys.id, id));
+      }
 
       await this.audit.write(
         {

@@ -29,9 +29,23 @@ import type { AssetRolesAdminService } from "./asset-roles.service";
  * - The audit row is org-less and carries no `entity_id`.
  */
 
-/** A global `admin`. Seeded by `pnpm db:seed` (`AUTH_MODE=local`). */
+/**
+ * A global `admin`. Seeded by `pnpm db:seed` (`AUTH_MODE=local`).
+ *
+ * **THE EMAIL IS THE LOAD-BEARING FIELD, NOT `sub`, and the two JWTs below
+ * carry DIFFERENT `sub` values so that stays true by construction.**
+ * `AccessControlService.resolveDbUser` matches
+ * `or(eq(users.id, jwt.sub), eq(users.email, jwt.email))`, and
+ * `packages/db/src/demo-users-seed.ts` gives every seeded login a
+ * `defaultRandom()` id — so no `bms.users` row carries a sentinel uuid and the
+ * email decides. The first draft gave both fixtures the SAME `sub`, which made
+ * the whole 403 assertion rest on that undeclared fact: if `sub` ever won the
+ * lookup, the tenant fixture would resolve to the admin row and the refusals
+ * would fail as "the gate moved" rather than "the fixture is wrong".
+ * `resolveDbUser` has already been re-keyed once, at ADR 0044.
+ */
 export const globalAdminJwt: JwtPayload = {
-  sub: "00000000-0000-4000-8000-000000000000",
+  sub: "00000000-0000-4000-8000-0000f3400001",
   email: "admin@bms.local",
   name: "integration:admin",
   role: "admin",
@@ -45,7 +59,7 @@ export const globalAdminJwt: JwtPayload = {
  * about this gate.
  */
 export const tenantAdminJwt: JwtPayload = {
-  sub: "00000000-0000-4000-8000-000000000000",
+  sub: "00000000-0000-4000-8000-0000f3400002",
   email: "wc-admin@bms.local",
   name: "integration:location-admin",
   role: "location_admin",
@@ -176,12 +190,13 @@ export async function assertCreateLandsWithAnOrgLessAuditRow(
     organization_id: string | null;
     entity_id: string | null;
     entity_type: string;
+    actor_id: string | null;
     payload: { code?: string } | null;
   }>(
     // Keyed on THIS code, not "the newest create". Another assertion in this
     // file creates a role too, and a positional read would pass or fail on the
     // order Vitest happens to run them in.
-    `SELECT organization_id, entity_id, entity_type, payload
+    `SELECT organization_id, entity_id, entity_type, actor_id, payload
        FROM bms.audit_log
       WHERE action = 'master.asset_role.create' AND payload->>'code' = $1
       LIMIT 1`,
@@ -194,6 +209,15 @@ export async function assertCreateLandsWithAnOrgLessAuditRow(
   expect(audit!.entity_id).toBeNull();
   expect(audit!.entity_type).toBe("asset_role");
   expect(audit!.payload?.code).toBe(code);
+
+  // `MasterDataAuditService.write` resolves the actor by the same
+  // `or(users.id, users.email)` the gate uses, and writes `actorId: null` when
+  // it finds nothing. Without this column the row would look correct while
+  // recording that nobody made the change — the audit trail's whole point.
+  expect(
+    audit!.actor_id,
+    "the audit row names no actor — the JWT resolved to no bms.users row",
+  ).not.toBeNull();
 }
 
 /** `sortOrder` is optional, and the column default stands when it is omitted. */
@@ -297,13 +321,30 @@ export async function assertAnEmptyPatchIsRefused(
   });
 }
 
-/** An unknown code is a 404, and it is checked before the body. */
+/**
+ * An unknown code is a 404, and the 404 is decided BEFORE the empty-body 400.
+ *
+ * The second call is what holds the ordering. The first passes a body that
+ * parses, so it would stay green even if `fetchRow` moved after the empty-body
+ * guard — the comment would claim an ordering the file did not check. `{}`
+ * against a missing code can only answer 404 if the existence check runs first.
+ */
 export async function assertAnUnknownCodeIsNotFound(
   svc: AssetRolesAdminService,
 ): Promise<void> {
   await expect(
     svc.update(globalAdminJwt, "no-such-role-code", { label: "x" }),
   ).rejects.toMatchObject({ status: 404 });
+
+  await expect(
+    svc.update(globalAdminJwt, "no-such-role-code", {}),
+  ).rejects.toMatchObject({ status: 404 });
+
+  // And the 400 is still reachable, on a code that DOES exist — or the
+  // assertion above would pass because everything answers 404.
+  await expect(svc.update(globalAdminJwt, "meter", {})).rejects.toMatchObject({
+    status: 400,
+  });
 }
 
 /**

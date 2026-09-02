@@ -155,7 +155,7 @@ export function runStockCatalogTests(): void {
         assert(
           roles.includes(binding.assetRoleCode),
           `${entry.code}/${widget.key} binds assetRoleCode "${binding.assetRoleCode}", which ` +
-            "migration 0051 does not seed — this is exactly the plural/singular drift the " +
+            "neither migration 0051 nor 0060 seeds — this is exactly the plural/singular drift the " +
             "plan calls out (e.g. binding \"chillers\" against a vocabulary whose codes are " +
             "singular).",
         );

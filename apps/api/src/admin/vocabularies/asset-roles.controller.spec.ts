@@ -93,6 +93,23 @@ export async function assertListPassesTheActiveFilterThrough(): Promise<void> {
     "no ?active must ask for every row — an omitted filter is not `false`, and the " +
       "retired codes this route exists to show would vanish if it were",
   );
+
+  // THE BRANCH THAT DECIDES 400 AGAINST 500, and the first version of this
+  // assertion never reached it — it exercised only the three values that parse.
+  // `?active=` arrives from Express as `""`, which a front end appending
+  // `?active=${filter}` sends on its first render.
+  await controller.list(JWT, "");
+  assert(
+    listCalls[3]?.activeOnly === undefined,
+    "an empty ?active must mean `all`, not an error — it is what an unset filter sends",
+  );
+
+  const err = await rejects(() => controller.list(JWT, "yes"));
+  assert(
+    err instanceof BadRequestException,
+    `an unparseable ?active must be a 400, got ${err === null ? "no error" : `${(err as Error).constructor.name}`}`,
+  );
+  assert(listCalls.length === 4, "the service must not be called with a value that did not parse");
 }
 
 /** A malformed create body is a 400 from the controller, never a 500. */
