@@ -2807,6 +2807,88 @@ retired role can never be named again and retirement through the API is one-way.
 assets per site fills `meter` and which fills `pump`. The vocabulary now holds a
 name for every one of them, so that ruling is a reading rather than a compromise.
 
+### The stock catalog gains a second plant shape (`F3.41`, ADR 0051 decision 6) — done
+
+`F3.41` closed 2026-09-02 (PR #271, squash `6248448`), and it is the row that
+finally gives PHE WB a dashboard. `electrical-metered-pumping` is the catalog's
+seventh entry and its first *second* entry for one section — which is the
+feature rather than a duplicate. Six entries keyed only by section encode one
+plant shape and silently exclude every other: `electrical` at a 100 kVA
+substation and `electrical` at a village pumping station are different trains,
+not different clients. Ten widgets bind the `meter` and `pump` roles `F3.40`
+created against the keys PHE WB's assets really carry.
+
+**The ruling the row was owed** was given the same day at the step 2 gate:
+`PHE-MFM-*` fills `meter`, and **both** pump shapes fill `pump`. No
+`dosing-pump`, therefore no migration — migration `0051` step 4 made the
+junction's role index deliberately NOT UNIQUE so one role may match several
+members. The twelve `PHE-AIRSP1051M-*` gateways stay unroled.
+
+**Three things the row's own text did not predict, and each is worth carrying
+forward.**
+
+**A guard had gone stale, and no key was misspelled.**
+`tests/f3.38-stock-catalog-vocabulary.test.ts` refuses a stock `pointKey` that
+sits in no `*_POINT_KEYS` array, and states its premise in the failure message:
+such a key means `bms.point_keys` *"can never hold it and no asset can ever
+register it"*. That premise died for twelve PHE codes when `F3.39` landed. They
+reach the table through migration `0057` step 4's data-derived insert — which
+finds nothing on a cold start, because `asset_points` is still empty when a
+migration runs — and through `phe-pilot-seed.ts`'s inline registration. Two live
+paths, neither visible to the guard. `METERED_PUMPING_POINT_KEYS` closes the
+fork, and ADR 0051 decision 3 had already ruled the codes admissible, so no ADR
+was owed.
+
+**On a cold start PHE WB got no asset groups at all.** `seed.ts` ran PHEWB's
+`seedAssetGroups` pass *before* `seedPheCatalog` created its locations and
+assets, and the loop's own comment conceded that the pass "matches nothing" on a
+fresh database. That was survivable while the pass only derived `location_id`.
+It stopped being survivable when this row made the same pass the thing that
+writes the roles, because CI seeds exactly once against a fresh schema and so
+does the PHE pilot. Proven both directions on scratch databases: 12 `meter`, 24
+`pump` and 12 unroled gateways with the fix, and `expected 36, got 0` without
+it. The local green was never evidence of this fix.
+
+**`outcomeOf` tests `truncated` before `partial`, and that decided the widget
+split.** One `pump` role matches four members per site carrying two disjoint
+point sets, so every pump binding resolves on half of what it matches by
+construction. On a cap-1 `value_tile` the report would read `truncated` — *"the
+widget cannot hold them all, use another widget"* — which is false here: the
+widget holds them fine and two members carry no such point. Both binaries
+therefore sit on **charts**, and on **two** charts rather than one, because a
+single chart binding both keys reports 4 matched and 4 bound, where the counts
+read as complete and only the outcome word disagrees. The three meter tiles do
+report `truncated`, and that is correct: the remedy it names is another widget,
+and `meter-current-chart` is that widget.
+
+**The catalog is two files now.** `stock-catalog.ts` crossed AGENTS.md §4.5's
+1000-line cap, so the electrical entries and the shared canvas literals moved to
+`stock-catalog-electrical.ts` in a separate, pure-relocation commit. Two
+reviewers verified the move changed no entry, widget, binding or grid
+coordinate. Because `tests/f3.38` reads the catalog as **text**, a third file
+must join its `STOCK_RELS` the day one appears, or that half's bindings are
+checked against no vocabulary at all.
+
+**Four reviewers ran, and two found the same defect the row shipped.**
+`seedPointKeyCatalog` assigned `unit = EXCLUDED.unit` outright while its sibling
+in `phe-pilot-seed.ts` had always used `COALESCE`, and it runs last — so a
+global administrator's `PATCH` on a point key's unit reverted at the next
+`compose up`. The two seeds had disagreed for a long time; this row made twelve
+codes overlap and turned a latent disagreement into a live regression. **The
+guard written to close it had a defect of its own**, caught on the same commit:
+it sliced each `INSERT` block at the first backtick, and an SQL comment quoting
+an escaped backtick ended the block after 76 characters, before `ON CONFLICT` —
+so it found the statement, counted it, and inspected nothing.
+
+**Verified**: `pnpm test:coverage` at 1561 tests with no threshold moved; a cold
+start with its counter-factual; the instantiation report checked row for row
+against a running API and browser, 10 of 10 with no mismatch. MQTT, ingest and
+simulator are N/A, and the reason is recorded rather than left silent.
+
+**Still owed by the owner**: the 2026-09-02 ruling reaches no ADR. Nothing
+compels one — no schema change landed, and decision 6 genuinely gates the row —
+but Amendments 1 to 4 of ADR 0051 all record rulings from this same gate.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
