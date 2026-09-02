@@ -53,8 +53,9 @@ Infer the mode from the request; ask only if genuinely ambiguous.
    genuinely begins.
 4. Follow the operating model: plan → TDD → build, and **route each step to its
    own model** (`build-operating-model.md` §2) — the plan to `plan-architect`
-   (Opus-pinned), the build to `implementer` dispatched with `model: "fable"`
-   (Opus-pinned as the floor — ruled 2026-09-02) whenever the unit is
+   (Opus-pinned), the build to `implementer` with `model:` chosen **per unit by
+   the nature of the task** — Fable, Opus or Sonnet per the §2 ladder, Opus
+   pinned as the default (ruled 2026-09-02) — whenever the unit is
    plan-described and self-contained. Never let a spawned agent inherit the
    session model: pass `model:` on every `Agent` call. Fan out to subagents
    **only** for independent, well-specified siblings that touch non-overlapping

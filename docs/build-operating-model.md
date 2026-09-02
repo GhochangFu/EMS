@@ -49,7 +49,7 @@ the superpowers skills, made concrete):
 | 1. **Pick** next *unblocked* item (enablers first) | Claude | **Haiku**, delegated | `backlog-cycle`, `BACKLOG.md` | — |
 | 2. **Brainstorm + ADR** — scope, deps, interface | Human + Claude | **Opus**, inline | `superpowers:brainstorming`, `new-adr` — **requires `/model opus` first** | ✅ **gate** |
 | 3. **Plan** — written, reviewable | Claude | **Opus**, delegated | `plan-architect` agent (Opus-pinned) | 👀 skim |
-| 4. **Build via TDD** | Claude (+ subagents) | **Premium** — Fable 5.1 by dispatch, Opus as the floor | `implementer` agent (Opus-pinned, dispatched with `model: "fable"`), `superpowers:test-driven-development` | — |
+| 4. **Build via TDD** | Claude (+ subagents) | **Per unit** — Fable, Opus or Sonnet by the nature of the task (the ladder below) | `implementer` agent (Opus-pinned as the default; every dispatch passes its own `model:`), `superpowers:test-driven-development` | — |
 | 5. **Review** — parallel passes | Subagents | **Opus** ×3, **Sonnet** ×1 | `code-reviewer`, `security-reviewer`, `agents-compliance-reviewer`, plus `migration-reviewer` for anything under `packages/db` | 👀 batched |
 | 6. **Verify against the running Docker stack** | Claude | **Sonnet** for the evidence, session model for the reading | `docker compose`, psql, and **`browser-verifier`** for the browser half (§3) | — |
 | 7. **Approve & merge** | Human | — | — | ✅ **gate** |
@@ -73,23 +73,38 @@ special". It is:
 > **The model is a property of the work unit, not of the session.** Every step
 > names its model, and every dispatch carries an explicit `model:`.
 
-**Revised 2026-09-02 — the build climbs too.** The owner moved step 4 to the
-premium model for every upcoming unit, after F2.13's second build pass. What
-reversed the 2026-08-21 routing: a build pass regularly *defines an interface*
-the next items hang off — a DI token, a catalog entry type the later packs
-extend, a route with a known ordering trap — and an approved plan de-risks the
-*shape* of that work, not its execution. When the cheaper model gets one of
-those wrong, the cost lands at step 5 as a review-fix loop and at step 7 as the
-owner's attention, and both are dearer than the rate difference. The premium
-model is not faster per token; it is dispatched so that fewer passes are needed.
-Sonnet keeps step 6's evidence gathering and step 5's compliance checklist,
-where a wrong answer is cheap to spot.
+**Revised 2026-09-02 — the build's model is chosen per unit.** Until this date
+step 4 was routed to Sonnet as a fixed rule. After F2.13's second build pass the
+owner ruled that the implementer's model **depends on the nature of the task**:
+it can be Fable, Opus or Sonnet, and the dispatcher picks one per unit and says
+why in the dispatch. What the fixed rule missed: an approved plan de-risks the
+*shape* of a unit, not its execution, and units differ in how much of the
+execution is judgment. A build pass that *defines an interface* the next items
+hang off — a DI token, a catalog entry type the later packs extend, a route
+with a known ordering trap — costs a review-fix loop at step 5 and the owner's
+attention at step 7 when a cheaper model gets the seam wrong, and both are
+dearer than the rate difference. A migration with its test, or a contract
+field, is not that unit. The stronger model is not faster per token; it is
+chosen so that fewer passes are needed.
+
+The ladder for step 4, applied per unit:
+
+- **Fable 5.1** — the unit defines a seam other work hangs off (a DI token, an
+  entry type a later pack extends, a route beside a known ordering trap), or it
+  spans several plan tasks in one pass, or it touches an auth/RLS surface in
+  production code.
+- **Opus** — ordinary multi-file feature work against the plan where judgment
+  is needed in the execution: a service with its integration spec, a page with
+  its jsdom spec, a refactor across a module.
+- **Sonnet** — a well-specified, self-contained, mechanical unit: a migration
+  with its test, a contract field with its factories, a fixture sweep, a rename,
+  a doc.
 
 | Model | Gets | Why |
 |-------|------|-----|
-| **Fable 5.1** (premium) | Step 4 build and its tests · refactors inside a build unit | The build defines the seams the next items hang off, and it lands under review. A wrong seam costs a review-fix loop and the owner's attention at step 7 — more than the rate difference. |
-| **Opus** | Step 2 scope/ADR · step 3 plan · step 5 `code-reviewer`, `security-reviewer`, `migration-reviewer` · root-cause debugging that survived one pass · the step 4 **floor** when a dispatch omits the override | These either decide, or they gate the human's merge. A weak review does not save money — it moves the cost onto the owner's attention. |
-| **Sonnet** | Step 5 `agents-compliance-reviewer` · doc writing · step 6 evidence gathering | Well-specified work against a written checklist; a wrong answer is cheap to spot. |
+| **Fable 5.1** (premium) | Step 4 units that define a seam, span several tasks, or touch auth/RLS production code | The seam is what the next items hang off, and it lands under review. A wrong seam costs a review-fix loop and the owner's attention at step 7 — more than the rate difference. |
+| **Opus** | Step 2 scope/ADR · step 3 plan · step 4 units that need judgment in the execution, and the **default pin** when a dispatch omits `model:` · step 5 `code-reviewer`, `security-reviewer`, `migration-reviewer` · root-cause debugging that survived one pass | These either decide, or they gate the human's merge. A weak review does not save money — it moves the cost onto the owner's attention. |
+| **Sonnet** | Step 4 mechanical units · step 5 `agents-compliance-reviewer` · doc writing · step 6 evidence gathering | Well-specified work against a plan or a written checklist; a wrong answer is cheap to spot. |
 | **Haiku** | Step 1 pick · locating a file · grepping a symbol · reading a config · summarising one file | Mechanical and verifiable; a wrong answer is cheap to spot. |
 
 **Never let a dispatch inherit.** `Explore` and `general-purpose` declare no model
@@ -125,12 +140,13 @@ Per step:
 - **Step 3 (Plan) — Opus, delegated.** `plan-architect` is pinned `model: opus`
   in its own frontmatter, is read-only, and returns the plan text for the caller
   to transcribe. It refuses to plan past the step-2 gate.
-- **Step 4 (Build) — premium, delegated.** Hand the unit to the `implementer`
-  agent with `model: "fable"` on the `Agent` call. The agent's own frontmatter
-  pins `model: opus` as the floor, so a dispatch that forgets the override still
-  lands on a premium model rather than a cheap one. Fallback, where the unit is
-  too small or too entangled to hand off cold: build inline — the session
-  already runs a premium model, so no `/model` flip is needed.
+- **Step 4 (Build) — per unit, delegated.** Hand the unit to the `implementer`
+  agent with `model:` on the `Agent` call chosen by the ladder above, and name
+  the reason in the dispatch so the choice is reviewable. The agent's own
+  frontmatter pins `model: opus` as the default, so a dispatch that forgets the
+  override lands in the middle of the ladder rather than at either end.
+  Fallback, where the unit is too small or too entangled to hand off cold:
+  build inline on the session model.
 - **Step 5 (Review) — split, and it never routes down.** `code-reviewer`,
   `security-reviewer` and `migration-reviewer` stay pinned `model: opus`.
   `agents-compliance-reviewer` is pinned `model: sonnet` because it matches a
@@ -351,7 +367,7 @@ the critical path, and merge approvals.
 [ ] 1. Confirm the next item is UNBLOCKED (BACKLOG.md Depends + ADR gate). [Haiku, delegated]
 [ ] 2. Brainstorm -> open an ADR (new-adr). Human approves scope + deps.   [Opus, inline]
 [ ] 3. plan-architect writes the plan. Human skims.                        [Opus, delegated]
-[ ] 4. TDD build. Delegate to implementer with model: "fable".            [Premium]
+[ ] 4. TDD build. Delegate to implementer; pick model: per unit (§2).   [Fable/Opus/Sonnet]
        Fan out to worktrees ONLY for independent siblings.
 [ ] 5. code-reviewer + security-reviewer + agents-compliance-reviewer,
        + migration-reviewer if the diff touches packages/db.
