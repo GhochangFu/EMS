@@ -49,7 +49,7 @@ the superpowers skills, made concrete):
 | 1. **Pick** next *unblocked* item (enablers first) | Claude | **Haiku**, delegated | `backlog-cycle`, `BACKLOG.md` | — |
 | 2. **Brainstorm + ADR** — scope, deps, interface | Human + Claude | **Opus**, inline | `superpowers:brainstorming`, `new-adr` — **requires `/model opus` first** | ✅ **gate** |
 | 3. **Plan** — written, reviewable | Claude | **Opus**, delegated | `plan-architect` agent (Opus-pinned) | 👀 skim |
-| 4. **Build via TDD** | Claude (+ subagents) | **Sonnet** | `implementer` agent (Sonnet-pinned), `superpowers:test-driven-development` | — |
+| 4. **Build via TDD** | Claude (+ subagents) | **Premium** — Fable 5.1 by dispatch, Opus as the floor | `implementer` agent (Opus-pinned, dispatched with `model: "fable"`), `superpowers:test-driven-development` | — |
 | 5. **Review** — parallel passes | Subagents | **Opus** ×3, **Sonnet** ×1 | `code-reviewer`, `security-reviewer`, `agents-compliance-reviewer`, plus `migration-reviewer` for anything under `packages/db` | 👀 batched |
 | 6. **Verify against the running Docker stack** | Claude | **Sonnet** for the evidence, session model for the reading | `docker compose`, psql, and **`browser-verifier`** for the browser half (§3) | — |
 | 7. **Approve & merge** | Human | — | — | ✅ **gate** |
@@ -60,8 +60,9 @@ The human owns **steps 2 and 7** only. Everything else Claude carries.
 
 Scope and plan are the two places where a cheap model costs the most: a bad plan
 is executed faithfully, and a bad scope decision survives the ADR that records
-it. The build is the opposite — it is the longest and most token-hungry step,
-and it is the one an approved plan has already de-risked.
+it. Until 2026-09-02 the build was read as the opposite — the longest and most
+token-hungry step, and the one an approved plan had already de-risked — and so
+it was the step routed *down*.
 
 Until 2026-08-21 this doc assumed the operator's session ran Sonnet, so it named
 only the two steps that had to *climb* to Opus. The session now runs Opus. Read
@@ -72,17 +73,32 @@ special". It is:
 > **The model is a property of the work unit, not of the session.** Every step
 > names its model, and every dispatch carries an explicit `model:`.
 
+**Revised 2026-09-02 — the build climbs too.** The owner moved step 4 to the
+premium model for every upcoming unit, after F2.13's second build pass. What
+reversed the 2026-08-21 routing: a build pass regularly *defines an interface*
+the next items hang off — a DI token, a catalog entry type the later packs
+extend, a route with a known ordering trap — and an approved plan de-risks the
+*shape* of that work, not its execution. When the cheaper model gets one of
+those wrong, the cost lands at step 5 as a review-fix loop and at step 7 as the
+owner's attention, and both are dearer than the rate difference. The premium
+model is not faster per token; it is dispatched so that fewer passes are needed.
+Sonnet keeps step 6's evidence gathering and step 5's compliance checklist,
+where a wrong answer is cheap to spot.
+
 | Model | Gets | Why |
 |-------|------|-----|
-| **Opus** | Step 2 scope/ADR · step 3 plan · step 5 `code-reviewer`, `security-reviewer`, `migration-reviewer` · root-cause debugging that survived one pass | These either decide, or they gate the human's merge. A weak review does not save money — it moves the cost onto the owner's attention. |
-| **Sonnet** | Step 4 build and its tests · refactors · step 5 `agents-compliance-reviewer` · doc writing · step 6 evidence gathering | Well-specified work against an approved plan or a written checklist. |
+| **Fable 5.1** (premium) | Step 4 build and its tests · refactors inside a build unit | The build defines the seams the next items hang off, and it lands under review. A wrong seam costs a review-fix loop and the owner's attention at step 7 — more than the rate difference. |
+| **Opus** | Step 2 scope/ADR · step 3 plan · step 5 `code-reviewer`, `security-reviewer`, `migration-reviewer` · root-cause debugging that survived one pass · the step 4 **floor** when a dispatch omits the override | These either decide, or they gate the human's merge. A weak review does not save money — it moves the cost onto the owner's attention. |
+| **Sonnet** | Step 5 `agents-compliance-reviewer` · doc writing · step 6 evidence gathering | Well-specified work against a written checklist; a wrong answer is cheap to spot. |
 | **Haiku** | Step 1 pick · locating a file · grepping a symbol · reading a config · summarising one file | Mechanical and verifiable; a wrong answer is cheap to spot. |
 
 **Never let a dispatch inherit.** `Explore` and `general-purpose` declare no model
 of their own, so an unpinned fan-out runs on whatever the session is set to —
 which is now the *expensive* direction, and silently so. Pass `model:` on every
 `Agent` call. `subagent_type: "fork"` ignores the override and always runs the
-parent model, so never route build work through a fork.
+parent model, and it carries the whole conversation into the build instead of
+the plan — so it is not the mechanism for step 4 either, whatever the parent
+runs.
 
 **A skill has no model of its own.** None of the installed `SKILL.md` files
 declares one, so an inline skill runs on whatever the session is set to. There
@@ -109,10 +125,12 @@ Per step:
 - **Step 3 (Plan) — Opus, delegated.** `plan-architect` is pinned `model: opus`
   in its own frontmatter, is read-only, and returns the plan text for the caller
   to transcribe. It refuses to plan past the step-2 gate.
-- **Step 4 (Build) — Sonnet.** Preferred mechanism: hand the unit to the
-  `implementer` agent, pinned `model: sonnet`. Fallback, where the unit is too
-  small or too entangled to hand off cold: ask the operator for `/model sonnet`
-  for the build stretch, and say when to flip back.
+- **Step 4 (Build) — premium, delegated.** Hand the unit to the `implementer`
+  agent with `model: "fable"` on the `Agent` call. The agent's own frontmatter
+  pins `model: opus` as the floor, so a dispatch that forgets the override still
+  lands on a premium model rather than a cheap one. Fallback, where the unit is
+  too small or too entangled to hand off cold: build inline — the session
+  already runs a premium model, so no `/model` flip is needed.
 - **Step 5 (Review) — split, and it never routes down.** `code-reviewer`,
   `security-reviewer` and `migration-reviewer` stay pinned `model: opus`.
   `agents-compliance-reviewer` is pinned `model: sonnet` because it matches a
@@ -125,10 +143,10 @@ Per step:
 
 ### Step 4 is delegated only when the unit pays for the cold start
 
-§3 already says subagents start **cold** and are the expensive path. That does
-not stop being true because the sub-model is cheaper. A cold Sonnet agent that
-re-derives context the parent already holds can cost more than staying inline,
-and it produces worse seams on tightly-coupled work.
+§3 already says subagents start **cold** and are the expensive path. That stays
+true whatever the sub-model costs. A cold agent that re-derives context the
+parent already holds can cost more than staying inline, and it produces worse
+seams on tightly-coupled work.
 
 Delegate step 4 when **all** of these hold:
 
@@ -138,9 +156,9 @@ Delegate step 4 when **all** of these hold:
 - It returns a **summary** — files changed, tests added, what failed — not a
   transcript and not file dumps.
 
-Otherwise build inline and flip the session model instead. The serial-spine rule
-in §3 is unchanged: ⭐ enablers are still built hands-on, one at a time, whatever
-model is running.
+Otherwise build inline on the session model. The serial-spine rule in §3 is
+unchanged: ⭐ enablers are still built hands-on, one at a time, whatever model is
+running.
 
 ### Step 6 is not optional, and it is not the test suite again
 
@@ -216,10 +234,10 @@ start. This is the one place where *not* spawning is the expensive choice.
 
 Two consequences of §2's routing rule land here. First, **pass `model:` on every
 spawn** — an agent with no pin inherits the session, so an unpinned fan-out on
-this session runs Opus by accident. Second, **a cheaper sub-model does not lower
-the bar for fanning out.** The cold-start cost is context, not rate; a Sonnet
-agent that has to re-read what the parent already holds is still the expensive
-path.
+this session runs Opus by accident. Second, **the sub-model's rate does not move
+the bar for fanning out.** The cold-start cost is context, not rate; an agent
+that has to re-read what the parent already holds is the expensive path
+whichever model it runs.
 
 ### Isolation: branches & worktrees (how parallel agents avoid collisions)
 
@@ -333,7 +351,7 @@ the critical path, and merge approvals.
 [ ] 1. Confirm the next item is UNBLOCKED (BACKLOG.md Depends + ADR gate). [Haiku, delegated]
 [ ] 2. Brainstorm -> open an ADR (new-adr). Human approves scope + deps.   [Opus, inline]
 [ ] 3. plan-architect writes the plan. Human skims.                        [Opus, delegated]
-[ ] 4. TDD build. Delegate to implementer, or flip to /model sonnet.       [Sonnet]
+[ ] 4. TDD build. Delegate to implementer with model: "fable".            [Premium]
        Fan out to worktrees ONLY for independent siblings.
 [ ] 5. code-reviewer + security-reviewer + agents-compliance-reviewer,
        + migration-reviewer if the diff touches packages/db.
