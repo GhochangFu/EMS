@@ -232,8 +232,8 @@ import { WATER_WTP } from "./water-wtp";
  *    4 maintenance plans, no KPI.
  *  - `water-wtp` — §1. **Authored** (plan Task 7): 20 points
  *    (11 + 5 + 2 + 2 derived), 6 alarms, 4 maintenance plans, no KPI.
- *  - `water-ro` — §2. Target 18 points (10 + 5 + 1 + 2), 6 alarms,
- *    4 maintenance plans, no KPI.
+ *  - `water-ro` — §2. **Authored** (plan Task 8): 18 points
+ *    (10 + 5 + 1 + 2 derived), 6 alarms, 4 maintenance plans, no KPI.
  *  - `water-softener` — §3, the smallest. Target 9 points (4 + 3 + 2 + 0),
  *    4 alarms, 3 maintenance plans, no KPI.
  *
