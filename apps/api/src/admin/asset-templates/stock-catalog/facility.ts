@@ -73,9 +73,11 @@ import type { StockAssetTemplateEntry } from "./types";
  * nobody tidies them into an `environment.ts` — or, worse, into `mechanical.ts`,
  * whose prefix already belongs to `e5.2-derived-taglist-v1.md`. That collision
  * is real and is what `stock-catalog.spec.ts`'s per-entry `ENTRY_SOURCE_DOC`
- * override exists for (PR 2, Task 11): `PACK_SOURCE_DOC` is keyed by PREFIX, so
- * `mechanical-lift` would otherwise be checked against the `E5.2` document and
- * pass green against the wrong source.
+ * override exists for — **added at PR 2 Task 11, one commit before the lift**:
+ * `PACK_SOURCE_DOC` is keyed by PREFIX, so `mechanical-lift` would otherwise be
+ * checked against the `E5.2` document and pass green against the wrong source.
+ * The override is consulted first, and `stock-catalog-deferrals.spec.ts` holds
+ * every one of its keys to `STOCK_ENTRY_CODES`.
  *
  * ---
  *
@@ -336,7 +338,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * §§1-7. PR 2 — `feat/E5.3-vertical-transport-pack` — adds §8a's lift and §8b's
  * escalator, the `VERTICAL_TRANSPORT_CLASS_POINT_KEYS` array, and the per-entry
  * `ENTRY_SOURCE_DOC` override that lets a `mechanical-`prefixed entry cite the
- * `E5.3` document. It is **not stacked** on PR 1: this repository squash-merges,
+ * `E5.3` document — **the override is PR 2's first commit, Task 11**, because
+ * the two codes must be declared before anything can point them at a document.
+ * It is **not stacked** on PR 1: this repository squash-merges,
  * so a stacked branch would have to rebase across a commit that no longer exists
  * in that form. **PR 2 cannot start until PR 1 merges.**
  *

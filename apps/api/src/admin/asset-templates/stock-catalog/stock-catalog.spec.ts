@@ -151,21 +151,48 @@ const PACK_SOURCE_DOC: Readonly<Record<string, string>> = {
   // `facility`, the seventh `bms.asset_domains` row.
   //
   // The third is `mechanical`, for the lift and the escalator, and **that prefix
-  // already belongs to `e5.2-derived-taglist-v1.md` two lines above.** A prefix
-  // maps to exactly one document, so `mechanical-lift` would be checked against
-  // the `E5.2` handout — the wrong source, and green, which is the failure a
-  // prefix-keyed map cannot see. PR 2 Task 11 adds a per-ENTRY `ENTRY_SOURCE_DOC`
-  // override consulted before this map, with a reverse check that every override
-  // key is a shipped entry. **Do not "fix" it by re-prefixing the two entries or
-  // by re-pointing `mechanical` here**: the prefix names the DOMAIN and both
-  // machines are mechanical, and re-pointing would leave `E5.2`'s six entries
-  // citing the wrong document instead.
+  // already belongs to `e5.2-derived-taglist-v1.md` two lines above** — which is
+  // what `ENTRY_SOURCE_DOC` below exists for. **Do not "fix" it by re-prefixing
+  // the two entries or by re-pointing `mechanical` here**: the prefix names the
+  // DOMAIN and both machines are mechanical, and re-pointing would leave `E5.2`'s
+  // six entries citing the wrong document instead.
   facility: "e5.3-derived-taglist-v1.md",
   environment: "e5.3-derived-taglist-v1.md",
 };
 
+/**
+ * **Per-ENTRY overrides, consulted before the prefix map** — `E5.3` Task 11,
+ * ADR 0054 decision 2.
+ *
+ * The prefix names the DOMAIN and the value names the SOURCE DOCUMENT. For
+ * twenty-five entries those two axes coincided; at `mechanical-lift` and
+ * `mechanical-escalator` they stop. Both machines are `mechanical` — the domain
+ * their motor, energy and vibration codes already live in — and both are
+ * transcribed from `e5.3-derived-taglist-v1.md`, while the `mechanical` prefix
+ * above belongs to `E5.2`'s document and must keep belonging to it for `E5.2`'s
+ * six entries. Without an override the two would be checked against the `E5.2`
+ * handout and **pass**, which is worse than an unchecked entry: a citation check
+ * pointing at the wrong document reads as provenance and is not.
+ *
+ * The prefix map stays the DEFAULT so twenty-five entries keep one line each.
+ * **Every key here must be a declared stock entry** — an override keyed on a
+ * code nobody ships checks nothing, forever — and `stock-catalog-deferrals.spec.ts`
+ * holds that claim against `STOCK_ENTRY_CODES`.
+ */
+export const ENTRY_SOURCE_DOC: Readonly<Record<string, string>> = {
+  "mechanical-lift": "e5.3-derived-taglist-v1.md",
+  "mechanical-escalator": "e5.3-derived-taglist-v1.md",
+};
+
 /** The pack an entry belongs to — everything before the first `-` in its code. */
 const packOf = (code: string): string => code.split("-")[0] ?? "";
+
+/**
+ * The document an entry's rows were transcribed from: its own override if it
+ * carries one, otherwise its pack's. `undefined` for neither, and `checkEntry`
+ * FAILS on `undefined` rather than skipping the citation.
+ */
+const sourceDocOf = (code: string): string | undefined => ENTRY_SOURCE_DOC[code] ?? PACK_SOURCE_DOC[packOf(code)];
 
 export type Alarm = { code: string; pointKey: string; severity: string; category?: string } & Record<
   string,
@@ -245,8 +272,13 @@ function assertMaintenanceVocabulary(
  * Run over the shipped catalog AND over the two inline fixtures below, so an
  * empty catalog (which `F2.12` may create while reorganising the packs) cannot
  * turn this whole function into a `for` over nothing.
+ *
+ * **Exported since `E5.3` Task 11** so a per-class spec can run it over a
+ * deliberately miscited COPY of a shipped entry — the only way to prove that
+ * `ENTRY_SOURCE_DOC`, and not the prefix default, decides that entry's source.
+ * Never call it on a REAL entry: the loop below already checks every one.
  */
-function checkEntry(entry: StockAssetTemplateEntry): void {
+export function checkEntry(entry: StockAssetTemplateEntry): void {
   const listed = stockAssetTemplateDtoSchema.safeParse(entry);
   assert(
     listed.success,
@@ -308,20 +340,22 @@ function checkEntry(entry: StockAssetTemplateEntry): void {
   // ADR 0052 decision 6: the stamp plus the citation IS the provenance. Every
   // entry cites its source document by name; there is no meta.provenance to
   // fall back on. Feeder-only until F2.12 Task 3; one document per PACK since
-  // E5.1 Task 2.
+  // E5.1 Task 2, plus a per-ENTRY override since E5.3 Task 11.
   //
   // **The missing-prefix branch is the point of the map.** It fails rather than
   // skipping, so a pack that ships entries without declaring its source is a
   // build failure and not a silently uncited pack.
   const pack = packOf(entry.code);
-  const sourceDoc = PACK_SOURCE_DOC[pack];
+  const sourceDoc = sourceDocOf(entry.code);
   assert(
     sourceDoc !== undefined,
-    `${entry.code}: no PACK_SOURCE_DOC entry for the pack prefix "${pack}", so this entry's ` +
-      "provenance is checked against nothing. Add the pack and the document its rows are " +
-      "transcribed from to PACK_SOURCE_DOC — a lookup that returned undefined and skipped the " +
-      "citation would make every entry of this pack pass while checking none (ADR 0052 decision " +
-      `6: the stamp plus the citation IS the provenance). Declared packs: ${Object.keys(PACK_SOURCE_DOC).join(", ")}.`,
+    `${entry.code}: no ENTRY_SOURCE_DOC override and no PACK_SOURCE_DOC entry for the pack ` +
+      `prefix "${pack}", so this entry's provenance is checked against nothing. Add the pack ` +
+      "and the document its rows are transcribed from to PACK_SOURCE_DOC — or, if this entry's " +
+      "domain prefix belongs to another pack's document, add the code to ENTRY_SOURCE_DOC — a " +
+      "lookup that returned undefined and skipped the citation would make every entry of this " +
+      "pack pass while checking none (ADR 0052 decision 6: the stamp plus the citation IS the " +
+      `provenance). Declared packs: ${Object.keys(PACK_SOURCE_DOC).join(", ")}.`,
   );
   assert(
     typeof entry.description === "string" && entry.description.includes(sourceDoc ?? ""),
@@ -692,6 +726,12 @@ const SCHEDULED_DERIVED_FIXTURE: StockAssetTemplateEntry = {
  * it was written for — a negative fixture that has silently become a positive
  * one. `facility` is `E5.3`'s and would recur the same way; `undeclared` is not
  * a domain, cannot be a pack, and is the only spelling that stays a refusal.
+ *
+ * **`ENTRY_SOURCE_DOC` cannot rescue it either, and that is by construction:**
+ * an override is keyed on a CODE, no fixture code is in that map, and a key
+ * that is not a shipped entry is refused by `stock-catalog-deferrals.spec.ts`.
+ * So `sourceDocOf` still returns `undefined` here and the refusal below fires
+ * on the missing prefix, exactly as it did before `E5.3` Task 11.
  */
 const UNKNOWN_PACK_FIXTURE: StockAssetTemplateEntry = {
   ...VALID_FIXTURE,
@@ -748,6 +788,8 @@ export function runStockAssetTemplateCatalogTests(): void {
   // not express: a pack that ships entries without declaring where its rows
   // were transcribed from. `F2.13` shipped one tag list and one constant; from
   // `E5.1` on there are two documents, and the third one arrives with `E5.2`.
+  // **Unchanged by `E5.3` Task 11's override and it must STAY unchanged** —
+  // both halves of `sourceDocOf` miss on this fixture (see its docblock).
   let unknownPackRefused: string | null = null;
   try {
     checkEntry(UNKNOWN_PACK_FIXTURE);

@@ -1,5 +1,5 @@
 import { STOCK_ASSET_TEMPLATE_CATALOG } from "./stock-catalog";
-import { assert, requireStockEntry } from "./stock-catalog.spec";
+import { assert, ENTRY_SOURCE_DOC, requireStockEntry } from "./stock-catalog.spec";
 
 /**
  * `E5.2` Task 1 — **the deferral ledger, and the catalog's own entry list**,
@@ -56,20 +56,23 @@ import { assert, requireStockEntry } from "./stock-catalog.spec";
  * `facility-parking-level` and `facility-bas-gateway` for that reason alone
  * (ADR 0054 decision 2 files an indoor-air-quality node under `environment`,
  * whose vocabulary already holds its temperature and humidity keys). PR 2
- * appends `mechanical-lift` (§8a) and `mechanical-escalator` (§8b), taking this
- * list to 27 — again in document order, not prefix order.
+ * appends `mechanical-lift` (§8a) and `mechanical-escalator` (§8b) at the end —
+ * again in document order, not prefix order, and **a third prefix in one pack**:
+ * `PACK_SOURCE_DOC` cannot express it, so `ENTRY_SOURCE_DOC` points those two
+ * codes at the `E5.3` document per entry (ADR 0054 decision 2).
  *
- * **STAGED FROM `E5.3` Task 3 TO TASK 10, AND FULL EQUALITY AGAIN SINCE.** The
- * seven `E5.3` codes were declared here one commit before the first of them was
- * authored, exactly as the six mechanical codes were at `E5.2` Task 5, and the
- * order claim compared the catalog against the HEAD of this list meanwhile:
- * full equality would have been red for the seven commits pass C took to author
- * them one at a time, and a bound that is red by construction teaches the next
- * author to ignore a red test — the `F2.12` / `E5.1` bound-staging pattern
- * applied to a list. **Task 10 (the BAS gateway) deleted the slice and the
- * anti-vacuity floor together**, so the claim below is `join === join` against
- * all twenty-five and cannot go vacuous. PR 2's Task 11 stages it once more at
- * 27 with a floor of 25, and Task 14 deletes both again.
+ * **STAGED AT `E5.3` Task 3, RESTORED AT TASK 10, AND STAGED ONCE MORE AT TASK
+ * 11.** Each pack declares its codes here one commit before the first of them
+ * is authored — the six mechanical codes at `E5.2` Task 5, the seven facility
+ * codes at `E5.3` Task 3, and the two vertical-transport codes at Task 11,
+ * where the override map forces it: a key that is not a declared entry is
+ * refused. Meanwhile the order claim compares the catalog against the HEAD of
+ * this list, because full equality would be red for every commit pass C takes
+ * to author the entries one at a time, and a bound that is red by construction
+ * teaches the next author to ignore a red test — the `F2.12` / `E5.1`
+ * bound-staging pattern applied to a list. **Task 14 (the escalator) deletes
+ * the slice and the floor of 25 together**, and the claim is `join === join`
+ * against all twenty-seven from then on.
  */
 const STOCK_ENTRY_CODES = [
   "electrical-feeder",
@@ -100,6 +103,14 @@ const STOCK_ENTRY_CODES = [
   "facility-parking-level",
   "environment-iaq-node",
   "facility-bas-gateway",
+  // The vertical-transport half of the same pack — `E5.3` PR 2, §§8a and 8b of
+  // the same document. Declared here at Task 11, one commit before Task 13
+  // authors the lift, because `ENTRY_SOURCE_DOC` may only carry a code this
+  // list names: the override and the codes it overrides land together or the
+  // override checks nothing. Neither entry ships yet; the order claim is a head
+  // comparison until Task 14.
+  "mechanical-lift",
+  "mechanical-escalator",
 ] as const;
 export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
 
@@ -116,13 +127,15 @@ export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
  * declares a deferred code" check would therefore fail on a correct entry.
  * Each list is checked against its own entry and no other.
  *
- * **89 records across 84 distinct codes** since `E5.3` Task 3. The four parts
+ * **106 records across 97 distinct codes** since `E5.3` Task 11. The five parts
  * are 32 records over 30 codes (electrical — `load_pct` three times), 15 over 14
  * (water — `hydraulic_load_pct` on the STP and the ETP), 17 over 17
- * (mechanical/HVAC — no code is deferred twice inside the pack) and **25 over 25**
+ * (mechanical/HVAC — no code is deferred twice inside the pack), 25 over 25
  * (facility/smart-building — no code deferred twice, and none of the 25 is
- * deferred by any earlier pack either). 30 + 14 + 17 + 25 is 86, not 84, and the
- * two-code difference is the whole reason this is a `Record`:
+ * deferred by any earlier pack either) and **17 over 15** (vertical transport —
+ * `availability_pct` and `mtbf_h` on both the lift and the escalator, for the
+ * same reason on each). 30 + 14 + 17 + 25 + 15 is 101, not 97, and the four-record
+ * difference over three codes is the whole reason this is a `Record`:
  *
  *  - **`specific_energy_kwh_kl` is deferred on `electrical-feeder` AND on
  *    `water-ro`** — the same code for the same shape of reason on two packs —
@@ -133,10 +146,16 @@ export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
  *    can compute it. This is the `load_pct` shape — deferred on three electrical
  *    classes and a measured core point on the UPS — and it is why a catalog-wide
  *    "no entry declares a deferred code" check would fail on correct entries.
- *  - **`availability_pct` is deferred on `electrical-dg-set` AND on
- *    `mechanical-pump`** — both need hours-in-state over a window, which the
- *    grammar has no state for. ADR 0053's Consequences name it as open for the
- *    N4 form; the pump's list does not become the DG set's when it lands.
+ *  - **`availability_pct` is deferred on FOUR entries** — `electrical-dg-set`,
+ *    `mechanical-pump` and, since `E5.3` PR 2, `mechanical-lift` and
+ *    `mechanical-escalator`. All four need hours-in-state over a window, which
+ *    the grammar has no state for. ADR 0053's Consequences name it as open for
+ *    the N4 form; the pump's list does not become the DG set's when it lands.
+ *  - **`starts_per_day` is deferred on `electrical-dg-set` AND on
+ *    `mechanical-escalator`** — a per-day count over a cumulative counter on
+ *    both. It is why the pack's ledger grows by 17 records but only **13**
+ *    distinct codes: measure the distinct total, never add the part's own count
+ *    to the previous total.
  *
  * A per-entry sum and a distinct count are both right; they count different
  * things, and neither is derivable from the other.
@@ -387,6 +406,67 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // stale_data alarm binds.
     "mean_latency_s",
   ],
+  // §8a — the pack's longest list: seven time windows, another system's clock,
+  // a method, and a rate whose two counters do not divide. The two the lift
+  // DOES author are the lifetime counter ratios (the E5.2 load_factor_pct
+  // shape), which need no window because both inputs are cumulative.
+  "mechanical-lift": [
+    // hours in service over hours elapsed — hours-in-state, and the third
+    // record of this code (electrical-dg-set, mechanical-pump, here).
+    "availability_pct",
+    // mean time between failures: a window, and it needs the failure history
+    // rather than the current fault flag.
+    "mtbf_h",
+    // entrapments per month — a window over an event.
+    "entrapments_per_month",
+    // door cycles per day; door_cycle_count is a CUMULATIVE counter, and per-day
+    // is the window the grammar has no state for.
+    "door_cycles_per_day",
+    // trips per day, the same shape over trip_count.
+    "trips_per_day",
+    // the peak-hour wait needs a distribution over a window, not a value.
+    "peak_hour_wait_s",
+    // out-of-service hours per month — hours-in-state again, over lift_in_service.
+    "out_of_service_hours_month",
+    // mean time to repair lives in the WORK ORDER system (E3.1), which
+    // bms-calc-v1 cannot name — the "another asset" class, one system out.
+    "mttr_h",
+    // ISO 18738 ride-quality banding: a method the document names and does not
+    // fix. vibration_z_mg is declared and the ride_quality_worsening alarm binds
+    // it against a band set at commissioning.
+    "ride_quality_index",
+    // levelling drift is a TREND against a commissioning baseline — E5.1's
+    // approach_trend class — not an instantaneous difference; the baseline is a
+    // site attribute and the trend is a window.
+    "levelling_drift_mm",
+    // faults per 1000 trips divides an INTERVAL counter by a CUMULATIVE one.
+    // The two counters do not share a denominator, so the quotient is not a
+    // rate however well it parses.
+    "fault_rate_per_1000_trips",
+  ],
+  // §8b — four windows, a method the document leaves open, and a commissioning
+  // baseline. availability_pct and mtbf_h are deferred on BOTH vertical-transport
+  // entries for the same reason, and starts_per_day is the DG set's code a third
+  // time: a per-entry Record is what lets one code be deferred five ways.
+  "mechanical-escalator": [
+    // hours running over hours elapsed — hours-in-state.
+    "availability_pct",
+    // the failure history again, not the current fault flag.
+    "mtbf_h",
+    // starts per day over the cumulative start_count — the same window the DG
+    // set defers this exact code for.
+    "starts_per_day",
+    // safety-circuit trips per month — a window over an event.
+    "safety_trips_per_month",
+    // THE DENOMINATOR IS UNDEFINED: the document does not fix whether standby is
+    // measured over run time or over run + standby, and the two answers differ by
+    // the whole idle band. A definition picked under the right name is worse than
+    // a deferral — esc_status carries the energy-save state and says so.
+    "standby_ratio_pct",
+    // deviation from a COMMISSIONING baseline current, an attribute nothing
+    // declares; motor_current_a is declared and the trend is the site's.
+    "motor_current_baseline_dev_pct",
+  ],
 };
 
 const DEFERRAL_REASON =
@@ -458,43 +538,68 @@ export function runStockCatalogDeferralTests(): void {
   // index appended in the wrong place, or an entry silently dropped from a
   // spread, would have passed every check in this directory.
   //
-  // **STAGED AGAIN AT `E5.3` Task 3, AND RESTORED TO FULL EQUALITY HERE AT TASK
-  // 10.** The claim compared the catalog against the HEAD of this list for the
-  // six commits pass C took to author the mechanical entries; `E5.2` Task 11
-  // restored full equality against an eighteen-element literal and deleted the
-  // `>= 12` floor with the slice. `E5.3` Task 3 declared seven more codes one
-  // commit before the first of them was authored, so the head comparison and the
-  // floor came back — and the BAS gateway is the seventh, so **both are gone
-  // again** and the comparison below is `join === join` against the whole
-  // twenty-five-element literal.
+  // **STAGED FOR THE THIRD TIME, HERE AT `E5.3` TASK 11, AND TASK 14 DELETES IT
+  // AGAIN.** The claim ran against the HEAD of this list for the six commits
+  // pass C took to author the mechanical entries and for the seven that authored
+  // the facility ones; `E5.2` Task 11 and `E5.3` Task 10 each restored full
+  // equality and deleted the floor with the slice. Task 11 declares
+  // `mechanical-lift` and `mechanical-escalator` one commit before either is
+  // authored — an `ENTRY_SOURCE_DOC` override must name a DECLARED entry in the
+  // commit that adds it, which is the check below this one — so the head
+  // comparison and the floor come back for exactly two commits. Task 14 (the
+  // escalator) deletes both. A staged claim is a claim with a deletion date.
   //
-  // **NO ANTI-VACUITY FLOOR IS NEEDED WHILE THE CLAIM IS FULL EQUALITY, and that
-  // is the whole point of taking the staging back out.** `slice(0, codes.length)`
-  // followed the catalog, so at `codes.length === 0` it was the empty list and
-  // the comparison was `"" === ""` — a pack index dropped from the spread in
-  // `stock-catalog.ts` would have PASSED while the product shipped nothing, and
-  // the floor was what refused that. Against the full literal an empty or
-  // truncated catalog cannot compare equal to twenty-five codes, so the claim
-  // carries its own floor and a second one would be decoration.
-  //
-  // **PR 2 STAGES IT ONE LAST TIME** (plan Task 11): the list grows to 27 with
-  // `mechanical-lift` and `mechanical-escalator`, the slice and a floor of 25
-  // come back for the two commits that author them, and Task 14 deletes both
-  // again. A staged claim is a claim with a deletion date, and this is its
-  // second deletion.
+  // **THE FLOOR IS WHAT THE SLICE COSTS, and it is not decoration.**
+  // `slice(0, codes.length)` follows the catalog, so at `codes.length === 0` the
+  // comparison is `"" === ""` — a pack index dropped from the spread in
+  // `stock-catalog.ts` would PASS while the product shipped nothing. The floor is
+  // **25**, what `main` ships today: it refuses an empty or truncated catalog
+  // while the two vertical-transport entries are unwritten, and it never moves to
+  // 27 — Task 14 restores full equality, which carries its own floor.
   const codes = STOCK_ASSET_TEMPLATE_CATALOG.map((entry) => entry.code);
   assert(
-    codes.join(",") === STOCK_ENTRY_CODES.join(","),
-    "the catalog's codes must equal STOCK_ENTRY_CODES exactly, in order — the pack indexes are " +
-      "spread into stock-catalog.ts in the order ADR 0040 ruling 2 (and, from E5.2, ADR 0053 " +
-      "decision 1; from E5.3, ADR 0054 decision 1) sets, and that order reaches the client " +
-      "unchanged: GET /admin/asset-templates/stock returns the array unsorted and the stock " +
-      "viewer renders it as it arrives, so the order IS what a global administrator reads. This " +
-      "is FULL equality and not a head comparison, restored at E5.3 Task 10 now that all seven " +
-      "facility entries ship: a catalog that is short an entry, carries one twice or lists a " +
-      "pack out of document order fails here and nowhere else.\n  expected " +
-      `${STOCK_ENTRY_CODES.join(", ")}\n  got      ${codes.join(", ")}`,
+    codes.length >= 25,
+    `the catalog ships ${codes.length} entries, fewer than the twenty-five E5.3 PR 1 left on ` +
+      "main. The order claim below is a HEAD comparison while Tasks 13-14 author the lift and " +
+      "the escalator, and a head comparison against a shrinking catalog compares less and less " +
+      "until it compares nothing: this floor is what refuses a pack index dropped from the " +
+      "spread in stock-catalog.ts. Do not lower it — delete it at Task 14, with the slice.",
   );
+  assert(
+    codes.join(",") === STOCK_ENTRY_CODES.slice(0, codes.length).join(","),
+    "the catalog's codes must equal the HEAD of STOCK_ENTRY_CODES exactly, in order — the pack " +
+      "indexes are spread into stock-catalog.ts in the order ADR 0040 ruling 2 (and, from E5.2, " +
+      "ADR 0053 decision 1; from E5.3, ADR 0054 decision 1) sets, and that order reaches the " +
+      "client unchanged: GET /admin/asset-templates/stock returns the array unsorted and the " +
+      "stock viewer renders it as it arrives, so the order IS what a global administrator reads. " +
+      "It is a HEAD comparison for two commits only, because Task 11 declares the lift and the " +
+      "escalator before Tasks 13-14 author them; a catalog that is short an entry, carries one " +
+      "twice or lists a pack out of document order fails here and nowhere else.\n  expected " +
+      `${STOCK_ENTRY_CODES.slice(0, codes.length).join(", ")}\n  got      ${codes.join(", ")}`,
+  );
+
+  // ---- every citation override names an entry the catalog declares --------
+  //
+  // The reverse direction of `E5.3` Task 11's per-entry override, and the one
+  // that fails in silence. `ENTRY_SOURCE_DOC` points a CODE at the document its
+  // domain prefix does not carry; a key that no entry answers to checks nothing,
+  // forever — a misspelt "mechanical-elevator" would leave the real
+  // `mechanical-lift` on the prefix default, checked against `E5.2`'s handout,
+  // and green. The claim lives here because this file owns the entry list, and
+  // the map lives in `stock-catalog.spec.ts` because `checkEntry` reads it.
+  //
+  // Against `STOCK_ENTRY_CODES` and NOT against the shipped catalog, deliberately:
+  // an override is declared in the same commit as its code and one or two commits
+  // before the entry itself, and this check must be green in that window.
+  for (const code of Object.keys(ENTRY_SOURCE_DOC)) {
+    assert(
+      (STOCK_ENTRY_CODES as readonly string[]).includes(code),
+      `${code} carries an ENTRY_SOURCE_DOC override but is not a declared stock entry — ` +
+        "an override keyed on a code nobody ships checks nothing, forever. Either the code is " +
+        "misspelt (and the entry it was meant for is silently back on its prefix default, cited " +
+        `against the wrong document) or the override outlived its entry. Declared: ${STOCK_ENTRY_CODES.join(", ")}.`,
+    );
+  }
 
   // ---- the deferred codes, per entry and never catalog-wide ---------------
   //
