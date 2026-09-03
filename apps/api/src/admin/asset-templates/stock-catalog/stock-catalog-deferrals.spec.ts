@@ -40,7 +40,9 @@ import { assert, requireStockEntry } from "./stock-catalog.spec";
  * the order `water.ts` lists them in and the order `GET /stock` returns them —
  * then the six mechanical/utility machine classes of
  * `docs/e5.2-derived-taglist-v1.md` in **document order** (ADR 0053 decision 1),
- * which is the order `mechanical.ts` lists them in.
+ * then the facility/smart-building classes of
+ * `docs/e5.3-derived-taglist-v1.md`, also in document order (ADR 0054
+ * decision 1) — the orders `mechanical.ts` and `facility.ts` list them in.
  *
  * **Two prefixes, one pack, one index.** `hvac-chiller` and `hvac-ahu` sit
  * between `mechanical-compressor` and `mechanical-boiler` because the tag list
@@ -49,13 +51,25 @@ import { assert, requireStockEntry } from "./stock-catalog.spec";
  * document's order, not the prefix's — do not "tidy" the two `hvac-` codes to
  * the end.
  *
- * **All eighteen are shipped since `E5.2` Task 11**, and the order claim below
- * is therefore full equality: the catalog's codes must equal this list exactly,
- * in this order. It was staged as a prefix comparison for the six commits pass
- * C took to author the mechanical entries one at a time — the `F2.12` / `E5.1`
- * bound-staging pattern applied to a list — and the boiler's commit deleted the
- * slice and the anti-vacuity floor together, because full equality against an
- * eighteen-element literal cannot go vacuous.
+ * **THREE prefixes in the facility pack, and the same rule.**
+ * `environment-iaq-node` is §6 of the `E5.3` document and sits between
+ * `facility-parking-level` and `facility-bas-gateway` for that reason alone
+ * (ADR 0054 decision 2 files an indoor-air-quality node under `environment`,
+ * whose vocabulary already holds its temperature and humidity keys). PR 2
+ * appends `mechanical-lift` (§8a) and `mechanical-escalator` (§8b), taking this
+ * list to 27 — again in document order, not prefix order.
+ *
+ * **STAGED SINCE `E5.3` Task 3, and the order claim below is a HEAD comparison
+ * rather than full equality.** The eighteen electrical, water and
+ * mechanical/HVAC codes are all shipped; the seven `E5.3` codes are declared
+ * here one commit before the first of them is authored, exactly as the six
+ * mechanical codes were at `E5.2` Task 5. Full equality would be red for the
+ * seven commits pass C takes to author them one at a time, and a bound that is
+ * red by construction teaches the next author to ignore a red test — the
+ * `F2.12` / `E5.1` bound-staging pattern applied to a list. **Task 10 (the BAS
+ * gateway) deletes the slice and the anti-vacuity floor together** and restores
+ * full equality against a 25-element literal, which cannot go vacuous; PR 2's
+ * Task 11 stages it again at 27 with a floor of 25.
  */
 const STOCK_ENTRY_CODES = [
   "electrical-feeder",
@@ -76,6 +90,16 @@ const STOCK_ENTRY_CODES = [
   "hvac-chiller",
   "hvac-ahu",
   "mechanical-boiler",
+  // The facility/smart-building pack — `E5.3`, §§1-7 of the document in order.
+  // Not one of the seven ships yet; Tasks 4-10 author them one per commit,
+  // against the lists below, and the order claim is staged until Task 10.
+  "facility-lighting-zone",
+  "facility-fire-panel",
+  "facility-access-door",
+  "facility-occupancy-zone",
+  "facility-parking-level",
+  "environment-iaq-node",
+  "facility-bas-gateway",
 ] as const;
 export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
 
@@ -92,12 +116,13 @@ export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
  * declares a deferred code" check would therefore fail on a correct entry.
  * Each list is checked against its own entry and no other.
  *
- * **64 records across 59 distinct codes** since `E5.2` Task 5. The three halves
+ * **89 records across 84 distinct codes** since `E5.3` Task 3. The four parts
  * are 32 records over 30 codes (electrical — `load_pct` three times), 15 over 14
- * (water — `hydraulic_load_pct` on the STP and the ETP) and 17 over 17
- * (mechanical/HVAC — no code is deferred twice inside the pack). 30 + 14 + 17 is
- * 61, not 59, and the two-code difference is the whole reason this is a
- * `Record`:
+ * (water — `hydraulic_load_pct` on the STP and the ETP), 17 over 17
+ * (mechanical/HVAC — no code is deferred twice inside the pack) and **25 over 25**
+ * (facility/smart-building — no code deferred twice, and none of the 25 is
+ * deferred by any earlier pack either). 30 + 14 + 17 + 25 is 86, not 84, and the
+ * two-code difference is the whole reason this is a `Record`:
  *
  *  - **`specific_energy_kwh_kl` is deferred on `electrical-feeder` AND on
  *    `water-ro`** — the same code for the same shape of reason on two packs —
@@ -257,6 +282,111 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // throughput_since_regen_kl class, a second code for declared information.
     "specific_fuel_kg_ton_steam",
   ],
+  // The facility/smart-building pack — E5.3, docs/e5.3-derived-taglist-v1.md.
+  // Twenty-five records over twenty-five codes in PR 1; the four PR 1 promotes
+  // are listed with their formulas in facility.ts. Each list is its section's
+  // "Derived:" prose line minus what that entry authors, and across the whole
+  // pack 8 + 40 = 48 distinct codes over 51 mentions is the reconciliation that
+  // proves no named code was dropped (PR 1: 4 + 25 = 29 over 30).
+  //
+  // Not one of the seven entries is shipped yet, so the loop below does not
+  // reach any of these lists. They are declared now, in the commit that
+  // declares the pack, so that the day an entry lands it lands against a check
+  // that already names what it may not author (E5.2 Task 5's shape).
+  //
+  // §1 — two time windows and three attributes. Nothing is promoted here.
+  "facility-lighting-zone": [
+    // minutes per day is a window; the lit_while_unoccupied alarm binds the
+    // state and says so.
+    "lit_while_unoccupied_min_day",
+    // hours per day of manual override — a window.
+    "override_hours_day",
+    // installed load per square metre needs the ZONE AREA, an attribute.
+    "lighting_w_per_m2",
+    // needs the full-output baseline the zone would draw without daylight
+    // harvesting — an attribute, and a commissioning one.
+    "daylight_saving_pct",
+    // faulty luminaires over the LUMINAIRE COUNT; lamp_fault_count is declared
+    // and the count it divides by is not.
+    "lamp_availability_pct",
+  ],
+  // §2 — the pack's NEW deferral class, two time windows and an attribute.
+  "facility-fire-panel": [
+    // THE NEW CLASS (see DEFERRAL_REASON): a product of five declared binaries
+    // that PARSES, and is refused all the same. A health flag over states is
+    // content.health's job (ADR 0050's surface), and each of the five inputs
+    // already raises its own alarm — a roll-up would restate five decisions as
+    // one number with no way back to which input moved it.
+    "fire_system_healthy",
+    // hours isolated per month — a window.
+    "isolation_hours_month",
+    // starts per hour; the jockey_pump_cycling alarm binds the run status and
+    // says the rate is the rule's.
+    "jockey_starts_per_hour",
+    // "running outside a test" needs the TEST SCHEDULE, a site attribute; the
+    // fire_pump_running_unplanned alarm carries the meaning instead.
+    "fire_pump_run_unplanned",
+  ],
+  // §3 — two time windows and the roll-up class again.
+  "facility-access-door": [
+    // minutes held open per day — a window.
+    "door_open_minutes_day",
+    // per-hour rate over interval counters whose REPORTING INTERVAL the
+    // catalog does not know — a window with an unknown denominator.
+    "traffic_per_hour",
+    // the fire_system_healthy class, second instance: a roll-up over the
+    // controller's own state points.
+    "access_system_healthy",
+  ],
+  // §4 — a window, an attribute, and another asset's energy.
+  "facility-occupancy-zone": [
+    // hours-in-state over a day — a window.
+    "occupied_hours_day",
+    // needs the DESK or ROOM count, an attribute; occupancy_capacity is the
+    // egress capacity and is a different denominator.
+    "space_utilization_pct",
+    // the HVAC zone's energy while this zone is empty — another asset's meter,
+    // which bms-calc-v1 cannot name.
+    "conditioning_while_empty_kwh",
+  ],
+  // §5 — four time windows, and the only entry whose deferrals are all one
+  // class. occupancy_pct is NOT here: the level declares bays_occupied and
+  // bays_total and authors it, with a different formula from §4's.
+  "facility-parking-level": [
+    // vehicles per day.
+    "turnover_per_day",
+    // average dwell needs entry-to-exit pairing, which is state over a window.
+    "avg_dwell_min",
+    // fan run hours per day.
+    "fan_hours_day",
+    // the fraction of fan hours CO demand drove — two windows, not one.
+    "co_driven_fan_pct",
+  ],
+  // §6 — two methods the document only names, and a window. The two the node
+  // DOES author are the ASHRAE 62.1 pair, the pack's only maxInputAgeSeconds
+  // overrides.
+  "environment-iaq-node": [
+    // ISHRAE banding: a table indexed by pollutant and concentration range,
+    // and the document names the method without fixing the bands.
+    "iaq_index",
+    // adequacy against a ventilation rate the document does not define — a
+    // method, and the rate is per occupancy category.
+    "ventilation_adequacy_pct",
+    // hours outside the band per day — a window, and the band is the site's.
+    "hours_out_of_band_day",
+  ],
+  // §7 — the roll-up class a third time, and two time windows.
+  "facility-bas-gateway": [
+    // ADR 0054 decision 6 rules it to the F3.x estate surface rather than to a
+    // template point: a per-gateway quality number is computed over the points
+    // BEHIND the gateway, which is the estate's view and not this asset's.
+    "data_quality_pct",
+    // reachable time over elapsed time — hours-in-state.
+    "uptime_pct",
+    // a mean over a window; last_seen_age_s is the instantaneous point the
+    // stale_data alarm binds.
+    "mean_latency_s",
+  ],
 };
 
 const DEFERRAL_REASON =
@@ -289,7 +419,16 @@ const DEFERRAL_REASON =
   "parses by TDS balance over feedwater_tds_ppm and blowdown_tds_ppm, and the second is an M row " +
   "whose sourceDataKeyPattern is null forever, so that formula never has an input either — same " +
   "reason as salt_efficiency_kg_kl, same remedy, and the pattern is now a class rather than an " +
-  "anecdote.";
+  "anecdote. E5.3's facility/smart-building pack adds ONE more class and no other, the eighth " +
+  "overall and the fifth numbered here: (5) A SUBSYSTEM STATE ROLL-UP, which is the first class " +
+  "whose formula PARSES and is refused anyway — fire_system_healthy is a product of five " +
+  "declared binaries, access_system_healthy the same over the controller's, and data_quality_pct " +
+  "a completeness fraction over the points behind a gateway; all three are ADR 0050's " +
+  "content.health surface rather than a template point (ADR 0054 decision 6 routes the third to " +
+  "the F3.x estate view), and each of their inputs already raises its own alarm, so the roll-up " +
+  "would restate several decisions as one number with no way back to which input moved it — " +
+  "every other class here is deferred because it CANNOT be written, and this one because it " +
+  "should not be.";
 
 /** The shared reason plus the class's own list, so the failure names both. */
 export const deferralReason = (code: StockEntryCode): string =>
@@ -319,26 +458,46 @@ export function runStockCatalogDeferralTests(): void {
   // index appended in the wrong place, or an entry silently dropped from a
   // spread, would have passed every check in this directory.
   //
-  // **FULL EQUALITY since `E5.2` Task 11**, which is where the staging ended.
-  // The claim compared the catalog against the HEAD of this list for the six
-  // commits pass C took to author the mechanical entries one at a time — full
-  // equality would have been red throughout, which is a bound that teaches the
-  // next author to ignore a red test. The boiler's commit deleted the slice and
-  // the `>= 12` anti-vacuity floor together: the floor existed because
-  // `slice(0, 0)` equals an empty catalog, so a pack index dropped from the
-  // spread would have passed the PREFIX claim while shipping nothing. Equality
-  // against an eighteen-element literal has no such hole — an empty catalog
-  // fails it by definition — so the floor is not owed and would only be a second
-  // number to keep true.
+  // **STAGED AGAIN AT `E5.3` Task 3, and it was full equality in between.** The
+  // claim compared the catalog against the HEAD of this list for the six commits
+  // pass C took to author the mechanical entries; `E5.2` Task 11 restored full
+  // equality against an eighteen-element literal and deleted the `>= 12` floor
+  // with the slice. `E5.3` Task 3 declares seven more codes one commit before the
+  // first of them is authored, so the head comparison and the floor are both back
+  // — and **Task 10 (the BAS gateway) deletes them again**, restoring full
+  // equality against 25.
+  //
+  // **THE FLOOR IS WHAT KEEPS THE STAGED CLAIM FROM GOING VACUOUS, and it is not
+  // decoration.** `slice(0, codes.length)` follows the catalog: at
+  // `codes.length === 0` it is the empty list and the comparison is `"" === ""`,
+  // so a pack index dropped from the spread in `stock-catalog.ts` — or every one
+  // of them — would PASS the order claim while the product shipped nothing. The
+  // floor is the shipped count at the moment of staging (18 today), so it fails
+  // the moment the catalog gets shorter and cannot be satisfied by an empty or
+  // truncated catalog. It moves to 25 at Task 10 only by being deleted.
   const codes = STOCK_ASSET_TEMPLATE_CATALOG.map((entry) => entry.code);
   assert(
-    codes.join(",") === STOCK_ENTRY_CODES.join(","),
-    "the catalog's codes must equal STOCK_ENTRY_CODES exactly, in order — the pack indexes are " +
-      "spread into stock-catalog.ts in the order ADR 0040 ruling 2 (and, from E5.2, ADR 0053 " +
-      "decision 1) sets, and that order reaches the client unchanged: GET " +
-      "/admin/asset-templates/stock returns the array unsorted and the stock viewer renders it " +
-      "as it arrives, so the order IS what a global administrator reads.\n  expected " +
-      `${STOCK_ENTRY_CODES.join(", ")}\n  got      ${codes.join(", ")}`,
+    codes.length >= 18,
+    `the catalog ships ${codes.length} entries and must ship at least the 18 that were already ` +
+      "authored when E5.3 Task 3 staged the order claim below. This floor is the anti-vacuity " +
+      "half of the staging: the claim compares against STOCK_ENTRY_CODES.slice(0, codes.length), " +
+      "which is the EMPTY list when the catalog is empty, so a pack index dropped from the spread " +
+      "in stock-catalog.ts would otherwise pass a comparison of nothing against nothing. Never " +
+      "lower this number to go green — if the catalog really did shrink, an entry was lost. " +
+      "E5.3 Task 10 deletes the floor and the slice together when the seventh facility entry " +
+      "lands and full equality against 25 becomes possible again.",
+  );
+  assert(
+    codes.join(",") === STOCK_ENTRY_CODES.slice(0, codes.length).join(","),
+    "the catalog's codes must equal the HEAD of STOCK_ENTRY_CODES exactly, in order — the pack " +
+      "indexes are spread into stock-catalog.ts in the order ADR 0040 ruling 2 (and, from E5.2, " +
+      "ADR 0053 decision 1; from E5.3, ADR 0054 decision 1) sets, and that order reaches the " +
+      "client unchanged: GET /admin/asset-templates/stock returns the array unsorted and the " +
+      "stock viewer renders it as it arrives, so the order IS what a global administrator reads. " +
+      "This is a HEAD comparison and not full equality only while E5.3's seven facility entries " +
+      "are being authored one per commit; Task 10 restores equality against all 25.\n  expected " +
+      `${STOCK_ENTRY_CODES.slice(0, codes.length).join(", ")}\n  got      ${codes.join(", ")}` +
+      `\n  declared but not yet shipped: ${STOCK_ENTRY_CODES.slice(codes.length).join(", ") || "(none)"}`,
   );
 
   // ---- the deferred codes, per entry and never catalog-wide ---------------

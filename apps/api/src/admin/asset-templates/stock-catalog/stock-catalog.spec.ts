@@ -143,6 +143,25 @@ const PACK_SOURCE_DOC: Readonly<Record<string, string>> = {
   // index and a second story about where two `hvac-` modules live.
   hvac: "e5.2-derived-taglist-v1.md",
   mechanical: "e5.2-derived-taglist-v1.md",
+  // **One document, TWO prefixes here — and a THIRD prefix this map cannot
+  // express.** `E5.3`'s tag list covers nine classes across three domains. Two
+  // of the three are declared below: ADR 0054 decision 2 files the indoor air
+  // quality node under `environment` — the domain whose vocabulary already holds
+  // its temperature and humidity keys — and everything else in PR 1 under
+  // `facility`, the seventh `bms.asset_domains` row.
+  //
+  // The third is `mechanical`, for the lift and the escalator, and **that prefix
+  // already belongs to `e5.2-derived-taglist-v1.md` two lines above.** A prefix
+  // maps to exactly one document, so `mechanical-lift` would be checked against
+  // the `E5.2` handout — the wrong source, and green, which is the failure a
+  // prefix-keyed map cannot see. PR 2 Task 11 adds a per-ENTRY `ENTRY_SOURCE_DOC`
+  // override consulted before this map, with a reverse check that every override
+  // key is a shipped entry. **Do not "fix" it by re-prefixing the two entries or
+  // by re-pointing `mechanical` here**: the prefix names the DOMAIN and both
+  // machines are mechanical, and re-pointing would leave `E5.2`'s six entries
+  // citing the wrong document instead.
+  facility: "e5.3-derived-taglist-v1.md",
+  environment: "e5.3-derived-taglist-v1.md",
 };
 
 /** The pack an entry belongs to — everything before the first `-` in its code. */

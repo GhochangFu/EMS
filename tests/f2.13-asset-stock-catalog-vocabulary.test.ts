@@ -106,6 +106,27 @@ const STOCK_ASSET_RELS = [
   `${STOCK_CATALOG_DIR}/hvac-chiller.ts`,
   `${STOCK_CATALOG_DIR}/hvac-ahu.ts`,
   `${STOCK_CATALOG_DIR}/mechanical-boiler.ts`,
+  // The facility/smart-building pack — `E5.3`, one index and (in PR 1) seven
+  // class modules, in the document's section order. **The index is listed here
+  // in the commit that CREATES it** (plan Task 3), before it holds a single
+  // entry, for the same reason `mechanical.ts` was: the directory cross-check
+  // below is red the moment a `.ts` file appears in the catalog directory
+  // unaccounted for, so a pack index and its listing are one commit by
+  // construction. `facility.ts` exports an empty array on purpose (`E5.1` §13
+  // item 1 — no skeleton modules with placeholder points), so it contributes no
+  // reference to the bounds below until Task 4.
+  //
+  // **The class modules join one per entry commit** — `facility-lighting-zone.ts`
+  // (§1), `facility-fire-panel.ts` (§2), `facility-access-door.ts` (§3),
+  // `facility-occupancy-zone.ts` (§4), `facility-parking-level.ts` (§5),
+  // `environment-iaq-node.ts` (§6) and `facility-bas-gateway.ts` (§7), then
+  // `mechanical-lift.ts` (§8a) and `mechanical-escalator.ts` (§8b) in PR 2.
+  // **Three domains under one index**, and that is deliberate: ADR 0054
+  // decision 2 files the IAQ node under `environment` — the domain whose
+  // vocabulary already holds its temperature and humidity keys — and the lift
+  // and the escalator under `mechanical`, while the module name follows the
+  // entry code the way `water-stp.ts` does.
+  `${STOCK_CATALOG_DIR}/facility.ts`,
 ] as const;
 
 /**
