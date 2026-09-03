@@ -117,7 +117,43 @@ const STOCK_ASSET_RELS = [
 const STOCK_ASSET_SCAN_EXEMPT = ["types.ts"] as const;
 
 const STOCK_LABEL = STOCK_ASSET_RELS.map((rel) => basename(rel)).join(" + ");
-const CONSTANTS_REL = "packages/shared/src/constants.ts";
+
+/**
+ * Every file that declares a shared `*_POINT_KEYS` array, in the order
+ * `point-keys-seed.ts` imports them. Restated from `f3.38`, on purpose (see
+ * the file docblock).
+ *
+ * **`E5.3` made this a list, and the reason is a rule and not a preference.**
+ * `packages/shared/src/constants.ts` reached 927 lines, and AGENTS.md §4.5's
+ * 1000-line cap is read WHOLE-FILE by `.githooks/pre-commit.mjs:191-194`, so
+ * the facility pack's 104 codes could not be appended there. They live in
+ * `packages/shared/src/facility-point-keys.ts` instead — plan
+ * `docs/plans/e5.3-facility-domain-pack.md` §4.5 and §12 ruling 1, a
+ * correction to ADR 0054 decision 3's *"three arrays in `constants.ts`"*.
+ *
+ * **A THIRD ENTRY BELONGS HERE THE DAY A THIRD FILE DECLARES ONE**, with its
+ * floor below — the same instruction `STOCK_ASSET_RELS` above already carries.
+ * The parse is per file and the floor is per file because a union bound cannot
+ * see which source supplied it: a mistyped path leaves the other file's 396
+ * codes clearing any floor set before the split.
+ */
+const POINT_KEY_SOURCE_RELS = [
+  "packages/shared/src/constants.ts",
+  "packages/shared/src/facility-point-keys.ts",
+] as const;
+
+/**
+ * The minimum number of codes each source must yield, per file and never as
+ * one total. Both are actuals after `E5.3` PR 1 — `constants.ts` 396,
+ * `facility-point-keys.ts` 104.
+ */
+const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
+  "packages/shared/src/constants.ts": 396,
+  "packages/shared/src/facility-point-keys.ts": 104,
+};
+
+/** The sources as one list, for an assertion message. */
+const POINT_KEY_SOURCE_LABEL = POINT_KEY_SOURCE_RELS.join(" + ");
 
 /**
  * Every code the point-key catalog can seed — the union of the `*_POINT_KEYS`
@@ -199,7 +235,16 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     ...scanCatalog(source),
     ...scanKpiPointKeys(source),
   ]);
-  const vocabulary = pointKeyVocabulary(read(CONSTANTS_REL));
+  // **Parsed per source file, then unioned** — never over a concatenation.
+  // The per-file sets are what the floors in the anti-vacuity block read, so a
+  // source that yields nothing names itself instead of hiding behind the other
+  // one's codes.
+  const vocabularyBySource = new Map<string, ReadonlySet<string>>(
+    POINT_KEY_SOURCE_RELS.map((rel) => [rel, pointKeyVocabulary(read(rel))]),
+  );
+  const vocabulary = new Set(
+    [...vocabularyBySource.values()].flatMap((codes) => [...codes]),
+  );
 
   it("every file in STOCK_ASSET_RELS exists and is non-empty", () => {
     for (const rel of STOCK_ASSET_RELS) {
@@ -348,7 +393,30 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // it. Leaving it at 289 would have stayed green with all 107 new codes
     // parsed as nothing at all, which is the silent failure this file exists
     // to end.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(396);
+    //
+    // **Per source FIRST.** The union cannot say which file supplied it, so a
+    // mistyped second path would leave `constants.ts`'s 396 clearing a union
+    // floor of 396 with the whole facility pack parsed as nothing — the exact
+    // shape of blindness this block exists to catch, arriving in the commit
+    // that made two sources possible.
+    for (const rel of POINT_KEY_SOURCE_RELS) {
+      // The floor must be DECLARED, not defaulted: a third source added
+      // without an entry would fall back to one code and pass for free.
+      const floor = POINT_KEY_SOURCE_FLOOR[rel];
+      expect(
+        floor,
+        `${rel} has no POINT_KEY_SOURCE_FLOOR entry, so its anti-vacuity floor is ` +
+          "whatever the fallback happens to be. Declare the number of codes that " +
+          "file holds.",
+      ).toBeGreaterThan(0);
+      expect(
+        vocabularyBySource.get(rel)?.size ?? 0,
+        `${rel} yielded fewer point-key codes than it declares — the scan of that ` +
+          "file is blind, and the check below would pass on the other source's codes " +
+          "alone. Fix the path or the array declaration; do not lower this floor.",
+      ).toBeGreaterThanOrEqual(floor ?? 1);
+    }
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(396);
   });
 
   it("every catalog pointKey is a code a *_POINT_KEYS array holds", () => {
@@ -359,7 +427,7 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
         "refuses a template_points row whose key the platform lacks, and assertPointKeysActive " +
         "refuses the import before the insert — this fails it before either, at build time. Promote " +
         "the key into the pack's *_POINT_KEYS array first (ADR 0051 Amendment 6's shape), or spell " +
-        `it the way ${CONSTANTS_REL} spells it.`,
+        `it the way ${POINT_KEY_SOURCE_LABEL} spells it.`,
     ).toEqual([]);
   });
 });

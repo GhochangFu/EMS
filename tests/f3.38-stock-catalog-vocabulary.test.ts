@@ -67,7 +67,43 @@ const STOCK_RELS = [
 
 /** The files as one list, for an assertion message. */
 const STOCK_LABEL = STOCK_RELS.join(" + ");
-const CONSTANTS_REL = "packages/shared/src/constants.ts";
+
+/**
+ * Every file that declares a shared `*_POINT_KEYS` array, in the order
+ * `point-keys-seed.ts` imports them.
+ *
+ * **`E5.3` made this a list, and the reason is a rule and not a preference.**
+ * `packages/shared/src/constants.ts` reached 927 lines, and AGENTS.md §4.5's
+ * 1000-line cap is read WHOLE-FILE by `.githooks/pre-commit.mjs:191-194`, so
+ * the facility pack's 104 codes could not be appended there. They live in
+ * `packages/shared/src/facility-point-keys.ts` instead — plan
+ * `docs/plans/e5.3-facility-domain-pack.md` §4.5 and §12 ruling 1, a
+ * correction to ADR 0054 decision 3's *"three arrays in `constants.ts`"*.
+ *
+ * **A THIRD ENTRY BELONGS HERE THE DAY A THIRD FILE DECLARES ONE**, with its
+ * floor below — the same instruction `STOCK_RELS` and `ROLE_MIGRATION_RELS`
+ * already carry. The parse is per file and the floor is per file because a
+ * union bound cannot see which source supplied it: a mistyped path leaves the
+ * other file's 396 codes clearing any floor set before the split.
+ */
+const POINT_KEY_SOURCE_RELS = [
+  "packages/shared/src/constants.ts",
+  "packages/shared/src/facility-point-keys.ts",
+] as const;
+
+/**
+ * The minimum number of codes each source must yield, per file and never as
+ * one total. Both are actuals after `E5.3` PR 1 — `constants.ts` 396,
+ * `facility-point-keys.ts` 104 — for the reason this file's own anti-vacuity
+ * docblock gives: slack here is indistinguishable from a blind scan.
+ */
+const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
+  "packages/shared/src/constants.ts": 396,
+  "packages/shared/src/facility-point-keys.ts": 104,
+};
+
+/** The sources as one list, for an assertion message. */
+const POINT_KEY_SOURCE_LABEL = POINT_KEY_SOURCE_RELS.join(" + ");
 /**
  * EVERY migration that seeds `bms.asset_roles`, in application order, not just
  * the first.
@@ -249,7 +285,16 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
   const stockSources = STOCK_RELS.map((rel) => read(rel));
   /** The catalog as one blob, for the two whole-text unit checks at the end. */
   const stock = stockSources.join("\n");
-  const vocabulary = pointKeyVocabulary(read(CONSTANTS_REL));
+  // **Parsed per source file, then unioned** — never over a concatenation.
+  // The per-file sets are what the floors in "the scan actually found the
+  // catalog" read, so a source that yields nothing names itself instead of
+  // hiding behind the other one's codes.
+  const vocabularyBySource = new Map<string, ReadonlySet<string>>(
+    POINT_KEY_SOURCE_RELS.map((rel) => [rel, pointKeyVocabulary(read(rel))]),
+  );
+  const vocabulary = new Set(
+    [...vocabularyBySource.values()].flatMap((codes) => [...codes]),
+  );
   const roles = roleVocabulary(
     ROLE_MIGRATION_RELS.map((rel) => sqlOnly(read(rel))).join("\n"),
   );
@@ -292,12 +337,32 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
       new Set(pointKeys.map((entry) => entry.section)).size,
       "every pointKey was attributed to one section — the section tracker is broken",
     ).toBeGreaterThanOrEqual(5);
+    // **Per source first.** The union below cannot say which file supplied it,
+    // so a mistyped second path would leave `constants.ts`'s 396 clearing a
+    // union floor of 396 with the whole facility pack parsed as nothing.
+    for (const rel of POINT_KEY_SOURCE_RELS) {
+      // The floor must be DECLARED, not defaulted: a third source added
+      // without an entry would fall back to one code and pass for free.
+      const floor = POINT_KEY_SOURCE_FLOOR[rel];
+      expect(
+        floor,
+        `${rel} has no POINT_KEY_SOURCE_FLOOR entry, so its anti-vacuity floor is ` +
+          "whatever the fallback happens to be. Declare the number of codes that " +
+          "file holds.",
+      ).toBeGreaterThan(0);
+      expect(
+        vocabularyBySource.get(rel)?.size ?? 0,
+        `${rel} yielded fewer point-key codes than it declares — the scan of that ` +
+          "file is blind, and every check below would pass on the other source's " +
+          "codes alone. Fix the path or the array declaration; do not lower this floor.",
+      ).toBeGreaterThanOrEqual(floor ?? 1);
+    }
     // 396 = 289 before + `E5.2`'s 107-code `MECHANICAL_CLASS_POINT_KEYS` +
     // `HVAC_CLASS_POINT_KEYS` (`docs/plans/e5.2-mechanical-domain-pack.md`
     // §4.4/§4.6). Moved to the actual rather than left at 289, for the same
     // reason `F3.41` moved this bound from 30 — slack here would have stayed
     // green with the 107 new codes parsed as nothing at all.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(396);
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(396);
     // 28 is 26 from `0051` plus 2 from `0060`, and both migrations are frozen,
     // so this number is stable by construction. If a LATER migration adds a
     // role code and the check below starts rejecting a legitimate
