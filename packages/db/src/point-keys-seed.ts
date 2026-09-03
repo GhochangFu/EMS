@@ -9,6 +9,7 @@ import {
   ELECTRICAL_POINT_KEYS,
   HVAC_POINT_KEYS,
   METERED_PUMPING_POINT_KEYS,
+  WATER_CLASS_POINT_KEYS,
 } from "@bms/shared";
 
 type PointKeySeed = {
@@ -233,6 +234,122 @@ const UNIT_BY_KEY: Record<string, string> = {
   step_operation_count: "",
   capacitor_current_a: "A",
   step_fault_state: "",
+  // `E5.1` — `WATER_CLASS_POINT_KEYS` (ADR 0040 decision 2). Every unit is
+  // read from `docs/e5.1-derived-taglist-v1.md`'s own Unit column, exactly
+  // §4.4 of `docs/plans/e5.1-water-domain-pack.md` spells it. `""` — never a
+  // missing entry, which would seed NULL and revert a global administrator's
+  // correction on every `compose up` — is the spelling for the eleven `0/1`
+  // rows and for `cycles_of_concentration`, a dimensionless ratio. `pH`,
+  // `Hazen` and `SDI15` are named units an operator reads, not `""` (ADR
+  // 0051 Amendment 6 decision 4 maps only 0/1, enum, code, tap and count to
+  // the empty string). `µS/cm` below is `U+00B5` MICRO SIGN, not `U+03BC`
+  // GREEK SMALL LETTER MU — verified against the tag list's own codepoint —
+  // and that value is permanent the moment this seed runs once.
+  //
+  // §1 WTP
+  raw_water_flow_klh: "KL/hr",
+  raw_turbidity_ntu: "NTU",
+  raw_ph: "pH",
+  settled_turbidity_ntu: "NTU",
+  filtered_turbidity_ntu: "NTU",
+  filter_dp_bar: "bar",
+  backwash_status: "",
+  coagulant_dose_lph: "L/hr",
+  chlorine_dose_lph: "L/hr",
+  treated_cl2_residual_mgl: "mg/L",
+  treated_water_flow_klh: "KL/hr",
+  clearwell_level_pct: "%",
+  clarifier_sludge_level_pct: "%",
+  treated_conductivity_uscm: "µS/cm",
+  intake_pump_current_a: "A",
+  intake_pump_status: "",
+  raw_color_hazen: "Hazen",
+  raw_alkalinity_mgl: "mg/L",
+  recovery_pct: "%", // E5.1: derived, formula in water-wtp.ts / water-ro.ts
+  turbidity_removal_pct: "%", // E5.1: derived, formula in water-wtp.ts
+  // §2 RO
+  feed_flow_klh: "KL/hr",
+  permeate_flow_klh: "KL/hr",
+  reject_flow_klh: "KL/hr",
+  feed_pressure_bar: "bar",
+  stage1_dp_bar: "bar",
+  feed_conductivity_uscm: "µS/cm",
+  permeate_conductivity_uscm: "µS/cm",
+  feed_ph: "pH",
+  feed_orp_mv: "mV",
+  feed_temp_c: "°C",
+  hp_pump_current_a: "A",
+  hp_pump_status: "",
+  cip_status: "",
+  antiscalant_dose_lph: "L/hr",
+  feed_sdi: "SDI15",
+  cartridge_filter_dp_bar: "bar",
+  salt_rejection_pct: "%", // E5.1: derived, formula in water-ro.ts
+  // §3 softener
+  inlet_flow_klh: "KL/hr",
+  outlet_flow_totalizer_kl: "KL",
+  outlet_hardness_mgl: "mg/L",
+  inlet_hardness_mgl: "mg/L",
+  vessel_dp_bar: "bar",
+  regen_status: "",
+  brine_tank_level_pct: "%",
+  salt_consumption_kg: "kg",
+  outlet_conductivity_uscm: "µS/cm",
+  // §4 cooling tower
+  supply_temp_c: "°C",
+  return_temp_c: "°C",
+  ambient_wetbulb_c: "°C",
+  circ_flow_klh: "KL/hr",
+  makeup_flow_klh: "KL/hr",
+  blowdown_flow_klh: "KL/hr",
+  basin_level_pct: "%",
+  circ_conductivity_uscm: "µS/cm",
+  makeup_conductivity_uscm: "µS/cm",
+  circ_ph: "pH",
+  circ_orp_mv: "mV",
+  fan_status: "",
+  fan_current_a: "A",
+  circ_pump_status: "",
+  circ_pump_current_a: "A",
+  inhibitor_dose_lph: "L/hr",
+  circ_tds_mgl: "mg/L",
+  range_c: "°C", // E5.1: derived, formula in water-cooling-tower.ts
+  approach_c: "°C", // E5.1: derived, formula in water-cooling-tower.ts
+  cycles_of_concentration: "", // E5.1: derived, formula in water-cooling-tower.ts
+  makeup_pct: "%", // E5.1: derived, formula in water-cooling-tower.ts
+  // §5 STP
+  influent_flow_klh: "KL/hr",
+  effluent_flow_klh: "KL/hr",
+  aeration_do_mgl: "mg/L",
+  mlss_mgl: "mg/L",
+  effluent_turbidity_ntu: "NTU",
+  effluent_tss_mgl: "mg/L",
+  effluent_ph: "pH",
+  effluent_cl2_residual_mgl: "mg/L",
+  effluent_bod_mgl: "mg/L",
+  effluent_cod_mgl: "mg/L",
+  blower_status: "",
+  blower_current_a: "A",
+  ras_flow_klh: "KL/hr",
+  eq_tank_level_pct: "%",
+  treated_tank_level_pct: "%",
+  mbr_tmp_bar: "bar",
+  uv_status: "",
+  // §6 ETP
+  neutralization_ph: "pH",
+  dosing_acid_lph: "L/hr",
+  dosing_alkali_lph: "L/hr",
+  bio_mlss_mgl: "mg/L",
+  bio_do_mgl: "mg/L",
+  settling_tss_mgl: "mg/L",
+  clarifier_turbidity_ntu: "NTU",
+  discharge_flow_klh: "KL/hr",
+  discharge_ph: "pH",
+  oil_grease_mgl: "mg/L",
+  sludge_holding_level_pct: "%",
+  filter_press_status: "",
+  transfer_pump_status: "",
+  guard_pond_level_pct: "%",
 };
 
 function titleCase(code: string): string {
@@ -318,6 +435,17 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
   // unit and both specs need four, but a reader who trusts "none move" would
   // be wrong by exactly one row. Verified on a scratch cold start (F2.11).
   ...keysForDomain(ELECTRICAL_CLASS_POINT_KEYS, "electrical"),
+  // `E5.1` — the water-treatment class point keys (ADR 0040), LAST and
+  // unfiltered, for the same two reasons the electrical class array above is
+  // last. (a) The `.filter()` above, which subtracts `ELECTRICAL_POINT_KEYS`
+  // from the control-room array, keeps reading exactly what it read before.
+  // (b) `created_at` ordering: the same five fixtures pick their point key
+  // with `ORDER BY created_at, code`, and appending this array last gives
+  // all 98 rows the newest `created_at` on every database, existing and
+  // fresh — and unlike `ELECTRICAL_CLASS_POINT_KEYS`'s `battery_charge_pct`,
+  // there is no pre-existing row among these 98, so no fixture window moves
+  // at all (verified on a cold start, not assumed).
+  ...keysForDomain(WATER_CLASS_POINT_KEYS, "water"),
 ];
 
 /**

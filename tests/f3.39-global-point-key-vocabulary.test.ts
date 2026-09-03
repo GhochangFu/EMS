@@ -481,6 +481,7 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       CONTROL_ROOM_ELECTRICAL_POINT_KEYS: "electrical",
       METERED_PUMPING_POINT_KEYS: "electrical",
       ELECTRICAL_CLASS_POINT_KEYS: "electrical",
+      WATER_CLASS_POINT_KEYS: "water",
     };
 
     /**
@@ -571,10 +572,10 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // Anti-vacuity for this case alone, at the actual rather than at the
       // pre-`F2.11` count of 46 — this file argues at length for moving a bound
       // to its actual, and leaving one slack in the same commit would be the
-      // inconsistency a later reader copies. 191 = 185 + `F2.12`'s six
-      // promoted derived codes (ADR 0051 Amendment 6 decision 8, plan §12
-      // ruling 2).
-      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(191);
+      // inconsistency a later reader copies. 289 = 191 + `E5.1`'s 98-code
+      // WATER_CLASS_POINT_KEYS (plan `docs/plans/e5.1-water-domain-pack.md`
+      // §4.4/§4.6), disjoint by construction.
+      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(289);
 
       const missing: string[] = [];
       for (const arrayName of Object.keys(ARRAY_DOMAIN)) {
@@ -680,15 +681,15 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       expect(
         arraysByName.size,
         `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`,
-      ).toBeGreaterThanOrEqual(8);
+      ).toBeGreaterThanOrEqual(9);
       const codes = new Set([...arraysByName.values()].flat());
-      // 191 is the actual after `F2.12` appended its six promoted derived
-      // codes (ADR 0051 Amendment 6 decision 8, plan §12 ruling 2) to the 185
-      // that were here after `F2.11`. Moved to the actual rather than left at
-      // 185, where it would have stayed green with the six new codes parsed
+      // 289 is the actual after `E5.1` appended `WATER_CLASS_POINT_KEYS`'s 98
+      // codes (`docs/plans/e5.1-water-domain-pack.md` §4.4/§4.6) to the 191
+      // that were here after `F2.12`. Moved to the actual rather than left at
+      // 191, where it would have stayed green with the 98 new codes parsed
       // as nothing at all — which is the exact failure this whole `describe`
       // block exists to make impossible.
-      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(191);
+      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(289);
       expect(
         sql.split(";").filter((s) => s.trim().length > 0).length,
         "migration 0057 holds almost no statements",

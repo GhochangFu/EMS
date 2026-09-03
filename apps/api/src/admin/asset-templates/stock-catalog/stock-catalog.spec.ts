@@ -98,9 +98,39 @@ const categoryVocabulary = (): ReadonlySet<string> => (categoryMemo ??= seededCa
 const SYNTHETIC_ORGANIZATION_ID = "00000000-0000-4000-8000-00000000f213";
 
 const FEEDER_CODE = "electrical-feeder";
-const TAG_LIST_REL = "electrical-derived-taglist-v1.md";
 
-/** The six electrical classes of `docs/electrical-derived-taglist-v1.md`. */
+/**
+ * **One source document per pack, keyed by the entry code's pack prefix** —
+ * `E5.1` Task 2, generalising `F2.13`'s single `TAG_LIST_REL` constant.
+ *
+ * ADR 0052 decision 6: the stamp plus the citation IS the provenance, and there
+ * is no `meta.provenance` to fall back on. `F2.13` shipped one pack, so one
+ * hardcoded document name was the whole rule; a water entry citing
+ * `e5.1-derived-taglist-v1.md` cannot pass a constant that spells the
+ * electrical one.
+ *
+ * **A map and not a two-element list, and that is the load-bearing part.** The
+ * lookup below **fails when the prefix is absent** rather than returning
+ * `undefined` and skipping the citation. A skipping lookup would make every
+ * entry of an undeclared pack pass while checking none of them — a check that
+ * has quietly become a decoration, which is the exact failure `E5.2` shipping
+ * `mechanical-chiller` without adding a line here would otherwise cause.
+ * `UNKNOWN_PACK_FIXTURE` below is what proves the refusal can fire.
+ */
+const PACK_SOURCE_DOC: Readonly<Record<string, string>> = {
+  electrical: "electrical-derived-taglist-v1.md",
+  water: "e5.1-derived-taglist-v1.md",
+};
+
+/** The pack an entry belongs to — everything before the first `-` in its code. */
+const packOf = (code: string): string => code.split("-")[0] ?? "";
+
+/**
+ * The six electrical classes of `docs/electrical-derived-taglist-v1.md`, then
+ * the six water plant classes of `docs/e5.1-derived-taglist-v1.md` in ADR
+ * 0040's ruled authoring order (STP, ETP, cooling tower, WTP, RO, softener) —
+ * the order `water.ts` lists them in and the order `GET /stock` returns them.
+ */
 const STOCK_ENTRY_CODES = [
   "electrical-feeder",
   "electrical-transformer",
@@ -108,6 +138,12 @@ const STOCK_ENTRY_CODES = [
   "electrical-ups",
   "electrical-solar-pv",
   "electrical-apfc",
+  "water-stp",
+  "water-etp",
+  "water-cooling-tower",
+  "water-wtp",
+  "water-ro",
+  "water-softener",
 ] as const;
 export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
 
@@ -124,9 +160,13 @@ export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
  * declares a deferred code" check would therefore fail on a correct entry.
  * Each list is checked against its own entry and no other.
  *
- * 32 entries across 30 distinct codes (`load_pct` three times). Plan §4.1's
- * "32 deferred" is this per-entry sum; plan §2's ledger of 30 is the distinct
- * count. Both are right; they count different things.
+ * **47 entries across 43 distinct codes** since `E5.1`. The electrical half is
+ * 32 entries over 30 codes (`load_pct` three times); the water half is 15 over
+ * 14 (`hydraulic_load_pct` on the STP and the ETP). 30 + 14 is 44, not 43,
+ * because **`specific_energy_kwh_kl` is deferred on the electrical feeder AND
+ * the RO skid** — the same code for the same reason on two packs, which is the
+ * per-entry `Record`'s whole point. A per-entry sum and a distinct count are
+ * both right; they count different things.
  */
 export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly string[]>> = {
   // §1 — rating, contract demand, tariff band, production/KL, Σ of feeders.
@@ -177,6 +217,26 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   ],
   // §6 — rated kVAr per step, a time window, `tan`/`acos`, and the tariff band.
   "electrical-apfc": ["pf_correction_kvar", "steps_per_day", "capacitor_health_pct", "pf_penalty_hours"],
+  // The water pack — E5.1, docs/e5.1-derived-taglist-v1.md. Fifteen records
+  // over fourteen codes; the seven the pack DOES author are in water.ts.
+  //
+  // §5 — a reuse meter §5 does not list; INFLUENT BOD and the aeration tank
+  // volume; blower kWh where §5 declares motor current; the design capacity.
+  "water-stp": ["reuse_pct", "fm_ratio", "specific_aeration_kwh_kl", "hydraulic_load_pct"],
+  // §6 — the design capacity; the reagent strength; INFLUENT COD where §6
+  // carries the outlet only; a recycle meter §6 does not list.
+  "water-etp": ["hydraulic_load_pct", "neutralization_chem_gkl", "cod_removal_pct", "recycle_pct"],
+  // §4 — an empirical evaporation factor that is unit-system- and
+  // site-specific, and the tag list gives none.
+  "water-cooling-tower": ["evaporation_loss_klh"],
+  // §1 — the hypochlorite solution strength, a site attribute.
+  "water-wtp": ["specific_chlorine_gkl"],
+  // §2 — the HP pump's kW (§2 declares current), and a temperature correction
+  // that is an exponential the grammar has no function for.
+  "water-ro": ["specific_energy_kwh_kl", "normalized_permeate_flow"],
+  // §3 — a restatement of a declared measured point; a time window; and the one
+  // whose input can never receive a value at all (see DEFERRAL_REASON).
+  "water-softener": ["throughput_since_regen_kl", "regen_frequency_per_day", "salt_efficiency_kg_kl"],
 };
 
 const DEFERRAL_REASON =
@@ -187,7 +247,17 @@ const DEFERRAL_REASON =
   "grammar has no state for (per-day, per-month, hours-in-state), or a model it has no " +
   "functions for (IEC 60076-7, C57.91, a Duval triangle). They are deferred and NAMED, never " +
   "authored with a placeholder formula (ADR 0036; F2.9 records the fork) — plan §2 carries the " +
-  "reason for each one.";
+  "reason for each one. E5.1's water pack adds TWO deferral classes the electrical pack had no " +
+  "case of. (1) A REAGENT STRENGTH, which is a site attribute: specific_chlorine_gkl and " +
+  "neutralization_chem_gkl both divide by litres per hour of a SOLUTION, and grams of chemical " +
+  "per KL needs what the litres contain — the formula looks trivially expressible until you ask " +
+  "that. (2) A LAB-ONLY INPUT WHOSE POINT COULD NEVER RECEIVE A VALUE: salt_efficiency_kg_kl " +
+  "parses over two declared measured points, and one of them is an M row — sourceDataKeyPattern " +
+  "is null forever, planAsset puts it in skippedPoints, so it never gets an asset_points row, " +
+  "never gets a reading, and the formula never has an input. That is the only deferral in the " +
+  "catalog whose reason is the DATA MODEL rather than the grammar, and it is the distinction " +
+  "from oil_rise_over_ambient_c, whose X-tier input can be wired. It becomes authorable the day " +
+  "F1.8 gives a manual row somewhere to write to.";
 
 /** The shared reason plus the class's own list, so the failure names both. */
 export const deferralReason = (code: StockEntryCode): string =>
@@ -333,11 +403,27 @@ function checkEntry(entry: StockAssetTemplateEntry): void {
 
   // ADR 0052 decision 6: the stamp plus the citation IS the provenance. Every
   // entry cites its source document by name; there is no meta.provenance to
-  // fall back on. Feeder-only until F2.12 Task 3.
+  // fall back on. Feeder-only until F2.12 Task 3; one document per PACK since
+  // E5.1 Task 2.
+  //
+  // **The missing-prefix branch is the point of the map.** It fails rather than
+  // skipping, so a pack that ships entries without declaring its source is a
+  // build failure and not a silently uncited pack.
+  const pack = packOf(entry.code);
+  const sourceDoc = PACK_SOURCE_DOC[pack];
   assert(
-    typeof entry.description === "string" && entry.description.includes(TAG_LIST_REL),
-    `${entry.code}.description must cite ${TAG_LIST_REL} by name — the stamp plus the citation is ` +
-      "the provenance (ADR 0052 decision 6); there is no meta.provenance to fall back on",
+    sourceDoc !== undefined,
+    `${entry.code}: no PACK_SOURCE_DOC entry for the pack prefix "${pack}", so this entry's ` +
+      "provenance is checked against nothing. Add the pack and the document its rows are " +
+      "transcribed from to PACK_SOURCE_DOC — a lookup that returned undefined and skipped the " +
+      "citation would make every entry of this pack pass while checking none (ADR 0052 decision " +
+      `6: the stamp plus the citation IS the provenance). Declared packs: ${Object.keys(PACK_SOURCE_DOC).join(", ")}.`,
+  );
+  assert(
+    typeof entry.description === "string" && entry.description.includes(sourceDoc ?? ""),
+    `${entry.code}.description must cite ${String(sourceDoc)} by name — the stamp plus the ` +
+      "citation is the provenance (ADR 0052 decision 6); there is no meta.provenance to fall " +
+      "back on",
   );
 
   const declaredKeys = new Set(entry.points.map((point) => point.pointKey));
@@ -558,9 +644,19 @@ export function requireStockEntry(code: string): StockAssetTemplateEntry {
  *
  * The `description` cites the tag list because the provenance claim is generic
  * from Task 3 on.
+ *
+ * **Every fixture code carries a declared pack prefix, since `E5.1` Task 2.**
+ * The four were `f213-spec-*`, and `packOf("f213-spec-valid")` is `"f213"`,
+ * which `PACK_SOURCE_DOC` does not declare and must not — a fixture is not a
+ * pack. Renaming them to `electrical-f213-spec-*` keeps their descriptions
+ * (which already cite the electrical tag list) truthful and makes them exercise
+ * the real lookup instead of an exemption. The rename is not cosmetic: the
+ * citation check runs BEFORE the derived and KPI loops, so an unprefixed
+ * fixture would fail there first and the two negative fixtures below would stop
+ * proving the rules they were written for while still going red.
  */
 const VALID_FIXTURE: StockAssetTemplateEntry = {
-  code: "f213-spec-valid",
+  code: "electrical-f213-spec-valid",
   name: "Spec fixture — valid",
   assetType: "test_rig",
   domain: "electrical",
@@ -632,7 +728,7 @@ const VALID_FIXTURE: StockAssetTemplateEntry = {
 
 const POINTLESS_FIXTURE: StockAssetTemplateEntry = {
   ...VALID_FIXTURE,
-  code: "f213-spec-pointless",
+  code: "electrical-f213-spec-pointless",
   points: [],
 };
 
@@ -660,7 +756,7 @@ const POINTLESS_FIXTURE: StockAssetTemplateEntry = {
  */
 const SCHEDULED_DERIVED_FIXTURE: StockAssetTemplateEntry = {
   ...VALID_FIXTURE,
-  code: "f213-spec-derived-scheduled",
+  code: "electrical-f213-spec-derived-scheduled",
   points: VALID_FIXTURE.points.map((point) =>
     point.kind === "derived"
       ? { ...point, calcTrigger: "scheduled" as const, calcIntervalSeconds: 300 }
@@ -668,9 +764,28 @@ const SCHEDULED_DERIVED_FIXTURE: StockAssetTemplateEntry = {
   ),
 };
 
+/**
+ * The negative fixture for the source-document check, and the whole reason
+ * `PACK_SOURCE_DOC` is a **map** rather than a two-element list.
+ *
+ * `E5.2` ships `mechanical-chiller`. If the prefix lookup returned `undefined`
+ * and the citation check quietly skipped, that entry would pass while being
+ * checked against nothing — and so would every entry of every pack after it,
+ * which is a check that has become a decoration. An unknown pack prefix is a
+ * BUILD failure here, and the message names the map that needs the entry.
+ *
+ * The defect is again one **no schema catches**: this fixture is a perfectly
+ * well-formed entry whose only fault is that its pack never declared where its
+ * rows were transcribed from.
+ */
+const UNKNOWN_PACK_FIXTURE: StockAssetTemplateEntry = {
+  ...VALID_FIXTURE,
+  code: "mechanical-chiller",
+};
+
 const UNDECLARED_KPI_FIXTURE: StockAssetTemplateEntry = {
   ...VALID_FIXTURE,
-  code: "f213-spec-kpi-undeclared",
+  code: "electrical-f213-spec-kpi-undeclared",
   content: {
     contentVersion: 1,
     kpis: [
@@ -712,6 +827,23 @@ export function runStockAssetTemplateCatalogTests(): void {
     scheduledDerivedRefused !== null && /calcTrigger/.test(scheduledDerivedRefused),
     "a scheduled derived point must be refused by checkEntry, naming the rule — got " +
       String(scheduledDerivedRefused),
+  );
+
+  // The source-document check, and the failure mode a hardcoded constant could
+  // not express: a pack that ships entries without declaring where its rows
+  // were transcribed from. `F2.13` shipped one tag list and one constant; from
+  // `E5.1` on there are two documents, and the third one arrives with `E5.2`.
+  let unknownPackRefused: string | null = null;
+  try {
+    checkEntry(UNKNOWN_PACK_FIXTURE);
+  } catch (err) {
+    unknownPackRefused = err instanceof Error ? err.message : String(err);
+  }
+  assert(
+    unknownPackRefused !== null && /PACK_SOURCE_DOC/.test(unknownPackRefused),
+    "an entry whose code carries a pack prefix PACK_SOURCE_DOC does not declare must be refused " +
+      "by checkEntry, naming the map entry that is missing — a lookup that returns undefined and " +
+      `skips the citation makes every entry of that pack pass while checking none. Got ${String(unknownPackRefused)}`,
   );
 
   let undeclaredKpiRefused: string | null = null;

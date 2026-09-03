@@ -190,16 +190,44 @@ const scanCatalog = (
  * ---------------------------------------------------------------------------
  *
  * Four process-chemistry keys have **no vocabulary to be in**, and that is a
- * different fault from the camelCase one. `point-keys-seed.ts` builds its
- * catalogs from the electrical, HVAC, UPS, IT and environment key sets only;
- * there is no water or process key set at all, `bms.asset_domains` carries no
- * `stp` or `etp` code, and no seeded asset carries a `water` domain. So the
- * water, STP and ETP templates cannot be made to resolve by renaming anything —
- * they are waiting on a vocabulary decision that is the owner's §10 gate, not a
- * defect fix.
+ * different fault from the camelCase one. These four are bound by the water,
+ * STP and ETP sections of the **dashboard** stock catalog, at 8 sites.
  *
- * They are still renamed to snake_case here, so that the day that vocabulary
- * lands the catalog already spells its keys the way every real code is spelled.
+ * **THE PREMISE OF THIS EXCEPTION CHANGED WITH `E5.1`, AND THE ANSWER DID
+ * NOT.** Until 2026-09-03 there was no water or process key set at all, and
+ * these four were *"waiting on a vocabulary decision that is the owner's §10
+ * gate, not a defect fix"*. That decision was taken: ADR 0040 was accepted and
+ * `E5.1` landed `WATER_CLASS_POINT_KEYS` — **98 codes, filed under the `water`
+ * domain, and it adopted none of these four spellings.** The water vocabulary
+ * names the same physical quantities specifically, one code per stream:
+ * `raw_water_flow_klh` / `feed_flow_klh` / `influent_flow_klh` /
+ * `discharge_flow_klh` rather than `flow_rate`; `raw_ph` / `feed_ph` /
+ * `effluent_ph` / `circ_ph` / `neutralization_ph` / `discharge_ph` rather than
+ * `ph`; `effluent_cod_mgl` rather than `cod`; `aeration_do_mgl` / `bio_do_mgl`
+ * rather than `dissolved_oxygen`. Verified by set intersection: none of the
+ * four joins the 98.
+ *
+ * So the four keys really are **still outside the vocabulary**, and the eight
+ * dashboard bindings that name them still resolve nothing. What changed is
+ * *why*: they are no longer waiting on a decision — the decision went the other
+ * way, and rebinding them is now ordinary work. It is not this row's work.
+ * `dashboard-templates/stock-catalog.ts` is a different catalog from the asset
+ * templates `E5.1` ships, ADR 0040 decision 8 fences it out, and rebinding also
+ * needs an `assetRoleCode` ruling per binding against the sixteen water-train
+ * roles `0051` seeds — nothing has done that. **A backlog row created at
+ * `E5.1`'s closure owns all three**, and deleting these four entries is the
+ * first thing that row does.
+ *
+ * One fact from the paragraph this replaced is unchanged and kept because a
+ * reader will ask: **`bms.asset_domains` still carries no `stp` or `etp`
+ * code.** Migration `0029` seeds exactly five — `electrical`, `hvac`, `it`,
+ * `environment` and `water` — and `E5.1` added none, because ADR 0051
+ * Amendment 6 decision 3 rules that `domain` is the filing domain and not an
+ * exclusivity: an STP, an ETP and a cooling tower are all water-treatment
+ * plants and all file under `water`.
+ *
+ * They were renamed to snake_case here when the list was written, so the
+ * catalog already spells its keys the way every real code is spelled.
  *
  * **`stillOutside` below is what makes this list temporary.** The moment one of
  * these four appears in the vocabulary, its test fails and tells the author to
@@ -260,12 +288,12 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
       new Set(pointKeys.map((entry) => entry.section)).size,
       "every pointKey was attributed to one section — the section tracker is broken",
     ).toBeGreaterThanOrEqual(5);
-    // 191 = 185 before + `F2.12`'s six promoted derived codes appended to
-    // `ELECTRICAL_CLASS_POINT_KEYS` (ADR 0051 Amendment 6 decision 8, plan
-    // §12 ruling 2). Moved to the actual rather than left at 185, for the
-    // same reason `F3.41` moved this bound from 30 — slack here would have
-    // stayed green with the six new codes parsed as nothing at all.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(191);
+    // 289 = 191 before + `E5.1`'s 98-code `WATER_CLASS_POINT_KEYS`
+    // (`docs/plans/e5.1-water-domain-pack.md` §4.4/§4.6). Moved to the actual
+    // rather than left at 191, for the same reason `F3.41` moved this bound
+    // from 30 — slack here would have stayed green with the 98 new codes
+    // parsed as nothing at all.
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(289);
     // 28 is 26 from `0051` plus 2 from `0060`, and both migrations are frozen,
     // so this number is stable by construction. If a LATER migration adds a
     // role code and the check below starts rejecting a legitimate
