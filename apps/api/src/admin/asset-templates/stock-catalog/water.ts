@@ -230,8 +230,8 @@ import { WATER_WTP } from "./water-wtp";
  *  - `water-cooling-tower` — §4, the entry that exercises the derived machinery.
  *    **Authored** (plan Task 6): 21 points (10 + 6 + 1 + 4 derived), 7 alarms,
  *    4 maintenance plans, no KPI.
- *  - `water-wtp` — §1. Target 20 points (11 + 5 + 2 + 2), 6 alarms,
- *    4 maintenance plans, no KPI.
+ *  - `water-wtp` — §1. **Authored** (plan Task 7): 20 points
+ *    (11 + 5 + 2 + 2 derived), 6 alarms, 4 maintenance plans, no KPI.
  *  - `water-ro` — §2. Target 18 points (10 + 5 + 1 + 2), 6 alarms,
  *    4 maintenance plans, no KPI.
  *  - `water-softener` — §3, the smallest. Target 9 points (4 + 3 + 2 + 0),

@@ -214,10 +214,164 @@ function checkCoolingTower(): void {
   assertProvenance(TOWER_CODE, entry, "§4");
 }
 
+// ===========================================================================
+// §1 — `water-wtp`
+// ===========================================================================
+
+const WTP_CODE = "water-wtp";
+
+/**
+ * §1's 18 table rows in the document's own order, then the two authored
+ * derived codes at `sortOrder` 18-19 — `[pointKey, tier, unit]`.
+ *
+ * `raw_color_hazen` carries `Hazen` and not `null`: plan §12 ruling 3 keeps
+ * `pH`, `Hazen` and `SDI15` as named units, because ADR 0051 Amendment 6
+ * decision 4 maps only *0/1, enum, code, tap and count* rows to the empty
+ * string and these three are named scales an operator reads.
+ */
+const WTP_POINTS: readonly PointRow[] = [
+  ["raw_water_flow_klh", "core", "KL/hr"],
+  ["raw_turbidity_ntu", "core", "NTU"],
+  ["raw_ph", "core", "pH"],
+  ["settled_turbidity_ntu", "extended", "NTU"],
+  ["filtered_turbidity_ntu", "core", "NTU"],
+  ["filter_dp_bar", "core", "bar"],
+  ["backwash_status", "core", null],
+  ["coagulant_dose_lph", "extended", "L/hr"],
+  ["chlorine_dose_lph", "extended", "L/hr"],
+  ["treated_cl2_residual_mgl", "core", "mg/L"],
+  ["treated_water_flow_klh", "core", "KL/hr"],
+  ["clearwell_level_pct", "core", "%"],
+  ["clarifier_sludge_level_pct", "extended", "%"],
+  ["treated_conductivity_uscm", "extended", "µS/cm"],
+  ["intake_pump_current_a", "core", "A"],
+  ["intake_pump_status", "core", null],
+  ["raw_color_hazen", "manual", "Hazen"],
+  ["raw_alkalinity_mgl", "manual", "mg/L"],
+  ["recovery_pct", "derived", "%"],
+  ["turbidity_removal_pct", "derived", "%"],
+];
+
+/**
+ * §1's two expressible derived codes. Both take their inputs from the same
+ * controller at the same scan rate, so both keep the 300 s default, spelled
+ * `null` — there is no `approach_c`-shaped override on this entry.
+ */
+const WTP_DERIVED: readonly DerivedRow[] = [
+  ["recovery_pct", "{treated_water_flow_klh} / {raw_water_flow_klh} * 100", null],
+  [
+    "turbidity_removal_pct",
+    "(1 - {filtered_turbidity_ntu} / {raw_turbidity_ntu}) * 100",
+    null,
+  ],
+];
+
+/**
+ * §1's five alarm bullets become **six** rows: *"residual chlorine low /
+ * high"* splits into two, which are opposite failures — a disinfection failure
+ * and an overdose — bound to one point at two bands.
+ */
+const WTP_ALARMS: readonly AlarmRow[] = [
+  ["filtered_turbidity_high", "filtered_turbidity_ntu", "critical", "safety"],
+  ["chlorine_residual_low", "treated_cl2_residual_mgl", "critical", "safety"],
+  ["chlorine_residual_high", "treated_cl2_residual_mgl", "warning", "operations"],
+  ["filter_dp_high", "filter_dp_bar", "warning", "operations"],
+  ["clearwell_level_low", "clearwell_level_pct", "critical", "operations"],
+  ["intake_pump_trip", "intake_pump_status", "critical", "operations"],
+];
+
+/**
+ * `water-wtp` against `docs/e5.1-derived-taglist-v1.md` §1 (plan §5.4) — the
+ * potable-side entry, and the first of the two that author `recovery_pct`.
+ */
+function checkWtp(): void {
+  const entry = requireStockEntry(WTP_CODE);
+  assertEntryIdentity(WTP_CODE, entry, "wtp");
+
+  // ---- 20 points, 11 core + 5 extended + 2 manual + 2 derived -------------
+
+  assert(
+    tierCount(entry, "core") === 11 &&
+      tierCount(entry, "extended") === 5 &&
+      tierCount(entry, "manual") === 2 &&
+      tierCount(entry, "derived") === 2,
+    `§1 marks 11 rows C, 5 X and 2 M, and two of its three derived codes are authored — ` +
+      `11/5/2/2. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
+  );
+  assertPointTable(WTP_CODE, "§1", entry, WTP_POINTS);
+  assertDerivedPoints(WTP_CODE, entry, WTP_DERIVED);
+  assertNoKpis(WTP_CODE, entry, "§1");
+  assertDeferralsAbsent(WTP_CODE, entry);
+
+  // ---- the spelling the tag list does not use ----------------------------
+
+  assert(
+    !entry.points.some((point) => point.pointKey === "pct_recovery"),
+    `${WTP_CODE} declares pct_recovery, which is the TAG LIST's spelling and not the code's. ` +
+      "Plan §12 ruling 1 ruled recovery_pct: ADR 0040 decision 2's convention is snake_case plus " +
+      "a unit suffix, and every other percentage in the vocabulary is *_pct. The document's two " +
+      "D rows are corrected in the closure docs PR so the handout and the product agree at the " +
+      "moment a client reads both. The code is seeded write-once into bms.point_keys, so this is " +
+      "the spelling that is permanent.",
+  );
+
+  // ---- 6 alarms, two of them on one point at opposite bands ---------------
+
+  const alarms = alarmsOf(entry);
+  assertAlarmTable(WTP_CODE, "§1", alarms, WTP_ALARMS);
+  assertPhilosophyRows(WTP_CODE, alarms);
+  assertSkillAssignment(
+    WTP_CODE,
+    alarms,
+    {
+      chlorine_residual_low: "controls",
+      chlorine_residual_high: "controls",
+      filter_dp_high: "mechanical",
+      clearwell_level_low: "civil",
+      intake_pump_trip: "mechanical",
+    },
+    ["filtered_turbidity_high"],
+  );
+  assert(
+    alarms.filter((alarm) => alarm.pointKey === "treated_cl2_residual_mgl").length === 2,
+    `${WTP_CODE} must carry two alarms on treated_cl2_residual_mgl at opposite bands — low is a ` +
+      "disinfection failure and high is an overdose with its own taste, odour and by-product " +
+      "consequences. Same shape as the cooling tower's two cycles rows and the feeder's two " +
+      "voltage rows: different meanings at different bands are different rows.",
+  );
+
+  // ---- 4 maintenance plans, the chlorine service the critical one ---------
+
+  const plans = maintenanceOf(entry);
+  assert(plans.length === 4, `plan §5.7 authors 4 WTP maintenance plans; the entry carries ${plans.length}`);
+  const safetyCritical = plans.filter((plan) => plan.safetyCritical === true);
+  assert(
+    safetyCritical.length === 1,
+    `exactly one §1 plan is safetyCritical — the chlorine dosing service and residual analyser ` +
+      `calibration; got ${safetyCritical.length}: ` +
+      `${safetyCritical.map((plan) => plan.title).join("; ") || "(none)"}`,
+  );
+  const chlorine = safetyCritical[0];
+  assert(
+    typeof chlorine?.title === "string" && chlorine.title.includes("Chlorine dosing"),
+    "the one safetyCritical WTP plan must be the chlorine dosing service and residual analyser " +
+      "calibration — disinfection is the public-health barrier this entry exists to keep proven, " +
+      `and it is the barrier the two residual alarms report on. Got: "${String(chlorine?.title)}"`,
+  );
+  assert(
+    chlorine?.category === "safety_critical",
+    `the chlorine dosing plan must be category "safety_critical"; got "${String(chlorine?.category)}"`,
+  );
+  assertMaintenanceBounds(WTP_CODE, entry);
+  assertProvenance(WTP_CODE, entry, "§1");
+}
+
 /**
  * Every per-class block in this file. Called by `water-classes-2.test.ts`, its
  * name-sibling wrapper.
  */
 export function runWaterClassEntryTests2(): void {
   checkCoolingTower();
+  checkWtp();
 }

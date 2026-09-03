@@ -10,7 +10,7 @@ import { runWaterClassEntryTests2 } from "./water-classes-2.spec";
  * is excluded from coverage.
  */
 describe("stock asset-template catalog — the water classes (E5.1, §§1 and 4)", () => {
-  it("ships the cooling tower class exactly as its tag-list section describes it", () => {
+  it("ships the cooling tower and WTP classes exactly as their tag-list sections describe them", () => {
     runWaterClassEntryTests2();
   });
 });
