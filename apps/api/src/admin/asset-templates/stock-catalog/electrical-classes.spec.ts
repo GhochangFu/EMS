@@ -1,12 +1,5 @@
-import {
-  alarmsOf,
-  assert,
-  DEFERRED_DERIVED_CODES,
-  deferralReason,
-  kpisOf,
-  maintenanceOf,
-  requireStockEntry,
-} from "./stock-catalog.spec";
+import { DEFERRED_DERIVED_CODES, deferralReason } from "./stock-catalog-deferrals.spec";
+import { alarmsOf, assert, kpisOf, maintenanceOf, requireStockEntry } from "./stock-catalog.spec";
 
 /**
  * `F2.12` pass C — one block per electrical class, each assertion a claim about

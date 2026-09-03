@@ -58,9 +58,10 @@ import type { StockAssetTemplateEntry } from "./types";
  * classes.** RFC 1628's `upsOutputPercentLoad` reports it directly, so this
  * class needs no rating attribute — while the feeder, the transformer and the
  * DG set each defer the same code because kW ÷ rating needs one. That
- * asymmetry is why `DEFERRED_DERIVED_CODES` in `stock-catalog.spec.ts` is a
- * per-entry `Record` and not one flat list: a catalog-wide *"no entry declares
- * a deferred code"* check would fail on this correct entry.
+ * asymmetry is why `DEFERRED_DERIVED_CODES` in
+ * `stock-catalog-deferrals.spec.ts` is a per-entry `Record` and not one flat
+ * list: a catalog-wide *"no entry declares a deferred code"* check would fail
+ * on this correct entry.
  *
  * **THE DEFERRED DERIVED CODES**, each with the reason it is named rather than
  * placeholdered (ADR 0051 Amendment 6 decision 8: a code with no formula is not

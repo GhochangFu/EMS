@@ -1,9 +1,8 @@
 import { readRepoFile } from "../../../testing/repo-root";
+import { DEFERRED_DERIVED_CODES, deferralReason } from "./stock-catalog-deferrals.spec";
 import {
   alarmsOf,
   assert,
-  DEFERRED_DERIVED_CODES,
-  deferralReason,
   maintenanceOf,
   requireStockEntry,
   type Alarm,
