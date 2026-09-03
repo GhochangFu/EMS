@@ -28,6 +28,7 @@ import { AssetPointsAdminPage } from "./pages/admin/asset-points-page";
 import { DashboardBuilderEditPage } from "./pages/admin/dashboard-builder-edit-page";
 import { DashboardBuilderPage } from "./pages/admin/dashboard-builder-page";
 import { AssetTemplateDetailPage } from "./pages/admin/asset-template-detail-page";
+import { AssetTemplateStockViewPage } from "./pages/admin/asset-template-stock-view-page";
 import { AssetTemplateVersionsPage } from "./pages/admin/asset-template-versions-page";
 import { AssetTemplatesAdminPage } from "./pages/admin/asset-templates-page";
 import { DashboardTemplateDetailPage } from "./pages/admin/dashboard-template-detail-page";
@@ -459,6 +460,24 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <AssetTemplateDetailPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/* `F2.14` — declared BEFORE `/admin/asset-templates/:templateId/versions`,
+          and the order is load-bearing: both paths are four segments with one
+          static and one dynamic part, so a URL matching both resolves by
+          declaration order. `asset-templates.controller.ts` carries the same
+          rule one layer up (`@Get("stock")` before `@Get(":id")`).
+          `tests/f2.14-stock-viewer-reachable.test.ts` checks it. */}
+      <Route
+        path="/admin/asset-templates/stock/:code"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <AssetTemplateStockViewPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />
