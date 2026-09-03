@@ -26,11 +26,16 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  * The 6-line `*_POINT_KEYS` parser is **restated** rather than shared — `f3.38`
  * keeps its own copy, and a shared helper is a second thing to keep honest.
  *
- * **No `KEYS_AWAITING_A_VOCABULARY` analogue here.** All 33 feeder keys are in
- * the vocabulary today (`F2.11` promoted the electrical class set). ADR 0052's
- * Consequences asks for one for the **water** keys until `E5.1` promotes them —
- * that list is `E5.1`'s to write, in this file, the day `water.ts` lands, with
- * `f3.38`'s `stillOutside` clock beside it.
+ * **No `KEYS_AWAITING_A_VOCABULARY` analogue here, and there is no longer one
+ * owed.** All 33 feeder keys were in the vocabulary from the day this file was
+ * written (`F2.11` promoted the electrical class set). ADR 0052's Consequences
+ * asked for such a list for the **water** keys *until* `E5.1` promoted them —
+ * and `E5.1` promoted all 98 in the commit before `water.ts` landed, so no
+ * water key ever reached this scan without a vocabulary to be checked against.
+ * The list this file was told to write is one it must not write: an entry on it
+ * would exempt a key the check at the foot of this file is now enforcing.
+ * `f3.38`'s `stillOutside` clock keeps running on four DASHBOARD-template keys,
+ * which are a different catalog and a separate backlog row.
  */
 
 /** The one directory every stock catalog file lives in, packs and classes alike. */
@@ -49,9 +54,15 @@ const STOCK_CATALOG_DIR = "apps/api/src/admin/asset-templates/stock-catalog";
  * directory cross-check below fails the build the moment a `.ts` file appears
  * in `STOCK_CATALOG_DIR` and is neither listed here nor named in
  * `STOCK_ASSET_SCAN_EXEMPT`. That is what `F2.13`'s docblock asked for in
- * prose and could only ask for. A new pack (`water.ts` for `E5.1`,
- * `mechanical.ts` for `E5.2`, `facility.ts` for `E5.3`) still belongs here the
- * day it lands, and the anti-vacuity lower bounds below move with it.
+ * prose and could only ask for. A new pack (`mechanical.ts` for `E5.2`,
+ * `facility.ts` for `E5.3`) still belongs here the day it lands, and the
+ * anti-vacuity lower bounds below move with it.
+ *
+ * **`E5.1` is the first time the cross-check did the work it was written for.**
+ * The water pack's seven files were created in the commit before this one, and
+ * that commit was red here — on the cross-check alone, naming all seven — until
+ * they were listed. That is the failure mode this list is for, caught by the
+ * check rather than by whoever happened to remember.
  */
 const STOCK_ASSET_RELS = [
   `${STOCK_CATALOG_DIR}/stock-catalog.ts`,
@@ -63,6 +74,15 @@ const STOCK_ASSET_RELS = [
   `${STOCK_CATALOG_DIR}/electrical-ups.ts`,
   `${STOCK_CATALOG_DIR}/electrical-solar-pv.ts`,
   `${STOCK_CATALOG_DIR}/electrical-apfc.ts`,
+  // The water pack — `E5.1`, one index and six plant modules, listed in the
+  // ADR 0040 ruling 2 authoring order `water.ts` itself uses.
+  `${STOCK_CATALOG_DIR}/water.ts`,
+  `${STOCK_CATALOG_DIR}/water-stp.ts`,
+  `${STOCK_CATALOG_DIR}/water-etp.ts`,
+  `${STOCK_CATALOG_DIR}/water-cooling-tower.ts`,
+  `${STOCK_CATALOG_DIR}/water-wtp.ts`,
+  `${STOCK_CATALOG_DIR}/water-ro.ts`,
+  `${STOCK_CATALOG_DIR}/water-softener.ts`,
 ] as const;
 
 /**
@@ -231,6 +251,18 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // alarm references, and the UPS carries 12 rather than 11 because §4's
     // "battery replace / self-test failed" bullet splits into two rows binding
     // two different declared points. Plan §8's own figure of 248 reconciles.
+    //
+    // **Deliberately still 248 after `E5.1` pass B, and staged the way `F2.12`
+    // staged its own.** The six water modules are skeletons carrying one point
+    // each, so this scan finds 254 today. The pass-C TARGET is **391** — 248 +
+    // 103 declared water points + 40 water alarm references; the KPI-member
+    // count stays 12, because the water pack authors no `content.kpis` at all
+    // (water.ts records why that is structural rather than a deferral of
+    // effort). Moving the bound now would leave every commit red until Task 9,
+    // and moving it to 254 would record a skeleton as though it were content.
+    // **Task 9 re-measures it off the built files and moves it to the actual;
+    // if the scan returns other than 391, that is a dropped or misspelled row
+    // and a finding for the commit message, not slack to round away.**
     expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(248);
     // 168 distinct, so a copy-pasted repetition cannot satisfy the bound above
     // alone: 33 feeder + 30 transformer + 38 DG + 29 UPS (battery_v and
@@ -239,12 +271,25 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // prediction — a distinct count below this is a DROPPED OR MISSPELLED point
     // row, not slack, because checkEntry already forces every alarm and KPI
     // reference to be a key its own entry declares.
+    //
+    // Staged with the length bound above and for the same reason. The six
+    // water skeletons declare 6 keys, of which 5 are distinct
+    // (`influent_flow_klh` is the STP's and the ETP's first row), so the scan
+    // finds 173 today. The pass-C TARGET is **266** — 168 + the water pack's 98
+    // distinct codes, zero of which overlap the electrical vocabulary. **Task 9
+    // moves it to the measured actual.** 103 water point rows over 98 distinct
+    // keys is not an error: `recovery_pct` is one code authored on two plants,
+    // and four codes recur between §1/§5 and §5/§6 of the tag list.
     expect(new Set(pointKeys).size, "fewer distinct keys than the six classes declare").toBeGreaterThanOrEqual(168);
-    // 191 — the same number f3.38 and f3.39 hold, F2.11's 139
-    // ELECTRICAL_CLASS_POINT_KEYS plus the six codes F2.12 pass A promoted.
-    // Already at its final value: pass A moved it, and Task 8 re-measured it
-    // (191) rather than assuming the promotion had landed.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(191);
+    // 289 = the 191 F2.12 left (F2.11's 139 ELECTRICAL_CLASS_POINT_KEYS plus
+    // F2.12 pass A's six promotions, plus the other arrays) + E5.1 pass A's
+    // 98-code WATER_CLASS_POINT_KEYS, disjoint by construction — the same
+    // number f3.38 and f3.39 now hold. **Already at its final value for this
+    // row**, unlike the two bounds above: pass A landed every water code, so
+    // nothing pass C authors can move it. Leaving it at 191 would have stayed
+    // green with all 98 new codes parsed as nothing at all, which is the
+    // silent failure this file exists to end.
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(289);
   });
 
   it("every catalog pointKey is a code a *_POINT_KEYS array holds", () => {
