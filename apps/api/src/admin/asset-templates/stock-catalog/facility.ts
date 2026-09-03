@@ -375,7 +375,7 @@ import type { StockAssetTemplateEntry } from "./types";
  * **VERSION HISTORY**, per entry (ADR 0052 decision 6): a change to a shipped
  * entry is a new `stockVersion`, recorded here and in the module, taken by an
  * organization through a re-import (decision 4), never by mutating its row. Each
- * entry will be **v1 (2026-09-03, `E5.3`), PROVISIONAL — derived from the tag
+ * entry will be **v1 (2026-09-04, `E5.3`), PROVISIONAL — derived from the tag
  * list and published practice, not client-confirmed**, and **each entry commit
  * appends its own line here** with its section, its point count and tier split,
  * its alarm count and its maintenance-plan count.
