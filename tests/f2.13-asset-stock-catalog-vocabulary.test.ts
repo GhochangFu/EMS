@@ -285,15 +285,17 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // MEANING, two formulas, ADR 0051 Amendment 6 decision 5); and four codes
     // recur between §1/§5 and §5/§6 of the tag list itself.
     expect(new Set(pointKeys).size, "fewer distinct keys than the six classes declare").toBeGreaterThanOrEqual(266);
-    // 289 = the 191 F2.12 left (F2.11's 139 ELECTRICAL_CLASS_POINT_KEYS plus
-    // F2.12 pass A's six promotions, plus the other arrays) + E5.1 pass A's
-    // 98-code WATER_CLASS_POINT_KEYS, disjoint by construction — the same
-    // number f3.38 and f3.39 now hold. **Already at its final value for this
-    // row**, unlike the two bounds above: pass A landed every water code, so
-    // nothing pass C authors can move it. Leaving it at 191 would have stayed
-    // green with all 98 new codes parsed as nothing at all, which is the
-    // silent failure this file exists to end.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(289);
+    // 396 = the 289 E5.1 left (F2.11's 139 ELECTRICAL_CLASS_POINT_KEYS plus
+    // F2.12's six promotions, plus the other arrays, plus E5.1's 98-code
+    // WATER_CLASS_POINT_KEYS) + E5.2 pass A's 107-code
+    // MECHANICAL_CLASS_POINT_KEYS + HVAC_CLASS_POINT_KEYS, disjoint by
+    // construction — the same number f3.38 and f3.39 now hold. **Already at
+    // its final value for this row**, unlike the two bounds above: pass A
+    // landed every mechanical/hvac code, so nothing pass C authors can move
+    // it. Leaving it at 289 would have stayed green with all 107 new codes
+    // parsed as nothing at all, which is the silent failure this file exists
+    // to end.
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(396);
   });
 
   it("every catalog pointKey is a code a *_POINT_KEYS array holds", () => {

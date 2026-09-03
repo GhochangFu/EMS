@@ -291,12 +291,12 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
       new Set(pointKeys.map((entry) => entry.section)).size,
       "every pointKey was attributed to one section — the section tracker is broken",
     ).toBeGreaterThanOrEqual(5);
-    // 289 = 191 before + `E5.1`'s 98-code `WATER_CLASS_POINT_KEYS`
-    // (`docs/plans/e5.1-water-domain-pack.md` §4.4/§4.6). Moved to the actual
-    // rather than left at 191, for the same reason `F3.41` moved this bound
-    // from 30 — slack here would have stayed green with the 98 new codes
-    // parsed as nothing at all.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(289);
+    // 396 = 289 before + `E5.2`'s 107-code `MECHANICAL_CLASS_POINT_KEYS` +
+    // `HVAC_CLASS_POINT_KEYS` (`docs/plans/e5.2-mechanical-domain-pack.md`
+    // §4.4/§4.6). Moved to the actual rather than left at 289, for the same
+    // reason `F3.41` moved this bound from 30 — slack here would have stayed
+    // green with the 107 new codes parsed as nothing at all.
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(396);
     // 28 is 26 from `0051` plus 2 from `0060`, and both migrations are frozen,
     // so this number is stable by construction. If a LATER migration adds a
     // role code and the check below starts rejecting a legitimate

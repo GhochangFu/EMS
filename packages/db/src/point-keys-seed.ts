@@ -7,7 +7,9 @@ import {
   CONTROL_ROOM_UPS_POINT_KEYS,
   ELECTRICAL_CLASS_POINT_KEYS,
   ELECTRICAL_POINT_KEYS,
+  HVAC_CLASS_POINT_KEYS,
   HVAC_POINT_KEYS,
+  MECHANICAL_CLASS_POINT_KEYS,
   METERED_PUMPING_POINT_KEYS,
   WATER_CLASS_POINT_KEYS,
 } from "@bms/shared";
@@ -350,6 +352,138 @@ const UNIT_BY_KEY: Record<string, string> = {
   filter_press_status: "",
   transfer_pump_status: "",
   guard_pond_level_pct: "%",
+  // `E5.2` / ADR 0053 decision 3 — `MECHANICAL_CLASS_POINT_KEYS` +
+  // `HVAC_CLASS_POINT_KEYS`, 107 entries, exactly as §4.4 of
+  // `docs/plans/e5.2-mechanical-domain-pack.md` spells them. `""` — never a
+  // missing entry, which would seed NULL and revert a global administrator's
+  // correction on every `compose up` — is the spelling for every `0/1`,
+  // `enum` and `code` row, and for the two dimensionless ratios (`cop`,
+  // `steam_to_fuel_ratio`). `°` is `U+00B0` on every `°C` code below, and `³`
+  // in `fad_m3h` / `specific_power_kw_m3min` is `U+00B3` SUPERSCRIPT THREE —
+  // both verified against the tag list's own codepoint, and permanent the
+  // moment this seed runs once. The twenty reused codes
+  // (`current_a`, `kw`, `kwh_total`, `run_hours_h`, `start_count`,
+  // `winding_temp_c`, `insulation_resistance_mohm`, `oil_temp_c`,
+  // `oil_pressure_bar`, `service_due_h`, `chw_supply_temp_c`,
+  // `chw_return_temp_c`, `chw_flow_lps`, `compressor_ok`, `cooling_kw`,
+  // `supply_air_temp_c`, `return_air_temp_c`, `fan_speed_pct`, `fan_rpm`,
+  // `fan_current_a`) and the boiler's reused `fuel_level_pct` are NOT
+  // redeclared here — they already have an entry above.
+  //
+  // §1 pump set
+  pump_status: "",
+  pump_mode: "",
+  pump_trip: "",
+  suction_pressure_bar: "bar",
+  discharge_pressure_bar: "bar",
+  flow_klh: "KL/hr",
+  de_bearing_temp_c: "°C",
+  nde_bearing_temp_c: "°C",
+  vibration_mms: "mm/s",
+  seal_leak_state: "",
+  dry_run_state: "",
+  head_m: "m", // E5.2: derived, formula in mechanical-pump.ts
+  specific_energy_kwh_kl: "kWh/KL", // E5.2: derived, formula in mechanical-pump.ts
+  // §2 motor + VFD
+  vfd_status: "",
+  vfd_ready: "",
+  vfd_fault: "",
+  vfd_fault_code: "",
+  vfd_output_freq_hz: "Hz",
+  vfd_speed_ref_pct: "%",
+  vfd_output_current_a: "A",
+  vfd_output_voltage_v: "V",
+  vfd_dc_bus_v: "V",
+  vfd_torque_pct: "%",
+  vfd_power_kw: "kW",
+  vfd_kwh_total: "kWh",
+  vfd_heatsink_temp_c: "°C",
+  motor_temp_c: "°C",
+  vfd_run_hours_h: "h",
+  // §3 air compressor
+  comp_status: "",
+  comp_load_state: "",
+  comp_fault: "",
+  comp_warning: "",
+  outlet_pressure_bar: "bar",
+  pressure_setpoint_bar: "bar",
+  element_outlet_temp_c: "°C",
+  intake_filter_dp_mbar: "mbar",
+  oil_separator_dp_bar: "bar",
+  loaded_hours_h: "h",
+  motor_current_a: "A",
+  dryer_dewpoint_c: "°C",
+  dryer_status: "",
+  receiver_pressure_bar: "bar",
+  fad_m3h: "m³/hr",
+  load_factor_pct: "%", // E5.2: derived, formula in mechanical-compressor.ts
+  specific_power_kw_m3min: "kW/(m³/min)", // E5.2: derived, formula in mechanical-compressor.ts
+  // §7 boiler (fuel_level_pct reused from the DG set, §12 ruling 1, not
+  // redeclared)
+  boiler_status: "",
+  boiler_trip: "",
+  steam_pressure_bar: "bar",
+  steam_temp_c: "°C",
+  steam_flow_kgh: "kg/hr",
+  steam_totalizer_kg: "kg",
+  drum_level_pct: "%",
+  feedwater_flow_kgh: "kg/hr",
+  feedwater_temp_c: "°C",
+  feedwater_tds_ppm: "ppm",
+  feed_pump_status: "",
+  fuel_flow_kgh: "kg/hr",
+  fuel_totalizer_kg: "kg",
+  flue_gas_temp_c: "°C",
+  flue_o2_pct: "%",
+  flue_co_ppm: "ppm",
+  combustion_air_temp_c: "°C",
+  furnace_draft_mmwc: "mmWC",
+  blowdown_state: "",
+  boiler_water_ph: "pH",
+  blowdown_tds_ppm: "ppm",
+  steam_to_fuel_ratio: "", // E5.2: derived, formula in mechanical-boiler.ts
+  excess_air_pct: "%", // E5.2: derived, formula in mechanical-boiler.ts
+  // §4 chiller
+  chiller_status: "",
+  chiller_alarm: "",
+  chiller_fault_code: "",
+  chw_setpoint_c: "°C",
+  cw_entering_temp_c: "°C",
+  cw_leaving_temp_c: "°C",
+  cw_flow_lps: "L/s",
+  evap_pressure_bar: "bar",
+  cond_pressure_bar: "bar",
+  evap_approach_c: "°C",
+  cond_approach_c: "°C",
+  compressor_load_pct: "%",
+  compressor_current_a: "A",
+  discharge_temp_c: "°C",
+  refrigerant_charge_pct: "%",
+  cooling_load_tr: "TR", // E5.2: derived, formula in hvac-chiller.ts
+  kw_per_tr: "kW/TR", // E5.2: derived, formula in hvac-chiller.ts
+  cop: "", // E5.2: derived, formula in hvac-chiller.ts
+  chw_delta_t_c: "°C", // E5.2: derived, formula in hvac-chiller.ts
+  cw_delta_t_c: "°C", // E5.2: derived, formula in hvac-chiller.ts
+  // §6 AHU
+  ahu_status: "",
+  ahu_fault: "",
+  supply_air_temp_sp_c: "°C",
+  mixed_air_temp_c: "°C",
+  outdoor_air_temp_c: "°C",
+  return_air_rh_pct: "%",
+  supply_air_rh_pct: "%",
+  duct_static_pa: "Pa",
+  duct_static_sp_pa: "Pa",
+  return_fan_speed_pct: "%",
+  chw_valve_pct: "%",
+  oa_damper_pct: "%",
+  ra_damper_pct: "%",
+  filter_dp_pa: "Pa",
+  filter_dirty_state: "",
+  return_air_co2_ppm: "ppm",
+  fire_trip_state: "",
+  sat_deviation_c: "°C", // E5.2: derived, formula in hvac-ahu.ts
+  coil_delta_t_c: "°C", // E5.2: derived, formula in hvac-ahu.ts
 };
 
 function titleCase(code: string): string {
@@ -446,6 +580,20 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
   // there is no pre-existing row among these 98, so no fixture window moves
   // at all (verified on a cold start, not assumed).
   ...keysForDomain(WATER_CLASS_POINT_KEYS, "water"),
+  // `E5.2` — the mechanical and HVAC class point keys (ADR 0053), LAST and
+  // unfiltered, for the same two reasons the water class array above is
+  // last. (a) The `.filter()` above, which subtracts `ELECTRICAL_POINT_KEYS`
+  // from the control-room array, keeps reading exactly what it read before.
+  // (b) `created_at` ordering: the same five fixtures pick their point key
+  // with `ORDER BY created_at, code`, and appending these arrays last gives
+  // all 107 rows the newest `created_at` on every database, existing and
+  // fresh — none of the 107 pre-exists, so no fixture window moves at all
+  // (verified on a cold start, not assumed). The `hvac` line files 39 codes
+  // under a domain that already holds `HVAC_POINT_KEYS`'s nine; the clash
+  // check `tests/f3.39-global-point-key-vocabulary.test.ts` runs is per
+  // code, not per domain.
+  ...keysForDomain(MECHANICAL_CLASS_POINT_KEYS, "mechanical"),
+  ...keysForDomain(HVAC_CLASS_POINT_KEYS, "hvac"),
 ];
 
 /**
