@@ -1,3 +1,4 @@
+import { MECHANICAL_PUMP } from "./mechanical-pump";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -6,12 +7,14 @@ import type { StockAssetTemplateEntry } from "./types";
  * time (ADR 0053, Accepted 2026-09-03; ADR 0052 decisions 1, 2 and 6). This
  * file aggregates; it authors nothing.
  *
- * **THE ARRAY BELOW IS EMPTY, AND IT IS EMPTY ON PURPOSE.** This module lands in
- * the commit that declares the pack — the two `PACK_SOURCE_DOC` prefixes, the
- * eighteen `STOCK_ENTRY_CODES`, the six deferral lists and this index — one
- * commit before the first machine is authored. `E5.1` §13 item 1 is the reason
- * it ships empty rather than holding six skeletons with one placeholder point
- * each: a skeleton passes every check in this directory while telling a global
+ * **THE ARRAY BELOW SHIPPED EMPTY, AND IT WAS EMPTY ON PURPOSE.** This module
+ * landed in the commit that declares the pack — the two `PACK_SOURCE_DOC`
+ * prefixes, the eighteen `STOCK_ENTRY_CODES`, the six deferral lists and this
+ * index — one commit before the first machine was authored, and it **fills one
+ * machine per commit** from there (`mechanical-pump` is in). `E5.1` §13 item 1 is
+ * the reason it shipped empty rather than holding six skeletons with one
+ * placeholder point each: a skeleton passes every check in this directory while
+ * telling a global
  * administrator that the catalog ships a pump it cannot instantiate, and it
  * makes the anti-vacuity bounds in `tests/f2.13-asset-stock-catalog-vocabulary`
  * move for content that does not exist. **Each entry commit creates its module,
@@ -307,7 +310,11 @@ import type { StockAssetTemplateEntry } from "./types";
  * appends its own line here** with its section, its point count and tier split,
  * its alarm count and its maintenance-plan count:
  *
- *  - *(none yet — `mechanical-pump` is the first, plan Task 6.)*
+ *  - **`mechanical-pump` v1** (2026-09-03, `E5.2` Task 6) — §1, the pump set.
+ *    20 points (6 core + 11 extended + 1 manual + 2 derived), 10 alarms, 4
+ *    maintenance plans, none `safetyCritical`. Authors `head_m` and
+ *    `specific_energy_kwh_kl`; defers `duty_hours_pct`, `starts_per_hour`,
+ *    `availability_pct` and `vibration_band`.
  *
  * The pack's targets, for the reader who wants to know where this is going and
  * as the numbers Task 11 re-measures rather than assumes: **141 declared point
@@ -320,6 +327,6 @@ import type { StockAssetTemplateEntry } from "./types";
 export const MECHANICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0053 decision 1's document order — pump, VFD, compressor, chiller, AHU,
   // boiler — which is the order GET /stock lists in, and NOT the prefix order.
-  // Empty until plan Task 6; each entry commit adds one import above and one
-  // line here, in this order.
+  // Each entry commit adds one import above and one line here, in this order.
+  MECHANICAL_PUMP,
 ];

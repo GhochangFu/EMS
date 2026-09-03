@@ -100,6 +100,7 @@ const STOCK_ASSET_RELS = [
   // line here as well as to `mechanical.ts`; the cross-check makes forgetting a
   // build failure rather than a silently unscanned module.
   `${STOCK_CATALOG_DIR}/mechanical.ts`,
+  `${STOCK_CATALOG_DIR}/mechanical-pump.ts`,
 ] as const;
 
 /**

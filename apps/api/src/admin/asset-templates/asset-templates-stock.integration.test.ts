@@ -11,6 +11,7 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import { AssetTemplatesStockService } from "./asset-templates-stock.service";
 import {
+  assertAMechanicalEntryImportsAndPublishes,
   assertForeignOrganizationIsRefused,
   assertImportCopiesTheCatalogNotAPeer,
   assertImportLandsAStampedDraft,
@@ -138,6 +139,10 @@ describe.skipIf(!connectionString)("F2.13 — stock asset-template catalog: list
 
   it("imports the shipped electrical-feeder whole against the seeded vocabulary, then publishes it", async () => {
     await assertTheShippedFeederImportsWholeAgainstTheRealVocabulary(realStock, svc, requirePool(), fx);
+  });
+
+  it("imports the shipped mechanical-pump under the seeded mechanical domain, then publishes it", async () => {
+    await assertAMechanicalEntryImportsAndPublishes(realStock, svc, requirePool(), fx);
   });
 
   it("refuses an unknown code with a 400 naming the available codes — and with an empty catalog", async () => {
