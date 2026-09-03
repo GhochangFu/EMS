@@ -771,7 +771,11 @@ Process (`AGENTS.md` §10).
   > each carrying the `philosophy` object this block's §3 anchored, and 23
   > maintenance plans, through the stock catalog `F2.13` built (PR #293). The
   > client's redline of `docs/e5.1-derived-taglist-v1.md` lands as template
-  > v2. `E5.2` is the next head of Track B.
+  > v2. **`E5.2` closed the same day** (PR #297): six machine classes — pump
+  > set, VFD, air compressor, chiller, AHU, boiler — under ADR 0053, 141 points
+  > over 107 new codes, 52 pair-absent alarms each with a `philosophy`, 24
+  > plans, and the first domain (`mechanical`) added through the seed path
+  > rather than a migration. `E5.3` is the next head of Track B.
 - **Owed:** ~~the AGENTS.md §2 promotion, in its own `chore(agents):` PR
   (§9.10)~~ ✅ **cleared** — §2 gained a *Template content* row, and §6 gained
   the two deferral bullets covering what ADR 0019 deliberately left closed.
