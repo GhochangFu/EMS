@@ -177,7 +177,9 @@ const POINT_KEY_SOURCE_RELS = [
  */
 const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
   "packages/shared/src/constants.ts": 396,
-  "packages/shared/src/facility-point-keys.ts": 104,
+  // 206 since E5.3 PR 2: 104 (FACILITY_CLASS_POINT_KEYS + ENVIRONMENT_CLASS_POINT_KEYS) +
+  // VERTICAL_TRANSPORT_CLASS_POINT_KEYS's 102.
+  "packages/shared/src/facility-point-keys.ts": 206,
 };
 
 /** The sources as one list, for an assertion message. */
@@ -489,7 +491,9 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
           "alone. Fix the path or the array declaration; do not lower this floor.",
       ).toBeGreaterThanOrEqual(floor ?? 1);
     }
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(500);
+    // 602 since E5.3 PR 2: 500 + VERTICAL_TRANSPORT_CLASS_POINT_KEYS's 102, disjoint by
+    // construction.
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(602);
   });
 
   it("every catalog pointKey is a code a *_POINT_KEYS array holds", () => {

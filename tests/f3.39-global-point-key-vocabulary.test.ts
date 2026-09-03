@@ -86,7 +86,9 @@ const POINT_KEY_SOURCE_RELS = [
  */
 const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
   "packages/shared/src/constants.ts": 11,
-  "packages/shared/src/facility-point-keys.ts": 2,
+  // 3 since E5.3 PR 2: VERTICAL_TRANSPORT_CLASS_POINT_KEYS joins
+  // FACILITY_CLASS_POINT_KEYS and ENVIRONMENT_CLASS_POINT_KEYS in this file.
+  "packages/shared/src/facility-point-keys.ts": 3,
 };
 
 /** The sources as one list, for an assertion message. */
@@ -550,6 +552,10 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // `controlRoomEnvironmentPointKeySchema` closes as a `z.enum`.
       FACILITY_CLASS_POINT_KEYS: "facility",
       ENVIRONMENT_CLASS_POINT_KEYS: "environment",
+      // `E5.3` PR 2, also in `facility-point-keys.ts` — a SECOND array under
+      // `mechanical`, the `HVAC_CLASS_POINT_KEYS` precedent, not an append to
+      // `MECHANICAL_CLASS_POINT_KEYS` (plan §12 ruling 1).
+      VERTICAL_TRANSPORT_CLASS_POINT_KEYS: "mechanical",
     };
 
     /**
@@ -650,7 +656,10 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // the 396 by construction: the eleven codes the tag list shares with an
       // existing array are REFERENCED, never redeclared, because a unit is
       // write-once.
-      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(500);
+      // 602 since E5.3 PR 2: 500 + VERTICAL_TRANSPORT_CLASS_POINT_KEYS's 102, disjoint from
+      // the 500 by construction: the eight codes the tag list shares with an existing
+      // array or module are REFERENCED, never redeclared.
+      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(602);
 
       const missing: string[] = [];
       for (const arrayName of Object.keys(ARRAY_DOMAIN)) {
@@ -796,12 +805,12 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
           "UNIT_BY_KEY in the same commit.",
       ).toEqual([]);
       // 13 since `E5.3` PR 1 — the eleven plus `FACILITY_CLASS_POINT_KEYS` and
-      // `ENVIRONMENT_CLASS_POINT_KEYS`; 14 after PR 2 adds
+      // `ENVIRONMENT_CLASS_POINT_KEYS`; 14 since PR 2 adds
       // `VERTICAL_TRANSPORT_CLASS_POINT_KEYS`.
       expect(
         arraysByName.size,
         `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`,
-      ).toBeGreaterThanOrEqual(13);
+      ).toBeGreaterThanOrEqual(14);
       const codes = new Set([...arraysByName.values()].flat());
       // 396 is the actual after `E5.2` appended `MECHANICAL_CLASS_POINT_KEYS`'s
       // 68 codes and `HVAC_CLASS_POINT_KEYS`'s 39
@@ -812,7 +821,9 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // block exists to make impossible. **500 since `E5.3` PR 1**: 396 + the
       // facility pack's 104, moved in the commit that seeds them and for the
       // same reason.
-      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(500);
+      // 602 since `E5.3` PR 2: 500 + `VERTICAL_TRANSPORT_CLASS_POINT_KEYS`'s 102, disjoint
+      // by construction.
+      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(602);
       expect(
         sql.split(";").filter((s) => s.trim().length > 0).length,
         "migration 0057 holds almost no statements",
