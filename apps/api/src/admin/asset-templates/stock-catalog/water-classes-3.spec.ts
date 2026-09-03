@@ -14,17 +14,20 @@ import {
   type AlarmRow,
   type DerivedRow,
   type PointRow,
-} from "./water-classes.spec";
+} from "./stock-transcription.spec";
+import { WATER_TAG_LIST } from "./water-classes.spec";
 
 /**
  * `E5.1` pass C, the third of three transcription spec files — §2 (RO skid)
  * and §3 (softener) of `docs/e5.1-derived-taglist-v1.md`.
  *
- * **The shared half is imported from `water-classes.spec.ts`, not restated** —
- * see `water-classes-2.spec.ts`'s docblock for why the helpers live in the
- * first spec rather than in a plain module of their own (a bare `.ts` here
- * would need a `STOCK_ASSET_RELS` entry, moving that count off 16; a
- * helpers-only `.spec.ts` would need a wrapper that runs nothing).
+ * **The transcription helpers are imported from `stock-transcription.spec.ts`,
+ * not restated** — see `water-classes-2.spec.ts`'s docblock for why they left
+ * `water-classes.spec.ts` in `E5.2` Task 2 and why they are a `.spec.ts` with
+ * self-tests rather than a plain module (a bare `.ts` here would need a
+ * `STOCK_ASSET_RELS` entry in `tests/f2.13`; a helpers-only `.spec.ts` would
+ * need a wrapper that runs nothing). `WATER_TAG_LIST` is still this pack's and
+ * still comes from `water-classes.spec.ts`.
  *
  * **`water-classes-3.test.ts` is this file's name-sibling wrapper** —
  * `tests/repo-invariants.test.ts` matches the pair by name, and a spec imported
@@ -132,7 +135,7 @@ function assertRecoveryIsOneCodeTwoFormulas(): void {
  */
 function checkRo(): void {
   const entry = requireStockEntry(RO_CODE);
-  assertEntryIdentity(RO_CODE, entry, "ro_skid");
+  assertEntryIdentity(RO_CODE, entry, "ro_skid", "water");
 
   // ---- 18 points, 10 core + 5 extended + 1 manual + 2 derived -------------
 
@@ -226,7 +229,7 @@ function checkRo(): void {
       "in the entry records which point that is",
   );
   assertMaintenanceBounds(RO_CODE, entry);
-  assertProvenance(RO_CODE, entry, "§2");
+  assertProvenance(RO_CODE, entry, WATER_TAG_LIST, "§2");
 }
 
 // ===========================================================================
@@ -270,7 +273,7 @@ const SOFTENER_ALARMS: readonly AlarmRow[] = [
  */
 function checkSoftener(): void {
   const entry = requireStockEntry(SOFTENER_CODE);
-  assertEntryIdentity(SOFTENER_CODE, entry, "softener");
+  assertEntryIdentity(SOFTENER_CODE, entry, "softener", "water");
 
   // ---- 9 points, 4 core + 3 extended + 2 manual + 0 derived ---------------
 
@@ -349,7 +352,7 @@ function checkSoftener(): void {
       `${safetyCritical.length}: ${safetyCritical.map((plan) => plan.title).join("; ")}`,
   );
   assertMaintenanceBounds(SOFTENER_CODE, entry);
-  assertProvenance(SOFTENER_CODE, entry, "§3");
+  assertProvenance(SOFTENER_CODE, entry, WATER_TAG_LIST, "§3");
 }
 
 /**

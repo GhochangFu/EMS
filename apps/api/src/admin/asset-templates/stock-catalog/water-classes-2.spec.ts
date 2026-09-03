@@ -14,21 +14,22 @@ import {
   type AlarmRow,
   type DerivedRow,
   type PointRow,
-} from "./water-classes.spec";
+} from "./stock-transcription.spec";
+import { WATER_TAG_LIST } from "./water-classes.spec";
 
 /**
  * `E5.1` pass C, the second of three transcription spec files — §4 (cooling
  * tower) and §1 (WTP) of `docs/e5.1-derived-taglist-v1.md`.
  *
- * **The shared half is imported from `water-classes.spec.ts`, not restated.**
- * The `0034` skill parser, the point and alarm transcription tables, the
- * philosophy and skill assertions, the maintenance bounds, the deferral loop
- * and the provenance needles are pack-wide properties, so they live once in the
- * first file and are exported — the shape `electrical-classes-2.spec.ts`
- * already uses against `stock-catalog.spec.ts`. **Not a plain helper `.ts`**: a
- * bare module in this directory would need a `STOCK_ASSET_RELS` entry in
- * `tests/f2.13-asset-stock-catalog-vocabulary.test.ts` (moving that count off
- * 16), while a helpers-only `.spec.ts` would need a wrapper that runs nothing.
+ * **The transcription helpers are imported from `stock-transcription.spec.ts`,
+ * not restated.** The `0034` skill parser, the point and alarm transcription
+ * tables, the philosophy and skill assertions, the maintenance bounds, the
+ * deferral loop and the provenance needles are properties of **every** stock
+ * pack, not of the water one — `E5.1` kept them in `water-classes.spec.ts` and
+ * `E5.2` Task 2 moved them out, because a mechanical spec importing a water
+ * spec for `assertPointTable` reads as if the mechanical pack were a water one.
+ * `WATER_TAG_LIST` is still this pack's and still comes from
+ * `water-classes.spec.ts`, as does `assertCodDualTier`.
  *
  * **Three files and not two, decided at plan §3's first escalation
  * checkpoint.** `water-classes.spec.ts` reached 704 lines with two entries in
@@ -120,7 +121,7 @@ const TOWER_ALARMS: readonly AlarmRow[] = [
  */
 function checkCoolingTower(): void {
   const entry = requireStockEntry(TOWER_CODE);
-  assertEntryIdentity(TOWER_CODE, entry, "cooling_tower");
+  assertEntryIdentity(TOWER_CODE, entry, "cooling_tower", "water");
 
   // ---- 21 points, 10 core + 6 extended + 1 manual + 4 derived -------------
 
@@ -211,7 +212,7 @@ function checkCoolingTower(): void {
     `the Legionella plan must be category "safety_critical"; got "${String(biocide?.category)}"`,
   );
   assertMaintenanceBounds(TOWER_CODE, entry);
-  assertProvenance(TOWER_CODE, entry, "§4");
+  assertProvenance(TOWER_CODE, entry, WATER_TAG_LIST, "§4");
 }
 
 // ===========================================================================
@@ -286,7 +287,7 @@ const WTP_ALARMS: readonly AlarmRow[] = [
  */
 function checkWtp(): void {
   const entry = requireStockEntry(WTP_CODE);
-  assertEntryIdentity(WTP_CODE, entry, "wtp");
+  assertEntryIdentity(WTP_CODE, entry, "wtp", "water");
 
   // ---- 20 points, 11 core + 5 extended + 2 manual + 2 derived -------------
 
@@ -364,7 +365,7 @@ function checkWtp(): void {
     `the chlorine dosing plan must be category "safety_critical"; got "${String(chlorine?.category)}"`,
   );
   assertMaintenanceBounds(WTP_CODE, entry);
-  assertProvenance(WTP_CODE, entry, "§1");
+  assertProvenance(WTP_CODE, entry, WATER_TAG_LIST, "§1");
 }
 
 /**
