@@ -340,11 +340,12 @@ export async function everyAlarmRendersDisabledWithNoSavePath(): Promise<void> {
     "an alarm field on the read-only stock viewer accepts input.",
   ).toEqual([]);
   expect(screen.queryByRole("button", { name: "Save alarms" })).toBeNull();
-  expect(
-    screen.queryByText(/Saving alarms is blocked/),
-    "the unwritable-content banner belongs to the authoring page. The catalog is not saved from " +
-      "here at all, so the sentence would name a problem the reader cannot have.",
-  ).toBeNull();
+  // No assertion on the "Saving alarms is blocked" banner: `AlarmsTab` renders
+  // it from the content, not from `editable`, and this fixture carries no
+  // reserved key — so a "does not render" check here passed vacuously (the
+  // F2.14 code review proved it with `optimisation: {}` in the fixture). The
+  // page does not suppress the banner, and the API rejects reserved keys, so
+  // the claim belongs to neither the page nor this spec.
 }
 
 /**

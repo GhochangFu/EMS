@@ -160,12 +160,15 @@ export function AssetTemplateStockViewPage({ user }: AssetTemplateStockViewPageP
   }
 
   if (!entry || !view) {
+    // The raw `:code` is echoed as a text node (React escapes it), cut to the
+    // 64 characters a real stock code can have: a crafted deep link should not
+    // be able to fill an admin panel with attacker-chosen text.
     return (
       <MasterDataLayout user={user}>
         <SectionCard title="Stock catalog">
           <p className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-            The stock catalog carries no entry with the code “{code ?? ""}”. It may have been
-            renamed, or the link may be older than the catalog.
+            The stock catalog carries no entry with the code “{(code ?? "").slice(0, 64)}”. It
+            may have been renamed, or the link may be older than the catalog.
           </p>
           <BackToAllTemplates />
         </SectionCard>

@@ -42,7 +42,10 @@ const LIST_PAGE = "apps/web/src/pages/admin/asset-templates-page.tsx";
 
 const STOCK_ROUTE = 'path="/admin/asset-templates/stock/:code"';
 const VERSIONS_ROUTE = 'path="/admin/asset-templates/:templateId/versions"';
-const VIEWER_PATH_PREFIX = "/admin/asset-templates/stock/";
+// Anchored on the JSX `to={` so a comment or a string literal that merely
+// names the path cannot keep this green once the `<Link>` is gone — the file-
+// wide substring the F2.14 code review flagged (`F4.38`'s class).
+const VIEWER_LINK = "to={`/admin/asset-templates/stock/";
 
 describe("F2.14: the stock catalog viewer is registered and linked", () => {
   it("the router file was read and is not empty", () => {
@@ -83,8 +86,8 @@ describe("F2.14: the stock catalog viewer is registered and linked", () => {
 
   it("the stock card links to the viewer", () => {
     expect(
-      read(LIST_PAGE).includes(VIEWER_PATH_PREFIX),
-      `${LIST_PAGE} carries no link to ${VIEWER_PATH_PREFIX}. A registered route that nothing ` +
+      read(LIST_PAGE).includes(VIEWER_LINK),
+      `${LIST_PAGE} carries no \`<Link ${VIEWER_LINK}…\`. A registered route that nothing ` +
         "links to is reachable only by typing the URL, which is not reachable by a person — the " +
         "gap F3.37's effort correction recorded and F3.36's guard exists to stop.",
     ).toBe(true);

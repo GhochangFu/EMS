@@ -19,7 +19,8 @@ import type { StockAssetTemplateDto } from "@bms/shared";
 import { capabilities, formulaFieldsAreReadOnly } from "./template-lifecycle";
 import { pointRowsFrom } from "./template-points-grid";
 import {
-  STOCK_VIEW_TEMPLATE_ID,
+  STOCK_VIEW_TEMPLATE_ID_PREFIX,
+  stockViewTemplateId,
   findStockEntry,
   stockEntryAsTemplate,
 } from "./stock-template-view";
@@ -208,23 +209,32 @@ export function runNullDescriptionSurvivesTests(): void {
 }
 
 /**
- * 6. The id is the sentinel, and the sentinel is not a uuid. The shape is the
- * one the API's `idParamSchema` accepts — a "tidy-up" that makes the sentinel
- * look like a real id fails here before it can reach a request.
+ * 6. The id is a sentinel — `stock:<code>` — and the sentinel is not a uuid.
+ * The shape is the one the API's `idParamSchema` accepts — a "tidy-up" that
+ * makes the sentinel look like a real id fails here before it can reach a
+ * request. And the id differs per entry: every tab reseeds on
+ * `[template.id, template.status]`, so one id for the whole catalog would
+ * leave a mounted tab body showing the previous entry's points under the next
+ * entry's header (the `F2.14` code review proved it with a probe).
  */
 export function runSentinelIdTests(): void {
   const view = stockEntryAsTemplate(ENTRY);
-  assert(view.id === STOCK_VIEW_TEMPLATE_ID, `view.id must be the sentinel, got ${view.id}`);
   assert(
-    !/^[0-9a-f]{8}-/i.test(STOCK_VIEW_TEMPLATE_ID),
-    `STOCK_VIEW_TEMPLATE_ID "${STOCK_VIEW_TEMPLATE_ID}" looks like a uuid — a stray request would reach the API as a real template id`,
+    view.id === stockViewTemplateId(ENTRY.code) && view.id.startsWith(STOCK_VIEW_TEMPLATE_ID_PREFIX),
+    `view.id must be the sentinel for the entry code, got ${view.id}`,
+  );
+  assert(
+    !/^[0-9a-f]{8}-/i.test(view.id),
+    `view.id "${view.id}" looks like a uuid — a stray request would reach the API as a real template id`,
   );
   for (const point of view.points) {
-    assert(
-      point.templateId === STOCK_VIEW_TEMPLATE_ID,
-      `point ${point.pointKey} must carry the sentinel templateId`,
-    );
+    assert(point.templateId === view.id, `point ${point.pointKey} must carry the entry's sentinel id`);
   }
+  const sibling = stockEntryAsTemplate({ ...ENTRY, code: "electrical-transformer" });
+  assert(
+    sibling.id !== view.id,
+    `two catalog entries must not share an id — the tabs reseed on template.id, so a shared id shows entry A's points under entry B's header`,
+  );
 }
 
 /**

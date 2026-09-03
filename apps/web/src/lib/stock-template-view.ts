@@ -33,6 +33,13 @@
  * `idParamSchema` on purpose: if a future edit does let it escape, the answer
  * is a 400 naming a fake id rather than a write against a real row.
  *
+ * **Why the id carries the entry code.** Every tab reseeds its row state with
+ * `useEffect(..., [template.id, template.status])`. One id for the whole
+ * catalog would leave a mounted tab body showing the previous entry's points
+ * under the next entry's header the moment `:code` changes without a remount
+ * — the code review of `F2.14` proved it with a probe. `stock:<code>` keeps
+ * the id a sentinel and makes it a real reseed key.
+ *
  * **When this module should give way.** Adapting the entry is right while
  * there is one read-only consumer. Narrowing the tabs' prop to the
  * content-and-points subset (a discriminated `editable` union, or a read/edit
@@ -42,10 +49,16 @@
 import type { AdminAssetTemplateDto, StockAssetTemplateDto } from "@bms/shared";
 
 /**
- * The synthetic row id every stock view carries. Deliberately not a uuid —
- * see the module docblock.
+ * The prefix of every synthetic row id a stock view carries. Deliberately not
+ * a uuid shape, and followed by the entry code so each entry reseeds the tabs
+ * — see the module docblock.
  */
-export const STOCK_VIEW_TEMPLATE_ID = "stock-catalog-entry";
+export const STOCK_VIEW_TEMPLATE_ID_PREFIX = "stock:";
+
+/** The synthetic row id for one catalog entry: `stock:<code>`. */
+export function stockViewTemplateId(code: string): string {
+  return `${STOCK_VIEW_TEMPLATE_ID_PREFIX}${code}`;
+}
 
 /**
  * One fixed instant for the timestamps a catalog entry does not have. The
@@ -56,8 +69,9 @@ const STOCK_VIEW_TIMESTAMP = new Date(0).toISOString();
 
 /** Shapes a stock catalog entry as the read-only `AdminAssetTemplateDto` the tabs render. */
 export function stockEntryAsTemplate(entry: StockAssetTemplateDto): AdminAssetTemplateDto {
+  const id = stockViewTemplateId(entry.code);
   return {
-    id: STOCK_VIEW_TEMPLATE_ID,
+    id,
     organizationId: "",
     organizationCode: "",
     organizationName: "",
@@ -80,7 +94,7 @@ export function stockEntryAsTemplate(entry: StockAssetTemplateDto): AdminAssetTe
     updatedAt: STOCK_VIEW_TIMESTAMP,
     points: entry.points.map((point) => ({
       id: `stock:${entry.code}:${point.pointKey}`,
-      templateId: STOCK_VIEW_TEMPLATE_ID,
+      templateId: id,
       pointKey: point.pointKey,
       label: point.label,
       unit: point.unit,
