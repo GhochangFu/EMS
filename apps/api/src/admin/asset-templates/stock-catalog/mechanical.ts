@@ -1,3 +1,4 @@
+import { HVAC_CHILLER } from "./hvac-chiller";
 import { MECHANICAL_COMPRESSOR } from "./mechanical-compressor";
 import { MECHANICAL_PUMP } from "./mechanical-pump";
 import { MECHANICAL_VFD } from "./mechanical-vfd";
@@ -330,6 +331,13 @@ import type { StockAssetTemplateEntry } from "./types";
  *    pressure-relief valve test, the first of the three ADR 0053 decision 8
  *    names. Authors `load_factor_pct` and `specific_power_kw_m3min`; defers
  *    `unload_cycles_per_hour` and `air_leak_estimate_pct`.
+ *  - **`hvac-chiller` v1** (2026-09-03, `E5.2` Task 9) — §4, the water-cooled
+ *    machine, and **the first stock entry ever filed under `hvac`**. 30 points
+ *    (13 core + 11 extended + 1 manual + 5 derived), 9 alarms, 4 maintenance
+ *    plans, none `safetyCritical`. Authors the N4 form's five KPIs —
+ *    `cooling_load_tr`, `kw_per_tr`, `cop`, `chw_delta_t_c` and `cw_delta_t_c`,
+ *    every input tier C — and binds the N5 health signal `kw_per_tr_high` to one
+ *    of them; defers `approach_trend` and `part_load_pct`.
  *
  * The pack's targets, for the reader who wants to know where this is going and
  * as the numbers Task 11 re-measures rather than assumes: **141 declared point
@@ -346,4 +354,5 @@ export const MECHANICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[
   MECHANICAL_PUMP,
   MECHANICAL_VFD,
   MECHANICAL_COMPRESSOR,
+  HVAC_CHILLER,
 ];
