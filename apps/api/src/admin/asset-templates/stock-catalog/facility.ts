@@ -1,3 +1,4 @@
+import { ENVIRONMENT_IAQ_NODE } from "./environment-iaq-node";
 import { FACILITY_ACCESS_DOOR } from "./facility-access-door";
 import { FACILITY_FIRE_PANEL } from "./facility-fire-panel";
 import { FACILITY_LIGHTING_ZONE } from "./facility-lighting-zone";
@@ -404,6 +405,11 @@ import type { StockAssetTemplateEntry } from "./types";
  *    7 alarms — one of them with no `skill` — 4 maintenance plans, none
  *    `safetyCritical`, one `condition_based`. Carries the pack's dual-tier row:
  *    `co_ppm` is `core` here and `extended` on the IAQ node.
+ *  - `environment-iaq-node` **v1** (2026-09-04, `E5.3`): §6, 17 points
+ *    (5 C + 9 X + 1 M + 2 derived — the pack's only two `maxInputAgeSeconds`
+ *    overrides, both `3600`), 6 alarms, every one with a `skill`, 3 maintenance
+ *    plans, none `safetyCritical`. **The first stock entry filed under
+ *    `environment`**, and the other half of the `co_ppm` dual-tier row.
  */
 export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0054 decision 1's document order — lighting zone, fire panel, access
@@ -416,4 +422,5 @@ export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] 
   FACILITY_ACCESS_DOOR,
   FACILITY_OCCUPANCY_ZONE,
   FACILITY_PARKING_LEVEL,
+  ENVIRONMENT_IAQ_NODE,
 ];
