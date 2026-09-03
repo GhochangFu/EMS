@@ -132,6 +132,17 @@ const FEEDER_CODE = "electrical-feeder";
 const PACK_SOURCE_DOC: Readonly<Record<string, string>> = {
   electrical: "electrical-derived-taglist-v1.md",
   water: "e5.1-derived-taglist-v1.md",
+  // **One document, two prefixes, and that is deliberate rather than a
+  // duplicate.** `E5.2`'s tag list covers six machine classes across two
+  // domains, and ADR 0053 decision 2 files the chiller and the AHU under
+  // `hvac` — the domain whose keys they already reuse — while the pump, VFD,
+  // compressor and boiler are `mechanical`. The prefix names the DOMAIN, the
+  // value names the SOURCE, and the two are not the same axis: a pack is one
+  // document, one index (`mechanical.ts`) and, here, two prefixes. Splitting
+  // the pack in two to make the map look one-to-one would have needed a second
+  // index and a second story about where two `hvac-` modules live.
+  hvac: "e5.2-derived-taglist-v1.md",
+  mechanical: "e5.2-derived-taglist-v1.md",
 };
 
 /** The pack an entry belongs to — everything before the first `-` in its code. */

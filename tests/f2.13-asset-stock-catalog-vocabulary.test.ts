@@ -83,6 +83,23 @@ const STOCK_ASSET_RELS = [
   `${STOCK_CATALOG_DIR}/water-wtp.ts`,
   `${STOCK_CATALOG_DIR}/water-ro.ts`,
   `${STOCK_CATALOG_DIR}/water-softener.ts`,
+  // The mechanical/utility pack — `E5.2`, one index and six machine modules, in
+  // ADR 0053 decision 1's document order. **The index is listed here in the
+  // commit that CREATES it** (plan Task 5), before it holds a single entry: the
+  // directory cross-check below is red the moment a `.ts` file appears in the
+  // catalog directory unaccounted for, so a pack index and its listing are one
+  // commit by construction. `mechanical.ts` exports an empty array on purpose
+  // (`E5.1` §13 item 1 — no skeleton modules with placeholder points), so it
+  // contributes no reference to the bounds below.
+  //
+  // **The six class modules join one per entry commit** — `mechanical-pump.ts`,
+  // `mechanical-vfd.ts`, `mechanical-compressor.ts`, `hvac-chiller.ts`,
+  // `hvac-ahu.ts`, `mechanical-boiler.ts`, two of them `hvac-*` under the
+  // mechanical index because ADR 0053 decision 2 files a chiller and an AHU
+  // under the domain their keys already live in. Each of those commits adds one
+  // line here as well as to `mechanical.ts`; the cross-check makes forgetting a
+  // build failure rather than a silently unscanned module.
+  `${STOCK_CATALOG_DIR}/mechanical.ts`,
 ] as const;
 
 /**
@@ -263,6 +280,19 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // pack authors no `content.kpis` at all — `water.ts` records why that is
     // structural rather than a deferral of effort. The measurement agrees with
     // plan §4.6's prediction exactly, so no row was dropped or misspelled.
+    //
+    // **Staged a third time for `E5.2`, and deliberately NOT moved by the
+    // commit that declared the mechanical pack** (plan Task 5). That commit
+    // adds `mechanical.ts` to the list above and the file exports an empty
+    // array, so it contributes zero references; moving the bound now would
+    // record content that does not exist. **It moves at plan Task 11, with the
+    // boiler, re-measured off the built files: 584 = 391 + 141 declared
+    // mechanical/HVAC point rows + 52 alarm references** (pump 20/10, VFD
+    // 15/7, compressor 23/7, chiller 30/9, AHU 28/8, boiler 25/11). The KPI
+    // member count stays 12 for the third pack running — ADR 0053 decision 6
+    // authors no `content.kpis` either, and `mechanical.ts` records why that is
+    // structural. Anything other than 584 at Task 11 is a dropped or misspelled
+    // row and a finding for that commit message, not slack.
     expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(391);
     // 168 distinct, so a copy-pasted repetition cannot satisfy the bound above
     // alone: 33 feeder + 30 transformer + 38 DG + 29 UPS (battery_v and
@@ -284,6 +314,15 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // intake and product streams, `water-ro` over feed and permeate — one
     // MEANING, two formulas, ADR 0051 Amendment 6 decision 5); and four codes
     // recur between §1/§5 and §5/§6 of the tag list itself.
+    //
+    // **382 at plan Task 11**, staged with the length bound above and moved in
+    // the same commit: 266 + the mechanical pack's 128 distinct keys (94 new
+    // table codes + 21 reused + 13 promoted derived codes) − **the 12 the
+    // electrical and water modules already name**, which are eleven of the
+    // twenty-one reused codes plus `fuel_level_pct`, the DG set's day-tank
+    // level that plan §12 ruling 1 reuses for the boiler rather than minting a
+    // second spelling. The nine reused `HVAC_POINT_KEYS` codes are named by no
+    // shipped module, which is why the subtraction is 12 and not 21.
     expect(new Set(pointKeys).size, "fewer distinct keys than the six classes declare").toBeGreaterThanOrEqual(266);
     // 396 = the 289 E5.1 left (F2.11's 139 ELECTRICAL_CLASS_POINT_KEYS plus
     // F2.12's six promotions, plus the other arrays, plus E5.1's 98-code

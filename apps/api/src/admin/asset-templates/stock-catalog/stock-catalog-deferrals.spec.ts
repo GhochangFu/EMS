@@ -37,7 +37,22 @@ import { assert, requireStockEntry } from "./stock-catalog.spec";
  * The six electrical classes of `docs/electrical-derived-taglist-v1.md`, then
  * the six water plant classes of `docs/e5.1-derived-taglist-v1.md` in ADR
  * 0040's ruled authoring order (STP, ETP, cooling tower, WTP, RO, softener) —
- * the order `water.ts` lists them in and the order `GET /stock` returns them.
+ * the order `water.ts` lists them in and the order `GET /stock` returns them —
+ * then the six mechanical/utility machine classes of
+ * `docs/e5.2-derived-taglist-v1.md` in **document order** (ADR 0053 decision 1),
+ * which is the order `mechanical.ts` lists them in.
+ *
+ * **Two prefixes, one pack, one index.** `hvac-chiller` and `hvac-ahu` sit
+ * between `mechanical-compressor` and `mechanical-boiler` because the tag list
+ * puts §4 and §6 there, and ADR 0053 decision 2 files a chiller and an AHU
+ * under the domain whose keys they already reuse. The list below is the
+ * document's order, not the prefix's — do not "tidy" the two `hvac-` codes to
+ * the end.
+ *
+ * **Six of the eighteen are not shipped yet, and that is the point of the
+ * staged order claim below** (`E5.2` Task 5): this list names what the pack has
+ * decided to author, one entry commit at a time, and the claim compares it
+ * against the catalog prefix-first until Task 11 authors the boiler.
  */
 const STOCK_ENTRY_CODES = [
   "electrical-feeder",
@@ -52,6 +67,12 @@ const STOCK_ENTRY_CODES = [
   "water-wtp",
   "water-ro",
   "water-softener",
+  "mechanical-pump",
+  "mechanical-vfd",
+  "mechanical-compressor",
+  "hvac-chiller",
+  "hvac-ahu",
+  "mechanical-boiler",
 ] as const;
 export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
 
@@ -68,13 +89,29 @@ export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
  * declares a deferred code" check would therefore fail on a correct entry.
  * Each list is checked against its own entry and no other.
  *
- * **47 entries across 43 distinct codes** since `E5.1`. The electrical half is
- * 32 entries over 30 codes (`load_pct` three times); the water half is 15 over
- * 14 (`hydraulic_load_pct` on the STP and the ETP). 30 + 14 is 44, not 43,
- * because **`specific_energy_kwh_kl` is deferred on the electrical feeder AND
- * the RO skid** — the same code for the same reason on two packs, which is the
- * per-entry `Record`'s whole point. A per-entry sum and a distinct count are
- * both right; they count different things.
+ * **64 records across 59 distinct codes** since `E5.2` Task 5. The three halves
+ * are 32 records over 30 codes (electrical — `load_pct` three times), 15 over 14
+ * (water — `hydraulic_load_pct` on the STP and the ETP) and 17 over 17
+ * (mechanical/HVAC — no code is deferred twice inside the pack). 30 + 14 + 17 is
+ * 61, not 59, and the two-code difference is the whole reason this is a
+ * `Record`:
+ *
+ *  - **`specific_energy_kwh_kl` is deferred on `electrical-feeder` AND on
+ *    `water-ro`** — the same code for the same shape of reason on two packs —
+ *    **and is AUTHORED as a derived point on `mechanical-pump`**, which declares
+ *    both `kw` and `flow_klh`. One code, one meaning (*energy per kilolitre
+ *    moved*), three entries. **The two deferral records stay**: they are claims
+ *    about the feeder and the RO, and neither becomes authorable because a pump
+ *    can compute it. This is the `load_pct` shape — deferred on three electrical
+ *    classes and a measured core point on the UPS — and it is why a catalog-wide
+ *    "no entry declares a deferred code" check would fail on correct entries.
+ *  - **`availability_pct` is deferred on `electrical-dg-set` AND on
+ *    `mechanical-pump`** — both need hours-in-state over a window, which the
+ *    grammar has no state for. ADR 0053's Consequences name it as open for the
+ *    N4 form; the pump's list does not become the DG set's when it lands.
+ *
+ * A per-entry sum and a distinct count are both right; they count different
+ * things, and neither is derivable from the other.
  */
 export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly string[]>> = {
   // §1 — rating, contract demand, tariff band, production/KL, Σ of feeders.
@@ -145,6 +182,78 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // §3 — a restatement of a declared measured point; a time window; and the one
   // whose input can never receive a value at all (see DEFERRAL_REASON).
   "water-softener": ["throughput_since_regen_kl", "regen_frequency_per_day", "salt_efficiency_kg_kl"],
+  // The mechanical/utility pack — E5.2, docs/e5.2-derived-taglist-v1.md.
+  // Seventeen records over seventeen codes; the thirteen the pack DOES author
+  // are listed with their formulas in mechanical.ts. Each list is its section's
+  // "Derived:" prose line minus what that entry authors, and 13 + 17 = 30 is the
+  // reconciliation that proves no named code was dropped.
+  //
+  // §1 — three time windows and a standard's lookup. `specific_energy_kwh_kl`
+  // is NOT here: the pump declares kw and flow_klh and authors it.
+  "mechanical-pump": [
+    // run hours over ELAPSED hours — the grammar has no state.
+    "duty_hours_pct",
+    // per-hour rate; the short_cycling alarm binds start_count and says so.
+    "starts_per_hour",
+    // hours-in-state over a window; already deferred on electrical-dg-set.
+    "availability_pct",
+    // ISO 20816 zones A-D are per machine group and mounting — a lookup table.
+    "vibration_band",
+  ],
+  // §2 — three asset attributes, one of them with a model behind it. The drive
+  // reports frequency, current and torque; it does not report its nameplate.
+  "mechanical-vfd": [
+    // output current / RATED current.
+    "motor_load_pct",
+    // the affinity-law estimate needs a direct-on-line baseline the drive
+    // never had — an attribute AND a model.
+    "energy_saving_vs_dol_kwh",
+    // output frequency / RATED frequency (50 or 60 Hz is a nameplate value, not
+    // a constant to hardcode); vfd_speed_ref_pct already carries the COMMANDED
+    // speed as a percentage, so this would also be a second code for it.
+    "speed_pct",
+  ],
+  // §3 — a time window, and a test rather than a formula.
+  "mechanical-compressor": [
+    // load/unload transitions per hour.
+    "unload_cycles_per_hour",
+    // a no-demand pressure-decay test needs a window in which nothing draws
+    // air — a METHOD the document names, not an expression over live points.
+    "air_leak_estimate_pct",
+  ],
+  // §4 — a trend and an attribute. The five the chiller DOES author are the N4
+  // form's KPIs (cooling_load_tr, kw_per_tr, cop, and the two delta-Ts).
+  "hvac-chiller": [
+    // a trend is a time window by definition.
+    "approach_trend",
+    // cooling load / RATED TR.
+    "part_load_pct",
+  ],
+  // §6 — an attribute, a time window, and a meter §6 does not list.
+  "hvac-ahu": [
+    // the clean and dirty pressure-drop band is per filter class — an attribute.
+    "filter_life_pct",
+    // kWh per day is a window.
+    "fan_energy_kwh_day",
+    // needs CHW flow AT THE COIL, and §6 declares none; the AHU has the two
+    // water temperatures and no flow, so the coil duty is not expressible.
+    "cooling_delivered_kw",
+  ],
+  // §7 — a method with a loss model, the second data-model deferral in the
+  // catalog, and a second code for a meaning already declared (plan §12 ruling
+  // 3, which promoted excess_air_pct and deferred this one).
+  "mechanical-boiler": [
+    // IS 13979 / BS 845 indirect efficiency needs the fuel analysis (C, H,
+    // moisture) — attributes — and a loss model the grammar cannot express.
+    "efficiency_indirect_pct",
+    // by TDS balance it PARSES over two declared measured points, and
+    // blowdown_tds_ppm is an M row whose pattern is null forever — see
+    // DEFERRAL_REASON, the salt_efficiency_kg_kl class, second instance.
+    "blowdown_pct",
+    // the reciprocal of the authored steam_to_fuel_ratio, times 1000 — the
+    // throughput_since_regen_kl class, a second code for declared information.
+    "specific_fuel_kg_ton_steam",
+  ],
 };
 
 const DEFERRAL_REASON =
@@ -165,7 +274,19 @@ const DEFERRAL_REASON =
   "never gets a reading, and the formula never has an input. That is the only deferral in the " +
   "catalog whose reason is the DATA MODEL rather than the grammar, and it is the distinction " +
   "from oil_rise_over_ambient_c, whose X-tier input can be wired. It becomes authorable the day " +
-  "F1.8 gives a manual row somewhere to write to.";
+  "F1.8 gives a manual row somewhere to write to. E5.2's mechanical/HVAC pack adds TWO more " +
+  "classes, numbered on from those. (3) A STANDARD'S LOOKUP: vibration_band is ISO 20816's zones " +
+  "A-D, and the zone boundaries are per machine group, power and mounting — an attribute TABLE, " +
+  "and bms-calc-v1 has arithmetic and five functions with no lookup of any kind. (4) A METHOD THE " +
+  "DOCUMENT ONLY NAMES: air_leak_estimate_pct is a no-demand pressure-decay TEST needing a window " +
+  "in which nothing draws air, and efficiency_indirect_pct is the IS 13979 / BS 845 loss model " +
+  "over a fuel analysis. Both are procedures whose inputs are not points; a formula authored for " +
+  "either would compute a different quantity under the right name, which is worse than a named " +
+  "deferral. E5.2 also adds the SECOND instance of the data-model class above: blowdown_pct " +
+  "parses by TDS balance over feedwater_tds_ppm and blowdown_tds_ppm, and the second is an M row " +
+  "whose sourceDataKeyPattern is null forever, so that formula never has an input either — same " +
+  "reason as salt_efficiency_kg_kl, same remedy, and the pattern is now a class rather than an " +
+  "anecdote.";
 
 /** The shared reason plus the class's own list, so the failure names both. */
 export const deferralReason = (code: StockEntryCode): string =>
@@ -194,13 +315,36 @@ export function runStockCatalogDeferralTests(): void {
   // failure message, which made it a list nothing held to the catalog: a pack
   // index appended in the wrong place, or an entry silently dropped from a
   // spread, would have passed every check in this directory.
+  // **STAGED, and only until `E5.2` Task 11.** `STOCK_ENTRY_CODES` names the
+  // eighteen entries the pack has DECIDED to author; the catalog ships them one
+  // entry commit at a time (Tasks 6-11, document order), so full equality would
+  // be red for six commits — which is a bound that teaches the next author to
+  // ignore a red test, the failure `F2.12` and `E5.1` both staged their way out
+  // of. The claim therefore holds the PREFIX: everything the catalog ships must
+  // equal the head of the list, in order. The moment the boiler lands, the
+  // slice and the floor below are deleted together and this becomes
+  // `codes.join(",") === STOCK_ENTRY_CODES.join(",")`.
   const codes = STOCK_ASSET_TEMPLATE_CATALOG.map((entry) => entry.code);
+  // The floor is the anti-vacuity half, and it is not optional: `slice(0, 0)`
+  // equals an empty catalog, so a pack index dropped from the spread in
+  // `stock-catalog.ts` would pass the prefix claim while shipping nothing —
+  // the exact silent failure the order claim was written to end. Twelve is what
+  // `E5.1` left; it rises by one per entry commit and reaches eighteen.
   assert(
-    codes.join(",") === STOCK_ENTRY_CODES.join(","),
-    "the catalog's codes must equal STOCK_ENTRY_CODES in order — the pack indexes are spread " +
-      "into stock-catalog.ts in the order ADR 0040 ruling 2 (and, from E5.2, ADR 0053 decision " +
-      "1) sets, and that order reaches the client unchanged.\n  expected " +
-      `${STOCK_ENTRY_CODES.join(", ")}\n  got      ${codes.join(", ")}`,
+    codes.length >= 12,
+    `the catalog ships ${codes.length} entries; E5.1 left twelve and E5.2 only adds to them. A ` +
+      "smaller catalog means a pack index is missing from the spread in stock-catalog.ts, and " +
+      "the prefix comparison below would go vacuously green on it.",
+  );
+  const expectedPrefix = STOCK_ENTRY_CODES.slice(0, codes.length);
+  assert(
+    codes.join(",") === expectedPrefix.join(","),
+    "the catalog's codes must equal the head of STOCK_ENTRY_CODES in order — the pack indexes " +
+      "are spread into stock-catalog.ts in the order ADR 0040 ruling 2 (and, from E5.2, ADR 0053 " +
+      "decision 1) sets, and that order reaches the client unchanged. Staged until E5.2 Task 11 " +
+      "ships the boiler, then full equality.\n  expected " +
+      `${expectedPrefix.join(", ")}\n  got      ${codes.join(", ")}` +
+      `\n  not yet shipped: ${STOCK_ENTRY_CODES.slice(codes.length).join(", ") || "(none — move this claim to full equality)"}`,
   );
 
   // ---- the deferred codes, per entry and never catalog-wide ---------------
