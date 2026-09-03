@@ -48,7 +48,7 @@ the superpowers skills, made concrete):
 |------|-----|-------|--------------|--------------|
 | 1. **Pick** next *unblocked* item (enablers first) | Claude | **Haiku**, delegated | `backlog-cycle`, `BACKLOG.md` | — |
 | 2. **Brainstorm + ADR** — scope, deps, interface | Human + Claude | **Opus**, inline | `superpowers:brainstorming`, `new-adr` — **requires `/model opus` first** | ✅ **gate** |
-| 3. **Plan** — written, reviewable | Claude | **Opus**, delegated | `plan-architect` agent (Opus-pinned) | 👀 skim |
+| 3. **Plan** — written, reviewable | Claude | **Fable 5.1**, delegated | `plan-architect` agent (Fable-pinned since 2026-09-03) | 👀 skim |
 | 4. **Build via TDD** | Claude (+ subagents) | **Per unit** — Fable, Opus or Sonnet by the nature of the task (the ladder below) | `implementer` agent (Opus-pinned as the default; every dispatch passes its own `model:`), `superpowers:test-driven-development` | — |
 | 5. **Review** — parallel passes | Subagents | **Opus** ×3, **Sonnet** ×1 | `code-reviewer`, `security-reviewer`, `agents-compliance-reviewer`, plus `migration-reviewer` for anything under `packages/db` | 👀 batched |
 | 6. **Verify against the running Docker stack** | Claude | **Sonnet** for the evidence, session model for the reading | `docker compose`, psql, and **`browser-verifier`** for the browser half (§3) | — |
@@ -72,6 +72,18 @@ special". It is:
 
 > **The model is a property of the work unit, not of the session.** Every step
 > names its model, and every dispatch carries an explicit `model:`.
+
+**Revised 2026-09-03 — the plan runs on Fable.** The owner ruled that
+`plan-architect` is pinned `model: fable` from this date, no longer Opus. The
+reason is the one the first paragraph of this section already gives: a bad
+plan is executed faithfully, and every build pass, every review and the
+owner's step-7 read all sit downstream of it. The plan is where the
+measurements are made (row counts, set intersections, guard bounds) and where
+the pass-and-model split is argued; a plan that mis-measures sends a cheaper
+build pass to transcribe the wrong number. The rate difference on one
+read-only plan is smaller than one review-fix loop it prevents. Nothing else
+moves: step 2 stays Opus inline, and the step-4 ladder and step-5 pins are
+unchanged.
 
 **Revised 2026-09-02 — the build's model is chosen per unit.** Until this date
 step 4 was routed to Sonnet as a fixed rule. After F2.13's second build pass the
@@ -102,8 +114,8 @@ The ladder for step 4, applied per unit:
 
 | Model | Gets | Why |
 |-------|------|-----|
-| **Fable 5.1** (premium) | Step 4 units that define a seam, span several tasks, or touch auth/RLS production code | The seam is what the next items hang off, and it lands under review. A wrong seam costs a review-fix loop and the owner's attention at step 7 — more than the rate difference. |
-| **Opus** | Step 2 scope/ADR · step 3 plan · step 4 units that need judgment in the execution, and the **default pin** when a dispatch omits `model:` · step 5 `code-reviewer`, `security-reviewer`, `migration-reviewer` · root-cause debugging that survived one pass | These either decide, or they gate the human's merge. A weak review does not save money — it moves the cost onto the owner's attention. |
+| **Fable 5.1** (premium) | **Step 3 plan** (`plan-architect`, ruled 2026-09-03) · step 4 units that define a seam, span several tasks, or touch auth/RLS production code | The plan is what every later pass transcribes, and the seam is what the next items hang off; both land under review. A wrong plan or a wrong seam costs a review-fix loop and the owner's attention at step 7 — more than the rate difference. |
+| **Opus** | Step 2 scope/ADR · step 4 units that need judgment in the execution, and the **default pin** when a dispatch omits `model:` · step 5 `code-reviewer`, `security-reviewer`, `migration-reviewer` · root-cause debugging that survived one pass | These either decide, or they gate the human's merge. A weak review does not save money — it moves the cost onto the owner's attention. |
 | **Sonnet** | Step 4 mechanical units · step 5 `agents-compliance-reviewer` · doc writing · step 6 evidence gathering | Well-specified work against a plan or a written checklist; a wrong answer is cheap to spot. |
 | **Haiku** | Step 1 pick · locating a file · grepping a symbol · reading a config · summarising one file | Mechanical and verifiable; a wrong answer is cheap to spot. |
 
@@ -137,9 +149,11 @@ Per step:
   that comes out of that dialogue — a subagent drafting it would invert the
   gate. So Claude states that Opus is required and stops until the operator runs
   `/model opus`. It does not brainstorm or draft an ADR on a cheaper model.
-- **Step 3 (Plan) — Opus, delegated.** `plan-architect` is pinned `model: opus`
-  in its own frontmatter, is read-only, and returns the plan text for the caller
-  to transcribe. It refuses to plan past the step-2 gate.
+- **Step 3 (Plan) — Fable, delegated.** `plan-architect` is pinned
+  `model: fable` in its own frontmatter (Opus until 2026-09-03), is read-only,
+  and returns the plan text for the caller to transcribe. It refuses to plan
+  past the step-2 gate. Pass `model: "fable"` on the dispatch as well — the
+  rule that no dispatch inherits applies to the plan too.
 - **Step 4 (Build) — per unit, delegated.** Hand the unit to the `implementer`
   agent with `model:` on the `Agent` call chosen by the ladder above, and name
   the reason in the dispatch so the choice is reviewable. The agent's own
@@ -366,7 +380,7 @@ the critical path, and merge approvals.
 ```
 [ ] 1. Confirm the next item is UNBLOCKED (BACKLOG.md Depends + ADR gate). [Haiku, delegated]
 [ ] 2. Brainstorm -> open an ADR (new-adr). Human approves scope + deps.   [Opus, inline]
-[ ] 3. plan-architect writes the plan. Human skims.                        [Opus, delegated]
+[ ] 3. plan-architect writes the plan. Human skims.                        [Fable, delegated]
 [ ] 4. TDD build. Delegate to implementer; pick model: per unit (§2).   [Fable/Opus/Sonnet]
        Fan out to worktrees ONLY for independent siblings.
 [ ] 5. code-reviewer + security-reviewer + agents-compliance-reviewer,
