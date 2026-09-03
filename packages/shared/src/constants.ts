@@ -822,12 +822,21 @@ export type WaterClassPointKey = (typeof WATER_CLASS_POINT_KEYS)[number];
  * `tests/f3.39-global-point-key-vocabulary.test.ts` — `keysForDomain` writes
  * `UNIT_BY_KEY[code] ?? null`, so a missing entry seeds `NULL`.
  *
- * **The array must stay in THIS file.** Both `tests/f3.38`'s
- * `pointKeyVocabulary` and `tests/f3.39`'s `arraysByName` read
- * `packages/shared/src/constants.ts` as text, with a regex anchored on
- * matching every uppercase `POINT_KEYS` array declaration and requiring the
- * array body contain no `]` character (`[^\]]*` in both). A sibling file
- * would be invisible to both, with nothing failing.
+ * **This array stays in THIS file, but a pack's array no longer has to.**
+ * Until `E5.3` it did: `tests/f3.38`'s `pointKeyVocabulary` and `tests/f3.39`'s
+ * `arraysByName` read `packages/shared/src/constants.ts` as text, so a sibling
+ * file was invisible to both **with nothing failing** — which is why this
+ * docblock used to forbid one outright. `E5.3` had to add 104 codes against a
+ * 927-line file and the AGENTS.md §4.5 cap, so ADR 0054 §12 ruling 1 put them
+ * in `packages/shared/src/facility-point-keys.ts` and the three guards now
+ * read a **list** of source files, `POINT_KEY_SOURCE_RELS`, parsing each and
+ * unioning the result. The silence is what got closed: each file carries its
+ * own floor, so a rel that parses as nothing fails **naming that file**, and
+ * `tests/f3.39`'s `ARRAY_DOMAIN` must cover every array parsed from every
+ * source. Adding a third file means adding its rel, its floor and its
+ * `ARRAY_DOMAIN` entries — not editing a regex. The four arrays already here
+ * stay put regardless: they are write-once data four merged pull requests have
+ * reviewed, and moving them would be churn.
  */
 export const MECHANICAL_CLASS_POINT_KEYS = [
   // §1 pump set — 13 (11 rows + 2 derived)
