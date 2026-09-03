@@ -298,11 +298,197 @@ function checkPump(): void {
   assertProvenance(PUMP_CODE, entry, MECHANICAL_TAG_LIST, "§1");
 }
 
+// ===========================================================================
+// §2 — `mechanical-vfd`
+// ===========================================================================
+
+const VFD_CODE = "mechanical-vfd";
+
+/**
+ * §2's 15 table rows in the document's own order (`sortOrder` 0-14) —
+ * `[pointKey, tier, unit]`. **There is no derived row and no reused code**: the
+ * cheap opposite shape to the pump, and the only entry in the pack that is
+ * neither.
+ *
+ * **All fifteen codes carry the `vfd_` prefix except `motor_temp_c`**, and that
+ * is deliberate rather than untidy. ADR 0053 decision 9 makes the drive its own
+ * asset on its own register block, so `vfd_power_kw`, `vfd_kwh_total` and
+ * `vfd_run_hours_h` are NOT the motor's `kw`, `kwh_total` and `run_hours_h`: the
+ * prefix says which device reported the number, and a drive that is powered but
+ * not running still accumulates a different hour count from the machine it
+ * drives. `motor_temp_c` keeps no prefix because it is the motor's own thermal
+ * model or PTC read back through the drive — the one row here that is about the
+ * driven machine.
+ *
+ * `vfd_status`, `vfd_ready` and `vfd_fault` are `0/1` rows and `vfd_fault_code`
+ * is a vendor `code` row; all four carry `null`, which the vocabulary spells
+ * `""` (ADR 0051 Amendment 6 decision 4). **`vfd_fault_code` is tier C** — the
+ * document marks it `C` because a fault flag without its code sends an engineer
+ * to the panel to read the display; the chiller's equivalent row is `X`, and the
+ * two are not to be normalised into one tier.
+ */
+const VFD_POINTS: readonly PointRow[] = [
+  ["vfd_status", "core", null],
+  ["vfd_ready", "extended", null],
+  ["vfd_fault", "core", null],
+  ["vfd_fault_code", "core", null],
+  ["vfd_output_freq_hz", "core", "Hz"],
+  ["vfd_speed_ref_pct", "core", "%"],
+  ["vfd_output_current_a", "core", "A"],
+  ["vfd_output_voltage_v", "extended", "V"],
+  ["vfd_dc_bus_v", "extended", "V"],
+  ["vfd_torque_pct", "extended", "%"],
+  ["vfd_power_kw", "extended", "kW"],
+  ["vfd_kwh_total", "extended", "kWh"],
+  ["vfd_heatsink_temp_c", "extended", "°C"],
+  ["motor_temp_c", "extended", "°C"],
+  ["vfd_run_hours_h", "core", "h"],
+];
+
+/**
+ * §2's six alarm bullets become **seven** rows. *"DC bus over/under-voltage
+ * (supply quality)"* splits into two rows binding `vfd_dc_bus_v` at opposite
+ * bands — the pump's `current_a` shape and the feeder's `voltage_vry` shape: a
+ * high bus is a regenerating load or a high supply and a low bus is a dip or a
+ * lost phase, and the two are answered differently.
+ *
+ * **No alarm binds `vfd_fault_code`.** `drive_fault` binds the `0/1` flag beside
+ * it and carries the vendor code in its own text — ADR 0053 decision 5's rule
+ * that vendor fault codes are named in the message and never enumerated, because
+ * an enum per OEM is a v2 shape and a wrong one is worse than none.
+ */
+const VFD_ALARMS: readonly AlarmRow[] = [
+  ["drive_fault", "vfd_fault", "critical", "operations"],
+  ["overcurrent", "vfd_output_current_a", "warning", "operations"],
+  ["dc_bus_overvoltage", "vfd_dc_bus_v", "warning", "operations"],
+  ["dc_bus_undervoltage", "vfd_dc_bus_v", "warning", "operations"],
+  ["heatsink_temp_high", "vfd_heatsink_temp_c", "warning", "operations"],
+  ["motor_temp_high", "motor_temp_c", "warning", "operations"],
+  ["speed_reference_not_followed", "vfd_output_freq_hz", "warning", "operations"],
+];
+
+/**
+ * `mechanical-vfd` against `docs/e5.2-derived-taglist-v1.md` §2 (plan §5.2) —
+ * **the entry that promotes nothing**. §2 names three derived codes and all
+ * three need the motor's nameplate, so the entry authors no formula at all: the
+ * cheap opposite of the pump, and the proof that a section with a *Derived:*
+ * line does not owe the vocabulary a promotion.
+ */
+function checkVfd(): void {
+  const entry = requireStockEntry(VFD_CODE);
+  assertEntryIdentity(VFD_CODE, entry, "vfd", "mechanical");
+
+  // ---- 15 points, 7 core + 8 extended + 0 manual + 0 derived --------------
+
+  assert(
+    tierCount(entry, "core") === 7 &&
+      tierCount(entry, "extended") === 8 &&
+      tierCount(entry, "manual") === 0 &&
+      tierCount(entry, "derived") === 0,
+    `§2 marks 7 rows C and 8 X, has no M row, and promotes none of its three derived codes — ` +
+      `7/8/0/0. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
+  );
+  assertPointTable(VFD_CODE, "§2", entry, VFD_POINTS);
+
+  // The empty table is the claim, not an omission: §2's `motor_load_pct`,
+  // `speed_pct` and `energy_saving_vs_dol_kwh` all divide by a NAMEPLATE value
+  // the drive does not report, so none is expressible over measured siblings and
+  // none is promoted. A later author "helpfully" hardcoding ÷ 50 Hz for
+  // speed_pct fails here first, which is where it should fail.
+  assertDerivedPoints(VFD_CODE, entry, []);
+  assertNoKpis(VFD_CODE, entry, "§2");
+  assertDeferralsAbsent(VFD_CODE, entry);
+
+  // ---- 7 alarms, two of them at opposite bands on one point ---------------
+
+  const alarms = alarmsOf(entry);
+  assertAlarmTable(VFD_CODE, "§2", alarms, VFD_ALARMS);
+  assertPhilosophyRows(VFD_CODE, alarms);
+  assertSkillAssignment(
+    VFD_CODE,
+    alarms,
+    {
+      drive_fault: "electrical",
+      overcurrent: "electrical",
+      dc_bus_overvoltage: "electrical",
+      dc_bus_undervoltage: "electrical",
+      heatsink_temp_high: "electrical",
+      motor_temp_high: "electrical",
+      // The one row whose cause is on the driven machine and not in the panel:
+      // the drive is doing what it was told and the load will not turn.
+      speed_reference_not_followed: "mechanical",
+    },
+    // No process-chemistry row on a drive: all four of the pack's no-skill rows
+    // are the boiler's. The empty list is a claim — assertSkillAssignment
+    // requires the map and this list to partition the seven.
+    [],
+  );
+
+  const dcBus = alarms.filter((alarm) => alarm.pointKey === "vfd_dc_bus_v");
+  assert(
+    dcBus.length === 2 &&
+      dcBus[0]?.code === "dc_bus_overvoltage" &&
+      dcBus[1]?.code === "dc_bus_undervoltage",
+    `${VFD_CODE} must carry TWO alarms on vfd_dc_bus_v at opposite bands — §2's one bullet ("DC ` +
+      "bus over/under-voltage\") is two events with two causes: a high bus is a high supply or a " +
+      "regenerating load with no brake resistor to take it, and a low bus is a supply dip or a " +
+      "lost input phase. One row with a message saying \"high or low\" is a row an operator " +
+      "cannot act on, because the two actions are opposite. Same shape as the feeder's two " +
+      `voltage_vry rows and the pump's two current_a rows. Got ` +
+      `${dcBus.length}: [${dcBus.map((alarm) => alarm.code).join(", ")}]`,
+  );
+
+  const faultCode = entry.points.find((point) => point.pointKey === "vfd_fault_code");
+  assert(
+    faultCode?.meta?.tier === "core" &&
+      alarms.every((alarm) => alarm.pointKey !== "vfd_fault_code"),
+    `${VFD_CODE} must declare vfd_fault_code as a tier C point that NO alarm binds. §2 marks it C ` +
+      "because a fault flag without its code sends an engineer to the panel to read the display; " +
+      "drive_fault binds the 0/1 vfd_fault flag beside it and carries the vendor code in its own " +
+      "TEXT, because enumerating one OEM's fault list is a v2 shape and a wrong enum is worse " +
+      `than none (ADR 0053 decision 5). Got tier ${String(faultCode?.meta?.tier)}, bound by ` +
+      `${alarms.filter((alarm) => alarm.pointKey === "vfd_fault_code").length} alarm(s).`,
+  );
+
+  // ---- 3 maintenance plans, none critical and none condition-based --------
+
+  const plans = maintenanceOf(entry);
+  assert(plans.length === 3, `plan §5.7 authors 3 VFD plans; the entry carries ${plans.length}`);
+  const safetyCritical = plans.filter((plan) => plan.safetyCritical === true);
+  assert(
+    safetyCritical.length === 0,
+    "no VFD plan is safetyCritical — ADR 0053 decision 8 names exactly three in the pack (the " +
+      "compressor's relief-valve test, the AHU's fire-trip interlock test and the boiler's " +
+      "low-water cut-off and safety-valve test), and none of them is here. A capacitor " +
+      `inspection is a reliability task, not a life-safety barrier. Got ${safetyCritical.length}: ` +
+      `${safetyCritical.map((plan) => plan.title).join("; ") || "(none)"}`,
+  );
+  // Unlike the pump and the chiller, this entry has NO condition_based plan and
+  // that is the correct authoring, not an omission: a drive's three tasks are
+  // calendar work — a clean, a torque check and a parameter backup — and there
+  // is no measured row whose rise is a trigger. `heatsink_temp_high` is an alarm
+  // an operator answers, not a work order a plan generates.
+  const conditionPlans = plans.filter((plan) => plan.category === "condition_based");
+  assert(
+    conditionPlans.length === 0 && plans.every((plan) => plan.generationMode === "calendar"),
+    `${VFD_CODE} must carry NO condition_based plan and every plan in "calendar" mode — §5.7 ` +
+      "authors a cooling-fan and heatsink clean, a power-terminal torque check with a DC-bus " +
+      "capacitor inspection, and a parameter backup with a fault-log review. All three are " +
+      `calendar work. Got ${conditionPlans.length} condition_based plan(s), modes [` +
+      `${plans.map((plan) => String(plan.generationMode)).join(", ")}].`,
+  );
+  assertMaintenanceBounds(VFD_CODE, entry);
+  assertProvenance(VFD_CODE, entry, MECHANICAL_TAG_LIST, "§2");
+}
+
 /**
  * Every per-class block in this file. Called by `mechanical-classes.test.ts`,
- * its name-sibling wrapper. **Task 7 appends `checkVfd()` below `checkPump()`
- * and changes nothing else in this file.**
+ * its name-sibling wrapper. **§3 and §4 live in `mechanical-classes-2.spec.ts`
+ * and §6 and §7 in `-3`** — two entries per file, so no file in this directory
+ * approaches the §4.5 cap.
  */
 export function runMechanicalClassEntryTests(): void {
   checkPump();
+  checkVfd();
 }

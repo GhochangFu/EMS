@@ -8,11 +8,12 @@ import { runMechanicalClassEntryTests } from "./mechanical-classes.spec";
  * wrapper to be its **name-sibling**: a spec imported from a differently-named
  * wrapper still runs, but it is excluded from coverage.
  *
- * The title says §1 and §2 because that is what the file will hold once Task 7
- * lands the VFD; the pump arrives first (Task 6) and the runner is the seam.
+ * The file holds §1 (the pump set, Task 6) and §2 (the VFD, Task 7); §3 and §4
+ * are in `mechanical-classes-2`, §6 and §7 in `-3`. The runner is the seam, so
+ * each entry commit adds one `check…()` call and nothing else moves.
  */
 describe("stock asset-template catalog — the mechanical classes (E5.2, §§1 and 2)", () => {
-  it("ships the pump set exactly as its tag-list section describes it", () => {
+  it("ships the pump set and the VFD exactly as their tag-list sections describe them", () => {
     runMechanicalClassEntryTests();
   });
 });

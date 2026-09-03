@@ -1,4 +1,5 @@
 import { MECHANICAL_PUMP } from "./mechanical-pump";
+import { MECHANICAL_VFD } from "./mechanical-vfd";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -315,6 +316,13 @@ import type { StockAssetTemplateEntry } from "./types";
  *    maintenance plans, none `safetyCritical`. Authors `head_m` and
  *    `specific_energy_kwh_kl`; defers `duty_hours_pct`, `starts_per_hour`,
  *    `availability_pct` and `vibration_band`.
+ *  - **`mechanical-vfd` v1** (2026-09-03, `E5.2` Task 7) — §2, the drive's own
+ *    register block. 15 points (7 core + 8 extended + 0 manual + 0 derived), 7
+ *    alarms, 3 maintenance plans, none `safetyCritical` and none
+ *    `condition_based`. Authors NO formula and reuses NO code — the cheap
+ *    opposite of the pump; defers `motor_load_pct`, `energy_saving_vs_dol_kwh`
+ *    and `speed_pct`, all three of them a nameplate value the drive never
+ *    reports.
  *
  * The pack's targets, for the reader who wants to know where this is going and
  * as the numbers Task 11 re-measures rather than assumes: **141 declared point
@@ -329,4 +337,5 @@ export const MECHANICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[
   // boiler — which is the order GET /stock lists in, and NOT the prefix order.
   // Each entry commit adds one import above and one line here, in this order.
   MECHANICAL_PUMP,
+  MECHANICAL_VFD,
 ];
