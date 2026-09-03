@@ -763,6 +763,15 @@ Process (`AGENTS.md` §10).
   > `widgets[]` now. That claim was already stale before this sweep and was
   > left alone, which is what identifies this block as a record rather than a
   > live index. Noted, deliberately not edited.
+  >
+  > **`E5.1` closed on 2026-09-03** (*Unblocks*, above, and the chain this
+  > block opened): the flagship shipped as six provisional water plant
+  > templates under ADR 0040 — STP, ETP, cooling tower, WTP, RO, softener —
+  > with 103 points over a 98-code water vocabulary, 40 pair-absent alarms
+  > each carrying the `philosophy` object this block's §3 anchored, and 23
+  > maintenance plans, through the stock catalog `F2.13` built (PR #293). The
+  > client's redline of `docs/e5.1-derived-taglist-v1.md` lands as template
+  > v2. `E5.2` is the next head of Track B.
 - **Owed:** ~~the AGENTS.md §2 promotion, in its own `chore(agents):` PR
   (§9.10)~~ ✅ **cleared** — §2 gained a *Template content* row, and §6 gained
   the two deferral bullets covering what ADR 0019 deliberately left closed.
