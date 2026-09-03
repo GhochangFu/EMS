@@ -394,6 +394,12 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // parsed as nothing at all, which is the silent failure this file exists
     // to end.
     //
+    // **500 since `E5.3` PR 1** — 396 + the facility pack's 104
+    // (`docs/plans/e5.3-facility-domain-pack.md` §4.4/§4.6), and already at
+    // its final value for PR 1 for the same reason as `E5.2`: pass A1 lands
+    // every facility and environment code, so nothing the seven entry commits
+    // author can move it.
+    //
     // **Per source FIRST.** The union cannot say which file supplied it, so a
     // mistyped second path would leave `constants.ts`'s 396 clearing a union
     // floor of 396 with the whole facility pack parsed as nothing — the exact
@@ -416,7 +422,7 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
           "alone. Fix the path or the array declaration; do not lower this floor.",
       ).toBeGreaterThanOrEqual(floor ?? 1);
     }
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(396);
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(500);
   });
 
   it("every catalog pointKey is a code a *_POINT_KEYS array holds", () => {

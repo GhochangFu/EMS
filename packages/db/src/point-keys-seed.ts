@@ -7,6 +7,8 @@ import {
   CONTROL_ROOM_UPS_POINT_KEYS,
   ELECTRICAL_CLASS_POINT_KEYS,
   ELECTRICAL_POINT_KEYS,
+  ENVIRONMENT_CLASS_POINT_KEYS,
+  FACILITY_CLASS_POINT_KEYS,
   HVAC_CLASS_POINT_KEYS,
   HVAC_POINT_KEYS,
   MECHANICAL_CLASS_POINT_KEYS,
@@ -484,6 +486,124 @@ const UNIT_BY_KEY: Record<string, string> = {
   fire_trip_state: "",
   sat_deviation_c: "°C", // E5.2: derived, formula in hvac-ahu.ts
   coil_delta_t_c: "°C", // E5.2: derived, formula in hvac-ahu.ts
+  // E5.3 (ADR 0054 decision 3) — the facility pack's 104 codes, from
+  // packages/shared/src/facility-point-keys.ts, in the tag list's section
+  // order. `""` and NEVER a missing entry for every 0/1, count, enum, code,
+  // text, floor and date row and for the one dimensionless ratio: `?? null`
+  // seeds NULL and overwrites a real unit on every `compose up`. A unit is
+  // WRITE-ONCE: ° is U+00B0, µ is U+00B5 (MICRO SIGN, E5.1's µS/cm, never
+  // U+03BC), ³ is U+00B3.
+  // §1 lighting zone — 15
+  lighting_state: "",
+  lighting_level_pct: "%",
+  lighting_mode: "",
+  lighting_scene: "",
+  occupancy_state: "",
+  illuminance_lux: "lux",
+  illuminance_sp_lux: "lux",
+  lamp_fault_count: "",
+  driver_fault_state: "",
+  emergency_test_state: "",
+  emergency_battery_ok: "",
+  zone_kw: "kW",
+  zone_kwh_total: "kWh",
+  burn_hours_h: "h",
+  schedule_active: "",
+  // §2 fire alarm panel — 23 (smoke_state is the control-room array's)
+  fire_alarm_state: "",
+  fire_fault_state: "",
+  fire_supervisory_state: "",
+  fire_isolate_state: "",
+  fire_prealarm_state: "",
+  panel_ac_ok: "",
+  panel_battery_ok: "",
+  panel_earth_fault: "",
+  panel_comms_ok: "",
+  zone_alarm_state: "",
+  zone_fault_state: "",
+  zone_isolated_state: "",
+  active_alarm_count: "",
+  active_fault_count: "",
+  sounder_active: "",
+  sounder_silenced: "",
+  fire_pump_status: "",
+  jockey_pump_status: "",
+  hydrant_header_pressure_bar: "bar",
+  fire_tank_level_pct: "%",
+  sprinkler_flow_state: "",
+  suppression_released_state: "",
+  weekly_test_done: "",
+  // §3 access door — 17 (16 rows + 1 derived)
+  door_state: "",
+  lock_state: "",
+  door_forced_state: "",
+  door_held_state: "",
+  door_mode: "",
+  reader_ok: "",
+  controller_comms_ok: "",
+  controller_tamper: "",
+  controller_ac_ok: "",
+  controller_battery_ok: "",
+  access_granted_count: "",
+  access_denied_count: "",
+  rex_count: "",
+  fire_release_state: "",
+  lockdown_state: "",
+  turnstile_status: "",
+  denied_ratio_pct: "%", // E5.3: derived, formula in facility-access-door.ts
+  // §4 occupancy zone — 10 (occupancy_state is §1's; 9 rows + 1 derived)
+  occupancy_count: "",
+  occupancy_capacity: "",
+  entry_count: "",
+  exit_count: "",
+  desk_occupied_count: "",
+  zone_temp_c: "°C",
+  zone_rh_pct: "%",
+  zone_temp_sp_c: "°C",
+  sensor_battery_pct: "%",
+  occupancy_pct: "%", // E5.3: derived, two formulas — occupancy zone and parking level
+  // §5 parking level — 14 (entry_count and exit_count are §4's)
+  bays_total: "",
+  bays_occupied: "",
+  bays_free: "",
+  ev_bays_free: "",
+  entry_barrier_state: "",
+  exit_barrier_state: "",
+  barrier_fault: "",
+  co_ppm: "ppm",
+  no2_ppm: "ppm",
+  jet_fan_status: "",
+  jet_fan_fault: "",
+  guidance_comms_ok: "",
+  ev_charger_kw: "kW",
+  ev_charger_kwh_total: "kWh",
+  // §7 BAS gateway — 12 (leak_state is the control-room array's)
+  device_online: "",
+  last_seen_age_s: "s",
+  comms_error_count: "",
+  points_stale_count: "",
+  cpu_pct: "%",
+  memory_pct: "%",
+  enclosure_temp_c: "°C",
+  supply_voltage_v: "V",
+  ups_on_battery: "",
+  door_open_state: "",
+  rtc_drift_s: "s",
+  firmware_version: "",
+  // §6 IAQ node — 13, the environment array (11 rows + 2 derived)
+  co2_ppm: "ppm",
+  pm25_ugm3: "µg/m³",
+  pm10_ugm3: "µg/m³",
+  tvoc_ugm3: "µg/m³",
+  ch2o_ugm3: "µg/m³",
+  o3_ppb: "ppb",
+  no2_ppb: "ppb",
+  outdoor_pm25_ugm3: "µg/m³",
+  outdoor_co2_ppm: "ppm",
+  sensor_online: "",
+  microbial_count_cfu: "CFU/m³",
+  co2_above_outdoor_ppm: "ppm", // E5.3: derived, formula in environment-iaq-node.ts
+  pm25_indoor_outdoor_ratio: "", // E5.3: derived, dimensionless (the `cop` spelling)
 };
 
 function titleCase(code: string): string {
@@ -594,6 +714,16 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
   // code, not per domain.
   ...keysForDomain(MECHANICAL_CLASS_POINT_KEYS, "mechanical"),
   ...keysForDomain(HVAC_CLASS_POINT_KEYS, "hvac"),
+  // `E5.3` — the facility pack (ADR 0054), LAST and unfiltered, for the same
+  // two reasons the mechanical arrays above are last, and from a second
+  // shared file (plan §4.5: `constants.ts` is at the §4.5 line cap). None of
+  // the 104 pre-exists, so no `ORDER BY created_at, code` fixture window
+  // moves. The `environment` line files 13 codes under a domain that already
+  // holds `CONTROL_ROOM_ENVIRONMENT_POINT_KEYS`'s six; the clash check in
+  // `tests/f3.39-global-point-key-vocabulary.test.ts` is per code, not per
+  // domain, and the two are disjoint.
+  ...keysForDomain(FACILITY_CLASS_POINT_KEYS, "facility"),
+  ...keysForDomain(ENVIRONMENT_CLASS_POINT_KEYS, "environment"),
 ];
 
 /**

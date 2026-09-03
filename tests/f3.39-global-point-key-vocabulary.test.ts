@@ -522,6 +522,14 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
      * reason — the entry is what makes the array's `keysForDomain` call
      * mandatory rather than optional, which is how the array reaches
      * `GLOBAL_CATALOG` at all.
+     *
+     * **`E5.3` stopped that being a matter of discipline.** "The scanned
+     * sources are non-empty" now asserts that every array `arraysByName`
+     * parsed has an entry here, so an array added to either source file and
+     * not added to this table is a build failure naming itself rather than a
+     * silent hole. The consequence is deliberate and worth stating: an array,
+     * its `ARRAY_DOMAIN` entry, its `keysForDomain` line and its
+     * `UNIT_BY_KEY` entries now have to land in ONE commit.
      */
     const ARRAY_DOMAIN: Record<string, string> = {
       ELECTRICAL_POINT_KEYS: "electrical",
@@ -535,6 +543,13 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       WATER_CLASS_POINT_KEYS: "water",
       MECHANICAL_CLASS_POINT_KEYS: "mechanical",
       HVAC_CLASS_POINT_KEYS: "hvac",
+      // `E5.3`, and both live in `facility-point-keys.ts`, not `constants.ts`.
+      // `ENVIRONMENT_CLASS_POINT_KEYS` is a SECOND array under the
+      // `environment` domain — the `HVAC_CLASS_POINT_KEYS` precedent — and not
+      // an append to `CONTROL_ROOM_ENVIRONMENT_POINT_KEYS`, which
+      // `controlRoomEnvironmentPointKeySchema` closes as a `z.enum`.
+      FACILITY_CLASS_POINT_KEYS: "facility",
+      ENVIRONMENT_CLASS_POINT_KEYS: "environment",
     };
 
     /**
@@ -628,8 +643,14 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // inconsistency a later reader copies. 396 = 289 + `E5.2`'s 107-code
       // MECHANICAL_CLASS_POINT_KEYS + HVAC_CLASS_POINT_KEYS (plan
       // `docs/plans/e5.2-mechanical-domain-pack.md` §4.4/§4.6), disjoint by
-      // construction.
-      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(396);
+      // construction. **500 since `E5.3` PR 1** — 396 + the facility pack's
+      // 104 (`FACILITY_CLASS_POINT_KEYS`'s 91 and
+      // `ENVIRONMENT_CLASS_POINT_KEYS`'s 13, plan
+      // `docs/plans/e5.3-facility-domain-pack.md` §4.4/§4.6), disjoint from
+      // the 396 by construction: the eleven codes the tag list shares with an
+      // existing array are REFERENCED, never redeclared, because a unit is
+      // write-once.
+      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(500);
 
       const missing: string[] = [];
       for (const arrayName of Object.keys(ARRAY_DOMAIN)) {
@@ -758,10 +779,29 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
             "not lower this floor.",
         ).toBeGreaterThanOrEqual(floor ?? 1);
       }
+      // **Every parsed array must be mapped, or it escapes every check above.**
+      // The pin, the clash test and the `UNIT_BY_KEY` test all iterate
+      // `ARRAY_DOMAIN`, never `arraysByName`, so an array added to a source
+      // file and not added to that table is neither pinned to a
+      // `keysForDomain` call nor compared against the others — the hazard
+      // `ARRAY_DOMAIN`'s own docblock has named since `F3.41` and which
+      // nothing checked until `E5.3`. A count pin would not do: a NEW unmapped
+      // array beside a deleted entry keeps the count and passes.
+      expect(
+        [...arraysByName.keys()].filter((name) => ARRAY_DOMAIN[name] === undefined).sort(),
+        `${POINT_KEY_SOURCE_LABEL} declares a *_POINT_KEYS array that ARRAY_DOMAIN in ` +
+          "this file does not map to a domain. Every assertion in this block iterates " +
+          "ARRAY_DOMAIN, so an unmapped array is seeded by nothing here and checked by " +
+          "nothing here. Add it to ARRAY_DOMAIN, to keysForDomain in the seed and to " +
+          "UNIT_BY_KEY in the same commit.",
+      ).toEqual([]);
+      // 13 since `E5.3` PR 1 — the eleven plus `FACILITY_CLASS_POINT_KEYS` and
+      // `ENVIRONMENT_CLASS_POINT_KEYS`; 14 after PR 2 adds
+      // `VERTICAL_TRANSPORT_CLASS_POINT_KEYS`.
       expect(
         arraysByName.size,
         `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`,
-      ).toBeGreaterThanOrEqual(11);
+      ).toBeGreaterThanOrEqual(13);
       const codes = new Set([...arraysByName.values()].flat());
       // 396 is the actual after `E5.2` appended `MECHANICAL_CLASS_POINT_KEYS`'s
       // 68 codes and `HVAC_CLASS_POINT_KEYS`'s 39
@@ -769,8 +809,10 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // that were here after `E5.1`. Moved to the actual rather than left at
       // 289, where it would have stayed green with the 107 new codes parsed
       // as nothing at all — which is the exact failure this whole `describe`
-      // block exists to make impossible.
-      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(396);
+      // block exists to make impossible. **500 since `E5.3` PR 1**: 396 + the
+      // facility pack's 104, moved in the commit that seeds them and for the
+      // same reason.
+      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(500);
       expect(
         sql.split(";").filter((s) => s.trim().length > 0).length,
         "migration 0057 holds almost no statements",

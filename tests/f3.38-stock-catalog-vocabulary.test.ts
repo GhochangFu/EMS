@@ -361,8 +361,12 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     // `HVAC_CLASS_POINT_KEYS` (`docs/plans/e5.2-mechanical-domain-pack.md`
     // §4.4/§4.6). Moved to the actual rather than left at 289, for the same
     // reason `F3.41` moved this bound from 30 — slack here would have stayed
-    // green with the 107 new codes parsed as nothing at all.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(396);
+    // green with the 107 new codes parsed as nothing at all. **500 since
+    // `E5.3` PR 1**: 396 + the facility pack's 104
+    // (`docs/plans/e5.3-facility-domain-pack.md` §4.4/§4.6), disjoint by
+    // construction because the eleven shared codes are referenced and never
+    // redeclared.
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(500);
     // 28 is 26 from `0051` plus 2 from `0060`, and both migrations are frozen,
     // so this number is stable by construction. If a LATER migration adds a
     // role code and the check below starts rejecting a legitimate
