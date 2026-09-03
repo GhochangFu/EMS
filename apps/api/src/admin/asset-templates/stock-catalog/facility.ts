@@ -13,7 +13,10 @@ import type { StockAssetTemplateEntry } from "./types";
  * twice (ADR 0054, Accepted 2026-09-03; ADR 0052 decisions 1, 2 and 6). This
  * file aggregates; it authors nothing.
  *
- * **THE ARRAY BELOW SHIPS EMPTY, AND IT IS EMPTY ON PURPOSE.** This module
+ * **THE ARRAY BELOW SHIPPED EMPTY, AND IT WAS EMPTY ON PURPOSE. ALL SEVEN
+ * OF PR 1'S ENTRIES ARE IN IT NOW** (`mechanical.ts` carries the same
+ * correction from `E5.2`'s closure; the tense is what tells a reader whether
+ * the pack is mid-build). This module
  * lands in the commit that declares the pack — the two `PACK_SOURCE_DOC`
  * prefixes, the seven new `STOCK_ENTRY_CODES`, the seven deferral lists and this
  * index — one commit before the first class is authored, and it **fills one

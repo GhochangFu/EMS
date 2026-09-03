@@ -425,7 +425,11 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     //
     // **490 since `E5.3` plan Task 10**, measured the same way and in the same
     // commit as the length bound above: 382 + the facility pack's 108 distinct
-    // keys — its 104 new table codes plus the 4 promoted derived codes, with
+    // keys — its 104 VOCABULARY codes (100 new table codes plus the 4
+    // promotions, which are MEMBERS of the two arrays and not a separate
+    // addend) plus the 4 REUSED codes its entries reference and never
+    // redeclare (`smoke_state`, `leak_state`, `temperature_c`,
+    // `humidity_pct`), with
     // **nothing subtracted**, because not one of the 108 is named by an
     // electrical, water or mechanical module. That zero overlap is the pack's
     // own claim: a building's lighting, fire, access, occupancy, parking, air
@@ -445,7 +449,7 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // repeats between sections. Equal to plan
     // §4.6's prediction, so the overlap arithmetic held as well as the
     // transcription.
-    expect(new Set(pointKeys).size, "fewer distinct keys than the eighteen classes declare").toBeGreaterThanOrEqual(490);
+    expect(new Set(pointKeys).size, "fewer distinct keys than the twenty-five classes declare").toBeGreaterThanOrEqual(490);
     // 396 = the 289 E5.1 left (F2.11's 139 ELECTRICAL_CLASS_POINT_KEYS plus
     // F2.12's six promotions, plus the other arrays, plus E5.1's 98-code
     // WATER_CLASS_POINT_KEYS) + E5.2 pass A's 107-code

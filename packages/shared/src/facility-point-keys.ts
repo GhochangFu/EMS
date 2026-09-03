@@ -119,8 +119,12 @@
  * **Every code here needs a `UNIT_BY_KEY` entry in
  * `packages/db/src/point-keys-seed.ts`**, enforced by
  * `tests/f3.39-global-point-key-vocabulary.test.ts` — `keysForDomain` writes
- * `UNIT_BY_KEY[code] ?? null`, so a missing entry seeds `NULL` and overwrites
- * a real unit on every `compose up`. The empty string, never a missing entry,
+ * `UNIT_BY_KEY[code] ?? null`, so a missing entry seeds `NULL` on a new row.
+ * It cannot overwrite a real unit: `seedPointKeyCatalog` writes
+ * `COALESCE(bms.point_keys.unit, EXCLUDED.unit)`, so the next boot repairs a
+ * NULL once the entry exists. A WRONG spelling is the permanent one, which is
+ * why the codepoints below are the real gate. The empty string, never a
+ * missing entry,
  * is how a `0/1`, `count`, `enum`, `code`, `text`, `floor` or `date` row and
  * the one dimensionless ratio spell an unset unit.
  *

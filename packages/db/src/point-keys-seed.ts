@@ -490,9 +490,12 @@ const UNIT_BY_KEY: Record<string, string> = {
   // packages/shared/src/facility-point-keys.ts, in the tag list's section
   // order. `""` and NEVER a missing entry for every 0/1, count, enum, code,
   // text, floor and date row and for the one dimensionless ratio: `?? null`
-  // seeds NULL and overwrites a real unit on every `compose up`. A unit is
-  // WRITE-ONCE: ° is U+00B0, µ is U+00B5 (MICRO SIGN, E5.1's µS/cm, never
-  // U+03BC), ³ is U+00B3.
+  // seeds NULL on a NEW row. It cannot overwrite a real one —
+  // `seedPointKeyCatalog` writes `COALESCE(bms.point_keys.unit,
+  // EXCLUDED.unit)`, so the next boot repairs a NULL once the entry exists.
+  // The failure that IS permanent is a WRONG spelling, which is why the
+  // codepoint check and not the presence check is the real gate: ° is U+00B0,
+  // µ is U+00B5 (MICRO SIGN, E5.1's µS/cm, never U+03BC), ³ is U+00B3.
   // §1 lighting zone — 15
   lighting_state: "",
   lighting_level_pct: "%",
@@ -719,9 +722,17 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
   // shared file (plan §4.5: `constants.ts` is at the §4.5 line cap). None of
   // the 104 pre-exists, so no `ORDER BY created_at, code` fixture window
   // moves. The `environment` line files 13 codes under a domain that already
-  // holds `CONTROL_ROOM_ENVIRONMENT_POINT_KEYS`'s six; the clash check in
-  // `tests/f3.39-global-point-key-vocabulary.test.ts` is per code, not per
-  // domain, and the two are disjoint.
+  // holds six rows, of which `CONTROL_ROOM_ENVIRONMENT_POINT_KEYS` declares
+  // FOUR. The other two — `controller_power_status` and `network_strength` —
+  // are the PHE gateway's own health points and reach this table only through
+  // `phe-pilot-seed.ts`, in no shared array at all. That matters beyond
+  // arithmetic: the clash check in
+  // `tests/f3.39-global-point-key-vocabulary.test.ts` iterates `ARRAY_DOMAIN`
+  // over the parsed source files, so those two are OUTSIDE its reach, and a
+  // later pack that declared either would be silently re-filed by this seed's
+  // `domain = EXCLUDED.domain` with nothing failing. `E5.3` is safe — all 104
+  // codes were checked against both, and against every code in
+  // `GLOBAL_CATALOG`, with zero overlap.
   ...keysForDomain(FACILITY_CLASS_POINT_KEYS, "facility"),
   ...keysForDomain(ENVIRONMENT_CLASS_POINT_KEYS, "environment"),
 ];

@@ -705,9 +705,11 @@ const PARKING_ALARMS: readonly AlarmRow[] = [
  * **The pack's one no-skill row that is neither life-safety nor security, and
  * it is recorded rather than forced into a class it does not fit.**
  *
- * `assertSkillAssignment`'s failure text names two unanswerable classes — the
- * water and mechanical packs' process chemistry, and this pack's life-safety and
- * security events. `level_full` is a third: a car park with no free bays is a
+ * `assertSkillAssignment`'s failure text names three unanswerable classes — the
+ * water and mechanical packs' process chemistry, this pack's life-safety and
+ * security events, and this pack's OCCUPANCY rows. `level_full` is the pack's
+ * instance of that third class, so nothing here needs a fourth constant or a
+ * local restatement: a car park with no free bays is a
  * FACT about how busy the building is, and no maintenance trade answers it
  * because nothing is broken. The car-park operator opens another level or turns
  * the entry sign; a wireman, a fitter, a controls engineer, a ventilation

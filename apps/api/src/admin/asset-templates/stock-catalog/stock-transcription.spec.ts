@@ -341,8 +341,8 @@ export function assertSkillAssignment(
       `${code} alarm "${alarmCode}" carries philosophy.skill ${String(skillOf(alarmCode))}, and ` +
         "it must carry none. bms.alarm_skills holds electrical, mechanical, hvac, controls and " +
         "civil, and no trade in that table answers this row, so the field is omitted rather " +
-        "than routing the alarm to the wrong trade. Two classes of row are unanswerable so " +
-        "far: the water and mechanical packs' PROCESS-CHEMISTRY rows (pH, TDS, flue O2 — " +
+        "than routing the alarm to the wrong trade. Three classes of row are unanswerable " +
+        "so far: the water and mechanical packs' PROCESS-CHEMISTRY rows (pH, TDS, flue O2 — " +
         "F4.78 files the process trade); E5.3's LIFE-SAFETY and SECURITY rows (a fire alarm, " +
         "a forced door — the fire officer and the security desk answer those, and neither is " +
         "a maintenance trade); and E5.3's OCCUPANCY rows (a zone over capacity, a car park " +
