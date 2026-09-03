@@ -1,3 +1,4 @@
+import { HVAC_AHU } from "./hvac-ahu";
 import { HVAC_CHILLER } from "./hvac-chiller";
 import { MECHANICAL_COMPRESSOR } from "./mechanical-compressor";
 import { MECHANICAL_PUMP } from "./mechanical-pump";
@@ -338,6 +339,16 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `cooling_load_tr`, `kw_per_tr`, `cop`, `chw_delta_t_c` and `cw_delta_t_c`,
  *    every input tier C — and binds the N5 health signal `kw_per_tr_high` to one
  *    of them; defers `approach_trend` and `part_load_pct`.
+ *  - **`hvac-ahu` v1** (2026-09-03, `E5.2` Task 10) — §6, the air handler with a
+ *    chilled-water coil. 28 points (13 core + 13 extended + 0 manual + 2
+ *    derived), 8 alarms, 4 maintenance plans, **one `safetyCritical`** — the
+ *    fire-trip interlock test, the second of the three ADR 0053 decision 8
+ *    names. Authors `sat_deviation_c` (the G36 AFDD quantity, bound by
+ *    `sat_deviation_high`) and `coil_delta_t_c`; defers `filter_life_pct`,
+ *    `fan_energy_kwh_day` and `cooling_delivered_kw`. **The first stock entry
+ *    anywhere to file an alarm under `comfort`** (three of the eight), and the
+ *    entry that binds a fan motor current because §6 carries **no fan run
+ *    status** — recorded as a v2 redline candidate rather than invented.
  *
  * The pack's targets, for the reader who wants to know where this is going and
  * as the numbers Task 11 re-measures rather than assumes: **141 declared point
@@ -355,4 +366,5 @@ export const MECHANICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[
   MECHANICAL_VFD,
   MECHANICAL_COMPRESSOR,
   HVAC_CHILLER,
+  HVAC_AHU,
 ];
