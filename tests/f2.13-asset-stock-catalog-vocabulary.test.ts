@@ -106,6 +106,34 @@ const STOCK_ASSET_RELS = [
   `${STOCK_CATALOG_DIR}/hvac-chiller.ts`,
   `${STOCK_CATALOG_DIR}/hvac-ahu.ts`,
   `${STOCK_CATALOG_DIR}/mechanical-boiler.ts`,
+  // The facility/smart-building pack — `E5.3`, one index and (in PR 1) seven
+  // class modules, in the document's section order. **The index is listed here
+  // in the commit that CREATES it** (plan Task 3), before it holds a single
+  // entry, for the same reason `mechanical.ts` was: the directory cross-check
+  // below is red the moment a `.ts` file appears in the catalog directory
+  // unaccounted for, so a pack index and its listing are one commit by
+  // construction. `facility.ts` exports an empty array on purpose (`E5.1` §13
+  // item 1 — no skeleton modules with placeholder points), so it contributes no
+  // reference to the bounds below until Task 4.
+  //
+  // **The class modules join one per entry commit** — `facility-lighting-zone.ts`
+  // (§1), `facility-fire-panel.ts` (§2), `facility-access-door.ts` (§3),
+  // `facility-occupancy-zone.ts` (§4), `facility-parking-level.ts` (§5),
+  // `environment-iaq-node.ts` (§6) and `facility-bas-gateway.ts` (§7), then
+  // `mechanical-lift.ts` (§8a) and `mechanical-escalator.ts` (§8b) in PR 2.
+  // **Three domains under one index**, and that is deliberate: ADR 0054
+  // decision 2 files the IAQ node under `environment` — the domain whose
+  // vocabulary already holds its temperature and humidity keys — and the lift
+  // and the escalator under `mechanical`, while the module name follows the
+  // entry code the way `water-stp.ts` does.
+  `${STOCK_CATALOG_DIR}/facility.ts`,
+  `${STOCK_CATALOG_DIR}/facility-lighting-zone.ts`,
+  `${STOCK_CATALOG_DIR}/facility-fire-panel.ts`,
+  `${STOCK_CATALOG_DIR}/facility-access-door.ts`,
+  `${STOCK_CATALOG_DIR}/facility-occupancy-zone.ts`,
+  `${STOCK_CATALOG_DIR}/facility-parking-level.ts`,
+  `${STOCK_CATALOG_DIR}/environment-iaq-node.ts`,
+  `${STOCK_CATALOG_DIR}/facility-bas-gateway.ts`,
 ] as const;
 
 /**
@@ -117,7 +145,43 @@ const STOCK_ASSET_RELS = [
 const STOCK_ASSET_SCAN_EXEMPT = ["types.ts"] as const;
 
 const STOCK_LABEL = STOCK_ASSET_RELS.map((rel) => basename(rel)).join(" + ");
-const CONSTANTS_REL = "packages/shared/src/constants.ts";
+
+/**
+ * Every file that declares a shared `*_POINT_KEYS` array, in the order
+ * `point-keys-seed.ts` imports them. Restated from `f3.38`, on purpose (see
+ * the file docblock).
+ *
+ * **`E5.3` made this a list, and the reason is a rule and not a preference.**
+ * `packages/shared/src/constants.ts` reached 927 lines, and AGENTS.md §4.5's
+ * 1000-line cap is read WHOLE-FILE by `.githooks/pre-commit.mjs:191-194`, so
+ * the facility pack's 104 codes could not be appended there. They live in
+ * `packages/shared/src/facility-point-keys.ts` instead — plan
+ * `docs/plans/e5.3-facility-domain-pack.md` §4.5 and §12 ruling 1, a
+ * correction to ADR 0054 decision 3's *"three arrays in `constants.ts`"*.
+ *
+ * **A THIRD ENTRY BELONGS HERE THE DAY A THIRD FILE DECLARES ONE**, with its
+ * floor below — the same instruction `STOCK_ASSET_RELS` above already carries.
+ * The parse is per file and the floor is per file because a union bound cannot
+ * see which source supplied it: a mistyped path leaves the other file's 396
+ * codes clearing any floor set before the split.
+ */
+const POINT_KEY_SOURCE_RELS = [
+  "packages/shared/src/constants.ts",
+  "packages/shared/src/facility-point-keys.ts",
+] as const;
+
+/**
+ * The minimum number of codes each source must yield, per file and never as
+ * one total. Both are actuals after `E5.3` PR 1 — `constants.ts` 396,
+ * `facility-point-keys.ts` 104.
+ */
+const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
+  "packages/shared/src/constants.ts": 396,
+  "packages/shared/src/facility-point-keys.ts": 104,
+};
+
+/** The sources as one list, for an assertion message. */
+const POINT_KEY_SOURCE_LABEL = POINT_KEY_SOURCE_RELS.join(" + ");
 
 /**
  * Every code the point-key catalog can seed — the union of the `*_POINT_KEYS`
@@ -199,7 +263,16 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     ...scanCatalog(source),
     ...scanKpiPointKeys(source),
   ]);
-  const vocabulary = pointKeyVocabulary(read(CONSTANTS_REL));
+  // **Parsed per source file, then unioned** — never over a concatenation.
+  // The per-file sets are what the floors in the anti-vacuity block read, so a
+  // source that yields nothing names itself instead of hiding behind the other
+  // one's codes.
+  const vocabularyBySource = new Map<string, ReadonlySet<string>>(
+    POINT_KEY_SOURCE_RELS.map((rel) => [rel, pointKeyVocabulary(read(rel))]),
+  );
+  const vocabulary = new Set(
+    [...vocabularyBySource.values()].flatMap((codes) => [...codes]),
+  );
 
   it("every file in STOCK_ASSET_RELS exists and is non-empty", () => {
     for (const rel of STOCK_ASSET_RELS) {
@@ -303,7 +376,19 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // either, and `mechanical.ts` records why that is structural rather than a
     // deferral of effort. A count below this is a dropped or misspelled row and
     // not slack.
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(584);
+    //
+    // **744 since `E5.3` plan Task 10 — MEASURED off the built files with this
+    // file's own two scanners after the BAS gateway landed, never copied from
+    // the plan**: 584 + 114 declared facility/environment point rows (15 + 24 +
+    // 17 + 11 + 17 + 17 + 13, the seven PR 1 entries in document order) + 46
+    // alarm references (4 + 11 + 7 + 4 + 7 + 6 + 7). Equal to plan §4.6's
+    // prediction, which is the check: §4.6 says to read this number off the
+    // files and treat any other value as a dropped or misspelled row rather
+    // than as slack, and it agreed. The KPI member count stays 12 for the
+    // FOURTH pack running — ADR 0054 decision 6 authors no `content.kpis`
+    // either, and `facility.ts` records why that is structural. PR 2 moves this
+    // to 897 with the lift and the escalator.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(744);
     // 168 distinct, so a copy-pasted repetition cannot satisfy the bound above
     // alone: 33 feeder + 30 transformer + 38 DG + 29 UPS (battery_v and
     // ambient_temp_c repeat) + 25 PV (ambient_temp_c) + 13 APFC (thd_v_pct,
@@ -337,7 +422,34 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // the overlap arithmetic held as well as the transcription: the length
     // bound above says no row was dropped, and this one says no key was
     // double-counted or quietly duplicated.
-    expect(new Set(pointKeys).size, "fewer distinct keys than the eighteen classes declare").toBeGreaterThanOrEqual(382);
+    //
+    // **490 since `E5.3` plan Task 10**, measured the same way and in the same
+    // commit as the length bound above: 382 + the facility pack's 108 distinct
+    // keys — its 104 VOCABULARY codes (100 new table codes plus the 4
+    // promotions, which are MEMBERS of the two arrays and not a separate
+    // addend) plus the 4 REUSED codes its entries reference and never
+    // redeclare (`smoke_state`, `leak_state`, `temperature_c`,
+    // `humidity_pct`), with
+    // **nothing subtracted**, because not one of the 108 is named by an
+    // electrical, water or mechanical module. That zero overlap is the pack's
+    // own claim: a building's lighting, fire, access, occupancy, parking, air
+    // quality and gateway rows share no spelling with a plant's, and the
+    // near-misses that look like a shared code are deliberately not one
+    // (`zone_kw` against `kw`, `burn_hours_h` against `run_hours_h`,
+    // `door_open_state` against `door_state`, `no2_ppb` against `no2_ppm`) —
+    // `packages/shared/src/facility-point-keys.ts` lists them all with the
+    // reason each was kept as spelled. 744 references over 490 distinct keys is
+    // not an error either: 46 of the references are alarm bindings onto rows
+    // their own entry already declares, and the pack's 114 declared rows are
+    // 108 distinct codes because **six are declared on two entries each** —
+    // `occupancy_pct` (one code, two formulas, the `recovery_pct` shape),
+    // `co_ppm` (the dual-tier row, core on the parking level and extended on
+    // the air quality node), `sensor_battery_pct`, `entry_count`, `exit_count`
+    // and `occupancy_state`, every one of them a code the tag list itself
+    // repeats between sections. Equal to plan
+    // §4.6's prediction, so the overlap arithmetic held as well as the
+    // transcription.
+    expect(new Set(pointKeys).size, "fewer distinct keys than the twenty-five classes declare").toBeGreaterThanOrEqual(490);
     // 396 = the 289 E5.1 left (F2.11's 139 ELECTRICAL_CLASS_POINT_KEYS plus
     // F2.12's six promotions, plus the other arrays, plus E5.1's 98-code
     // WATER_CLASS_POINT_KEYS) + E5.2 pass A's 107-code
@@ -348,7 +460,36 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // it. Leaving it at 289 would have stayed green with all 107 new codes
     // parsed as nothing at all, which is the silent failure this file exists
     // to end.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(396);
+    //
+    // **500 since `E5.3` PR 1** — 396 + the facility pack's 104
+    // (`docs/plans/e5.3-facility-domain-pack.md` §4.4/§4.6), and already at
+    // its final value for PR 1 for the same reason as `E5.2`: pass A1 lands
+    // every facility and environment code, so nothing the seven entry commits
+    // author can move it.
+    //
+    // **Per source FIRST.** The union cannot say which file supplied it, so a
+    // mistyped second path would leave `constants.ts`'s 396 clearing a union
+    // floor of 396 with the whole facility pack parsed as nothing — the exact
+    // shape of blindness this block exists to catch, arriving in the commit
+    // that made two sources possible.
+    for (const rel of POINT_KEY_SOURCE_RELS) {
+      // The floor must be DECLARED, not defaulted: a third source added
+      // without an entry would fall back to one code and pass for free.
+      const floor = POINT_KEY_SOURCE_FLOOR[rel];
+      expect(
+        floor,
+        `${rel} has no POINT_KEY_SOURCE_FLOOR entry, so its anti-vacuity floor is ` +
+          "whatever the fallback happens to be. Declare the number of codes that " +
+          "file holds.",
+      ).toBeGreaterThan(0);
+      expect(
+        vocabularyBySource.get(rel)?.size ?? 0,
+        `${rel} yielded fewer point-key codes than it declares — the scan of that ` +
+          "file is blind, and the check below would pass on the other source's codes " +
+          "alone. Fix the path or the array declaration; do not lower this floor.",
+      ).toBeGreaterThanOrEqual(floor ?? 1);
+    }
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(500);
   });
 
   it("every catalog pointKey is a code a *_POINT_KEYS array holds", () => {
@@ -359,7 +500,7 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
         "refuses a template_points row whose key the platform lacks, and assertPointKeysActive " +
         "refuses the import before the insert — this fails it before either, at build time. Promote " +
         "the key into the pack's *_POINT_KEYS array first (ADR 0051 Amendment 6's shape), or spell " +
-        `it the way ${CONSTANTS_REL} spells it.`,
+        `it the way ${POINT_KEY_SOURCE_LABEL} spells it.`,
     ).toEqual([]);
   });
 });

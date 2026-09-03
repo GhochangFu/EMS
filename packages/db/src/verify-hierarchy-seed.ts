@@ -69,19 +69,20 @@ export async function verifyHierarchySeed(
     throw new Error("verifyHierarchySeed: no results");
   }
   expect("organizations", g.orgs, 2);
-  // `E5.2` — six: five from migration `0029` plus the ones
-  // `asset-domains-seed.ts` writes (`mechanical`, ADR 0053 decision 2), the
-  // first domain a pack adds through the seed path rather than a migration
-  // (ADR 0031 Amendment 1 A1.1). A fixed seed cardinality, not a lifetime
-  // counter — and it counts every row, not the active ones, because a global
-  // administrator's retirement (`active = false`) must survive `compose up`,
-  // which runs this check on every boot; the seed's `DO NOTHING` never
-  // reactivates a retired row. The number is DERIVED from the seed's own
-  // list rather than written here, because this line is a boot gate: the
-  // compose `migrate` service runs `db:seed`, `api` waits on it, and a
-  // disagreement between the two would keep the API from starting (the
-  // `E5.2` migration review's one Medium). When `E5.3` appends `facility`
-  // to `PACK_ASSET_DOMAINS`, this expectation moves to 7 by itself.
+  // `E5.2`/`E5.3` — seven: five from migration `0029` plus the ones
+  // `asset-domains-seed.ts` writes (`mechanical`, ADR 0053 decision 2;
+  // `facility`, ADR 0054 decision 2), added through the seed path rather
+  // than a migration (ADR 0031 Amendment 1 A1.1). A fixed seed cardinality,
+  // not a lifetime counter — and it counts every row, not the active ones,
+  // because a global administrator's retirement (`active = false`) must
+  // survive `compose up`, which runs this check on every boot; the seed's
+  // `DO NOTHING` never reactivates a retired row. The number is DERIVED
+  // from the seed's own list rather than written here, because this line is
+  // a boot gate: the compose `migrate` service runs `db:seed`, `api` waits
+  // on it, and a disagreement between the two would keep the API from
+  // starting (the `E5.2` migration review's one Medium). `E5.3` appended
+  // `facility` to `PACK_ASSET_DOMAINS`, and this expectation moved to 7 by
+  // itself.
   expect("asset domains", g.asset_domains, MIGRATION_0029_ASSET_DOMAINS + PACK_ASSET_DOMAINS.length);
 
   // ── Pass 2: ESKOM ─────────────────────────────────────────────────────────

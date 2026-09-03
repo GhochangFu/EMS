@@ -41,6 +41,16 @@ import { TELEMETRY_POINT_REF_SEP } from "./constants";
 /** Point-key catalogues and the `pointRef` separator — the non-contract half. */
 export * from "./constants";
 
+/**
+ * `E5.3`'s facility / smart-building point-key arrays. A SECOND file rather
+ * than an append to `./constants`, which is 927 lines against AGENTS.md §4.5's
+ * whole-file 1000-line cap — plan `docs/plans/e5.3-facility-domain-pack.md`
+ * §4.5 and §12 ruling 1, a correction to ADR 0054 decision 3. The three guards
+ * that parse the arrays as text read a two-file list with a per-file floor, so
+ * the split is visible to them rather than silent.
+ */
+export * from "./facility-point-keys";
+
 /** The schemas themselves. See the note above on why they are re-exported. */
 export * from "./contracts";
 

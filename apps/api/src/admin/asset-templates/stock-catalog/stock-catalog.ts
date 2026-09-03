@@ -1,4 +1,5 @@
 import { ELECTRICAL_STOCK_ASSET_TEMPLATES } from "./electrical";
+import { FACILITY_STOCK_ASSET_TEMPLATES } from "./facility";
 import { MECHANICAL_STOCK_ASSET_TEMPLATES } from "./mechanical";
 import type { StockAssetTemplateEntry } from "./types";
 import { WATER_STOCK_ASSET_TEMPLATES } from "./water";
@@ -77,7 +78,30 @@ import { WATER_STOCK_ASSET_TEMPLATES } from "./water";
  *    `PACK_SOURCE_DOC` in `stock-catalog.spec.ts` declares two prefixes
  *    (`hvac`, `mechanical`) against the same file. They share `point-fields.ts`
  *    with the other two packs, which is not edited.
- *  - `facility.ts` — `E5.3`.
+ *  - `facility.ts` — the pack index only, since `E5.3` (plan Task 3). The nine
+ *    facility/smart-building and vertical-transport classes are their own
+ *    modules — in PR 1 `facility-lighting-zone.ts` (§1),
+ *    `facility-fire-panel.ts` (§2), `facility-access-door.ts` (§3),
+ *    `facility-occupancy-zone.ts` (§4), `facility-parking-level.ts` (§5),
+ *    `environment-iaq-node.ts` (§6) and `facility-bas-gateway.ts` (§7); in PR 2
+ *    `mechanical-lift.ts` (§8a) and `mechanical-escalator.ts` (§8b) — listed in
+ *    ADR 0054 decision 1's document order, for the same §4.5 reason as the other
+ *    three packs: 235 point rows, 78 alarms each carrying a populated
+ *    `philosophy`, 9 formulas and 33 maintenance plans project far past the
+ *    1000-line cap AGENTS.md §4.5 reads whole-file. (78 authored alarms is not
+ *    the document's 77 alarm BULLETS: the lift splits one bullet into two rows
+ *    and the escalator splits two, while two bullets bind no declared row and
+ *    are dropped — see `facility.ts`.) **This is the first pack to
+ *    span THREE domains, and that is deliberate**: ADR 0054 decision 2 files the
+ *    IAQ node under `environment` — the domain whose vocabulary already holds
+ *    its temperature and humidity keys — and the lift and the escalator under
+ *    `mechanical`, while the module name follows the entry code the way
+ *    `water-stp.ts` does. A pack is one source document and one index; the code
+ *    prefix is the DOMAIN. So `PACK_SOURCE_DOC` in `stock-catalog.spec.ts`
+ *    declares two prefixes (`facility`, `environment`) against this file's
+ *    document — and the third, `mechanical`, is already `E5.2`'s, which is why
+ *    PR 2 adds a per-ENTRY override rather than a third prefix. They share
+ *    `point-fields.ts` with the other three packs, which is not edited.
  *
  * **A NEW PACK FILE — OR, INSIDE THE ELECTRICAL PACK, A NEW CLASS MODULE —
  * MUST JOIN `STOCK_ASSET_RELS` IN
@@ -115,9 +139,16 @@ import { WATER_STOCK_ASSET_TEMPLATES } from "./water";
 export const STOCK_ASSET_TEMPLATE_CATALOG: readonly StockAssetTemplateEntry[] = [
   ...ELECTRICAL_STOCK_ASSET_TEMPLATES,
   ...WATER_STOCK_ASSET_TEMPLATES,
-  // Empty until `E5.2` plan Task 6 authors the pump — the pack is declared one
-  // commit before its first entry, and `mechanical.ts` says why it ships empty
-  // rather than as six skeletons. `stock-catalog-deferrals.spec.ts` holds the
-  // resulting catalog to the head of `STOCK_ENTRY_CODES` until all six land.
+  // All six landed at `E5.2` Tasks 6-11. This spread was empty for one commit
+  // before the pump, and `mechanical.ts` records why it shipped empty rather
+  // than as six skeletons.
   ...MECHANICAL_STOCK_ASSET_TEMPLATES,
+  // Empty for one commit at `E5.3` Task 3 — the pack is declared one commit
+  // before its first entry, and `facility.ts` says why it shipped empty rather
+  // than as seven skeletons. **All seven landed at Tasks 4-10**, so
+  // `stock-catalog-deferrals.spec.ts` compares the catalog against the whole of
+  // `STOCK_ENTRY_CODES` again: the HEAD comparison and its anti-vacuity floor
+  // were deleted together with the BAS gateway, which is what staging a claim
+  // means. PR 2 stages it once more for the lift and the escalator.
+  ...FACILITY_STOCK_ASSET_TEMPLATES,
 ];

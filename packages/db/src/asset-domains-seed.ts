@@ -12,9 +12,11 @@ import type pg from "pg";
  * cooling tower under `water` and added none. ADR 0053 decision 2 rules the
  * sixth, **`mechanical` / `Mechanical` / `sort_order 60`**, for the pump set,
  * the VFD, the air compressor and the boiler (the chiller and the AHU are
- * `hvac`). It is the first domain added since `0029`, and this is the module
- * `E5.3` copies for `facility` — one more entry in {@link PACK_ASSET_DOMAINS},
- * under its own ADR, and `verifyHierarchySeed`'s Pass 1 count moves with it.
+ * `hvac`). ADR 0054 decision 2 rules the seventh, **`facility` / `Facility` /
+ * `sort_order 70`**, for the lighting zone, the fire panel, the access door,
+ * the occupancy zone, the parking level, the IAQ node and the BAS gateway —
+ * one more entry in {@link PACK_ASSET_DOMAINS}, under its own ADR, and
+ * `verifyHierarchySeed`'s Pass 1 count moved with it, with no edit there.
  *
  * **Why no tenant context, and why no grant** (plan §4.3, measured on the
  * running stack rather than reasoned): `bms_owner` owns the table since `0041`
@@ -55,11 +57,15 @@ export type AssetDomainSeed = {
 };
 
 /**
- * The rows. Exactly one today, and a second is a second ADR — the spec asserts
- * the literal, so an addition is a deliberate edit to both.
+ * The rows. Two today — `mechanical` (ADR 0053 decision 2) and `facility`
+ * (ADR 0054 decision 2) — and a third is a third ADR: the spec asserts the
+ * literal, so an addition is a deliberate edit to both. `verifyHierarchySeed`'s
+ * Pass 1 count is derived from this array's length, so `facility` moved it
+ * from six to seven with no edit there — only its comment changed.
  */
 export const PACK_ASSET_DOMAINS: readonly AssetDomainSeed[] = [
   { code: "mechanical", label: "Mechanical", sortOrder: 60 },
+  { code: "facility", label: "Facility", sortOrder: 70 },
 ];
 
 /**

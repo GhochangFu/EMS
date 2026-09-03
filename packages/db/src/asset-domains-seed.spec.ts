@@ -8,14 +8,14 @@ import { ASSET_DOMAIN_SQL, PACK_ASSET_DOMAINS } from "./asset-domains-seed";
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
 
 /**
- * `E5.2` — the claims on the first `bms.asset_domains` row a pack adds through
- * the seed rather than a migration (ADR 0031 Amendment 1 A1.1, ADR 0053
- * decision 2). No database: the SQL and the seed order are asserted as text,
- * the `ruled-point-catalog-seed.spec.ts` shape. The row's *existence* on a
- * seeded database is `verifyHierarchySeed`'s Pass 1 (six domains), and the
- * fact that an import depends on it is the F2.13 integration suite's
- * unknown-domain refusal, whose *Expected one of* list must end in
- * `mechanical`.
+ * `E5.2`/`E5.3` — the claims on the `bms.asset_domains` rows a pack adds
+ * through the seed rather than a migration (ADR 0031 Amendment 1 A1.1, ADR
+ * 0053 decision 2, ADR 0054 decision 2). No database: the SQL and the seed
+ * order are asserted as text, the `ruled-point-catalog-seed.spec.ts` shape.
+ * The rows' *existence* on a seeded database is `verifyHierarchySeed`'s
+ * Pass 1 (seven domains), and the fact that an import depends on them is the
+ * F2.13 integration suite's unknown-domain refusal, whose *Expected one of*
+ * list must end in `facility`.
  */
 
 /**
@@ -94,12 +94,15 @@ export function assertReSeedingIsIdempotentAndNeverOverwrites(): void {
 }
 
 /**
- * Exactly the row ADR 0053 decision 2 rules — `mechanical` / `Mechanical` /
- * `sort_order 60`, last after `water` (50). A second entry is a second ADR, and
- * `E5.3`'s `facility` lands by amending this literal under its own.
+ * Exactly the two rows ADR 0053 decision 2 and ADR 0054 decision 2 rule —
+ * `mechanical` / `Mechanical` / `sort_order 60`, last after `water` (50), then
+ * `facility` / `Facility` / `sort_order 70`. A third entry is a third ADR.
  */
 export function assertThePackDeclaresExactlyTheRuledRow(): void {
-  expect(PACK_ASSET_DOMAINS).toEqual([{ code: "mechanical", label: "Mechanical", sortOrder: 60 }]);
+  expect(PACK_ASSET_DOMAINS).toEqual([
+    { code: "mechanical", label: "Mechanical", sortOrder: 60 },
+    { code: "facility", label: "Facility", sortOrder: 70 },
+  ]);
 }
 
 /**
