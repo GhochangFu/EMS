@@ -252,18 +252,18 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // "battery replace / self-test failed" bullet splits into two rows binding
     // two different declared points. Plan §8's own figure of 248 reconciles.
     //
-    // **Deliberately still 248 after `E5.1` pass B, and staged the way `F2.12`
-    // staged its own.** The six water modules are skeletons carrying one point
-    // each, so this scan finds 254 today. The pass-C TARGET is **391** — 248 +
-    // 103 declared water points + 40 water alarm references; the KPI-member
-    // count stays 12, because the water pack authors no `content.kpis` at all
-    // (water.ts records why that is structural rather than a deferral of
-    // effort). Moving the bound now would leave every commit red until Task 9,
-    // and moving it to 254 would record a skeleton as though it were content.
-    // **Task 9 re-measures it off the built files and moves it to the actual;
-    // if the scan returns other than 391, that is a dropped or misspelled row
-    // and a finding for the commit message, not slack to round away.**
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(248);
+    // **391 since `E5.1` pass C, and staged the way `F2.12` staged its own.**
+    // The bound stayed at 248 through passes A and B, because the six water
+    // modules were skeletons carrying one point each and moving it to 254 would
+    // have recorded a skeleton as though it were content. It moves here, in the
+    // commit that authors the last of the six, **re-measured off the built
+    // files rather than copied from the plan**: 248 + 143 water references =
+    // **391**, where the 143 is 103 declared water point rows + 40 water alarm
+    // `pointKey` references. The KPI-member count stays 12, because the water
+    // pack authors no `content.kpis` at all — `water.ts` records why that is
+    // structural rather than a deferral of effort. The measurement agrees with
+    // plan §4.6's prediction exactly, so no row was dropped or misspelled.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(391);
     // 168 distinct, so a copy-pasted repetition cannot satisfy the bound above
     // alone: 33 feeder + 30 transformer + 38 DG + 29 UPS (battery_v and
     // ambient_temp_c repeat) + 25 PV (ambient_temp_c) + 13 APFC (thd_v_pct,
@@ -272,15 +272,19 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // row, not slack, because checkEntry already forces every alarm and KPI
     // reference to be a key its own entry declares.
     //
-    // Staged with the length bound above and for the same reason. The six
-    // water skeletons declare 6 keys, of which 5 are distinct
-    // (`influent_flow_klh` is the STP's and the ETP's first row), so the scan
-    // finds 173 today. The pass-C TARGET is **266** — 168 + the water pack's 98
-    // distinct codes, zero of which overlap the electrical vocabulary. **Task 9
-    // moves it to the measured actual.** 103 water point rows over 98 distinct
-    // keys is not an error: `recovery_pct` is one code authored on two plants,
-    // and four codes recur between §1/§5 and §5/§6 of the tag list.
-    expect(new Set(pointKeys).size, "fewer distinct keys than the six classes declare").toBeGreaterThanOrEqual(168);
+    // Staged with the length bound above and for the same reason, and moved in
+    // the same commit. **266 = 168 + the water pack's 98 distinct codes**, zero
+    // of which overlap the electrical vocabulary — measured off the built files
+    // at `E5.1` Task 9, and equal to plan §4.6's prediction.
+    //
+    // **143 water references over 98 distinct keys is not an error**, and the
+    // gap is three different legitimate things: an alarm binds a key its own
+    // entry already declares (40 of the 143 are alarm references);
+    // `recovery_pct` is one code authored on two plants (`water-wtp` over its
+    // intake and product streams, `water-ro` over feed and permeate — one
+    // MEANING, two formulas, ADR 0051 Amendment 6 decision 5); and four codes
+    // recur between §1/§5 and §5/§6 of the tag list itself.
+    expect(new Set(pointKeys).size, "fewer distinct keys than the six classes declare").toBeGreaterThanOrEqual(266);
     // 289 = the 191 F2.12 left (F2.11's 139 ELECTRICAL_CLASS_POINT_KEYS plus
     // F2.12 pass A's six promotions, plus the other arrays) + E5.1 pass A's
     // 98-code WATER_CLASS_POINT_KEYS, disjoint by construction — the same

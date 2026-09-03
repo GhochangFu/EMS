@@ -234,17 +234,29 @@ import { WATER_WTP } from "./water-wtp";
  *    (11 + 5 + 2 + 2 derived), 6 alarms, 4 maintenance plans, no KPI.
  *  - `water-ro` — §2. **Authored** (plan Task 8): 18 points
  *    (10 + 5 + 1 + 2 derived), 6 alarms, 4 maintenance plans, no KPI.
- *  - `water-softener` — §3, the smallest. Target 9 points (4 + 3 + 2 + 0),
- *    4 alarms, 3 maintenance plans, no KPI.
+ *  - `water-softener` — §3, the smallest. **Authored** (plan Task 9): 9 points
+ *    (4 + 3 + 2 + 0), 4 alarms, 3 maintenance plans, no KPI.
  *
- * **`E5.1` pass B shipped all six as SKELETONS** — one core point each, no
- * alarms, no maintenance — so that `checkEntry`, the per-entry deferral loop
- * and the vocabulary guard ran over a water entry from that commit on. **Pass C
- * (plan Tasks 4-9) authors them one plant per commit, in the index order
- * below**, and each bullet above says whether its entry is authored or still a
- * skeleton. A bullet marked **Authored** states what its module carries; a
- * bullet marked *Target* states what pass C will make it carry, and that
- * module's own docblock names the single placeholder point it ships until then.
+ * **ALL SIX ARE AUTHORED.** `E5.1` pass B shipped them as skeletons — one core
+ * point each, no alarms, no maintenance — so that `checkEntry`, the per-entry
+ * deferral loop and the vocabulary guard ran over a water entry from that
+ * commit on; **pass C (plan Tasks 4-9) replaced every one of them**, one plant
+ * per commit, in the index order below. **No placeholder point remains anywhere
+ * in the pack.** The totals: **103 declared point rows over 98 distinct codes**
+ * (`recovery_pct` is authored twice and four codes recur inside the tag list
+ * itself), **8 derived points over 7 promoted codes**, **40 alarms, every one
+ * pair-absent and every one carrying a populated `philosophy`**, **23
+ * maintenance plans of which 3 are `safetyCritical`**, and **no `content.kpis`
+ * on any entry**. `tests/f2.13`'s scan reads 391 references over 266 distinct
+ * keys across the pack and the electrical one together.
+ *
+ * **A LABEL DIFFERENCE BETWEEN TWO ENTRIES IS THE DOCUMENT'S, NOT A DEFECT.**
+ * `effluent_cod_mgl` and `effluent_bod_mgl` are labelled *"Effluent COD"* and
+ * *"Effluent BOD"* on the STP and *"COD"* and *"BOD"* on the ETP, because §5
+ * and §6 spell their Description columns that way. Each entry carries its own
+ * section's wording, labels are display-only and asserted by nothing, and
+ * harmonising them here would silently edit the handout a client is holding.
+ * **A v2 redline candidate for the document**, recorded rather than fixed.
  */
 export const WATER_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0040 ruling 2's authoring order, which is the order GET /stock lists

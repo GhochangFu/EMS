@@ -229,10 +229,134 @@ function checkRo(): void {
   assertProvenance(RO_CODE, entry, "§2");
 }
 
+// ===========================================================================
+// §3 — `water-softener`
+// ===========================================================================
+
+const SOFTENER_CODE = "water-softener";
+
+/**
+ * §3's 9 table rows in the document's own order — `[pointKey, tier, unit]`. No
+ * derived code is authored: all three of §3's are deferred.
+ *
+ * The smallest entry in the pack, and the cheap opposite end that proves the
+ * mechanism is not tuned to one shape.
+ */
+const SOFTENER_POINTS: readonly PointRow[] = [
+  ["inlet_flow_klh", "core", "KL/hr"],
+  ["outlet_flow_totalizer_kl", "core", "KL"],
+  ["outlet_hardness_mgl", "extended", "mg/L"],
+  ["inlet_hardness_mgl", "manual", "mg/L"],
+  ["vessel_dp_bar", "extended", "bar"],
+  ["regen_status", "core", null],
+  ["brine_tank_level_pct", "core", "%"],
+  ["salt_consumption_kg", "manual", "kg"],
+  ["outlet_conductivity_uscm", "extended", "µS/cm"],
+];
+
+/** §3's four alarm bullets, one row each — nothing splits on this entry. */
+const SOFTENER_ALARMS: readonly AlarmRow[] = [
+  ["outlet_hardness_high", "outlet_hardness_mgl", "critical", "operations"],
+  ["brine_level_low", "brine_tank_level_pct", "warning", "operations"],
+  ["vessel_dp_high", "vessel_dp_bar", "warning", "operations"],
+  ["throughput_anomaly", "outlet_flow_totalizer_kl", "info", "operations"],
+];
+
+/**
+ * `water-softener` against `docs/e5.1-derived-taglist-v1.md` §3 (plan §5.6) —
+ * the last entry of the pack, and the one whose deferral ledger is worth
+ * reading: `salt_efficiency_kg_kl`'s formula PARSES and its point could never
+ * fire.
+ */
+function checkSoftener(): void {
+  const entry = requireStockEntry(SOFTENER_CODE);
+  assertEntryIdentity(SOFTENER_CODE, entry, "softener");
+
+  // ---- 9 points, 4 core + 3 extended + 2 manual + 0 derived ---------------
+
+  assert(
+    tierCount(entry, "core") === 4 &&
+      tierCount(entry, "extended") === 3 &&
+      tierCount(entry, "manual") === 2 &&
+      tierCount(entry, "derived") === 0,
+    `§3 marks 4 rows C, 3 X and 2 M, and all three of its derived codes are deferred — 4/3/2/0. ` +
+      `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
+  );
+  assertPointTable(SOFTENER_CODE, "§3", entry, SOFTENER_POINTS);
+  assertNoKpis(SOFTENER_CODE, entry, "§3");
+  assertDeferralsAbsent(SOFTENER_CODE, entry);
+
+  // ---- the deferral whose reason is the data model, not the grammar -------
+
+  const keys = new Set(entry.points.map((point) => point.pointKey));
+  assert(
+    keys.has("salt_consumption_kg") &&
+      keys.has("outlet_flow_totalizer_kl") &&
+      !keys.has("salt_efficiency_kg_kl"),
+    `${SOFTENER_CODE} must declare both of salt_efficiency_kg_kl's inputs and NOT author the code ` +
+      "itself. This is the one deferral in the whole catalog whose reason is the DATA MODEL " +
+      "rather than the grammar: {salt_consumption_kg} / {outlet_flow_totalizer_kl} is valid " +
+      "bms-calc-v1 over two declared measured points, and the point could never fire, because " +
+      "salt_consumption_kg is an M row whose sourceDataKeyPattern is null forever — planAsset " +
+      "puts it in skippedPoints, so it never gets an asset_points row, never gets a reading, and " +
+      "the formula never has an input. A permanent, 0058-foreign-keyed point key for a formula " +
+      "that cannot run is the decorative vocabulary ADR 0051 fact 4 exists to end. It becomes " +
+      "authorable the day F1.8 gives a manual row somewhere to write to.",
+  );
+  assert(
+    !keys.has("throughput_since_regen_kl"),
+    `${SOFTENER_CODE} declares throughput_since_regen_kl, and it must not: §3 ALREADY carries ` +
+      'that quantity as the MEASURED row outlet_flow_totalizer_kl — "Treated volume since ' +
+      'regeneration". A derived restatement of a declared point adds nothing and would be a ' +
+      "second code for one meaning, which ADR 0051 Amendment 6 decision 5 refuses.",
+  );
+
+  // ---- 4 alarms -----------------------------------------------------------
+
+  const alarms = alarmsOf(entry);
+  assertAlarmTable(SOFTENER_CODE, "§3", alarms, SOFTENER_ALARMS);
+  assertPhilosophyRows(SOFTENER_CODE, alarms);
+  assertSkillAssignment(
+    SOFTENER_CODE,
+    alarms,
+    { brine_level_low: "civil", vessel_dp_high: "mechanical" },
+    ["outlet_hardness_high", "throughput_anomaly"],
+  );
+
+  const throughput = alarms.find((alarm) => alarm.code === "throughput_anomaly");
+  assert(
+    throughput?.pointKey === "outlet_flow_totalizer_kl",
+    `${SOFTENER_CODE}'s throughput_anomaly alarm must bind outlet_flow_totalizer_kl. The ` +
+      "comparison it implies is against the vessel's RATED exchange capacity, which is an asset " +
+      "attribute — so the comparison is per site and set at commissioning, which is exactly why " +
+      `this row carries a parameter and no number. Got "${String(throughput?.pointKey)}".`,
+  );
+
+  // ---- 3 maintenance plans, none of them safety-critical ------------------
+
+  const plans = maintenanceOf(entry);
+  assert(
+    plans.length === 3,
+    `plan §5.7 authors 3 softener maintenance plans — the pack's only entry with three; the ` +
+      `entry carries ${plans.length}`,
+  );
+  const safetyCritical = plans.filter((plan) => plan.safetyCritical === true);
+  assert(
+    safetyCritical.length === 0,
+    `no softener plan is safetyCritical — the pack's three are the ETP guard pond, the cooling ` +
+      `tower Legionella program and the WTP chlorine dosing service (plan §5.7). Got ` +
+      `${safetyCritical.length}: ${safetyCritical.map((plan) => plan.title).join("; ")}`,
+  );
+  assertMaintenanceBounds(SOFTENER_CODE, entry);
+  assertProvenance(SOFTENER_CODE, entry, "§3");
+}
+
 /**
  * Every per-class block in this file. Called by `water-classes-3.test.ts`, its
  * name-sibling wrapper.
  */
 export function runWaterClassEntryTests3(): void {
   checkRo();
+  checkSoftener();
 }
