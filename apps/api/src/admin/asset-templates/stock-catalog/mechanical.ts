@@ -1,5 +1,6 @@
 import { HVAC_AHU } from "./hvac-ahu";
 import { HVAC_CHILLER } from "./hvac-chiller";
+import { MECHANICAL_BOILER } from "./mechanical-boiler";
 import { MECHANICAL_COMPRESSOR } from "./mechanical-compressor";
 import { MECHANICAL_PUMP } from "./mechanical-pump";
 import { MECHANICAL_VFD } from "./mechanical-vfd";
@@ -90,8 +91,8 @@ import type { StockAssetTemplateEntry } from "./types";
  *    and is corrected at closure.
  *  - **128 distinct keys the pack names = 94 new + 21 reused + 13 promoted**, and
  *    the six entries together declare **141 point rows** (128 table rows + 13
- *    derived) once all six land. Those are targets until Task 11 re-measures them
- *    off the built files.
+ *    derived). Both figures were targets until Task 11; they are now measured off
+ *    the built files and agree exactly — see the foot of this docblock.
  *
  * **TIERS → `meta.tier`** (ADR 0053 decision 4, ADR 0040 decision 3): `C` is
  * `core` / required, `X` is `extended` / optional, `M` is `manual` / optional and
@@ -349,14 +350,32 @@ import type { StockAssetTemplateEntry } from "./types";
  *    anywhere to file an alarm under `comfort`** (three of the eight), and the
  *    entry that binds a fan motor current because §6 carries **no fan run
  *    status** — recorded as a v2 redline candidate rather than invented.
+ *  - **`mechanical-boiler` v1** (2026-09-03, `E5.2` Task 11) — §7, the packaged
+ *    fire-tube steam boiler under the Indian Boiler Regulations, and **the entry
+ *    that closes the pack**. 25 points (7 core + 14 extended + 2 manual + 2
+ *    derived), 11 alarms from §7's nine bullets (drum level, steam pressure and
+ *    flue oxygen each split at opposite bands), 5 maintenance plans, **one
+ *    `safetyCritical`** — the low-water cut-off and safety-valve test, the third
+ *    and last of the three ADR 0053 decision 8 names, while the annual
+ *    inspection is `compliance` and not critical. Authors `steam_to_fuel_ratio`
+ *    and `excess_air_pct`; defers `efficiency_indirect_pct`, `blowdown_pct` and
+ *    `specific_fuel_kg_ton_steam`. It carries **the pack's one dual-tier row**
+ *    (`feedwater_tds_ppm`, `extended`), **the pack's only four rows with no
+ *    `philosophy.skill`**, and **four statutory rows that carry no number at
+ *    all** — the trip, the low drum level, the approach to safety-valve lift and
+ *    the low flue oxygen.
  *
- * The pack's targets, for the reader who wants to know where this is going and
- * as the numbers Task 11 re-measures rather than assumes: **141 declared point
- * rows over 128 distinct codes, 13 derived points over 13 promoted codes, 52
- * alarms all pair-absent and all carrying a populated `philosophy`, 24
- * maintenance plans of which 3 are `safetyCritical`, and no `content.kpis` on any
- * entry.** They are predictions of the plan until the six modules exist; nothing
- * in this file asserts them.
+ * **THE PACK, AS BUILT AND MEASURED at Task 11 rather than predicted:** the six
+ * entries declare **141 point rows over 128 distinct codes** (128 table rows plus
+ * the 13 derived), **13 derived points over 13 promoted codes** with no code
+ * authored twice, **52 alarms** all pair-absent and all carrying a populated
+ * `philosophy`, **24 maintenance plans of which 3 are `safetyCritical`**, and **no
+ * `content.kpis` on any entry**. The `tests/f2.13` scan re-measured off the built
+ * files agrees exactly with the plan's prediction — **584 references over 382
+ * distinct keys** (391 + 141 declared rows + 52 alarm references; 266 + 128
+ * distinct less the 12 an electrical or water module already names) — so no row
+ * was dropped or misspelled anywhere in the pack, and both bounds in that file
+ * now stand at the measured actuals.
  */
 export const MECHANICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0053 decision 1's document order — pump, VFD, compressor, chiller, AHU,
@@ -367,4 +386,5 @@ export const MECHANICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[
   MECHANICAL_COMPRESSOR,
   HVAC_CHILLER,
   HVAC_AHU,
+  MECHANICAL_BOILER,
 ];

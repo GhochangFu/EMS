@@ -105,6 +105,7 @@ const STOCK_ASSET_RELS = [
   `${STOCK_CATALOG_DIR}/mechanical-compressor.ts`,
   `${STOCK_CATALOG_DIR}/hvac-chiller.ts`,
   `${STOCK_CATALOG_DIR}/hvac-ahu.ts`,
+  `${STOCK_CATALOG_DIR}/mechanical-boiler.ts`,
 ] as const;
 
 /**
@@ -289,16 +290,20 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // **Staged a third time for `E5.2`, and deliberately NOT moved by the
     // commit that declared the mechanical pack** (plan Task 5). That commit
     // adds `mechanical.ts` to the list above and the file exports an empty
-    // array, so it contributes zero references; moving the bound now would
-    // record content that does not exist. **It moves at plan Task 11, with the
-    // boiler, re-measured off the built files: 584 = 391 + 141 declared
-    // mechanical/HVAC point rows + 52 alarm references** (pump 20/10, VFD
-    // 15/7, compressor 23/7, chiller 30/9, AHU 28/8, boiler 25/11). The KPI
-    // member count stays 12 for the third pack running — ADR 0053 decision 6
-    // authors no `content.kpis` either, and `mechanical.ts` records why that is
-    // structural. Anything other than 584 at Task 11 is a dropped or misspelled
-    // row and a finding for that commit message, not slack.
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(391);
+    // array, so it contributed zero references; moving the bound then would
+    // have recorded content that did not exist.
+    //
+    // **584 since plan Task 11 — MEASURED off the built files with this file's
+    // own two scanners, not copied from the plan**: 391 + 141 declared
+    // mechanical/HVAC point rows + 52 alarm references (pump 20/10, VFD 15/7,
+    // compressor 23/7, chiller 30/9, AHU 28/8, boiler 25/11). The measurement
+    // agrees with plan §4.6's prediction exactly, so no row was dropped or
+    // misspelled anywhere in the pack. The KPI member count stays 12 for the
+    // third pack running — ADR 0053 decision 6 authors no `content.kpis`
+    // either, and `mechanical.ts` records why that is structural rather than a
+    // deferral of effort. A count below this is a dropped or misspelled row and
+    // not slack.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(584);
     // 168 distinct, so a copy-pasted repetition cannot satisfy the bound above
     // alone: 33 feeder + 30 transformer + 38 DG + 29 UPS (battery_v and
     // ambient_temp_c repeat) + 25 PV (ambient_temp_c) + 13 APFC (thd_v_pct,
@@ -320,15 +325,19 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // MEANING, two formulas, ADR 0051 Amendment 6 decision 5); and four codes
     // recur between §1/§5 and §5/§6 of the tag list itself.
     //
-    // **382 at plan Task 11**, staged with the length bound above and moved in
-    // the same commit: 266 + the mechanical pack's 128 distinct keys (94 new
-    // table codes + 21 reused + 13 promoted derived codes) − **the 12 the
-    // electrical and water modules already name**, which are eleven of the
-    // twenty-one reused codes plus `fuel_level_pct`, the DG set's day-tank
-    // level that plan §12 ruling 1 reuses for the boiler rather than minting a
-    // second spelling. The nine reused `HVAC_POINT_KEYS` codes are named by no
-    // shipped module, which is why the subtraction is 12 and not 21.
-    expect(new Set(pointKeys).size, "fewer distinct keys than the six classes declare").toBeGreaterThanOrEqual(266);
+    // **382 since plan Task 11**, staged with the length bound above and moved
+    // in the same commit, and measured the same way: 266 + the mechanical
+    // pack's 128 distinct keys (94 new table codes + 21 reused + 13 promoted
+    // derived codes) − **the 12 the electrical and water modules already
+    // name**, which are eleven of the twenty-one reused codes plus
+    // `fuel_level_pct`, the DG set's day-tank level that plan §12 ruling 1
+    // reuses for the boiler rather than minting a second spelling. The nine
+    // reused `HVAC_POINT_KEYS` codes are named by no shipped module, which is
+    // why the subtraction is 12 and not 21. Equal to plan §4.6's prediction, so
+    // the overlap arithmetic held as well as the transcription: the length
+    // bound above says no row was dropped, and this one says no key was
+    // double-counted or quietly duplicated.
+    expect(new Set(pointKeys).size, "fewer distinct keys than the eighteen classes declare").toBeGreaterThanOrEqual(382);
     // 396 = the 289 E5.1 left (F2.11's 139 ELECTRICAL_CLASS_POINT_KEYS plus
     // F2.12's six promotions, plus the other arrays, plus E5.1's 98-code
     // WATER_CLASS_POINT_KEYS) + E5.2 pass A's 107-code

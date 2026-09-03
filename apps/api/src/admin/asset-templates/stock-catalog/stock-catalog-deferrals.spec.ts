@@ -49,10 +49,13 @@ import { assert, requireStockEntry } from "./stock-catalog.spec";
  * document's order, not the prefix's — do not "tidy" the two `hvac-` codes to
  * the end.
  *
- * **Six of the eighteen are not shipped yet, and that is the point of the
- * staged order claim below** (`E5.2` Task 5): this list names what the pack has
- * decided to author, one entry commit at a time, and the claim compares it
- * against the catalog prefix-first until Task 11 authors the boiler.
+ * **All eighteen are shipped since `E5.2` Task 11**, and the order claim below
+ * is therefore full equality: the catalog's codes must equal this list exactly,
+ * in this order. It was staged as a prefix comparison for the six commits pass
+ * C took to author the mechanical entries one at a time — the `F2.12` / `E5.1`
+ * bound-staging pattern applied to a list — and the boiler's commit deleted the
+ * slice and the anti-vacuity floor together, because full equality against an
+ * eighteen-element literal cannot go vacuous.
  */
 const STOCK_ENTRY_CODES = [
   "electrical-feeder",
@@ -315,36 +318,27 @@ export function runStockCatalogDeferralTests(): void {
   // failure message, which made it a list nothing held to the catalog: a pack
   // index appended in the wrong place, or an entry silently dropped from a
   // spread, would have passed every check in this directory.
-  // **STAGED, and only until `E5.2` Task 11.** `STOCK_ENTRY_CODES` names the
-  // eighteen entries the pack has DECIDED to author; the catalog ships them one
-  // entry commit at a time (Tasks 6-11, document order), so full equality would
-  // be red for six commits — which is a bound that teaches the next author to
-  // ignore a red test, the failure `F2.12` and `E5.1` both staged their way out
-  // of. The claim therefore holds the PREFIX: everything the catalog ships must
-  // equal the head of the list, in order. The moment the boiler lands, the
-  // slice and the floor below are deleted together and this becomes
-  // `codes.join(",") === STOCK_ENTRY_CODES.join(",")`.
+  //
+  // **FULL EQUALITY since `E5.2` Task 11**, which is where the staging ended.
+  // The claim compared the catalog against the HEAD of this list for the six
+  // commits pass C took to author the mechanical entries one at a time — full
+  // equality would have been red throughout, which is a bound that teaches the
+  // next author to ignore a red test. The boiler's commit deleted the slice and
+  // the `>= 12` anti-vacuity floor together: the floor existed because
+  // `slice(0, 0)` equals an empty catalog, so a pack index dropped from the
+  // spread would have passed the PREFIX claim while shipping nothing. Equality
+  // against an eighteen-element literal has no such hole — an empty catalog
+  // fails it by definition — so the floor is not owed and would only be a second
+  // number to keep true.
   const codes = STOCK_ASSET_TEMPLATE_CATALOG.map((entry) => entry.code);
-  // The floor is the anti-vacuity half, and it is not optional: `slice(0, 0)`
-  // equals an empty catalog, so a pack index dropped from the spread in
-  // `stock-catalog.ts` would pass the prefix claim while shipping nothing —
-  // the exact silent failure the order claim was written to end. Twelve is what
-  // `E5.1` left; it rises by one per entry commit and reaches eighteen.
   assert(
-    codes.length >= 12,
-    `the catalog ships ${codes.length} entries; E5.1 left twelve and E5.2 only adds to them. A ` +
-      "smaller catalog means a pack index is missing from the spread in stock-catalog.ts, and " +
-      "the prefix comparison below would go vacuously green on it.",
-  );
-  const expectedPrefix = STOCK_ENTRY_CODES.slice(0, codes.length);
-  assert(
-    codes.join(",") === expectedPrefix.join(","),
-    "the catalog's codes must equal the head of STOCK_ENTRY_CODES in order — the pack indexes " +
-      "are spread into stock-catalog.ts in the order ADR 0040 ruling 2 (and, from E5.2, ADR 0053 " +
-      "decision 1) sets, and that order reaches the client unchanged. Staged until E5.2 Task 11 " +
-      "ships the boiler, then full equality.\n  expected " +
-      `${expectedPrefix.join(", ")}\n  got      ${codes.join(", ")}` +
-      `\n  not yet shipped: ${STOCK_ENTRY_CODES.slice(codes.length).join(", ") || "(none — move this claim to full equality)"}`,
+    codes.join(",") === STOCK_ENTRY_CODES.join(","),
+    "the catalog's codes must equal STOCK_ENTRY_CODES exactly, in order — the pack indexes are " +
+      "spread into stock-catalog.ts in the order ADR 0040 ruling 2 (and, from E5.2, ADR 0053 " +
+      "decision 1) sets, and that order reaches the client unchanged: GET " +
+      "/admin/asset-templates/stock returns the array unsorted and the stock viewer renders it " +
+      "as it arrives, so the order IS what a global administrator reads.\n  expected " +
+      `${STOCK_ENTRY_CODES.join(", ")}\n  got      ${codes.join(", ")}`,
   );
 
   // ---- the deferred codes, per entry and never catalog-wide ---------------

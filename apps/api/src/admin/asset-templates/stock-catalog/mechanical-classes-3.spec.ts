@@ -7,6 +7,7 @@ import {
   assertEntryIdentity,
   assertMaintenanceBounds,
   assertNoKpis,
+  assertNoLimitNumbers,
   assertPhilosophyRows,
   assertPointTable,
   assertProvenance,
@@ -394,6 +395,391 @@ function checkAhu(): void {
   assertProvenance(AHU_CODE, entry, MECHANICAL_TAG_LIST, "§6");
 }
 
+// ===========================================================================
+// §7 — `mechanical-boiler`
+// ===========================================================================
+
+const BOILER_CODE = "mechanical-boiler";
+
+/**
+ * The `why` the boiler's four statutory rows pass to `assertNoLimitNumbers`.
+ *
+ * The helper is pack-neutral and takes the regime as an argument for exactly
+ * this reason: the water pack passes its CPCB Schedule VI discharge-consent
+ * sentence, and this pack passes the boiler's IBR one. The rule is the same and
+ * the regime is not, and a message naming the wrong regulator sends the reader
+ * to the wrong document.
+ */
+const IBR_REGIME =
+  "This is an Indian Boiler Regulations row: the low-water level, the safety-valve set pressure " +
+  "and the operating band are per boiler, fixed on its own certificate by its inspecting " +
+  "authority, and recorded on its log sheet (ADR 0053 decision 5, B7).";
+
+/**
+ * §7's 23 table rows in the document's own order (`sortOrder` 0-22), then the
+ * two authored derived codes at 23-24 — `[pointKey, tier, unit]`.
+ *
+ * **`feedwater_tds_ppm` is `extended`, and it is the pack's ONE dual-tier row.**
+ * §7 spells its tier `X/M` and ADR 0053 decision 4 resolves a dual-tier row
+ * **first-listed wins**, as the water pack's two did. It is an online analyser on
+ * a plant that has one and a laboratory sample on a plant that does not, and the
+ * document lists the analyser first. The check below asserts it by name, because
+ * this is the only row in the pack where reading the tier off the table needs a
+ * ruling rather than a column.
+ *
+ * **Row thirteen is `fuel_level_pct`, the DG SET's code, reused** (plan §12
+ * ruling 1). §7 spells it `fuel_tank_level_pct` and the tag list's own
+ * cross-cutting note says existing keys are reused rather than renamed: *day-tank
+ * / bunker level* and the DG set's *fuel level (day tank)* are one meaning, and
+ * one meaning is one code (ADR 0051 Amendment 6 decision 5). The document's
+ * spelling is corrected at closure rather than minted as a second key, and this
+ * is why the entry's alarm code and its bound point disagree by name — see the
+ * check below, which says so rather than leaving it to look like a typo.
+ *
+ * **Two `M` rows** — `boiler_water_ph` and `blowdown_tds_ppm`, both laboratory
+ * values written on a sheet — which carry a null `sourceDataKeyPattern` forever
+ * and never get an `asset_points` row. `blowdown_tds_ppm` is also why
+ * `blowdown_pct` is deferred: the formula parses and its input can never arrive.
+ *
+ * `run_hours_h` is the entry's one other reused code. The four `0/1` rows carry
+ * `null`, which the vocabulary spells `""`, and so does the dimensionless
+ * `steam_to_fuel_ratio`. `furnace_draft_mmwc` carries `mmWC` and
+ * `boiler_water_ph` carries `pH`, both spelled as `UNIT_BY_KEY` spells them.
+ */
+const BOILER_POINTS: readonly PointRow[] = [
+  ["boiler_status", "core", null],
+  ["boiler_trip", "core", null],
+  ["steam_pressure_bar", "core", "bar"],
+  ["steam_temp_c", "extended", "°C"],
+  ["steam_flow_kgh", "extended", "kg/hr"],
+  ["steam_totalizer_kg", "extended", "kg"],
+  ["drum_level_pct", "core", "%"],
+  ["feedwater_flow_kgh", "extended", "kg/hr"],
+  ["feedwater_temp_c", "extended", "°C"],
+  ["feedwater_tds_ppm", "extended", "ppm"],
+  ["feed_pump_status", "core", null],
+  ["fuel_flow_kgh", "extended", "kg/hr"],
+  ["fuel_totalizer_kg", "extended", "kg"],
+  ["fuel_level_pct", "extended", "%"],
+  ["flue_gas_temp_c", "core", "°C"],
+  ["flue_o2_pct", "extended", "%"],
+  ["flue_co_ppm", "extended", "ppm"],
+  ["combustion_air_temp_c", "extended", "°C"],
+  ["furnace_draft_mmwc", "extended", "mmWC"],
+  ["blowdown_state", "extended", null],
+  ["run_hours_h", "core", "h"],
+  ["boiler_water_ph", "manual", "pH"],
+  ["blowdown_tds_ppm", "manual", "ppm"],
+  ["steam_to_fuel_ratio", "derived", null],
+  ["excess_air_pct", "derived", "%"],
+];
+
+/**
+ * §7's two expressible derived codes, as literal strings (plan §5.0).
+ *
+ * `steam_to_fuel_ratio` is the document's own *steam ÷ fuel* — kilograms of
+ * steam per kilogram of fuel, the figure a boiler house is judged on day to day.
+ * Dimensionless, so the vocabulary spells its unit `""` and the template `null`.
+ * Both inputs are tier X: a boiler with no steam meter or no fuel meter gets no
+ * value, which is legal (the reference check requires a key to be DECLARED, not
+ * required) and honest.
+ *
+ * `excess_air_pct` is the textbook simplified relation from flue-gas oxygen on a
+ * dry basis, and **`20.9` is the volume fraction of oxygen in air** — an
+ * atmospheric constant, not a site value and not a limit, so B7 (which governs
+ * alarm thresholds) has nothing to say about it. Plan §12 question 3 asked
+ * whether to promote it at all, given that §7 names it *"from O₂"* without
+ * writing a formula, and **the owner ruled to promote it and to defer
+ * `specific_fuel_kg_ton_steam`**, which would have been a second code for the
+ * reciprocal of the ratio above. **This is the only place in the entry where the
+ * number `20.9` may appear**: the four statutory alarm rows carry no digit at
+ * all, and `assertNoLimitNumbers` below is what holds that line.
+ *
+ * Division by zero needs no guard: `evaluate.ts` returns `non_finite`, so the
+ * ratio at zero fuel flow — a boiler that is not firing — and the excess air at
+ * exactly the oxygen fraction of air yield no value for that reading rather than
+ * a fabricated one. **Neither overrides `maxInputAgeSeconds`**; both are `null`,
+ * and there is no override anywhere in this pack.
+ */
+const BOILER_DERIVED: readonly DerivedRow[] = [
+  ["steam_to_fuel_ratio", "{steam_flow_kgh} / {fuel_flow_kgh}", null],
+  ["excess_air_pct", "{flue_o2_pct} / (20.9 - {flue_o2_pct}) * 100", null],
+];
+
+/**
+ * §7's nine alarm bullets become **eleven** rows: drum level, steam pressure and
+ * flue-gas oxygen each split into two rows at opposite bands, because a level
+ * that is too low and a level that is too high are two different failures with
+ * two different remedies — the same shape as the pump's two current rows and the
+ * feeder's two voltage rows.
+ *
+ * **Four rows are `safety` and they are the entry's statutory half.**
+ * `drum_level_low` is the IBR-critical one: the low-water cut-off is the last
+ * barrier before the tubes are uncovered. `steam_pressure_high` is the approach
+ * to safety-valve lift, `flue_o2_low` is incomplete combustion with its carbon
+ * monoxide risk, and `co_high` is that risk measured directly. Two rows are
+ * `energy` — a hot stack and excess air are both continuous costs on a machine
+ * that is still making steam — and the remaining five are `operations`.
+ *
+ * **Four rows carry NO `philosophy.skill`, and they are the only four in the
+ * pack.** `flue_o2_high`, `flue_o2_low`, `co_high` and `feedwater_tds_high` are
+ * combustion and water-chemistry excursions, and `bms.alarm_skills` holds
+ * exactly `electrical`, `mechanical`, `hvac`, `controls` and `civil` — **no
+ * process trade** (`F4.78` files it). The field is omitted rather than routed to
+ * a trade that does not answer the event, and `assertSkillAssignment` is called
+ * with the seven assigned rows AND these four, which must partition the eleven.
+ */
+const BOILER_ALARMS: readonly AlarmRow[] = [
+  ["boiler_trip", "boiler_trip", "critical", "safety"],
+  ["drum_level_low", "drum_level_pct", "critical", "safety"],
+  ["drum_level_high", "drum_level_pct", "warning", "operations"],
+  ["steam_pressure_high", "steam_pressure_bar", "critical", "safety"],
+  ["steam_pressure_low", "steam_pressure_bar", "warning", "operations"],
+  ["flue_gas_temp_high", "flue_gas_temp_c", "warning", "energy"],
+  ["flue_o2_high", "flue_o2_pct", "warning", "energy"],
+  ["flue_o2_low", "flue_o2_pct", "critical", "safety"],
+  ["co_high", "flue_co_ppm", "critical", "safety"],
+  ["feedwater_tds_high", "feedwater_tds_ppm", "warning", "operations"],
+  ["fuel_tank_level_low", "fuel_level_pct", "warning", "operations"],
+];
+
+/**
+ * The four rows whose limit is set by a statute and an inspecting authority
+ * rather than by an engineer's judgement, and which therefore carry the MEANING
+ * and never a number — in the message *and* inside every `philosophy` string,
+ * which is the half `checkEntry`'s pair-absence check cannot see.
+ *
+ * These four and not the two bands they belong to: `drum_level_high` (carryover)
+ * and `steam_pressure_low` (demand exceeding firing) are operating rows an
+ * engineer sets from the plant's own behaviour, while a low-water level, a
+ * safety-valve set pressure and the oxygen floor beneath which combustion goes
+ * incomplete are the boiler's certificate and the regulations behind it. A number
+ * shipped unread to every organization that imports this entry is a number
+ * somebody will believe, and on these four believing the wrong one is how a
+ * boiler is destroyed or a boiler house is filled with carbon monoxide.
+ */
+const BOILER_IBR_ROWS = [
+  "boiler_trip",
+  "drum_level_low",
+  "steam_pressure_high",
+  "flue_o2_low",
+] as const;
+
+/**
+ * `mechanical-boiler` against `docs/e5.2-derived-taglist-v1.md` §7 (plan §5.6) —
+ * **the entry that closes the pack**, and the one that carries three things no
+ * other entry does: the four process-chemistry rows with no `skill`, the four
+ * statutory rows with no number, and the pack's one dual-tier row.
+ */
+function checkBoiler(): void {
+  const entry = requireStockEntry(BOILER_CODE);
+  assertEntryIdentity(BOILER_CODE, entry, "boiler", "mechanical");
+
+  // ---- 25 points, 7 core + 14 extended + 2 manual + 2 derived -------------
+
+  assert(
+    tierCount(entry, "core") === 7 &&
+      tierCount(entry, "extended") === 14 &&
+      tierCount(entry, "manual") === 2 &&
+      tierCount(entry, "derived") === 2,
+    `§7 marks 7 rows C, 14 X (the dual-tier row included) and 2 M, and two of its five derived ` +
+      `codes are authored — 7/14/2/2. Got ${tierCount(entry, "core")}/` +
+      `${tierCount(entry, "extended")}/${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
+  );
+  assertPointTable(BOILER_CODE, "§7", entry, BOILER_POINTS);
+  assertDerivedPoints(BOILER_CODE, entry, BOILER_DERIVED);
+  assertNoKpis(BOILER_CODE, entry, "§7");
+  assertDeferralsAbsent(BOILER_CODE, entry);
+
+  // ---- the pack's one dual-tier row, first-listed wins --------------------
+
+  const feedwaterTds = entry.points.find((point) => point.pointKey === "feedwater_tds_ppm");
+  assert(
+    feedwaterTds?.meta?.tier === "extended" && feedwaterTds.required === false,
+    `${BOILER_CODE}.feedwater_tds_ppm must be tier EXTENDED and optional. §7 spells its tier ` +
+      "\"X/M\" — the pack's one dual-tier row — and ADR 0053 decision 4 resolves a dual-tier row " +
+      "FIRST-LISTED WINS, as the water pack's two did. It is an online analyser on a plant that " +
+      "has one and a laboratory sample on a plant that does not, and the document lists the " +
+      "analyser first; meta.tier says what THAT plant type typically fits, not what the code is. " +
+      "Reading it as manual would also make feedwater_tds_high an alarm on a row that can never " +
+      `receive a value. Got tier ${String(feedwaterTds?.meta?.tier)}, required ` +
+      `${String(feedwaterTds?.required)}.`,
+  );
+
+  // ---- the two M rows, and the one that strands blowdown_pct --------------
+
+  for (const pointKey of ["boiler_water_ph", "blowdown_tds_ppm"]) {
+    const lab = entry.points.find((point) => point.pointKey === pointKey);
+    assert(
+      lab?.meta?.tier === "manual" && lab.required === false && lab.sourceDataKeyPattern === null,
+      `${BOILER_CODE}.${pointKey} must be one of the entry's two M rows — tier manual, optional, ` +
+        "with a null sourceDataKeyPattern. §7 marks both \"(lab)\": a boiler-water pH and a " +
+        "blowdown TDS are read on a bench and written on a log sheet, so they carry a null " +
+        "pattern FOREVER, always land in skippedPoints and never get an asset_points row until " +
+        "F1.8 manual entry gives them somewhere to write. blowdown_tds_ppm is also why " +
+        "blowdown_pct is DEFERRED rather than authored: the TDS-balance formula parses over two " +
+        "declared measured points, and one of them can never receive a value — the second " +
+        `instance of water-softener's salt_efficiency_kg_kl class. Got tier ` +
+        `${String(lab?.meta?.tier)}, required ${String(lab?.required)}, pattern ` +
+        `${String(lab?.sourceDataKeyPattern)}.`,
+    );
+  }
+
+  // ---- 11 alarms, four of them with no skill and four with no number ------
+
+  const alarms = alarmsOf(entry);
+  assertAlarmTable(BOILER_CODE, "§7", alarms, BOILER_ALARMS);
+  assertPhilosophyRows(BOILER_CODE, alarms);
+  assertSkillAssignment(
+    BOILER_CODE,
+    alarms,
+    {
+      boiler_trip: "mechanical",
+      drum_level_low: "mechanical",
+      // A level riding high is the feedwater control loop or the level
+      // transmitter, not a mounting — the controls trade's, as the pump's and
+      // the chiller's short-cycling rows are.
+      drum_level_high: "controls",
+      steam_pressure_high: "mechanical",
+      // Demand beyond firing is the firing-rate control and the load, not a
+      // failure of the pressure part.
+      steam_pressure_low: "controls",
+      flue_gas_temp_high: "mechanical",
+      // A day tank and its bund are the civil trade's, as the water pack's tank
+      // rows are.
+      fuel_tank_level_low: "civil",
+    },
+    // THE PACK'S ONLY NO-SKILL ROWS, all four of them here. A combustion or a
+    // water-chemistry excursion is answered by a process trade, and
+    // bms.alarm_skills holds electrical, mechanical, hvac, controls and civil
+    // and NO process (migration 0034; F4.78 files it). The field is omitted
+    // rather than routed to a trade that does not answer the event — filing a
+    // chemistry alarm under controls because a field wants a value is the
+    // guessing the rule prevents. When F4.78 lands, these four gain a skill in
+    // a stockVersion 2. assertSkillAssignment requires the map above and this
+    // list to partition the eleven, so a misspelling here is a failure rather
+    // than a row silently checked by nothing.
+    ["flue_o2_high", "flue_o2_low", "co_high", "feedwater_tds_high"],
+  );
+
+  assertNoLimitNumbers(BOILER_CODE, alarms, BOILER_IBR_ROWS, IBR_REGIME);
+
+  // ---- the day-tank row: one code, two spellings, and the reused key ------
+
+  const fuelAlarm = alarms.find((alarm) => alarm.code === "fuel_tank_level_low");
+  const fuelPoint = entry.points.find((point) => point.pointKey === "fuel_level_pct");
+  assert(
+    fuelAlarm?.pointKey === "fuel_level_pct" && fuelPoint !== undefined,
+    `${BOILER_CODE}'s fuel_tank_level_low alarm must bind fuel_level_pct — THE DG SET'S CODE, ` +
+      "reused. The alarm code and the point it binds disagree by name on purpose and this is not " +
+      "a typo: §7 spells the row fuel_tank_level_pct, and plan §12 ruling 1 reused the DG set's " +
+      "existing fuel_level_pct instead, because \"day-tank / bunker level\" and \"fuel level (day " +
+      "tank)\" are one meaning and one meaning is one code (ADR 0051 Amendment 6 decision 5). The " +
+      "tag list's spelling is corrected at closure rather than minted as a second key; a later " +
+      "\"tidy\" of either name breaks the reuse and mints the duplicate the ruling refused. Got " +
+      `"${String(fuelAlarm?.pointKey)}", point declared: ${String(fuelPoint !== undefined)}.`,
+  );
+
+  const splitRows = ["drum_level_pct", "steam_pressure_bar", "flue_o2_pct"] as const;
+  for (const pointKey of splitRows) {
+    assert(
+      alarms.filter((alarm) => alarm.pointKey === pointKey).length === 2,
+      `${BOILER_CODE} must carry two alarms on ${pointKey} at opposite bands. §7's bullets pair ` +
+        "them — drum level low / high, steam pressure high / low, flue oxygen high / low — and a " +
+        "band that is too low and a band that is too high are two different failures with two " +
+        "different remedies, two different severities and, on this entry, two different skills. " +
+        "Same shape as the pump's two current rows and the feeder's two voltage rows.",
+    );
+  }
+
+  const safetyRows = alarms
+    .filter((alarm) => alarm.category === "safety")
+    .map((alarm) => alarm.code);
+  assert(
+    safetyRows.join(",") === "boiler_trip,drum_level_low,steam_pressure_high,flue_o2_low,co_high",
+    `${BOILER_CODE} must file exactly boiler_trip, drum_level_low, steam_pressure_high, ` +
+      "flue_o2_low and co_high as \"safety\" — the trip and the four ways a boiler hurts somebody: " +
+      "uncovered tubes, a safety valve about to lift, incomplete combustion and the carbon " +
+      "monoxide it makes. flue_gas_temp_high and flue_o2_high are \"energy\" (a machine still " +
+      "making steam and spending more to do it) and the remaining four are \"operations\". Got " +
+      `[${safetyRows.join(", ")}].`,
+  );
+
+  // ---- 5 maintenance plans: one safetyCritical, one compliance -----------
+
+  const plans = maintenanceOf(entry);
+  assert(plans.length === 5, `plan §5.7 authors 5 boiler plans; the entry carries ${plans.length}`);
+  const safetyCritical = plans.filter((plan) => plan.safetyCritical === true);
+  assert(
+    safetyCritical.length === 1 &&
+      safetyCritical[0]?.category === "safety_critical" &&
+      safetyCritical[0]?.priority === "critical" &&
+      /low-water/i.test(String(safetyCritical[0]?.title)) &&
+      String(safetyCritical[0]?.complianceRef) === "IBR log-sheet practice",
+    `${BOILER_CODE} must carry exactly ONE safetyCritical plan — the low-water cut-off and ` +
+      "safety-valve test, the third and last of the ADR 0053 decision 8 names for this pack " +
+      "(the others are the compressor's relief-valve test and the AHU's fire-trip interlock " +
+      "test). Those two devices are the barriers behind drum_level_low and steam_pressure_high, " +
+      "the entry's two IBR-critical alarms, and a boiler is destroyed or bursts when they are the " +
+      "things nobody tested. Category safety_critical, priority critical, complianceRef \"IBR " +
+      `log-sheet practice\". Got ${safetyCritical.length}: ` +
+      `${safetyCritical.map((plan) => plan.title).join("; ") || "(none)"}, complianceRef ` +
+      `"${String(safetyCritical[0]?.complianceRef)}".`,
+  );
+  const compliance = plans.filter((plan) => plan.category === "compliance");
+  assert(
+    compliance.length === 1 &&
+      compliance[0]?.safetyCritical === false &&
+      compliance[0]?.priority === "critical" &&
+      String(compliance[0]?.complianceRef) === "IBR annual inspection",
+    `${BOILER_CODE}'s annual inspection preparation must be category "compliance" with ` +
+      "safetyCritical FALSE and complianceRef \"IBR annual inspection\" (plan §12 ruling 5). It " +
+      "is a statutory inspection with its own reference and its own consequence — a boiler " +
+      "without a current certificate may not be fired — and that is a compliance item rather " +
+      "than a life-safety barrier. Authoring it safetyCritical would make four such plans in a " +
+      "pack ADR 0053 decision 8 says has three, and would blur the two meanings: one is a device " +
+      "that stops an accident, the other is a document that permits operation. Its priority is " +
+      `still critical. Got ${compliance.length} compliance plan(s), safetyCritical ` +
+      `${String(compliance[0]?.safetyCritical)}, complianceRef ` +
+      `"${String(compliance[0]?.complianceRef)}".`,
+  );
+  // NO condition_based plan on this entry: a boiler's schedule is the statute's
+  // and the water treatment's, not a measured value crossing a band. The
+  // chemistry round is inspection_round on a weekly calendar because the log
+  // sheet is what the inspector reads, and the two rows it records are M rows
+  // that no condition could ever be evaluated against.
+  const conditionPlans = plans.filter((plan) => plan.category === "condition_based");
+  assert(
+    conditionPlans.length === 0,
+    `${BOILER_CODE} must carry NO condition_based plan — a boiler's schedule is the statute's and ` +
+      "the water treatment's rather than a measured value crossing a band, and the two rows the " +
+      "chemistry round records are M rows nothing could evaluate a condition against. Got " +
+      `${conditionPlans.length}: ${conditionPlans.map((plan) => plan.title).join("; ")}.`,
+  );
+  const chemistry = plans.find((plan) => plan.category === "inspection_round");
+  const chemistryTrigger = String(chemistry?.triggerSummary ?? "");
+  for (const pointKey of ["boiler_water_ph", "blowdown_tds_ppm"]) {
+    assert(
+      chemistryTrigger.includes(pointKey),
+      `${BOILER_CODE}'s blowdown and chemistry round must name ${pointKey} in its triggerSummary ` +
+        "— the entry's two M rows, and this plan is the only thing that produces their values at " +
+        `all. Got: "${chemistryTrigger}"`,
+    );
+  }
+  const burner = plans.find((plan) => /burner/i.test(String(plan.title)));
+  const burnerTrigger = String(burner?.triggerSummary ?? "");
+  for (const pointKey of ["flue_o2_pct", "flue_co_ppm"]) {
+    assert(
+      burnerTrigger.includes(pointKey),
+      `${BOILER_CODE}'s burner service and combustion tuning plan must name ${pointKey} in its ` +
+        "triggerSummary — the two readings the tuning is done against, and the two the four " +
+        `no-skill process rows are bound to. Got: "${burnerTrigger}"`,
+    );
+  }
+  assertMaintenanceBounds(BOILER_CODE, entry);
+  assertProvenance(BOILER_CODE, entry, MECHANICAL_TAG_LIST, "§7");
+}
+
 /**
  * Every per-class block in this file. Called by `mechanical-classes-3.test.ts`,
  * its name-sibling wrapper. **§1 to §4 live in `mechanical-classes.spec.ts` and
@@ -402,4 +788,5 @@ function checkAhu(): void {
  */
 export function runMechanicalClassEntryTests3(): void {
   checkAhu();
+  checkBoiler();
 }
