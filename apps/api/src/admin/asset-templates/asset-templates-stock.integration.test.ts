@@ -132,7 +132,7 @@ describe.skipIf(!connectionString)("F2.13 — stock asset-template catalog: list
     await assertImportCopiesTheCatalogNotAPeer(stock, requirePool(), fx);
   });
 
-  it("runs every authoring guard — an inactive point key is refused before the insert", async () => {
+  it("runs every authoring guard — an inactive point key and an unknown domain are refused before the insert", async () => {
     await assertImportRunsEveryAuthoringGuard(stock, requirePool(), fx);
   });
 

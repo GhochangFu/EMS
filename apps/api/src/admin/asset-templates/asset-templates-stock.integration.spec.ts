@@ -19,7 +19,8 @@ import type { StockAssetTemplateEntry } from "./stock-catalog/types";
  * catalogs, three service instances, built by the `.test.ts`:
  *
  *  - `stock` — {@link buildFixtureCatalog}: a plain entry, a peer-mutation
- *    entry, and an entry naming a deliberately INACTIVE point key.
+ *    entry, an entry naming a deliberately INACTIVE point key, and (`E5.2`)
+ *    an entry filed under a domain that is not a `bms.asset_domains` row.
  *  - `emptyStock` — `[]`, so the unknown-code 400 is checked with nothing to
  *    list.
  *  - `realStock` — the shipped `STOCK_ASSET_TEMPLATE_CATALOG`, imported whole
@@ -38,7 +39,20 @@ export const INACTIVE_KEY = `f213_inactive_${randomUUID().replace(/-/g, "").slic
 
 const PEER_CODE = `${TEST_CODE}-PEER`;
 const INACTIVE_CODE = `${TEST_CODE}-INACTIVE`;
+const UNKNOWN_DOMAIN_CODE = `${TEST_CODE}-UNKNOWN-DOMAIN`;
 const FEEDER_CODE = "electrical-feeder";
+
+/**
+ * A domain that is not, and will never be, a `bms.asset_domains` row — what
+ * `assertAssetDomain` alone refuses. The refusal's *Expected one of* list is
+ * read live from the table, so the assertion on it is how this suite proves
+ * the `E5.2` seed row `mechanical` exists AND is active on the seeded database
+ * without touching the vocabulary. A mutate-and-restore negative (retire
+ * `mechanical`, import, restore) is deliberately not written: the seed is
+ * `ON CONFLICT (code) DO NOTHING`, so a run that died between the two steps
+ * would leave the domain retired on every later boot.
+ */
+const UNKNOWN_DOMAIN = "f213-not-a-domain";
 
 /** The real import's row, deleted by id in `cleanup`. */
 let importedFeederId: string | null = null;
@@ -117,6 +131,16 @@ export function buildFixtureCatalog(fx: Fixtures): StockAssetTemplateEntry[] {
       points: [
         { ...MEASURED, pointKey: INACTIVE_KEY, label: "Inactive", unit: null, required: true, sortOrder: 0, meta: { tier: "core" as const } },
       ],
+    },
+    {
+      code: UNKNOWN_DOMAIN_CODE,
+      name: "Stock fixture (unknown domain)",
+      assetType: "test_rig",
+      domain: UNKNOWN_DOMAIN,
+      description: "Filed under a domain that is not a vocabulary row; its point keys are live.",
+      stockVersion: 1,
+      content: { contentVersion: 1 },
+      points,
     },
   ];
 }
@@ -269,6 +293,25 @@ export async function assertImportRunsEveryAuthoringGuard(
   assert(message.includes(INACTIVE_KEY), `the refusal must name the key, got "${message}"`);
   const { rowCount } = await pool.query(`SELECT 1 FROM bms.asset_templates WHERE code = $1`, [INACTIVE_CODE]);
   assert(rowCount === 0, "the refusal must come before the insert — a row was written");
+
+  // `E5.2` — the second guard, `assertAssetDomain` (ADR 0031 Amendment 1),
+  // with the entry's point keys live so only the domain can refuse it. The
+  // list the 400 names is the table's active rows in `sort_order`, so ending
+  // in `mechanical` (60) is the proof that the seed row landed and is active.
+  const domainMessage = await expectRefusal(
+    () => stock.import(fx.adminJwt, UNKNOWN_DOMAIN_CODE, fx.organizationId),
+    400,
+    new RegExp(`domain "${UNKNOWN_DOMAIN}" is not a live value`),
+    "importing an entry filed under a domain that is not a vocabulary row",
+  );
+  assert(
+    /Expected one of: [a-z_, ]*\bmechanical\.$/.test(domainMessage),
+    `the refusal must list the live domains ending in "mechanical" — the E5.2 seed row — got "${domainMessage}"`,
+  );
+  const unknownDomainRows = await pool.query(`SELECT 1 FROM bms.asset_templates WHERE code = $1`, [
+    UNKNOWN_DOMAIN_CODE,
+  ]);
+  assert(unknownDomainRows.rowCount === 0, "the domain refusal must come before the insert — a row was written");
 }
 
 /**
@@ -327,7 +370,7 @@ export async function assertUnknownCodeIs400NamingTheAvailableCodes(
     /Unknown stock template "NOPE"/,
     "importing an unknown code",
   );
-  for (const code of [TEST_CODE, PEER_CODE, INACTIVE_CODE]) {
+  for (const code of [TEST_CODE, PEER_CODE, INACTIVE_CODE, UNKNOWN_DOMAIN_CODE]) {
     assert(message.includes(code), `the 400 must name the available code ${code}, got "${message}"`);
   }
 
@@ -401,7 +444,7 @@ export async function assertListNeedsAMasterDataRole(stock: AssetTemplatesStockS
   assert(caught instanceof ForbiddenException, `a viewer must be refused the catalog with a 403, got ${String(caught)}`);
   // And the list itself is what the guard protects — a sanity check that it
   // reads the fixture catalog, so the refusal above is refusing something.
-  assert(stock.list().items.length === 3, "the fixture catalog lists its three entries");
+  assert(stock.list().items.length === 4, "the fixture catalog lists its four entries");
 }
 
 export { loadFixtures, type Fixtures };

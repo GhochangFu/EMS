@@ -50,17 +50,30 @@ export async function verifyHierarchySeed(
   };
 
   // ── Pass 1: no tenant context ─────────────────────────────────────────────
-  // Only `bms.organizations` stays here — it carries no policy. Everything else
-  // that used to live in this query touches a table `0047` now policies, so it
-  // moved under a per-organization context below (see the module header).
-  const global = await pool.query<{ orgs: string }>(`
-    SELECT (SELECT COUNT(*)::text FROM bms.organizations) AS orgs
+  // Only `bms.organizations` and `bms.asset_domains` live here — neither
+  // carries a policy (`0047` left the global-vocabulary class unpoliced).
+  // Everything else that used to live in this query touches a table `0047`
+  // now policies, so it moved under a per-organization context below (see the
+  // module header).
+  const global = await pool.query<{ orgs: string; asset_domains: string }>(`
+    SELECT
+      (SELECT COUNT(*)::text FROM bms.organizations) AS orgs,
+      (SELECT COUNT(*)::text FROM bms.asset_domains) AS asset_domains
   `);
   const g = global.rows[0];
   if (!g) {
     throw new Error("verifyHierarchySeed: no results");
   }
   expect("organizations", g.orgs, 2);
+  // `E5.2` — six: five from migration `0029` plus the one
+  // `asset-domains-seed.ts` writes (`mechanical`, ADR 0053 decision 2), the
+  // first domain a pack adds through the seed path rather than a migration
+  // (ADR 0031 Amendment 1 A1.1). A fixed seed cardinality, not a lifetime
+  // counter — and it counts every row, not the active ones, because a global
+  // administrator's retirement (`active = false`) must survive `compose up`,
+  // which runs this check on every boot; the seed's `DO NOTHING` never
+  // reactivates a retired row. `E5.3` moves this to 7 with `facility`.
+  expect("asset domains", g.asset_domains, 6);
 
   // ── Pass 2: ESKOM ─────────────────────────────────────────────────────────
   await withOrganization(pool, eskomOrgId, async () => {

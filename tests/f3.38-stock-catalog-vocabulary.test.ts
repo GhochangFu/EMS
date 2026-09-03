@@ -224,7 +224,10 @@ const scanCatalog = (
  * `environment` and `water` — and `E5.1` added none, because ADR 0051
  * Amendment 6 decision 3 rules that `domain` is the filing domain and not an
  * exclusivity: an STP, an ETP and a cooling tower are all water-treatment
- * plants and all file under `water`.
+ * plants and all file under `water`. `E5.2` then added the sixth,
+ * `mechanical`, through the seed path ADR 0031 Amendment 1 A1.1 prescribes
+ * (`packages/db/src/asset-domains-seed.ts`, ADR 0053 decision 2) — the first
+ * code not from `0029` — and still no `stp` or `etp`.
  *
  * They were renamed to snake_case here when the list was written, so the
  * catalog already spells its keys the way every real code is spelled.

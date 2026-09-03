@@ -14,6 +14,7 @@ import {
   cleanupLegacyPheRtuLocations,
 } from "./hierarchy-seed";
 import { seedAccessControlFixtures } from "./access-fixtures-seed";
+import { seedAssetDomains } from "./asset-domains-seed";
 import { seedPointKeyCatalog } from "./point-keys-seed";
 import { pheMapLocationRowsForInsert } from "./phe-map-seed";
 import { seedPheCatalog } from "./phe-pilot-seed";
@@ -210,6 +211,10 @@ async function main(): Promise<void> {
     // lookup (unpoliced); the `users`/`user_organization_access` writes are on
     // `identityDb`.
     await seedPheOrganizationAdmin(identityDb, pool);
+
+    // `E5.2`: the pack's domain rows first (ADR 0031 A1.1, unpoliced, no
+    // tenant context), then the point keys filed under them — the module says why.
+    await seedAssetDomains(pool);
 
     // `F3.39`: one fleet-wide catalog, so no tenant context at all — neither
     // one taken from here nor one it opens itself. `bms.point_keys` lost its
