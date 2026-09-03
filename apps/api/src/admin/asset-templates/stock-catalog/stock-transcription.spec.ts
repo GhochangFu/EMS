@@ -307,19 +307,19 @@ export function assertSkillAssignment(
   code: string,
   alarms: readonly Alarm[],
   assigned: Readonly<Record<string, string>>,
-  processRows: readonly string[],
+  unanswerableRows: readonly string[],
 ): void {
   // The two lists must partition the alarm set. `skillOf` returns `undefined`
-  // for a code that does not exist, so a misspelled `processRows` entry would
+  // for a code that does not exist, so a misspelled `unanswerableRows` entry would
   // otherwise pass the "carries no skill" assertion vacuously and that row's
   // skill-absence would be checked by nothing (code review, 2026-09-03).
   // Self-test 2 below is what proves this clause can fire.
   const known = new Set(alarms.map((alarm) => alarm.code));
-  const listed = [...Object.keys(assigned), ...processRows];
+  const listed = [...Object.keys(assigned), ...unanswerableRows];
   const unknown = listed.filter((alarmCode) => !known.has(alarmCode));
   assert(
     unknown.length === 0 && new Set(listed).size === listed.length && listed.length === alarms.length,
-    `${code}: the assigned map and the process list must partition the ${alarms.length} alarms — ` +
+    `${code}: the assigned map and the no-trade list must partition the ${alarms.length} alarms — ` +
       `${listed.length} listed (${new Set(listed).size} distinct), unknown: [${unknown.join(", ")}].`,
   );
   const skillOf = (alarmCode: string): unknown =>
@@ -335,15 +335,18 @@ export function assertSkillAssignment(
         `Got ${String(skillOf(alarmCode))}.`,
     );
   }
-  for (const alarmCode of processRows) {
+  for (const alarmCode of unanswerableRows) {
     assert(
       skillOf(alarmCode) === undefined,
       `${code} alarm "${alarmCode}" carries philosophy.skill ${String(skillOf(alarmCode))}, and ` +
-        "it must carry none. It is a process-chemistry row: bms.alarm_skills holds electrical, " +
-        "mechanical, hvac, controls and civil, and NO process trade, so the field is omitted " +
-        "rather than routing a chemistry excursion to the wrong trade. A process skill is a " +
-        "separate backlog row with its own migration (F4.78); when it lands, these rows gain a " +
-        "skill in a stockVersion 2.",
+        "it must carry none. bms.alarm_skills holds electrical, mechanical, hvac, controls and " +
+        "civil, and no trade in that table answers this row, so the field is omitted rather " +
+        "than routing the alarm to the wrong trade. Two classes of row are unanswerable so " +
+        "far: the water and mechanical packs' PROCESS-CHEMISTRY rows (pH, TDS, flue O2 — " +
+        "F4.78 files the process trade), and E5.3's LIFE-SAFETY and SECURITY rows (a fire " +
+        "alarm, a forced door — the fire officer and the security desk answer those, and " +
+        "neither is a maintenance trade). When a trade lands for either class, its rows gain " +
+        "a skill in a stockVersion 2.",
     );
   }
 }

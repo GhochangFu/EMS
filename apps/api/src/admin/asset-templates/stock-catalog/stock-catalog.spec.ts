@@ -526,8 +526,8 @@ export function requireStockEntry(code: string): StockAssetTemplateEntry {
     throw new Error(
       `the catalog must ship "${code}" (plan §5) — found only: ${shipped || "(nothing)"}. An ` +
         "authored class module reaches the catalog only through its pack index — electrical.ts, " +
-        "water.ts or mechanical.ts; until it is listed there, GET /admin/asset-templates/stock " +
-        "cannot see it.",
+        "water.ts, mechanical.ts or facility.ts; until it is listed there, " +
+        "GET /admin/asset-templates/stock cannot see it.",
     );
   }
   return entry;
