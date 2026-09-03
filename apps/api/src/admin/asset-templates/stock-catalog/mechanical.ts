@@ -1,3 +1,4 @@
+import { MECHANICAL_COMPRESSOR } from "./mechanical-compressor";
 import { MECHANICAL_PUMP } from "./mechanical-pump";
 import { MECHANICAL_VFD } from "./mechanical-vfd";
 import type { StockAssetTemplateEntry } from "./types";
@@ -323,6 +324,12 @@ import type { StockAssetTemplateEntry } from "./types";
  *    opposite of the pump; defers `motor_load_pct`, `energy_saving_vs_dol_kwh`
  *    and `speed_pct`, all three of them a nameplate value the drive never
  *    reports.
+ *  - **`mechanical-compressor` v1** (2026-09-03, `E5.2` Task 8) — §3, the rotary
+ *    screw with its dryer. 23 points (8 core + 13 extended + 0 manual + 2
+ *    derived), 7 alarms, 4 maintenance plans, **one `safetyCritical`** — the
+ *    pressure-relief valve test, the first of the three ADR 0053 decision 8
+ *    names. Authors `load_factor_pct` and `specific_power_kw_m3min`; defers
+ *    `unload_cycles_per_hour` and `air_leak_estimate_pct`.
  *
  * The pack's targets, for the reader who wants to know where this is going and
  * as the numbers Task 11 re-measures rather than assumes: **141 declared point
@@ -338,4 +345,5 @@ export const MECHANICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[
   // Each entry commit adds one import above and one line here, in this order.
   MECHANICAL_PUMP,
   MECHANICAL_VFD,
+  MECHANICAL_COMPRESSOR,
 ];

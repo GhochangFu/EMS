@@ -102,6 +102,7 @@ const STOCK_ASSET_RELS = [
   `${STOCK_CATALOG_DIR}/mechanical.ts`,
   `${STOCK_CATALOG_DIR}/mechanical-pump.ts`,
   `${STOCK_CATALOG_DIR}/mechanical-vfd.ts`,
+  `${STOCK_CATALOG_DIR}/mechanical-compressor.ts`,
 ] as const;
 
 /**
