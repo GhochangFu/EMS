@@ -334,18 +334,32 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                     {entry.assetType} · {entry.points.length} point{entry.points.length === 1 ? "" : "s"}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  aria-label={`Import ${entry.name}`}
-                  disabled={importOrgId === "" || importM.isPending}
-                  onClick={() => {
-                    setImportError(null);
-                    importM.mutate(entry.code);
-                  }}
-                  className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
-                >
-                  {importM.isPending && importM.variables === entry.code ? "Importing…" : "Import"}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* `F2.14` — the card is a summary, so the whole entry is
+                      read on its own route. Before Import, because reading
+                      comes before taking. */}
+                  <Link
+                    to={`/admin/asset-templates/stock/${entry.code}`}
+                    aria-label={`View ${entry.name}`}
+                    className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+                  >
+                    View
+                  </Link>
+                  <button
+                    type="button"
+                    aria-label={`Import ${entry.name}`}
+                    disabled={importOrgId === "" || importM.isPending}
+                    onClick={() => {
+                      setImportError(null);
+                      importM.mutate(entry.code);
+                    }}
+                    className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+                  >
+                    {importM.isPending && importM.variables === entry.code
+                      ? "Importing…"
+                      : "Import"}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
