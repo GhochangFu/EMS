@@ -1,5 +1,6 @@
 import { ENVIRONMENT_IAQ_NODE } from "./environment-iaq-node";
 import { FACILITY_ACCESS_DOOR } from "./facility-access-door";
+import { FACILITY_BAS_GATEWAY } from "./facility-bas-gateway";
 import { FACILITY_FIRE_PANEL } from "./facility-fire-panel";
 import { FACILITY_LIGHTING_ZONE } from "./facility-lighting-zone";
 import { FACILITY_OCCUPANCY_ZONE } from "./facility-occupancy-zone";
@@ -410,6 +411,13 @@ import type { StockAssetTemplateEntry } from "./types";
  *    overrides, both `3600`), 6 alarms, every one with a `skill`, 3 maintenance
  *    plans, none `safetyCritical`. **The first stock entry filed under
  *    `environment`**, and the other half of the `co_ppm` dual-tier row.
+ *  - `facility-bas-gateway` **v1** (2026-09-04, `E5.3`): §7, 13 points
+ *    (2 C + 11 X + 0 M + 0 derived — the pack's only entry that promotes
+ *    nothing), 7 alarms, every one with a `skill`, 3 maintenance plans, none
+ *    `safetyCritical`. **The entry that closes PR 1**, and the class the SOW
+ *    footer's data-quality number is computed FROM — that number is deferred
+ *    here by ADR 0054 decision 6, because it is measured over the points behind
+ *    a gateway and is the estate's surface rather than this asset's point.
  */
 export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0054 decision 1's document order — lighting zone, fire panel, access
@@ -423,4 +431,5 @@ export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] 
   FACILITY_OCCUPANCY_ZONE,
   FACILITY_PARKING_LEVEL,
   ENVIRONMENT_IAQ_NODE,
+  FACILITY_BAS_GATEWAY,
 ];

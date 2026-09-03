@@ -14,7 +14,7 @@ import { runFacilityClassEntryTests3 } from "./facility-classes-3.spec";
  * nothing else moves.
  */
 describe("stock asset-template catalog — the facility classes (E5.3, §§6 and 7)", () => {
-  it("ships the indoor air quality node exactly as its tag-list section describes it", () => {
+  it("ships the indoor air quality node and the BAS gateway exactly as their tag-list sections describe them", () => {
     runFacilityClassEntryTests3();
   });
 });

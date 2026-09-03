@@ -28,9 +28,9 @@ import {
  *
  * **Two entries here, three in `-2` and two in `facility-classes.spec.ts`**, the
  * split plan §4.5 fixed: the AGENTS.md §4.5 pre-commit guard reads a whole file.
- * **This file is created with the IAQ block alone and §7 appends to it** — the
- * runner at the foot is the seam, so Task 10 adds one `check…()` call and
- * nothing else moves.
+ * The file was created with the IAQ block alone at Task 9 and **§7 appended to
+ * it at Task 10** — the runner at the foot is the seam, so that commit added one
+ * `check…()` call and nothing else moved. **§7 closes PR 1.**
  *
  * **It reaches into `-2` for one function and that is deliberate.**
  * `assertCoPpmTier` is the pack's dual-tier claim: `co_ppm` is `core` on the
@@ -400,6 +400,348 @@ function checkIaqNode(): void {
   assertProvenance(IAQ_CODE, entry, FACILITY_TAG_LIST, "§6");
 }
 
+// ===========================================================================
+// §7 — `facility-bas-gateway`
+// ===========================================================================
+
+const BAS_CODE = "facility-bas-gateway";
+
+/**
+ * §7's 13 table rows in the document's own order (`sortOrder` 0-12) —
+ * `[pointKey, tier, unit]`. **No derived row is appended**, because this entry
+ * promotes nothing (see {@link checkBasGateway}).
+ *
+ * **Two rows are C and eleven are X**, which is the split the section itself
+ * makes: a gateway that is unreachable takes every point behind it dark, and a
+ * gateway that is reachable but not updating is the failure that fools a
+ * dashboard — so `device_online` and `last_seen_age_s` are the two a site must
+ * map. Everything else is what a particular controller happens to expose:
+ * `cpu_pct` and `memory_pct` come from a Linux-class gateway and not from a
+ * field controller, `ups_on_battery` needs a UPS, and `points_stale_count` needs
+ * a gateway that counts its own deadbands.
+ *
+ * **Seven of the thirteen carry a null unit**, which is more than any other
+ * entry in the pack: five `0/1` rows (`device_online`, `ups_on_battery`,
+ * `door_open_state`, `leak_state`), two `count` rows (`comms_error_count`,
+ * `points_stale_count`) and one `text` row (`firmware_version`) — §4.4's map
+ * spells every one of them `""` in the vocabulary and `null` on the point.
+ * `firmware_version` is the one worth naming twice: it is an
+ * attribute-as-point, a STRING carried on a template point, and a unit on a
+ * string is meaningless rather than merely absent.
+ *
+ * **`leak_state` at row 12 is a REUSED code** from
+ * `CONTROL_ROOM_ENVIRONMENT_POINT_KEYS` — the closed `z.enum` the control-room
+ * screens consume — referenced here and never redeclared, the same shape §6
+ * uses for `temperature_c` and `humidity_pct` (ADR 0054 decision 3).
+ *
+ * **`door_open_state` is NOT §3's `door_state`.** This is the panel's own
+ * enclosure door, a tamper and dust question on the gateway itself; §3's row is
+ * the controlled door of an access-control point. Two devices, two questions,
+ * and the prefix says which reported it.
+ */
+const BAS_POINTS: readonly PointRow[] = [
+  ["device_online", "core", null],
+  ["last_seen_age_s", "core", "s"],
+  ["comms_error_count", "extended", null],
+  ["points_stale_count", "extended", null],
+  ["cpu_pct", "extended", "%"],
+  ["memory_pct", "extended", "%"],
+  ["enclosure_temp_c", "extended", "°C"],
+  ["supply_voltage_v", "extended", "V"],
+  ["ups_on_battery", "extended", null],
+  ["door_open_state", "extended", null],
+  ["rtc_drift_s", "extended", "s"],
+  ["firmware_version", "extended", null],
+  ["leak_state", "extended", null],
+];
+
+/**
+ * §7's seven alarm bullets, one row each — nothing dropped and nothing
+ * invented.
+ *
+ * **Every row carries a `skill`, and the split is by what the responder
+ * actually does.** Five are `controls` — a gateway that is unreachable, not
+ * updating, accumulating protocol errors, drifting on its clock or standing
+ * with its door open is a controls engineer's job at the panel. Two are
+ * `electrical`: a hot enclosure and a low 24 V supply are the panel's power and
+ * cooling, which is the electrical trade's work and not the integrator's.
+ *
+ * **None of the pack's 16 no-skill rows is on this entry.** A gateway reports
+ * nothing about a building's use and attends no life-safety event: every row
+ * here is a device fault a named trade goes and fixes.
+ */
+const BAS_ALARMS: readonly AlarmRow[] = [
+  ["device_offline", "device_online", "critical", "operations"],
+  ["stale_data", "last_seen_age_s", "warning", "operations"],
+  ["comms_error_rate_high", "comms_error_count", "warning", "operations"],
+  ["enclosure_temp_high", "enclosure_temp_c", "warning", "operations"],
+  ["supply_voltage_low", "supply_voltage_v", "warning", "operations"],
+  ["clock_drift", "rtc_drift_s", "warning", "operations"],
+  ["panel_door_open", "door_open_state", "info", "operations"],
+];
+
+/**
+ * **The six declared rows no alarm binds, asserted as an exact set.**
+ *
+ * §7 gives seven bullets and the entry authors seven rows, so six of its
+ * thirteen points are reported and never alarmed. That is the ruling, not an
+ * oversight: §12 ruling 6 forbids inventing an alarm for a row the document
+ * does not raise one for, exactly as it forbids inventing a row for a bullet
+ * that has none. Each of the six has its own reason and none of them is "we ran
+ * out of time":
+ *
+ *  - `points_stale_count`, `cpu_pct`, `memory_pct` — capacity and housekeeping
+ *    trends. A number that is interesting on a chart over a month is not a page
+ *    at three in the morning, and `stale_data` already alarms the consequence
+ *    the stale count describes.
+ *  - `ups_on_battery` — the mains behind the panel is the electrical system's
+ *    own alarm and this row is the gateway REPORTING it. The maintenance plan
+ *    that tests the battery names this row instead.
+ *  - `firmware_version` — a string. There is nothing to compare it against
+ *    without a target version, which is fleet-management state and not a
+ *    reading.
+ *  - `leak_state` — **the reused row §7 declares and raises no bullet for.**
+ *    Water under a floor void is a real event, and the document gives it no
+ *    alarm here because the room's own leak detection raises it; a second row
+ *    on the gateway would page a controls engineer for a plumbing fault.
+ *
+ * Asserted as an exact set rather than a subset, so that adding an alarm on any
+ * one of them — or quietly dropping a declared row — fails and names the change.
+ * The access door's `denied_ratio_pct` claim is the shape.
+ */
+function assertTheRowsNoAlarmBinds(entry = requireStockEntry(BAS_CODE)): void {
+  const bound = new Set(alarmsOf(entry).map((alarm) => alarm.pointKey));
+  const unbound = entry.points
+    .map((point) => point.pointKey)
+    .filter((pointKey) => !bound.has(pointKey))
+    .sort();
+  const expected = [
+    "cpu_pct",
+    "firmware_version",
+    "leak_state",
+    "memory_pct",
+    "points_stale_count",
+    "ups_on_battery",
+  ];
+  assert(
+    unbound.join(", ") === expected.join(", "),
+    `${BAS_CODE} must declare exactly these six rows that no alarm binds:\n  expected ` +
+      `${expected.join(", ")}\n  got      ${unbound.join(", ") || "(none)"}\n` +
+      "§7 raises seven bullets over thirteen rows, and §12 ruling 6 forbids inventing an alarm " +
+      "for a row the document does not raise one for. Three are housekeeping trends a chart " +
+      "reads better than a pager (points_stale_count, cpu_pct, memory_pct — and stale_data " +
+      "already alarms the consequence); ups_on_battery is the electrical system's own alarm " +
+      "reported here and is named by the UPS battery plan instead; firmware_version is a string " +
+      "with nothing to compare it against; and leak_state is the reused row the document " +
+      "declares and raises no bullet for — the room's own leak detection answers it, and a " +
+      "second row here would page a controls engineer for a plumbing fault.",
+  );
+}
+
+/**
+ * `facility-bas-gateway` against `docs/e5.3-derived-taglist-v1.md` §7 (plan
+ * §5.7) — **the entry that closes PR 1**, and the one class whose subject is the
+ * platform's own plumbing rather than a building system.
+ *
+ * **`assertNoLimitNumbers` IS DELIBERATELY NOT CALLED HERE, and the reason is
+ * not that numbers do not matter.** The helper prints the regime sentence it is
+ * given, and `E5.3` §13 item 7 split the pack's constant into one per authority
+ * for exactly that reason: `FACILITY_LIFE_SAFETY_REGIME` names NFPA 72 and IS
+ * 2189, `FACILITY_OCCUPANCY_REGIME` an occupancy licence, and
+ * `FACILITY_AIR_QUALITY_REGIME` the ISHRAE and ASHRAE parameter lists. **No
+ * authority sets ANY number on this entry.** An enclosure temperature is the
+ * controller's own operating range from its datasheet, a supply voltage band is
+ * the power supply's, an acceptable protocol error rate is the integrator's at
+ * commissioning and a tolerable clock drift is the site's. There is no
+ * regulator behind them, so there is no regime sentence to pass, and minting a
+ * fourth constant with no authority behind it would be worse than the omission —
+ * a failure message citing a standard that says nothing about the number the
+ * reader is chasing is the defect item 7 records. `checkEntry` still refuses a
+ * `thresholdValue`/`operator` pair on every row catalog-wide (B7), which is the
+ * claim that actually matters here.
+ *
+ * The one place a digit legitimately appears is the LABEL of
+ * `supply_voltage_v` — `(24 V DC)`, which plan §5 lists among the parentheses
+ * that stay because they are part of the measurement's meaning. It is a nominal
+ * rating and not a limit, it is what the document writes, and no alarm string on
+ * this entry carries a digit at all.
+ */
+function checkBasGateway(): void {
+  const entry = requireStockEntry(BAS_CODE);
+  assertEntryIdentity(BAS_CODE, entry, "bas_gateway", "facility");
+
+  // ---- 13 points, 2 core + 11 extended + 0 manual + 0 derived -------------
+
+  assert(
+    tierCount(entry, "core") === 2 &&
+      tierCount(entry, "extended") === 11 &&
+      tierCount(entry, "manual") === 0 &&
+      tierCount(entry, "derived") === 0,
+    "§7 marks 2 rows C and 11 X, authors no M row and promotes no derived code — 2/11/0/0. " +
+      `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
+  );
+  assertPointTable(BAS_CODE, "§7", entry, BAS_POINTS);
+  // The EMPTY table is the claim, not the absence of a call: §7 names three
+  // derived codes and this entry promotes NONE of them, so a formula appearing
+  // here later fails this line and has to be argued for.
+  assertDerivedPoints(BAS_CODE, entry, []);
+  assertNoKpis(BAS_CODE, entry, "§7");
+  assertDeferralsAbsent(BAS_CODE, entry);
+
+  // ---- the reused row, and the string row --------------------------------
+
+  const leak = entry.points.find((point) => point.pointKey === "leak_state");
+  assert(
+    leak?.meta?.tier === "extended" && leak.required === false && leak.unit === null,
+    `${BAS_CODE}.leak_state must be tier X, optional and carry a null unit. It is a REUSED code ` +
+      "from CONTROL_ROOM_ENVIRONMENT_POINT_KEYS — the closed z.enum the control-room screens " +
+      "consume — referenced here and never redeclared, and §7 marks it X because water detection " +
+      "under a floor void is fitted in some panel rooms and not others. The vocabulary spells a " +
+      `0/1 row "" and the point carries null. Got tier ${String(leak?.meta?.tier)}, required ` +
+      `${String(leak?.required)}, unit ${String(leak?.unit)}.`,
+  );
+  const firmware = entry.points.find((point) => point.pointKey === "firmware_version");
+  assert(
+    firmware?.unit === null && firmware.meta?.tier === "extended",
+    `${BAS_CODE}.firmware_version must carry a null unit and tier X. It is a text row — an ` +
+      "attribute-as-point, a STRING on a template point — and §4.4 maps every text, 0/1, count, " +
+      "enum and code row to \"\" in the vocabulary and null here. A unit on a string is " +
+      `meaningless rather than merely absent. Got unit ${String(firmware?.unit)}, tier ` +
+      `${String(firmware?.meta?.tier)}.`,
+  );
+  assertTheRowsNoAlarmBinds(entry);
+
+  // ---- 7 alarms, every one of them with a trade --------------------------
+
+  const alarms = alarmsOf(entry);
+  assertAlarmTable(BAS_CODE, "§7", alarms, BAS_ALARMS);
+  assertPhilosophyRows(BAS_CODE, alarms);
+  assertSkillAssignment(
+    BAS_CODE,
+    alarms,
+    {
+      device_offline: "controls",
+      stale_data: "controls",
+      comms_error_rate_high: "controls",
+      enclosure_temp_high: "electrical",
+      supply_voltage_low: "electrical",
+      clock_drift: "controls",
+      panel_door_open: "controls",
+    },
+    // Every row here carries a trade and the empty list is the CLAIM —
+    // assertSkillAssignment requires the map and this list to partition the
+    // seven. Five are controls (an unreachable gateway, a stalled one, protocol
+    // errors, a drifted clock, an open panel door) and two are electrical (a hot
+    // enclosure and a low 24 V supply are the panel's power and cooling). None
+    // of the pack's 16 no-skill rows is here: a gateway reports nothing about a
+    // building's USE and attends no life-safety event.
+    [],
+  );
+  const offline = alarms.find((alarm) => alarm.code === "device_offline");
+  assert(
+    offline?.severity === "critical" && offline.category === "operations",
+    `${BAS_CODE}'s device_offline must be critical / operations — it is the only row in this ` +
+      "pack whose failure takes OTHER assets' points dark rather than its own. Every point " +
+      "behind an unreachable gateway stops arriving, and the screens that read them keep " +
+      `rendering the last value. Got ${String(offline?.severity)} / ${String(offline?.category)}.`,
+  );
+  const stale = alarms.find((alarm) => alarm.code === "stale_data");
+  assert(
+    stale?.pointKey === "last_seen_age_s",
+    `${BAS_CODE}'s stale_data must bind last_seen_age_s and not device_online. The two rows are ` +
+      "different failures and this is the one that fools a dashboard: a gateway that answers a " +
+      "ping while its points stop updating looks HEALTHIER than one that is plainly offline, " +
+      "because every trend on it goes flat rather than empty. device_offline binds the reachable " +
+      `flag; this row binds the age. Got "${String(stale?.pointKey)}".`,
+  );
+  for (const alarm of alarms) {
+    const strings = [
+      String(alarm.message ?? ""),
+      ...Object.values(
+        (alarm as unknown as { philosophy?: Record<string, unknown> }).philosophy ?? {},
+      ).map((value) => String(value)),
+    ];
+    for (const text of strings) {
+      assert(
+        !/\d/.test(text),
+        `${BAS_CODE} alarm "${alarm.code}" carries a digit in "${text}". assertNoLimitNumbers is ` +
+          "not called on this entry because NO AUTHORITY sets any number on it — an enclosure " +
+          "temperature is the controller's datasheet range, a supply band is the power supply's, " +
+          "an acceptable protocol error rate is the integrator's at commissioning and a tolerable " +
+          "clock drift is the site's — so there is no regime sentence to print and E5.3 §13 item " +
+          "7 forbids minting one with no authority behind it. The rule the other entries get from " +
+          "that helper still holds here and this is how: no digit in a message and none inside a " +
+          "philosophy either. The nominal 24 V DC rating lives in the supply row's LABEL, where " +
+          "the tag list puts it, and it is a rating and not a limit.",
+      );
+    }
+  }
+  assert(
+    DEFERRED_DERIVED_CODES[BAS_CODE].length === 3 &&
+      DEFERRED_DERIVED_CODES[BAS_CODE].includes("data_quality_pct"),
+    "§7's Derived: line names three codes and this entry authors NONE of them. data_quality_pct " +
+      "is the SOW page-10 footer's own number (98.6% Good) and ADR 0054 decision 6 rules it to " +
+      "the F3.x estate surface: a quality figure is computed over the points BEHIND a gateway, " +
+      "which is the estate's view and not this asset's, and a per-gateway template point would " +
+      "be a second, quieter answer to it. uptime_pct is reachable time over elapsed time and " +
+      "mean_latency_s is a mean over a window — both need a clock and a memory bms-calc-v1 has " +
+      `neither of. Got ${DEFERRED_DERIVED_CODES[BAS_CODE].length}: ` +
+      `${DEFERRED_DERIVED_CODES[BAS_CODE].join(", ")}.`,
+  );
+
+  // ---- 3 maintenance plans, none safetyCritical, none condition_based -----
+
+  const plans = maintenanceOf(entry);
+  assert(plans.length === 3, `plan §5.10 authors 3 BAS gateway plans; the entry carries ${plans.length}`);
+  const safetyCritical = plans.filter((plan) => plan.safetyCritical === true);
+  assert(
+    safetyCritical.length === 0,
+    `${BAS_CODE} must carry NO safetyCritical plan, and that is authored rather than omitted. ` +
+      "Nothing on a gateway is a barrier whose silent failure hurts somebody: it OBSERVES the " +
+      "fire panel, the lift and the access controller and it interlocks none of them, so a dead " +
+      "gateway is an estate that has gone blind and not an estate that has become unsafe. ADR " +
+      "0054 decision 8 names ten critical plans across the pack and none of them is here. Got " +
+      `${safetyCritical.length}: ${safetyCritical.map((plan) => plan.title).join("; ")}`,
+  );
+  const conditionPlans = plans.filter((plan) => plan.category === "condition_based");
+  assert(
+    conditionPlans.length === 0 && plans.every((plan) => plan.generationMode === "calendar"),
+    `${BAS_CODE} must carry NO condition_based plan and every plan in "calendar" mode. Firmware ` +
+      "and backups are checked on a schedule, a battery is tested on one and an enclosure is " +
+      "cleaned on one; none of the three is generated by a reading, and the readings this entry " +
+      "does carry raise an alarm somebody answers now rather than a work order raised later. Got " +
+      `${conditionPlans.length} condition_based plan(s), modes [` +
+      `${plans.map((plan) => String(plan.generationMode)).join(", ")}].`,
+  );
+  const firmwarePlan = plans.find((plan) => plan.title.startsWith("Firmware"));
+  for (const pointKey of ["firmware_version", "rtc_drift_s"]) {
+    assert(
+      String(firmwarePlan?.triggerSummary ?? "").includes(pointKey),
+      `${BAS_CODE}'s firmware plan must name ${pointKey} in its triggerSummary — the string row ` +
+        "no alarm binds, and the clock row whose drift the same visit corrects. A row nothing " +
+        `alarms needs the plan to say what is done with it. Got: ` +
+        `"${String(firmwarePlan?.triggerSummary)}"`,
+    );
+  }
+  const upsPlan = plans.find((plan) => plan.title.includes("UPS"));
+  assert(
+    String(upsPlan?.triggerSummary ?? "").includes("ups_on_battery"),
+    `${BAS_CODE}'s UPS battery plan must name ups_on_battery in its triggerSummary — the row no ` +
+      "alarm binds, because the mains failure behind it is the electrical system's own alarm and " +
+      `this row is the gateway reporting it. Got: "${String(upsPlan?.triggerSummary)}"`,
+  );
+  const enclosurePlan = plans.find((plan) => plan.category === "inspection_round");
+  assert(
+    String(enclosurePlan?.triggerSummary ?? "").includes("enclosure_temp_c"),
+    `${BAS_CODE}'s enclosure round must name enclosure_temp_c in its triggerSummary — the reading ` +
+      "a blocked filter and a failed panel fan move, and the one the round exists to keep in " +
+      `range. Got: "${String(enclosurePlan?.triggerSummary)}"`,
+  );
+  assertMaintenanceBounds(BAS_CODE, entry);
+  assertProvenance(BAS_CODE, entry, FACILITY_TAG_LIST, "§7");
+}
+
 /**
  * Every per-class block in this file. Called by `facility-classes-3.test.ts`,
  * its name-sibling wrapper. **§1 and §2 live in `facility-classes.spec.ts` and
@@ -407,4 +749,5 @@ function checkIaqNode(): void {
  */
 export function runFacilityClassEntryTests3(): void {
   checkIaqNode();
+  checkBasGateway();
 }

@@ -133,6 +133,7 @@ const STOCK_ASSET_RELS = [
   `${STOCK_CATALOG_DIR}/facility-occupancy-zone.ts`,
   `${STOCK_CATALOG_DIR}/facility-parking-level.ts`,
   `${STOCK_CATALOG_DIR}/environment-iaq-node.ts`,
+  `${STOCK_CATALOG_DIR}/facility-bas-gateway.ts`,
 ] as const;
 
 /**
@@ -375,7 +376,19 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // either, and `mechanical.ts` records why that is structural rather than a
     // deferral of effort. A count below this is a dropped or misspelled row and
     // not slack.
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(584);
+    //
+    // **744 since `E5.3` plan Task 10 — MEASURED off the built files with this
+    // file's own two scanners after the BAS gateway landed, never copied from
+    // the plan**: 584 + 114 declared facility/environment point rows (15 + 24 +
+    // 17 + 11 + 17 + 17 + 13, the seven PR 1 entries in document order) + 46
+    // alarm references (4 + 11 + 7 + 4 + 7 + 6 + 7). Equal to plan §4.6's
+    // prediction, which is the check: §4.6 says to read this number off the
+    // files and treat any other value as a dropped or misspelled row rather
+    // than as slack, and it agreed. The KPI member count stays 12 for the
+    // FOURTH pack running — ADR 0054 decision 6 authors no `content.kpis`
+    // either, and `facility.ts` records why that is structural. PR 2 moves this
+    // to 897 with the lift and the escalator.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(744);
     // 168 distinct, so a copy-pasted repetition cannot satisfy the bound above
     // alone: 33 feeder + 30 transformer + 38 DG + 29 UPS (battery_v and
     // ambient_temp_c repeat) + 25 PV (ambient_temp_c) + 13 APFC (thd_v_pct,
@@ -409,7 +422,30 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // the overlap arithmetic held as well as the transcription: the length
     // bound above says no row was dropped, and this one says no key was
     // double-counted or quietly duplicated.
-    expect(new Set(pointKeys).size, "fewer distinct keys than the eighteen classes declare").toBeGreaterThanOrEqual(382);
+    //
+    // **490 since `E5.3` plan Task 10**, measured the same way and in the same
+    // commit as the length bound above: 382 + the facility pack's 108 distinct
+    // keys — its 104 new table codes plus the 4 promoted derived codes, with
+    // **nothing subtracted**, because not one of the 108 is named by an
+    // electrical, water or mechanical module. That zero overlap is the pack's
+    // own claim: a building's lighting, fire, access, occupancy, parking, air
+    // quality and gateway rows share no spelling with a plant's, and the
+    // near-misses that look like a shared code are deliberately not one
+    // (`zone_kw` against `kw`, `burn_hours_h` against `run_hours_h`,
+    // `door_open_state` against `door_state`, `no2_ppb` against `no2_ppm`) —
+    // `packages/shared/src/facility-point-keys.ts` lists them all with the
+    // reason each was kept as spelled. 744 references over 490 distinct keys is
+    // not an error either: 46 of the references are alarm bindings onto rows
+    // their own entry already declares, and the pack's 114 declared rows are
+    // 108 distinct codes because **six are declared on two entries each** —
+    // `occupancy_pct` (one code, two formulas, the `recovery_pct` shape),
+    // `co_ppm` (the dual-tier row, core on the parking level and extended on
+    // the air quality node), `sensor_battery_pct`, `entry_count`, `exit_count`
+    // and `occupancy_state`, every one of them a code the tag list itself
+    // repeats between sections. Equal to plan
+    // §4.6's prediction, so the overlap arithmetic held as well as the
+    // transcription.
+    expect(new Set(pointKeys).size, "fewer distinct keys than the eighteen classes declare").toBeGreaterThanOrEqual(490);
     // 396 = the 289 E5.1 left (F2.11's 139 ELECTRICAL_CLASS_POINT_KEYS plus
     // F2.12's six promotions, plus the other arrays, plus E5.1's 98-code
     // WATER_CLASS_POINT_KEYS) + E5.2 pass A's 107-code

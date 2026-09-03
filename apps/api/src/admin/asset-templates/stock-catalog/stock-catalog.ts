@@ -143,11 +143,12 @@ export const STOCK_ASSET_TEMPLATE_CATALOG: readonly StockAssetTemplateEntry[] = 
   // before the pump, and `mechanical.ts` records why it shipped empty rather
   // than as six skeletons.
   ...MECHANICAL_STOCK_ASSET_TEMPLATES,
-  // **Empty until `E5.3` plan Task 4 authors the lighting zone** — the pack is
-  // declared one commit before its first entry, and `facility.ts` says why it
-  // ships empty rather than as seven skeletons.
-  // `stock-catalog-deferrals.spec.ts` holds the resulting catalog to the HEAD of
-  // `STOCK_ENTRY_CODES`, with an anti-vacuity floor at the 18 already shipped,
-  // until all seven land at Task 10 and full equality is restored.
+  // Empty for one commit at `E5.3` Task 3 — the pack is declared one commit
+  // before its first entry, and `facility.ts` says why it shipped empty rather
+  // than as seven skeletons. **All seven landed at Tasks 4-10**, so
+  // `stock-catalog-deferrals.spec.ts` compares the catalog against the whole of
+  // `STOCK_ENTRY_CODES` again: the HEAD comparison and its anti-vacuity floor
+  // were deleted together with the BAS gateway, which is what staging a claim
+  // means. PR 2 stages it once more for the lift and the escalator.
   ...FACILITY_STOCK_ASSET_TEMPLATES,
 ];
