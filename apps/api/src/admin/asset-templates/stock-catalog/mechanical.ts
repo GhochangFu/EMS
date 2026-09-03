@@ -15,8 +15,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * **THE ARRAY BELOW SHIPPED EMPTY, AND IT WAS EMPTY ON PURPOSE.** This module
  * landed in the commit that declares the pack — the two `PACK_SOURCE_DOC`
  * prefixes, the eighteen `STOCK_ENTRY_CODES`, the six deferral lists and this
- * index — one commit before the first machine was authored, and it **fills one
- * machine per commit** from there (`mechanical-pump` is in). `E5.1` §13 item 1 is
+ * index — one commit before the first machine was authored, and it **filled one
+ * machine per commit** from there; all six are in (the version history at the
+ * foot of this docblock is the order they landed). `E5.1` §13 item 1 is
  * the reason it shipped empty rather than holding six skeletons with one
  * placeholder point each: a skeleton passes every check in this directory while
  * telling a global

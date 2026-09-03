@@ -761,9 +761,11 @@ export type WaterClassPointKey = (typeof WATER_CLASS_POINT_KEYS)[number];
  * sits beside, so `tests/f3.39`'s lookbehind-anchored `keysForDomain(` pin
  * cannot confuse them.
  *
- * **Twenty codes are reused, never redeclared** (ADR 0053 decision 3) —
+ * **Twenty-one codes are reused, never redeclared** (ADR 0053 decision 3) —
  * `current_a`, `kw`, `kwh_total`, `run_hours_h`, `start_count`,
- * `winding_temp_c`, `insulation_resistance_mohm` (all `ELECTRICAL_CLASS_POINT_KEYS`),
+ * `winding_temp_c`, `insulation_resistance_mohm`, `fuel_level_pct` (the DG
+ * set's day-tank level, reused for the boiler's by the plan's §12 ruling 1;
+ * all `ELECTRICAL_CLASS_POINT_KEYS`),
  * `oil_temp_c`, `oil_pressure_bar`, `service_due_h`, `fan_current_a` (also
  * `ELECTRICAL_CLASS_POINT_KEYS`), and the nine `HVAC_POINT_KEYS` codes
  * `chw_supply_temp_c`, `chw_return_temp_c`, `chw_flow_lps`, `compressor_ok`,

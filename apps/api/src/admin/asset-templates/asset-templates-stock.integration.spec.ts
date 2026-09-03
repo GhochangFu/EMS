@@ -390,7 +390,11 @@ export async function assertAMechanicalEntryImportsAndPublishes(
   // Same pre-check as the feeder's, for the same reason: an open draft of this
   // code in the target organization — left by a crashed run, or a developer's
   // own — would 409 the import. Say so rather than fail as a constraint name;
-  // this suite must never delete a row it did not write.
+  // this suite must never delete a row it did not write. Drafts only, on
+  // purpose: a PUBLISHED leftover (a run that died between `publish` and
+  // `cleanup`) does not collide — the next import takes the next version
+  // (`F2.13`: a second import of a published code is v2) — so widening this
+  // to any status would refuse a run for a state the product allows.
   const { rowCount } = await pool.query(
     `SELECT 1 FROM bms.asset_templates WHERE organization_id = $1 AND code = $2 AND status = 'draft'`,
     [fx.organizationId, PUMP_CODE],

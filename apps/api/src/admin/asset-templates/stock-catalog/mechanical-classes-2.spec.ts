@@ -371,9 +371,11 @@ const CHILLER_POINTS: readonly PointRow[] = [
  *
  * **`kw_per_tr` AND `cop` RESTATE THE ΔT RATHER THAN REFERENCING
  * `chw_delta_t_c`.** A derived point may reference only MEASURED points of the
- * same entry (ADR 0036 decision 7, enforced by `validateFormula`), so a formula
- * naming another derived point does not parse. The restatement is therefore
- * required, not clumsy, and it must not be "simplified" into a reference. The
+ * same entry (ADR 0036 decision 7). The formula parses — `validateFormula` is
+ * handed every declared key — and `templatePointsBodySchema`'s `derivedRef`
+ * check is what refuses a formula naming another derived point. The
+ * restatement is therefore required, not clumsy, and it must not be
+ * "simplified" into a reference. The
  * literal comparison below is what makes that permanent: two valid formulas over
  * the same inputs can mean opposite things — `{return} - {supply}` and
  * `{supply} - {return}` are a load and its negative — and a rewrite of a shipped
@@ -477,8 +479,8 @@ function checkChiller(): void {
         formula.includes("{chw_return_temp_c} - {chw_supply_temp_c}"),
       `${CHILLER_CODE}.${pointKey} must restate the chilled-water ΔT from its two MEASURED ` +
         "temperatures and must not reference the derived point chw_delta_t_c. A derived point may " +
-        "reference only measured points of the same entry (ADR 0036 decision 7, enforced by " +
-        "validateFormula), so the reference form does not parse at all — the restatement is " +
+        "reference only measured points of the same entry (ADR 0036 decision 7, refused by " +
+        "templatePointsBodySchema's derivedRef check — the string itself parses) — the restatement is " +
         "required rather than clumsy, and a later author \"simplifying\" it breaks the entry for " +
         `every organization that imported it. Got: "${formula}"`,
     );

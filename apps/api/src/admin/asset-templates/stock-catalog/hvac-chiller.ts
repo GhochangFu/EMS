@@ -98,10 +98,12 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  * **`kw_per_tr` AND `cop` RESTATE THE ΔT, AND THAT IS REQUIRED RATHER THAN
  * CLUMSY.** A derived point may reference only MEASURED points of the same entry
- * (ADR 0036 decision 7, enforced by `validateFormula`), never another derived
- * point — so `{cooling_kw} * 3.517 / {cooling_load_tr}` does not parse at all,
- * and `{chw_delta_t_c}` inside a denominator does not parse either. The
- * restatement is the only expressible form. **Do not "simplify" it**: the entry
+ * (ADR 0036 decision 7), never another derived point. The formula itself
+ * PARSES — `validateFormula` is handed every declared key, derived ones
+ * included — and it is `templatePointsBodySchema`'s sibling `derivedRef`
+ * check (`asset-templates.schema.ts`) that refuses `{cooling_load_tr}` or
+ * `{chw_delta_t_c}` inside a formula, at `checkEntry`, at create and at
+ * publish. The restatement is the only form that check admits. **Do not "simplify" it**: the entry
  * spec asserts all five strings literally, because a rewrite of a shipped
  * formula is a silent behaviour change on every organization that imported the
  * entry, and two valid formulas over the same inputs can mean opposite things.
