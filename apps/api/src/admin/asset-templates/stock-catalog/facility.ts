@@ -2,6 +2,7 @@ import { FACILITY_ACCESS_DOOR } from "./facility-access-door";
 import { FACILITY_FIRE_PANEL } from "./facility-fire-panel";
 import { FACILITY_LIGHTING_ZONE } from "./facility-lighting-zone";
 import { FACILITY_OCCUPANCY_ZONE } from "./facility-occupancy-zone";
+import { FACILITY_PARKING_LEVEL } from "./facility-parking-level";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -398,6 +399,11 @@ import type { StockAssetTemplateEntry } from "./types";
  *    (2 C + 8 X + 0 M + 1 derived — `occupancy_pct`, the first of its two
  *    authorings), 4 alarms from five bullets — the pack's second dropped bullet
  *    — one of them with no `skill`, 2 maintenance plans, none `safetyCritical`.
+ *  - `facility-parking-level` **v1** (2026-09-04, `E5.3`): §5, 17 points
+ *    (5 C + 11 X + 0 M + 1 derived — `occupancy_pct`, the second authoring),
+ *    7 alarms — one of them with no `skill` — 4 maintenance plans, none
+ *    `safetyCritical`, one `condition_based`. Carries the pack's dual-tier row:
+ *    `co_ppm` is `core` here and `extended` on the IAQ node.
  */
 export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0054 decision 1's document order — lighting zone, fire panel, access
@@ -409,4 +415,5 @@ export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] 
   FACILITY_FIRE_PANEL,
   FACILITY_ACCESS_DOOR,
   FACILITY_OCCUPANCY_ZONE,
+  FACILITY_PARKING_LEVEL,
 ];

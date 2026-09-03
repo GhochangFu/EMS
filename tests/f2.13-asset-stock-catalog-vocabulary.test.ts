@@ -131,6 +131,7 @@ const STOCK_ASSET_RELS = [
   `${STOCK_CATALOG_DIR}/facility-fire-panel.ts`,
   `${STOCK_CATALOG_DIR}/facility-access-door.ts`,
   `${STOCK_CATALOG_DIR}/facility-occupancy-zone.ts`,
+  `${STOCK_CATALOG_DIR}/facility-parking-level.ts`,
 ] as const;
 
 /**

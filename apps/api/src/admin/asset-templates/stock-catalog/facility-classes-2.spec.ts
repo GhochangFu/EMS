@@ -614,6 +614,332 @@ function checkOccupancyZone(): void {
   assertProvenance(OCCUPANCY_CODE, entry, FACILITY_TAG_LIST, "§4");
 }
 
+// ===========================================================================
+// §5 — `facility-parking-level`
+// ===========================================================================
+
+const PARKING_CODE = "facility-parking-level";
+
+/**
+ * §5's 16 table rows in the document's own order (`sortOrder` 0-15), then the
+ * second authoring of `occupancy_pct` at 16 — `[pointKey, tier, unit]`.
+ *
+ * **Four rows carry a unit** — `ppm` twice on the two basement gases, `kW` and
+ * `kWh` on the EV charger cluster — and the other twelve are `0/1` or `count`
+ * rows, which ADR 0051 Amendment 6 decision 4 spells `""` in the vocabulary and
+ * `null` here.
+ *
+ * **`co_ppm` is `core` on this entry and `extended` on §6's IAQ node**, which is
+ * the pack's dual-tier row and is settled by ADR 0054 decision 4 rather than
+ * left to the reader: a basement carbon monoxide sensor IS the ventilation
+ * interlock, and a level without one has no way to know it needs to run the
+ * fans. On an air quality node the same code is one pollutant among nine.
+ * {@link assertCoPpmTier} says it from both blocks, the way `effluent_cod_mgl`
+ * is asserted on the STP and the ETP.
+ *
+ * **`entry_count` and `exit_count` are REFERENCED, not declared** — §4's
+ * occupancy zone owns them, and here they count VEHICLES rather than people.
+ * One code, one meaning: things that crossed the boundary inward, in the
+ * interval.
+ *
+ * `no2_ppm` here and §6's `no2_ppb` are two quantities at two ranges — a
+ * basement's diesel exhaust and an indoor node's trace measurement — and are
+ * deliberately not normalised into one code (plan §4.2's near-miss list).
+ */
+const PARKING_POINTS: readonly PointRow[] = [
+  ["bays_total", "core", null],
+  ["bays_occupied", "core", null],
+  ["bays_free", "core", null],
+  ["ev_bays_free", "extended", null],
+  ["entry_barrier_state", "extended", null],
+  ["exit_barrier_state", "extended", null],
+  ["barrier_fault", "extended", null],
+  ["entry_count", "extended", null],
+  ["exit_count", "extended", null],
+  ["co_ppm", "core", "ppm"],
+  ["no2_ppm", "extended", "ppm"],
+  ["jet_fan_status", "core", null],
+  ["jet_fan_fault", "extended", null],
+  ["guidance_comms_ok", "extended", null],
+  ["ev_charger_kw", "extended", "kW"],
+  ["ev_charger_kwh_total", "extended", "kWh"],
+  ["occupancy_pct", "derived", "%"],
+];
+
+/**
+ * §5 promotes **one** of its five derived codes — `occupancy_pct`, the SECOND
+ * of its two authorings.
+ *
+ * Both inputs are `C` here, unlike §4's, where both are `X`: a guidance system
+ * that does not know its bay count or its occupied count is not a guidance
+ * system. `maxInputAgeSeconds` is `null` — the bay sensors report on one
+ * network at one rate.
+ */
+const PARKING_DERIVED: readonly DerivedRow[] = [
+  ["occupancy_pct", "{bays_occupied} / {bays_total} * 100", null],
+];
+
+/**
+ * §5's seven alarm bullets, one row each — nothing dropped and nothing invented.
+ *
+ * **`co_high` is `critical` / `safety` and is the life-safety one on this
+ * entry**, which the section says outright: a basement fills with exhaust when
+ * the ventilation stops, and carbon monoxide is the gas that kills before
+ * anybody notices it. `no2_high` is the diesel marker beside it and is a
+ * `warning`.
+ *
+ * `level_full` is the one row with no `skill` — see {@link PARKING_NO_SKILL_ROWS}.
+ */
+const PARKING_ALARMS: readonly AlarmRow[] = [
+  ["co_high", "co_ppm", "critical", "safety"],
+  ["no2_high", "no2_ppm", "warning", "safety"],
+  ["jet_fan_fault", "jet_fan_fault", "warning", "operations"],
+  ["level_full", "bays_free", "info", "operations"],
+  ["barrier_fault", "barrier_fault", "warning", "operations"],
+  ["guidance_network_offline", "guidance_comms_ok", "warning", "operations"],
+  ["bay_count_inconsistent", "bays_occupied", "warning", "operations"],
+];
+
+/**
+ * **The pack's one no-skill row that is neither life-safety nor security, and
+ * it is recorded rather than forced into a class it does not fit.**
+ *
+ * `assertSkillAssignment`'s failure text names two unanswerable classes — the
+ * water and mechanical packs' process chemistry, and this pack's life-safety and
+ * security events. `level_full` is a third: a car park with no free bays is a
+ * FACT about how busy the building is, and no maintenance trade answers it
+ * because nothing is broken. The car-park operator opens another level or turns
+ * the entry sign; a wireman, a fitter, a controls engineer, a ventilation
+ * engineer and a civil trade all have nothing to do.
+ *
+ * Filing it under `controls` to make the map tidy would route a full car park to
+ * a trade that would then have to work out why it was called, which is the exact
+ * failure the omission exists to prevent. The row is `info` for the same reason.
+ */
+const PARKING_NO_SKILL_ROWS = ["level_full"] as const;
+
+/**
+ * **`occupancy_pct` is ONE code authored on TWO entries with DIFFERENT formula
+ * strings, and that is correct rather than a clash** — `E5.1`'s `recovery_pct`
+ * shape, and plan §12 ruling 2's promotion.
+ *
+ * ADR 0051 Amendment 6 decision 5 rules one code, one *meaning* — and the
+ * meaning is identical on both: *the fraction of a space's design capacity that
+ * is in use*. Only the rows differ, because a zone counts people against a
+ * commissioned capacity and a level counts vehicles against its bays. The code
+ * is promoted **once** into `FACILITY_CLASS_POINT_KEYS` and authored **twice**.
+ *
+ * Asserted from this block rather than from §4's because this is the second
+ * authoring — the one a reader arrives at already holding the first, and
+ * therefore the one where the suspicion of a copy-paste bug lands.
+ */
+function assertOccupancyIsOneCodeTwoFormulas(): void {
+  const formulaOn = (code: string): string | undefined =>
+    requireStockEntry(code).points.find((point) => point.pointKey === "occupancy_pct")?.formula ??
+    undefined;
+  const zone = formulaOn(OCCUPANCY_CODE);
+  const level = formulaOn(PARKING_CODE);
+  assert(
+    zone === "{occupancy_count} / {occupancy_capacity} * 100" &&
+      level === "{bays_occupied} / {bays_total} * 100",
+    "occupancy_pct must be authored on BOTH facility-occupancy-zone and facility-parking-level, " +
+      `each over its own asset's rows. Got zone "${String(zone)}" and level "${String(level)}". ` +
+      "One code, one MEANING (ADR 0051 Amendment 6 decision 5) — the fraction of a space's " +
+      "design capacity that is in use — and two formulas, because a zone counts people against " +
+      "a commissioned capacity and a level counts vehicles against its bays. This is not a clash " +
+      'and must not be "fixed" by minting a second code.',
+  );
+  assert(
+    zone !== level,
+    "the two occupancy_pct formulas must differ — identical strings mean one of the two entries " +
+      "was copied from the other and now computes the wrong space's occupancy",
+  );
+  for (const code of [OCCUPANCY_CODE, PARKING_CODE] as const) {
+    assert(
+      !DEFERRED_DERIVED_CODES[code].includes("occupancy_pct"),
+      `${code} lists occupancy_pct as a deferral and it is AUTHORED there. A code cannot be both ` +
+        "on one entry: the deferral record is a claim that the entry does not declare it, and " +
+        "assertDeferralsAbsent would fail on the entry itself. It is deferred on neither.",
+    );
+  }
+}
+
+/**
+ * **The pack's dual-tier row, asserted from BOTH blocks** — the
+ * `effluent_cod_mgl` shape (`manual` on the STP, `extended` on the ETP), and the
+ * reason it is parameterised rather than written twice.
+ *
+ * `co_ppm` is declared once, under `facility`, because §5 is its first
+ * occurrence in the document (ADR 0054 decision 3). **A tier is per ENTRY**, and
+ * ADR 0054 decision 4 rules this one: `core` on the parking level, because a
+ * basement carbon monoxide sensor IS the ventilation interlock and a level
+ * without one has no way to know it needs to run its fans; `extended` on §6's
+ * IAQ node, where the same code is one pollutant among nine on an indoor comfort
+ * sensor.
+ *
+ * **Each block asserts its own half**, and the failure message names the other
+ * — so "normalising" the two into one tier fails on whichever entry was edited,
+ * with the reason the disagreement is deliberate. Exported because §6's block
+ * lives in `facility-classes-3.spec.ts`: a claim about a pair asserted from one
+ * side only is half a claim, and each entry ships in its own commit.
+ */
+export function assertCoPpmTier(code: string, tier: "core" | "extended"): void {
+  const point = requireStockEntry(code).points.find((row) => row.pointKey === "co_ppm");
+  assert(
+    point?.meta?.tier === tier && point.required === (tier === "core"),
+    `${code} must file co_ppm as meta.tier "${tier}" with required ${String(tier === "core")}. ` +
+      "This is the pack's DUAL-TIER row (ADR 0054 decision 4) and the disagreement between the " +
+      "two entries is deliberate: on facility-parking-level the code is CORE, because a basement " +
+      "carbon monoxide sensor is the ventilation interlock and a level without one cannot know " +
+      "it needs to run its fans; on environment-iaq-node it is EXTENDED, one pollutant among " +
+      "nine on an indoor comfort sensor. The code itself is declared once, under facility, " +
+      `because §5 is its first occurrence in the document. Got tier ` +
+      `"${String(point?.meta?.tier)}", required ${String(point?.required)}.`,
+  );
+  assert(
+    point?.unit === "ppm",
+    `${code}.co_ppm must carry unit "ppm" on both entries — a tier is per entry and a UNIT is ` +
+      "not: UNIT_BY_KEY seeds it write-once through COALESCE, so a template that overrode it on " +
+      `one of the two would ship a disagreement no later seed could correct. Got ` +
+      `"${String(point?.unit)}".`,
+  );
+}
+
+/**
+ * `facility-parking-level` against `docs/e5.3-derived-taglist-v1.md` §5 (plan
+ * §5.5) — the entry that carries the pack's dual-tier row and the second of
+ * `occupancy_pct`'s two formulas.
+ *
+ * **Its `co_ppm` half of the dual-tier claim is asserted here and §6's from
+ * `facility-classes-3.spec.ts`** — each entry ships in its own commit, so
+ * neither block may reach into an entry the catalog has not got yet.
+ */
+function checkParkingLevel(): void {
+  const entry = requireStockEntry(PARKING_CODE);
+  assertEntryIdentity(PARKING_CODE, entry, "parking_level", "facility");
+
+  // ---- 17 points, 5 core + 11 extended + 0 manual + 1 derived -------------
+
+  assert(
+    tierCount(entry, "core") === 5 &&
+      tierCount(entry, "extended") === 11 &&
+      tierCount(entry, "manual") === 0 &&
+      tierCount(entry, "derived") === 1,
+    `§5 marks 5 rows C and 11 X, has no M row, and one of its five derived codes is authored — ` +
+      `5/11/0/1. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
+  );
+  assertPointTable(PARKING_CODE, "§5", entry, PARKING_POINTS);
+  assertDerivedPoints(PARKING_CODE, entry, PARKING_DERIVED);
+  assertOccupancyIsOneCodeTwoFormulas();
+  assertCoPpmTier(PARKING_CODE, "core");
+  assertNoKpis(PARKING_CODE, entry, "§5");
+  assertDeferralsAbsent(PARKING_CODE, entry);
+
+  // ---- 7 alarms, one of them with no trade to route to --------------------
+
+  const alarms = alarmsOf(entry);
+  assertAlarmTable(PARKING_CODE, "§5", alarms, PARKING_ALARMS);
+  assertPhilosophyRows(PARKING_CODE, alarms);
+  assertSkillAssignment(
+    PARKING_CODE,
+    alarms,
+    {
+      co_high: "hvac",
+      no2_high: "hvac",
+      jet_fan_fault: "mechanical",
+      barrier_fault: "mechanical",
+      guidance_network_offline: "controls",
+      bay_count_inconsistent: "controls",
+    },
+    PARKING_NO_SKILL_ROWS,
+  );
+  assertNoLimitNumbers(PARKING_CODE, alarms, ["co_high", "no2_high"], FACILITY_LIFE_SAFETY_REGIME);
+
+  assert(
+    PARKING_NO_SKILL_ROWS.length === 1,
+    `${PARKING_CODE} must carry exactly one row with no skill — level_full, which is a FACT ` +
+      "about how busy the building is and not a failure any trade answers. The two gas rows are " +
+      "ventilation (hvac), the fan and the barrier are machines (mechanical), and the bay " +
+      "network and the count inconsistency are sensor bindings (controls). Got " +
+      `${PARKING_NO_SKILL_ROWS.length}.`,
+  );
+  const co = alarms.find((alarm) => alarm.code === "co_high");
+  assert(
+    co?.severity === "critical" && co.category === "safety",
+    `${PARKING_CODE}'s co_high must be critical / safety — §5 calls it the life-safety one ` +
+      "outright. A basement fills with exhaust when the ventilation stops, and carbon monoxide " +
+      "is the gas that kills before anybody notices it. Filing it as an operations warning " +
+      `beside the fan fault is how it gets read as a ventilation nuisance. Got ` +
+      `${String(co?.severity)} / ${String(co?.category)}.`,
+  );
+  const inconsistent = alarms.find((alarm) => alarm.code === "bay_count_inconsistent");
+  const inconsistentText = String(inconsistent?.message ?? "");
+  assert(
+    inconsistent?.pointKey === "bays_occupied" &&
+      inconsistentText.includes("bays_free") &&
+      inconsistentText.includes("bays_total"),
+    `${PARKING_CODE}'s bay_count_inconsistent must bind bays_occupied and NAME bays_free and ` +
+      "bays_total in its message. The inconsistency is between three rows and bms-calc-v1 " +
+      "expresses no equality, so the alarm binds one and the rule reads the other two beside it " +
+      `(E2.4). Got "${String(inconsistent?.pointKey)}", message "${inconsistentText}".`,
+  );
+  assert(
+    DEFERRED_DERIVED_CODES[PARKING_CODE].length === 4,
+    "§5's Derived: line names five codes: occupancy_pct is authored above and the other four " +
+      "are deferred — and they are the pack's only list that is all one class, four time " +
+      "windows (turnover_per_day, avg_dwell_min, fan_hours_day, co_driven_fan_pct). Got " +
+      `${DEFERRED_DERIVED_CODES[PARKING_CODE].length}.`,
+  );
+
+  // ---- 4 maintenance plans, one condition_based, none safetyCritical ------
+
+  const plans = maintenanceOf(entry);
+  assert(plans.length === 4, `plan §5.10 authors 4 parking plans; the entry carries ${plans.length}`);
+  // NO safetyCritical plan, and that is authoring rather than omission (E5.2
+  // §13 item 10). The gas calibration is the closest — it is what keeps the
+  // life-safety co_high row honest — and it is `calibration` work on a
+  // ventilation interlock rather than a statutory barrier test. ADR 0054
+  // decision 8 names ten critical plans in the pack and none of them is here.
+  const safetyCritical = plans.filter((plan) => plan.safetyCritical === true);
+  assert(
+    safetyCritical.length === 0,
+    `${PARKING_CODE} must carry NO safetyCritical plan. The gas calibration is the closest — it ` +
+      "is what keeps the life-safety co_high row honest — and it is calibration work on a " +
+      "ventilation interlock, not a statutory barrier test. ADR 0054 decision 8 names ten " +
+      `critical plans across the pack and none of them is on this entry. Got ` +
+      `${safetyCritical.length}: ${safetyCritical.map((plan) => plan.title).join("; ")}`,
+  );
+  const calibration = plans.find((plan) => plan.category === "calibration");
+  for (const pointKey of ["co_ppm", "no2_ppm"]) {
+    assert(
+      String(calibration?.triggerSummary ?? "").includes(pointKey),
+      `${PARKING_CODE}'s gas calibration plan must name ${pointKey} in its triggerSummary — the ` +
+        "two rows the calibration is done on, and the two whose alarms are the level's only " +
+        `safety ones. Got: "${String(calibration?.triggerSummary)}"`,
+    );
+  }
+  const conditionPlans = plans.filter((plan) => plan.category === "condition_based");
+  assert(
+    conditionPlans.length === 1 && conditionPlans[0]?.generationMode === "condition",
+    `${PARKING_CODE} must carry exactly one condition_based plan, generated in "condition" mode ` +
+      "— the bay-sensor network check, raised when the three bay counts stop agreeing. A " +
+      `condition_based plan on a calendar mode is a calendar plan wearing the wrong category. ` +
+      `Got ${conditionPlans.length} plan(s), mode "${String(conditionPlans[0]?.generationMode)}".`,
+  );
+  const trigger = String(conditionPlans[0]?.triggerSummary ?? "");
+  for (const pointKey of ["bays_occupied", "bays_free", "bays_total"]) {
+    assert(
+      trigger.includes(pointKey),
+      `${PARKING_CODE}'s bay-sensor plan must name ${pointKey} in its triggerSummary — the three ` +
+        "rows whose disagreement IS the trigger, and the three bay_count_inconsistent is " +
+        `written around. Got: "${trigger}"`,
+    );
+  }
+  assertMaintenanceBounds(PARKING_CODE, entry);
+  assertProvenance(PARKING_CODE, entry, FACILITY_TAG_LIST, "§5");
+}
+
 /**
  * Every per-class block in this file. Called by `facility-classes-2.test.ts`,
  * its name-sibling wrapper. **§1 and §2 live in `facility-classes.spec.ts` and
@@ -622,4 +948,5 @@ function checkOccupancyZone(): void {
 export function runFacilityClassEntryTests2(): void {
   checkAccessDoor();
   checkOccupancyZone();
+  checkParkingLevel();
 }
