@@ -228,7 +228,8 @@ import { WATER_WTP } from "./water-wtp";
  *    the client's own dashboards). **Authored** (plan Task 5): 17 points
  *    (7 + 8 + 2 + 0), 8 alarms, 4 maintenance plans, no KPI.
  *  - `water-cooling-tower` — §4, the entry that exercises the derived machinery.
- *    Target 21 points (10 + 6 + 1 + 4), 7 alarms, 4 maintenance plans, no KPI.
+ *    **Authored** (plan Task 6): 21 points (10 + 6 + 1 + 4 derived), 7 alarms,
+ *    4 maintenance plans, no KPI.
  *  - `water-wtp` — §1. Target 20 points (11 + 5 + 2 + 2), 6 alarms,
  *    4 maintenance plans, no KPI.
  *  - `water-ro` — §2. Target 18 points (10 + 5 + 1 + 2), 6 alarms,

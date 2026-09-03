@@ -197,6 +197,66 @@ export function assertAlarmTable(
 }
 
 /**
+ * One authored derived point — `[pointKey, formula, maxInputAgeSeconds]`.
+ */
+export type DerivedRow = readonly [
+  pointKey: string,
+  formula: string,
+  maxInputAgeSeconds: number | null,
+];
+
+/**
+ * The authored formulas, **as literal strings**, and the one
+ * `maxInputAgeSeconds` override in the row.
+ *
+ * `checkEntry` already proves each formula parses under `bms-calc-v1` and
+ * references only measured points the same entry declares, that the dialect is
+ * right, that the trigger is `streaming` with a null interval, and that a
+ * derived point carries no `meta.tier`. What it cannot say is that the formula
+ * is the RIGHT one: `{return_temp_c} - {supply_temp_c}` and
+ * `{supply_temp_c} - {return_temp_c}` are both valid and one of them is range
+ * and the other is its negative. So the string is asserted literally — a
+ * "simplification" of a shipped formula is a silent behaviour change on every
+ * organization that imported it, not a refactor.
+ */
+export function assertDerivedPoints(
+  code: string,
+  entry: StockAssetTemplateEntry,
+  table: readonly DerivedRow[],
+): void {
+  const derivedPoints = entry.points.filter((point) => point.kind === "derived");
+  assert(
+    derivedPoints.length === table.length,
+    `${code} authors ${derivedPoints.length} derived points; the plan authors ${table.length}: ` +
+      `${table.map((row) => row[0]).join(", ")}`,
+  );
+  for (const [pointKey, formula, maxInputAgeSeconds] of table) {
+    const point = derivedPoints.find((row) => row.pointKey === pointKey);
+    assert(point !== undefined, `${code} must author the derived point ${pointKey}`);
+    assert(
+      point?.formula === formula,
+      `${code}.${pointKey}'s formula must be exactly "${formula}" — got ` +
+        `"${String(point?.formula)}". Two valid formulas over the same inputs can mean opposite ` +
+        "things, so the string is asserted literally rather than parsed: a rewrite of a shipped " +
+        "formula is a silent behaviour change on every organization that imported the entry.",
+    );
+    assert(
+      point?.maxInputAgeSeconds === maxInputAgeSeconds,
+      `${code}.${pointKey} must carry maxInputAgeSeconds ${String(maxInputAgeSeconds)}, got ` +
+        `${String(point?.maxInputAgeSeconds)}. The default is 300 s and it is right for an input ` +
+        "that arrives from the same controller at the same scan rate; an override says the input " +
+        "is a slow site sensor, and at the default the formula silently never fires, which reads " +
+        'as "the feature is broken" and is the harder failure to diagnose.',
+    );
+    assert(
+      point?.required === false,
+      `${code}.${pointKey} must be required: false — a computed point is fitted by nobody, so it ` +
+        `can never be a site's required mapping; got ${String(point?.required)}`,
+    );
+  }
+}
+
+/**
  * Every alarm of a water entry carries a populated `philosophy` (ADR 0040
  * decision 4 — the first stock content anywhere to do so), and every `skill`
  * present is one of `0034`'s five seeded trades.
