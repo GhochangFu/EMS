@@ -521,8 +521,8 @@ export type ElectricalClassPointKey = (typeof ELECTRICAL_CLASS_POINT_KEYS)[numbe
  * genuinely expressible over measured siblings *inside their own entry*, and
  * each is authored as a `kind: "derived"` template point with the formula
  * below (the other fourteen are deferred and named in
- * `stock-catalog/stock-catalog.spec.ts`'s `DEFERRED_DERIVED_CODES`, never
- * placeholdered):
+ * `stock-catalog/stock-catalog-deferrals.spec.ts`'s `DEFERRED_DERIVED_CODES`,
+ * never placeholdered):
  *
  *  - `recovery_pct` — `water-wtp`:
  *    `{treated_water_flow_klh} / {raw_water_flow_klh} * 100`; `water-ro`:
@@ -616,7 +616,7 @@ export type ElectricalClassPointKey = (typeof ELECTRICAL_CLASS_POINT_KEYS)[numbe
  * with no section in `docs/e5.1-derived-taglist-v1.md`; a train of unit
  * assets (ADR 0040 ruling 5 — one asset per plant for v1); and every derived
  * code with no in-entry formula, deferred by name in
- * `stock-catalog/stock-catalog.spec.ts`.
+ * `stock-catalog/stock-catalog-deferrals.spec.ts`.
  */
 export const WATER_CLASS_POINT_KEYS = [
   // §1 WTP — 20 (18 rows + 2 derived)
@@ -727,3 +727,199 @@ export const WATER_CLASS_POINT_KEYS = [
 ] as const;
 
 export type WaterClassPointKey = (typeof WATER_CLASS_POINT_KEYS)[number];
+
+/**
+ * `E5.2` / ADR 0053 — the mechanical/utility class point-key vocabulary, 68
+ * codes across four mechanical machine classes (pump set, motor + VFD, air
+ * compressor, boiler). `HVAC_CLASS_POINT_KEYS`, immediately below, holds the
+ * other 39 (chiller, AHU) — 107 in all.
+ *
+ * **Citation.** `docs/e5.2-derived-taglist-v1.md` §§1-3 and §7 are the
+ * source, and ADR 0053 (Accepted 2026-09-03) is the gate: the source is
+ * **PROVISIONAL** — derived from published mechanical/HVAC practice, not a
+ * client-confirmed tag list — marked so in every entry this vocabulary feeds
+ * (`stock-catalog/mechanical.ts`, `E5.2`).
+ *
+ * **Why two arrays and not one.** ADR 0053 decision 2 files a template's
+ * `domain` from its code prefix (`mechanical-*` → `"mechanical"`, `hvac-*` →
+ * `"hvac"`), and `tests/f3.39-global-point-key-vocabulary.test.ts`'s clash
+ * check requires each `*_POINT_KEYS` array single-domain, the same
+ * constraint that already keeps `ELECTRICAL_CLASS_POINT_KEYS` and
+ * `WATER_CLASS_POINT_KEYS` apart. **Why not six, one per machine class**:
+ * there is no intra-list code recurrence within this pack to resolve (§4.1
+ * of the plan), so a per-class split would buy nothing but six `ARRAY_DOMAIN`
+ * lines for what is still only two domains.
+ *
+ * **Why `HVAC_CLASS_POINT_KEYS` is not appended to `HVAC_POINT_KEYS`.**
+ * `hvacPointKeySchema = z.enum(HVAC_POINT_KEYS)` (`contracts/dashboard.ts`)
+ * is a CLOSED enum consumed by the CRAC screens, `rule-points.ts` and
+ * `control-room-bindings.ts` / `crac-page.tsx` — `apps/sim`'s CRAC shape
+ * writes exactly those nine codes. Widening that array would widen the enum
+ * under every existing consumer with no code changed to expect it. The
+ * naming mirrors `ELECTRICAL_CLASS_POINT_KEYS` beside `ELECTRICAL_POINT_KEYS`
+ * for the same reason, and neither new name is a substring of the array it
+ * sits beside, so `tests/f3.39`'s lookbehind-anchored `keysForDomain(` pin
+ * cannot confuse them.
+ *
+ * **Twenty codes are reused, never redeclared** (ADR 0053 decision 3) —
+ * `current_a`, `kw`, `kwh_total`, `run_hours_h`, `start_count`,
+ * `winding_temp_c`, `insulation_resistance_mohm` (all `ELECTRICAL_CLASS_POINT_KEYS`),
+ * `oil_temp_c`, `oil_pressure_bar`, `service_due_h`, `fan_current_a` (also
+ * `ELECTRICAL_CLASS_POINT_KEYS`), and the nine `HVAC_POINT_KEYS` codes
+ * `chw_supply_temp_c`, `chw_return_temp_c`, `chw_flow_lps`, `compressor_ok`,
+ * `cooling_kw`, `supply_air_temp_c`, `return_air_temp_c`, `fan_speed_pct`,
+ * `fan_rpm`. They stay in the arrays that hold them today; units are
+ * write-once (`COALESCE` in `seedPointKeyCatalog`) and a second `UNIT_BY_KEY`
+ * entry would be a duplicate object key TypeScript refuses anyway.
+ *
+ * **Seven near-misses, checked and clean** (plan §4.2): `fuel_level_pct` is
+ * reused for the boiler's day-tank level rather than minting
+ * `fuel_tank_level_pct` (§12 ruling 1 — one code, one meaning, ADR 0051
+ * Amendment 6 decision 5); `motor_current_a` / `compressor_current_a` are
+ * kept distinct from `current_a` (several motors per package, the register
+ * is the main one's); `vfd_power_kw` / `vfd_kwh_total` / `vfd_run_hours_h`
+ * are kept distinct from `kw` / `kwh_total` / `run_hours_h` (the VFD is its
+ * own asset, ADR 0053 decision 9); `flow_klh` is not folded into any legacy
+ * dashboard key; `chw_supply_temp_c` / `chw_return_temp_c` mean the same
+ * thing on the chiller and the AHU (plant loop vs. one coil) and are reused
+ * on both rather than renamed; the four `_sp_`/`setpoint` codes are
+ * authored as measured points because the controller reports them and no
+ * `_sp` convention existed before this pack; `fan_status` is NOT on the AHU
+ * table (the tag list's alarm bullet needing it binds `fan_current_a`
+ * instead — a v2 redline candidate, plan §4.2).
+ *
+ * **Thirteen promoted derived codes** (plan §5.0, six on this array's
+ * classes: `head_m`, `specific_energy_kwh_kl` (pump); `load_factor_pct`,
+ * `specific_power_kw_m3min` (compressor); `steam_to_fuel_ratio`,
+ * `excess_air_pct` (boiler) — each marked `// E5.2: derived, formula in
+ * mechanical-<class>.ts` below; the other seven are on `HVAC_CLASS_POINT_KEYS`.
+ * **`specific_energy_kwh_kl` is one code, three entries, one authoring**: it
+ * is deferred on `electrical-feeder` (needs production/KL, cross-asset) and
+ * on `water-ro` (which declares HP-pump current, not `kw`); the pump
+ * declares both `kw` and `flow_klh`, so it is authored — and filed
+ * `mechanical` — here. One meaning, the `load_pct` shape.
+ *
+ * **Two new deferral classes** this pack introduces to `DEFERRAL_REASON`
+ * (plan §5.0): *a standard's lookup* (`vibration_band` — ISO 20816 zones are
+ * an attribute table, the grammar has no lookup) and *a method the document
+ * only names* (`air_leak_estimate_pct`, `efficiency_indirect_pct` — each
+ * needs a test window or a fuel-analysis model the tag list does not
+ * supply).
+ *
+ * **`""` for every `0/1`, `enum` and `code` row and for the two dimensionless
+ * ratios** (`cop`, `steam_to_fuel_ratio`) — ADR 0051 Amendment 6 decision 4 —
+ * never a missing `UNIT_BY_KEY` entry, which would seed NULL. Every other
+ * unit is spelled exactly as the tag list spells it. `°` is `U+00B0` on
+ * every `°C` code; `³` in `fad_m3h` and `specific_power_kw_m3min` is
+ * `U+00B3` SUPERSCRIPT THREE, matching `W/m²`'s `U+00B2` convention. No `µ`
+ * and no `Ω` occur among these codes — `MΩ` belongs to the reused
+ * `insulation_resistance_mohm`, not redeclared here.
+ *
+ * **Every code here needs a `UNIT_BY_KEY` entry in
+ * `packages/db/src/point-keys-seed.ts`**, enforced by
+ * `tests/f3.39-global-point-key-vocabulary.test.ts` — `keysForDomain` writes
+ * `UNIT_BY_KEY[code] ?? null`, so a missing entry seeds `NULL`.
+ *
+ * **The array must stay in THIS file.** Both `tests/f3.38`'s
+ * `pointKeyVocabulary` and `tests/f3.39`'s `arraysByName` read
+ * `packages/shared/src/constants.ts` as text, with a regex anchored on
+ * matching every uppercase `POINT_KEYS` array declaration and requiring the
+ * array body contain no `]` character (`[^\]]*` in both). A sibling file
+ * would be invisible to both, with nothing failing.
+ */
+export const MECHANICAL_CLASS_POINT_KEYS = [
+  // §1 pump set — 13 (11 rows + 2 derived)
+  "pump_status", "pump_mode", "pump_trip",
+  "suction_pressure_bar", "discharge_pressure_bar", "flow_klh",
+  "de_bearing_temp_c", "nde_bearing_temp_c", "vibration_mms",
+  "seal_leak_state", "dry_run_state",
+  "head_m", // E5.2: derived, formula in mechanical-pump.ts
+  "specific_energy_kwh_kl", // E5.2: derived, formula in mechanical-pump.ts
+  // §2 motor + VFD — 15 (15 rows, no derived)
+  "vfd_status", "vfd_ready", "vfd_fault",
+  "vfd_fault_code", "vfd_output_freq_hz", "vfd_speed_ref_pct",
+  "vfd_output_current_a", "vfd_output_voltage_v", "vfd_dc_bus_v",
+  "vfd_torque_pct", "vfd_power_kw", "vfd_kwh_total",
+  "vfd_heatsink_temp_c", "motor_temp_c", "vfd_run_hours_h",
+  // §3 air compressor — 17 (15 rows + 2 derived)
+  "comp_status", "comp_load_state", "comp_fault",
+  "comp_warning", "outlet_pressure_bar", "pressure_setpoint_bar",
+  "element_outlet_temp_c", "intake_filter_dp_mbar", "oil_separator_dp_bar",
+  "loaded_hours_h", "motor_current_a", "dryer_dewpoint_c",
+  "dryer_status", "receiver_pressure_bar", "fad_m3h",
+  "load_factor_pct", // E5.2: derived, formula in mechanical-compressor.ts
+  "specific_power_kw_m3min", // E5.2: derived, formula in mechanical-compressor.ts
+  // §7 boiler — 23 (21 rows + 2 derived; the boiler's day-tank level is the
+  // DG set's reused fuel_level_pct, §12 ruling 1, and is not listed here)
+  "boiler_status", "boiler_trip", "steam_pressure_bar",
+  "steam_temp_c", "steam_flow_kgh", "steam_totalizer_kg",
+  "drum_level_pct", "feedwater_flow_kgh", "feedwater_temp_c",
+  "feedwater_tds_ppm", "feed_pump_status", "fuel_flow_kgh",
+  "fuel_totalizer_kg", "flue_gas_temp_c",
+  "flue_o2_pct", "flue_co_ppm", "combustion_air_temp_c",
+  "furnace_draft_mmwc", "blowdown_state", "boiler_water_ph",
+  "blowdown_tds_ppm",
+  "steam_to_fuel_ratio", // E5.2: derived, formula in mechanical-boiler.ts
+  "excess_air_pct", // E5.2: derived, formula in mechanical-boiler.ts
+] as const;
+
+export type MechanicalClassPointKey = (typeof MECHANICAL_CLASS_POINT_KEYS)[number];
+
+/**
+ * `E5.2` / ADR 0053 — the HVAC class point-key vocabulary, 39 codes across
+ * two machine classes (chiller, AHU) — see `MECHANICAL_CLASS_POINT_KEYS`,
+ * immediately above, for the citation, the two-array rationale, the reused
+ * codes, the near-misses and the codepoint rules; they hold for this array
+ * too and are not repeated here.
+ *
+ * **Filed `hvac`, a domain that already holds `HVAC_POINT_KEYS`'s nine
+ * codes.** A second array under one domain is what
+ * `CONTROL_ROOM_UPS_POINT_KEYS` beside `ELECTRICAL_CLASS_POINT_KEYS` already
+ * does for `electrical` — the clash check in
+ * `tests/f3.39-global-point-key-vocabulary.test.ts` is per code, not per
+ * domain, so this is not a new shape.
+ *
+ * **`hvac-chiller` and `hvac-ahu` are the first two stock entries ever filed
+ * under `hvac`.** `chw_supply_temp_c` / `chw_return_temp_c` are reused on
+ * both — the chiller's plant-loop CHW and the AHU's coil CHW are the same
+ * meaning read at a different point, not two quantities.
+ *
+ * **Seven promoted derived codes on these two classes** (the other six are
+ * on `MECHANICAL_CLASS_POINT_KEYS`): `cooling_load_tr`, `kw_per_tr`, `cop`,
+ * `chw_delta_t_c`, `cw_delta_t_c` (chiller — the N4 KPIs, plan §5.0, two of
+ * them the document's own physical constants, `4.19` and `3.517`); the N5
+ * health signal `kw_per_tr_high` binds `kw_per_tr`, one of these — a derived
+ * point, not `content.kpis`/`content.health` (ADR 0053 decision 11, ADR
+ * 0050's surface). `sat_deviation_c`, `coil_delta_t_c` (AHU).
+ * `coil_delta_t_c` is the same formula string as `chw_delta_t_c` on a
+ * different asset — the plant loop ΔT vs. one coil's ΔT, kept as two codes
+ * because the tag list names them separately (plan §5.0, §12 ruling 4).
+ *
+ * **`fan_rpm`'s catalogue unit stays `RPM`**, the existing spelling, not the
+ * document's `rpm` — reused, not redeclared, so no second spelling of the
+ * same unit ships to an importer.
+ */
+export const HVAC_CLASS_POINT_KEYS = [
+  // §4 chiller — 20 (15 rows + 5 derived)
+  "chiller_status", "chiller_alarm", "chiller_fault_code",
+  "chw_setpoint_c", "cw_entering_temp_c", "cw_leaving_temp_c",
+  "cw_flow_lps", "evap_pressure_bar", "cond_pressure_bar",
+  "evap_approach_c", "cond_approach_c", "compressor_load_pct",
+  "compressor_current_a", "discharge_temp_c", "refrigerant_charge_pct",
+  "cooling_load_tr", // E5.2: derived, formula in hvac-chiller.ts
+  "kw_per_tr", // E5.2: derived, formula in hvac-chiller.ts
+  "cop", // E5.2: derived, formula in hvac-chiller.ts
+  "chw_delta_t_c", // E5.2: derived, formula in hvac-chiller.ts
+  "cw_delta_t_c", // E5.2: derived, formula in hvac-chiller.ts
+  // §6 AHU — 19 (17 rows + 2 derived)
+  "ahu_status", "ahu_fault", "supply_air_temp_sp_c",
+  "mixed_air_temp_c", "outdoor_air_temp_c", "return_air_rh_pct",
+  "supply_air_rh_pct", "duct_static_pa", "duct_static_sp_pa",
+  "return_fan_speed_pct", "chw_valve_pct", "oa_damper_pct",
+  "ra_damper_pct", "filter_dp_pa", "filter_dirty_state",
+  "return_air_co2_ppm", "fire_trip_state",
+  "sat_deviation_c", // E5.2: derived, formula in hvac-ahu.ts
+  "coil_delta_t_c", // E5.2: derived, formula in hvac-ahu.ts
+] as const;
+
+export type HvacClassPointKey = (typeof HVAC_CLASS_POINT_KEYS)[number];
