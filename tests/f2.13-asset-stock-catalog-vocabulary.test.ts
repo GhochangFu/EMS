@@ -127,6 +127,7 @@ const STOCK_ASSET_RELS = [
   // and the escalator under `mechanical`, while the module name follows the
   // entry code the way `water-stp.ts` does.
   `${STOCK_CATALOG_DIR}/facility.ts`,
+  `${STOCK_CATALOG_DIR}/facility-lighting-zone.ts`,
 ] as const;
 
 /**

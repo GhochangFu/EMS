@@ -1,3 +1,4 @@
+import { FACILITY_LIGHTING_ZONE } from "./facility-lighting-zone";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -380,8 +381,8 @@ import type { StockAssetTemplateEntry } from "./types";
  * appends its own line here** with its section, its point count and tier split,
  * its alarm count and its maintenance-plan count.
  *
- *  - *(none yet — Task 4 appends the lighting zone's line with the first
- *    module.)*
+ *  - `facility-lighting-zone` **v1** (2026-09-04, `E5.3`): §1, 15 points
+ *    (5 C + 10 X + 0 M + 0 derived), 4 alarms, 3 maintenance plans.
  */
 export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0054 decision 1's document order — lighting zone, fire panel, access
@@ -389,4 +390,5 @@ export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] 
   // and the escalator in PR 2 — which is the order GET /stock lists in, and NOT
   // the prefix order. Each entry commit adds one import above and one line here,
   // in this order.
+  FACILITY_LIGHTING_ZONE,
 ];
