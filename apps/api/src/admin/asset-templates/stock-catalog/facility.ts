@@ -5,6 +5,7 @@ import { FACILITY_FIRE_PANEL } from "./facility-fire-panel";
 import { FACILITY_LIGHTING_ZONE } from "./facility-lighting-zone";
 import { FACILITY_OCCUPANCY_ZONE } from "./facility-occupancy-zone";
 import { FACILITY_PARKING_LEVEL } from "./facility-parking-level";
+import { MECHANICAL_LIFT } from "./mechanical-lift";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -425,6 +426,15 @@ import type { StockAssetTemplateEntry } from "./types";
  *    footer's data-quality number is computed FROM — that number is deferred
  *    here by ADR 0054 decision 6, because it is measured over the points behind
  *    a gateway and is the estate's surface rather than this asset's point.
+ *  - `mechanical-lift` **v1** (2026-09-04, `E5.3`): §8a, 80 points
+ *    (7 C + 66 X + 5 M + 2 derived — `door_reversal_ratio_pct` and
+ *    `kwh_per_trip`), 17 alarms from sixteen bullets — one of them with no
+ *    `skill`, and two of them binding a derived point and a `manual` row — 6
+ *    maintenance plans, three `safetyCritical`. **The pack's largest entry**,
+ *    and the first whose citation its own `mechanical` prefix would get wrong:
+ *    `ENTRY_SOURCE_DOC` points it at the `E5.3` document, and
+ *    `facility-classes-4.spec.ts` proves the override and not the prefix
+ *    default decides it.
  */
 export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0054 decision 1's document order — lighting zone, fire panel, access
@@ -439,4 +449,5 @@ export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] 
   FACILITY_PARKING_LEVEL,
   ENVIRONMENT_IAQ_NODE,
   FACILITY_BAS_GATEWAY,
+  MECHANICAL_LIFT,
 ];
