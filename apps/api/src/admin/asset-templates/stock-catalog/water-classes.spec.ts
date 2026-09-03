@@ -304,6 +304,18 @@ export function assertSkillAssignment(
   assigned: Readonly<Record<string, string>>,
   processRows: readonly string[],
 ): void {
+  // The two lists must partition the alarm set. `skillOf` returns `undefined`
+  // for a code that does not exist, so a misspelled `processRows` entry would
+  // otherwise pass the "carries no skill" assertion vacuously and that row's
+  // skill-absence would be checked by nothing (code review, 2026-09-03).
+  const known = new Set(alarms.map((alarm) => alarm.code));
+  const listed = [...Object.keys(assigned), ...processRows];
+  const unknown = listed.filter((alarmCode) => !known.has(alarmCode));
+  assert(
+    unknown.length === 0 && new Set(listed).size === listed.length && listed.length === alarms.length,
+    `${code}: the assigned map and the process list must partition the ${alarms.length} alarms — ` +
+      `${listed.length} listed (${new Set(listed).size} distinct), unknown: [${unknown.join(", ")}].`,
+  );
   const skillOf = (alarmCode: string): unknown =>
     philosophyOf(alarms.find((alarm) => alarm.code === alarmCode) ?? ({} as Alarm))?.skill;
   for (const [alarmCode, skill] of Object.entries(assigned)) {
