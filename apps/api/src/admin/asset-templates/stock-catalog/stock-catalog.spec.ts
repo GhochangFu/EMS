@@ -29,7 +29,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *    classes pass C authors land against them the moment they join the pack.
  *  - **Entry-specific, for `electrical-feeder`** — each one is a claim about
  *    `docs/electrical-derived-taglist-v1.md` §1, not about the code. If the
- *    tag list changes, these change with it, in the same PR.
+ *    tag list changes, these change with it, in the same PR. **The feeder's
+ *    deferral half is not here**: its "no derived point, no `content.kpis`"
+ *    guard moved to `stock-catalog-deferrals.spec.ts` with `DEFERRAL_REASON`,
+ *    the text it fails with.
+ *
+ * **The deferral ledger lives in `stock-catalog-deferrals.spec.ts`** —
+ * `STOCK_ENTRY_CODES`, `DEFERRED_DERIVED_CODES`, `deferralReason` and the
+ * per-entry loop that runs them, moved by `E5.2` Task 1 because `E5.1` §13 item
+ * 12 measured this file at 978 lines against the §4.5 1000-line cap and the
+ * mechanical pack's six lists would have crossed it. That file imports `assert`
+ * and `requireStockEntry` from here; nothing here imports from it.
  *
  * **Two vocabularies are read out of their migrations, never retyped**, the
  * discipline the dashboard sibling holds: `0030` seeds `bms.alarm_severities`,
@@ -113,155 +123,30 @@ const FEEDER_CODE = "electrical-feeder";
  * lookup below **fails when the prefix is absent** rather than returning
  * `undefined` and skipping the citation. A skipping lookup would make every
  * entry of an undeclared pack pass while checking none of them — a check that
- * has quietly become a decoration, which is the exact failure `E5.2` shipping
- * `mechanical-chiller` without adding a line here would otherwise cause.
- * `UNKNOWN_PACK_FIXTURE` below is what proves the refusal can fire.
+ * has quietly become a decoration, which is the exact failure a pack shipping
+ * its entries before declaring its source document would otherwise cause.
+ * `UNKNOWN_PACK_FIXTURE` below is what proves the refusal can fire, and it
+ * sits on the `undeclared` prefix precisely so that no future pack can turn it
+ * into a positive fixture by declaring the one it was written against.
  */
 const PACK_SOURCE_DOC: Readonly<Record<string, string>> = {
   electrical: "electrical-derived-taglist-v1.md",
   water: "e5.1-derived-taglist-v1.md",
+  // **One document, two prefixes, and that is deliberate rather than a
+  // duplicate.** `E5.2`'s tag list covers six machine classes across two
+  // domains, and ADR 0053 decision 2 files the chiller and the AHU under
+  // `hvac` — the domain whose keys they already reuse — while the pump, VFD,
+  // compressor and boiler are `mechanical`. The prefix names the DOMAIN, the
+  // value names the SOURCE, and the two are not the same axis: a pack is one
+  // document, one index (`mechanical.ts`) and, here, two prefixes. Splitting
+  // the pack in two to make the map look one-to-one would have needed a second
+  // index and a second story about where two `hvac-` modules live.
+  hvac: "e5.2-derived-taglist-v1.md",
+  mechanical: "e5.2-derived-taglist-v1.md",
 };
 
 /** The pack an entry belongs to — everything before the first `-` in its code. */
 const packOf = (code: string): string => code.split("-")[0] ?? "";
-
-/**
- * The six electrical classes of `docs/electrical-derived-taglist-v1.md`, then
- * the six water plant classes of `docs/e5.1-derived-taglist-v1.md` in ADR
- * 0040's ruled authoring order (STP, ETP, cooling tower, WTP, RO, softener) —
- * the order `water.ts` lists them in and the order `GET /stock` returns them.
- */
-const STOCK_ENTRY_CODES = [
-  "electrical-feeder",
-  "electrical-transformer",
-  "electrical-dg-set",
-  "electrical-ups",
-  "electrical-solar-pv",
-  "electrical-apfc",
-  "water-stp",
-  "water-etp",
-  "water-cooling-tower",
-  "water-wtp",
-  "water-ro",
-  "water-softener",
-] as const;
-export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
-
-/**
- * The tag list's "Derived:" codes that this row does **not** author, **per
- * entry** — ADR 0051 Amendment 6 decision 8: a code with no `bms-calc-v1`
- * formula is not vocabulary. Listed so the failure message names them and the
- * next author reads WHY rather than deleting the assertion.
- *
- * **A `Record` and not one flat list, and that is load-bearing.** `load_pct`
- * is deferred on the feeder, the transformer and the DG set — each needs the
- * asset's rating — and is a **measured core point on the UPS**, which reports
- * it directly (RFC 1628 `upsOutputPercentLoad`). A catalog-wide "no entry
- * declares a deferred code" check would therefore fail on a correct entry.
- * Each list is checked against its own entry and no other.
- *
- * **47 entries across 43 distinct codes** since `E5.1`. The electrical half is
- * 32 entries over 30 codes (`load_pct` three times); the water half is 15 over
- * 14 (`hydraulic_load_pct` on the STP and the ETP). 30 + 14 is 44, not 43,
- * because **`specific_energy_kwh_kl` is deferred on the electrical feeder AND
- * the RO skid** — the same code for the same reason on two packs, which is the
- * per-entry `Record`'s whole point. A per-entry sum and a distinct count are
- * both right; they count different things.
- */
-export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly string[]>> = {
-  // §1 — rating, contract demand, tariff band, production/KL, Σ of feeders.
-  "electrical-feeder": [
-    "load_pct",
-    "demand_vs_contract_pct",
-    "pf_penalty_flag",
-    "kwh_per_unit_output",
-    "specific_energy_kwh_kl",
-    "losses_pct",
-  ],
-  // §2 — another asset's LV meter, the rating, and three models the grammar
-  // has no functions for (IEC 60076-7, C57.91 ageing, a Duval-triangle lookup).
-  "electrical-transformer": [
-    "lv_load_pct",
-    "load_pct",
-    "hot_spot_estimate_c",
-    "loss_of_life_pct_day",
-    "duval_triangle_zone",
-    "tap_changes_per_day",
-  ],
-  // §3 — the rating, the tank capacity (`fuel_level_pct` is a percentage), and
-  // three that need a time window the grammar has no state for.
-  "electrical-dg-set": [
-    "load_pct",
-    "fuel_hours_remaining_h",
-    "starts_per_day",
-    "availability_pct",
-    "underload_hours",
-  ],
-  // §4 — the site minimum, an attribute, and two per-window counts.
-  "electrical-ups": [
-    "runtime_margin_min",
-    "battery_events_per_month",
-    "battery_age_months",
-    "charge_cycle_count",
-  ],
-  // §5 — the point of connection is another asset's §1 meter; the rest need
-  // installed kWp, the whole string set, the site load or an emission factor.
-  "electrical-solar-pv": [
-    "grid_export_kw",
-    "performance_ratio_pct",
-    "specific_yield_kwh_kwp_day",
-    "capacity_utilization_pct",
-    "string_current_deviation_pct",
-    "self_consumption_pct",
-    "co2_avoided_kg",
-  ],
-  // §6 — rated kVAr per step, a time window, `tan`/`acos`, and the tariff band.
-  "electrical-apfc": ["pf_correction_kvar", "steps_per_day", "capacitor_health_pct", "pf_penalty_hours"],
-  // The water pack — E5.1, docs/e5.1-derived-taglist-v1.md. Fifteen records
-  // over fourteen codes; the seven the pack DOES author are in water.ts.
-  //
-  // §5 — a reuse meter §5 does not list; INFLUENT BOD and the aeration tank
-  // volume; blower kWh where §5 declares motor current; the design capacity.
-  "water-stp": ["reuse_pct", "fm_ratio", "specific_aeration_kwh_kl", "hydraulic_load_pct"],
-  // §6 — the design capacity; the reagent strength; INFLUENT COD where §6
-  // carries the outlet only; a recycle meter §6 does not list.
-  "water-etp": ["hydraulic_load_pct", "neutralization_chem_gkl", "cod_removal_pct", "recycle_pct"],
-  // §4 — an empirical evaporation factor that is unit-system- and
-  // site-specific, and the tag list gives none.
-  "water-cooling-tower": ["evaporation_loss_klh"],
-  // §1 — the hypochlorite solution strength, a site attribute.
-  "water-wtp": ["specific_chlorine_gkl"],
-  // §2 — the HP pump's kW (§2 declares current), and a temperature correction
-  // that is an exponential the grammar has no function for.
-  "water-ro": ["specific_energy_kwh_kl", "normalized_permeate_flow"],
-  // §3 — a restatement of a declared measured point; a time window; and the one
-  // whose input can never receive a value at all (see DEFERRAL_REASON).
-  "water-softener": ["throughput_since_regen_kl", "regen_frequency_per_day", "salt_efficiency_kg_kl"],
-};
-
-const DEFERRAL_REASON =
-  "ADR 0051 Amendment 6 decision 8: a code with no formula is not vocabulary. Every deferred " +
-  "code needs an asset or site attribute (rating, contract demand, tariff band, installed kWp, " +
-  "tank capacity, rated kVAr per step), a value on another asset that bms-calc-v1 cannot name " +
-  "(a Σ of feeders, an LV meter, the point of connection, the site load), a time window the " +
-  "grammar has no state for (per-day, per-month, hours-in-state), or a model it has no " +
-  "functions for (IEC 60076-7, C57.91, a Duval triangle). They are deferred and NAMED, never " +
-  "authored with a placeholder formula (ADR 0036; F2.9 records the fork) — plan §2 carries the " +
-  "reason for each one. E5.1's water pack adds TWO deferral classes the electrical pack had no " +
-  "case of. (1) A REAGENT STRENGTH, which is a site attribute: specific_chlorine_gkl and " +
-  "neutralization_chem_gkl both divide by litres per hour of a SOLUTION, and grams of chemical " +
-  "per KL needs what the litres contain — the formula looks trivially expressible until you ask " +
-  "that. (2) A LAB-ONLY INPUT WHOSE POINT COULD NEVER RECEIVE A VALUE: salt_efficiency_kg_kl " +
-  "parses over two declared measured points, and one of them is an M row — sourceDataKeyPattern " +
-  "is null forever, planAsset puts it in skippedPoints, so it never gets an asset_points row, " +
-  "never gets a reading, and the formula never has an input. That is the only deferral in the " +
-  "catalog whose reason is the DATA MODEL rather than the grammar, and it is the distinction " +
-  "from oil_rise_over_ambient_c, whose X-tier input can be wired. It becomes authorable the day " +
-  "F1.8 gives a manual row somewhere to write to.";
-
-/** The shared reason plus the class's own list, so the failure names both. */
-export const deferralReason = (code: StockEntryCode): string =>
-  `${DEFERRAL_REASON} Deferred for ${code}: ${DEFERRED_DERIVED_CODES[code].join(", ")}.`;
 
 export type Alarm = { code: string; pointKey: string; severity: string; category?: string } & Record<
   string,
@@ -621,8 +506,9 @@ export function requireStockEntry(code: string): StockAssetTemplateEntry {
     const shipped = STOCK_ASSET_TEMPLATE_CATALOG.map((candidate) => candidate.code).join(", ");
     throw new Error(
       `the catalog must ship "${code}" (plan §5) — found only: ${shipped || "(nothing)"}. An ` +
-        "authored class module reaches the catalog only through ELECTRICAL_STOCK_ASSET_TEMPLATES " +
-        "in electrical.ts; until it is listed there, GET /admin/asset-templates/stock cannot see it.",
+        "authored class module reaches the catalog only through its pack index — electrical.ts, " +
+        "water.ts or mechanical.ts; until it is listed there, GET /admin/asset-templates/stock " +
+        "cannot see it.",
     );
   }
   return entry;
@@ -768,19 +654,29 @@ const SCHEDULED_DERIVED_FIXTURE: StockAssetTemplateEntry = {
  * The negative fixture for the source-document check, and the whole reason
  * `PACK_SOURCE_DOC` is a **map** rather than a two-element list.
  *
- * `E5.2` ships `mechanical-chiller`. If the prefix lookup returned `undefined`
- * and the citation check quietly skipped, that entry would pass while being
- * checked against nothing — and so would every entry of every pack after it,
- * which is a check that has become a decoration. An unknown pack prefix is a
- * BUILD failure here, and the message names the map that needs the entry.
+ * If the prefix lookup returned `undefined` and the citation check quietly
+ * skipped, an entry of an undeclared pack would pass while being checked
+ * against nothing — and so would every entry of every pack after it, which is a
+ * check that has become a decoration. An unknown pack prefix is a BUILD failure
+ * here, and the message names the map that needs the entry.
  *
  * The defect is again one **no schema catches**: this fixture is a perfectly
  * well-formed entry whose only fault is that its pack never declared where its
  * rows were transcribed from.
+ *
+ * **The prefix must be one no pack will ever claim, and `undeclared` is that
+ * prefix.** This fixture read `mechanical-chiller` until `E5.2` Task 1, chosen
+ * *because* `mechanical` was an undeclared prefix at the time. `E5.2` declares
+ * both `mechanical` and `hvac` in Task 5 (and its chiller is ruled
+ * `hvac-chiller`, not `mechanical-chiller`, ADR 0053 decision 2), so the
+ * fixture would have started passing the citation check and failing on nothing
+ * it was written for — a negative fixture that has silently become a positive
+ * one. `facility` is `E5.3`'s and would recur the same way; `undeclared` is not
+ * a domain, cannot be a pack, and is the only spelling that stays a refusal.
  */
 const UNKNOWN_PACK_FIXTURE: StockAssetTemplateEntry = {
   ...VALID_FIXTURE,
-  code: "mechanical-chiller",
+  code: "undeclared-f213-spec-pack",
 };
 
 const UNDECLARED_KPI_FIXTURE: StockAssetTemplateEntry = {
@@ -881,33 +777,6 @@ export function runStockAssetTemplateCatalogTests(): void {
     `duplicate stock template code across the aggregated catalog: ${codes.join(",")}`,
   );
 
-  // ---- the deferred codes, per entry and never catalog-wide ---------------
-  //
-  // Deliberately NOT in `checkEntry`: each entry is checked against its OWN
-  // list, because `load_pct` is deferred on three classes and a measured core
-  // point on the UPS. An entry pass C has not authored yet is simply not
-  // reached; its list is here so the day it lands it lands against this check.
-  for (const entry of STOCK_ASSET_TEMPLATE_CATALOG) {
-    // The reverse direction is the one that fails silently: a mistyped key
-    // ("electrical-dgset") would leave that class checked against nothing,
-    // forever, and nothing else in this file would notice.
-    assert(
-      Object.hasOwn(DEFERRED_DERIVED_CODES, entry.code),
-      `${entry.code} has no entry in DEFERRED_DERIVED_CODES, so its deferred derived codes are ` +
-        `checked against nothing. Add one — an empty list is a legitimate value, with a comment ` +
-        `naming the row that will fill it. Known: ${STOCK_ENTRY_CODES.join(", ")}.`,
-    );
-    const deferred = DEFERRED_DERIVED_CODES[entry.code as StockEntryCode] ?? [];
-    const keys = new Set(entry.points.map((point) => point.pointKey));
-    for (const code of deferred) {
-      assert(
-        !keys.has(code),
-        `${entry.code} declares "${code}", one of its deferred derived codes. ` +
-          `${deferralReason(entry.code as StockEntryCode)}`,
-      );
-    }
-  }
-
   // ---- the feeder class, against its tag list -----------------------------
 
   const feeder = STOCK_ASSET_TEMPLATE_CATALOG.find((entry) => entry.code === FEEDER_CODE);
@@ -950,16 +819,9 @@ export function runStockAssetTemplateCatalogTests(): void {
     "kwh_today (tier C/D) must be required and measured",
   );
 
-  // No derived point, no kpis — the deferral guard.
-  const derived = feeder.points.filter((point) => point.kind === "derived");
-  assert(
-    derived.length === 0,
-    `${FEEDER_CODE} authors ${derived.length} derived point(s): ${derived.map((p) => p.pointKey).join(", ")}. ${DEFERRAL_REASON}`,
-  );
-  assert(
-    !Object.hasOwn(feeder.content ?? {}, "kpis"),
-    `${FEEDER_CODE} carries content.kpis. ${deferralReason(FEEDER_CODE)}`,
-  );
+  // The feeder's "no derived point, no kpis" guard moved to
+  // `stock-catalog-deferrals.spec.ts` with the ledger it cites — it is a
+  // deferral claim, and `DEFERRAL_REASON` is the text it fails with.
 
   // Eleven philosophy rows. Pair-absence, the binding, the message, the
   // severity and the category are `checkEntry`'s from F2.12 Task 3 on — every

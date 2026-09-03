@@ -196,10 +196,31 @@ describe("F4.45 rule vocabularies", () => {
       return [...statement.matchAll(/\(\s*'([a-z_]+)'/g)].map((match) => match[1]);
     };
 
-    const seeded = [...seededCodes("rule_categories"), ...seededCodes("asset_domains")];
+    // `E5.2` — "whatever the seed actually contains" stopped being only `0029`:
+    // a domain pack adds its domain through `packages/db/src/asset-domains-seed.ts`
+    // (ADR 0031 Amendment 1 A1.1), so its `PACK_ASSET_DOMAINS` literal is
+    // parsed too. Without this the guard would never cover `mechanical`, or
+    // `E5.3`'s `facility` after it.
+    const packSeededDomainCodes = (): string[] => {
+      const source = readFileSync(
+        join(repoRoot, "packages", "db", "src", "asset-domains-seed.ts"),
+        "utf8",
+      );
+      const from = source.indexOf("PACK_ASSET_DOMAINS");
+      expect(from, "no PACK_ASSET_DOMAINS literal in asset-domains-seed.ts").toBeGreaterThan(-1);
+      const literal = source.slice(from, source.indexOf("];", from));
+      return [...literal.matchAll(/code:\s*"([a-z_]+)"/g)].map((match) => match[1]);
+    };
+
+    const seeded = [
+      ...seededCodes("rule_categories"),
+      ...seededCodes("asset_domains"),
+      ...packSeededDomainCodes(),
+    ];
 
     expect(seeded).toContain("safety");
     expect(seeded).toContain("electrical");
+    expect(seeded, "the E5.2 seed-path domain must reach the guard").toContain("mechanical");
     expect(seeded.length).toBeGreaterThanOrEqual(8);
 
     for (const surface of surfaces) {

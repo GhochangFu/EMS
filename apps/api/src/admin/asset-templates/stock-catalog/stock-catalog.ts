@@ -1,4 +1,5 @@
 import { ELECTRICAL_STOCK_ASSET_TEMPLATES } from "./electrical";
+import { MECHANICAL_STOCK_ASSET_TEMPLATES } from "./mechanical";
 import type { StockAssetTemplateEntry } from "./types";
 import { WATER_STOCK_ASSET_TEMPLATES } from "./water";
 
@@ -58,7 +59,24 @@ import { WATER_STOCK_ASSET_TEMPLATES } from "./water";
  *    `philosophy`, 8 formulas and 23 maintenance plans), well past the cap
  *    AGENTS.md §4.5 reads whole-file. They share `point-fields.ts` with the
  *    electrical pack, which is not edited.
- *  - `mechanical.ts` — `E5.2`.
+ *  - `mechanical.ts` — the pack index only, since `E5.2` (plan Task 5). The six
+ *    mechanical/utility machine classes are their own modules —
+ *    `mechanical-pump.ts` (§1), `mechanical-vfd.ts` (§2),
+ *    `mechanical-compressor.ts` (§3), `hvac-chiller.ts` (§4), `hvac-ahu.ts`
+ *    (§6) and `mechanical-boiler.ts` (§7), listed in ADR 0053 decision 1's
+ *    document order — for the same §4.5 reason as the other two packs: 141
+ *    point rows, 52 alarms each carrying a populated `philosophy`, 13 formulas
+ *    and 24 maintenance plans project well past the 1000-line cap AGENTS.md
+ *    §4.5 reads whole-file. **Two of the six are `hvac-*.ts` under the
+ *    MECHANICAL index, and that is deliberate**: ADR 0053 decision 2 files the
+ *    chiller and the AHU under `hvac`, the domain whose vocabulary already
+ *    holds nine of their keys, while the module name follows the entry code the
+ *    way `water-stp.ts` does. A pack is one source document and one index; the
+ *    code prefix is the DOMAIN. Splitting them into an `hvac.ts` would need a
+ *    second index and a second provenance story for one document — which is why
+ *    `PACK_SOURCE_DOC` in `stock-catalog.spec.ts` declares two prefixes
+ *    (`hvac`, `mechanical`) against the same file. They share `point-fields.ts`
+ *    with the other two packs, which is not edited.
  *  - `facility.ts` — `E5.3`.
  *
  * **A NEW PACK FILE — OR, INSIDE THE ELECTRICAL PACK, A NEW CLASS MODULE —
@@ -97,4 +115,9 @@ import { WATER_STOCK_ASSET_TEMPLATES } from "./water";
 export const STOCK_ASSET_TEMPLATE_CATALOG: readonly StockAssetTemplateEntry[] = [
   ...ELECTRICAL_STOCK_ASSET_TEMPLATES,
   ...WATER_STOCK_ASSET_TEMPLATES,
+  // Empty until `E5.2` plan Task 6 authors the pump — the pack is declared one
+  // commit before its first entry, and `mechanical.ts` says why it ships empty
+  // rather than as six skeletons. `stock-catalog-deferrals.spec.ts` holds the
+  // resulting catalog to the head of `STOCK_ENTRY_CODES` until all six land.
+  ...MECHANICAL_STOCK_ASSET_TEMPLATES,
 ];

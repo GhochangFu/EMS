@@ -482,6 +482,8 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       METERED_PUMPING_POINT_KEYS: "electrical",
       ELECTRICAL_CLASS_POINT_KEYS: "electrical",
       WATER_CLASS_POINT_KEYS: "water",
+      MECHANICAL_CLASS_POINT_KEYS: "mechanical",
+      HVAC_CLASS_POINT_KEYS: "hvac",
     };
 
     /**
@@ -572,10 +574,11 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // Anti-vacuity for this case alone, at the actual rather than at the
       // pre-`F2.11` count of 46 — this file argues at length for moving a bound
       // to its actual, and leaving one slack in the same commit would be the
-      // inconsistency a later reader copies. 289 = 191 + `E5.1`'s 98-code
-      // WATER_CLASS_POINT_KEYS (plan `docs/plans/e5.1-water-domain-pack.md`
-      // §4.4/§4.6), disjoint by construction.
-      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(289);
+      // inconsistency a later reader copies. 396 = 289 + `E5.2`'s 107-code
+      // MECHANICAL_CLASS_POINT_KEYS + HVAC_CLASS_POINT_KEYS (plan
+      // `docs/plans/e5.2-mechanical-domain-pack.md` §4.4/§4.6), disjoint by
+      // construction.
+      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(396);
 
       const missing: string[] = [];
       for (const arrayName of Object.keys(ARRAY_DOMAIN)) {
@@ -681,15 +684,16 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       expect(
         arraysByName.size,
         `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`,
-      ).toBeGreaterThanOrEqual(9);
+      ).toBeGreaterThanOrEqual(11);
       const codes = new Set([...arraysByName.values()].flat());
-      // 289 is the actual after `E5.1` appended `WATER_CLASS_POINT_KEYS`'s 98
-      // codes (`docs/plans/e5.1-water-domain-pack.md` §4.4/§4.6) to the 191
-      // that were here after `F2.12`. Moved to the actual rather than left at
-      // 191, where it would have stayed green with the 98 new codes parsed
+      // 396 is the actual after `E5.2` appended `MECHANICAL_CLASS_POINT_KEYS`'s
+      // 68 codes and `HVAC_CLASS_POINT_KEYS`'s 39
+      // (`docs/plans/e5.2-mechanical-domain-pack.md` §4.4/§4.6) to the 289
+      // that were here after `E5.1`. Moved to the actual rather than left at
+      // 289, where it would have stayed green with the 107 new codes parsed
       // as nothing at all — which is the exact failure this whole `describe`
       // block exists to make impossible.
-      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(289);
+      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(396);
       expect(
         sql.split(";").filter((s) => s.trim().length > 0).length,
         "migration 0057 holds almost no statements",

@@ -224,7 +224,10 @@ const scanCatalog = (
  * `environment` and `water` — and `E5.1` added none, because ADR 0051
  * Amendment 6 decision 3 rules that `domain` is the filing domain and not an
  * exclusivity: an STP, an ETP and a cooling tower are all water-treatment
- * plants and all file under `water`.
+ * plants and all file under `water`. `E5.2` then added the sixth,
+ * `mechanical`, through the seed path ADR 0031 Amendment 1 A1.1 prescribes
+ * (`packages/db/src/asset-domains-seed.ts`, ADR 0053 decision 2) — the first
+ * code not from `0029` — and still no `stp` or `etp`.
  *
  * They were renamed to snake_case here when the list was written, so the
  * catalog already spells its keys the way every real code is spelled.
@@ -288,12 +291,12 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
       new Set(pointKeys.map((entry) => entry.section)).size,
       "every pointKey was attributed to one section — the section tracker is broken",
     ).toBeGreaterThanOrEqual(5);
-    // 289 = 191 before + `E5.1`'s 98-code `WATER_CLASS_POINT_KEYS`
-    // (`docs/plans/e5.1-water-domain-pack.md` §4.4/§4.6). Moved to the actual
-    // rather than left at 191, for the same reason `F3.41` moved this bound
-    // from 30 — slack here would have stayed green with the 98 new codes
-    // parsed as nothing at all.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(289);
+    // 396 = 289 before + `E5.2`'s 107-code `MECHANICAL_CLASS_POINT_KEYS` +
+    // `HVAC_CLASS_POINT_KEYS` (`docs/plans/e5.2-mechanical-domain-pack.md`
+    // §4.4/§4.6). Moved to the actual rather than left at 289, for the same
+    // reason `F3.41` moved this bound from 30 — slack here would have stayed
+    // green with the 107 new codes parsed as nothing at all.
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${CONSTANTS_REL}`).toBeGreaterThanOrEqual(396);
     // 28 is 26 from `0051` plus 2 from `0060`, and both migrations are frozen,
     // so this number is stable by construction. If a LATER migration adds a
     // role code and the check below starts rejecting a legitimate

@@ -100,11 +100,14 @@ export async function fixtureLocation(db: BmsDb): Promise<FixtureLocation> {
  * would be a second place to edit when the vocabulary moves. `bms.asset_domains`
  * has no Drizzle export, hence the raw statement.
  *
- * Safe to read for the same reason as {@link fixtureLocation}: nothing under
- * `apps/**`, `packages/**` or `tests/**` writes `bms.asset_domains` outside the
- * migrations, so no suite can delete the code between this read and the insert
- * that references it. Were that to change, the failure would be the same shape
- * as the one this file exists to close, under `assets_domain_fk`.
+ * Safe to read for the same reason as {@link fixtureLocation}: the one writer
+ * of `bms.asset_domains` outside the migrations is the seed —
+ * `packages/db/src/asset-domains-seed.ts` since `E5.2`, `INSERT … ON CONFLICT
+ * (code) DO NOTHING`, inserts only and never a `DELETE` — and no suite under
+ * `apps/**`, `packages/**` or `tests/**` writes the table at all, so nothing
+ * can delete the code between this read and the insert that references it.
+ * Were a deleting writer to appear, the failure would be the same shape as
+ * the one this file exists to close, under `assets_domain_fk`.
  */
 async function anyAssetDomain(db: BmsDb): Promise<string> {
   const result = await db.execute<{ code: string }>(
