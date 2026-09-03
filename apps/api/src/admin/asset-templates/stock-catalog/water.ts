@@ -222,8 +222,8 @@ import { WATER_WTP } from "./water-wtp";
  * Each entry is **v1 (2026-09-03, `E5.1`), PROVISIONAL — derived from published
  * practice and the client's reference dashboards, not client-confirmed**:
  *
- *  - `water-stp` — §5. Target 18 points (11 core + 5 extended + 2 manual +
- *    0 derived), 9 alarms, 4 maintenance plans, no KPI.
+ *  - `water-stp` — §5. **Authored** (plan Task 4): 18 points (11 core +
+ *    5 extended + 2 manual + 0 derived), 9 alarms, 4 maintenance plans, no KPI.
  *  - `water-etp` — §6, the least provisional section (five `◆` rows read from
  *    the client's own dashboards). Target 17 points (7 + 8 + 2 + 0), 8 alarms,
  *    4 maintenance plans, no KPI.
@@ -236,13 +236,14 @@ import { WATER_WTP } from "./water-wtp";
  *  - `water-softener` — §3, the smallest. Target 9 points (4 + 3 + 2 + 0),
  *    4 alarms, 3 maintenance plans, no KPI.
  *
- * **`E5.1` pass B (this commit) ships all six as SKELETONS** — one core point
- * each, no alarms, no maintenance — so that `checkEntry`, the per-entry
- * deferral loop and the vocabulary guard run over a water entry from here on.
- * Pass C (plan Tasks 4-9) authors the entries above, one plant per commit, in
- * the index order below. The counts in this history are the pass-C targets, not
- * what the modules carry today; each module's docblock names the single point
- * it ships as a placeholder.
+ * **`E5.1` pass B shipped all six as SKELETONS** — one core point each, no
+ * alarms, no maintenance — so that `checkEntry`, the per-entry deferral loop
+ * and the vocabulary guard ran over a water entry from that commit on. **Pass C
+ * (plan Tasks 4-9) authors them one plant per commit, in the index order
+ * below**, and each bullet above says whether its entry is authored or still a
+ * skeleton. A bullet marked **Authored** states what its module carries; a
+ * bullet marked *Target* states what pass C will make it carry, and that
+ * module's own docblock names the single placeholder point it ships until then.
  */
 export const WATER_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0040 ruling 2's authoring order, which is the order GET /stock lists
