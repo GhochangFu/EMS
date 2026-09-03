@@ -128,6 +128,7 @@ const STOCK_ASSET_RELS = [
   // entry code the way `water-stp.ts` does.
   `${STOCK_CATALOG_DIR}/facility.ts`,
   `${STOCK_CATALOG_DIR}/facility-lighting-zone.ts`,
+  `${STOCK_CATALOG_DIR}/facility-fire-panel.ts`,
 ] as const;
 
 /**

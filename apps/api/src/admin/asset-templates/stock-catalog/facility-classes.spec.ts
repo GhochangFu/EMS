@@ -7,6 +7,7 @@ import {
   assertEntryIdentity,
   assertMaintenanceBounds,
   assertNoKpis,
+  assertNoLimitNumbers,
   assertPhilosophyRows,
   assertPointTable,
   assertProvenance,
@@ -46,6 +47,24 @@ import {
 
 /** The document all nine entries of this pack cite — ADR 0054 decision 7. */
 export const FACILITY_TAG_LIST = "e5.3-derived-taglist-v1.md";
+
+/**
+ * The regime sentence `assertNoLimitNumbers` prints when a life-safety row is
+ * caught carrying a digit — the facility pack's equivalent of the water pack's
+ * CPCB Schedule VI consent sentence and the boiler's IBR one.
+ *
+ * **The rule is the same and the regime is not**, which is why the helper takes
+ * this as a parameter: a message naming the wrong regulator sends the reader to
+ * the wrong document. It is safe for this string to carry the standard numbers
+ * because it is interpolated only into the FAILURE message; the rows themselves
+ * carry none, in the alarm text and inside the `philosophy` too.
+ */
+export const FACILITY_LIFE_SAFETY_REGIME =
+  "NFPA 72 and IS 2189 fix the STATE VOCABULARY a fire panel reports — alarm, fault, " +
+  "supervisory, pre-alarm, isolate — and fix no number a template could ship. Every window and " +
+  "every level is the site's: how long a zone may stay isolated, the standing pressure a hydrant " +
+  "header holds, the level a fire tank's make-up supply must keep it above. All three are set by " +
+  "the site's fire officer at commissioning, against that building's own risk assessment.";
 
 // ===========================================================================
 // §1 — `facility-lighting-zone`
@@ -279,6 +298,322 @@ function checkLightingZone(): void {
   assertProvenance(LIGHTING_CODE, entry, FACILITY_TAG_LIST, "§1");
 }
 
+// ===========================================================================
+// §2 — `facility-fire-panel`
+// ===========================================================================
+
+const FIRE_PANEL_CODE = "facility-fire-panel";
+
+/**
+ * §2's 24 table rows in the document's own order (`sortOrder` 0-23) —
+ * `[pointKey, tier, unit]`. Nothing is appended: §2 promotes no derived code.
+ *
+ * **Two rows are the ones this table exists to hold.** `smoke_state` at index 22
+ * is a **reused** code — the control room's, referenced here and redeclared
+ * nowhere (ADR 0054 decision 3), and its unit is the empty string the vocabulary
+ * already seeds, spelled `null` here so the template defers to the catalog
+ * rather than overriding it. `weekly_test_done` at index 23 is the entry's one
+ * `M` row: entered by hand through `F1.8`, never mapped from a data key.
+ *
+ * Only two rows carry a unit — `bar` on the hydrant header and `%` on the fire
+ * tank — and the other twenty-two are `0/1`, `enum` or `count` rows, which ADR
+ * 0051 Amendment 6 decision 4 spells `""` in the vocabulary and `null` here.
+ *
+ * `panel_comms_ok` is **declared here**. §3's `controller_comms_ok` is a
+ * different code on a different device and the two are not to be normalised into
+ * one: this row is the link between the gateway and the FIRE panel, and the
+ * alarm that binds it is the pack's only `critical` comms row.
+ */
+const FIRE_PANEL_POINTS: readonly PointRow[] = [
+  ["fire_alarm_state", "core", null],
+  ["fire_fault_state", "core", null],
+  ["fire_supervisory_state", "extended", null],
+  ["fire_isolate_state", "core", null],
+  ["fire_prealarm_state", "extended", null],
+  ["panel_ac_ok", "core", null],
+  ["panel_battery_ok", "core", null],
+  ["panel_earth_fault", "extended", null],
+  ["panel_comms_ok", "core", null],
+  ["zone_alarm_state", "core", null],
+  ["zone_fault_state", "core", null],
+  ["zone_isolated_state", "extended", null],
+  ["active_alarm_count", "extended", null],
+  ["active_fault_count", "extended", null],
+  ["sounder_active", "extended", null],
+  ["sounder_silenced", "extended", null],
+  ["fire_pump_status", "extended", null],
+  ["jockey_pump_status", "extended", null],
+  ["hydrant_header_pressure_bar", "extended", "bar"],
+  ["fire_tank_level_pct", "extended", "%"],
+  ["sprinkler_flow_state", "extended", null],
+  ["suppression_released_state", "extended", null],
+  ["smoke_state", "extended", null],
+  ["weekly_test_done", "manual", null],
+];
+
+/**
+ * §2 authors **no** derived point, and the empty table is the claim.
+ *
+ * The pack's NEW deferral class is here: `fire_system_healthy` is expressible —
+ * a product of five declared binaries that PARSES under `bms-calc-v1` — and it
+ * is refused all the same, because a health flag over states is
+ * `content.health`'s job (ADR 0050's surface) and each of its five inputs
+ * already raises its own alarm. **Every other class in this pack is deferred
+ * because it cannot be written; this one because it should not be** (plan §12
+ * ruling 5). The other three are two time windows and a test schedule the panel
+ * does not report.
+ */
+const FIRE_PANEL_DERIVED: readonly DerivedRow[] = [];
+
+/**
+ * §2's eleven alarm bullets become **eleven** rows, one for one — the only entry
+ * in the pack where the mapping is exactly one to one.
+ *
+ * Ten are `safety`. `jockey_pump_cycling` is the exception and is `operations`:
+ * a jockey pump starting repeatedly is a LEAK in the ring main, which is a
+ * maintenance finding on the wet system rather than a life-safety event, and
+ * filing it `safety` would put it beside the fire alarm on every screen that
+ * groups by category.
+ */
+const FIRE_PANEL_ALARMS: readonly AlarmRow[] = [
+  ["fire_alarm", "fire_alarm_state", "critical", "safety"],
+  ["fire_fault", "fire_fault_state", "warning", "safety"],
+  ["fire_supervisory", "fire_supervisory_state", "warning", "safety"],
+  ["zone_isolated_too_long", "fire_isolate_state", "warning", "safety"],
+  ["panel_on_battery", "panel_ac_ok", "warning", "safety"],
+  ["panel_earth_fault", "panel_earth_fault", "warning", "safety"],
+  ["panel_comms_loss", "panel_comms_ok", "critical", "safety"],
+  ["fire_pump_running_unplanned", "fire_pump_status", "warning", "safety"],
+  ["hydrant_header_pressure_low", "hydrant_header_pressure_bar", "critical", "safety"],
+  ["fire_tank_level_low", "fire_tank_level_pct", "critical", "safety"],
+  ["jockey_pump_cycling", "jockey_pump_status", "warning", "operations"],
+];
+
+/**
+ * **The seven rows that carry no `skill`, and the four that do** (plan §12
+ * ruling 4 — the distinction ADR 0054 decision 5 was reaching for).
+ *
+ * `bms.alarm_skills` holds five trades from migration `0034` — `electrical`,
+ * `mechanical`, `hvac`, `controls`, `civil` — and **no fire, security or
+ * life-safety trade**. The rule this entry establishes for the pack is: **a
+ * trade answers the panel's own infrastructure; none of the five answers the
+ * EVENT the panel reports.** A fire alarm, a detector fault, a supervisory
+ * signal, an isolation left in place, an earth fault on loop wiring, a fire pump
+ * running and a header pressure falling are all answered by the site's fire
+ * function — so the field is omitted rather than routed to whichever trade a
+ * form wanted a value from.
+ *
+ * The four that carry one are infrastructure a trade genuinely answers: the
+ * panel's mains supply (`electrical`), the gateway link (`controls`), the fire
+ * water tank and its make-up (`civil`) and the jockey pump (`mechanical`).
+ *
+ * **This is the largest no-skill block in the catalog** — seven of the pack's
+ * fourteen PR 1 rows — and `F4.78` is the backlog row that files the missing
+ * trades. When it lands, these seven gain a `skill` in a `stockVersion: 2`.
+ */
+const FIRE_PANEL_NO_SKILL_ROWS = [
+  "fire_alarm",
+  "fire_fault",
+  "fire_supervisory",
+  "zone_isolated_too_long",
+  "panel_earth_fault",
+  "fire_pump_running_unplanned",
+  "hydrant_header_pressure_low",
+] as const;
+
+/**
+ * **Observe-only, and it is a scope fence rather than an omission** (ADR 0054,
+ * §2's own instruction: *"The BMS observes only"*).
+ *
+ * Reset, silence and isolate stay on the panel. A template cannot command
+ * anything today — there is no command surface in `asset_templates.content` at
+ * all — so this claim is about the CONTENT: no alarm and no maintenance plan may
+ * instruct an operator to reset, silence or isolate from the BMS, because a
+ * sentence telling somebody to silence a fire panel from a monitoring screen is
+ * a sentence that will be believed the day one exists.
+ *
+ * `sounder_silenced` is a declared row and stays: the panel REPORTS that
+ * somebody silenced it at the panel, which is exactly the observation this entry
+ * exists for. The forbidden shape is an instruction, not an observation, so the
+ * scan is over the imperative forms only.
+ */
+function assertObserveOnly(entry = requireStockEntry(FIRE_PANEL_CODE)): void {
+  const forbidden = [/\breset the panel\b/i, /\bsilence the\b/i, /\bisolate the zone\b/i];
+  const texts = [
+    ...alarmsOf(entry).flatMap((alarm) => [
+      String(alarm.message ?? ""),
+      ...Object.values(
+        (alarm.philosophy ?? {}) as Record<string, unknown>,
+      ).map((value) => String(value)),
+    ]),
+    ...maintenanceOf(entry).map((plan) => String(plan.triggerSummary ?? "")),
+  ];
+  for (const text of texts) {
+    for (const pattern of forbidden) {
+      assert(
+        !pattern.test(text),
+        `${FIRE_PANEL_CODE} instructs an operator to reset, silence or isolate in "${text}". ` +
+          "§2 and ADR 0054 make this entry OBSERVE-ONLY: those three actions stay on the panel, " +
+          "with the person standing in front of it who can see the zone plan. The template has " +
+          "no command surface today, so the instruction is all that could ship — and an " +
+          "instruction to silence a fire panel from a monitoring screen is one somebody will " +
+          "follow the day a command surface exists.",
+      );
+    }
+  }
+}
+
+/**
+ * `facility-fire-panel` against `docs/e5.3-derived-taglist-v1.md` §2 (plan §5.2)
+ * — **the entry the pack's first escalation checkpoint keys on**, and the one
+ * that sets the `skill` rule for everything after it.
+ *
+ * Three properties meet here for the first time in the pack: a reused code, an
+ * `M` row, and an alarm set where the majority of rows deliberately carry no
+ * trade. It is also where the no-number rule bites hardest — the state
+ * vocabulary is a standard's and every window and level is a fire officer's.
+ */
+function checkFirePanel(): void {
+  const entry = requireStockEntry(FIRE_PANEL_CODE);
+  assertEntryIdentity(FIRE_PANEL_CODE, entry, "fire_panel", "facility");
+
+  // ---- 24 points, 8 core + 15 extended + 1 manual + 0 derived -------------
+
+  assert(
+    tierCount(entry, "core") === 8 &&
+      tierCount(entry, "extended") === 15 &&
+      tierCount(entry, "manual") === 1 &&
+      tierCount(entry, "derived") === 0,
+    `§2 marks 8 rows C, 15 X and 1 M, and promotes none of its four derived codes — 8/15/1/0. ` +
+      `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
+  );
+  assertPointTable(FIRE_PANEL_CODE, "§2", entry, FIRE_PANEL_POINTS);
+  assertDerivedPoints(FIRE_PANEL_CODE, entry, FIRE_PANEL_DERIVED);
+  assertNoKpis(FIRE_PANEL_CODE, entry, "§2");
+  assertDeferralsAbsent(FIRE_PANEL_CODE, entry);
+
+  // ---- the M row, and the reused code beside it ---------------------------
+
+  const weeklyTest = entry.points.find((point) => point.pointKey === "weekly_test_done");
+  assert(
+    weeklyTest?.meta?.tier === "manual" &&
+      weeklyTest.required === false &&
+      weeklyTest.sourceDataKeyPattern === null,
+    `${FIRE_PANEL_CODE}.weekly_test_done must be tier M, optional and carry a null ` +
+      "sourceDataKeyPattern. §2 marks it M because the weekly test is a signature in a logbook, " +
+      "not a telemetry point: it arrives through F1.8 manual entry and is never mapped from a " +
+      "data key. An M row therefore never gets an asset_points row at all — it is always in " +
+      `skippedPoints — and promoting it to C would make every import fail. Got tier ` +
+      `${String(weeklyTest?.meta?.tier)}, required ${String(weeklyTest?.required)}, pattern ` +
+      `${String(weeklyTest?.sourceDataKeyPattern)}.`,
+  );
+  const smoke = entry.points.find((point) => point.pointKey === "smoke_state");
+  assert(
+    smoke?.unit === null && smoke.meta?.tier === "extended",
+    `${FIRE_PANEL_CODE}.smoke_state is a REUSED code — the control room's — referenced here and ` +
+      "redeclared nowhere (ADR 0054 decision 3). Its unit is the empty string the vocabulary " +
+      "already seeds and is write-once through the seed's COALESCE, so this row must carry null " +
+      "and defer to the catalog rather than override it on every organization that imports the " +
+      `entry. Got unit ${String(smoke?.unit)}, tier ${String(smoke?.meta?.tier)}.`,
+  );
+
+  // ---- 11 alarms, seven of them with no trade to route to ----------------
+
+  const alarms = alarmsOf(entry);
+  assertAlarmTable(FIRE_PANEL_CODE, "§2", alarms, FIRE_PANEL_ALARMS);
+  assertPhilosophyRows(FIRE_PANEL_CODE, alarms);
+  assertSkillAssignment(
+    FIRE_PANEL_CODE,
+    alarms,
+    {
+      panel_on_battery: "electrical",
+      panel_comms_loss: "controls",
+      fire_tank_level_low: "civil",
+      jockey_pump_cycling: "mechanical",
+    },
+    FIRE_PANEL_NO_SKILL_ROWS,
+  );
+  assert(
+    FIRE_PANEL_NO_SKILL_ROWS.length === 7,
+    `${FIRE_PANEL_CODE} must carry exactly seven rows with no skill — the events the panel ` +
+      "REPORTS, whose responder is the site's fire function and not one of migration 0034's five " +
+      "trades. The other four are the panel's own infrastructure: its mains supply (electrical), " +
+      "its gateway link (controls), the fire water tank (civil) and the jockey pump (mechanical). " +
+      `Got ${FIRE_PANEL_NO_SKILL_ROWS.length}.`,
+  );
+  assertNoLimitNumbers(
+    FIRE_PANEL_CODE,
+    alarms,
+    ["fire_alarm", "hydrant_header_pressure_low", "fire_tank_level_low", "zone_isolated_too_long"],
+    FACILITY_LIFE_SAFETY_REGIME,
+  );
+  assertObserveOnly(entry);
+
+  const commsLoss = alarms.find((alarm) => alarm.code === "panel_comms_loss");
+  assert(
+    commsLoss?.severity === "critical",
+    `${FIRE_PANEL_CODE}'s panel_comms_loss must be critical. It is the SILENT failure: with the ` +
+      "gateway-panel link down the BMS reports no alarm, no fault and no supervisory signal, and " +
+      "every other row on this entry goes quiet in exactly the way a healthy building looks. A " +
+      "warning here would be a warning that the monitoring stopped monitoring. Got " +
+      `${String(commsLoss?.severity)}.`,
+  );
+  const cycling = alarms.find((alarm) => alarm.code === "jockey_pump_cycling");
+  assert(
+    cycling?.pointKey === "jockey_pump_status" && cycling.category === "operations",
+    `${FIRE_PANEL_CODE}'s jockey_pump_cycling must bind the RUN STATUS jockey_pump_status and be ` +
+      "filed operations, not safety. jockey_starts_per_hour is deferred — bms-calc-v1 has " +
+      "arithmetic and five functions and no state, so a per-hour rate is not expressible — so " +
+      "the alarm binds the status and the RATE is the rule's to evaluate (E2.4). A jockey pump " +
+      "starting repeatedly is a leak in the ring main, which is a finding on the wet system and " +
+      `not a life-safety event. Got "${String(cycling?.pointKey)}" / ` +
+      `${String(cycling?.category)}.`,
+  );
+
+  // ---- 4 maintenance plans, two safetyCritical, none condition_based ------
+
+  const plans = maintenanceOf(entry);
+  assert(plans.length === 4, `plan §5.10 authors 4 fire-panel plans; the entry carries ${plans.length}`);
+  const safetyCritical = plans.filter((plan) => plan.safetyCritical === true);
+  assert(
+    safetyCritical.length === 2 &&
+      safetyCritical.every((plan) => plan.category === "safety_critical"),
+    "exactly two fire-panel plans are safetyCritical, both also categorised safety_critical — the " +
+      "panel standby battery test and the annual detector and zone functional test. The weekly " +
+      "test is compliance work and the pump run test is an inspection round: both matter and " +
+      "neither is the barrier that fails silently. ADR 0054 decision 8 names both of these. Got " +
+      `${safetyCritical.length}: ${safetyCritical.map((plan) => plan.title).join("; ") || "(none)"}`,
+  );
+  const annual = plans.find((plan) => plan.intervalDays === 365);
+  assert(
+    annual?.complianceRef === "NFPA 72 / IS 2189",
+    `${FIRE_PANEL_CODE}'s annual functional test must carry complianceRef "NFPA 72 / IS 2189". ` +
+      "The standard is what the test is done AGAINST, and complianceRef is the one field on this " +
+      "entry where a standard's number belongs — it is a citation, not a limit, which is why the " +
+      "alarm rows carry no digit at all and this field carries two. Got " +
+      `"${String(annual?.complianceRef)}".`,
+  );
+  // NO condition_based plan, and that is authoring rather than omission: a fire
+  // panel's four tasks are all calendar work fixed by the standard and the
+  // site's schedule, and there is no measured row here whose rise generates a
+  // work order. `fire_tank_level_low` is an alarm somebody answers now, not a
+  // task a plan raises later (E5.2 §13 item 10 — assert the absence with its
+  // reason, never leave it unclaimed).
+  const conditionPlans = plans.filter((plan) => plan.category === "condition_based");
+  assert(
+    conditionPlans.length === 0 && plans.every((plan) => plan.generationMode === "calendar"),
+    `${FIRE_PANEL_CODE} must carry NO condition_based plan and every plan in "calendar" mode — ` +
+      "§5.10 authors a weekly alarm test, a standby battery test, an annual detector and zone " +
+      "functional test and a weekly fire and jockey pump run test. All four are calendar work " +
+      "whose interval a standard and the site's fire officer fix, and none of them is generated " +
+      `by a reading. Got ${conditionPlans.length} condition_based plan(s), modes [` +
+      `${plans.map((plan) => String(plan.generationMode)).join(", ")}].`,
+  );
+  assertMaintenanceBounds(FIRE_PANEL_CODE, entry);
+  assertProvenance(FIRE_PANEL_CODE, entry, FACILITY_TAG_LIST, "§2");
+}
+
 /**
  * Every per-class block in this file. Called by `facility-classes.test.ts`, its
  * name-sibling wrapper. **§3, §4 and §5 live in `facility-classes-2.spec.ts`
@@ -286,4 +621,5 @@ function checkLightingZone(): void {
  */
 export function runFacilityClassEntryTests(): void {
   checkLightingZone();
+  checkFirePanel();
 }

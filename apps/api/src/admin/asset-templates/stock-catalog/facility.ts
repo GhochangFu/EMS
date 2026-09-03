@@ -1,3 +1,4 @@
+import { FACILITY_FIRE_PANEL } from "./facility-fire-panel";
 import { FACILITY_LIGHTING_ZONE } from "./facility-lighting-zone";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -383,6 +384,9 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  *  - `facility-lighting-zone` **v1** (2026-09-04, `E5.3`): §1, 15 points
  *    (5 C + 10 X + 0 M + 0 derived), 4 alarms, 3 maintenance plans.
+ *  - `facility-fire-panel` **v1** (2026-09-04, `E5.3`): §2, 24 points
+ *    (8 C + 15 X + 1 M + 0 derived), 11 alarms — seven of them with no `skill`
+ *    — 4 maintenance plans, two `safetyCritical`. Observe-only.
  */
 export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0054 decision 1's document order — lighting zone, fire panel, access
@@ -391,4 +395,5 @@ export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] 
   // the prefix order. Each entry commit adds one import above and one line here,
   // in this order.
   FACILITY_LIGHTING_ZONE,
+  FACILITY_FIRE_PANEL,
 ];

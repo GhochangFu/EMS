@@ -14,7 +14,7 @@ import { runFacilityClassEntryTests } from "./facility-classes.spec";
  * else moves.
  */
 describe("stock asset-template catalog — the facility classes (E5.3, §§1 and 2)", () => {
-  it("ships the lighting zone exactly as its tag-list section describes it", () => {
+  it("ships the lighting zone and the fire alarm panel exactly as their tag-list sections describe them", () => {
     runFacilityClassEntryTests();
   });
 });
