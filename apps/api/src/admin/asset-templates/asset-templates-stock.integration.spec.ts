@@ -47,9 +47,9 @@ const PUMP_CODE = "mechanical-pump";
  * A domain that is not, and will never be, a `bms.asset_domains` row — what
  * `assertAssetDomain` alone refuses. The refusal's *Expected one of* list is
  * read live from the table, so the assertion on it is how this suite proves
- * the `E5.2` seed row `mechanical` exists AND is active on the seeded database
+ * the `E5.3` seed row `facility` exists AND is active on the seeded database
  * without touching the vocabulary. A mutate-and-restore negative (retire
- * `mechanical`, import, restore) is deliberately not written: the seed is
+ * `facility`, import, restore) is deliberately not written: the seed is
  * `ON CONFLICT (code) DO NOTHING`, so a run that died between the two steps
  * would leave the domain retired on every later boot.
  */
@@ -298,10 +298,11 @@ export async function assertImportRunsEveryAuthoringGuard(
   const { rowCount } = await pool.query(`SELECT 1 FROM bms.asset_templates WHERE code = $1`, [INACTIVE_CODE]);
   assert(rowCount === 0, "the refusal must come before the insert — a row was written");
 
-  // `E5.2` — the second guard, `assertAssetDomain` (ADR 0031 Amendment 1),
-  // with the entry's point keys live so only the domain can refuse it. The
-  // list the 400 names is the table's active rows in `sort_order`, so ending
-  // in `mechanical` (60) is the proof that the seed row landed and is active.
+  // `E5.2`/`E5.3` — the second guard, `assertAssetDomain` (ADR 0031
+  // Amendment 1), with the entry's point keys live so only the domain can
+  // refuse it. The list the 400 names is the table's active rows in
+  // `sort_order`, so ending in `facility` (70) is the proof that the seed
+  // row landed and is active.
   const domainMessage = await expectRefusal(
     () => stock.import(fx.adminJwt, UNKNOWN_DOMAIN_CODE, fx.organizationId),
     400,
@@ -309,8 +310,8 @@ export async function assertImportRunsEveryAuthoringGuard(
     "importing an entry filed under a domain that is not a vocabulary row",
   );
   assert(
-    /Expected one of: [a-z_, ]*\bmechanical\.$/.test(domainMessage),
-    `the refusal must list the live domains ending in "mechanical" — the E5.2 seed row — got "${domainMessage}"`,
+    /Expected one of: [a-z_, ]*\bfacility\.$/.test(domainMessage),
+    `the refusal must list the live domains ending in "facility" — the E5.3 seed row — got "${domainMessage}"`,
   );
   const unknownDomainRows = await pool.query(`SELECT 1 FROM bms.asset_templates WHERE code = $1`, [
     UNKNOWN_DOMAIN_CODE,

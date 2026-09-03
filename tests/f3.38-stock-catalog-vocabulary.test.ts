@@ -227,7 +227,8 @@ const scanCatalog = (
  * plants and all file under `water`. `E5.2` then added the sixth,
  * `mechanical`, through the seed path ADR 0031 Amendment 1 A1.1 prescribes
  * (`packages/db/src/asset-domains-seed.ts`, ADR 0053 decision 2) — the first
- * code not from `0029` — and still no `stp` or `etp`.
+ * code not from `0029` — and still no `stp` or `etp`. `E5.3` added the
+ * seventh, `facility`, the same way.
  *
  * They were renamed to snake_case here when the list was written, so the
  * catalog already spells its keys the way every real code is spelled.
