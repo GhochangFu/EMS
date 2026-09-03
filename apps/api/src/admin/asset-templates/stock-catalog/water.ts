@@ -225,8 +225,8 @@ import { WATER_WTP } from "./water-wtp";
  *  - `water-stp` — §5. **Authored** (plan Task 4): 18 points (11 core +
  *    5 extended + 2 manual + 0 derived), 9 alarms, 4 maintenance plans, no KPI.
  *  - `water-etp` — §6, the least provisional section (five `◆` rows read from
- *    the client's own dashboards). Target 17 points (7 + 8 + 2 + 0), 8 alarms,
- *    4 maintenance plans, no KPI.
+ *    the client's own dashboards). **Authored** (plan Task 5): 17 points
+ *    (7 + 8 + 2 + 0), 8 alarms, 4 maintenance plans, no KPI.
  *  - `water-cooling-tower` — §4, the entry that exercises the derived machinery.
  *    Target 21 points (10 + 6 + 1 + 4), 7 alarms, 4 maintenance plans, no KPI.
  *  - `water-wtp` — §1. Target 20 points (11 + 5 + 2 + 2), 6 alarms,

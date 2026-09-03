@@ -16,8 +16,8 @@ import { runWaterClassEntryTests } from "./water-classes.spec";
  * `pnpm exec vitest run tests/repo-invariants.test.ts` part of every water
  * entry's gate for that reason.
  */
-describe("stock asset-template catalog — the water classes (E5.1, §§4-6)", () => {
-  it("ships the STP class exactly as its tag-list section describes it", () => {
+describe("stock asset-template catalog — the water classes (E5.1, §§5-6)", () => {
+  it("ships the STP and ETP classes exactly as their tag-list sections describe them", () => {
     runWaterClassEntryTests();
   });
 });
