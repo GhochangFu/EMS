@@ -1,4 +1,4 @@
-import { FACILITY_LIFE_SAFETY_REGIME, FACILITY_TAG_LIST } from "./facility-classes.spec";
+import { FACILITY_AIR_QUALITY_REGIME, FACILITY_OCCUPANCY_REGIME, FACILITY_TAG_LIST } from "./facility-classes.spec";
 import { DEFERRED_DERIVED_CODES } from "./stock-catalog-deferrals.spec";
 import { alarmsOf, assert, maintenanceOf, requireStockEntry } from "./stock-catalog.spec";
 import {
@@ -40,7 +40,8 @@ import {
  *
  * **Every helper is imported and nothing is restated.**
  * `stock-transcription.spec.ts` is pack-neutral; `FACILITY_TAG_LIST` and
- * `FACILITY_LIFE_SAFETY_REGIME` are declared once in `facility-classes.spec.ts`
+ * `FACILITY_OCCUPANCY_REGIME` and `FACILITY_AIR_QUALITY_REGIME` are declared once in
+ * `facility-classes.spec.ts`
  * and imported here, so the document name and the regime sentence have exactly
  * one spelling across the pack.
  *
@@ -536,7 +537,7 @@ function checkOccupancyZone(): void {
     OCCUPANCY_CODE,
     alarms,
     ["occupancy_over_capacity"],
-    FACILITY_LIFE_SAFETY_REGIME,
+    FACILITY_OCCUPANCY_REGIME,
   );
   assertNoSensorOfflineRow(entry);
 
@@ -854,7 +855,7 @@ function checkParkingLevel(): void {
     },
     PARKING_NO_SKILL_ROWS,
   );
-  assertNoLimitNumbers(PARKING_CODE, alarms, ["co_high", "no2_high"], FACILITY_LIFE_SAFETY_REGIME);
+  assertNoLimitNumbers(PARKING_CODE, alarms, ["co_high", "no2_high"], FACILITY_AIR_QUALITY_REGIME);
 
   assert(
     PARKING_NO_SKILL_ROWS.length === 1,

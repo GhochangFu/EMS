@@ -1,6 +1,6 @@
 import { FACILITY_STOCK_ASSET_TEMPLATES } from "./facility";
 import { assertCoPpmTier } from "./facility-classes-2.spec";
-import { FACILITY_LIFE_SAFETY_REGIME, FACILITY_TAG_LIST } from "./facility-classes.spec";
+import { FACILITY_AIR_QUALITY_REGIME, FACILITY_TAG_LIST } from "./facility-classes.spec";
 import { DEFERRED_DERIVED_CODES } from "./stock-catalog-deferrals.spec";
 import { alarmsOf, assert, maintenanceOf, requireStockEntry } from "./stock-catalog.spec";
 import {
@@ -321,7 +321,7 @@ function checkIaqNode(): void {
     IAQ_CODE,
     alarms,
     ["co2_above_outdoor_high", "pm25_high", "co_high"],
-    FACILITY_LIFE_SAFETY_REGIME,
+    FACILITY_AIR_QUALITY_REGIME,
   );
 
   const aboveOutdoor = alarms.find((alarm) => alarm.code === "co2_above_outdoor_high");

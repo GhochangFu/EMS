@@ -66,6 +66,32 @@ export const FACILITY_LIFE_SAFETY_REGIME =
   "header holds, the level a fire tank's make-up supply must keep it above. All three are set by " +
   "the site's fire officer at commissioning, against that building's own risk assessment.";
 
+/**
+ * **One regime per authority, because `assertNoLimitNumbers` prints the sentence
+ * it is given.** {@link FACILITY_LIFE_SAFETY_REGIME} names NFPA 72 and IS 2189,
+ * which is right for the fire panel and wrong for every other entry in this
+ * pack — an `occupancy_over_capacity` failure citing a fire-alarm standard, or a
+ * `pm25_high` failure citing one, sends the reader to a document that says
+ * nothing about the number they are looking for. `E5.3` §13 records the finding;
+ * these two are the fix. The B7/B8 rule they each state is identical — v1 ships
+ * the meaning and no number — only the authority differs.
+ */
+export const FACILITY_OCCUPANCY_REGIME =
+  "A zone's capacity is the SITE's number, not a standard's. It comes from that building's " +
+  "occupancy licence, its fire strategy or its own space policy, and the same room lawfully " +
+  "holds a different count as a classroom, an office and an event space. So the template ships " +
+  "the MEANING — occupancy above the declared capacity — and the count is declared per site at " +
+  "commissioning, as `occupancy_capacity` and `bays_total` are declared points rather than " +
+  "constants in a formula.";
+
+export const FACILITY_AIR_QUALITY_REGIME =
+  "The ISHRAE IEQ Standard and ASHRAE 62.1 fix the PARAMETER LIST an indoor-air node reads — " +
+  "CO2, PM2.5, PM10, TVOC, CH2O, temperature, RH — and CO2 is a ventilation-adequacy proxy " +
+  "rather than a pollutant limit. Basement CO and NO2 answer to the parking ventilation code " +
+  "the site is built to, not to either of those. All of them set numbers that differ by " +
+  "jurisdiction, by building class and by whether the space is occupied, so v1 carries the " +
+  "meaning and the site's air-quality consultant sets every level.";
+
 // ===========================================================================
 // §1 — `facility-lighting-zone`
 // ===========================================================================

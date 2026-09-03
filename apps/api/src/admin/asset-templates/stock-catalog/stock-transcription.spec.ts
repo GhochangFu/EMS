@@ -343,10 +343,12 @@ export function assertSkillAssignment(
         "civil, and no trade in that table answers this row, so the field is omitted rather " +
         "than routing the alarm to the wrong trade. Two classes of row are unanswerable so " +
         "far: the water and mechanical packs' PROCESS-CHEMISTRY rows (pH, TDS, flue O2 — " +
-        "F4.78 files the process trade), and E5.3's LIFE-SAFETY and SECURITY rows (a fire " +
-        "alarm, a forced door — the fire officer and the security desk answer those, and " +
-        "neither is a maintenance trade). When a trade lands for either class, its rows gain " +
-        "a skill in a stockVersion 2.",
+        "F4.78 files the process trade); E5.3's LIFE-SAFETY and SECURITY rows (a fire alarm, " +
+        "a forced door — the fire officer and the security desk answer those, and neither is " +
+        "a maintenance trade); and E5.3's OCCUPANCY rows (a zone over capacity, a car park " +
+        "full), which report a building's USE and need no responder at all — nothing is " +
+        "broken and nobody is dispatched. When a trade lands for a class that wants one, its " +
+        "rows gain a skill in a stockVersion 2.",
     );
   }
 }
