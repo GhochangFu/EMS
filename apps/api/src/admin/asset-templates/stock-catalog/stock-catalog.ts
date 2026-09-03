@@ -1,5 +1,6 @@
 import { ELECTRICAL_STOCK_ASSET_TEMPLATES } from "./electrical";
 import type { StockAssetTemplateEntry } from "./types";
+import { WATER_STOCK_ASSET_TEMPLATES } from "./water";
 
 /**
  * `F2.13` — the stock asset-template catalog (ADR 0052 decision 1).
@@ -47,7 +48,16 @@ import type { StockAssetTemplateEntry } from "./types";
  *    shared `point-fields.ts` — because appending all five remaining classes
  *    to one `electrical.ts` was projected at ~1550-1800 lines (plan §4.3),
  *    well past the cap AGENTS.md §4.5 reads whole-file.
- *  - `water.ts` — `E5.1`.
+ *  - `water.ts` — the pack index only, since `E5.1` (plan Task 2). The six
+ *    water-treatment plant classes are their own modules — `water-stp.ts`
+ *    (§5), `water-etp.ts` (§6), `water-cooling-tower.ts` (§4),
+ *    `water-wtp.ts` (§1), `water-ro.ts` (§2) and `water-softener.ts` (§3),
+ *    listed in ADR 0040 ruling 2's authoring order rather than the tag list's —
+ *    because all six in one `water.ts` was projected at ~1400-1800 lines
+ *    (plan §4.5: 103 point rows, 40 alarms each carrying a populated
+ *    `philosophy`, 8 formulas and 23 maintenance plans), well past the cap
+ *    AGENTS.md §4.5 reads whole-file. They share `point-fields.ts` with the
+ *    electrical pack, which is not edited.
  *  - `mechanical.ts` — `E5.2`.
  *  - `facility.ts` — `E5.3`.
  *
@@ -86,4 +96,5 @@ import type { StockAssetTemplateEntry } from "./types";
  */
 export const STOCK_ASSET_TEMPLATE_CATALOG: readonly StockAssetTemplateEntry[] = [
   ...ELECTRICAL_STOCK_ASSET_TEMPLATES,
+  ...WATER_STOCK_ASSET_TEMPLATES,
 ];
