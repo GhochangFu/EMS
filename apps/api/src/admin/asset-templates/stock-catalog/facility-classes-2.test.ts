@@ -14,7 +14,7 @@ import { runFacilityClassEntryTests2 } from "./facility-classes-2.spec";
  * `check…()` call and nothing else moves.
  */
 describe("stock asset-template catalog — the facility classes (E5.3, §§3, 4 and 5)", () => {
-  it("ships the access door exactly as its tag-list section describes it", () => {
+  it("ships the access door and the occupancy zone exactly as their tag-list sections describe them", () => {
     runFacilityClassEntryTests2();
   });
 });

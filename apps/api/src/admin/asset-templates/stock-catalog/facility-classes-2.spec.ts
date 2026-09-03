@@ -1,4 +1,4 @@
-import { FACILITY_TAG_LIST } from "./facility-classes.spec";
+import { FACILITY_LIFE_SAFETY_REGIME, FACILITY_TAG_LIST } from "./facility-classes.spec";
 import { DEFERRED_DERIVED_CODES } from "./stock-catalog-deferrals.spec";
 import { alarmsOf, assert, maintenanceOf, requireStockEntry } from "./stock-catalog.spec";
 import {
@@ -8,6 +8,7 @@ import {
   assertEntryIdentity,
   assertMaintenanceBounds,
   assertNoKpis,
+  assertNoLimitNumbers,
   assertPhilosophyRows,
   assertPointTable,
   assertProvenance,
@@ -351,6 +352,268 @@ function checkAccessDoor(): void {
   assertProvenance(ACCESS_DOOR_CODE, entry, FACILITY_TAG_LIST, "§3");
 }
 
+// ===========================================================================
+// §4 — `facility-occupancy-zone`
+// ===========================================================================
+
+const OCCUPANCY_CODE = "facility-occupancy-zone";
+
+/**
+ * §4's 10 table rows in the document's own order (`sortOrder` 0-9), then the one
+ * promoted derived point at 10 — `[pointKey, tier, unit]`.
+ *
+ * **`occupancy_state` at index 0 is a REFERENCED code, not a declared one.** §1
+ * is its first occurrence in the document, so it is declared on the lighting
+ * zone and filed under `facility` (ADR 0054 decision 3), and this entry names it
+ * without redeclaring it. **A tier is per ENTRY**: it is `core` on both, for two
+ * different reasons — the lighting zone cannot run its control strategy without
+ * presence, and a zone that counts people needs to know whether anyone is there.
+ *
+ * **Three codes are declared HERE for later sections to reference**:
+ * `entry_count` and `exit_count`, which §5's parking level uses for vehicles
+ * rather than people, and `sensor_battery_pct`, which §6's IAQ node reuses. One
+ * code, one meaning, and the tier is free to differ.
+ *
+ * `occupancy_capacity` is the document's *(attribute-as-point)* row and is the
+ * whole reason `occupancy_pct` is authorable here at all — the capacity is a
+ * POINT the zone reports, so `bms-calc-v1` can name it. That is what plan §12
+ * ruling 2 overturned in ADR 0054's sketch, which had assumed the capacity was
+ * an asset attribute the grammar cannot read.
+ */
+const OCCUPANCY_POINTS: readonly PointRow[] = [
+  ["occupancy_state", "core", null],
+  ["occupancy_count", "extended", null],
+  ["occupancy_capacity", "extended", null],
+  ["entry_count", "extended", null],
+  ["exit_count", "extended", null],
+  ["desk_occupied_count", "extended", null],
+  ["zone_temp_c", "core", "°C"],
+  ["zone_rh_pct", "extended", "%"],
+  ["zone_temp_sp_c", "extended", "°C"],
+  ["sensor_battery_pct", "extended", "%"],
+  ["occupancy_pct", "derived", "%"],
+];
+
+/**
+ * §4 promotes **one** of its four derived codes — `occupancy_pct`, the FIRST of
+ * its two authorings.
+ *
+ * Both inputs are `X`: a site that fits neither a counter nor a capacity gets no
+ * value, which is correct. An empty zone divides by a zero capacity only if the
+ * capacity was never commissioned, and `evaluate.ts` returns `non_finite` there
+ * — no value, never a wrong one.
+ *
+ * `maxInputAgeSeconds` is `null`, the 300 s default: the count and the capacity
+ * arrive from the same sensor gateway. The pack's only two overrides are on the
+ * IAQ node.
+ */
+const OCCUPANCY_DERIVED: readonly DerivedRow[] = [
+  ["occupancy_pct", "{occupancy_count} / {occupancy_capacity} * 100", null],
+];
+
+/**
+ * §4's five alarm bullets become **four** rows, and the fifth is dropped and
+ * recorded — {@link assertNoSensorOfflineRow} below.
+ *
+ * `occupancy_over_capacity` **binds the derived point**, which is shipped
+ * behaviour and not a novelty: `recovery_low` binds `recovery_pct` on
+ * `water-ro`. It is the only row here with no `skill` — a zone over its egress
+ * capacity is answered by the people who manage the space and by the fire
+ * strategy, not by one of migration `0034`'s five maintenance trades.
+ */
+const OCCUPANCY_ALARMS: readonly AlarmRow[] = [
+  ["occupancy_over_capacity", "occupancy_pct", "critical", "safety"],
+  ["counter_drift", "entry_count", "warning", "operations"],
+  ["zone_temp_out_of_band_occupied", "zone_temp_c", "warning", "comfort"],
+  ["sensor_battery_low", "sensor_battery_pct", "info", "operations"],
+];
+
+/**
+ * **The second dropped bullet of the pack, asserted as an absence** (plan §12
+ * ruling 6) — §1's was the first.
+ *
+ * §4's *Alarms* line names five events and this entry carries four. The fifth —
+ * *sensor offline* — has **no point to bind**: §4's table carries no
+ * `sensor_online` row, and §6's IAQ node is the section that does. ADR 0054
+ * decision 3 files the vocabulary from the document's TABLE and not from its
+ * prose, so no row was invented to give the bullet a home.
+ *
+ * The bullet is a **v2 redline candidate for the `F2.18` handout**. Unlike §1's
+ * gateway-comms bullet, this one has a nearly-identical row one section away,
+ * which makes it the more tempting of the two to rehome — and rehoming it would
+ * bind an alarm to a key this template does not declare, which fails
+ * `assertContentRefsResolve` at import time on a client's site.
+ *
+ * Both halves are asserted, because either alone is weak: no declared point key
+ * may contain `online`, and no alarm may bind one.
+ */
+function assertNoSensorOfflineRow(entry = requireStockEntry(OCCUPANCY_CODE)): void {
+  const onlinePoints = entry.points.filter((point) => point.pointKey.includes("online"));
+  assert(
+    onlinePoints.length === 0,
+    `${OCCUPANCY_CODE} declares an online point (${onlinePoints.map((p) => p.pointKey).join(", ")}), ` +
+      "and §4's table carries none. §4's fifth alarm bullet — sensor offline — has NO row to " +
+      "bind, and sensor_online was deliberately NOT added here for it (plan §12 ruling 6): the " +
+      "vocabulary is filed from the document's TABLE, not its prose. §6's IAQ node is the " +
+      "section that declares sensor_online, and the bullet is a v2 redline for the F2.18 " +
+      "handout. sensor_battery_low is the health row this entry DOES carry.",
+  );
+  const onlineAlarms = alarmsOf(entry).filter((alarm) => alarm.pointKey.includes("online"));
+  assert(
+    onlineAlarms.length === 0,
+    `${OCCUPANCY_CODE} alarm "${onlineAlarms[0]?.code}" binds ${String(onlineAlarms[0]?.pointKey)}, ` +
+      "which this entry does not declare. §4's sensor-offline bullet is DROPPED and recorded for " +
+      "F2.18, not rehomed onto §6's key: an alarm on a point the template does not declare fails " +
+      "assertContentRefsResolve at import, and this bullet is the more tempting of the pack's two " +
+      "to rehome precisely because a nearly-identical row exists one section away.",
+  );
+}
+
+/**
+ * `facility-occupancy-zone` against `docs/e5.3-derived-taglist-v1.md` §4 (plan
+ * §5.4) — the pack's smallest entry, and the one that carries the FIRST of
+ * `occupancy_pct`'s two formulas.
+ *
+ * It is also the entry that supplies three codes to later sections —
+ * `entry_count`, `exit_count` and `sensor_battery_pct` — while referencing §1's
+ * `occupancy_state`, so it sits on both sides of the first-occurrence rule at
+ * once.
+ */
+function checkOccupancyZone(): void {
+  const entry = requireStockEntry(OCCUPANCY_CODE);
+  assertEntryIdentity(OCCUPANCY_CODE, entry, "occupancy_zone", "facility");
+
+  // ---- 11 points, 2 core + 8 extended + 0 manual + 1 derived --------------
+
+  assert(
+    tierCount(entry, "core") === 2 &&
+      tierCount(entry, "extended") === 8 &&
+      tierCount(entry, "manual") === 0 &&
+      tierCount(entry, "derived") === 1,
+    `§4 marks 2 rows C and 8 X, has no M row, and one of its four derived codes is authored — ` +
+      `2/8/0/1. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
+  );
+  assertPointTable(OCCUPANCY_CODE, "§4", entry, OCCUPANCY_POINTS);
+  assertDerivedPoints(OCCUPANCY_CODE, entry, OCCUPANCY_DERIVED);
+  assertNoKpis(OCCUPANCY_CODE, entry, "§4");
+  assertDeferralsAbsent(OCCUPANCY_CODE, entry);
+
+  // ---- the capacity is a POINT, which is what makes the ratio authorable --
+
+  const capacity = entry.points.find((point) => point.pointKey === "occupancy_capacity");
+  assert(
+    capacity?.kind === "measured" && capacity.meta?.tier === "extended",
+    `${OCCUPANCY_CODE}.occupancy_capacity must be a measured extended row. §4 spells it ` +
+      "attribute-as-point, and that is the whole reason occupancy_pct is authorable at all: the " +
+      "capacity is a POINT the zone reports, so bms-calc-v1 can name it. ADR 0054 sketched this " +
+      "code as attribute-deferred on the assumption that the capacity was an asset attribute the " +
+      "grammar cannot read, and plan §12 ruling 2 overturned that on the document's own row. Got " +
+      `kind ${String(capacity?.kind)}, tier ${String(capacity?.meta?.tier)}.`,
+  );
+
+  // ---- 4 alarms, one of them with no trade to route to --------------------
+
+  const alarms = alarmsOf(entry);
+  assertAlarmTable(OCCUPANCY_CODE, "§4", alarms, OCCUPANCY_ALARMS);
+  assertPhilosophyRows(OCCUPANCY_CODE, alarms);
+  assertSkillAssignment(
+    OCCUPANCY_CODE,
+    alarms,
+    {
+      counter_drift: "controls",
+      zone_temp_out_of_band_occupied: "hvac",
+      sensor_battery_low: "controls",
+    },
+    // The one no-skill row here is the LIFE-SAFETY class: a zone over its egress
+    // capacity is answered by whoever manages the space and by the fire
+    // strategy, and none of 0034's five maintenance trades is either of them.
+    // The other three are a sensor binding (controls), a comfort band (hvac) and
+    // a battery round (controls).
+    ["occupancy_over_capacity"],
+  );
+  assertNoLimitNumbers(
+    OCCUPANCY_CODE,
+    alarms,
+    ["occupancy_over_capacity"],
+    FACILITY_LIFE_SAFETY_REGIME,
+  );
+  assertNoSensorOfflineRow(entry);
+
+  const overCapacity = alarms.find((alarm) => alarm.code === "occupancy_over_capacity");
+  assert(
+    overCapacity?.pointKey === "occupancy_pct" && overCapacity.severity === "critical",
+    `${OCCUPANCY_CODE}'s occupancy_over_capacity must bind the DERIVED occupancy_pct and be ` +
+      "critical. Binding the raw count instead would need the capacity to be known by whoever " +
+      "sets the rule, which is exactly the number the derived point already divides by — and an " +
+      "over-capacity zone is an egress question, which is why it pages. An alarm on a derived " +
+      "point is shipped behaviour: recovery_low binds recovery_pct on water-ro. Got " +
+      `"${String(overCapacity?.pointKey)}" / ${String(overCapacity?.severity)}.`,
+  );
+  const drift = alarms.find((alarm) => alarm.code === "counter_drift");
+  assert(
+    drift?.pointKey === "entry_count" && String(drift.message ?? "").includes("exit_count"),
+    `${OCCUPANCY_CODE}'s counter_drift must bind entry_count and NAME exit_count in its message ` +
+      "— the divergence is between the two and bms-calc-v1 cannot express a running difference, " +
+      "so the alarm binds one counter and the rule reads the other beside it (E2.4). A message " +
+      `that does not say which second row the rule needs is a rule nobody can write. Got ` +
+      `"${String(drift?.pointKey)}", message "${String(drift?.message)}".`,
+  );
+  assert(
+    DEFERRED_DERIVED_CODES[OCCUPANCY_CODE].length === 3,
+    "§4's Derived: line names four codes: occupancy_pct is authored above and the other three " +
+      "are deferred — a window (occupied_hours_day), an attribute (space_utilization_pct, which " +
+      "needs the desk or room count and not the egress capacity) and another asset's meter " +
+      `(conditioning_while_empty_kwh). Got ${DEFERRED_DERIVED_CODES[OCCUPANCY_CODE].length}.`,
+  );
+
+  // ---- 2 maintenance plans, none of them safetyCritical -------------------
+
+  const plans = maintenanceOf(entry);
+  assert(plans.length === 2, `plan §5.10 authors 2 occupancy plans; the entry carries ${plans.length}`);
+  // NO safetyCritical plan, and that is authoring rather than omission (E5.2
+  // §13 item 10). The egress question this entry raises is answered by the
+  // occupancy_over_capacity ALARM, which fires now; a battery round and a
+  // counter calibration are the tasks, and calling either one safety-critical
+  // would flatten the distinction the fire panel's and the access door's plans
+  // depend on.
+  const safetyCritical = plans.filter((plan) => plan.safetyCritical === true);
+  assert(
+    safetyCritical.length === 0,
+    `${OCCUPANCY_CODE} must carry NO safetyCritical plan. Its egress question is answered by the ` +
+      "occupancy_over_capacity alarm, which fires now; the two plans are a battery round and a " +
+      "counter calibration, and marking either critical would flatten the distinction the fire " +
+      `panel's battery test and the access door's fire-release test depend on. Got ` +
+      `${safetyCritical.length}: ${safetyCritical.map((plan) => plan.title).join("; ")}`,
+  );
+  const calibration = plans.find((plan) => plan.category === "calibration");
+  assert(
+    calibration !== undefined,
+    `${OCCUPANCY_CODE} must carry a calibration plan — the people-counter drift check. ` +
+      "counter_drift is the alarm and this is the task that clears it; a counter nobody " +
+      "recalibrates diverges further every interval and the alarm becomes permanent furniture.",
+  );
+  for (const pointKey of ["entry_count", "exit_count"]) {
+    assert(
+      String(calibration?.triggerSummary ?? "").includes(pointKey),
+      `${OCCUPANCY_CODE}'s calibration plan must name ${pointKey} in its triggerSummary — the ` +
+        "two counters whose divergence IS the drift, and the two counter_drift is written " +
+        `around. Got: "${String(calibration?.triggerSummary)}"`,
+    );
+  }
+  const conditionPlans = plans.filter((plan) => plan.category === "condition_based");
+  assert(
+    conditionPlans.length === 0 && plans.every((plan) => plan.generationMode === "calendar"),
+    `${OCCUPANCY_CODE} must carry NO condition_based plan and both plans in "calendar" mode. A ` +
+      "wireless battery is replaced on a round and a people counter is recalibrated on a " +
+      "schedule; neither is generated by a reading, and sensor_battery_low is an alarm somebody " +
+      `answers rather than a condition a plan watches. Got ${conditionPlans.length} ` +
+      `condition_based plan(s), modes [${plans.map((plan) => String(plan.generationMode)).join(", ")}].`,
+  );
+  assertMaintenanceBounds(OCCUPANCY_CODE, entry);
+  assertProvenance(OCCUPANCY_CODE, entry, FACILITY_TAG_LIST, "§4");
+}
+
 /**
  * Every per-class block in this file. Called by `facility-classes-2.test.ts`,
  * its name-sibling wrapper. **§1 and §2 live in `facility-classes.spec.ts` and
@@ -358,4 +621,5 @@ function checkAccessDoor(): void {
  */
 export function runFacilityClassEntryTests2(): void {
   checkAccessDoor();
+  checkOccupancyZone();
 }

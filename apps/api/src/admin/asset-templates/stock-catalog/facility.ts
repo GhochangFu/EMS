@@ -1,6 +1,7 @@
 import { FACILITY_ACCESS_DOOR } from "./facility-access-door";
 import { FACILITY_FIRE_PANEL } from "./facility-fire-panel";
 import { FACILITY_LIGHTING_ZONE } from "./facility-lighting-zone";
+import { FACILITY_OCCUPANCY_ZONE } from "./facility-occupancy-zone";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -393,6 +394,10 @@ import type { StockAssetTemplateEntry } from "./types";
  *    formula), 7 alarms — five of them with no `skill`, the security class — 3
  *    maintenance plans, one `safetyCritical`. Declares `controller_comms_ok`,
  *    the code PR 2 depends on.
+ *  - `facility-occupancy-zone` **v1** (2026-09-04, `E5.3`): §4, 11 points
+ *    (2 C + 8 X + 0 M + 1 derived — `occupancy_pct`, the first of its two
+ *    authorings), 4 alarms from five bullets — the pack's second dropped bullet
+ *    — one of them with no `skill`, 2 maintenance plans, none `safetyCritical`.
  */
 export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0054 decision 1's document order — lighting zone, fire panel, access
@@ -403,4 +408,5 @@ export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] 
   FACILITY_LIGHTING_ZONE,
   FACILITY_FIRE_PANEL,
   FACILITY_ACCESS_DOOR,
+  FACILITY_OCCUPANCY_ZONE,
 ];
