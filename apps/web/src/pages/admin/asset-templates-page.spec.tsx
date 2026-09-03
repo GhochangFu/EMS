@@ -169,6 +169,36 @@ export async function failedImportRendersThroughApiErrorMessage(): Promise<void>
   expect(screen.queryByText(/statusCode/)).toBeNull();
 }
 
+/**
+ * `F2.14` — each stock row links to the read-only viewer, beside Import.
+ *
+ * The card is a summary; the row's only affordance used to be "import it and
+ * find out". The link is what lets an administrator read the whole entry —
+ * 33 points and 11 alarms on the live feeder — before taking it. Import is
+ * unchanged and still gated on an organization, which is what this case
+ * re-checks alongside the link.
+ */
+export async function eachStockRowLinksToTheReadOnlyViewer(): Promise<void> {
+  stubApi();
+  renderPage();
+
+  const view = await screen.findByRole("link", {
+    name: "View Feeder / incomer — multifunction energy meter",
+  });
+  expect(
+    view.getAttribute("href"),
+    "the View link does not point at the viewer route registered in app.tsx.",
+  ).toBe("/admin/asset-templates/stock/electrical-feeder");
+
+  const importButton = screen.getByRole("button", { name: IMPORT_BUTTON });
+  expect(importButton).toBeDisabled();
+  await userEvent.selectOptions(
+    screen.getByRole("combobox", { name: "Import into organization" }),
+    "org-1",
+  );
+  expect(importButton).not.toBeDisabled();
+}
+
 /** The card is not rendered at all for a role `canAuthorTemplates` refuses. */
 export async function cardIsAbsentForARoleThatCannotAuthor(): Promise<void> {
   stubApi();

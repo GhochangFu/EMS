@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   cardIsAbsentForARoleThatCannotAuthor,
+  eachStockRowLinksToTheReadOnlyViewer,
   emptyCatalogRendersTheEmptyState,
   failedImportRendersThroughApiErrorMessage,
   importsAStockEntryIntoTheChosenOrganization,
@@ -30,6 +31,10 @@ describe("F2.13 asset templates list page — the stock catalog card", () => {
 
   it("renders a failed import through apiErrorMessage, never the raw body", async () => {
     await failedImportRendersThroughApiErrorMessage();
+  });
+
+  it("links each stock row to the read-only viewer, beside Import", async () => {
+    await eachStockRowLinksToTheReadOnlyViewer();
   });
 
   it("does not render the card for a role that cannot author templates", async () => {
