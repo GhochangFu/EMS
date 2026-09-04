@@ -95,7 +95,9 @@ const GATES = [
   // ADR 0045 already Accepted. So the citation above ("Requires an ADR before
   // it counts as pending at all") stopped being true, and the entry is deleted
   // rather than left to rot, per this list's own rule. It was not harmless
-  // while it sat here: `gatedItems` does not test `dependencyClear`, so the
+  // while it sat here: the dashboard's held section did not test
+  // `dependencyClear` (`F4.86` fixed that, and deleted the `gatedItems` this
+  // sentence used to name), so the
   // client-facing page carried "Held for a decision on the multi-tenancy model"
   // against E7.1 while E7.1a was in flight. E7.1's own row says "Do not
   // implement against this row" — that is a routing instruction to the four
@@ -801,6 +803,34 @@ for (const [aName, a, bName, b] of [
   }
 }
 
+// Disjointness is only half the invariant, and the weaker half. It is satisfied
+// VACUOUSLY by an under-populated `gated`: narrow `item.held` in any way — the
+// plausible refactor is `item.readyToStart && ...`, misreading that flag as
+// "eligible" — and `gated` empties board-wide. Every consumer then agrees on
+// zero, the three sets trivially do not intersect, both gates pass, and 15
+// items silently become "Waiting" with the held section rendering nothing.
+//
+// So also check COVERAGE. An item with an open gate has exactly two honest
+// homes: `gated` if its dependencies are finished, `blocked` if they are not.
+// `stray` is the set that reaches neither, which is empty on a correct board
+// and non-empty for every narrowing of `held`.
+const stray = items.filter(
+  (it) =>
+    it.gate &&
+    it.status !== "done" &&
+    it.status !== "dropped" &&
+    it.dependencyClear &&
+    !it.held,
+);
+if (stray.length > 0) {
+  console.error(
+    `backlog-status: ${stray.length} gated item(s) counted in neither gated nor blocked: ` +
+      `${stray.map((it) => it.id).join(", ")}.\n` +
+      `  \`item.held\` has been narrowed and the board now hides them.`,
+  );
+  process.exit(1);
+}
+
 const P_ORDER = { P0: 0, P1: 1, P2: 2, P3: 3 };
 const byPriority = (a, b) =>
   (P_ORDER[a.priority] ?? 9) - (P_ORDER[b.priority] ?? 9) ||
@@ -851,6 +881,13 @@ const payload = {
         status: it?.status ?? "unknown",
         gate: it?.gate ?? null,
         readyToStart: it?.readyToStart ?? false,
+        // `F4.86`. The chain node is a PROJECTION, so the dashboard's
+        // critical-path panel cannot reach `items` and has to be handed the
+        // flag. Without it that panel was the fifth re-derivation of heldness —
+        // it read `n.gate` and painted E1.1 "hold" while every other panel on
+        // the same page said "Waiting". Neither new gate could see it, because
+        // both walk `data.items`, not this array.
+        held: it?.held ?? false,
       };
     }),
   })),
@@ -902,6 +939,10 @@ payload.fingerprint = createHash("sha256")
           // whose `status` is projected here too. What this slot adds is the
           // compensating case: one item enters held as another leaves, the
           // totals do not move, and without this field nothing else would.
+          //
+          // Adding the slot costs exactly one spurious `CHANGED` prompt, the
+          // first run after it lands. Worth naming, because "no news, no churn"
+          // is this hash's whole purpose.
           it.held,
           it.gate?.kind ?? null,
           it.deliveredOn,
