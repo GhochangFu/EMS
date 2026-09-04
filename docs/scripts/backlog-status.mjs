@@ -95,7 +95,9 @@ const GATES = [
   // ADR 0045 already Accepted. So the citation above ("Requires an ADR before
   // it counts as pending at all") stopped being true, and the entry is deleted
   // rather than left to rot, per this list's own rule. It was not harmless
-  // while it sat here: `gatedItems` does not test `dependencyClear`, so the
+  // while it sat here: the dashboard's held section did not test
+  // `dependencyClear` (`F4.86` fixed that, and deleted the `gatedItems` this
+  // sentence used to name), so the
   // client-facing page carried "Held for a decision on the multi-tenancy model"
   // against E7.1 while E7.1a was in flight. E7.1's own row says "Do not
   // implement against this row" — that is a routing instruction to the four
@@ -475,6 +477,23 @@ function resolveEligibility(items) {
     // `planned` (🟡) is deliberately excluded: it means an ADR is in flight or
     // the item shipped only in part, which is not the same as "pick this up".
     item.readyToStart = item.dependencyClear && !item.gate && item.status === "pending";
+    // THE one definition of "held" (`F4.86`). Every consumer reads this flag —
+    // the `gated` set below, the dashboard's `stateOf`, its "Eligible, but
+    // held" section, and the republish hook — because four separate
+    // re-derivations of this same idea is what put E1.1 in two sections at
+    // once and made the page's own numbers disagree with each other.
+    //
+    // `dependencyClear` is part of the definition, not an extra filter on top
+    // of it. The board's footer says held means held on a DECISION, not on
+    // engineering capacity, and the held section's own prose promises "the
+    // engineering they depend on is finished". An item waiting on both is
+    // waiting on engineering too, so it belongs in `blocked` — the ruling
+    // `34c6636` already made for the console line and left unapplied here.
+    item.held =
+      item.dependencyClear &&
+      Boolean(item.gate) &&
+      item.status !== "done" &&
+      item.status !== "dropped";
     item.unlocks = [];
   }
 
@@ -748,12 +767,69 @@ const countBy = (key) =>
   items.reduce((acc, it) => ((acc[it[key]] = (acc[it[key]] ?? 0) + 1), acc), {});
 
 const ready = items.filter((it) => it.readyToStart);
-const gated = items.filter(
-  (it) => it.dependencyClear && it.gate && it.status !== "done" && it.status !== "dropped",
-);
+const gated = items.filter((it) => it.held);
 const blocked = items.filter(
   (it) => !it.dependencyClear && it.status !== "done" && it.status !== "dropped",
 );
+
+// `F4.86`. These three sets are rendered as three separate answers to "why can
+// this not start", so an item in two of them is reported twice and the totals
+// stop adding up. The overlap that motivated this was `gated` x `blocked`, but
+// the check is written over all three pairs rather than that one: the defect
+// class is a predicate drifting until two sets intersect, and naming only the
+// pair that already bit us would not catch the next one.
+//
+// A hard exit, not a warning. `warnings` is rendered ON the board, which is the
+// wrong place for "the board is wrong" — and the leak-check CI job runs this
+// script, so a non-zero exit here is a gate under AGENTS.md §4.6.
+//
+// Like its sibling in `backlog-dashboard.mjs`, this is data-dependent: it can
+// only fire while some item sits in two sets at once. Restore the old inclusive
+// predicate on a board where nothing is gated AND dependency-blocked and it
+// passes. That is the state in which the defect is also invisible.
+for (const [aName, a, bName, b] of [
+  ["ready", ready, "gated", gated],
+  ["ready", ready, "blocked", blocked],
+  ["gated", gated, "blocked", blocked],
+]) {
+  const bIds = new Set(b.map((it) => it.id));
+  const both = a.filter((it) => bIds.has(it.id)).map((it) => it.id);
+  if (both.length > 0) {
+    console.error(
+      `backlog-status: ${both.length} item(s) counted as both ${aName} and ${bName}: ${both.join(", ")}.\n` +
+        `  These sets must not intersect — see the \`item.held\` docblock.`,
+    );
+    process.exit(1);
+  }
+}
+
+// Disjointness is only half the invariant, and the weaker half. It is satisfied
+// VACUOUSLY by an under-populated `gated`: narrow `item.held` in any way — the
+// plausible refactor is `item.readyToStart && ...`, misreading that flag as
+// "eligible" — and `gated` empties board-wide. Every consumer then agrees on
+// zero, the three sets trivially do not intersect, both gates pass, and 15
+// items silently become "Waiting" with the held section rendering nothing.
+//
+// So also check COVERAGE. An item with an open gate has exactly two honest
+// homes: `gated` if its dependencies are finished, `blocked` if they are not.
+// `stray` is the set that reaches neither, which is empty on a correct board
+// and non-empty for every narrowing of `held`.
+const stray = items.filter(
+  (it) =>
+    it.gate &&
+    it.status !== "done" &&
+    it.status !== "dropped" &&
+    it.dependencyClear &&
+    !it.held,
+);
+if (stray.length > 0) {
+  console.error(
+    `backlog-status: ${stray.length} gated item(s) counted in neither gated nor blocked: ` +
+      `${stray.map((it) => it.id).join(", ")}.\n` +
+      `  \`item.held\` has been narrowed and the board now hides them.`,
+  );
+  process.exit(1);
+}
 
 const P_ORDER = { P0: 0, P1: 1, P2: 2, P3: 3 };
 const byPriority = (a, b) =>
@@ -805,6 +881,13 @@ const payload = {
         status: it?.status ?? "unknown",
         gate: it?.gate ?? null,
         readyToStart: it?.readyToStart ?? false,
+        // `F4.86`. The chain node is a PROJECTION, so the dashboard's
+        // critical-path panel cannot reach `items` and has to be handed the
+        // flag. Without it that panel was the fifth re-derivation of heldness —
+        // it read `n.gate` and painted E1.1 "hold" while every other panel on
+        // the same page said "Waiting". Neither new gate could see it, because
+        // both walk `data.items`, not this array.
+        held: it?.held ?? false,
       };
     }),
   })),
@@ -842,6 +925,25 @@ payload.fingerprint = createHash("sha256")
           it.title,
           it.dependsRaw,
           it.readyToStart,
+          // `F4.86`. `held` earns a slot because it moves a card between two
+          // rendered sections on its own, and nothing else in this TUPLE moves
+          // with it: a gated item that becomes dependency-clear leaves
+          // "Waiting" and joins "Eligible, but held" while `readyToStart` stays
+          // false throughout, because a gated item is never ready.
+          //
+          // That is narrower than "the board could move unnoticed", and the
+          // difference is worth keeping straight. `counts` is hashed alongside
+          // these tuples and carries `gated` and `blocked`, so the ordinary
+          // single flip already moves the fingerprint through the totals — and
+          // the usual CAUSE of the flip is an upstream item reaching `done`,
+          // whose `status` is projected here too. What this slot adds is the
+          // compensating case: one item enters held as another leaves, the
+          // totals do not move, and without this field nothing else would.
+          //
+          // Adding the slot costs exactly one spurious `CHANGED` prompt, the
+          // first run after it lands. Worth naming, because "no news, no churn"
+          // is this hash's whole purpose.
+          it.held,
           it.gate?.kind ?? null,
           it.deliveredOn,
         ])

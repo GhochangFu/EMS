@@ -68,11 +68,24 @@ const P_ORDER = { P0: 0, P1: 1, P2: 2, P3: 3 };
 const inProgressIds = new Set(data.inProgress.map((p) => p.id));
 const readyIds = data.ready.filter((id) => !inProgressIds.has(id));
 
+/**
+ * One test for a gate's audience (`F4.86`). The WORDING differs by surface —
+ * a full-board state chip reads "Awaiting client", the card pill beside it
+ * reads "awaiting client" — but the condition behind them must not, and it was
+ * written out twice. Flip one and the chip filter selects a different set than
+ * the cards show, which is this row's own defect one level down.
+ */
+const isClientGate = (it) => it.gate?.kind === "client";
+
 const stateOf = (it) => {
   if (inProgressIds.has(it.id) && it.status !== "done") return { label: "In flight", cls: "lamp-active", key: "flight" };
   if (it.status === "done") return { label: "Done", cls: "lamp-done", key: "done" };
   if (it.status === "dropped") return { label: "Dropped", cls: "lamp-idle", key: "waiting" };
-  if (it.gate) return { label: it.gate.kind === "client" ? "Awaiting client" : "Needs ADR", cls: "lamp-gated", key: "held" };
+  // `it.held`, not `it.gate` (`F4.86`). Reading the gate alone put an item
+  // that is gated AND dependency-blocked under the `held` key, so the legend,
+  // the wave lanes and the full board's state chips all counted it as held
+  // while the stat tile beside them read `counts.gated` and did not.
+  if (it.held) return { label: isClientGate(it) ? "Awaiting client" : "Needs ADR", cls: "lamp-gated", key: "held" };
   // `planned` (🟡) gets its OWN key, not `flight`.
   //
   // It shared `flight` until 2026-08-23, which made every aggregate keyed on
@@ -102,6 +115,81 @@ const STATE_KEYS = [
 ];
 
 for (const it of data.items) it.stateKey = stateOf(it).key;
+
+// `F4.86`. THE held set for this file — the "Eligible, but held" cards read it,
+// and every `stateKey === "held"` above must have come from the same flag.
+//
+// The three numbers on the page that mean "held" are produced by three
+// different code paths: the stat tile prints `counts.gated` straight from the
+// status script, the section header counts these cards, and the legend, wave
+// lanes and state chips tally `stateKey`. They agreed on nothing but luck until
+// `F4.86`, when the tile disagreed with the other two.
+//
+// So this asserts the three agree, and fails the run when they do not. It is
+// not a tautology: put `it.gate` back in either the filter below or `stateOf`
+// and this goes red — the exact regression it exists to stop.
+//
+// It is data-dependent, and the scope is worth stating rather than overselling.
+// The check can only fire while some item distinguishes the two predicates —
+// one that is gated AND dependency-blocked. With no such item on the board the
+// predicates agree and a reintroduced `it.gate` passes. That is also the only
+// state in which the defect is invisible, so the check is silent exactly when
+// there is nothing to see, and speaks the moment there is.
+//
+// `process.exit(1)`, NOT `process.exitCode = 1`. The `--mark-published` branch
+// below ends in `process.exit(0)`, which discards a pending `exitCode` — so a
+// deferred failure here would let a disagreeing board be marked as published,
+// silently and with a zero status. Exiting here also fails before any file is
+// written, which is the same shape as the sibling gate in `backlog-status.mjs`.
+const heldItems = data.items
+  .filter((it) => it.held)
+  .sort((a, b) => (P_ORDER[a.priority] ?? 9) - (P_ORDER[b.priority] ?? 9));
+
+// `stateOf` returns `flight` BEFORE it can return `held`, so a held item with a
+// live branch is keyed `flight` and the tally legitimately runs short. That is
+// precedence, not drift, and the gate has to allow for it — otherwise opening a
+// branch on any gated row turns this red with a message blaming `item.held`,
+// which would not be the cause. CI never sees that case (its shallow checkout
+// derives no in-flight rows) and the Stop hook swallows it, so it would surface
+// only to someone running the pair by hand, with the least useful diagnosis.
+//
+// It does leave the two stat tiles counting such an item twice, once under "In
+// flight" and once under "Eligible · held". That is older than this change and
+// is a question about what `counts.gated` should MEAN, so it is filed, not
+// decided here.
+const heldInFlight = heldItems.filter((it) => inProgressIds.has(it.id)).length;
+const heldByStateKey = data.items.filter((it) => it.stateKey === "held").length;
+if (
+  heldItems.length !== (data.counts.gated ?? 0) ||
+  heldByStateKey !== heldItems.length - heldInFlight
+) {
+  console.error(
+    "backlog-dashboard: the three derivations of 'held' disagree —\n" +
+      `  counts.gated (stat tile):   ${data.counts.gated ?? 0}\n` +
+      `  held cards (section head):  ${heldItems.length}\n` +
+      `  stateKey (legend, lanes):   ${heldByStateKey}` +
+      (heldInFlight > 0 ? `  (${heldInFlight} held row(s) keyed 'flight' — expected)` : "") +
+      "\n  All three must read `item.held`. See its docblock in backlog-status.mjs.",
+  );
+  process.exit(1);
+}
+
+// The critical-path panel reads `held` off a chain NODE, which is a projection
+// built by `backlog-status.mjs` — so the panel fails silently in one specific
+// way. Drop the field from that projection and `n.held` is `undefined` for
+// every node: no error, no exception, every "hold" mark just disappears and the
+// chain reads "waiting" throughout. The gate above cannot see it, because it
+// walks `data.items` and the panel does not.
+const chainNodes = data.criticalPaths.flatMap((p) => p.chain);
+const missingHeld = chainNodes.filter((n) => typeof n.held !== "boolean").map((n) => n.id);
+if (missingHeld.length > 0) {
+  console.error(
+    `backlog-dashboard: ${missingHeld.length} critical-path node(s) carry no \`held\` flag: ` +
+      `${missingHeld.join(", ")}.\n` +
+      "  The chain projection in backlog-status.mjs must include it, or the panel marks nothing as held.",
+  );
+  process.exit(1);
+}
 
 const pwOf = (it) => it.effortWeeks?.mid ?? 0;
 const pwTotal = data.items.reduce((a, it) => a + pwOf(it), 0);
@@ -380,9 +468,16 @@ function swimlanes() {
 
 /** The chains BACKLOG.md §1 protects, with live states read from §2. */
 function paths() {
+  // `n.held`, not `n.gate` (`F4.86`) — the fifth re-derivation, and the one
+  // that hid longest. A chain node is a projection of the item, not the item,
+  // so neither of this change's gates walks it: both iterate `data.items`.
+  // Reading the gate alone painted E1.1 "hold" here while the lanes, the
+  // legend, the state chips and the held section all said "Waiting" — the same
+  // page giving two answers, which is the defect `F4.86` exists to remove. The
+  // flag reaches this panel because `backlog-status.mjs` now projects it.
   const cls = (n) =>
-    n.status === "done" ? "lamp-done" : n.gate ? "lamp-gated" : n.readyToStart ? "lamp-ready" : "lamp-idle";
-  const mark = (n) => (n.status === "done" ? "✓" : n.gate ? "hold" : n.readyToStart ? "ready" : "waiting");
+    n.status === "done" ? "lamp-done" : n.held ? "lamp-gated" : n.readyToStart ? "lamp-ready" : "lamp-idle";
+  const mark = (n) => (n.status === "done" ? "✓" : n.held ? "hold" : n.readyToStart ? "ready" : "waiting");
   return data.criticalPaths
     .map(
       (p, pi) => `<div class="path reveal">
@@ -486,21 +581,12 @@ function render(forClient) {
     })
     .join("");
 
-  const gatedItems = data.items
-    .filter((it) => it.gate && it.status !== "done" && it.status !== "dropped")
-    .sort(
-      (a, b) =>
-        Number(b.dependencyClear) - Number(a.dependencyClear) ||
-        (P_ORDER[a.priority] ?? 9) - (P_ORDER[b.priority] ?? 9),
-    );
-
-  const gatedHtml = gatedItems
+  const gatedHtml = heldItems
     .map(
       (it, i) => `<article class="card lamp-gated reveal" style="transition-delay:${(i * 0.03).toFixed(2)}s">
         <div class="card-top">${idTag(it)}
-          ${pill(it.gate.kind === "client" ? "awaiting client" : "needs an ADR", "lamp-gated")}
-          ${it.priority === "P0" ? pill("P0", "p0") : pill(it.priority, "lamp-idle")}
-          ${it.dependencyClear ? "" : pill("also waiting on deps", "lamp-idle")}</div>
+          ${pill(isClientGate(it) ? "awaiting client" : "needs an ADR", "lamp-gated")}
+          ${it.priority === "P0" ? pill("P0", "p0") : pill(it.priority, "lamp-idle")}</div>
         <h3>${esc(it.title)}</h3>
         <div class="gate-why">${esc(client ? it.gate.clientReason : it.gate.reason)}${
           client ? "" : `<div class="gate-src">${esc(it.gate.source)}</div>`
@@ -714,7 +800,7 @@ function render(forClient) {
     </section>
 
     <section>
-      <div class="sec-head"><div class="sec-title"><h2>Eligible, but held</h2><span class="count">${gatedItems.length} item${gatedItems.length === 1 ? "" : "s"}</span></div>
+      <div class="sec-head"><div class="sec-title"><h2>Eligible, but held</h2><span class="count">${heldItems.length} item${heldItems.length === 1 ? "" : "s"}</span></div>
         <p><b>These cannot start yet.</b> The engineering they depend on is finished — what is
           outstanding is a decision. ${
             client
