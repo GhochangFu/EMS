@@ -145,6 +145,23 @@ export function runUnknownDomainSortsLastByCodeTests(): void {
     groups[1].label === "aaa-unknown" && groups[2].label === "zzz-unknown",
     "an unknown domain must read as its bare code",
   );
+
+  // A known domain must also win the comparison when it appears in the
+  // second position of the input array — the mirror direction of the
+  // comparisons above, which all happened to put the known domain first.
+  const reversed = groupStockByDomain(
+    [
+      entry({ code: "AA-1", domain: "aaa-unknown" }),
+      entry({ code: "WTP-1", domain: "water" }),
+    ],
+    DOMAINS,
+  );
+  assert(
+    reversed.map((group) => group.domain).join(",") === "water,aaa-unknown",
+    `a known domain must sort before an unknown one regardless of comparison order — got ${reversed
+      .map((group) => group.domain)
+      .join(",")}`,
+  );
 }
 
 /** `domains === undefined` — every group labels as its code and orders by code. */
