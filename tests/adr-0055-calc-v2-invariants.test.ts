@@ -139,20 +139,21 @@ describe("ADR 0055 part (b) — every stock-catalog v1 formula literal parses id
  * `CALC_DIALECTS`, and `calcDialectSchema` in
  * `packages/shared/src/contracts/admin.ts` is the one derivation of it.
  *
- * **Two files are exempt, and only until their own task lands.** `F2.9` Task 6
- * owns `asset-templates.schema.ts` and Task 7 owns
- * `asset-point-calc-override.schema.ts`; widening either needs the guard
- * changes that come with it, so Task 5 must not do it by hand. The exemption
- * is by filename and it is **self-removing**: the test below also asserts each
- * exempt file *still contains* the literal, so the day Task 6 or Task 7 lands
- * this file goes red and the stale exemption has to be deleted rather than
- * left to rot into a permanent hole.
+ * **One file is still exempt, and only until its own task lands.** `F2.9`
+ * Task 7 owns `asset-point-calc-override.schema.ts`; widening it needs the
+ * guard changes that come with it, so no earlier task may do it by hand. The
+ * exemption is by filename and it is **self-removing**: the test below also
+ * asserts each exempt file *still contains* the literal, so the day Task 7
+ * lands this file goes red and the stale exemption has to be deleted rather
+ * than left to rot into a permanent hole. That is what happened to
+ * `asset-templates.schema.ts`'s entry, which Task 6 removed when it widened
+ * that file to `calcDialectSchema` — the mechanism works, and the entry below
+ * is not to be renewed once Task 7 is in.
  */
 const DIALECT_LITERAL_RE = /z\.literal\(\s*CALC_DIALECT\s*\)/;
 
 /** Owned by a later `F2.9` task; see the docblock above. Repo-relative. */
 const DIALECT_LITERAL_EXEMPT = [
-  "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
   "apps/api/src/admin/asset-points/asset-point-calc-override.schema.ts",
 ];
 
@@ -218,9 +219,9 @@ describe("ADR 0055 part (c) — no endpoint restates the calc dialect as a v1 li
     (rel) => {
       expect(
         DIALECT_LITERAL_RE.test(readFileSync(join(repoRoot, rel), "utf8")),
-        `${rel} no longer spells z.literal(CALC_DIALECT). Its F2.9 task (6 for ` +
-          "asset-templates.schema.ts, 7 for asset-point-calc-override.schema.ts) has landed — " +
-          "delete this file's entry from DIALECT_LITERAL_EXEMPT so the scan covers it.",
+        `${rel} no longer spells z.literal(CALC_DIALECT). Its F2.9 task (7, for ` +
+          "asset-point-calc-override.schema.ts) has landed — delete this file's entry from " +
+          "DIALECT_LITERAL_EXEMPT so the scan covers it.",
       ).toBe(true);
     },
   );

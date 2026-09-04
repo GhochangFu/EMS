@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 
 import { CALC_DIALECT } from "@bms/shared";
-import type { AdminAssetTemplateDto, CalcDialect, CalcV1Dialect, JwtPayload } from "@bms/shared";
+import type { AdminAssetTemplateDto, JwtPayload } from "@bms/shared";
 
 import {
   templateContentSchema,
@@ -103,10 +103,11 @@ async function expectRejection(
 /**
  * Deletes only **this run's** rows. `template_points` cascade on the FK.
  *
- * Prefix match, not equality: seven cases author under `${TEST_CODE}-…`
+ * Prefix match, not equality: nine cases author under `${TEST_CODE}-…`
  * (`-BADKEY`, `-EMPTY`, `-FORBIDDEN`, `-CONTENT`, `-BADSKILL`, `-ORPHANCREATE`,
- * `-LEGACY`), and a case that throws between creating one and deleting it would
- * otherwise leave a row behind.
+ * `-LEGACY`, plus `-XREF` and `-RATIO` in the `F2.9` calc-v2 sibling, which
+ * reuses this function), and a case that throws between creating one and
+ * deleting it would otherwise leave a row behind.
  *
  * The prefix is `TEST_CODE`, never `TEST_CODE_FAMILY`. Widening it back to the
  * family is the 2026-08-24 flake — this statement runs in `afterAll` while
@@ -281,18 +282,19 @@ export async function assertCalcFieldsSurviveUpdateRoundTrip(
   fx: Fixtures,
   created: AdminAssetTemplateDto,
 ): Promise<void> {
-  // `F2.9` Task 5 widened the READ DTO's dialect; the write body still pins
-  // `v1` until Task 6 adds the `v2` guards that must travel with it. Narrow
-  // with an assertion, never a cast — every point this fixture creates is
-  // `v1`, so a `v2` here means the fixture changed and the round trip stopped
-  // proving what it claims. Delete once Task 6 widens the body.
-  const writableDialect = (dialect: CalcDialect | null): CalcV1Dialect | undefined => {
-    assert(
-      dialect === null || dialect === CALC_DIALECT,
-      `this fixture creates bms-calc-v1 points only, read back ${dialect}`,
-    );
-    return dialect === null ? undefined : CALC_DIALECT;
-  };
+  // `F2.9` Task 6 widened the write body to `calcDialectSchema`, so the read
+  // DTO's dialect is assignable to it and the *cast* Task 5 needed here is
+  // gone. Its **assertion** is not, and stays as its own line: this case's
+  // whole claim is that a GET -> PATCH round trip does not silently erase a
+  // calc field, and it echoes back whatever dialect it reads. A `v2` point in
+  // this fixture would still pass while proving something else entirely.
+  assert(
+    created.points.every(
+      (point) => point.formulaDialect === null || point.formulaDialect === CALC_DIALECT,
+    ),
+    "this fixture creates bms-calc-v1 points only; a v2 point here means the fixture " +
+      "changed and this round trip stopped proving what it claims",
+  );
 
   const patched = await svc.update(fx.adminJwt, created.id, {
     points: created.points.map((point) => ({
@@ -302,7 +304,7 @@ export async function assertCalcFieldsSurviveUpdateRoundTrip(
       kind: point.kind,
       sourceDataKeyPattern: point.sourceDataKeyPattern ?? undefined,
       formula: point.formula ?? undefined,
-      formulaDialect: writableDialect(point.formulaDialect),
+      formulaDialect: point.formulaDialect ?? undefined,
       calcTrigger: point.calcTrigger ?? undefined,
       calcIntervalSeconds: point.calcIntervalSeconds ?? undefined,
       maxInputAgeSeconds: point.maxInputAgeSeconds ?? undefined,
