@@ -316,9 +316,13 @@ function refusalFrom(run: () => void): string | null {
  * So the claim is made the only way that separates the two: take the SHIPPED
  * entry, swap its citation to `E5.2`'s document, and require that `checkEntry`
  * refuses it **naming E5.3's**. Only the override can produce that message.
- * `checkEntry` is never called on a real entry here — the catalog loop in
- * `stock-catalog.spec.ts` already does that — only on a deliberately broken
- * copy.
+ * `checkEntry` runs TWICE below, and the pairing is the point: once on the
+ * SHIPPED entry, which must pass, and once on a deliberately broken copy, which
+ * must be refused. Without the first call the second could pass for any reason
+ * at all — a typo in the copy, a helper that throws unconditionally — and the
+ * override would be checked by nothing. The catalog loop in
+ * `stock-catalog.spec.ts` also runs `checkEntry` over every entry; this pair is
+ * about THIS override, not about the entry's general validity.
  */
 function assertTheOverrideDecidesTheSource(entry = requireStockEntry(LIFT_CODE)): void {
   const description = String(entry.description ?? "");

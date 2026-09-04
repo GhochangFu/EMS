@@ -406,8 +406,10 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // stale_data alarm binds.
     "mean_latency_s",
   ],
-  // §8a — the pack's longest list: seven time windows, another system's clock,
-  // a method, and a rate whose two counters do not divide. The two the lift
+  // §8a — the pack's longest list, eleven: seven time windows, another system's
+  // clock, a method, a rate whose two counters do not divide, and
+  // levelling_drift_mm, which is a COMMISSIONING BASELINE trend and its own
+  // class (§13 item 5's ruling). The two the lift
   // DOES author are the lifetime counter ratios (the E5.2 load_factor_pct
   // shape), which need no window because both inputs are cumulative.
   "mechanical-lift": [
@@ -446,8 +448,9 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   ],
   // §8b — four windows, a method the document leaves open, and a commissioning
   // baseline. availability_pct and mtbf_h are deferred on BOTH vertical-transport
-  // entries for the same reason, and starts_per_day is the DG set's code a third
-  // time: a per-entry Record is what lets one code be deferred five ways.
+  // entries for the same reason, and starts_per_day is the DG set's code a SECOND
+  // time: a per-entry Record is what lets one code be deferred once per entry, and
+  // the most any code reaches here is FOUR (availability_pct).
   "mechanical-escalator": [
     // hours running over hours elapsed — hours-in-state.
     "availability_pct",

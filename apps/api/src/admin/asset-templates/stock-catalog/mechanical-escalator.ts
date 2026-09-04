@@ -23,7 +23,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * **41 POINTS — 5 core + 31 extended + 3 manual + 2 DERIVED.** §8b prints
  * **one flat table of forty rows** — it has no sub-blocks, unlike §8a's eight —
  * and thirty-nine of them are measured here in the document's own order
- * (`sortOrder` 0-38). The fortieth, `handrail_speed_dev_pct`, is the section's
+ * (`sortOrder` 0-38). The fortieth POINT OF THIS ENTRY — the handout lists it
+ * thirteenth, and the two numbers are different questions —
+ * `handrail_speed_dev_pct`, is the section's
  * one `X/D` row and is authored **derived**, so it leaves the measured sequence
  * and is appended at 39 with `kwh_per_run_hour` at 40. Every row after the
  * document's thirteenth therefore sits one index lower than its position on the
@@ -349,7 +351,9 @@ export const MECHANICAL_ESCALATOR: StockAssetTemplateEntry = {
         message:
           "Handrail slipping behind the step band — the entrapment case. The value is signed and " +
           "computed from the slower of the two handrails, so a negative reading is the direction " +
-          "that matters; the tolerance itself is the value set for this machine at commissioning.",
+          "that matters. Inert unless step_speed_ms and both handrail speeds are mapped: all " +
+          "three are optional, and a stopped machine reads step speed as zero, so an unfitted " +
+          "site looks like a healthy one.",
         philosophy: {
           cause:
             "A worn or glazed handrail drive, a slack or stretched handrail, a contaminated " +

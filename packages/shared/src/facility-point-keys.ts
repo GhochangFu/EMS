@@ -239,14 +239,24 @@ export type EnvironmentClassPointKey = (typeof ENVIRONMENT_CLASS_POINT_KEYS)[num
  * **New codepoints and unit spellings** (plan §4.4/§4.6): `²` is `U+00B2` in
  * `max_accel_ms2`'s `m/s²`; `³` is `U+00B3` in `max_jerk_ms3`'s `m/s³`;
  * `kwh_per_run_hour` is `kWh/h`, not `kW` (§12 ruling 7 — the quantity is an averaged
- * consumption over run time, not an instantaneous power). `lux`, `µg/m³`, `ppb`,
- * `CFU/m³`, `m/s`, `mm`, `mg`, `dB(A)`, `km` do not apply to this array (they are
- * `FACILITY_CLASS_POINT_KEYS`'s or `ENVIRONMENT_CLASS_POINT_KEYS`'s); this array
- * introduces `m`, `kg`, `A`, `bar`, `V` reused from existing spellings plus
- * `m/s²`, `m/s³`, `dB(A)`, `km`, `kWh/h` new to `UNIT_BY_KEY`.
+ * consumption over run time, not an instantaneous power). **Measured against
+ * `UNIT_BY_KEY`, not assumed** — an earlier draft of this sentence filed five of
+ * these under the wrong array, and this is the file the next pack's author reads
+ * to learn which spellings already exist, so a wrong list here buys a second
+ * spelling that no later seed can correct. `lux`, `µg/m³`, `ppb` and `CFU/m³` do
+ * NOT apply here — they are `FACILITY_CLASS_POINT_KEYS`'s or
+ * `ENVIRONMENT_CLASS_POINT_KEYS`'s. `m`, `kg`, `A`, `bar`, `V` are reused from
+ * spellings that already existed. **New to `UNIT_BY_KEY` with this array, all
+ * nine of them: `m/s`, `mm`, `mg`, `dB(A)`, `km`, `m/s²`, `m/s³`, `kWh/h`** and
+ * `floor_km_total`'s `km`. `mg` here means MILLI-G of acceleration, not
+ * milligram — the catalog already spells milligram per litre `mg/L`, the tag
+ * list spells this one `mg`, and ADR 0054 decision 3 says spellings follow the
+ * document. It is permanent: `COALESCE` never overwrites, so a correction is a
+ * `PATCH` per row on every database, not a seed edit. `F2.18` carries it as a
+ * redline item.
  */
 export const VERTICAL_TRANSPORT_CLASS_POINT_KEYS = [
-  // §8a lift — 74 (78 rows less 6 reused = 72, + 2 derived), six sub-blocks
+  // §8a lift — 74 (78 rows less 6 reused = 72, + 2 derived), EIGHT sub-blocks
   // service state
   "lift_in_service", "lift_mode", "lift_fault",
   "lift_fault_code", "lift_fault_count", "fire_recall_state",

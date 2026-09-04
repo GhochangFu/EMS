@@ -52,12 +52,12 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  * **`(trac)` AND `(hyd)` ARE AN APPLICABILITY MARKER, AND THEY ARE A REDLINE
  * INSTRUCTION FOR THE CLIENT** — §8a's own words: *"drop the rows marked (hyd)
- * or (trac) that do not apply"*. Nine rows are traction-only
+ * or (trac) that do not apply"*. Eight rows are traction-only
  * (`drive_fault_code`, `motor_temp_c`, `drive_heatsink_temp_c`, `dc_bus_v`,
  * `brake_state`, `brake_temp_c`, `rope_brake_state`, and `regen_kw` on a regen
  * drive) and three are hydraulic-only (`hydraulic_oil_temp_c`,
- * `hydraulic_oil_level_low`, `hydraulic_pressure_bar`). **All twelve are
- * authored, all twelve are tier `X`**, and the marker is dropped from the label
+ * `hydraulic_oil_level_low`, `hydraulic_pressure_bar`). **All eleven are
+ * authored, all eleven are tier `X`**, and the marker is dropped from the label
  * rather than shipped in it: the tier already carries the meaning — an optional
  * point a site does not map is simply skipped — and a label reading *"(hyd)"*
  * on a traction lift's screen would be noise on every asset. The applicability
@@ -287,6 +287,11 @@ export const MECHANICAL_LIFT: StockAssetTemplateEntry = {
         },
       },
       {
+        // The same caveat the escalator's handrail row carries, and for the same
+        // reason: `entrapment_state` is tier `extended` and optional, so this
+        // critical row is inert on a site that does not map it. Said in the
+        // shipped message, not only here — a docblock reaches the author, and it
+        // is the ADMINISTRATOR choosing what to fit who needs to know.
         code: "entrapment",
         pointKey: "entrapment_state",
         severity: "critical",
@@ -294,7 +299,9 @@ export const MECHANICAL_LIFT: StockAssetTemplateEntry = {
         message:
           "Passenger trapped in the car. The controller reports this state directly; the BMS " +
           "does not compute it, because the definition needs a car-load reference this template " +
-          "deliberately ships no value for.",
+          "deliberately ships no value for. Inert unless entrapment_state is mapped: it is " +
+          "optional, and only an OEM API or a controller gateway reports it, so a " +
+          "dry-contact installation has no entrapment signal at all.",
         philosophy: {
           cause:
             "The car has stopped away from a landing with somebody inside it — a supply failure, " +
@@ -610,9 +617,8 @@ export const MECHANICAL_LIFT: StockAssetTemplateEntry = {
         severity: "warning",
         category: "safety",
         message:
-          "Statutory inspection date passed. This row binds the MANUAL point " +
-          "annual_inspection_due, whose date is entered by hand through F1.8 and never arrives " +
-          "from a data key.",
+          "Statutory inspection date passed. The date is a manual row: somebody types it in " +
+          "when the certificate is issued, and no reading on this template can correct it.",
         philosophy: {
           cause:
             "The inspection has not been booked or has not been done, the certificate has not " +
