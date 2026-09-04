@@ -90,7 +90,7 @@ export function runCalcDslBarrelTests(): void {
   if (parsed.ok) {
     const first: CalcCrossRef | undefined = parsed.crossRefs[0];
     assert(
-      first !== undefined && crossRefKey(first) === "sum(kw)@site",
+      first !== undefined && crossRefKey(first) === "a:sum(kw)@site",
       `the barrel's crossRefKey must build the canonical form, got ${first && crossRefKey(first)}`,
     );
   }

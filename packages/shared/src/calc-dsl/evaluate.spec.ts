@@ -172,15 +172,15 @@ function evalExprV2(
 export function runEvaluateV2Tests(): void {
   // ---- an aggregate reads its value from crossInputs by canonical key ---------
 
-  const half = evalExprV2("sum({kw} @site) / 2", {}, { "sum(kw)@site": 10 });
-  assert(half.ok === true && Object.is(half.value, 5), `sum(kw)@site = 10 halved must be 5, got ${JSON.stringify(half)}`);
+  const half = evalExprV2("sum({kw} @site) / 2", {}, { "a:sum(kw)@site": 10 });
+  assert(half.ok === true && Object.is(half.value, 5), `a:sum(kw)@site = 10 halved must be 5, got ${JSON.stringify(half)}`);
 
-  const grouped = evalExprV2("sum({kw} @site) / sum({kw} @group('IT_LOAD'))", {}, { "sum(kw)@site": 10, "sum(kw)@group:IT_LOAD": 4 });
+  const grouped = evalExprV2("sum({kw} @site) / sum({kw} @group('IT_LOAD'))", {}, { "a:sum(kw)@site": 10, "a:sum(kw)@group:IT_LOAD": 4 });
   assert(grouped.ok === true && Object.is(grouped.value, 2.5), `the ADR's PUE shape must compute, got ${JSON.stringify(grouped)}`);
 
-  // ---- a qref reads by CODE.key --------------------------------------------------
+  // ---- a qref reads by q:CODE.key -------------------------------------------------
 
-  const balance = evalExprV2("{TX_01.kwh} - {TX_02.kwh}", {}, { "TX_01.kwh": 7, "TX_02.kwh": 3 });
+  const balance = evalExprV2("{TX_01.kwh} - {TX_02.kwh}", {}, { "q:TX_01.kwh": 7, "q:TX_02.kwh": 3 });
   assert(balance.ok === true && Object.is(balance.value, 4), `a balance of two qrefs must compute, got ${JSON.stringify(balance)}`);
 
   // ---- absent → missing_input at the node's own position ------------------------
@@ -190,7 +190,7 @@ export function runEvaluateV2Tests(): void {
   if (!absent.ok) {
     assert(absent.position === 0, `expected the aggregate's position (0), got ${absent.position}`);
   }
-  const absentQref = evalExprV2("{TX_01.kwh} - {TX_02.kwh}", {}, { "TX_01.kwh": 7 });
+  const absentQref = evalExprV2("{TX_01.kwh} - {TX_02.kwh}", {}, { "q:TX_01.kwh": 7 });
   assert(absentQref.ok === false && absentQref.code === "missing_input", "an absent qref must refuse as missing_input");
   if (!absentQref.ok) {
     // "{TX_01.kwh} - {TX_02.kwh}" — the second brace is at 14
@@ -199,12 +199,12 @@ export function runEvaluateV2Tests(): void {
 
   // ---- a non-finite cross input refuses at the node, like a local ref does ----
 
-  const infinite = evalExprV2("sum({kw} @site) / 2", {}, { "sum(kw)@site": Infinity });
+  const infinite = evalExprV2("sum({kw} @site) / 2", {}, { "a:sum(kw)@site": Infinity });
   assert(infinite.ok === false && infinite.code === "non_finite", `Infinity in crossInputs must refuse as non_finite, got ${JSON.stringify(infinite)}`);
   if (!infinite.ok) {
     assert(infinite.position === 0, `expected the aggregate's position (0), got ${infinite.position}`);
   }
-  const nan = evalExprV2("1 + {TX_01.kwh}", {}, { "TX_01.kwh": NaN });
+  const nan = evalExprV2("1 + {TX_01.kwh}", {}, { "q:TX_01.kwh": NaN });
   assert(nan.ok === false && nan.code === "non_finite", "NaN in crossInputs must refuse as non_finite");
   if (!nan.ok) {
     assert(nan.position === 4, `expected the qref's position (4), got ${nan.position}`);
@@ -219,7 +219,7 @@ export function runEvaluateV2Tests(): void {
   if (!v1Parsed.ok) {
     throw new Error("v1 fixture must parse");
   }
-  const v1Ignores = evaluate(v1Parsed.ast, new Map([["A", 1]]), new Map([["A", 100], ["sum(A)@site", 5]]));
+  const v1Ignores = evaluate(v1Parsed.ast, new Map([["A", 1]]), new Map([["A", 100], ["a:sum(A)@site", 5]]));
   assert(v1Ignores.ok === true && Object.is(v1Ignores.value, 2), `a v1 AST must read A from inputs, not crossInputs, got ${JSON.stringify(v1Ignores)}`);
   const v1NotServedByCross = evaluate(v1Parsed.ast, new Map(), new Map([["A", 100]]));
   assert(

@@ -226,7 +226,7 @@ export function runParserV2Tests(): void {
   assert(ratio.crossRefs.length === 2, `the site ratio must carry two cross refs, got ${ratio.crossRefs.length}`);
   assert(ratio.refs.length === 0, `an aggregate's point key is not a local ref, got refs ${JSON.stringify(ratio.refs)}`);
   assert(
-    ratio.crossRefs.map(crossRefKey).join("|") === "sum(kw)@site|sum(kw)@group:IT_LOAD",
+    ratio.crossRefs.map(crossRefKey).join("|") === "a:sum(kw)@site|a:sum(kw)@group:IT_LOAD",
     `cross ref keys in first-appearance order, got ${ratio.crossRefs.map(crossRefKey).join("|")}`,
   );
 
@@ -236,8 +236,9 @@ export function runParserV2Tests(): void {
     `a balance must carry two qrefs, got ${JSON.stringify(balance.crossRefs)}`,
   );
   assert(
-    balance.crossRefs.map(crossRefKey).join("|") === "TX_01.kwh|TX_02.kwh",
-    `qref keys must be CODE.key, got ${balance.crossRefs.map(crossRefKey).join("|")}`,
+    balance.crossRefs.map(crossRefKey).join("|") === "q:TX_01.kwh|q:TX_02.kwh",
+    `qref keys must be q:CODE.key — the "q:" prefix is what keeps a qref key off an ` +
+      `aggregate key whatever the codes contain. Got ${balance.crossRefs.map(crossRefKey).join("|")}`,
   );
   assert(
     balance.crossRefs[0].position === 0 && balance.crossRefs[1].position === 14,

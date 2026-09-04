@@ -1,5 +1,7 @@
 import type { CalcAggregate, CalcQualifiedRef } from "./ast";
 import { crossRefKey } from "./cross-ref";
+import { CALC_DIALECT_V2 } from "./limits";
+import { parseFormula } from "./parser";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -29,18 +31,18 @@ const aggregate = (
 export function runCrossRefKeyTests(): void {
   // ---- 1. the three canonical forms, as the plan states them ------------------
 
-  assert(crossRefKey(qref("TX_01", "kwh")) === "TX_01.kwh", `qref key must be TX_01.kwh, got ${crossRefKey(qref("TX_01", "kwh"))}`);
+  assert(crossRefKey(qref("TX_01", "kwh")) === "q:TX_01.kwh", `qref key must be q:TX_01.kwh, got ${crossRefKey(qref("TX_01", "kwh"))}`);
   assert(
-    crossRefKey(aggregate("sum", "kw", { kind: "site" })) === "sum(kw)@site",
-    `site aggregate key must be sum(kw)@site, got ${crossRefKey(aggregate("sum", "kw", { kind: "site" }))}`,
+    crossRefKey(aggregate("sum", "kw", { kind: "site" })) === "a:sum(kw)@site",
+    `site aggregate key must be a:sum(kw)@site, got ${crossRefKey(aggregate("sum", "kw", { kind: "site" }))}`,
   );
   assert(
-    crossRefKey(aggregate("sum", "kw", { kind: "group", code: "IT_LOAD" })) === "sum(kw)@group:IT_LOAD",
-    `group aggregate key must be sum(kw)@group:IT_LOAD, got ${crossRefKey(aggregate("sum", "kw", { kind: "group", code: "IT_LOAD" }))}`,
+    crossRefKey(aggregate("sum", "kw", { kind: "group", code: "IT_LOAD" })) === "a:sum(kw)@group:IT_LOAD",
+    `group aggregate key must be a:sum(kw)@group:IT_LOAD, got ${crossRefKey(aggregate("sum", "kw", { kind: "group", code: "IT_LOAD" }))}`,
   );
   assert(
-    crossRefKey(aggregate("avg", "kw", { kind: "domain", code: "hvac" })) === "avg(kw)@domain:hvac",
-    `domain aggregate key must be avg(kw)@domain:hvac, got ${crossRefKey(aggregate("avg", "kw", { kind: "domain", code: "hvac" }))}`,
+    crossRefKey(aggregate("avg", "kw", { kind: "domain", code: "hvac" })) === "a:avg(kw)@domain:hvac",
+    `domain aggregate key must be a:avg(kw)@domain:hvac, got ${crossRefKey(aggregate("avg", "kw", { kind: "domain", code: "hvac" }))}`,
   );
 
   // ---- 2. every field is load-bearing — nodes differing in one field differ in key
@@ -67,17 +69,38 @@ export function runCrossRefKeyTests(): void {
 
   // ---- 4. a qref key and an aggregate key cannot coincide ----------------------
   //
-  // The two FORMS are disjoint by construction: an aggregate key always
-  // contains `(` (it is `fn(` + key + `)@` + scope), and a qref key is
-  // `assetCode.pointKey`, which introduces no `(` of its own. So the only way
-  // the two could meet is an asset code or point key that itself contains
-  // `(`…`)@`. Catalog-shaped codes never do, and the follow-up row the plan's
-  // Q1 ruling names constrains the charset; until then this holds over every
-  // code without a `(`, which is every real one. Asserted over a pool that
-  // includes every legal `v1` key character except `.` (the qualified
-  // separator) so the check is not vacuous on `[a-z_]` alone.
+  // The two forms are disjoint because of the **kind prefix**, and for no other
+  // reason. The old argument here — an aggregate key always contains `(`, a
+  // qref key introduces none of its own, so the two meet only through a code
+  // containing `(`…`)@`, "which no catalog-shaped code does" — was refuted:
+  // nothing enforces that charset (the tokenizer admits every character but
+  // `{` and `}` inside braces; `bms.assets.code` has no regex at the column or
+  // at the write boundary), and `runCrossRefCollisionTests` below shows the
+  // collision reached through `parseFormula`. The pool therefore now includes
+  // `(`, `)`, `@` and `:` — the exact characters the refuted claim assumed
+  // away — so the property is asserted over inputs that would break it if the
+  // prefix were removed. The Q1 charset row is still owed, for *resolution*.
+  //
+  // `.` stays out of the pool: it is the qualified form's own separator.
 
-  const codePool = ["TX_01", "kw", "kwh", "a-b", "c/d", "e f", "IT_LOAD", "sum", "avg", "site", "group:IT_LOAD"];
+  const codePool = [
+    "TX_01",
+    "kw",
+    "kwh",
+    "a-b",
+    "c/d",
+    "e f",
+    "IT_LOAD",
+    "sum",
+    "avg",
+    "site",
+    "group:IT_LOAD",
+    "sum(kw)@site",
+    "sum(kw)@group:IT_LOAD",
+    "(",
+    ")@",
+    "x)@domain:y",
+  ];
   const scopes: CalcAggregate["scope"][] = [
     { kind: "site" },
     { kind: "group", code: "IT_LOAD" },
@@ -89,7 +112,7 @@ export function runCrossRefKeyTests(): void {
     for (const pointKey of codePool) {
       for (const scope of scopes) {
         const key = crossRefKey(aggregate(fn, pointKey, scope));
-        assert(key.includes("("), `every aggregate key must contain "(", got ${key}`);
+        assert(key.startsWith("a:"), `every aggregate key must carry the "a:" kind prefix, got ${key}`);
         aggregateKeys.add(key);
       }
     }
@@ -101,9 +124,70 @@ export function runCrossRefKeyTests(): void {
     for (const pointKey of codePool) {
       const key = crossRefKey(qref(assetCode, pointKey));
       qrefCount += 1;
-      assert(!key.includes("("), `a qref key over catalog-shaped codes must not contain "(", got ${key}`);
+      assert(key.startsWith("q:"), `every qref key must carry the "q:" kind prefix, got ${key}`);
       assert(!aggregateKeys.has(key), `qref key ${key} collides with an aggregate key`);
     }
   }
   assert(qrefCount === codePool.length * codePool.length, "anti-vacuity: the qref cross-product must have run");
+}
+
+/**
+ * **The collision is reachable through the parser, so the key must be
+ * injective by construction** (security review of PR 1, MEDIUM).
+ *
+ * The docblock used to argue the two forms could only meet through a code
+ * containing `(`, `)` or `@`, "which no catalog-shaped code does". Nothing in
+ * the repository enforces that charset: the tokenizer accepts every character
+ * except `{` and `}` inside braces, `bms.assets.code` is
+ * `varchar(64).notNull().unique()` with no regex, and the write boundary is
+ * `z.string().min(2).max(64)` with no regex either. A claim that rests on a
+ * convention nobody enforces is not an invariant.
+ *
+ * What it costs when it breaks: `dedupeCrossRefs` keeps the first node per key
+ * and drops the rest, silently. The dropped node then never reaches
+ * `crossRefs`, so PR 2's decision-12 location check never sees it, and at
+ * evaluation one key serves both nodes — an aggregate returns one asset's
+ * value, or a qualified reference returns a site sum. A wrong number, with
+ * nothing counted: the class of failure ADR 0037 decision 9 exists to prevent.
+ *
+ * The one-character kind prefix makes it structural instead. The pair below is
+ * the exact one the reviewer executed.
+ */
+export function runCrossRefCollisionTests(): void {
+  const formula = "{sum(kw)@domain:x.y} + sum({kw} @domain('x.y'))";
+  const parsed = parseFormula(formula, { dialect: CALC_DIALECT_V2 });
+  assert(parsed.ok, `the colliding pair must parse under ${CALC_DIALECT_V2}, or the case is vacuous`);
+  if (!parsed.ok) return;
+
+  assert(
+    parsed.crossRefs.length === 2,
+    `a qref and an aggregate are two references and must survive the dedupe as two — the ` +
+      `dropped one reaches no save-time check and no evaluation-time lookup. Got ` +
+      `${parsed.crossRefs.length}: ${parsed.crossRefs.map(crossRefKey).join("|")}`,
+  );
+
+  const kinds = parsed.crossRefs.map((node) => node.kind).join("|");
+  assert(
+    kinds === "qref|aggregate",
+    `and both kinds must be present, in first-appearance order. Got: ${kinds}`,
+  );
+
+  // The property the prefix buys, stated directly: two nodes of different
+  // kinds cannot share a key whatever their codes contain. `q:` and `a:` are
+  // the whole of the argument — no charset assumption is left in it.
+  const [first, second] = parsed.crossRefs;
+  assert(
+    first !== undefined && second !== undefined && crossRefKey(first) !== crossRefKey(second),
+    `the two keys must differ, got ${first && crossRefKey(first)} and ${second && crossRefKey(second)}`,
+  );
+
+  // Deduping still works within a kind — the prefix must not have turned every
+  // node into its own entry, which would pass the assertion above vacuously.
+  const repeated = parseFormula("sum({kw} @site) + sum({kw} @site)", { dialect: CALC_DIALECT_V2 });
+  assert(
+    repeated.ok && repeated.crossRefs.length === 1,
+    `the same aggregate written twice is still one input, got ${
+      repeated.ok ? repeated.crossRefs.length : "a parse failure"
+    }`,
+  );
 }
