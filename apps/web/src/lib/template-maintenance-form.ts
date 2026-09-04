@@ -135,16 +135,19 @@ export type TemplateMaintenanceRow = {
   intervalDays: string;
 };
 
+/** Whether a stored value is still a member of the live category vocabulary. */
 export function isMaintenanceCategory(value: unknown): value is MaintenanceScheduleCategory {
   return typeof value === "string" && (MAINTENANCE_CATEGORIES as readonly string[]).includes(value);
 }
 
+/** Whether a stored value is still a member of the live generation-mode vocabulary. */
 export function isMaintenanceGenerationMode(value: unknown): value is MaintenanceGenerationMode {
   return (
     typeof value === "string" && (MAINTENANCE_GENERATION_MODES as readonly string[]).includes(value)
   );
 }
 
+/** Whether a stored value is still a member of the live priority vocabulary. */
 export function isWorkOrderPriority(value: unknown): value is WorkOrderPriority {
   return typeof value === "string" && (MAINTENANCE_PRIORITIES as readonly string[]).includes(value);
 }
@@ -341,9 +344,13 @@ export function maintenanceFormErrors(
  *
  * The three enums are narrowed through a type guard over `.options`, never
  * `as`. A stored non-member falls back to the API's own default, which is
- * unreachable behind the disabled Save and — because the comparator normalises
- * **both** sides through this function — reads identically on each, so a
- * template holding a retired category is not permanently dirty.
+ * unreachable on the wire behind the disabled Save.
+ *
+ * **The comparator does NOT use this function's enum handling**, and that is
+ * deliberate — see `comparableMaintenance`. Normalising both sides here made a
+ * retired code indistinguishable from the default that replaces it, so
+ * repairing a retired category by choosing the API's own default value read as
+ * "no change" and left Save disabled on a fix the screen had just demanded.
  */
 export function buildMaintenancePayload(
   rows: readonly TemplateMaintenanceRow[],
@@ -395,9 +402,40 @@ export function maintenanceHaveChanged(
   stored: readonly TemplateMaintenancePlan[] | undefined,
 ): boolean {
   return (
-    JSON.stringify(buildMaintenancePayload(rows)) !==
-    JSON.stringify(buildMaintenancePayload(maintenanceRowsFrom(stored)))
+    JSON.stringify(comparableMaintenance(rows)) !==
+    JSON.stringify(comparableMaintenance(maintenanceRowsFrom(stored)))
   );
+}
+
+/**
+ * What the comparator compares: the payload, with the three enum fields taken
+ * **verbatim from the row** instead of through their type guards.
+ *
+ * The payload builder must substitute the API default for a non-member, because
+ * that is what may go on the wire. The comparator must not, and the difference
+ * is a real dead end rather than a nicety. Suppose a category is retired from
+ * the vocabulary while a template still stores it. The tab reports the problem
+ * and disables Save. The author picks the most obvious repair — the very value
+ * the API defaults to. Now both sides of a guard-normalised comparison read
+ * that same default: the edited row because the author chose it, and the stored
+ * baseline because the guard replaced the retired code with it. The comparator
+ * says nothing changed, Save stays disabled, and the caption flips from "Fix
+ * the problems above to save" to "No changes yet" — on the one repair the
+ * screen had just asked for. Every other choice saves normally, which makes it
+ * the kind of dead end a user reports as "it just will not save".
+ *
+ * Carrying the raw strings here keeps the repair visible and costs nothing
+ * else: a retired code equals itself, so an untouched tab holding one is still
+ * not dirty, and nothing invalid reaches the wire because Save is gated on
+ * `maintenanceFormErrors` either way.
+ */
+function comparableMaintenance(rows: readonly TemplateMaintenanceRow[]): unknown[] {
+  return buildMaintenancePayload(rows).map((plan, index) => ({
+    ...plan,
+    category: rows[index]?.category,
+    generationMode: rows[index]?.generationMode,
+    priority: rows[index]?.priority,
+  }));
 }
 
 function text(value: unknown): string {

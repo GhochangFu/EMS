@@ -11,6 +11,7 @@ import {
   runSectionCapTests,
   runSeedsEveryApiDefaultTests,
   runTitleBoundsTests,
+  runRepairingARetiredEnumReadsAsAChangeTests,
   runVocabularyIdentityTests,
   runVocabularyMembershipTests,
 } from "./template-maintenance-form.spec";
@@ -63,5 +64,9 @@ describe("template maintenance form", () => {
 
   it("takes the three vocabularies from the contract's own enums, by identity", () => {
     runVocabularyIdentityTests();
+  });
+
+  it("reads repairing a retired enum with the API's own default as a change", () => {
+    runRepairingARetiredEnumReadsAsAChangeTests();
   });
 });

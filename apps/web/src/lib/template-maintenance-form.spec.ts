@@ -461,6 +461,51 @@ export function runReadBackIsNeverDirtyTests(): void {
 }
 
 /**
+ * Repairing a retired enum with the API's own default value must read as a
+ * change.
+ *
+ * The dead end this closes: a category is retired while a template still stores
+ * it, the tab reports the problem and disables Save, and the author picks the
+ * most obvious repair — the value the API itself defaults to. If the comparator
+ * normalised both sides through the payload builder's type guards, the edited
+ * row and the stored baseline would both read that default, the comparator
+ * would say nothing changed, and Save would stay disabled on the one repair the
+ * screen had just demanded. Every other category saves normally, so it presents
+ * as "it just will not save" for one choice.
+ *
+ * Unreachable today — the three enums agree with the API's copies byte for byte
+ * — but it is exactly the state the `(retired)` option exists for.
+ */
+export function runRepairingARetiredEnumReadsAsAChangeTests(): void {
+  const stored = [
+    { title: "Membrane CIP", intervalDays: 90, category: "descaling" },
+  ] as unknown as TemplateMaintenancePlan[];
+
+  const untouched = maintenanceRowsFrom(stored);
+  assert(
+    untouched[0]?.category === "descaling",
+    `a retired code must survive the seed verbatim, got ${String(untouched[0]?.category)}`,
+  );
+  assert(
+    !maintenanceHaveChanged(untouched, stored),
+    "a template holding a retired category must not read as dirty before it is touched",
+  );
+
+  const repaired = untouched.map((row) => ({ ...row, category: "preventive" }));
+  assert(
+    maintenanceHaveChanged(repaired, stored),
+    "repairing a retired category with the API's own default must enable Save — " +
+      "normalising both sides through the payload builder's guards hides this edit",
+  );
+
+  // The payload still sends a legal member either way; only the comparison changed.
+  assert(
+    buildMaintenancePayload(repaired)[0]?.category === "preventive",
+    "the repaired row must send the chosen category",
+  );
+}
+
+/**
  * Case 12 — the vocabularies are the contract's own arrays, by identity.
  *
  * `===`, not `toEqual`. A re-spelled copy of the fourteen categories would
