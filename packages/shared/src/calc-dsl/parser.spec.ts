@@ -9,6 +9,7 @@ import {
   MAX_FORMULA_POINT_REFS,
 } from "./limits";
 import { formatCalcError, parseFormula, validateFormula, type ParseOptions } from "./parser";
+import { V1_CORPUS, V1_REFUSALS_V2_ACCEPTS } from "./v1-corpus";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -178,6 +179,23 @@ export function runParserTests(): void {
   const first = parseFormula("2 + {A} * 3");
   const second = parseFormula("2 + {A} * 3");
   assert(JSON.stringify(first) === JSON.stringify(second), "parseFormula must be pure");
+
+  // ---- v1-corpus.ts smoke check (F2.9 Task 3, ADR 0055 decision 4) ------------
+  // The full superset property is `dialect-superset.spec.ts`'s job; this loop
+  // only proves every literal this spec feeds `parseFormula` also lives in
+  // that shared corpus and still parses to a `ParseResult` here, so the
+  // corpus cannot silently stop importing without failing this spec too.
+  for (const expression of V1_CORPUS) {
+    const result = parseFormula(expression);
+    assert(
+      typeof result.ok === "boolean",
+      `v1-corpus.ts entry must parse to a ParseResult here too: ${JSON.stringify(expression)}`,
+    );
+  }
+  assert(
+    V1_REFUSALS_V2_ACCEPTS.every((expression) => V1_CORPUS.includes(expression)),
+    "every V1_REFUSALS_V2_ACCEPTS entry must itself be a V1_CORPUS entry",
+  );
 }
 
 const V2: ParseOptions = { dialect: CALC_DIALECT_V2 };

@@ -2,6 +2,7 @@ import type { CalcEvalErrorCode, CalcEvalResult } from "./evaluate";
 import { evaluate } from "./evaluate";
 import { CALC_DIALECT_V2 } from "./limits";
 import { parseFormula } from "./parser";
+import { V1_CORPUS } from "./v1-corpus";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -131,6 +132,20 @@ export function runEvaluateTests(): void {
   // ---- happy path ---------------------------------------------------------------
 
   expectValue("({A} + {B}) / 2", { A: 4, B: 6 }, 5, "the ADR's own averaging shape");
+
+  // ---- v1-corpus.ts smoke check (F2.9 Task 3, ADR 0055 decision 4) ------------
+  // The full superset property is `dialect-superset.spec.ts`'s job; this loop
+  // only proves the shared corpus parses under v1 without throwing, and — for
+  // the entries that parse ok — that `evaluate` runs on the real AST without
+  // throwing, so the corpus cannot silently rot for this spec's own purpose.
+  for (const expression of V1_CORPUS) {
+    const parsed = parseFormula(expression);
+    assert(typeof parsed.ok === "boolean", `v1-corpus.ts entry must parse to a ParseResult: ${JSON.stringify(expression)}`);
+    if (parsed.ok) {
+      const result = evaluate(parsed.ast, new Map());
+      assert(typeof result.ok === "boolean", `v1-corpus.ts entry must evaluate without throwing: ${JSON.stringify(expression)}`);
+    }
+  }
 }
 
 /** The `v2` sibling of `evalExpr`: parses under `bms-calc-v2` and passes the
