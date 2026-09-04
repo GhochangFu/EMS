@@ -97,9 +97,11 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
 
   // `F2.21` — the active list lives in the URL, not in component state, so
   // "look at the stock catalog" is a link. `resolveAssetTemplatesPageTab` also
-  // holds the permission fallback: a viewer following an author's `?tab=stock`
-  // lands on Templates rather than on a card whose fetch is gated off and which
-  // would therefore never stop loading.
+  // holds the permission fallback: a `location_admin` following an author's
+  // `?tab=stock` lands on Templates rather than on a page with no list at all,
+  // because both cards below are guarded. Not a security control — the server
+  // permits that role to list the catalog and the client is deliberately
+  // stricter; the resolver's docblock has the whole boundary.
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = resolveAssetTemplatesPageTab(searchParams.get("tab"), mayAuthor);
   const tabs = visibleAssetTemplatesPageTabs(mayAuthor);

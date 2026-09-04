@@ -351,12 +351,16 @@ export async function eachStockRowLinksToTheReadOnlyViewer(): Promise<void> {
  * The card is not rendered at all for a role `canAuthorTemplates` refuses —
  * **even when the URL asks for it by name**.
  *
- * `F2.21` opens this at `?tab=stock` rather than at the bare path, because
- * tabs created a way to ask for the card that did not exist before: a viewer
+ * `F2.21` opens this at `?tab=stock` rather than at the bare path, because tabs
+ * created a way to ask for the card that did not exist before: a `location_admin`
  * following an author's link. `resolveAssetTemplatesPageTab` falls back to
- * Templates, and the tab itself is never offered. That fallback is load-bearing
- * rather than cosmetic — `stockQ`'s `enabled` is gated on the same permission,
- * so a rendered stock tab would show a card that never stops loading.
+ * Templates, and the tab itself is never offered.
+ *
+ * The fallback earns its place, but not as a security control — the server
+ * PERMITS a `location_admin` to list the catalog (`requireMasterDataUser`), and
+ * `canAuthorTemplates` is deliberately narrower. What it prevents is a page with
+ * no list at all: both cards are guarded, so without it this role would land on
+ * a tab strip and nothing else.
  */
 export async function cardIsAbsentForARoleThatCannotAuthor(): Promise<void> {
   stubApi();

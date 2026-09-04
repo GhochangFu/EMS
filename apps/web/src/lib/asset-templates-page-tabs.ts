@@ -37,9 +37,9 @@ export type AssetTemplatesPageTab = {
    * `true` when the tab is only for a user who may author templates.
    *
    * Declared here rather than tested at the call site, because the resolver
-   * below has to know it: the stock list's fetch is gated on the same
-   * permission (`stockQ`'s `enabled`), so a viewer who reaches `?tab=stock`
-   * would otherwise sit on a card that never stops loading.
+   * below has to know it — see its docblock for what the flag actually
+   * protects against, which is a page with no list on it rather than any
+   * server-side refusal.
    */
   authorOnly: boolean;
 };
@@ -71,12 +71,34 @@ export const DEFAULT_ASSET_TEMPLATES_PAGE_TAB: AssetTemplatesPageTabId = "templa
  *   an earlier version. Falls back to Templates, because a page that renders no
  *   list at all reads as broken rather than as a bad link. Same reasoning as
  *   `resolveTemplateTab`.
- * - **Known but not permitted** — a viewer following an author's link to
- *   `?tab=stock`. Also falls back to Templates. This one is load-bearing rather
- *   than cosmetic: `F2.13` gates the stock *fetch* on the same permission, so
- *   rendering the tab for a viewer would show a card that is pending forever,
- *   with no error to explain it. The server refuses that list too, so there is
- *   nothing to show even if the fetch were allowed.
+ * - **Known but not permitted** — someone following an author's link to
+ *   `?tab=stock` who may not author. Also falls back to Templates.
+ *
+ * ## What the second fallback is, and is not
+ *
+ * **It is not a security control, and the trust boundary is the opposite way
+ * round from the obvious guess.** `admin-route.tsx` admits `admin`,
+ * `organization_admin` and `location_admin` to this page. Of those exactly one
+ * has `mayAuthor` false — `location_admin`, because `canAuthorTemplates` is
+ * `isMasterDataAdmin(role) && role !== "location_admin"` (ADR 0015 §7: import
+ * is an authoring act). And `location_admin` is a role the SERVER permits to
+ * list the catalog: `assertCanList` calls `requireMasterDataUser`, and
+ * `isMasterDataRole` includes it.
+ *
+ * So the client here is deliberately **stricter** than the server. `viewer` and
+ * `operator`, whom the server does refuse, never reach this page at all, so
+ * this branch never runs for them.
+ *
+ * What it prevents is a **page with no list on it**. Both cards are guarded —
+ * Templates on `tab === "templates"`, stock on `tab === "stock" && mayAuthor` —
+ * so a `location_admin` landing on `stock` with no fallback would see a tab
+ * strip and nothing else. (An earlier version of this comment said "a card that
+ * never stops loading". That needs `stockQ.isPending` to render, and the page's
+ * own second guard makes it unreachable. Corrected rather than left standing.)
+ *
+ * Because it is not a security control, `stockQ`'s `enabled: mayAuthor` and the
+ * page's own `&& mayAuthor` are kept as well: client-side policy that stops the
+ * request being made, not the thing that makes it safe.
  *
  * `mayAuthor` is passed in rather than read here, because this module is pure
  * and the permission comes from `canAuthorTemplates(user.role)`.

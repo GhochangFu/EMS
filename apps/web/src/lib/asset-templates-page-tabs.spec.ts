@@ -2,9 +2,11 @@
  * The list page's tab registry and its resolver (`F2.21` part 1).
  *
  * The resolver has two distinct fallbacks and they fail for different reasons,
- * so each is pinned separately. The permission one is the load-bearing case:
- * `F2.13` gates the stock fetch on the same flag, so resolving `stock` for a
- * viewer would render a card that never stops loading.
+ * so each is pinned separately. The permission one prevents a page with NO list
+ * on it: both cards are guarded, so a `location_admin` landing on `?tab=stock`
+ * without the fallback would see a tab strip and nothing else. It is not a
+ * security control — the server permits that role to list the catalog, and the
+ * client is deliberately stricter. See the resolver's own docblock.
  */
 import {
   ASSET_TEMPLATES_PAGE_TABS,
