@@ -1013,7 +1013,15 @@ console.log(`wrote ${OUT_FILE} (standalone, internal)`);
 console.log(`wrote ${OUT_CLIENT} (standalone, client-facing${found.length ? " — LEAK CHECK FAILED" : ", leak check passed"})`);
 console.log(
   `  ${data.counts.done ?? 0} done · ${data.inProgress.length} in flight · ${readyIds.length} ready · ` +
-    `${data.items.filter((i) => i.gate && i.status !== "done" && i.status !== "dropped").length} held · ` +
+    // `counts.gated`, the same number the stat tile renders — NOT a re-derivation.
+    // This line used to filter on `i.gate` alone, which omitted
+    // `dependencyClear` and so counted an item that is gated AND
+    // dependency-blocked as held, while `backlog-status.mjs` correctly files it
+    // under `blocked`. The page then said 15 while this line said 16, and the
+    // republish hook quotes THIS line — so the two disagreed in public. The
+    // page was right: its own footer says held means held on a decision, not on
+    // engineering capacity, and such an item is held on both.
+    `${data.counts.gated ?? 0} held · ` +
     `generated ${data.generatedAtIST}`,
 );
 console.log(
