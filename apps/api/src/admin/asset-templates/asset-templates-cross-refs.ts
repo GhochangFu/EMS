@@ -45,6 +45,7 @@ export interface CrossRefCandidatePoint {
   formulaDialect?: string | null;
 }
 
+/** The point keys a `bms-calc-v2` formula names inside its own text, deduped. */
 export function crossRefPointKeys(
   points: readonly CrossRefCandidatePoint[],
 ): { pointKey: string }[] {

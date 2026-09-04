@@ -116,6 +116,31 @@ const CATALOG: readonly StockAssetTemplateDto[] = [
  * would restate the constant and catch nothing the constant does not already
  * say; what matters is what `template-lifecycle.ts` answers for it.
  */
+/**
+ * The bridge carries `minCoverageRatio` through rather than hardcoding it.
+ *
+ * The fixture value is deliberately **non-null**. Every other point in this
+ * file carries `null`, and the bridge used to hardcode `null` — so an assertion
+ * against a null fixture passed whether the field was read or discarded, which
+ * is exactly how the discard survived Task 8 (see the plan's corrections 14
+ * and 17: one declared this file closed, the other moved the DTO field to a
+ * later task, and nobody re-read the bridge in between).
+ *
+ * `0.8` is not a magic number here — it only has to differ from `null`.
+ */
+export function runCoverageRatioIsCarriedThroughTests(): void {
+  const entry = stockAssetTemplateDtoSchema.parse({
+    ...ENTRY,
+    points: [{ ...ENTRY.points[2], minCoverageRatio: 0.8 }],
+  });
+  const carried = stockEntryAsTemplate(entry).points[0].minCoverageRatio;
+  assert(
+    carried === 0.8,
+    `the stock bridge dropped minCoverageRatio: expected 0.8, got ${String(carried)} — ` +
+      "a stock v2 formula would silently read as fail-closed in the viewer",
+  );
+}
+
 export function runStatusIsReadOnlyTests(): void {
   const view = stockEntryAsTemplate(ENTRY);
   assert(
