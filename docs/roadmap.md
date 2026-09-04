@@ -775,7 +775,18 @@ Process (`AGENTS.md` §10).
   > set, VFD, air compressor, chiller, AHU, boiler — under ADR 0053, 141 points
   > over 107 new codes, 52 pair-absent alarms each with a `philosophy`, 24
   > plans, and the first domain (`mechanical`) added through the seed path
-  > rather than a migration. `E5.3` is the next head of Track B.
+  > rather than a migration. **`E5.3` closed on 2026-09-04** (#300 and #301):
+  > nine building classes — lighting zone, fire panel, access door, occupancy
+  > zone, parking level, IAQ node, BAS gateway, lift, escalator — under ADR
+  > 0054, 235 points over 206 new codes, 78 pair-absent alarms each with a
+  > `philosophy`, 33 plans of which 10 are `safetyCritical`, a second domain
+  > (`facility`) through the same seed path, and the class vocabulary in a
+  > second file because `constants.ts` had reached §4.5's cap. It shipped as
+  > two pull requests under one ADR and one plan, the pack measuring about
+  > 1.8× `E5.2`. **That completes Track B's three domain packs** — the stock
+  > catalog holds 27 entries over four packs and `bms.point_keys` 604 codes —
+  > so **no row succeeds `E5.3` as the head of Track B**; which of the track's
+  > remaining rows leads is the owner's to pick.
 - **Owed:** ~~the AGENTS.md §2 promotion, in its own `chore(agents):` PR
   (§9.10)~~ ✅ **cleared** — §2 gained a *Template content* row, and §6 gained
   the two deferral bullets covering what ADR 0019 deliberately left closed.
