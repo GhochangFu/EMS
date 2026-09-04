@@ -46,10 +46,12 @@ import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { StockCatalogAccordion } from "../../components/asset-templates/stock-catalog-accordion";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import { canAuthorTemplates } from "../../lib/template-authoring-access";
+import { groupStockByDomain } from "../../lib/stock-catalog-groups";
 import { statusTone } from "../../lib/template-lifecycle";
 import { groupTemplateVersions } from "../../lib/template-list-grouping";
 import type { AuthUser } from "../../stores/auth-store";
@@ -111,10 +113,16 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
   // ADR 0031 Amendment 1 made `domain` a vocabulary row rather than an enum.
   // `vocabulariesQueryKey` is shared on purpose — this must not become a fourth
   // fetch of the same nine-row payload.
+  //
+  // `F2.17` widened `enabled` from `modalOpen && mayAuthor` to `mayAuthor`:
+  // the stock catalog's group headings read their labels from `assetDomains`
+  // in THIS payload, so an author needs it as soon as the card renders, not
+  // only once the create modal opens. Widening the gate — rather than adding
+  // a second query — is what keeps ADR 0038 decision 2 intact.
   const vocabQ = useQuery({
     queryKey: vocabulariesQueryKey,
     queryFn: fetchVocabularies,
-    enabled: modalOpen && mayAuthor,
+    enabled: mayAuthor,
   });
 
   const groups = useMemo(() => {
@@ -167,6 +175,15 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
   });
 
   const stockRows = stockQ.data?.items ?? [];
+
+  // `F2.17` — one group per domain PRESENT in the response, never one per
+  // vocabulary row. `assetDomains` may still be `undefined` on the render
+  // between the two queries settling; `groupStockByDomain` then falls back to
+  // the bare code for both the sort key and the label.
+  const stockGroups = useMemo(
+    () => groupStockByDomain(stockRows, vocabQ.data?.assetDomains),
+    [stockRows, vocabQ.data],
+  );
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -322,9 +339,15 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
           {!stockQ.isPending && !stockQ.isError && stockRows.length === 0 ? (
             <p className="text-sm text-bms-muted">The stock catalog is empty — nothing to import.</p>
           ) : null}
-          <ul className="divide-y divide-gray-100">
-            {stockRows.map((entry) => (
-              <li key={entry.code} className="flex flex-wrap items-center justify-between gap-2 py-2">
+          {/* `F2.17` — the rows stay HERE and arrive at the accordion as a
+              render prop. `tests/f2.14-stock-viewer-reachable.test.ts:87-94`
+              reads this file as text for the `<Link to={`…stock/` literal
+              below; lifting the row markup into the accordion would turn that
+              guard red by design. */}
+          <StockCatalogAccordion
+            groups={stockGroups}
+            renderEntry={(entry) => (
+              <li className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <div>
                   <div className="text-sm font-semibold text-bms-ink">{entry.name}</div>
                   <div className="text-[11px] text-bms-muted">
@@ -361,8 +384,9 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                   </button>
                 </div>
               </li>
-            ))}
-          </ul>
+            )}
+          />
+
         </SectionCard>
       ) : null}
 
