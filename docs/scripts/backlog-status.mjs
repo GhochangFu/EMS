@@ -780,6 +780,11 @@ const blocked = items.filter(
 // A hard exit, not a warning. `warnings` is rendered ON the board, which is the
 // wrong place for "the board is wrong" — and the leak-check CI job runs this
 // script, so a non-zero exit here is a gate under AGENTS.md §4.6.
+//
+// Like its sibling in `backlog-dashboard.mjs`, this is data-dependent: it can
+// only fire while some item sits in two sets at once. Restore the old inclusive
+// predicate on a board where nothing is gated AND dependency-blocked and it
+// passes. That is the state in which the defect is also invisible.
 for (const [aName, a, bName, b] of [
   ["ready", ready, "gated", gated],
   ["ready", ready, "blocked", blocked],
@@ -884,12 +889,19 @@ payload.fingerprint = createHash("sha256")
           it.dependsRaw,
           it.readyToStart,
           // `F4.86`. `held` earns a slot because it moves a card between two
-          // rendered sections on its own: a gated item that becomes
-          // dependency-clear leaves "Waiting" and joins "Eligible, but held",
-          // and no other field in this projection changes when it does —
-          // `readyToStart` stays false throughout, because a gated item is
-          // never ready. The board therefore moved without the fingerprint
-          // moving, and the republish hook stayed quiet.
+          // rendered sections on its own, and nothing else in this TUPLE moves
+          // with it: a gated item that becomes dependency-clear leaves
+          // "Waiting" and joins "Eligible, but held" while `readyToStart` stays
+          // false throughout, because a gated item is never ready.
+          //
+          // That is narrower than "the board could move unnoticed", and the
+          // difference is worth keeping straight. `counts` is hashed alongside
+          // these tuples and carries `gated` and `blocked`, so the ordinary
+          // single flip already moves the fingerprint through the totals — and
+          // the usual CAUSE of the flip is an upstream item reaching `done`,
+          // whose `status` is projected here too. What this slot adds is the
+          // compensating case: one item enters held as another leaves, the
+          // totals do not move, and without this field nothing else would.
           it.held,
           it.gate?.kind ?? null,
           it.deliveredOn,

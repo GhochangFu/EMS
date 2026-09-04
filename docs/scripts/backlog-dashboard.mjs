@@ -114,13 +114,24 @@ for (const it of data.items) it.stateKey = stateOf(it).key;
 // different code paths: the stat tile prints `counts.gated` straight from the
 // status script, the section header counts these cards, and the legend, wave
 // lanes and state chips tally `stateKey`. They agreed on nothing but luck until
-// `F4.86` — the tile said 15 while the other two said 16.
+// `F4.86`, when the tile disagreed with the other two.
 //
 // So this asserts the three agree, and fails the run when they do not. It is
-// not a tautology: delete `it.held` from either the filter below or `stateOf`,
-// put `it.gate` back, and this goes red. That is the exact regression it exists
-// to stop, and it stays red after `E1.1` closes, because it compares
-// derivations rather than a remembered number.
+// not a tautology: put `it.gate` back in either the filter below or `stateOf`
+// and this goes red — the exact regression it exists to stop.
+//
+// It is data-dependent, and the scope is worth stating rather than overselling.
+// The check can only fire while some item distinguishes the two predicates —
+// one that is gated AND dependency-blocked. With no such item on the board the
+// predicates agree and a reintroduced `it.gate` passes. That is also the only
+// state in which the defect is invisible, so the check is silent exactly when
+// there is nothing to see, and speaks the moment there is.
+//
+// `process.exit(1)`, NOT `process.exitCode = 1`. The `--mark-published` branch
+// below ends in `process.exit(0)`, which discards a pending `exitCode` — so a
+// deferred failure here would let a disagreeing board be marked as published,
+// silently and with a zero status. Exiting here also fails before any file is
+// written, which is the same shape as the sibling gate in `backlog-status.mjs`.
 const heldItems = data.items
   .filter((it) => it.held)
   .sort((a, b) => (P_ORDER[a.priority] ?? 9) - (P_ORDER[b.priority] ?? 9));
@@ -134,7 +145,7 @@ if (heldItems.length !== (data.counts.gated ?? 0) || heldByStateKey !== heldItem
       `  stateKey (legend, lanes):   ${heldByStateKey}\n` +
       "  All three must read `item.held`. See its docblock in backlog-status.mjs.",
   );
-  process.exitCode = 1;
+  process.exit(1);
 }
 
 const pwOf = (it) => it.effortWeeks?.mid ?? 0;
