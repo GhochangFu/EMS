@@ -14,7 +14,12 @@
  * `Object.hasOwn` on the fixture **before** using it, so nobody can later
  * "tidy" it into a literal and quietly disarm the check.
  */
-import type { TemplateAlarm, TemplateDashboardView, TemplateKpi } from "@bms/shared";
+import type {
+  TemplateAlarm,
+  TemplateDashboardView,
+  TemplateKpi,
+  TemplateMaintenancePlan,
+} from "@bms/shared";
 
 import {
   contentCanBeWrittenBack,
@@ -388,6 +393,109 @@ export function runInheritedKeyTests(): void {
   const realByKey = new Map(withReal.map((problem) => [problem.key, problem]));
   assert(realByKey.get("optimisation")?.reason === "reserved", "optimisation is still reserved");
   assert(!realByKey.has("health"), "health is writable since E1.3, not reserved");
+}
+
+const MAINTENANCE: TemplateMaintenancePlan[] = [
+  {
+    title: "Membrane CIP",
+    category: "preventive",
+    generationMode: "calendar",
+    safetyCritical: false,
+    priority: "medium",
+    estimatedMinutes: 120,
+    intervalDays: 90,
+  },
+];
+
+/**
+ * `storedWithFutureKey()` plus a `health` section.
+ *
+ * `health` is the one section the API accepts, this merge carries and no tab
+ * edits (ADR 0050 decision 7 reopened it; ADR 0050 Amendment 1 decision 5 keeps
+ * it off the strip). A maintenance edit is the first write that could plausibly
+ * drop it — the two shared a sentence in `template-content-merge.ts`'s docblock
+ * until `F2.19` — so it is in this fixture rather than assumed.
+ */
+function storedWithHealth(): StoredTemplateContent {
+  return JSON.parse(
+    JSON.stringify({
+      ...storedWithFutureKey(),
+      health: { weights: { A: 1 } },
+    }),
+  ) as StoredTemplateContent;
+}
+
+/**
+ * `mergeTemplateContent`'s fourth arm (`F2.19`, ADR 0038 Amendment 5 Part B).
+ *
+ * The arm itself is not new code — `maintenance` is an array, so
+ * `[...patch.value]` already handled it, and `WRITABLE_KEYS` already listed it.
+ * That is exactly why it is asserted: "the existing branch already does this"
+ * is a claim, and the §3.1 finding this file opens with says what it costs if
+ * it is wrong. The Maintenance tab is the first surface that sends this patch,
+ * and the sections it must not destroy are the four beside it.
+ */
+export function runMaintenancePatchPreservesOtherSectionsTests(): void {
+  const stored = storedWithHealth();
+  const merged = mergeTemplateContent(stored, { section: "maintenance", value: MAINTENANCE });
+
+  for (const key of ["kpis", "alarms", "dashboards", "health", "someFutureKey"]) {
+    assert(
+      JSON.stringify(merged[key]) === JSON.stringify(stored[key]),
+      `${key} must survive a maintenance edit unchanged — got ${JSON.stringify(merged[key])}`,
+    );
+  }
+  assert(
+    JSON.stringify(merged.maintenance) === JSON.stringify(MAINTENANCE),
+    `the edited section must be the new value — got ${JSON.stringify(merged.maintenance)}`,
+  );
+  assert(merged.contentVersion === 1, "a stored contentVersion is carried through");
+  assert(
+    Object.keys(merged).sort().join(",") === Object.keys(stored).sort().join(","),
+    "the merge must add no key and remove none",
+  );
+  assert(
+    merged.maintenance !== MAINTENANCE,
+    "the maintenance value is copied, not the same reference",
+  );
+
+  // The other direction: editing another section must not touch a stored
+  // maintenance plan. `runPreservesEveryOtherKeyTests` already covers `kpis`;
+  // this is the one that would catch a dashboards write that special-cased the
+  // array sections and lost this one.
+  const dashboardEdit = mergeTemplateContent(stored, { section: "dashboards", value: DASHBOARDS });
+  assert(
+    JSON.stringify(dashboardEdit.maintenance) === JSON.stringify(stored.maintenance),
+    "editing dashboards must not touch maintenance",
+  );
+}
+
+/**
+ * An empty maintenance section is written as `[]`, never a deletion.
+ *
+ * Removing the last plan and deleting the section are different intents, and
+ * the second must be asked for. The array precedent is
+ * `runEmptySectionWritesAnArrayTests`; this proves the fourth arm follows it,
+ * because "remove every plan" is a real thing an author does on this tab.
+ */
+export function runEmptyMaintenanceSectionIsKeptTests(): void {
+  const stored = storedWithHealth();
+  const merged = mergeTemplateContent(stored, { section: "maintenance", value: [] });
+
+  assert(Object.hasOwn(merged, "maintenance"), "the key must still exist");
+  assert(Array.isArray(merged.maintenance), "the value must be an array");
+  assert((merged.maintenance as unknown[]).length === 0, "the array must be empty");
+  assert(
+    JSON.stringify(merged.health) === JSON.stringify(stored.health),
+    "emptying maintenance must not touch health",
+  );
+
+  const bare = mergeTemplateContent({ contentVersion: 1 }, { section: "maintenance", value: [] });
+  assert(Object.hasOwn(bare, "maintenance"), "a first edit creates the section even when empty");
+  assert(
+    Object.keys(bare).sort().join(",") === "contentVersion,maintenance",
+    `no other key may appear — got ${Object.keys(bare).join(",")}`,
+  );
 }
 
 const DASHBOARDS: Record<string, TemplateDashboardView> = {

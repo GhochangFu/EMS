@@ -10,7 +10,13 @@
  * and the Alarms tab both write `content`. If either sent only its own section,
  * the stored `maintenance` plans and `dashboards` views would be **destroyed**
  * — and maintenance authoring is explicitly out of F2.5's scope, so this UI
- * would silently delete content it refuses to even display.
+ * would silently delete content it did not even display.
+ *
+ * That last clause is a **dated record of F2.5**, and half of it has since
+ * changed: `F2.19` (ADR 0038 Amendment 5 Part B) gives `maintenance` a tab and
+ * this patch union a fourth arm. The finding it narrates did not change — a
+ * wholesale `PATCH` still destroys every section the request omits, and there
+ * are now four tabs that could do it rather than two.
  *
  * So every write starts from the stored object and changes one key.
  *
@@ -36,22 +42,34 @@
  * `unwritableContentKeys` names the problem instead, so the page can say what
  * is wrong before the author fills in a form and collects a 400.
  */
-import type { TemplateAlarm, TemplateDashboardView, TemplateKpi } from "@bms/shared";
+import type {
+  TemplateAlarm,
+  TemplateDashboardView,
+  TemplateKpi,
+  TemplateMaintenancePlan,
+} from "@bms/shared";
 
 /** The stored column, as the read DTO delivers it. */
 export type StoredTemplateContent = Readonly<Record<string, unknown>>;
 
 /**
- * The three sections `F2.5`/`F3.1e` author. Everything else is carried, not
- * edited.
+ * The four sections `F2.5` / `F3.1e` / `F2.19` author. Everything else is
+ * carried, not edited.
  *
- * `dashboards` is a **record**, not an array like its two siblings — a named
+ * `dashboards` is a **record**, not an array like its three siblings — a named
  * view keyed by name, not a list of entries. `mergeTemplateContent` branches
  * on that shape rather than treating every section as `[...patch.value]`.
+ *
+ * **`maintenance` needed no code change** (`F2.19`, ADR 0038 Amendment 5
+ * Part B): it is an array, so the existing arm already carries it, and
+ * `WRITABLE_KEYS` already listed it because the API has accepted the section
+ * since ADR 0019. Widening this union is the whole edit, and the spec proves
+ * the arm by exercising it rather than by trusting the shape.
  */
 export type TemplateContentPatch =
   | { section: "kpis"; value: readonly TemplateKpi[] }
   | { section: "alarms"; value: readonly TemplateAlarm[] }
+  | { section: "maintenance"; value: readonly TemplateMaintenancePlan[] }
   | { section: "dashboards"; value: Readonly<Record<string, TemplateDashboardView>> };
 
 /**
@@ -75,9 +93,12 @@ const WRITABLE_KEYS = ["contentVersion", "kpis", "alarms", "maintenance", "dashb
  * accepts but this file still calls reserved would block a KPI tab save on a
  * template that carries a perfectly valid health section.
  *
- * It has no tab of its own — `template-tabs.ts` stays at ADR 0038's six — so it
- * is now in `maintenance`'s class: writable by the API, carried through this
- * merge byte for byte, and edited by nothing in this UI yet.
+ * It has no tab of its own, and since `F2.19` it is the **only** section in
+ * that class: writable by the API, carried through this merge byte for byte,
+ * and edited by nothing in this UI. `maintenance` used to be its company —
+ * ADR 0038 Amendment 5 Part B gave that section a tab, so the sentence now
+ * names one section rather than two. ADR 0050 Amendment 1 decision 5 scopes
+ * `E1.3` to the score surfaces, so `health` gaining a tab needs its own ruling.
  */
 const RESERVED_KEYS: Readonly<Record<string, string>> = {
   optimisation: "E1.6 (optimisation advisories)",

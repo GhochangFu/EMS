@@ -10,7 +10,9 @@ import {
   runDropsUnsafeKeysTests,
   runEachSectionIsIndependentTests,
   runEmptyDashboardsRecordIsKeptTests,
+  runEmptyMaintenanceSectionIsKeptTests,
   runEmptySectionWritesAnArrayTests,
+  runMaintenancePatchPreservesOtherSectionsTests,
   runPreservesEveryOtherKeyTests,
   runInheritedKeyTests,
   runUnwritableKeysAreClassifiedTests,
@@ -68,5 +70,13 @@ describe("template content merge", () => {
 
   it("does not alias the caller's dashboards record", () => {
     runDashboardsPatchDoesNotAliasTests();
+  });
+
+  it("a maintenance patch preserves every other section, health included", () => {
+    runMaintenancePatchPreservesOtherSectionsTests();
+  });
+
+  it("writes an empty maintenance section as [], never deleting the key", () => {
+    runEmptyMaintenanceSectionIsKeptTests();
   });
 });
