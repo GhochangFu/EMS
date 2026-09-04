@@ -67,19 +67,20 @@ function template(alarms: unknown[]): AdminAssetTemplateDto {
   });
 }
 
-function renderTab(alarms: unknown[]) {
+function renderTab(alarms: unknown[], editable = true): HTMLElement {
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
+  const { container } = render(
     <QueryClientProvider client={queryClient}>
       <AlarmsTab
         template={template(alarms)}
-        editable={true}
+        editable={editable}
         onSaved={vi.fn()}
         onDirtyChange={vi.fn()}
       />
     </QueryClientProvider>,
   );
+  return container;
 }
 
 /** The pair-absent row itself — ADR 0019 Amendment 2 decision 5's claim. */
@@ -128,4 +129,89 @@ export async function fullPairRendersAnEditableThresholdBox(): Promise<void> {
 
   const operatorSelect = screen.getByRole("combobox", { name: "Fires when the value is" });
   expect((operatorSelect as HTMLSelectElement).value).toBe("gt");
+}
+
+/**
+ * `F2.20` — the philosophy block opens by default on a read-only template.
+ *
+ * Reading is the other half of what this tab is for, and a closed `<details>`
+ * hides its content from `innerText` entirely: `E5.3`'s first browser pass
+ * reported a `philosophy.skill` that was present in the data as missing from
+ * the page, because the block was collapsed. On a version that can never be
+ * saved there is no Save state to protect, so the block opens.
+ *
+ * The three cases below are one claim each, and the second and third are what
+ * keep the change from being a deletion of the collapse.
+ */
+
+/** A valid alarm carrying one philosophy field — the subject of cases 1 and 2. */
+const ALARM_WITH_CAUSE = {
+  code: "OVERLOAD",
+  pointKey: "current_a",
+  severity: "warning",
+  message: "Load above the feeder's rating",
+  philosophy: { cause: "Bearing wear" },
+};
+
+/** Case 1 — read-only, so the philosophy is open and its content is readable. */
+export async function philosophyIsOpenOnAReadOnlyTemplate(): Promise<void> {
+  const container = renderTab([ALARM_WITH_CAUSE], false);
+
+  // The vocabularies settle first, so `open` is read from the final render.
+  await waitFor(() => {
+    expect(screen.getByRole("option", { name: "Warning" })).toBeInTheDocument();
+  });
+
+  const block = container.querySelector("details");
+  expect(block).not.toBeNull();
+  expect((block as HTMLDetailsElement).open).toBe(true);
+  expect(screen.getByDisplayValue("Bearing wear")).toBeInTheDocument();
+}
+
+/**
+ * Case 2 — the baseline the protection needs.
+ *
+ * A clean, editable draft keeps the block collapsed. Without this the change
+ * could be "always open", which is a different feature and loses the collapse
+ * an author with twenty alarms depends on.
+ */
+export async function philosophyStaysCollapsedOnACleanDraft(): Promise<void> {
+  const container = renderTab([ALARM_WITH_CAUSE], true);
+
+  await waitFor(() => {
+    expect(screen.getByRole("option", { name: "Warning" })).toBeInTheDocument();
+  });
+
+  expect((container.querySelector("details") as HTMLDetailsElement).open).toBe(false);
+  expect(screen.queryByText("needs attention")).not.toBeInTheDocument();
+}
+
+/**
+ * Case 3 — the forced-open protection, proved to have survived.
+ *
+ * `VOCABULARIES` loads `alarmSkills: []`, so any non-empty skill is refused by
+ * `alarmFormErrors` with `field: "skill"`. On an editable draft that failing
+ * field must be visible, or the author sees a disabled Save and a "fix the
+ * problems above" message with nothing on screen to fix.
+ */
+export async function philosophyIsForcedOpenByAProblemOnADraft(): Promise<void> {
+  const container = renderTab(
+    [
+      {
+        code: "OVERLOAD",
+        pointKey: "current_a",
+        severity: "warning",
+        message: "Load above the feeder's rating",
+        philosophy: { skill: "electrician" },
+      },
+    ],
+    true,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByRole("option", { name: "Warning" })).toBeInTheDocument();
+  });
+
+  expect((container.querySelector("details") as HTMLDetailsElement).open).toBe(true);
+  expect(screen.getByText("needs attention")).toBeInTheDocument();
 }

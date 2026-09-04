@@ -5,6 +5,9 @@ import { cleanup } from "@testing-library/react";
 import {
   fullPairRendersAnEditableThresholdBox,
   pairAbsentRowRendersCommissioningCopyAndAnEmptyOperator,
+  philosophyIsForcedOpenByAProblemOnADraft,
+  philosophyIsOpenOnAReadOnlyTemplate,
+  philosophyStaysCollapsedOnACleanDraft,
 } from "./alarms-tab.spec";
 
 /**
@@ -24,5 +27,17 @@ describe("F2.13 alarms tab — ADR 0019 Amendment 2", () => {
 
   it("still renders an editable threshold box for a full pair", async () => {
     await fullPairRendersAnEditableThresholdBox();
+  });
+
+  it("opens the alarm philosophy on a read-only template (F2.20)", async () => {
+    await philosophyIsOpenOnAReadOnlyTemplate();
+  });
+
+  it("keeps the alarm philosophy collapsed on a clean draft (F2.20)", async () => {
+    await philosophyStaysCollapsedOnACleanDraft();
+  });
+
+  it("still forces the alarm philosophy open when a draft's philosophy field fails", async () => {
+    await philosophyIsForcedOpenByAProblemOnADraft();
   });
 });
