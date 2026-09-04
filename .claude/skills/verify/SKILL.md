@@ -158,6 +158,33 @@ Two things that look like savings and are not:
 - **`read_page` is text but not small.** It defaults to a 50k-character
   accessibility tree. Pass `ref_id` or `depth`, or prefer `find`.
 
+**"Prove nothing threw" is not what an unfiltered console read proves.** A
+Chrome extension whose content script matches `<all_urls>` runs on every full
+page load in the developer's own profile, and its uncaught errors land in the
+same console. On 2026-09-04 a browser pass read **exactly two `[EXCEPTION]`
+entries on every admin page load**, each a bare `Object` with no message and no
+stack — the container serves a minified bundle with no source maps, so nothing
+in the entry named its origin. They were filed as `F4.91` against this
+application. They were not ours.
+
+Three cheap probes settled it, and they are the ones to repeat rather than
+rediscover:
+
+1. **Load a page with none of our code.** Keycloak's account console at
+   `localhost:8080` produced the same entries. That single reading is worth more
+   than any amount of staring at our own bundle.
+2. **Count the failures.** `read_network_requests` showed 18 API calls, all 2xx,
+   on both routes — so "unhandled rejection from a failed fetch", the obvious
+   first hypothesis, was refuted by a count rather than by an argument.
+3. **Change route without reloading.** The pair never recurred on an in-app
+   navigation, which puts it in page bootstrap rather than in anything a React
+   route does.
+
+So: scope every console assertion with `pattern`, or state which page you
+compared against. An unscoped "the console is clean" is a claim about the
+developer's browser profile as much as about this application — and a row filed
+on it costs a real investigation, which is what `F4.91` cost.
+
 `resize_window` to a smaller viewport before a screenshot you genuinely need —
 the image shrinks and so does its cost.
 
