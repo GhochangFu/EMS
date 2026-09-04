@@ -5,6 +5,29 @@
 Accepted — 2026-08-20, by the repository owner, the same day it was drafted
 for `F2.3`.
 
+**Decisions 2 and 7 are superseded for `bms-calc-v2`.**
+[ADR 0055](./0055-cross-asset-aggregation-calc-grammar.md) — *Accepted
+2026-09-04* — discharges the "ADR 0036 amendment" that `F2.8` and `F2.9` both
+name, and goes further than "amend":
+
+- **Decision 2 is superseded.** ADR 0055 decision 6 adds *both* an aggregate
+  form and an asset-qualified reference form, each confined to the owning
+  asset's location (its decision 12).
+- **Decision 7 is repealed, not narrowed.** ADR 0055 decision 7 lets a
+  cross-asset reference read a derived point, and takes on the topological
+  ordering and cycle detection that decision 7 below exists to avoid.
+
+**Two things keep every decision below true, and both matter to a reader here.**
+
+*This dialect is frozen, permanently.* ADR 0055 applies only to the new
+`bms-calc-v2` dialect, and its decision 3 fixes `"bms-calc-v1"` at its current
+meaning forever: a `v1` formula never gains a cross-asset reference and never
+loses a refusal. Everything below is the live specification of `v1`.
+
+*Accepted is not implemented.* `F2.9` is the item that changes the code. Until
+it lands, every guard enforcing the decisions below is still in place and still
+refusing what they refuse.
+
 ## Context
 
 `F2.3` is a Wave 0 ⭐ enabler (`docs/BACKLOG.md:385`) with no `Depends` entry,
