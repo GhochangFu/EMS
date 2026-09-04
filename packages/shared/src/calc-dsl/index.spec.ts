@@ -1,5 +1,5 @@
-import { CALC_DIALECT, CALC_DIALECT_V2, CALC_DIALECTS, CalcTokenizeError, tokenize } from "./index";
-import type { CalcDialect, Token, TokenKind } from "./index";
+import { CALC_DIALECT, CALC_DIALECT_V2, CALC_DIALECTS, CalcTokenizeError, crossRefKey, parseFormula, tokenize } from "./index";
+import type { CalcCrossRef, CalcDialect, ParseOptions, Token, TokenKind } from "./index";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -76,4 +76,22 @@ export function runCalcDslBarrelTests(): void {
   const v2Kinds = v2.map((t) => t.kind).join(",");
   assert(v2Kinds === "ref,scope,eof", `tokenize(text, { dialect }) must reach the v2 lexer, got ${v2Kinds}`);
   assert(v2[0].assetCode === "TX", `a qualified ref through the barrel must carry assetCode, got ${v2[0].assetCode}`);
+
+  // ---- 6. crossRefKey and the parser's dialect option are reachable ----------
+  //
+  // `F2.9` Task 2: the api host (PR 2) builds `crossInputs` with `crossRefKey`
+  // through the barrel — a key built any other way would never match the
+  // evaluator's lookup, and nothing but this assertion would say so.
+
+  assert(typeof crossRefKey === "function", `crossRefKey must be exported from the calc-dsl barrel, got ${typeof crossRefKey}`);
+  const options: ParseOptions = { dialect: CALC_DIALECT_V2 };
+  const parsed = parseFormula("sum({kw} @site)", options);
+  assert(parsed.ok === true, `parseFormula(text, { dialect }) must reach the v2 parser, got ${JSON.stringify(parsed)}`);
+  if (parsed.ok) {
+    const first: CalcCrossRef | undefined = parsed.crossRefs[0];
+    assert(
+      first !== undefined && crossRefKey(first) === "sum(kw)@site",
+      `the barrel's crossRefKey must build the canonical form, got ${first && crossRefKey(first)}`,
+    );
+  }
 }

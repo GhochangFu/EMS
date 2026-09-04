@@ -1,4 +1,5 @@
 import type { CalcExpr, CalcFunctionName } from "./ast";
+import { crossRefKey } from "./cross-ref";
 
 /**
  * ADR 0037 decision 9. `missing_input` covers a `{ref}` absent from the
@@ -63,7 +64,18 @@ function applyFunction(fn: CalcFunctionName, args: number[]): { value: number } 
   }
 }
 
-function evalNode(node: CalcExpr, inputs: ReadonlyMap<string, number>): CalcEvalResult {
+/**
+ * This switch is exhaustive-checked by the compiler for free: `evalNode`
+ * returns `CalcEvalResult`, so a missing `case` is "function lacks ending
+ * return statement" (TS2366) — confirmed on the widened union before the
+ * `v2` cases below were written. `collectRefEntries` in `./parser` returns
+ * `void` and gets no such check; it carries an explicit `assertNever`.
+ */
+function evalNode(
+  node: CalcExpr,
+  inputs: ReadonlyMap<string, number>,
+  crossInputs: ReadonlyMap<string, number>,
+): CalcEvalResult {
   switch (node.kind) {
     case "number":
       return { ok: true, value: node.value };
@@ -81,8 +93,23 @@ function evalNode(node: CalcExpr, inputs: ReadonlyMap<string, number>): CalcEval
       return finiteOrFail(value, node.position);
     }
 
+    // bms-calc-v2 (ADR 0055): a cross-asset node is served from `crossInputs`
+    // only, by its canonical key, and never from `inputs` — the two maps are
+    // separate namespaces so a local point key can never shadow a cross
+    // reference or be shadowed by one. Resolution (which assets, which
+    // members, how fresh) happened in the host before this ran (ADR 0037
+    // decision 1 unchanged); an absent key is exactly a missing input.
+    case "qref":
+    case "aggregate": {
+      const value = crossInputs.get(crossRefKey(node));
+      if (value === undefined) {
+        return { ok: false, code: "missing_input", position: node.position };
+      }
+      return finiteOrFail(value, node.position);
+    }
+
     case "unary": {
-      const operand = evalNode(node.operand, inputs);
+      const operand = evalNode(node.operand, inputs, crossInputs);
       if (!operand.ok) {
         return operand;
       }
@@ -90,11 +117,11 @@ function evalNode(node: CalcExpr, inputs: ReadonlyMap<string, number>): CalcEval
     }
 
     case "binary": {
-      const left = evalNode(node.left, inputs);
+      const left = evalNode(node.left, inputs, crossInputs);
       if (!left.ok) {
         return left;
       }
-      const right = evalNode(node.right, inputs);
+      const right = evalNode(node.right, inputs, crossInputs);
       if (!right.ok) {
         return right;
       }
@@ -104,7 +131,7 @@ function evalNode(node: CalcExpr, inputs: ReadonlyMap<string, number>): CalcEval
     case "call": {
       const args: number[] = [];
       for (const argNode of node.args) {
-        const arg = evalNode(argNode, inputs);
+        const arg = evalNode(argNode, inputs, crossInputs);
         if (!arg.ok) {
           return arg;
         }
@@ -119,11 +146,19 @@ function evalNode(node: CalcExpr, inputs: ReadonlyMap<string, number>): CalcEval
   }
 }
 
+const EMPTY_CROSS_INPUTS: ReadonlyMap<string, number> = new Map();
+
 /**
- * Evaluates a parsed `bms-calc-v1` expression against resolved input values.
- * Pure — no clock, no database, no configuration (ADR 0037 decision 1).
- * Staleness is the caller's job, resolved before this runs (decision 5); this
- * function only ever sees values already decided to be usable.
+ * Evaluates a parsed `bms-calc-v1` or `bms-calc-v2` expression against
+ * resolved input values. Pure — no clock, no database, no configuration
+ * (ADR 0037 decision 1). Staleness is the caller's job, resolved before this
+ * runs (decision 5); this function only ever sees values already decided to
+ * be usable.
+ *
+ * `inputs` is keyed by local point key; `crossInputs` (ADR 0055) by
+ * `crossRefKey` of each `qref`/`aggregate` node, filled by the host after it
+ * resolved membership and coverage. It defaults to empty, so every `v1`
+ * caller keeps its two-argument call, and a `v1` AST never reads it.
  *
  * Checks finiteness at every node, not only the root (decision 9): a chain
  * like `({A} * {B}) - ({A} * {B})` refuses at the first multiply, not at the
@@ -131,6 +166,10 @@ function evalNode(node: CalcExpr, inputs: ReadonlyMap<string, number>): CalcEval
  * non-finite and `Infinity - Infinity` is `NaN` either way — the position
  * reported is the node that actually produced the non-finite value.
  */
-export function evaluate(ast: CalcExpr, inputs: ReadonlyMap<string, number>): CalcEvalResult {
-  return evalNode(ast, inputs);
+export function evaluate(
+  ast: CalcExpr,
+  inputs: ReadonlyMap<string, number>,
+  crossInputs: ReadonlyMap<string, number> = EMPTY_CROSS_INPUTS,
+): CalcEvalResult {
+  return evalNode(ast, inputs, crossInputs);
 }
