@@ -66,6 +66,7 @@ import {
   templateOrganizationOptions,
 } from "../../lib/template-list-filters";
 import { statusTone } from "../../lib/template-lifecycle";
+import { labelFor } from "../../lib/vocabulary";
 import { groupTemplateVersions } from "../../lib/template-list-grouping";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -153,10 +154,18 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
   // in THIS payload, so an author needs it as soon as the card renders, not
   // only once the create modal opens. Widening the gate — rather than adding
   // a second query — is what keeps ADR 0038 decision 2 intact.
+  //
+  // **`F2.21` widened it again, to every role that reaches this page**, and the
+  // reason is the same one a third time. The domain filter is NOT author-gated:
+  // a `location_admin` reaches this page and gets the picker. With the gate at
+  // `mayAuthor` they got it unlabelled — `templateDomainOptions(groups,
+  // undefined)` falls back to bare codes and alphabetical order, so the control
+  // read "hvac" where an author read "HVAC" and the options came back in a
+  // different order for the two roles. The endpoint is `JwtAuthGuard` only, so
+  // any authenticated user may read it.
   const vocabQ = useQuery({
     queryKey: vocabulariesQueryKey,
     queryFn: fetchVocabularies,
-    enabled: mayAuthor,
   });
 
   const groups = useMemo(() => {
@@ -382,7 +391,14 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                     </span>
                   </div>
                   <div className="text-[11px] text-bms-muted">
-                    {group.organizationCode} · {group.latest.assetType} · {group.latest.domain}
+                    {/* `F2.21` — the vocabulary's label, not the bare code.
+                        The header printed `hvac` while the new picker beside it
+                        prints "HVAC", so filtering by "HVAC" left every row
+                        reading something the filter never mentioned.
+                        `labelFor` falls back to the code, which is the right
+                        fallback for the render before `vocabQ` settles. */}
+                    {group.organizationCode} · {group.latest.assetType} ·{" "}
+                    {labelFor(vocabQ.data?.assetDomains, group.latest.domain)}
                   </div>
                 </div>
                 <div className="text-[11px] text-bms-muted">

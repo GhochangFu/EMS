@@ -6,12 +6,17 @@ import {
   aBlockedStoreRendersEveryGroupOpen,
   aCollapsedGroupHidesItsRowsWithoutUnmountingTheCard,
   aFilterWhoseOptionVanishesIsDropped,
+  aNonAuthorStillGetsLabelledDomainOptions,
   aPickerWithASingleValueIsNotRendered,
   anEntryWhoseDomainIsNotInTheVocabularyRendersUnderAFallbackHeading,
   cardIsAbsentForARoleThatCannotAuthor,
   collapseStateIsRememberedForTheNextVisit,
   eachStockRowLinksToTheReadOnlyViewer,
+  aZeroCountRendersButAPendingOneDoesNot,
   eachTabShowsHowManyRowsItHolds,
+  everyOfferedTabRendersACard,
+  theGroupHeaderPrintsTheDomainLabel,
+  theStripShowsTheSelectedTabsHint,
   emptyCatalogRendersTheEmptyState,
   failedImportRendersThroughApiErrorMessage,
   importsAStockEntryIntoTheChosenOrganization,
@@ -107,6 +112,26 @@ describe("F2.13 asset templates list page — the stock catalog card", () => {
 
   it("drops a filter whose option vanishes as the search narrows", async () => {
     await aFilterWhoseOptionVanishesIsDropped();
+  });
+
+  it("gives a non-authoring role vocabulary-labelled domain options", async () => {
+    await aNonAuthorStillGetsLabelledDomainOptions();
+  });
+
+  it("renders a card for every tab it offers, for both roles", async () => {
+    await everyOfferedTabRendersACard();
+  });
+
+  it("shows the selected tab's hint, not the first tab's", async () => {
+    await theStripShowsTheSelectedTabsHint();
+  });
+
+  it("shows a zero count but no count at all while the list is pending", async () => {
+    await aZeroCountRendersButAPendingOneDoesNot();
+  });
+
+  it("prints the domain label on a group header, not the bare code", async () => {
+    await theGroupHeaderPrintsTheDomainLabel();
   });
 
   it("does not render a picker that could only offer one value", async () => {

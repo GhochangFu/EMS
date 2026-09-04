@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
 import type { AssetDomainDto, StockAssetTemplateDto } from "@bms/shared";
 
@@ -238,6 +238,19 @@ function DraftLanding() {
 }
 
 /**
+ * Renders the router's own search string beside the page, so a `?tab=` WRITE is
+ * observable (`duplicate-dashboard-dialog.spec.tsx`'s `Elsewhere` idiom).
+ *
+ * `MemoryRouter` never touches `window.location`, so this is the only way to
+ * see the write from a test — and without it, dropping `setSearchParams` while
+ * keeping the read leaves every case in this file green.
+ */
+function SearchProbe() {
+  const location = useLocation();
+  return <p>search: {location.search}</p>;
+}
+
+/**
  * `F2.21` put the two lists on peer tabs, so the stock catalog no longer
  * renders on a bare `/admin/asset-templates`. Every stock assertion below
  * therefore opens the page at this entry instead.
@@ -254,7 +267,15 @@ function renderPage(user: AuthUser = admin, entry = "/admin/asset-templates"): v
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
-          <Route path="/admin/asset-templates" element={<AssetTemplatesAdminPage user={user} />} />
+          <Route
+            path="/admin/asset-templates"
+            element={
+              <>
+                <AssetTemplatesAdminPage user={user} />
+                <SearchProbe />
+              </>
+            }
+          />
           <Route path="/admin/asset-templates/:id" element={<DraftLanding />} />
         </Routes>
       </MemoryRouter>
@@ -377,10 +398,18 @@ export async function cardIsAbsentForARoleThatCannotAuthor(): Promise<void> {
   );
   expect(screen.queryByRole("combobox", { name: "Import into organization" })).toBeNull();
   expect(api.fetchAdminStockAssetTemplates).not.toHaveBeenCalled();
-  // `F2.17` widened `vocabQ`'s `enabled` from `modalOpen && mayAuthor` to
-  // `mayAuthor`, because the group headings read their labels from that same
-  // payload. It must still fetch nothing for a role that cannot author.
-  expect(vocabApi.fetchVocabularies).not.toHaveBeenCalled();
+  // `F2.17` asserted here that `fetchVocabularies` is NOT called for this role.
+  // **`F2.21` reverses that deliberately, and the old assertion was load-bearing
+  // enough to say why.** `F2.17`'s reason was that only the stock card needed
+  // domain labels, and only an author sees it. This row gives the same payload a
+  // second consumer — the Templates domain filter — which is not author-gated
+  // and which a `location_admin` does see. Leaving the gate at `mayAuthor` made
+  // that control read bare codes in a different order for this role than for an
+  // author. The endpoint is `JwtAuthGuard` only.
+  //
+  // The count still matters: ADR 0038 decision 2 shares one query key, and this
+  // must not become a second fetch of the same payload.
+  expect(vocabApi.fetchVocabularies).toHaveBeenCalledTimes(1);
 }
 
 /**
@@ -584,10 +613,22 @@ export async function switchingTabsSwapsTheListAndRecordsItInTheUrl(): Promise<v
     "true",
   );
 
+  // The choice is WRITTEN to the URL, which is what makes "look at the
+  // catalog" a link. Read through a probe inside the router, never
+  // `window.location` — `MemoryRouter` keeps its history in memory and never
+  // touches the document's URL, so a `window.location` assertion here would
+  // pass against a page that wrote nothing.
+  //
+  // Without this, keeping the READ path and dropping the write is invisible:
+  // the eleven stock cases deep-link through `initialEntries` and exercise only
+  // the read, and this case's own headings would still swap off local state.
+  expect(await screen.findByText("search: ?tab=stock")).toBeInTheDocument();
+
   // And back, so the strip is not a one-way door.
   await userEvent.click(screen.getByRole("tab", { name: /Templates/ }));
   expect(await screen.findByRole("heading", { name: "Templates" })).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Stock catalog" })).toBeNull();
+  expect(await screen.findByText("search: ?tab=templates")).toBeInTheDocument();
 }
 
 /** The strip counts each list, so the reader knows what is behind the other tab. */
@@ -735,4 +776,148 @@ export async function aFilterWhoseOptionVanishesIsDropped(): Promise<void> {
   // The picker is gone here, because one domain is left — and the stale `water`
   // must not still be filtering behind it.
   expect(screen.queryByRole("combobox", { name: "Filter by domain" })).toBeNull();
+}
+
+/**
+ * A role that cannot author still gets a properly labelled domain filter.
+ *
+ * `F2.17` gated `vocabQ` on `mayAuthor`, because only the stock card needed
+ * domain labels. The Templates domain filter is this payload's second consumer
+ * and is NOT author-gated, so with the old gate a `location_admin` saw bare
+ * codes in alphabetical order while an author saw vocabulary labels in
+ * `sortOrder` — the same control reading differently for two roles.
+ *
+ * The order assertion is what makes this more than a spelling check: `sortOrder`
+ * here is electrical(1), water(2), hvac(3), so an unlabelled fallback would sort
+ * electrical, hvac, water and fail on position as well as on text.
+ */
+export async function aNonAuthorStillGetsLabelledDomainOptions(): Promise<void> {
+  stubApi(STOCK, FILTER_VOCABULARIES, FILTERABLE_TEMPLATES);
+  renderPage(locationAdmin);
+
+  const domainSelect = await screen.findByRole("combobox", { name: "Filter by domain" });
+  await waitFor(() => {
+    expect(
+      within(domainSelect)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["All domains", "Electrical plant", "Water treatment", "HVAC"]);
+  });
+
+  // Still no stock card, and still no stock fetch — widening the vocabulary
+  // gate must not have widened anything else.
+  expect(screen.queryByRole("heading", { name: "Stock catalog" })).toBeNull();
+  expect(api.fetchAdminStockAssetTemplates).not.toHaveBeenCalled();
+}
+
+/**
+ * Every tab the strip offers renders a card when selected.
+ *
+ * This is the gap the resolver's own tests cannot see. `runVisibleTabsTests`
+ * proves a visible tab resolves to ITSELF; it says nothing about whether the
+ * page then renders anything for it. Widen the registry without widening the
+ * page guard — `authorOnly: false` on stock, say — and a `location_admin`
+ * selects Stock catalog, `tab === "stock" && mayAuthor` is false, and BOTH
+ * cards are absent. A blank page under a selected tab, with the whole suite
+ * green.
+ *
+ * Run for both roles, because the failure only appears for the role whose
+ * visible set and page guards could disagree.
+ */
+export async function everyOfferedTabRendersACard(): Promise<void> {
+  for (const [user, expected] of [
+    [admin, ["Templates", "Stock catalog"]],
+    [locationAdmin, ["Templates"]],
+  ] as const) {
+    stubApi(STOCK, FILTER_VOCABULARIES, FILTERABLE_TEMPLATES);
+    renderPage(user);
+
+    const offered = await screen.findAllByRole("tab");
+    expect(offered.map((tab) => tab.textContent?.replace(/\d+$/, "").trim())).toEqual([
+      ...expected,
+    ]);
+
+    for (const label of expected) {
+      await userEvent.click(screen.getByRole("tab", { name: new RegExp(label) }));
+      expect(
+        await screen.findByRole("heading", { name: label }),
+        `selecting the "${label}" tab must render a card, not an empty page`,
+      ).toBeInTheDocument();
+    }
+
+    cleanup();
+    vi.restoreAllMocks();
+  }
+}
+
+/**
+ * The strip shows the SELECTED tab's hint, not the first tab's.
+ *
+ * Nothing else reads hint text — the lib spec only asserts it is non-empty, and
+ * the coverage gate stops at `lib/`, so the `.tsx` is unreachable by both. That
+ * pairing is exactly why `const current = tabs[0]` would otherwise survive: the
+ * stock tab would permanently show the Templates hint.
+ */
+export async function theStripShowsTheSelectedTabsHint(): Promise<void> {
+  stubApi(STOCK, FILTER_VOCABULARIES, FILTERABLE_TEMPLATES);
+  renderPage();
+
+  expect(
+    await screen.findByText("The templates this organization owns, newest version first."),
+  ).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("tab", { name: /Stock catalog/ }));
+
+  expect(
+    await screen.findByText(
+      "Repository class templates every organization can import (ADR 0052).",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText("The templates this organization owns, newest version first."),
+  ).toBeNull();
+}
+
+/**
+ * A tab holding zero rows shows `0`; a tab still loading shows no count at all.
+ *
+ * Both halves are needed. `count ? … : null` would hide a real zero, which
+ * reads as "still loading"; dropping the `listQ.data ?` guard would show a
+ * confident `0` before the list has arrived, which is the thing the strip's
+ * docblock says the `undefined` exists to prevent.
+ */
+export async function aZeroCountRendersButAPendingOneDoesNot(): Promise<void> {
+  stubApi(STOCK, FILTER_VOCABULARIES, { items: [] });
+  renderPage();
+
+  const templatesTab = await screen.findByRole("tab", { name: /Templates/ });
+  await waitFor(() => {
+    expect(within(templatesTab).getByText("0")).toBeInTheDocument();
+  });
+
+  cleanup();
+  vi.restoreAllMocks();
+
+  // Now a list that never arrives: the count must be absent, not `0`.
+  stubApi(STOCK, FILTER_VOCABULARIES);
+  vi.spyOn(api, "fetchAdminAssetTemplates").mockReturnValue(new Promise(() => {}) as never);
+  renderPage();
+
+  const pendingTab = await screen.findByRole("tab", { name: /Templates/ });
+  expect(pendingTab.textContent).toBe("Templates");
+}
+
+/**
+ * The group header prints the vocabulary's label, not the bare domain code.
+ *
+ * `F2.21` made this visible rather than introducing it: the new picker beside
+ * the list prints "HVAC", so a header reading `hvac` meant filtering by a word
+ * that appeared nowhere in the rows it kept.
+ */
+export async function theGroupHeaderPrintsTheDomainLabel(): Promise<void> {
+  stubApi(STOCK, FILTER_VOCABULARIES, FILTERABLE_TEMPLATES);
+  renderPage();
+
+  expect(await screen.findByText("IX · unit · HVAC")).toBeInTheDocument();
+  expect(screen.queryByText("IX · unit · hvac")).toBeNull();
 }

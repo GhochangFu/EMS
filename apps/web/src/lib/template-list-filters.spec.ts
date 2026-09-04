@@ -320,4 +320,19 @@ export function runClampDropsAValueWithNoOptionTests(): void {
     clampTemplateListFilters({ organizationId: "org-1", domain: "hvac" }, [], []).domain === "",
     "empty option lists clear both axes",
   );
+
+  // The remembered half, which the docblock names as the deliberate tradeoff:
+  // the SAME raw value clamps away while its option is gone and comes back once
+  // the option returns. Without this only the dropping half is pinned, and a
+  // clamp that permanently cleared the input would pass everything above.
+  const raw = { organizationId: "", domain: "water" };
+  assert(
+    clampTemplateListFilters(raw, orgs, domains).domain === "",
+    "dropped while `water` has no option",
+  );
+  assert(
+    clampTemplateListFilters(raw, orgs, [...domains, { value: "water", label: "Water" }]).domain ===
+      "water",
+    "and re-applied once the option is back — the choice is remembered, not destroyed",
+  );
 }
