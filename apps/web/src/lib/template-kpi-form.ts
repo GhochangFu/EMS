@@ -1,4 +1,4 @@
-import { CALC_DIALECT, MAX_FORMULA_POINT_REFS } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECTS, MAX_FORMULA_POINT_REFS } from "@bms/shared";
 import type { TemplateKpi } from "@bms/shared";
 
 import { previewInputKeys } from "./calc-preview";
@@ -90,10 +90,17 @@ export function kpiRowsFrom(kpis: readonly TemplateKpi[] | undefined): TemplateK
     unit: typeof kpi?.unit === "string" ? kpi.unit : "",
     pointKeys: Array.isArray(kpi?.pointKeys) ? [...kpi.pointKeys] : [],
     expression: typeof kpi?.expression === "string" ? kpi.expression : "",
-    // Anything that is not the checked dialect reads as unvalidated, which is
-    // the safe direction: it suppresses the parser checks on a row this UI
-    // cannot vouch for, and leaves the Validate button as the way up.
-    dialect: kpi?.dialect === CALC_DIALECT ? CALC_DIALECT : "unvalidated",
+    // Resolved against the vocabulary rather than compared to the `v1`
+    // literal (`F2.9`, ADR 0055 decision 2 and the owner's Q3 ruling, which
+    // widened `templateKpiSchema.dialect`). Anything this UI does not know
+    // still reads as unvalidated — the safe direction for a row it cannot
+    // vouch for, with the Validate button as the way up.
+    //
+    // The `v1`-only ternary this replaces was **not** cosmetic: `buildKpiPayload`
+    // writes `dialect: row.dialect` for every row on every save, so a stored
+    // `v2` KPI read back as `"unvalidated"` was sent back that way the next
+    // time the author edited any *other* KPI in the tab.
+    dialect: CALC_DIALECTS.find((known) => known === kpi?.dialect) ?? "unvalidated",
     higherIsBetter: typeof kpi?.higherIsBetter === "boolean" ? kpi.higherIsBetter : null,
   }));
 }
@@ -117,6 +124,13 @@ export function blankKpiRow(): TemplateKpiRow {
  * Derived from the expression once the dialect is `bms-calc-v1`, so a validated
  * KPI can never carry a stale array; the manual list while unvalidated, because
  * an expression that does not parse yields nothing to derive.
+ *
+ * A `bms-calc-v2` KPI takes the manual branch too, and that is the deliberate
+ * direction rather than an oversight: deriving its keys needs a `v2` parse, and
+ * `previewInputKeys` is `v1`-only, so deriving here would return `[]` for
+ * `sum({kw} @site) + {kw}` and drop a local key the KPI really reads. Keeping
+ * the stored array changes nothing about a `v2` row; threading the dialect
+ * through the preview is `F2.9` Task 15's.
  */
 export function effectivePointKeys(row: TemplateKpiRow): string[] {
   if (row.dialect !== CALC_DIALECT) {
