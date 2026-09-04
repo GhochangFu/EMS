@@ -22,11 +22,19 @@ import {
  */
 describe("F2.13 asset templates list page — the stock catalog card", () => {
   /**
-   * The order of these three is load-bearing (`F2.17`).
-   * `aBlockedStoreRendersEveryGroupOpen` leaves a throwing `window
-   * .localStorage` ACCESSOR in place until `vi.restoreAllMocks()` puts jsdom's
-   * back — so the `clear()` that resets the collapse key between cases has to
-   * come after it, not before. `cleanup()` leads because it only unmounts.
+   * The order of these three is load-bearing (`F2.17`), and what it protects is
+   * this `afterEach` itself rather than the next case.
+   *
+   * `aBlockedStoreRendersEveryGroupOpen` leaves a throwing `window.localStorage`
+   * ACCESSOR in place until `vi.restoreAllMocks()` puts jsdom's back. Run
+   * `clear()` before that restore and the teardown throws on the accessor, so
+   * every later case fails on a teardown error rather than on its own
+   * assertion. `cleanup()` leads because it only unmounts.
+   *
+   * It is NOT what stops the throwing accessor reaching another case — that
+   * case is the last `it` in this file, so nothing follows it whatever the
+   * order. The reason to keep this order is the teardown, and the reason to
+   * keep the case last is defence in depth for the day someone appends one.
    */
   afterEach(() => {
     cleanup();
