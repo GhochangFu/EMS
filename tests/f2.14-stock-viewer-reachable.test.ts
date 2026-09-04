@@ -35,10 +35,21 @@ const read = (rel: string): string => {
  *
  * Per the `tests/` carve-out the assertions are inline here, with no `.spec`
  * sibling.
+ *
+ * ## `F4.92` — the link assertion stopped standing on its own
+ *
+ * `F2.21` put the stock card on a tab, so the `<Link>` this file scans for now
+ * renders **only while the stock tab is selected**. The substring check stayed
+ * green and reachability still held — the tab is offered to any author, and
+ * `F2.21`'s browser pass confirmed the deep link — but the static chain had a
+ * missing link in the middle: "the tab is offered, **therefore** the link
+ * renders". A guard that reads stronger than it is gets trusted at face value,
+ * so the registry case below holds the other half.
  */
 
 const APP_TSX = "apps/web/src/app.tsx";
 const LIST_PAGE = "apps/web/src/pages/admin/asset-templates-page.tsx";
+const PAGE_TABS = "apps/web/src/lib/asset-templates-page-tabs.ts";
 
 const STOCK_ROUTE = 'path="/admin/asset-templates/stock/:code"';
 const VERSIONS_ROUTE = 'path="/admin/asset-templates/:templateId/versions"';
@@ -46,6 +57,12 @@ const VERSIONS_ROUTE = 'path="/admin/asset-templates/:templateId/versions"';
 // names the path cannot keep this green once the `<Link>` is gone — the file-
 // wide substring the F2.14 code review flagged (`F4.38`'s class).
 const VIEWER_LINK = "to={`/admin/asset-templates/stock/";
+// Anchored on the registry entry's own `id:` property, not on the bare string
+// `"stock"`. That file also declares
+// `AssetTemplatesPageTabId = "templates" | "stock"`, so a bare-substring scan
+// would stay green with the entry itself deleted — which is exactly the
+// mutation this case has to go red on.
+const STOCK_TAB_ENTRY = 'id: "stock"';
 
 describe("F2.14: the stock catalog viewer is registered and linked", () => {
   it("the router file was read and is not empty", () => {
@@ -54,6 +71,7 @@ describe("F2.14: the stock catalog viewer is registered and linked", () => {
     // never pass as compliance.
     expect(read(APP_TSX), `${APP_TSX} could not be read`).not.toBe("");
     expect(read(LIST_PAGE), `${LIST_PAGE} could not be read`).not.toBe("");
+    expect(read(PAGE_TABS), `${PAGE_TABS} could not be read`).not.toBe("");
   });
 
   it("registers the stock viewer route", () => {
@@ -90,6 +108,22 @@ describe("F2.14: the stock catalog viewer is registered and linked", () => {
       `${LIST_PAGE} carries no \`<Link ${VIEWER_LINK}…\`. A registered route that nothing ` +
         "links to is reachable only by typing the URL, which is not reachable by a person — the " +
         "gap F3.37's effort correction recorded and F3.36's guard exists to stop.",
+    ).toBe(true);
+  });
+
+  it("offers the stock tab, which is what makes that link render", () => {
+    // `F4.92`. The case above scans the list page as one string, and since
+    // `F2.21` that page renders the `<Link>` only under `tab === "stock"`. So
+    // the substring proves the link EXISTS, not that a person can get to it.
+    // The registry is the other half: `visibleAssetTemplatesPageTabs` renders
+    // exactly the entries in `ASSET_TEMPLATES_PAGE_TABS`, so no entry means no
+    // tab, and no tab means the link never mounts.
+    expect(
+      read(PAGE_TABS).includes(STOCK_TAB_ENTRY),
+      `${PAGE_TABS} declares no \`${STOCK_TAB_ENTRY}\` entry. The tab strip renders exactly ` +
+        "`ASSET_TEMPLATES_PAGE_TABS`, so without it the stock card — and the `<Link>` to the " +
+        "viewer the case above asserts on — never mounts, and the viewer is reachable only by " +
+        "typing the URL. The two cases hold one chain and neither one holds it alone.",
     ).toBe(true);
   });
 });
