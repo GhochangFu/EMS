@@ -486,6 +486,17 @@ function checkEscalator(): void {
       `safetyCritical is about the failure mode, not about the obligation. Got category ` +
       `"${String(statutory?.category)}", safetyCritical ${String(statutory?.safetyCritical)}.`,
   );
+  assert(
+    statutory?.complianceRef === "State Lift Act licence",
+    `${ESCALATOR_CODE}'s annual statutory inspection must carry complianceRef "State Lift ` +
+      'Act licence" — the SAME string the lift carries, because it is the same statute: the ' +
+      "state Lift Acts license escalators alongside lifts, and an escalator is not a separate " +
+      "regime. Plan §5.10 names a complianceRef for the fire panel and the lift and is SILENT " +
+      "here, so the build chose, and this line is what stops the choice drifting: an " +
+      "unasserted string is one a later edit changes with nothing failing. If the owner rules a " +
+      `different citation, change it HERE and in the module together. Got ` +
+      `"${String(statutory?.complianceRef)}".`,
+  );
   const conditionPlans = plans.filter((plan) => plan.category === "condition_based");
   assert(
     conditionPlans.length === 0 && plans.every((plan) => plan.generationMode === "calendar"),
