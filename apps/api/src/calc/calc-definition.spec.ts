@@ -159,6 +159,58 @@ export function runCalcDefinitionTests(): void {
     "v2 syntax stored under the v1 dialect must still be refused — decision 3 freezes v1's meaning",
   );
 
+  // ---- the self-reference backstop (`F2.9` finding 34) ------------------------
+  // Dialect-independent on purpose: the failure it backstops is a stored row
+  // whose dialect label does not describe its formula, so a guard that read the
+  // label would be the guard the failure walks past.
+
+  const selfReferenceUnderV1 = toActiveDefinition({
+    ...BASE,
+    pointKey: "TOTAL_KWH",
+    formula: "{TOTAL_KWH} * 2",
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 300,
+  });
+  assert(
+    selfReferenceUnderV1.ok === false && selfReferenceUnderV1.reason === "self_reference",
+    `a v1 definition whose refs contain its own pointKey must skip as self_reference, got ${
+      selfReferenceUnderV1.ok ? "ok" : selfReferenceUnderV1.reason
+    }`,
+  );
+
+  const selfReferenceUnderV2 = toActiveDefinition({
+    ...BASE,
+    pointKey: "TOTAL_KWH",
+    formula: "{TOTAL_KWH} * 2",
+    formulaDialect: CALC_DIALECT_V2,
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 300,
+  });
+  assert(
+    selfReferenceUnderV2.ok === false && selfReferenceUnderV2.reason === "self_reference",
+    `the same formula under v2 must skip identically — the guard reads refs, never the dialect, got ${
+      selfReferenceUnderV2.ok ? "ok" : selfReferenceUnderV2.reason
+    }`,
+  );
+
+  // The other half of the guard: it must refuse a self-reference and nothing
+  // else. `{OTHER}` on a point named `TOTAL_KWH` is an ordinary sibling
+  // reference and stays active — a backstop that also stopped these would take
+  // every derived point in the stock catalog down with it.
+  const siblingReference = toActiveDefinition({
+    ...BASE,
+    pointKey: "TOTAL_KWH",
+    formula: "{OTHER} * 2",
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 300,
+  });
+  assert(
+    siblingReference.ok === true,
+    `a definition referencing a different point must stay active, got ${
+      siblingReference.ok ? "ok" : siblingReference.reason
+    }`,
+  );
+
   // ---- decision 10 mirrored on the stored row (defence in depth) --------------
   // The Zod rule refuses `v2` + `streaming` at save. A row copied forward
   // unvalidated by `createDraftFrom` never passed that rule, so the loader

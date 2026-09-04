@@ -1,7 +1,7 @@
 import { CALC_DIALECT, CALC_DIALECT_V2, parseFormula } from "@bms/shared";
 
 import { defKey } from "./calc-batch";
-import type { CalcDefinition } from "./calc-definition";
+import { toActiveDefinition, type CalcDefinition, type TemplatePointCalcRow } from "./calc-definition";
 import type { CalcInputSample } from "./calc-inputs";
 import type { CalcWriteInput } from "./calc-write.service";
 import { runSchedulerLoop, runScheduledSweep, type CalcSchedulerDeps, type CalcSchedulerLoopDeps } from "./calc-scheduler.service";
@@ -219,6 +219,53 @@ async function runSweepTests(): Promise<void> {
     assert(
       skips.filter((s) => s === "v2_not_yet_evaluable").length === 2,
       `the next due window must count a second refusal, got ${JSON.stringify(skips)}`,
+    );
+  }
+
+  // ---- a self-referencing row never reaches a write (`F2.9` finding 34) --------
+  // The row is built and resolved the way the engine builds one — through
+  // `toActiveDefinition`, which is `CalcDefinitionsService.reload`'s only
+  // producer of scheduled definitions — rather than handed to the sweep as a
+  // ready-made `CalcDefinition`, because the refusal lives in the loader and a
+  // hand-built definition would prove nothing about it.
+  //
+  // The row is labelled **`bms-calc-v1`** on purpose. That is the pair a
+  // template migration can produce (a surviving dialect-only override plus a
+  // new version's `v2` formula, neither re-validated), and it is the one label
+  // the `v2_not_yet_evaluable` guard above cannot catch — so this case gates
+  // the self-reference refusal itself, not that other guard.
+
+  {
+    const mislabelled: TemplatePointCalcRow = {
+      templatePointId: "tp-self",
+      assetId: "asset-1",
+      pointKey: "SELF",
+      kind: "derived",
+      formula: "{SELF} * 2",
+      formulaDialect: CALC_DIALECT,
+      calcTrigger: "scheduled",
+      calcIntervalSeconds: 60,
+      maxInputAgeSeconds: null,
+      minCoverageRatio: null,
+    };
+    const resolved = toActiveDefinition(mislabelled);
+    const samples = new Map([["asset-1:SELF", { value: 5, timeMs: 0 }]]);
+    const { deps, writes } = buildSweepDeps(resolved.ok ? [resolved.def] : [], samples);
+    await runScheduledSweep(deps, new Map(), 0);
+    // Asserted before the reason, so that removing the refusal fails on the
+    // damage rather than on the label: with the guard gone this definition is
+    // active, its one input is fresh, and the sweep writes 10 — the first
+    // doubling of the runaway.
+    assert(
+      writes.length === 0,
+      `a self-referencing formula must produce no write — every tick would double its own ` +
+        `stored value. Got ${JSON.stringify(writes)}`,
+    );
+    assert(
+      resolved.ok === false && resolved.reason === "self_reference",
+      `and the reason must be the counted self_reference skip, got ${
+        resolved.ok ? "ok" : resolved.reason
+      }`,
     );
   }
 }

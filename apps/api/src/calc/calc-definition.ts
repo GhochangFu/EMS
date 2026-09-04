@@ -25,6 +25,10 @@ import {
  * `bms-calc-v2` dialect: `v2` is `scheduled`-only, the Zod rule refuses the
  * pair at save, and this is the second refusal on the stored row — for
  * exactly the `createDraftFrom` path above.
+ *
+ * `self_reference` (`F2.9`) is the odd one: it does not describe a row that
+ * failed a save-time rule, it describes one whose *stored dialect disagrees
+ * with its formula*. See the comment on the check itself.
  */
 export type CalcSkipReason =
   | "not_derived"
@@ -36,7 +40,8 @@ export type CalcSkipReason =
   | "interval_on_streaming"
   | "interval_out_of_range"
   | "max_input_age_out_of_range"
-  | "streaming_on_v2";
+  | "streaming_on_v2"
+  | "self_reference";
 
 export interface CalcDefinition {
   templatePointId: string;
@@ -129,6 +134,41 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
   const parsed = parseFormula(row.formula, { dialect });
   if (!parsed.ok) {
     return { ok: false, reason: "unparseable_formula" };
+  }
+  // A formula that reads the point it writes is refused here, **whatever
+  // dialect the row claims** — because the failure this backstops is a stored
+  // dialect label that does not describe the formula beside it, and a guard
+  // that read the label would be the guard that failure walks past.
+  //
+  // `reload()` coalesces `formula` and `formula_dialect` independently, so the
+  // two can come from different places. The **write** path that produced such a
+  // pair through a calc override is closed (`582ed49`: the merged pair is now
+  // parsed whenever an override states a formula *or* a dialect). A second path
+  // is still open — template migration repoints `assets.template_id` without
+  // re-validating the surviving override, because `computeTemplateVersionDelta`
+  // reports a derived point's formula/dialect change in `derivedChanged` and
+  // never in `refusals`, which is all the migrate service consumes.
+  // **Re-validating that path is ADR 0039 decision 2's "no blind apply" and is
+  // owed to PR 2**; this is not that fix and does not discharge it.
+  //
+  // What it does discharge is the damage. A self-reference compounds: `{SELF} *
+  // 2` doubles its own stored value on every tick until it overflows, silently,
+  // and no cycle detector exists in this PR (ADR 0055 decision 8's
+  // evaluation-time detector is Task 13's, with the ordering pass and
+  // membership resolution). Nothing legitimate is refused: every authoring path
+  // already rejects a self-reference at save time, so a row that reaches here
+  // with one arrived by a route that did not validate it.
+  //
+  // Re-checking a stored row at read time is this function's own convention,
+  // not a new mechanism — `interval_out_of_range` and
+  // `max_input_age_out_of_range` below re-check bounds the Zod layer enforces,
+  // for exactly the rows that never passed it.
+  //
+  // **Local references only.** A cross-asset self-reference (`sum({SELF}
+  // @site)` on a member of that site) is not visible here: it needs the
+  // membership set, which only Task 13's detector resolves.
+  if (parsed.refs.includes(row.pointKey)) {
+    return { ok: false, reason: "self_reference" };
   }
   if (row.calcTrigger !== "streaming" && row.calcTrigger !== "scheduled") {
     return { ok: false, reason: "no_trigger" };
