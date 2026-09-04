@@ -11,8 +11,20 @@ import type { CalcSkipReason } from "../calc/calc-definition";
 
 /** Runtime skip reasons (ADR 0037 decision 9) — a stored definition can be
  * unusable (`CalcSkipReason`), or usable but skipped this evaluation because
- * an input was absent or too old. */
-export type CalcRuntimeSkipReason = CalcSkipReason | "missing_input" | "stale_input" | "non_finite";
+ * an input was absent or too old.
+ *
+ * `v2_not_yet_evaluable` is the odd one and is **temporary**: `F2.9` PR 1
+ * stores and validates `bms-calc-v2` but nothing evaluates it, so the
+ * scheduled host refuses a `v2` definition rather than computing it as if it
+ * were local. It is a runtime reason only — no `toActiveDefinition` path
+ * returns it, because the definition itself is perfectly well formed. `F2.9`
+ * Task 13 deletes it along with the refusal. */
+export type CalcRuntimeSkipReason =
+  | CalcSkipReason
+  | "missing_input"
+  | "stale_input"
+  | "non_finite"
+  | "v2_not_yet_evaluable";
 
 @Injectable()
 export class MetricsService {

@@ -1,4 +1,4 @@
-import { parseFormula } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECT_V2, parseFormula } from "@bms/shared";
 
 import { defKey } from "./calc-batch";
 import type { CalcDefinition } from "./calc-definition";
@@ -13,9 +13,10 @@ function assert(condition: boolean, message: string): void {
 }
 
 function def(overrides: Partial<CalcDefinition> & { formula: string }): CalcDefinition {
-  const parsed = parseFormula(overrides.formula);
+  const dialect = overrides.dialect ?? CALC_DIALECT;
+  const parsed = parseFormula(overrides.formula, { dialect });
   if (!parsed.ok) {
-    throw new Error(`test formula "${overrides.formula}" failed to parse`);
+    throw new Error(`test formula "${overrides.formula}" failed to parse under ${dialect}`);
   }
   return {
     templatePointId: "tp-1",
@@ -26,6 +27,9 @@ function def(overrides: Partial<CalcDefinition> & { formula: string }): CalcDefi
     trigger: "scheduled",
     intervalSeconds: 60,
     maxInputAgeSeconds: 999_999,
+    dialect,
+    crossRefs: parsed.crossRefs,
+    minCoverageRatio: null,
     ...overrides,
   };
 }
@@ -149,6 +153,73 @@ async function runSweepTests(): Promise<void> {
     await runScheduledSweep(deps, new Map(), 0);
     assert(warnings.length === 1, `expected 1 warning, got ${warnings.length}`);
     assert(writes.length === 1 && writes[0]?.[0]?.pointKey === "HEALTHY", "the healthy formula must still write");
+  }
+
+  // ---- a v2 definition is refused, counted, and does not stop the sweep ---------
+  //
+  // PR 1 of F2.9 stores and validates `bms-calc-v2`; nothing evaluates it until
+  // Task 13 lands membership resolution, the ordering pass and cycle detection
+  // together. The formula below is why the gap cannot be left open: ADR 0055
+  // decision 7 repeals the derived-to-derived ban, and no cycle detector exists
+  // yet, so a v2 formula whose references are all local would be evaluated as an
+  // ordinary local formula and double its own stored value every tick — a wrong
+  // number, silently, which is the class of failure ADR 0037 decision 9 exists to
+  // prevent. The refusal is therefore a *counted* skip, never a silent one.
+
+  {
+    const selfCompounding = def({
+      pointKey: "SELF_COMPOUNDING",
+      templatePointId: "tp-v2",
+      formula: "{SELF_COMPOUNDING} * 2",
+      dialect: CALC_DIALECT_V2,
+      intervalSeconds: 60,
+    });
+    const v1Formula = def({
+      pointKey: "V1_HEALTHY",
+      templatePointId: "tp-v1",
+      formula: "{A} * 2",
+      intervalSeconds: 60,
+    });
+    const samples = new Map([
+      ["asset-1:SELF_COMPOUNDING", { value: 5, timeMs: 0 }],
+      ["asset-1:A", { value: 4, timeMs: 0 }],
+    ]);
+    const { deps, writes, skips } = buildSweepDeps([selfCompounding, v1Formula], samples);
+    const lastRunMs = new Map<string, number>();
+
+    await runScheduledSweep(deps, lastRunMs, 0);
+
+    const written = (writes[0] ?? []).map((w) => w.pointKey);
+    assert(
+      !written.includes("SELF_COMPOUNDING"),
+      `a v2 definition must not be evaluated before Task 13, got writes ${JSON.stringify(written)}`,
+    );
+    assert(
+      written.length === 1 && written[0] === "V1_HEALTHY",
+      `the v1 formula in the same sweep must still write — the refusal is targeted, not a broken ` +
+        `sweep. Got ${JSON.stringify(written)}`,
+    );
+    assert(
+      skips.filter((s) => s === "v2_not_yet_evaluable").length === 1,
+      `the refusal must increment bms_api_calc_skipped_total exactly once, got skips ` +
+        `${JSON.stringify(skips)}`,
+    );
+
+    // The refusal sits after the due check, so it counts once per due window —
+    // not once per 10s base tick, which would drown the counter for an hourly
+    // formula and make the reason useless as a signal.
+    await runScheduledSweep(deps, lastRunMs, 10_000);
+    assert(
+      skips.filter((s) => s === "v2_not_yet_evaluable").length === 1,
+      `a v2 definition 10s into a 60s interval is not due and must not be counted again, got ` +
+        `${JSON.stringify(skips)}`,
+    );
+
+    await runScheduledSweep(deps, lastRunMs, 60_000);
+    assert(
+      skips.filter((s) => s === "v2_not_yet_evaluable").length === 2,
+      `the next due window must count a second refusal, got ${JSON.stringify(skips)}`,
+    );
   }
 }
 

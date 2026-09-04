@@ -34,6 +34,8 @@ export const FIXTURE_DERIVED_POINT_KEYS = [
   "CALCDEF_VALID_STREAMING",
   "CALCDEF_VALID_SCHEDULED",
   "CALCDEF_NO_TRIGGER",
+  "CALCDEF_V2_SITE_SUM",
+  "CALCDEF_SCHEDULED_ONLY",
 ];
 
 function assert(condition: boolean, message: string): void {
@@ -57,6 +59,12 @@ async function seedTemplate(
   fx: Fixtures,
 ): Promise<{ templateId: string; assetId: string }> {
   const measuredKey = fx.pointKeys[0].code;
+  // `F2.9`: a second measured key referenced by a **scheduled** formula and by
+  // nothing streaming. `getInputKeys()` must not carry it — see the assertion
+  // in `assertLoaderResolvesValidRowsAndSkipsInvalidOnes`. It cannot be
+  // `measuredKey`, which the streaming formula references and so stays indexed
+  // whatever the scheduled ones do.
+  const scheduledOnlyKey = fx.pointKeys[1].code;
   const [template] = await db
     .insert(assetTemplates)
     .values({
@@ -112,6 +120,39 @@ async function seedTemplate(
       formulaDialect: "bms-calc-v1",
       calcTrigger: null,
       sortOrder: 3,
+    },
+    {
+      organizationId: fx.organizationId,
+      templateId: template.id,
+      pointKey: scheduledOnlyKey,
+      kind: "measured",
+      sortOrder: 4,
+    },
+    {
+      // `F2.9` — the first stored `bms-calc-v2` row. Scheduled by decision 10.
+      organizationId: fx.organizationId,
+      templateId: template.id,
+      pointKey: "CALCDEF_V2_SITE_SUM",
+      kind: "derived",
+      formula: `sum({${measuredKey}} @site)`,
+      formulaDialect: "bms-calc-v2",
+      calcTrigger: "scheduled",
+      calcIntervalSeconds: 300,
+      minCoverageRatio: 0.8,
+      sortOrder: 5,
+    },
+    {
+      // A `v1` scheduled formula over a key nothing streaming references — the
+      // re-entrancy index must leave that key out.
+      organizationId: fx.organizationId,
+      templateId: template.id,
+      pointKey: "CALCDEF_SCHEDULED_ONLY",
+      kind: "derived",
+      formula: `{${scheduledOnlyKey}} * 3`,
+      formulaDialect: "bms-calc-v1",
+      calcTrigger: "scheduled",
+      calcIntervalSeconds: 180,
+      sortOrder: 6,
     },
   ]);
 
@@ -171,6 +212,7 @@ export async function assertLoaderResolvesValidRowsAndSkipsInvalidOnes(
   const db = createDb(pool);
   const { assetId } = await seedTemplate(db, fx);
   const measuredKey = fx.pointKeys[0].code;
+  const scheduledOnlyKey = fx.pointKeys[1].code;
 
   const metrics = new MetricsService();
   const svc = new CalcDefinitionsService(db, metrics);
@@ -201,10 +243,37 @@ export async function assertLoaderResolvesValidRowsAndSkipsInvalidOnes(
     "getScheduledDefinitions must not include a streaming definition",
   );
 
+  // ---- `F2.9`: the first stored `bms-calc-v2` row resolves, carrying its cross ref --
+
+  const v2Def = scheduled.find((def) => def.pointKey === "CALCDEF_V2_SITE_SUM");
+  assert(
+    v2Def !== undefined,
+    `getScheduledDefinitions must include the v2 definition — it is stored and validated in ` +
+      `PR 1 even though nothing evaluates it yet. Formula: sum({${measuredKey}} @site)`,
+  );
+  assert(
+    v2Def?.dialect === "bms-calc-v2",
+    `the v2 definition must carry its own dialect, got ${String(v2Def?.dialect)}`,
+  );
+  assert(
+    v2Def?.crossRefs.length === 1,
+    `the site sum is one cross reference, got ${String(v2Def?.crossRefs.length)}`,
+  );
+  assert(v2Def?.minCoverageRatio === 0.8, `min_coverage_ratio must round-trip, got ${String(v2Def?.minCoverageRatio)}`);
+
+  // ---- the re-entrancy index carries streaming inputs only (ADR 0037 decision 11) ---
+
   const inputKeys = await svc.getInputKeys();
   assert(
     [...inputKeys].some((key) => key === `${assetId}:${measuredKey}`),
     "getInputKeys must include the measured point both derived formulas reference",
+  );
+  assert(
+    !inputKeys.has(`${assetId}:${scheduledOnlyKey}`),
+    `getInputKeys must not carry ${scheduledOnlyKey} — only a **scheduled** formula reads it, and ` +
+      "the set exists to decide which of the engine's own writes may wake the streaming host " +
+      "(ADR 0037 decision 11). Indexing a scheduled formula's inputs widens that filter for no " +
+      "gain: the streaming host skips a scheduled definition anyway.",
   );
 }
 
@@ -270,5 +339,22 @@ export async function assertCacheIsNotReReadWithinTtl(pool: pg.Pool, fx: Fixture
   assert(
     second.length === 2,
     `the 60s cache must not re-read within its TTL — expected 2 definitions still, got ${second.length}`,
+  );
+
+  // `F2.9` — the exact complement, and the only guard on what "fresh" means.
+  // `getAllDefinitionsFresh()` is the save-time cycle detector's read (Task 12):
+  // it must see the database as it is *now*, because a detector answering from a
+  // cache up to 60s old would admit a formula that closes a loop against a
+  // definition written in that window. Run after the cached read above, since
+  // this call resets the TTL.
+  const fresh = await svc.getAllDefinitionsFresh();
+  assert(
+    !fresh.some((def) => def.pointKey === "CALCDEF_VALID_SCHEDULED"),
+    "getAllDefinitionsFresh must bypass the cache and reflect the deleted row",
+  );
+  assert(
+    fresh.some((def) => def.pointKey === "CALCDEF_VALID_STREAMING"),
+    "getAllDefinitionsFresh must still return the rows that remain — a read that returned " +
+      "nothing would pass the assertion above while proving nothing",
   );
 }

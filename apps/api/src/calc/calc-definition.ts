@@ -1,6 +1,7 @@
-import type { CalcExpr, CalcTrigger } from "@bms/shared";
+import type { CalcCrossRef, CalcDialect, CalcExpr, CalcTrigger } from "@bms/shared";
 import {
   CALC_DIALECT,
+  CALC_DIALECTS,
   DEFAULT_MAX_INPUT_AGE_SECONDS,
   MAX_CALC_INTERVAL_SECONDS,
   MAX_INPUT_AGE_SECONDS_BOUND,
@@ -19,6 +20,11 @@ import {
  * these as a skip, never a throw and never a default: a stored row this
  * function cannot use is simply not computed, exactly as if it did not
  * exist, until an author fixes it through the normal write path.
+ *
+ * `streaming_on_v2` (`F2.9`, ADR 0055 decision 10) is the same shape for the
+ * `bms-calc-v2` dialect: `v2` is `scheduled`-only, the Zod rule refuses the
+ * pair at save, and this is the second refusal on the stored row — for
+ * exactly the `createDraftFrom` path above.
  */
 export type CalcSkipReason =
   | "not_derived"
@@ -29,7 +35,8 @@ export type CalcSkipReason =
   | "missing_interval"
   | "interval_on_streaming"
   | "interval_out_of_range"
-  | "max_input_age_out_of_range";
+  | "max_input_age_out_of_range"
+  | "streaming_on_v2";
 
 export interface CalcDefinition {
   templatePointId: string;
@@ -43,6 +50,25 @@ export interface CalcDefinition {
   intervalSeconds: number | null;
   /** Resolved: `DEFAULT_MAX_INPUT_AGE_SECONDS` when the row leaves it unset. */
   maxInputAgeSeconds: number;
+  /**
+   * The dialect the formula was parsed under (ADR 0055). Carried on the
+   * definition rather than re-derived, so a host can branch on it without
+   * re-reading the row — which is what `runScheduledSweep` does today.
+   */
+  dialect: CalcDialect;
+  /**
+   * Every distinct cross-asset reference the formula names, deduped by
+   * `crossRefKey`. Always `[]` under `v1`, which has no such production.
+   * Separate from `refs`: a local point key and a cross reference live in
+   * different namespaces and must never be resolved against each other.
+   */
+  crossRefs: CalcCrossRef[];
+  /**
+   * ADR 0055 decision 11. `null` means **fail closed** — every declared member
+   * of an aggregate must be fresh — not "no limit". Never overridden per asset:
+   * the column exists on `template_points` alone.
+   */
+  minCoverageRatio: number | null;
 }
 
 /**
@@ -71,6 +97,9 @@ export interface TemplatePointCalcRow {
   calcTrigger: string | null;
   calcIntervalSeconds: number | null;
   maxInputAgeSeconds: number | null;
+  /** `template_points.min_coverage_ratio` — the one calc column ADR 0055 does
+   * **not** put on `asset_points`, so it arrives unmerged. */
+  minCoverageRatio: number | null;
 }
 
 export type ActiveDefinitionResult = { ok: true; def: CalcDefinition } | { ok: false; reason: CalcSkipReason };
@@ -87,15 +116,28 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
   if (!row.formula) {
     return { ok: false, reason: "no_formula" };
   }
-  if (row.formulaDialect !== CALC_DIALECT) {
+  // Resolved against the vocabulary rather than compared to one literal, so a
+  // third dialect is admitted here the moment it is admitted everywhere
+  // (`F4.43`'s "nobody restates a vocabulary"). A stored dialect this engine
+  // does not know is `bad_dialect` — never quietly parsed as `v1`, which would
+  // give a formula written for another grammar a meaning it was not authored
+  // with.
+  const dialect: CalcDialect | undefined = CALC_DIALECTS.find((known) => known === row.formulaDialect);
+  if (!dialect) {
     return { ok: false, reason: "bad_dialect" };
   }
-  const parsed = parseFormula(row.formula);
+  const parsed = parseFormula(row.formula, { dialect });
   if (!parsed.ok) {
     return { ok: false, reason: "unparseable_formula" };
   }
   if (row.calcTrigger !== "streaming" && row.calcTrigger !== "scheduled") {
     return { ok: false, reason: "no_trigger" };
+  }
+  // ADR 0055 decision 10: `v2` is `scheduled`-only. Reported ahead of the
+  // interval checks because the dialect/trigger pair is the actionable defect —
+  // a `v2` streaming row is wrong whether or not it also carries an interval.
+  if (dialect !== CALC_DIALECT && row.calcTrigger === "streaming") {
+    return { ok: false, reason: "streaming_on_v2" };
   }
   if (row.calcTrigger === "streaming" && row.calcIntervalSeconds != null) {
     return { ok: false, reason: "interval_on_streaming" };
@@ -126,6 +168,9 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
       trigger: row.calcTrigger,
       intervalSeconds: row.calcTrigger === "scheduled" ? row.calcIntervalSeconds : null,
       maxInputAgeSeconds: row.maxInputAgeSeconds ?? DEFAULT_MAX_INPUT_AGE_SECONDS,
+      dialect,
+      crossRefs: parsed.crossRefs,
+      minCoverageRatio: row.minCoverageRatio,
     },
   };
 }

@@ -43,6 +43,8 @@ const CACHE_TTL_MS = 60_000;
 @Injectable()
 export class CalcDefinitionsService {
   private definitionsByInput = new Map<string, CalcDefinition[]>();
+  private streamingInputKeys: ReadonlySet<string> = new Set();
+  private all: CalcDefinition[] = [];
   private scheduled: CalcDefinition[] = [];
   private cacheLoadedAt = 0;
 
@@ -75,6 +77,14 @@ export class CalcDefinitionsService {
         calcTrigger: sql<string | null>`coalesce(${assetPoints.calcTrigger}, ${templatePoints.calcTrigger})`,
         calcIntervalSeconds: sql<number | null>`coalesce(${assetPoints.calcIntervalSeconds}, ${templatePoints.calcIntervalSeconds})`,
         maxInputAgeSeconds: sql<number | null>`coalesce(${assetPoints.maxInputAgeSeconds}, ${templatePoints.maxInputAgeSeconds})`,
+        // `F2.9` — the sixth calc column, and deliberately **not** a coalesce.
+        // ADR 0055 puts `min_coverage_ratio` on `template_points` only:
+        // `asset_points` has no such column, so there is nothing to coalesce
+        // with and it is not overridable per asset. Wrapping it in a coalesce
+        // anyway would claim a merge that does not exist.
+        // `tests/adr-0039-resolution-merge.test.ts` pins each of the five
+        // merged columns above by its exact text — leave them byte-identical.
+        minCoverageRatio: templatePoints.minCoverageRatio,
       })
       .from(assets)
       // assets.templateId is nullable (every seeded asset is hand-created,
@@ -114,6 +124,7 @@ export class CalcDefinitionsService {
 
     const defs: CalcDefinition[] = [];
     const byInput = new Map<string, CalcDefinition[]>();
+    const streamingInputKeys = new Set<string>();
     for (const row of rows) {
       const result = toActiveDefinition(row);
       if (!result.ok) {
@@ -129,20 +140,37 @@ export class CalcDefinitionsService {
         } else {
           byInput.set(key, [result.def]);
         }
+        if (result.def.trigger === "streaming") {
+          streamingInputKeys.add(key);
+        }
       }
     }
 
     this.definitionsByInput = byInput;
+    this.streamingInputKeys = streamingInputKeys;
+    this.all = defs;
     this.scheduled = defs.filter((def) => def.trigger === "scheduled");
     this.cacheLoadedAt = Date.now();
     this.metrics.setCalcActiveFormulas(defs.length);
   }
 
-  /** Every `(assetId, pointKey)` that is an input to some active formula —
-   * the streaming host's re-entrancy filter (ADR 0037 decision 11). */
+  /**
+   * Every `(assetId, pointKey)` that is an input to some active **streaming**
+   * formula — the streaming host's re-entrancy filter (ADR 0037 decision 11).
+   *
+   * **Deliberately not `definitionsByInput.keys()`**, and re-collapsing the two
+   * would widen the filter silently. This set decides which of the engine's own
+   * writes are allowed to wake the streaming host at all
+   * (`filterToInputs`), so its correctness argument has to hold for every
+   * indexed definition — see `calc-batch.ts`, where that argument is written
+   * out. A scheduled formula's inputs belong to the sweep, which reads them on
+   * its own clock and never through this set; indexing them buys nothing (the
+   * streaming host skips a scheduled definition at `calc-streaming.service.ts`
+   * anyway) and costs the one guarantee the set exists for.
+   */
   async getInputKeys(): Promise<ReadonlySet<string>> {
     await this.ensureFresh();
-    return new Set(this.definitionsByInput.keys());
+    return this.streamingInputKeys;
   }
 
   /** Active formulas that use `(assetId, pointKey)` as an input, resolved on
@@ -157,5 +185,21 @@ export class CalcDefinitionsService {
   async getScheduledDefinitions(): Promise<CalcDefinition[]> {
     await this.ensureFresh();
     return this.scheduled;
+  }
+
+  /**
+   * Every active definition, read **past** the 60s cache (`F2.9`, ADR 0055
+   * decision 8) — the save-time dependency detector's read.
+   *
+   * The TTL is right for the two evaluation hosts: a formula that starts
+   * computing up to a minute late costs one sample. It is wrong for a
+   * *decision* about whether a candidate formula closes a dependency cycle: a
+   * definition written in the last 60s would be invisible, and the detector
+   * would admit the edge that completes the loop. The cost is one query per
+   * template/override save, which is a human-rate write path.
+   */
+  async getAllDefinitionsFresh(): Promise<CalcDefinition[]> {
+    await this.reload();
+    return this.all;
   }
 }

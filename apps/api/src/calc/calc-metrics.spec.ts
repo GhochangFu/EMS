@@ -19,9 +19,11 @@ const ALL_REASONS_RECORD: Record<CalcRuntimeSkipReason, true> = {
   interval_on_streaming: true,
   interval_out_of_range: true,
   max_input_age_out_of_range: true,
+  streaming_on_v2: true,
   missing_input: true,
   stale_input: true,
   non_finite: true,
+  v2_not_yet_evaluable: true,
 };
 const ALL_REASONS = Object.keys(ALL_REASONS_RECORD) as CalcRuntimeSkipReason[];
 
