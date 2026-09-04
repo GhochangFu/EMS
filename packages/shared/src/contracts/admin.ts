@@ -363,6 +363,12 @@ export const stockTemplatePointDtoSchema = z.object({
   calcTrigger: z.enum(CALC_TRIGGERS).nullable(),
   calcIntervalSeconds: z.number().int().nullable(),
   maxInputAgeSeconds: z.number().int().nullable(),
+  // ADR 0055 decision 11 (`F2.9` Task 8) — mirrors `adminTemplatePointDtoSchema`
+  // above field for field, including the **no bound** reasoning: this is the
+  // shape a catalog entry's own point-fields helper (`apps/api`'s
+  // `derived()`) produces, and the `(0, 1]` bound lives only on the write
+  // side, in `apps/api`'s `templatePointBodySchema`.
+  minCoverageRatio: z.number().nullable(),
   required: z.boolean(),
   sortOrder: z.number().int(),
   // F2.13 / ADR 0052 decision 2 — every stock point declares its tier. The

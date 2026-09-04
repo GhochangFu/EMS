@@ -60,6 +60,7 @@ const ENTRY: StockAssetTemplateDto = stockAssetTemplateDtoSchema.parse({
       calcTrigger: null,
       calcIntervalSeconds: null,
       maxInputAgeSeconds: null,
+      minCoverageRatio: null,
       required: true,
       sortOrder: 0,
       meta: { tier: "extended" },
@@ -75,6 +76,7 @@ const ENTRY: StockAssetTemplateDto = stockAssetTemplateDtoSchema.parse({
       calcTrigger: null,
       calcIntervalSeconds: null,
       maxInputAgeSeconds: null,
+      minCoverageRatio: null,
       required: false,
       sortOrder: 1,
       // `meta` deliberately absent — the branch the bridge has to close.
@@ -90,6 +92,7 @@ const ENTRY: StockAssetTemplateDto = stockAssetTemplateDtoSchema.parse({
       calcTrigger: "streaming",
       calcIntervalSeconds: null,
       maxInputAgeSeconds: 300,
+      minCoverageRatio: null,
       required: false,
       sortOrder: 2,
       meta: { tier: "core" },
