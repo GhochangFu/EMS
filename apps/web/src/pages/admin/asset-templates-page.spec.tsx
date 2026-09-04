@@ -19,6 +19,14 @@ import { AssetTemplatesAdminPage } from "./asset-templates-page";
  * (ADR 0052 decision 10), rendered (ADR 0042). The first `.spec.tsx` for this
  * page; model: `dashboard-templates-page.spec.tsx`.
  *
+ * `F2.21` changed what a stock row's second line prints — the domain LABEL, not
+ * the bare code — so the cases stubbed with `GROUPED_VOCABULARIES` now expect
+ * "Electrical plant" and "Water treatment" where they read `electrical` and
+ * `water`. The two cases stubbed with the DEFAULT `VOCABULARIES` still expect
+ * the bare code, and deliberately: that fixture carries an empty `assetDomains`,
+ * so they pin `labelFor`'s fallback rather than merely agreeing with whatever
+ * the component prints.
+ *
  * `F2.17` adds the domain accordion cases below the original five. Every one
  * of those opens on a `findByRole` for a *labelled* heading, never a sync
  * query: the entries ride `stockQ` and the labels ride `vocabQ`, so there is
@@ -481,14 +489,14 @@ export async function aCollapsedGroupHidesItsRowsWithoutUnmountingTheCard(): Pro
   renderPage(admin, STOCK_TAB);
 
   const electrical = await screen.findByRole("button", { name: ELECTRICAL_HEADING });
-  expect(screen.getByText("electrical-feeder · electrical · stock v1")).toBeInTheDocument();
+  expect(screen.getByText("electrical-feeder · Electrical plant · stock v1")).toBeInTheDocument();
 
   await userEvent.click(electrical);
 
   expect(electrical).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByRole("list", { name: "Electrical plant entries" })).toBeNull();
-  expect(screen.queryByText("electrical-feeder · electrical · stock v1")).toBeNull();
-  expect(screen.queryByText("electrical-ups · electrical · stock v1")).toBeNull();
+  expect(screen.queryByText("electrical-feeder · Electrical plant · stock v1")).toBeNull();
+  expect(screen.queryByText("electrical-ups · Electrical plant · stock v1")).toBeNull();
 
   // `getByRole("heading")`, not `getByText` — `F2.21`'s tab strip renders the
   // words "Stock catalog" as well, so a bare text query now matches two nodes.
@@ -501,11 +509,11 @@ export async function aCollapsedGroupHidesItsRowsWithoutUnmountingTheCard(): Pro
     "aria-expanded",
     "true",
   );
-  expect(screen.getByText("water-clarifier · water · stock v1")).toBeInTheDocument();
+  expect(screen.getByText("water-clarifier · Water treatment · stock v1")).toBeInTheDocument();
 
   await userEvent.click(electrical);
   expect(electrical).toHaveAttribute("aria-expanded", "true");
-  expect(screen.getByText("electrical-feeder · electrical · stock v1")).toBeInTheDocument();
+  expect(screen.getByText("electrical-feeder · Electrical plant · stock v1")).toBeInTheDocument();
 }
 
 /**
@@ -563,6 +571,10 @@ export async function aBlockedStoreRendersEveryGroupOpen(): Promise<void> {
   render(
     <StockCatalogAccordion
       groups={groups}
+      // Bare `entry.domain`, unlike the page — this case renders the
+      // accordion DIRECTLY with its own render prop, so it is testing the
+      // component's collapse behaviour and not the page's labelling. Keeping
+      // the code here is what makes that independence visible.
       renderEntry={(entry) => (
         <li>
           {entry.code} · {entry.domain} · stock v{entry.stockVersion}

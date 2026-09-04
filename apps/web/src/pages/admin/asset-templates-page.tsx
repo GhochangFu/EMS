@@ -485,8 +485,16 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
               <li className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <div>
                   <div className="text-sm font-semibold text-bms-ink">{entry.name}</div>
+                  {/* `F2.21` — the label, for the same reason the Templates
+                      header uses it, and because this row would otherwise be
+                      the ONE place left printing a bare code. The browser pass
+                      caught it: the accordion heading directly above already
+                      read "Electrical" while the row under it read
+                      `· electrical ·`. Fixing the Templates side alone is what
+                      made the two cards disagree, so it belongs to this row. */}
                   <div className="text-[11px] text-bms-muted">
-                    {entry.code} · {entry.domain} · stock v{entry.stockVersion}
+                    {entry.code} · {labelFor(vocabQ.data?.assetDomains, entry.domain)} · stock v
+                    {entry.stockVersion}
                   </div>
                   <div className="text-[11px] text-bms-muted">
                     {entry.assetType} · {entry.points.length} point{entry.points.length === 1 ? "" : "s"}
