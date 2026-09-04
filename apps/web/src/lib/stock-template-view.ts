@@ -106,6 +106,13 @@ export function stockEntryAsTemplate(entry: StockAssetTemplateDto): AdminAssetTe
       calcTrigger: point.calcTrigger,
       calcIntervalSeconds: point.calcIntervalSeconds,
       maxInputAgeSeconds: point.maxInputAgeSeconds,
+      // ADR 0055 decision 11 (`F2.9`). The second type bridge, and it is
+      // temporary: `stockTemplatePointDtoSchema` does not carry the field yet,
+      // because adding it there means every catalog point must spell it —
+      // `point-fields.ts`, which `F2.9` Task 8 owns. `null` is the honest value
+      // meanwhile: no stock entry declares a `v2` formula in this row, and
+      // `null` reads as "fail closed", not as "no limit".
+      minCoverageRatio: null,
       required: point.required,
       sortOrder: point.sortOrder,
       // The one type bridge: the stock shape is `{ tier } | undefined`, the

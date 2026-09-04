@@ -59,6 +59,7 @@ const MEASURED_POINT = {
   calcTrigger: null,
   calcIntervalSeconds: null,
   maxInputAgeSeconds: null,
+  minCoverageRatio: null,
   required: true,
   sortOrder: 0,
   meta: null,
@@ -87,6 +88,10 @@ const DERIVED_POINT = {
   calcTrigger: "scheduled",
   calcIntervalSeconds: 300,
   maxInputAgeSeconds: 900,
+  // ADR 0055 decision 11 (`F2.9` Task 5) — a read-side field like the five
+  // above. `null` on a `v1` point is the only honest value: the ratio bounds an
+  // aggregate's members, and `v1` has no aggregates.
+  minCoverageRatio: null,
   required: false,
   sortOrder: 1,
   meta: { tier: "extended" },

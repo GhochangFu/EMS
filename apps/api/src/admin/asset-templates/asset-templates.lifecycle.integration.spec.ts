@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import type pg from "pg";
 
-import type { AdminAssetTemplateDto, JwtPayload } from "@bms/shared";
+import { CALC_DIALECT } from "@bms/shared";
+import type { AdminAssetTemplateDto, CalcDialect, CalcV1Dialect, JwtPayload } from "@bms/shared";
 
 import {
   templateContentSchema,
@@ -280,6 +281,19 @@ export async function assertCalcFieldsSurviveUpdateRoundTrip(
   fx: Fixtures,
   created: AdminAssetTemplateDto,
 ): Promise<void> {
+  // `F2.9` Task 5 widened the READ DTO's dialect; the write body still pins
+  // `v1` until Task 6 adds the `v2` guards that must travel with it. Narrow
+  // with an assertion, never a cast — every point this fixture creates is
+  // `v1`, so a `v2` here means the fixture changed and the round trip stopped
+  // proving what it claims. Delete once Task 6 widens the body.
+  const writableDialect = (dialect: CalcDialect | null): CalcV1Dialect | undefined => {
+    assert(
+      dialect === null || dialect === CALC_DIALECT,
+      `this fixture creates bms-calc-v1 points only, read back ${dialect}`,
+    );
+    return dialect === null ? undefined : CALC_DIALECT;
+  };
+
   const patched = await svc.update(fx.adminJwt, created.id, {
     points: created.points.map((point) => ({
       pointKey: point.pointKey,
@@ -288,7 +302,7 @@ export async function assertCalcFieldsSurviveUpdateRoundTrip(
       kind: point.kind,
       sourceDataKeyPattern: point.sourceDataKeyPattern ?? undefined,
       formula: point.formula ?? undefined,
-      formulaDialect: point.formulaDialect ?? undefined,
+      formulaDialect: writableDialect(point.formulaDialect),
       calcTrigger: point.calcTrigger ?? undefined,
       calcIntervalSeconds: point.calcIntervalSeconds ?? undefined,
       maxInputAgeSeconds: point.maxInputAgeSeconds ?? undefined,

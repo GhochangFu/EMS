@@ -58,6 +58,7 @@ function template(alarms: unknown[]): AdminAssetTemplateDto {
         calcTrigger: null,
         calcIntervalSeconds: null,
         maxInputAgeSeconds: null,
+        minCoverageRatio: null,
         required: true,
         sortOrder: 0,
         meta: { tier: "core" },

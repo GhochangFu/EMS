@@ -372,7 +372,10 @@ export function runTemplateContentSchemaTests(): void {
   assert(templateContentSchema.safeParse({ kpis: [kpi] }).success, "a valid KPI must parse");
 
   rejects({ kpis: [{ ...kpi, dialect: undefined }] }, "dialect is required, not defaulted");
-  rejects({ kpis: [{ ...kpi, dialect: "something-else" }] }, "dialect accepts only the two known values");
+  rejects(
+    { kpis: [{ ...kpi, dialect: "something-else" }] },
+    'dialect accepts only "unvalidated" and the members of CALC_DIALECTS',
+  );
   rejects({ kpis: [{ ...kpi, pointKeys: [] }] }, "a KPI referencing no points cannot be checked");
   rejects({ kpis: [kpi, kpi] }, "two KPIs with the same code must be rejected");
 
@@ -432,6 +435,10 @@ export function runTemplateContentSchemaTests(): void {
     { kpis: [unusedPointKey] },
     "a declared pointKeys entry the expression never uses must fail — both directions of the cross-check",
   );
+
+  // The `bms-calc-v2` half of this schema — the `F2.9` Q3 and Q3b rulings —
+  // lives in `asset-templates-content-kpi-v2.spec.ts`, because this file sits
+  // against the §4.5 1000-line cap.
 
   // ---- dashboards: anchored, ordering only ---------------------------------
 

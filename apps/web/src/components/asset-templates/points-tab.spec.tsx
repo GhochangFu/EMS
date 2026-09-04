@@ -51,6 +51,7 @@ function point(index: number, meta: unknown): unknown {
     calcTrigger: null,
     calcIntervalSeconds: null,
     maxInputAgeSeconds: null,
+    minCoverageRatio: null,
     required: true,
     sortOrder: index - 1,
     meta,

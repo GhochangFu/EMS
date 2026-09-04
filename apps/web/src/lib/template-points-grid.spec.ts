@@ -42,6 +42,10 @@ function point(overrides: Record<string, unknown> = {}) {
     calcTrigger: null,
     calcIntervalSeconds: null,
     maxInputAgeSeconds: null,
+    // ADR 0055 decision 11 (`F2.9` Task 5). Read-side only for now: the grid's
+    // own row type and `buildPointsPayload` carry it from Task 15, and the
+    // twelve-field key assertion below is what will force that.
+    minCoverageRatio: null,
     required: true,
     sortOrder: 0,
     meta: null,

@@ -3,7 +3,7 @@ import type {
   AutomationRuleCategory,
   AutomationRuleOperator,
   AutomationRuleSeverity,
-  CalcV1Dialect,
+  CalcDialect,
   // F3.1a: the widget vocabulary and its four config variants, derived rather than restated —
   // §4.8's "a vocabulary is declared once and everything else is derived from it". Taken from
   // `./index` like every other type here: the alias lives there, and the cycle is harmless
@@ -110,11 +110,24 @@ export type TemplateAlarm = {
 
 /**
  * `expression` is opaque behind `dialect: "unvalidated"` — content written
- * before ADR 0036 (`F2.3`) and never re-saved. `dialect: "bms-calc-v1"` means
- * `expression` has been parsed under the `bms-calc-v1` grammar
+ * before ADR 0036 (`F2.3`) and never re-saved. A real dialect means
+ * `expression` has been parsed under that grammar
  * (`packages/shared/src/calc-dsl`) and `pointKeys` is exactly the set of
- * point references it uses, not merely a bookkeeping array checked without a
- * parser.
+ * **local** point references it uses, not merely a bookkeeping array checked
+ * without a parser.
+ *
+ * **`bms-calc-v2` (ADR 0055 decision 2, `F2.9`) is admissible here.** Two
+ * things it does not mean:
+ *
+ * - `pointKeys` does **not** grow to cover cross-asset references. A key named
+ *   only inside `sum({kw} @site)` or `{TX_01.kwh}` resolves against another
+ *   asset, and which asset that is is not known until evaluation time, so it
+ *   is exempt from the cross-check in **both** directions (the owner's Q3b
+ *   ruling). The two-way check keeps its full strength over local references.
+ * - Nothing evaluates a `v2` KPI yet. KPI evaluation is read-time and from
+ *   local values (ADR 0037 §"Not in this ADR"), so a stored `v2` KPI is
+ *   admitted and parsed but not computed. That is a later row's work and must
+ *   not be presented as a cross-asset KPI that works.
  */
 export type TemplateKpi = {
   code: string;
@@ -122,13 +135,7 @@ export type TemplateKpi = {
   unit?: string;
   pointKeys: string[];
   expression: string;
-  // Temporary, F2.9 Task 1: pinned to `v1` because the `v2` parser does not
-  // exist yet (Task 2 adds it), and `DtoMatchesParsedContent` in
-  // `asset-templates-content.schema.ts` holds this type to the KPI Zod schema,
-  // which is still `v1`. ADR 0055 decision 2 and the owner's Q3 ruling widen
-  // this to `CalcDialect` — Task 5b does it, once there is a parser that can
-  // parse what the wider type admits. Do not treat this pin as a decision.
-  dialect: "unvalidated" | CalcV1Dialect;
+  dialect: "unvalidated" | CalcDialect;
   higherIsBetter?: boolean;
 };
 
