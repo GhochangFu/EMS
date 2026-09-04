@@ -1,4 +1,10 @@
-import { crossRefPointKeys } from "./asset-templates-cross-refs";
+import {
+  MAX_ECHOED_POINT_KEY_LENGTH,
+  MAX_ECHOED_POINT_KEYS,
+  boundedMissingPointKeys,
+  crossRefPointKeys,
+} from "./asset-templates-cross-refs";
+import { templatePointBodySchema } from "./asset-templates.schema";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -86,5 +92,80 @@ export function runCrossRefPointKeyTests(): void {
       { pointKey: "c", kind: "derived", formula: "sum({kwh} @site)", formulaDialect: "bms-calc-v2" },
     ]).join(",") === "kw,kwh",
     "keys must be de-duplicated across points — the catalog read is one `IN` list",
+  );
+}
+
+/**
+ * **What the catalog refusal is allowed to echo** (security review of PR 1,
+ * LOW).
+ *
+ * `assertPointKeysActive` names every offending code, and that is deliberate:
+ * a caller told only "invalid point key" has to bisect a 40-point template by
+ * hand. Before `F2.9` the codes it could name came only from the DTO, bounded
+ * at 128 by `pointKeyCode`. A cross-reference key is lifted out of the
+ * **formula string**, where the only bound is `MAX_FORMULA_LENGTH` (1000) and
+ * there is no charset rule at all — so the message became a channel for
+ * formula-derived text, which is the whole of what the calc-DSL's no-echo
+ * discipline exists to prevent (`formatCalcError`'s docblock records the
+ * `parseStoredContent` incident, and AGENTS.md §4.3 asks for field paths).
+ */
+export function runBoundedMissingPointKeyTests(): void {
+  const long = "x".repeat(900);
+  const bounded = boundedMissingPointKeys([long]);
+  const rendered = bounded.join(", ");
+
+  assert(
+    !rendered.includes(long),
+    `a 900-character key lifted out of a formula must not be echoed whole. Got ${rendered.length} characters`,
+  );
+  assert(
+    rendered.length <= MAX_ECHOED_POINT_KEY_LENGTH + 16,
+    `and the truncated form must stay near the bound, got ${rendered.length} characters`,
+  );
+  assert(
+    rendered.startsWith("xxx"),
+    `the author still has to recognise which key it is, so the head is kept. Got: ${rendered.slice(0, 8)}`,
+  );
+
+  // Truncation is a no-op on every key the DTO path can produce, which is why
+  // the existing "name the offending codes" behaviour is unchanged.
+  const atBound = "y".repeat(MAX_ECHOED_POINT_KEY_LENGTH);
+  assert(
+    boundedMissingPointKeys([atBound]).join(", ") === atBound,
+    "a key at the DTO bound must be named in full — truncating it would degrade the message " +
+      "for the common case to guard the rare one",
+  );
+
+  // Anti-drift: the bound is the DTO's own, and this is what says so rather
+  // than a comment. `pointKeyCode` is not exported, so it is checked through
+  // the schema that uses it.
+  const point = { pointKey: atBound, kind: "measured" as const };
+  assert(
+    templatePointBodySchema.safeParse(point).success,
+    `MAX_ECHOED_POINT_KEY_LENGTH (${MAX_ECHOED_POINT_KEY_LENGTH}) must be a length the DTO ` +
+      "accepts, or truncation would fire on ordinary point keys",
+  );
+  assert(
+    !templatePointBodySchema.safeParse({ ...point, pointKey: `${atBound}y` }).success,
+    `and it must be the DTO's exact bound — one character more must be refused there, or the ` +
+      "two have drifted apart",
+  );
+
+  // The count is bounded too: a formula may name many keys, and 40 truncated
+  // codes is still a long message built out of formula text.
+  const many = Array.from({ length: MAX_ECHOED_POINT_KEYS + 5 }, (_, i) => `k${i}`);
+  const capped = boundedMissingPointKeys(many);
+  assert(
+    capped.length === MAX_ECHOED_POINT_KEYS + 1,
+    `at most ${MAX_ECHOED_POINT_KEYS} codes are listed, plus one entry saying how many were ` +
+      `not. Got ${capped.length}`,
+  );
+  assert(
+    capped[capped.length - 1] === "and 5 more",
+    `and the caller must be told how many were withheld, or the list is a lie. Got: ${capped[capped.length - 1]}`,
+  );
+  assert(
+    boundedMissingPointKeys(["a", "b"]).join(", ") === "a, b",
+    "a short list is passed through unchanged — no cap entry when nothing was withheld",
   );
 }

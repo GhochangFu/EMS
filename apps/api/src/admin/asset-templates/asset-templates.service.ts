@@ -44,7 +44,11 @@ import {
   templateContentSchema,
   type TemplateContentParsed,
 } from "./asset-templates-content.schema";
-import { crossRefPointKeys, type CrossRefCandidatePoint } from "./asset-templates-cross-refs";
+import {
+  boundedMissingPointKeys,
+  crossRefPointKeys,
+  type CrossRefCandidatePoint,
+} from "./asset-templates-cross-refs";
 import type {
   CreateAssetTemplateBody,
   TemplatePointBody,
@@ -639,7 +643,9 @@ export class AssetTemplatesAdminService {
       .where(and(eq(pointKeys.active, true), inArray(pointKeys.code, codes)));
 
     const active = new Set(rows.map((row) => row.code));
-    const missing = codes.filter((code) => !active.has(code));
+    // `F2.9`: bounded — `crossRefPointKeys` above lifts keys out of the formula
+    // string, which nothing bounds at 128. See `boundedMissingPointKeys`.
+    const missing = boundedMissingPointKeys(codes.filter((code) => !active.has(code)));
     if (missing.length > 0) {
       throw new BadRequestException(
         `Not in the active point-key catalog: ${missing.join(", ")}`,
