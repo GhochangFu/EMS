@@ -28,9 +28,10 @@ function asOk(result: ParseResult): Extract<ParseResult, { ok: true }> {
  *   three callers) — `Task 12`.
  * - **(b) — every `derived("…")` and `expression: "…"` literal under the
  *   stock catalog parses identically under both dialects.**
- * - **(c) — no `z.literal(CALC_DIALECT)` under
- *   `packages/shared/src/contracts` or `apps/api/src`, except at the two sites
- *   Tasks 6 and 7 still own.**
+ * - **(c) — no `z.literal(CALC_DIALECT)` anywhere under
+ *   `packages/shared/src/contracts` or `apps/api/src`. No exemptions remain:
+ *   Task 6 converted `asset-templates.schema.ts` and Task 7
+ *   `asset-point-calc-override.schema.ts`.**
  * - (d) — `calc-scope.service.ts`'s qualified-code statement contains a
  *   `location_id` filter, checked against a mutated copy first — `Task 11`.
  *
@@ -139,23 +140,17 @@ describe("ADR 0055 part (b) — every stock-catalog v1 formula literal parses id
  * `CALC_DIALECTS`, and `calcDialectSchema` in
  * `packages/shared/src/contracts/admin.ts` is the one derivation of it.
  *
- * **One file is still exempt, and only until its own task lands.** `F2.9`
- * Task 7 owns `asset-point-calc-override.schema.ts`; widening it needs the
- * guard changes that come with it, so no earlier task may do it by hand. The
- * exemption is by filename and it is **self-removing**: the test below also
- * asserts each exempt file *still contains* the literal, so the day Task 7
- * lands this file goes red and the stale exemption has to be deleted rather
- * than left to rot into a permanent hole. That is what happened to
- * `asset-templates.schema.ts`'s entry, which Task 6 removed when it widened
- * that file to `calcDialectSchema` — the mechanism works, and the entry below
- * is not to be renewed once Task 7 is in.
+ * **The scan now covers every file, and there is no exemption list.** Two files
+ * were exempt while the guard changes that had to travel with their widening
+ * were still unbuilt — `asset-templates.schema.ts` (`F2.9` Task 6) and
+ * `asset-point-calc-override.schema.ts` (Task 7). The exemption was by filename
+ * and **self-removing**: a companion test asserted each exempt file *still*
+ * contained the literal, so converting one turned this file red and forced the
+ * entry out rather than letting it rot into a permanent hole. Both have landed,
+ * the list is empty, and it is not to be renewed. A new exemption is a scope
+ * ruling, not a convenience.
  */
 const DIALECT_LITERAL_RE = /z\.literal\(\s*CALC_DIALECT\s*\)/;
-
-/** Owned by a later `F2.9` task; see the docblock above. Repo-relative. */
-const DIALECT_LITERAL_EXEMPT = [
-  "apps/api/src/admin/asset-points/asset-point-calc-override.schema.ts",
-];
 
 const SCANNED_ROOTS = ["packages/shared/src/contracts", "apps/api/src"];
 
@@ -198,10 +193,9 @@ describe("ADR 0055 part (c) — no endpoint restates the calc dialect as a v1 li
     expect(DIALECT_LITERAL_RE.test("z.literal(CALC_DIALECT_V2)")).toBe(false);
   });
 
-  it("no file outside the two later-task sites pins a dialect field to bms-calc-v1", () => {
+  it("no file pins a dialect field to bms-calc-v1", () => {
     const offenders = scannedFiles
       .map((file) => relative(file))
-      .filter((rel) => !DIALECT_LITERAL_EXEMPT.includes(rel))
       .filter((rel) => DIALECT_LITERAL_RE.test(readFileSync(join(repoRoot, rel), "utf8")));
 
     expect(
@@ -214,15 +208,22 @@ describe("ADR 0055 part (c) — no endpoint restates the calc dialect as a v1 li
     ).toEqual([]);
   });
 
-  it.each(DIALECT_LITERAL_EXEMPT)(
-    "%s still carries the literal, so its exemption is still real",
-    (rel) => {
-      expect(
-        DIALECT_LITERAL_RE.test(readFileSync(join(repoRoot, rel), "utf8")),
-        `${rel} no longer spells z.literal(CALC_DIALECT). Its F2.9 task (7, for ` +
-          "asset-point-calc-override.schema.ts) has landed — delete this file's entry from " +
-          "DIALECT_LITERAL_EXEMPT so the scan covers it.",
-      ).toBe(true);
-    },
-  );
+  /**
+   * The two files that carried the exemption are the two the scan most has to
+   * cover, and "no offenders" is also what an empty scan says. Named
+   * explicitly, so a refactor that moves or renames either one is a failure
+   * here rather than a silent hole.
+   */
+  it.each([
+    "packages/shared/src/contracts/admin.ts",
+    "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
+    "apps/api/src/admin/asset-points/asset-point-calc-override.schema.ts",
+  ])("%s is in the scanned set and derives the dialect from CALC_DIALECTS", (rel) => {
+    expect(scannedFiles.map((file) => relative(file)), `${rel} is not being scanned`).toContain(rel);
+    const source = readFileSync(join(repoRoot, rel), "utf8");
+    expect(DIALECT_LITERAL_RE.test(source), `${rel} restates the v1 literal`).toBe(false);
+    expect(source, `${rel} must reach the vocabulary through calcDialectSchema`).toContain(
+      "calcDialectSchema",
+    );
+  });
 });

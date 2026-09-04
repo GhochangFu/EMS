@@ -157,10 +157,22 @@ export class AssetPointCalcOverrideService {
       );
     }
 
-    const problems = validateMergedCalcOverride(body, ctx.template, ctx.declaredPointKeys);
+    const problems = validateMergedCalcOverride(body, ctx.template, ctx.declared);
     if (problems.length > 0) {
       throw new BadRequestException(problems.join(" "));
     }
+
+    // **`F2.9` Task 12 goes here, and nothing stands in for it.** A merged
+    // `bms-calc-v2` formula may reference a derived point (ADR 0055 decision
+    // 7), so what has to be refused is the *cycle*, not the reference —
+    // including a cycle that only exists because of asset-group membership,
+    // which no pure check on this request can see. Task 12 adds
+    // `CalcDependencyService.checkCandidate({ assetId, pointKey,
+    // templatePointId, parsed })` on this line, reading every definition fresh
+    // and building the real graph. A stub here would be a guard that gates
+    // nothing, which is worse than an absent one; the seam is left clear
+    // instead. Until it lands, a `v2` override with a cyclic reference is
+    // storable — see `F2.9`'s plan, Task 12.
 
     const values = {
       formula: body.formula,
@@ -333,7 +345,7 @@ export class AssetPointCalcOverrideService {
   ): Promise<{
     organizationId: string;
     template: AssetPointCalcOverrideFields;
-    declaredPointKeys: string[];
+    declared: { measured: string[]; all: string[] };
     existingRowId: string | null;
   }> {
     await this.accessControl.requireMasterDataUser(jwt);
@@ -391,22 +403,33 @@ export class AssetPointCalcOverrideService {
     return {
       organizationId,
       template: toFields(point),
-      // **Measured only**, matching `assetTemplatePointsBodySchema`'s
-      // sibling-scoped rule: "a derived formula may only reference measured
-      // points". This endpoint is a second author for the same engine, so it
-      // must refuse what the first one refuses.
-      //
-      // Passing every declared key would let an override reference another
-      // derived point, or itself. `CalcSchedulerService` stamps a fresh
-      // wall-clock bucket on every tick, so `ON CONFLICT DO NOTHING` never
-      // dedupes a self-referential series: `{SELF} * 2` compounds each
-      // interval until it is non-finite, and `{M} + {SELF}` accumulates
-      // without bound. It also breaks the invariant `getInputKeys()` rests on
-      // (ADR 0037 decision 11) — a derived point is never a formula input.
-      //
-      // The overridden point is excluded by construction: the check above
-      // already established that it is `derived`.
-      declaredPointKeys: points.filter((p) => p.kind === "measured").map((p) => p.pointKey),
+      // Two lists, because ADR 0055 decision 7 makes the answer depend on the
+      // merged dialect. `validateMergedCalcOverride` picks between them.
+      declared: {
+        // **Measured only**, matching `assetTemplatePointsBodySchema`'s
+        // sibling-scoped rule: "a derived formula may only reference measured
+        // points". This endpoint is a second author for the same engine, so it
+        // must refuse what the first one refuses.
+        //
+        // Passing every declared key would let a `bms-calc-v1` override
+        // reference another derived point, or itself. `CalcSchedulerService`
+        // stamps a fresh wall-clock bucket on every tick, so `ON CONFLICT DO
+        // NOTHING` never dedupes a self-referential series: `{SELF} * 2`
+        // compounds each interval until it is non-finite, and `{M} + {SELF}`
+        // accumulates without bound. It also breaks the invariant
+        // `getInputKeys()` rests on (ADR 0037 decision 11) — a `v1` derived
+        // point is never a formula input.
+        //
+        // The overridden point is excluded by construction: the check above
+        // already established that it is `derived`.
+        measured: points.filter((p) => p.kind === "measured").map((p) => p.pointKey),
+        // Every declared key, for `bms-calc-v2` — decision 7 repeals the ban
+        // above, because a cross-asset formula reads other assets' points and a
+        // site total is a derived point by construction. The overridden point
+        // IS in this list: a self-reference under `v2` is a one-node dependency
+        // cycle, and refusing a cycle is Task 12's graph, not a key list.
+        all: points.map((p) => p.pointKey),
+      },
       existingRowId: existing?.id ?? null,
     };
   }
