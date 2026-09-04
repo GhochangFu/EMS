@@ -135,20 +135,52 @@ export class AssetTemplatesStockService {
     // the one path that was not applying it.
     //
     // A `ZodError` here propagates rather than being caught and rewrapped:
-    // `importStock` (asset-templates.controller.ts:116-118) already catches
+    // `importStock` (asset-templates.controller.ts:115-120) already catches
     // `ZodError` and answers `BadRequestException(err.flatten())` — the same
-    // 400 body `POST /` returns for the identical schema. Propagating keeps
-    // this the one service method in `apps/api` whose refusal is a
-    // `ZodError` rather than a Nest HTTP exception, and its only caller
-    // already maps it; converting it here would bury the schema's own
-    // message behind a generic "Bad Request Exception".
+    // 400 body `POST /` returns for the identical schema. An earlier draft of
+    // this comment justified that by claiming a `BadRequestException` raised
+    // here would bury the schema's own message behind a generic "Bad Request
+    // Exception". It would not: `new BadRequestException(err.flatten())`
+    // answers the byte-identical body wherever it is raised, which is exactly
+    // what assertion 2 of `asset-templates-stock.service.spec.ts` measures.
+    // The real reason is narrower — `import` has one caller and that caller
+    // already maps the error — and the hazard it leaves is a second caller
+    // added later with no `ZodError` catch, which would turn this 400 into a
+    // 500.
     //
-    // The parsed OUTPUT, not the raw entry, is what reaches `create` — Zod's
-    // defaults (`kind`, `required`, `sortOrder`) are applied identically to a
-    // hand-authored draft and an import. Measured against all 27 shipped
-    // catalog entries: 27 pass, and all 27 parse to output deep-equal to
-    // their input, so no shipped entry's shape changes here.
-    const parsed = createAssetTemplateBodySchema.parse({ organizationId, ...body });
+    // Propagating a `ZodError` out of a service is not unique to this method,
+    // and the first draft of this comment claimed it was. Eight other service
+    // sites parse with no `try`/`catch` around them — measured, and the three
+    // `.catch` handlers in those files attach to `withTenant` chains rather
+    // than to a parse: `list()` above,
+    // `dashboard-templates.service.ts` 141/275/649/658/670 and
+    // `dashboard-templates-instantiate.service.ts` 175/553. Every one of them
+    // parses STORED or CONSTRUCTED data — a row's `content`, a DTO being
+    // assembled — and none parses caller input. That, not the bare throw, is
+    // the real distinction: this parse stands on a request path, so its
+    // failure is an answer the caller is owed and the controller maps it;
+    // there a failure is an invariant break with no answer to give. `list()`'s
+    // caller `listStock` has NO catch, so a `ZodError` there reaches Nest's
+    // default handler as a 500 whose message is the JSON of `issues` —
+    // unreachable for a shipped entry, but a genuine latent 500, and a
+    // different route's problem rather than this one's.
+    //
+    // The parsed OUTPUT, not the raw entry, is what reaches `create`, so an
+    // import and a hand-authored draft hand `create` the same shape. Measured
+    // against all 27 shipped catalog entries: 27 pass, and all 27 parse to
+    // output deep-equal to their input, so no shipped entry's shape changes
+    // here — the decision is inert for today's catalog, and assertion 3 of
+    // `asset-templates-stock.service.spec.ts` is what stops a later edit from
+    // keeping the parse for validation and handing the raw entry over.
+    // `organizationId` comes LAST so the caller's value is authoritative by
+    // construction. Spread the other way and an entry carrying its own
+    // `organizationId` would replace it, and the parse would not stop that —
+    // the key is declared on the schema and only gets a `uuid()` format
+    // check. `StockAssetTemplateEntry` is `Omit<CreateAssetTemplateBody,
+    // "organizationId">` and every pack is an array of object literals, so
+    // excess-property checking already refuses the key at the literal; this
+    // ordering means the guarantee does not rest on that type-level accident.
+    const parsed = createAssetTemplateBodySchema.parse({ ...body, organizationId });
     return this.templates.create(jwt, parsed, { stockCode: entry.code, stockVersion });
   }
 }

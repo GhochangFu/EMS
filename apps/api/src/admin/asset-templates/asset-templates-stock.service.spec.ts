@@ -49,10 +49,10 @@ const MEASURED = {
   calcTrigger: null,
   calcIntervalSeconds: null,
   maxInputAgeSeconds: null,
-  // `required` and `sortOrder` both default in the schema (`true` / `0`);
-  // spelled out here so GOOD_ENTRY's point is already exactly what the
-  // parsed output produces, and assertion 3's deep-equal isn't tripped by a
-  // Zod default the fixture never named.
+  // `required` and `sortOrder` both default in the schema (`true` / `0`),
+  // spelled out here so a point built from MEASURED parses to itself. The
+  // DEFAULTING case is carried by GOOD_ENTRY's second point instead, which
+  // names none of the three defaulted keys on purpose — see assertion 3.
   required: true,
   sortOrder: 0,
 } as const;
@@ -63,13 +63,20 @@ const GOOD_CODE = "f216-good";
 
 /**
  * The derived point `b` carries NO `meta` key at all — not `{}`, not `null`.
- * `meta` is `z.object({ tier }).strict().optional()`, so `meta: {}` fails
- * with "Required" (the `tier` key is missing) and `meta: null` fails with
- * "Expected object, received null" — both BEFORE Zod's `superRefine` ever
- * looks at `formula`, since Zod collects issues from every key of an object
- * schema independently of the others. Either would make this fixture assert
- * the wrong message, so `meta` is omitted entirely: `.optional()` accepts an
- * absent key with no issue, leaving the formula parse as the only failure.
+ * `meta` is `z.object({ tier }).strict().optional()`, so `meta: {}` fails with
+ * "Required" at `["points", 1, "meta", "tier"]` and `meta: null` fails with
+ * "Expected object, received null" at `["points", 1, "meta"]` — and in BOTH
+ * cases the formula issue this fixture exists to produce disappears entirely.
+ *
+ * The mechanism is NOT that Zod collects a per-key issue beside the formula
+ * one — an earlier draft of this comment said that, and it is wrong. A failing
+ * element makes `z.array` return INVALID rather than a dirty value, and
+ * `templatePointsBodySchema` is a `ZodEffects`, which runs its `superRefine`
+ * only when the inner parse succeeds; the sibling-scoped formula check
+ * therefore never runs at all. Note what that costs: with `meta: {}` the
+ * issue-count assertion below still passes, and only the path and message
+ * assertions fail. So `meta` is omitted entirely — `.optional()` accepts an
+ * absent key with no issue, leaving the formula parse as the one failure.
  */
 const BAD_FORMULA_ENTRY: StockAssetTemplateEntry = {
   code: BAD_CODE,
@@ -90,6 +97,21 @@ const BAD_FORMULA_ENTRY: StockAssetTemplateEntry = {
   ],
 } as unknown as StockAssetTemplateEntry;
 
+/**
+ * Two points, and the second one is the whole reason assertion 3 can tell a
+ * parsed body from a raw entry:
+ *
+ * - `a` spells every defaulted key, so it parses to itself.
+ * - `b` names NONE of `kind`, `required` and `sortOrder`, so its parsed output
+ *   is NOT equal to its literal — Zod fills in `"measured"`, `true` and `0`.
+ *   With only `a`, handing the raw entry to `create` would still pass.
+ *
+ * The `as unknown as` cast is what permits `b`: all three keys are
+ * non-optional on `StockAssetTemplateEntry`, which is
+ * `Omit<CreateAssetTemplateBody, "organizationId">` — `z.infer`'s OUTPUT type.
+ * That is also why the decision this gates is inert for the shipped packs and
+ * gated here anyway.
+ */
 const GOOD_ENTRY: StockAssetTemplateEntry = {
   code: GOOD_CODE,
   name: "F216 good",
@@ -97,8 +119,45 @@ const GOOD_ENTRY: StockAssetTemplateEntry = {
   domain: "water",
   stockVersion: 3,
   content: { contentVersion: 1 },
-  points: [{ pointKey: "a", ...MEASURED, meta: { tier: "core" } }],
+  points: [{ pointKey: "a", ...MEASURED, meta: { tier: "core" } }, { pointKey: "b" }],
 } as unknown as StockAssetTemplateEntry;
+
+/**
+ * What `create` must receive for `GOOD_ENTRY` — spelled by hand, and NEVER
+ * derived from `GOOD_ENTRY`. A derived expectation drops the defaults from
+ * both sides at once, so `toEqual` would hold whether `create` was handed the
+ * parse's output or the raw entry, which is the false green this literal
+ * exists to close.
+ *
+ * `stockVersion` is absent because it is the stamp, not a body key;
+ * `organizationId` is the caller's, spread last by `import`.
+ */
+const EXPECTED_CREATE_BODY = {
+  organizationId: ORG,
+  code: GOOD_CODE,
+  name: "F216 good",
+  assetType: "test_rig",
+  domain: "water",
+  content: { contentVersion: 1 },
+  points: [
+    {
+      pointKey: "a",
+      kind: "measured",
+      sourceDataKeyPattern: null,
+      formula: null,
+      formulaDialect: null,
+      calcTrigger: null,
+      calcIntervalSeconds: null,
+      maxInputAgeSeconds: null,
+      required: true,
+      sortOrder: 0,
+      meta: { tier: "core" },
+    },
+    // The three keys point `b` never named. Only the parsed output carries
+    // them — this line is what fails if `create` is handed the raw entry.
+    { pointKey: "b", kind: "measured", required: true, sortOrder: 0 },
+  ],
+};
 
 const EXPECTED_MESSAGE = "Invalid formula: unexpected end of formula at character 5";
 const EXPECTED_PATH = ["points", 1, "formula"];
@@ -209,13 +268,21 @@ export async function assertTheControllerAnswers400WithTheSchemasOwnMessage(): P
 }
 
 /**
- * **Assertion 3 — the positive path.** A valid entry's PARSED output — not
- * the raw catalog entry — reaches `create`, alongside the stock stamp, and
- * `stockVersion` never leaks onto the body: dropping the destructure would
- * make `.strict()` refuse the whole body with "Unrecognized key(s) in
- * object: 'stockVersion'", which this test would then fail to reach
- * `create` at all — so `Object.hasOwn` pins the destructure directly rather
- * than trusting that a leaked key happens to look the same.
+ * **Assertion 3 — the positive path.** A valid entry's PARSED output — not the
+ * raw catalog entry — reaches `create`, alongside the stock stamp.
+ *
+ * The deep-equal is what separates the two objects, and it only can because
+ * `GOOD_ENTRY`'s point `b` omits `kind`, `required` and `sortOrder` while
+ * `EXPECTED_CREATE_BODY` spells all three. Hand `create` `{ ...body,
+ * organizationId }` — keeping the parse for validation and discarding its
+ * output — and this assertion fails on `points[1]`.
+ *
+ * The `Object.hasOwn(body, "stockVersion") === false` check below restates
+ * that; it is NOT the gate on the destructure-before-parse ordering. Remove
+ * the destructure and `.strict()` refuses the whole body with "Unrecognized
+ * key(s) in object: 'stockVersion'", so `create` is never reached and the
+ * `createCalls.length === 1` assertion fails first. It stays because it costs
+ * nothing and states plainly what the body may not carry.
  */
 export async function assertAValidEntryReachesCreateWithTheParsedBodyAndTheStamp(): Promise<void> {
   const { templates, createCalls } = templatesStub();
@@ -228,11 +295,45 @@ export async function assertAValidEntryReachesCreateWithTheParsedBodyAndTheStamp
   const call = createCalls[0]!;
   expectDeepEqual(call.stamp, { stockCode: GOOD_CODE, stockVersion: 3 });
 
-  const { stockVersion: _stockVersion, ...expectedBody } = GOOD_ENTRY as unknown as Record<string, unknown>;
-  expectDeepEqual(call.body, { organizationId: ORG, ...expectedBody });
+  expectDeepEqual(call.body, EXPECTED_CREATE_BODY);
   assert(
     Object.hasOwn(call.body as object, "stockVersion") === false,
     "stockVersion must never reach create() as a body field — it is the stamp, not a body key",
+  );
+}
+
+/**
+ * `F2.16` — the caller's `organizationId` wins over anything the entry carries.
+ *
+ * The parse spreads `organizationId` LAST. Reverse it and an entry carrying its
+ * own `organizationId` replaces the caller's, and the schema does not object:
+ * the key is declared on the create body and only gets a `uuid()` format check.
+ * `create` would then re-authorize and bind `withTenant` to the entry's
+ * organization rather than the one the request named.
+ *
+ * The fixture casts past `StockAssetTemplateEntry`, which is
+ * `Omit<CreateAssetTemplateBody, "organizationId">`, so TypeScript refuses this
+ * key on a real catalog literal. That type-level guard is exactly what this
+ * assertion declines to rely on — it is an accident of how the packs are
+ * written, not a property of the import path.
+ */
+export async function assertTheCallersOrganizationWinsOverAnEntryThatCarriesOne(): Promise<void> {
+  const OTHER_ORG = "00000000-0000-4000-8000-0000000f2160";
+  const carriesAnOrganization = {
+    ...GOOD_ENTRY,
+    organizationId: OTHER_ORG,
+  } as unknown as StockAssetTemplateEntry;
+  const { templates, createCalls } = templatesStub();
+  const access = {} as unknown as AccessControlService;
+  const stock = new AssetTemplatesStockService([carriesAnOrganization], access, templates);
+
+  await stock.import(JWT, GOOD_CODE, ORG);
+
+  assert(createCalls.length === 1, `create must be reached once, got ${createCalls.length}`);
+  const body = createCalls[0].body as Record<string, unknown>;
+  assert(
+    body.organizationId === ORG,
+    `the caller's organization must win — create received ${String(body.organizationId)}`,
   );
 }
 

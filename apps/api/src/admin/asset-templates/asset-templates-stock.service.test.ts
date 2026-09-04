@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertASchemaFailingEntryIsRefusedBeforeCreate,
   assertAValidEntryReachesCreateWithTheParsedBodyAndTheStamp,
+  assertTheCallersOrganizationWinsOverAnEntryThatCarriesOne,
   assertTheControllerAnswers400WithTheSchemasOwnMessage,
 } from "./asset-templates-stock.service.spec";
 
@@ -18,5 +19,9 @@ describe("F2.16 — the stock import runs the create body schema before create",
 
   it("reaches create with the parsed body and the stamp for a valid entry", async () => {
     await assertAValidEntryReachesCreateWithTheParsedBodyAndTheStamp();
+  });
+
+  it("keeps the caller's organizationId when the entry carries one of its own", async () => {
+    await assertTheCallersOrganizationWinsOverAnEntryThatCarriesOne();
   });
 });
