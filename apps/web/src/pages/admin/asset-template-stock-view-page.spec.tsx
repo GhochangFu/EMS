@@ -22,15 +22,22 @@ import { AssetTemplateStockViewPage } from "./asset-template-stock-view-page";
  * file Vitest collects (ADR 0042 decision 2).
  *
  * **What this file exists to hold.** The viewer renders repository data through
- * the same six authoring tabs with `editable={false}`. Two things can silently
- * stop being true: a field could render writable on a screen with no save path,
- * and the synthetic `status` in `lib/stock-template-view.ts` could become
- * `draft`, which leaves the Calculations and KPIs formula editors writable even
- * with `editable={false}` (`formulaFieldsAreReadOnly` reads `status`, not the
- * prop). Both fixtures below are built for that: `FEEDER` mirrors the live
- * `electrical-feeder` — 33 points, 11 alarms, no derived point — and
- * `WITH_FORMULA` carries the derived point and the KPI the feeder structurally
- * cannot, which is the only way to reach either formula editor.
+ * the same seven authoring tabs with `editable={false}`. Two things can
+ * silently stop being true: a field could render writable on a screen with no
+ * save path, and the synthetic `status` in `lib/stock-template-view.ts` could
+ * become `draft`, which leaves the Calculations and KPIs formula editors
+ * writable even with `editable={false}` (`formulaFieldsAreReadOnly` reads
+ * `status`, not the prop). Both fixtures below are built for that: `FEEDER`
+ * mirrors the live `electrical-feeder` — 33 points, 11 alarms, no derived
+ * point — and `WITH_FORMULA` carries the derived point and the KPI the feeder
+ * structurally cannot, which is the only way to reach either formula editor.
+ *
+ * **`FEEDER` gained three maintenance plans in `F2.19`** (ADR 0038
+ * Amendment 5 Part B). The seventh tab is what discharges the review problem
+ * the amendment names: 101 authored plans across all 27 stock entries, ten of
+ * them `safetyCritical`, and a global administrator could not see one of them.
+ * The read-only floor is the minimum the amendment sets, so it is asserted
+ * here on the viewer rather than only on the tab.
  *
  * The fixtures are parsed through `stockAssetTemplateDtoSchema`, so they are
  * real `StockAssetTemplateDto`s rather than hand-typed lookalikes.
@@ -89,6 +96,31 @@ function stockAlarm(index: number): unknown {
 }
 
 /**
+ * Three plans in the shape the stock packs actually authored them: partial,
+ * because the API's defaults are applied on write and never re-sent. One is
+ * `safetyCritical` and one carries a `triggerSummary` — the two fields a reader
+ * most needs and the two a collapsed or truncated render would lose.
+ */
+const MAINTENANCE_PLANS = [
+  { title: "Thermographic scan of the feeder terminations", intervalDays: 180 },
+  {
+    title: "Protection relay secondary injection test",
+    intervalDays: 730,
+    category: "compliance",
+    priority: "high",
+    estimatedMinutes: 240,
+    safetyCritical: true,
+  },
+  {
+    title: "Breaker mechanism service",
+    intervalDays: 365,
+    triggerSummary: "Due on the operation counter or on the calendar, whichever comes first.",
+  },
+];
+
+const MAINTENANCE_COUNT = MAINTENANCE_PLANS.length;
+
+/**
  * The live `electrical-feeder`, by its measured shape: 33 points, 11 alarms,
  * zero derived points and zero KPIs. `p32` is what catches a truncated render.
  */
@@ -102,6 +134,7 @@ const FEEDER: StockAssetTemplateDto = stockAssetTemplateDtoSchema.parse({
   content: {
     contentVersion: 1,
     alarms: Array.from({ length: ALARM_COUNT }, (_unused, index) => stockAlarm(index)),
+    maintenance: MAINTENANCE_PLANS,
   },
   points: Array.from({ length: POINT_COUNT }, (_unused, index) => stockPoint(index)),
 });
@@ -346,6 +379,57 @@ export async function everyAlarmRendersDisabledWithNoSavePath(): Promise<void> {
   // F2.14 code review proved it with `optimisation: {}` in the fixture). The
   // page does not suppress the banner, and the API rejects reserved keys, so
   // the claim belongs to neither the page nor this spec.
+}
+
+/**
+ * Case 2b — every maintenance plan renders, disabled, with no save path.
+ *
+ * This is the case ADR 0038 Amendment 5 Part B exists for. The amendment's
+ * minimum scope is a read-only Maintenance tab on this viewer, because the
+ * client cannot redline what the client cannot see — the review posture ADR
+ * 0040 set for Track B — and 101 authored plans were reachable only through the
+ * API. The `safetyCritical` badge is asserted because ten of those plans are
+ * safety critical and the badge is the one thing on the card a reader must not
+ * have to open a field to find.
+ */
+export async function everyMaintenancePlanRendersDisabledWithNoSavePath(): Promise<void> {
+  stubApi();
+  const container = renderViewer(`/admin/asset-templates/stock/${FEEDER_CODE}?tab=maintenance`);
+
+  await screen.findByText(FEEDER_NAME);
+  for (const plan of MAINTENANCE_PLANS) {
+    expect(
+      await screen.findByDisplayValue(plan.title),
+      `the plan "${plan.title}" did not render`,
+    ).toBeInTheDocument();
+  }
+  expect(
+    screen.getByDisplayValue(MAINTENANCE_PLANS[2].triggerSummary as string),
+    "the trigger summary must render — it is the field that says when a plan is due",
+  ).toBeInTheDocument();
+
+  // The floor case 2 had to learn: `enabledFieldNames` maps over `aria-label`,
+  // so `toEqual([])` also passes on a tab that rendered nothing at all.
+  expect(
+    fieldsOutsideTheImportPicker(container).length,
+    "the Maintenance tab rendered too few fields for the sweep below to mean anything",
+  ).toBeGreaterThan(MAINTENANCE_COUNT * 10);
+  expect(
+    enabledFieldNames(container),
+    "a maintenance field on the read-only stock viewer accepts input. ADR 0052 decision 1 makes " +
+      "the catalog repository data — it is imported, never edited here.",
+  ).toEqual([]);
+  expect(screen.queryByRole("button", { name: "Save maintenance" })).toBeNull();
+
+  expect(
+    screen.getAllByText("Safety critical"),
+    "exactly one of the three plans is safety critical, and the badge must render read-only",
+  ).toHaveLength(1);
+
+  expect(
+    screen.getByRole("tab", { name: "Maintenance" }).getAttribute("aria-selected"),
+    "?tab=maintenance must select the Maintenance tab in the strip",
+  ).toBe("true");
 }
 
 /**

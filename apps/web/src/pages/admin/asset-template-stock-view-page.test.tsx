@@ -7,6 +7,7 @@ import {
   anUnknownCodeRendersTheNotFoundPanel,
   bothFormulaEditorsRenderReadOnly,
   everyAlarmRendersDisabledWithNoSavePath,
+  everyMaintenancePlanRendersDisabledWithNoSavePath,
   everyPointRendersAndNoFieldAcceptsInput,
   importIsDisabledUntilAnOrganizationIsChosen,
   importLandsOnTheNewDraft,
@@ -29,6 +30,10 @@ describe("F2.14 the read-only viewer for a stock catalog entry", () => {
 
   it("renders every stored alarm disabled, with no save path", async () => {
     await everyAlarmRendersDisabledWithNoSavePath();
+  });
+
+  it("renders every stored maintenance plan disabled, with no save path (F2.19)", async () => {
+    await everyMaintenancePlanRendersDisabledWithNoSavePath();
   });
 
   it("renders both the formula and the KPI expression editor read-only", async () => {
