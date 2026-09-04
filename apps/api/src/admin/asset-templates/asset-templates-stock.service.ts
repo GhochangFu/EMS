@@ -4,6 +4,7 @@ import { stockAssetTemplateDtoSchema } from "@bms/shared";
 import type { AdminAssetTemplateDto, JwtPayload, StockAssetTemplateDto } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { createAssetTemplateBodySchema } from "./asset-templates.schema";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import { STOCK_ASSET_TEMPLATE_CATALOG_TOKEN } from "./asset-templates.tokens";
 import type { StockAssetTemplateEntry } from "./stock-catalog/types";
@@ -33,9 +34,13 @@ import type { StockAssetTemplateEntry } from "./stock-catalog/types";
  * `AssetTemplatesAdminService.create` with the entry's body, the target
  * organization and the stamp — so every guard an authored draft passes, an
  * import passes: `assertPointKeysActive`, `assertAssetDomain`, the alarm
- * vocabularies, the content reference check. Nothing the catalog says can
- * bypass a rule the form enforces, and there is no second write path to keep
- * honest.
+ * vocabularies, the content reference check. Since `F2.16` the import also
+ * runs `createAssetTemplateBodySchema` itself — the 256 KB content cap, the
+ * prototype-key ban, the bms-calc-v1 formula parse and the `.strict()` key
+ * set — on the same object `checkEntry` parses at build time
+ * (`stock-catalog.spec.ts`), rather than trusting that build-time pass to
+ * still hold at import time. Nothing the catalog says can bypass a rule the
+ * form enforces, and there is no second write path to keep honest.
  *
  * **THE CATALOG ARRIVES THROUGH A DI TOKEN**, not an import, even though a
  * real entry ships — `asset-templates.tokens.ts` records the three test cases
@@ -107,12 +112,43 @@ export class AssetTemplatesStockService {
     }
 
     // The create body is `.strict()`; `stockVersion` is not a body field. It
-    // travels as the stamp — `create`'s third argument — beside the code.
+    // travels as the stamp — `create`'s third argument — beside the code. The
+    // destructure must run BEFORE the parse below: parsing the whole `entry`
+    // (stockVersion included) would make `.strict()` refuse every import with
+    // "Unrecognized key(s) in object: 'stockVersion'".
     const { stockVersion, ...body } = entry;
-    return this.templates.create(
-      jwt,
-      { organizationId, ...body },
-      { stockCode: entry.code, stockVersion },
-    );
+
+    // `F2.16` — until this line, nothing here ever ran
+    // `createAssetTemplateBodySchema` on an import; the 256 KB content cap,
+    // the prototype-key ban, the bms-calc-v1 formula parse and the `.strict()`
+    // key set only guarded a stock entry at BUILD time, via `checkEntry` in
+    // `stock-catalog.spec.ts`. That build-time check stays — it is what keeps
+    // a malformed entry from ever shipping — but it is not a substitute for
+    // running the same contract at the moment the entry is turned into a
+    // create call, which is what every other caller of `create` goes through.
+    //
+    // This is also the ONLY create-time path where the 256 KB cap can ever
+    // bind: `asset-templates-content.schema.ts:78-82` records that Express's
+    // body parser answers 413 at 100 KB, so on `POST /` the schema's own cap
+    // is unreachable. A stock import carries its content from code, not the
+    // HTTP body, so it is the one path the byte cap actually protects — and
+    // the one path that was not applying it.
+    //
+    // A `ZodError` here propagates rather than being caught and rewrapped:
+    // `importStock` (asset-templates.controller.ts:116-118) already catches
+    // `ZodError` and answers `BadRequestException(err.flatten())` — the same
+    // 400 body `POST /` returns for the identical schema. Propagating keeps
+    // this the one service method in `apps/api` whose refusal is a
+    // `ZodError` rather than a Nest HTTP exception, and its only caller
+    // already maps it; converting it here would bury the schema's own
+    // message behind a generic "Bad Request Exception".
+    //
+    // The parsed OUTPUT, not the raw entry, is what reaches `create` — Zod's
+    // defaults (`kind`, `required`, `sortOrder`) are applied identically to a
+    // hand-authored draft and an import. Measured against all 27 shipped
+    // catalog entries: 27 pass, and all 27 parse to output deep-equal to
+    // their input, so no shipped entry's shape changes here.
+    const parsed = createAssetTemplateBodySchema.parse({ organizationId, ...body });
+    return this.templates.create(jwt, parsed, { stockCode: entry.code, stockVersion });
   }
 }
