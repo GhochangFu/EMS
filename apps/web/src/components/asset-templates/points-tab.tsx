@@ -15,6 +15,19 @@
  *
  * `sortOrder` is a number input. ADR 0038 decision 2 makes it the dashboard
  * ordering control, and there is no section editor and no drag-and-drop.
+ *
+ * The **Tier** column is ADR 0038 Amendment 5 Part A (`F2.15`). On a draft it
+ * is a `<select>` over `TEMPLATE_POINT_TIERS`, whose empty option is the stored
+ * "no tier" state rather than a convenience — `template_points.meta` defaults
+ * to `{}`, and a control that could not express that would assign a tier on the
+ * author's next save. On a published or archived version it is read-only
+ * **text**, not a disabled select: that is decision 3's lifecycle rule applied
+ * unchanged, and it is what keeps the `F2.14` stock viewer's "no field on this
+ * screen accepts input" sweep true.
+ *
+ * The tier is provenance, not behaviour. Nothing here and nothing in
+ * `lib/template-points-grid.ts` branches on its value — no validation, no
+ * ordering, no styling — and the amendment says no code may start to.
  */
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -25,12 +38,14 @@ import { apiErrorMessage } from "../../lib/api-error-message";
 import { fetchAdminPointKeys } from "../../api/admin/point-keys";
 import {
   MAX_TEMPLATE_POINTS,
+  TEMPLATE_POINT_TIERS,
   blankPointRow,
   buildPointsPayload,
   pointGridErrors,
   pointRowsFrom,
   pointsHaveChanged,
   setPointKind,
+  setPointTier,
   type TemplatePointRow,
 } from "../../lib/template-points-grid";
 
@@ -114,6 +129,9 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
               <th className="py-1 pr-2">Label</th>
               <th className="py-1 pr-2">Unit</th>
               <th className="py-1 pr-2">Kind</th>
+              {/* After Kind: the tier is provenance about the point, as the
+                  kind is, rather than one of its editable values. */}
+              <th className="py-1 pr-2">Tier</th>
               <th className="py-1 pr-2">Source key pattern</th>
               <th className="py-1 pr-2">Required</th>
               <th className="py-1 pr-2">Order</th>
@@ -193,6 +211,42 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
                     </select>
                   </td>
                   <td className="py-1.5 pr-2">
+                    {editable ? (
+                      <select
+                        // Named per row because the column holds one control
+                        // per point and a screen reader otherwise hears three
+                        // identical "Tier" selects. The fallback covers a row
+                        // added but not yet given a key.
+                        aria-label={`Tier for ${row.pointKey || `row ${index + 1}`}`}
+                        value={row.meta?.tier ?? ""}
+                        // Through `setPointTier`, never a direct `meta` write:
+                        // the empty option has to become `null` rather than an
+                        // object the wire schema refuses.
+                        onChange={(event) =>
+                          setRows((current) =>
+                            current.map((entry, position) =>
+                              position === index
+                                ? setPointTier(entry, event.target.value)
+                                : entry,
+                            ),
+                          )
+                        }
+                        className={cellClass(false, undefined)}
+                      >
+                        {/* Not a placeholder — the stored state of a point with
+                            no tier, which is most hand-authored ones. */}
+                        <option value="">no tier</option>
+                        {TEMPLATE_POINT_TIERS.map((tier) => (
+                          <option key={tier} value={tier}>
+                            {tier}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-xs">{row.meta?.tier ?? "—"}</span>
+                    )}
+                  </td>
+                  <td className="py-1.5 pr-2">
                     <input
                       type="text"
                       value={row.sourceDataKeyPattern}
@@ -242,7 +296,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
             })}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="py-4 text-center text-bms-muted">
+                <td colSpan={9} className="py-4 text-center text-bms-muted">
                   This template declares no points yet.
                 </td>
               </tr>

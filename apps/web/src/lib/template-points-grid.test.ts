@@ -10,6 +10,7 @@ import {
   runKindChangeTests,
   runPointMetaSurvivesARoundTripTests,
   runSeedTests,
+  runTierAuthoringTests,
 } from "./template-points-grid.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -48,5 +49,9 @@ describe("template points grid", () => {
 
   it("treats a change as what would be sent, not what was typed", () => {
     runChangeDetectionTests();
+  });
+
+  it("makes the tier authorable: a tier-only edit is a change, and no rule branches on it (F2.15)", () => {
+    runTierAuthoringTests();
   });
 });

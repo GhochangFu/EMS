@@ -6,14 +6,14 @@ import type { TemplatePointInput, TemplatePointTier } from "../api/admin/asset-t
 /**
  * The Points tab's grid rules (`F2.5`, ADR 0038 Unit 9b).
  *
- * ## The rule this module exists for: the grid edits seven fields and sends twelve
+ * ## The rule this module exists for: the grid edits eight fields and sends twelve
  *
  * `templatePointsBodySchema` takes the **whole** point set on every draft
  * update — "the points ARE the template, and a partial patch would leave 'did
  * you mean to delete the ones you omitted?' ambiguous". `replacePoints` then
  * deletes every row and reinserts from the payload.
  *
- * So a payload builder that sent only the seven fields this tab edits would
+ * So a payload builder that sent only the fields this tab edits would
  * write `null` into `formula`, `formulaDialect`, `calcTrigger`,
  * `calcIntervalSeconds` and `maxInputAgeSeconds` for every point. The server
  * would accept it — a measured point with no formula is valid, and a *derived*
@@ -35,6 +35,13 @@ import type { TemplatePointInput, TemplatePointTier } from "../api/admin/asset-t
  * different from the calc fields': the key is **omitted** for a point with no
  * tier rather than sent as `null`, because `templatePointBodySchema.meta` is
  * optional-but-closed — `{ tier }` once present, `null` and `{}` both refused.
+ *
+ * **`F2.15` made that thirteenth field the eighth *authorable* one**
+ * (ADR 0038 Amendment 5 Part A): the Points tab renders a Tier select on a
+ * draft, through `setPointTier`. Carrying it was already the rule; what changed
+ * is that the author can now set it. It stays provenance — the amendment says
+ * so explicitly — so nothing in this module or in `points-tab.tsx` branches on
+ * its value, and `pointGridErrors` has no tier rule at all.
  *
  * ## Point identity does not survive a save, and nothing depends on it
  *
@@ -60,15 +67,18 @@ export type TemplatePointKindValue = "measured" | "derived";
 /**
  * One editable row.
  *
- * The seven edited fields are strings as the DOM holds them; `label`, `unit`
- * and `sourceDataKeyPattern` are `.nullish()` on the wire, so an emptied box
- * becomes `null` in `buildPointsPayload` rather than an empty string.
+ * Seven of the eight edited fields are strings as the DOM holds them; `label`,
+ * `unit` and `sourceDataKeyPattern` are `.nullish()` on the wire, so an emptied
+ * box becomes `null` in `buildPointsPayload` rather than an empty string.
  *
  * The five calc fields keep their wire types. They are carried, not edited.
  *
- * `meta` is normalised on seed: the read side may hold `null` or `{}` (the
- * column default) for a point with no tier, and both become `null` here so
- * that `buildPointsPayload` has one case to omit.
+ * `meta` is the eighth edited field and the exception to the sentence above: it
+ * is not a string but the wire object, because its empty state is a missing key
+ * rather than an empty value. `setPointTier` is what turns the select's string
+ * back into it. It is normalised on seed — the read side may hold `null` or
+ * `{}` (the column default) for a point with no tier, and both become `null`
+ * here so that `buildPointsPayload` has one case to omit.
  */
 export type TemplatePointRow = {
   pointKey: string;
@@ -169,6 +179,59 @@ export function setPointKind(
     };
   }
   return { ...row, kind, sourceDataKeyPattern: "" };
+}
+
+/**
+ * The three tiers ADR 0040 decision 3 names, in the order the select offers
+ * them.
+ *
+ * This is the **first** runtime list of the tiers in `apps/web` — before
+ * `F2.15` the values existed only as the type `TemplatePointTier`, because
+ * nothing rendered them. It is a literal list on purpose, for the reason
+ * `alarms-tab.tsx` gives about the operators: unlike the domain, the severity
+ * and the alarm skill, the tier is a closed union in the contract and not a
+ * `bms.*` vocabulary row, so a fetch would be inventing a table that does not
+ * exist.
+ */
+export const TEMPLATE_POINT_TIERS = [
+  "core",
+  "extended",
+  "manual",
+] as const satisfies readonly TemplatePointTier[];
+
+/**
+ * Compile-time: a fourth tier added to the contract without an option here
+ * fails `pnpm typecheck` rather than rendering a select that silently cannot
+ * express a stored value.
+ *
+ * `satisfies` above only proves every listed tier is real. This proves the
+ * other direction — that every real tier is listed — which is the one that
+ * loses data.
+ */
+type AssertNever<T extends never> = T;
+export type EveryTierHasAnOption = AssertNever<
+  Exclude<TemplatePointTier, (typeof TEMPLATE_POINT_TIERS)[number]>
+>;
+
+/**
+ * Sets a point's tier from the select's raw string value.
+ *
+ * The empty option is load-bearing, not a convenience. `template_points.meta`
+ * is `jsonb NOT NULL DEFAULT '{}'`, so a hand-authored point legitimately has
+ * no tier, and the wire shape for that is to omit `meta` entirely. A select
+ * that could not express "no tier" would assign one on the author's next save
+ * — silently, to a field whose whole purpose is to record the client's redline.
+ *
+ * Anything outside `TEMPLATE_POINT_TIERS` clears the tier rather than being
+ * carried. The DOM hands over a `string`, and passing an unknown value through
+ * would reach the server as a 400 naming a Zod path the author never chose.
+ *
+ * Nothing else on the row moves. The tier is provenance (ADR 0038 Amendment 5),
+ * so unlike `setPointKind` this clears no companion field.
+ */
+export function setPointTier(row: TemplatePointRow, raw: string): TemplatePointRow {
+  const tier = TEMPLATE_POINT_TIERS.find((candidate) => candidate === raw);
+  return { ...row, meta: tier ? { tier } : null };
 }
 
 /** One problem, addressed to a row. `row: null` means the grid as a whole. */
