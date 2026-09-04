@@ -1,10 +1,11 @@
 /**
- * A stock catalog entry, shaped as the template the six tab components take
+ * A stock catalog entry, shaped as the template the seven tab components take
  * (`F2.14`, ADR 0052 decisions 1 and 10).
  *
  * The read-only viewer renders a `StockAssetTemplateDto` through `DetailsTab`,
- * `PointsTab`, `CalculationsTab`, `KpisTab`, `AlarmsTab` and `DashboardsTab`
- * with `editable={false}`. Those tabs take an `AdminAssetTemplateDto`, and a
+ * `PointsTab`, `CalculationsTab`, `KpisTab`, `AlarmsTab`, `DashboardsTab` and —
+ * since `F2.19`, ADR 0038 Amendment 5 Part B — `MaintenanceTab`, with
+ * `editable={false}`. Those tabs take an `AdminAssetTemplateDto`, and a
  * stock entry is the *write* shape — no row identity, no organization, no
  * timestamps. This module bridges the two at one tested seam, so no tab
  * changes.

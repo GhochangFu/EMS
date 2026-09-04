@@ -3,15 +3,17 @@
  * decisions 1 and 10).
  *
  * An administrator can read a catalog entry in full before deciding to import
- * it. The entry is rendered through the **same six tab components the authoring
- * detail page uses**, with `editable={false}`, so there is exactly one
- * description of what a template looks like rather than a second read-only
- * copy that drifts. `lib/stock-template-view.ts` is the seam that makes that
+ * it. The entry is rendered through the **same seven tab components the
+ * authoring detail page uses**, with `editable={false}`, so there is exactly
+ * one description of what a template looks like rather than a second read-only
+ * copy that drifts. That is what made `F2.19` free here: `MaintenanceTab`
+ * became the seventh arm of `TemplateTabBody` and this page rendered it with
+ * no edit of its own. `lib/stock-template-view.ts` is the seam that makes that
  * possible: it shapes a `StockAssetTemplateDto` — the *write* shape, with no
  * row identity — as the `AdminAssetTemplateDto` the tabs take.
  *
  * **Nothing here writes to the catalog, and nothing can.** ADR 0052 decision 1
- * makes the catalog repository data; every save control in all six tabs sits
+ * makes the catalog repository data; every save control in all seven tabs sits
  * behind `{editable ? … : null}`, and this page passes the literal `false`. The
  * one writable control on the screen is the header's organization picker, which
  * feeds Import — and Import creates a *new* row rather than changing the entry.
@@ -62,12 +64,12 @@ import type { AuthUser } from "../../stores/auth-store";
 type AssetTemplateStockViewPageProps = { user: AuthUser };
 
 /**
- * The two callbacks the six tabs require, as **module-level constants rather
+ * The two callbacks the seven tabs require, as **module-level constants rather
  * than inline arrows**.
  *
  * `onDirtyChange` sits in a `useEffect` dependency array in every one of the
- * six tabs. A fresh arrow on each render changes that dependency every time,
- * which re-runs six effects for no reason. These are stable by construction.
+ * seven tabs. A fresh arrow on each render changes that dependency every time,
+ * which re-runs seven effects for no reason. These are stable by construction.
  * They are not "simplifiable" back to `() => {}` at the call site.
  */
 const NEVER_SAVED: (next: AdminAssetTemplateDto) => void = () => {};

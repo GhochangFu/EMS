@@ -2,9 +2,9 @@
  * The tab registry (`F2.5`, ADR 0038 decision 2 — Unit 7).
  *
  * These assertions cover the **behaviour**. The count and the ids are also
- * asserted against this file's *source text* by Unit 8, because a type cannot
- * stop someone adding a sixth entry and a behavioural test that read the
- * registry would simply agree with whatever it found.
+ * asserted against `template-tabs.ts`'s *source text* by Unit 8, because a type
+ * cannot stop someone adding an eighth entry and a behavioural test that read
+ * the registry would simply agree with whatever it found.
  */
 import {
   DEFAULT_TEMPLATE_TAB,
@@ -18,15 +18,15 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-/** Six tabs, the six ADR 0038 names, in the ADR's order (Amendment 4). */
+/** Seven tabs, the seven ADR 0038 names, in the ADR's order (Amendment 5). */
 export function runRegistryShapeTests(): void {
   assert(
-    TEMPLATE_TABS.length === 6,
-    `ADR 0038 Amendment 4 names six tabs, got ${TEMPLATE_TABS.length}`,
+    TEMPLATE_TABS.length === 7,
+    `ADR 0038 Amendment 5 names seven tabs, got ${TEMPLATE_TABS.length}`,
   );
   assert(
     TEMPLATE_TABS.map((tab) => tab.id).join(",") ===
-      "details,points,calculations,kpis,alarms,dashboards",
+      "details,points,calculations,kpis,alarms,dashboards,maintenance",
     `the registry drifted — got ${TEMPLATE_TABS.map((tab) => tab.id).join(",")}`,
   );
   assert(
@@ -43,20 +43,24 @@ export function runRegistryShapeTests(): void {
  * The closed sections have no tab.
  *
  * `optimisation` is refused by `templateContentSchema`, so a tab for it would
- * always error — worse than no tab. `maintenance` is deliberately omitted, and
- * **`health` joined it in `E1.3`**: ADR 0050 decision 7 reopened the tier, so it
+ * always error — worse than no tab. **`health` joined this list in `E1.3`**:
+ * ADR 0050 decision 7 reopened the tier, so it
  * is no longer refused, but ADR 0050 Amendment 1 decision 5 scopes `E1.3` to the
- * score surfaces and a seventh tab needs an ADR 0038 amendment. It stays in this
+ * score surfaces and an eighth tab needs an ADR 0038 amendment. It stays in this
  * list for a changed reason, which is why the reason is written down. **`dashboards` left this list in `F3.1e`** (ADR 0038 Amendment 4):
  * it carried only an ordering when this was written, and `F3.1a` gave it
  * widgets, which is the condition decision 2 set for it becoming a tab.
- * Asserted over the ids rather than trusted to the count: six tabs is still six
- * tabs if one of
+ * **`maintenance` left it in `F2.19`** (Amendment 5 Part B), and for a
+ * different kind of reason: decision 2 set it no condition to discharge, it was
+ * omitted pending a ruling nobody had asked for, and the amendment is that
+ * ruling. Exactly one entry was removed each time; the mechanism is untouched.
+ * Asserted over the ids rather than trusted to the count: seven tabs is still
+ * seven tabs if one of
  * them is the wrong one.
  */
 export function runNoClosedSectionTabTests(): void {
   const ids = TEMPLATE_TABS.map((tab) => tab.id as string);
-  for (const closed of ["health", "optimisation", "maintenance"]) {
+  for (const closed of ["health", "optimisation"]) {
     assert(!ids.includes(closed), `${closed} has no tab in this ADR — got ${ids.join(",")}`);
   }
 }

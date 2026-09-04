@@ -1,18 +1,19 @@
 /**
  * The Versions / migration view (`F2.6`, ADR 0039 decision 8).
  *
- * **A route, not a tab.** ADR 0038 names exactly six tabs, and three gates keep
- * it that way — `tests/adr-0038-template-authoring-ui.test.ts` scans
+ * **A route, not a tab.** ADR 0038 names exactly seven tabs, and three gates
+ * keep it that way — `tests/adr-0038-template-authoring-ui.test.ts` scans
  * `lib/template-tabs.ts`, `lib/template-tabs.spec.ts` holds the count and the
  * id string, and `lib/template-tab-guard.spec.ts` holds it arithmetically as an
- * ordered-pair count. Adding one here would break gates that exist for a good
- * reason (D-3).
+ * ordered-pair count (forty-two, since seven tabs give `n(n-1)`). Adding one
+ * here would break gates that exist for a good reason (D-3).
  *
  * **This docblock said "a sixth tab" until `F3.1e`, and that phrase now names
- * something that exists** — Dashboards is the sixth (ADR 0038 Amendment 4). The
- * count and the ordinal moved; the argument did not, and it is the half that
- * matters: migration is not authoring. It acts on *assets*, while all six tabs
- * are about the template's own shape. That is why this is still a route.
+ * something that exists** — Dashboards is the sixth (ADR 0038 Amendment 4), and
+ * Maintenance is the seventh (Amendment 5 Part B, `F2.19`). The count and the
+ * ordinal have moved twice; the argument did not, and it is the half that
+ * matters: migration is not authoring. It acts on *assets*, while all seven
+ * tabs are about the template's own shape. That is why this is still a route.
  *
  * Presentation only. Every rule that could be wrong is in
  * `lib/template-version-migration.ts`, because `apps/web`'s Vitest project runs
