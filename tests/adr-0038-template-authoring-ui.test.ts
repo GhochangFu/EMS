@@ -7,24 +7,29 @@ import { describe, expect, it } from "vitest";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
 /**
- * ADR 0038 decision 2, as amended: the template detail page has **exactly six**
- * tabs — Details, Points, Calculations, KPIs, Alarms, Dashboards — and no tab
- * for a content section the API will not accept.
+ * ADR 0038 decision 2, as amended: the template detail page has **exactly
+ * seven** tabs — Details, Points, Calculations, KPIs, Alarms, Dashboards,
+ * Maintenance — and no tab for a content section the API will not accept.
  *
  * The count was five until `F3.1e`. **Amendment 4 (2026-08-29) moved it to
  * six**, discharging the condition decision 2 wrote for itself — *"It becomes a
  * tab when `F3.1` gives it widgets"* — after `F3.1a` gave `content.dashboards`
- * widgets in `b0b4f3f`. The number moves by amendment, once, with a reason.
- * Never by editing this file to make a new tab pass.
+ * widgets in `b0b4f3f`. **Amendment 5 Part B (2026-09-04) moved it to seven**
+ * for `F2.19`, and on a different footing: decision 2 set `maintenance` no
+ * condition at all. *Not in this ADR* omitted it pending a ruling nobody had
+ * asked for on whether class-level plans are authored here or with the
+ * work-order surface, and the amendment is that ruling. The number moves by
+ * amendment, once, with a reason. Never by editing this file to make a new tab
+ * pass.
  *
  * ## Why a source scan, when `template-tabs.spec.ts` already asserts the ids
  *
  * The spec reads the exported array at runtime. It proves the registry the app
- * ships behaves correctly, and it would keep passing if a seventh tab were added
- * to the array *and* to the spec's expected list — which is what a well-meaning
- * "add another tab" change looks like, since a red test is an invitation
- * to update it. This reads the **source text**, so the number six is asserted
- * somewhere the person adding a tab is not already editing.
+ * ships behaves correctly, and it would keep passing if an eighth tab were
+ * added to the array *and* to the spec's expected list — which is what a
+ * well-meaning "add another tab" change looks like, since a red test is an
+ * invitation to update it. This reads the **source text**, so the number seven
+ * is asserted somewhere the person adding a tab is not already editing.
  *
  * The two overlap on purpose and neither replaces the other: behaviour there,
  * text here.
@@ -64,7 +69,7 @@ function stripComments(source: string): string {
   return source.replace(BLOCK_COMMENT, "").replace(LINE_COMMENT, "");
 }
 
-describe("ADR 0038 decision 2 + Amendment 4 — the tab registry declares exactly six tabs", () => {
+describe("ADR 0038 decision 2 + Amendment 5 — the tab registry declares exactly seven tabs", () => {
   // `apps/web/src/lib/template-tabs.ts`, not the strip that renders it. The
   // plan put the registry in `template-tab-strip.tsx`; Unit 7 moved it here so
   // `resolveTemplateTab` would be reachable by a test at all, and the module's
@@ -73,7 +78,15 @@ describe("ADR 0038 decision 2 + Amendment 4 — the tab registry declares exactl
   const raw = readFileSync(join(repoRoot, rel), "utf8");
   const source = stripComments(raw);
 
-  const EXPECTED = ["details", "points", "calculations", "kpis", "alarms", "dashboards"];
+  const EXPECTED = [
+    "details",
+    "points",
+    "calculations",
+    "kpis",
+    "alarms",
+    "dashboards",
+    "maintenance",
+  ];
 
   /**
    * The registry entries, and nothing around them.
@@ -104,17 +117,17 @@ describe("ADR 0038 decision 2 + Amendment 4 — the tab registry declares exactl
     ).toBeGreaterThan(0);
   });
 
-  it("declares six tabs, with the six ADR 0038 ids, in the ADR's order", () => {
+  it("declares seven tabs, with the seven ADR 0038 ids, in the ADR's order", () => {
     expect(ids).toEqual(EXPECTED);
     // Asserted separately from the list so a count drift and a rename read as
     // different failures.
-    expect(ids.length, "ADR 0038 Amendment 4 names six tabs and only six").toBe(6);
+    expect(ids.length, "ADR 0038 Amendment 5 names seven tabs and only seven").toBe(7);
     // Each entry is one object literal. A second source of the same number,
     // which catches an entry that lost its `id` rather than the whole entry.
     expect(
       (block.match(/\{/g) ?? []).length,
       "one object literal per tab — an entry without an id would not be counted above",
-    ).toBe(6);
+    ).toBe(7);
   });
 
   it("has no tab for a reserved or deferred content section", () => {
@@ -135,9 +148,13 @@ describe("ADR 0038 decision 2 + Amendment 4 — the tab registry declares exactl
     // American one the plausible typo rather than an impossible one.
     // `dashboards` left this list in `F3.1e` under ADR 0038 Amendment 4, which
     // discharged decision 2's own condition — *"It becomes a tab when `F3.1`
-    // gives it widgets"* — after `F3.1a` gave it widgets. Exactly one entry was
-    // removed; the rest of this loop is untouched and must stay that way.
-    for (const closed of ["health", "optimisation", "optimization", "maintenance"]) {
+    // gives it widgets"* — after `F3.1a` gave it widgets. `maintenance` left it
+    // in `F2.19` under Amendment 5 Part B, which discharged nothing, because
+    // decision 2 set it no condition: it was omitted pending a ruling nobody
+    // had asked for, and the amendment is that ruling. Exactly one entry was
+    // removed each time; the rest of this loop is untouched and must stay that
+    // way. Weakening the scan to make room for a tab is what it exists to stop.
+    for (const closed of ["health", "optimisation", "optimization"]) {
       expect(
         ids,
         `${closed} has no tab in ADR 0038. The two reserved keys are refused by ` +
@@ -146,8 +163,8 @@ describe("ADR 0038 decision 2 + Amendment 4 — the tab registry declares exactl
     }
   });
 
-  it("the TemplateTabId union names the same six ids and no more", () => {
-    // The array's element type is what keeps a seventh entry from compiling. That
+  it("the TemplateTabId union names the same seven ids and no more", () => {
+    // The array's element type is what keeps an eighth entry from compiling. That
     // protection is only as strong as the union: widen it to `string`, or add a
     // name to it, and the array can hold anything with `tsc` silent. Nothing
     // else in the repository asserts this line.
@@ -155,7 +172,7 @@ describe("ADR 0038 decision 2 + Amendment 4 — the tab registry declares exactl
     expect(union, "TemplateTabId is no longer a single-line union of string literals").not.toBeNull();
 
     const declared = [...(union?.[1] ?? "").matchAll(/"([a-z]+)"/g)].map((match) => match[1]);
-    expect(declared, "the union must be a closed set of the six tab ids").toEqual(EXPECTED);
+    expect(declared, "the union must be a closed set of the seven tab ids").toEqual(EXPECTED);
     expect(declared, "the union and the array must name the same tabs").toEqual(ids);
   });
 
@@ -176,7 +193,7 @@ describe("ADR 0038 decision 2 + Amendment 4 — the tab registry declares exactl
       expect(
         block,
         `the registry entries must stay literal — found ${construction}. Building them ` +
-          "from anything else makes the six-tab limit unenforceable by a source scan.",
+          "from anything else makes the seven-tab limit unenforceable by a source scan.",
       ).not.toContain(construction);
     }
   });

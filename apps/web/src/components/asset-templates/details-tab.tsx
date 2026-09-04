@@ -123,7 +123,14 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!blocked && patch) {
+        // `editable` first (`F2.15`, the Low from `F2.14`'s security review).
+        // No route to this handler exists today — every input is disabled and
+        // no submit button is rendered on a read-only version — and the stock
+        // viewer's sentinel id would fail `idParamSchema` with a 400 if one
+        // did. The gate is here so that stays true by construction rather than
+        // by the absence of a control: a dirty form re-rendered read-only keeps
+        // its `patch`, so the two conditions below are not enough on their own.
+        if (editable && !blocked && patch) {
           saveM.mutate();
         }
       }}

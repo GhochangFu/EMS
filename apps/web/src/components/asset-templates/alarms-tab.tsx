@@ -308,11 +308,25 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
               </Field>
             </div>
 
-            {/* Forced open when it holds a problem. A collapsed block hiding
-                the only failing field leaves the author with a disabled Save,
-                a "fix the problems above" message, and nothing visible to fix
-                — which reads as the form being broken. */}
-            <details className="mt-3" open={rowProblems.some((problem) => PHILOSOPHY_FIELDS.includes(problem.field))}>
+            {/* Open by default on a **read-only** template (`F2.20`). There is
+                no Save to protect on a version that can never accept a write,
+                and reading is the other job this tab has: closed `<details>`
+                content is absent from `innerText` altogether, which is how
+                `E5.3`'s first browser pass reported a `philosophy.skill` that
+                was present in the data as missing from the page.
+
+                On an **editable** template the collapse stays, and is forced
+                open only when a philosophy field is failing. A collapsed block
+                hiding the only failing field leaves the author with a disabled
+                Save, a "fix the problems above" message, and nothing visible to
+                fix — which reads as the form being broken. */}
+            <details
+              className="mt-3"
+              open={
+                !editable ||
+                rowProblems.some((problem) => PHILOSOPHY_FIELDS.includes(problem.field))
+              }
+            >
               <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
                 Alarm philosophy
                 {rowProblems.some((problem) => PHILOSOPHY_FIELDS.includes(problem.field)) ? (

@@ -15,6 +15,16 @@ import {
   fetchMaintenanceSchedules,
   updateMaintenanceSchedule,
 } from "../api/maintenance";
+// The three label maps left this file in `F2.19` (ADR 0038 Amendment 5 Part B).
+// The Maintenance tab is the second surface that renders these twenty-three
+// strings, and two copies of one vocabulary's labels drift — a category renamed
+// on one screen and not the other says one code means two things. The wording
+// is unchanged; it is this panel's, now shared.
+import {
+  MAINTENANCE_CATEGORY_LABELS,
+  MAINTENANCE_GENERATION_MODE_LABELS,
+  WORK_ORDER_PRIORITY_LABELS,
+} from "../lib/maintenance-labels";
 
 type MaintenanceSchedulesPanelProps = {
   assetOptions: AssetRow[];
@@ -48,38 +58,6 @@ const generationModes: MaintenanceGenerationMode[] = [
   "condition",
   "predictive",
 ];
-
-const priorityLabels: Record<WorkOrderPriority, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  critical: "Critical",
-};
-
-const categoryLabels: Record<MaintenanceScheduleCategory, string> = {
-  preventive: "Preventive maintenance",
-  predictive: "Predictive maintenance",
-  condition_based: "Condition-based maintenance",
-  compliance: "Compliance / statutory",
-  amc: "AMC / vendor contract",
-  calibration: "Calibration",
-  runtime_based: "Runtime-based",
-  seasonal: "Seasonal",
-  inspection_round: "Inspection rounds",
-  corrective_follow_up: "Corrective follow-up",
-  deferred_backlog: "Deferred backlog",
-  shutdown_outage: "Shutdown / outage",
-  energy_optimization: "Energy optimization",
-  safety_critical: "Safety-critical",
-};
-
-const generationModeLabels: Record<MaintenanceGenerationMode, string> = {
-  manual: "Manual",
-  calendar: "Calendar",
-  runtime: "Runtime",
-  condition: "Condition",
-  predictive: "Predictive",
-};
 
 function priorityStyle(priority: WorkOrderPriority): string {
   switch (priority) {
@@ -317,7 +295,7 @@ export function MaintenanceSchedulesPanel({
             <option value="all">All categories</option>
             {categoryOptions.map((category) => (
               <option key={category} value={category}>
-                {categoryLabels[category]}
+                {MAINTENANCE_CATEGORY_LABELS[category]}
               </option>
             ))}
           </select>
@@ -346,7 +324,7 @@ export function MaintenanceSchedulesPanel({
             <option value="all">All priorities</option>
             {priorities.map((priority) => (
               <option key={priority} value={priority}>
-                {priorityLabels[priority]}
+                {WORK_ORDER_PRIORITY_LABELS[priority]}
               </option>
             ))}
           </select>
@@ -397,15 +375,15 @@ export function MaintenanceSchedulesPanel({
                 <span
                   className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${categoryStyle(item.category)}`}
                 >
-                  {categoryLabels[item.category]}
+                  {MAINTENANCE_CATEGORY_LABELS[item.category]}
                 </span>
                 <span
                   className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${priorityStyle(item.priority)}`}
                 >
-                  {priorityLabels[item.priority]}
+                  {WORK_ORDER_PRIORITY_LABELS[item.priority]}
                 </span>
                 <span className="rounded border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-bms-muted">
-                  {generationModeLabels[item.generationMode]}
+                  {MAINTENANCE_GENERATION_MODE_LABELS[item.generationMode]}
                 </span>
               </div>
               <div className="mt-3 grid gap-1 text-[11px] text-bms-muted">
@@ -446,7 +424,7 @@ export function MaintenanceSchedulesPanel({
                   onClick={() =>
                     convertM.mutate({
                       id: item.id,
-                      notes: `Generated WO from ${categoryLabels[item.category]}`,
+                      notes: `Generated WO from ${MAINTENANCE_CATEGORY_LABELS[item.category]}`,
                     })
                   }
                 >
@@ -516,7 +494,7 @@ export function MaintenanceSchedulesPanel({
                   >
                     {categoryOptions.map((category) => (
                       <option key={category} value={category}>
-                        {categoryLabels[category]}
+                        {MAINTENANCE_CATEGORY_LABELS[category]}
                       </option>
                     ))}
                   </select>
@@ -555,7 +533,7 @@ export function MaintenanceSchedulesPanel({
                   >
                     {generationModes.map((mode) => (
                       <option key={mode} value={mode}>
-                        {generationModeLabels[mode]}
+                        {MAINTENANCE_GENERATION_MODE_LABELS[mode]}
                       </option>
                     ))}
                   </select>
@@ -571,7 +549,7 @@ export function MaintenanceSchedulesPanel({
                   >
                     {priorities.map((priority) => (
                       <option key={priority} value={priority}>
-                        {priorityLabels[priority]}
+                        {WORK_ORDER_PRIORITY_LABELS[priority]}
                       </option>
                     ))}
                   </select>

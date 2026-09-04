@@ -5,11 +5,12 @@
  * than cast, so a DTO field that changes shape fails here instead of letting
  * these assertions run against an object the API can no longer produce.
  */
-import { adminAssetTemplateDtoSchema } from "@bms/shared/contracts";
+import { adminAssetTemplateDtoSchema, adminTemplatePointDtoSchema } from "@bms/shared/contracts";
 import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import {
   MAX_TEMPLATE_POINTS,
+  TEMPLATE_POINT_TIERS,
   blankPointRow,
   brokenFormulaRefs,
   buildPointsPayload,
@@ -17,6 +18,7 @@ import {
   pointRowsFrom,
   pointsHaveChanged,
   setPointKind,
+  setPointTier,
   type TemplatePointRow,
 } from "./template-points-grid";
 
@@ -413,5 +415,86 @@ export function runChangeDetectionTests(): void {
   assert(
     pointsHaveChanged([rows[1], rows[0]], row),
     "reordering the array is a change — the payload order is what the grid shows",
+  );
+}
+
+/**
+ * `F2.15` / ADR 0038 Amendment 5 Part A — the tier is authorable.
+ *
+ * `F2.13` proved the tier *survives* a round trip. What was asserted nowhere,
+ * and is what the Tier control depends on, is that a tier-only edit is a change
+ * (or Save never enables and the control does nothing), that the three values
+ * are named once in a list the contract can be checked against, and that
+ * **nothing validates the tier** — Amendment 5 keeps it provenance, not
+ * behaviour, so `pointGridErrors` must stay silent about it.
+ *
+ * The empty option is not a convenience. `template_points.meta` defaults to
+ * `{}`, so a hand-authored point legitimately has no tier; a select that could
+ * not express that stored state would assign one silently on the next save.
+ */
+export function runTierAuthoringTests(): void {
+  // The order is the order the select offers, so it is asserted as a sequence
+  // rather than as a set.
+  assert(
+    JSON.stringify(TEMPLATE_POINT_TIERS) === JSON.stringify(["core", "extended", "manual"]),
+    `the tier list must be core, extended, manual in that order — got ${JSON.stringify(TEMPLATE_POINT_TIERS)}`,
+  );
+  // Checked against the contract, not against a second literal: a tier the
+  // select offers that the schema refuses would be a 400 the author cannot see
+  // coming.
+  for (const tier of TEMPLATE_POINT_TIERS) {
+    assert(
+      adminTemplatePointDtoSchema.shape.meta.parse({ tier })?.tier === tier,
+      `"${tier}" must parse through the DTO's meta schema`,
+    );
+  }
+  let refused = false;
+  try {
+    adminTemplatePointDtoSchema.shape.meta.parse({ tier: "bogus" });
+  } catch {
+    refused = true;
+  }
+  assert(refused, "a tier outside the contract's enum must not parse — the list is not free text");
+
+  const row = template([point({ meta: { tier: "core" } }), derivedPoint()]);
+  const rows = pointRowsFrom(row);
+
+  // Setting a tier touches `meta` and nothing else.
+  const manual = setPointTier(rows[0], "manual");
+  assert(
+    JSON.stringify(manual.meta) === JSON.stringify({ tier: "manual" }),
+    `setPointTier must set the tier — got ${JSON.stringify(manual.meta)}`,
+  );
+  assert(
+    JSON.stringify({ ...manual, meta: null }) === JSON.stringify({ ...rows[0], meta: null }),
+    "setPointTier must leave every other field identical",
+  );
+
+  // The empty option clears the tier, and anything the contract does not offer
+  // is treated the same way rather than written through to the wire.
+  assert(setPointTier(rows[0], "").meta === null, 'the empty option clears the tier');
+  assert(
+    setPointTier(rows[0], "bogus").meta === null,
+    "a value outside the contract's enum clears rather than being carried to a 400",
+  );
+
+  // **This is what makes Save enable.** Without it the Tier select would change
+  // the row and leave the button disabled.
+  const changed = [manual, rows[1]];
+  assert(pointsHaveChanged(changed, row), "a tier-only change is a change worth saving");
+  assert(
+    !pointsHaveChanged([setPointTier(manual, "core"), rows[1]], row),
+    "setting the tier back matches what is stored again, so Save disables itself",
+  );
+
+  // Amendment 5: the tier stays provenance. Nothing branches on it, including
+  // validation — a tier change can never make the grid unsavable.
+  assert(
+    pointGridErrors(changed).length === 0,
+    `no rule may branch on the tier — got ${JSON.stringify(pointGridErrors(changed))}`,
+  );
+  assert(
+    pointGridErrors([setPointTier(rows[0], ""), rows[1]]).length === 0,
+    "clearing the tier is not a validation problem either",
   );
 }

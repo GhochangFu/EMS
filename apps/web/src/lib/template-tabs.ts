@@ -1,16 +1,25 @@
 /**
  * The detail page's tab registry (`F2.5`, ADR 0038 decision 2 — Unit 7).
  *
- * ADR 0038 names **exactly six** tabs, and names them so that the closed
+ * ADR 0038 names **exactly seven** tabs, and names them so that the closed
  * sections cannot arrive by accident:
  *
  * - `optimisation` is rejected outright by `templateContentSchema` (`E1.6` owns
  *   it), so a tab for it would always error, which is worse than no tab;
- * - `maintenance` is deliberately omitted — ADR 0038 *Not in this ADR*;
+ * - **`maintenance` was deliberately omitted until `F2.19`, and is now the
+ *   seventh tab.** This docblock read *"deliberately omitted — ADR 0038 *Not in
+ *   this ADR*"*, and that fence had a stated reason: no ruling had been asked
+ *   for on whether class-level plans are authored here or with the work-order
+ *   surface. [ADR 0038](../../../../docs/adr/0038-template-authoring-ui.md)
+ *   Amendment 5 Part B is that ruling — they are authored here. Unlike
+ *   Amendment 4 it discharges no condition, because decision 2 set none; the
+ *   section was omitted rather than guessed. `maintenance-schedules-panel.tsx`
+ *   is still **not** this surface, and nothing materialises a plan into a
+ *   `bms.maintenance_task_templates` row;
  * - **`health` moved from the first class to the second in `E1.3`.** ADR 0050
  *   decision 7 reopened the tier, so the API now accepts it and this UI carries
  *   it through `mergeTemplateContent` untouched. It still has no tab: ADR 0050
- *   Amendment 1 decision 5 scopes `E1.3` to the score surfaces, and a seventh
+ *   Amendment 1 decision 5 scopes `E1.3` to the score surfaces, and an eighth
  *   tab is an ADR 0038 amendment, not a side effect of a backlog row. Do not
  *   add one here without it.
  *
@@ -37,7 +46,7 @@
  *
  * ## The registry is scanned as text, not only as a type
  *
- * A type cannot stop someone adding a seventh tab, so Unit 8's invariant reads
+ * A type cannot stop someone adding an eighth tab, so Unit 8's invariant reads
  * this file's source and extracts the entries. The registry is therefore a flat
  * array literal, one entry per line, `id` first, with a bare string literal —
  * no computed key, no spread, no construction from another module.
@@ -50,14 +59,20 @@
  * ```
  *
  * That returns exactly `details, points, calculations, kpis, alarms,
- * dashboards`, verified against this file when `F3.1e` added the sixth entry.
- * Anyone changing the shape below must
+ * dashboards, maintenance`, re-run against this file when `F2.19` added the
+ * seventh entry. Anyone changing the shape below must
  * re-run it — a broken regex returns nothing and reads as compliance, which is
  * why Unit 8 must also fail on an empty scan.
+ *
+ * **`F2.19` proved that guard rather than trusting it**, as ADR 0038
+ * Amendment 5 requires: renaming one entry's `id:` to `tabId:` was checked to
+ * make `tests/adr-0038-template-authoring-ui.test.ts` go red, and only then was
+ * the entry restored. An all-green run under that mutation would have meant the
+ * scan reads an empty result as compliance.
  */
 
-/** The six tabs, and the only six. */
-export type TemplateTabId = "details" | "points" | "calculations" | "kpis" | "alarms" | "dashboards";
+/** The seven tabs, and the only seven. */
+export type TemplateTabId = "details" | "points" | "calculations" | "kpis" | "alarms" | "dashboards" | "maintenance";
 
 export type TemplateTab = {
   id: TemplateTabId;
@@ -73,6 +88,7 @@ export const TEMPLATE_TABS: readonly TemplateTab[] = [
   { id: "kpis", label: "KPIs", hint: "Named expressions over this template's points." },
   { id: "alarms", label: "Alarms", hint: "Thresholds, severities and the knowledge behind each one." },
   { id: "dashboards", label: "Dashboards", hint: "Which points a dashboard shows, and the widgets drawn from them." },
+  { id: "maintenance", label: "Maintenance", hint: "The maintenance plans this asset class ships with, and how often each repeats." },
 ];
 
 /** The tab a bare detail URL opens. */
