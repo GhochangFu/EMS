@@ -5,14 +5,25 @@ import { cleanup } from "@testing-library/react";
 import {
   aBlockedStoreRendersEveryGroupOpen,
   aCollapsedGroupHidesItsRowsWithoutUnmountingTheCard,
+  aFilterWhoseOptionVanishesIsDropped,
+  aNonAuthorStillGetsLabelledDomainOptions,
+  aPickerWithASingleValueIsNotRendered,
   anEntryWhoseDomainIsNotInTheVocabularyRendersUnderAFallbackHeading,
   cardIsAbsentForARoleThatCannotAuthor,
   collapseStateIsRememberedForTheNextVisit,
   eachStockRowLinksToTheReadOnlyViewer,
+  aZeroCountRendersButAPendingOneDoesNot,
+  eachTabShowsHowManyRowsItHolds,
+  everyOfferedTabRendersACard,
+  theGroupHeaderPrintsTheDomainLabel,
+  theStripShowsTheSelectedTabsHint,
   emptyCatalogRendersTheEmptyState,
   failedImportRendersThroughApiErrorMessage,
   importsAStockEntryIntoTheChosenOrganization,
+  organizationAndDomainFiltersNarrowTheList,
+  pickersOfferOnlyWhatIsPresentInVocabularyOrder,
   stockEntriesAreGroupedByDomainInVocabularyOrder,
+  switchingTabsSwapsTheListAndRecordsItInTheUrl,
 } from "./asset-templates-page.spec";
 
 /**
@@ -80,5 +91,50 @@ describe("F2.13 asset templates list page — the stock catalog card", () => {
 
   it("renders every group open when the storage accessor itself throws", async () => {
     await aBlockedStoreRendersEveryGroupOpen();
+  });
+
+  /** `F2.21` — the two lists as peer tabs, and the Templates list's filters. */
+  it("swaps the rendered list when a tab is selected, and back again", async () => {
+    await switchingTabsSwapsTheListAndRecordsItInTheUrl();
+  });
+
+  it("shows each tab's row count without opening it", async () => {
+    await eachTabShowsHowManyRowsItHolds();
+  });
+
+  it("narrows the list by organization and by domain, and says how many of how many", async () => {
+    await organizationAndDomainFiltersNarrowTheList();
+  });
+
+  it("offers only the organizations and domains present, in the vocabulary's order", async () => {
+    await pickersOfferOnlyWhatIsPresentInVocabularyOrder();
+  });
+
+  it("drops a filter whose option vanishes as the search narrows", async () => {
+    await aFilterWhoseOptionVanishesIsDropped();
+  });
+
+  it("gives a non-authoring role vocabulary-labelled domain options", async () => {
+    await aNonAuthorStillGetsLabelledDomainOptions();
+  });
+
+  it("renders a card for every tab it offers, for both roles", async () => {
+    await everyOfferedTabRendersACard();
+  });
+
+  it("shows the selected tab's hint, not the first tab's", async () => {
+    await theStripShowsTheSelectedTabsHint();
+  });
+
+  it("shows a zero count but no count at all while the list is pending", async () => {
+    await aZeroCountRendersButAPendingOneDoesNot();
+  });
+
+  it("prints the domain label on a group header, not the bare code", async () => {
+    await theGroupHeaderPrintsTheDomainLabel();
+  });
+
+  it("does not render a picker that could only offer one value", async () => {
+    await aPickerWithASingleValueIsNotRendered();
   });
 });
