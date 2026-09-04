@@ -149,6 +149,46 @@ export function templateDomainOptions(
 }
 
 /**
+ * Drops a filter whose value is no longer among its options.
+ *
+ * **The failure this prevents is a control that lies.** Both option lists are
+ * derived from what is present, and what is present moves with the search box
+ * and the status filter. Select "Water treatment", then type a search term no
+ * water template matches, and `domain` still holds `water` while the
+ * `<select>` has no `<option>` for it — a browser renders the first option
+ * instead, so the control reads "All domains" while the list is still filtered
+ * to water and shows nothing. The reader sees an empty list and no reason for
+ * it.
+ *
+ * Clamping here rather than resetting the state in an effect is deliberate:
+ * the page passes the clamped value to BOTH the `<select>` and
+ * `filterTemplateGroups`, so the control and the list cannot disagree at all,
+ * rather than agreeing again one render later.
+ *
+ * **The tradeoff, named rather than hidden**: the underlying choice is
+ * remembered, so widening the search back re-applies it. The alternative —
+ * forgetting it — is a state write during render or an effect, and it throws
+ * away a choice the reader made explicitly. Remembering is the smaller
+ * surprise, because the control never displays a value it is not applying.
+ *
+ * `""` is never an option value, so an unset filter clamps to itself.
+ */
+export function clampTemplateListFilters(
+  filters: TemplateListFilters,
+  organizationOptions: readonly TemplateFilterOption[],
+  domainOptions: readonly TemplateFilterOption[],
+): TemplateListFilters {
+  return {
+    organizationId: organizationOptions.some((option) => option.value === filters.organizationId)
+      ? filters.organizationId
+      : "",
+    domain: domainOptions.some((option) => option.value === filters.domain)
+      ? filters.domain
+      : "",
+  };
+}
+
+/**
  * The subtitle the Templates card shows.
  *
  * "showing 6 of 42" whenever anything is hidden, and a plain count otherwise.

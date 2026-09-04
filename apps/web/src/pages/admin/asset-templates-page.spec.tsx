@@ -697,3 +697,38 @@ export async function aPickerWithASingleValueIsNotRendered(): Promise<void> {
   expect(screen.queryByRole("combobox", { name: "Filter by organization" })).toBeNull();
   expect(screen.getByRole("combobox", { name: "Filter by domain" })).toBeInTheDocument();
 }
+
+/**
+ * Searching until the selected domain has no templates clears that filter
+ * rather than leaving a control that lies.
+ *
+ * Without the clamp the `<select>` holds a value with no matching `<option>`,
+ * so a browser paints the first one — "All domains" — while the list is still
+ * filtered to the vanished domain and shows nothing. The reader would see an
+ * empty list, a search term that plainly matches, and no filter set.
+ *
+ * The last two assertions are what make this more than a screenshot: the row
+ * that DOES match the search is on screen, and the subtitle no longer claims
+ * anything is hidden.
+ */
+export async function aFilterWhoseOptionVanishesIsDropped(): Promise<void> {
+  stubApi(STOCK, FILTER_VOCABULARIES, FILTERABLE_TEMPLATES);
+  renderPage();
+
+  await userEvent.selectOptions(
+    await screen.findByRole("combobox", { name: "Filter by domain" }),
+    "water",
+  );
+  expect(await screen.findByText("showing 1 of 4 templates")).toBeInTheDocument();
+  expect(screen.getByText("RO")).toBeInTheDocument();
+
+  // CHILLER is hvac, so the water option disappears from the picker entirely.
+  await userEvent.type(screen.getByRole("textbox", { name: "Search templates" }), "CHILLER");
+
+  expect(await screen.findByText("1 template")).toBeInTheDocument();
+  expect(screen.getByText("CHILLER")).toBeInTheDocument();
+  expect(screen.queryByText("No templates match this filter.")).toBeNull();
+  // The picker is gone here, because one domain is left — and the stale `water`
+  // must not still be filtering behind it.
+  expect(screen.queryByRole("combobox", { name: "Filter by domain" })).toBeNull();
+}

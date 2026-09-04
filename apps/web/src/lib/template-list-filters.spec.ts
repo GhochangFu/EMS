@@ -19,6 +19,7 @@ import type {
 
 import {
   NO_TEMPLATE_LIST_FILTERS,
+  clampTemplateListFilters,
   filterTemplateGroups,
   templateDomainOptions,
   templateListSubtitle,
@@ -269,5 +270,54 @@ export function runSubtitleTests(): void {
   assert(
     templateListSubtitle(0, 0) === "0 templates",
     "an empty list is not 'showing 0 of 0'",
+  );
+}
+
+/**
+ * A filter whose option has gone is dropped, so the control cannot display one
+ * value while the list applies another.
+ *
+ * Both directions on the same value: it survives while its option exists, and
+ * is dropped once it does not. A clamp that always returned `""` would pass a
+ * one-sided version of this.
+ */
+export function runClampDropsAValueWithNoOptionTests(): void {
+  const orgs = [
+    { value: "org-1", label: "ACME" },
+    { value: "org-2", label: "BETA" },
+  ];
+  const domains = [{ value: "hvac", label: "HVAC" }];
+
+  assert(
+    clampTemplateListFilters({ organizationId: "org-2", domain: "hvac" }, orgs, domains)
+      .organizationId === "org-2",
+    "a value that still has an option must survive",
+  );
+  assert(
+    clampTemplateListFilters({ organizationId: "org-2", domain: "water" }, orgs, domains)
+      .domain === "",
+    "a domain with no option must be dropped, or the control shows one thing and the list does another",
+  );
+  assert(
+    clampTemplateListFilters({ organizationId: "org-9", domain: "hvac" }, orgs, domains)
+      .organizationId === "",
+    "an organization with no option must be dropped",
+  );
+  // Each axis is clamped independently — dropping one must not drop the other.
+  assert(
+    clampTemplateListFilters({ organizationId: "org-9", domain: "hvac" }, orgs, domains).domain ===
+      "hvac",
+    "clamping one axis must leave the other alone",
+  );
+  // `""` is never an option value and must clamp to itself, not to a first option.
+  const cleared = clampTemplateListFilters(NO_TEMPLATE_LIST_FILTERS, orgs, domains);
+  assert(
+    cleared.organizationId === "" && cleared.domain === "",
+    "an unset filter clamps to itself",
+  );
+  // And with no options at all, everything clears rather than throwing.
+  assert(
+    clampTemplateListFilters({ organizationId: "org-1", domain: "hvac" }, [], []).domain === "",
+    "empty option lists clear both axes",
   );
 }

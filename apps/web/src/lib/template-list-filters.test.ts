@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runClampDropsAValueWithNoOptionTests,
   runDomainFollowsLatestVersionTests,
   runDomainOptionsOrderedByVocabularyTests,
   runEmptyFilterKeepsEverythingTests,
@@ -43,5 +44,9 @@ describe("template list filters", () => {
 
   it("says 'showing x of y' only while a filter hides something", () => {
     runSubtitleTests();
+  });
+
+  it("drops a filter whose option has gone, so the control cannot lie about the list", () => {
+    runClampDropsAValueWithNoOptionTests();
   });
 });

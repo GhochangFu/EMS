@@ -59,6 +59,7 @@ import {
 import { canAuthorTemplates } from "../../lib/template-authoring-access";
 import { groupStockByDomain } from "../../lib/stock-catalog-groups";
 import {
+  clampTemplateListFilters,
   filterTemplateGroups,
   templateDomainOptions,
   templateListSubtitle,
@@ -180,9 +181,23 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
     () => templateDomainOptions(groups, vocabQ.data?.assetDomains),
     [groups, vocabQ.data],
   );
+  // Clamped, then used for BOTH the `<select>` values and the filtering, so the
+  // controls and the list cannot disagree. Without this, searching until the
+  // selected domain has no templates leaves a `<select>` with no matching
+  // `<option>` — which renders as "All domains" while the list is still
+  // filtered to that domain and shows nothing.
+  const filters = useMemo(
+    () =>
+      clampTemplateListFilters(
+        { organizationId: orgFilter, domain: domainFilter },
+        organizationOptions,
+        domainOptions,
+      ),
+    [orgFilter, domainFilter, organizationOptions, domainOptions],
+  );
   const visibleGroups = useMemo(
-    () => filterTemplateGroups(groups, { organizationId: orgFilter, domain: domainFilter }),
-    [groups, orgFilter, domainFilter],
+    () => filterTemplateGroups(groups, filters),
+    [groups, filters],
   );
 
   const createM = useMutation({
@@ -290,7 +305,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                 control that cannot change anything. */}
             {organizationOptions.length > 1 ? (
               <select
-                value={orgFilter}
+                value={filters.organizationId}
                 onChange={(event) => setOrgFilter(event.target.value)}
                 aria-label="Filter by organization"
                 className="rounded border border-gray-200 px-2 py-1 text-xs"
@@ -305,7 +320,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
             ) : null}
             {domainOptions.length > 1 ? (
               <select
-                value={domainFilter}
+                value={filters.domain}
                 onChange={(event) => setDomainFilter(event.target.value)}
                 aria-label="Filter by domain"
                 className="rounded border border-gray-200 px-2 py-1 text-xs"

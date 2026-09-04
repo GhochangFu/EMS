@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import {
   aBlockedStoreRendersEveryGroupOpen,
   aCollapsedGroupHidesItsRowsWithoutUnmountingTheCard,
+  aFilterWhoseOptionVanishesIsDropped,
   aPickerWithASingleValueIsNotRendered,
   anEntryWhoseDomainIsNotInTheVocabularyRendersUnderAFallbackHeading,
   cardIsAbsentForARoleThatCannotAuthor,
@@ -102,6 +103,10 @@ describe("F2.13 asset templates list page — the stock catalog card", () => {
 
   it("offers only the organizations and domains present, in the vocabulary's order", async () => {
     await pickersOfferOnlyWhatIsPresentInVocabularyOrder();
+  });
+
+  it("drops a filter whose option vanishes as the search narrows", async () => {
+    await aFilterWhoseOptionVanishesIsDropped();
   });
 
   it("does not render a picker that could only offer one value", async () => {
