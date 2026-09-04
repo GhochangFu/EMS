@@ -790,3 +790,190 @@ here in advance.
   folding it in, and nothing here reopens that.
 - **No seventh tab.** `maintenance` stays omitted for the reason decision 2
   gives, and `health` / `optimisation` stay refused by the API.
+
+  *Superseded by Amendment 5 (2026-09-04) for `maintenance` only. `health` and
+  `optimisation` are unaffected and still get no tab.*
+
+## Amendment 5 — the Points tab's tier is editable, and `maintenance` is the seventh tab (2026-09-04)
+
+Ruled by the repository owner on 2026-09-04, at the joint `F2.15` / `F2.19`
+step 2 gate and **before any implementation code**, in its own `docs(adr):`
+change. The owner was asked whether the two rows take one amendment or two and
+chose one, because they move the same surface: `F2.15` makes a `template_points`
+field authorable on the Points tab, and `F2.19` opens a `content` section that
+decision 2 fenced. The routing follows Amendment 4's precedent — the amendment
+lands ahead of the work that motivated it, not inside its branch.
+
+This amendment does **not** reopen decision 2's reasoning about `health` and
+`optimisation`. Both are still refused by `templateContentSchema`, both still
+get no tab, and `E1.1` / `E1.6` still own them.
+
+### Part A — the Points tab gains an editable Tier control (`F2.15`)
+
+Decision 2's Points row lists what that tab writes:
+
+> | Points | `PATCH /:id` — `points[]` | `pointKey`, `label`, `unit`, `kind`, `sourceDataKeyPattern`, `required`, `sortOrder` |
+
+**`meta.tier` joins that list as an eighth authorable field.** The tab renders a
+Tier column, and on a `draft` it is a select over `core` / `extended` /
+`manual`; on a `published` or `archived` version it is read-only text, which is
+decision 3's lifecycle rule applied unchanged and needing no restatement.
+
+**No contract moves.** The field has been accepted on the write path since
+`F2.13`, in two places that must stay identical:
+
+| File | Line | What it holds |
+|---|---|---|
+| `packages/shared/src/contracts/admin.ts` | `:351` | `meta: z.object({ tier: z.enum(["core", "extended", "manual"]) }).strict().optional()` |
+| `apps/api/src/admin/asset-templates/asset-templates.schema.ts` | `:66` | the same declaration on the API's body schema |
+
+So this part is `apps/web` only. It adds no route, no column, no migration and
+no vocabulary. `template_points.meta` is `jsonb NOT NULL DEFAULT '{}'` and has
+been since before `E5.1`; ADR 0040 open question 4 ruled `meta.tier`, no DDL,
+and that ruling stands.
+
+**Why editable rather than read-only, and what the choice costs.** The row was
+drafted with the read-only column as the cheaper option, and it is: a display
+column touches neither this ADR nor ADR 0040. The owner chose the select
+anyway, and the reason it is defensible is that the tier's whole purpose is the
+client's redline. ADR 0040 decision 3 says *"The tier marking is what makes the
+client's redline mechanical: strike extended rows, done."* A redline that
+arrives as a marked-up document has to be applied by somebody; a read-only
+column means that somebody is an engineer editing catalog source, and an
+editable select means it can be an author working on a draft. The tier is the
+one field on that tab whose value the client, not the author, decides.
+
+**What this does not change about ADR 0040 decision 3.** The tier stays
+provenance, not behaviour — nothing at runtime branches on it, which is the
+reason open question 4 put it in `meta` rather than in a column. Making it
+authorable does not make it behavioural, and no code may start reading
+`meta.tier` to decide anything as a consequence of this amendment.
+
+**The stock catalog is not edited through this control.** A stock entry is
+imported and then authored as an ordinary draft; the `F2.14` viewer is
+read-only and stays read-only. Editing a draft's tier does not write back to
+`GLOBAL_CATALOG`, and a client redline that changes the shipped pack is still
+`stockVersion: 2` under ADR 0052 decision 6 and ADR 0039.
+
+**The guard this part owes.** `PointsTab` has no jsdom spec — that absence is
+the reason `F2.14` declined to touch the tab — so `F2.15` writes the first one.
+`pointRowsFrom` already reads `point.meta?.tier` and is in
+`apps/web/src/lib/template-points-grid.ts`, which the coverage gate's `include`
+reaches, so the round-trip half of the guard belongs beside it rather than in
+the component.
+
+### Part B — the detail page has seven tabs; `maintenance` is the seventh (`F2.19`)
+
+Decision 2 says the page has exactly five tabs, Amendment 4 moved that to six,
+and *Not in this ADR* omitted maintenance plan authoring with a stated reason:
+
+> **Maintenance plan authoring** (`content.maintenance`). The section is open
+> in the contract (ADR 0019), but no ruling has been asked for on whether
+> class-level plans are authored here or with the work-order surface.
+
+**Unlike Amendment 4, this amendment discharges no condition, because decision 2
+set none.** It was omitted rather than guessed, pending a ruling nobody had
+asked for. This amendment is that ruling: **class-level maintenance plans are
+authored here**, on the template detail page, and the count moves six → seven.
+
+Three facts made the question ripe, all measured on 2026-09-04:
+
+1. **The write target is real and already validated.** The API accepts
+   `content.maintenance` today —
+   `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts` binds
+   it to the live maintenance vocabularies (`maintenanceCategorySchema`,
+   `maintenanceGenerationModeSchema`, `maintenancePrioritySchema`), and
+   `asset-templates-content.schema.spec.ts:333–360` asserts the bound category
+   set, the `intervalDays` range of 1–730 and the generation-mode ban. A
+   maintenance tab therefore cannot always-error, which is the test decision 2
+   applied to `optimisation` and failed it.
+2. **The content behind it is the least reviewable in the catalog.** The three
+   domain packs plus the electrical classes authored maintenance plans that a
+   global administrator cannot see at all, several of them `safetyCritical`.
+   `F2.19` carries the count; this amendment deliberately does not restate it,
+   because a count copied into an ADR is a count that goes stale.
+3. **The client cannot redline what the client cannot see.** That is the review
+   posture ADR 0040 set for Track B, and it is the same argument Part A makes
+   for the tier.
+
+The tab:
+
+| Tab | Writes | Notes |
+|-----|--------|-------|
+| Maintenance | `PATCH /:id` — `content.maintenance` | `title`, `intervalDays` (1–730), and the optional `category` / `priority` / `generationMode` / `safetyCritical` fields, each bound to the live vocabulary its schema names rather than to a hardcoded list |
+
+It is the **seventh** in the strip, after Dashboards. Decision 3's lifecycle
+rule applies to it unchanged.
+
+**`maintenance-schedules-panel.tsx` is still not this surface.** *Not in this
+ADR* said so and the sentence survives the fence coming down: its "templates"
+are maintenance *schedule* templates that generate work orders, a different
+entity from `asset_templates`. Nothing here links the two, and nothing
+materialises `content.maintenance` into `bms.maintenance_task_templates` — the
+shared contract's own docblock records that gap and this amendment does not
+close it.
+
+**Minimum scope is read-only.** A read-only Maintenance tab on the `F2.14`
+viewer is what discharges the review problem, and it is the floor this
+amendment sets. Whether the draft editor gains an editable tab in the same row
+is `F2.19`'s design question at its plan gate, not a ruling taken here.
+
+### The count is held in three executable places, and all three move again
+
+Amendment 4 established that the tab count is not held in one place, and that
+the third is the one an agent meets last and understands least. It is still
+three, and the numbers have moved once since. **Measured on 2026-09-04:**
+
+| File | Line | What it holds | Six → seven |
+|---|---|---|---|
+| `tests/adr-0038-template-authoring-ui.test.ts` | `:76` | `EXPECTED`, the exact ordered id list | append `"maintenance"` |
+| | `:111` | `.toBe(6)` on the extracted id count | `7` |
+| | `:117` | `.toBe(6)` on the brace count | `7` |
+| | `:140` | the reserved-section loop, `["health", "optimisation", "optimization", "maintenance"]` | drop `"maintenance"`, keep the other three |
+| | `:158` | the `TemplateTabId` union scan, `toEqual(EXPECTED)` | follows `EXPECTED` |
+| `apps/web/src/lib/template-tabs.spec.ts` | `:24` | `TEMPLATE_TABS.length === 6` | `7` |
+| | `:28–29` | the joined id string, `"details,points,calculations,kpis,alarms,dashboards"` | append `,maintenance` |
+| | `:59` | the closed-section loop, `["health", "optimisation", "maintenance"]` | drop `"maintenance"` |
+| `apps/web/src/lib/template-tab-guard.spec.ts` | `:87` | `assert(blocked === 30, …)` | **`42`** |
+
+The third is arithmetic, not textual: the dirty-tab guard runs over every
+ordered pair of distinct tabs, and `n` tabs give `n(n-1)`. Six give 30; **seven
+give 42**. Nothing in that file says "six", so a search for the count does not
+find it, and the test goes red on a number that looks unrelated to tabs.
+
+**The registry's own docblock is a fourth place, and it is prose rather than a
+gate.** `apps/web/src/lib/template-tabs.ts` currently says *"`maintenance` is
+deliberately omitted — ADR 0038 *Not in this ADR*"* and, of `health`, that *"a
+seventh tab is an ADR 0038 amendment, not a side effect of a backlog row. Do not
+add one here without it."* That instruction was obeyed: this is the amendment.
+The docblock must be corrected to name Amendment 5 and to keep the `health` /
+`optimisation` sentence intact, and the extraction regex it documents must be
+re-run against the edited file, because **a broken regex returns nothing and
+reads as compliance** — the scan must still fail on an empty result.
+
+**Do not relax `runNoClosedSectionTabTests`.** It reads the registry as text on
+purpose, because a type cannot stop someone adding a tab. The correct change is
+to remove `maintenance` from its closed list and leave the mechanism alone;
+weakening the scan to make room defeats what it exists for.
+
+**Dated records stand and must not be edited.** Amendment 4 named
+`template-tab-guard.ts:12`, `template-authoring-access.spec.ts:118`,
+`vitest.config.ts:363` and the `docs/plans/f2.5-*` files as descriptions of what
+was true when `F2.5` shipped. That convention is unchanged, and Amendment 4's
+own text is now itself such a record: it says six, it was right on 2026-08-29,
+and it is not rewritten here.
+
+### What this does not decide
+
+- **No eighth tab.** `health` and `optimisation` stay refused by
+  `templateContentSchema` and stay out of the strip. `E1.1` and `E1.6` own them.
+- **No materialisation.** `content.maintenance` still becomes no
+  `bms.maintenance_task_templates` row. Authoring a plan on a template does not
+  schedule work.
+- **No new RBAC.** Both parts rely on the existing `requireMasterDataUser` /
+  `assertCanAuthor` split, exactly as decision 2 and *Not in this ADR* set it.
+- **No tier semantics.** Nothing at runtime may begin branching on `meta.tier`
+  because it became editable. ADR 0040 open question 4's reasoning is intact.
+- **Nothing about `F2.20`.** The Alarms tab's collapsed philosophy is a
+  presentation change on an existing tab, needs no amendment, and the owner
+  ruled its shape separately on 2026-09-04.
