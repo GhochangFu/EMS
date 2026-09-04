@@ -153,8 +153,78 @@ const WATER_HEADING = "Water treatment · 1 entry";
 /** Every accordion heading, and nothing else on the page. */
 const ANY_HEADING = /· \d+ entr(y|ies)$/;
 
-function stubApi(stock: unknown = STOCK, vocabularies: unknown = VOCABULARIES): void {
-  vi.spyOn(api, "fetchAdminAssetTemplates").mockResolvedValue({ items: [] } as never);
+/**
+ * `F2.21` fixtures — four templates, two organizations, three domains, so no
+ * single filter can be satisfied by returning everything or returning one row.
+ *
+ * `sortOrder` deliberately disagrees with alphabetical order on both the code
+ * and the label, for the reason `stock-catalog-groups.spec.ts` records: a
+ * picker that sorted by name would pass a lazier fixture.
+ */
+function listTemplate(seed: {
+  code: string;
+  domain: string;
+  organizationId?: string;
+  organizationCode?: string;
+}): unknown {
+  const organizationId = seed.organizationId ?? "org-1";
+  return {
+    id: `${organizationId}-${seed.code}`,
+    organizationId,
+    organizationCode: seed.organizationCode ?? "IX",
+    organizationName: "Ion Exchange",
+    code: seed.code,
+    version: 1,
+    name: `${seed.code} template`,
+    assetType: "unit",
+    domain: seed.domain,
+    description: null,
+    status: "draft",
+    content: {},
+    publishedAt: null,
+    archivedAt: null,
+    stockCode: null,
+    stockVersion: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    pointCount: 3,
+  };
+}
+
+const FILTERABLE_TEMPLATES = {
+  items: [
+    listTemplate({ code: "CHILLER", domain: "hvac" }),
+    listTemplate({ code: "TRF", domain: "electrical" }),
+    listTemplate({
+      code: "PUMP",
+      domain: "hvac",
+      organizationId: "org-2",
+      organizationCode: "BETA",
+    }),
+    listTemplate({
+      code: "RO",
+      domain: "water",
+      organizationId: "org-2",
+      organizationCode: "BETA",
+    }),
+  ],
+};
+
+const FILTER_VOCABULARIES = {
+  ...VOCABULARIES,
+  assetDomains: [
+    { code: "electrical", label: "Electrical plant", sortOrder: 1, active: true },
+    { code: "water", label: "Water treatment", sortOrder: 2, active: true },
+    { code: "hvac", label: "HVAC", sortOrder: 3, active: true },
+  ],
+};
+
+function stubApi(
+  stock: unknown = STOCK,
+  vocabularies: unknown = VOCABULARIES,
+  templates: unknown = { items: [] },
+): void {
+  vi.spyOn(api, "fetchAdminAssetTemplates").mockResolvedValue(templates as never);
   vi.spyOn(api, "fetchAdminStockAssetTemplates").mockResolvedValue(stock as never);
   vi.spyOn(api, "importAdminStockAssetTemplate").mockResolvedValue(IMPORTED_DRAFT as never);
   vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue(ORGS as never);
@@ -167,11 +237,22 @@ function DraftLanding() {
   return <div>landed on draft {id}</div>;
 }
 
-function renderPage(user: AuthUser = admin): void {
+/**
+ * `F2.21` put the two lists on peer tabs, so the stock catalog no longer
+ * renders on a bare `/admin/asset-templates`. Every stock assertion below
+ * therefore opens the page at this entry instead.
+ *
+ * Deep-linking rather than clicking the tab is deliberate: it keeps each test
+ * about the thing it was written for, and it exercises the `?tab=` resolver on
+ * every one of them rather than only in the tab test.
+ */
+const STOCK_TAB = "/admin/asset-templates?tab=stock";
+
+function renderPage(user: AuthUser = admin, entry = "/admin/asset-templates"): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/admin/asset-templates"]}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/admin/asset-templates" element={<AssetTemplatesAdminPage user={user} />} />
           <Route path="/admin/asset-templates/:id" element={<DraftLanding />} />
@@ -190,7 +271,7 @@ const IMPORT_BUTTON = "Import Feeder / incomer — multifunction energy meter";
  */
 export async function importsAStockEntryIntoTheChosenOrganization(): Promise<void> {
   stubApi();
-  renderPage();
+  renderPage(admin, STOCK_TAB);
 
   expect(await screen.findByText("electrical-feeder · electrical · stock v1")).toBeInTheDocument();
 
@@ -211,7 +292,7 @@ export async function importsAStockEntryIntoTheChosenOrganization(): Promise<voi
 /** `{ items: [] }` renders the empty state and enables no Import. Keep this case. */
 export async function emptyCatalogRendersTheEmptyState(): Promise<void> {
   stubApi({ items: [] });
-  renderPage();
+  renderPage(admin, STOCK_TAB);
 
   expect(await screen.findByText(/catalog is empty/i)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /^Import / })).toBeNull();
@@ -222,7 +303,7 @@ export async function failedImportRendersThroughApiErrorMessage(): Promise<void>
   stubApi();
   const raw = '{"message":"Organization is outside your access scope","error":"Forbidden","statusCode":403}';
   vi.spyOn(api, "importAdminStockAssetTemplate").mockRejectedValue(new Error(raw));
-  renderPage();
+  renderPage(admin, STOCK_TAB);
 
   await screen.findByText("electrical-feeder · electrical · stock v1");
   await userEvent.selectOptions(
@@ -247,7 +328,7 @@ export async function failedImportRendersThroughApiErrorMessage(): Promise<void>
  */
 export async function eachStockRowLinksToTheReadOnlyViewer(): Promise<void> {
   stubApi();
-  renderPage();
+  renderPage(admin, STOCK_TAB);
 
   const view = await screen.findByRole("link", {
     name: "View Feeder / incomer — multifunction energy meter",
@@ -266,14 +347,30 @@ export async function eachStockRowLinksToTheReadOnlyViewer(): Promise<void> {
   expect(importButton).not.toBeDisabled();
 }
 
-/** The card is not rendered at all for a role `canAuthorTemplates` refuses. */
+/**
+ * The card is not rendered at all for a role `canAuthorTemplates` refuses —
+ * **even when the URL asks for it by name**.
+ *
+ * `F2.21` opens this at `?tab=stock` rather than at the bare path, because
+ * tabs created a way to ask for the card that did not exist before: a viewer
+ * following an author's link. `resolveAssetTemplatesPageTab` falls back to
+ * Templates, and the tab itself is never offered. That fallback is load-bearing
+ * rather than cosmetic — `stockQ`'s `enabled` is gated on the same permission,
+ * so a rendered stock tab would show a card that never stops loading.
+ */
 export async function cardIsAbsentForARoleThatCannotAuthor(): Promise<void> {
   stubApi();
-  renderPage(locationAdmin);
+  renderPage(locationAdmin, STOCK_TAB);
 
   // The templates list renders — the page is up — but no stock card.
   expect(await screen.findByText("No templates match this filter.")).toBeInTheDocument();
   expect(screen.queryByText("Stock catalog")).toBeNull();
+  // The tab is not merely inert, it is not offered.
+  expect(screen.queryByRole("tab", { name: /Stock catalog/ })).toBeNull();
+  expect(screen.getByRole("tab", { name: /Templates/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   expect(screen.queryByRole("combobox", { name: "Import into organization" })).toBeNull();
   expect(api.fetchAdminStockAssetTemplates).not.toHaveBeenCalled();
   // `F2.17` widened `vocabQ`'s `enabled` from `modalOpen && mayAuthor` to
@@ -292,7 +389,7 @@ export async function cardIsAbsentForARoleThatCannotAuthor(): Promise<void> {
  */
 export async function stockEntriesAreGroupedByDomainInVocabularyOrder(): Promise<void> {
   stubApi(GROUPED_STOCK, GROUPED_VOCABULARIES);
-  renderPage();
+  renderPage(admin, STOCK_TAB);
 
   await screen.findByRole("button", { name: ELECTRICAL_HEADING });
 
@@ -324,7 +421,7 @@ export async function stockEntriesAreGroupedByDomainInVocabularyOrder(): Promise
  */
 export async function anEntryWhoseDomainIsNotInTheVocabularyRendersUnderAFallbackHeading(): Promise<void> {
   stubApi(UNKNOWN_DOMAIN_STOCK, GROUPED_VOCABULARIES);
-  renderPage();
+  renderPage(admin, STOCK_TAB);
 
   await screen.findByRole("button", { name: ELECTRICAL_HEADING });
 
@@ -348,7 +445,7 @@ export async function anEntryWhoseDomainIsNotInTheVocabularyRendersUnderAFallbac
  */
 export async function aCollapsedGroupHidesItsRowsWithoutUnmountingTheCard(): Promise<void> {
   stubApi(GROUPED_STOCK, GROUPED_VOCABULARIES);
-  renderPage();
+  renderPage(admin, STOCK_TAB);
 
   const electrical = await screen.findByRole("button", { name: ELECTRICAL_HEADING });
   expect(screen.getByText("electrical-feeder · electrical · stock v1")).toBeInTheDocument();
@@ -360,7 +457,10 @@ export async function aCollapsedGroupHidesItsRowsWithoutUnmountingTheCard(): Pro
   expect(screen.queryByText("electrical-feeder · electrical · stock v1")).toBeNull();
   expect(screen.queryByText("electrical-ups · electrical · stock v1")).toBeNull();
 
-  expect(screen.getByText("Stock catalog")).toBeInTheDocument();
+  // `getByRole("heading")`, not `getByText` — `F2.21`'s tab strip renders the
+  // words "Stock catalog" as well, so a bare text query now matches two nodes.
+  // The card's own heading is what "not unmounted" means here.
+  expect(screen.getByRole("heading", { name: "Stock catalog" })).toBeInTheDocument();
   expect(
     screen.getByRole("combobox", { name: "Import into organization" }),
   ).toBeInTheDocument();
@@ -382,13 +482,13 @@ export async function aCollapsedGroupHidesItsRowsWithoutUnmountingTheCard(): Pro
  */
 export async function collapseStateIsRememberedForTheNextVisit(): Promise<void> {
   stubApi(GROUPED_STOCK, GROUPED_VOCABULARIES);
-  renderPage();
+  renderPage(admin, STOCK_TAB);
 
   await userEvent.click(await screen.findByRole("button", { name: ELECTRICAL_HEADING }));
   expect(window.localStorage.getItem(STOCK_CATALOG_COLLAPSE_KEY)).toBe('["electrical"]');
 
   cleanup();
-  renderPage();
+  renderPage(admin, STOCK_TAB);
 
   expect(await screen.findByRole("button", { name: ELECTRICAL_HEADING })).toHaveAttribute(
     "aria-expanded",
@@ -449,4 +549,151 @@ export async function aBlockedStoreRendersEveryGroupOpen(): Promise<void> {
   expect(screen.queryByText("electrical-feeder · electrical · stock v1")).toBeNull();
   expect(water).toHaveAttribute("aria-expanded", "true");
   expect(screen.getByText("water-clarifier · water · stock v1")).toBeInTheDocument();
+}
+
+/**
+ * `F2.21` part 1 — the two lists are peers, and only one renders at a time.
+ *
+ * The negative half is the point. Before this row both cards were on screen at
+ * once, so an assertion that the stock card is present would have passed
+ * against the old page too. What is new is that selecting one list REMOVES the
+ * other, and that the choice lands in the URL.
+ */
+export async function switchingTabsSwapsTheListAndRecordsItInTheUrl(): Promise<void> {
+  stubApi(STOCK, VOCABULARIES, FILTERABLE_TEMPLATES);
+  renderPage();
+
+  // Templates first, and the stock card is not merely collapsed — it is absent.
+  expect(await screen.findByRole("heading", { name: "Templates" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Stock catalog" })).toBeNull();
+  expect(screen.getByRole("tab", { name: /Templates/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  await userEvent.click(screen.getByRole("tab", { name: /Stock catalog/ }));
+
+  expect(await screen.findByRole("heading", { name: "Stock catalog" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Templates" })).toBeNull();
+  expect(screen.getByRole("tab", { name: /Stock catalog/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  // And back, so the strip is not a one-way door.
+  await userEvent.click(screen.getByRole("tab", { name: /Templates/ }));
+  expect(await screen.findByRole("heading", { name: "Templates" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Stock catalog" })).toBeNull();
+}
+
+/** The strip counts each list, so the reader knows what is behind the other tab. */
+export async function eachTabShowsHowManyRowsItHolds(): Promise<void> {
+  stubApi(STOCK, VOCABULARIES, FILTERABLE_TEMPLATES);
+  renderPage();
+
+  const templatesTab = await screen.findByRole("tab", { name: /Templates/ });
+  await waitFor(() => {
+    expect(within(templatesTab).getByText("4")).toBeInTheDocument();
+  });
+  // STOCK holds one entry; the count comes from the other list's own query, so
+  // it is visible without opening that tab — which is the point of showing it.
+  const stockTab = screen.getByRole("tab", { name: /Stock catalog/ });
+  await waitFor(() => {
+    expect(within(stockTab).getByText("1")).toBeInTheDocument();
+  });
+}
+
+/**
+ * `F2.21` part 2 — the two filters narrow the list, and the subtitle says what
+ * it is narrowing out of.
+ *
+ * Checked in both directions on every step: the rows that should go are gone
+ * AND the rows that should stay are still there. A one-sided version would pass
+ * against a filter that simply emptied the list.
+ */
+export async function organizationAndDomainFiltersNarrowTheList(): Promise<void> {
+  stubApi(STOCK, FILTER_VOCABULARIES, FILTERABLE_TEMPLATES);
+  renderPage();
+
+  expect(await screen.findByText("4 templates")).toBeInTheDocument();
+  expect(screen.getByText("CHILLER")).toBeInTheDocument();
+  expect(screen.getByText("RO")).toBeInTheDocument();
+
+  await userEvent.selectOptions(
+    screen.getByRole("combobox", { name: "Filter by organization" }),
+    "org-2",
+  );
+
+  expect(await screen.findByText("showing 2 of 4 templates")).toBeInTheDocument();
+  expect(screen.getByText("PUMP")).toBeInTheDocument();
+  expect(screen.getByText("RO")).toBeInTheDocument();
+  expect(screen.queryByText("CHILLER")).toBeNull();
+  expect(screen.queryByText("TRF")).toBeNull();
+
+  // The two filters intersect rather than replacing one another.
+  await userEvent.selectOptions(
+    screen.getByRole("combobox", { name: "Filter by domain" }),
+    "water",
+  );
+
+  expect(await screen.findByText("showing 1 of 4 templates")).toBeInTheDocument();
+  expect(screen.getByText("RO")).toBeInTheDocument();
+  expect(screen.queryByText("PUMP")).toBeNull();
+
+  // A combination nothing matches says so, and still reports the total.
+  await userEvent.selectOptions(
+    screen.getByRole("combobox", { name: "Filter by domain" }),
+    "electrical",
+  );
+  expect(await screen.findByText("showing 0 of 4 templates")).toBeInTheDocument();
+  expect(screen.getByText("No templates match this filter.")).toBeInTheDocument();
+}
+
+/**
+ * The domain picker offers only the domains present, in the vocabulary's
+ * `sortOrder`, and the organization picker offers only the organizations
+ * present.
+ *
+ * `sortOrder` here is electrical(1), water(2), hvac(3) — neither the fixture's
+ * order nor alphabetical by code or label.
+ */
+export async function pickersOfferOnlyWhatIsPresentInVocabularyOrder(): Promise<void> {
+  stubApi(STOCK, FILTER_VOCABULARIES, FILTERABLE_TEMPLATES);
+  renderPage();
+
+  const domainSelect = await screen.findByRole("combobox", { name: "Filter by domain" });
+  expect(
+    within(domainSelect)
+      .getAllByRole("option")
+      .map((option) => option.textContent),
+  ).toEqual(["All domains", "Electrical plant", "Water treatment", "HVAC"]);
+
+  const orgSelect = screen.getByRole("combobox", { name: "Filter by organization" });
+  expect(
+    within(orgSelect)
+      .getAllByRole("option")
+      .map((option) => option.textContent),
+  ).toEqual(["All organizations", "BETA", "IX"]);
+}
+
+/**
+ * A picker that could only offer one value is not rendered.
+ *
+ * This is the location-scoped admin's case: their list holds one organization,
+ * so an organization picker would be a control that cannot change anything.
+ * The domain picker is still shown here, because two domains are present —
+ * which is what stops this passing against a page that rendered no pickers.
+ */
+export async function aPickerWithASingleValueIsNotRendered(): Promise<void> {
+  stubApi(STOCK, FILTER_VOCABULARIES, {
+    items: [
+      listTemplate({ code: "CHILLER", domain: "hvac" }),
+      listTemplate({ code: "TRF", domain: "electrical" }),
+    ],
+  });
+  renderPage();
+
+  expect(await screen.findByText("2 templates")).toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: "Filter by organization" })).toBeNull();
+  expect(screen.getByRole("combobox", { name: "Filter by domain" })).toBeInTheDocument();
 }

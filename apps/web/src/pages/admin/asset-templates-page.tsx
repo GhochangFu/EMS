@@ -33,7 +33,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import type { AssetTemplateStatus } from "@bms/shared";
 
 import {
@@ -46,12 +46,24 @@ import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { AssetTemplatesPageTabStrip } from "../../components/admin/asset-templates-page-tab-strip";
 import { StockCatalogAccordion } from "../../components/asset-templates/stock-catalog-accordion";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
+import {
+  resolveAssetTemplatesPageTab,
+  visibleAssetTemplatesPageTabs,
+  type AssetTemplatesPageTabId,
+} from "../../lib/asset-templates-page-tabs";
 import { canAuthorTemplates } from "../../lib/template-authoring-access";
 import { groupStockByDomain } from "../../lib/stock-catalog-groups";
+import {
+  filterTemplateGroups,
+  templateDomainOptions,
+  templateListSubtitle,
+  templateOrganizationOptions,
+} from "../../lib/template-list-filters";
 import { statusTone } from "../../lib/template-lifecycle";
 import { groupTemplateVersions } from "../../lib/template-list-grouping";
 import type { AuthUser } from "../../stores/auth-store";
@@ -81,8 +93,27 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const mayAuthor = canAuthorTemplates(user.role);
+
+  // `F2.21` — the active list lives in the URL, not in component state, so
+  // "look at the stock catalog" is a link. `resolveAssetTemplatesPageTab` also
+  // holds the permission fallback: a viewer following an author's `?tab=stock`
+  // lands on Templates rather than on a card whose fetch is gated off and which
+  // would therefore never stop loading.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = resolveAssetTemplatesPageTab(searchParams.get("tab"), mayAuthor);
+  const tabs = visibleAssetTemplatesPageTabs(mayAuthor);
+  const selectTab = (next: AssetTemplatesPageTabId) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", next);
+    // `replace` — switching lists is not a navigation the reader wants to walk
+    // back through one tab at a time.
+    setSearchParams(params, { replace: true });
+  };
+
   const [status, setStatus] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
+  const [orgFilter, setOrgFilter] = useState("");
+  const [domainFilter, setDomainFilter] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +169,21 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
       : rows;
     return groupTemplateVersions(matching);
   }, [listQ.data, search]);
+
+  // `F2.21` — the pickers are built from `groups`, i.e. from what the search
+  // and status filters already left, but BEFORE the two new filters run.
+  // Deriving them from `visibleGroups` instead would empty each picker as soon
+  // as the other was used, so a reader could pick one organization and then
+  // find every domain gone.
+  const organizationOptions = useMemo(() => templateOrganizationOptions(groups), [groups]);
+  const domainOptions = useMemo(
+    () => templateDomainOptions(groups, vocabQ.data?.assetDomains),
+    [groups, vocabQ.data],
+  );
+  const visibleGroups = useMemo(
+    () => filterTemplateGroups(groups, { organizationId: orgFilter, domain: domainFilter }),
+    [groups, orgFilter, domainFilter],
+  );
 
   const createM = useMutation({
     mutationFn: () =>
@@ -210,9 +256,23 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
         }
       />
 
+      {/* `F2.21` part 1 — the two lists are peers. They were stacked, which made
+          the stock catalog's reachability a function of how long the template
+          list happened to be, and that list grows without limit. */}
+      <AssetTemplatesPageTabStrip
+        tabs={tabs}
+        active={tab}
+        onSelect={selectTab}
+        counts={{
+          templates: listQ.data ? groups.length : undefined,
+          stock: stockQ.data ? stockRows.length : undefined,
+        }}
+      />
+
+      {tab === "templates" ? (
       <SectionCard
         title="Templates"
-        subtitle={`${groups.length} template${groups.length === 1 ? "" : "s"}`}
+        subtitle={templateListSubtitle(visibleGroups.length, groups.length)}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -222,6 +282,42 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
               aria-label="Search templates"
               className="rounded border border-gray-200 px-2 py-1 text-xs"
             />
+            {/* `F2.21` part 2 — organization is the axis nothing addressed:
+                a global admin sees every organization here, and the code was
+                printed on each header but was not selectable. Both pickers are
+                hidden when they would offer a single value, which is the
+                location-scoped admin's case — a picker with one entry is a
+                control that cannot change anything. */}
+            {organizationOptions.length > 1 ? (
+              <select
+                value={orgFilter}
+                onChange={(event) => setOrgFilter(event.target.value)}
+                aria-label="Filter by organization"
+                className="rounded border border-gray-200 px-2 py-1 text-xs"
+              >
+                <option value="">All organizations</option>
+                {organizationOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {domainOptions.length > 1 ? (
+              <select
+                value={domainFilter}
+                onChange={(event) => setDomainFilter(event.target.value)}
+                aria-label="Filter by domain"
+                className="rounded border border-gray-200 px-2 py-1 text-xs"
+              >
+                <option value="">All domains</option>
+                {domainOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <div className="flex gap-1">
               {STATUS_FILTERS.map((option) => (
                 <button
@@ -248,14 +344,14 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
             {(listQ.error as Error).message}
           </p>
         ) : null}
-        {!listQ.isPending && !listQ.isError && groups.length === 0 ? (
+        {!listQ.isPending && !listQ.isError && visibleGroups.length === 0 ? (
           <p className="text-sm text-bms-muted">
             No templates match this filter.
           </p>
         ) : null}
 
         <div className="space-y-3">
-          {groups.map((group) => (
+          {visibleGroups.map((group) => (
             <div
               key={`${group.organizationId}-${group.code}`}
               className="rounded border border-gray-200"
@@ -304,8 +400,14 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
           ))}
         </div>
       </SectionCard>
+      ) : null}
 
-      {mayAuthor ? (
+      {/* `F2.21` — `mayAuthor` is still tested here as well as inside
+          `resolveAssetTemplatesPageTab`. The resolver stops a viewer LANDING on
+          this tab; this guard stops the card rendering at all, and the two
+          protect different things — a permission check that lives only in a URL
+          resolver would be one refactor away from being the only one. */}
+      {tab === "stock" && mayAuthor ? (
         <SectionCard
           title="Stock catalog"
           subtitle="Repository class templates every organization can import (ADR 0052)"

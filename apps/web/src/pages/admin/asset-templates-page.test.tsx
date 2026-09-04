@@ -5,14 +5,19 @@ import { cleanup } from "@testing-library/react";
 import {
   aBlockedStoreRendersEveryGroupOpen,
   aCollapsedGroupHidesItsRowsWithoutUnmountingTheCard,
+  aPickerWithASingleValueIsNotRendered,
   anEntryWhoseDomainIsNotInTheVocabularyRendersUnderAFallbackHeading,
   cardIsAbsentForARoleThatCannotAuthor,
   collapseStateIsRememberedForTheNextVisit,
   eachStockRowLinksToTheReadOnlyViewer,
+  eachTabShowsHowManyRowsItHolds,
   emptyCatalogRendersTheEmptyState,
   failedImportRendersThroughApiErrorMessage,
   importsAStockEntryIntoTheChosenOrganization,
+  organizationAndDomainFiltersNarrowTheList,
+  pickersOfferOnlyWhatIsPresentInVocabularyOrder,
   stockEntriesAreGroupedByDomainInVocabularyOrder,
+  switchingTabsSwapsTheListAndRecordsItInTheUrl,
 } from "./asset-templates-page.spec";
 
 /**
@@ -80,5 +85,26 @@ describe("F2.13 asset templates list page — the stock catalog card", () => {
 
   it("renders every group open when the storage accessor itself throws", async () => {
     await aBlockedStoreRendersEveryGroupOpen();
+  });
+
+  /** `F2.21` — the two lists as peer tabs, and the Templates list's filters. */
+  it("swaps the rendered list when a tab is selected, and back again", async () => {
+    await switchingTabsSwapsTheListAndRecordsItInTheUrl();
+  });
+
+  it("shows each tab's row count without opening it", async () => {
+    await eachTabShowsHowManyRowsItHolds();
+  });
+
+  it("narrows the list by organization and by domain, and says how many of how many", async () => {
+    await organizationAndDomainFiltersNarrowTheList();
+  });
+
+  it("offers only the organizations and domains present, in the vocabulary's order", async () => {
+    await pickersOfferOnlyWhatIsPresentInVocabularyOrder();
+  });
+
+  it("does not render a picker that could only offer one value", async () => {
+    await aPickerWithASingleValueIsNotRendered();
   });
 });
