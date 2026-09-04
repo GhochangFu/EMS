@@ -17,7 +17,7 @@
  * that a `ref` token's `text` excludes its braces — live in
  * `calc-token-ranges.ts`, shared with Unit 4's validator.
  */
-import type { TokenKind } from "@bms/shared";
+import { CALC_DIALECT, type CalcDialect, type TokenKind } from "@bms/shared";
 
 import { safeTokenize, tokenRange } from "./calc-token-ranges";
 
@@ -47,6 +47,10 @@ const CLASS_BY_KIND: Readonly<Record<TokenKind, string | null>> = {
   lparen: "cm-calc-punctuation",
   rparen: "cm-calc-punctuation",
   comma: "cm-calc-punctuation",
+  // `bms-calc-v2` only (ADR 0055 decision 1). A `v1` call never emits either,
+  // so under `v1` these two classes are never applied.
+  scope: "cm-calc-scope",
+  string: "cm-calc-string",
   // `eof` marks the end of input. It has `text: ""`, so a decoration built from
   // it would be zero-width — CodeMirror renders nothing for one, and a mark
   // that renders nothing is a mark that hides a bug.
@@ -66,10 +70,13 @@ export function decorationClass(kind: TokenKind): string | null {
  * simply has nothing to say until the text lexes again. Highlighting must never
  * be the thing that reports a syntax error — a `ViewPlugin` that throws takes
  * the editor down with it.
+ *
+ * `dialect` defaults to `v1`. The editor passes the formula's own dialect
+ * (`F2.9` Task 15); until then every caller is a `v1` caller, unchanged.
  */
-export function calcDecorations(text: string): CalcDecoration[] {
+export function calcDecorations(text: string, dialect: CalcDialect = CALC_DIALECT): CalcDecoration[] {
   const decorations: CalcDecoration[] = [];
-  for (const token of safeTokenize(text)) {
+  for (const token of safeTokenize(text, dialect)) {
     const className = decorationClass(token.kind);
     if (className === null) {
       continue;

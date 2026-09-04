@@ -1,5 +1,5 @@
-import { CalcTokenizeError, tokenize } from "./index";
-import type { Token, TokenKind } from "./index";
+import { CALC_DIALECT, CALC_DIALECT_V2, CALC_DIALECTS, CalcTokenizeError, tokenize } from "./index";
+import type { CalcDialect, Token, TokenKind } from "./index";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -57,4 +57,23 @@ export function runCalcDslBarrelTests(): void {
   const first: Token = tokens[0];
   const firstKind: TokenKind = first.kind;
   assert(firstKind === "ref", `expected the annotated TokenKind to be "ref", got ${firstKind}`);
+
+  // ---- 5. the v2 dialect constants and the dialect option are reachable ------
+  //
+  // `F2.9` (ADR 0055): `CALC_DIALECT` is unchanged so every existing import
+  // keeps compiling; `CALC_DIALECT_V2` and the `CALC_DIALECTS` tuple are the
+  // additions, and `tokenize` takes `{ dialect }` through the barrel.
+
+  assert(CALC_DIALECT === "bms-calc-v1", `CALC_DIALECT must stay bms-calc-v1, got ${CALC_DIALECT}`);
+  assert(CALC_DIALECT_V2 === "bms-calc-v2", `CALC_DIALECT_V2 must be bms-calc-v2, got ${CALC_DIALECT_V2}`);
+  assert(
+    CALC_DIALECTS.length === 2 && CALC_DIALECTS[0] === CALC_DIALECT && CALC_DIALECTS[1] === CALC_DIALECT_V2,
+    `CALC_DIALECTS must be [v1, v2] in that order, got ${JSON.stringify(CALC_DIALECTS)}`,
+  );
+
+  const dialect: CalcDialect = CALC_DIALECT_V2;
+  const v2 = tokenize("{TX.kw} @site", { dialect });
+  const v2Kinds = v2.map((t) => t.kind).join(",");
+  assert(v2Kinds === "ref,scope,eof", `tokenize(text, { dialect }) must reach the v2 lexer, got ${v2Kinds}`);
+  assert(v2[0].assetCode === "TX", `a qualified ref through the barrel must carry assetCode, got ${v2[0].assetCode}`);
 }

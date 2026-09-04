@@ -3,7 +3,7 @@ import type {
   AutomationRuleCategory,
   AutomationRuleOperator,
   AutomationRuleSeverity,
-  CalcDialect,
+  CalcV1Dialect,
   // F3.1a: the widget vocabulary and its four config variants, derived rather than restated —
   // §4.8's "a vocabulary is declared once and everything else is derived from it". Taken from
   // `./index` like every other type here: the alias lives there, and the cycle is harmless
@@ -122,7 +122,13 @@ export type TemplateKpi = {
   unit?: string;
   pointKeys: string[];
   expression: string;
-  dialect: "unvalidated" | CalcDialect;
+  // Temporary, F2.9 Task 1: pinned to `v1` because the `v2` parser does not
+  // exist yet (Task 2 adds it), and `DtoMatchesParsedContent` in
+  // `asset-templates-content.schema.ts` holds this type to the KPI Zod schema,
+  // which is still `v1`. ADR 0055 decision 2 and the owner's Q3 ruling widen
+  // this to `CalcDialect` — Task 5b does it, once there is a parser that can
+  // parse what the wider type admits. Do not treat this pin as a decision.
+  dialect: "unvalidated" | CalcV1Dialect;
   higherIsBetter?: boolean;
 };
 

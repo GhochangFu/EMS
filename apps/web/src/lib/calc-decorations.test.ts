@@ -8,6 +8,7 @@ import {
   runNumberSourceWidthTests,
   runUnexpectedCharacterTests,
   runUnterminatedReferenceTests,
+  runV2DialectDecorationTests,
 } from "./calc-decorations.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -38,5 +39,9 @@ describe("calc syntax decorations", () => {
 
   it("styles a function call apart from its arguments", () => {
     runFunctionCallTests();
+  });
+
+  it("styles scope and string spans under the v2 dialect only", () => {
+    runV2DialectDecorationTests();
   });
 });

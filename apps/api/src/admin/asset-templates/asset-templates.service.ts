@@ -26,8 +26,8 @@ import type {
   AdminAssetTemplateSummaryDto,
   AdminTemplatePointDto,
   AssetTemplateStatus,
-  CalcDialect,
   CalcTrigger,
+  CalcV1Dialect,
   JwtPayload,
   TemplateDraftRequiredVerb,
   TemplateLifecycleStatus,
@@ -959,7 +959,12 @@ export class AssetTemplatesAdminService {
       kind: point.kind as TemplatePointKind,
       sourceDataKeyPattern: point.sourceDataKeyPattern,
       formula: point.formula,
-      formulaDialect: point.formulaDialect as CalcDialect | null,
+      // Temporary, F2.9 Task 1: cast to `v1` because the DTO's `formulaDialect`
+      // is still `z.literal(CALC_DIALECT)` and the `v2` parser does not exist
+      // yet (Task 2 adds it). ADR 0055 decision 2 widens this to `CalcDialect`
+      // — Task 5 does it with `calcDialectSchema`. Do not treat this cast as a
+      // decision.
+      formulaDialect: point.formulaDialect as CalcV1Dialect | null,
       calcTrigger: point.calcTrigger as CalcTrigger | null,
       calcIntervalSeconds: point.calcIntervalSeconds,
       maxInputAgeSeconds: point.maxInputAgeSeconds,

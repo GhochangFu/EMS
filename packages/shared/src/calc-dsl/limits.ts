@@ -1,13 +1,35 @@
 import type { CalcFunctionName } from "./ast";
 
 export const CALC_DIALECT = "bms-calc-v1";
-export type CalcDialect = typeof CALC_DIALECT;
+/**
+ * `bms-calc-v2` (ADR 0055): the cross-asset dialect. A strict superset of
+ * `v1` — every `v1` formula means the same thing under `v2` (decision 4), and
+ * `v1` itself keeps its meaning forever (decision 3). `CALC_DIALECT` is left
+ * as the bare `v1` literal on purpose: every existing import of it is a `v1`
+ * import and keeps compiling unchanged.
+ */
+export const CALC_DIALECT_V2 = "bms-calc-v2";
+export const CALC_DIALECTS = [CALC_DIALECT, CALC_DIALECT_V2] as const;
+export type CalcDialect = (typeof CALC_DIALECTS)[number];
+/** The `v1` literal alone, for a surface that must not widen with the union. */
+export type CalcV1Dialect = typeof CALC_DIALECT;
+
+/** Aggregate functions a `v2` formula may apply over a scope (ADR 0055
+ * decision 1; the set is the plan's design decision 5 — `min`/`max` stay
+ * scalar, `count` is excluded). */
+export const CALC_AGGREGATE_FNS = ["sum", "avg"] as const;
+/** The three scope kinds after `@` (ADR 0055 decision 1). */
+export const CALC_SCOPE_KINDS = ["site", "domain", "group"] as const;
 
 /** Same cap as `TemplateKpi.expression` (ADR 0036 decision 8). */
 export const MAX_FORMULA_LENGTH = 1000;
 /** Distinct point references, not occurrences — `MAX_KPI_POINT_REFS` reuses
  * this constant (ADR 0036 decision 8). */
 export const MAX_FORMULA_POINT_REFS = 20;
+/** Distinct cross-asset references (qualified refs and aggregates) per `v2`
+ * formula, beside the unchanged local cap above (ADR 0055; plan design
+ * decision 6). An aggregate's *member set* is deliberately not capped here. */
+export const MAX_FORMULA_CROSS_REFS = 8;
 /** Parser recursion-depth guard — defense in depth against a pathological
  * paste, not a limit any legitimate formula should approach. */
 export const MAX_FORMULA_DEPTH = 64;

@@ -284,6 +284,13 @@ const ERROR_MESSAGES: Readonly<Record<CalcErrorCode, string>> = {
   unknown_function: "unknown function",
   bad_arity: "wrong number of arguments",
   unknown_reference: "reference to an unknown point",
+  // `bms-calc-v2` lexical codes (ADR 0055) — one line each, no echo, forced
+  // here by the `Record<CalcErrorCode, string>` type. Author guidance beyond
+  // this is `F2.22`'s.
+  unknown_scope: "unknown scope",
+  unterminated_string: "unterminated string",
+  empty_string: "empty string",
+  malformed_qualified_reference: "malformed qualified point reference",
 };
 
 /**

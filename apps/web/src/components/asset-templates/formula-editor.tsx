@@ -84,6 +84,10 @@ const calcTheme = EditorView.theme({
   ".cm-calc-function": { color: "#7c3aed" },
   ".cm-calc-operator": { color: "#4A5464" },
   ".cm-calc-punctuation": { color: "#4A5464" },
+  // `bms-calc-v2` only (ADR 0055): a scope reads like a keyword, a string like
+  // a literal. Neither is emitted under `v1`, so a `v1` formula never sees them.
+  ".cm-calc-scope": { color: "#B45309", fontWeight: "600" },
+  ".cm-calc-string": { color: "#0E7490" },
 });
 
 /**

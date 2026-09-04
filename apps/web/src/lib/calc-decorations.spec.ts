@@ -9,7 +9,7 @@
  * Every offset below is a literal read off a red first run, never recomputed
  * here from the derivation the module uses.
  */
-import { tokenize, type TokenKind } from "@bms/shared";
+import { CALC_DIALECT_V2, tokenize, type TokenKind } from "@bms/shared";
 
 import { calcDecorations, decorationClass } from "./calc-decorations";
 import { safeTokenize } from "./calc-token-ranges";
@@ -129,6 +129,8 @@ export function runEveryTokenKindIsStyledTests(): void {
     "lparen",
     "rparen",
     "comma",
+    "scope",
+    "string",
     "eof",
   ];
   for (const kind of kinds) {
@@ -157,5 +159,47 @@ export function runFunctionCallTests(): void {
   assert(
     decorations.every((d) => d.to <= "min(1, {A}) * 2".length),
     "no decoration may run past the end of the text",
+  );
+}
+
+/**
+ * Case 8 — the `v2` productions are styled under the `v2` dialect only
+ * (ADR 0055 decision 2 for the tokens; decision 4 for the default).
+ *
+ * `calcDecorations(text)` with no dialect is a `v1` call, and under `v1` the
+ * `@` is an unexpected character — so the same text decorates to nothing.
+ * Under `v2`, `@group` is one `scope` span (the `@` included) and `'IT_LOAD'`
+ * is one `string` span (the quotes included — the token's `text` excludes
+ * them, and `tokenWidth` adds them back). Offsets read off a red run.
+ */
+export function runV2DialectDecorationTests(): void {
+  const text = "sum({kw} @group('IT_LOAD'))";
+
+  assert(
+    calcDecorations(text).length === 0,
+    "with no dialect the call is v1, and `@` does not lex under v1",
+  );
+
+  const decorations = calcDecorations(text, CALC_DIALECT_V2);
+  const scope = decorations.find((d) => d.className === "cm-calc-scope");
+  assert(scope !== undefined, `expected a cm-calc-scope span, got ${JSON.stringify(decorations)}`);
+  if (scope) {
+    assert(scope.from === 9 && scope.to === 15, `"@group" must span 9..15, got ${scope.from}..${scope.to}`);
+    assert(text.slice(scope.from, scope.to) === "@group", "the scope span must cover exactly `@group`");
+  }
+
+  const string = decorations.find((d) => d.className === "cm-calc-string");
+  assert(string !== undefined, `expected a cm-calc-string span, got ${JSON.stringify(decorations)}`);
+  if (string) {
+    assert(
+      string.from === 16 && string.to === 25,
+      `"'IT_LOAD'" must span 16..25, got ${string.from}..${string.to}`,
+    );
+    assert(text.slice(string.from, string.to) === "'IT_LOAD'", "the string span must cover the quotes");
+  }
+
+  assert(
+    decorations.every((d) => d.to <= text.length && d.to > d.from),
+    "every span stays inside the text and is non-empty",
   );
 }

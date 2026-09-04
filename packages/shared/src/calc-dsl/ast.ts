@@ -1,7 +1,15 @@
 /**
- * The `bms-calc-v1` grammar (ADR 0036). This module is the frozen public AST
- * surface `F2.4`/`F2.5`/`F2.6`/`F2.8` build against — changing a shape here is
- * a breaking change for all four.
+ * The `bms-calc-v1` grammar (ADR 0036) and, since ADR 0055, the `bms-calc-v2`
+ * additions to it.
+ *
+ * **The `v1` shapes are frozen.** They are the public AST surface
+ * `F2.4`/`F2.5`/`F2.6`/`F2.8` build against, and ADR 0055 decision 3 says
+ * `v1` keeps its meaning forever — changing an existing shape here is a
+ * breaking change for every consumer. **The `v2` additions are additive and
+ * named:** a new member of a union or a new error code, never an edit to an
+ * existing one. A consumer that exhausts a union must decide what a new kind
+ * means for it, which is the point of adding a kind rather than an optional
+ * field (ADR 0055 decision 2; plan design decision 2).
  */
 
 export type CalcFunctionName = "min" | "max" | "abs" | "round" | "clamp";
@@ -43,7 +51,15 @@ export type CalcErrorCode =
   | "trailing_input"
   | "unknown_function"
   | "bad_arity"
-  | "unknown_reference";
+  | "unknown_reference"
+  // `bms-calc-v2` lexical codes (ADR 0055). Additive — a `v1` call can never
+  // produce one, because every `v2` production sits behind a dialect check in
+  // the tokenizer. The parser's `v2` codes are added beside them by `F2.9`
+  // Task 2.
+  | "unknown_scope"
+  | "unterminated_string"
+  | "empty_string"
+  | "malformed_qualified_reference";
 
 /**
  * `position` is a 0-based character offset into the expression. Never carries

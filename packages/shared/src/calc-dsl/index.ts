@@ -7,4 +7,4 @@ export { evaluate, type CalcEvalErrorCode, type CalcEvalResult } from "./evaluat
 // than defining the grammar a second time in a Lezer file. `CalcTokenizeError`
 // is exported as a value, not a type — the editor catches it with `instanceof`
 // on every keystroke, because a half-typed `{ref}` throws by design.
-export { tokenize, CalcTokenizeError, type Token, type TokenKind } from "./tokenizer";
+export { tokenize, CalcTokenizeError, type Token, type TokenKind, type TokenizeOptions } from "./tokenizer";
