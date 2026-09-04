@@ -72,7 +72,11 @@ const stateOf = (it) => {
   if (inProgressIds.has(it.id) && it.status !== "done") return { label: "In flight", cls: "lamp-active", key: "flight" };
   if (it.status === "done") return { label: "Done", cls: "lamp-done", key: "done" };
   if (it.status === "dropped") return { label: "Dropped", cls: "lamp-idle", key: "waiting" };
-  if (it.gate) return { label: it.gate.kind === "client" ? "Awaiting client" : "Needs ADR", cls: "lamp-gated", key: "held" };
+  // `it.held`, not `it.gate` (`F4.86`). Reading the gate alone put an item
+  // that is gated AND dependency-blocked under the `held` key, so the legend,
+  // the wave lanes and the full board's state chips all counted it as held
+  // while the stat tile beside them read `counts.gated` and did not.
+  if (it.held) return { label: it.gate.kind === "client" ? "Awaiting client" : "Needs ADR", cls: "lamp-gated", key: "held" };
   // `planned` (🟡) gets its OWN key, not `flight`.
   //
   // It shared `flight` until 2026-08-23, which made every aggregate keyed on
@@ -102,6 +106,36 @@ const STATE_KEYS = [
 ];
 
 for (const it of data.items) it.stateKey = stateOf(it).key;
+
+// `F4.86`. THE held set for this file — the "Eligible, but held" cards read it,
+// and every `stateKey === "held"` above must have come from the same flag.
+//
+// The three numbers on the page that mean "held" are produced by three
+// different code paths: the stat tile prints `counts.gated` straight from the
+// status script, the section header counts these cards, and the legend, wave
+// lanes and state chips tally `stateKey`. They agreed on nothing but luck until
+// `F4.86` — the tile said 15 while the other two said 16.
+//
+// So this asserts the three agree, and fails the run when they do not. It is
+// not a tautology: delete `it.held` from either the filter below or `stateOf`,
+// put `it.gate` back, and this goes red. That is the exact regression it exists
+// to stop, and it stays red after `E1.1` closes, because it compares
+// derivations rather than a remembered number.
+const heldItems = data.items
+  .filter((it) => it.held)
+  .sort((a, b) => (P_ORDER[a.priority] ?? 9) - (P_ORDER[b.priority] ?? 9));
+
+const heldByStateKey = data.items.filter((it) => it.stateKey === "held").length;
+if (heldItems.length !== (data.counts.gated ?? 0) || heldByStateKey !== heldItems.length) {
+  console.error(
+    "backlog-dashboard: the three derivations of 'held' disagree —\n" +
+      `  counts.gated (stat tile):   ${data.counts.gated ?? 0}\n` +
+      `  held cards (section head):  ${heldItems.length}\n` +
+      `  stateKey (legend, lanes):   ${heldByStateKey}\n` +
+      "  All three must read `item.held`. See its docblock in backlog-status.mjs.",
+  );
+  process.exitCode = 1;
+}
 
 const pwOf = (it) => it.effortWeeks?.mid ?? 0;
 const pwTotal = data.items.reduce((a, it) => a + pwOf(it), 0);
@@ -486,21 +520,12 @@ function render(forClient) {
     })
     .join("");
 
-  const gatedItems = data.items
-    .filter((it) => it.gate && it.status !== "done" && it.status !== "dropped")
-    .sort(
-      (a, b) =>
-        Number(b.dependencyClear) - Number(a.dependencyClear) ||
-        (P_ORDER[a.priority] ?? 9) - (P_ORDER[b.priority] ?? 9),
-    );
-
-  const gatedHtml = gatedItems
+  const gatedHtml = heldItems
     .map(
       (it, i) => `<article class="card lamp-gated reveal" style="transition-delay:${(i * 0.03).toFixed(2)}s">
         <div class="card-top">${idTag(it)}
           ${pill(it.gate.kind === "client" ? "awaiting client" : "needs an ADR", "lamp-gated")}
-          ${it.priority === "P0" ? pill("P0", "p0") : pill(it.priority, "lamp-idle")}
-          ${it.dependencyClear ? "" : pill("also waiting on deps", "lamp-idle")}</div>
+          ${it.priority === "P0" ? pill("P0", "p0") : pill(it.priority, "lamp-idle")}</div>
         <h3>${esc(it.title)}</h3>
         <div class="gate-why">${esc(client ? it.gate.clientReason : it.gate.reason)}${
           client ? "" : `<div class="gate-src">${esc(it.gate.source)}</div>`
@@ -714,7 +739,7 @@ function render(forClient) {
     </section>
 
     <section>
-      <div class="sec-head"><div class="sec-title"><h2>Eligible, but held</h2><span class="count">${gatedItems.length} item${gatedItems.length === 1 ? "" : "s"}</span></div>
+      <div class="sec-head"><div class="sec-title"><h2>Eligible, but held</h2><span class="count">${heldItems.length} item${heldItems.length === 1 ? "" : "s"}</span></div>
         <p><b>These cannot start yet.</b> The engineering they depend on is finished — what is
           outstanding is a decision. ${
             client

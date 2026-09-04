@@ -475,6 +475,23 @@ function resolveEligibility(items) {
     // `planned` (🟡) is deliberately excluded: it means an ADR is in flight or
     // the item shipped only in part, which is not the same as "pick this up".
     item.readyToStart = item.dependencyClear && !item.gate && item.status === "pending";
+    // THE one definition of "held" (`F4.86`). Every consumer reads this flag —
+    // the `gated` set below, the dashboard's `stateOf`, its "Eligible, but
+    // held" section, and the republish hook — because four separate
+    // re-derivations of this same idea is what put E1.1 in two sections at
+    // once and made the page's own numbers disagree with each other.
+    //
+    // `dependencyClear` is part of the definition, not an extra filter on top
+    // of it. The board's footer says held means held on a DECISION, not on
+    // engineering capacity, and the held section's own prose promises "the
+    // engineering they depend on is finished". An item waiting on both is
+    // waiting on engineering too, so it belongs in `blocked` — the ruling
+    // `34c6636` already made for the console line and left unapplied here.
+    item.held =
+      item.dependencyClear &&
+      Boolean(item.gate) &&
+      item.status !== "done" &&
+      item.status !== "dropped";
     item.unlocks = [];
   }
 
@@ -748,12 +765,36 @@ const countBy = (key) =>
   items.reduce((acc, it) => ((acc[it[key]] = (acc[it[key]] ?? 0) + 1), acc), {});
 
 const ready = items.filter((it) => it.readyToStart);
-const gated = items.filter(
-  (it) => it.dependencyClear && it.gate && it.status !== "done" && it.status !== "dropped",
-);
+const gated = items.filter((it) => it.held);
 const blocked = items.filter(
   (it) => !it.dependencyClear && it.status !== "done" && it.status !== "dropped",
 );
+
+// `F4.86`. These three sets are rendered as three separate answers to "why can
+// this not start", so an item in two of them is reported twice and the totals
+// stop adding up. The overlap that motivated this was `gated` x `blocked`, but
+// the check is written over all three pairs rather than that one: the defect
+// class is a predicate drifting until two sets intersect, and naming only the
+// pair that already bit us would not catch the next one.
+//
+// A hard exit, not a warning. `warnings` is rendered ON the board, which is the
+// wrong place for "the board is wrong" — and the leak-check CI job runs this
+// script, so a non-zero exit here is a gate under AGENTS.md §4.6.
+for (const [aName, a, bName, b] of [
+  ["ready", ready, "gated", gated],
+  ["ready", ready, "blocked", blocked],
+  ["gated", gated, "blocked", blocked],
+]) {
+  const bIds = new Set(b.map((it) => it.id));
+  const both = a.filter((it) => bIds.has(it.id)).map((it) => it.id);
+  if (both.length > 0) {
+    console.error(
+      `backlog-status: ${both.length} item(s) counted as both ${aName} and ${bName}: ${both.join(", ")}.\n` +
+        `  These sets must not intersect — see the \`item.held\` docblock.`,
+    );
+    process.exit(1);
+  }
+}
 
 const P_ORDER = { P0: 0, P1: 1, P2: 2, P3: 3 };
 const byPriority = (a, b) =>
@@ -842,6 +883,14 @@ payload.fingerprint = createHash("sha256")
           it.title,
           it.dependsRaw,
           it.readyToStart,
+          // `F4.86`. `held` earns a slot because it moves a card between two
+          // rendered sections on its own: a gated item that becomes
+          // dependency-clear leaves "Waiting" and joins "Eligible, but held",
+          // and no other field in this projection changes when it does —
+          // `readyToStart` stays false throughout, because a gated item is
+          // never ready. The board therefore moved without the fingerprint
+          // moving, and the republish hook stayed quiet.
+          it.held,
           it.gate?.kind ?? null,
           it.deliveredOn,
         ])

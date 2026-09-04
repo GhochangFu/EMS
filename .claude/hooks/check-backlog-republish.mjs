@@ -90,11 +90,15 @@ const run = (script) =>
 
     const counts = data.counts || {};
     const inFlight = (data.inProgress || []).map((i) => i.id);
-    // Match the renderer's definition of held, not counts.gated — the renderer
-    // excludes done and dropped rows, so the two numbers differ.
-    const held = (data.items || []).filter(
-      (i) => i.gate && i.status !== 'done' && i.status !== 'dropped',
-    ).length;
+    // `counts.gated` — the number the board's stat tile prints (`F4.86`).
+    //
+    // This was a fourth re-derivation of "held", added to match the renderer
+    // when `34c6636` corrected the dashboard's console line. It matched the
+    // renderer while the renderer was wrong, so this line reported 16 held
+    // against a board that showed 15. Its stated reason was false as well:
+    // `counts.gated` does exclude done and dropped rows, so that was never
+    // what set the two numbers apart — `dependencyClear` was.
+    const held = counts.gated ?? 0;
     const warnings = data.warnings || [];
 
     const lines = [
