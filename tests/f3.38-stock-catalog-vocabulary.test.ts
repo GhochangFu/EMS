@@ -99,7 +99,9 @@ const POINT_KEY_SOURCE_RELS = [
  */
 const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
   "packages/shared/src/constants.ts": 396,
-  "packages/shared/src/facility-point-keys.ts": 104,
+  // 206 since E5.3 PR 2: 104 (FACILITY_CLASS_POINT_KEYS + ENVIRONMENT_CLASS_POINT_KEYS) +
+  // VERTICAL_TRANSPORT_CLASS_POINT_KEYS's 102.
+  "packages/shared/src/facility-point-keys.ts": 206,
 };
 
 /** The sources as one list, for an assertion message. */
@@ -366,7 +368,9 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     // (`docs/plans/e5.3-facility-domain-pack.md` §4.4/§4.6), disjoint by
     // construction because the eleven shared codes are referenced and never
     // redeclared.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(500);
+    // 602 since E5.3 PR 2: 500 + VERTICAL_TRANSPORT_CLASS_POINT_KEYS's 102, disjoint by
+    // construction.
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(602);
     // 28 is 26 from `0051` plus 2 from `0060`, and both migrations are frozen,
     // so this number is stable by construction. If a LATER migration adds a
     // role code and the check below starts rejecting a legitimate

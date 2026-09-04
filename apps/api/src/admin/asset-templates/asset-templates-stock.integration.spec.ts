@@ -44,6 +44,7 @@ const UNKNOWN_DOMAIN_CODE = `${TEST_CODE}-UNKNOWN-DOMAIN`;
 const FEEDER_CODE = "electrical-feeder";
 const PUMP_CODE = "mechanical-pump";
 const LIGHTING_CODE = "facility-lighting-zone";
+const LIFT_CODE = "mechanical-lift";
 
 /**
  * A domain that is not, and will never be, a `bms.asset_domains` row — what
@@ -57,15 +58,16 @@ const LIGHTING_CODE = "facility-lighting-zone";
  */
 const UNKNOWN_DOMAIN = "f213-not-a-domain";
 
-/** The three real imports' rows, each deleted by its own id in `cleanup`. */
+/** The four real imports' rows, each deleted by its own id in `cleanup`. */
 let importedFeederId: string | null = null;
 let importedPumpId: string | null = null;
 let importedLightingZoneId: string | null = null;
+let importedLiftId: string | null = null;
 
-/** Deletes only this run's rows: the `TEST_CODE` family, the three real rows by id, the minted key. */
+/** Deletes only this run's rows: the `TEST_CODE` family, the four real rows by id, the minted key. */
 export async function cleanup(pool: pg.Pool): Promise<void> {
   await pool.query(`DELETE FROM bms.asset_templates WHERE code LIKE $1`, [`${TEST_CODE}%`]);
-  for (const id of [importedFeederId, importedPumpId, importedLightingZoneId]) {
+  for (const id of [importedFeederId, importedPumpId, importedLightingZoneId, importedLiftId]) {
     if (id) {
       await pool.query(`DELETE FROM bms.asset_templates WHERE id = $1`, [id]);
     }
@@ -539,6 +541,104 @@ export async function assertAFacilityEntryImportsAndPublishes(
     `publish must accept the imported lighting zone, got ${published.status}`,
   );
   assert(published.stockCode === LIGHTING_CODE, "publish keeps the stamp");
+}
+
+/**
+ * `E5.3` Task 13 — the lift through the same path, and the two bindings PR 1
+ * never exercised against a database.
+ *
+ * The lighting zone proved the `facility` domain row is live and that a
+ * fifteen-point entry round-trips. This entry is different in three ways that
+ * only a real import can check:
+ *
+ *  - **80 points**, the catalog's largest, so `assertPointKeysActive` runs over
+ *    the whole `E5.3` PR 2 vocabulary commit at once — every one of §8a's codes
+ *    must be an active `bms.point_keys` row, including the six referenced ones
+ *    that came from PR 1 and from packs before it.
+ *  - **An alarm binding a `derived` point** (`door_reversal_ratio_rising` on
+ *    `door_reversal_ratio_pct`) and **an alarm binding a `manual` row**
+ *    (`statutory_inspection_overdue` on `annual_inspection_due`).
+ *    `assertContentRefsResolve` resolves an alarm's `pointKey` against the
+ *    template's declared points, and both of those ARE declared points — a
+ *    manual row is stored as a `template_points` row at import and is skipped
+ *    only later, when an asset is instantiated from the template. Publish
+ *    re-validates the stored content, so both bindings are proved twice.
+ *  - **The citation the entry's own prefix would get wrong.** Nothing at
+ *    runtime reads `ENTRY_SOURCE_DOC` — it is a spec-side map — but the
+ *    description it governs travels into the row, and a published lift is what
+ *    a global administrator reads it from.
+ */
+export async function assertALiftImportsAndPublishes(
+  realStock: AssetTemplatesStockService,
+  svc: AssetTemplatesAdminService,
+  pool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  // Drafts only, for the reason the three imports above give: a PUBLISHED
+  // leftover does not collide, because the next import takes the next version.
+  const { rowCount } = await pool.query(
+    `SELECT 1 FROM bms.asset_templates WHERE organization_id = $1 AND code = $2 AND status = 'draft'`,
+    [fx.organizationId, LIFT_CODE],
+  );
+  assert(
+    rowCount === 0,
+    `organization ${fx.organizationId} already has an open "${LIFT_CODE}" draft, so this import ` +
+      "would 409. Publish or delete it, then re-run.",
+  );
+
+  const draft = await realStock.import(fx.adminJwt, LIFT_CODE, fx.organizationId);
+  importedLiftId = draft.id;
+  assert(
+    draft.domain === "mechanical",
+    `the imported lift must carry domain "mechanical" — the prefix says the domain (ADR 0054 ` +
+      "decision 2) even though the rows were transcribed from E5.3's document, which is exactly " +
+      `what ENTRY_SOURCE_DOC exists to say. Got "${draft.domain}".`,
+  );
+  assert(draft.stockCode === LIFT_CODE && draft.stockVersion === 1, "the lift import is stamped v1");
+  assert(draft.points.length === 80, `80 points must land, got ${draft.points.length}`);
+  assert((await storedPointCount(pool, draft.id)) === 80, "80 template_points rows must be stored");
+  assert(
+    draft.points.filter((point) => point.kind === "derived").length === 2,
+    "the lift's two promoted formulas must survive the import as derived points — " +
+      `door_reversal_ratio_pct and kwh_per_trip. Got ` +
+      `${draft.points.filter((point) => point.kind === "derived").length}.`,
+  );
+
+  const alarms = (draft.content as { alarms?: Record<string, unknown>[] }).alarms ?? [];
+  assert(alarms.length === 17, `17 alarms must survive, got ${alarms.length}`);
+  assert(
+    alarms.every((alarm) => !("thresholdValue" in alarm) && !("operator" in alarm)),
+    "every lift alarm must still be pair-absent after the round trip",
+  );
+  assert(
+    alarms.every((alarm) => {
+      const philosophy = alarm.philosophy as Record<string, unknown> | undefined;
+      return (
+        typeof philosophy === "object" &&
+        philosophy !== null &&
+        ["cause", "impact", "action"].every(
+          (field) => typeof philosophy[field] === "string" && (philosophy[field] as string).length > 0,
+        )
+      );
+    }),
+    "every lift alarm must carry a populated philosophy after the round trip — the threshold " +
+      "pair is deliberately absent, so cause, impact and action are all the meaning an operator " +
+      "gets, and a philosophy dropped in transit would leave a row with no meaning at all",
+  );
+  const derivedBinding = alarms.find((alarm) => alarm.code === "door_reversal_ratio_rising");
+  const manualBinding = alarms.find((alarm) => alarm.code === "statutory_inspection_overdue");
+  assert(
+    derivedBinding?.pointKey === "door_reversal_ratio_pct" &&
+      manualBinding?.pointKey === "annual_inspection_due",
+    "the two bindings this entry exists to prove must survive assertContentRefsResolve at import " +
+      "— door_reversal_ratio_rising on the DERIVED point, and statutory_inspection_overdue on " +
+      `the MANUAL row. Got "${String(derivedBinding?.pointKey)}" and ` +
+      `"${String(manualBinding?.pointKey)}".`,
+  );
+
+  const published = await svc.publish(fx.adminJwt, draft.id);
+  assert(published.status === "published", `publish must accept the imported lift, got ${published.status}`);
+  assert(published.stockCode === LIFT_CODE, "publish keeps the stamp");
 }
 
 /** 400, naming the available codes — and still a sentence with an empty catalog. */

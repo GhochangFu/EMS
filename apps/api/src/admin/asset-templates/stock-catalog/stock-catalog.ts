@@ -100,7 +100,9 @@ import { WATER_STOCK_ASSET_TEMPLATES } from "./water";
  *    prefix is the DOMAIN. So `PACK_SOURCE_DOC` in `stock-catalog.spec.ts`
  *    declares two prefixes (`facility`, `environment`) against this file's
  *    document — and the third, `mechanical`, is already `E5.2`'s, which is why
- *    PR 2 adds a per-ENTRY override rather than a third prefix. They share
+ *    PR 2 Task 11 added `ENTRY_SOURCE_DOC`, a per-ENTRY override consulted
+ *    before the prefix map, rather than re-pointing a prefix six other entries
+ *    depend on. The lift and the escalator carry an override each. They share
  *    `point-fields.ts` with the other three packs, which is not edited.
  *
  * **A NEW PACK FILE — OR, INSIDE THE ELECTRICAL PACK, A NEW CLASS MODULE —
@@ -146,9 +148,12 @@ export const STOCK_ASSET_TEMPLATE_CATALOG: readonly StockAssetTemplateEntry[] = 
   // Empty for one commit at `E5.3` Task 3 — the pack is declared one commit
   // before its first entry, and `facility.ts` says why it shipped empty rather
   // than as seven skeletons. **All seven landed at Tasks 4-10**, so
-  // `stock-catalog-deferrals.spec.ts` compares the catalog against the whole of
+  // `stock-catalog-deferrals.spec.ts` compared the catalog against the whole of
   // `STOCK_ENTRY_CODES` again: the HEAD comparison and its anti-vacuity floor
   // were deleted together with the BAS gateway, which is what staging a claim
-  // means. PR 2 stages it once more for the lift and the escalator.
+  // means. **PR 2 Task 11 staged it a third time** — `STOCK_ENTRY_CODES` names
+  // the lift and the escalator two commits before this spread grows to 27,
+  // because their citation overrides may only name a declared entry — and Task
+  // 14 restores full equality with the escalator.
   ...FACILITY_STOCK_ASSET_TEMPLATES,
 ];

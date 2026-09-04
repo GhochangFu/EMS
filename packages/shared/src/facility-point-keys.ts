@@ -213,3 +213,101 @@ export const ENVIRONMENT_CLASS_POINT_KEYS = [
 ] as const;
 
 export type EnvironmentClassPointKey = (typeof ENVIRONMENT_CLASS_POINT_KEYS)[number];
+
+/**
+ * `E5.3` §§8a/8b — the vertical-transport (lift, escalator) vocabulary, filed
+ * under `mechanical`. Plan `docs/plans/e5.3-facility-domain-pack.md` §4.4.
+ *
+ * **A second array under `mechanical`, not an append.** `MECHANICAL_CLASS_POINT_KEYS`
+ * lives in `constants.ts` and is write-once; §12 ruling 1 files this array here instead,
+ * the `HVAC_CLASS_POINT_KEYS` precedent (a second array under one domain).
+ *
+ * **Eight codes are already seeded and are REFERENCED, never redeclared**:
+ * `controller_comms_ok` (declared under `facility`, §3 access door),
+ * `motor_current_a`, `motor_temp_c`, `vibration_mms` (`MECHANICAL_CLASS_POINT_KEYS`),
+ * `kw`, `kwh_total`, `run_hours_h`, `start_count` (the electrical arrays).
+ *
+ * **§8a lift — 74** (78 rows less the six reused above = 72, + 2 derived) and
+ * **§8b escalator — 28** (40 rows less thirteen reused = 27, + 1 derived) — see plan
+ * §4.4 for the row-by-row derivation. `door_reversal_ratio_pct`, `kwh_per_trip` (lift)
+ * and `kwh_per_run_hour` (escalator) are promoted DERIVED (§12 ruling 2), the last two
+ * following `E5.2`'s `load_factor_pct` precedent for a lifetime-counter ratio.
+ * `handrail_speed_dev_pct` is likewise promoted DERIVED, signed, at `sortOrder 39`
+ * (§12 ruling 3) — `entrapment_state` stays MEASURED, `extended` tier, for the same
+ * ruling.
+ *
+ * **New codepoints and unit spellings** (plan §4.4/§4.6): `²` is `U+00B2` in
+ * `max_accel_ms2`'s `m/s²`; `³` is `U+00B3` in `max_jerk_ms3`'s `m/s³`;
+ * `kwh_per_run_hour` is `kWh/h`, not `kW` (§12 ruling 7 — the quantity is an averaged
+ * consumption over run time, not an instantaneous power). **Measured against
+ * `UNIT_BY_KEY`, not assumed** — an earlier draft of this sentence filed five of
+ * these under the wrong array, and this is the file the next pack's author reads
+ * to learn which spellings already exist, so a wrong list here buys a second
+ * spelling that no later seed can correct. `lux`, `µg/m³`, `ppb` and `CFU/m³` do
+ * NOT apply here — they are `FACILITY_CLASS_POINT_KEYS`'s or
+ * `ENVIRONMENT_CLASS_POINT_KEYS`'s. `m`, `kg`, `A`, `bar`, `V` are reused from
+ * spellings that already existed. **New to `UNIT_BY_KEY` with this array, all
+ * nine of them: `m/s`, `mm`, `mg`, `dB(A)`, `km`, `m/s²`, `m/s³`, `kWh/h`** and
+ * `floor_km_total`'s `km`. `mg` here means MILLI-G of acceleration, not
+ * milligram — the catalog already spells milligram per litre `mg/L`, the tag
+ * list spells this one `mg`, and ADR 0054 decision 3 says spellings follow the
+ * document. It is permanent: `COALESCE` never overwrites, so a correction is a
+ * `PATCH` per row on every database, not a seed edit. `F2.18` carries it as a
+ * redline item.
+ */
+export const VERTICAL_TRANSPORT_CLASS_POINT_KEYS = [
+  // §8a lift — 74 (78 rows less 6 reused = 72, + 2 derived), EIGHT sub-blocks
+  // service state
+  "lift_in_service", "lift_mode", "lift_fault",
+  "lift_fault_code", "lift_fault_count", "fire_recall_state",
+  "fire_operation_state", "emergency_power_mode", "ard_state",
+  "passenger_alarm", "entrapment_state", "intercom_call_active",
+  // motion
+  "car_position_floor", "car_position_m", "car_direction",
+  "car_moving", "car_speed_ms", "car_load_pct",
+  "car_load_kg", "overload_state", "full_load_bypass_state",
+  "levelling_error_mm", "hall_calls_pending", "car_calls_pending",
+  "next_stop_floor",
+  // doors
+  "car_door_state", "landing_door_state", "door_zone_state",
+  "door_cycle_count", "door_reversal_count", "door_open_time_s",
+  "door_fault_state", "door_motor_current_a",
+  // drive and machine
+  "drive_status", "drive_fault_code", "drive_heatsink_temp_c",
+  "dc_bus_v", "brake_state", "brake_temp_c",
+  "brake_fault_state", "rope_brake_state", "hydraulic_oil_temp_c",
+  "hydraulic_oil_level_low", "hydraulic_pressure_bar", "regen_kw",
+  // shaft, pit, machine room
+  "machine_room_temp_c", "machine_room_humidity_pct", "pit_water_state",
+  "pit_light_state", "shaft_temp_c", "safety_chain_ok",
+  "governor_tripped", "terminal_limit_state", "car_light_state",
+  "car_fan_state", "car_temp_c",
+  // ride quality
+  "vibration_x_mg", "vibration_y_mg", "vibration_z_mg",
+  "max_accel_ms2", "max_jerk_ms3", "noise_dba",
+  // counters and usage
+  "trip_count", "floor_km_total", "passenger_count",
+  "waiting_time_avg_s", "waiting_time_max_s",
+  // manual / statutory
+  "annual_inspection_due", "rope_condition", "brake_test_result",
+  "buffer_test_result", "ard_battery_test",
+  "door_reversal_ratio_pct", // E5.3: derived, formula in mechanical-lift.ts
+  "kwh_per_trip", // E5.3: derived, formula in mechanical-lift.ts
+  // §8b escalator — 28 (40 rows less 13 reused = 27, + 1 derived)
+  "esc_status", "esc_direction", "esc_mode",
+  "esc_fault", "esc_fault_code", "esc_emergency_stop",
+  "safety_circuit_ok", "safety_device_tripped", "step_speed_ms",
+  "handrail_speed_l_ms", "handrail_speed_r_ms",
+  // E5.3: the X/D row, authored DERIVED (§12 ruling 3) — formula in
+  // mechanical-escalator.ts
+  "handrail_speed_dev_pct",
+  "gearbox_temp_c", "gearbox_oil_level_low", "aux_brake_tripped",
+  "step_chain_tension_ok", "drive_chain_ok", "missing_step_state",
+  "comb_plate_state", "skirt_switch_state", "handrail_inlet_state",
+  "passenger_sensor_state", "machine_space_temp_c", "truss_water_state",
+  "lubrication_fault", "standby_hours_h", "step_chain_elongation_pct",
+  "kwh_per_run_hour", // E5.3: derived, formula in mechanical-escalator.ts — §12 ruling 7
+] as const;
+
+export type VerticalTransportClassPointKey =
+  (typeof VERTICAL_TRANSPORT_CLASS_POINT_KEYS)[number];

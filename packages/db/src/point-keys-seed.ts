@@ -13,6 +13,7 @@ import {
   HVAC_POINT_KEYS,
   MECHANICAL_CLASS_POINT_KEYS,
   METERED_PUMPING_POINT_KEYS,
+  VERTICAL_TRANSPORT_CLASS_POINT_KEYS,
   WATER_CLASS_POINT_KEYS,
 } from "@bms/shared";
 
@@ -607,6 +608,114 @@ const UNIT_BY_KEY: Record<string, string> = {
   microbial_count_cfu: "CFU/m³",
   co2_above_outdoor_ppm: "ppm", // E5.3: derived, formula in environment-iaq-node.ts
   pm25_indoor_outdoor_ratio: "", // E5.3: derived, dimensionless (the `cop` spelling)
+  // §8a lift — 74 (72 rows + 2 derived); controller_comms_ok, motor_current_a,
+  // motor_temp_c, kw, kwh_total, run_hours_h are reused, not redeclared here
+  lift_in_service: "",
+  lift_mode: "",
+  lift_fault: "",
+  lift_fault_code: "",
+  lift_fault_count: "",
+  fire_recall_state: "",
+  fire_operation_state: "",
+  emergency_power_mode: "",
+  ard_state: "",
+  passenger_alarm: "",
+  entrapment_state: "",
+  intercom_call_active: "",
+  car_position_floor: "",
+  car_position_m: "m",
+  car_direction: "",
+  car_moving: "",
+  car_speed_ms: "m/s",
+  car_load_pct: "%",
+  car_load_kg: "kg",
+  overload_state: "",
+  full_load_bypass_state: "",
+  levelling_error_mm: "mm",
+  hall_calls_pending: "",
+  car_calls_pending: "",
+  next_stop_floor: "",
+  car_door_state: "",
+  landing_door_state: "",
+  door_zone_state: "",
+  door_cycle_count: "",
+  door_reversal_count: "",
+  door_open_time_s: "s",
+  door_fault_state: "",
+  door_motor_current_a: "A",
+  drive_status: "",
+  drive_fault_code: "",
+  drive_heatsink_temp_c: "°C",
+  dc_bus_v: "V",
+  brake_state: "",
+  brake_temp_c: "°C",
+  brake_fault_state: "",
+  rope_brake_state: "",
+  hydraulic_oil_temp_c: "°C",
+  hydraulic_oil_level_low: "",
+  hydraulic_pressure_bar: "bar",
+  regen_kw: "kW",
+  machine_room_temp_c: "°C",
+  machine_room_humidity_pct: "%",
+  pit_water_state: "",
+  pit_light_state: "",
+  shaft_temp_c: "°C",
+  safety_chain_ok: "",
+  governor_tripped: "",
+  terminal_limit_state: "",
+  car_light_state: "",
+  car_fan_state: "",
+  car_temp_c: "°C",
+  vibration_x_mg: "mg",
+  vibration_y_mg: "mg",
+  vibration_z_mg: "mg",
+  max_accel_ms2: "m/s²",
+  max_jerk_ms3: "m/s³",
+  noise_dba: "dB(A)",
+  trip_count: "",
+  floor_km_total: "km",
+  passenger_count: "",
+  waiting_time_avg_s: "s",
+  waiting_time_max_s: "s",
+  annual_inspection_due: "",
+  rope_condition: "",
+  brake_test_result: "",
+  buffer_test_result: "",
+  ard_battery_test: "",
+  door_reversal_ratio_pct: "%", // E5.3: derived, formula in mechanical-lift.ts
+  kwh_per_trip: "kWh", // E5.3: derived, formula in mechanical-lift.ts
+  // §8b escalator — 28 (27 rows + 1 derived); controller_comms_ok,
+  // motor_current_a, motor_temp_c, brake_state, brake_temp_c, passenger_count,
+  // kw, kwh_total, run_hours_h, start_count, vibration_mms,
+  // annual_inspection_due, brake_test_result are reused, not redeclared here
+  esc_status: "",
+  esc_direction: "",
+  esc_mode: "",
+  esc_fault: "",
+  esc_fault_code: "",
+  esc_emergency_stop: "",
+  safety_circuit_ok: "",
+  safety_device_tripped: "",
+  step_speed_ms: "m/s",
+  handrail_speed_l_ms: "m/s",
+  handrail_speed_r_ms: "m/s",
+  handrail_speed_dev_pct: "%", // E5.3: derived, sortOrder 39 — §12 ruling 3
+  gearbox_temp_c: "°C",
+  gearbox_oil_level_low: "",
+  aux_brake_tripped: "",
+  step_chain_tension_ok: "",
+  drive_chain_ok: "",
+  missing_step_state: "",
+  comb_plate_state: "",
+  skirt_switch_state: "",
+  handrail_inlet_state: "",
+  passenger_sensor_state: "",
+  machine_space_temp_c: "°C",
+  truss_water_state: "",
+  lubrication_fault: "",
+  standby_hours_h: "h",
+  step_chain_elongation_pct: "%",
+  kwh_per_run_hour: "kWh/h", // E5.3: derived, formula in mechanical-escalator.ts — §12 ruling 7
 };
 
 function titleCase(code: string): string {
@@ -735,6 +844,16 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
   // `GLOBAL_CATALOG`, with zero overlap.
   ...keysForDomain(FACILITY_CLASS_POINT_KEYS, "facility"),
   ...keysForDomain(ENVIRONMENT_CLASS_POINT_KEYS, "environment"),
+  // `E5.3` PR 2 — the vertical-transport pack (ADR 0054), LAST and unfiltered,
+  // for the same two reasons the facility arrays above are last, and from the
+  // same second shared file. None of the 102 pre-exists, so no
+  // `ORDER BY created_at, code` fixture window moves. This line files 102 codes
+  // under a domain that already holds 68 (`MECHANICAL_CLASS_POINT_KEYS`) — the
+  // `HVAC_CLASS_POINT_KEYS` precedent; the clash check in
+  // `tests/f3.39-global-point-key-vocabulary.test.ts` is per code, not per
+  // domain, and all 102 were checked against every code in `GLOBAL_CATALOG`
+  // with zero overlap.
+  ...keysForDomain(VERTICAL_TRANSPORT_CLASS_POINT_KEYS, "mechanical"),
 ];
 
 /**
