@@ -135,6 +135,7 @@ const STOCK_ASSET_RELS = [
   `${STOCK_CATALOG_DIR}/environment-iaq-node.ts`,
   `${STOCK_CATALOG_DIR}/facility-bas-gateway.ts`,
   `${STOCK_CATALOG_DIR}/mechanical-lift.ts`,
+  `${STOCK_CATALOG_DIR}/mechanical-escalator.ts`,
 ] as const;
 
 /**
@@ -391,7 +392,18 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // FOURTH pack running — ADR 0054 decision 6 authors no `content.kpis`
     // either, and `facility.ts` records why that is structural. PR 2 moves this
     // to 897 with the lift and the escalator.
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(744);
+    //
+    // **897 since `E5.3` plan Task 14 — MEASURED off the built files with this
+    // file's own two scanners after the escalator landed, by raising the bound
+    // past any possible value and reading vitest's received number, never by
+    // copying the plan's prediction and watching it pass** (a bound set to the
+    // predicted value proves only `>= predicted`). 744 + the lift's 97 (80
+    // declared point rows + 17 alarm references) + the escalator's 56 (41 + 15)
+    // = **897**, equal to plan §4.6's prediction, which is the check §4.6 asks
+    // for: any other value is a dropped or misspelled row and not slack. The KPI
+    // member count stays 12 for the FIFTH pack running. **This is the pack's
+    // final value** — no `E5.3` commit follows the escalator.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(897);
     // 168 distinct, so a copy-pasted repetition cannot satisfy the bound above
     // alone: 33 feeder + 30 transformer + 38 DG + 29 UPS (battery_v and
     // ambient_temp_c repeat) + 25 PV (ambient_temp_c) + 13 APFC (thd_v_pct,
@@ -452,7 +464,27 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // repeats between sections. Equal to plan
     // §4.6's prediction, so the overlap arithmetic held as well as the
     // transcription.
-    expect(new Set(pointKeys).size, "fewer distinct keys than the twenty-five classes declare").toBeGreaterThanOrEqual(490);
+    //
+    // **592 since `E5.3` plan Task 14**, measured the same way and in the same
+    // commit as the length bound above — the bound was raised past any possible
+    // value and the received number read off vitest, rather than set to the
+    // plan's figure and watched to pass. 490 + the vertical-transport pack's
+    // **102** distinct keys: the lift and the escalator declare 121 rows over a
+    // 110-code union (80 + 41 less the **eleven** codes both entries declare —
+    // `controller_comms_ok`, `motor_current_a`, `motor_temp_c`, `brake_state`,
+    // `brake_temp_c`, `passenger_count`, `kw`, `kwh_total`, `run_hours_h`,
+    // `annual_inspection_due`, `brake_test_result`), less the **eight** of that
+    // union already in the set: `controller_comms_ok`, which PR 1's access door
+    // declares, and `motor_current_a`, `motor_temp_c`, `kw`, `kwh_total`,
+    // `run_hours_h`, `start_count` and `vibration_mms`, which `E5.2`'s modules
+    // name. Equal to plan §4.6's prediction. (§4.6's own parenthetical
+    // decomposition reads "107 + 3 promoted"; PR 2 promotes **four** points over
+    // three codes across the two entries and the total it predicts is right, so
+    // the arithmetic reconciles by a different route to the same 102.) **The
+    // pack's final value**: no `E5.3` commit follows the escalator, and this is
+    // the number that says nothing in either entry was double-counted or
+    // quietly duplicated while the length bound above says nothing was dropped.
+    expect(new Set(pointKeys).size, "fewer distinct keys than the twenty-seven classes declare").toBeGreaterThanOrEqual(592);
     // 396 = the 289 E5.1 left (F2.11's 139 ELECTRICAL_CLASS_POINT_KEYS plus
     // F2.12's six promotions, plus the other arrays, plus E5.1's 98-code
     // WATER_CLASS_POINT_KEYS) + E5.2 pass A's 107-code

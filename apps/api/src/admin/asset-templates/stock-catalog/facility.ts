@@ -5,6 +5,7 @@ import { FACILITY_FIRE_PANEL } from "./facility-fire-panel";
 import { FACILITY_LIGHTING_ZONE } from "./facility-lighting-zone";
 import { FACILITY_OCCUPANCY_ZONE } from "./facility-occupancy-zone";
 import { FACILITY_PARKING_LEVEL } from "./facility-parking-level";
+import { MECHANICAL_ESCALATOR } from "./mechanical-escalator";
 import { MECHANICAL_LIFT } from "./mechanical-lift";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -435,6 +436,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `ENTRY_SOURCE_DOC` points it at the `E5.3` document, and
  *    `facility-classes-4.spec.ts` proves the override and not the prefix
  *    default decides it.
+ *  - `mechanical-escalator` **v1** (2026-09-04, `E5.3`): §8b, 41 points
+ *    (5 C + 31 X + 3 M + 2 derived — `handrail_speed_dev_pct`, the pack's only
+ *    signed formula and its one `X/D` promotion, and `kwh_per_run_hour`), 15
+ *    alarms from thirteen bullets — one of them with no `skill` — 5 maintenance
+ *    plans, three `safetyCritical` and none `condition_based`. **The entry that
+ *    closes the pack**: it references thirteen codes and declares none of them,
+ *    the most of any entry here, and Task 14 restores the catalog order claim
+ *    to full equality against all twenty-seven entries with it.
  */
 export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0054 decision 1's document order — lighting zone, fire panel, access
@@ -450,4 +459,5 @@ export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] 
   ENVIRONMENT_IAQ_NODE,
   FACILITY_BAS_GATEWAY,
   MECHANICAL_LIFT,
+  MECHANICAL_ESCALATOR,
 ];

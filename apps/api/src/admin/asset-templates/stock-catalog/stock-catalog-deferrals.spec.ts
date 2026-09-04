@@ -70,9 +70,9 @@ import { assert, ENTRY_SOURCE_DOC, requireStockEntry } from "./stock-catalog.spe
  * this list, because full equality would be red for every commit pass C takes
  * to author the entries one at a time, and a bound that is red by construction
  * teaches the next author to ignore a red test — the `F2.12` / `E5.1`
- * bound-staging pattern applied to a list. **Task 14 (the escalator) deletes
+ * bound-staging pattern applied to a list. **Task 14 (the escalator) deleted
  * the slice and the floor of 25 together**, and the claim is `join === join`
- * against all twenty-seven from then on.
+ * against all twenty-seven from there on.
  */
 const STOCK_ENTRY_CODES = [
   "electrical-feeder",
@@ -107,8 +107,8 @@ const STOCK_ENTRY_CODES = [
   // the same document. Declared here at Task 11, one commit before Task 13
   // authors the lift, because `ENTRY_SOURCE_DOC` may only carry a code this
   // list names: the override and the codes it overrides land together or the
-  // override checks nothing. Neither entry ships yet; the order claim is a head
-  // comparison until Task 14.
+  // override checks nothing. Task 13 authored the lift and Task 14 the
+  // escalator, and the order claim is full equality again from Task 14.
   "mechanical-lift",
   "mechanical-escalator",
 ] as const;
@@ -538,44 +538,45 @@ export function runStockCatalogDeferralTests(): void {
   // index appended in the wrong place, or an entry silently dropped from a
   // spread, would have passed every check in this directory.
   //
-  // **STAGED FOR THE THIRD TIME, HERE AT `E5.3` TASK 11, AND TASK 14 DELETES IT
-  // AGAIN.** The claim ran against the HEAD of this list for the six commits
+  // **STAGED FOR THE THIRD TIME AT `E5.3` TASK 11, AND RESTORED TO FULL
+  // EQUALITY HERE AT TASK 14 — the third deletion, and the last this pack
+  // needs.** The claim ran against the HEAD of this list for the six commits
   // pass C took to author the mechanical entries and for the seven that authored
   // the facility ones; `E5.2` Task 11 and `E5.3` Task 10 each restored full
-  // equality and deleted the floor with the slice. Task 11 declares
-  // `mechanical-lift` and `mechanical-escalator` one commit before either is
+  // equality and deleted the floor with the slice. Task 11 declared
+  // `mechanical-lift` and `mechanical-escalator` two commits before either was
   // authored — an `ENTRY_SOURCE_DOC` override must name a DECLARED entry in the
   // commit that adds it, which is the check below this one — so the head
-  // comparison and the floor come back for exactly two commits. Task 14 (the
-  // escalator) deletes both. A staged claim is a claim with a deletion date.
+  // comparison and a floor of 25 came back for exactly two commits. **The
+  // escalator is the second of them, so both are gone** and the comparison below
+  // is `join === join` against the whole twenty-seven-element literal.
   //
-  // **THE FLOOR IS WHAT THE SLICE COSTS, and it is not decoration.**
-  // `slice(0, codes.length)` follows the catalog, so at `codes.length === 0` the
-  // comparison is `"" === ""` — a pack index dropped from the spread in
-  // `stock-catalog.ts` would PASS while the product shipped nothing. The floor is
-  // **25**, what `main` ships today: it refuses an empty or truncated catalog
-  // while the two vertical-transport entries are unwritten, and it never moves to
-  // 27 — Task 14 restores full equality, which carries its own floor.
+  // **NO ANTI-VACUITY FLOOR IS NEEDED WHILE THE CLAIM IS FULL EQUALITY, and that
+  // is the whole point of taking the staging back out.** `slice(0, codes.length)`
+  // followed the catalog, so at `codes.length === 0` it was the empty list and
+  // the comparison was `"" === ""` — a pack index dropped from the spread in
+  // `stock-catalog.ts` would have PASSED while the product shipped nothing, and
+  // the floor of 25 was what refused that. Against the full literal an empty,
+  // truncated or REORDERED catalog cannot compare equal to twenty-seven codes,
+  // so the claim carries its own floor and a second one would be decoration.
+  // The head comparison could not say this: it passed on any prefix, and a
+  // twenty-six-entry catalog missing only the escalator was its green case.
+  //
+  // A staged claim is a claim with a deletion date, and this one has now been
+  // staged and deleted three times without the deletion ever being forgotten,
+  // because each staging comment names the task that removes it.
   const codes = STOCK_ASSET_TEMPLATE_CATALOG.map((entry) => entry.code);
   assert(
-    codes.length >= 25,
-    `the catalog ships ${codes.length} entries, fewer than the twenty-five E5.3 PR 1 left on ` +
-      "main. The order claim below is a HEAD comparison while Tasks 13-14 author the lift and " +
-      "the escalator, and a head comparison against a shrinking catalog compares less and less " +
-      "until it compares nothing: this floor is what refuses a pack index dropped from the " +
-      "spread in stock-catalog.ts. Do not lower it — delete it at Task 14, with the slice.",
-  );
-  assert(
-    codes.join(",") === STOCK_ENTRY_CODES.slice(0, codes.length).join(","),
-    "the catalog's codes must equal the HEAD of STOCK_ENTRY_CODES exactly, in order — the pack " +
-      "indexes are spread into stock-catalog.ts in the order ADR 0040 ruling 2 (and, from E5.2, " +
-      "ADR 0053 decision 1; from E5.3, ADR 0054 decision 1) sets, and that order reaches the " +
-      "client unchanged: GET /admin/asset-templates/stock returns the array unsorted and the " +
-      "stock viewer renders it as it arrives, so the order IS what a global administrator reads. " +
-      "It is a HEAD comparison for two commits only, because Task 11 declares the lift and the " +
-      "escalator before Tasks 13-14 author them; a catalog that is short an entry, carries one " +
-      "twice or lists a pack out of document order fails here and nowhere else.\n  expected " +
-      `${STOCK_ENTRY_CODES.slice(0, codes.length).join(", ")}\n  got      ${codes.join(", ")}`,
+    codes.join(",") === STOCK_ENTRY_CODES.join(","),
+    "the catalog's codes must equal STOCK_ENTRY_CODES exactly, in order — the pack indexes are " +
+      "spread into stock-catalog.ts in the order ADR 0040 ruling 2 (and, from E5.2, ADR 0053 " +
+      "decision 1; from E5.3, ADR 0054 decision 1) sets, and that order reaches the client " +
+      "unchanged: GET /admin/asset-templates/stock returns the array unsorted and the stock " +
+      "viewer renders it as it arrives, so the order IS what a global administrator reads. This " +
+      "is FULL equality and not a head comparison, restored at E5.3 Task 14 now that both " +
+      "vertical-transport entries ship: a catalog that is short an entry, carries one twice or " +
+      "lists a pack out of document order fails here and nowhere else.\n  expected " +
+      `${STOCK_ENTRY_CODES.join(", ")}\n  got      ${codes.join(", ")}`,
   );
 
   // ---- every citation override names an entry the catalog declares --------
