@@ -100,6 +100,11 @@ export type AssetPointCalcOverrideBody = z.infer<typeof assetPointCalcOverrideBo
  * dependency graph, which needs membership resolution and lands with `F2.9`
  * Task 12 (`CalcDependencyService.checkCandidate`, called from the service).
  *
+ * **Every rule here is a rule about the merged pair**, and the formula parse is
+ * no exception — an override that sets `formulaDialect` alone re-labels a
+ * formula it did not write, and `CalcDefinitionsService.reload` coalesces the
+ * two columns independently. See the branch below.
+ *
  * @param override what this request sets, per column; `null` inherits
  * @param template the pinned version's values for the same five columns
  * @param declared the point keys that version declares — `measured` is what a
@@ -140,20 +145,38 @@ export function validateMergedCalcOverride(
         `formulaDialect alongside the formula, to ` +
         `${CALC_DIALECTS.map((known) => `"${known}"`).join(" or ")}.`,
     );
-  } else if (override.formula !== null) {
-    // Only the *new* formula is parsed. A stored template formula that no
-    // longer validates is `toActiveDefinition`'s counted skip to report, and
+  } else if (override.formula !== null || override.formulaDialect !== null) {
+    // The **merged** formula, under the **merged** dialect, whenever this
+    // request states *either* half — not only when it states the formula.
+    //
+    // It used to be only the new formula, and that was sound while
+    // `formulaDialect` had one legal value: a dialect nobody could change
+    // could not change what the inherited formula means. `F2.9` makes it a
+    // two-member enum, so an override that sets the dialect alone **re-labels
+    // the template's formula** — and `CalcDefinitionsService.reload` coalesces
+    // `formula` and `formula_dialect` independently, so that relabelled pair
+    // is what the engine runs. Parsed nowhere else, a `v1` label on a `v2`
+    // formula walks past `runScheduledSweep`'s `def.dialect !== CALC_DIALECT`
+    // refusal and gets evaluated as an ordinary local formula — the runaway
+    // the plan's finding 22 exists to stop, reached around it. Decision 3
+    // ("a `v1` formula keeps its exact current meaning, forever") is a
+    // property of the merged pair, exactly as decision 10 below already is.
+    //
+    // An override that states **neither** half still does not parse the stored
+    // formula, and that boundary is deliberate: a stored template formula that
+    // no longer validates is `toActiveDefinition`'s counted skip to report, and
     // rejecting an unrelated override because of it would strand the point.
     //
     // **Guard 3, gated on the dialect** — see the docblock. `v1` keeps the
     // measured-only set and therefore keeps its refusal verbatim; `v2` gets
     // every declared key.
     const knownRefs = dialect === CALC_DIALECT ? declared.measured : declared.all;
-    const result = validateFormula(override.formula, knownRefs, { dialect });
+    const result = validateFormula(merged.formula, knownRefs, { dialect });
     if (!result.ok) {
       const first = result.errors[0];
       problems.push(
-        `The formula is not valid ${dialect}: ` +
+        `The formula${inherited("formula")} is not valid ` +
+          `${dialect}${inherited("formulaDialect")}: ` +
           `${first ? formatCalcError(first) : "unparseable"}. It may reference only the ` +
           `point keys this asset's template version declares: ${knownRefs.join(", ")}.`,
       );

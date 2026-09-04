@@ -368,6 +368,116 @@ export function assertV2OverrideAdmitsADerivedSiblingAndAnAggregate(): void {
 }
 
 /**
+ * **A dialect-only override must not smuggle a `v2` formula past `v1`'s
+ * refusals** (security review of PR 1, HIGH).
+ *
+ * "Only the new formula is parsed" was sound while `formulaDialect` had one
+ * legal value. With two, an override can change the dialect while inheriting
+ * the formula, and the merged pair — the pair `CalcDefinitionsService.reload`
+ * coalesces column by column, and the pair the engine actually runs — was then
+ * never parsed at all. A `v1` label on a `v2` formula walks straight past
+ * `runScheduledSweep`'s `def.dialect !== CALC_DIALECT` refusal, which is the
+ * one thing standing between PR 1 and the runaway series the plan's finding 22
+ * records.
+ *
+ * So the merged formula is parsed under the merged dialect whenever the
+ * override states **either** half. Decision 3 is enforced on the merged pair
+ * exactly as decision 10 already was.
+ *
+ * Asserted on `"unknown point"` — under `v1` the known set is
+ * `declared.measured`, so a self- or sibling-derived reference comes back as
+ * `unknown_reference`, byte for byte the refusal
+ * `assertV1OverrideStillRefusesADerivedSibling` pins. `formatCalcError` never
+ * echoes the offending key, so there is no other string to match.
+ */
+export function assertADialectDowngradeCannotRelabelAV2Formula(): void {
+  const selfReferential: AssetPointCalcOverrideFields = {
+    ...V2_TEMPLATE,
+    formula: `{${SELF_KEY}} * 2`,
+  };
+  const downgraded = validateMergedCalcOverride(
+    { ...NOTHING, formulaDialect: "bms-calc-v1" },
+    selfReferential,
+    KEYS,
+  );
+  assert(
+    downgraded.length > 0,
+    "a dialect-only override that relabels a self-referential v2 formula as v1 must be " +
+      "refused — the merged pair is what the engine runs, and nothing else parses it",
+  );
+  assert(
+    downgraded.join(" ").includes("unknown point"),
+    `and it must be refused as v1's unknown reference, the refusal decision 3 preserves ` +
+      `forever. Got: ${downgraded.join(" ")}`,
+  );
+
+  const siblingReferential: AssetPointCalcOverrideFields = {
+    ...V2_TEMPLATE,
+    formula: `{${DERIVED_SIBLING}} * 2`,
+  };
+  const sibling = validateMergedCalcOverride(
+    { ...NOTHING, formulaDialect: "bms-calc-v1" },
+    siblingReferential,
+    KEYS,
+  );
+  assert(
+    sibling.join(" ").includes("unknown point"),
+    `a v2 formula reading a derived sibling, relabelled v1, must be refused the same way — ` +
+      `it is the premise "a v1 formula cannot reference a derived point" that calc-batch.ts ` +
+      `rests on. Got: ${sibling.join(" ")}`,
+  );
+
+  // The message must say the formula is inherited: the author typed a dialect
+  // and no formula, and a refusal naming neither is not actionable.
+  assert(
+    downgraded.join(" ").includes("inherited"),
+    `the refusal must say the formula it parsed came from the template. Got: ${downgraded.join(" ")}`,
+  );
+}
+
+/**
+ * **The other direction, and it must not over-refuse.** A dialect-only override
+ * to `v2` over a legitimate `v1` local formula is legal: decision 4 makes `v2`
+ * a strict superset, so every `v1` formula parses under it and means the same
+ * thing.
+ */
+export function assertADialectOnlyUpgradeOfAValidFormulaIsAccepted(): void {
+  const problems = validateMergedCalcOverride(
+    { ...NOTHING, formulaDialect: "bms-calc-v2" },
+    SCHEDULED_TEMPLATE,
+    KEYS,
+  );
+  assert(
+    problems.length === 0,
+    `a dialect-only override to v2 over a valid v1 formula must be accepted — v2 is a strict ` +
+      `superset (ADR 0055 decision 4). Got: ${problems.join(" ")}`,
+  );
+}
+
+/**
+ * **The branch boundary, pinned from the other side.** An override that states
+ * *neither* the formula nor the dialect still does not parse the stored
+ * formula, and a template whose stored formula no longer validates therefore
+ * does not strand every unrelated override on the point. That row is
+ * `toActiveDefinition`'s counted skip to report, which is the reason the
+ * narrow condition existed in the first place.
+ *
+ * This case must stay **green** under the mutation that reddens the two above,
+ * or the mutation proves only that the condition changed and not that it
+ * changed in the right direction.
+ */
+export function assertAnUnrelatedOverrideStillDoesNotParseTheStoredFormula(): void {
+  const broken: AssetPointCalcOverrideFields = { ...SCHEDULED_TEMPLATE, formula: "{KW} * * 2" };
+  const problems = validateMergedCalcOverride({ ...NOTHING, maxInputAgeSeconds: 30 }, broken, KEYS);
+  assert(
+    problems.length === 0,
+    `an override touching neither the formula nor the dialect must not be rejected because a ` +
+      `stored template formula no longer parses — that is a counted skip, not this request's ` +
+      `fault. Got: ${problems.join(" ")}`,
+  );
+}
+
+/**
  * ADR 0055 decision 10, mirrored from `templatePointBodySchema`. A `v2` formula
  * resolves its cross-asset membership once per sweep, so there is nothing for it
  * to resolve against on a single incoming reading — a streaming `v2` point

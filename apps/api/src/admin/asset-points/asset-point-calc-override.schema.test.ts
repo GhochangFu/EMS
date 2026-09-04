@@ -1,8 +1,11 @@
 import { describe, it } from "vitest";
 
 import {
+  assertADialectDowngradeCannotRelabelAV2Formula,
+  assertADialectOnlyUpgradeOfAValidFormulaIsAccepted,
   assertAV2TemplateIsOverridableWithoutRestatingTheDialect,
   assertAnEmptyTemplateNeedsAFullOverride,
+  assertAnUnrelatedOverrideStillDoesNotParseTheStoredFormula,
   assertAnUnknownStoredDialectIsRefused,
   assertAnUnrelatedSingleColumnOverrideIsAccepted,
   assertBoundsAreEnforcedByTheSchema,
@@ -73,5 +76,17 @@ describe("F2.6 — asset point calc override contract", () => {
 
   it("refuses a stored dialect outside CALC_DIALECTS, naming every runnable one", () => {
     assertAnUnknownStoredDialectIsRefused();
+  });
+
+  it("refuses a dialect-only downgrade that relabels a v2 formula as v1", () => {
+    assertADialectDowngradeCannotRelabelAV2Formula();
+  });
+
+  it("accepts a dialect-only upgrade of a formula that is valid under both dialects", () => {
+    assertADialectOnlyUpgradeOfAValidFormulaIsAccepted();
+  });
+
+  it("still does not parse the stored formula for an override that states neither half", () => {
+    assertAnUnrelatedOverrideStillDoesNotParseTheStoredFormula();
   });
 });
