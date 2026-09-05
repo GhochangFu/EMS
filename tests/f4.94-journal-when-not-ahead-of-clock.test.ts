@@ -104,3 +104,29 @@ describe("F4.94 — journal tags and .sql files match, both directions", () => {
     expect(duplicates, `duplicate journal tag(s): ${duplicates.join(", ")}`).toEqual([]);
   });
 });
+
+/**
+ * The three assertions above keep this repository's journal honest. They say
+ * nothing about the databases that already carry the future stamps, which is
+ * what the pre-flight in `packages/db/src/migrate.ts` repairs. Comments are
+ * stripped before the source is read: an `f3.1a` lesson, where a mention in a
+ * comment kept a `toContain` green after the code it described had gone.
+ */
+describe("F4.94 — db:migrate re-syncs drizzle's stamps before it migrates", () => {
+  it("calls the re-sync pre-flight before migrate()", () => {
+    const source = read("packages/db/src/migrate.ts")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/^[ \t]*\/\/.*$/gm, " ");
+    const message =
+      "db:migrate must re-sync drizzle's created_at stamps before migrate(); without it " +
+      "every existing database keeps the future stamps and skips the next migration.";
+
+    expect(source, message).toContain('from "drizzle-orm/migrator"');
+
+    const resyncAt = source.indexOf("await resyncJournalStamps(");
+    const migrateAt = source.indexOf("await migrate(db");
+    expect(resyncAt, message).toBeGreaterThan(-1);
+    expect(migrateAt, message).toBeGreaterThan(-1);
+    expect(resyncAt, message).toBeLessThan(migrateAt);
+  });
+});
