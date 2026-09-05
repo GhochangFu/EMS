@@ -1,4 +1,6 @@
-import { CORE, EXTENDED, MEASURED } from "./point-fields";
+import { CALC_DIALECT_V2 } from "@bms/shared";
+
+import { CORE, derived, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -7,14 +9,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  * **Moved out of `electrical.ts` by `F2.12` when that file reached the §4.5
  * cap. Text only — no point, alarm, unit, label, tier or sort order changed,
- * which is why `stockVersion` stays 1.**
+ * which is why `F2.12` did not bump `stockVersion`.** `F2.8` did, to **2**: it
+ * appends three `bms-calc-v2` derived rows. See VERSION HISTORY below.
  *
  * ---
  *
  * **SOURCE.** `docs/electrical-derived-taglist-v1.md` §1 — *"Feeder / incomer —
  * multifunction energy meter (HT panel, LT panel, MCC feeder, sub-meter)"*.
  * All 33 rows, in the table's own order (`sortOrder` 0…32), `label` from the
- * Description column, `unit` from the Unit column. The entry's `description`
+ * Description column, `unit` from the Unit column. **The three DERIVED rows at
+ * `sortOrder` 33–35 are not in that document** — they are `F2.8`'s, and the
+ * VERSION HISTORY below is their provenance. The entry's `description`
  * cites that file and section by name, because **the stamp plus the citation
  * is the provenance** (decision 6): `stock_version = 1` on an imported row *is*
  * "derived-v1", and there is no `meta.provenance`.
@@ -46,11 +51,19 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `kwh_per_unit_output` — needs production, a value from another asset.
  *  - `specific_energy_kwh_kl` — needs KL throughput, a value from another
  *    asset.
- *  - `losses_pct` = incomer − Σ feeders — a cross-asset sum the grammar has no
- *    way to express.
+ *  - `losses_pct` = incomer − Σ feeders. `bms-calc-v2` (ADR 0055) CAN now
+ *    express a cross-asset Σ — `F2.8`'s `site_kw` below is one — so the grammar
+ *    is no longer the obstacle. It stays deferred because the tag list's own
+ *    definition needs the FEEDER SET the incomer is measured against, and
+ *    naming that set is `F2.22`-era content. A formula summing the wrong scope
+ *    would compute a real number under the wrong name, which is worse than a
+ *    named deferral.
  *
- * Zero `kind: "derived"` points, no `content.kpis`. `F2.12` promotes each of
- * these it can actually author a formula for, in its own plan.
+ * **Three `kind: "derived"` points since `F2.8`, and no `content.kpis`.** They
+ * are not tag-list rows and not promotions of the six above: they are ruling 1
+ * of `F2.8`'s gate (2026-09-05) — PUE on the site's incomer, and nowhere else.
+ * `F2.12` promotes each deferred code it can actually author a formula for, in
+ * its own plan.
  *
  * **ALARMS — 11 philosophy rows, every one pair-absent** (ADR 0019 Amendment 2
  * decisions 1 and 2; B7: limit values are set per site at commissioning). The
@@ -101,8 +114,34 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  *  - `electrical-feeder` **v1** (2026-09-02, `F2.13`): authored from
  *    `electrical-derived-taglist-v1.md` §1, PROVISIONAL — derived, not
- *    client-confirmed. The client-confirmed release is v2, its redline
- *    recorded in this list.
+ *    client-confirmed. The client-confirmed redline is recorded in this list
+ *    when it arrives.
+ *  - `electrical-feeder` **v2** (2026-09-05, `F2.8`): three `bms-calc-v2`
+ *    derived points appended at `sortOrder` 33–35, per the owner's ruling 1 of
+ *    2026-09-05 — `site_kw = sum({kw} @site)`, `it_kw = sum({kw}
+ *    @group('IT_LOAD'))` and `pue = {site_kw} / {it_kw}`. Four things a tenant
+ *    importing this release must know:
+ *
+ *      1. **`IT_LOAD` is a reserved group code the importing organization
+ *         creates per site.** `bms.asset_groups` is unique on
+ *         `(location_id, code)`, and `@group('…')` resolves against the owning
+ *         asset's location (ADR 0055 decision 9), so the group is per site and
+ *         `it_kw` covers exactly the IT feeders that site put in it. Until the
+ *         group exists the aggregate resolves to no members and nothing is
+ *         written — visible, not wrong. A tenant that prefers another code
+ *         edits the formula on the imported draft.
+ *      2. **`minCoverageRatio` is `null`, which is FAIL CLOSED** (ADR 0055
+ *         decision 11): every declared member must carry a fresh value or the
+ *         tick writes nothing. That is the default on purpose; relaxing it is
+ *         the importing tenant's own visible edit on the draft.
+ *      3. **The value is at most one 60 s tick old** — ADR 0055 decision 10's
+ *         cost. A `v2` formula resolves its membership once per sweep, so it
+ *         cannot be streaming, and `pue` reads two derived siblings on its own
+ *         asset (decision 7), which the sweep resolves in the same tick.
+ *      4. **The incomer is the owner of the point**, not every asset and not a
+ *         site-level role. On a panel or a sub-meter these three rows simply
+ *         compute the same site figures again; a tenant that does not want
+ *         that deletes them from the draft.
  */
 export const ELECTRICAL_FEEDER: StockAssetTemplateEntry = {
   code: "electrical-feeder",
@@ -115,7 +154,7 @@ export const ELECTRICAL_FEEDER: StockAssetTemplateEntry = {
     "docs/electrical-derived-taglist-v1.md §1 (PROVISIONAL — derived from industry practice, " +
     "not client-confirmed). Tier C points are required, tier X optional; alarm rows carry a " +
     "meaning and no limit — limits are set per site at commissioning.",
-  stockVersion: 1,
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -237,5 +276,34 @@ export const ELECTRICAL_FEEDER: StockAssetTemplateEntry = {
     { ...MEASURED, pointKey: "relay_trip_code", label: "Protection relay last trip (O/C, E/F, U/V)", unit: null, required: false, sortOrder: 30, meta: EXTENDED },
     { ...MEASURED, pointKey: "earth_fault_state", label: "Earth-fault indication", unit: null, required: false, sortOrder: 31, meta: EXTENDED },
     { ...MEASURED, pointKey: "meter_comms_ok", label: "Meter reachable", unit: null, required: true, sortOrder: 32, meta: CORE },
+    // `F2.8` — PUE, appended after the tag list's rows. Two aggregates and the
+    // ratio of them; `pue` reads its two derived siblings, which ADR 0055
+    // decision 7 admits and the sweep resolves in the same tick. No `meta`:
+    // `meta.tier` says what the plant has FITTED, and nothing fits a computed
+    // point. `minCoverageRatio` is left at `derived()`'s null — fail closed.
+    {
+      ...derived("sum({kw} @site)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V2 }),
+      pointKey: "site_kw",
+      label: "Site load (Σ kW at this site)",
+      unit: "kW",
+      required: false,
+      sortOrder: 33,
+    },
+    {
+      ...derived("sum({kw} @group('IT_LOAD'))", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V2 }),
+      pointKey: "it_kw",
+      label: "IT load (Σ kW, group IT_LOAD)",
+      unit: "kW",
+      required: false,
+      sortOrder: 34,
+    },
+    {
+      ...derived("{site_kw} / {it_kw}", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V2 }),
+      pointKey: "pue",
+      label: "PUE",
+      unit: null,
+      required: false,
+      sortOrder: 35,
+    },
   ],
 };

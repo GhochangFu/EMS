@@ -111,10 +111,10 @@ type ScheduledOverrides = {
  * The `calcTrigger: "scheduled"` overload (`F2.9` Task 8, ADR 0055
  * decision 10) is the only way to get a `v2` derived point: `formulaDialect:
  * "bms-calc-v2"` is not admissible on the plain overload, so a `v2` formula
- * can only ever be scheduled, matching the decision. **No stock entry uses
- * this overload yet** — `F2.8`'s PUE entry is its first caller; every one of
- * the 18 existing callers passes no `calcTrigger` and resolves to the first
- * overload, unchanged.
+ * can only ever be scheduled, matching the decision. **First caller:
+ * `electrical-feeder` v2 (`F2.8`)** — its three PUE points, all at 60 s. Every
+ * other caller passes no `calcTrigger` and resolves to the first overload,
+ * unchanged.
  */
 export function derived(formula: string, opts?: StreamingOverrides): StreamingDerivedPoint;
 export function derived(formula: string, opts: ScheduledOverrides): ScheduledDerivedPoint;

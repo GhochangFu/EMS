@@ -1,4 +1,13 @@
-import { CALC_DIALECT, parseFormula, stockAssetTemplateDtoSchema, validateFormula } from "@bms/shared";
+import {
+  CALC_DIALECT,
+  CALC_DIALECTS,
+  CALC_DIALECT_V2,
+  MAX_CALC_INTERVAL_SECONDS,
+  MIN_CALC_INTERVAL_SECONDS,
+  parseFormula,
+  stockAssetTemplateDtoSchema,
+  validateFormula,
+} from "@bms/shared";
 
 import {
   maintenanceCategorySchema,
@@ -401,10 +410,76 @@ export function checkEntry(entry: StockAssetTemplateEntry): void {
       typeof point.formula === "string" && point.formula.length > 0,
       `${entry.code}.${point.pointKey}: a derived point must carry a non-empty formula`,
     );
+
+    // **The dialect forks the branch from F2.8 Task 2 on.** ADR 0055 decision 3
+    // freezes `v1`'s meaning, so the `v1` arm below is unchanged — streaming, no
+    // interval, MEASURED siblings only. Decisions 7, 10 and 11 give `v2` its own
+    // rules, in its own arm rather than by widening the `v1` ones: a widened rule
+    // would let a `v2` point pass checks meant for a `v1` one. The vocabulary is
+    // `CALC_DIALECTS`, never a restated pair (`adr-0055` part (c)). **This file
+    // is at the §4.5 cap**: the next block goes to `electrical-classes.spec.ts`,
+    // which imports `checkEntry` for exactly that reason.
     assert(
-      point.formulaDialect === CALC_DIALECT,
-      `${entry.code}.${point.pointKey}: formulaDialect must be "${CALC_DIALECT}", got ${String(point.formulaDialect)}`,
+      CALC_DIALECTS.some((dialect) => dialect === point.formulaDialect),
+      `${entry.code}.${point.pointKey}: formulaDialect must be one of ${CALC_DIALECTS.join(", ")}, ` +
+        `got ${String(point.formulaDialect)}`,
     );
+
+    const formula = typeof point.formula === "string" ? point.formula : "";
+
+    if (point.formulaDialect === CALC_DIALECT_V2) {
+      // ADR 0055 decision 10: a cross-asset formula resolves its membership once
+      // per sweep, so it is scheduled and carries an interval. The import path's
+      // `superRefine` agrees; here it fails the build, not the first Import.
+      assert(
+        point.calcTrigger === "scheduled",
+        `${entry.code}.${point.pointKey}: a "${CALC_DIALECT_V2}" point must carry calcTrigger ` +
+          `"scheduled" — a cross-asset formula cannot run on a single incoming reading ` +
+          `(ADR 0055 decision 10); got ${String(point.calcTrigger)}`,
+      );
+      const interval = point.calcIntervalSeconds;
+      assert(
+        typeof interval === "number" &&
+          Number.isInteger(interval) &&
+          interval >= MIN_CALC_INTERVAL_SECONDS &&
+          interval <= MAX_CALC_INTERVAL_SECONDS,
+        `${entry.code}.${point.pointKey}: calcIntervalSeconds must be an integer in ` +
+          `[${MIN_CALC_INTERVAL_SECONDS}, ${MAX_CALC_INTERVAL_SECONDS}], got ${String(interval)}`,
+      );
+      // ADR 0055 decision 11: `null` is fail closed — every declared member must
+      // be fresh — and is the stock default. `0` admits an aggregate over nothing
+      // and >`1` can never be satisfied; both are silent at evaluation time.
+      const ratio = point.minCoverageRatio;
+      assert(
+        ratio == null || (ratio > 0 && ratio <= 1),
+        `${entry.code}.${point.pointKey}: minCoverageRatio must be null (fail closed, the stock ` +
+          `default) or a ratio in (0, 1]; got ${String(ratio)}`,
+      );
+
+      const parsedV2 = parseFormula(formula, { dialect: CALC_DIALECT_V2 });
+      if (!parsedV2.ok) {
+        const detail = parsedV2.errors.map((error) => `${error.code} at ${error.position}`).join("; ");
+        throw new Error(`${entry.code}.${point.pointKey}: formula "${formula}" does not parse under ${CALC_DIALECT_V2}: ${detail}`);
+      }
+      // Decision 7 admits a DERIVED sibling, so the reference set is the entry's
+      // declared keys — measured and derived — not the measured-only set the `v1`
+      // arm uses. Every aggregate's and qualified `pointKey` is held to that set
+      // too, **deliberately narrow**: a stock aggregate today sums a key its own
+      // class declares, which is what makes `assertPointKeysActive` enough at
+      // import time. Widen it when one first needs another class's key, and say so.
+      const crossKeys = parsedV2.crossRefs.map((ref) => ref.pointKey);
+      const unknown = [...parsedV2.refs, ...crossKeys].filter((key) => !declaredKeys.has(key));
+      assert(
+        unknown.length === 0,
+        `${entry.code}.${point.pointKey}: formula "${formula}", parsed under ${CALC_DIALECT_V2}, ` +
+          `references ${unknown.map((key) => `"${key}"`).join(", ")} — keys this entry does not ` +
+          "declare. A stock formula may only name a point key its own entry declares, locally or " +
+          "inside an aggregate; assertPointKeysActive and the calc engine both depend on it.",
+      );
+      continue;
+    }
+
+    // ---- `bms-calc-v1`, unchanged since `F2.13` (ADR 0055 decision 3) -------
     assert(
       point.calcTrigger === "streaming",
       `${entry.code}.${point.pointKey}: a stock derived point is computed on arrival — calcTrigger ` +
@@ -416,7 +491,6 @@ export function checkEntry(entry: StockAssetTemplateEntry): void {
         `(${String(point.calcIntervalSeconds)}) — templatePointBodySchema refuses the pair outright`,
     );
 
-    const formula = typeof point.formula === "string" ? point.formula : "";
     if (!validateFormula(formula, measuredKeys).ok) {
       const parsed = parseFormula(formula);
       const detail = parsed.ok
@@ -849,12 +923,17 @@ export function runStockAssetTemplateCatalogTests(): void {
   );
   if (!feeder) return;
 
-  // Exactly 33 rows, 17 C and 16 X, in table order (`sortOrder` 0…32).
-  assert(feeder.points.length === 33, `tag list §1 has 33 rows; the entry declares ${feeder.points.length}`);
+  // The tag list's 33 rows — 17 C and 16 X — plus `F2.8`'s three derived rows,
+  // in order (`sortOrder` 0…35). The measured half is a transcription claim about
+  // `docs/electrical-derived-taglist-v1.md` §1; the derived half is not in that
+  // document at all and is not counted against it. `optional` is measured-only
+  // for the same reason: a derived row is optional too, and folding the two
+  // together would let a lost tag-list row hide behind a new formula.
+  assert(feeder.points.length === 36, `tag list §1's 33 rows + F2.8's 3 derived; the entry declares ${feeder.points.length}`);
   const required = feeder.points.filter((point) => point.required);
-  const optional = feeder.points.filter((point) => !point.required);
+  const optional = feeder.points.filter((point) => point.kind === "measured" && !point.required);
   assert(required.length === 17, `17 rows are tier C (required); got ${required.length}`);
-  assert(optional.length === 16, `16 rows are tier X (optional); got ${optional.length}`);
+  assert(optional.length === 16, `16 measured rows are tier X (optional); got ${optional.length}`);
   feeder.points.forEach((point, index) => {
     assert(
       point.sortOrder === index,
@@ -862,7 +941,24 @@ export function runStockAssetTemplateCatalogTests(): void {
     );
   });
   const feederKeys = new Set(feeder.points.map((point) => point.pointKey));
-  assert(feederKeys.size === 33, "no point key may repeat");
+  assert(feederKeys.size === 36, "no point key may repeat");
+
+  // **The three derived rows are `F2.8`'s, not the tag list's** — ruling 1 of that
+  // row's gate (PUE lives on the site's incomer and nowhere else), and ADR 0055
+  // decision 6's worked example made concrete: two aggregates and the ratio of the
+  // two derived siblings decision 7 admits. The order is the ratio's own reading
+  // order, so a later append cannot put `pue` above the inputs it divides.
+  const derived = feeder.points.filter((point) => point.kind === "derived");
+  assert(
+    derived.length === 3 && derived.map((point) => point.pointKey).join(",") === "site_kw,it_kw,pue",
+    `F2.8 ruling 1 authors site_kw, it_kw and pue on the incomer, in that order; got ` +
+      `${derived.map((point) => point.pointKey).join(", ") || "(none)"}`,
+  );
+  assert(
+    derived.every((point) => point.formulaDialect === CALC_DIALECT_V2),
+    `every F2.8 derived row is "${CALC_DIALECT_V2}" — two of them aggregate over a scope, which ` +
+      `only v2 can express; got ${derived.map((point) => String(point.formulaDialect)).join(", ")}`,
+  );
 
   // The tier marking is `checkEntry`'s from F2.12 Task 3 on — the iff rule
   // there subsumes the C/X pair this block used to assert, and says more (it
