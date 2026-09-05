@@ -8,7 +8,7 @@
 // CI did not catch it because .github/workflows/ci.yml runs db:migrate but never
 // db:seed (tracked as F4.4 in docs/BACKLOG.md).
 //
-// Fires after any edit under packages/db/drizzle/ and asserts four invariants:
+// Fires after any edit under packages/db/drizzle/ and asserts five invariants:
 //   1. every *.sql file has a journal entry
 //   2. every journal entry has a *.sql file
 //   3. `when` timestamps strictly increase (drizzle applies only migrations
@@ -18,6 +18,9 @@
 //      future stamp sorts above a later, honestly-stamped migration, so
 //      drizzle silently skips the later one on every database that already
 //      ran the future entry)
+//   5. every `when` is a finite number (F4.94 — a string or a null `when`
+//      turns into NaN, every comparison against NaN is false, and both the
+//      ordering check and drizzle's own newer-than test go quiet)
 //
 // Exits 2 on violation so the message is fed back to Claude as advisory
 // feedback. The edit has already happened — this never undoes anything.
