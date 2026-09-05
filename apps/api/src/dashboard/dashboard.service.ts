@@ -423,6 +423,10 @@ export class DashboardService {
    * (`latestPueRatio`), and `null` where no incomer in scope computes the pair.
    * There is no sentinel: the owner's ruling 4 of 2026-09-05 deleted the `1`
    * this method used to return for an empty scope along with the curve itself.
+   * A configured site whose engine has written nothing for
+   * `PUE_LATEST_MAX_AGE_SECONDS` (900 s) also drops out of both sums — the
+   * owner's ruling of 2026-09-06 — so `null` here means "no fresh pair in
+   * scope", not only "nothing configured".
    */
   async kpis(assetIds?: string[] | null): Promise<{
     totalKw: number;
