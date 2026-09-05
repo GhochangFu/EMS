@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { CALC_DIALECT_V2, parseFormula } from "@bms/shared";
 import { expect } from "vitest";
 
@@ -17,6 +20,71 @@ import {
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
 
 const ORGANIZATION_ID = "00000000-0000-4000-8000-000000000000";
+
+/**
+ * Where `seed.ts` might be, tried in order — `asset-domains-seed.spec.ts`'s
+ * `SEED_CANDIDATES` idiom, and for the reason its docblock gives:
+ * `import.meta.url` is a `TS1470` error under this package's CommonJS build
+ * and `__dirname` does not exist when Vitest loads the file as ESM, so the two
+ * cwds the suite actually runs from are named instead.
+ */
+const SEED_CANDIDATES = ["src/seed.ts", "packages/db/src/seed.ts"];
+
+function readSeedSource(): string {
+  const path = SEED_CANDIDATES.map((c) => resolve(process.cwd(), c)).find((p) => existsSync(p));
+  if (path === undefined) {
+    throw new Error(`seed.ts not found from ${process.cwd()}; tried ${SEED_CANDIDATES.join(", ")}`);
+  }
+  return readFileSync(path, "utf8");
+}
+
+/**
+ * Comments and string literals blanked to spaces of the same length, so a call
+ * named in prose cannot be mistaken for a call site. Same helper, same reason,
+ * as `asset-domains-seed.spec.ts` — and it matters more here, because this
+ * module's docblocks name every one of these functions.
+ */
+function codeOnly(source: string): string {
+  const blank = (match: string): string => " ".repeat(match.length);
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, blank)
+    .replace(/\/\/[^\n]*/g, blank)
+    .replace(/`(?:\\.|[^`\\])*`/g, blank)
+    .replace(/"(?:\\.|[^"\\])*"/g, blank);
+}
+
+/** The index of a call that must appear exactly once, or a failure naming it. */
+function soleCallAt(code: string, call: string): number {
+  const at = code.indexOf(call);
+  expect(at, `seed.ts does not call ${call}`).toBeGreaterThan(-1);
+  expect(code.indexOf(call, at + 1), `seed.ts runs ${call} twice`).toBe(-1);
+  return at;
+}
+
+/**
+ * The one subquery of {@link PUE_DEMO_VERIFY_SQL} aliased `alias`, sliced from
+ * its opening parenthesis to its closing one.
+ *
+ * Sliced rather than matched against the whole statement because every claim
+ * below is about **one** of the five subqueries: `t.version = 1` appears in
+ * `derived_points` already, and `active = true` appears on the driving assets
+ * of three of them. A `toContain` over the whole string would pass on the
+ * wrong subquery and prove nothing.
+ */
+function subqueryAliased(sql: string, alias: string): string {
+  const end = sql.indexOf(`) AS ${alias}`);
+  expect(end, `no subquery of the verify is aliased ${alias}`).toBeGreaterThan(-1);
+  let depth = 0;
+  let at = end;
+  for (; at >= 0; at -= 1) {
+    if (sql[at] === ")") depth += 1;
+    if (sql[at] === "(") {
+      depth -= 1;
+      if (depth === 0) break;
+    }
+  }
+  return sql.slice(at, end + 1);
+}
 
 const WRITE_STATEMENTS = [
   PUE_DEMO_RACK_KW_POINTS_SQL,
@@ -227,4 +295,111 @@ export function assertTheVerifyReadsBackEveryWrite(): void {
   expect(PUE_DEMO_VERIFY_SQL).toContain("AS pinned_incomers");
   expect(PUE_DEMO_VERIFY_SQL).toContain("ag.code = 'IT_LOAD'");
   expect(PUE_DEMO_VERIFY_SQL).toContain("ap.point_key = 'rack_kw'");
+}
+
+/**
+ * **The `rack_kw` catalog rows are written BEFORE the health baselines** —
+ * the migration review's finding A, and the reason `run 1` and `run N` of
+ * `db:seed` now agree.
+ *
+ * `HEALTH_TEMPLATE_POINTS_SQL` declares on each `BASELINE-*` every
+ * non-computed `bms.asset_points` key its domain's assets carry. Written after
+ * it, the fourteen `rack_kw` rows are invisible to that statement on the first
+ * boot, so `BASELINE-IT` declares `pdu_util_pct` alone on run 1 and gains
+ * `rack_kw` only on run 2 — on a **published** version, which ADR 0015 makes
+ * immutable, so the first boot's template is not the one every later boot
+ * produces. Measured live before the fix: the `BASELINE-IT rack_kw`
+ * `template_points` row was 28 s younger than the incomer template.
+ *
+ * `seedPueDemoRackKwPoints` therefore runs on its own, after
+ * `seedRuledPointCatalog` (its only dependency is the `bms.point_keys` FK) and
+ * before `seedAssetTemplateHealth`; `seedPueDemo` keeps its place last, because
+ * the template copy and the pin both need the baselines to exist.
+ *
+ * The three call texts are matched in full, including `(pool, eskomOrgId)`:
+ * `seedPueDemoRackKwPoints` has `seedPueDemo` as a prefix, so a bare
+ * `indexOf("seedPueDemo")` would find the rack_kw call and the ordering claim
+ * would be vacuously true.
+ */
+export function assertTheRackKwRowsAreSeededBeforeTheHealthBaselines(): void {
+  const code = codeOnly(readSeedSource());
+  const rackKwAt = soleCallAt(code, "await seedPueDemoRackKwPoints(pool, eskomOrgId);");
+  const healthAt = soleCallAt(code, "await seedAssetTemplateHealth(pool, eskomOrgId);");
+  const pueAt = soleCallAt(code, "await seedPueDemo(pool, eskomOrgId);");
+  const catalogAt = soleCallAt(code, "await seedRuledPointCatalog(pool, eskomOrgId);");
+
+  expect(
+    catalogAt,
+    "the rack_kw rows FK into bms.point_keys through the ruled-point catalog, so they cannot be written before it",
+  ).toBeLessThan(rackKwAt);
+  expect(
+    rackKwAt,
+    "the rack_kw catalog rows must be written BEFORE seedAssetTemplateHealth, or BASELINE-IT " +
+      "declares rack_kw only from the second boot, on a published and therefore immutable version",
+  ).toBeLessThan(healthAt);
+  expect(
+    healthAt,
+    "seedPueDemo copies BASELINE-ELECTRICAL's measured points and moves its pin, so it still runs after the baselines",
+  ).toBeLessThan(pueAt);
+}
+
+/**
+ * **A deactivated `rack_kw` row must not lock the boot** — the migration
+ * review's finding B.
+ *
+ * The `it_assets_without_rack_kw` subquery used to require `ap.active = true`.
+ * Every write in this module is `ON CONFLICT … DO NOTHING`, so it cannot
+ * re-activate a row: an administrator who deactivates one IT point through
+ * `asset-points.service.ts` makes `db:seed` throw on **every** later
+ * `compose up`, and `api`, `sim` and `ingest` all wait on the `migrate`
+ * service. A supported administrative action would stop the stack.
+ *
+ * The subquery therefore tests existence only — the same shape
+ * `UNCATALOGUED_RULED_POINTS_SQL` uses for exactly the same class of row, and
+ * the same shape `verifyHierarchySeed`'s `eskom_it_rack_kw_points` count
+ * already had. The seed's job is that a row exists; whether it is active is the
+ * administrator's.
+ */
+export function assertADeactivatedRackKwRowCannotLockTheBoot(): void {
+  const subquery = subqueryAliased(PUE_DEMO_VERIFY_SQL, "it_assets_without_rack_kw");
+  expect(subquery).toContain("ap.point_key = 'rack_kw'");
+  expect(
+    subquery.includes("ap.active"),
+    "the rack_kw existence check must not require ap.active = true: DO NOTHING cannot " +
+      "re-activate a row an administrator deactivated, so one deactivation would fail db:seed " +
+      "on every later compose up and block the whole stack from starting",
+  ).toBe(false);
+
+  // Mutation: put the predicate back and the analysis above must go red.
+  const mutated = PUE_DEMO_VERIFY_SQL.replace(
+    "          AND ap.point_key = 'rack_kw'",
+    "          AND ap.point_key = 'rack_kw'\n          AND ap.active = true",
+  );
+  expect(mutated, "the mutation did not apply — the subquery's shape changed").not.toBe(
+    PUE_DEMO_VERIFY_SQL,
+  );
+  expect(subqueryAliased(mutated, "it_assets_without_rack_kw").includes("ap.active")).toBe(true);
+}
+
+/**
+ * **The verify matches the pin, version for version** — the code review's
+ * finding C.
+ *
+ * `PUE_DEMO_PIN_SQL` moves a pin off `BASELINE-ELECTRICAL` **version 1** only.
+ * `incomers_still_on_the_baseline` matched the code at any version, so a
+ * database whose administrator published a v2 of the electrical baseline and
+ * migrated the incomers onto it — ADR 0039's explicit, previewed and audited
+ * path — reported incomers the pin is deliberately not allowed to touch, threw,
+ * and blocked the boot. The two statements now name the same version, so the
+ * post-condition asks about exactly the rows the statement before it could move.
+ */
+export function assertTheVerifyAgreesWithThePinOnTheBaselineVersion(): void {
+  expect(PUE_DEMO_PIN_SQL).toContain("baseline.version = 1");
+  const subquery = subqueryAliased(PUE_DEMO_VERIFY_SQL, "incomers_still_on_the_baseline");
+  expect(subquery).toContain("t.code = 'BASELINE-ELECTRICAL'");
+  expect(
+    subquery,
+    "the verify must count only the version the pin can move, or an operator-published v2 of " +
+      "the baseline turns db:seed red on a database nothing is wrong with",
+  ).toContain("t.version = 1");
 }

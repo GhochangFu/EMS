@@ -58,11 +58,11 @@ function kpis(pueEstimate: number | null): DashboardKpis {
  * The hook is stubbed whole rather than at its two fetches: it opens a Socket.IO
  * connection on mount, and a unit test has no business dialling one.
  */
-function stubDashboard(pueEstimate: number | null): void {
+function stubDashboard(pueEstimate: number | null, stale = false): void {
   vi.spyOn(executiveDashboard, "useExecutiveDashboard").mockReturnValue({
     kpiQuery: { data: kpis(pueEstimate), isLoading: false, isError: false },
     trendQuery: { data: { points: [] }, isLoading: false, isError: false },
-    stale: false,
+    stale,
     displayTotalKw: 1447.3,
     chartPoints: [],
   } as unknown as ReturnType<typeof executiveDashboard.useExecutiveDashboard>);
@@ -119,4 +119,56 @@ export async function anUnconfiguredEstateShowsTheDashAndTheReason(): Promise<vo
   // The curve is gone: a live `displayTotalKw` of 1447.3 used to produce `1.34`
   // here regardless of what the API said.
   expect(within(tile).queryByText("1.34")).not.toBeInTheDocument();
+}
+
+/**
+ * How `KpiTile` marks a tile stale: an amber ring on the card's own element.
+ * `ring-2` is the discriminating class — the tile also renders a
+ * "Stale · no telemetry ~10s" line, but only for `status === "ready"`, so on
+ * the empty tile the ring is the *only* thing a reader would see and the only
+ * thing an assertion can catch.
+ */
+const STALE_RING = "ring-2";
+
+/**
+ * **An unconfigured PUE tile carries no stale ring** (code review, finding F).
+ *
+ * The page passed `stale={stale && kpiStatus === "ready"}` to a tile whose own
+ * status `pueTileProps` may have turned into `empty`. A stale estate with no
+ * incomer configured therefore drew the amber ring around `—  Not configured …`
+ * — an alarm colour on a tile that has nothing to be stale about, with no text
+ * to explain it, because `KpiTile` gates the "Stale" line on `ready`. The page
+ * now computes the props once and reads the ring off the tile's real status.
+ *
+ * The "Total load" tile is asserted in the same render as the anti-vacuity
+ * half: it proves the `stale` flag reached the page at all, so a green run
+ * cannot come from a stub that quietly said "live".
+ */
+export async function anUnconfiguredPueTileCarriesNoStaleRing(): Promise<void> {
+  stubDashboard(null, true);
+  renderPage();
+
+  const pue = tileLabelled("PUE");
+  expect(await within(pue).findByText("—")).toBeInTheDocument();
+  expect(
+    pue.className,
+    "an empty PUE tile must not wear the amber stale ring: KpiTile draws no Stale text for a " +
+      "non-ready status, so the ring would be an unexplained alarm colour on a dash",
+  ).not.toContain(STALE_RING);
+
+  const totalLoad = tileLabelled("Total load");
+  expect(
+    totalLoad.className,
+    "the stale flag did not reach the page — every assertion above would pass vacuously",
+  ).toContain(STALE_RING);
+}
+
+/** The other direction: a measured ratio on a stale estate still rings. */
+export async function aMeasuredPueTileStillCarriesTheStaleRing(): Promise<void> {
+  stubDashboard(1.42, true);
+  renderPage();
+
+  const pue = tileLabelled("PUE");
+  expect(await within(pue).findByText("1.42")).toBeInTheDocument();
+  expect(pue.className).toContain(STALE_RING);
 }

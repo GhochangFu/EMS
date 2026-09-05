@@ -5,6 +5,7 @@ import {
   assertNonFiniteIsNull,
   assertOneIncomerIsItsOwnRatio,
   assertRoundsToTwoDecimals,
+  assertTheLatestReadIsBoundedAtThreeEngineDefaults,
   assertZeroIncomersIsNull,
   assertZeroItLoadIsNull,
 } from "./pue-ratio.spec";
@@ -36,5 +37,9 @@ describe("F2.8 — PUE is a ratio of two sums, or nothing", () => {
 
   it("never lets a non-finite result reach the nullable contract", () => {
     assertNonFiniteIsNull();
+  });
+
+  it("bounds the latest read at three times the engine's default input age", () => {
+    assertTheLatestReadIsBoundedAtThreeEngineDefaults();
   });
 });

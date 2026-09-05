@@ -65,6 +65,17 @@ export function DashboardPage({ user }: DashboardPageProps) {
       ? "error"
       : "ready";
 
+  /**
+   * `F2.8` — computed once, because the tile's `stale` prop has to be decided
+   * against **this** status and not against `kpiStatus`. `pueTileProps` turns a
+   * settled query that returned `null` into `"empty"`, and `KpiTile` draws its
+   * amber stale ring for any truthy `stale` while drawing the explanatory
+   * "Stale ·" line only for `"ready"` — so `stale && kpiStatus === "ready"`
+   * ringed an unconfigured estate's `—` in an alarm colour with nothing to say
+   * why.
+   */
+  const pueProps = pueTileProps(kpiStatus, kpi?.pueEstimate);
+
   const trendStatus = trendQuery.isLoading
     ? "loading"
     : trendQuery.isError
@@ -151,11 +162,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
             the value is at most one 60 s engine tick old. The plan's §5 and §11
             both say 8 s; 8 s is `locationQ` on this page, a different query.
           */}
-          <KpiTile
-            label="PUE"
-            {...pueTileProps(kpiStatus, kpi?.pueEstimate)}
-            stale={stale && kpiStatus === "ready"}
-          />
+          <KpiTile label="PUE" {...pueProps} stale={stale && pueProps.status === "ready"} />
         </div>
 
         <SectionCard

@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertADeactivatedRackKwRowCannotLockTheBoot,
   assertEveryStatementIsBoundedToOneOrganization,
   assertItKwReadsRackKwHereAndOnlyHere,
   assertRackKwRowsSatisfyTheSourceRefCheck,
@@ -8,7 +9,9 @@ import {
   assertTheDialectIsAParameterAndTheRowsAreScheduled,
   assertTheIncomerTemplateKeepsItsHealthBand,
   assertThePinMovesOnlyABaselinePinOfAnIncomer,
+  assertTheRackKwRowsAreSeededBeforeTheHealthBaselines,
   assertTheThreeFormulasParseUnderV2,
+  assertTheVerifyAgreesWithThePinOnTheBaselineVersion,
   assertTheVerifyReadsBackEveryWrite,
 } from "./pue-demo-seed.spec";
 
@@ -47,5 +50,17 @@ describe("F2.8 — the demo PUE seed: one incomer template per site on bms-calc-
 
   it("reads back every write in its post-condition", () => {
     assertTheVerifyReadsBackEveryWrite();
+  });
+
+  it("writes the rack_kw catalog rows before the health baselines read them", () => {
+    assertTheRackKwRowsAreSeededBeforeTheHealthBaselines();
+  });
+
+  it("does not let a deactivated rack_kw row lock the boot", () => {
+    assertADeactivatedRackKwRowCannotLockTheBoot();
+  });
+
+  it("counts only the baseline version the pin is allowed to move", () => {
+    assertTheVerifyAgreesWithThePinOnTheBaselineVersion();
   });
 });

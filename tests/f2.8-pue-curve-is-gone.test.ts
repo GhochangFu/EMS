@@ -249,55 +249,213 @@ describe("F2.8 part (b) — electrical-feeder.ts authors the three v2 points on 
  * `rack_kw`, never `kw`. Read as text via the exported `PUE_DEMO_FORMULAS`
  * constant, the shape `pue-demo-seed.ts` itself documents (module docblock,
  * "exported constants").
+ *
+ * **The group code is derived, not copied** (code review, finding E). The demo
+ * seed used to spell `IT_LOAD` inside its `it_kw` literal while importing
+ * `IT_LOAD_GROUP_CODE` for the group it creates, so renaming the constant would
+ * have left every gate green and made `it_kw` resolve `no_members` forever. The
+ * literal now interpolates the constant, and the expected string below is built
+ * from the constant's own value read out of `asset-groups-seed.ts` — a copied
+ * string here would only move the same silent drift into this file. The **stock**
+ * entry cannot interpolate it (`apps/api` does not depend on `packages/db`), so
+ * it is checked against the same value instead: that is the one remaining way
+ * the two can drift apart, and this is where it is caught.
  */
 const PUE_DEMO_SEED_FILE = join(repoRoot, "packages", "db", "src", "pue-demo-seed.ts");
+const ASSET_GROUPS_SEED_FILE = join(repoRoot, "packages", "db", "src", "asset-groups-seed.ts");
 
-const FORMULA_CONST_RE = /^\s*(site_kw|it_kw|pue):\s*"((?:[^"\\]|\\.)*)",?\s*$/m;
+const IT_LOAD_CONST_RE = /export const IT_LOAD_GROUP_CODE = "([A-Za-z0-9_-]+)"/;
 
-function extractDemoFormula(source: string, key: "site_kw" | "it_kw" | "pue"): string | null {
-  const re = new RegExp(`^\\s*${key}:\\s*"((?:[^"\\\\]|\\\\.)*)",?\\s*$`, "m");
+function itLoadGroupCode(source: string): string | null {
+  const match = IT_LOAD_CONST_RE.exec(source);
+  return match ? (match[1] as string) : null;
+}
+
+/**
+ * One `PUE_DEMO_FORMULAS` entry as text. Accepts a quoted literal (`site_kw`,
+ * `pue`) or a template literal (`it_kw`), and resolves the single interpolation
+ * the module is allowed to carry against the code passed in.
+ */
+function extractDemoFormula(
+  source: string,
+  key: "site_kw" | "it_kw" | "pue",
+  groupCode: string,
+): string | null {
+  const re = new RegExp(
+    `^\\s*${key}:\\s*(?:"((?:[^"\\\\]|\\\\.)*)"|\`([^\`]*)\`),?\\s*$`,
+    "m",
+  );
   const match = re.exec(source);
-  return match ? (JSON.parse(`"${match[1]}"`) as string) : null;
+  if (!match) {
+    return null;
+  }
+  if (match[1] !== undefined) {
+    return JSON.parse(`"${match[1]}"`) as string;
+  }
+  return (match[2] as string).split("${IT_LOAD_GROUP_CODE}").join(groupCode);
+}
+
+const DEMO_IT_KW_INTERPOLATES_RE = /it_kw:\s*`[^`]*\$\{IT_LOAD_GROUP_CODE\}[^`]*`/;
+
+/**
+ * Every way the demo seed, the stock entry and `IT_LOAD_GROUP_CODE` can
+ * disagree, returned rather than thrown — so the real files and a mutated
+ * scratch copy run through one function and the red-run proof is one call.
+ */
+function groupCodeDefects(demoSource: string, stockSource: string, groupsSource: string): string[] {
+  const defects: string[] = [];
+  const code = itLoadGroupCode(groupsSource);
+  if (code === null) {
+    defects.push("asset-groups-seed.ts does not export IT_LOAD_GROUP_CODE as a string literal");
+    return defects;
+  }
+  if (!DEMO_IT_KW_INTERPOLATES_RE.test(demoSource)) {
+    defects.push(
+      "the demo it_kw formula spells the group code as a literal instead of interpolating IT_LOAD_GROUP_CODE",
+    );
+  }
+  const demoItKw = extractDemoFormula(demoSource, "it_kw", code);
+  const expectedDemo = `sum({rack_kw} @group('${code}'))`;
+  if (demoItKw !== expectedDemo) {
+    defects.push(`demo it_kw is ${JSON.stringify(demoItKw)}, expected ${JSON.stringify(expectedDemo)}`);
+  }
+  const stockCalls = extractFeederDerivedCalls(stockSource);
+  const stockItKw = stockCalls[1]?.literal ?? null;
+  const expectedStock = `sum({kw} @group('${code}'))`;
+  if (stockItKw !== expectedStock) {
+    defects.push(
+      `stock it_kw is ${JSON.stringify(stockItKw)}, expected ${JSON.stringify(expectedStock)} — ` +
+        "the stock catalog and the demo seed name different groups",
+    );
+  }
+  return defects;
 }
 
 describe("F2.8 part (c) — pue-demo-seed.ts diverges from the stock feeder in it_kw alone", () => {
   const demoSource = readFileSync(PUE_DEMO_SEED_FILE, "utf8");
   const stockSource = readFileSync(FEEDER_FILE, "utf8");
+  const groupsSource = readFileSync(ASSET_GROUPS_SEED_FILE, "utf8");
+  const groupCode = itLoadGroupCode(groupsSource) as string;
   const stockCalls = extractFeederDerivedCalls(stockSource);
   const stockByKey = new Map(
     stockCalls.map((call, index) => [["site_kw", "it_kw", "pue"][index], call.literal] as const),
   );
 
-  it("matches the formula constant pattern, so the extraction below is not silently vacuous", () => {
-    expect(FORMULA_CONST_RE.test('  site_kw: "sum({kw} @site)",')).toBe(true);
+  it("read IT_LOAD_GROUP_CODE out of asset-groups-seed.ts, so nothing below is vacuous", () => {
+    expect(groupCode).toBe("IT_LOAD");
+    expect(itLoadGroupCode('export const IT_LOAD_GROUP_CODE = "OTHER";')).toBe("OTHER");
   });
 
   it("found all three demo formulas as text", () => {
-    expect(extractDemoFormula(demoSource, "site_kw")).not.toBeNull();
-    expect(extractDemoFormula(demoSource, "it_kw")).not.toBeNull();
-    expect(extractDemoFormula(demoSource, "pue")).not.toBeNull();
+    expect(extractDemoFormula(demoSource, "site_kw", groupCode)).not.toBeNull();
+    expect(extractDemoFormula(demoSource, "it_kw", groupCode)).not.toBeNull();
+    expect(extractDemoFormula(demoSource, "pue", groupCode)).not.toBeNull();
   });
 
-  it("the demo it_kw formula reads sum({rack_kw} @group('IT_LOAD'))", () => {
-    expect(extractDemoFormula(demoSource, "it_kw")).toBe("sum({rack_kw} @group('IT_LOAD'))");
+  it("the demo seed and the stock entry both name IT_LOAD_GROUP_CODE's own value", () => {
+    expect(groupCodeDefects(demoSource, stockSource, groupsSource)).toEqual([]);
   });
 
   it("site_kw and pue are byte-identical between the demo seed and the stock feeder", () => {
-    expect(extractDemoFormula(demoSource, "site_kw")).toBe(stockByKey.get("site_kw"));
-    expect(extractDemoFormula(demoSource, "pue")).toBe(stockByKey.get("pue"));
+    expect(extractDemoFormula(demoSource, "site_kw", groupCode)).toBe(stockByKey.get("site_kw"));
+    expect(extractDemoFormula(demoSource, "pue", groupCode)).toBe(stockByKey.get("pue"));
   });
 
   it("it_kw is the ONLY divergence — demo it_kw differs from stock it_kw", () => {
-    expect(extractDemoFormula(demoSource, "it_kw")).not.toBe(stockByKey.get("it_kw"));
+    expect(extractDemoFormula(demoSource, "it_kw", groupCode)).not.toBe(stockByKey.get("it_kw"));
   });
 
-  it("the analysis kills a mutation: {kw} in the demo it_kw formula", () => {
-    const mutated = demoSource.replace(
-      "it_kw: \"sum({rack_kw} @group('IT_LOAD'))\",",
-      "it_kw: \"sum({kw} @group('IT_LOAD'))\",",
+  it("the analysis kills a mutation: renaming IT_LOAD_GROUP_CODE, and hardcoding it back", () => {
+    // Rename the constant. The demo interpolates it and follows; the stock entry
+    // cannot, so the two now name different groups and it_kw would resolve
+    // `no_members` on every tick of every imported feeder.
+    const renamed = groupsSource.replace(
+      'export const IT_LOAD_GROUP_CODE = "IT_LOAD"',
+      'export const IT_LOAD_GROUP_CODE = "IT_RACK_LOAD"',
     );
-    expect(mutated, "the mutation did not apply — the it_kw line shape changed").not.toBe(demoSource);
-    expect(extractDemoFormula(mutated, "it_kw")).toBe("sum({kw} @group('IT_LOAD'))");
-    expect(extractDemoFormula(mutated, "it_kw")).toBe(stockByKey.get("it_kw"));
+    expect(renamed, "the mutation did not apply — the constant's shape changed").not.toBe(
+      groupsSource,
+    );
+    expect(groupCodeDefects(demoSource, stockSource, renamed).join("\n")).toContain(
+      "the stock catalog and the demo seed name different groups",
+    );
+
+    // Put the literal back into the demo formula: the drift this finding is about.
+    const hardcoded = demoSource.replace(
+      DEMO_IT_KW_INTERPOLATES_RE,
+      "it_kw: \"sum({rack_kw} @group('IT_LOAD'))\"",
+    );
+    expect(hardcoded, "the mutation did not apply — the it_kw line shape changed").not.toBe(
+      demoSource,
+    );
+    expect(groupCodeDefects(hardcoded, stockSource, groupsSource)).toContain(
+      "the demo it_kw formula spells the group code as a literal instead of interpolating IT_LOAD_GROUP_CODE",
+    );
+  });
+});
+
+// --- part (d) — the section counts in ELECTRICAL_CLASS_POINT_KEYS ---------
+
+/**
+ * `packages/shared/src/constants.ts` files its electrical vocabulary in six
+ * commented sections, each headed `// §N <name> — <count>`. `F2.8` appended
+ * `site_kw`, `it_kw` and `pue` to §1 and left the heading reading 15 (code
+ * review, finding G), which is the sort of stale number a later reader trusts
+ * and a later author copies. Nothing scanned these headings before; this is
+ * where they are held, for every section rather than only the one that drifted.
+ */
+const CONSTANTS_FILE = join(repoRoot, "packages", "shared", "src", "constants.ts");
+
+const SECTION_HEADING_RE = /^\s*\/\/ (§\d+ .*?) — (\d+)\s*$/;
+const KEY_LINE_RE = /^\s*"[a-z0-9_]+",/;
+
+type Section = { heading: string; declared: number; actual: number };
+
+function electricalSections(source: string): Section[] {
+  const start = source.indexOf("export const ELECTRICAL_CLASS_POINT_KEYS = [");
+  if (start === -1) {
+    return [];
+  }
+  const end = source.indexOf("\n] as const;", start);
+  const body = source.slice(start, end === -1 ? undefined : end);
+  const sections: Section[] = [];
+  for (const line of body.split("\n")) {
+    const heading = SECTION_HEADING_RE.exec(line);
+    if (heading) {
+      sections.push({ heading: heading[1] as string, declared: Number(heading[2]), actual: 0 });
+      continue;
+    }
+    if (KEY_LINE_RE.test(line) && sections.length > 0) {
+      (sections[sections.length - 1] as Section).actual += 1;
+    }
+  }
+  return sections;
+}
+
+describe("F2.8 part (d) — every ELECTRICAL_CLASS_POINT_KEYS section heading counts its own keys", () => {
+  const source = readFileSync(CONSTANTS_FILE, "utf8");
+  const sections = electricalSections(source);
+
+  it("found all six sections, so the comparison below is not silently empty", () => {
+    expect(sections.map((s) => s.heading.slice(0, 2))).toEqual(["§1", "§2", "§3", "§4", "§5", "§6"]);
+  });
+
+  it("each heading's declared count equals the keys under it", () => {
+    const wrong = sections
+      .filter((s) => s.declared !== s.actual)
+      .map((s) => `${s.heading}: heading says ${s.declared}, the array holds ${s.actual}`);
+    expect(wrong).toEqual([]);
+  });
+
+  it("the six sections sum to the 148 keys the docblock claims F2.12 and F2.8 left behind", () => {
+    expect(sections.reduce((total, s) => total + s.actual, 0)).toBe(148);
+    expect(source).toContain("145 → 148");
+  });
+
+  it("the analysis kills a mutation: a heading whose count is one out", () => {
+    const mutated = source.replace("// §6 capacitor bank / APFC — 13", "// §6 capacitor bank / APFC — 12");
+    expect(mutated, "the mutation did not apply — the §6 heading changed").not.toBe(source);
+    const wrong = electricalSections(mutated).filter((s) => s.declared !== s.actual);
+    expect(wrong.map((s) => s.heading)).toEqual(["§6 capacitor bank / APFC"]);
   });
 });

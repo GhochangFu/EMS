@@ -3,8 +3,10 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aMeasuredPueTileStillCarriesTheStaleRing,
   aMeasuredRatioRendersOnTheDashboard,
   anUnconfiguredEstateShowsTheDashAndTheReason,
+  anUnconfiguredPueTileCarriesNoStaleRing,
 } from "./dashboard-page.spec";
 
 /**
@@ -24,5 +26,13 @@ describe("F2.8 executive dashboard PUE tile", () => {
 
   it("renders a dash and the not-configured reason when the API returns null", async () => {
     await anUnconfiguredEstateShowsTheDashAndTheReason();
+  });
+
+  it("draws no stale ring around an unconfigured PUE tile", async () => {
+    await anUnconfiguredPueTileCarriesNoStaleRing();
+  });
+
+  it("still draws the stale ring when the ratio is measured", async () => {
+    await aMeasuredPueTileStillCarriesTheStaleRing();
   });
 });

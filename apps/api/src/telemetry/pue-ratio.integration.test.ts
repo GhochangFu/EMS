@@ -4,6 +4,8 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
+  assertAStaleIncomerDropsOutOfBothSums,
+  assertAnEntirelyStaleScopeIsNull,
   assertEmptyScopeIsNull,
   assertFixtureIsVisibleInTheHourlyView,
   assertHalfPairIsExcludedFromBothSums,
@@ -79,6 +81,15 @@ describe.skipIf(!connectionString)("F2.8 — PUE reader against Postgres", () =>
 
   it("answers null for an empty scope rather than reading the estate", async () => {
     await assertEmptyScopeIsNull(pool as pg.Pool);
+  });
+
+  /** The owner's ruling of 2026-09-06: the latest read is bounded at 15 minutes. */
+  it("leaves an incomer that stopped reporting 20 minutes ago out of both sums", async () => {
+    await assertAStaleIncomerDropsOutOfBothSums(pool as pg.Pool, fx);
+  });
+
+  it("answers null when every incomer in scope has gone silent", async () => {
+    await assertAnEntirelyStaleScopeIsNull(pool as pg.Pool, fx);
   });
 
   it("reads every incomer when the scope is null", async () => {

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type pg from "pg";
 
-import { latestPueRatio, windowedPueRatio } from "./pue-ratio";
+import { PUE_LATEST_MAX_AGE_SECONDS, latestPueRatio, windowedPueRatio } from "./pue-ratio";
 
 /**
  * `F2.8` — the two database halves of the PUE reader, run against a real
@@ -27,6 +27,13 @@ import { latestPueRatio, windowedPueRatio } from "./pue-ratio";
  *    naive form gives a different answer: 3.0 where the correct one is 3.5.
  * 3. **The scope.** `null` means every incomer; an array is the containment
  *    (ADR 0043 Amendments 2/3) the caller's `FLEET_POOL` read depends on.
+ * 4. **The 15-minute freshness bound** on `latestPueRatio` (the owner's ruling
+ *    of 2026-09-06). Assets D and E are a stale pair and a fresh pair stamped
+ *    from the wall clock rather than from {@link BASE}, because a bound against
+ *    `now()` is the one thing a far-future fixture cannot exercise. The bound is
+ *    **one-sided** on purpose — `time > now() - 900 s` and no upper bound — so
+ *    every case above keeps counting; tightening it to a `BETWEEN` would make
+ *    the whole 2031 fixture invisible and every assertion here vacuous.
  *
  * **Fixture placement is load-bearing, and the obvious placement does not work.**
  * The rows go in a **fixed far-future** window ({@link BASE}), the same device
@@ -102,6 +109,17 @@ const MINUTE_MS = 60_000;
  */
 const BASE = new Date("2031-04-01T00:00:00.000Z");
 
+/**
+ * How far back the stale pair (asset D) is stamped, and the fresh one (E).
+ *
+ * Both are far from the 15-minute bound — five minutes past it and fourteen
+ * inside it — so a slow run, a busy database or a clock that drifts by a minute
+ * cannot flip either case. Wall-clock rather than {@link BASE}, because the
+ * predicate under test is against `now()`.
+ */
+const STALE_MINUTES = 20;
+const FRESH_MINUTES = 1;
+
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
@@ -117,6 +135,10 @@ export interface Fixtures {
   readonly assetB: string;
   /** Half pair — `site_kw` only. Must be absent from both sums. */
   readonly assetC: string;
+  /** A complete pair stamped {@link STALE_MINUTES} ago — outside the freshness bound. */
+  readonly assetD: string;
+  /** A complete pair stamped {@link FRESH_MINUTES} ago — inside it. */
+  readonly assetE: string;
   /** Bucket start of the earlier of the fixture's two hours (three samples per key). */
   readonly earlyBucket: Date;
   /** Bucket start of the later hour (one sample per key — the "latest" values). */
@@ -245,6 +267,28 @@ function samplePlan(fx: {
   ];
 }
 
+/**
+ * The wall-clock half of the fixture: one stale pair and one fresh pair, for
+ * the 15-minute bound on {@link latestPueRatio}.
+ *
+ * D's numbers are absurd on purpose — 5000 kW of site load against 1 kW of IT
+ * load. If the bound is dropped, `[D, E]` answers `163.23` instead of `2` and
+ * `[D]` answers `5000` instead of `null`; no rounding or ordering accident can
+ * produce either.
+ */
+function agedSamplePlan(
+  fx: { assetD: string; assetE: string },
+  now: number,
+): ReadonlyArray<{ time: Date; assetId: string; pointKey: string; value: number }> {
+  const ago = (minutes: number): Date => new Date(now - minutes * MINUTE_MS);
+  return [
+    { time: ago(STALE_MINUTES), assetId: fx.assetD, pointKey: "site_kw", value: 5000 },
+    { time: ago(STALE_MINUTES), assetId: fx.assetD, pointKey: "it_kw", value: 1 },
+    { time: ago(FRESH_MINUTES), assetId: fx.assetE, pointKey: "site_kw", value: 60 },
+    { time: ago(FRESH_MINUTES), assetId: fx.assetE, pointKey: "it_kw", value: 30 },
+  ];
+}
+
 export async function setupFixtures(pool: pg.Pool): Promise<Fixtures> {
   await reapStaleFixtures(pool);
   const domain = await anyAssetDomain(pool);
@@ -270,7 +314,7 @@ export async function setupFixtures(pool: pg.Pool): Promise<Fixtures> {
   if (!locationId) throw new Error("failed to insert the F2.8 fixture location");
 
   const assetIds: string[] = [];
-  for (const label of ["A", "B", "C"]) {
+  for (const label of ["A", "B", "C", "D", "E"]) {
     const rows = await pool.query<{ id: string }>(
       `INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
@@ -287,11 +331,21 @@ export async function setupFixtures(pool: pg.Pool): Promise<Fixtures> {
     if (!id) throw new Error(`failed to insert the F2.8 fixture asset ${label}`);
     assetIds.push(id);
   }
-  const [assetA, assetB, assetC] = assetIds as [string, string, string];
+  const [assetA, assetB, assetC, assetD, assetE] = assetIds as [
+    string,
+    string,
+    string,
+    string,
+    string,
+  ];
 
   const earlyBucket = BASE;
   const lateBucket = new Date(BASE.getTime() + HOUR_MS);
-  for (const s of samplePlan({ assetA, assetB, assetC, earlyBucket, lateBucket })) {
+  const rows = [
+    ...samplePlan({ assetA, assetB, assetC, earlyBucket, lateBucket }),
+    ...agedSamplePlan({ assetD, assetE }, Date.now()),
+  ];
+  for (const s of rows) {
     await pool.query(
       `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
        VALUES ($1, $2, $3, $4, 'kW')`,
@@ -299,7 +353,17 @@ export async function setupFixtures(pool: pg.Pool): Promise<Fixtures> {
     );
   }
 
-  return { organizationId, locationId, assetA, assetB, assetC, earlyBucket, lateBucket };
+  return {
+    organizationId,
+    locationId,
+    assetA,
+    assetB,
+    assetC,
+    assetD,
+    assetE,
+    earlyBucket,
+    lateBucket,
+  };
 }
 
 /** End of the fixture's two-hour span — inclusive of the late bucket, exclusive of nothing else. */
@@ -389,6 +453,58 @@ export async function assertHalfPairIsExcludedFromBothSums(
   );
 }
 
+/**
+ * **A silent site drops out of both sums** — the owner's ruling of 2026-09-06
+ * (code review, finding H).
+ *
+ * D reported 5000 kW of site load against 1 kW of IT load twenty minutes ago and
+ * has said nothing since; E reported 60 against 30 a minute ago. Scoped to the
+ * pair, the answer must be E's own `60 / 30 = 2`. Without the bound the reader
+ * answers `5060 / 31 = 163.23` — an estate figure dominated by a site that is no
+ * longer reporting, on a tile whose page-level `Stale` badge cannot see it
+ * (`use-executive-dashboard.ts` derives that badge from the estate's last `kw`
+ * tick, and neither the energy page nor the reports panel passes it at all).
+ *
+ * The bound is applied inside the `latest` CTE, so a stale `it_kw` takes its
+ * asset's `site_kw` out with it through `HAVING COUNT(*) = 2` — half a stale
+ * pair must not be worse than none.
+ */
+export async function assertAStaleIncomerDropsOutOfBothSums(
+  pool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const pair = await latestPueRatio(pool, [fx.assetD, fx.assetE]);
+  assert(
+    pair === 2,
+    `a pair last seen ${STALE_MINUTES} min ago must leave both sums (bound: ` +
+      `${PUE_LATEST_MAX_AGE_SECONDS} s), leaving E's own 60 / 30 = 2; got ${JSON.stringify(pair)}`,
+  );
+  const freshAlone = await latestPueRatio(pool, [fx.assetE]);
+  assert(
+    freshAlone === 2,
+    `and E alone is the same 2, so the case above is not passing by cancellation; got ${JSON.stringify(freshAlone)}`,
+  );
+}
+
+/**
+ * Every incomer in scope silent → `null`, and the tile shows the dash.
+ *
+ * The same answer ruling 4 gives "nothing configured", and deliberately so: a
+ * reader cannot tell the two apart and neither can act on the difference. What
+ * must never happen is the third option — a stale number rendered as a live one.
+ */
+export async function assertAnEntirelyStaleScopeIsNull(
+  pool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const got = await latestPueRatio(pool, [fx.assetD]);
+  assert(
+    got === null,
+    `a scope holding only a stale pair has no PUE, got ${JSON.stringify(got)} — without the ` +
+      "freshness bound this reads 5000",
+  );
+}
+
 /** An empty scope is "nothing readable", not "every incomer". */
 export async function assertEmptyScopeIsNull(pool: pg.Pool): Promise<void> {
   const got = await latestPueRatio(pool, []);
@@ -402,6 +518,13 @@ export async function assertEmptyScopeIsNull(pool: pg.Pool): Promise<void> {
  * `DISTINCT ON` reads, where the implementation uses `GROUP BY … HAVING`), so
  * this holds whatever else the shared database happens to contain, and the
  * count check keeps it from passing on an empty estate.
+ *
+ * The reference carries the same 15-minute bound, and must: the shared
+ * development database holds `site_kw`/`it_kw` rows from earlier sessions, and a
+ * reference without the predicate would disagree with a correct reader for a
+ * reason that has nothing to do with the scope this case is about. Asset D is
+ * that condition made deliberate — see
+ * {@link assertAStaleIncomerDropsOutOfBothSums}.
  */
 export async function assertNullScopeReadsEveryIncomer(
   pool: pg.Pool,
@@ -410,18 +533,21 @@ export async function assertNullScopeReadsEveryIncomer(
   const { rows } = await pool.query<{ incomers: number; site_kw: string; it_kw: string }>(
     `WITH site AS (
        SELECT DISTINCT ON (asset_id) asset_id, value
-       FROM telemetry.point_values WHERE point_key = 'site_kw'
+       FROM telemetry.point_values
+       WHERE point_key = 'site_kw' AND time > now() - ($1::int * interval '1 second')
        ORDER BY asset_id, time DESC
      ),
      it AS (
        SELECT DISTINCT ON (asset_id) asset_id, value
-       FROM telemetry.point_values WHERE point_key = 'it_kw'
+       FROM telemetry.point_values
+       WHERE point_key = 'it_kw' AND time > now() - ($1::int * interval '1 second')
        ORDER BY asset_id, time DESC
      )
      SELECT COUNT(*)::int AS incomers,
             COALESCE(SUM(site.value), 0)::float8 AS site_kw,
             COALESCE(SUM(it.value), 0)::float8 AS it_kw
      FROM site INNER JOIN it ON it.asset_id = site.asset_id`,
+    [PUE_LATEST_MAX_AGE_SECONDS],
   );
   const reference = rows[0];
   assert(reference !== undefined, "the reference query returned no row");

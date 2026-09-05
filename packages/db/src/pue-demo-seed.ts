@@ -29,42 +29,58 @@ import { HEALTH_BASELINE_CONTENT } from "./asset-template-health-seed";
  * fourteen members that carry no such reading and refuse every tick as
  * `coverage_below_floor`. The other two literals are byte-identical to the
  * stock ones; `tests/f2.8-pue-curve-is-gone.test.ts` reads both files as text
- * and holds the pair together.
+ * and holds the pair together. The **group code** in the demo literal is
+ * `IT_LOAD_GROUP_CODE` interpolated, never the string `IT_LOAD` typed twice:
+ * this module already imports the constant for the group it verifies, and a
+ * second, hand-copied spelling would let a rename pass every gate green while
+ * `it_kw` resolved `no_members` for ever.
  *
- * **What the seed writes, in order, and why the order is load-bearing.**
+ * **This module is called TWICE, from two places in `seed.ts`, and the split
+ * is what makes run 1 equal run N.**
  *
- * 1. `PUE_DEMO_RACK_KW_POINTS_SQL` — one `unmapped` catalog row for `rack_kw`
- *    on each active IT asset. `readScopeMembers` admits an asset to an
- *    aggregate only if the key is declared "by template or by an active
- *    mapping"; the IT baseline declares only `pdu_util_pct`, so without this
- *    row `sum({rack_kw} @group('IT_LOAD'))` has zero members. Same shape as
- *    `seedRuledPointCatalog`'s rows (`unmapped`, `rtu_id NULL`, `SIM_` key),
- *    and the `asset_points_source_ref_check` constraint requires exactly that.
- * 2. `PUE_DEMO_TEMPLATE_SQL` — the incomer template, `published`, version 1,
+ * {@link seedPueDemoRackKwPoints} runs **early** — right after
+ * `seedRuledPointCatalog`, its only dependency (the `bms.point_keys` FK) — and
+ * writes nothing but the `rack_kw` catalog rows. It has to run before
+ * `seedAssetTemplateHealth`, because `HEALTH_TEMPLATE_POINTS_SQL` declares on
+ * each `BASELINE-*` every non-computed `bms.asset_points` key its domain's
+ * assets carry. Written after it, the fourteen rows would be invisible on the
+ * first boot: `BASELINE-IT` would declare `pdu_util_pct` alone on run 1 and
+ * gain `rack_kw` on run 2, on a **published** version that ADR 0015 makes
+ * immutable — so the template a fresh install ends up with would depend on how
+ * many times it had been booted. Measured on the live database before the fix:
+ * the `BASELINE-IT rack_kw` row was 28 seconds younger than the incomer
+ * template. `BASELINE-IT` now declares `rack_kw` from the first boot.
+ *
+ * {@link seedPueDemo} runs **last** in the ESKOM bracket and writes the rest,
+ * in order:
+ *
+ * 1. `PUE_DEMO_TEMPLATE_SQL` — the incomer template, `published`, version 1,
  *    `asset_type 'baseline'` so `HEALTH_TEMPLATE_VERIFY_SQL`'s `unusable` check
  *    covers it on every later seed.
- * 3. `PUE_DEMO_TEMPLATE_POINTS_SQL` — the baseline's measured rows copied from
+ * 2. `PUE_DEMO_TEMPLATE_POINTS_SQL` — the baseline's measured rows copied from
  *    `template_points` (not from `asset_points`, so the copy cannot pick up a
  *    key the baseline itself refused), plus the three derived rows. The
  *    dialect is a **parameter** (`CALC_DIALECT_V2`), never a literal.
- * 4. `PUE_DEMO_PIN_SQL` — moves each `incoming-supply` asset from
+ * 3. `PUE_DEMO_PIN_SQL` — moves each `incoming-supply` asset from
  *    `BASELINE-ELECTRICAL` to the incomer template. The role is the selector
  *    (ruling 1 read off data, §11 decision 3); naming the source template is
  *    what leaves an operator's own migration alone.
- * 5. `PUE_DEMO_VERIFY_SQL` — reads every write back, because the seed runs as
- *    `bms_owner` under `FORCE ROW LEVEL SECURITY` and a declined write is
- *    silent.
+ * 4. `PUE_DEMO_VERIFY_SQL` — reads every write back, including the `rack_kw`
+ *    rows the earlier call wrote, because the seed runs as `bms_owner` under
+ *    `FORCE ROW LEVEL SECURITY` and a declined write is silent.
  *
- * It runs LAST in `seed.ts`'s ESKOM bracket: after `seedAssetGroups` (the role
+ * Its position is load-bearing three ways: after `seedAssetGroups` (the role
  * and the `IT_LOAD` group), after `seedPointKeyCatalog` (`rack_kw` and the
  * three derived keys are FKs into `bms.point_keys`), and after
  * `seedAssetTemplateHealth` (the copy source, and the pin it moves).
- * `verifyHierarchySeed`'s three ESKOM PUE counts are what hold that order on a
- * cold database.
+ * `verifyHierarchySeed`'s three ESKOM PUE counts and
+ * `pue-demo-seed.spec.ts`'s call-order scan of `seed.ts` are what hold both
+ * positions; only a **cold** database can show a call that ran too early.
  *
  * **Idempotent under `compose up`.** Every statement is `DO NOTHING` or
- * predicated on the state it establishes, so the hundredth seed writes what
- * the first one wrote. The one hazard a re-seed had — `CalcWriteService`'s
+ * predicated on the state it establishes, so the hundredth seed writes what the
+ * first one wrote — which is now true of `BASELINE-IT` as well, and was not
+ * before the split above. The one hazard a re-seed had — `CalcWriteService`'s
  * `computed` rows for the three outputs being read back as measured
  * declarations on `BASELINE-ELECTRICAL` — is closed by the `source_kind <>
  * 'computed'` predicate in `HEALTH_TEMPLATE_POINTS_SQL`, not here.
@@ -94,7 +110,7 @@ export const PUE_DEMO_CALC_INTERVAL_SECONDS = 60;
  */
 export const PUE_DEMO_FORMULAS = {
   site_kw: "sum({kw} @site)",
-  it_kw: "sum({rack_kw} @group('IT_LOAD'))",
+  it_kw: `sum({rack_kw} @group('${IT_LOAD_GROUP_CODE}'))`,
   pue: "{site_kw} / {it_kw}",
 } as const;
 
@@ -136,6 +152,28 @@ export const PUE_DEMO_DERIVED_POINTS: readonly PueDemoDerivedPoint[] = [
  * shape. `LEFT JOIN` on the catalog for the unit, as that module does: the FK
  * on `point_key` is what refuses a key the catalog does not hold, and a NULL
  * unit must not drop the row.
+ *
+ * `readScopeMembers` admits an asset to an aggregate only if the key is
+ * declared "by template or by an active mapping"; the IT baseline declares only
+ * `pdu_util_pct`, so without these rows `sum({rack_kw} @group('IT_LOAD'))` has
+ * zero members and refuses every tick as `no_members`.
+ *
+ * **`asset_points_source_ref_check`** requires `rtu_id IS NULL` for
+ * `source_kind = 'unmapped'`, which is why the NULL is written explicitly
+ * rather than defaulted.
+ *
+ * **`asset_points_asset_source_key_idx` is a second constraint, and it is
+ * OUTSIDE the conflict target.** That index is `UNIQUE (asset_id,
+ * source_data_key)`, while the `ON CONFLICT` below infers on `(asset_id,
+ * point_key)`. An IT asset that already maps `SIM_RACK_KW` to some *other*
+ * point key therefore raises `23505` instead of taking the `DO NOTHING` branch,
+ * and because the whole ESKOM bracket is one transaction, that would roll back
+ * every tenant write in it. No live row does — every IT asset's existing
+ * mapping is `SIM_PDU_UTIL_PCT` — and the same exposure is `seedRuledPointCatalog`'s
+ * with `SIM_`-prefixed keys of its own, so this is a shared property of the
+ * demo seed rather than something this statement introduces. Widening the
+ * conflict target is not the fix: two conflict targets cannot be inferred at
+ * once, and the second collision is a real data problem an operator should see.
  */
 export const PUE_DEMO_RACK_KW_POINTS_SQL = `
 INSERT INTO bms.asset_points
@@ -285,6 +323,26 @@ WHERE a.organization_id = $1
  * anti-vacuity total. The absolute cardinalities — 9 incomers, 14 members, 14
  * rows — are `verifyHierarchySeed`'s, the boot gate, which is also the only
  * place the seed *order* is proved.
+ *
+ * **Two predicates this statement deliberately does NOT carry, each of which
+ * would turn `db:seed` red on a healthy database and stop the whole stack**
+ * (`api`, `sim` and `ingest` all wait on the compose `migrate` service):
+ *
+ * - **`ap.active = true` on the `rack_kw` check.** Every write above is
+ *   `ON CONFLICT … DO NOTHING`, so nothing here can re-activate a row an
+ *   administrator deactivated through `asset-points.service.ts` — one
+ *   deactivation would fail every later `compose up` for ever. The check is
+ *   existence only, the shape `UNCATALOGUED_RULED_POINTS_SQL` uses for the same
+ *   class of row and the shape `verifyHierarchySeed`'s own `rack_kw` count
+ *   already had. Whether the mapping is active is the administrator's business;
+ *   that a row exists is the seed's.
+ * - **A version-free `incomers_still_on_the_baseline`.** `PUE_DEMO_PIN_SQL`
+ *   moves a pin off `BASELINE-ELECTRICAL` **version 1** only, so the check names
+ *   version 1 too. Without it, a database whose administrator published a v2 of
+ *   the electrical baseline and migrated the incomers onto it — ADR 0039's
+ *   explicit, previewed and audited path, which the pin's own `WHERE` exists to
+ *   respect — would be reported as unfinished work by a statement that is not
+ *   allowed to finish it.
  */
 export const PUE_DEMO_VERIFY_SQL = `
 SELECT
@@ -298,7 +356,6 @@ SELECT
         SELECT 1 FROM bms.asset_points ap
         WHERE ap.asset_id = a.id
           AND ap.point_key = 'rack_kw'
-          AND ap.active = true
       )
   ) AS it_assets_without_rack_kw,
   (
@@ -322,6 +379,7 @@ SELECT
     WHERE a.organization_id = $1
       AND a.active = true
       AND t.code = '${PUE_DEMO_SOURCE_TEMPLATE_CODE}'
+      AND t.version = 1
       AND EXISTS (
         SELECT 1 FROM bms.asset_group_members agm
         WHERE agm.asset_id = a.id
@@ -377,16 +435,42 @@ type PueDemoVerifyRow = {
 };
 
 /**
- * Seeds the demo PUE and proves it landed. Called inside the organization's
- * `withOrganization` bracket, so every statement runs in that transaction with
- * the tenant GUC set. A `rowCount` of 0 is the correct answer on a re-seed and
- * is not a failure; the post-condition is what fails.
+ * Declares `rack_kw` on every active IT asset, and nothing else.
+ *
+ * Split out of {@link seedPueDemo} and called **before**
+ * `seedAssetTemplateHealth` — the module docblock says why, and
+ * `pue-demo-seed.spec.ts` reads `seed.ts` as text to hold the order. Its only
+ * dependency is `seedPointKeyCatalog` (the `bms.point_keys` FK), so it can run
+ * as early as the ruled-point catalog.
+ *
+ * No post-condition here: the rows are read back by
+ * {@link PUE_DEMO_VERIFY_SQL}'s `it_assets_without_rack_kw` at the end of the
+ * same tenant bracket, and a second read-back in between would report the same
+ * fact twice.
+ *
+ * @returns how many rows this call inserted. Zero is the correct answer on a
+ *   re-seed and is not a failure.
+ */
+export async function seedPueDemoRackKwPoints(
+  pool: pg.Pool,
+  organizationId: string,
+): Promise<number> {
+  const rackKw = await pool.query(PUE_DEMO_RACK_KW_POINTS_SQL, [organizationId]);
+  return rackKw.rowCount ?? 0;
+}
+
+/**
+ * Seeds the demo PUE incomer template and proves the whole feature landed —
+ * including the `rack_kw` rows {@link seedPueDemoRackKwPoints} wrote earlier in
+ * the same tenant bracket. Called inside the organization's `withOrganization`
+ * bracket, so every statement runs in that transaction with the tenant GUC set.
+ * A `rowCount` of 0 is the correct answer on a re-seed and is not a failure;
+ * the post-condition is what fails.
  */
 export async function seedPueDemo(
   pool: pg.Pool,
   organizationId: string,
-): Promise<{ rackKwPoints: number; templates: number; templatePoints: number; pinned: number }> {
-  const rackKw = await pool.query(PUE_DEMO_RACK_KW_POINTS_SQL, [organizationId]);
+): Promise<{ templates: number; templatePoints: number; pinned: number }> {
   const templates = await pool.query(PUE_DEMO_TEMPLATE_SQL, pueDemoTemplateParams(organizationId));
   const points = await pool.query(
     PUE_DEMO_TEMPLATE_POINTS_SQL,
@@ -419,7 +503,6 @@ export async function seedPueDemo(
   }
 
   return {
-    rackKwPoints: rackKw.rowCount ?? 0,
     templates: templates.rowCount ?? 0,
     templatePoints: points.rowCount ?? 0,
     pinned: pinned.rowCount ?? 0,

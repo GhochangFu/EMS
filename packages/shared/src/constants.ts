@@ -316,7 +316,7 @@ export type MeteredPumpingPointKey = (typeof METERED_PUMPING_POINT_KEYS)[number]
  * an import can declare it, the same as every other code in this array.
  */
 export const ELECTRICAL_CLASS_POINT_KEYS = [
-  // §1 feeder / incomer — 15
+  // §1 feeder / incomer — 18
   "current_in",
   "kvah_total",
   "kvarh_total",

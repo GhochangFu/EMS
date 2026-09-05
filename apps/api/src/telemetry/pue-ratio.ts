@@ -1,3 +1,4 @@
+import { DEFAULT_MAX_INPUT_AGE_SECONDS } from "@bms/shared";
 import type { Pool } from "pg";
 
 import { aggregateRelation, avgExpr, type AggregateLevel } from "./point-aggregates";
@@ -48,20 +49,53 @@ import { aggregateRelation, avgExpr, type AggregateLevel } from "./point-aggrega
  * bypass — only the scope array decides what is counted. `null` means "every
  * incomer", which is what a global admin's `readableAssetIds` returns.
  *
- * ## No freshness bound
+ * ## The freshness bound on the latest read — the owner's ruling of 2026-09-06
  *
- * {@link latestPueRatio} reads the latest value per point with no age
- * predicate, deliberately, for parity with the `kw_latest` CTE the estate
- * `totalKw` is read from (`dashboard.service.ts`). The two numbers sit on one
- * ribbon and must age the same way. The engine already refuses to *write* a
- * value from stale inputs (ADR 0037 decision 9), so the worst case here is the
- * last value it did write; the ribbon's own `Stale` badge is the page-level
- * signal. Plan `F2.8` §11 decision 6.
+ * {@link latestPueRatio} ignores any `site_kw` or `it_kw` row older than
+ * {@link PUE_LATEST_MAX_AGE_SECONDS}. A site that stops reporting drops out of
+ * **both** sums (the pairing rule below takes its surviving half with it), and
+ * a scope in which every site has gone silent answers `null` — the tile shows
+ * the dash, exactly as it does for "nothing configured", because a reader can
+ * act on neither difference.
+ *
+ * Plan §11 decision 6 originally took the opposite view — no bound, for parity
+ * with the `kw_latest` CTE the estate `totalKw` is read from — on the strength
+ * of "the ribbon's `Stale` badge is the page-level signal". **That second half
+ * was measured false in review.** `use-executive-dashboard.ts` derives `stale`
+ * estate-wide from the timestamp of the last Socket.IO `kw` tick, so one silent
+ * site among nine cannot move it; and `energy-page.tsx` and `reports-panel.tsx`
+ * pass no `stale` prop at all. Nothing else on those pages would have said that
+ * a PUE of 1.4 was two days old.
+ *
+ * 900 s is three times the engine's own default `maxInputAgeSeconds`
+ * (`DEFAULT_MAX_INPUT_AGE_SECONDS`, `packages/shared/src/calc-dsl/limits.ts`):
+ * the engine refuses to *write* a value computed from inputs older than 300 s,
+ * and the reader tolerates three of those before it stops showing what was
+ * written. `pue-ratio.spec.ts` pins the multiple rather than the number, so
+ * retuning the engine default cannot silently break the relationship.
+ *
+ * The predicate is **one-sided** — `time > now() - interval` and no upper bound
+ * — because a future-stamped row is a clock problem, not a staleness one, and
+ * because the integration fixture deliberately lives in 2031 (its header says
+ * why). {@link windowedPueRatio} is **not** bounded: its caller passes an
+ * explicit `[start, end]`, which is a stronger and more honest statement of
+ * which rows count, and an "energy in the last 24 h" panel that silently
+ * dropped its own window would be wrong rather than cautious.
  *
  * Parameterised queries throughout; the only interpolation is
  * `aggregateRelation(level)`, a lookup against the closed `RELATIONS` set, and
  * `avgExpr()`, which validates its own alias.
  */
+
+/**
+ * How old a `site_kw` / `it_kw` reading may be and still count towards the KPI
+ * — fifteen minutes, the owner's ruling of 2026-09-06 (module docblock).
+ *
+ * Derived from the engine's default rather than typed as `900`: three ticks of
+ * `DEFAULT_MAX_INPUT_AGE_SECONDS` is the decision, and the number is only its
+ * current value.
+ */
+export const PUE_LATEST_MAX_AGE_SECONDS = 3 * DEFAULT_MAX_INPUT_AGE_SECONDS;
 
 /** The three numbers ruling 3 reduces a scope to. */
 export interface PueRatioInput {
@@ -131,6 +165,13 @@ function ratioOfRow(row: PueSumsRow | undefined): number | null {
  * `MAX(value) FILTER (…)` picks that single row's value rather than aggregating
  * anything.
  *
+ * The {@link PUE_LATEST_MAX_AGE_SECONDS} bound is applied **inside** the
+ * `latest` CTE rather than after the pairing, and that placement is the whole
+ * behaviour: a site whose `it_kw` has gone stale loses that row here, fails
+ * `COUNT(*) = 2` below, and so leaves the numerator as well. Half a stale
+ * incomer must not be worse than none — keeping its site load while dropping
+ * its IT load would inflate every estate figure it appeared in.
+ *
  * @param assetIds the caller's scope. `null` is every incomer; an empty array is
  *   nothing, and answers `null` — the same treatment `kw_latest` gives it.
  */
@@ -144,6 +185,7 @@ export async function latestPueRatio(
       SELECT DISTINCT ON (asset_id, point_key) asset_id, point_key, value
       FROM telemetry.point_values
       WHERE point_key IN ('site_kw', 'it_kw')
+        AND time > now() - ($2::int * interval '1 second')
         AND ($1::uuid[] IS NULL OR asset_id = ANY($1::uuid[]))
       ORDER BY asset_id, point_key, time DESC
     ),
@@ -160,7 +202,7 @@ export async function latestPueRatio(
            COALESCE(SUM(it_kw), 0)::float8 AS it_kw
     FROM paired
     `,
-    [assetIds ?? null],
+    [assetIds ?? null, PUE_LATEST_MAX_AGE_SECONDS],
   );
   return ratioOfRow(r.rows[0]);
 }
@@ -189,7 +231,10 @@ export interface WindowedPueRatioOptions {
  * the branch ADR 0023 measured exact to 7.1e-14 against raw.
  *
  * The bounds are `bucket >= start AND bucket <= end`, on the bucket rather than
- * on `time`, which is the same predicate shape both callers' kWh queries use.
+ * on `time`, which is the same predicate shape both callers' kWh queries use —
+ * and they are the **only** bounds here. {@link PUE_LATEST_MAX_AGE_SECONDS} is
+ * deliberately not applied: the caller has already named the window it wants,
+ * and silently dropping part of it would be wrong rather than cautious.
  */
 export async function windowedPueRatio(
   pool: Pool,

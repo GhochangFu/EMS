@@ -1,4 +1,6 @@
-import { pueRatioOf } from "./pue-ratio";
+import { DEFAULT_MAX_INPUT_AGE_SECONDS } from "@bms/shared";
+
+import { PUE_LATEST_MAX_AGE_SECONDS, pueRatioOf } from "./pue-ratio";
 
 /**
  * `F2.8` — the pure half of the PUE reader. Everything here is arithmetic; the
@@ -95,4 +97,33 @@ export function assertNonFiniteIsNull(): void {
   assert(nan === null, `NaN must not reach the contract, got ${JSON.stringify(nan)}`);
   const infinite = pueRatioOf({ incomers: 1, siteKw: Number.POSITIVE_INFINITY, itKw: 50 });
   assert(infinite === null, `Infinity must not reach the contract, got ${JSON.stringify(infinite)}`);
+}
+
+/**
+ * **The 15-minute bound is three engine defaults, and it is derived rather than
+ * typed** — the owner's ruling of 2026-09-06 (code review, finding H).
+ *
+ * The plan's §11 decision 6 took "no freshness bound" on the strength of the
+ * ribbon's `Stale` badge covering the page. It does not: `use-executive-
+ * dashboard.ts` derives `stale` estate-wide from the last Socket.IO `kw` tick,
+ * so one silent site cannot move it, and neither `energy-page.tsx` nor
+ * `reports-panel.tsx` passes `stale` at all. The ruling bounds the read instead.
+ *
+ * Asserted as `3 × DEFAULT_MAX_INPUT_AGE_SECONDS` rather than as the number
+ * `900`, because the relationship is the decision: the engine refuses to *write*
+ * a value from inputs older than its 300 s default, and the reader tolerates
+ * three of those before it drops a site. Retuning the engine default and leaving
+ * this at 900 would silently break the ratio between them, which is the only
+ * thing that would make the choice wrong.
+ */
+export function assertTheLatestReadIsBoundedAtThreeEngineDefaults(): void {
+  assert(
+    PUE_LATEST_MAX_AGE_SECONDS === 3 * DEFAULT_MAX_INPUT_AGE_SECONDS,
+    `the latest read's bound must be three times the engine's ${DEFAULT_MAX_INPUT_AGE_SECONDS} s ` +
+      `default maxInputAgeSeconds, got ${PUE_LATEST_MAX_AGE_SECONDS}`,
+  );
+  assert(
+    PUE_LATEST_MAX_AGE_SECONDS === 900,
+    `and that is fifteen minutes, the owner's ruling of 2026-09-06; got ${PUE_LATEST_MAX_AGE_SECONDS}`,
+  );
 }
