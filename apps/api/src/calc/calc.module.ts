@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { TelemetryModule } from "../telemetry/telemetry.module";
 import { CalcDefinitionsService } from "./calc-definitions.service";
+import { CalcDependencyService } from "./calc-dependency.service";
 import { CalcInputsService } from "./calc-inputs.service";
 import { CalcSchedulerService } from "./calc-scheduler.service";
 import { CalcScopeService } from "./calc-scope.service";
@@ -15,8 +16,11 @@ import { CalcWriteService } from "./calc-write.service";
  * `TelemetryModule` needs importing here, for `TelemetryBroadcastHub`.
  *
  * No controller — this module exposes no HTTP route; both hosts start with
- * the API process via their own `onModuleInit`. Nothing outside this module
- * consumes a calc service yet, so nothing is exported.
+ * the API process via their own `onModuleInit`. **One** service is exported:
+ * `CalcDependencyService`, the save-time cycle detector (`F2.9`, ADR 0055
+ * decision 8), which `AdminModule`'s two authoring paths call before they store
+ * a `bms-calc-v2` formula. Nothing else crosses this boundary — the two
+ * evaluation hosts stay private.
  *
  * ---
  *
@@ -77,11 +81,13 @@ import { CalcWriteService } from "./calc-write.service";
     CalcDefinitionsService,
     CalcInputsService,
     // `F2.9` Task 11 — membership resolution for `bms-calc-v2` (ADR 0055
-    // decision 12). Provided here; Task 12 exports the detector built on it.
+    // decision 12). Provided here; Task 12's detector is built on it.
     CalcScopeService,
+    CalcDependencyService,
     CalcWriteService,
     CalcStreamingService,
     CalcSchedulerService,
   ],
+  exports: [CalcDependencyService],
 })
 export class CalcModule {}

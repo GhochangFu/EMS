@@ -48,9 +48,12 @@ function asOk(result: ParseResult): Extract<ParseResult, { ok: true }> {
  * ADR 0055 (`bms-calc-v2`) invariants, `F2.9`. Four parts, filled in across
  * the plan's tasks — **only part (b) is built by Task 3**:
  *
- * - (a) — one builder, one topological sort (`buildCalcGraph`/
- *   `topologicalOrder` defined in exactly one file, imported by name from the
- *   three callers) — `Task 12`.
+ * - **(a) — one builder, one topological sort: `buildCalcGraph` and
+ *   `topologicalOrder` are each defined in exactly one file under
+ *   `apps/api/src`, and the two files that need them import from it.** Built by
+ *   Task 12. The importer list holds **two** files, not three: the scheduled
+ *   sweep does not import `calc-graph` until Task 13, which owns adding it
+ *   (plan correction 54).
  * - **(b) — every `derived("…")` and `expression: "…"` literal under the
  *   stock catalog parses identically under both dialects.**
  * - **(c) — no `z.literal(CALC_DIALECT)` anywhere under
@@ -60,8 +63,7 @@ function asOk(result: ParseResult): Extract<ParseResult, { ok: true }> {
  * - **(d) — `calc-scope.service.ts`'s qualified-code statement contains a
  *   `location_id` filter**, checked against a mutated copy first — `Task 11`.
  *
- * Part (a) is **not yet in this file** — it lands with Task 12. Do not read
- * its absence as "done"; read it as "not this task's job."
+ * All four parts are now present.
  */
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -351,5 +353,91 @@ describe("ADR 0055 part (d) — the qualified-code statement filters on the owne
     expect(containmentDefect(inverted)).toBe("the qualified-code statement's WHERE must filter on location_id");
     const dropped = statement.replace(/\s*WHERE[\s\S]*$/, "");
     expect(containmentDefect(dropped)).toBe("the qualified-code statement must have a WHERE clause");
+  });
+});
+
+// --- part (a) — one builder, one topological sort ----------------------------
+
+/**
+ * ADR 0055 decision 8: the save-time detector and the sweep answer the same
+ * question — "does this graph have a cycle, and in what order do the rest
+ * evaluate" — and they must answer it with the **same code**. Two builders
+ * drift, and the way they drift is the worst available: a save admits a formula
+ * the tick then refuses forever, or refuses one the tick would happily compute.
+ * Neither throws, and neither is visible from either end alone.
+ *
+ * Held as source structure rather than behaviour, because behaviour cannot see
+ * it: a second, subtly different `buildCalcGraph` beside the first passes every
+ * test either caller has.
+ *
+ * **The importer list is the other half, and it is not decoration.** Naming the
+ * files that reach the shared builder is what makes a new local copy show up
+ * here as a *missing* importer rather than as nothing at all. `F2.9` Task 13
+ * adds `calc-scheduler.service.ts` to it when it wires the sweep — an obligation
+ * on that task, per plan correction 54, not an optional tidy-up. It is absent
+ * today because the sweep does not yet import the module.
+ */
+const DEFINES_BUILD_GRAPH = /^export function buildCalcGraph\s*\(/m;
+const DEFINES_TOPOLOGICAL_ORDER = /^export function topologicalOrder\s*\(/m;
+
+/**
+ * An `import … from "…/calc-graph"` statement, anchored to the import line so a
+ * mention in a comment or a docblock cannot satisfy it. `[^;]*?` crosses
+ * newlines but never a statement boundary, so the multi-line import shape this
+ * repo's formatter produces is matched and a *later* import is not.
+ */
+const IMPORTS_CALC_GRAPH = /^import\b[^;]*?from\s+"\.{1,2}\/[^"]*calc-graph";$/m;
+
+const apiFiles = walkTsFiles(join(repoRoot, "apps", "api", "src")).map((file) => relative(file));
+
+describe("ADR 0055 part (a) — one graph builder and one topological sort", () => {
+  it("scanned a real file set, so the scans below are not silently empty", () => {
+    expect(apiFiles.length).toBeGreaterThanOrEqual(100);
+    expect(apiFiles).toContain("apps/api/src/calc/calc-graph.ts");
+  });
+
+  /** Anti-vacuity: each pattern must match the definition it is looking for and
+   * must **not** match a call site or an import of the same name — the two
+   * shapes a naive `buildCalcGraph\(` would confuse it with. */
+  it("matches a definition and nothing else", () => {
+    expect(DEFINES_BUILD_GRAPH.test("export function buildCalcGraph(defs, membership) {")).toBe(true);
+    expect(DEFINES_TOPOLOGICAL_ORDER.test("export function topologicalOrder (graph) {")).toBe(true);
+    expect(DEFINES_BUILD_GRAPH.test("  const graph = buildCalcGraph(defs, membership);")).toBe(false);
+    expect(DEFINES_BUILD_GRAPH.test('import { buildCalcGraph } from "./calc-graph";')).toBe(false);
+
+    expect(IMPORTS_CALC_GRAPH.test('import { buildCalcGraph } from "./calc-graph";')).toBe(true);
+    expect(IMPORTS_CALC_GRAPH.test('import { templateCycles } from "../../calc/calc-graph";')).toBe(true);
+    expect(
+      IMPORTS_CALC_GRAPH.test('import {\n  buildCalcGraph,\n  topologicalOrder,\n} from "./calc-graph";'),
+    ).toBe(true);
+    expect(IMPORTS_CALC_GRAPH.test(' * see `calc-graph.ts` for the edge direction')).toBe(false);
+    expect(IMPORTS_CALC_GRAPH.test('import { helper } from "./calc-graph-helpers";')).toBe(false);
+  });
+
+  it.each([
+    ["buildCalcGraph", DEFINES_BUILD_GRAPH],
+    ["topologicalOrder", DEFINES_TOPOLOGICAL_ORDER],
+  ])("exactly one file under apps/api/src defines %s", (name, pattern) => {
+    const definers = apiFiles.filter((rel) => pattern.test(readFileSync(join(repoRoot, rel), "utf8")));
+    expect(
+      definers,
+      `${name} must be defined exactly once (ADR 0055 decision 8). Found:\n${definers.join("\n")}\n\n` +
+        "The save-time detector and the scheduled sweep must refuse the same cycles. A second " +
+        "implementation drifts silently: a save admits a formula the tick then refuses, or " +
+        "refuses one it would compute, and no test on either side can see it.",
+    ).toEqual(["apps/api/src/calc/calc-graph.ts"]);
+  });
+
+  it.each([
+    "apps/api/src/calc/calc-dependency.service.ts",
+    "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
+  ])("%s reaches the graph through calc-graph rather than its own copy", (rel) => {
+    expect(apiFiles, `${rel} is not being scanned`).toContain(rel);
+    const source = readFileSync(join(repoRoot, rel), "utf8");
+    expect(
+      IMPORTS_CALC_GRAPH.test(source),
+      `${rel} must import from calc-graph on an import line. Task 13 adds ` +
+        "apps/api/src/calc/calc-scheduler.service.ts to this list when it wires the sweep.",
+    ).toBe(true);
   });
 });

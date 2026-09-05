@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runAssetTemplateSchemaTests,
   runCalcDialectGuardTests,
+  runTemplateCycleGuardTests,
 } from "./asset-templates.schema.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -13,5 +14,9 @@ describe("asset-templates schema", () => {
 
   it("gates the calc dialect, the v2 trigger rule and the coverage ratio (F2.9)", () => {
     runCalcDialectGuardTests();
+  });
+
+  it("refuses a dependency cycle among the template's own points (F2.9 Task 12)", () => {
+    runTemplateCycleGuardTests();
   });
 });

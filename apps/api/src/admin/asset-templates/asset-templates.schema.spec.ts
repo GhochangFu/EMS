@@ -718,3 +718,77 @@ export function runCalcDialectGuardTests(): void {
     "a formula error must never echo the referenced point key back to the caller",
   );
 }
+
+// ---- F2.9 Task 12: the save-time cycle check over the template's own points --
+
+/** The cycle issues, by the one phrase every cycle message carries. */
+function cycleIssues(issues: readonly Issue[]): Issue[] {
+  return issues.filter((issue) => issue.message.includes("dependency cycle"));
+}
+
+/**
+ * `F2.9` Task 12 / ADR 0055 decision 8 — the array-level `superRefine` runs
+ * `templateCycles(points)` and reports each point that lies on a cycle.
+ *
+ * **This is the half decision 7 left open.** `runCalcDialectGuardTests` above
+ * proves a `v2` formula may now reference a derived sibling; what has to be
+ * refused instead is the *cycle*, and a cycle is a property of the whole array,
+ * not of one point. Two consequences are asserted here rather than assumed:
+ *
+ * - the check spans the array — `{D} ↔ {E}` is invisible to any per-point rule,
+ *   and is reported at **both** points, because either one is a legitimate
+ *   place for the author to break the loop;
+ * - it is scoped to this template's own points, which is all a template save
+ *   can see (plan correction 52). The message says so; a `@site` aggregate over
+ *   the template's **own** declared key is the sharpest case, since that is the
+ *   one cross-asset form which does resolve against a virtual asset.
+ */
+export function runTemplateCycleGuardTests(): void {
+  const pair = refusalOf(
+    {
+      ...validTemplate,
+      points: [v2Point({ pointKey: "D", formula: "{E}" }), v2Point({ pointKey: "E", formula: "{D}" })],
+    },
+    "two bms-calc-v2 points referencing each other",
+  );
+  const both = cycleIssues(pair);
+  assert(
+    both.length === 2,
+    "a two-point cycle must be reported at both points — either is a legitimate place to " +
+      `break it, and neither is more at fault. Got: ${describeIssues(pair)}`,
+  );
+  assert(
+    both.every((issue) => issue.path[issue.path.length - 1] === "formula"),
+    `each cycle issue must land on the formula field that forms it, got: ${describeIssues(pair)}`,
+  );
+  assert(
+    both.every((issue) => issue.message.includes("D") && issue.message.includes("E")),
+    `the message must name the cycle's members so the author can break it, got: ${describeIssues(pair)}`,
+  );
+  // Plan correction 52: the check sees only this template's points, and the
+  // message must not read as "this template has no cycles".
+  assert(
+    both.every((issue) => issue.message.includes("cannot rule out")),
+    "the message must say what it found, not what it ruled out — a template has no location, " +
+      `so @domain, @group and {CODE.key} resolve to nothing here. Got: ${describeIssues(pair)}`,
+  );
+
+  const selfAggregate = refusalOf(
+    { ...validTemplate, points: [v2Point({ pointKey: "T", formula: "sum({T} @site)" })] },
+    "a bms-calc-v2 point aggregating its own key over @site",
+  );
+  assert(
+    cycleIssues(selfAggregate).length === 1,
+    "a site sum that includes the point's own key is a one-edge cycle — the declaring asset " +
+      `is a member of its own site. Got: ${describeIssues(selfAggregate)}`,
+  );
+
+  acceptanceOf(
+    {
+      ...validTemplate,
+      points: [{ pointKey: "A" }, v2Point({ pointKey: "D", formula: "{A}" })],
+    },
+    "a bms-calc-v2 point referencing a measured sibling — no cycle, and the check must not " +
+      "refuse a v2 formula merely for being one",
+  );
+}

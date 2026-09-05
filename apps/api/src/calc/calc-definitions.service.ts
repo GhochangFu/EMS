@@ -65,7 +65,22 @@ export class CalcDefinitionsService {
     await this.reload();
   }
 
-  private async reload(): Promise<void> {
+  /**
+   * Reloads the cache.
+   *
+   * `countSkips` is `false` for exactly one caller —
+   * `getAllDefinitionsFresh()`, the save-time cycle detector's read (`F2.9`,
+   * finding 30). `bms_api_calc_skipped_total` means "the engine refused to
+   * compute N times"; if an author's keystroke moved it too, the number would
+   * mean two things at once and be readable as neither. ADR 0037 decision 9
+   * requires that no **evaluation** skip is silent, and a validation read is
+   * not an evaluation. **Both** count sites below are gated, not just the
+   * first: half a counter is a counter that lies more quietly.
+   *
+   * No shipped refusal changes. The rows filtered out are the same rows either
+   * way, so the detector still never sees an unusable definition.
+   */
+  private async reload({ countSkips = true }: { countSkips?: boolean } = {}): Promise<void> {
     const rows = await this.fleetDb
       .select({
         templatePointId: templatePoints.id,
@@ -140,7 +155,7 @@ export class CalcDefinitionsService {
       }
       const result = toActiveDefinition(row);
       if (!result.ok) {
-        this.metrics.countCalcSkipped(result.reason);
+        if (countSkips) this.metrics.countCalcSkipped(result.reason);
         continue;
       }
       candidates.push(result.def);
@@ -161,7 +176,7 @@ export class CalcDefinitionsService {
       if (!referencesADerivedSiblingUnderV1(def, derivedPointKeysByAsset)) {
         return true;
       }
-      this.metrics.countCalcSkipped("v1_references_derived");
+      if (countSkips) this.metrics.countCalcSkipped("v1_references_derived");
       return false;
     });
 
@@ -233,9 +248,14 @@ export class CalcDefinitionsService {
    * definition written in the last 60s would be invisible, and the detector
    * would admit the edge that completes the loop. The cost is one query per
    * template/override save, which is a human-rate write path.
+   *
+   * **`countSkips: false`** — see `reload`. This read is a validation, not an
+   * evaluation, and counting it would make `bms_api_calc_skipped_total` move on
+   * an author's keystroke (finding 30). The cache it leaves behind is the same
+   * cache either way, so the two evaluation hosts are unaffected.
    */
   async getAllDefinitionsFresh(): Promise<CalcDefinition[]> {
-    await this.reload();
+    await this.reload({ countSkips: false });
     return this.all;
   }
 }
