@@ -7,11 +7,16 @@ import {
   assertADuplicateHashPlansTheSameInEitherRowOrder,
   assertAFreshDatabaseIsLeftAlone,
   assertAJournalAheadOfTheClockIsRefusedBeforeAnyQuery,
+  assertALoneNullStampIsRestamped,
   assertAMatchingDatabaseNeedsNoRestamp,
   assertANonIntegerJournalStampIsRefused,
+  assertANullRowBesideACorrectDuplicateIsStillRestamped,
+  assertANullStrayAlwaysBlocks,
+  assertANullStrayIsWarnedAboutAsAChainReplay,
   assertAPartlyMigratedDatabaseReportsNothingUnreachable,
   assertAPlannedRestampThatWritesNothingIsReported,
   assertASecondRunRestampsNothing,
+  assertAStrayAtAnUnappliedEntrysOwnStampNamesBothSides,
   assertAStrayShadowingAnUnappliedEntryBlocks,
   assertAStringCreatedAtIsComparedNumerically,
   assertAnUnappliedEntryBelowTheMaximumIsUnreachable,
@@ -109,5 +114,25 @@ describe("F4.94 — db:migrate re-syncs drizzle's stamps to the journal before m
 
   it("says how many re-stamps were planned when fewer rows were written", async () => {
     await assertAPlannedRestampThatWritesNothingIsReported();
+  });
+
+  it("names both the unreachable entry and the stray when the stray sits at that entry's stamp", () => {
+    assertAStrayAtAnUnappliedEntrysOwnStampNamesBothSides();
+  });
+
+  it("plans a re-stamp for a lone NULL created_at", () => {
+    assertALoneNullStampIsRestamped();
+  });
+
+  it("plans a re-stamp for a NULL row even when a correct duplicate already matches the journal", () => {
+    assertANullRowBesideACorrectDuplicateIsStillRestamped();
+  });
+
+  it("treats a stray with a NULL created_at as always blocking", () => {
+    assertANullStrayAlwaysBlocks();
+  });
+
+  it("warns that a NULL stray makes drizzle replay the whole chain", async () => {
+    await assertANullStrayIsWarnedAboutAsAChainReplay();
   });
 });

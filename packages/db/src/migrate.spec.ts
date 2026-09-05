@@ -258,9 +258,10 @@ export function assertAnUnknownHashAheadOfTheJournalIsAStray(): void {
  * boundary value is deliberate: a `>` written where `>=` was meant passes every
  * other case and fails this one.
  *
- * A stray stamped *below* entry 2 would be correctly silent, because entry 3's
- * own applied row already sets the table's maximum above entry 2 and the stray
- * adds no blocking of its own.
+ * Here entry 3's own applied row already sets the table's maximum above entry
+ * 2, so the stray adds no blocking of its own; it is still named, because the
+ * operator reads the stray line and the unreachable line together. A stray
+ * stamped *below* entry 2 would be correctly silent.
  */
 export function assertAStrayShadowingAnUnappliedEntryBlocks(): void {
   const plan = planJournalResync(
@@ -277,6 +278,72 @@ export function assertAStrayShadowingAnUnappliedEntryBlocks(): void {
   expect(plan.unreachable).toEqual([
     { hash: HASH_E2, folderMillis: WHEN_E2, tag: "0002_middle" },
   ]);
+}
+
+/**
+ * The boundary of both rules at once. The database has applied entry 1 only,
+ * and a stray sits at exactly entry 2's `when`, so the stray itself sets the
+ * table's maximum. Entry 2 is unreachable (`folderMillis <= maximum` — a `<`
+ * written here passes every other case), the stray blocks it (`>= unappliedMin`
+ * — an `unappliedMax` written there passes every other case), and entry 3 stays
+ * reachable because it sits above the maximum.
+ */
+export function assertAStrayAtAnUnappliedEntrysOwnStampNamesBothSides(): void {
+  const plan = planJournalResync(
+    [
+      { hash: HASH_E1, created_at: WHEN_E1 },
+      { hash: HASH_STRAY, created_at: WHEN_E2 },
+    ],
+    THREE_ENTRY_JOURNAL,
+  );
+
+  expect(plan.restamps).toEqual([]);
+  expect(plan.blockingStrays).toEqual([{ hash: HASH_STRAY, createdAt: WHEN_E2 }]);
+  expect(plan.unreachable).toEqual([
+    { hash: HASH_E2, folderMillis: WHEN_E2, tag: "0002_middle" },
+  ]);
+}
+
+/**
+ * A NULL `created_at` is not "below everything": Postgres sorts NULL first under
+ * `ORDER BY created_at DESC`, so drizzle reads that row as the newest applied
+ * migration, `Number(null)` is `0`, and the whole chain replays. Three shapes.
+ * A lone NULL row for a journal hash is planned as an ordinary re-stamp. A NULL
+ * row beside a correct duplicate is still planned, although the readable
+ * maximum already equals the journal, because one guarded statement on the
+ * hash repairs the NULL row too. A NULL stray always blocks, whatever the
+ * journal looks like.
+ */
+export function assertALoneNullStampIsRestamped(): void {
+  const plan = planJournalResync([{ hash: HASH_0062, created_at: null }], JOURNAL);
+
+  expect(plan.restamps).toEqual([{ hash: HASH_0062, from: 0, to: WHEN_0062 }]);
+}
+
+export function assertANullRowBesideACorrectDuplicateIsStillRestamped(): void {
+  const plan = planJournalResync(
+    [
+      { hash: HASH_0062, created_at: WHEN_0062 },
+      { hash: HASH_0062, created_at: null },
+    ],
+    JOURNAL,
+  );
+
+  expect(plan.restamps).toEqual([{ hash: HASH_0062, from: WHEN_0062, to: WHEN_0062 }]);
+}
+
+export function assertANullStrayAlwaysBlocks(): void {
+  const plan = planJournalResync(
+    [
+      { hash: HASH_0061, created_at: WHEN_0061 },
+      { hash: HASH_0062, created_at: WHEN_0062 },
+      { hash: HASH_STRAY, created_at: null },
+    ],
+    JOURNAL,
+  );
+
+  expect(plan.restamps).toEqual([]);
+  expect(plan.blockingStrays).toEqual([{ hash: HASH_STRAY, createdAt: 0, unreadable: true }]);
 }
 
 /**
@@ -447,6 +514,31 @@ export async function assertABlockingStrayIsWarnedAboutAndNeverWritten(): Promis
   for (const update of updatesIn(client)) {
     expect(update.values).not.toContain(HASH_STRAY);
   }
+}
+
+/**
+ * A NULL stray gets its own warning, because the repair is different: the row
+ * is not "above" anything, drizzle reads it as the newest and replays the chain.
+ */
+export async function assertANullStrayIsWarnedAboutAsAChainReplay(): Promise<void> {
+  const client = fakeClient({
+    present: true,
+    rows: [
+      { hash: HASH_0061, created_at: String(WHEN_0061) },
+      { hash: HASH_0062, created_at: String(WHEN_0062) },
+      { hash: HASH_STRAY, created_at: null },
+    ],
+  });
+  const lines: string[] = [];
+
+  const plan = await resyncJournalStamps(client, JOURNAL, (line) => lines.push(line));
+
+  expect(plan.blockingStrays).toEqual([{ hash: HASH_STRAY, createdAt: 0, unreadable: true }]);
+  const warning = lines.find((line) => line.includes("WARNING"));
+  expect(warning ?? "").toContain("beefbeefbeef");
+  expect(warning ?? "").toContain("NULL created_at");
+  expect(warning ?? "").toContain("replays the whole chain");
+  expect(updatesIn(client)).toEqual([]);
 }
 
 /**

@@ -107,8 +107,16 @@ export interface JournalResync {
     readonly from: number;
     readonly to: number;
   }>;
-  /** Applied rows the journal does not describe, which still shadow part of it. */
-  readonly blockingStrays: ReadonlyArray<{ readonly hash: string; readonly createdAt: number }>;
+  /**
+   * Applied rows the journal does not describe, which still shadow part of it.
+   * `unreadable` marks a row whose `created_at` is NULL: drizzle reads that row
+   * as the newest one and replays the whole chain, so it always blocks.
+   */
+  readonly blockingStrays: ReadonlyArray<{
+    readonly hash: string;
+    readonly createdAt: number;
+    readonly unreadable?: true;
+  }>;
   /**
    * Journal entries with no applied row that sit at or below what the table's
    * maximum will be once the re-stamps land. Drizzle applies an entry only when
@@ -142,12 +150,22 @@ const JOURNAL_CLOCK_SKEW_MS = 60 * 60 * 1000;
 
 /**
  * The same coercion drizzle itself applies to `created_at`. A NULL or an
- * unreadable value compares as `0`, which is below every journal stamp, so
- * such a row is never mistaken for one sitting ahead of the journal.
+ * unreadable value compares as `0` here, but it is NOT harmless in drizzle:
+ * Postgres sorts NULL first under `ORDER BY created_at DESC`, so drizzle reads
+ * a NULL row as the newest applied migration, `Number(null)` is `0`, and every
+ * entry then passes the newer-than test — the whole chain replays. Drizzle's
+ * own migrator never writes a NULL; only a hand repair can. The plan therefore
+ * treats an unreadable stamp as a defect to repair or to name, never as a row
+ * that sits below everything.
  */
 function toMillis(value: string | number | null): number {
   const millis = Number(value);
   return Number.isFinite(millis) ? millis : 0;
+}
+
+/** True when `created_at` holds a number drizzle can compare. */
+function isReadableStamp(value: string | number | null): boolean {
+  return value !== null && Number.isFinite(Number(value));
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -256,17 +274,22 @@ export function planJournalResync(
   // stamp. First-wins would pick the already-repaired row, plan nothing, and
   // warn about nothing, because the hash is in the journal and so is not a stray.
   const maxByHash = new Map<string, number>();
+  const unreadableHashes = new Set<string>();
   for (const row of applied) {
+    if (!isReadableStamp(row.created_at)) unreadableHashes.add(row.hash);
     const millis = toMillis(row.created_at);
     const seen = maxByHash.get(row.hash);
     if (seen === undefined || millis > seen) maxByHash.set(row.hash, millis);
   }
 
+  // A hash with a NULL row is re-stamped even when its readable maximum already
+  // equals the journal: the guarded statement matches on the hash, so one
+  // write repairs the NULL row too, and drizzle stops reading it as the newest.
   const restamps: Array<{ hash: string; from: number; to: number }> = [];
   for (const entry of journal) {
     const from = maxByHash.get(entry.hash);
     if (from === undefined) continue;
-    if (from !== entry.folderMillis) {
+    if (from !== entry.folderMillis || unreadableHashes.has(entry.hash)) {
       restamps.push({ hash: entry.hash, from, to: entry.folderMillis });
     }
   }
@@ -289,11 +312,13 @@ export function planJournalResync(
   // journal altogether and so blocks whatever is generated next.
   const journalHashes = new Set(journal.map((entry) => entry.hash));
   const lastStamp = lastJournalStamp(journal);
-  const blockingStrays: Array<{ hash: string; createdAt: number }> = [];
+  const blockingStrays: Array<{ hash: string; createdAt: number; unreadable?: true }> = [];
   for (const row of applied) {
     if (journalHashes.has(row.hash)) continue;
     const createdAt = toMillis(row.created_at);
-    if (createdAt >= unappliedMin || createdAt > lastStamp) {
+    if (!isReadableStamp(row.created_at)) {
+      blockingStrays.push({ hash: row.hash, createdAt, unreadable: true });
+    } else if (createdAt >= unappliedMin || createdAt > lastStamp) {
       blockingStrays.push({ hash: row.hash, createdAt });
     }
   }
@@ -376,6 +401,15 @@ export async function resyncJournalStamps(
 
   const lastStamp = lastJournalStamp(journal);
   for (const stray of plan.blockingStrays) {
+    if (stray.unreadable) {
+      log(
+        `F4.94 WARNING: ${MIGRATIONS_TABLE} row ${shortHash(stray.hash)} is not in the ` +
+          "journal and has a NULL created_at. Postgres sorts NULL first under ORDER BY " +
+          "created_at DESC, so drizzle reads that row as the newest applied migration and " +
+          "replays the whole chain on the next run. Re-stamp that row by hand.",
+      );
+      continue;
+    }
     log(
       `F4.94 WARNING: ${MIGRATIONS_TABLE} row ${shortHash(stray.hash)} ` +
         `(created_at ${stray.createdAt}) is not in the journal and sits at or above a journal ` +
