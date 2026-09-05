@@ -4,6 +4,7 @@ import { TelemetryModule } from "../telemetry/telemetry.module";
 import { CalcDefinitionsService } from "./calc-definitions.service";
 import { CalcInputsService } from "./calc-inputs.service";
 import { CalcSchedulerService } from "./calc-scheduler.service";
+import { CalcScopeService } from "./calc-scope.service";
 import { CalcStreamingService } from "./calc-streaming.service";
 import { CalcWriteService } from "./calc-write.service";
 
@@ -75,6 +76,9 @@ import { CalcWriteService } from "./calc-write.service";
   providers: [
     CalcDefinitionsService,
     CalcInputsService,
+    // `F2.9` Task 11 — membership resolution for `bms-calc-v2` (ADR 0055
+    // decision 12). Provided here; Task 12 exports the detector built on it.
+    CalcScopeService,
     CalcWriteService,
     CalcStreamingService,
     CalcSchedulerService,

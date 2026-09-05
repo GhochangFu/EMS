@@ -57,12 +57,11 @@ function asOk(result: ParseResult): Extract<ParseResult, { ok: true }> {
  *   `packages/shared/src/contracts` or `apps/api/src`. No exemptions remain:
  *   Task 6 converted `asset-templates.schema.ts` and Task 7
  *   `asset-point-calc-override.schema.ts`.**
- * - (d) — `calc-scope.service.ts`'s qualified-code statement contains a
- *   `location_id` filter, checked against a mutated copy first — `Task 11`.
+ * - **(d) — `calc-scope.service.ts`'s qualified-code statement contains a
+ *   `location_id` filter**, checked against a mutated copy first — `Task 11`.
  *
- * Parts (a) and (d) are **not yet in this file** — they land with the tasks
- * named above. Do not read their absence as "done"; read it as "not this
- * task's job."
+ * Part (a) is **not yet in this file** — it lands with Task 12. Do not read
+ * its absence as "done"; read it as "not this task's job."
  */
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -250,5 +249,107 @@ describe("ADR 0055 part (c) — no endpoint restates the calc dialect as a v1 li
     expect(source, `${rel} must reach the vocabulary through calcDialectSchema`).toContain(
       "calcDialectSchema",
     );
+  });
+});
+
+// --- part (d) — the qualified-code statement is contained by the owner's location ---
+
+/**
+ * ADR 0055 decision 12: `{CODE.key}` resolves against the **owner's**
+ * `location_id`. `bms.assets.code` is globally unique, so a lookup by code
+ * alone *succeeds* across locations and across organizations — the formula
+ * silently reads another site's tag, and nothing throws. The integration
+ * suite proves the containment on its own fixture, but a green suite cannot
+ * see the filter go missing if every fixture happens to sit at one location.
+ * This scan is the static guard for that: the `WHERE` of the qualified-code
+ * statement in `calc-scope.service.ts` must name `location_id`.
+ *
+ * Verified against a mutated copy at the build gate (Task 11): with the
+ * `WHERE a.location_id = r.location_id` line removed, "must have a WHERE
+ * clause" fails; with the predicate replaced by `a.active`, "must filter on
+ * location_id" fails. The in-file anti-vacuity case below re-runs the second
+ * of those on every run.
+ */
+const CALC_SCOPE_SERVICE = "apps/api/src/calc/calc-scope.service.ts";
+
+/**
+ * The SQL template literal of `readQualifiedCodes` — the first `sql\`…\``
+ * after the method's **definition**, not its call site, which is why the
+ * marker carries `private async`. No backtick may appear inside the SQL, and
+ * none does; a comment with one would end the literal early here as it would
+ * in the compiler.
+ */
+function qualifiedCodeStatement(source: string): string | null {
+  const definition = source.indexOf("private async readQualifiedCodes(");
+  if (definition < 0) {
+    return null;
+  }
+  const open = source.indexOf("sql`", definition);
+  if (open < 0) {
+    return null;
+  }
+  const close = source.indexOf("`", open + "sql`".length);
+  if (close < 0) {
+    return null;
+  }
+  return source.slice(open + "sql`".length, close);
+}
+
+/** Everything from the statement's first top-level `WHERE` to its end. */
+function whereClause(statement: string): string | null {
+  const match = /\bWHERE\b/.exec(statement);
+  return match === null ? null : statement.slice(match.index);
+}
+
+/** Why `statement` fails the containment rule, or `null` when it holds. */
+function containmentDefect(statement: string | null): string | null {
+  if (statement === null) {
+    return "the readQualifiedCodes statement could not be located";
+  }
+  if (!/\bbms\.assets\b/.test(statement) || !/\bcode\b/.test(statement)) {
+    return "the located statement does not read bms.assets by code — the scan found the wrong literal";
+  }
+  const where = whereClause(statement);
+  if (where === null) {
+    return "the qualified-code statement must have a WHERE clause";
+  }
+  if (!/\blocation_id\b/.test(where)) {
+    return "the qualified-code statement's WHERE must filter on location_id";
+  }
+  return null;
+}
+
+describe("ADR 0055 part (d) — the qualified-code statement filters on the owner's location_id", () => {
+  const source = readFileSync(join(repoRoot, CALC_SCOPE_SERVICE), "utf8");
+
+  it("locates the qualified-code statement, so the rule below is not silently vacuous", () => {
+    const statement = qualifiedCodeStatement(source);
+    expect(statement, `${CALC_SCOPE_SERVICE}: readQualifiedCodes and its sql template must exist`).not.toBeNull();
+    expect(statement as string).toMatch(/\bbms\.assets\b/);
+  });
+
+  it("the statement's WHERE names location_id (ADR 0055 decision 12)", () => {
+    const defect = containmentDefect(qualifiedCodeStatement(source));
+    expect(
+      defect,
+      `${CALC_SCOPE_SERVICE}: ${defect ?? ""}\n\n` +
+        "A {CODE.key} reference resolves only to an asset at the owner's location. " +
+        "assets.code is globally unique, so a lookup without location_id succeeds across " +
+        "sites and across organizations, and the formula silently reads another site's tag.",
+    ).toBeNull();
+  });
+
+  /**
+   * Anti-vacuity: the same analysis on the real source with the predicate
+   * replaced must go red. Verified by hand at the build gate on a mutated copy
+   * of the file; this case keeps that check alive on every run.
+   */
+  it("the analysis kills the mutation it exists to catch", () => {
+    const statement = qualifiedCodeStatement(source) as string;
+    const inverted = statement.replace(/WHERE[\s\S]*$/, "WHERE a.active");
+    expect(inverted, "the mutation did not apply — the statement shape changed").not.toBe(statement);
+    expect(containmentDefect(inverted)).toBe("the qualified-code statement's WHERE must filter on location_id");
+    const dropped = statement.replace(/\s*WHERE[\s\S]*$/, "");
+    expect(containmentDefect(dropped)).toBe("the qualified-code statement must have a WHERE clause");
   });
 });
