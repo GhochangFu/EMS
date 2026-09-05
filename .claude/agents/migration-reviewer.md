@@ -32,7 +32,9 @@ risk you are hunting.
 
 1. **Journal integrity (highest priority).** Every new `.sql` has a
    `meta/_journal.json` entry; every entry has a file; `when` values strictly
-   increase. Flag any mismatch — this is the exact bug above.
+   increase; and no `when` is ahead of the wall clock (F4.94 — a future stamp
+   makes the next generated entry skip on every existing database). Flag any
+   mismatch — this is the exact bug above.
 2. **Reachability on existing databases.** Drizzle applies only migrations
    *newer than the newest already-applied one*. A new entry whose `when` is
    older than an already-applied migration will never run on dev/CI/pilot

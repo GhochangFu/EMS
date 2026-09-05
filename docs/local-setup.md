@@ -416,7 +416,7 @@ tree:
 |---|---|
 | committed migration edit | a `packages/db/drizzle/*.sql` already in `HEAD` is modified, renamed or deleted |
 | dependency ADR gate (§9.4) | a dependency specifier is added and **no** `docs/adr/*.md` is staged in the same commit |
-| drizzle journal | a staged `.sql` has no journal entry, a journal entry has no `.sql`, or `when` does not strictly increase |
+| drizzle journal | a staged `.sql` has no journal entry, a journal entry has no `.sql`, `when` does not strictly increase, or a `when` is more than one hour ahead of the wall clock |
 | style hygiene (§4.1/§4.5) | an **added** line of a staged `.ts`/`.tsx` carries `console.log`, an `any` type or an emoji — or the file crosses the 1000-line cap |
 
 Style hygiene reads added lines only. Scanning whole files would make every

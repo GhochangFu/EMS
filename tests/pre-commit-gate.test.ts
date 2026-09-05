@@ -91,6 +91,14 @@ const JOURNAL = (tags: string[]): string =>
     entries: tags.map((tag, idx) => ({ idx, version: "7", when: 1700000000000 + idx, tag, breakpoints: true })),
   });
 
+/** F4.94 — a journal built from explicit `{ tag, when }` pairs, so a case can pin the clock relationship it tests. */
+const journalWith = (entries: ReadonlyArray<{ tag: string; when: number }>): string =>
+  JSON.stringify({
+    version: "7",
+    dialect: "postgresql",
+    entries: entries.map((e, idx) => ({ idx, version: "7", when: e.when, tag: e.tag, breakpoints: true })),
+  });
+
 afterAll(() => {
   for (const dir of scratchDirs) {
     rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
@@ -143,6 +151,23 @@ describe("pre-commit backstop - what it blocks", () => {
     const r = runGate(dir, { "src/a.ts": "export const f = (x: any) => x;\n" });
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("type - use `unknown`");
+  });
+
+  it("aborts on a journal entry whose `when` is ahead of the wall clock", () => {
+    const dir = scratchRepo({
+      "packages/db/drizzle/0001_init.sql": "CREATE TABLE a();\n",
+      "packages/db/drizzle/meta/_journal.json": journalWith([{ tag: "0001_init", when: 1700000000000 }]),
+    });
+    const r = runGate(dir, {
+      "packages/db/drizzle/0002_next.sql": "CREATE TABLE b();\n",
+      "packages/db/drizzle/meta/_journal.json": journalWith([
+        { tag: "0001_init", when: 1700000000000 },
+        { tag: "0002_next", when: Date.now() + 2 * 3_600_000 },
+      ]),
+    });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("ahead of the wall clock");
+    expect(r.stderr).toContain("0002_next");
   });
 });
 
@@ -204,6 +229,38 @@ describe("pre-commit backstop - what it must NOT block", () => {
     expect(r.stderr).toBe("");
     expect(r.code).toBe(0);
   });
+
+  it("passes a journal entry stamped in the past", () => {
+    const dir = scratchRepo({
+      "packages/db/drizzle/0001_init.sql": "CREATE TABLE a();\n",
+      "packages/db/drizzle/meta/_journal.json": journalWith([{ tag: "0001_init", when: 1700000000000 }]),
+    });
+    const r = runGate(dir, {
+      "packages/db/drizzle/0002_next.sql": "CREATE TABLE b();\n",
+      "packages/db/drizzle/meta/_journal.json": journalWith([
+        { tag: "0001_init", when: 1700000000000 },
+        { tag: "0002_next", when: Date.now() - 60_000 },
+      ]),
+    });
+    expect(r.stderr).toBe("");
+    expect(r.code).toBe(0);
+  });
+
+  it("passes a journal entry inside the one-hour clock-skew tolerance", () => {
+    const dir = scratchRepo({
+      "packages/db/drizzle/0001_init.sql": "CREATE TABLE a();\n",
+      "packages/db/drizzle/meta/_journal.json": journalWith([{ tag: "0001_init", when: 1700000000000 }]),
+    });
+    const r = runGate(dir, {
+      "packages/db/drizzle/0002_next.sql": "CREATE TABLE b();\n",
+      "packages/db/drizzle/meta/_journal.json": journalWith([
+        { tag: "0001_init", when: 1700000000000 },
+        { tag: "0002_next", when: Date.now() + 10 * 60_000 },
+      ]),
+    });
+    expect(r.stderr).toBe("");
+    expect(r.code).toBe(0);
+  });
 });
 
 describe("the Claude Code hooks still work after the shared extraction", () => {
@@ -261,5 +318,24 @@ describe("the Claude Code hooks still work after the shared extraction", () => {
     });
     expect(r.code).toBe(0);
     expect(r.stderr).toBe("");
+  });
+
+  it("check-drizzle-journal exits 2 on a future `when` in the working tree", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bms-drizzle-hook-"));
+    scratchDirs.push(dir);
+    write(dir, {
+      "packages/db/drizzle/0001_init.sql": "CREATE TABLE a();\n",
+      "packages/db/drizzle/0002_next.sql": "CREATE TABLE b();\n",
+      "packages/db/drizzle/meta/_journal.json": journalWith([
+        { tag: "0001_init", when: 1700000000000 },
+        { tag: "0002_next", when: Date.now() + 2 * 3_600_000 },
+      ]),
+    });
+    const r = runClaudeHook("check-drizzle-journal.mjs", {
+      tool_name: "Edit",
+      tool_input: { file_path: join(dir, "packages/db/drizzle/meta/_journal.json") },
+    });
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain("ahead of the wall clock");
   });
 });

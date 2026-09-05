@@ -176,7 +176,8 @@ function checkDrizzleJournal() {
     'Drizzle journal integrity failed for the staged tree:\n\n' +
       problems.join('\n\n') +
       '\n\nRegenerate with `pnpm db:generate`, or hand-edit meta/_journal.json ' +
-      'keeping `idx`/`tag`/`when` consistent - and stage it.',
+      'keeping `idx`/`tag` consistent and `when` = `Date.now()` at authoring time ' +
+      '- and stage it.',
   ];
 }
 

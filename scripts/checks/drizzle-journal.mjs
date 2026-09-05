@@ -12,14 +12,26 @@
 // what the agent just edited. The pre-commit hook passes the *staged* content,
 // because that is what the commit will actually contain — staging one half of
 // a migration pair is exactly the mistake a commit-time gate should catch.
+//
+// F4.94 added a fourth invariant: `when` must never sit ahead of the wall
+// clock. A hand-pinned future stamp (measured drift: about 6.5 days on
+// entries 0057–0062) sorts above a later, honestly-stamped migration, so
+// drizzle's `Number(lastDbMigration.created_at) < migration.folderMillis`
+// check skips the later file on every database that already ran the future
+// one — silently. `JOURNAL_CLOCK_SKEW_MS` tolerates only the gap between
+// `drizzle-kit`'s `when: +new Date()` stamp and the moment this check runs.
+
+/** Clock-skew allowance for a freshly generated entry: drizzle-kit stamps `when: +new Date()` on the author's machine. */
+export const JOURNAL_CLOCK_SKEW_MS = 60 * 60 * 1000;
 
 /**
- * @param {{ journalText: string, sqlTags: string[] }} view
+ * @param {{ journalText: string, sqlTags: string[], now?: number }} view
  *   `journalText` is the raw meta/_journal.json; `sqlTags` are the migration
- *   file names without the `.sql` suffix.
+ *   file names without the `.sql` suffix; `now` is injectable for tests and
+ *   defaults to `Date.now()`.
  * @returns {string[]} human-readable problems; empty means the view is sound.
  */
-export function journalProblems({ journalText, sqlTags }) {
+export function journalProblems({ journalText, sqlTags, now = Date.now() }) {
   let journal;
   try {
     journal = JSON.parse(journalText);
@@ -63,6 +75,17 @@ export function journalProblems({ journalText, sqlTags }) {
       );
       break;
     }
+  }
+
+  const ahead = entries.filter((e) => Number((e && e.when) || 0) > now + JOURNAL_CLOCK_SKEW_MS);
+  if (ahead.length > 0) {
+    problems.push(
+      `Journal 'when' is ahead of the wall clock (now = ${now}, tolerance ${JOURNAL_CLOCK_SKEW_MS} ms):\n` +
+        ahead.map((e) => `  - ${e.tag} = ${e.when} (${new Date(e.when).toISOString()})`).join('\n') +
+        '\n\nThe next generated migration takes Date.now(), which is SMALLER, so drizzle skips it on ' +
+        'every database that already ran this entry - silently. Stamp `when` with Date.now() at ' +
+        'authoring time; never hand-pin it ahead of the clock (F4.94).',
+    );
   }
 
   return problems;
