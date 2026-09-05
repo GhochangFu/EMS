@@ -28,9 +28,12 @@ import { AssetTemplateStockViewPage } from "./asset-template-stock-view-page";
  * become `draft`, which leaves the Calculations and KPIs formula editors
  * writable even with `editable={false}` (`formulaFieldsAreReadOnly` reads
  * `status`, not the prop). Both fixtures below are built for that: `FEEDER`
- * mirrors the live `electrical-feeder` — 33 points, 11 alarms, no derived
- * point — and `WITH_FORMULA` carries the derived point and the KPI the feeder
- * structurally cannot, which is the only way to reach either formula editor.
+ * mirrors the `electrical-feeder` as it shipped at stock v1 — 33 points, 11
+ * alarms, no derived point (the live entry is v2 with three `bms-calc-v2`
+ * derived points since `F2.8`; this fixture keeps the v1 shape on purpose,
+ * because it is the one that reaches the "no derived points" empty state) —
+ * and `WITH_FORMULA` carries a derived point and a KPI, which is the only way
+ * to reach either formula editor.
  *
  * **`FEEDER` gained three maintenance plans in `F2.19`** (ADR 0038
  * Amendment 5 Part B). The seventh tab is what discharges the review problem
@@ -122,8 +125,11 @@ const MAINTENANCE_PLANS = [
 const MAINTENANCE_COUNT = MAINTENANCE_PLANS.length;
 
 /**
- * The live `electrical-feeder`, by its measured shape: 33 points, 11 alarms,
- * zero derived points and zero KPIs. `p32` is what catches a truncated render.
+ * The `electrical-feeder` at stock v1, by its measured shape then: 33 points,
+ * 11 alarms, zero derived points and zero KPIs. `F2.8` took the live entry to
+ * v2 (36 points, three derived); this fixture stays at the v1 shape because a
+ * feeder with zero derived points is what renders the Calculations empty
+ * state. `p32` is what catches a truncated render.
  */
 const FEEDER: StockAssetTemplateDto = stockAssetTemplateDtoSchema.parse({
   code: FEEDER_CODE,

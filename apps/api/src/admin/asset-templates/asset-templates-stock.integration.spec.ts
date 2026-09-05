@@ -356,9 +356,18 @@ export async function assertTheShippedFeederImportsWholeAgainstTheRealVocabulary
 
   const draft = await realStock.import(fx.adminJwt, FEEDER_CODE, fx.organizationId);
   importedFeederId = draft.id;
-  assert(draft.stockCode === FEEDER_CODE && draft.stockVersion === 1, "the feeder import is stamped v1");
-  assert(draft.points.length === 33, `33 points must land, got ${draft.points.length}`);
-  assert((await storedPointCount(pool, draft.id)) === 33, "33 template_points rows must be stored");
+  // F2.8: the feeder is stock v2 — 33 measured points plus the three
+  // `bms-calc-v2` derived points (`site_kw`, `it_kw`, `pue`) on the incomer.
+  // The import writes the derived rows through the same `template_points`
+  // path, so the stored count is the whole entry, not the measured half.
+  assert(draft.stockCode === FEEDER_CODE && draft.stockVersion === 2, "the feeder import is stamped v2");
+  assert(draft.points.length === 36, `36 points must land, got ${draft.points.length}`);
+  assert((await storedPointCount(pool, draft.id)) === 36, "36 template_points rows must be stored");
+  const derivedKeys = draft.points.filter((point) => point.kind === "derived").map((point) => point.pointKey);
+  assert(
+    derivedKeys.length === 3 && derivedKeys.join(",") === "site_kw,it_kw,pue",
+    `the three F2.8 derived points must land in order, got [${derivedKeys.join(",")}]`,
+  );
   const alarms = (draft.content as { alarms?: Record<string, unknown>[] }).alarms ?? [];
   assert(alarms.length === 11, `11 alarms must survive, got ${alarms.length}`);
   assert(
