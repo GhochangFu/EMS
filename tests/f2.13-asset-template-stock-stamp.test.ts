@@ -18,7 +18,6 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  */
 const MIGRATION_PREFIX = "0061_";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
-const PREVIOUS_WHEN = 1788870783386; // 0060's `when`.
 
 /**
  * Comments stripped before every assertion. The `f3.1a` lesson: a header
@@ -133,13 +132,18 @@ describe("F2.13 asset_templates stock stamp (ADR 0052, mirrors 0056)", () => {
         "by tag; an unjournalled .sql file is silently skipped.",
     ).toBeDefined();
 
+    const previous = journal.entries.find((e) => e.tag === "0060_asset_role_estate_shapes");
+    expect(
+      previous,
+      "journal entry with tag \"0060_asset_role_estate_shapes\" not found.",
+    ).toBeDefined();
+
     expect(
       entry?.when,
-      "migration 0061's journal when must be strictly greater than 0060's " +
-        `(${PREVIOUS_WHEN}). A generated when is behind 0060's — drizzle applies nothing on ` +
-        "a database that already holds 0060, and every check downstream passes against a " +
-        "schema short two columns.",
-    ).toBeGreaterThan(PREVIOUS_WHEN);
+      "migration 0061's journal when must be strictly greater than 0060's — a generated " +
+        "when is behind 0060's — drizzle applies nothing on a database that already holds " +
+        "0060, and every check downstream passes against a schema short two columns.",
+    ).toBeGreaterThan(previous!.when);
   });
 
   it("packages/db/src/schema/bms-schema.ts declares stockCode/stockVersion on assetTemplates", () => {
