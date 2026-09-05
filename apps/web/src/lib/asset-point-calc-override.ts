@@ -1,5 +1,6 @@
 import {
   CALC_DIALECT,
+  CALC_DIALECT_V2,
   MAX_CALC_INTERVAL_SECONDS,
   MAX_INPUT_AGE_SECONDS_BOUND,
   MIN_CALC_INTERVAL_SECONDS,
@@ -176,10 +177,11 @@ export function draftProblems(
   const problems: string[] = [];
 
   const merged = {
+    formulaDialect: body.formulaDialect ?? config.template.formulaDialect,
     calcTrigger: body.calcTrigger ?? config.template.calcTrigger,
     calcIntervalSeconds: body.calcIntervalSeconds ?? config.template.calcIntervalSeconds,
   };
-  const inherited = (field: "calcTrigger" | "calcIntervalSeconds"): string =>
+  const inherited = (field: keyof AssetPointCalcOverrideFields): string =>
     body[field] === null ? " (inherited from the template)" : "";
 
   if (CALC_FIELDS.every((field) => body[field] === null)) {
@@ -210,6 +212,23 @@ export function draftProblems(
         `The input validity window must be between 1 and ${MAX_INPUT_AGE_SECONDS_BOUND} seconds.`,
       );
     }
+  }
+
+  // ADR 0055 decision 10, in `validateMergedCalcOverride`'s exact sentence.
+  //
+  // The dialect is **not an input on this panel** — `draftToBody` sends `v1`
+  // beside a formula and nothing otherwise — so the `v2` half of this pair can
+  // only ever be inherited, and the message says so through
+  // `inherited("formulaDialect")`. That is the whole D-1 shape decision 6 makes
+  // easy: the author overrides Runs and never types the field that makes the
+  // choice illegal.
+  if (merged.formulaDialect === CALC_DIALECT_V2 && merged.calcTrigger === "streaming") {
+    problems.push(
+      `The merged formulaDialect is "${CALC_DIALECT_V2}"${inherited("formulaDialect")} but ` +
+        `calcTrigger is "streaming"${inherited("calcTrigger")}. A "${CALC_DIALECT_V2}" point ` +
+        `requires calcTrigger: "scheduled" — a cross-asset formula resolves its members once ` +
+        "per sweep and cannot run on a single reading.",
+    );
   }
 
   // D-1, in the same terms the API uses.

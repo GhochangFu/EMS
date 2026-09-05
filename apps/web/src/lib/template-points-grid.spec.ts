@@ -73,6 +73,33 @@ function derivedPoint(overrides: Record<string, unknown> = {}) {
   });
 }
 
+/**
+ * A `bms-calc-v2` derived point carrying a **non-null** `minCoverageRatio`.
+ *
+ * Separate from `derivedPoint` rather than a flipped field on it, because every
+ * other case in this file reads that fixture and a ratio on them would be
+ * refused by `templatePointBodySchema` (ADR 0055 decision 11: only a `v2`
+ * derived point may carry one).
+ *
+ * **0.8, never `null`.** A `null` fixture passes whether the field is carried
+ * or discarded, which is exactly how the discard this row fixes survived the
+ * suite in the first place.
+ */
+function v2DerivedPoint(overrides: Record<string, unknown> = {}) {
+  return derivedPoint({
+    id: "p3",
+    pointKey: "SITE_KW",
+    label: "Site load",
+    formula: "sum({CHW_SUPPLY_T} @site)",
+    formulaDialect: "bms-calc-v2",
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 300,
+    minCoverageRatio: 0.8,
+    sortOrder: 2,
+    ...overrides,
+  });
+}
+
 function template(points: unknown[]): AdminAssetTemplateDto {
   return adminAssetTemplateDtoSchema.parse({
     id: "t1",
@@ -128,14 +155,139 @@ export function runCalcFieldsSurviveARoundTripTests(): void {
   assert(
     sent ===
       "calcIntervalSeconds,calcTrigger,formula,formulaDialect,kind,label,maxInputAgeSeconds," +
-        "pointKey,required,sortOrder,sourceDataKeyPattern,unit",
-    `the payload must carry all twelve fields — got ${sent}`,
+        "minCoverageRatio,pointKey,required,sortOrder,sourceDataKeyPattern,unit",
+    `the payload must carry all thirteen fields — got ${sent}`,
   );
 
   // An untouched grid round-trips to exactly what the server holds.
   assert(
     !pointsHaveChanged(pointRowsFrom(row), row),
     "loading and immediately saving must be a no-op — it deletes and reinserts every row",
+  );
+}
+
+/**
+ * **`F2.9` finding 39 — `minCoverageRatio` is carried, or the first save from
+ * either tab silently stops a working formula.**
+ *
+ * The same shape as the calc fields above, with a sharper consequence. ADR 0055
+ * decision 11 makes an absent ratio **fail closed**: the aggregate refuses
+ * rather than computing over whatever members happen to be fresh. So a grid
+ * that dropped the field would send `minCoverageRatio: null` for a stock `v2`
+ * point, the server would accept it, and the formula would stop producing
+ * values with nothing on screen saying why. The value itself is unrecoverable
+ * — it lives in no other column.
+ *
+ * `setPointKind` clears it on derived → measured, because
+ * `templatePointBodySchema` refuses the ratio on anything that is not a `v2`
+ * derived point; leaving it would turn a kind change into a 400 naming a field
+ * this grid never showed.
+ */
+export function runMinCoverageRatioSurvivesARoundTripTests(): void {
+  const row = template([point(), derivedPoint(), v2DerivedPoint()]);
+  const rows = pointRowsFrom(row);
+
+  assert(
+    rows[2].minCoverageRatio === 0.8,
+    `the grid row must hold the stored ratio, got ${JSON.stringify(rows[2].minCoverageRatio)}`,
+  );
+
+  const payload = buildPointsPayload(rows);
+  assert(
+    payload[2].minCoverageRatio === 0.8,
+    `minCoverageRatio lost on the round trip — got ${JSON.stringify(payload[2].minCoverageRatio)}`,
+  );
+  assert(
+    payload[1].minCoverageRatio === null,
+    `a v1 derived point carries null, not undefined — got ${JSON.stringify(payload[1].minCoverageRatio)}`,
+  );
+
+  assert(
+    !pointsHaveChanged(rows, row),
+    "loading and immediately saving a v2 point must still be a no-op",
+  );
+
+  // A new row starts with no ratio: `blankPointRow` is measured, and only a
+  // `v2` derived point may carry one.
+  assert(
+    blankPointRow(rows).minCoverageRatio === null,
+    "a blank row carries no ratio",
+  );
+
+  // derived → measured clears it, alongside the five calc fields.
+  const measured = setPointKind(rows[2], "measured");
+  assert(
+    measured.minCoverageRatio === null,
+    `derived → measured must clear the ratio, got ${JSON.stringify(measured.minCoverageRatio)}`,
+  );
+}
+
+/**
+ * `brokenFormulaRefs` reads each row under **its own** dialect.
+ *
+ * Two rules, and only one of them is dialect-dependent:
+ *
+ * - "no longer in this template" stays under **both** dialects. A local `{ref}`
+ *   naming a key the grid no longer holds is broken however it is parsed, and
+ *   it is this tab's edit that broke it.
+ * - "which is now derived" is ADR 0036 decision 7, and ADR 0055 decision 7
+ *   repeals it for `v2`. Reporting it on a `v2` row would refuse the dialect's
+ *   own purpose, on a tab with no way to fix it.
+ *
+ * The `v1` control below is the anti-vacuity half: the identical formula on a
+ * `v1` row still reports **both** problems, so "not reported under `v2`" cannot
+ * be satisfied by reporting nothing anywhere.
+ *
+ * Parsing under the row's dialect is what makes any of this reachable —
+ * `parseFormula` under `v1` fails at the `@` of an aggregate, and a formula
+ * that does not parse is skipped entirely.
+ */
+export function runBrokenFormulaRefsReadTheRowsDialectTests(): void {
+  const rows = pointRowsFrom(
+    template([
+      point(),
+      derivedPoint(),
+      v2DerivedPoint({ formula: "{COOLING_KW} + {GONE}" }),
+    ]),
+  );
+
+  const underV2 = brokenFormulaRefs(rows).filter((problem) => problem.row === 2);
+  assert(
+    underV2.length === 1,
+    `a v2 row reports only the removed key — got ${JSON.stringify(underV2)}`,
+  );
+  assert(
+    underV2[0].message.includes('"GONE"') &&
+      underV2[0].message.includes("no longer in this template"),
+    `the removed-key message must name GONE, got: ${underV2[0].message}`,
+  );
+  assert(
+    !underV2.some((problem) => problem.message.includes("is now derived")),
+    "ADR 0055 decision 7 — a v2 formula may reference a derived sibling",
+  );
+
+  const asV1 = rows.map((row, index) =>
+    index === 2 ? { ...row, formulaDialect: "bms-calc-v1" as const } : row,
+  );
+  const underV1 = brokenFormulaRefs(asV1).filter((problem) => problem.row === 2);
+  assert(
+    underV1.length === 2,
+    `the same formula on a v1 row reports both problems — got ${JSON.stringify(underV1)}`,
+  );
+  assert(
+    underV1.some((problem) => problem.message.includes("is now derived")),
+    "decision 3 freezes the v1 refusal: it must still fire",
+  );
+
+  // A key that exists only inside an aggregate is not a local reference, so the
+  // "no longer in this template" rule does not reach it — the asset it resolves
+  // against is another one. Under `v1` the same text does not parse at all.
+  const crossOnly = pointRowsFrom(
+    template([point(), v2DerivedPoint({ formula: "sum({SITE_TOTAL} @site)" })]),
+  );
+  assert(
+    brokenFormulaRefs(crossOnly).length === 0,
+    `a cross-asset reference is exempt — got ${JSON.stringify(brokenFormulaRefs(crossOnly))}`,
   );
 }
 

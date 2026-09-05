@@ -6,7 +6,14 @@
  * derivation the module uses — two copies of one arithmetic agreeing proves
  * nothing about either.
  */
-import { CALC_DIALECT, CalcTokenizeError, tokenize, validateFormula, type TemplateKpi } from "@bms/shared";
+import {
+  CALC_DIALECT,
+  CALC_DIALECT_V2,
+  CalcTokenizeError,
+  tokenize,
+  validateFormula,
+  type TemplateKpi,
+} from "@bms/shared";
 
 import {
   upgradeKpiToCalcDialect,
@@ -100,6 +107,128 @@ export function runDerivedReferenceTests(): void {
   assert(
     self.message !== sibling.message,
     "the self-reference and sibling-reference messages must differ",
+  );
+}
+
+/**
+ * Case 3b — `bms-calc-v2` admits exactly what `v1` refuses above.
+ *
+ * ADR 0055 decision 7 repeals the derived-reference ban for `v2`: a cross-asset
+ * formula reads other assets' points, and a site total is a derived point by
+ * construction, so keeping the ban would refuse the dialect's own purpose.
+ * Decision 3 freezes the `v1` half forever — `runDerivedReferenceTests` above
+ * **is** that half and does not change.
+ *
+ * The third assertion is this pair's anti-vacuity case. Without it "admitted
+ * under `v2`" could equally mean "admitted", and the whole gate could be
+ * deleted with these assertions still green.
+ */
+export function runV2AdmitsDerivedReferenceTests(): void {
+  const sibling = validateDerivedFormula("{D} * 2", POINTS, "OTHER", CALC_DIALECT_V2);
+  assert(
+    sibling.state === "ok",
+    `v2 must admit a derived sibling, got ${JSON.stringify(sibling)}`,
+  );
+  if (sibling.state !== "ok") {
+    return;
+  }
+  assert(sibling.refs.join(",") === "D", `refs must be ["D"], got ${JSON.stringify(sibling.refs)}`);
+
+  const aggregate = validateDerivedFormula("sum({A} @site)", POINTS, "D", CALC_DIALECT_V2);
+  assert(
+    aggregate.state === "ok",
+    `v2 must parse an aggregate, got ${JSON.stringify(aggregate)}`,
+  );
+  if (aggregate.state !== "ok") {
+    return;
+  }
+  // An aggregate's reference is cross-asset, so it is not a local ref at all.
+  // The empty array is the whole of Q3b's exemption: nothing downstream can
+  // demand that `A` be declared here, because the asset it resolves against is
+  // not known until evaluation time.
+  assert(
+    aggregate.refs.length === 0,
+    `an aggregate names no local ref — refs must be empty, got ${JSON.stringify(aggregate.refs)}`,
+  );
+
+  const underV1 = onlyDiagnostic(
+    validateDerivedFormula("sum({A} @site)", POINTS, "D"),
+    "the same aggregate under v1",
+  );
+  // Read off a red run, not computed: `sum({A} ` is eight characters, so the
+  // `@` the `v1` tokenizer cannot accept sits at 8.
+  assert(underV1.from === 8, `the v1 error must sit on the "@" at 8, got ${underV1.from}`);
+}
+
+/**
+ * Case 3c — a `v2` KPI's `pointKeys` lists its **local** references only.
+ *
+ * The owner's Q3b ruling, mirrored from `templateKpiSchema`'s `superRefine`
+ * (`asset-templates-content.schema.ts:349-368`). A key that appears solely
+ * inside an aggregate or a qualified reference is exempt from **both**
+ * directions: it need not be declared, and it does not count as "used".
+ *
+ * The second case is the anti-vacuity one, and it is the same case Task 8b used
+ * on the API side: the exemption is a **narrowing**, not "skip the check under
+ * `v2`". Declaring a key that no local reference uses is still refused.
+ */
+export function runV2KpiPointKeyExemptionTests(): void {
+  const allCross = {
+    expression: "sum({SITE_KW} @site)",
+    pointKeys: [],
+    dialect: CALC_DIALECT_V2,
+  } as const;
+  const exempt = validateKpiExpression(allCross, DECLARED);
+  assert(
+    exempt.state === "ok",
+    `a v2 KPI whose every reference is cross-asset must validate with pointKeys: [] — got ` +
+      JSON.stringify(exempt),
+  );
+
+  const overDeclared = onlyDiagnostic(
+    validateKpiExpression({ ...allCross, pointKeys: ["SITE_KW"] }, DECLARED),
+    "a declared key used only inside an aggregate",
+  );
+  assert(
+    overDeclared.message === "Every entry in pointKeys must be referenced by expression at least once",
+    `the narrowed check must still refuse an unused entry, got: ${overDeclared.message}`,
+  );
+
+  const mixed = validateKpiExpression(
+    { expression: "sum({A} @site) + {A}", pointKeys: ["A"], dialect: CALC_DIALECT_V2 },
+    DECLARED,
+  );
+  assert(mixed.state === "ok", `a mixed local/cross v2 KPI must validate, got ${JSON.stringify(mixed)}`);
+  if (mixed.state !== "ok") {
+    return;
+  }
+  assert(mixed.refs.join(",") === "A", `the local half is the ref, got ${JSON.stringify(mixed.refs)}`);
+}
+
+/**
+ * **Validate must not rewrite a `v2` row to `v1`.**
+ *
+ * `upgradeKpiToCalcDialect` stamped `CALC_DIALECT` unconditionally, so pressing
+ * **Validate this expression** on a stored `v2` KPI downgraded it — the same
+ * class of defect as the Calculations tab stamping `v1` on every formula edit:
+ * an existing control damaging a row it did not author.
+ */
+export function runV2KpiUpgradeKeepsItsDialectTests(): void {
+  const kpi: TemplateKpi = {
+    code: "SITE_KW",
+    name: "Site load",
+    pointKeys: [],
+    expression: "sum({SITE_KW} @site)",
+    dialect: CALC_DIALECT_V2,
+  };
+  const result = upgradeKpiToCalcDialect(kpi, DECLARED);
+  assert(
+    result.validation.state === "ok",
+    `a v2 expression must validate under v2, got ${JSON.stringify(result.validation)}`,
+  );
+  assert(
+    result.kpi.dialect === CALC_DIALECT_V2,
+    `Validate must leave a v2 row at v2, got "${result.kpi.dialect}"`,
   );
 }
 

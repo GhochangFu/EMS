@@ -101,6 +101,11 @@ function expectedPoint(index: number): Record<string, unknown> {
     calcTrigger: null,
     calcIntervalSeconds: null,
     maxInputAgeSeconds: null,
+    // `F2.9` Task 15 — `buildPointsPayload` carries ADR 0055 decision 11's
+    // ratio, so the whole-payload comparison below sees it on every point.
+    // `null` on a measured one: only a `bms-calc-v2` derived point may hold a
+    // value, and the server refuses it anywhere else.
+    minCoverageRatio: null,
   };
 }
 

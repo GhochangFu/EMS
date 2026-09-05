@@ -86,7 +86,12 @@ export function CalculationsTab({
   const formulaProblems = derivedIndexes.filter(
     (entry) =>
       validateEditorFormula(
-        { mode: "derived", points: siblings, selfPointKey: entry.row.pointKey },
+        {
+          mode: "derived",
+          points: siblings,
+          selfPointKey: entry.row.pointKey,
+          dialect: entry.row.formulaDialect ?? CALC_DIALECT,
+        },
         entry.row.formula ?? "",
       ).state === "error",
   );
@@ -126,7 +131,12 @@ export function CalculationsTab({
 
       {derivedIndexes.map(({ row, index }) => {
         const validation = validateEditorFormula(
-          { mode: "derived", points: siblings, selfPointKey: row.pointKey },
+          {
+            mode: "derived",
+            points: siblings,
+            selfPointKey: row.pointKey,
+            dialect: row.formulaDialect ?? CALC_DIALECT,
+          },
           row.formula ?? "",
         );
         const problems = [
@@ -154,6 +164,11 @@ export function CalculationsTab({
                 mode="derived"
                 points={siblings}
                 selfPointKey={row.pointKey}
+                // The formula's own dialect, not this editor's. Under
+                // `bms-calc-v2` the linter must admit a derived sibling and
+                // completion must offer one (ADR 0055 decision 7); under `v1`
+                // both stay exactly as decision 3 freezes them.
+                dialect={row.formulaDialect ?? CALC_DIALECT}
                 value={row.formula ?? ""}
                 // ADR 0038 decision 3's one load-bearing line, expressed
                 // through the named rule rather than through `!editable`.
@@ -165,9 +180,18 @@ export function CalculationsTab({
                 onChange={(next) =>
                   update(index, {
                     formula: next,
-                    // The dialect is this editor's, never typed. A formula with
-                    // no dialect is refused, and there is exactly one.
-                    formulaDialect: CALC_DIALECT,
+                    // **The row's own dialect, defaulting to `v1` only when it
+                    // has none.** There is no dialect control on this tab (one
+                    // is `F2.22`'s), so this line is not a choice the author
+                    // makes — it is what an edit preserves.
+                    //
+                    // Stamping `CALC_DIALECT` unconditionally silently
+                    // downgraded a stored `bms-calc-v2` formula to `v1` on the
+                    // first keystroke, and the API then refused its own syntax
+                    // at the `@` of the aggregate it had itself stored. A
+                    // control that damages a row it did not author is the worst
+                    // shape this tab can take.
+                    formulaDialect: row.formulaDialect ?? CALC_DIALECT,
                   })
                 }
               />

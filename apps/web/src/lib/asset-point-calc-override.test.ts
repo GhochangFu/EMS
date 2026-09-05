@@ -9,6 +9,7 @@ import {
   runDraftToBodyTests,
   runEmptySubmitIsRefusedTests,
   runFieldRowTests,
+  runV2IsScheduledOnlyTests,
 } from "./asset-point-calc-override.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -43,5 +44,9 @@ describe("F2.6 — per-point calc override panel rules", () => {
 
   it("refuses an empty form and points at Clear", () => {
     runEmptySubmitIsRefusedTests();
+  });
+
+  it("refuses a streaming override on a merged bms-calc-v2 point (ADR 0055 decision 10)", () => {
+    runV2IsScheduledOnlyTests();
   });
 });

@@ -29,8 +29,10 @@
  */
 import {
   CALC_DIALECT,
+  CALC_DIALECTS,
   formatCalcError,
   validateFormula,
+  type CalcDialect,
   type CalcParseError,
   type TemplateKpi,
   type TemplatePointKind,
@@ -118,8 +120,14 @@ const UNDECLARED_KPI_REFERENCE_MESSAGE =
  * be reported past the last token — and both are better than a zero-width mark
  * the author cannot see.
  */
-function rangeAt(formula: string, position: number): { from: number; to: number } {
-  const token = safeTokenize(formula).find((candidate) => candidate.position === position);
+function rangeAt(
+  formula: string,
+  position: number,
+  dialect: CalcDialect = CALC_DIALECT,
+): { from: number; to: number } {
+  const token = safeTokenize(formula, dialect).find(
+    (candidate) => candidate.position === position,
+  );
   if (!token) {
     return { from: clampOffset(position, formula), to: formula.length };
   }
@@ -127,13 +135,17 @@ function rangeAt(formula: string, position: number): { from: number; to: number 
 }
 
 /** Renders a parser error as a positioned diagnostic. */
-function toDiagnostic(formula: string, error: CalcParseError): FormulaDiagnostic {
-  return { message: formatCalcError(error), ...rangeAt(formula, error.position) };
+function toDiagnostic(
+  formula: string,
+  error: CalcParseError,
+  dialect: CalcDialect = CALC_DIALECT,
+): FormulaDiagnostic {
+  return { message: formatCalcError(error), ...rangeAt(formula, error.position, dialect) };
 }
 
 /** Every `ref` token in source order. */
-function refTokens(formula: string): Token[] {
-  return safeTokenize(formula).filter((token) => token.kind === "ref");
+function refTokens(formula: string, dialect: CalcDialect = CALC_DIALECT): Token[] {
+  return safeTokenize(formula, dialect).filter((token) => token.kind === "ref");
 }
 
 /**
@@ -157,22 +169,44 @@ function wholeText(formula: string, message: string): FormulaDiagnostic {
  * where the server scans `result.refs`. The rule is identical; the order only
  * decides which reference is reported first when a formula breaks it twice, and
  * source order is the one the author is looking at.
+ *
+ * ## The derived-reference refusal runs under `bms-calc-v1` only
+ *
+ * ADR 0055 decision 7 repeals ADR 0036 decision 7 for `bms-calc-v2`: a
+ * cross-asset formula reads other assets' points, and a site total is a derived
+ * point by construction, so keeping the ban would refuse the dialect's own
+ * purpose. Decision 3 freezes the `v1` half **forever** — that arm is not a
+ * default to be revisited, it is the meaning `v1` is guaranteed to keep.
+ *
+ * What replaces the ban under `v2` is a **cycle** check on the real dependency
+ * graph, which needs membership resolution and therefore lives on the server
+ * (`F2.9` Task 12). This function cannot do it and does not pretend to; the
+ * editor mirror of those diagnostics is `F2.22`'s.
+ *
+ * `dialect` defaults to `v1`, so every caller that predates `F2.9` is unchanged
+ * without restating it.
  */
 export function validateDerivedFormula(
   formula: string,
   points: readonly FormulaPoint[],
   selfPointKey: string,
+  dialect: CalcDialect = CALC_DIALECT,
 ): FormulaValidation {
   const result = validateFormula(
     formula,
     points.map((point) => point.pointKey),
+    { dialect },
   );
   if (!result.ok) {
-    return { state: "error", diagnostics: [toDiagnostic(formula, result.errors[0])] };
+    return { state: "error", diagnostics: [toDiagnostic(formula, result.errors[0], dialect)] };
+  }
+
+  if (dialect !== CALC_DIALECT) {
+    return { state: "ok", refs: result.refs };
   }
 
   const kindByKey = new Map(points.map((point) => [point.pointKey, point.kind]));
-  for (const token of refTokens(formula)) {
+  for (const token of refTokens(formula, dialect)) {
     if (kindByKey.get(token.text) !== "derived") {
       continue;
     }
@@ -184,7 +218,7 @@ export function validateDerivedFormula(
             token.text === selfPointKey
               ? DERIVED_SELF_REFERENCE_MESSAGE
               : DERIVED_SIBLING_REFERENCE_MESSAGE,
-          ...rangeAt(formula, token.position),
+          ...rangeAt(formula, token.position, dialect),
         },
       ],
     };
@@ -200,15 +234,31 @@ export function validateDerivedFormula(
  * `"unvalidated"`; the upgrade path acts on a KPI whose dialect is exactly
  * `"unvalidated"`, so delegating to the public function would make the upgrade
  * unable to ever succeed. Both call this instead.
+ *
+ * **Both directions are narrowed to LOCAL references under `bms-calc-v2`** —
+ * the owner's `F2.9` Q3b ruling, mirroring `templateKpiSchema.superRefine`
+ * (`asset-templates-content.schema.ts:349-368`). A key that appears solely
+ * inside an aggregate (`sum({kw} @site)`) or a qualified reference
+ * (`{CODE.key}`) is exempt from both: it need not appear in `pointKeys`, it
+ * does not count as "used", and the template need not declare it, because the
+ * asset it resolves against is not known until evaluation time.
+ *
+ * That exemption is almost free. `validateFormula` already checks local
+ * references only, and `result.refs` is local by construction — so the one
+ * addition is the `used.has` guard on the declared-key scan, which walks raw
+ * `ref` tokens and would otherwise reach inside an aggregate. **Under `v1` that
+ * guard is a provable no-op**: every `ref` token in a formula that passed
+ * `validateFormula` is a local reference, so `used` holds all of them.
  */
 function checkKpiExpression(
   expression: string,
   pointKeys: readonly string[],
   declaredPointKeys: readonly string[],
+  dialect: CalcDialect,
 ): FormulaValidation {
-  const result = validateFormula(expression, pointKeys);
+  const result = validateFormula(expression, pointKeys, { dialect });
   if (!result.ok) {
-    return { state: "error", diagnostics: [toDiagnostic(expression, result.errors[0])] };
+    return { state: "error", diagnostics: [toDiagnostic(expression, result.errors[0], dialect)] };
   }
 
   const used = new Set(result.refs);
@@ -217,14 +267,17 @@ function checkKpiExpression(
   }
 
   const declared = new Set(declaredPointKeys);
-  for (const token of refTokens(expression)) {
-    if (declared.has(token.text)) {
+  for (const token of refTokens(expression, dialect)) {
+    if (!used.has(token.text) || declared.has(token.text)) {
       continue;
     }
     return {
       state: "error",
       diagnostics: [
-        { message: UNDECLARED_KPI_REFERENCE_MESSAGE, ...rangeAt(expression, token.position) },
+        {
+          message: UNDECLARED_KPI_REFERENCE_MESSAGE,
+          ...rangeAt(expression, token.position, dialect),
+        },
       ],
     };
   }
@@ -233,38 +286,70 @@ function checkKpiExpression(
 }
 
 /**
+ * The dialect a stored KPI is checked under, or `null` for `"unvalidated"`.
+ *
+ * Resolved through `CALC_DIALECTS` rather than compared to the two literals:
+ * `TemplateKpi["dialect"]` widened with the Q3 ruling and a third member would
+ * otherwise be read as `"unvalidated"` by a check nobody remembered to extend.
+ */
+function checkedDialect(dialect: TemplateKpi["dialect"]): CalcDialect | null {
+  return CALC_DIALECTS.find((known) => known === dialect) ?? null;
+}
+
+/**
  * Validates a KPI as stored.
  *
  * A KPI at `dialect: "unvalidated"` is **never an error** — ADR 0038 decision 9.
  * `F2.3` shipped this column before the parser existed and templates on `main`
  * hold expressions that never met it.
+ *
+ * **`"unvalidated"` is now the only silent state** (`F2.9`). It used to be
+ * "anything that is not `v1`", which made a stored `bms-calc-v2` KPI free text
+ * in the editor while `isCheckedDialect` — already widened by the Q3 ruling —
+ * told the same field it was checked. The two disagreed, and the field showed
+ * neither highlighting nor a diagnostic for an expression the server would
+ * happily parse.
  */
 export function validateKpiExpression(
   kpi: KpiFormulaInput,
   declaredPointKeys: readonly string[],
 ): FormulaValidation {
-  if (kpi.dialect !== CALC_DIALECT) {
+  const dialect = checkedDialect(kpi.dialect);
+  if (dialect === null) {
     return { state: "unvalidated" };
   }
-  return checkKpiExpression(kpi.expression, kpi.pointKeys, declaredPointKeys);
+  return checkKpiExpression(kpi.expression, kpi.pointKeys, declaredPointKeys, dialect);
 }
 
 /**
  * The **Validate this expression** action (ADR 0038 decision 9).
  *
  * Returns one `FormulaValidation` — the same vocabulary every other caller
- * reads — beside the KPI to store. On success that is a new object carrying
- * `dialect: "bms-calc-v1"`. On failure it is **the input reference itself**, so
- * a caller that writes `result.kpi` unconditionally still writes nothing new:
- * not the dialect, not the expression.
+ * reads — beside the KPI to store. On failure the KPI is **the input reference
+ * itself**, so a caller that writes `result.kpi` unconditionally still writes
+ * nothing new: not the dialect, not the expression.
+ *
+ * **The target dialect is the row's own, not a hardcoded `v1`** (`F2.9`). An
+ * `"unvalidated"` row is upgraded to `bms-calc-v1`, which is what this function
+ * has always done and what its name says. A row that already names a real
+ * dialect is validated **under that dialect and left on it** — stamping
+ * `CALC_DIALECT` here rewrote a stored `bms-calc-v2` KPI to `v1` every time the
+ * author pressed **Validate this expression**, which is the same class of
+ * damage as an editor stamping its own dialect over a formula it did not write.
  */
 export function upgradeKpiToCalcDialect(
   kpi: TemplateKpi,
   declaredPointKeys: readonly string[],
 ): { validation: FormulaValidation; kpi: TemplateKpi } {
-  const validation = checkKpiExpression(kpi.expression, kpi.pointKeys, declaredPointKeys);
+  const dialect = checkedDialect(kpi.dialect) ?? CALC_DIALECT;
+  const validation = checkKpiExpression(
+    kpi.expression,
+    kpi.pointKeys,
+    declaredPointKeys,
+    dialect,
+  );
   if (validation.state !== "ok") {
     return { validation, kpi };
   }
-  return { validation, kpi: { ...kpi, dialect: CALC_DIALECT } };
+  return { validation, kpi: { ...kpi, dialect } };
 }

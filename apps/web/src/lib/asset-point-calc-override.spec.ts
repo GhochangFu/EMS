@@ -1,3 +1,4 @@
+import { CALC_DIALECT_V2 } from "@bms/shared";
 import type { AssetPointCalcConfigDto } from "@bms/shared";
 
 import {
@@ -29,6 +30,22 @@ const NOTHING = {
 const SCHEDULED_TEMPLATE = {
   formula: "{KW} * 2",
   formulaDialect: "bms-calc-v1",
+  calcTrigger: "scheduled",
+  calcIntervalSeconds: 300,
+  maxInputAgeSeconds: 600,
+} as const;
+
+/**
+ * A `bms-calc-v2` template point.
+ *
+ * `scheduled`, because the server refuses any other shape (ADR 0055 decision
+ * 10) — a stored `v2` streaming point cannot exist, so the only way to reach
+ * the merged refusal is an override that sets the trigger while the dialect
+ * inherits.
+ */
+const V2_TEMPLATE = {
+  formula: "sum({KW} @site)",
+  formulaDialect: CALC_DIALECT_V2,
   calcTrigger: "scheduled",
   calcIntervalSeconds: 300,
   maxInputAgeSeconds: 600,
@@ -221,6 +238,57 @@ export function runBoundsTests(): void {
   assert(
     draftProblems({ ...EMPTY_DRAFT, calcIntervalSeconds: "45.5" }, target).length > 0,
     "a fractional interval is not a whole number of seconds",
+  );
+}
+
+/**
+ * ADR 0055 decision 10 on the **merged** pair, word for word from the API.
+ *
+ * The mistake decision 6 makes easy: the author overrides `Runs` to streaming
+ * and never types the dialect that makes it illegal, because the dialect is not
+ * an input on this panel at all — `draftToBody` can only ever send `v1` beside
+ * a formula. So the `v2` half is always inherited, and the message says so.
+ *
+ * The wording is compared in full rather than by substring. The API's sentence
+ * and this one are two copies of one rule that `apps/web` cannot import; a
+ * substring assertion is exactly what lets them drift apart while staying
+ * green.
+ *
+ * The `v1` control is the anti-vacuity half — the same override on a `v1`
+ * template must raise the interval problem and **not** this one.
+ */
+export function runV2IsScheduledOnlyTests(): void {
+  const problems = draftProblems(
+    { ...EMPTY_DRAFT, calcTrigger: "streaming" },
+    config({}, { ...V2_TEMPLATE }),
+  );
+  const v2 = problems.filter((problem) => problem.includes(`A "${CALC_DIALECT_V2}" point`));
+  assert(
+    v2.length === 1,
+    `a streaming override on a v2 point is refused once — got ${JSON.stringify(problems)}`,
+  );
+  assert(
+    v2[0] ===
+      `The merged formulaDialect is "${CALC_DIALECT_V2}" (inherited from the template) but ` +
+        `calcTrigger is "streaming". A "${CALC_DIALECT_V2}" point requires calcTrigger: ` +
+        '"scheduled" — a cross-asset formula resolves its members once per sweep and cannot ' +
+        "run on a single reading.",
+    `the panel must use the API's sentence verbatim, got: ${v2[0]}`,
+  );
+
+  const v1 = draftProblems({ ...EMPTY_DRAFT, calcTrigger: "streaming" }, config());
+  assert(
+    v1.length > 0,
+    "a v1 template scheduled with an interval still refuses a streaming override",
+  );
+  assert(
+    !v1.some((problem) => problem.includes(CALC_DIALECT_V2)),
+    `nothing v2 may be said about a v1 point — got ${JSON.stringify(v1)}`,
+  );
+
+  assert(
+    !canSubmit({ ...EMPTY_DRAFT, calcTrigger: "streaming" }, config({}, { ...V2_TEMPLATE })),
+    "and Save stays disabled",
   );
 }
 

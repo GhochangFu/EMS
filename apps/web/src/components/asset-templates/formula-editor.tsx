@@ -42,6 +42,7 @@ import { useEffect, useRef } from "react";
 import { calcDecorations } from "../../lib/calc-decorations";
 import {
   completionKeys,
+  decorationDialect,
   editorDiagnosticRanges,
   flattenNewlines,
   isCheckedDialect,
@@ -167,7 +168,15 @@ function buildExtensions(
         // `calcDecorations` returns source order, which is what
         // `RangeSetBuilder` requires. It also returns `[]` for text that does
         // not lex — the normal state mid-keystroke, not an error.
-        for (const decoration of calcDecorations(view.state.doc.toString())) {
+        //
+        // `F2.9` Task 15: lexed under the row's own dialect. Without it a `v2`
+        // formula is lexed as `v1`, stops at the `@`, and renders unstyled from
+        // there on — silent rather than wrong, but the author sees plain text
+        // where every other formula is coloured and reads it as broken.
+        for (const decoration of calcDecorations(
+          view.state.doc.toString(),
+          decorationDialect(propsRef.current),
+        )) {
           builder.add(
             decoration.from,
             decoration.to,

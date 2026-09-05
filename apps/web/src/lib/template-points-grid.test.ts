@@ -2,12 +2,14 @@ import { describe, it } from "vitest";
 
 import {
   runBrokenFormulaRefTests,
+  runBrokenFormulaRefsReadTheRowsDialectTests,
   runCalcFieldsSurviveARoundTripTests,
   runChangeDetectionTests,
   runEmptyOverridesBecomeNullTests,
   runGridErrorTests,
   runIncompleteDerivedPointTests,
   runKindChangeTests,
+  runMinCoverageRatioSurvivesARoundTripTests,
   runPointMetaSurvivesARoundTripTests,
   runSeedTests,
   runTierAuthoringTests,
@@ -21,6 +23,14 @@ describe("template points grid", () => {
 
   it("carries meta.tier through a load-and-save round trip, omitting the key for an untiered point (F2.13)", () => {
     runPointMetaSurvivesARoundTripTests();
+  });
+
+  it("carries minCoverageRatio through a round trip and clears it on derived → measured (F2.9)", () => {
+    runMinCoverageRatioSurvivesARoundTripTests();
+  });
+
+  it("reads each row's formula under its own dialect", () => {
+    runBrokenFormulaRefsReadTheRowsDialectTests();
   });
 
   it("seeds rows from the template and appends after the highest sortOrder", () => {

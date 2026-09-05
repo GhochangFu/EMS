@@ -9,6 +9,7 @@ import {
   runPointKeyResolutionTests,
   runSeedTests,
   runStoredV2KpiSurvivesTests,
+  runV2KpiIsSaveableAndKeepsItsDialectTests,
   runValidateActionTests,
   runValidatedRowCannotSaveBrokenTests,
 } from "./template-kpi-form.spec";
@@ -33,6 +34,10 @@ describe("template KPI form", () => {
 
   it("flips the dialect only when the expression validates", () => {
     runValidateActionTests();
+  });
+
+  it("keeps a stored v2 KPI saveable and leaves its dialect alone (F2.9)", () => {
+    runV2KpiIsSaveableAndKeepsItsDialectTests();
   });
 
   it("catches blank fields, duplicate codes and the section cap", () => {
