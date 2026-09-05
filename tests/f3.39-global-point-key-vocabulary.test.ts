@@ -659,7 +659,9 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // 602 since E5.3 PR 2: 500 + VERTICAL_TRANSPORT_CLASS_POINT_KEYS's 102, disjoint from
       // the 500 by construction: the eight codes the tag list shares with an existing
       // array or module are REFERENCED, never redeclared.
-      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(602);
+      // 605 since `F2.8` Task 1: 602 + UNIT_BY_KEY's three new entries
+      // (site_kw, it_kw, pue).
+      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(605);
 
       const missing: string[] = [];
       for (const arrayName of Object.keys(ARRAY_DOMAIN)) {
@@ -823,7 +825,9 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // same reason.
       // 602 since `E5.3` PR 2: 500 + `VERTICAL_TRANSPORT_CLASS_POINT_KEYS`'s 102, disjoint
       // by construction.
-      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(602);
+      // 605 since `F2.8` Task 1: 602 + `ELECTRICAL_CLASS_POINT_KEYS`'s three new
+      // derived codes (site_kw, it_kw, pue).
+      expect(codes.size, "the shared point-key arrays are empty").toBeGreaterThanOrEqual(605);
       expect(
         sql.split(";").filter((s) => s.trim().length > 0).length,
         "migration 0057 holds almost no statements",

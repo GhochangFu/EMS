@@ -403,7 +403,12 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // for: any other value is a dropped or misspelled row and not slack. The KPI
     // member count stays 12 for the FIFTH pack running. **This is the pack's
     // final value** — no `E5.3` commit follows the escalator.
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(897);
+    // 900 since `F2.8` Task 1 — raised ahead of Task 2's three
+    // `electrical-feeder.ts` rows (site_kw, it_kw, pue), per the plan's build
+    // order (vocabulary before content). Red until Task 2 adds the three
+    // `pointKey:` occurrences to the catalog text; Task 1 alone cannot satisfy
+    // it, and that is expected and reported at Task 1's gate.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(900);
     // 168 distinct, so a copy-pasted repetition cannot satisfy the bound above
     // alone: 33 feeder + 30 transformer + 38 DG + 29 UPS (battery_v and
     // ambient_temp_c repeat) + 25 PV (ambient_temp_c) + 13 APFC (thd_v_pct,
@@ -484,7 +489,10 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     // pack's final value**: no `E5.3` commit follows the escalator, and this is
     // the number that says nothing in either entry was double-counted or
     // quietly duplicated while the length bound above says nothing was dropped.
-    expect(new Set(pointKeys).size, "fewer distinct keys than the twenty-seven classes declare").toBeGreaterThanOrEqual(592);
+    // 595 since `F2.8` Task 1 — same reasoning as the length floor above: the
+    // three new codes are distinct new occurrences Task 2 adds to the catalog
+    // text, not to a vocabulary array, so this floor is also red until Task 2.
+    expect(new Set(pointKeys).size, "fewer distinct keys than the twenty-seven classes declare").toBeGreaterThanOrEqual(595);
     // 396 = the 289 E5.1 left (F2.11's 139 ELECTRICAL_CLASS_POINT_KEYS plus
     // F2.12's six promotions, plus the other arrays, plus E5.1's 98-code
     // WATER_CLASS_POINT_KEYS) + E5.2 pass A's 107-code
@@ -526,7 +534,11 @@ describe("F2.13 the stock asset-template catalog names point keys that exist", (
     }
     // 602 since E5.3 PR 2: 500 + VERTICAL_TRANSPORT_CLASS_POINT_KEYS's 102, disjoint by
     // construction.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(602);
+    //
+    // 605 since `F2.8` Task 1: 602 + `ELECTRICAL_CLASS_POINT_KEYS`'s three new
+    // derived codes (site_kw, it_kw, pue). This floor CAN go green in Task 1
+    // alone — it parses `constants.ts`'s arrays, not the catalog text.
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(605);
   });
 
   it("every catalog pointKey is a code a *_POINT_KEYS array holds", () => {
