@@ -86,7 +86,12 @@ function energyTable(preview: EnergyReportPreview): ReportCell[][] {
     // The cell type is what enforces the split; there is no regex deciding it.
     ["Total energy", preview.summary.totalKwh, "kWh"],
     ["Peak demand", preview.summary.peakKw, "kW"],
-    ["PUE estimate", preview.summary.pueEstimate, ""],
+    // `pueEstimate` is nullable from `F2.8`. The dash is **U+2014**, the glyph
+    // `KpiTile` renders for an empty tile, so the export and the screen agree.
+    // Not U+002D: that is an ADR 0026 formula leader and would arrive guarded as
+    // `'-`. As a string it routes to `csvTextCell` and is outside
+    // `assertFiniteCells`, which is typed on `number`.
+    ["PUE estimate", preview.summary.pueEstimate ?? "—", ""],
     ["Indicative cost", preview.summary.indicativeCostZar, "ZAR"],
     ["Tariff", preview.summary.tariffZarPerKwh, "ZAR/kWh"],
     [],

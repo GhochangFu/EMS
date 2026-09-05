@@ -12,6 +12,7 @@ import { KpiTile } from "../components/kpi-tile";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 import { AppShell } from "../layouts/app-shell";
+import { pueTileProps } from "../lib/pue-tile";
 import type { AuthUser } from "../stores/auth-store";
 
 const WINDOWS = ["24h", "7d", "30d"] as const;
@@ -124,12 +125,8 @@ export function EnergyPage({ user }: EnergyPageProps) {
             unit="kW"
             hint="Max total site kW in window"
           />
-          <KpiTile
-            label="PUE (est.)"
-            status={sumStatus}
-            value={s != null ? s.pueEstimate.toFixed(2) : null}
-            hint="From average load — same curve as Executive Dashboard"
-          />
+          {/* `F2.8` — the windowed Σ site_kw / Σ it_kw, or a dash with a reason. */}
+          <KpiTile label="PUE" {...pueTileProps(sumStatus, s?.pueEstimate)} />
           <KpiTile
             label="Indicative cost"
             status={sumStatus}

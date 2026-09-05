@@ -17,7 +17,11 @@ export const energyCentreSummarySchema = z.object({
   window: z.string(),
   totalKwh: z.number(),
   peakKw: z.number(),
-  pueEstimate: z.number(),
+  // Nullable since `F2.8` — the same ruling and the same reason as
+  // `dashboardKpisSchema.pueEstimate`, and this schema is reused by
+  // `energyReportPreviewSchema.summary`, so the CSV/XLSX export takes the null
+  // too (`reports.serialise.ts` writes U+2014).
+  pueEstimate: z.number().nullable(),
   indicativeCostZar: z.number(),
   tariffZarPerKwh: z.number(),
   asOf: z.string(),

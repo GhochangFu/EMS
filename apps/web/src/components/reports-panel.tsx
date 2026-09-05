@@ -8,6 +8,7 @@ import {
   fetchEnergyReportPreview,
   type EnergyReportInput,
 } from "../api/reports";
+import { pueTileProps } from "../lib/pue-tile";
 import { KpiTile } from "./kpi-tile";
 
 type ReportCard = {
@@ -218,12 +219,12 @@ export function ReportsPanel() {
             unit="kW"
             hint="Maximum hourly aggregate"
           />
-          <KpiTile
-            label="PUE (est.)"
-            status={status}
-            value={summary ? summary.pueEstimate.toFixed(2) : null}
-            hint="Prototype estimate"
-          />
+          {/*
+            `F2.8` — the same value the export writes, rendered the same way:
+            a dash here is the U+2014 `reports.serialise.ts` puts in the
+            `PUE estimate` cell.
+          */}
+          <KpiTile label="PUE" {...pueTileProps(status, summary?.pueEstimate)} />
           <KpiTile
             label="Indicative cost"
             status={status}
