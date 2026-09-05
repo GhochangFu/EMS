@@ -2849,10 +2849,13 @@ for `?active=`.
 carries the same cross-package `instanceof ZodError` shape and is the only other
 one in `apps/api`, harmless in the CJS container and wrong under Vitest. §4.4's
 grant rule is unguarded, so a future tenant-pool writer that forgets its revoke
-fails no gate. And the drizzle journal's `when` values run about 6.5 days ahead
-of the wall clock, so a generated `0061` would take a smaller timestamp than
-`0059` and `0060`, look correctly journalled, and never run on dev, CI or the PHE
-pilot while still running on a fresh database.
+fails no gate. And, at the time, the drizzle journal's `when` values ran about
+6.5 days ahead of the wall clock, so a generated `0061` would have taken a
+smaller timestamp than `0059` and `0060`, looked correctly journalled, and never
+run on dev, CI or the PHE pilot while still running on a fresh database — filed
+as `F4.94` and closed on 2026-09-05 (PR #327): the entries were re-stamped,
+`db:migrate` re-syncs an existing database's stamps to the journal by hash, and
+the journal gate refuses a `when` ahead of the clock.
 
 **One delta from decision 5 awaits the owner's ruling.** Decision 5 says gated to
 the global `admin` role *only*, and the `GET` this row added sits at
