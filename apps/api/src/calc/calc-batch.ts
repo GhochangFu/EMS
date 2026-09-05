@@ -47,6 +47,19 @@ export function collapseLatest(readings: TelemetryReading[]): TelemetryReading[]
  *    3 freezes `v1`'s refusals forever, and the template and override guards
  *    keep applying the derived-reference refusal under `v1` unchanged.
  *
+ *    **The write guards are no longer the whole backing for this step**, and
+ *    the reason is worth stating: a stored `formula_dialect` is coalesced
+ *    independently of `formula`, so a label can disagree with the text it
+ *    labels — through a dialect-only override (closed at the write path in
+ *    `582ed49`), or through a template migration that repoints
+ *    `assets.template_id` without re-validating the override (still open;
+ *    `template-version-delta.ts` routes a dialect change into
+ *    `derivedChanged`, never `refusals`, and re-validation is owed to `F2.9`
+ *    PR 2). `CalcDefinitionsService.reload()` therefore re-enforces this
+ *    refusal at **read** time as `v1_references_derived`, and
+ *    `toActiveDefinition` refuses a self-reference as `self_reference`. Step 2
+ *    holds because of those, whatever a stored label claims.
+ *
  * So no key in this set is a derived point's own output, and the engine's own
  * write still cannot re-enter. **Both steps are load-bearing**: widening the
  * set to scheduled definitions breaks step 1 and re-opens the loop.
