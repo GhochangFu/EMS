@@ -42,6 +42,21 @@ const JOURNAL_CLOCK_SKEW_MS = 60 * 60 * 1000;
 
 const journal: Journal = JSON.parse(read(JOURNAL_REL)) as Journal;
 
+/**
+ * `new Date(w).toISOString()` throws `RangeError` when `|w| > 8.64e15`, and the
+ * largest future stamp is exactly the one this file exists to report. A failure
+ * message that throws while it is being built turns a clear assertion failure
+ * into an unrelated stack trace, so the formatter degrades instead.
+ * `scripts/checks/drizzle-journal.mjs` formats the same way.
+ */
+const MAX_DATE_MS = 8.64e15;
+
+function isoOrOutOfRange(when: number): string {
+  return Number.isFinite(when) && Math.abs(when) <= MAX_DATE_MS
+    ? new Date(when).toISOString()
+    : "out of Date range";
+}
+
 describe("F4.94 — journal `when` is strictly increasing", () => {
   it("no entry's `when` is at or below the previous entry's `when`", () => {
     const entries = journal.entries;
@@ -60,12 +75,29 @@ describe("F4.94 — journal `when` is strictly increasing", () => {
 });
 
 describe("F4.94 — journal `when` is never ahead of the wall clock", () => {
+  /**
+   * Every other check here compares `when` numerically, and every comparison
+   * against `NaN` is false. A string date or a missing `when` would therefore
+   * pass the ordering and the clock check in silence, so the shape is asserted
+   * before the value is.
+   */
+  it("every entry's `when` is a finite integer", () => {
+    for (const entry of journal.entries) {
+      expect(
+        Number.isInteger(entry.when),
+        `journal \`when\` ${entry.tag} = ${JSON.stringify(entry.when)} is not a finite ` +
+          "integer. Drizzle compares it numerically, so every ordering check against it is " +
+          "false and the entry's position in the chain is undefined.",
+      ).toBe(true);
+    }
+  });
+
   it("every entry's `when` is at most one hour ahead of Date.now()", () => {
     const now = Date.now();
     for (const entry of journal.entries) {
       expect(
         entry.when,
-        `journal \`when\` ${entry.tag} = ${entry.when} (${new Date(entry.when).toISOString()}) ` +
+        `journal \`when\` ${entry.tag} = ${entry.when} (${isoOrOutOfRange(entry.when)}) ` +
           "is ahead of the wall clock; the next generated migration takes Date.now(), which " +
           "is smaller, and is skipped on every database that already ran this entry.",
       ).toBeLessThanOrEqual(now + JOURNAL_CLOCK_SKEW_MS);

@@ -91,8 +91,13 @@ const JOURNAL = (tags: string[]): string =>
     entries: tags.map((tag, idx) => ({ idx, version: "7", when: 1700000000000 + idx, tag, breakpoints: true })),
   });
 
-/** F4.94 — a journal built from explicit `{ tag, when }` pairs, so a case can pin the clock relationship it tests. */
-const journalWith = (entries: ReadonlyArray<{ tag: string; when: number }>): string =>
+/**
+ * F4.94 — a journal built from explicit `{ tag, when }` pairs, so a case can pin
+ * the clock relationship it tests. `when` is `unknown` rather than `number`
+ * because two cases feed the gate a stamp drizzle would never write: a string
+ * date, and a value beyond what `new Date(...).toISOString()` can format.
+ */
+const journalWith = (entries: ReadonlyArray<{ tag: string; when: unknown }>): string =>
   JSON.stringify({
     version: "7",
     dialect: "postgresql",
@@ -168,6 +173,53 @@ describe("pre-commit backstop - what it blocks", () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain("ahead of the wall clock");
     expect(r.stderr).toContain("0002_next");
+  });
+
+  /**
+   * `Number("2026-09-11")` is `NaN`, and every comparison against `NaN` is
+   * false, so before F4.94's L2 fix a hand-written string date passed the
+   * monotonic check and the ahead-of-clock check in silence — the two checks
+   * that exist to catch a hand-edited journal.
+   */
+  it("aborts on a journal entry whose `when` is not a number", () => {
+    const dir = scratchRepo({
+      "packages/db/drizzle/0001_init.sql": "CREATE TABLE a();\n",
+      "packages/db/drizzle/meta/_journal.json": journalWith([{ tag: "0001_init", when: 1700000000000 }]),
+    });
+    const r = runGate(dir, {
+      "packages/db/drizzle/0002_next.sql": "CREATE TABLE b();\n",
+      "packages/db/drizzle/meta/_journal.json": journalWith([
+        { tag: "0001_init", when: 1700000000000 },
+        { tag: "0002_next", when: "2026-09-11" },
+      ]),
+    });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("not a finite number");
+    expect(r.stderr).toContain("0002_next");
+  });
+
+  /**
+   * `new Date(w).toISOString()` throws `RangeError` above 8.64e15, and both
+   * hooks catch and fail OPEN, so the largest future stamp of all — the one
+   * that blocks every later migration forever — was the one the gate let
+   * through, while printing a "check crashed" warning nobody reads.
+   */
+  it("aborts on a `when` too large for Date, without crashing the check", () => {
+    const dir = scratchRepo({
+      "packages/db/drizzle/0001_init.sql": "CREATE TABLE a();\n",
+      "packages/db/drizzle/meta/_journal.json": journalWith([{ tag: "0001_init", when: 1700000000000 }]),
+    });
+    const r = runGate(dir, {
+      "packages/db/drizzle/0002_next.sql": "CREATE TABLE b();\n",
+      "packages/db/drizzle/meta/_journal.json": journalWith([
+        { tag: "0001_init", when: 1700000000000 },
+        { tag: "0002_next", when: 9e15 },
+      ]),
+    });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("ahead of the wall clock");
+    expect(r.stderr).toContain("0002_next");
+    expect(r.stderr).not.toContain("pre-commit WARNING");
   });
 });
 
