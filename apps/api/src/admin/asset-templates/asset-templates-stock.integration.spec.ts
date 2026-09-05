@@ -91,6 +91,9 @@ const MEASURED = {
   calcTrigger: null,
   calcIntervalSeconds: null,
   maxInputAgeSeconds: null,
+  // ADR 0055 decision 11 (`F2.9` Task 8) — mirrors `point-fields.ts`'s
+  // `MEASURED`: a measured point has no aggregate to cover.
+  minCoverageRatio: null,
 } as const;
 
 /** Built after `loadFixtures`, because the point keys are the seeded organization's. */

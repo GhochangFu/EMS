@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 
-import { evaluate } from "@bms/shared";
+import { CALC_DIALECT, evaluate } from "@bms/shared";
 
 import { sleep } from "../telemetry/sleep";
 import { defKey } from "./calc-batch";
@@ -114,6 +114,28 @@ export async function runScheduledSweep(
       continue;
     }
     lastRunMs.set(key, bucketTimeMs(nowMs, intervalSeconds));
+    if (def.dialect !== CALC_DIALECT) {
+      // `F2.9` PR 1 stores and validates `bms-calc-v2`; nothing evaluates it
+      // yet. **`F2.9` Task 13 removes this refusal**, together with the
+      // membership resolver, the ordering pass and the cycle detector — and
+      // only together, which is the whole reason it exists.
+      //
+      // Evaluating a `v2` definition here would not fail, it would compute the
+      // wrong number: ADR 0055 decision 7 repeals the derived-to-derived ban,
+      // no cycle detection exists in this PR, and `evaluate` treats a `v2` AST
+      // whose references are all local exactly like a `v1` one. A formula such
+      // as `{SELF} * 2` would therefore be saved, accepted, and double its own
+      // stored value every tick, silently. An aggregate fails safe (nothing
+      // resolves members yet, so `crossInputs` is empty and the evaluation
+      // refuses); a local-only `v2` formula does not.
+      //
+      // Counted, never silent — ADR 0037 decision 9 applied to one more
+      // reason. Placed after `lastRunMs.set` so it counts once per due window
+      // rather than once per 10s base tick, which is where Task 13's
+      // `dependency_cycle` refusal goes too.
+      deps.metrics.countCalcSkipped("v2_not_yet_evaluable");
+      continue;
+    }
     try {
       const outcome = await evaluateOneScheduledFormula(deps, def, nowMs);
       if (outcome) {

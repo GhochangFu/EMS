@@ -493,6 +493,13 @@ export const templatePoints = bmsSchema.table("template_points", {
   calcTrigger: varchar("calc_trigger", { length: 16 }),
   calcIntervalSeconds: integer("calc_interval_seconds"),
   maxInputAgeSeconds: integer("max_input_age_seconds"),
+  // ADR 0055 decision 11 (F2.9 migration 0062). `NULL` = fail closed: every
+  // declared member of a `bms-calc-v2` aggregate must be fresh, NOT "no
+  // limit". A ratio narrows that requirement to a fraction of declared
+  // members. Bounded to `(0, 1]` in apps/api's Zod layer
+  // (`asset-templates.schema.ts`), not by a DB CHECK — the same split
+  // migrations 0035/0036 use for this table's formula/calcTrigger columns.
+  minCoverageRatio: doublePrecision("min_coverage_ratio"),
   required: boolean("required").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
   meta: jsonb("meta").notNull().default({}),

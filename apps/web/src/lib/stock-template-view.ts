@@ -106,6 +106,7 @@ export function stockEntryAsTemplate(entry: StockAssetTemplateDto): AdminAssetTe
       calcTrigger: point.calcTrigger,
       calcIntervalSeconds: point.calcIntervalSeconds,
       maxInputAgeSeconds: point.maxInputAgeSeconds,
+      minCoverageRatio: point.minCoverageRatio,
       required: point.required,
       sortOrder: point.sortOrder,
       // The one type bridge: the stock shape is `{ tier } | undefined`, the

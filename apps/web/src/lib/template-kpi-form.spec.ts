@@ -1,7 +1,7 @@
 /**
  * The KPIs tab's form rules (`F2.5`, ADR 0038 decision 9 — Unit 9d).
  */
-import { CALC_DIALECT, MAX_FORMULA_POINT_REFS } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECT_V2, MAX_FORMULA_POINT_REFS } from "@bms/shared";
 import type { TemplateKpi } from "@bms/shared";
 
 import {
@@ -98,6 +98,75 @@ export function runSeedTests(): void {
     "a new KPI starts unvalidated — decision 9 makes the button the only way up",
   );
   assert(fresh.higherIsBetter === null, "…with no direction declared");
+}
+
+/**
+ * A stored `bms-calc-v2` KPI survives being read and sent back (`F2.9`, ADR
+ * 0055 decision 2; the owner's Q3 ruling).
+ *
+ * The API accepts a `v2` KPI since the dialect widened. A tab that read one
+ * back as `"unvalidated"` would not merely mislabel it on screen:
+ * `buildKpiPayload` writes **every** row's dialect on save, so editing any
+ * *other* KPI sends the untouched `v2` row back as unparsed. With
+ * `pointKeys: []` — a KPI whose every reference is cross-asset, which is the
+ * shape Q3b exists for — the server refuses the whole save naming a field the
+ * tab gives no way to repair; with a non-empty `pointKeys` the save succeeds
+ * and a parsed, cross-checked KPI silently becomes an unparsed one.
+ */
+export function runStoredV2KpiSurvivesTests(): void {
+  const storedV2: TemplateKpi = {
+    code: "PUE",
+    name: "Power usage effectiveness",
+    pointKeys: [],
+    expression: "sum({kw} @site) / sum({kw} @group('IT_LOAD'))",
+    dialect: CALC_DIALECT_V2,
+  };
+  const storedV1: TemplateKpi = {
+    code: "DELTA_T",
+    name: "Delta T",
+    pointKeys: ["CHW_SUPPLY_T", "CHW_RETURN_T"],
+    expression: "{CHW_RETURN_T} - {CHW_SUPPLY_T}",
+    dialect: CALC_DIALECT,
+  };
+
+  const rows = kpiRowsFrom([storedV2, storedV1]);
+  assert(
+    rows[0].dialect === CALC_DIALECT_V2,
+    `a stored v2 KPI must read back as v2, got ${rows[0].dialect}`,
+  );
+
+  const roundTripped = buildKpiPayload(rows);
+  assert(
+    roundTripped[0].dialect === CALC_DIALECT_V2,
+    `read then sent unchanged, a v2 KPI must still be v2, got ${roundTripped[0].dialect}`,
+  );
+  assert(
+    roundTripped[0].pointKeys.length === 0,
+    `a KPI whose every reference is cross-asset declares no local point key (Q3b), got ` +
+      `${JSON.stringify(roundTripped[0].pointKeys)}`,
+  );
+
+  // The failure path in full: the author edits a **different** KPI and saves.
+  const edited = rows.map((entry, index) =>
+    index === 1 ? { ...entry, name: "Chilled water delta T" } : entry,
+  );
+  const afterEditingAnother = buildKpiPayload(edited);
+  assert(
+    afterEditingAnother[0].dialect === CALC_DIALECT_V2,
+    `editing one KPI must not rewrite another's dialect, got ${afterEditingAnother[0].dialect}`,
+  );
+  assert(
+    afterEditingAnother[1].name === "Chilled water delta T",
+    "…and the edit the author actually made must still be sent",
+  );
+
+  // A dialect this UI does not know still reads as unvalidated. The ternary
+  // widened to the vocabulary, it did not become "trust whatever is stored".
+  const [unknown] = kpiRowsFrom([{ ...storedV2, dialect: "bms-calc-v3" } as unknown as TemplateKpi]);
+  assert(
+    unknown.dialect === "unvalidated",
+    `a dialect outside CALC_DIALECTS must read as unvalidated, got ${unknown.dialect}`,
+  );
 }
 
 /**

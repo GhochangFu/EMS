@@ -1,4 +1,4 @@
-import { parseFormula, type TelemetryReading } from "@bms/shared";
+import { CALC_DIALECT, parseFormula, type TelemetryReading } from "@bms/shared";
 
 import type { CalcDefinition } from "./calc-definition";
 import type { CalcInputSample } from "./calc-inputs";
@@ -36,6 +36,11 @@ function def(overrides: Partial<CalcDefinition> & { formula: string }): CalcDefi
     trigger: "streaming",
     intervalSeconds: null,
     maxInputAgeSeconds: 300,
+    // Always `v1` here: ADR 0055 decision 10 makes `v2` `scheduled`-only, so a
+    // `v2` definition can never reach the streaming host.
+    dialect: CALC_DIALECT,
+    crossRefs: [],
+    minCoverageRatio: null,
     ...overrides,
   };
 }

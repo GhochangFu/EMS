@@ -9,7 +9,7 @@
  */
 import { z } from "zod";
 
-import { CALC_DIALECT, CALC_TRIGGERS } from "../calc-dsl";
+import { CALC_DIALECTS, CALC_TRIGGERS } from "../calc-dsl";
 import { templateLifecycleStatusSchema } from "./template-lifecycle";
 import { assetRoleCodeSchema } from "./operations";
 import { pointSourceKindSchema } from "./telemetry-entry";
@@ -220,6 +220,21 @@ export const assetTemplateStatusSchema = templateLifecycleStatusSchema;
 export const templatePointKindSchema = z.enum(["measured", "derived"]);
 
 /**
+ * Which calc grammar a stored `formula` was written in — `bms-calc-v1`
+ * (ADR 0036) or `bms-calc-v2` (ADR 0055 decision 2).
+ *
+ * **Declared once, from `CALC_DIALECTS`, and re-used at every site.** Three
+ * schemas in this file carry a `formulaDialect`, and `apps/api` carries two
+ * more; each of them pinned the `v1` constant with a bare Zod literal until
+ * `F2.9`. Re-inlining one is the §4.8 "nobody restates a vocabulary" failure in
+ * its worst form here: one endpoint silently refuses a dialect every other
+ * endpoint accepts, so the same stored row reads back on one page and 400s on
+ * another. `tests/adr-0055-calc-v2-invariants.test.ts` part (c) is the guard —
+ * it scans raw source, so do not spell that literal even inside a comment.
+ */
+export const calcDialectSchema = z.enum(CALC_DIALECTS);
+
+/**
  * `F2.13` / ADR 0052 decision 2, ADR 0040 open question 4 — the tier marking
  * a point carries (tag-list `C` -> `core`, `X` -> `extended`), what makes a
  * client's redline mechanical. `.partial()`, not a bare `{ tier }` object:
@@ -248,7 +263,7 @@ export const adminTemplatePointDtoSchema = z.object({
   // derived one (enforced in apps/api's templatePointBodySchema, not here —
   // this is a read-side DTO).
   formula: z.string().nullable(),
-  formulaDialect: z.literal(CALC_DIALECT).nullable(),
+  formulaDialect: calcDialectSchema.nullable(),
   // ADR 0037 decision 4. Read-side counterpart of the enforcement in
   // apps/api's templatePointBodySchema — carried here for the same reason
   // formula/formulaDialect are: templatePointsBodySchema sends the whole
@@ -257,6 +272,14 @@ export const adminTemplatePointDtoSchema = z.object({
   calcTrigger: z.enum(CALC_TRIGGERS).nullable(),
   calcIntervalSeconds: z.number().nullable(),
   maxInputAgeSeconds: z.number().nullable(),
+  // ADR 0055 decision 11 (`F2.9`). `null` is "fail closed" — every declared
+  // member of an aggregate must be fresh — and NOT "no limit"; the column is
+  // nullable for exactly that reading. **No `(0, 1]` bound here**, for the same
+  // reason `calcIntervalSeconds` carries none: this is a read-side DTO over
+  // stored rows, and a read schema that rejects a row the database holds is a
+  // schema that lies about the estate. The bound lives on the write side, in
+  // apps/api's `templatePointBodySchema`.
+  minCoverageRatio: z.number().nullable(),
   required: z.boolean(),
   sortOrder: z.number(),
   meta: templatePointMetaDtoSchema,
@@ -335,11 +358,17 @@ export const stockTemplatePointDtoSchema = z.object({
   unit: z.string().max(32).nullable(),
   sourceDataKeyPattern: z.string().max(128).nullable(),
   formula: z.string().max(1000).nullable(),
-  formulaDialect: z.literal(CALC_DIALECT).nullable(),
+  formulaDialect: calcDialectSchema.nullable(),
   kind: templatePointKindSchema,
   calcTrigger: z.enum(CALC_TRIGGERS).nullable(),
   calcIntervalSeconds: z.number().int().nullable(),
   maxInputAgeSeconds: z.number().int().nullable(),
+  // ADR 0055 decision 11 (`F2.9` Task 8) — mirrors `adminTemplatePointDtoSchema`
+  // above field for field, including the **no bound** reasoning: this is the
+  // shape a catalog entry's own point-fields helper (`apps/api`'s
+  // `derived()`) produces, and the `(0, 1]` bound lives only on the write
+  // side, in `apps/api`'s `templatePointBodySchema`.
+  minCoverageRatio: z.number().nullable(),
   required: z.boolean(),
   sortOrder: z.number().int(),
   // F2.13 / ADR 0052 decision 2 — every stock point declares its tier. The
@@ -470,7 +499,7 @@ export type ExpectedMatchesAssetInstantiationSourceKind = AssertAssignable<
  */
 export const assetPointCalcOverrideFieldsSchema = z.object({
   formula: z.string().nullable(),
-  formulaDialect: z.literal(CALC_DIALECT).nullable(),
+  formulaDialect: calcDialectSchema.nullable(),
   calcTrigger: z.enum(CALC_TRIGGERS).nullable(),
   calcIntervalSeconds: z.number().nullable(),
   maxInputAgeSeconds: z.number().nullable(),

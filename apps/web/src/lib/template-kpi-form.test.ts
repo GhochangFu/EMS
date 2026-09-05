@@ -8,6 +8,7 @@ import {
   runPointKeyDerivationTests,
   runPointKeyResolutionTests,
   runSeedTests,
+  runStoredV2KpiSurvivesTests,
   runValidateActionTests,
   runValidatedRowCannotSaveBrokenTests,
 } from "./template-kpi-form.spec";
@@ -20,6 +21,10 @@ describe("template KPI form", () => {
 
   it("seeds from the stored section and starts a new KPI unvalidated", () => {
     runSeedTests();
+  });
+
+  it("keeps a stored bms-calc-v2 KPI's dialect when another KPI is edited", () => {
+    runStoredV2KpiSurvivesTests();
   });
 
   it("derives pointKeys once validated and keeps the manual list before", () => {

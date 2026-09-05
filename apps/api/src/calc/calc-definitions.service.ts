@@ -7,7 +7,7 @@ import type { BmsDb } from "@bms/db";
 import { FLEET_DRIZZLE } from "../database/database.tokens";
 import { MetricsService } from "../observability/metrics.service";
 import { inputKey } from "./calc-batch";
-import { toActiveDefinition, type CalcDefinition } from "./calc-definition";
+import { referencesADerivedSiblingUnderV1, toActiveDefinition, type CalcDefinition } from "./calc-definition";
 
 /** Matches `AlarmEngineService.CACHE_TTL_MS` — the same staleness budget for
  * the same reason (ADR 0037 decision 6). */
@@ -43,6 +43,8 @@ const CACHE_TTL_MS = 60_000;
 @Injectable()
 export class CalcDefinitionsService {
   private definitionsByInput = new Map<string, CalcDefinition[]>();
+  private streamingInputKeys: ReadonlySet<string> = new Set();
+  private all: CalcDefinition[] = [];
   private scheduled: CalcDefinition[] = [];
   private cacheLoadedAt = 0;
 
@@ -75,6 +77,14 @@ export class CalcDefinitionsService {
         calcTrigger: sql<string | null>`coalesce(${assetPoints.calcTrigger}, ${templatePoints.calcTrigger})`,
         calcIntervalSeconds: sql<number | null>`coalesce(${assetPoints.calcIntervalSeconds}, ${templatePoints.calcIntervalSeconds})`,
         maxInputAgeSeconds: sql<number | null>`coalesce(${assetPoints.maxInputAgeSeconds}, ${templatePoints.maxInputAgeSeconds})`,
+        // `F2.9` — the sixth calc column, and deliberately **not** a coalesce.
+        // ADR 0055 puts `min_coverage_ratio` on `template_points` only:
+        // `asset_points` has no such column, so there is nothing to coalesce
+        // with and it is not overridable per asset. Wrapping it in a coalesce
+        // anyway would claim a merge that does not exist.
+        // `tests/adr-0039-resolution-merge.test.ts` pins each of the five
+        // merged columns above by its exact text — leave them byte-identical.
+        minCoverageRatio: templatePoints.minCoverageRatio,
       })
       .from(assets)
       // assets.templateId is nullable (every seeded asset is hand-created,
@@ -112,37 +122,91 @@ export class CalcDefinitionsService {
       )
       .where(eq(templatePoints.kind, "derived"));
 
-    const defs: CalcDefinition[] = [];
-    const byInput = new Map<string, CalcDefinition[]>();
+    const candidates: CalcDefinition[] = [];
+    // Every row this query returns is `kind = 'derived'` (the WHERE above), so
+    // the asset's derived point keys are already in hand and the post-pass
+    // below needs no second query. Built from the **rows**, not from the
+    // resolved definitions: a derived point that is itself unusable — no
+    // trigger, unparseable — is still a derived point, and referencing it is
+    // what ADR 0036 decision 7 bans. That is also the write-side guard's own
+    // reading: `asset-templates.schema.ts` tests `kind`, never usability.
+    const derivedPointKeysByAsset = new Map<string, Set<string>>();
     for (const row of rows) {
+      const forAsset = derivedPointKeysByAsset.get(row.assetId);
+      if (forAsset) {
+        forAsset.add(row.pointKey);
+      } else {
+        derivedPointKeysByAsset.set(row.assetId, new Set([row.pointKey]));
+      }
       const result = toActiveDefinition(row);
       if (!result.ok) {
         this.metrics.countCalcSkipped(result.reason);
         continue;
       }
-      defs.push(result.def);
-      for (const ref of result.def.refs) {
-        const key = inputKey(result.def.assetId, ref);
+      candidates.push(result.def);
+    }
+
+    // `F2.9` — the `v1`-references-a-derived-point refusal, and the **only**
+    // check here that needs a definition's siblings rather than its own row.
+    // {@link referencesADerivedSiblingUnderV1} carries the reasoning; two
+    // placement facts belong here, where they can be got wrong:
+    //
+    //  - it runs **before** the indexes below, so a refused definition is
+    //    unreachable through `getDefinitionsForInput` and never wakes the
+    //    streaming host. Filtering after them would leave the runaway
+    //    compounding through a path `getScheduledDefinitions()` does not show;
+    //  - `setCalcActiveFormulas` therefore counts what survives, which is what
+    //    ADR 0037 decision 7's gauge means by "active".
+    const defs = candidates.filter((def) => {
+      if (!referencesADerivedSiblingUnderV1(def, derivedPointKeysByAsset)) {
+        return true;
+      }
+      this.metrics.countCalcSkipped("v1_references_derived");
+      return false;
+    });
+
+    const byInput = new Map<string, CalcDefinition[]>();
+    const streamingInputKeys = new Set<string>();
+    for (const def of defs) {
+      for (const ref of def.refs) {
+        const key = inputKey(def.assetId, ref);
         const list = byInput.get(key);
         if (list) {
-          list.push(result.def);
+          list.push(def);
         } else {
-          byInput.set(key, [result.def]);
+          byInput.set(key, [def]);
+        }
+        if (def.trigger === "streaming") {
+          streamingInputKeys.add(key);
         }
       }
     }
 
     this.definitionsByInput = byInput;
+    this.streamingInputKeys = streamingInputKeys;
+    this.all = defs;
     this.scheduled = defs.filter((def) => def.trigger === "scheduled");
     this.cacheLoadedAt = Date.now();
     this.metrics.setCalcActiveFormulas(defs.length);
   }
 
-  /** Every `(assetId, pointKey)` that is an input to some active formula —
-   * the streaming host's re-entrancy filter (ADR 0037 decision 11). */
+  /**
+   * Every `(assetId, pointKey)` that is an input to some active **streaming**
+   * formula — the streaming host's re-entrancy filter (ADR 0037 decision 11).
+   *
+   * **Deliberately not `definitionsByInput.keys()`**, and re-collapsing the two
+   * would widen the filter silently. This set decides which of the engine's own
+   * writes are allowed to wake the streaming host at all
+   * (`filterToInputs`), so its correctness argument has to hold for every
+   * indexed definition — see `calc-batch.ts`, where that argument is written
+   * out. A scheduled formula's inputs belong to the sweep, which reads them on
+   * its own clock and never through this set; indexing them buys nothing (the
+   * streaming host skips a scheduled definition at `calc-streaming.service.ts`
+   * anyway) and costs the one guarantee the set exists for.
+   */
   async getInputKeys(): Promise<ReadonlySet<string>> {
     await this.ensureFresh();
-    return new Set(this.definitionsByInput.keys());
+    return this.streamingInputKeys;
   }
 
   /** Active formulas that use `(assetId, pointKey)` as an input, resolved on
@@ -157,5 +221,21 @@ export class CalcDefinitionsService {
   async getScheduledDefinitions(): Promise<CalcDefinition[]> {
     await this.ensureFresh();
     return this.scheduled;
+  }
+
+  /**
+   * Every active definition, read **past** the 60s cache (`F2.9`, ADR 0055
+   * decision 8) — the save-time dependency detector's read.
+   *
+   * The TTL is right for the two evaluation hosts: a formula that starts
+   * computing up to a minute late costs one sample. It is wrong for a
+   * *decision* about whether a candidate formula closes a dependency cycle: a
+   * definition written in the last 60s would be invisible, and the detector
+   * would admit the edge that completes the loop. The cost is one query per
+   * template/override save, which is a human-rate write path.
+   */
+  async getAllDefinitionsFresh(): Promise<CalcDefinition[]> {
+    await this.reload();
+    return this.all;
   }
 }

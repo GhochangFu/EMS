@@ -29,6 +29,21 @@ export const TEST_ASSET_PREFIX = "F26-OVR-TEST-";
 
 const DERIVED_KEY = "F26_OVR_DERIVED";
 const MEASURED_KEY = "F26_OVR_MEASURED";
+/**
+ * A **second** derived point, seeded only for the `F2.9` `v2` cases
+ * (`seed(..., { extraDerived: true })`).
+ *
+ * It exists so `assertV2OverrideAdmitsADerivedReference` proves decision 7 with
+ * a *sibling* reference rather than a self-reference. A self-reference is a
+ * one-node dependency cycle, refused by `CalcDependencyService` in `F2.9`
+ * Task 12 — writing one here would store a formula that compounds every tick
+ * the moment anything evaluates `bms-calc-v2`, to prove a property a sibling
+ * proves just as well.
+ *
+ * Opt-in, because the other cases assert on the number of derived points this
+ * template declares.
+ */
+const DERIVED_KEY_2 = "F26_OVR_DERIVED_2";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -104,7 +119,7 @@ async function seed(
   db: BmsDb,
   fx: Fixtures,
   suffix: string,
-  opts: { locationId?: string } = {},
+  opts: { locationId?: string; extraDerived?: boolean } = {},
 ): Promise<{ assetId: string; templateId: string }> {
   const [template] = await db
     .insert(assetTemplates)
@@ -137,6 +152,18 @@ async function seed(
       sortOrder: 1,
       ...TEMPLATE_CALC,
     },
+    ...(opts.extraDerived
+      ? [
+          {
+            organizationId: fx.organizationId,
+            templateId: template.id,
+            pointKey: DERIVED_KEY_2,
+            kind: "derived" as const,
+            sortOrder: 2,
+            ...TEMPLATE_CALC,
+          },
+        ]
+      : []),
   ]);
 
   const [asset] = await db
@@ -180,6 +207,7 @@ async function rowFor(
       rtu_id: string | null;
       active: boolean;
       formula: string | null;
+      formula_dialect: string | null;
       calc_trigger: string | null;
       calc_interval_seconds: number | null;
       max_input_age_seconds: number | null;
@@ -187,8 +215,8 @@ async function rowFor(
   | undefined
 > {
   const { rows } = await pool.query(
-    `SELECT id, source_kind, source_data_key, rtu_id, active, formula, calc_trigger,
-            calc_interval_seconds, max_input_age_seconds
+    `SELECT id, source_kind, source_data_key, rtu_id, active, formula, formula_dialect,
+            calc_trigger, calc_interval_seconds, max_input_age_seconds
        FROM bms.asset_points WHERE asset_id = $1 AND point_key = $2`,
     [assetId, pointKey],
   );
@@ -549,6 +577,135 @@ export async function assertFormulaCannotReferenceADerivedPoint(
   assert(
     row?.formula === `{${MEASURED_KEY}} * 3`,
     `a measured reference must still be accepted, got ${String(row?.formula)}`,
+  );
+}
+
+/**
+ * **`F2.9` — the other half of the same guard, and the reason it is gated on
+ * the dialect rather than removed.**
+ *
+ * ADR 0055 decision 7 repeals "a derived formula may only reference measured
+ * points" for `bms-calc-v2`: a cross-asset formula reads *other assets'* points,
+ * and a site total is a derived point by construction. The refusal above is
+ * unchanged and still fires under `bms-calc-v1`; this is the same fixture, the
+ * same endpoint and the same reference, differing only in the stored dialect.
+ *
+ * Both directions run in one case on purpose. A test that only proves `v2`
+ * accepts would stay green if the gate were dropped and both dialects accepted
+ * — which is exactly the guard `assertFormulaCannotReferenceADerivedPoint`
+ * exists to hold.
+ *
+ * The reference is a derived **sibling**, not the point itself: a
+ * self-reference is a one-node cycle, and refusing it needs the dependency
+ * graph `CalcDependencyService` builds in `F2.9` Task 12.
+ */
+export async function assertV2OverrideAdmitsADerivedReference(
+  pool: pg.Pool,
+  fx: Fixtures,
+  svc: AssetPointCalcOverrideService,
+): Promise<void> {
+  const db = createDb(pool);
+  const { assetId } = await seed(db, fx, "V2REF", { extraDerived: true });
+
+  // The v1 direction first, so the acceptance below is the dialect and not a
+  // fixture that declares the key as measured.
+  await expectRejection(
+    () =>
+      svc.setOverride(fx.adminJwt, assetId, DERIVED_KEY, {
+        ...NOTHING,
+        formula: `{${DERIVED_KEY_2}} * 2`,
+        formulaDialect: "bms-calc-v1",
+      }),
+    /unknown point/,
+    "a bms-calc-v1 override referencing a derived sibling",
+    400,
+  );
+  assert(
+    (await rowFor(pool, assetId, DERIVED_KEY)) === undefined,
+    "the v1 refusal must leave no row behind",
+  );
+
+  const dto = await svc.setOverride(fx.adminJwt, assetId, DERIVED_KEY, {
+    ...NOTHING,
+    formula: `{${DERIVED_KEY_2}} * 2`,
+    formulaDialect: "bms-calc-v2",
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 60,
+  });
+
+  const row = await rowFor(pool, assetId, DERIVED_KEY);
+  assert(row !== undefined, "the v2 override must be written");
+  assert(
+    row?.formula === `{${DERIVED_KEY_2}} * 2`,
+    `the formula must be stored verbatim, got ${String(row?.formula)}`,
+  );
+  assert(
+    row?.formula_dialect === "bms-calc-v2",
+    `and the dialect column must hold the v2 value — a z.literal here would have refused the ` +
+      `body outright. Got ${String(row?.formula_dialect)}`,
+  );
+  assert(
+    row?.calc_trigger === "scheduled" && row?.calc_interval_seconds === 60,
+    "decision 10 — a v2 point is scheduled with an interval",
+  );
+
+  assert(
+    dto.effective.formulaDialect === "bms-calc-v2",
+    `the write's own read-back must resolve the dialect to v2, got ${String(dto.effective.formulaDialect)}`,
+  );
+  const reread = assetPointCalcConfigListResponseSchema.parse(
+    await svc.listCalcPoints(fx.adminJwt, assetId),
+  );
+  const item = reread.items.find((entry) => entry.pointKey === DERIVED_KEY);
+  assert(
+    item?.effective.formulaDialect === "bms-calc-v2",
+    `and the contract-parsed read must carry it too — assetPointCalcOverrideFieldsSchema ` +
+      `would refuse it if the vocabulary were restated. Got ${String(item?.effective.formulaDialect)}`,
+  );
+}
+
+/**
+ * ADR 0055 decision 10 on the write path: a `bms-calc-v2` point must be
+ * `scheduled`. It resolves its member set once per sweep, so a streaming `v2`
+ * point stores clean and never computes — the silent shape the merged check
+ * exists to catch.
+ */
+export async function assertV2OverrideRefusesStreaming(
+  pool: pg.Pool,
+  fx: Fixtures,
+  svc: AssetPointCalcOverrideService,
+): Promise<void> {
+  const db = createDb(pool);
+  const { assetId } = await seed(db, fx, "V2STREAM");
+
+  await expectRejection(
+    () =>
+      svc.setOverride(fx.adminJwt, assetId, DERIVED_KEY, {
+        ...NOTHING,
+        formula: `sum({${MEASURED_KEY}} @site)`,
+        formulaDialect: "bms-calc-v2",
+        calcTrigger: "streaming",
+      }),
+    /cannot run on a single reading/,
+    "a bms-calc-v2 override with a streaming trigger",
+    400,
+  );
+  assert(
+    (await rowFor(pool, assetId, DERIVED_KEY)) === undefined,
+    "and nothing may be written — the refusal must precede the eager create",
+  );
+
+  // Anti-vacuity: the same cross-asset formula on the template's own scheduled
+  // trigger is accepted, so the refusal is decision 10 and not "v2 is refused".
+  await svc.setOverride(fx.adminJwt, assetId, DERIVED_KEY, {
+    ...NOTHING,
+    formula: `sum({${MEASURED_KEY}} @site)`,
+    formulaDialect: "bms-calc-v2",
+  });
+  const row = await rowFor(pool, assetId, DERIVED_KEY);
+  assert(
+    row?.formula === `sum({${MEASURED_KEY}} @site)`,
+    `a scheduled v2 aggregate must be accepted, got ${String(row?.formula)}`,
   );
 }
 

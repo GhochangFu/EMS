@@ -110,11 +110,24 @@ export type TemplateAlarm = {
 
 /**
  * `expression` is opaque behind `dialect: "unvalidated"` — content written
- * before ADR 0036 (`F2.3`) and never re-saved. `dialect: "bms-calc-v1"` means
- * `expression` has been parsed under the `bms-calc-v1` grammar
+ * before ADR 0036 (`F2.3`) and never re-saved. A real dialect means
+ * `expression` has been parsed under that grammar
  * (`packages/shared/src/calc-dsl`) and `pointKeys` is exactly the set of
- * point references it uses, not merely a bookkeeping array checked without a
- * parser.
+ * **local** point references it uses, not merely a bookkeeping array checked
+ * without a parser.
+ *
+ * **`bms-calc-v2` (ADR 0055 decision 2, `F2.9`) is admissible here.** Two
+ * things it does not mean:
+ *
+ * - `pointKeys` does **not** grow to cover cross-asset references. A key named
+ *   only inside `sum({kw} @site)` or `{TX_01.kwh}` resolves against another
+ *   asset, and which asset that is is not known until evaluation time, so it
+ *   is exempt from the cross-check in **both** directions (the owner's Q3b
+ *   ruling). The two-way check keeps its full strength over local references.
+ * - Nothing evaluates a `v2` KPI yet. KPI evaluation is read-time and from
+ *   local values (ADR 0037 §"Not in this ADR"), so a stored `v2` KPI is
+ *   admitted and parsed but not computed. That is a later row's work and must
+ *   not be presented as a cross-asset KPI that works.
  */
 export type TemplateKpi = {
   code: string;

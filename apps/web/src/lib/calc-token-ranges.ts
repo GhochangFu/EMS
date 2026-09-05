@@ -1,5 +1,6 @@
 /**
- * Mapping `bms-calc-v1` tokens onto source character ranges (`F2.5`, ADR 0038).
+ * Mapping calc tokens onto source character ranges (`F2.5`, ADR 0038; the
+ * `bms-calc-v2` widths since `F2.9`, ADR 0055).
  *
  * **Not in the Unit 5 plan's file list.** It exists because two modules need
  * the same two facts about the tokenizer, and the plan asked each of them to
@@ -18,7 +19,7 @@
  * This module is the owner. It knows nothing about validation, decoration or
  * CodeMirror — only about turning a `Token` into a `{ from, to }`.
  */
-import { CalcTokenizeError, tokenize, type Token } from "@bms/shared";
+import { CALC_DIALECT, CalcTokenizeError, tokenize, type CalcDialect, type Token } from "@bms/shared";
 
 /**
  * Tokenizes, or returns no tokens.
@@ -31,10 +32,15 @@ import { CalcTokenizeError, tokenize, type Token } from "@bms/shared";
  *
  * Any other error is re-thrown: a bug in the tokenizer must not read as an
  * empty formula.
+ *
+ * `dialect` defaults to `v1`. Under `v1` a `v2` glyph (`@`, `'`) is an
+ * unexpected character and so yields `[]` — a dialect that failed to reach
+ * `tokenize` would read as "nothing to highlight", which is why the spec
+ * asserts the threading explicitly.
  */
-export function safeTokenize(text: string): Token[] {
+export function safeTokenize(text: string, dialect: CalcDialect = CALC_DIALECT): Token[] {
   try {
-    return tokenize(text);
+    return tokenize(text, { dialect });
   } catch (error) {
     if (error instanceof CalcTokenizeError) {
       return [];
@@ -46,12 +52,14 @@ export function safeTokenize(text: string): Token[] {
 /**
  * Character width of a token in the source text.
  *
- * A `ref` token's `text` holds the point key **without** its braces
- * (`tokenizer.ts:83-98`), so the two delimiters are added back. A `number`
- * token stores its raw source slice in `text` and its parsed value separately
- * in `numberValue` (`tokenizer.ts:121`), so `text.length` is the source width:
- * `1.50` is four characters wide even though `String(1.5)` is three. Every
- * other kind stores its raw glyph.
+ * A `ref` token's `text` holds the point key **without** its braces, so the
+ * two delimiters are added back; a qualified `v2` ref (`{CODE.key}`) also
+ * drops its `assetCode` and the `.` from `text`, so those come back too. A
+ * `string` token's `text` excludes its two quotes. A `scope` token's `text`
+ * keeps its `@`, so its width is its text. A `number` token stores its raw
+ * source slice in `text` and its parsed value separately in `numberValue`, so
+ * `text.length` is the source width: `1.50` is four characters wide even
+ * though `String(1.5)` is three. Every other kind stores its raw glyph.
  */
 export function tokenWidth(token: Token): number {
   if (token.kind === "eof") {
@@ -59,7 +67,14 @@ export function tokenWidth(token: Token): number {
     // range means for them; this module does not invent one.
     return 0;
   }
-  return token.kind === "ref" ? token.text.length + 2 : token.text.length;
+  if (token.kind === "ref") {
+    const prefix = token.assetCode === undefined ? 0 : token.assetCode.length + 1;
+    return prefix + token.text.length + 2;
+  }
+  if (token.kind === "string") {
+    return token.text.length + 2;
+  }
+  return token.text.length;
 }
 
 /** Clamps an offset into the text's bounds. */

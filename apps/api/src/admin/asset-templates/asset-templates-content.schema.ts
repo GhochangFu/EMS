@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import {
   alarmSkillCodeSchema,
-  CALC_DIALECT,
+  CALC_DIALECTS,
   // F3.1a: the four widget config schemas, reused rather than restated (§4.8 — "a vocabulary
   // is declared once and everything else is derived from it"). `@bms/shared` and not
   // `@bms/shared/contracts`, because apps/api compiles with moduleResolution "node" and
@@ -254,32 +254,83 @@ const templateAlarmSchema = z
   );
 
 /**
+ * The dialects a KPI may declare: the pre-ADR-0036 escape hatch, plus every
+ * real grammar — **spread from `CALC_DIALECTS`, never listed** (§4.8). ADR 0055
+ * decision 2 says the KPI dialect widens with the calc grammar, and the owner's
+ * `F2.9` Q3 ruling took that sentence literally, so the day a third grammar
+ * exists this schema must accept it without an edit here.
+ */
+const KPI_DIALECTS = ["unvalidated", ...CALC_DIALECTS] as const;
+
+/** A KPI that names no point at all cannot be cross-checked against anything,
+ * so it is refused rather than stored as an unverifiable row. Two messages
+ * because the two cases are genuinely different: one is not parsed, the other
+ * was parsed and found to reference nothing. */
+const KPI_NO_POINT_KEYS_UNVALIDATED =
+  'An "unvalidated" KPI is not parsed, so pointKeys is the only record of what it reads — ' +
+  "it must name at least one point";
+const KPI_NO_REFERENCES =
+  "A KPI must reference at least one point: pointKeys is empty and expression names none, " +
+  "local or cross-asset";
+
+/**
  * `pointKeys` is separate from `expression` on purpose: it is what makes the
  * reference check possible. Historically that was "possible without a formula
- * parser" — `F2.3` had not built one yet. Now that it has (ADR 0036),
- * `dialect: "bms-calc-v1"` turns `pointKeys` from an unverified bookkeeping
- * array into a real two-way cross-check: every `{ref}` in `expression` must
- * appear in `pointKeys`, and every entry in `pointKeys` must be used. A KPI
- * left at `dialect: "unvalidated"` still validates exactly as before —
- * nothing here forces a migration of stored content; re-validation only
- * happens on the next author write.
+ * parser" — `F2.3` had not built one yet. Now that it has (ADR 0036), a real
+ * dialect turns `pointKeys` from an unverified bookkeeping array into a real
+ * two-way cross-check: every `{ref}` in `expression` must appear in
+ * `pointKeys`, and every entry in `pointKeys` must be used. A KPI left at
+ * `dialect: "unvalidated"` still validates exactly as before — nothing here
+ * forces a migration of stored content; re-validation only happens on the next
+ * author write.
+ *
+ * **`bms-calc-v2` and what `pointKeys` means under it** (ADR 0055 decision 2;
+ * the owner's `F2.9` Q3b ruling). `pointKeys` keeps its meaning: it lists the
+ * **local** point keys the expression references. A key that appears solely
+ * inside an aggregate (`sum({kw} @site)`) or a qualified reference
+ * (`{TX_01.kwh}`) is exempt from **both** directions, because the asset it
+ * resolves against is not known until evaluation time. That exemption needs no
+ * code of its own: `parseFormula` already splits local `refs` from `crossRefs`,
+ * and `validateFormula` checks local references only. **The check is narrowed,
+ * not disabled** — under `v2` a declared key the expression uses in no local
+ * reference is still refused, and
+ * `asset-templates-content.schema.spec.ts` proves it with that exact case.
+ *
+ * **Why `pointKeys` lost its `.min(1)` array bound.** A `v2` KPI whose every
+ * reference is cross-asset has no local keys at all, so `["…"].min(1)` would
+ * make the ruling's own headline example unstorable. The rule it enforced is
+ * kept below, one level down, where it can see what the expression actually
+ * references: an empty `pointKeys` is refused unless the parse found a
+ * cross-asset reference. Every `v1` and `"unvalidated"` outcome is unchanged
+ * (`crossRefs` is always `[]` under `v1`); only the issue code moves from
+ * `too_small` to `custom`.
  */
 const templateKpiSchema = z
   .object({
     code: z.string().min(1).max(64),
     name: z.string().min(1).max(255),
     unit: z.string().max(32).optional(),
-    pointKeys: z.array(pointKeyRef).min(1).max(MAX_KPI_POINT_REFS),
+    pointKeys: z.array(pointKeyRef).max(MAX_KPI_POINT_REFS),
     expression: z.string().min(1).max(1000),
-    dialect: z.enum(["unvalidated", CALC_DIALECT]),
+    dialect: z.enum(KPI_DIALECTS),
     higherIsBetter: z.boolean().optional(),
   })
   .strict()
   .superRefine((kpi, ctx) => {
-    if (kpi.dialect !== CALC_DIALECT) {
+    if (kpi.dialect === "unvalidated") {
+      if (kpi.pointKeys.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["pointKeys"],
+          message: KPI_NO_POINT_KEYS_UNVALIDATED,
+        });
+      }
       return;
     }
-    const result = validateFormula(kpi.expression, kpi.pointKeys);
+    // Parsed under whichever real dialect the KPI names — not under a
+    // hardcoded `v1`. A `v2` expression handed to the `v1` parser fails at the
+    // `@`, which would refuse the grammar the row is allowed to declare.
+    const result = validateFormula(kpi.expression, kpi.pointKeys, { dialect: kpi.dialect });
     if (!result.ok) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -288,13 +339,24 @@ const templateKpiSchema = z
       });
       return;
     }
-    // The other direction — every `{ref}` in `expression` resolves to a
+    if (kpi.pointKeys.length === 0 && result.crossRefs.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["pointKeys"],
+        message: KPI_NO_REFERENCES,
+      });
+    }
+    // The other direction — every LOCAL `{ref}` in `expression` resolves to a
     // declared key — was already checked by `validateFormula` above
     // (`unknown_reference` fails it). This is only the reverse: a declared
     // key the expression never uses. Does not also catch a *duplicate*
     // pointKeys entry (["A","A"] with expression "{A}" passes both checks) —
     // harmless, and pre-existing: pointKeys carried no uniqueness rule before
     // this dialect existed either.
+    //
+    // `result.refs` is local-only by construction, which is exactly the Q3b
+    // rule: a key used only inside an aggregate does not count as "used", so
+    // declaring it is still an error, and NOT declaring it is still fine.
     const used = new Set(result.refs);
     const unused = kpi.pointKeys.filter((key) => !used.has(key));
     if (unused.length > 0) {
@@ -306,10 +368,13 @@ const templateKpiSchema = z
     }
   })
   .describe(
-    'When dialect is "bms-calc-v1", expression is parsed under bms-calc-v1 and rejected on ' +
-      "syntax error or unknown function; every entry in pointKeys must be used by expression " +
-      'at least once, and every {ref} in expression must appear in pointKeys. A "unvalidated" ' +
-      "KPI is not parsed.",
+    `When dialect is one of ${CALC_DIALECTS.join(" / ")}, expression is parsed under that ` +
+      "grammar and rejected on syntax error or unknown function; every entry in pointKeys must " +
+      "be used by expression at least once as a LOCAL reference, and every local {ref} in " +
+      "expression must appear in pointKeys. A cross-asset reference (an aggregate such as " +
+      "sum({kw} @site), or a qualified {CODE.key}) is exempt from both directions — the asset " +
+      'it resolves against is not known until evaluation time. A "unvalidated" KPI is not ' +
+      "parsed, and must then declare at least one pointKey.",
   );
 
 /** `createMaintenanceScheduleBodySchema` minus the two fields only an instance

@@ -13,6 +13,7 @@
  * What lives here is everything that answers a question. What stays in the
  * `.tsx` is everything that talks to CodeMirror.
  */
+import { CALC_DIALECTS } from "@bms/shared";
 import type { TemplateKpi } from "@bms/shared";
 
 import {
@@ -130,9 +131,20 @@ export function completionKeys(rules: FormulaEditorRules): string[] {
  * False only for a KPI still at `"unvalidated"` (ADR 0038 decision 9). That
  * field stays free text — no highlighting, no live preview — until the author
  * uses **Validate this expression**.
+ *
+ * `F2.9`: resolved against `CALC_DIALECTS` rather than compared to the `v1`
+ * literal, because the KPI dialect widened (ADR 0055 decision 2, the owner's Q3
+ * ruling) and a restated vocabulary drifts from the one it restates. **This
+ * says a `v2` row is not free text; it does not say a `v2` expression is
+ * checked.** The lint path does not run through here — it runs through
+ * `validateKpiExpression`, which still returns `"unvalidated"` for `v2` — and
+ * `calcDecorations` still lexes as `v1`, so a `v2` expression yields no tokens
+ * and therefore no highlighting. Threading the dialect through both is `F2.9`
+ * Task 15's, and until it lands a `v2` KPI renders unchecked whatever this
+ * function returns.
  */
 export function isCheckedDialect(rules: FormulaEditorRules): boolean {
-  return rules.mode === "derived" || rules.dialect === "bms-calc-v1";
+  return rules.mode === "derived" || CALC_DIALECTS.some((known) => known === rules.dialect);
 }
 
 /** A diagnostic range that CodeMirror will actually render. */

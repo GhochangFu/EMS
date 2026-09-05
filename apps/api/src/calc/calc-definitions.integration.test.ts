@@ -11,6 +11,8 @@ import {
   assertHandCreatedAssetContributesNothing,
   assertLoaderGoesDarkOnBareTenantPool,
   assertLoaderResolvesValidRowsAndSkipsInvalidOnes,
+  assertTheTwoHopCycleWritesNothingAndTheHealthyFormulaStillWrites,
+  assertV1ReferencingADerivedSiblingIsRefused,
   cleanup,
   FIXTURE_DERIVED_POINT_KEYS,
 } from "./calc-definitions.integration.spec";
@@ -94,5 +96,15 @@ describe.skipIf(!connectionString)("F2.4 — calc definition loader", () => {
   it("resolves nothing on a bare tenant pool — proves the read must be on fleet", async () => {
     if (!pool || !tenantPool) throw new Error("pools required");
     await assertLoaderGoesDarkOnBareTenantPool(pool, tenantPool, fx);
+  });
+
+  it("refuses a v1 definition that references a derived point on its own asset, and counts it", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertV1ReferencingADerivedSiblingIsRefused(pool, fx);
+  });
+
+  it("writes neither half of a two-hop v1 cycle, and still writes the healthy formula beside it", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertTheTwoHopCycleWritesNothingAndTheHealthyFormulaStillWrites(pool, fx);
   });
 });

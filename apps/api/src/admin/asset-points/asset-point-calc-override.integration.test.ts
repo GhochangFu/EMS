@@ -21,6 +21,8 @@ import {
   assertReadReportsTheTriple,
   assertSetCreatesTheRowEagerly,
   assertSetUpdatesAnExistingRowInPlace,
+  assertV2OverrideAdmitsADerivedReference,
+  assertV2OverrideRefusesStreaming,
   cleanup,
 } from "./asset-point-calc-override.integration.spec";
 
@@ -52,6 +54,8 @@ describe.skipIf(!connectionString)("F2.6 — asset point calc overrides", () => 
     // migration `0057`. See `registerFixturePointKeys`.
     releasePointKeys = await registerFixturePointKeys(created, [
       "F26_OVR_DERIVED",
+      // `F2.9` — the derived *sibling* the `bms-calc-v2` case references.
+      "F26_OVR_DERIVED_2",
       "F26_OVR_MEASURED",
     ]);
     const db = createDb(created);
@@ -122,6 +126,16 @@ describe.skipIf(!connectionString)("F2.6 — asset point calc overrides", () => 
   it("refuses an override formula that references a derived point", async () => {
     if (!pool) throw new Error("pool required");
     await assertFormulaCannotReferenceADerivedPoint(pool, fx, svc);
+  });
+
+  it("ADR 0055 decision 7 — a bms-calc-v2 override may reference a derived sibling", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertV2OverrideAdmitsADerivedReference(pool, fx, svc);
+  });
+
+  it("ADR 0055 decision 10 — a bms-calc-v2 override may not be streaming", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertV2OverrideRefusesStreaming(pool, fx, svc);
   });
 
   it("refuses to re-key a computed row from the mapping surface", async () => {

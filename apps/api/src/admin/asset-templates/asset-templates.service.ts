@@ -44,6 +44,11 @@ import {
   templateContentSchema,
   type TemplateContentParsed,
 } from "./asset-templates-content.schema";
+import {
+  boundedMissingPointKeys,
+  crossRefPointKeys,
+  type CrossRefCandidatePoint,
+} from "./asset-templates-cross-refs";
 import type {
   CreateAssetTemplateBody,
   TemplatePointBody,
@@ -619,12 +624,18 @@ export class AssetTemplatesAdminService {
    * was missed.
    */
   private async assertPointKeysActive(
-    points: { pointKey: string }[],
+    points: CrossRefCandidatePoint[],
   ): Promise<void> {
-    if (points.length === 0) {
+    // `F2.9` / ADR 0055: a `bms-calc-v2` aggregate names its point key inside
+    // the formula string, where `0058`'s foreign key cannot see it. Folded in
+    // here rather than at one call site so create, update and publish all get
+    // it — a PATCH is the common authoring path, and a key checked on create
+    // but not on update is a hole with a green test above it.
+    const declared = [...points, ...crossRefPointKeys(points)];
+    if (declared.length === 0) {
       return;
     }
-    const codes = [...new Set(points.map((point) => point.pointKey))];
+    const codes = [...new Set(declared.map((point) => point.pointKey))];
     const rows = await this.fleetDb
       .select({ code: pointKeys.code })
       .from(pointKeys)
@@ -632,7 +643,9 @@ export class AssetTemplatesAdminService {
       .where(and(eq(pointKeys.active, true), inArray(pointKeys.code, codes)));
 
     const active = new Set(rows.map((row) => row.code));
-    const missing = codes.filter((code) => !active.has(code));
+    // `F2.9`: bounded — `crossRefPointKeys` above lifts keys out of the formula
+    // string, which nothing bounds at 128. See `boundedMissingPointKeys`.
+    const missing = boundedMissingPointKeys(codes.filter((code) => !active.has(code)));
     if (missing.length > 0) {
       throw new BadRequestException(
         `Not in the active point-key catalog: ${missing.join(", ")}`,
@@ -851,6 +864,13 @@ export class AssetTemplatesAdminService {
         calcTrigger: point.calcTrigger ?? null,
         calcIntervalSeconds: point.calcIntervalSeconds ?? null,
         maxInputAgeSeconds: point.maxInputAgeSeconds ?? null,
+        // ADR 0055 decision 11 (`F2.9`). Re-stamped like every other point
+        // field, and the *version bump* is why: `createDraftFrom` copies the
+        // parent's `PointRow`s through here, so omitting it would silently
+        // reset a published ratio to NULL on the next version — which decision
+        // 11 reads as fail closed, so the formula would stop computing with no
+        // error and no edit. Held by the lifecycle integration suite.
+        minCoverageRatio: point.minCoverageRatio ?? null,
         required: point.required ?? true,
         sortOrder: point.sortOrder ?? index,
         // F2.13 / ADR 0052 decision 2 — the tier marking, re-stamped on every
@@ -963,6 +983,10 @@ export class AssetTemplatesAdminService {
       calcTrigger: point.calcTrigger as CalcTrigger | null,
       calcIntervalSeconds: point.calcIntervalSeconds,
       maxInputAgeSeconds: point.maxInputAgeSeconds,
+      // ADR 0055 decision 11 (`F2.9`). Read straight off the row: the column is
+      // on `template_points` only, so there is nothing to coalesce an override
+      // against. `null` means fail closed, not "no limit".
+      minCoverageRatio: point.minCoverageRatio,
       required: point.required,
       sortOrder: point.sortOrder,
       // F2.13 / ADR 0052 decision 2. `point.meta` is jsonb — cast rather than

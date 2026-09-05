@@ -7,6 +7,7 @@ import {
   runNullDescriptionSurvivesTests,
   runParsesAsAdminTemplateTests,
   runSentinelIdTests,
+  runCoverageRatioIsCarriedThroughTests,
   runStatusIsReadOnlyTests,
   runVersionIsZeroTests,
 } from "./stock-template-view.spec";
@@ -23,6 +24,10 @@ describe("stock template view", () => {
 
   it("carries content and points through by value", () => {
     runContentAndPointsSurviveTests();
+  });
+
+  it("carries minCoverageRatio through instead of hardcoding null", () => {
+    runCoverageRatioIsCarriedThroughTests();
   });
 
   it("bridges point meta from optional to nullable", () => {

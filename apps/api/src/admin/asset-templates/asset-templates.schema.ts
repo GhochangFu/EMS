@@ -1,6 +1,9 @@
 import {
   assetDomainCodeSchema,
   CALC_DIALECT,
+  CALC_DIALECT_V2,
+  CALC_DIALECTS,
+  calcDialectSchema,
   CALC_TRIGGERS,
   formatCalcError,
   MAX_CALC_INTERVAL_SECONDS,
@@ -46,7 +49,12 @@ export const templatePointBodySchema = z
     // per-point refinement cannot see the rest of the array — and are enforced
     // by templatePointsBodySchema's own superRefine below instead.
     formula: z.string().min(1).max(1000).nullish(),
-    formulaDialect: z.literal(CALC_DIALECT).nullish(),
+    // ADR 0055 decision 2 (`F2.9`): the vocabulary is `CALC_DIALECTS`, derived
+    // once as `calcDialectSchema`. Never a literal here — a literal pins this
+    // one endpoint to `bms-calc-v1` while every other endpoint accepts `v2`,
+    // so the same stored row reads back on one page and 400s on another
+    // (`tests/adr-0055-calc-v2-invariants.test.ts` part (c)).
+    formulaDialect: calcDialectSchema.nullish(),
     // ADR 0037 decision 4: when the formula above runs, and how stale its
     // inputs may be. Cross-checked against `kind`/`calcTrigger` below —
     // a per-point refinement, unlike decision 7's cross-point rule, since
@@ -54,6 +62,20 @@ export const templatePointBodySchema = z
     calcTrigger: z.enum(CALC_TRIGGERS).nullish(),
     calcIntervalSeconds: z.number().int().min(MIN_CALC_INTERVAL_SECONDS).max(MAX_CALC_INTERVAL_SECONDS).nullish(),
     maxInputAgeSeconds: z.number().int().min(1).max(MAX_INPUT_AGE_SECONDS_BOUND).nullish(),
+    // ADR 0055 decision 11 (`F2.9`): the fraction of an aggregate's *declared*
+    // members that must carry a fresh value before the result is written.
+    //
+    // **The `(0, 1]` bound lives here, on the write side, and nowhere else.**
+    // `0` would admit an aggregate computed over nothing, and anything above
+    // `1` can never be satisfied — both are author mistakes, and both are
+    // silent at evaluation time. `adminTemplatePointDtoSchema` deliberately
+    // carries no bound: a read reports what the row holds, and migration
+    // `0062` puts no `CHECK` on the column (the `0035`/`0036` precedent).
+    //
+    // Absent or `null` means **fail closed** — every declared member must be
+    // fresh — not "no limit". Refused below on anything but a `v2` derived
+    // point, where it is the only shape that has an aggregate to cover.
+    minCoverageRatio: z.number().gt(0).max(1).nullish(),
     required: z.boolean().default(true),
     sortOrder: z.number().int().min(0).default(0),
     // F2.13 / ADR 0052 decision 2, ADR 0040 open question 4 — the tier
@@ -72,11 +94,16 @@ export const templatePointBodySchema = z
   .strict()
   .superRefine((point, ctx) => {
     const hasFormula = point.formula != null || point.formulaDialect != null;
-    if (point.kind === "derived" && (!point.formula || point.formulaDialect !== CALC_DIALECT)) {
+    // The dialect itself is checked by `calcDialectSchema` above, so all this
+    // has to see is that both fields are present. The message names every
+    // dialect rather than one, because since ADR 0055 there are two.
+    if (point.kind === "derived" && (!point.formula || point.formulaDialect == null)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["formula"],
-        message: `A derived point requires "formula" and formulaDialect: "${CALC_DIALECT}"`,
+        message:
+          'A derived point requires "formula" and a formulaDialect of ' +
+          CALC_DIALECTS.map((dialect) => `"${dialect}"`).join(" or "),
       });
     }
     if (point.kind === "measured" && hasFormula) {
@@ -97,6 +124,24 @@ export const templatePointBodySchema = z
       });
     }
     if (point.kind === "derived") {
+      // ADR 0055 decision 10, mirrored at the write boundary. A `bms-calc-v2`
+      // formula resolves its cross-asset membership once per sweep, so there
+      // is nothing for it to resolve against on a single incoming reading —
+      // a streaming `v2` point would store clean and never compute.
+      //
+      // Combined with the `scheduled -> interval required` branch below, this
+      // is the whole of decision 10 here: a `v2` point IS scheduled, therefore
+      // it MUST carry an interval, so a null interval becomes a save-time
+      // rejection instead of a formula that silently never runs.
+      if (point.formulaDialect === CALC_DIALECT_V2 && point.calcTrigger !== "scheduled") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["calcTrigger"],
+          message:
+            `A "${CALC_DIALECT_V2}" point requires calcTrigger: "scheduled" — a cross-asset ` +
+            "formula resolves its members once per sweep and cannot run on a single reading",
+        });
+      }
       if (point.calcTrigger == null) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -117,11 +162,30 @@ export const templatePointBodySchema = z
         });
       }
     }
+
+    // ADR 0055 decision 11. The ratio is the coverage of an *aggregate's*
+    // member set, and only a `v2` derived formula can hold an aggregate — on
+    // anything else it is a value that reads as configured and is never
+    // consulted, which is the silent shape this repository refuses.
+    if (
+      point.minCoverageRatio != null &&
+      !(point.kind === "derived" && point.formulaDialect === CALC_DIALECT_V2)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["minCoverageRatio"],
+        message:
+          `minCoverageRatio applies only to a derived point in the "${CALC_DIALECT_V2}" ` +
+          "dialect — it is the fraction of an aggregate's declared members that must be fresh",
+      });
+    }
   })
   .describe(
-    'A derived point requires "formula", formulaDialect: "bms-calc-v1", and a calcTrigger ' +
-      'of "streaming" or "scheduled" ("scheduled" also requires calcIntervalSeconds); a ' +
-      "measured point must carry none of those five fields.",
+    'A derived point requires "formula", a formulaDialect of "bms-calc-v1" or ' +
+      '"bms-calc-v2", and a calcTrigger of "streaming" or "scheduled" ("scheduled" also ' +
+      'requires calcIntervalSeconds). A "bms-calc-v2" point must be "scheduled", and is ' +
+      "the only shape that may carry minCoverageRatio, which is bounded to (0, 1] and " +
+      "means fail-closed when absent. A measured point must carry none of those fields.",
   );
 
 /**
@@ -164,13 +228,27 @@ const templatePointsBodySchema = z
         // per-point refinement — nothing this sibling-scoped check can add
         return;
       }
-      const result = validateFormula(point.formula, declaredKeys);
+      // A point that reached here has a dialect (the per-point refinement
+      // refuses a derived point without one); the fallback keeps this total
+      // rather than parsing `v2` syntax under `v1` rules by accident.
+      const dialect = point.formulaDialect ?? CALC_DIALECT;
+      const result = validateFormula(point.formula, declaredKeys, { dialect });
       if (!result.ok) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: [index, "formula"],
           message: `Invalid formula: ${formatCalcError(result.errors[0])}`,
         });
+        return;
+      }
+      if (dialect !== CALC_DIALECT) {
+        // ADR 0055 decision 7 repeals the refusal below for `bms-calc-v2`: a
+        // `v2` formula may reference a derived point, and the cycle — not the
+        // reference — is what has to be refused. That check needs the real
+        // dependency graph and lands with `F2.9` Task 12, which calls
+        // `templateCycles(points)` here. Until then this branch is a no-op on
+        // purpose: a stub cycle check would be a guard that gates nothing,
+        // and a `v2` row is a counted skip in the engine until PR 2 anyway.
         return;
       }
       const derivedRef = result.refs.find((ref) => kindByKey.get(ref) === "derived");
@@ -190,8 +268,10 @@ const templatePointsBodySchema = z
   })
   .describe(
     "Every `pointKey` must be unique within this template's points. A derived point's " +
-      "`formula` must parse under bms-calc-v1, every `{ref}` must resolve to a point declared " +
-      "in this array, and none of those references may resolve to another derived point.",
+      "`formula` must parse under the dialect it declares, and every local `{ref}` must " +
+      "resolve to a point declared in this array. Under bms-calc-v1, none of those " +
+      "references may resolve to another derived point; bms-calc-v2 lifts that restriction " +
+      "(ADR 0055 decision 7) and its cross-asset references resolve at evaluation time.",
   );
 
 export const createAssetTemplateBodySchema = z

@@ -1,3 +1,5 @@
+import { CALC_DIALECT, CALC_DIALECT_V2, formatCalcError, parseFormula } from "@bms/shared";
+
 import {
   createAssetTemplateBodySchema,
   instantiateAssetsBodySchema,
@@ -500,5 +502,219 @@ function runInstantiateSchemaTests(): void {
   assert(
     !instantiateAssetsBodySchema.safeParse({ rtuId: "not-a-uuid", assets: oneAsset }).success,
     "the target id must be a uuid",
+  );
+}
+
+// ---- F2.9 / ADR 0055: the write-side dialect guards --------------------------
+
+type Issue = { path: (string | number)[]; message: string };
+
+/** The issues of a refusal, or a throw naming what was expected. */
+function refusalOf(body: unknown, what: string): Issue[] {
+  const result = createAssetTemplateBodySchema.safeParse(body);
+  if (result.success) {
+    throw new Error(`${what}: expected a refusal, but the body parsed`);
+  }
+  return result.error.issues.map((issue) => ({ path: issue.path, message: issue.message }));
+}
+
+function acceptanceOf(body: unknown, what: string): void {
+  const result = createAssetTemplateBodySchema.safeParse(body);
+  if (!result.success) {
+    throw new Error(`${what}: expected acceptance, refused with ${describeIssues(result.error.issues)}`);
+  }
+}
+
+function pointRefusalOf(point: unknown, what: string): Issue[] {
+  const result = templatePointBodySchema.safeParse(point);
+  if (result.success) {
+    throw new Error(`${what}: expected a refusal, but the point parsed`);
+  }
+  return result.error.issues.map((issue) => ({ path: issue.path, message: issue.message }));
+}
+
+function pointAcceptanceOf(point: unknown, what: string): void {
+  const result = templatePointBodySchema.safeParse(point);
+  if (!result.success) {
+    throw new Error(`${what}: expected acceptance, refused with ${describeIssues(result.error.issues)}`);
+  }
+}
+
+function describeIssues(issues: readonly Issue[]): string {
+  return issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join(" | ");
+}
+
+/**
+ * Matches on the **last** path segment, so a per-point issue (`calcTrigger`)
+ * and the same field seen through the array (`points.1.calcTrigger`) read the
+ * same way — and, more importantly, so a case that legitimately produces two
+ * issues is not asserted through `issues[0]`, whose identity depends on
+ * emission order rather than on the rule under test.
+ */
+function refusedAt(issues: readonly Issue[], field: string): boolean {
+  return issues.some((issue) => issue.path[issue.path.length - 1] === field);
+}
+
+function messagesOf(issues: readonly Issue[]): string {
+  return issues.map((issue) => issue.message).join(" | ");
+}
+
+/** A complete, valid `bms-calc-v2` point, before the field under test is set. */
+function v2Point(overrides: Record<string, unknown>): Record<string, unknown> {
+  return {
+    pointKey: "E",
+    kind: "derived",
+    formula: "sum({kw} @site)",
+    formulaDialect: CALC_DIALECT_V2,
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 60,
+    ...overrides,
+  };
+}
+
+/**
+ * `F2.9` / ADR 0055 — the dialect, decision 10's trigger rule, decision 11's
+ * coverage bound, and the dialect gate on ADR 0036 decision 7's refusal.
+ *
+ * **The `v1` half is the load-bearing one.** Decision 7 ("a derived formula may
+ * only reference measured points") is repealed for `bms-calc-v2` *only*, so the
+ * `v1` refusal and both of its messages have to survive the widening verbatim.
+ * A `v1` formula stored today still relies on it.
+ *
+ * The three ADR 0036 decision-7 cases in `runAssetTemplateSchemaTests` above do
+ * **not** cover that: none of them carries a `calcTrigger`, so
+ * `templatePointBodySchema`'s own per-point refinement refuses every element
+ * and the array-level `superRefine` — where the derived-reference rule actually
+ * lives — never runs. They pass for a reason unrelated to the rule they name.
+ * Every case below therefore carries a complete calc config.
+ */
+export function runCalcDialectGuardTests(): void {
+  // ---- v1 half: decision 7's refusal is kept, verbatim, and still gates -----
+
+  const chain = refusalOf(
+    {
+      ...validTemplate,
+      points: [
+        { pointKey: "A" },
+        { pointKey: "D", kind: "derived", formula: "{A}", formulaDialect: CALC_DIALECT, calcTrigger: "streaming" },
+        { pointKey: "E", kind: "derived", formula: "{D}", formulaDialect: CALC_DIALECT, calcTrigger: "streaming" },
+      ],
+    },
+    "a bms-calc-v1 formula referencing a derived sibling",
+  );
+  assert(
+    messagesOf(chain).includes("references another derived point"),
+    "ADR 0036 decision 7's v1 refusal must survive the v2 widening with its message " +
+      `verbatim, got: ${describeIssues(chain)}`,
+  );
+
+  const self = refusalOf(
+    {
+      ...validTemplate,
+      points: [
+        { pointKey: "SELF", kind: "derived", formula: "{SELF}", formulaDialect: CALC_DIALECT, calcTrigger: "streaming" },
+      ],
+    },
+    "a bms-calc-v1 formula referencing itself",
+  );
+  assert(
+    messagesOf(self).includes("references itself"),
+    `the v1 self-reference message must survive verbatim, got: ${describeIssues(self)}`,
+  );
+
+  // ---- v2 half: decision 7 repealed, decision 10 mirrored ------------------
+
+  acceptanceOf(
+    {
+      ...validTemplate,
+      points: [
+        { pointKey: "A" },
+        { pointKey: "D", kind: "derived", formula: "{A}", formulaDialect: CALC_DIALECT, calcTrigger: "streaming" },
+        v2Point({ formula: "{D} * 2" }),
+      ],
+    },
+    "a bms-calc-v2 formula referencing a derived sibling (ADR 0055 decision 7)",
+  );
+
+  acceptanceOf(
+    { ...validTemplate, points: [{ pointKey: "A" }, v2Point({})] },
+    "a bms-calc-v2 aggregate over a key this template does not declare — the catalog " +
+      "check for it is the service's, not the schema's",
+  );
+
+  // Decision 10's mirror. A `v2` point resolves its membership once per sweep,
+  // so it cannot run on a single incoming reading.
+  assert(
+    refusedAt(
+      pointRefusalOf(
+        v2Point({ calcTrigger: "streaming", calcIntervalSeconds: undefined }),
+        "a streaming bms-calc-v2 point",
+      ),
+      "calcTrigger",
+    ),
+    "a bms-calc-v2 point must be refused at `calcTrigger` when it is not scheduled",
+  );
+
+  // The other half of decision 10's mirror: `v2` is scheduled, and a scheduled
+  // point needs an interval — so a `v2` point with no interval is a save-time
+  // rejection rather than a formula that stores clean and never runs.
+  assert(
+    refusedAt(
+      pointRefusalOf(
+        v2Point({ calcIntervalSeconds: undefined }),
+        "a bms-calc-v2 point with no interval",
+      ),
+      "calcIntervalSeconds",
+    ),
+    "a scheduled bms-calc-v2 point with no calcIntervalSeconds must be refused at " +
+      "`calcIntervalSeconds` — decision 10 leaves it no other trigger to fall back to",
+  );
+
+  // ---- decision 11: the coverage ratio, bounded on the write side only -----
+
+  assert(
+    refusedAt(
+      pointRefusalOf(
+        {
+          pointKey: "E",
+          kind: "derived",
+          formula: "{A}",
+          formulaDialect: CALC_DIALECT,
+          calcTrigger: "streaming",
+          minCoverageRatio: 0.5,
+        },
+        "a bms-calc-v1 point carrying minCoverageRatio",
+      ),
+      "minCoverageRatio",
+    ),
+    "minCoverageRatio has no meaning under bms-calc-v1 — there is no aggregate to cover",
+  );
+
+  for (const bad of [0, 1.5]) {
+    pointRefusalOf(v2Point({ minCoverageRatio: bad }), `minCoverageRatio ${bad}`);
+  }
+  for (const good of [0.5, 1]) {
+    pointAcceptanceOf(v2Point({ minCoverageRatio: good }), `minCoverageRatio ${good}`);
+  }
+
+  // ---- the parse error is the dsl's own, and never echoes the formula ------
+
+  const noScope = parseFormula("sum({kw})", { dialect: CALC_DIALECT_V2 });
+  assert(
+    !noScope.ok && noScope.errors[0].code === "scope_required",
+    "fixture sanity: `sum({kw})` must be the scope_required case, or the assertion below " +
+      "proves nothing about which error the schema surfaces",
+  );
+  const scopeless = refusalOf(
+    { ...validTemplate, points: [{ pointKey: "A" }, v2Point({ formula: "sum({kw})" })] },
+    "a bms-calc-v2 aggregate with no scope",
+  );
+  assert(
+    !noScope.ok && messagesOf(scopeless).includes(formatCalcError(noScope.errors[0])),
+    `the schema must surface the dsl's own scope_required message, got: ${describeIssues(scopeless)}`,
+  );
+  assert(
+    !messagesOf(scopeless).includes("kw"),
+    "a formula error must never echo the referenced point key back to the caller",
   );
 }

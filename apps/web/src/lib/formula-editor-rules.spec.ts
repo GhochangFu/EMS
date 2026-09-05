@@ -6,6 +6,7 @@
  * `apps/web` Vitest project runs `environment: "node"` over
  * `src/**\/*.test.ts`, and the coverage gate does not look above `src/lib`.
  */
+import { CALC_DIALECT_V2 } from "@bms/shared";
 import type { TemplateKpi } from "@bms/shared";
 
 import {
@@ -103,6 +104,10 @@ export function runUnvalidatedKpiStillSilentTests(): void {
   );
   assert(!isCheckedDialect(kpi("unvalidated")), "an unvalidated KPI is not a checked dialect");
   assert(isCheckedDialect(kpi("bms-calc-v1")), "a bms-calc-v1 KPI is checked");
+  // `F2.9` — a real dialect, resolved against the vocabulary rather than
+  // compared to the `v1` literal. This says the row is not free text; it does
+  // **not** say a `v2` expression is checked, which is Task 15's work.
+  assert(isCheckedDialect(kpi(CALC_DIALECT_V2)), "a bms-calc-v2 KPI is not free text either");
   assert(isCheckedDialect(DERIVED), "a derived formula is always checked");
 }
 
