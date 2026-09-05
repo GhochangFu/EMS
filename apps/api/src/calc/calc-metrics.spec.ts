@@ -21,6 +21,7 @@ const ALL_REASONS_RECORD: Record<CalcRuntimeSkipReason, true> = {
   max_input_age_out_of_range: true,
   streaming_on_v2: true,
   self_reference: true,
+  v1_references_derived: true,
   missing_input: true,
   stale_input: true,
   non_finite: true,

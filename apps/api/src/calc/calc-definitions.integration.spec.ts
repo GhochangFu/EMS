@@ -7,6 +7,9 @@ import type { BmsDb } from "@bms/db";
 import type { Fixtures } from "../admin/asset-templates/asset-templates.instantiate.integration.spec";
 import { MetricsService } from "../observability/metrics.service";
 import { CalcDefinitionsService } from "./calc-definitions.service";
+import type { CalcInputSample } from "./calc-inputs";
+import { runScheduledSweep, type CalcSchedulerDeps } from "./calc-scheduler.service";
+import type { CalcWriteInput } from "./calc-write.service";
 
 /**
  * `F2.4` — `CalcDefinitionsService` against a real database. Reuses
@@ -36,6 +39,14 @@ export const FIXTURE_DERIVED_POINT_KEYS = [
   "CALCDEF_NO_TRIGGER",
   "CALCDEF_V2_SITE_SUM",
   "CALCDEF_SCHEDULED_ONLY",
+  // `F2.9` — the derived-sibling refusal fixture below. `CALCDEF_CYCLE_A` is
+  // registered once and used twice: derived on one template, **measured** on
+  // the other, which is the per-asset half of the check.
+  "CALCDEF_CYCLE_A",
+  "CALCDEF_CYCLE_B",
+  "CALCDEF_HEALTHY",
+  "CALCDEF_V2_ON_DERIVED",
+  "CALCDEF_XREF_USER",
 ];
 
 function assert(condition: boolean, message: string): void {
@@ -356,5 +367,315 @@ export async function assertCacheIsNotReReadWithinTtl(pool: pg.Pool, fx: Fixture
     fresh.some((def) => def.pointKey === "CALCDEF_VALID_STREAMING"),
     "getAllDefinitionsFresh must still return the rows that remain — a read that returned " +
       "nothing would pass the assertion above while proving nothing",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// `F2.9` — a `v1` definition may never reference a derived point on its own
+// asset (ADR 0036 decision 7, frozen for `v1` by ADR 0055 decision 3)
+// ---------------------------------------------------------------------------
+
+const CYCLE_TEMPLATE_CODE = `${TEST_TEMPLATE_CODE}-CYCLE`;
+const XREF_TEMPLATE_CODE = `${TEST_TEMPLATE_CODE}-XREF`;
+/** Any instant; the fixture's samples are stamped with it, so every input is
+ * fresh against the 300s default `max_input_age_seconds` the rows inherit. */
+const SWEEP_NOW_MS = 1_767_000_000_000;
+
+/**
+ * Two templates, two assets, and the state no write path can produce — which is
+ * the point. A `v1` label on a formula that reads a derived point arrives by
+ * template migration repointing `assets.template_id` without re-validating the
+ * surviving override (plan finding 34), so the fixture writes the rows directly
+ * rather than through `replacePoints`, which would refuse them.
+ *
+ * On the **cycle** asset: `CALCDEF_CYCLE_A` and `CALCDEF_CYCLE_B` read each
+ * other — two hops, which the one-hop self-reference backstop (`f2f0023`) does
+ * not see, and which compound every tick. Beside them, two definitions that
+ * must survive: `CALCDEF_HEALTHY` (`v1` over a measured point — every stock
+ * derived point is this shape) and `CALCDEF_V2_ON_DERIVED` (`v2`, which ADR
+ * 0055 decision 7 allows to read a derived point).
+ *
+ * On the **xref** asset: `CALCDEF_CYCLE_A` again, declared **measured** there,
+ * read by a `v1` formula. A derived-key set built globally rather than per
+ * asset would refuse it.
+ */
+async function seedDerivedSiblingTemplates(
+  db: BmsDb,
+  fx: Fixtures,
+): Promise<{ cycleAssetId: string; xrefAssetId: string; measuredKey: string }> {
+  const measuredKey = fx.pointKeys[0].code;
+  const [cycleTemplate] = await db
+    .insert(assetTemplates)
+    .values({
+      organizationId: fx.organizationId,
+      code: CYCLE_TEMPLATE_CODE,
+      version: 1,
+      name: "Derived-sibling refusal fixture",
+      assetType: "test_rig",
+      domain: "electrical",
+      status: "published",
+      publishedAt: new Date(),
+    })
+    .returning({ id: assetTemplates.id });
+
+  await db.insert(templatePoints).values([
+    {
+      organizationId: fx.organizationId,
+      templateId: cycleTemplate.id,
+      pointKey: measuredKey,
+      kind: "measured",
+      sortOrder: 0,
+    },
+    {
+      organizationId: fx.organizationId,
+      templateId: cycleTemplate.id,
+      pointKey: "CALCDEF_CYCLE_A",
+      kind: "derived",
+      formula: "{CALCDEF_CYCLE_B} + 1",
+      formulaDialect: "bms-calc-v1",
+      calcTrigger: "scheduled",
+      calcIntervalSeconds: 60,
+      sortOrder: 1,
+    },
+    {
+      organizationId: fx.organizationId,
+      templateId: cycleTemplate.id,
+      pointKey: "CALCDEF_CYCLE_B",
+      kind: "derived",
+      formula: "{CALCDEF_CYCLE_A} + 1",
+      formulaDialect: "bms-calc-v1",
+      calcTrigger: "scheduled",
+      calcIntervalSeconds: 60,
+      sortOrder: 2,
+    },
+    {
+      organizationId: fx.organizationId,
+      templateId: cycleTemplate.id,
+      pointKey: "CALCDEF_HEALTHY",
+      kind: "derived",
+      formula: `{${measuredKey}} * 2`,
+      formulaDialect: "bms-calc-v1",
+      calcTrigger: "scheduled",
+      calcIntervalSeconds: 60,
+      sortOrder: 3,
+    },
+    {
+      organizationId: fx.organizationId,
+      templateId: cycleTemplate.id,
+      pointKey: "CALCDEF_V2_ON_DERIVED",
+      kind: "derived",
+      formula: "{CALCDEF_HEALTHY} * 2",
+      formulaDialect: "bms-calc-v2",
+      calcTrigger: "scheduled",
+      calcIntervalSeconds: 60,
+      sortOrder: 4,
+    },
+  ]);
+
+  const [xrefTemplate] = await db
+    .insert(assetTemplates)
+    .values({
+      organizationId: fx.organizationId,
+      code: XREF_TEMPLATE_CODE,
+      version: 1,
+      name: "Same key, measured on another template",
+      assetType: "test_rig",
+      domain: "electrical",
+      status: "published",
+      publishedAt: new Date(),
+    })
+    .returning({ id: assetTemplates.id });
+
+  await db.insert(templatePoints).values([
+    {
+      organizationId: fx.organizationId,
+      templateId: xrefTemplate.id,
+      pointKey: "CALCDEF_CYCLE_A",
+      kind: "measured",
+      sortOrder: 0,
+    },
+    {
+      organizationId: fx.organizationId,
+      templateId: xrefTemplate.id,
+      pointKey: "CALCDEF_XREF_USER",
+      kind: "derived",
+      formula: "{CALCDEF_CYCLE_A} * 5",
+      formulaDialect: "bms-calc-v1",
+      calcTrigger: "scheduled",
+      calcIntervalSeconds: 60,
+      sortOrder: 1,
+    },
+  ]);
+
+  const inserted = await db
+    .insert(assets)
+    .values([
+      {
+        organizationId: fx.organizationId,
+        code: `${TEST_ASSET_PREFIX}CYCLE01`,
+        name: "Derived-sibling fixture asset",
+        siteName: "Fixture Site",
+        locationId: fx.otherLocationId,
+        domain: "electrical",
+        templateId: cycleTemplate.id,
+      },
+      {
+        organizationId: fx.organizationId,
+        code: `${TEST_ASSET_PREFIX}XREF01`,
+        name: "Same-key-measured fixture asset",
+        siteName: "Fixture Site",
+        locationId: fx.otherLocationId,
+        domain: "electrical",
+        templateId: xrefTemplate.id,
+      },
+    ])
+    .returning({ id: assets.id, code: assets.code });
+
+  const cycleAssetId = inserted.find((a) => a.code === `${TEST_ASSET_PREFIX}CYCLE01`)?.id;
+  const xrefAssetId = inserted.find((a) => a.code === `${TEST_ASSET_PREFIX}XREF01`)?.id;
+  if (!cycleAssetId || !xrefAssetId) {
+    throw new Error("both fixture assets must be inserted");
+  }
+  return { cycleAssetId, xrefAssetId, measuredKey };
+}
+
+/** The value of one labelled series, e.g. `reason="v1_references_derived"`. */
+function labelledSeriesValue(text: string, metricName: string, label: string): number | undefined {
+  const line = text.split("\n").find((l) => l.startsWith(metricName) && l.includes(label) && !l.startsWith("#"));
+  const match = line?.match(/\s(-?\d+(?:\.\d+)?)\s*$/);
+  return match ? Number(match[1]) : undefined;
+}
+
+export async function assertV1ReferencingADerivedSiblingIsRefused(pool: pg.Pool, fx: Fixtures): Promise<void> {
+  const db = createDb(pool);
+  const { cycleAssetId, xrefAssetId } = await seedDerivedSiblingTemplates(db, fx);
+
+  const metrics = new MetricsService();
+  const svc = new CalcDefinitionsService(db, metrics);
+  // One read, so the counter below reflects exactly one reload.
+  const scheduled = await svc.getScheduledDefinitions();
+  const onCycleAsset = scheduled.filter((def) => def.assetId === cycleAssetId);
+
+  for (const refused of ["CALCDEF_CYCLE_A", "CALCDEF_CYCLE_B"]) {
+    assert(
+      !onCycleAsset.some((def) => def.pointKey === refused),
+      `${refused} is a v1 formula reading a derived point on its own asset — ADR 0036 decision 7 ` +
+        "bans it at save and ADR 0055 decision 3 freezes that ban, so the loader must refuse the " +
+        "stored row too. Two such rows reference each other and compound every tick.",
+    );
+  }
+
+  // The refusal must happen **before** the input index, or the definition stays
+  // reachable through the streaming host's own path while looking refused here.
+  const byInput = await svc.getDefinitionsForInput(cycleAssetId, "CALCDEF_CYCLE_B");
+  assert(
+    byInput.length === 0,
+    `a refused definition must not be indexed by its inputs either, got ${byInput.length} — ` +
+      "filtering after the index build leaves getDefinitionsForInput serving the runaway",
+  );
+
+  // ---- the over-refusal guards -------------------------------------------------
+
+  assert(
+    onCycleAsset.some((def) => def.pointKey === "CALCDEF_HEALTHY"),
+    "a v1 formula over a measured sibling must stay active — that is every derived point in the " +
+      "stock catalog, and refusing it would take the calc engine down",
+  );
+  const v2OnDerived = onCycleAsset.find((def) => def.pointKey === "CALCDEF_V2_ON_DERIVED");
+  assert(
+    v2OnDerived?.dialect === "bms-calc-v2",
+    "a v2 formula may read a derived point (ADR 0055 decision 7) — it is refused by the " +
+      `scheduler's v2_not_yet_evaluable guard until Task 13, never by this one, got ${String(v2OnDerived?.dialect)}`,
+  );
+  assert(
+    scheduled.some((def) => def.assetId === xrefAssetId && def.pointKey === "CALCDEF_XREF_USER"),
+    "CALCDEF_CYCLE_A is measured on this asset's template and derived on the other one. The " +
+      "derived key set is per asset; a global set would refuse this formula and break cross-asset " +
+      "work before PR 2 starts.",
+  );
+
+  // ---- counted, never silent (ADR 0037 decision 9) --------------------------------
+
+  const skipped = await metrics.registry.getSingleMetricAsString("bms_api_calc_skipped_total");
+  assert(
+    labelledSeriesValue(skipped, "bms_api_calc_skipped_total", 'reason="v1_references_derived"') === 2,
+    `both refusals must be counted under their own reason after one reload, got: ${skipped}`,
+  );
+}
+
+export async function assertTheTwoHopCycleWritesNothingAndTheHealthyFormulaStillWrites(
+  pool: pg.Pool,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const { cycleAssetId, xrefAssetId, measuredKey } = await seedDerivedSiblingTemplates(db, fx);
+  const svc = new CalcDefinitionsService(db, new MetricsService());
+
+  // The samples a compounding cycle actually reads: its own previous tick's
+  // stored values. Without them the two cycle definitions would skip as
+  // `missing_input` whether or not they were refused, and this test would prove
+  // nothing about the refusal.
+  const samples = new Map<string, CalcInputSample>([
+    [`${cycleAssetId}:${measuredKey}`, { value: 5, timeMs: SWEEP_NOW_MS }],
+    [`${cycleAssetId}:CALCDEF_CYCLE_A`, { value: 100, timeMs: SWEEP_NOW_MS }],
+    [`${cycleAssetId}:CALCDEF_CYCLE_B`, { value: 200, timeMs: SWEEP_NOW_MS }],
+    [`${cycleAssetId}:CALCDEF_HEALTHY`, { value: 10, timeMs: SWEEP_NOW_MS }],
+    [`${xrefAssetId}:CALCDEF_CYCLE_A`, { value: 3, timeMs: SWEEP_NOW_MS }],
+  ]);
+
+  const writes: CalcWriteInput[] = [];
+  const skips: string[] = [];
+  const deps: CalcSchedulerDeps = {
+    definitions: svc,
+    inputs: {
+      getLatestSamples: async (assetId, refs) => {
+        const found = new Map<string, CalcInputSample>();
+        for (const ref of refs) {
+          const sample = samples.get(`${assetId}:${ref}`);
+          if (sample) found.set(ref, sample);
+        }
+        return found;
+      },
+    },
+    writer: {
+      writeValues: async (values) => {
+        writes.push(...values);
+        return { written: values.length, assetPointsCreated: 0 };
+      },
+    },
+    metrics: { countCalcSkipped: (reason) => skips.push(reason) },
+    logger: { warn: () => undefined },
+  };
+
+  await runScheduledSweep(deps, new Map(), SWEEP_NOW_MS);
+
+  const written = writes.filter((w) => w.assetId === cycleAssetId || w.assetId === xrefAssetId);
+  const cycleWrites = written.filter((w) => w.pointKey === "CALCDEF_CYCLE_A" || w.pointKey === "CALCDEF_CYCLE_B");
+  assert(
+    cycleWrites.length === 0,
+    `neither half of the two-hop cycle may write. Each reads the other's stored value, so a write ` +
+      `here is the runaway compounding: ${JSON.stringify(cycleWrites)}`,
+  );
+  const healthy = written.find((w) => w.pointKey === "CALCDEF_HEALTHY");
+  assert(
+    healthy?.value === 10,
+    `the v1 formula over a measured point on the **same asset** must still write 5 * 2 = 10 in the ` +
+      `same sweep — otherwise the assertion above only proves the sweep is broken, got ${String(healthy?.value)}`,
+  );
+  const xref = written.find((w) => w.pointKey === "CALCDEF_XREF_USER");
+  assert(
+    xref?.value === 15,
+    `the other asset's v1 formula reading the same key, measured there, must write 3 * 5 = 15, ` +
+      `got ${String(xref?.value)}`,
+  );
+  assert(
+    skips.includes("v2_not_yet_evaluable"),
+    `the v2 definition must be refused by the scheduler's own guard, not by the loader's — the two ` +
+      `must not silently merge, got skips: ${JSON.stringify(skips)}`,
+  );
+  assert(
+    !skips.includes("v1_references_derived"),
+    "the loader's refusal is counted in the loader's metrics, never in the sweep's — a definition " +
+      `it refused never reaches the sweep at all, got skips: ${JSON.stringify(skips)}`,
   );
 }

@@ -29,6 +29,14 @@ import {
  * `self_reference` (`F2.9`) is the odd one: it does not describe a row that
  * failed a save-time rule, it describes one whose *stored dialect disagrees
  * with its formula*. See the comment on the check itself.
+ *
+ * `v1_references_derived` (`F2.9`) is that same shape widened from one hop to
+ * every hop, and **no `toActiveDefinition` path returns it**: the check needs
+ * the *sibling* rows, which only `CalcDefinitionsService.reload()` has, so it
+ * is raised there as a post-pass. See {@link referencesADerivedSiblingUnderV1}.
+ * Like every other reason here it counts on the save-time read as well as on a
+ * sweep, because `getAllDefinitionsFresh()` re-resolves every definition —
+ * plan finding 30's known over-count, owed to Task 12 and not fixed here.
  */
 export type CalcSkipReason =
   | "not_derived"
@@ -41,7 +49,8 @@ export type CalcSkipReason =
   | "interval_out_of_range"
   | "max_input_age_out_of_range"
   | "streaming_on_v2"
-  | "self_reference";
+  | "self_reference"
+  | "v1_references_derived";
 
 export interface CalcDefinition {
   templatePointId: string;
@@ -213,4 +222,66 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
       minCoverageRatio: row.minCoverageRatio,
     },
   };
+}
+
+/**
+ * Whether `def` is a **`bms-calc-v1`** definition that reads a point which is
+ * `derived` on its own asset — the `v1_references_derived` skip, raised as a
+ * post-pass by `CalcDefinitionsService.reload()` because the answer needs the
+ * asset's *sibling* rows and `toActiveDefinition` sees one row at a time.
+ *
+ * **This is not a new rule and not a cycle detector.** ADR 0036 decision 7
+ * already forbids a `v1` formula from referencing another derived point, and
+ * ADR 0055 decision 3 freezes `v1`'s refusals forever; decision 7 of ADR 0055
+ * repeals the ban for `v2` only, which is why this reads the dialect. The
+ * write-side half is `asset-templates.schema.ts`'s decision-7 refusal
+ * (`kindByKey.get(ref) === "derived"`), and this is the same predicate read off
+ * stored rows. Task 12's real dependency graph and topological order are PR 2's;
+ * this is a flat per-asset set membership test and must stay one.
+ *
+ * **Why a read-time copy of a write-time rule is worth its lines.** The class it
+ * backstops is a stored `formula_dialect` that does not describe the formula
+ * beside it, and every guard that trusts the label is a guard that class walks
+ * past. `reload()` coalesces `formula` and `formula_dialect` independently, so
+ * the two can arrive from different rows:
+ *
+ *  - the **override** path that produced such a pair is closed (`582ed49` —
+ *    the merged pair is parsed whenever an override states a formula *or* a
+ *    dialect);
+ *  - the **one-hop** case, a formula reading the point it writes, is refused
+ *    above whatever the label says (`f2f0023`);
+ *  - the **migrate** path is still open. Repointing `assets.template_id` does
+ *    not re-validate the surviving override, because
+ *    `computeTemplateVersionDelta` reports a derived point's formula/dialect
+ *    change in `derivedChanged` and never in `refusals`
+ *    (`template-version-delta.ts`, plan finding 31's file). **That fix is ADR
+ *    0039 decision 2's "no blind apply" and is owed to PR 2**; this does not
+ *    discharge it, it only bounds the damage.
+ *
+ * Two hops is the case the one-hop backstop misses: two `v1`-labelled points on
+ * one asset referencing each other compound every tick, and nothing in PR 1
+ * detects a cycle. Refusing the *reference* rather than the *cycle* closes one
+ * hop, two hops and n hops together, whatever path produced the row.
+ *
+ * **It can never fire on legitimate `v1` content**, precisely because the
+ * write-side guard refuses such a formula at save. If it fires, something
+ * upstream stored a dialect that lies — which is exactly what makes it worth
+ * counting rather than merging into a neighbouring reason.
+ */
+export function referencesADerivedSiblingUnderV1(
+  def: CalcDefinition,
+  derivedPointKeysByAsset: ReadonlyMap<string, ReadonlySet<string>>,
+): boolean {
+  if (def.dialect !== CALC_DIALECT) {
+    return false;
+  }
+  const derivedOnThisAsset = derivedPointKeysByAsset.get(def.assetId);
+  if (!derivedOnThisAsset) {
+    return false;
+  }
+  // Per asset, never global: `point_keys.code` is an org-scoped catalog code,
+  // and the same code is measured on one template and derived on another. A
+  // global set would refuse a legal formula on the second asset — and would
+  // break cross-asset work before PR 2 begins it.
+  return def.refs.some((ref) => derivedOnThisAsset.has(ref));
 }

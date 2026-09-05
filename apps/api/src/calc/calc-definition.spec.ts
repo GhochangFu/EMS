@@ -1,6 +1,11 @@
 import { CALC_DIALECT, CALC_DIALECT_V2, DEFAULT_MAX_INPUT_AGE_SECONDS } from "@bms/shared";
 
-import { toActiveDefinition, type TemplatePointCalcRow } from "./calc-definition";
+import {
+  referencesADerivedSiblingUnderV1,
+  toActiveDefinition,
+  type CalcDefinition,
+  type TemplatePointCalcRow,
+} from "./calc-definition";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -227,5 +232,78 @@ export function runCalcDefinitionTests(): void {
     `a v2 row triggered streaming must skip as streaming_on_v2, got ${
       v2Streaming.ok ? "ok" : v2Streaming.reason
     }`,
+  );
+
+  runDerivedSiblingTests();
+}
+
+/**
+ * `F2.9` — the `v1`-references-a-derived-point backstop. ADR 0036 decision 7
+ * bans it, ADR 0055 decision 3 freezes that ban for `v1` forever, and this is
+ * the read-time half of it. The set is **per asset**: a point key is an
+ * org-scoped catalog code, and the same code is measured on one template and
+ * derived on another.
+ */
+function runDerivedSiblingTests(): void {
+  const scheduled = { calcTrigger: "scheduled", calcIntervalSeconds: 300 } as const;
+  const activeDef = (row: Partial<TemplatePointCalcRow>): CalcDefinition => {
+    const result = toActiveDefinition({ ...BASE, ...scheduled, ...row });
+    if (!result.ok) {
+      throw new Error(`this test's fixture row must resolve to a definition, got ${result.reason}`);
+    }
+    return result.def;
+  };
+
+  // `asset-1` has two derived points; `asset-2` declares only one of the same
+  // two codes derived — `TOTAL_KWH` is measured there.
+  const derivedByAsset = new Map<string, ReadonlySet<string>>([
+    ["asset-1", new Set(["TOTAL_KWH", "OTHER_DERIVED"])],
+    ["asset-2", new Set(["OTHER_DERIVED"])],
+  ]);
+
+  const v1OnDerived = activeDef({ pointKey: "TOTAL_KWH", formula: "{OTHER_DERIVED} * 2" });
+  assert(
+    referencesADerivedSiblingUnderV1(v1OnDerived, derivedByAsset),
+    "a v1 formula referencing a derived point on the same asset is what ADR 0036 decision 7 bans",
+  );
+
+  // The over-refusal guard, and the one that matters most: every derived point
+  // in the stock catalog is exactly this shape.
+  const v1OnMeasured = activeDef({ pointKey: "TOTAL_KWH", formula: "{A} + {B}" });
+  assert(
+    !referencesADerivedSiblingUnderV1(v1OnMeasured, derivedByAsset),
+    "a v1 formula over measured siblings must never be refused — that is every stock derived point",
+  );
+
+  // ADR 0055 decision 7 repeals the ban for `v2`. A `v2` definition is refused
+  // by the scheduler's `v2_not_yet_evaluable` guard until Task 13, never here —
+  // folding the two together would delete decision 7 the day Task 13 lands.
+  const v2OnDerived = activeDef({
+    pointKey: "TOTAL_KWH",
+    formula: "{OTHER_DERIVED} * 2",
+    formulaDialect: CALC_DIALECT_V2,
+  });
+  assert(
+    !referencesADerivedSiblingUnderV1(v2OnDerived, derivedByAsset),
+    "a v2 formula may read a derived point (ADR 0055 decision 7) — this check is v1's rule only",
+  );
+
+  // Per asset, not global. `TOTAL_KWH` is derived on `asset-1` and measured on
+  // `asset-2`; a global set would refuse this and break cross-asset work before
+  // PR 2 starts.
+  const sameKeyOnAnotherAsset = activeDef({
+    assetId: "asset-2",
+    pointKey: "OTHER_DERIVED",
+    formula: "{TOTAL_KWH} * 2",
+  });
+  assert(
+    !referencesADerivedSiblingUnderV1(sameKeyOnAnotherAsset, derivedByAsset),
+    "the derived key set is per asset — the same code measured on another asset must stay active",
+  );
+
+  const onAnUnknownAsset = activeDef({ assetId: "asset-404", formula: "{OTHER_DERIVED} * 2" });
+  assert(
+    !referencesADerivedSiblingUnderV1(onAnUnknownAsset, derivedByAsset),
+    "an asset with no entry in the map has no derived siblings, and must not throw",
   );
 }
