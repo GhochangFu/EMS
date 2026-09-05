@@ -8,8 +8,8 @@ import { pueTileProps } from "./pue-tile";
  * Assertions live here; `pue-tile.test.ts` is the Vitest entry point (ADR 0014).
  *
  * The function this file covers replaced `pue-estimate.ts`, which held a copy of
- * `DashboardService.estimatePue`'s fitted curve so the dashboard could show a
- * number the API had not sent. Ruling 4 of `F2.8` deletes the curve everywhere
+ * the API's fitted PUE curve so the dashboard could show a number the API had
+ * not sent. Ruling 4 of `F2.8` deletes the curve everywhere
  * and makes `pueEstimate` nullable, so the only thing left to share between the
  * three pages is **how a null is rendered** — and that is a decision, not a
  * formula: an unconfigured estate is not an error and not a zero.

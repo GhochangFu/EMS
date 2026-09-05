@@ -4,8 +4,8 @@ import type { KpiTileStatus } from "../components/kpi-tile";
  * `F2.8` — the three PUE tiles' props, from one place.
  *
  * This module replaces `pue-estimate.ts`, which held a client-side copy of
- * `DashboardService.estimatePue`'s fitted curve `1.22 + min(0.45, totalKw /
- * 12000)`. The dashboard preferred that copy over the API's own number whenever
+ * the API's fitted PUE curve (a constant plus a capped slice of the estate
+ * kW). The dashboard preferred that copy over the API's own number whenever
  * live telemetry was flowing, so the tile and the CSV export of the same estate
  * could disagree. The owner's ruling 4 of 2026-09-05 deletes the curve from all
  * three copies and makes `pueEstimate` nullable, so what the three pages now
