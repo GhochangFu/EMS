@@ -23,6 +23,7 @@ import { backfillAssetLocations, seedAssetGroups } from "./asset-groups-seed";
 import { seedAutomationRules, seedEskomLadderRules } from "./automation-rules-seed";
 import { seedRuledPointCatalog } from "./ruled-point-catalog-seed";
 import { seedAssetTemplateHealth } from "./asset-template-health-seed";
+import { seedPueDemo } from "./pue-demo-seed";
 import {
   seedDemoAlarms,
   seedDemoWorkOrders,
@@ -238,6 +239,17 @@ async function main(): Promise<void> {
       // score was demonstrable from `F4.69` on, but `bms.asset_templates` held
       // no row, so every asset reported `band: null` and the donut drew nothing.
       await seedAssetTemplateHealth(pool, eskomOrgId);
+      // `F2.8` — LAST in this bracket, and the position is load-bearing three
+      // ways: after `seedAssetGroups` above (the `incoming-supply` role is the
+      // pin's selector, and `IT_LOAD` is the group `it_kw` resolves through),
+      // after `seedPointKeyCatalog` (`rack_kw`, `site_kw`, `it_kw` and `pue`
+      // are FKs into `bms.point_keys`), and after `seedAssetTemplateHealth`
+      // (the copy source of the seven measured points, and the
+      // `BASELINE-ELECTRICAL` pin the nine incomers move off). Put this call
+      // above any of them and `verifyHierarchySeed`'s three ESKOM PUE counts
+      // fail on a cold database with 0 of 9 / 0 of 14 / 0 of 14 — and only on
+      // a cold one, which is why the cold-start gate exists.
+      await seedPueDemo(pool, eskomOrgId);
     });
 
     // ── Post-tenant ───────────────────────────────────────────────────────

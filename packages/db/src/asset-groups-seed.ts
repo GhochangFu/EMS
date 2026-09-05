@@ -139,6 +139,70 @@ export function demoRoleForAsset(code: string, domain: string): string | null {
   return null;
 }
 
+/**
+ * `F2.8` ruling 2 — the reserved group code the incomer's `it_kw` formula
+ * resolves through: `sum({rack_kw} @group('IT_LOAD'))` (`pue-demo-seed.ts`).
+ * `bms.asset_groups` is unique on `(location_id, code)` (migration `0010`),
+ * so the group is per site, which is what lets `@group` resolve against the
+ * owner's location (ADR 0055 decision 9).
+ */
+export const IT_LOAD_GROUP_CODE = "IT_LOAD";
+
+/**
+ * The demo groups an asset joins, derived from its domain and code — one per
+ * asset, except an IT asset, which joins two.
+ *
+ * **`IT_LOAD` is a second group and `it-rack` stays** (`F2.8`, plan §11
+ * decision 2). Two readers name `it-rack` — `apps/web/src/lib/
+ * control-room-access.ts` and migration `0013` — so ruling 2 adds the reserved
+ * code rather than renaming the one the scoped-access demo is built on. Keyed
+ * on the `it` domain, so PHE WB (electrical and environment only) gets no
+ * `IT_LOAD` group by construction; `asset-groups-seed.spec.ts` runs the real
+ * PHE catalog through this to hold that.
+ *
+ * Pure and exported so the mapping is testable through the real function
+ * rather than restated in a test — the same reason `demoRoleForAsset` is.
+ */
+export function demoGroupCodesForAsset(code: string, domain: string): readonly string[] {
+  if (domain === "hvac") {
+    return ["hvac"];
+  }
+  if (domain === "it") {
+    return ["it-rack", IT_LOAD_GROUP_CODE];
+  }
+  if (domain === "environment") {
+    return ["environment"];
+  }
+  if (code.includes("UPS") || code.includes("BATT")) {
+    return ["ups-battery"];
+  }
+  return ["electrical"];
+}
+
+/** The picker-facing name of a demo group; the code is what a formula names. */
+export function demoGroupName(groupCode: string): string {
+  switch (groupCode) {
+    case "it-rack":
+      return "IT & Rack Load";
+    case "ups-battery":
+      return "UPS & Battery";
+    case IT_LOAD_GROUP_CODE:
+      return "IT load (PUE)";
+    default:
+      return groupCode[0]!.toUpperCase() + groupCode.slice(1);
+  }
+}
+
+function demoGroupDescription(groupCode: string): string {
+  if (groupCode === IT_LOAD_GROUP_CODE) {
+    return (
+      "Seeded IT load group (F2.8 ruling 2). The reserved code the site incomer's " +
+      "it_kw formula resolves through @group('IT_LOAD'); one per site."
+    );
+  }
+  return "Seeded operational asset group for scoped access demos.";
+}
+
 export async function seedAssetGroups(
   pool: pg.Pool,
   organizationId: string,
@@ -166,56 +230,42 @@ export async function seedAssetGroups(
   `);
 
   for (const row of assetScopeRows.rows) {
-    const groupCode =
-      row.domain === "hvac"
-        ? "hvac"
-        : row.domain === "it"
-          ? "it-rack"
-          : row.domain === "environment"
-            ? "environment"
-            : row.code.includes("UPS") || row.code.includes("BATT")
-              ? "ups-battery"
-              : "electrical";
-    const groupName =
-      groupCode === "it-rack"
-        ? "IT & Rack Load"
-        : groupCode === "ups-battery"
-          ? "UPS & Battery"
-          : groupCode[0]!.toUpperCase() + groupCode.slice(1);
-    const group = await pool.query<{ id: string }>(
-      `
-      INSERT INTO bms.asset_groups (location_id, code, name, description, organization_id)
-      VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (location_id, code) DO UPDATE
-      SET name = EXCLUDED.name,
-          description = EXCLUDED.description,
-          organization_id = EXCLUDED.organization_id
-      RETURNING id
-      `,
-      [
-        row.location_id,
-        groupCode,
-        groupName,
-        "Seeded operational asset group for scoped access demos.",
-        organizationId,
-      ],
-    );
-    const groupId = group.rows[0]?.id;
-    if (!groupId) {
-      continue;
+    for (const groupCode of demoGroupCodesForAsset(row.code, row.domain)) {
+      const group = await pool.query<{ id: string }>(
+        `
+        INSERT INTO bms.asset_groups (location_id, code, name, description, organization_id)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (location_id, code) DO UPDATE
+        SET name = EXCLUDED.name,
+            description = EXCLUDED.description,
+            organization_id = EXCLUDED.organization_id
+        RETURNING id
+        `,
+        [
+          row.location_id,
+          groupCode,
+          demoGroupName(groupCode),
+          demoGroupDescription(groupCode),
+          organizationId,
+        ],
+      );
+      const groupId = group.rows[0]?.id;
+      if (!groupId) {
+        continue;
+      }
+      // `COALESCE` on the existing value, not `EXCLUDED.role`: this seed re-runs
+      // on every `compose up`, and `F3.37`'s whole purpose is that an admin sets
+      // this column. Writing `EXCLUDED.role` would silently revert their choice
+      // at the next boot. So the seed fills a NULL and never overwrites a value.
+      await pool.query(
+        `
+        INSERT INTO bms.asset_group_members (asset_group_id, asset_id, role)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (asset_group_id, asset_id) DO UPDATE
+        SET role = COALESCE(bms.asset_group_members.role, EXCLUDED.role)
+        `,
+        [groupId, row.asset_id, demoRoleForAsset(row.code, row.domain)],
+      );
     }
-    // `COALESCE` on the existing value, not `EXCLUDED.role`: this seed re-runs
-    // on every `compose up`, and `F3.37`'s whole purpose is that an admin sets
-    // this column. Writing `EXCLUDED.role` would silently revert their choice
-    // at the next boot. So the seed fills a NULL and never overwrites a value.
-    await pool.query(
-      `
-      INSERT INTO bms.asset_group_members (asset_group_id, asset_id, role)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (asset_group_id, asset_id) DO UPDATE
-      SET role = COALESCE(bms.asset_group_members.role, EXCLUDED.role)
-      `,
-      [groupId, row.asset_id, demoRoleForAsset(row.code, row.domain)],
-    );
   }
 }

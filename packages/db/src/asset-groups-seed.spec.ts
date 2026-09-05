@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import { demoRoleForAsset } from "./asset-groups-seed";
+import { demoGroupCodesForAsset, demoGroupName, demoRoleForAsset } from "./asset-groups-seed";
 import { assetCode, deviceDomain, loadPheCatalog } from "./phe-pilot-seed";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
@@ -149,4 +149,54 @@ export function assertOnlyElectricalAssetsTakeARole(): void {
 export function assertAnUndecidedCodeStaysNull(): void {
   expect(demoRoleForAsset("CR-SOMETHING-ELSE", "electrical")).toBeNull();
   expect(demoRoleForAsset("", "electrical")).toBeNull();
+}
+
+/**
+ * `F2.8` ruling 2 — every IT asset joins a **second** group, `IT_LOAD`, and
+ * nothing else does.
+ *
+ * `IT_LOAD` is the reserved code the incomer's `it_kw` formula resolves through
+ * (`sum({rack_kw} @group('IT_LOAD'))`, `pue-demo-seed.ts`), and `@group` resolves
+ * against the owner's location, so the group is per site. `it-rack` stays: two
+ * readers name it (`apps/web/src/lib/control-room-access.ts`, migration `0013`),
+ * so ruling 2 adds a group rather than renaming one. The pure function replaced
+ * the inline ternary in `seedAssetGroups` so that this table can run through
+ * the real mapping instead of restating it.
+ */
+export function assertEveryItAssetJoinsItRackAndItLoad(): void {
+  expect(demoGroupCodesForAsset("X", "it")).toEqual(["it-rack", "IT_LOAD"]);
+  expect(demoGroupCodesForAsset("CR-PDU-1", "it")).toEqual(["it-rack", "IT_LOAD"]);
+  expect(demoGroupCodesForAsset("CR-HVAC-1", "hvac")).toEqual(["hvac"]);
+  expect(demoGroupCodesForAsset("CR-ENV-1", "environment")).toEqual(["environment"]);
+  expect(demoGroupCodesForAsset("CR-UPS-1", "electrical")).toEqual(["ups-battery"]);
+  expect(demoGroupCodesForAsset("CR-BATT-1", "electrical")).toEqual(["ups-battery"]);
+  expect(demoGroupCodesForAsset("CR-Q1", "electrical")).toEqual(["electrical"]);
+  expect(demoGroupCodesForAsset("CR-UTILITY-11KV", "electrical")).toEqual(["electrical"]);
+  // The name is the one the picker shows; the code is what the formula names.
+  expect(demoGroupName("IT_LOAD")).toBe("IT load (PUE)");
+  expect(demoGroupName("it-rack")).toBe("IT & Rack Load");
+  expect(demoGroupName("ups-battery")).toBe("UPS & Battery");
+  expect(demoGroupName("electrical")).toBe("Electrical");
+}
+
+/**
+ * PHE WB gets no `IT_LOAD` group, by construction and not by luck.
+ *
+ * The anti-vacuity half of the case above: `IT_LOAD` is keyed on the `it`
+ * domain, and none of the 48 PHE devices is filed under it (`deviceDomain`
+ * gives `electrical` or `environment`). Run through the real catalog so a
+ * re-filed device shows up here, and so the `48` guards the loop against an
+ * empty catalog that would make every `not.toContain` pass for nothing.
+ */
+export function assertNoPheDeviceJoinsItLoad(): void {
+  const catalog = loadPheCatalog();
+  const seen = new Set<string>();
+  for (const row of catalog.rows) {
+    const code = assetCode(row.DeviceCode);
+    seen.add(code);
+    const codes = demoGroupCodesForAsset(code, deviceDomain(row.DeviceCode, row.ModelDeviceCode));
+    expect(codes, `${code} joined IT_LOAD`).not.toContain("IT_LOAD");
+    expect(codes, `${code} joined no group`).toHaveLength(1);
+  }
+  expect(seen.size, "the PHE catalog no longer holds 48 devices").toBe(48);
 }

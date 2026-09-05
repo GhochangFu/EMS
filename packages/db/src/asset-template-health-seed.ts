@@ -17,7 +17,7 @@ import type pg from "pg";
  * fabricated *Excellent* on an executive screen — and it is why the cut-points
  * have to be *seeded* rather than defaulted.
  *
- * **Four templates, not one, and that is forced rather than chosen.**
+ * **Four domain baselines, not one, and that is forced rather than chosen.**
  * `asset_templates.domain` is a foreign key to `bms.asset_domains`, and the 71
  * scored assets span all four domains the seed uses (electrical 50, environment
  * 14, it 4, hvac 3). One template can carry one domain, so pinning every asset
@@ -25,7 +25,14 @@ import type pg from "pg";
  * mismatch no constraint catches and every reader has to un-learn. ADR 0031
  * Amendment 1 already ruled the other direction of the same pair: instantiation
  * copies the template's domain onto the asset precisely so the two cannot
- * disagree.
+ * disagree. A fifth `BASELINE-*` row exists since `F2.8` —
+ * `BASELINE-ELECTRICAL-INCOMER`, written by `pue-demo-seed.ts` *after* this
+ * module. It is not a domain baseline: it carries the same bands and the same
+ * seven measured points as `BASELINE-ELECTRICAL`, plus three `bms-calc-v2`
+ * derived points, and only the nine `incoming-supply` assets move to it. This
+ * module never writes to it (its code is not `'BASELINE-' || upper(domain)`)
+ * and never moves an asset off it (the pin below guards on `template_id IS
+ * NULL`).
  *
  * **Each template declares points, because `publish()` refuses one that does
  * not.** `AssetTemplatesService.publish` throws *"A template with no points
@@ -176,6 +183,18 @@ ON CONFLICT (organization_id, code, version) DO NOTHING
  *
  * `unit` stays NULL: it is an *override* of the catalog unit, and there is
  * nothing to override.
+ *
+ * **`source_kind <> 'computed'` (`F2.8`, plan §11 decision 8).** The calc
+ * engine's `CalcWriteService` creates a `computed` catalog row for every
+ * derived point the first time it writes it — for the demo, `site_kw`,
+ * `it_kw` and `pue` on each of the nine incomers. Those rows are the engine's
+ * *outputs*; read back here without the predicate, the next `compose up`
+ * would declare all three as MEASURED points on `BASELINE-ELECTRICAL`, the
+ * template the other 41 electrical assets stay pinned to. Nothing would fail:
+ * `publish()` is not involved, the FK holds, and the baseline would simply
+ * claim three tags no electrical asset carries. The predicate is what keeps
+ * the engine's own rows from feeding back into a baseline through the seed,
+ * and `asset-template-health-seed.spec.ts` pins it by its exact text.
  */
 export const HEALTH_TEMPLATE_POINTS_SQL = `
 INSERT INTO bms.template_points
@@ -198,6 +217,7 @@ JOIN bms.asset_templates t
  AND t.version = 1
 WHERE ap.organization_id = $1
   AND ap.active = true
+  AND ap.source_kind <> 'computed'
   AND a.active = true
 ORDER BY t.id, ap.point_key, ap.source_data_key
 ON CONFLICT (template_id, point_key) DO NOTHING

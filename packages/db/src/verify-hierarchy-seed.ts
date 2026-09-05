@@ -92,6 +92,9 @@ export async function verifyHierarchySeed(
       eskom_uncovered_electrical_assets: string;
       orphan_assets: string;
       loc_mismatch: string;
+      eskom_incomers_on_pue_template: string;
+      eskom_it_load_members: string;
+      eskom_it_rack_kw_points: string;
     }>(`
       SELECT
         (SELECT COUNT(*)::text FROM bms.locations l
@@ -116,7 +119,34 @@ export async function verifyHierarchySeed(
         (SELECT COUNT(*)::text FROM bms.assets WHERE location_id IS NULL) AS orphan_assets,
         (SELECT COUNT(*)::text FROM bms.assets a
           INNER JOIN bms.rtus r ON r.id = a.rtu_id
-          WHERE a.location_id IS DISTINCT FROM r.location_id) AS loc_mismatch
+          WHERE a.location_id IS DISTINCT FROM r.location_id) AS loc_mismatch,
+        -- F2.8. THE THREE COUNTS BELOW PROVE THE SEED ORDER FOR THE DEMO PUE,
+        -- the same way the PHE membership counts in the PHEWB pass do for
+        -- F3.41. seedPueDemo runs last in the ESKOM bracket and depends on
+        -- three earlier calls: seedAssetGroups (the incoming-supply role that
+        -- selects the incomer, and the IT_LOAD group), seedPointKeyCatalog
+        -- (the FK for rack_kw and the three derived keys) and
+        -- seedAssetTemplateHealth (the copy source and the pin it moves). A
+        -- developer database has been seeded many times and holds every row
+        -- already; only a cold database (CI, or the scratch container plan
+        -- section 8 asks for) can show a call that ran too early, and only
+        -- these counts read it.
+        --
+        -- NO BACKTICK MAY APPEAR IN THIS COMMENT (see the PHEWB pass).
+        (SELECT COUNT(*)::text FROM bms.assets a
+          INNER JOIN bms.asset_templates t ON t.id = a.template_id
+          INNER JOIN bms.organizations o ON o.id = a.organization_id
+          WHERE o.code = 'ESKOM'
+            AND t.code = 'BASELINE-ELECTRICAL-INCOMER') AS eskom_incomers_on_pue_template,
+        (SELECT COUNT(*)::text FROM bms.asset_group_members agm
+          INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+          INNER JOIN bms.organizations o ON o.id = ag.organization_id
+          WHERE o.code = 'ESKOM' AND ag.code = 'IT_LOAD') AS eskom_it_load_members,
+        (SELECT COUNT(*)::text FROM bms.asset_points ap
+          INNER JOIN bms.assets a ON a.id = ap.asset_id
+          INNER JOIN bms.organizations o ON o.id = a.organization_id
+          WHERE o.code = 'ESKOM' AND a.domain = 'it'
+            AND ap.point_key = 'rack_kw') AS eskom_it_rack_kw_points
     `);
     const row = res.rows[0];
     // 11 = 10 operational + the deliberately inactive ESK-DECOMM-01 that F4.10
@@ -138,6 +168,19 @@ export async function verifyHierarchySeed(
       row?.eskom_uncovered_electrical_assets,
       0,
     );
+    // `F2.8`. Fixed seed cardinalities read off the ESKOM catalog
+    // (`eskom-assets-seed.ts`, a repository file) — NOT lifetime counters.
+    // Nine incomers: one `*-CR-UTILITY*` asset per RSMOC site, each carrying
+    // `role = 'incoming-supply'` from `demoRoleForAsset`; CSMOC Gauteng has
+    // no incomer and the decommissioned substation's one asset has no role,
+    // so both stay on `BASELINE-ELECTRICAL`. Fourteen IT assets: one at each
+    // of eight RSMOC sites and six at Western Cape, each a member of its
+    // site's `IT_LOAD` group and each with one `rack_kw` catalog row — the
+    // row `readScopeMembers` needs before `sum({rack_kw} @group('IT_LOAD'))`
+    // resolves any member at all.
+    expect("ESKOM incomers pinned to BASELINE-ELECTRICAL-INCOMER", row?.eskom_incomers_on_pue_template, 9);
+    expect("ESKOM IT_LOAD group members", row?.eskom_it_load_members, 14);
+    expect("ESKOM IT assets with a rack_kw catalog row", row?.eskom_it_rack_kw_points, 14);
   });
 
   // ── Pass 3: PHEWB ─────────────────────────────────────────────────────────
