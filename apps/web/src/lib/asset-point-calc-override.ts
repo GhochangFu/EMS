@@ -259,3 +259,52 @@ export function draftProblems(
 export function canSubmit(draft: OverrideDraft, config: AssetPointCalcConfigDto): boolean {
   return draftProblems(draft, config).length === 0;
 }
+
+/** How long ago, in the coarsest unit that still says something useful. */
+function ago(elapsedMs: number): string {
+  // A clock that reads slightly behind the server's would otherwise produce
+  // "-1 s ago", which looks like a bug in the engine rather than in the clock.
+  const seconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  if (seconds < 60) {
+    return `${seconds} s ago`;
+  }
+  if (seconds < 3600) {
+    return `${Math.floor(seconds / 60)} min ago`;
+  }
+  return `${Math.floor(seconds / 3600)} h ago`;
+}
+
+/**
+ * The calc-points status pill's text (`F2.9` Task 16 — ADR 0055 decision 8,
+ * plan design decision 9, layer 3), or `null` when there is no pill to render.
+ *
+ * `written 12 s ago` / `skipped: dependency_cycle`. The two arms say different
+ * things on purpose. For a formula that computed, the useful fact is *when* —
+ * a point last written an hour ago on a 5-minute interval is the symptom an
+ * operator is looking for. For a refusal, the useful fact is *why*: the reason
+ * is what tells them whether they broke it by moving an asset into a group, and
+ * the age of a refusal that repeats every due window says nothing.
+ *
+ * `nowMs` is a parameter and the clock is never read here — the caller passes
+ * its own, so this stays pure and the "12 s ago" case is a fixed number rather
+ * than a race.
+ *
+ * `lastSkipReason` is rendered as received. It is `z.string()` in the contract
+ * on purpose: the vocabulary lives in `apps/api`, and a web-side map from
+ * reason to prose would silently fall through to nothing the first time the
+ * engine gained a reason — which is exactly when an operator most needs to see
+ * one. `dependency_cycle` is not beautiful, but it is searchable, it matches
+ * the label on `bms_api_calc_skipped_total`, and it is never absent.
+ */
+export function calcRuntimePillLabel(
+  runtime: AssetPointCalcConfigDto["runtime"],
+  nowMs: number,
+): string | null {
+  if (runtime === null) {
+    return null;
+  }
+  if (runtime.lastOutcome === "written") {
+    return `written ${ago(nowMs - new Date(runtime.at).getTime())}`;
+  }
+  return runtime.lastSkipReason === null ? "skipped" : `skipped: ${runtime.lastSkipReason}`;
+}

@@ -20,6 +20,7 @@ import type {
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { CalcDependencyService } from "../../calc/calc-dependency.service";
+import { CalcStatusRegistry } from "../../calc/calc-status.registry";
 import { computedSourceDataKey } from "../../calc/computed-source-data-key";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
@@ -85,9 +86,26 @@ export class AssetPointCalcOverrideService {
     private readonly audit: MasterDataAuditService,
     // `F2.9` Task 12 — the save-time cycle detector, exported by `CalcModule`.
     private readonly dependencies: CalcDependencyService,
+    // `F2.9` Task 16 — the engine's last outcome per formula instance, also
+    // exported by `CalcModule`. Read-only here: this service reports what the
+    // hosts recorded and never records anything itself.
+    private readonly status: CalcStatusRegistry,
   ) {}
 
-  /** Decision 8 — every derived point of one asset: template, override, effective. */
+  /**
+   * Decision 8 — every derived point of one asset: template, override,
+   * effective, and (`F2.9` Task 16) what the engine last did with it.
+   *
+   * **`runtime` is read from an in-process map, and that limit is the reason
+   * the field is nullable.** `CalcStatusRegistry` holds what *this* API
+   * process's two calc hosts recorded; it is empty after a restart, and under
+   * more than one API instance this read is answered by whichever instance
+   * took the request — which may not be the one that ran the sweep. A `null`
+   * therefore means "this process has no outcome for that point", not "the
+   * engine never ran it". See the registry's own docblock: it is an operator
+   * hint, deliberately, and the counter and the transition log remain the
+   * authoritative record of a refusal.
+   */
   async listCalcPoints(
     jwt: JwtPayload,
     assetId: string,
@@ -119,6 +137,7 @@ export class AssetPointCalcOverrideService {
       const row = rowByKey.get(point.pointKey);
       const template = toFields(point);
       const override = row ? toFields(row) : EMPTY_FIELDS;
+      const runtime = this.status.get(assetId, point.id);
       return {
         pointKey: point.pointKey,
         templatePointId: point.id,
@@ -128,6 +147,14 @@ export class AssetPointCalcOverrideService {
         template,
         override,
         effective: mergeFields(override, template),
+        runtime:
+          runtime === null
+            ? null
+            : {
+                lastOutcome: runtime.outcome,
+                lastSkipReason: runtime.reason,
+                at: new Date(runtime.atMs).toISOString(),
+              },
       };
     });
 

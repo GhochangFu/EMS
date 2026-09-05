@@ -4,6 +4,7 @@ import { defKey, inputKey } from "./calc-batch";
 import { toActiveDefinition, type CalcDefinition, type TemplatePointCalcRow } from "./calc-definition";
 import type { Membership } from "./calc-graph";
 import type { CalcInputSample } from "./calc-inputs";
+import { CalcStatusRegistry } from "./calc-status.registry";
 import type { CalcWriteInput } from "./calc-write.service";
 import { runSchedulerLoop, runScheduledSweep, type CalcSchedulerDeps, type CalcSchedulerLoopDeps } from "./calc-scheduler.service";
 
@@ -42,7 +43,7 @@ function count(skips: readonly string[], reason: string): number {
   return skips.filter((s) => s === reason).length;
 }
 
-function def(overrides: Partial<CalcDefinition> & { formula: string }): CalcDefinition {
+export function def(overrides: Partial<CalcDefinition> & { formula: string }): CalcDefinition {
   const dialect = overrides.dialect ?? CALC_DIALECT;
   const parsed = parseFormula(overrides.formula, { dialect });
   if (!parsed.ok) {
@@ -79,12 +80,16 @@ type SweepHarness = {
   warnings: string[];
   excluded: number[];
   membersMax: number[];
+  /** The **real** registry, never a recording fake: a fake that keyed itself
+   * would leave every registry assertion here green against a registry that
+   * keyed on the template point id alone, or dropped skips entirely. */
+  status: CalcStatusRegistry;
 };
 
 /** `samplesByAssetRef` is keyed by `inputKey(assetId, pointKey)`, so the local
  * read and the pairs read serve one map — a stored value is the same row
  * whichever way a formula reaches it. */
-function buildSweepDeps(
+export function buildSweepDeps(
   scheduled: CalcDefinition[],
   samplesByAssetRef: Map<string, CalcInputSample>,
   options: SweepOptions = {},
@@ -94,6 +99,7 @@ function buildSweepDeps(
   const warnings: string[] = [];
   const excluded: number[] = [];
   const membersMax: number[] = [];
+  const status = new CalcStatusRegistry();
   const deps: CalcSchedulerDeps = {
     definitions: { getScheduledDefinitions: async () => scheduled },
     inputs: {
@@ -137,9 +143,10 @@ function buildSweepDeps(
       countCalcAggregateExcluded: (n) => excluded.push(n),
       setCalcAggregateMembersMax: (n) => membersMax.push(n),
     },
+    status,
     logger: { warn: (m: unknown) => warnings.push(String(m)) },
   };
-  return { deps, writes, skips, warnings, excluded, membersMax };
+  return { deps, writes, skips, warnings, excluded, membersMax, status };
 }
 
 async function runSweepTests(): Promise<void> {
@@ -386,6 +393,7 @@ function buildLoopDeps(
       countCalcAggregateExcluded: () => undefined,
       setCalcAggregateMembersMax: () => undefined,
     },
+    status: new CalcStatusRegistry(),
     logger: { warn: () => undefined },
     sleep: async (ms) => {
       sleepCalls += 1;
@@ -522,6 +530,7 @@ async function runLoopTests(): Promise<void> {
         countCalcAggregateExcluded: () => undefined,
         setCalcAggregateMembersMax: () => undefined,
       },
+      status: new CalcStatusRegistry(),
       logger: { warn: () => undefined },
       sleep: async (ms) => {
         nowRef.value += ms;
@@ -713,7 +722,7 @@ async function runV2SweepTests(): Promise<void> {
       ["asset-b", [["A_CODE", "asset-a"]]],
       ["asset-c", [["A_CODE", "asset-a"]]],
     ]);
-    const { deps, writes, skips } = buildSweepDeps([a, b, downstream, healthy], samples, { membership });
+    const { deps, writes, skips, status } = buildSweepDeps([a, b, downstream, healthy], samples, { membership });
     const lastRunMs = new Map<string, number>();
     await runScheduledSweep(deps, lastRunMs, 0);
 
@@ -733,6 +742,22 @@ async function runV2SweepTests(): Promise<void> {
         `(100 - 1 = 99; plan design decision 7, ruling Q6), got ${JSON.stringify(batch)}`,
     );
     assert(count(skips, "dependency_cycle") === 2, `both members counted, got ${JSON.stringify(skips)}`);
+
+    // Layer 3 (`F2.9` Task 16): the counter says two refusals happened; only
+    // the registry says *which two points*, which is what the operator who
+    // just moved an asset into a group is looking at.
+    for (const member of [a, b]) {
+      const recorded = status.get(member.assetId, member.templatePointId);
+      assert(
+        recorded?.outcome === "skipped" && recorded.reason === "dependency_cycle",
+        `${member.assetId} must be recorded as skipped/dependency_cycle, got ${JSON.stringify(recorded)}`,
+      );
+    }
+    assert(
+      status.get(downstream.assetId, downstream.templatePointId)?.outcome === "written",
+      `a formula downstream of the cycle computed, so its page shows written, got ` +
+        `${JSON.stringify(status.get(downstream.assetId, downstream.templatePointId))}`,
+    );
 
     await runScheduledSweep(deps, lastRunMs, 10_000);
     assert(

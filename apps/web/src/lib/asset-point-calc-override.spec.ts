@@ -3,6 +3,7 @@ import type { AssetPointCalcConfigDto } from "@bms/shared";
 
 import {
   calcFieldRows,
+  calcRuntimePillLabel,
   canClear,
   canSubmit,
   columnOrigin,
@@ -71,6 +72,9 @@ function config(
       calcIntervalSeconds: ov.calcIntervalSeconds ?? template.calcIntervalSeconds,
       maxInputAgeSeconds: ov.maxInputAgeSeconds ?? template.maxInputAgeSeconds,
     },
+    // `F2.9` Task 16 — the panel's own rules do not read it, and the pill's
+    // label is asserted on the field directly in `runRuntimePillLabelTests`.
+    runtime: null,
   };
 }
 
@@ -299,5 +303,66 @@ export function runEmptySubmitIsRefusedTests(): void {
   assert(
     problems.join(" ").includes("Clear"),
     `and must point at Clear rather than reading as an error, got: ${problems.join(" ")}`,
+  );
+}
+
+/**
+ * `F2.9` Task 16 — the calc-points status pill's text (plan design decision 9,
+ * layer 3).
+ *
+ * `null` in, `null` out is the case that keeps the pill from appearing at all
+ * on a point this API process has not evaluated: the field is nullable for a
+ * real reason (the registry is in-process and empty after a restart), and a
+ * pill reading "skipped" there would state a refusal that never happened.
+ */
+export function runRuntimePillLabelTests(): void {
+  const at = "2026-09-05T12:00:00.000Z";
+  const nowMs = new Date(at).getTime();
+
+  assert(
+    calcRuntimePillLabel(null, nowMs) === null,
+    "no recorded outcome means no pill — never a pill that invents one",
+  );
+
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "written", lastSkipReason: null, at }, nowMs + 12_000) ===
+      "written 12 s ago",
+    `a written point reads as its age, got ${String(
+      calcRuntimePillLabel({ lastOutcome: "written", lastSkipReason: null, at }, nowMs + 12_000),
+    )}`,
+  );
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "written", lastSkipReason: null, at }, nowMs + 90_000) ===
+      "written 1 min ago",
+    "past a minute the pill reads in minutes rather than 90 s",
+  );
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "written", lastSkipReason: null, at }, nowMs + 7_200_000) ===
+      "written 2 h ago",
+    "past an hour it reads in hours — the shape that says a scheduled point has stopped",
+  );
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "written", lastSkipReason: null, at }, nowMs - 4_000) ===
+      "written 0 s ago",
+    "a browser clock behind the server's must not produce a negative age, which reads as a bug " +
+      "in the engine rather than in the clock",
+  );
+
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "skipped", lastSkipReason: "dependency_cycle", at }, nowMs + 12_000) ===
+      "skipped: dependency_cycle",
+    "a refusal names its reason and not its age — the reason is what an operator who just moved " +
+      "an asset into a group needs, and a refusal repeats every due window anyway",
+  );
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "skipped", lastSkipReason: "a_reason_web_has_never_heard_of", at }, nowMs) ===
+      "skipped: a_reason_web_has_never_heard_of",
+    "an unknown reason is rendered as received. The vocabulary lives in apps/api and the contract " +
+      "keeps the field a plain string for that reason; a web-side lookup would show nothing at all " +
+      "the first time the engine gained a reason, which is when it matters most.",
+  );
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "skipped", lastSkipReason: null, at }, nowMs) === "skipped",
+    "a skip with no reason still renders a pill, without a dangling colon",
   );
 }

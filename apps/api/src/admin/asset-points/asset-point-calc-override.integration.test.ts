@@ -8,6 +8,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { CalcDefinitionsService } from "../../calc/calc-definitions.service";
 import { CalcDependencyService } from "../../calc/calc-dependency.service";
 import { CalcScopeService } from "../../calc/calc-scope.service";
+import { CalcStatusRegistry } from "../../calc/calc-status.registry";
 import { MetricsService } from "../../observability/metrics.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { registerFixturePointKeys } from "../../testing/integration-fixtures";
@@ -74,6 +75,10 @@ describe.skipIf(!connectionString)("F2.6 — asset point calc overrides", () => 
       // graph node), so they now also hold that the detector admits what it
       // should. The refusals themselves live in the `.cycles` sibling.
       new CalcDependencyService(db, new CalcDefinitionsService(db, new MetricsService()), new CalcScopeService(db)),
+      // `F2.9` Task 16 — empty, so every `runtime` this suite reads is `null`.
+      // The recorded case lives in the `.cycles` sibling, beside the refusal
+      // that produces it.
+      new CalcStatusRegistry(),
     );
     fx = await loadFixtures(created);
     await cleanup(created);

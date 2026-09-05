@@ -9,6 +9,7 @@ import {
   runDraftToBodyTests,
   runEmptySubmitIsRefusedTests,
   runFieldRowTests,
+  runRuntimePillLabelTests,
   runV2IsScheduledOnlyTests,
 } from "./asset-point-calc-override.spec";
 
@@ -48,5 +49,9 @@ describe("F2.6 — per-point calc override panel rules", () => {
 
   it("refuses a streaming override on a merged bms-calc-v2 point (ADR 0055 decision 10)", () => {
     runV2IsScheduledOnlyTests();
+  });
+
+  it("labels the calc-points status pill from what the engine last did (F2.9 Task 16)", () => {
+    runRuntimePillLabelTests();
   });
 });

@@ -5,6 +5,7 @@ import type pg from "pg";
 import { assetTemplates, assets, createDb, templatePoints } from "@bms/db";
 import { CALC_DIALECT, CALC_DIALECT_V2 } from "@bms/shared";
 
+import type { CalcStatusRegistry } from "../../calc/calc-status.registry";
 import type { Fixtures } from "../asset-templates/asset-templates.instantiate.integration.spec";
 import type { AssetPointCalcOverrideService } from "./asset-point-calc-override.service";
 
@@ -361,5 +362,84 @@ export async function assertQualifiedReferenceIsConfinedToLocation(
   assert(
     (await formulaOf(pool, fixture.y, KEY_KW)) === acrossLocations,
     "the refusal must precede the update too — the existing row must be untouched",
+  );
+}
+
+/**
+ * `F2.9` Task 16 — design decision 9, layer 3: a refusal the engine recorded
+ * reaches the page the operator is looking at.
+ *
+ * The registry passed in is the **same instance** the service was constructed
+ * with, so a `record` here is exactly what a sweep in the same process would
+ * have left behind. Nothing is stubbed between the write and the read.
+ *
+ * **Three controls, because "a nullable object" is the easy thing to get
+ * wrong.** A field that is always `null` satisfies the contract, satisfies
+ * every existing case in this directory, and would ship. So this asserts, in
+ * order: the point reads `null` *before* anything is recorded (or the recorded
+ * read below proves nothing); the recorded read carries **exactly** the three
+ * promised keys with the promised values, and `at` decodes back to the
+ * millisecond that was recorded; and a **different** asset's point is still
+ * `null` afterwards, which is what makes this a per-formula-instance read
+ * rather than one flag for the estate.
+ *
+ * The fourth assertion is the `written` half: `lastSkipReason` must come back
+ * `null` rather than absent or `"null"`, since that is the value the web pill
+ * branches on.
+ */
+export async function assertTheCalcPointsReadCarriesTheRecordedRefusal(
+  pool: pg.Pool,
+  fx: Fixtures,
+  svc: AssetPointCalcOverrideService,
+  status: CalcStatusRegistry,
+): Promise<void> {
+  const fixture = await seedCycleFixture(pool, fx);
+
+  const before = (await svc.listCalcPoints(fx.adminJwt, fixture.x)).items;
+  const total = before.find((item) => item.pointKey === KEY_TOTAL);
+  assert(total !== undefined, `the aggregate point ${KEY_TOTAL} must be listed for X`);
+  assert(
+    total?.runtime === null,
+    `a point this process has not evaluated reads null, not a fabricated outcome, got ${JSON.stringify(total?.runtime)}`,
+  );
+
+  const atMs = Date.UTC(2026, 8, 5, 12, 0, 0);
+  status.record(fixture.x, total?.templatePointId ?? "", {
+    outcome: "skipped",
+    reason: "dependency_cycle",
+    atMs,
+  });
+
+  const after = (await svc.listCalcPoints(fx.adminJwt, fixture.x)).items;
+  const runtime = after.find((item) => item.pointKey === KEY_TOTAL)?.runtime;
+  assert(
+    JSON.stringify(Object.keys(runtime ?? {}).sort()) === JSON.stringify(["at", "lastOutcome", "lastSkipReason"]),
+    `the DTO promises exactly lastOutcome, lastSkipReason and at, got ${JSON.stringify(runtime)}`,
+  );
+  assert(
+    runtime?.lastOutcome === "skipped" && runtime.lastSkipReason === "dependency_cycle",
+    `the recorded refusal must reach the read verbatim, got ${JSON.stringify(runtime)}`,
+  );
+  assert(
+    new Date(runtime?.at ?? 0).getTime() === atMs,
+    `at is the recorded evaluation time as an ISO string, got ${JSON.stringify(runtime?.at)}`,
+  );
+
+  const otherAsset = (await svc.listCalcPoints(fx.adminJwt, fixture.y)).items;
+  assert(
+    otherAsset.every((item) => item.runtime === null),
+    `recording X's point must not answer for Y's — the read is per formula instance, got ` +
+      `${JSON.stringify(otherAsset.map((item) => item.runtime))}`,
+  );
+
+  const kw = otherAsset.find((item) => item.pointKey === KEY_KW);
+  assert(kw !== undefined, `the derived point ${KEY_KW} must be listed for Y`);
+  status.record(fixture.y, kw?.templatePointId ?? "", { outcome: "written", reason: null, atMs });
+  const written = (await svc.listCalcPoints(fx.adminJwt, fixture.y)).items.find(
+    (item) => item.pointKey === KEY_KW,
+  )?.runtime;
+  assert(
+    written?.lastOutcome === "written" && written.lastSkipReason === null,
+    `a written outcome carries a null reason — the value the pill branches on, got ${JSON.stringify(written)}`,
   );
 }

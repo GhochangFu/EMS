@@ -525,6 +525,38 @@ export const assetPointCalcConfigDtoSchema = z.object({
   template: assetPointCalcOverrideFieldsSchema,
   override: assetPointCalcOverrideFieldsSchema,
   effective: assetPointCalcOverrideFieldsSchema,
+  /**
+   * What the calc engine last did with this point (`F2.9`, ADR 0055 decision
+   * 8 — plan design decision 9, layer 3), or `null` when the API process
+   * serving this read has not evaluated it.
+   *
+   * **`null` does not mean "never ran".** The registry behind this field is
+   * in-process and empty after a restart, and a multi-instance API answers
+   * from whichever instance served the request. It is an operator hint — the
+   * one place a cycle induced by a group membership becomes visible on the
+   * asset an operator is actually looking at — and never an audit trail. The
+   * authoritative records are `bms_api_calc_skipped_total` and the engine's
+   * own transition log.
+   *
+   * `lastSkipReason` is deliberately `z.string()` and **not** an enum. The
+   * reason vocabulary is `CalcRuntimeSkipReason`, which lives in `apps/api`
+   * beside the code that raises each member and has grown with almost every
+   * calc row (`F2.9` alone added six). Restating it here would put the same
+   * list in two packages with no compiler edge between them — the drift
+   * `F4.43` names — and the first symptom would be a Zod refusal of a response
+   * the API is entitled to send, on a field nothing branches on. The web side
+   * renders it as text.
+   *
+   * `at` is an ISO timestamp of the **evaluation**, not of the stored value,
+   * whose time is bucketed to the formula's interval (ADR 0037 decision 8).
+   */
+  runtime: z
+    .object({
+      lastOutcome: z.enum(["written", "skipped"]),
+      lastSkipReason: z.string().nullable(),
+      at: z.string(),
+    })
+    .nullable(),
 });
 
 /**

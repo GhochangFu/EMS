@@ -4,7 +4,7 @@ import type { CalcCrossRef } from "@bms/shared";
 import { CALC_DIALECT, crossRefKey, evaluate } from "@bms/shared";
 
 import { sleep } from "../telemetry/sleep";
-import { MetricsService } from "../observability/metrics.service";
+import { MetricsService, type CalcRuntimeSkipReason } from "../observability/metrics.service";
 import { resolveAggregate } from "./calc-aggregate";
 import { defKey, inputKey } from "./calc-batch";
 import type { CalcDefinition } from "./calc-definition";
@@ -14,6 +14,7 @@ import { classifyInput, type CalcInputSample } from "./calc-inputs";
 import { CalcInputsService } from "./calc-inputs.service";
 import { bucketTimeMs, isDue } from "./calc-schedule";
 import { CalcScopeService } from "./calc-scope.service";
+import { CalcStatusRegistry } from "./calc-status.registry";
 import { CalcWriteService, type CalcWriteInput } from "./calc-write.service";
 
 /** Never one timer per formula (ADR 0037 decision 7) — one loop, this base
@@ -27,7 +28,40 @@ export interface CalcSchedulerDeps {
   scope: Pick<CalcScopeService, "resolveMembership">;
   writer: Pick<CalcWriteService, "writeValues">;
   metrics: Pick<MetricsService, "countCalcSkipped" | "countCalcAggregateExcluded" | "setCalcAggregateMembersMax">;
+  /** `F2.9` Task 16 — design decision 9, layer 3: what the per-asset page reads. */
+  status: Pick<CalcStatusRegistry, "record">;
   logger: Pick<Logger, "warn">;
+}
+
+/**
+ * **The one place this host refuses a formula.** Every refusal counts *and*
+ * records, and it does so through here rather than beside each `if`.
+ *
+ * There are eight refusal sites in this file and Task 13 alone added five new
+ * reasons, so a `record` written out beside each `countCalcSkipped` gives the
+ * next refusal eight chances to be counted but not recorded — a point that
+ * shows the previous outcome forever, or `null`, while the counter moves. The
+ * two facts are one event and are emitted by one function.
+ *
+ * `tests/adr-0055-calc-v2-invariants.test.ts` part (e) holds it as source
+ * structure: `countCalcSkipped(` may not appear in this file outside this
+ * function.
+ *
+ * Returns `null` so a caller can `return refuse(…)` — every refusal site here
+ * either returns `null` or `continue`s.
+ *
+ * `nowMs` is the sweep's own tick time, threaded in rather than read from the
+ * clock, so what the page shows is the pass that actually made the decision.
+ */
+function refuse(deps: CalcSchedulerDeps, def: CalcDefinition, reason: CalcRuntimeSkipReason, nowMs: number): null {
+  deps.metrics.countCalcSkipped(reason);
+  deps.status.record(def.assetId, def.templatePointId, { outcome: "skipped", reason, atMs: nowMs });
+  return null;
+}
+
+/** The other half of {@link refuse}: a formula that produced a value this pass. */
+function noteWritten(deps: CalcSchedulerDeps, def: CalcDefinition, nowMs: number): void {
+  deps.status.record(def.assetId, def.templatePointId, { outcome: "written", reason: null, atMs: nowMs });
 }
 
 /**
@@ -105,8 +139,7 @@ async function resolveCrossInputs(
     if (ref.kind === "qref") {
       const assetId = qualified?.get(ref.assetCode);
       if (assetId === null || assetId === undefined) {
-        deps.metrics.countCalcSkipped("unknown_asset_reference");
-        return null;
+        return refuse(deps, def, "unknown_asset_reference", nowMs);
       }
       reads.push({ ref, key, pairs: [{ assetId, pointKey: ref.pointKey }] });
     } else {
@@ -127,16 +160,14 @@ async function resolveCrossInputs(
       const sample = sampleOf(pairs[0]);
       const classification = classifyInput(sample, nowMs, def.maxInputAgeSeconds);
       if (classification !== "fresh" || !sample) {
-        deps.metrics.countCalcSkipped(classification === "missing" ? "missing_input" : "stale_input");
-        return null;
+        return refuse(deps, def, classification === "missing" ? "missing_input" : "stale_input", nowMs);
       }
       crossInputs.set(key, sample.value);
       continue;
     }
     const result = resolveAggregate(ref.fn, pairs.map(sampleOf), nowMs, def.maxInputAgeSeconds, def.minCoverageRatio);
     if (!result.ok) {
-      deps.metrics.countCalcSkipped(result.reason);
-      return null;
+      return refuse(deps, def, result.reason, nowMs);
     }
     if (result.excluded > 0) {
       deps.metrics.countCalcAggregateExcluded(result.excluded);
@@ -176,8 +207,7 @@ async function evaluateOneScheduledFormula(
     const sample = samples.get(ref);
     const classification = classifyInput(sample, nowMs, def.maxInputAgeSeconds);
     if (classification !== "fresh" || !sample) {
-      deps.metrics.countCalcSkipped(classification === "missing" ? "missing_input" : "stale_input");
-      return null;
+      return refuse(deps, def, classification === "missing" ? "missing_input" : "stale_input", nowMs);
     }
     inputs.set(ref, sample.value);
   }
@@ -193,8 +223,7 @@ async function evaluateOneScheduledFormula(
 
   const result = evaluate(def.ast, inputs, crossInputs);
   if (!result.ok) {
-    deps.metrics.countCalcSkipped("non_finite");
-    return null;
+    return refuse(deps, def, "non_finite", nowMs);
   }
 
   return {
@@ -261,7 +290,8 @@ function largestMemberSet(membership: Membership): number {
  * one write at the end.
  *
  * **Every refusal counts once per due window**, below `lastRunMs.set` (plan
- * correction 61): `dependency_cycle` and `membership_unresolved` here, and
+ * correction 61), and goes through {@link refuse}, which counts and records it
+ * together: `dependency_cycle` and `membership_unresolved` here, and
  * `unknown_asset_reference`, `no_members`, `coverage_below_floor`,
  * `missing_input` and `stale_input` inside the evaluation. Above that line a
  * refusal would re-count on every 10-second base tick and
@@ -353,7 +383,7 @@ export async function runScheduledSweep(
       // is the milder sibling: isDue becomes always-true and the formula
       // fires every base tick against a negative bucket grid. All three are
       // the same "this definition cannot be scheduled" case.
-      deps.metrics.countCalcSkipped("missing_interval");
+      refuse(deps, def, "missing_interval", nowMs);
       continue;
     }
     const key = defKey(def.assetId, def.templatePointId);
@@ -364,17 +394,18 @@ export async function runScheduledSweep(
     lastRunMs.set(key, bucketTimeMs(nowMs, intervalSeconds));
     // Every refusal from here down counts once per due window (correction 61).
     if (cyclic.has(id)) {
-      deps.metrics.countCalcSkipped("dependency_cycle");
+      refuse(deps, def, "dependency_cycle", nowMs);
       continue;
     }
     if (membership === null && def.dialect !== CALC_DIALECT) {
-      deps.metrics.countCalcSkipped("membership_unresolved");
+      refuse(deps, def, "membership_unresolved", nowMs);
       continue;
     }
     try {
       const outcome = await evaluateOneScheduledFormula(deps, def, nowMs, membership ?? EMPTY_MEMBERSHIP, computedThisTick);
       if (outcome) {
         toWrite.push(outcome);
+        noteWritten(deps, def, nowMs);
         computedThisTick.set(id, { value: outcome.value, timeMs: outcome.time.getTime() });
       }
     } catch (err) {
@@ -447,6 +478,7 @@ export class CalcSchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly scope: CalcScopeService,
     private readonly writer: CalcWriteService,
     private readonly metrics: MetricsService,
+    private readonly status: CalcStatusRegistry,
   ) {}
 
   onModuleInit(): void {
@@ -456,6 +488,7 @@ export class CalcSchedulerService implements OnModuleInit, OnModuleDestroy {
       scope: this.scope,
       writer: this.writer,
       metrics: this.metrics,
+      status: this.status,
       logger: this.logger,
       sleep,
       now: () => Date.now(),

@@ -8,6 +8,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { CalcDefinitionsService } from "../../calc/calc-definitions.service";
 import { CalcDependencyService } from "../../calc/calc-dependency.service";
 import { CalcScopeService } from "../../calc/calc-scope.service";
+import { CalcStatusRegistry } from "../../calc/calc-status.registry";
 import { MetricsService } from "../../observability/metrics.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { registerFixturePointKeys } from "../../testing/integration-fixtures";
@@ -19,6 +20,7 @@ import {
   KEY_MEASURED,
   KEY_TOTAL,
   assertQualifiedReferenceIsConfinedToLocation,
+  assertTheCalcPointsReadCarriesTheRecordedRefusal,
   assertV2OverrideRefusesAMembershipCycle,
   cleanup,
 } from "./asset-point-calc-override.cycles.integration.spec";
@@ -44,6 +46,9 @@ describe.skipIf(!connectionString)("F2.9 — bms-calc-v2 override cycle refusal"
   let svc: AssetPointCalcOverrideService;
   let fx: Fixtures;
   let releasePointKeys: (() => Promise<void>) | undefined;
+  /** The very instance the service reads, so a `record` here is exactly what a
+   * sweep in the same process would have left behind (`F2.9` Task 16). */
+  let status: CalcStatusRegistry;
 
   beforeAll(async () => {
     const created = await openIntegrationPool(connectionString as string, "F2.9");
@@ -52,12 +57,14 @@ describe.skipIf(!connectionString)("F2.9 — bms-calc-v2 override cycle refusal"
     // migration `0057`.
     releasePointKeys = await registerFixturePointKeys(created, [KEY_MEASURED, KEY_KW, KEY_TOTAL]);
     const db = createDb(created);
+    status = new CalcStatusRegistry();
     svc = new AssetPointCalcOverrideService(
       db,
       db,
       new AccessControlService(db, db),
       new MasterDataAuditService(db, db),
       new CalcDependencyService(db, new CalcDefinitionsService(db, new MetricsService()), new CalcScopeService(db)),
+      status,
     );
     fx = await loadFixtures(created);
     await cleanup(created);
@@ -85,5 +92,10 @@ describe.skipIf(!connectionString)("F2.9 — bms-calc-v2 override cycle refusal"
   it("resolves {CODE.key} only at the owner's location (ADR 0055 decision 12)", async () => {
     if (!pool) throw new Error("pool required");
     await assertQualifiedReferenceIsConfinedToLocation(pool, fx, svc);
+  });
+
+  it("carries a recorded dependency_cycle refusal into the calc-points read (Task 16)", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertTheCalcPointsReadCarriesTheRecordedRefusal(pool, fx, svc, status);
   });
 });

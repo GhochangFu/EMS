@@ -10,6 +10,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { CalcDefinitionsService } from "../../calc/calc-definitions.service";
 import { CalcDependencyService } from "../../calc/calc-dependency.service";
 import { CalcScopeService } from "../../calc/calc-scope.service";
+import { CalcStatusRegistry } from "../../calc/calc-status.registry";
 import { withTenant } from "../../database/tenant-context";
 import { MetricsService } from "../../observability/metrics.service";
 import { registerFixturePointKeys } from "../../testing/integration-fixtures";
@@ -282,6 +283,10 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
           new CalcDefinitionsService(fleetDb, new MetricsService()),
           new CalcScopeService(fleetDb),
         ),
+        // `F2.9` Task 16 — empty here, and that is the whole point for this
+        // suite: an unrecorded point reads `runtime: null`, so the registry
+        // adds no database access and nothing for RLS to contain.
+        new CalcStatusRegistry(),
       ),
       ownerPool,
       organizationId,

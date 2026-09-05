@@ -61,8 +61,11 @@ function asOk(result: ParseResult): Extract<ParseResult, { ok: true }> {
  *   `asset-point-calc-override.schema.ts`.**
  * - **(d) — `calc-scope.service.ts`'s qualified-code statement contains a
  *   `location_id` filter**, checked against a mutated copy first — `Task 11`.
+ * - **(e) — neither evaluation host calls `countCalcSkipped(` outside its own
+ *   `refuse` helper**, so a refusal cannot be counted without also being
+ *   recorded for the per-asset page — `Task 16`.
  *
- * All four parts are now present.
+ * All five parts are now present.
  */
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -439,5 +442,111 @@ describe("ADR 0055 part (a) — one graph builder and one topological sort", () 
       `${rel} must import from calc-graph on an import line — the save-time detector, the ` +
         "template save path and the scheduled sweep all reach the one builder (ADR 0055 decision 8).",
     ).toBe(true);
+  });
+});
+
+// --- part (e) — one refusal helper per evaluation host ------------------------
+
+/**
+ * `F2.9` Task 16 (plan design decision 9, layer 3). Every refusal is two facts
+ * that are one event: `bms_api_calc_skipped_total` moves, **and** the point's
+ * entry in `CalcStatusRegistry` is replaced so the per-asset calc-points page
+ * says why. Written out beside each `if`, the two drift the moment a refusal is
+ * added — the scheduler alone has eight refusal sites and `F2.9` added six
+ * reasons to the vocabulary in one row.
+ *
+ * The way they drift is the quiet way. A refusal that counts but does not
+ * record leaves the operator's page showing the *previous* outcome — `written
+ * 4 min ago` on a point that has been refused every due window since — and
+ * every existing test stays green, because the counter is still right and the
+ * page still renders. Nothing throws and nothing is missing; one number is
+ * simply stale in a way only this scan can see.
+ *
+ * Held as source structure for the same reason part (a) is: behaviour cannot
+ * see it. A ninth refusal site added tomorrow, counted directly, passes every
+ * case either host has — the case for the new refusal asserts the new refusal.
+ */
+const CALC_HOSTS = [
+  "apps/api/src/calc/calc-scheduler.service.ts",
+  "apps/api/src/calc/calc-streaming.service.ts",
+];
+
+/** A comment line. The helper's own docblock names `countCalcSkipped(` — this
+ * is what keeps that sentence from reading as a violation of itself. */
+function isCommentLine(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");
+}
+
+/**
+ * The line range of the host's top-level `function refuse(…) { … }`, or `null`
+ * when there is no such helper — which is itself the defect, not a reason to
+ * skip the check.
+ */
+function refuseSpan(lines: readonly string[]): { from: number; to: number } | null {
+  const from = lines.findIndex((line) => /^function refuse\(/.test(line));
+  if (from < 0) {
+    return null;
+  }
+  const to = lines.findIndex((line, index) => index > from && /^\}/.test(line));
+  return to < 0 ? null : { from, to };
+}
+
+/** 1-based line numbers of every `countCalcSkipped(` call outside the helper. */
+function strayCountLines(lines: readonly string[]): number[] | null {
+  const span = refuseSpan(lines);
+  if (span === null) {
+    return null;
+  }
+  return lines
+    .map((text, index) => ({ text, index }))
+    .filter(({ text }) => !isCommentLine(text) && text.includes("countCalcSkipped("))
+    .filter(({ index }) => index < span.from || index > span.to)
+    .map(({ index }) => index + 1);
+}
+
+describe("ADR 0055 part (e) — each evaluation host counts a refusal in exactly one place", () => {
+  it("scanned both hosts, and each really does call countCalcSkipped", () => {
+    for (const rel of CALC_HOSTS) {
+      const lines = readFileSync(join(repoRoot, rel), "utf8").split("\n");
+      const calls = lines.filter((line) => !isCommentLine(line) && line.includes("countCalcSkipped("));
+      expect(
+        calls.length,
+        `${rel} must call countCalcSkipped exactly once — zero means the scan below proves ` +
+          "nothing, and more than one means a refusal was counted outside refuse()",
+      ).toBe(1);
+      expect(refuseSpan(lines), `${rel} must declare a top-level refuse() helper`).not.toBeNull();
+    }
+  });
+
+  it("tells a call apart from a comment and a type annotation", () => {
+    expect(isCommentLine(' * `countCalcSkipped(` may not appear outside the helper')).toBe(true);
+    expect(isCommentLine("    // deps.metrics.countCalcSkipped(reason);")).toBe(true);
+    expect(isCommentLine('  deps.metrics.countCalcSkipped("non_finite");')).toBe(false);
+    // The `(` is what keeps `Pick<MetricsService, "countCalcSkipped">` out.
+    expect('  metrics: Pick<MetricsService, "countCalcSkipped">;'.includes("countCalcSkipped(")).toBe(false);
+  });
+
+  it.each(CALC_HOSTS)("%s counts every refusal through its own refuse() helper", (rel) => {
+    const stray = strayCountLines(readFileSync(join(repoRoot, rel), "utf8").split("\n"));
+    expect(
+      stray,
+      `${rel}: countCalcSkipped( is called outside refuse() at line(s) ${(stray ?? []).join(", ")}.\n\n` +
+        "A refusal counts and records together, or the per-asset calc-points page shows the " +
+        "previous outcome for a formula that is being refused every due window — with the counter " +
+        "still correct and every test still green (`F2.9` Task 16, design decision 9 layer 3).",
+    ).toEqual([]);
+  });
+
+  it("the analysis kills the mutation it exists to catch", () => {
+    const lines = readFileSync(join(repoRoot, CALC_HOSTS[0]), "utf8").split("\n");
+    expect(strayCountLines(lines)).toEqual([]);
+
+    const stray = [...lines, '  deps.metrics.countCalcSkipped("non_finite");'];
+    expect(strayCountLines(stray)).toEqual([stray.length]);
+
+    const noHelper = lines.map((line) => line.replace(/^function refuse\(/, "function refuseHelper("));
+    expect(noHelper, "the mutation did not apply — the helper's shape changed").not.toEqual(lines);
+    expect(strayCountLines(noHelper)).toBeNull();
   });
 });

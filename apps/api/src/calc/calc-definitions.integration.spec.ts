@@ -10,6 +10,7 @@ import { CalcDefinitionsService } from "./calc-definitions.service";
 import type { CalcInputSample } from "./calc-inputs";
 import { runScheduledSweep, type CalcSchedulerDeps } from "./calc-scheduler.service";
 import { CalcScopeService } from "./calc-scope.service";
+import { CalcStatusRegistry } from "./calc-status.registry";
 import type { CalcWriteInput } from "./calc-write.service";
 
 /**
@@ -656,6 +657,10 @@ export async function assertTheTwoHopCycleWritesNothingAndTheHealthyFormulaStill
       countCalcAggregateExcluded: () => undefined,
       setCalcAggregateMembersMax: () => undefined,
     },
+    // `F2.9` Task 16 — a real registry, discarded: this suite is about what the
+    // sweep writes to the database, and the registry's own behaviour is
+    // asserted in `calc-status.registry.spec.ts` and `calc-scheduler.status.spec.ts`.
+    status: new CalcStatusRegistry(),
     logger: { warn: () => undefined },
   };
 

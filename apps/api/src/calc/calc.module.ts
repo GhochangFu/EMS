@@ -6,6 +6,7 @@ import { CalcDependencyService } from "./calc-dependency.service";
 import { CalcInputsService } from "./calc-inputs.service";
 import { CalcSchedulerService } from "./calc-scheduler.service";
 import { CalcScopeService } from "./calc-scope.service";
+import { CalcStatusRegistry } from "./calc-status.registry";
 import { CalcStreamingService } from "./calc-streaming.service";
 import { CalcWriteService } from "./calc-write.service";
 
@@ -16,11 +17,17 @@ import { CalcWriteService } from "./calc-write.service";
  * `TelemetryModule` needs importing here, for `TelemetryBroadcastHub`.
  *
  * No controller — this module exposes no HTTP route; both hosts start with
- * the API process via their own `onModuleInit`. **One** service is exported:
- * `CalcDependencyService`, the save-time cycle detector (`F2.9`, ADR 0055
- * decision 8), which `AdminModule`'s two authoring paths call before they store
- * a `bms-calc-v2` formula. Nothing else crosses this boundary — the two
- * evaluation hosts stay private.
+ * the API process via their own `onModuleInit`. **Two** things are exported and
+ * nothing else crosses this boundary — the two evaluation hosts stay private:
+ *
+ * - `CalcDependencyService`, the save-time cycle detector (`F2.9`, ADR 0055
+ *   decision 8), which `AdminModule`'s two authoring paths call before they
+ *   store a `bms-calc-v2` formula;
+ * - `CalcStatusRegistry` (`F2.9` Task 16, design decision 9 layer 3), which
+ *   both hosts write to and `AssetPointCalcOverrideService.listCalcPoints`
+ *   reads. Exporting the registry rather than a host is the point: the read
+ *   side gets the last outcome per formula instance and no ability to run,
+ *   schedule or refuse anything.
  *
  * ---
  *
@@ -85,10 +92,14 @@ import { CalcWriteService } from "./calc-write.service";
     // scheduled sweep are both built on it, each resolving afresh per call.
     CalcScopeService,
     CalcDependencyService,
+    // `F2.9` Task 16 — one instance for both hosts and the read path. Nest's
+    // default provider scope is the module singleton, which is what makes the
+    // page read the same map the sweep wrote.
+    CalcStatusRegistry,
     CalcWriteService,
     CalcStreamingService,
     CalcSchedulerService,
   ],
-  exports: [CalcDependencyService],
+  exports: [CalcDependencyService, CalcStatusRegistry],
 })
 export class CalcModule {}
