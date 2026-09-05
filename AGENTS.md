@@ -783,7 +783,12 @@ Do not add top-level folders without updating this section.
   `SET`, leaks the previous caller's tenant to the next one on the same
   connection. If a read path cannot be wrapped in a transaction, it is not
   permitted to touch a tenant table.
-- Migrations are forward-only. Never edit a merged migration.
+- Migrations are forward-only. Never edit a merged migration. Stamp a journal
+  entry's `when` with `Date.now()` and never hand-pin it ahead of the clock: a
+  future stamp makes the next generated migration sort below it and skip,
+  silently, on every database that already ran the future entry. `db:migrate`
+  re-syncs an existing database's applied stamps to the journal by file hash
+  before it migrates, and warns about rows it cannot match (F4.94).
 - **No new `bms.*` table ships without `organization_id` and a
   `tenant_isolation` policy under `FORCE`** (ADR 0043 decision 5), unless it is
   platform vocabulary with no tenant data (`asset_domains`, `rule_categories`,
@@ -2170,7 +2175,7 @@ new scope-sensitive features.
     |---|---|
     | a committed `packages/db/drizzle/*.sql` is never edited | §4.4, forward-only |
     | a dependency needs an ADR | §9.4 above, promotion §10 |
-    | the drizzle journal stays consistent with its `.sql` files | §4.4 |
+    | the drizzle journal stays consistent with its `.sql` files, strictly increasing, every `when` a finite number and never more than an hour ahead of the wall clock (F4.94) | §4.4 |
     | style hygiene on added lines | §4.5 |
 
     **Point 1 — `.claude/hooks/`, wired in `.claude/settings.json`.** Two are
