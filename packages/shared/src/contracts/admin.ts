@@ -525,6 +525,38 @@ export const assetPointCalcConfigDtoSchema = z.object({
   template: assetPointCalcOverrideFieldsSchema,
   override: assetPointCalcOverrideFieldsSchema,
   effective: assetPointCalcOverrideFieldsSchema,
+  /**
+   * What the calc engine last did with this point (`F2.9`, ADR 0055 decision
+   * 8 — plan design decision 9, layer 3), or `null` when the API process
+   * serving this read has not evaluated it.
+   *
+   * **`null` does not mean "never ran".** The registry behind this field is
+   * in-process and empty after a restart, and a multi-instance API answers
+   * from whichever instance served the request. It is an operator hint — the
+   * one place a cycle induced by a group membership becomes visible on the
+   * asset an operator is actually looking at — and never an audit trail. The
+   * authoritative records are `bms_api_calc_skipped_total` and the engine's
+   * own transition log.
+   *
+   * `lastSkipReason` is deliberately `z.string()` and **not** an enum. The
+   * reason vocabulary is `CalcRuntimeSkipReason`, which lives in `apps/api`
+   * beside the code that raises each member and has grown with almost every
+   * calc row (`F2.9` alone added six). Restating it here would put the same
+   * list in two packages with no compiler edge between them — the drift
+   * `F4.43` names — and the first symptom would be a Zod refusal of a response
+   * the API is entitled to send, on a field nothing branches on. The web side
+   * renders it as text.
+   *
+   * `at` is an ISO timestamp of the **evaluation**, not of the stored value,
+   * whose time is bucketed to the formula's interval (ADR 0037 decision 8).
+   */
+  runtime: z
+    .object({
+      lastOutcome: z.enum(["written", "skipped"]),
+      lastSkipReason: z.string().nullable(),
+      at: z.string(),
+    })
+    .nullable(),
 });
 
 /**
@@ -575,6 +607,46 @@ export const templateMigrationRefusalReasonSchema = z.enum([
    * class this feature is built to avoid.
    */
   "point_key_already_mapped",
+  /**
+   * `F2.9` — the asset's own calc override, merged over the **target**
+   * version's declaration of the same derived point, is not a pair this engine
+   * will run (findings 31 and 34; ADR 0039 decision 2, "no blind apply").
+   *
+   * ## The same rules as the override endpoint, deliberately
+   *
+   * This one reason covers **both** of that endpoint's gates, because both are
+   * "the merged pair does not survive the move" and an operator acts on either
+   * the same way — correct or clear the override, then migrate.
+   * `AssetTemplateMigrationService` runs `validateMergedCalcOverride`, the one
+   * pure function `PUT /admin/assets/:id/calc-points/:key` validates with, and
+   * `CalcDependencyService.checkCandidate`, the save-time cycle detector that
+   * endpoint also runs. An override states only the columns it sets and
+   * inherits the rest, so a new version can turn a pair that was legal when it
+   * was written into one that is not: a legal dialect-only `bms-calc-v1`
+   * override plus a target version whose formula is `bms-calc-v2` merges to a
+   * `v2` formula wearing a `v1` label, which is a formula no dialect gate reads
+   * correctly. Two implementations of one rule is how two paths drift apart, so
+   * both are imported rather than restated.
+   *
+   * **The claim is parity, and only parity.** Both gates resolve against the
+   * estate as it stands, exactly as the endpoint resolves them, so a merged
+   * pair migrate admits is one that endpoint would admit at this instant. It is
+   * not a promise that the post-migration graph is acyclic: definitions resolve
+   * through each asset's *current* pin, so the target version's own derived
+   * points join the graph only once the pin moves. ADR 0055 decision 8 puts
+   * that authority on the tick, which refuses such a formula as
+   * `dependency_cycle` — counted, and reported on the asset's own page.
+   *
+   * ## Why it is checked at migrate and not inside the delta
+   *
+   * `computeTemplateVersionDelta` is pure over two arrays of *template* points.
+   * It has no asset and no override, and `migration-preview` computes it from
+   * exactly those two inputs — giving it an asset would make it impure and
+   * would stop matching the preview's own inputs. The delta reports what the
+   * two versions say; this refusal is about what one asset's stored row means
+   * once the pin moves, which only the service can see.
+   */
+  "calc_override_invalid_on_target",
 ]);
 
 export const templateMigrationRefusalDtoSchema = z.object({
@@ -612,13 +684,26 @@ export const templateMeasuredChangeDtoSchema = z.object({
   toSourceDataKeyPattern: z.string().nullable(),
 });
 
-/** Which of the five calc fields moved between the two versions. */
+/**
+ * Which calc field moved between the two versions.
+ *
+ * **This is a delta vocabulary, not `keyof AssetPointCalcOverrideFields`**, and
+ * `minCoverageRatio` is the member that makes the difference load-bearing.
+ * ADR 0055 decision 11 refuses a per-asset coverage-ratio override, so the
+ * ratio is a `template_points` column only and must never join
+ * `assetPointCalcOverrideFieldsSchema` above. It still *changes between two
+ * versions*, and a migrated asset picks the new value up on its next sweep —
+ * `null` meaning "every declared member must be fresh" — so a delta that could
+ * not name it reported "no changes" about a migration that decides whether the
+ * formula computes at all (`F2.9` finding 31).
+ */
 export const templateCalcFieldSchema = z.enum([
   "formula",
   "formulaDialect",
   "calcTrigger",
   "calcIntervalSeconds",
   "maxInputAgeSeconds",
+  "minCoverageRatio",
 ]);
 
 /**
@@ -628,12 +713,24 @@ export const templateCalcFieldSchema = z.enum([
  * reader to diff: "formula unchanged, interval 60 → 300" and "both changed" are
  * different decisions for whoever confirms the migration, and a UI that
  * recomputed the comparison would be a second implementation of it.
+ *
+ * **The two ratio fields sit outside `from`/`to`, and that asymmetry is the
+ * point** (`F2.9` finding 31). Those two are `AssetPointCalcOverrideFields` —
+ * the five columns an asset may override — and ADR 0055 decision 11 refuses a
+ * per-asset `minCoverageRatio`. Widening that DTO to make this entry
+ * symmetrical would claim an override the ADR forbids, in a shape the override
+ * endpoint would then have to refuse. So the ratio is reported here, beside
+ * them, as what the two *versions* declare.
  */
 export const templateDerivedChangeDtoSchema = z.object({
   pointKey: z.string(),
   changedFields: z.array(templateCalcFieldSchema),
   from: assetPointCalcOverrideFieldsSchema,
   to: assetPointCalcOverrideFieldsSchema,
+  /** The source version's coverage ratio; `null` means "every member fresh". */
+  fromMinCoverageRatio: z.number().nullable(),
+  /** The target version's, which the asset picks up the moment the pin moves. */
+  toMinCoverageRatio: z.number().nullable(),
 });
 
 /**

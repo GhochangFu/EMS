@@ -21,6 +21,13 @@ import {
  * function cannot use is simply not computed, exactly as if it did not
  * exist, until an author fixes it through the normal write path.
  *
+ * `coverage_ratio_out_of_range` (`F2.9`, ADR 0055 decision 11) is the same
+ * shape for `min_coverage_ratio`: the Zod layer holds `(0, 1]`, a database
+ * `CHECK` is foreclosed by decision 11 and the `0035`/`0036` precedent, so this
+ * re-checks the bound beside its two siblings for the rows that never passed
+ * the Zod layer (plan finding 32). A `0` would make every aggregate pass on
+ * zero fresh members; a ratio above `1` could never pass at all.
+ *
  * `streaming_on_v2` (`F2.9`, ADR 0055 decision 10) is the same shape for the
  * `bms-calc-v2` dialect: `v2` is `scheduled`-only, the Zod rule refuses the
  * pair at save, and this is the second refusal on the stored row — for
@@ -34,9 +41,9 @@ import {
  * every hop, and **no `toActiveDefinition` path returns it**: the check needs
  * the *sibling* rows, which only `CalcDefinitionsService.reload()` has, so it
  * is raised there as a post-pass. See {@link referencesADerivedSiblingUnderV1}.
- * Like every other reason here it counts on the save-time read as well as on a
- * sweep, because `getAllDefinitionsFresh()` re-resolves every definition —
- * plan finding 30's known over-count, owed to Task 12 and not fixed here.
+ * Like every other reason here it counts on a cache refresh only: the
+ * save-time detector's read (`getAllDefinitionsFresh()`) re-resolves every
+ * definition **without** counting, since `F2.9` Task 12 (plan finding 30).
  */
 export type CalcSkipReason =
   | "not_derived"
@@ -50,7 +57,8 @@ export type CalcSkipReason =
   | "max_input_age_out_of_range"
   | "streaming_on_v2"
   | "self_reference"
-  | "v1_references_derived";
+  | "v1_references_derived"
+  | "coverage_ratio_out_of_range";
 
 export interface CalcDefinition {
   templatePointId: string;
@@ -152,21 +160,29 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
   // `reload()` coalesces `formula` and `formula_dialect` independently, so the
   // two can come from different places. The **write** path that produced such a
   // pair through a calc override is closed (`582ed49`: the merged pair is now
-  // parsed whenever an override states a formula *or* a dialect). A second path
-  // is still open — template migration repoints `assets.template_id` without
-  // re-validating the surviving override, because `computeTemplateVersionDelta`
-  // reports a derived point's formula/dialect change in `derivedChanged` and
-  // never in `refusals`, which is all the migrate service consumes.
-  // **Re-validating that path is ADR 0039 decision 2's "no blind apply" and is
-  // owed to PR 2**; this is not that fix and does not discharge it.
+  // parsed whenever an override states a formula *or* a dialect). The second
+  // path — template migration repointing `assets.template_id` without
+  // re-validating the surviving override — **is closed too, since `F2.9` Task
+  // 12b**: `AssetTemplateMigrationService` merges each override over the target
+  // version's point and re-runs `validateMergedCalcOverride`, refusing as
+  // `calc_override_invalid_on_target`. That was ADR 0039 decision 2's "no blind
+  // apply".
+  //
+  // **This check still earns its lines.** It does not rest on either of those
+  // write paths being closed — that is the whole point of a read-time backstop,
+  // and the two findings that produced it (33 and 34) were both cases where a
+  // guard trusted a write path it should not have. A row can still reach here
+  // from a fixture, a support SQL edit, or a path not yet written.
   //
   // What it does discharge is the damage. A self-reference compounds: `{SELF} *
-  // 2` doubles its own stored value on every tick until it overflows, silently,
-  // and no cycle detector exists in this PR (ADR 0055 decision 8's
-  // evaluation-time detector is Task 13's, with the ordering pass and
-  // membership resolution). Nothing legitimate is refused: every authoring path
-  // already rejects a self-reference at save time, so a row that reaches here
-  // with one arrived by a route that did not validate it.
+  // 2` doubles its own stored value on every tick until it overflows, silently.
+  // The sweep's cycle detector (`runScheduledSweep`, since `F2.9` Task 13)
+  // would refuse the same row as a one-edge `dependency_cycle` — but that is
+  // one host's evaluation-time check, and this is the loader's, which every
+  // host shares; a definition refused here never reaches either. Nothing
+  // legitimate is refused: every authoring path already rejects a
+  // self-reference at save time, so a row that reaches here with one arrived
+  // by a route that did not validate it.
   //
   // Re-checking a stored row at read time is this function's own convention,
   // not a new mechanism — `interval_out_of_range` and
@@ -175,7 +191,8 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
   //
   // **Local references only.** A cross-asset self-reference (`sum({SELF}
   // @site)` on a member of that site) is not visible here: it needs the
-  // membership set, which only Task 13's detector resolves.
+  // membership set, which only the two detectors resolve — the save-time
+  // `CalcDependencyService` and the sweep's own ordering pass.
   if (parsed.refs.includes(row.pointKey)) {
     return { ok: false, reason: "self_reference" };
   }
@@ -204,6 +221,12 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
     (row.maxInputAgeSeconds < 1 || row.maxInputAgeSeconds > MAX_INPUT_AGE_SECONDS_BOUND)
   ) {
     return { ok: false, reason: "max_input_age_out_of_range" };
+  }
+  // `(0, 1]` — written as the negation of "inside", so a `NaN` (which a
+  // `numeric` column admits) fails rather than passing both comparisons
+  // vacuously. `1` is inside: it means "every member" (ADR 0055 decision 11).
+  if (row.minCoverageRatio != null && !(row.minCoverageRatio > 0 && row.minCoverageRatio <= 1)) {
+    return { ok: false, reason: "coverage_ratio_out_of_range" };
   }
 
   return {
@@ -250,13 +273,16 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
  *    dialect);
  *  - the **one-hop** case, a formula reading the point it writes, is refused
  *    above whatever the label says (`f2f0023`);
- *  - the **migrate** path is still open. Repointing `assets.template_id` does
- *    not re-validate the surviving override, because
- *    `computeTemplateVersionDelta` reports a derived point's formula/dialect
- *    change in `derivedChanged` and never in `refusals`
- *    (`template-version-delta.ts`, plan finding 31's file). **That fix is ADR
- *    0039 decision 2's "no blind apply" and is owed to PR 2**; this does not
- *    discharge it, it only bounds the damage.
+ *  - the **migrate** path is closed since `F2.9` Task 12b. Repointing
+ *    `assets.template_id` now re-validates each surviving override against the
+ *    target version through `validateMergedCalcOverride` — the same function
+ *    the override endpoint calls, so migrate cannot admit a pair that endpoint
+ *    would refuse — and refuses as `calc_override_invalid_on_target`. That was
+ *    ADR 0039 decision 2's "no blind apply".
+ *
+ * None of that retires this check. A read-time refusal exists precisely so it
+ * does not depend on a write path holding, and findings 33 and 34 were both
+ * guards that trusted one.
  *
  * Two hops is the case the one-hop backstop misses: two `v1`-labelled points on
  * one asset referencing each other compound every tick, and nothing in PR 1

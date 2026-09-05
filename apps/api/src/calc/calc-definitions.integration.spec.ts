@@ -9,6 +9,8 @@ import { MetricsService } from "../observability/metrics.service";
 import { CalcDefinitionsService } from "./calc-definitions.service";
 import type { CalcInputSample } from "./calc-inputs";
 import { runScheduledSweep, type CalcSchedulerDeps } from "./calc-scheduler.service";
+import { CalcScopeService } from "./calc-scope.service";
+import { CalcStatusRegistry } from "./calc-status.registry";
 import type { CalcWriteInput } from "./calc-write.service";
 
 /**
@@ -259,8 +261,8 @@ export async function assertLoaderResolvesValidRowsAndSkipsInvalidOnes(
   const v2Def = scheduled.find((def) => def.pointKey === "CALCDEF_V2_SITE_SUM");
   assert(
     v2Def !== undefined,
-    `getScheduledDefinitions must include the v2 definition — it is stored and validated in ` +
-      `PR 1 even though nothing evaluates it yet. Formula: sum({${measuredKey}} @site)`,
+    `getScheduledDefinitions must include the v2 definition — the loader resolves it and the ` +
+      `scheduled sweep evaluates it. Formula: sum({${measuredKey}} @site)`,
   );
   assert(
     v2Def?.dialect === "bms-calc-v2",
@@ -584,8 +586,8 @@ export async function assertV1ReferencingADerivedSiblingIsRefused(pool: pg.Pool,
   const v2OnDerived = onCycleAsset.find((def) => def.pointKey === "CALCDEF_V2_ON_DERIVED");
   assert(
     v2OnDerived?.dialect === "bms-calc-v2",
-    "a v2 formula may read a derived point (ADR 0055 decision 7) — it is refused by the " +
-      `scheduler's v2_not_yet_evaluable guard until Task 13, never by this one, got ${String(v2OnDerived?.dialect)}`,
+    "a v2 formula may read a derived point (ADR 0055 decision 7) — the sweep orders it after the " +
+      `point it reads and refuses only a cycle, never this loader, got ${String(v2OnDerived?.dialect)}`,
   );
   assert(
     scheduled.some((def) => def.assetId === xrefAssetId && def.pointKey === "CALCDEF_XREF_USER"),
@@ -614,12 +616,14 @@ export async function assertTheTwoHopCycleWritesNothingAndTheHealthyFormulaStill
   // The samples a compounding cycle actually reads: its own previous tick's
   // stored values. Without them the two cycle definitions would skip as
   // `missing_input` whether or not they were refused, and this test would prove
-  // nothing about the refusal.
+  // nothing about the refusal. The stored `CALCDEF_HEALTHY` (7) deliberately
+  // differs from what this sweep computes for it (5 * 2 = 10), so the `v2`
+  // formula that reads it proves *where* it read from.
   const samples = new Map<string, CalcInputSample>([
     [`${cycleAssetId}:${measuredKey}`, { value: 5, timeMs: SWEEP_NOW_MS }],
     [`${cycleAssetId}:CALCDEF_CYCLE_A`, { value: 100, timeMs: SWEEP_NOW_MS }],
     [`${cycleAssetId}:CALCDEF_CYCLE_B`, { value: 200, timeMs: SWEEP_NOW_MS }],
-    [`${cycleAssetId}:CALCDEF_HEALTHY`, { value: 10, timeMs: SWEEP_NOW_MS }],
+    [`${cycleAssetId}:CALCDEF_HEALTHY`, { value: 7, timeMs: SWEEP_NOW_MS }],
     [`${xrefAssetId}:CALCDEF_CYCLE_A`, { value: 3, timeMs: SWEEP_NOW_MS }],
   ]);
 
@@ -636,14 +640,27 @@ export async function assertTheTwoHopCycleWritesNothingAndTheHealthyFormulaStill
         }
         return found;
       },
+      getLatestSamplesForPairs: async () => new Map(),
     },
+    // The real resolver: no definition here carries a cross reference, so it
+    // answers without a query — the early return the sweep relies on for a
+    // `v2` formula whose references are all local.
+    scope: new CalcScopeService(db),
     writer: {
       writeValues: async (values) => {
         writes.push(...values);
         return { written: values.length, assetPointsCreated: 0 };
       },
     },
-    metrics: { countCalcSkipped: (reason) => skips.push(reason) },
+    metrics: {
+      countCalcSkipped: (reason) => skips.push(reason),
+      countCalcAggregateExcluded: () => undefined,
+      setCalcAggregateMembersMax: () => undefined,
+    },
+    // `F2.9` Task 16 — a real registry, discarded: this suite is about what the
+    // sweep writes to the database, and the registry's own behaviour is
+    // asserted in `calc-status.registry.spec.ts` and `calc-scheduler.status.spec.ts`.
+    status: new CalcStatusRegistry(),
     logger: { warn: () => undefined },
   };
 
@@ -668,10 +685,21 @@ export async function assertTheTwoHopCycleWritesNothingAndTheHealthyFormulaStill
     `the other asset's v1 formula reading the same key, measured there, must write 3 * 5 = 15, ` +
       `got ${String(xref?.value)}`,
   );
+  // `F2.9` Task 13: the `v2` formula over the derived sibling is evaluated —
+  // ordered after `CALCDEF_HEALTHY` and reading this tick's value from the
+  // overlay (10), not the stored 7. This is the first cross-derived value the
+  // engine has ever computed, and it lands in the same batch as its input.
+  const v2OverDerived = written.find((w) => w.pointKey === "CALCDEF_V2_ON_DERIVED");
   assert(
-    skips.includes("v2_not_yet_evaluable"),
-    `the v2 definition must be refused by the scheduler's own guard, not by the loader's — the two ` +
-      `must not silently merge, got skips: ${JSON.stringify(skips)}`,
+    v2OverDerived?.value === 20,
+    `the v2 formula reading the derived sibling must write (5 * 2) * 2 = 20 from the overlay — ` +
+      `14 would mean it read the stored 7, absent would mean it was refused; got ` +
+      `${String(v2OverDerived?.value)}, skips: ${JSON.stringify(skips)}`,
+  );
+  assert(
+    !skips.includes("dependency_cycle"),
+    `the refused v1 pair never reaches the sweep, so the sweep sees no cycle to count, got skips: ` +
+      `${JSON.stringify(skips)}`,
   );
   assert(
     !skips.includes("v1_references_derived"),

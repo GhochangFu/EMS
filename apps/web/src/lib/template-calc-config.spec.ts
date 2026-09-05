@@ -7,6 +7,7 @@
  * server started refusing.
  */
 import {
+  CALC_DIALECT_V2,
   CALC_TRIGGERS,
   MAX_CALC_INTERVAL_SECONDS,
   MAX_INPUT_AGE_SECONDS_BOUND,
@@ -44,9 +45,59 @@ function derived(overrides: Partial<TemplatePointRow> = {}): TemplatePointRow {
     calcTrigger: "streaming",
     calcIntervalSeconds: null,
     maxInputAgeSeconds: null,
+    minCoverageRatio: null,
     meta: null,
     ...overrides,
   };
+}
+
+/**
+ * ADR 0055 decision 10 — a `bms-calc-v2` point is `scheduled` and nothing else.
+ *
+ * A `v2` formula resolves its cross-asset membership once per sweep, so there
+ * is nothing for it to resolve against on a single incoming reading: a
+ * streaming `v2` point stores clean and never computes. The server refuses it
+ * in `templatePointBodySchema` and in `validateMergedCalcOverride`; this tab is
+ * a third author for the same engine, and a rule held in two paths and not the
+ * third is not a style difference.
+ *
+ * The `v1` control is the anti-vacuity half: `streaming` is the *default* shape
+ * of a `v1` derived point, so a check that fired on every streaming row would
+ * make the tab unsaveable and would still pass an assertion that only looked at
+ * the `v2` case.
+ */
+export function runV2IsScheduledOnlyTests(): void {
+  const streaming = calcConfigErrors(derived({ formulaDialect: CALC_DIALECT_V2 }), 0);
+  const onTrigger = streaming.filter((problem) => problem.field === "calcTrigger");
+  assert(
+    onTrigger.length === 1,
+    `a streaming v2 row is one problem on calcTrigger — got ${JSON.stringify(streaming)}`,
+  );
+  assert(
+    onTrigger[0].message ===
+      `A "${CALC_DIALECT_V2}" point requires calcTrigger: "scheduled" — a cross-asset ` +
+        "formula resolves its members once per sweep and cannot run on a single reading",
+    `the message must match the server's word for word, got: ${onTrigger[0].message}`,
+  );
+
+  const scheduled = calcConfigErrors(
+    derived({
+      formulaDialect: CALC_DIALECT_V2,
+      calcTrigger: "scheduled",
+      calcIntervalSeconds: 300,
+    }),
+    0,
+  );
+  assert(
+    scheduled.length === 0,
+    `a scheduled v2 row is fine — got ${JSON.stringify(scheduled)}`,
+  );
+
+  const v1Streaming = calcConfigErrors(derived(), 0);
+  assert(
+    v1Streaming.length === 0,
+    `streaming is still the ordinary v1 shape — got ${JSON.stringify(v1Streaming)}`,
+  );
 }
 
 /** The bounds are the shared constants, not copies. */

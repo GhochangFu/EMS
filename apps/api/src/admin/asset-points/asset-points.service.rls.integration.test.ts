@@ -7,7 +7,12 @@ import { assetTemplates, assets, createDb, pointKeys, templatePoints } from "@bm
 import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { CalcDefinitionsService } from "../../calc/calc-definitions.service";
+import { CalcDependencyService } from "../../calc/calc-dependency.service";
+import { CalcScopeService } from "../../calc/calc-scope.service";
+import { CalcStatusRegistry } from "../../calc/calc-status.registry";
 import { withTenant } from "../../database/tenant-context";
+import { MetricsService } from "../../observability/metrics.service";
 import { registerFixturePointKeys } from "../../testing/integration-fixtures";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
@@ -268,6 +273,20 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
         fleetDb,
         new AccessControlService(authDb, fleetDb),
         new MasterDataAuditService(tenantDb, fleetDb),
+        // `F2.9` Task 12 — the save-time cycle detector. Fleet on all three
+        // slots: the definition cache, the membership resolution and the asset
+        // code lookup are cross-organization reads by nature (Amendment 2/3),
+        // and this suite's assertions are about the *override write*, which
+        // still runs through `tenantDb` under real RLS.
+        new CalcDependencyService(
+          fleetDb,
+          new CalcDefinitionsService(fleetDb, new MetricsService()),
+          new CalcScopeService(fleetDb),
+        ),
+        // `F2.9` Task 16 — empty here, and that is the whole point for this
+        // suite: an unrecorded point reads `runtime: null`, so the registry
+        // adds no database access and nothing for RLS to contain.
+        new CalcStatusRegistry(),
       ),
       ownerPool,
       organizationId,

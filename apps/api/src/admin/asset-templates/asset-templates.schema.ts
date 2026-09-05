@@ -17,6 +17,7 @@ import {
 } from "@bms/shared";
 import { z } from "zod";
 
+import { templateCycles } from "../../calc/calc-graph";
 import { templateContentSchema } from "./asset-templates-content.schema";
 
 /**
@@ -244,11 +245,10 @@ const templatePointsBodySchema = z
       if (dialect !== CALC_DIALECT) {
         // ADR 0055 decision 7 repeals the refusal below for `bms-calc-v2`: a
         // `v2` formula may reference a derived point, and the cycle — not the
-        // reference — is what has to be refused. That check needs the real
-        // dependency graph and lands with `F2.9` Task 12, which calls
-        // `templateCycles(points)` here. Until then this branch is a no-op on
-        // purpose: a stub cycle check would be a guard that gates nothing,
-        // and a `v2` row is a counted skip in the engine until PR 2 anyway.
+        // reference — is what has to be refused. That check is
+        // `templateCycles(points)`, and it runs **once** after this loop:
+        // a cycle is a property of the whole array, so running it per point
+        // would report every cycle as many times as it has members.
         return;
       }
       const derivedRef = result.refs.find((ref) => kindByKey.get(ref) === "derived");
@@ -265,6 +265,45 @@ const templatePointsBodySchema = z
         });
       }
     });
+
+    // `F2.9` Task 12 / ADR 0055 decision 8 — the `bms-calc-v2` half of the rule
+    // the loop above enforces for `v1`. **Once, over the whole array**: a cycle
+    // is a property of the set of points, invisible to any per-point rule, and
+    // `templateCycles` already reports each member separately.
+    //
+    // The message names the members and says what was *found*. It deliberately
+    // does not read as "this template has no cycles" (plan correction 52): a
+    // template has no location, so `@domain`, `@group` and every `{CODE.key}`
+    // resolve to nothing here and only `@site` — over the template's own
+    // declared keys — resolves at all. The tick is the authority; this is the
+    // subset a save can prove.
+    const indexByPointKey = new Map(points.map((point, index) => [point.pointKey, index]));
+    // `?? null`: the body's optional fields arrive as `undefined` when absent,
+    // and the stored-row shape `templateCycles` takes spells the same absence
+    // `null`. It skips a point with no formula either way — this only makes the
+    // two spellings one.
+    const cycleInput = points.map((point) => ({
+      pointKey: point.pointKey,
+      kind: point.kind,
+      formula: point.formula ?? null,
+      formulaDialect: point.formulaDialect ?? null,
+    }));
+    for (const cycle of templateCycles(cycleInput)) {
+      const index = indexByPointKey.get(cycle.pointKey);
+      if (index === undefined) continue;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [index, "formula"],
+        message:
+          `This point's formula lies on a dependency cycle. The points on it are: ` +
+          `${cycle.members.join(", ")}. None of them can ever compute — each waits on ` +
+          "another, so all of them stay unwritten. Only this template's own points are in " +
+          "view when it saves: @site resolves to the keys declared here, and @domain, @group " +
+          "and {CODE.key} resolve to nothing until assets exist. This check therefore reports " +
+          "the cycle it found and cannot rule out one that appears once the template is " +
+          "instantiated beside other assets.",
+      });
+    }
   })
   .describe(
     "Every `pointKey` must be unique within this template's points. A derived point's " +

@@ -10,6 +10,9 @@ import {
   runUnknownReferenceTests,
   runUnusedPointKeysTests,
   runUnvalidatedDialectTests,
+  runV2AdmitsDerivedReferenceTests,
+  runV2KpiPointKeyExemptionTests,
+  runV2KpiUpgradeKeepsItsDialectTests,
   runValidDerivedFormulaTests,
 } from "./template-formula-validation.spec";
 
@@ -53,5 +56,17 @@ describe("template formula validation", () => {
 
   it("upgrades a KPI dialect on success and writes nothing on failure", () => {
     runKpiUpgradeTests();
+  });
+
+  it("admits under bms-calc-v2 the derived references v1 refuses", () => {
+    runV2AdmitsDerivedReferenceTests();
+  });
+
+  it("exempts a v2 KPI's cross-asset references from pointKeys, both ways", () => {
+    runV2KpiPointKeyExemptionTests();
+  });
+
+  it("leaves a v2 KPI at v2 when Validate succeeds", () => {
+    runV2KpiUpgradeKeepsItsDialectTests();
   });
 });

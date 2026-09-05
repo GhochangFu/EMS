@@ -5,6 +5,11 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import { createDb } from "@bms/db";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { CalcDefinitionsService } from "../../calc/calc-definitions.service";
+import { CalcDependencyService } from "../../calc/calc-dependency.service";
+import { CalcScopeService } from "../../calc/calc-scope.service";
+import { CalcStatusRegistry } from "../../calc/calc-status.registry";
+import { MetricsService } from "../../observability/metrics.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { registerFixturePointKeys } from "../../testing/integration-fixtures";
 import { loadFixtures, type Fixtures } from "../asset-templates/asset-templates.instantiate.integration.spec";
@@ -64,6 +69,16 @@ describe.skipIf(!connectionString)("F2.6 — asset point calc overrides", () => 
       db,
       new AccessControlService(db, db),
       new MasterDataAuditService(db, db),
+      // `F2.9` Task 12 — the real detector, not a stub. The two `v2` cases in
+      // this suite are cycle-free by construction (`F26_OVR_DERIVED_2` is a
+      // `v1` formula over a measured key, and `F26_OVR_MEASURED` is never a
+      // graph node), so they now also hold that the detector admits what it
+      // should. The refusals themselves live in the `.cycles` sibling.
+      new CalcDependencyService(db, new CalcDefinitionsService(db, new MetricsService()), new CalcScopeService(db)),
+      // `F2.9` Task 16 — empty, so every `runtime` this suite reads is `null`.
+      // The recorded case lives in the `.cycles` sibling, beside the refusal
+      // that produces it.
+      new CalcStatusRegistry(),
     );
     fx = await loadFixtures(created);
     await cleanup(created);

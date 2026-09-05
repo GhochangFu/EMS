@@ -2,12 +2,14 @@ import { describe, it } from "vitest";
 
 import {
   runCompletionKeyTests,
+  runDecorationDialectTests,
   runDiagnosticRangeTests,
   runEmptyDerivedFormulaTests,
   runEmptyKpiExpressionTests,
   runFlattenNewlinesTests,
   runRoutesToTheRightValidatorTests,
   runUnvalidatedKpiStillSilentTests,
+  runV2CompletionKeyTests,
 } from "./formula-editor-rules.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -30,6 +32,14 @@ describe("formula editor rules", () => {
 
   it("offers measured siblings only, minus the point being edited", () => {
     runCompletionKeyTests();
+  });
+
+  it("offers every sibling except self under bms-calc-v2", () => {
+    runV2CompletionKeyTests();
+  });
+
+  it("highlights a v2 formula under v2, and never lexes \"unvalidated\"", () => {
+    runDecorationDialectTests();
   });
 
   it("clamps diagnostic ranges and widens the invisible ones", () => {

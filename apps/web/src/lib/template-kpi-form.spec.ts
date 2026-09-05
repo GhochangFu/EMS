@@ -287,6 +287,69 @@ export function runValidateActionTests(): void {
   assert(again.validation.state === "ok" && again.row.dialect === CALC_DIALECT, "revalidating is safe");
 }
 
+/**
+ * **A stored `bms-calc-v2` KPI must not make the tab unsaveable, and Validate
+ * must not rewrite it to `v1`.**
+ *
+ * Both are the same class as the Calculations tab stamping `v1` on every
+ * formula edit: a control damaging a row it did not author. The owner's Q3
+ * ruling widened `templateKpiSchema.dialect`, so a `v2` KPI is storable today
+ * even though nothing evaluates one yet (ADR 0037 §"Not in this ADR"), and an
+ * author who opens the tab to rename a *different* KPI must be able to save.
+ *
+ * Q3b is the rule underneath: `pointKeys` lists the **local** point keys the
+ * expression reads, so a KPI whose every reference is cross-asset correctly has
+ * `pointKeys: []`. The API refuses an empty array only when the parse also
+ * found no cross-asset reference, and this mirrors that pair rather than
+ * exempting `v2` wholesale — the third case below is the one that would pass if
+ * the check were simply skipped.
+ */
+export function runV2KpiIsSaveableAndKeepsItsDialectTests(): void {
+  const crossOnly = row({
+    code: "SITE_KW",
+    name: "Site load",
+    expression: "sum({SITE_KW} @site)",
+    pointKeys: [],
+    dialect: CALC_DIALECT_V2,
+  });
+  assert(
+    kpiFormErrors([crossOnly], DECLARED).length === 0,
+    `a v2 KPI reading only other assets must be saveable — got ` +
+      JSON.stringify(kpiFormErrors([crossOnly], DECLARED)),
+  );
+
+  // The narrowing is not a hole: with no cross-asset reference either, an empty
+  // `pointKeys` is still a KPI that reads nothing.
+  const readsNothing = row({ expression: "{FLOW}", pointKeys: [], dialect: CALC_DIALECT_V2 });
+  assert(
+    kpiFormErrors([readsNothing], DECLARED).some((problem) => problem.field === "pointKeys"),
+    "a v2 KPI with no local keys and no cross-asset reference reads nothing and is refused",
+  );
+
+  // Validate leaves the dialect where it is, and — the case a null-ish fixture
+  // would miss — keeps the local keys a mixed expression really reads.
+  const mixed = row({
+    code: "SHARE",
+    name: "Share of site",
+    expression: "{FLOW} / sum({FLOW} @site)",
+    pointKeys: ["FLOW"],
+    dialect: CALC_DIALECT_V2,
+  });
+  const validated = validateKpiRow(mixed, DECLARED);
+  assert(
+    validated.validation.state === "ok",
+    `a mixed local/cross v2 expression validates — got ${JSON.stringify(validated.validation)}`,
+  );
+  assert(
+    validated.row.dialect === CALC_DIALECT_V2,
+    `Validate must not rewrite a v2 row to v1 — got "${validated.row.dialect}"`,
+  );
+  assert(
+    validated.row.pointKeys.join(",") === "FLOW",
+    `the local key must survive Validate — got ${JSON.stringify(validated.row.pointKeys)}`,
+  );
+}
+
 /** Codes, names, expressions and the section cap. */
 export function runFormErrorTests(): void {
   assert(kpiFormErrors([row()], DECLARED).length === 0, "a valid KPI has no problems");

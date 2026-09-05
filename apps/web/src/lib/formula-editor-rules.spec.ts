@@ -6,13 +6,14 @@
  * `apps/web` Vitest project runs `environment: "node"` over
  * `src/**\/*.test.ts`, and the coverage gate does not look above `src/lib`.
  */
-import { CALC_DIALECT_V2 } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECT_V2 } from "@bms/shared";
 import type { TemplateKpi } from "@bms/shared";
 
 import {
   EMPTY_DERIVED_FORMULA_MESSAGE,
   EMPTY_KPI_EXPRESSION_MESSAGE,
   completionKeys,
+  decorationDialect,
   editorDiagnosticRanges,
   flattenNewlines,
   isCheckedDialect,
@@ -35,7 +36,12 @@ const POINTS: FormulaPoint[] = [
   { pointKey: "SELF", kind: "derived" },
 ];
 
-const DERIVED: FormulaEditorRules = { mode: "derived", points: POINTS, selfPointKey: "D" };
+const DERIVED: FormulaEditorRules = {
+  mode: "derived",
+  points: POINTS,
+  selfPointKey: "D",
+  dialect: CALC_DIALECT,
+};
 
 function kpi(dialect: TemplateKpi["dialect"], kpiPointKeys: string[] = ["A"]): FormulaEditorRules {
   return { mode: "kpi", declaredPointKeys: ["A", "B"], kpiPointKeys, dialect };
@@ -152,7 +158,12 @@ export function runCompletionKeyTests(): void {
   assert(!derived.includes("D"), "must not offer the point being edited");
   assert(!derived.includes("SELF"), "must not offer another derived point");
 
-  const self = completionKeys({ mode: "derived", points: POINTS, selfPointKey: "A" });
+  const self = completionKeys({
+    mode: "derived",
+    points: POINTS,
+    selfPointKey: "A",
+    dialect: CALC_DIALECT,
+  });
   assert(
     self.join(",") === "B",
     `editing measured point A must not offer A itself, got ${JSON.stringify(self)}`,
@@ -162,6 +173,49 @@ export function runCompletionKeyTests(): void {
   assert(
     kpiKeys.join(",") === "A,B",
     `KPI mode offers every declared key, got ${JSON.stringify(kpiKeys)}`,
+  );
+}
+
+/**
+ * Under `bms-calc-v2` completion offers every sibling except the point being
+ * edited.
+ *
+ * The `v1` filter exists because ADR 0036 decision 7 makes a derived sibling an
+ * error the moment it is picked — offering it would be worse than offering
+ * nothing. ADR 0055 decision 7 repeals that ban for `v2`, so under `v2` the
+ * same filter hides keys the server now accepts.
+ *
+ * Self is still excluded under both. `v2` repealed the sibling ban, not the
+ * self-reference one — a formula that reads itself is a cycle, which Task 12
+ * refuses at save.
+ *
+ * The `v1` half is re-asserted here beside it: a gate that only ever widens is
+ * not a gate, and this is the assertion that reddens if the dialect condition
+ * is inverted rather than dropped.
+ */
+export function runV2CompletionKeyTests(): void {
+  const v2 = completionKeys({
+    mode: "derived",
+    points: POINTS,
+    selfPointKey: "SELF",
+    dialect: CALC_DIALECT_V2,
+  });
+  assert(
+    v2.join(",") === "A,B,D",
+    `v2 offers every sibling except self, got ${JSON.stringify(v2)}`,
+  );
+  assert(v2.includes("D"), "v2 must offer the derived sibling D — ADR 0055 decision 7");
+  assert(!v2.includes("SELF"), "v2 must still not offer the point being edited");
+
+  const v1 = completionKeys({
+    mode: "derived",
+    points: POINTS,
+    selfPointKey: "SELF",
+    dialect: CALC_DIALECT,
+  });
+  assert(
+    v1.join(",") === "A,B",
+    `v1 still offers measured siblings only, got ${JSON.stringify(v1)}`,
   );
 }
 
@@ -193,6 +247,36 @@ export function runDiagnosticRangeTests(): void {
   assert(
     inverted[0].to >= inverted[0].from,
     `to must never fall below from, got ${inverted[0].from}..${inverted[0].to}`,
+  );
+}
+
+/**
+ * The dialect the editor highlights with.
+ *
+ * This is the half `isCheckedDialect`'s docblock used to record as outstanding:
+ * `formula-editor.tsx` called `calcDecorations` with no dialect, so a `v2`
+ * formula lexed as `v1`, stopped at the `@`, and rendered unstyled from there
+ * on. The author then sees plain text where every other formula is coloured and
+ * reads a correct formula as broken.
+ *
+ * `"unvalidated"` is not a grammar, so it falls back to `v1` — which is what
+ * **Validate this expression** attempts first. It is only reachable when
+ * `isCheckedDialect` has already suppressed highlighting, and is asserted here
+ * so a later caller cannot hand that string to `tokenize` as if it named one.
+ */
+export function runDecorationDialectTests(): void {
+  assert(
+    decorationDialect({ ...DERIVED, dialect: CALC_DIALECT_V2 }) === CALC_DIALECT_V2,
+    "a v2 derived formula must be lexed as v2, or its scope and string runs render unstyled",
+  );
+  assert(decorationDialect(DERIVED) === CALC_DIALECT, "a v1 derived formula is lexed as v1");
+  assert(
+    decorationDialect(kpi(CALC_DIALECT_V2)) === CALC_DIALECT_V2,
+    "the Q3 ruling widened the KPI dialect, so a v2 KPI must be lexed as v2 too",
+  );
+  assert(
+    decorationDialect(kpi("unvalidated")) === CALC_DIALECT,
+    'an "unvalidated" KPI is not a grammar and must never reach tokenize as one',
   );
 }
 

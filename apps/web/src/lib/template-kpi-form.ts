@@ -1,4 +1,10 @@
-import { CALC_DIALECT, CALC_DIALECTS, MAX_FORMULA_POINT_REFS } from "@bms/shared";
+import {
+  CALC_DIALECT,
+  CALC_DIALECTS,
+  CALC_DIALECT_V2,
+  MAX_FORMULA_POINT_REFS,
+  parseFormula,
+} from "@bms/shared";
 import type { TemplateKpi } from "@bms/shared";
 
 import { previewInputKeys } from "./calc-preview";
@@ -130,13 +136,36 @@ export function blankKpiRow(): TemplateKpiRow {
  * `previewInputKeys` is `v1`-only, so deriving here would return `[]` for
  * `sum({kw} @site) + {kw}` and drop a local key the KPI really reads. Keeping
  * the stored array changes nothing about a `v2` row; threading the dialect
- * through the preview is `F2.9` Task 15's.
+ * through the preview is `F2.22`'s, with the rest of the `v2` authoring
+ * surface.
  */
 export function effectivePointKeys(row: TemplateKpiRow): string[] {
   if (row.dialect !== CALC_DIALECT) {
     return [...row.pointKeys];
   }
   return previewInputKeys(row.expression);
+}
+
+/**
+ * Whether a `bms-calc-v2` expression names at least one **cross-asset**
+ * reference.
+ *
+ * The owner's Q3b ruling: `pointKeys` lists the *local* keys a KPI reads, so a
+ * KPI whose every reference is an aggregate or a qualified `{CODE.key}`
+ * correctly has `pointKeys: []`. That is not "a KPI that reads nothing", and
+ * `templateKpiSchema` tells the two apart on exactly this question — an empty
+ * array is refused only when the parse also found no cross-asset reference.
+ *
+ * False for every other dialect, so `v1` and `"unvalidated"` reach the same
+ * refusal they always did. `parseFormula` is used rather than `previewInputKeys`
+ * because the preview is `v1`-only and would fail at the first `@`.
+ */
+function referencesAnotherAsset(row: TemplateKpiRow): boolean {
+  if (row.dialect !== CALC_DIALECT_V2) {
+    return false;
+  }
+  const parsed = parseFormula(row.expression.trim(), { dialect: CALC_DIALECT_V2 });
+  return parsed.ok && parsed.crossRefs.length > 0;
 }
 
 /**
@@ -151,6 +180,14 @@ export function effectivePointKeys(row: TemplateKpiRow): string[] {
  * The refs are derived here rather than trusted from `row.pointKeys`, because
  * this is the moment the two must start agreeing and the author has had no
  * field in which to make them agree.
+ *
+ * **Except under `bms-calc-v2`, where the stored array is kept** — the same
+ * split `effectivePointKeys` makes, for the same reason. `previewInputKeys` is
+ * `v1`-only, so re-deriving would hand `sum({kw} @site) + {kw}` an empty
+ * `pointKeys`; the `v2` parse would then refuse the local `{kw}` as an unknown
+ * reference, and this function writes `result.kpi.pointKeys` onto the row on
+ * **either** outcome — so pressing Validate would blank a correct array and
+ * report a problem it had just created.
  */
 export function validateKpiRow(
   row: TemplateKpiRow,
@@ -159,7 +196,8 @@ export function validateKpiRow(
   const candidate: TemplateKpi = {
     code: row.code,
     name: row.name,
-    pointKeys: previewInputKeys(row.expression),
+    pointKeys:
+      row.dialect === CALC_DIALECT_V2 ? [...row.pointKeys] : previewInputKeys(row.expression),
     expression: row.expression,
     dialect: row.dialect,
   };
@@ -250,7 +288,12 @@ export function kpiFormErrors(
     }
 
     const keys = effectivePointKeys(row);
-    if (keys.length === 0) {
+    // `referencesAnotherAsset` is the Q3b exemption, and it is a **narrowing**,
+    // not a skip: a `v2` KPI with no local keys and no cross-asset reference
+    // reads nothing and is still refused, by this branch, exactly as a `v1` one
+    // is. Without it a stored `v2` KPI made the whole tab unsaveable — an
+    // author who opened it to rename a different KPI could not press Save.
+    if (keys.length === 0 && !referencesAnotherAsset(row)) {
       problems.push({
         row: index,
         field: "pointKeys",

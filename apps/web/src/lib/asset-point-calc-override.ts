@@ -1,5 +1,6 @@
 import {
   CALC_DIALECT,
+  CALC_DIALECT_V2,
   MAX_CALC_INTERVAL_SECONDS,
   MAX_INPUT_AGE_SECONDS_BOUND,
   MIN_CALC_INTERVAL_SECONDS,
@@ -176,10 +177,11 @@ export function draftProblems(
   const problems: string[] = [];
 
   const merged = {
+    formulaDialect: body.formulaDialect ?? config.template.formulaDialect,
     calcTrigger: body.calcTrigger ?? config.template.calcTrigger,
     calcIntervalSeconds: body.calcIntervalSeconds ?? config.template.calcIntervalSeconds,
   };
-  const inherited = (field: "calcTrigger" | "calcIntervalSeconds"): string =>
+  const inherited = (field: keyof AssetPointCalcOverrideFields): string =>
     body[field] === null ? " (inherited from the template)" : "";
 
   if (CALC_FIELDS.every((field) => body[field] === null)) {
@@ -212,6 +214,23 @@ export function draftProblems(
     }
   }
 
+  // ADR 0055 decision 10, in `validateMergedCalcOverride`'s exact sentence.
+  //
+  // The dialect is **not an input on this panel** — `draftToBody` sends `v1`
+  // beside a formula and nothing otherwise — so the `v2` half of this pair can
+  // only ever be inherited, and the message says so through
+  // `inherited("formulaDialect")`. That is the whole D-1 shape decision 6 makes
+  // easy: the author overrides Runs and never types the field that makes the
+  // choice illegal.
+  if (merged.formulaDialect === CALC_DIALECT_V2 && merged.calcTrigger === "streaming") {
+    problems.push(
+      `The merged formulaDialect is "${CALC_DIALECT_V2}"${inherited("formulaDialect")} but ` +
+        `calcTrigger is "streaming"${inherited("calcTrigger")}. A "${CALC_DIALECT_V2}" point ` +
+        `requires calcTrigger: "scheduled" — a cross-asset formula resolves its members once ` +
+        "per sweep and cannot run on a single reading.",
+    );
+  }
+
   // D-1, in the same terms the API uses.
   if (merged.calcTrigger === "scheduled" && merged.calcIntervalSeconds === null) {
     problems.push(
@@ -239,4 +258,53 @@ export function draftProblems(
 /** Whether Save may be pressed. */
 export function canSubmit(draft: OverrideDraft, config: AssetPointCalcConfigDto): boolean {
   return draftProblems(draft, config).length === 0;
+}
+
+/** How long ago, in the coarsest unit that still says something useful. */
+function ago(elapsedMs: number): string {
+  // A clock that reads slightly behind the server's would otherwise produce
+  // "-1 s ago", which looks like a bug in the engine rather than in the clock.
+  const seconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  if (seconds < 60) {
+    return `${seconds} s ago`;
+  }
+  if (seconds < 3600) {
+    return `${Math.floor(seconds / 60)} min ago`;
+  }
+  return `${Math.floor(seconds / 3600)} h ago`;
+}
+
+/**
+ * The calc-points status pill's text (`F2.9` Task 16 — ADR 0055 decision 8,
+ * plan design decision 9, layer 3), or `null` when there is no pill to render.
+ *
+ * `written 12 s ago` / `skipped: dependency_cycle`. The two arms say different
+ * things on purpose. For a formula that computed, the useful fact is *when* —
+ * a point last written an hour ago on a 5-minute interval is the symptom an
+ * operator is looking for. For a refusal, the useful fact is *why*: the reason
+ * is what tells them whether they broke it by moving an asset into a group, and
+ * the age of a refusal that repeats every due window says nothing.
+ *
+ * `nowMs` is a parameter and the clock is never read here — the caller passes
+ * its own, so this stays pure and the "12 s ago" case is a fixed number rather
+ * than a race.
+ *
+ * `lastSkipReason` is rendered as received. It is `z.string()` in the contract
+ * on purpose: the vocabulary lives in `apps/api`, and a web-side map from
+ * reason to prose would silently fall through to nothing the first time the
+ * engine gained a reason — which is exactly when an operator most needs to see
+ * one. `dependency_cycle` is not beautiful, but it is searchable, it matches
+ * the label on `bms_api_calc_skipped_total`, and it is never absent.
+ */
+export function calcRuntimePillLabel(
+  runtime: AssetPointCalcConfigDto["runtime"],
+  nowMs: number,
+): string | null {
+  if (runtime === null) {
+    return null;
+  }
+  if (runtime.lastOutcome === "written") {
+    return `written ${ago(nowMs - new Date(runtime.at).getTime())}`;
+  }
+  return runtime.lastSkipReason === null ? "skipped" : `skipped: ${runtime.lastSkipReason}`;
 }

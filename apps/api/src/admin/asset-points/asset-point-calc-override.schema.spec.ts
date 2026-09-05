@@ -375,10 +375,11 @@ export function assertV2OverrideAdmitsADerivedSiblingAndAnAggregate(): void {
  * legal value. With two, an override can change the dialect while inheriting
  * the formula, and the merged pair — the pair `CalcDefinitionsService.reload`
  * coalesces column by column, and the pair the engine actually runs — was then
- * never parsed at all. A `v1` label on a `v2` formula walks straight past
- * `runScheduledSweep`'s `def.dialect !== CALC_DIALECT` refusal, which is the
- * one thing standing between PR 1 and the runaway series the plan's finding 22
- * records.
+ * never parsed at all. In PR 1 a `v1` label on a `v2` formula walked straight
+ * past the scheduler's dialect refusal, which was the one thing standing
+ * between PR 1 and the runaway series the plan's finding 22 records; since
+ * `F2.9` Task 13 that refusal is gone and the read-time backstops hold the
+ * class instead, which makes this write-time parse no less load-bearing.
  *
  * So the merged formula is parsed under the merged dialect whenever the
  * override states **either** half. Decision 3 is enforced on the merged pair

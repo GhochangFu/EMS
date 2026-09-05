@@ -7,6 +7,7 @@ import {
   runIntervalOnlyWhenScheduledTests,
   runParseOptionalSecondsTests,
   runTriggerChangeTests,
+  runV2IsScheduledOnlyTests,
   runValidConfigTests,
 } from "./template-calc-config.spec";
 
@@ -38,5 +39,9 @@ describe("template calc config", () => {
 
   it("reports every derived point in the grid, addressed by row", () => {
     runGridPassTests();
+  });
+
+  it("refuses a streaming bms-calc-v2 point, and only that one (ADR 0055 decision 10)", () => {
+    runV2IsScheduledOnlyTests();
   });
 });

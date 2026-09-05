@@ -2,7 +2,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import type { AdminAssetPointDto, MasterDataActiveFilter } from "@bms/shared";
+import type {
+  AdminAssetPointDto,
+  AssetPointCalcConfigDto,
+  MasterDataActiveFilter,
+} from "@bms/shared";
 
 import {
   clearAdminAssetPointCalcOverride,
@@ -27,6 +31,7 @@ import { PointCalcOverridePanel } from "../../components/assets/point-calc-overr
 import { SectionCard } from "../../components/section-card";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import {
+  calcRuntimePillLabel,
   draftFromConfig,
   draftToBody,
   hasAnyOverride,
@@ -35,6 +40,27 @@ import {
 } from "../../lib/asset-point-calc-override";
 import { StatusPill } from "../../components/status-pill";
 import type { AuthUser } from "../../stores/auth-store";
+
+/**
+ * `F2.9` Task 16 (ADR 0055 decision 8; plan design decision 9, layer 3) — what
+ * the engine last did with one derived point, beside what it is configured to
+ * do. `written 12 s ago` / `skipped: dependency_cycle`.
+ *
+ * Nothing is rendered when the API reports no outcome. That is deliberate: the
+ * registry feeding it is in-process and empty after a restart, so `null` means
+ * "this API process has not evaluated it", and a pill reading "unknown" would
+ * make an absence look like a finding. The text itself is
+ * {@link calcRuntimePillLabel}'s, which is where the pure spec gates it.
+ */
+function CalcRuntimePill({ runtime }: { runtime: AssetPointCalcConfigDto["runtime"] }) {
+  const label = calcRuntimePillLabel(runtime, Date.now());
+  if (label === null) {
+    return null;
+  }
+  const tone =
+    runtime?.lastOutcome === "skipped" ? "bg-red-100 text-red-800" : "bg-bms-green/10 text-bms-green";
+  return <span className={`rounded px-2 py-0.5 font-semibold ${tone}`}>{label}</span>;
+}
 
 type AssetPointsAdminPageProps = { user: AuthUser };
 
@@ -336,6 +362,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                       ? ""
                       : ` · every ${config.effective.calcIntervalSeconds}s`}
                   </span>
+                  <CalcRuntimePill runtime={config.runtime} />
                   {hasAnyOverride(config) ? (
                     <span className="rounded bg-amber-100 px-2 py-0.5 font-semibold text-amber-800">
                       overridden

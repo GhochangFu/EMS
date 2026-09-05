@@ -9,8 +9,9 @@ import type { CalcDefinition } from "./calc-definition";
 import { CalcDefinitionsService } from "./calc-definitions.service";
 import { classifyInput, newestTimeMs, type CalcInputSample } from "./calc-inputs";
 import { CalcInputsService } from "./calc-inputs.service";
+import { CalcStatusRegistry } from "./calc-status.registry";
 import { CalcWriteService, type CalcWriteInput } from "./calc-write.service";
-import { MetricsService } from "../observability/metrics.service";
+import { MetricsService, type CalcRuntimeSkipReason } from "../observability/metrics.service";
 
 /** The narrow slice of each real dependency `evaluateStreamingBatch` needs —
  * `Pick`, not the concrete class, so a test can pass a plain fake without
@@ -22,7 +23,43 @@ export interface CalcStreamingDeps {
   inputs: Pick<CalcInputsService, "getLatestSamples">;
   writer: Pick<CalcWriteService, "writeValues">;
   metrics: Pick<MetricsService, "countCalcSkipped">;
+  /** `F2.9` Task 16 — design decision 9, layer 3: what the per-asset page reads. */
+  status: Pick<CalcStatusRegistry, "record">;
   logger: Pick<Logger, "warn">;
+}
+
+/**
+ * **The one place this host refuses a formula**, the twin of the scheduler's
+ * own `refuse`. The count and the record are one event: written out beside
+ * each `if`, the next refusal added here would have two chances to be counted
+ * without being recorded, and a streaming point would then sit on a stale
+ * outcome — or on `null` forever — while `bms_api_calc_skipped_total` moved.
+ *
+ * A streaming formula that is never recorded is the worse half of the same
+ * defect: the page would show every streaming point as "never evaluated",
+ * which is indistinguishable from an engine that is not running.
+ *
+ * `tests/adr-0055-calc-v2-invariants.test.ts` part (e) holds it as source
+ * structure: `countCalcSkipped(` may not appear in this file outside here.
+ *
+ * `assetId` comes from the reading, not from `def` — the same id the write
+ * carries — so the registry entry and the written row name one asset.
+ */
+function refuse(
+  deps: CalcStreamingDeps,
+  def: CalcDefinition,
+  assetId: string,
+  reason: CalcRuntimeSkipReason,
+  nowMs: number,
+): null {
+  deps.metrics.countCalcSkipped(reason);
+  deps.status.record(assetId, def.templatePointId, { outcome: "skipped", reason, atMs: nowMs });
+  return null;
+}
+
+/** The other half of {@link refuse}: a formula that produced a value this batch. */
+function noteWritten(deps: CalcStreamingDeps, def: CalcDefinition, assetId: string, nowMs: number): void {
+  deps.status.record(assetId, def.templatePointId, { outcome: "written", reason: null, atMs: nowMs });
 }
 
 async function evaluateOneStreamingFormula(
@@ -38,8 +75,7 @@ async function evaluateOneStreamingFormula(
     const sample = samples.get(ref);
     const classification = classifyInput(sample, nowMs, def.maxInputAgeSeconds);
     if (classification !== "fresh" || !sample) {
-      deps.metrics.countCalcSkipped(classification === "missing" ? "missing_input" : "stale_input");
-      return null;
+      return refuse(deps, def, assetId, classification === "missing" ? "missing_input" : "stale_input", nowMs);
     }
     inputs.set(ref, sample.value);
     used.push(sample);
@@ -47,8 +83,7 @@ async function evaluateOneStreamingFormula(
 
   const result = evaluate(def.ast, inputs);
   if (!result.ok) {
-    deps.metrics.countCalcSkipped("non_finite");
-    return null;
+    return refuse(deps, def, assetId, "non_finite", nowMs);
   }
 
   return {
@@ -106,6 +141,7 @@ export async function evaluateStreamingBatch(
       const outcome = await evaluateOneStreamingFormula(deps, def, assetId, nowMs);
       if (outcome) {
         toWrite.push(outcome);
+        noteWritten(deps, def, assetId, nowMs);
       }
     } catch (err) {
       deps.logger.warn(
@@ -135,6 +171,7 @@ export class CalcStreamingService implements OnModuleInit {
     private readonly inputs: CalcInputsService,
     private readonly writer: CalcWriteService,
     private readonly metrics: MetricsService,
+    private readonly status: CalcStatusRegistry,
   ) {}
 
   onModuleInit(): void {
@@ -144,6 +181,7 @@ export class CalcStreamingService implements OnModuleInit {
         inputs: this.inputs,
         writer: this.writer,
         metrics: this.metrics,
+        status: this.status,
         logger: this.logger,
       };
       void evaluateStreamingBatch(deps, readings).catch((err: unknown) => {

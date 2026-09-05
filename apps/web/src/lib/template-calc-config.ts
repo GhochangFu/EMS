@@ -1,4 +1,5 @@
 import {
+  CALC_DIALECT_V2,
   CALC_TRIGGERS,
   DEFAULT_MAX_INPUT_AGE_SECONDS,
   MAX_CALC_INTERVAL_SECONDS,
@@ -120,6 +121,28 @@ export function calcConfigErrors(
       row: index,
       field: "calcTrigger",
       message: "Choose when this formula runs: on every reading, or on a schedule.",
+    });
+  }
+
+  // ADR 0055 decision 10. A `bms-calc-v2` formula resolves its cross-asset
+  // membership once per sweep, so there is nothing for it to resolve against on
+  // a single incoming reading: a streaming `v2` point stores clean and never
+  // computes. `templatePointBodySchema` and `validateMergedCalcOverride` both
+  // refuse it, and this tab is a third author for the same engine.
+  //
+  // **The server's sentence verbatim.** Its own refinement is broader —
+  // `calcTrigger !== "scheduled"`, which also catches an unset trigger — but the
+  // membership test above already reports that case on this same field, and
+  // `calculations-tab.tsx` renders the *first* problem per field. Two messages
+  // for one empty select would mean the author sees whichever this function
+  // happens to push first.
+  if (row.formulaDialect === CALC_DIALECT_V2 && row.calcTrigger === "streaming") {
+    problems.push({
+      row: index,
+      field: "calcTrigger",
+      message:
+        `A "${CALC_DIALECT_V2}" point requires calcTrigger: "scheduled" — a cross-asset ` +
+        "formula resolves its members once per sweep and cannot run on a single reading",
     });
   }
 

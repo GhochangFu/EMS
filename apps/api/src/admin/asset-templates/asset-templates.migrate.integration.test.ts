@@ -5,6 +5,10 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import { createDb } from "@bms/db";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { CalcDefinitionsService } from "../../calc/calc-definitions.service";
+import { CalcDependencyService } from "../../calc/calc-dependency.service";
+import { CalcScopeService } from "../../calc/calc-scope.service";
+import { MetricsService } from "../../observability/metrics.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { registerFixturePointKeys } from "../../testing/integration-fixtures";
 import { asRole } from "../../testing/role-urls";
@@ -79,6 +83,13 @@ describe.skipIf(!connectionString)("F2.6 — template version migration", () => 
       tenantDb,
       new AccessControlService(createDb(authPool), fleetDb),
       new MasterDataAuditService(tenantDb, fleetDb),
+      // `F2.9` PR 2 review fix 2 — migrate now runs the override endpoint's
+      // cycle detector as well, so this hand-wired service needs the real one.
+      new CalcDependencyService(
+        fleetDb,
+        new CalcDefinitionsService(fleetDb, new MetricsService()),
+        new CalcScopeService(fleetDb),
+      ),
     );
     // `F3.39`: the template points this suite invents (`KW`, `VOLTS`) reach
     // bms.asset_points, whose point_key references point_keys(code) from

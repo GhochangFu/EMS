@@ -1,5 +1,5 @@
-import { parseFormula } from "@bms/shared";
-import type { AdminAssetTemplateDto, AdminTemplatePointDto } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECTS, parseFormula } from "@bms/shared";
+import type { AdminAssetTemplateDto, AdminTemplatePointDto, CalcDialect } from "@bms/shared";
 
 import type { TemplatePointInput, TemplatePointTier } from "../api/admin/asset-templates";
 
@@ -93,6 +93,18 @@ export type TemplatePointRow = {
   calcTrigger: AdminTemplatePointDto["calcTrigger"];
   calcIntervalSeconds: number | null;
   maxInputAgeSeconds: number | null;
+  /**
+   * ADR 0055 decision 11 — the fraction of an aggregate's declared members that
+   * must be fresh, or `null` for the default.
+   *
+   * Carried, never edited here (a ratio input is `F2.22`'s). It is on the row
+   * for the same reason the five calc fields are — the server replaces the whole
+   * point set from whichever tab saves — and the consequence of losing it is
+   * sharper than theirs: `null` is **fail closed**, so a dropped ratio does not
+   * loosen the rule, it stops the formula computing at all, with nothing on
+   * screen to say why and no other column holding the value.
+   */
+  minCoverageRatio: number | null;
   meta: { tier: TemplatePointTier } | null;
 };
 
@@ -111,6 +123,7 @@ export function pointRowsFrom(template: AdminAssetTemplateDto): TemplatePointRow
     calcTrigger: point.calcTrigger,
     calcIntervalSeconds: point.calcIntervalSeconds,
     maxInputAgeSeconds: point.maxInputAgeSeconds,
+    minCoverageRatio: point.minCoverageRatio,
     meta: point.meta?.tier ? { tier: point.meta.tier } : null,
   }));
 }
@@ -131,6 +144,7 @@ export function blankPointRow(rows: readonly TemplatePointRow[]): TemplatePointR
     calcTrigger: null,
     calcIntervalSeconds: null,
     maxInputAgeSeconds: null,
+    minCoverageRatio: null,
     meta: null,
   };
 }
@@ -176,6 +190,11 @@ export function setPointKind(
       calcTrigger: null,
       calcIntervalSeconds: null,
       maxInputAgeSeconds: null,
+      // The sixth, for the same reason as the other five.
+      // `templatePointBodySchema` refuses `minCoverageRatio` on anything that is
+      // not a `bms-calc-v2` derived point (ADR 0055 decision 11), so leaving it
+      // turns a kind change into a 400 naming a field this grid never showed.
+      minCoverageRatio: null,
     };
   }
   return { ...row, kind, sourceDataKeyPattern: "" };
@@ -322,6 +341,24 @@ export function pointGridErrors(rows: readonly TemplatePointRow[]): PointGridPro
  * Reference extraction only. Nothing here re-implements the server's
  * reachability analysis, and a formula that does not parse is left to the
  * server and to the Calculations tab, which is where it can be fixed.
+ *
+ * ## Each row is read under its **own** dialect (`F2.9`, ADR 0055)
+ *
+ * Parsing every row as `v1` made a `bms-calc-v2` formula fail at the `@` of its
+ * first aggregate, which this function treats as "not mine to report" — so a
+ * `v2` row was skipped entirely and a key deleted out from under it was never
+ * named.
+ *
+ * Only the derived-sibling refusal is dialect-dependent. Decision 7 repeals it
+ * for `v2`, where reading another derived point is the dialect's purpose, and
+ * decision 3 freezes it for `v1`. The "no longer in this template" half stays
+ * under **both**: a local `{ref}` naming a key the grid no longer holds is
+ * broken however it is parsed, and it is this tab's edit that broke it.
+ *
+ * A cross-asset reference is exempt from both, and needs no code of its own —
+ * `parseFormula` puts it in `crossRefs`, and only `refs` is walked below. The
+ * asset it resolves against is another one, so this grid has nothing to say
+ * about it.
  */
 export function brokenFormulaRefs(rows: readonly TemplatePointRow[]): PointGridProblem[] {
   const problems: PointGridProblem[] = [];
@@ -334,7 +371,8 @@ export function brokenFormulaRefs(rows: readonly TemplatePointRow[]): PointGridP
     if (row.kind !== "derived" || formula === "") {
       return;
     }
-    const result = parseFormula(formula);
+    const dialect = rowDialect(row);
+    const result = parseFormula(formula, { dialect });
     if (!result.ok) {
       // Left to the Calculations tab and to the server. A parse error is not
       // something an edit on *this* tab caused.
@@ -353,7 +391,7 @@ export function brokenFormulaRefs(rows: readonly TemplatePointRow[]): PointGridP
             `This point's formula references "${ref}", which is no longer in this template. ` +
             "Restore that point key, or change the formula on the Calculations tab.",
         });
-      } else if (kind === "derived") {
+      } else if (kind === "derived" && dialect === CALC_DIALECT) {
         problems.push({
           row: index,
           field: "formula",
@@ -368,6 +406,20 @@ export function brokenFormulaRefs(rows: readonly TemplatePointRow[]): PointGridP
   });
 
   return problems;
+}
+
+/**
+ * The dialect a row's formula is parsed under.
+ *
+ * `formulaDialect` is nullable on the wire and a stored row can predate a
+ * vocabulary, so this resolves through `CALC_DIALECTS` and falls back to `v1`
+ * rather than trusting the column. `v1` is the safe fallback for **this**
+ * function: it is the narrower grammar, so an unrecognised label yields a parse
+ * failure the function already knows to leave alone, never a silently widened
+ * one.
+ */
+function rowDialect(row: TemplatePointRow): CalcDialect {
+  return CALC_DIALECTS.find((known) => known === row.formulaDialect) ?? CALC_DIALECT;
 }
 
 /**
@@ -400,6 +452,7 @@ export function buildPointsPayload(rows: readonly TemplatePointRow[]): TemplateP
     calcTrigger: row.calcTrigger,
     calcIntervalSeconds: row.calcIntervalSeconds,
     maxInputAgeSeconds: row.maxInputAgeSeconds,
+    minCoverageRatio: row.minCoverageRatio,
     // Omitted, not nulled, for a point with no tier — see the module docblock.
     ...(row.meta ? { meta: row.meta } : {}),
   }));

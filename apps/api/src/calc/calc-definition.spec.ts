@@ -88,6 +88,42 @@ export function runCalcDefinitionTests(): void {
     "a maxInputAgeSeconds above the bound must skip",
   );
 
+  // ---- the coverage ratio's (0, 1] bound, re-checked at read time (finding 32) --
+  // The same convention as the two bounds above: the Zod layer enforces it, and
+  // this re-checks it for exactly the rows that never passed the Zod layer. The
+  // boundary at 1 is the one that matters — `1` means "every member" and an
+  // exclusive slip there would silently disable fail-closed for that ratio.
+
+  const ratioZero = toActiveDefinition({ ...BASE, calcTrigger: "scheduled", calcIntervalSeconds: 300, minCoverageRatio: 0 });
+  assert(
+    ratioZero.ok === false && ratioZero.reason === "coverage_ratio_out_of_range",
+    `a min_coverage_ratio of 0 is outside (0, 1] and must skip, got ${ratioZero.ok ? "ok" : ratioZero.reason}`,
+  );
+  const ratioAboveOne = toActiveDefinition({
+    ...BASE,
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 300,
+    minCoverageRatio: 1.5,
+  });
+  assert(
+    ratioAboveOne.ok === false && ratioAboveOne.reason === "coverage_ratio_out_of_range",
+    `a min_coverage_ratio above 1 must skip, got ${ratioAboveOne.ok ? "ok" : ratioAboveOne.reason}`,
+  );
+  const ratioNaN = toActiveDefinition({ ...BASE, calcTrigger: "scheduled", calcIntervalSeconds: 300, minCoverageRatio: NaN });
+  assert(
+    ratioNaN.ok === false && ratioNaN.reason === "coverage_ratio_out_of_range",
+    `a NaN ratio (a numeric column admits one) must skip, not pass a comparison vacuously, got ${
+      ratioNaN.ok ? "ok" : ratioNaN.reason
+    }`,
+  );
+  const ratioOne = toActiveDefinition({ ...BASE, calcTrigger: "scheduled", calcIntervalSeconds: 300, minCoverageRatio: 1 });
+  assert(
+    ratioOne.ok === true && ratioOne.def.minCoverageRatio === 1,
+    `a min_coverage_ratio of exactly 1 is inside the bound and must resolve, got ${ratioOne.ok ? "ok" : ratioOne.reason}`,
+  );
+  const ratioHalf = toActiveDefinition({ ...BASE, calcTrigger: "scheduled", calcIntervalSeconds: 300, minCoverageRatio: 0.5 });
+  assert(ratioHalf.ok === true && ratioHalf.def.minCoverageRatio === 0.5, "a ratio inside the bound carries through");
+
   // ---- a valid scheduled row resolves the default when unset -----------------
 
   const validScheduled = toActiveDefinition({ ...BASE, calcTrigger: "scheduled", calcIntervalSeconds: 300 });
@@ -275,9 +311,10 @@ function runDerivedSiblingTests(): void {
     "a v1 formula over measured siblings must never be refused — that is every stock derived point",
   );
 
-  // ADR 0055 decision 7 repeals the ban for `v2`. A `v2` definition is refused
-  // by the scheduler's `v2_not_yet_evaluable` guard until Task 13, never here —
-  // folding the two together would delete decision 7 the day Task 13 lands.
+  // ADR 0055 decision 7 repeals the ban for `v2`. A `v2` definition that reads
+  // a derived point is ordered after it by the sweep and refused only on a
+  // cycle (`dependency_cycle`), never here — folding the two together would
+  // delete decision 7.
   const v2OnDerived = activeDef({
     pointKey: "TOTAL_KWH",
     formula: "{OTHER_DERIVED} * 2",

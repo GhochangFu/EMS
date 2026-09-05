@@ -65,7 +65,43 @@ export class CalcDefinitionsService {
     await this.reload();
   }
 
-  private async reload(): Promise<void> {
+  /**
+   * Reloads the cache.
+   *
+   * `countSkips` is `false` for exactly one caller —
+   * `getAllDefinitionsFresh()`, the save-time cycle detector's read (`F2.9`,
+   * finding 30). `bms_api_calc_skipped_total` means "the engine refused to
+   * compute N times"; if an author's keystroke moved it too, the number would
+   * mean two things at once and be readable as neither. ADR 0037 decision 9
+   * requires that no **evaluation** skip is silent, and a validation read is
+   * not an evaluation. **Both** count sites below are gated, not just the
+   * first: half a counter is a counter that lies more quietly.
+   *
+   * No shipped refusal changes. The rows filtered out are the same rows either
+   * way, so the detector still never sees an unusable definition.
+   *
+   * **`stampCache` travels with it, and it is a second flag rather than a
+   * consequence of the first for a reason.** `cacheLoadedAt` is what
+   * {@link CalcDefinitionsService.ensureFresh} tests, so an *uncounted* reload
+   * that stamped the timestamp would spend the next 60 seconds of refresh
+   * window on behalf of a counted one that never runs: every `v2` override save
+   * would silence the following sweep's reload, and with it every skip reason
+   * that is only reachable from a `reload()` — `self_reference`,
+   * `v1_references_derived`, `streaming_on_v2` and
+   * `coverage_ratio_out_of_range`, PR 1's runaway backstops. The refusals still
+   * fire at evaluation time; what was lost was **detection**, which is the
+   * whole of ADR 0037 decision 9. Proved by execution at the `F2.9` PR 2 review
+   * gate: four counted `self_reference` skips across four sweeps became one as
+   * soon as a save ran between them.
+   *
+   * So the two flags are one decision — "this read is a validation" — written
+   * as two, because a flag named `countSkips` that also governed the cache
+   * timestamp would be a name that hides half of what it does.
+   */
+  private async reload({
+    countSkips = true,
+    stampCache = true,
+  }: { countSkips?: boolean; stampCache?: boolean } = {}): Promise<void> {
     const rows = await this.fleetDb
       .select({
         templatePointId: templatePoints.id,
@@ -140,7 +176,7 @@ export class CalcDefinitionsService {
       }
       const result = toActiveDefinition(row);
       if (!result.ok) {
-        this.metrics.countCalcSkipped(result.reason);
+        if (countSkips) this.metrics.countCalcSkipped(result.reason);
         continue;
       }
       candidates.push(result.def);
@@ -161,7 +197,7 @@ export class CalcDefinitionsService {
       if (!referencesADerivedSiblingUnderV1(def, derivedPointKeysByAsset)) {
         return true;
       }
-      this.metrics.countCalcSkipped("v1_references_derived");
+      if (countSkips) this.metrics.countCalcSkipped("v1_references_derived");
       return false;
     });
 
@@ -186,7 +222,13 @@ export class CalcDefinitionsService {
     this.streamingInputKeys = streamingInputKeys;
     this.all = defs;
     this.scheduled = defs.filter((def) => def.trigger === "scheduled");
-    this.cacheLoadedAt = Date.now();
+    // Contents always; the timestamp only for an evaluation refresh. See the
+    // docblock: leaving `cacheLoadedAt` alone is what keeps the next
+    // `ensureFresh()` a real, counted reload rather than a no-op inside a TTL
+    // a validation read paid for.
+    if (stampCache) {
+      this.cacheLoadedAt = Date.now();
+    }
     this.metrics.setCalcActiveFormulas(defs.length);
   }
 
@@ -233,9 +275,21 @@ export class CalcDefinitionsService {
    * definition written in the last 60s would be invisible, and the detector
    * would admit the edge that completes the loop. The cost is one query per
    * template/override save, which is a human-rate write path.
+   *
+   * **`countSkips: false`** — see `reload`. This read is a validation, not an
+   * evaluation, and counting it would make `bms_api_calc_skipped_total` move on
+   * an author's keystroke (finding 30).
+   *
+   * **`stampCache: false`** for the other half of the same reason. The cache
+   * *contents* this leaves behind are the same either way, so the two
+   * evaluation hosts read the same definitions — but the *timestamp* is not a
+   * free write. Stamping it would let this uncounted reload consume the refresh
+   * window the next sweep would have spent on a counted one, so an author's
+   * save would silence the skips the following sweep should have counted
+   * (`F2.9` PR 2 review fix 3). Contents shared, window not.
    */
   async getAllDefinitionsFresh(): Promise<CalcDefinition[]> {
-    await this.reload();
+    await this.reload({ countSkips: false, stampCache: false });
     return this.all;
   }
 }

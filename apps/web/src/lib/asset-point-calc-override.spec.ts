@@ -1,7 +1,9 @@
+import { CALC_DIALECT_V2 } from "@bms/shared";
 import type { AssetPointCalcConfigDto } from "@bms/shared";
 
 import {
   calcFieldRows,
+  calcRuntimePillLabel,
   canClear,
   canSubmit,
   columnOrigin,
@@ -34,6 +36,22 @@ const SCHEDULED_TEMPLATE = {
   maxInputAgeSeconds: 600,
 } as const;
 
+/**
+ * A `bms-calc-v2` template point.
+ *
+ * `scheduled`, because the server refuses any other shape (ADR 0055 decision
+ * 10) — a stored `v2` streaming point cannot exist, so the only way to reach
+ * the merged refusal is an override that sets the trigger while the dialect
+ * inherits.
+ */
+const V2_TEMPLATE = {
+  formula: "sum({KW} @site)",
+  formulaDialect: CALC_DIALECT_V2,
+  calcTrigger: "scheduled",
+  calcIntervalSeconds: 300,
+  maxInputAgeSeconds: 600,
+} as const;
+
 function config(
   override: Partial<AssetPointCalcConfigDto["override"]> = {},
   template: AssetPointCalcConfigDto["template"] = { ...SCHEDULED_TEMPLATE },
@@ -54,6 +72,9 @@ function config(
       calcIntervalSeconds: ov.calcIntervalSeconds ?? template.calcIntervalSeconds,
       maxInputAgeSeconds: ov.maxInputAgeSeconds ?? template.maxInputAgeSeconds,
     },
+    // `F2.9` Task 16 — the panel's own rules do not read it, and the pill's
+    // label is asserted on the field directly in `runRuntimePillLabelTests`.
+    runtime: null,
   };
 }
 
@@ -224,6 +245,57 @@ export function runBoundsTests(): void {
   );
 }
 
+/**
+ * ADR 0055 decision 10 on the **merged** pair, word for word from the API.
+ *
+ * The mistake decision 6 makes easy: the author overrides `Runs` to streaming
+ * and never types the dialect that makes it illegal, because the dialect is not
+ * an input on this panel at all — `draftToBody` can only ever send `v1` beside
+ * a formula. So the `v2` half is always inherited, and the message says so.
+ *
+ * The wording is compared in full rather than by substring. The API's sentence
+ * and this one are two copies of one rule that `apps/web` cannot import; a
+ * substring assertion is exactly what lets them drift apart while staying
+ * green.
+ *
+ * The `v1` control is the anti-vacuity half — the same override on a `v1`
+ * template must raise the interval problem and **not** this one.
+ */
+export function runV2IsScheduledOnlyTests(): void {
+  const problems = draftProblems(
+    { ...EMPTY_DRAFT, calcTrigger: "streaming" },
+    config({}, { ...V2_TEMPLATE }),
+  );
+  const v2 = problems.filter((problem) => problem.includes(`A "${CALC_DIALECT_V2}" point`));
+  assert(
+    v2.length === 1,
+    `a streaming override on a v2 point is refused once — got ${JSON.stringify(problems)}`,
+  );
+  assert(
+    v2[0] ===
+      `The merged formulaDialect is "${CALC_DIALECT_V2}" (inherited from the template) but ` +
+        `calcTrigger is "streaming". A "${CALC_DIALECT_V2}" point requires calcTrigger: ` +
+        '"scheduled" — a cross-asset formula resolves its members once per sweep and cannot ' +
+        "run on a single reading.",
+    `the panel must use the API's sentence verbatim, got: ${v2[0]}`,
+  );
+
+  const v1 = draftProblems({ ...EMPTY_DRAFT, calcTrigger: "streaming" }, config());
+  assert(
+    v1.length > 0,
+    "a v1 template scheduled with an interval still refuses a streaming override",
+  );
+  assert(
+    !v1.some((problem) => problem.includes(CALC_DIALECT_V2)),
+    `nothing v2 may be said about a v1 point — got ${JSON.stringify(v1)}`,
+  );
+
+  assert(
+    !canSubmit({ ...EMPTY_DRAFT, calcTrigger: "streaming" }, config({}, { ...V2_TEMPLATE })),
+    "and Save stays disabled",
+  );
+}
+
 /** An empty form is Clear, not Save — the same rule the API applies. */
 export function runEmptySubmitIsRefusedTests(): void {
   const problems = draftProblems(EMPTY_DRAFT, config());
@@ -231,5 +303,66 @@ export function runEmptySubmitIsRefusedTests(): void {
   assert(
     problems.join(" ").includes("Clear"),
     `and must point at Clear rather than reading as an error, got: ${problems.join(" ")}`,
+  );
+}
+
+/**
+ * `F2.9` Task 16 — the calc-points status pill's text (plan design decision 9,
+ * layer 3).
+ *
+ * `null` in, `null` out is the case that keeps the pill from appearing at all
+ * on a point this API process has not evaluated: the field is nullable for a
+ * real reason (the registry is in-process and empty after a restart), and a
+ * pill reading "skipped" there would state a refusal that never happened.
+ */
+export function runRuntimePillLabelTests(): void {
+  const at = "2026-09-05T12:00:00.000Z";
+  const nowMs = new Date(at).getTime();
+
+  assert(
+    calcRuntimePillLabel(null, nowMs) === null,
+    "no recorded outcome means no pill — never a pill that invents one",
+  );
+
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "written", lastSkipReason: null, at }, nowMs + 12_000) ===
+      "written 12 s ago",
+    `a written point reads as its age, got ${String(
+      calcRuntimePillLabel({ lastOutcome: "written", lastSkipReason: null, at }, nowMs + 12_000),
+    )}`,
+  );
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "written", lastSkipReason: null, at }, nowMs + 90_000) ===
+      "written 1 min ago",
+    "past a minute the pill reads in minutes rather than 90 s",
+  );
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "written", lastSkipReason: null, at }, nowMs + 7_200_000) ===
+      "written 2 h ago",
+    "past an hour it reads in hours — the shape that says a scheduled point has stopped",
+  );
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "written", lastSkipReason: null, at }, nowMs - 4_000) ===
+      "written 0 s ago",
+    "a browser clock behind the server's must not produce a negative age, which reads as a bug " +
+      "in the engine rather than in the clock",
+  );
+
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "skipped", lastSkipReason: "dependency_cycle", at }, nowMs + 12_000) ===
+      "skipped: dependency_cycle",
+    "a refusal names its reason and not its age — the reason is what an operator who just moved " +
+      "an asset into a group needs, and a refusal repeats every due window anyway",
+  );
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "skipped", lastSkipReason: "a_reason_web_has_never_heard_of", at }, nowMs) ===
+      "skipped: a_reason_web_has_never_heard_of",
+    "an unknown reason is rendered as received. The vocabulary lives in apps/api and the contract " +
+      "keeps the field a plain string for that reason; a web-side lookup would show nothing at all " +
+      "the first time the engine gained a reason, which is when it matters most.",
+  );
+  assert(
+    calcRuntimePillLabel({ lastOutcome: "skipped", lastSkipReason: null, at }, nowMs) === "skipped",
+    "a skip with no reason still renders a pill, without a dangling colon",
   );
 }

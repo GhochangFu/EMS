@@ -87,6 +87,15 @@ export interface TemplatePointInput {
   calcTrigger?: CalcTrigger | null;
   calcIntervalSeconds?: number | null;
   maxInputAgeSeconds?: number | null;
+  /**
+   * ADR 0055 decision 11 — the sixth field a round trip must carry.
+   *
+   * Nullable, not merely optional: it is the fraction of an aggregate's declared
+   * members that must be fresh, and `null` is **fail closed**. Omitting it from
+   * a payload the server replaces wholesale would stop a stock `bms-calc-v2`
+   * formula computing, with a 200 and no other column holding the value.
+   */
+  minCoverageRatio?: number | null;
   required?: boolean;
   sortOrder?: number;
   meta?: { tier: TemplatePointTier };

@@ -10,6 +10,7 @@ import { and, asc, eq } from "drizzle-orm";
 
 import { assetPoints, assets, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import { CALC_DIALECT_V2, parseFormula } from "@bms/shared";
 import type {
   AssetPointCalcConfigDto,
   AssetPointCalcConfigListResponse,
@@ -18,6 +19,8 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { CalcDependencyService } from "../../calc/calc-dependency.service";
+import { CalcStatusRegistry } from "../../calc/calc-status.registry";
 import { computedSourceDataKey } from "../../calc/computed-source-data-key";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
@@ -81,9 +84,28 @@ export class AssetPointCalcOverrideService {
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    // `F2.9` Task 12 — the save-time cycle detector, exported by `CalcModule`.
+    private readonly dependencies: CalcDependencyService,
+    // `F2.9` Task 16 — the engine's last outcome per formula instance, also
+    // exported by `CalcModule`. Read-only here: this service reports what the
+    // hosts recorded and never records anything itself.
+    private readonly status: CalcStatusRegistry,
   ) {}
 
-  /** Decision 8 — every derived point of one asset: template, override, effective. */
+  /**
+   * Decision 8 — every derived point of one asset: template, override,
+   * effective, and (`F2.9` Task 16) what the engine last did with it.
+   *
+   * **`runtime` is read from an in-process map, and that limit is the reason
+   * the field is nullable.** `CalcStatusRegistry` holds what *this* API
+   * process's two calc hosts recorded; it is empty after a restart, and under
+   * more than one API instance this read is answered by whichever instance
+   * took the request — which may not be the one that ran the sweep. A `null`
+   * therefore means "this process has no outcome for that point", not "the
+   * engine never ran it". See the registry's own docblock: it is an operator
+   * hint, deliberately, and the counter and the transition log remain the
+   * authoritative record of a refusal.
+   */
   async listCalcPoints(
     jwt: JwtPayload,
     assetId: string,
@@ -115,6 +137,7 @@ export class AssetPointCalcOverrideService {
       const row = rowByKey.get(point.pointKey);
       const template = toFields(point);
       const override = row ? toFields(row) : EMPTY_FIELDS;
+      const runtime = this.status.get(assetId, point.id);
       return {
         pointKey: point.pointKey,
         templatePointId: point.id,
@@ -124,6 +147,14 @@ export class AssetPointCalcOverrideService {
         template,
         override,
         effective: mergeFields(override, template),
+        runtime:
+          runtime === null
+            ? null
+            : {
+                lastOutcome: runtime.outcome,
+                lastSkipReason: runtime.reason,
+                at: new Date(runtime.atMs).toISOString(),
+              },
       };
     });
 
@@ -162,17 +193,46 @@ export class AssetPointCalcOverrideService {
       throw new BadRequestException(problems.join(" "));
     }
 
-    // **`F2.9` Task 12 goes here, and nothing stands in for it.** A merged
+    // **`F2.9` Task 12 — the cycle check, on the MERGED dialect.** A merged
     // `bms-calc-v2` formula may reference a derived point (ADR 0055 decision
     // 7), so what has to be refused is the *cycle*, not the reference —
-    // including a cycle that only exists because of asset-group membership,
-    // which no pure check on this request can see. Task 12 adds
-    // `CalcDependencyService.checkCandidate({ assetId, pointKey,
-    // templatePointId, parsed })` on this line, reading every definition fresh
-    // and building the real graph. A stub here would be a guard that gates
-    // nothing, which is worse than an absent one; the seam is left clear
-    // instead. Until it lands, a `v2` override with a cyclic reference is
-    // storable — see `F2.9`'s plan, Task 12.
+    // including a cycle that exists only because of the asset's site or group
+    // membership, which no pure check on this request can see.
+    //
+    // **Merged, not `body.formulaDialect`.** An override that states the
+    // formula alone inherits the template's `v2` label, and an override that
+    // states neither half still merges to a `v2` pair; testing the request's
+    // own column would skip the check on exactly the rows that need it, which
+    // is the shape finding 33 exists to name. `formula` is merged the same way
+    // and for the same reason.
+    //
+    // A merged formula that does not parse is left to `validateMergedCalcOverride`
+    // above and to `toActiveDefinition`'s counted skip — this is a check about a
+    // graph, and there is no graph node for a formula the engine cannot read.
+    const mergedDialect = body.formulaDialect ?? ctx.template.formulaDialect;
+    const mergedFormula = body.formula ?? ctx.template.formula;
+    if (mergedDialect === CALC_DIALECT_V2 && mergedFormula !== null) {
+      const parsed = parseFormula(mergedFormula, { dialect: CALC_DIALECT_V2 });
+      if (parsed.ok) {
+        const cycle = await this.dependencies.checkCandidate({
+          assetId,
+          pointKey,
+          templatePointId: ctx.templatePointId,
+          dialect: CALC_DIALECT_V2,
+          localRefs: parsed.refs,
+          crossRefs: parsed.crossRefs,
+        });
+        if (cycle.length > 0) {
+          throw new BadRequestException(
+            "This formula would form a dependency cycle: " +
+              `${cycle.map((member) => `${member.assetCode}/${member.pointKey}`).join(" → ")}. ` +
+              "Every point on a cycle waits on another, so none of them ever computes. Break " +
+              "the loop — change this formula, or the aggregate scope that draws the other " +
+              "points in.",
+          );
+        }
+      }
+    }
 
     const values = {
       formula: body.formula,
@@ -344,6 +404,10 @@ export class AssetPointCalcOverrideService {
     pointKey: string,
   ): Promise<{
     organizationId: string;
+    /** `template_points.id` — what `defKey` tracks a definition by, and what the
+     * cycle detector needs to place the candidate on the same graph the sweep
+     * builds. */
+    templatePointId: string;
     template: AssetPointCalcOverrideFields;
     declared: { measured: string[]; all: string[] };
     existingRowId: string | null;
@@ -402,6 +466,7 @@ export class AssetPointCalcOverrideService {
 
     return {
       organizationId,
+      templatePointId: point.id,
       template: toFields(point),
       // Two lists, because ADR 0055 decision 7 makes the answer depend on the
       // merged dialect. `validateMergedCalcOverride` picks between them.

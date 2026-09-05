@@ -2,6 +2,7 @@ import { CALC_DIALECT, parseFormula, type TelemetryReading } from "@bms/shared";
 
 import type { CalcDefinition } from "./calc-definition";
 import type { CalcInputSample } from "./calc-inputs";
+import { CalcStatusRegistry } from "./calc-status.registry";
 import type { CalcWriteInput } from "./calc-write.service";
 import { evaluateStreamingBatch, type CalcStreamingDeps } from "./calc-streaming.service";
 
@@ -51,6 +52,9 @@ interface Fakes {
   skips: string[];
   warnings: string[];
   getDefinitionsForInputCalls: { assetId: string; pointKey: string }[];
+  /** The **real** registry, never a recording fake — a fake would key itself
+   * and leave the assertions below green against a broken registry. */
+  status: CalcStatusRegistry;
 }
 
 function buildFakes(
@@ -63,6 +67,7 @@ function buildFakes(
   const skips: string[] = [];
   const warnings: string[] = [];
   const getDefinitionsForInputCalls: { assetId: string; pointKey: string }[] = [];
+  const status = new CalcStatusRegistry();
 
   const deps: CalcStreamingDeps = {
     definitions: {
@@ -98,6 +103,7 @@ function buildFakes(
         skips.push(reason);
       },
     },
+    status,
     logger: {
       warn: (message: unknown) => {
         warnings.push(String(message));
@@ -105,7 +111,7 @@ function buildFakes(
     },
   };
 
-  return { deps, writes, skips, warnings, getDefinitionsForInputCalls };
+  return { deps, writes, skips, warnings, getDefinitionsForInputCalls, status };
 }
 
 export async function runCalcStreamingTests(): Promise<void> {
@@ -239,6 +245,48 @@ export async function runCalcStreamingTests(): Promise<void> {
     assert(
       written?.time.getTime() === triggerTimeMs,
       `expected the written time to equal the newer input's time (${triggerTimeMs}), got ${written?.time.getTime()}`,
+    );
+  }
+
+  // ---- both outcomes reach the status registry (`F2.9` Task 16) ----------------
+  //
+  // Design decision 9 layer 3 says **both** hosts write to it. A registry only
+  // the scheduled sweep filled would leave every streaming formula reading
+  // `null` on the calc-points page for as long as the process lived — which the
+  // page cannot tell apart from an engine that never ran, so the pill would be
+  // most misleading exactly where it is most confidently wrong.
+
+  {
+    const skipping = def({ assetId: "asset-1", templatePointId: "tp-skip", pointKey: "S", formula: "{TRIGGER} + {ABSENT}" });
+    const writing = def({ assetId: "asset-1", templatePointId: "tp-write", pointKey: "W", formula: "{TRIGGER} * 2" });
+    const inputKeys = new Set(["asset-1:TRIGGER"]);
+    const definitionsByAssetPoint = new Map([["asset-1:TRIGGER", [skipping, writing]]]);
+    const samples = new Map<string, CalcInputSample | undefined>([
+      ["asset-1:TRIGGER", { value: 3, timeMs: Date.now() }],
+    ]);
+    const fakes = buildFakes(inputKeys, definitionsByAssetPoint, samples);
+
+    const before = Date.now();
+    await evaluateStreamingBatch(fakes.deps, [reading({ assetId: "asset-1", pointKey: "TRIGGER" })]);
+    const after = Date.now();
+
+    const refused = fakes.status.get("asset-1", "tp-skip");
+    assert(
+      refused?.outcome === "skipped" && refused.reason === "missing_input",
+      `a streaming refusal is recorded with its reason, got ${JSON.stringify(refused)}`,
+    );
+    const computed = fakes.status.get("asset-1", "tp-write");
+    assert(
+      computed?.outcome === "written" && computed.reason === null,
+      `a streaming formula that produced a value is recorded as written, got ${JSON.stringify(computed)}`,
+    );
+    assert(
+      (computed?.atMs ?? 0) >= before && (computed?.atMs ?? 0) <= after,
+      `the recorded time is this batch's own evaluation time, got ${JSON.stringify(computed)}`,
+    );
+    assert(
+      fakes.status.get("asset-2", "tp-write") === null,
+      "an asset the batch never touched stays unrecorded",
     );
   }
 }

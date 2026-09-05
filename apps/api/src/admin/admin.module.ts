@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 
+import { CalcModule } from "../calc/calc.module";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { AssetPointCalcOverrideController } from "./asset-points/asset-point-calc-override.controller";
@@ -51,7 +52,13 @@ import { TelemetryImportController } from "./telemetry-import/telemetry-import.c
 import { TelemetryImportService } from "./telemetry-import/telemetry-import.service";
 
 @Module({
-  imports: [VocabulariesModule],
+  // `F2.9` — `CalcModule` is imported for the two services it exports:
+  // `CalcDependencyService` and `CalcStatusRegistry`. The override author is a
+  // second author for the same engine, so it must refuse the cycle the sweep
+  // would refuse (ADR 0055 decision 8) rather than storing a formula that can
+  // never compute — and since the PR 2 review `AssetTemplateMigrationService`
+  // is a third author, refusing the same pair before it repoints an asset.
+  imports: [VocabulariesModule, CalcModule],
   controllers: [
     OrganizationsAdminController,
     LocationsAdminController,

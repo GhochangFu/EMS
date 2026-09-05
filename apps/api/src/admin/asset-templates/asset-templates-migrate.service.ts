@@ -22,10 +22,16 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+// `F2.9` PR 2 review fix 2 — the override endpoint's *second* gate. Exported by
+// `CalcModule`, which `AdminModule` already imports.
+import { CalcDependencyService } from "../../calc/calc-dependency.service";
 import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
+// `F2.9` Task 12b, widened at the PR 2 review — the override endpoint's own two
+// gates, imported rather than restated. See that file's docblock.
+import { refuseOverridesThatDoNotSurvive } from "./asset-templates-migrate-calc";
 import type { MigrateAssetsBody } from "./asset-templates-migrate.schema";
 import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./template-version-delta";
 
@@ -69,6 +75,15 @@ import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./templat
  *   catch it because both values are valid domain codes. Migrating the pin and
  *   leaving `assets.domain` alone would make the pin and the asset disagree,
  *   which is the one thing ADR 0015's identity invariant exists to prevent.
+ * - **`F2.9` Task 12b** — a migrating asset's own calc override, merged over
+ *   the target version's declaration of the same derived point, that either of
+ *   the override endpoint's two gates refuses: `validateMergedCalcOverride`,
+ *   or `CalcDependencyService.checkCandidate`. The delta is pure over two
+ *   template versions and never sees an override, so without this the pin could
+ *   move under a legal dialect-only override and leave a `bms-calc-v2` formula
+ *   wearing a `bms-calc-v1` label — a pair no code path had validated
+ *   (findings 31 and 34). `asset-templates-migrate-calc.ts` holds both, and
+ *   states exactly what parity with that endpoint does and does not claim.
  */
 
 type TemplateRow = typeof assetTemplates.$inferSelect;
@@ -159,6 +174,10 @@ export class AssetTemplateMigrationService {
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    // `F2.9` PR 2 review fix 2 — the save-time cycle detector, the same
+    // instance `AssetPointCalcOverrideService` uses. Read-only: it resolves a
+    // graph and reports, and writes nothing.
+    private readonly dependencies: CalcDependencyService,
   ) {}
 
   /**
@@ -654,24 +673,43 @@ export class AssetTemplateMigrationService {
     // Refused rather than merged. `onConflictDoNothing` would report the point
     // as created while leaving a `computed` row standing in for physical
     // wiring, which is exactly the quiet wrongness this feature exists to stop.
-    const creatingAssetIds = planned.filter((a) => a.newPoints.length > 0).map((a) => a.dto.assetId);
-    if (creatingAssetIds.length > 0) {
+    //
+    // **One read, two checks** (`F2.9` Task 12b). The collision check below
+    // needs the assets that create a point; the override re-validation after it
+    // needs *every* migrating asset, and the first set is a subset of the
+    // second. Two batched reads of one table in one plan would be two round
+    // trips for the same rows, so this reads the superset once and both checks
+    // filter it in memory. The collision half is unchanged: it still iterates
+    // only `asset.newPoints`, so a migration that creates nothing still refuses
+    // nothing here.
+    const plannedAssetIds = planned.map((a) => a.dto.assetId);
+    if (plannedAssetIds.length > 0) {
       // E7.1b: `asset_points` read on `fleetDb` — FORCEd in 0047; a zero-row
       // tenantDb read would make every point look new and plan duplicate
-      // inserts. `creatingAssetIds` are the already-scoped selected assets.
+      // inserts. `plannedAssetIds` are the already-scoped selected assets.
       const existingRows = await this.fleetDb
         .select({
           assetId: assetPoints.assetId,
           pointKey: assetPoints.pointKey,
           sourceKind: assetPoints.sourceKind,
+          // The five calc override columns — ADR 0039 decision 6's coalesce
+          // reads exactly these off this table. There is no
+          // `asset_points.min_coverage_ratio` and there must not be one:
+          // ADR 0055 decision 11 refuses a per-asset coverage ratio.
+          formula: assetPoints.formula,
+          formulaDialect: assetPoints.formulaDialect,
+          calcTrigger: assetPoints.calcTrigger,
+          calcIntervalSeconds: assetPoints.calcIntervalSeconds,
+          maxInputAgeSeconds: assetPoints.maxInputAgeSeconds,
         })
         .from(assetPoints)
-        .where(inArray(assetPoints.assetId, creatingAssetIds));
+        .where(inArray(assetPoints.assetId, plannedAssetIds));
 
-      const existingByAsset = new Map<string, Map<string, string>>();
+      type ExistingPointRow = (typeof existingRows)[number];
+      const existingByAsset = new Map<string, Map<string, ExistingPointRow>>();
       for (const row of existingRows) {
-        const forAsset = existingByAsset.get(row.assetId) ?? new Map<string, string>();
-        forAsset.set(row.pointKey, row.sourceKind);
+        const forAsset = existingByAsset.get(row.assetId) ?? new Map<string, ExistingPointRow>();
+        forAsset.set(row.pointKey, row);
         existingByAsset.set(row.assetId, forAsset);
       }
 
@@ -681,7 +719,7 @@ export class AssetTemplateMigrationService {
           continue;
         }
         for (const point of asset.newPoints) {
-          const sourceKind = forAsset.get(point.pointKey);
+          const sourceKind = forAsset.get(point.pointKey)?.sourceKind;
           if (sourceKind === undefined) {
             continue;
           }
@@ -703,6 +741,35 @@ export class AssetTemplateMigrationService {
           });
         }
       }
+
+      // --- the surviving override, re-validated (`F2.9` Task 12b) ----------
+      //
+      // Both gates live in `asset-templates-migrate-calc.ts`, whose docblock
+      // carries the whole argument: why migrate re-runs the override
+      // endpoint's own two checks rather than restating them, and exactly
+      // what parity with that endpoint does and does not claim. Called here,
+      // before the transaction opens, like every other fallible decision.
+      await refuseOverridesThatDoNotSurvive({
+        assets: planned
+          .filter((asset) => existingByAsset.has(asset.dto.assetId))
+          .map((asset) => ({
+            assetId: asset.dto.assetId,
+            assetCode: asset.dto.assetCode,
+            rows: existingByAsset.get(asset.dto.assetId) as Map<string, ExistingPointRow>,
+          })),
+        targetPoints,
+        // Read only when some migrating asset actually carries a `computed`
+        // row. Most migrations have no override at all, and this service does
+        // not resolve what it does not need before the transaction. The empty
+        // map is not a silent skip: the gate treats a missing id as "cannot
+        // build a candidate node" and there is nothing to check anyway.
+        targetPointIdsByKey: existingRows.some((row) => row.sourceKind === "computed")
+          ? await this.pointIdsByKey(target.id)
+          : new Map<string, string>(),
+        targetVersion: target.version,
+        dependencies: this.dependencies,
+        refuse,
+      });
     }
 
     return {
@@ -727,6 +794,24 @@ export class AssetTemplateMigrationService {
     return row;
   }
 
+  /**
+   * `template_points.id` by point key, for one version.
+   *
+   * A second, narrow read rather than a column on {@link loadPoints}: that
+   * projection is "the subset of a stored row `computeTemplateVersionDelta`
+   * reads", and the id is not one of them — widening it would put a field on
+   * the delta's input type that the delta never looks at. Read once per plan,
+   * on the same `fleetDb` and for the same E7.1b reason as every other
+   * `template_points` read here.
+   */
+  private async pointIdsByKey(templateId: string): Promise<Map<string, string>> {
+    const rows = await this.fleetDb
+      .select({ id: templatePoints.id, pointKey: templatePoints.pointKey })
+      .from(templatePoints)
+      .where(eq(templatePoints.templateId, templateId));
+    return new Map(rows.map((row) => [row.pointKey, row.id]));
+  }
+
   private async loadPoints(templateId: string): Promise<StoredTemplatePoint[]> {
     // E7.1b: `template_points` read on `fleetDb` — a `FORCE`d tenant table in
     // `0047`. The delta this feeds decides what to migrate; a silent zero-point
@@ -747,6 +832,11 @@ export class AssetTemplateMigrationService {
       calcTrigger: row.calcTrigger,
       calcIntervalSeconds: row.calcIntervalSeconds,
       maxInputAgeSeconds: row.maxInputAgeSeconds,
+      // `F2.9` finding 31. Projected because the delta compares it: a version
+      // bump that moves only the ratio used to produce an empty
+      // `derivedChanged`, so `migration-preview` said "no changes" while the
+      // migrated asset picked the new value up on its next sweep.
+      minCoverageRatio: row.minCoverageRatio,
     }));
   }
 

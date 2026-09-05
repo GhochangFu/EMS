@@ -5,8 +5,12 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertDistinctOnReturnsNewestPerKey,
+  assertEmptyPairsReturnsEmptyMapWithoutQuerying,
   assertEmptyPointKeysReturnsEmptyMap,
   assertOldButWithinBoundSampleIsReturned,
+  assertPairsReadOmitsAPairOlderThanTheBound,
+  assertPairsReadReturnsExactlyOneRowPerPair,
+  assertPairsReadReturnsTheLatestPerPair,
   assertUnreportedKeyIsAbsent,
   cleanup,
 } from "./calc-inputs.integration.spec";
@@ -57,5 +61,26 @@ describe.skipIf(!connectionString)("F2.4 — calc input reader", () => {
   it("returns an empty map for an empty pointKeys list without querying", async () => {
     if (!pool) throw new Error("pool required");
     await assertEmptyPointKeysReturnsEmptyMap(pool);
+  });
+
+  // `F2.9` — the paired read behind `bms-calc-v2` aggregates.
+
+  it("pairs read: returns the latest sample per (asset, key) pair, not per key", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertPairsReadReturnsTheLatestPerPair(pool);
+  });
+
+  it("pairs read: returns exactly one row per pair, and it is the newest sample", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertPairsReadReturnsExactlyOneRowPerPair(pool);
+  });
+
+  it("pairs read: omits a pair older than the 7-day bound and keeps one inside it", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertPairsReadOmitsAPairOlderThanTheBound(pool);
+  });
+
+  it("pairs read: returns an empty map for an empty pairs list without querying", async () => {
+    await assertEmptyPairsReturnsEmptyMapWithoutQuerying();
   });
 });

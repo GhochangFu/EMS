@@ -17,7 +17,7 @@ import {
 import type { StockAssetTemplateDto } from "@bms/shared";
 
 import { capabilities, formulaFieldsAreReadOnly } from "./template-lifecycle";
-import { pointRowsFrom } from "./template-points-grid";
+import { buildPointsPayload, pointRowsFrom } from "./template-points-grid";
 import {
   STOCK_VIEW_TEMPLATE_ID_PREFIX,
   stockViewTemplateId,
@@ -138,6 +138,41 @@ export function runCoverageRatioIsCarriedThroughTests(): void {
     carried === 0.8,
     `the stock bridge dropped minCoverageRatio: expected 0.8, got ${String(carried)} — ` +
       "a stock v2 formula would silently read as fail-closed in the viewer",
+  );
+}
+
+/**
+ * The ratio survives the **whole** stock path, not only the bridge.
+ *
+ * `runCoverageRatioIsCarriedThroughTests` above covers one hop — catalog entry
+ * to `AdminAssetTemplateDto`. The value a `F2.6` "start from this stock entry"
+ * flow actually writes goes through two more:
+ * `stockEntryAsTemplate → pointRowsFrom → buildPointsPayload`. Each was fixed by
+ * a different task (plan corrections 17 and finding 39), neither gated the
+ * composition, and `Task 15` found it working only by a probe that was then
+ * deleted. A hop added later that drops the field would pass every existing
+ * assertion in this file and in `template-points-grid.spec.ts`.
+ *
+ * Fail-closed is why it matters: ADR 0055 decision 11 reads a `null` ratio as
+ * "every declared member must be fresh". A stock `v2` formula whose ratio is
+ * silently nulled on its first save does not error — it stops computing, and
+ * the value it lost cannot be recovered from the row.
+ *
+ * The fixture value is deliberately non-null, for the reason correction 14
+ * records: against a `null` fixture this assertion passes whether the field is
+ * carried or discarded.
+ */
+export function runStockRatioSurvivesTheGridRoundTripTests(): void {
+  const entry = stockAssetTemplateDtoSchema.parse({
+    ...ENTRY,
+    points: [{ ...ENTRY.points[2], minCoverageRatio: 0.8 }],
+  });
+  const payload = buildPointsPayload(pointRowsFrom(stockEntryAsTemplate(entry)));
+  assert(
+    payload[0]?.minCoverageRatio === 0.8,
+    "the ratio must survive stockEntryAsTemplate -> pointRowsFrom -> buildPointsPayload: " +
+      `expected 0.8, got ${String(payload[0]?.minCoverageRatio)} — a null here is fail-closed, ` +
+      "so the stock formula stops computing instead of reporting an error",
   );
 }
 

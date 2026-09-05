@@ -8,6 +8,7 @@ import {
   runParsesAsAdminTemplateTests,
   runSentinelIdTests,
   runCoverageRatioIsCarriedThroughTests,
+  runStockRatioSurvivesTheGridRoundTripTests,
   runStatusIsReadOnlyTests,
   runVersionIsZeroTests,
 } from "./stock-template-view.spec";
@@ -28,6 +29,10 @@ describe("stock template view", () => {
 
   it("carries minCoverageRatio through instead of hardcoding null", () => {
     runCoverageRatioIsCarriedThroughTests();
+  });
+
+  it("keeps minCoverageRatio across the whole stock-to-payload path", () => {
+    runStockRatioSurvivesTheGridRoundTripTests();
   });
 
   it("bridges point meta from optional to nullable", () => {

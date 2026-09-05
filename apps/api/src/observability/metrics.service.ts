@@ -13,18 +13,26 @@ import type { CalcSkipReason } from "../calc/calc-definition";
  * unusable (`CalcSkipReason`), or usable but skipped this evaluation because
  * an input was absent or too old.
  *
- * `v2_not_yet_evaluable` is the odd one and is **temporary**: `F2.9` PR 1
- * stores and validates `bms-calc-v2` but nothing evaluates it, so the
- * scheduled host refuses a `v2` definition rather than computing it as if it
- * were local. It is a runtime reason only — no `toActiveDefinition` path
- * returns it, because the definition itself is perfectly well formed. `F2.9`
- * Task 13 deletes it along with the refusal. */
+ * The five after `non_finite` are `bms-calc-v2`'s (ADR 0055; `F2.9` Task 13),
+ * and every one is decided at evaluation time from state no stored row holds:
+ * `dependency_cycle` (decision 8 — the formula lies on a cycle of the graph as
+ * membership resolves it this tick), `membership_unresolved` (the fleet read
+ * that resolves membership failed, so every `v2` formula is refused this
+ * sweep rather than computed over a guessed member set), `unknown_asset_reference`
+ * (a `{CODE.key}` names no asset at the owner's location, decision 12),
+ * `no_members` and `coverage_below_floor` (decision 11's two aggregate
+ * refusals; a member that is missing or stale under a `null` ratio reports as
+ * `missing_input` / `stale_input`, the same reason a local input would). */
 export type CalcRuntimeSkipReason =
   | CalcSkipReason
   | "missing_input"
   | "stale_input"
   | "non_finite"
-  | "v2_not_yet_evaluable";
+  | "dependency_cycle"
+  | "membership_unresolved"
+  | "unknown_asset_reference"
+  | "no_members"
+  | "coverage_below_floor";
 
 @Injectable()
 export class MetricsService {
@@ -139,6 +147,29 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * Members an aggregate left out because they were missing or stale while
+   * its coverage ratio still admitted the value (ADR 0055 decision 11). A
+   * refused aggregate counts under `bms_api_calc_skipped_total` instead; this
+   * is the partial-coverage signal that a *written* value carries — non-zero
+   * means site totals are being computed over fewer assets than declared.
+   */
+  private readonly calcAggregateMembersExcluded = new Counter({
+    name: "bms_api_calc_aggregate_members_excluded_total",
+    help: "Aggregate members excluded as missing or stale from a value that was still written.",
+    registers: [this.registry],
+  });
+
+  /** The largest declared member set of any aggregate, as membership resolved
+   * on the last sweep (plan design decision 6): a member set is not capped —
+   * a silently computed subset would be worse than being slow — so its growth
+   * must be visible before it hurts. */
+  private readonly calcAggregateMembersMax = new Gauge({
+    name: "bms_api_calc_aggregate_members_max",
+    help: "Largest declared member set of any bms-calc-v2 aggregate on the last scheduled sweep.",
+    registers: [this.registry],
+  });
+
   constructor() {
     this.registry.setDefaultLabels({
       service: process.env.OTEL_SERVICE_NAME ?? "bms-api",
@@ -207,5 +238,15 @@ export class MetricsService {
   /** Sets the current count of active (usable) calc definitions. */
   setCalcActiveFormulas(count: number): void {
     this.calcActiveFormulas.set(count);
+  }
+
+  /** Records members an aggregate excluded from a value it still wrote. */
+  countCalcAggregateExcluded(count: number): void {
+    this.calcAggregateMembersExcluded.inc(count);
+  }
+
+  /** Sets the largest declared member set seen by the last scheduled sweep. */
+  setCalcAggregateMembersMax(count: number): void {
+    this.calcAggregateMembersMax.set(count);
   }
 }

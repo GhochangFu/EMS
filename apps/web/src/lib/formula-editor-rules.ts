@@ -13,8 +13,8 @@
  * What lives here is everything that answers a question. What stays in the
  * `.tsx` is everything that talks to CodeMirror.
  */
-import { CALC_DIALECTS } from "@bms/shared";
-import type { TemplateKpi } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECTS } from "@bms/shared";
+import type { CalcDialect, TemplateKpi } from "@bms/shared";
 
 import {
   validateDerivedFormula,
@@ -43,6 +43,20 @@ export type FormulaEditorRules =
       points: readonly FormulaPoint[];
       /** The point being edited. Referencing it is a self-reference. */
       selfPointKey: string;
+      /**
+       * The dialect **this formula is stored under** (`F2.9`, ADR 0055).
+       *
+       * Required, with no default. Two rules read it — the derived-reference
+       * refusal and what `{` completion offers — and both are wrong in opposite
+       * directions if a caller forgets it: a `v2` formula would be underlined
+       * for references the server accepts, and its author would be offered a
+       * narrower set of keys than exists. A required field turns "forgot to
+       * thread it" into a compile error, which is the only place it is cheap.
+       *
+       * The KPI arm's `dialect` below is a different type on purpose — it
+       * carries `"unvalidated"`, which a point's `formulaDialect` never does.
+       */
+      dialect: CalcDialect;
     }
   | {
       mode: "kpi";
@@ -96,7 +110,7 @@ export function validateEditorFormula(rules: FormulaEditorRules, text: string): 
     return { state: "error", diagnostics: [{ message, from: 0, to: text.length }] };
   }
   if (rules.mode === "derived") {
-    return validateDerivedFormula(text, rules.points, rules.selfPointKey);
+    return validateDerivedFormula(text, rules.points, rules.selfPointKey, rules.dialect);
   }
   return validateKpiExpression(
     { expression: text, pointKeys: rules.kpiPointKeys, dialect: rules.dialect },
@@ -107,19 +121,33 @@ export function validateEditorFormula(rules: FormulaEditorRules, text: string): 
 /**
  * The keys `{` completion offers.
  *
- * In derived mode this is **measured siblings only**, minus the point being
- * edited. Those are exactly the references the server accepts, so completion
- * prevents the error rather than reporting it — which is what ADR 0038
- * decision 7 gives as its reason for taking `@codemirror/autocomplete` at all.
+ * In derived mode this is **exactly what the server accepts**, minus the point
+ * being edited, so completion prevents the error rather than reporting it —
+ * which is what ADR 0038 decision 7 gives as its reason for taking
+ * `@codemirror/autocomplete` at all.
  *
- * Offering a derived sibling here would be worse than offering nothing: the
- * author would pick it, and the field would immediately underline the choice
- * the editor had just suggested.
+ * Under `bms-calc-v1` that is **measured siblings only**. Offering a derived
+ * sibling there would be worse than offering nothing: the author would pick it,
+ * and the field would immediately underline the choice the editor had just
+ * suggested.
+ *
+ * Under `bms-calc-v2` it is **every sibling**, because ADR 0055 decision 7
+ * repeals that ban — a cross-asset formula reads other assets' derived points
+ * by design. The same filter that helps under `v1` would hide keys the server
+ * now accepts.
+ *
+ * Self is excluded under both. Decision 7 repealed the sibling ban, not the
+ * self-reference one: a formula that reads its own point is a cycle, and Task
+ * 12 refuses it at save.
  */
 export function completionKeys(rules: FormulaEditorRules): string[] {
   if (rules.mode === "derived") {
     return rules.points
-      .filter((point) => point.kind === "measured" && point.pointKey !== rules.selfPointKey)
+      .filter(
+        (point) =>
+          point.pointKey !== rules.selfPointKey &&
+          (rules.dialect !== CALC_DIALECT || point.kind === "measured"),
+      )
       .map((point) => point.pointKey);
   }
   return [...rules.declaredPointKeys];
@@ -134,17 +162,39 @@ export function completionKeys(rules: FormulaEditorRules): string[] {
  *
  * `F2.9`: resolved against `CALC_DIALECTS` rather than compared to the `v1`
  * literal, because the KPI dialect widened (ADR 0055 decision 2, the owner's Q3
- * ruling) and a restated vocabulary drifts from the one it restates. **This
- * says a `v2` row is not free text; it does not say a `v2` expression is
- * checked.** The lint path does not run through here — it runs through
- * `validateKpiExpression`, which still returns `"unvalidated"` for `v2` — and
- * `calcDecorations` still lexes as `v1`, so a `v2` expression yields no tokens
- * and therefore no highlighting. Threading the dialect through both is `F2.9`
- * Task 15's, and until it lands a `v2` KPI renders unchecked whatever this
- * function returns.
+ * ruling) and a restated vocabulary drifts from the one it restates.
+ *
+ * **Task 15 closed both halves.** `validateKpiExpression` now checks a `v2`
+ * expression under `v2` instead of returning `"unvalidated"`, so a `true` here
+ * and a real diagnostic agree; and {@link decorationDialect} gives the editor
+ * the dialect to lex with, so a `v2` expression is highlighted rather than
+ * silently rendering unstyled.
  */
 export function isCheckedDialect(rules: FormulaEditorRules): boolean {
   return rules.mode === "derived" || CALC_DIALECTS.some((known) => known === rules.dialect);
+}
+
+/**
+ * The dialect `calcDecorations` should lex with for this surface (`F2.9` Task
+ * 15, ADR 0055).
+ *
+ * A derived formula carries a real `CalcDialect` and uses it. A KPI's dialect
+ * also carries `"unvalidated"`, which is not a grammar at all — that row is
+ * free text the server has never parsed, so it lexes as `v1`, matching what
+ * **Validate this expression** will attempt first. `isCheckedDialect` already
+ * suppresses highlighting entirely for that case; this is the answer for the
+ * one it does not suppress.
+ *
+ * Separate from `validateEditorFormula`'s dialect on purpose, even though they
+ * agree today: that one decides what is *refused*, this one decides only what
+ * is *coloured*, and a highlighting choice must never be able to change a
+ * validation result.
+ */
+export function decorationDialect(rules: FormulaEditorRules): CalcDialect {
+  if (rules.mode === "derived") {
+    return rules.dialect;
+  }
+  return CALC_DIALECTS.find((known) => known === rules.dialect) ?? CALC_DIALECT;
 }
 
 /** A diagnostic range that CodeMirror will actually render. */
