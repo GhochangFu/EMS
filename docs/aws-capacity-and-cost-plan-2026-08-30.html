@@ -1,0 +1,1036 @@
+<title>NEXUS Capacity Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+/* ══════════════════════════════════════════════════════════════════════
+   Tokens. Light is the complete set on bare :root; dark redefines only
+   the values, twice (media query guarded against an explicit light
+   choice, then the [data-theme] stamp) so both directions of the toggle
+   win. No colour is ever declared only inside a media block.
+   ══════════════════════════════════════════════════════════════════════ */
+:root{
+  --paper:#F4F6F8;      --surface:#FFFFFF;    --surface-2:#EDF1F5;
+  --surface-3:#E3E9EF;
+  --ink:#101C27;        --ink-2:#43566A;      --ink-3:#7A8CA0;
+  --rule:#D5DDE5;       --rule-2:#C2CCD8;
+  --accent:#B4531F;     --accent-2:#8A3E15;   --accent-wash:#FBF1EA;
+  --ok:#00A651;         --warn:#B54708;       --crit:#B42318;
+  --warn-wash:#FFFAEB;  --crit-wash:#FEF3F2;  --ok-wash:#ECFDF3;
+  /* categorical — validated light, surface #FCFCFB, all six checks pass */
+  --c1:#3A7FC4; --c2:#D2691E; --c3:#2F9E6E; --c4:#9B59C7; --c5:#C2185B;
+  /* sequential ladder — one hue, light to dark, for the resolution levels */
+  --s1:#12314B; --s2:#2B5C88; --s3:#5B8FBE; --s4:#A9C6DE;
+  /* label ink for text sitting ON the darkest sequential band — the ramp
+     inverts in dark mode, so this must invert with it or the value vanishes */
+  --on-seq:#FFFFFF;
+  --shadow:0 1px 2px rgba(16,28,39,.06), 0 4px 14px rgba(16,28,39,.05);
+  --sans:"Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+  --cond:"Saira Condensed", "Arial Narrow", ui-sans-serif, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#0D141B;    --surface:#141C25;    --surface-2:#1C2733;
+    --surface-3:#243342;
+    --ink:#E6EDF4;      --ink-2:#A8B8C8;      --ink-3:#74889C;
+    --rule:#263543;     --rule-2:#34485A;
+    --accent:#E08A4A;   --accent-2:#F0A468;   --accent-wash:#26190F;
+    --ok:#3DCD58;       --warn:#F0A64A;       --crit:#F27168;
+    --warn-wash:#2A1D0C; --crit-wash:#2B1412; --ok-wash:#0E2418;
+    --c1:#4A8BCC; --c2:#D97428; --c3:#2FA875; --c4:#A46BCC; --c5:#E04D82;
+    --s1:#8FB8DA; --s2:#5B8FBE; --s3:#39648E; --s4:#22405C;
+    --on-seq:#0D141B;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0D141B;    --surface:#141C25;    --surface-2:#1C2733;
+  --surface-3:#243342;
+  --ink:#E6EDF4;      --ink-2:#A8B8C8;      --ink-3:#74889C;
+  --rule:#263543;     --rule-2:#34485A;
+  --accent:#E08A4A;   --accent-2:#F0A468;   --accent-wash:#26190F;
+  --ok:#3DCD58;       --warn:#F0A64A;       --crit:#F27168;
+  --warn-wash:#2A1D0C; --crit-wash:#2B1412; --ok-wash:#0E2418;
+  --c1:#4A8BCC; --c2:#D97428; --c3:#2FA875; --c4:#A46BCC; --c5:#E04D82;
+  --s1:#8FB8DA; --s2:#5B8FBE; --s3:#39648E; --s4:#22405C;
+  --on-seq:#0D141B;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:15px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px; margin:0 auto; padding:0 24px 96px}
+@media (max-width:640px){ .wrap{padding:0 14px 64px} }
+
+/* ── masthead ─────────────────────────────────────────────────────── */
+.mast{
+  border-bottom:2px solid var(--ink); padding:38px 0 20px; margin-bottom:0;
+  display:grid; grid-template-columns:minmax(0,1fr) auto; gap:24px; align-items:end;
+}
+@media (max-width:760px){ .mast{grid-template-columns:1fr; align-items:start} }
+.eyebrow{
+  font-family:var(--mono); font-size:10.5px; font-weight:500;
+  letter-spacing:.2em; text-transform:uppercase; color:var(--accent);
+  margin-bottom:10px;
+}
+.mast h1{
+  font-family:var(--cond); font-weight:800; font-size:clamp(38px,6.2vw,62px);
+  line-height:.96; letter-spacing:-.005em; text-transform:uppercase;
+  margin:0 0 10px; text-wrap:balance;
+}
+.mast .sub{font-size:16px; color:var(--ink-2); max-width:60ch; margin:0}
+.stamp{
+  font-family:var(--mono); font-size:10.5px; line-height:1.9; color:var(--ink-3);
+  text-align:right; white-space:nowrap;
+}
+.stamp b{color:var(--ink-2); font-weight:500}
+@media (max-width:760px){ .stamp{text-align:left} }
+
+/* ── headline figures ─────────────────────────────────────────────── */
+.heads{
+  display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
+  border-bottom:1px solid var(--rule);
+}
+@media (max-width:820px){ .heads{grid-template-columns:repeat(2,1fr)} }
+.head{padding:22px 22px 22px 0; border-right:1px solid var(--rule)}
+.head:last-child{border-right:0}
+@media (max-width:820px){
+  .head{padding:18px 18px 18px 0}
+  .head:nth-child(2){border-right:0}
+  .head:nth-child(1),.head:nth-child(2){border-bottom:1px solid var(--rule)}
+}
+.head .n{
+  font-family:var(--cond); font-weight:700; font-size:40px; line-height:1;
+  letter-spacing:-.01em; font-variant-numeric:tabular-nums; display:block;
+}
+.head .n small{font-size:19px; font-weight:600; color:var(--ink-2); margin-left:3px}
+.head .l{
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--ink-3); margin-top:9px; display:block;
+}
+.head .d{font-size:13px; color:var(--ink-2); margin-top:5px; line-height:1.45}
+
+/* ── sections ─────────────────────────────────────────────────────── */
+section{padding-top:52px}
+.sec-h{display:flex; align-items:baseline; gap:14px; margin-bottom:6px}
+.sec-n{
+  font-family:var(--mono); font-size:11px; font-weight:700; color:var(--accent);
+  letter-spacing:.08em; padding-top:4px;
+}
+h2{
+  font-family:var(--cond); font-weight:700; font-size:clamp(25px,3.4vw,33px);
+  line-height:1.06; text-transform:uppercase; letter-spacing:.004em;
+  margin:0; text-wrap:balance;
+}
+.lede{
+  font-size:16px; color:var(--ink-2); max-width:76ch; margin:0 0 22px 0;
+  padding-left:33px;
+}
+@media (max-width:640px){ .lede{padding-left:0} }
+h3{
+  font-family:var(--cond); font-weight:700; font-size:19px; text-transform:uppercase;
+  letter-spacing:.02em; margin:30px 0 9px;
+}
+p{margin:0 0 13px; max-width:78ch}
+code{
+  font-family:var(--mono); font-size:.87em; background:var(--surface-2);
+  border:1px solid var(--rule); border-radius:2px; padding:.08em .34em;
+}
+
+/* ── tables ───────────────────────────────────────────────────────── */
+.tw{overflow-x:auto; border:1px solid var(--rule); border-radius:3px;
+    background:var(--surface); box-shadow:var(--shadow); margin:16px 0}
+table{border-collapse:collapse; width:100%; font-size:13.5px; min-width:640px}
+thead th{
+  font-family:var(--mono); font-size:9.5px; font-weight:700; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--ink-3); text-align:left;
+  padding:11px 14px; border-bottom:1.5px solid var(--rule-2);
+  background:var(--surface-2); white-space:nowrap; vertical-align:bottom;
+}
+tbody td{padding:9px 14px; border-bottom:1px solid var(--rule); vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+td.num, th.num{text-align:right; font-family:var(--mono); font-size:12.5px;
+  font-variant-numeric:tabular-nums; white-space:nowrap}
+td.lbl{font-weight:600; color:var(--ink)}
+td.mono{font-family:var(--mono); font-size:12px}
+tr.grp td{
+  background:var(--surface-3); font-family:var(--mono); font-size:9.5px;
+  font-weight:700; letter-spacing:.11em; text-transform:uppercase;
+  color:var(--ink-2); padding:8px 14px;
+}
+tr.tot td{
+  border-top:1.5px solid var(--rule-2); font-weight:700;
+  background:var(--surface-2);
+}
+tr.tot td.num{font-weight:700; font-size:13.5px}
+.src{
+  font-family:var(--mono); font-size:10.5px; color:var(--ink-3);
+  padding:9px 14px 0; margin:0;
+}
+
+/* ── callouts ─────────────────────────────────────────────────────── */
+/* Severity rides the surface wash and the eyebrow, the way the product paints an
+   alarmed node — not a coloured rail down one edge. */
+.find{
+  border:1px solid var(--rule-2); border-radius:3px;
+  background:var(--accent-wash); box-shadow:var(--shadow);
+  padding:18px 20px; margin:16px 0;
+}
+.find.warn{background:var(--warn-wash); border-color:var(--warn)}
+.find.crit{background:var(--crit-wash); border-color:var(--crit)}
+.find h4{
+  font-family:var(--cond); font-weight:700; font-size:18px; text-transform:uppercase;
+  letter-spacing:.02em; margin:0 0 7px; display:flex; gap:10px; align-items:baseline;
+}
+.find h4 i{
+  font-family:var(--mono); font-style:normal; font-size:10px; font-weight:700;
+  color:var(--accent); letter-spacing:.08em;
+}
+.find.warn h4 i{color:var(--warn)} .find.crit h4 i{color:var(--crit)}
+.find p:last-child{margin-bottom:0}
+.note{
+  background:var(--surface-2); border:1px solid var(--rule); border-radius:3px;
+  padding:14px 17px; margin:16px 0; font-size:13.5px; color:var(--ink-2);
+}
+.note b{color:var(--ink)}
+.note p:last-child{margin-bottom:0}
+
+.pill{
+  display:inline-block; font-family:var(--mono); font-size:9.5px; font-weight:700;
+  letter-spacing:.07em; text-transform:uppercase; padding:2px 7px;
+  border-radius:2px; border:1px solid currentColor; white-space:nowrap;
+}
+.p-ok{color:var(--ok); background:var(--ok-wash)}
+.p-warn{color:var(--warn); background:var(--warn-wash)}
+.p-crit{color:var(--crit); background:var(--crit-wash)}
+.p-neutral{color:var(--ink-3); background:var(--surface-2)}
+
+/* ── figures ──────────────────────────────────────────────────────── */
+figure{
+  margin:20px 0; border:1px solid var(--rule); border-radius:3px;
+  background:var(--surface); box-shadow:var(--shadow); padding:20px;
+}
+figcaption{
+  font-size:13px; color:var(--ink-2); margin-top:14px; padding-top:12px;
+  border-top:1px solid var(--rule); max-width:80ch;
+}
+figcaption b{color:var(--ink)}
+.fig-t{
+  font-family:var(--cond); font-weight:700; font-size:17px; text-transform:uppercase;
+  letter-spacing:.02em; margin:0 0 3px;
+}
+.fig-s{font-size:13px; color:var(--ink-3); margin:0 0 16px}
+.chart{width:100%; height:auto; display:block; overflow:visible}
+.chart .ax{stroke:var(--rule-2); stroke-width:1}
+.chart .gl{stroke:var(--rule); stroke-width:1; stroke-dasharray:2 3}
+.chart .tl{font-family:var(--mono); font-size:10px; fill:var(--ink-3); letter-spacing:.04em}
+.chart .vl{font-family:var(--mono); font-size:11px; font-weight:700; fill:var(--ink);
+  font-variant-numeric:tabular-nums}
+/* .vs sits on the sequential ramp, which inverts between themes; .vc sits on
+   the categorical bands, which do not. They need different label ink. */
+.chart .vs{font-family:var(--mono); font-size:9px; font-weight:700;
+  fill:var(--on-seq); font-variant-numeric:tabular-nums}
+.chart .vc{font-family:var(--mono); font-size:9px; font-weight:700;
+  fill:#FFFFFF; font-variant-numeric:tabular-nums}
+.chart .cat{font-family:var(--cond); font-size:14px; font-weight:700; fill:var(--ink)}
+.legend{display:flex; flex-wrap:wrap; gap:7px 20px; margin-top:15px}
+.legend span{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-2)}
+.legend i{width:11px; height:11px; border-radius:2px; flex:none;
+  outline:2px solid var(--surface); outline-offset:-1px}
+
+/* ── option cards ─────────────────────────────────────────────────── */
+.opts{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin:18px 0}
+@media (max-width:860px){ .opts{grid-template-columns:1fr} }
+.opt{
+  border:1px solid var(--rule); border-radius:3px; background:var(--surface);
+  box-shadow:var(--shadow); padding:17px 18px; display:flex; flex-direction:column; gap:8px;
+}
+.opt .ot{font-family:var(--cond); font-weight:700; font-size:17px; text-transform:uppercase;
+  letter-spacing:.02em; margin:0}
+.opt p{font-size:13.5px; color:var(--ink-2); margin:0}
+.opt .verdict{
+  margin-top:auto; padding-top:11px; border-top:1px solid var(--rule);
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.05em; color:var(--ink-3);
+}
+
+/* ── footer ───────────────────────────────────────────────────────── */
+footer{
+  margin-top:64px; padding-top:22px; border-top:2px solid var(--ink);
+  display:grid; grid-template-columns:minmax(0,1fr) auto; gap:20px; align-items:end;
+  font-size:13px; color:var(--ink-2);
+}
+@media (max-width:700px){ footer{grid-template-columns:1fr} }
+footer .brand{font-family:var(--cond); font-weight:700; font-size:19px;
+  text-transform:uppercase; letter-spacing:.02em; color:var(--ink)}
+footer .fm{font-family:var(--mono); font-size:10.5px; color:var(--ink-3); line-height:1.9}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+@media (prefers-reduced-motion:reduce){ *{animation:none!important; transition:none!important} }
+</style>
+
+<div class="wrap">
+
+<!-- ══════════════════ MASTHEAD ══════════════════ -->
+<header class="mast">
+  <div>
+    <div class="eyebrow">TRINETRA · IONSiTE NEXUS · Infrastructure planning</div>
+    <h1>AWS Capacity<br>&amp; Cost Plan</h1>
+    <p class="sub">Hardware, storage and monthly spend for the multi-tenant platform at
+      10, 20, 50 and 100 organizations — sized from telemetry volumes measured on the
+      pilot database, not from vendor rules of thumb.</p>
+  </div>
+  <div class="stamp">
+    <b>Revision</b> A<br>
+    <b>Date</b> 2026-08-30<br>
+    <b>Region</b> ap-south-1 (Mumbai)<br>
+    <b>Currency</b> USD &amp; INR @ ₹88<br>
+    <b>Prepared by</b> Euphoria Infotech<br>
+    <b>Status</b> Estimate — for review
+  </div>
+</header>
+
+<!-- ══════════════════ HEADLINE FIGURES ══════════════════ -->
+<div class="heads">
+  <div class="head">
+    <span class="n">₹11.8</span>
+    <span class="l">per tag · per month</span>
+    <span class="d">All-in at 100 organizations on a 3-year commitment — $0.13, before GST.
+      The figure barely moves between 20 and 100 orgs.</span>
+  </div>
+  <div class="head">
+    <span class="n">38<small>GB</small></span>
+    <span class="l">telemetry per organization</span>
+    <span class="d">Steady state at two years, 500 tags on a 15-second scan, all four
+      rollup levels. 43 GB once OLTP and the audit log are added.</span>
+  </div>
+  <div class="head">
+    <span class="n">1</span>
+    <span class="l">database cluster</span>
+    <span class="d">Row-level security is the tenant boundary (ADR 0043), so one cluster
+      serves every organization — not one per tenant.</span>
+  </div>
+  <div class="head">
+    <span class="n">29<small>×</small></span>
+    <span class="l">measured compression</span>
+    <span class="d">On real telemetry, on disk, including index elimination. A synthetic
+      probe managed only 9.6×.</span>
+  </div>
+</div>
+
+<!-- ══════════════════ 0 · PARAMETERS ══════════════════ -->
+<section id="parameters">
+  <div class="sec-h"><span class="sec-n">00</span><h2>The parameters everything hangs on</h2></div>
+  <p class="lede">Change any of these and the whole plan moves. They are stated first so a
+    reader can challenge them before reading a single instance size.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Parameter</th><th>Value used</th><th>Why this value</th></tr></thead>
+      <tbody>
+        <tr><td class="lbl">Tags per organization</td><td class="mono">500</td>
+          <td>Given. One tag is one <code>(asset_id, point_key)</code> series — the grain of
+            the telemetry primary key.</td></tr>
+        <tr><td class="lbl">Scan interval</td><td class="mono">15 s <span class="pill p-warn">assumed</span></td>
+          <td><b>Not given, and the largest single lever.</b> 15 s is a normal BMS poll for
+            electrical and HVAC points. Section 03 prices 5 s and 60 s beside it.</td></tr>
+        <tr><td class="lbl">Raw retention</td><td class="mono">730 days</td>
+          <td>Migration <code>0028</code>, ruled at the ADR 0024 gate.</td></tr>
+        <tr><td class="lbl">Rollup ladder</td><td class="mono">1m · 5m · 1h · 1d</td>
+          <td>Four continuous aggregates, hierarchical (ADR 0023). Row counts follow the
+            tag count, not the scan rate — this matters, see 02.</td></tr>
+        <tr><td class="lbl">Concurrent operators</td><td class="mono">12 per org</td>
+          <td>Assumed peak. Drives the WebSocket tier and Redis, both of which are small
+            relative to the database.</td></tr>
+        <tr><td class="lbl">Availability target</td><td class="mono">Warm standby, 2 AZ</td>
+          <td>A monitoring platform that is down cannot report that a plant is down. Every
+            tier below carries a standby from day one.</td></tr>
+        <tr><td class="lbl">Horizon</td><td class="mono">Day 730</td>
+          <td>Steady state — the first day the retention policies have reached equilibrium.
+            Storage is flat after this, except for two levels (see 02).</td></tr>
+        <tr><td class="lbl">Region &amp; pricing</td><td class="mono">ap-south-1</td>
+          <td>Mumbai. On-demand list price, August 2026, USD. <b>Treat as ±15%</b> and confirm
+            in the AWS Pricing Calculator before any commitment.</td></tr>
+        <tr><td class="lbl">Rupee conversion</td>
+          <td class="mono">₹88.00 / USD <span class="pill p-warn">assumed</span></td>
+          <td><b>Not a quote.</b> AWS India (AISPL) bills Indian entities in rupees at its own
+            published INR price list, which does not track the spot rate day to day. Every ₹
+            figure here is a USD figure multiplied by this one number — replace it and they all
+            move together.</td></tr>
+        <tr><td class="lbl">GST</td><td class="mono">18%</td>
+          <td>Applied by AWS India on the invoice. Shown as a separate line rather than folded
+            in, because it is usually input-credit recoverable.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════ 1 · DERIVATION ══════════════════ -->
+<section id="derivation">
+  <div class="sec-h"><span class="sec-n">01</span><h2>Where the storage numbers come from</h2></div>
+  <p class="lede">Every gigabyte below is derived from bytes per row measured on the pilot
+    database on 2026-08-10, not from an estimate of rows per day. Bytes per row is independent
+    of scan rate, so it survives a change to the assumption above; rows per day does not.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Quantity</th><th class="num">Value</th><th>Measurement</th></tr></thead>
+      <tbody>
+        <tr class="grp"><td colspan="3">Raw — telemetry.point_values</td></tr>
+        <tr><td class="lbl">Row on disk, uncompressed</td><td class="num">276 B</td>
+          <td>112 MB over 425,235 rows on one real day. Heap 81 B, indexes 195 B.</td></tr>
+        <tr><td class="lbl">Row on disk, compressed</td><td class="num">9.5 B</td>
+          <td>3,944 kB over the same 425,235 rows.</td></tr>
+        <tr><td class="lbl">Compression, total on disk</td><td class="num">29.1×</td>
+          <td>ADR 0024 fact 1. Most of the win is index elimination, not column encoding.</td></tr>
+        <tr><td class="lbl">Compression, heap only</td><td class="num">62.1×</td>
+          <td>33 MB → 544 kB. Quoted separately because the two are not the same claim.</td></tr>
+        <tr class="grp"><td colspan="3">Rollups — the four continuous aggregates</td></tr>
+        <tr><td class="lbl">Aggregate row, uncompressed</td><td class="num">~200 B</td>
+          <td>Derived bottom-up from the column list plus tuple and index overhead.
+            Cross-checked against the one measurement large enough to trust:
+            <code>_1d</code> at 304 kB over 1,278 rows = 238 B.</td></tr>
+        <tr><td class="lbl">Aggregate row, compressed</td><td class="num">~20 B</td>
+          <td>Deliberately conservative. Stored sums, minima and maxima delta-encode worse
+            than a raw sample stream.</td></tr>
+        <tr class="grp"><td colspan="3">Policies — migration 0028 and ADR 0023 decision 7</td></tr>
+        <tr><td class="lbl">Chunk interval</td><td class="num">1 day</td><td>ADR 0001.</td></tr>
+        <tr><td class="lbl">Compress after</td><td class="num">7 days</td>
+          <td>Raw, <code>_1m</code> and <code>_5m</code>. <code>_1h</code> and <code>_1d</code>
+            are deliberately left as row-store.</td></tr>
+        <tr><td class="lbl">Drop after — raw</td><td class="num">730 days</td><td>Migration 0028.</td></tr>
+        <tr><td class="lbl">Drop after — <code>_1m</code>, <code>_5m</code></td><td class="num">735 days</td>
+          <td>Five days longer than their source, by design: an aggregate must outlive its
+            source strictly or the two policy schedules can leave an unrepairable gap.</td></tr>
+        <tr><td class="lbl">Drop after — <code>_1h</code>, <code>_1d</code></td>
+          <td class="num">never</td>
+          <td>ADR 0023 decision 7. After raw expires these are the only record of the period.</td></tr>
+      </tbody>
+    </table>
+    <p class="src">Sources — ADR 0023 (F4.1), ADR 0024 (F4.2), migrations 0027 and 0028,
+      packages/db/src/schema/telemetry-schema.ts</p>
+  </div>
+
+  <div class="note">
+    <p><b>One correction to the ADRs, and it matters for the long horizon.</b> ADR 0023
+    extrapolates <code>_1h</code> at ≈35 MB/year and <code>_1d</code> at ≈22 MB/year from
+    measurements of 480 kB and 304 kB. Those figures imply about 16 bytes per row, which is
+    below a bare PostgreSQL row-store tuple header — the tables were small enough that page
+    granularity dominated the reading. This plan uses ~200 B/row instead, so its
+    <code>_1h</code>/<code>_1d</code> numbers are roughly 13× the ADR's. Those are exactly the
+    two levels that are <b>never dropped and never compressed</b>, so understating them is the
+    error that surfaces in year five rather than year two. Worth a correction to ADR 0023.</p>
+  </div>
+</section>
+
+<!-- ══════════════════ 2 · FINDINGS ══════════════════ -->
+<section id="findings">
+  <div class="sec-h"><span class="sec-n">02</span><h2>Three findings that change the plan</h2></div>
+  <p class="lede">These came out of the sizing work rather than going into it. Each one changes
+    a decision someone would otherwise make by default.</p>
+
+  <div class="find crit">
+    <h4><i>FINDING 01</i> Amazon RDS cannot run this database</h4>
+    <p><code>timescaledb</code> does not appear in the supported-extension list for Amazon RDS
+      for PostgreSQL 16 — verified against the AWS documentation on 2026-08-30. Aurora
+      PostgreSQL does not offer it either.</p>
+    <p>Even where a managed PostgreSQL service does expose TimescaleDB, it is normally the
+      Apache-2 edition, which gives hypertables and <code>time_bucket</code> but <b>not</b>
+      <code>add_compression_policy</code>, <code>add_retention_policy</code> or
+      <code>add_continuous_aggregate_policy</code>. Migrations <code>0027</code> and
+      <code>0028</code> are built on all three. An Apache-2 build would take the platform's
+      29× compression and its entire rollup ladder off the table.</p>
+    <p>So the database tier in every option below is <b>self-managed PostgreSQL 16 +
+      TimescaleDB on EC2 with EBS</b>. Tiger Cloud (managed TimescaleDB, on AWS, available
+      through AWS Marketplace with VPC peering) is the credible managed alternative and is
+      priced as an option in section 06. Everything else in the stack — Redis, Keycloak's own
+      database, object storage — can and should use the managed AWS service.</p>
+  </div>
+
+  <div class="find warn">
+    <h4><i>FINDING 02</i> At a 60-second scan the 1-minute rollup costs more than raw</h4>
+    <p>The rollup levels are sized by <b>tag count</b>, not by scan rate: 500 tags produce
+      720,000 <code>_1m</code> rows a day whether the sensors are read every second or every
+      minute. Raw is sized by both. So as the scan interval lengthens, raw shrinks and the
+      rollups do not.</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Scan interval</th><th class="num">Raw rows per 1m bucket</th>
+          <th class="num">Raw, per org</th><th class="num"><code>_1m</code>, per org</th>
+          <th class="num"><code>_1m</code> as % of raw</th><th></th></tr></thead>
+        <tbody>
+          <tr><td class="lbl">5 s</td><td class="num">12.00</td><td class="num">70.8 GB</td>
+            <td class="num">10.7 GB</td><td class="num">15%</td>
+            <td><span class="pill p-ok">ladder pays</span></td></tr>
+          <tr><td class="lbl">15 s <span class="pill p-neutral">base</span></td><td class="num">4.00</td>
+            <td class="num">23.6 GB</td><td class="num">10.7 GB</td><td class="num">45%</td>
+            <td><span class="pill p-warn">watch</span></td></tr>
+          <tr><td class="lbl">60 s</td><td class="num">1.00</td><td class="num">5.9 GB</td>
+            <td class="num">10.7 GB</td><td class="num">181%</td>
+            <td><span class="pill p-crit">inverted</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>At 60 s the <code>_1m</code> aggregate stores one bucket per raw sample — it costs
+      nearly twice what raw costs and adds no resolution at all. The ladder ADR 0023 chose is
+      efficient at the 1 Hz target it was designed against and inefficient at a slow scan.
+      <b>If Ion Exchange settles on a 60-second scan, dropping <code>_1m</code> from the
+      ladder is worth an ADR.</b> That is a scope decision, not a sizing one.</p>
+  </div>
+
+  <div class="find">
+    <h4><i>FINDING 03</i> Two levels never expire, so one line on this plan has no ceiling</h4>
+    <p><code>_1h</code> and <code>_1d</code> are never dropped and never compressed. They add
+      about <b>0.85 GB per organization per year, forever</b> — 8.5 GB/year at 10 orgs, 85
+      GB/year at 100. That is small against a 4.3 TB fleet and it is the only line here that
+      does not reach a steady state, so it belongs in the five-year budget rather than the
+      two-year one. Nothing needs to change today; it needs a review date.</p>
+  </div>
+</section>
+
+<!-- ══════════════════ 3 · SENSITIVITY ══════════════════ -->
+<section id="sensitivity">
+  <div class="sec-h"><span class="sec-n">03</span><h2>Sensitivity — the scan interval</h2></div>
+  <p class="lede">Storage per organization varies more than 4× across a realistic range of scan
+    intervals. This is the number to settle with the client before hardware is bought.</p>
+
+  <figure>
+    <p class="fig-t">Storage per organization at day 730</p>
+    <p class="fig-s">500 tags · steady state · <b>telemetry only</b> — raw plus all four rollup
+      levels, excluding the 5 GB per organization of OLTP tables and audit log</p>
+    <svg class="chart" viewBox="0 0 900 250" role="img"
+      aria-label="Stacked bars of storage per organization. At a 5-second scan the total is 85.4 GB, of which raw is 70.8. At 15 seconds the total is 38.1 GB with raw at 23.6. At 60 seconds the total is 20.4 GB with raw at 5.9, and the one-minute rollup at 10.7 GB is larger than raw.">
+      <!-- geometry: x0=118, width 700 maps 0..90 GB -->
+      <line class="ax" x1="118" y1="24" x2="118" y2="196"/>
+      <line class="gl" x1="118" y1="200" x2="818" y2="200"/>
+      <g>
+        <line class="gl" x1="273" y1="24" x2="273" y2="200"/>
+        <line class="gl" x1="429" y1="24" x2="429" y2="200"/>
+        <line class="gl" x1="584" y1="24" x2="584" y2="200"/>
+        <line class="gl" x1="740" y1="24" x2="740" y2="200"/>
+        <text class="tl" x="118" y="216" text-anchor="middle">0</text>
+        <text class="tl" x="273" y="216" text-anchor="middle">20</text>
+        <text class="tl" x="429" y="216" text-anchor="middle">40</text>
+        <text class="tl" x="584" y="216" text-anchor="middle">60</text>
+        <text class="tl" x="740" y="216" text-anchor="middle">80</text>
+        <text class="tl" x="818" y="240" text-anchor="end">gigabytes per organization</text>
+      </g>
+
+      <!-- 5 s : raw 70.8 | _1m 10.7 | _5m 2.1 | _1h+_1d 1.7  (7.778 px per GB) -->
+      <text class="cat" x="108" y="46" text-anchor="end">5 s</text>
+      <rect x="118"   y="30" width="550.7" height="30" fill="var(--s1)"/>
+      <rect x="670.7" y="30" width="83.2"  height="30" fill="var(--s2)"/>
+      <rect x="755.9" y="30" width="16.3"  height="30" fill="var(--s3)"/>
+      <rect x="774.2" y="30" width="13.2"  height="30" fill="var(--s4)"/>
+      <text class="vs" x="393" y="49" text-anchor="middle">70.8</text>
+      <text class="vs" x="712" y="49" text-anchor="middle">10.7</text>
+      <text class="vl" x="797" y="49">85.4</text>
+
+      <!-- 15 s : raw 23.6 | 10.7 | 2.1 | 1.7 -->
+      <text class="cat" x="108" y="103" text-anchor="end">15 s</text>
+      <rect x="118"   y="87" width="183.6" height="30" fill="var(--s1)"/>
+      <rect x="303.6" y="87" width="83.2"  height="30" fill="var(--s2)"/>
+      <rect x="388.8" y="87" width="16.3"  height="30" fill="var(--s3)"/>
+      <rect x="407.1" y="87" width="13.2"  height="30" fill="var(--s4)"/>
+      <text class="vs" x="210" y="106" text-anchor="middle">23.6</text>
+      <text class="vs" x="345" y="106" text-anchor="middle">10.7</text>
+      <text class="vl" x="430" y="106">38.1</text>
+      <text class="tl" x="497" y="106" fill="var(--accent)">← base case</text>
+
+      <!-- 60 s : raw 5.9 | 10.7 | 2.1 | 1.7 -->
+      <text class="cat" x="108" y="160" text-anchor="end">60 s</text>
+      <rect x="118"   y="144" width="45.9" height="30" fill="var(--s1)"/>
+      <rect x="165.9" y="144" width="83.2" height="30" fill="var(--s2)"/>
+      <rect x="251.1" y="144" width="16.3" height="30" fill="var(--s3)"/>
+      <rect x="269.4" y="144" width="13.2" height="30" fill="var(--s4)"/>
+      <text class="vs" x="141" y="163" text-anchor="middle">5.9</text>
+      <text class="vs" x="207" y="163" text-anchor="middle">10.7</text>
+      <text class="vl" x="292" y="163">20.4</text>
+      <text class="tl" x="352" y="163" fill="var(--crit)">← rollup exceeds raw</text>
+    </svg>
+    <div class="legend">
+      <span><i style="background:var(--s1)"></i>Raw samples</span>
+      <span><i style="background:var(--s2)"></i>1-minute rollup</span>
+      <span><i style="background:var(--s3)"></i>5-minute rollup</span>
+      <span><i style="background:var(--s4)"></i>1-hour + 1-day (never dropped)</span>
+    </div>
+    <figcaption>The four levels are a resolution ladder, so they take one hue from dark to
+      light rather than four separate colours. <b>Only the darkest band moves</b> — the three
+      rollup levels are fixed by tag count. That is finding 02 seen directly: the 60-second
+      bar's second band is wider than its first.</figcaption>
+  </figure>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Fleet database size at day 730 — telemetry <em>plus</em> OLTP</th><th class="num">10 orgs</th>
+        <th class="num">20 orgs</th><th class="num">50 orgs</th><th class="num">100 orgs</th></tr></thead>
+      <tbody>
+        <tr><td class="lbl">5-second scan</td><td class="num">904 GB</td><td class="num">1.81 TB</td><!--tel+oltp-->
+          <td class="num">4.52 TB</td><td class="num">9.04 TB</td></tr>
+        <tr><td class="lbl">15-second scan <span class="pill p-neutral">base</span></td>
+          <td class="num">431 GB</td><td class="num">863 GB</td><td class="num">2.16 TB</td>
+          <td class="num">4.32 TB</td></tr>
+        <tr><td class="lbl">60-second scan</td><td class="num">254 GB</td><td class="num">509 GB</td>
+          <td class="num">1.27 TB</td><td class="num">2.54 TB</td></tr>
+      </tbody>
+    </table>
+    <p class="src">Includes OLTP tables and the audit log at 5 GB per organization over two years.</p>
+  </div>
+</section>
+
+<!-- ══════════════════ 4 · THE MATRIX ══════════════════ -->
+<section id="matrix">
+  <div class="sec-h"><span class="sec-n">04</span><h2>The requirement matrix</h2></div>
+  <p class="lede">Four scale points at the base case — 500 tags per organization on a
+    15-second scan. Read down a column for one deployment; read across a row to see what grows
+    with scale and what does not.</p>
+
+  <div class="tw">
+    <table>
+      <thead>
+        <tr>
+          <th style="min-width:230px">&nbsp;</th>
+          <th class="num">Tier A · 10 orgs</th><th class="num">Tier B · 20 orgs</th>
+          <th class="num">Tier C · 50 orgs</th><th class="num">Tier D · 100 orgs</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="grp"><td colspan="5">Workload</td></tr>
+        <tr><td class="lbl">Tags under management</td>
+          <td class="num">5,000</td><td class="num">10,000</td><td class="num">25,000</td><td class="num">50,000</td></tr>
+        <tr><td class="lbl">Raw rows per day</td>
+          <td class="num">28.8 M</td><td class="num">57.6 M</td><td class="num">144 M</td><td class="num">288 M</td></tr>
+        <tr><td class="lbl">Sustained inserts / s</td>
+          <td class="num">333</td><td class="num">667</td><td class="num">1,667</td><td class="num">3,333</td></tr>
+        <tr><td class="lbl">WebSocket updates / s</td>
+          <td class="num">333</td><td class="num">667</td><td class="num">1,667</td><td class="num">3,333</td></tr>
+        <tr><td class="lbl">Concurrent operators (peak)</td>
+          <td class="num">120</td><td class="num">240</td><td class="num">600</td><td class="num">1,200</td></tr>
+
+        <tr class="grp"><td colspan="5">Database — PostgreSQL 16 + TimescaleDB, self-managed on EC2</td></tr>
+        <tr><td class="lbl">Primary instance</td>
+          <td class="num">r7i.xlarge</td><td class="num">r7i.2xlarge</td>
+          <td class="num">r7i.4xlarge</td><td class="num">r7i.8xlarge</td></tr>
+        <tr><td class="lbl">vCPU / RAM</td>
+          <td class="num">4 / 32 GB</td><td class="num">8 / 64 GB</td>
+          <td class="num">16 / 128 GB</td><td class="num">32 / 256 GB</td></tr>
+        <tr><td class="lbl">Computed working set</td>
+          <td class="num">4.9 GB</td><td class="num">7.7 GB</td>
+          <td class="num">16.3 GB</td><td class="num">30.7 GB</td></tr>
+        <tr><td class="lbl">Standby (second AZ)</td>
+          <td class="num">1 × same</td><td class="num">1 × same</td>
+          <td class="num">1 × same</td><td class="num">1 × same</td></tr>
+        <tr><td class="lbl">Read replicas (reports)</td>
+          <td class="num">—</td><td class="num">—</td>
+          <td class="num">1 × r7i.2xlarge</td><td class="num">2 × r7i.4xlarge</td></tr>
+        <tr><td class="lbl">EBS gp3 per node</td>
+          <td class="num">750 GB</td><td class="num">1.5 TB</td>
+          <td class="num">3.5 TB</td><td class="num">7 TB</td></tr>
+        <tr><td class="lbl">Provisioned IOPS</td>
+          <td class="num">6,000</td><td class="num">8,000</td>
+          <td class="num">12,000</td><td class="num">16,000</td></tr>
+        <tr><td class="lbl">Provisioned throughput</td>
+          <td class="num">250 MB/s</td><td class="num">400 MB/s</td>
+          <td class="num">600 MB/s</td><td class="num">1,000 MB/s</td></tr>
+
+        <tr class="grp"><td colspan="5">Application tier</td></tr>
+        <tr><td class="lbl">API / WebSocket nodes</td>
+          <td class="num">2 × c7i.large</td><td class="num">3 × c7i.large</td>
+          <td class="num">4 × c7i.xlarge</td><td class="num">6 × c7i.xlarge</td></tr>
+        <tr><td class="lbl">Ingest hosts (MQTT client)</td>
+          <td class="num">1 × c7i.large</td><td class="num">2 × c7i.large</td>
+          <td class="num">3 × c7i.large</td><td class="num">4 × c7i.xlarge</td></tr>
+        <tr><td class="lbl">MQTT broker (EMQX)</td>
+          <td class="num">2 × c7i.large</td><td class="num">2 × c7i.large</td>
+          <td class="num">3 × c7i.xlarge</td><td class="num">3 × c7i.2xlarge</td></tr>
+        <tr><td class="lbl">Redis — Socket.IO fan-out</td>
+          <td class="num">cache.t4g.medium</td><td class="num">cache.r7g.large</td>
+          <td class="num">cache.r7g.xlarge</td><td class="num">cache.r7g.2xlarge</td></tr>
+        <tr><td class="lbl">Keycloak identity</td>
+          <td class="num">2 × t3.medium</td><td class="num">2 × t3.medium</td>
+          <td class="num">2 × c7i.large</td><td class="num">2 × c7i.xlarge</td></tr>
+        <tr><td class="lbl">Web UI</td>
+          <td class="num" colspan="4" style="text-align:center">S3 + CloudFront — a static Vite bundle, no servers at any scale</td></tr>
+
+        <tr class="grp"><td colspan="5">Storage at day 730</td></tr>
+        <tr><td class="lbl">Telemetry (raw + 4 rollups)</td>
+          <td class="num">381 GB</td><td class="num">763 GB</td>
+          <td class="num">1.91 TB</td><td class="num">3.82 TB</td></tr>
+        <tr><td class="lbl">OLTP, alarms, audit log</td>
+          <td class="num">50 GB</td><td class="num">100 GB</td>
+          <td class="num">250 GB</td><td class="num">500 GB</td></tr>
+        <tr><td class="lbl">Total data</td>
+          <td class="num">431 GB</td><td class="num">863 GB</td>
+          <td class="num">2.16 TB</td><td class="num">4.32 TB</td></tr>
+        <tr><td class="lbl">Provisioned (1.6× for WAL, bloat, rebuild)</td>
+          <td class="num">690 GB</td><td class="num">1.38 TB</td>
+          <td class="num">3.45 TB</td><td class="num">6.90 TB</td></tr>
+        <tr><td class="lbl">Perpetual growth after year 2</td>
+          <td class="num">8.5 GB/yr</td><td class="num">17 GB/yr</td>
+          <td class="num">43 GB/yr</td><td class="num">85 GB/yr</td></tr>
+
+        <tr class="tot"><td class="lbl">Monthly cost — on-demand</td>
+          <td class="num">₹1,31,472</td><td class="num">₹2,25,016</td>
+          <td class="num">₹5,39,792</td><td class="num">₹11,77,440</td></tr>
+        <tr class="tot"><td class="lbl">Monthly cost — 3-year commitment</td>
+          <td class="num">₹65,736</td><td class="num">₹1,12,508</td>
+          <td class="num">₹2,69,896</td><td class="num">₹5,88,720</td></tr>
+        <tr class="tot"><td class="lbl">Per organization, per month — 3-yr</td>
+          <td class="num">₹6,574</td><td class="num">₹5,625</td>
+          <td class="num">₹5,398</td><td class="num">₹5,887</td></tr>
+      </tbody>
+    </table>
+    <p class="src">Instance RAM is set well above the computed working set on purpose: compression
+      jobs, four aggregate refresh policies and concurrent report queries all want memory the
+      steady-state read path does not.</p>
+  </div>
+
+  <div class="note">
+    <p><b>Note the shape of the last row.</b> Cost per organization <em>falls</em> from 10 to 50
+    orgs and then <em>rises</em> at 100. The fall is the fixed platform cost — Keycloak, the
+    broker, observability, the load balancer — spreading over more tenants. The rise at 100 is
+    the read replicas that appear when the primary can no longer serve reports and live queries
+    together. Section 07 is about that inflection.</p>
+  </div>
+</section>
+
+<!-- ══════════════════ 5 · COST BREAKDOWN ══════════════════ -->
+<section id="cost">
+  <div class="sec-h"><span class="sec-n">05</span><h2>Where the money goes</h2></div>
+  <p class="lede">Monthly, on-demand, ap-south-1 — in dollars first because that is how AWS
+    lists it, then converted to rupees. The database is between 40% and 59% of the bill at
+    every scale and its share grows, which is why the storage assumptions in section 00 deserve
+    more scrutiny than the instance choices.</p>
+
+  <figure>
+    <p class="fig-t">Monthly cost composition</p>
+    <p class="fig-s">USD per month · on-demand list price · ap-south-1</p>
+    <svg class="chart" viewBox="0 0 900 290" role="img"
+      aria-label="Stacked bars of monthly cost by component group. At 10 organizations the total is 1,494 dollars, of which the database is 605. At 20 organizations 2,557 dollars with database 1,200. At 50 organizations 6,134 dollars with database and replicas 3,232. At 100 organizations 13,380 dollars with database and replicas 7,929.">
+      <!-- x0=126, 690 px maps 0..14000 USD -->
+      <line class="ax" x1="126" y1="20" x2="126" y2="236"/>
+      <g>
+        <line class="gl" x1="373" y1="20" x2="373" y2="240"/>
+        <line class="gl" x1="619" y1="20" x2="619" y2="240"/>
+        <line class="gl" x1="816" y1="20" x2="816" y2="240"/>
+        <text class="tl" x="126" y="256" text-anchor="middle">$0</text>
+        <text class="tl" x="373" y="256" text-anchor="middle">$5,000</text>
+        <text class="tl" x="619" y="256" text-anchor="middle">$10,000</text>
+        <text class="tl" x="816" y="256" text-anchor="middle">$14,000</text>
+        <text class="tl" x="816" y="280" text-anchor="end">US dollars per month</text>
+      </g>
+
+      <!-- 10 orgs: db 605 | compute 370 | platform 179 | backup 45 | net+ops 294  (0.04929 px/$) -->
+      <text class="cat" x="116" y="42" text-anchor="end">10 orgs</text>
+      <rect x="126"   y="26" width="29.8" height="30" fill="var(--c1)"/>
+      <rect x="157.8" y="26" width="18.2" height="30" fill="var(--c2)"/>
+      <rect x="178"   y="26" width="8.8"  height="30" fill="var(--c3)"/>
+      <rect x="188.8" y="26" width="2.2"  height="30" fill="var(--c4)"/>
+      <rect x="193"   y="26" width="14.5" height="30" fill="var(--c5)"/>
+      <text class="vl" x="217" y="45">$1,494</text>
+
+      <!-- 20 orgs: 1200 | 513 | 376 | 91 | 377 -->
+      <text class="cat" x="116" y="94" text-anchor="end">20 orgs</text>
+      <rect x="126"   y="78" width="59.1" height="30" fill="var(--c1)"/>
+      <rect x="187.1" y="78" width="25.3" height="30" fill="var(--c2)"/>
+      <rect x="214.4" y="78" width="18.5" height="30" fill="var(--c3)"/>
+      <rect x="234.9" y="78" width="4.5"  height="30" fill="var(--c4)"/>
+      <rect x="241.4" y="78" width="18.6" height="30" fill="var(--c5)"/>
+      <text class="vl" x="270" y="97">$2,557</text>
+
+      <!-- 50 orgs: 3232 | 1222 | 757 | 227 | 697 -->
+      <text class="cat" x="116" y="146" text-anchor="end">50 orgs</text>
+      <rect x="126"   y="130" width="159.3" height="30" fill="var(--c1)"/>
+      <rect x="287.3" y="130" width="60.2"  height="30" fill="var(--c2)"/>
+      <rect x="349.5" y="130" width="37.3"  height="30" fill="var(--c3)"/>
+      <rect x="388.8" y="130" width="11.2"  height="30" fill="var(--c4)"/>
+      <rect x="402"   y="130" width="34.4"  height="30" fill="var(--c5)"/>
+      <text class="vc" x="206" y="149" text-anchor="middle">3,232</text>
+      <text class="vl" x="446" y="149">$6,134</text>
+
+      <!-- 100 orgs: 7929 | 2269 | 1459 | 453 | 1269 -->
+      <text class="cat" x="116" y="198" text-anchor="end">100 orgs</text>
+      <rect x="126"   y="182" width="390.8" height="30" fill="var(--c1)"/>
+      <rect x="518.8" y="182" width="111.8" height="30" fill="var(--c2)"/>
+      <rect x="632.6" y="182" width="71.9"  height="30" fill="var(--c3)"/>
+      <rect x="706.5" y="182" width="22.3"  height="30" fill="var(--c4)"/>
+      <rect x="730.8" y="182" width="62.5"  height="30" fill="var(--c5)"/>
+      <text class="vc" x="321" y="201" text-anchor="middle">7,929</text>
+      <text class="vl" x="803" y="201">$13,380</text>
+    </svg>
+    <div class="legend">
+      <span><i style="background:var(--c1)"></i>Database + read replicas</span>
+      <span><i style="background:var(--c2)"></i>Compute — API, ingest, broker</span>
+      <span><i style="background:var(--c3)"></i>Redis + Keycloak</span>
+      <span><i style="background:var(--c4)"></i>Backup &amp; archive</span>
+      <span><i style="background:var(--c5)"></i>Network, edge &amp; observability</span>
+    </div>
+    <figcaption>Every segment is separated by a surface-coloured gap and the two largest carry
+      their own value, so the composition reads without depending on colour alone. The full
+      itemisation is in the table below.</figcaption>
+  </figure>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Component</th><th class="num">10 orgs</th><th class="num">20 orgs</th>
+        <th class="num">50 orgs</th><th class="num">100 orgs</th></tr></thead>
+      <tbody>
+        <tr><td class="lbl">Database — primary + standby, incl. EBS</td>
+          <td class="num">$605</td><td class="num">$1,200</td><td class="num">$2,470</td><td class="num">$4,869</td></tr>
+        <tr><td class="lbl">Read replicas</td>
+          <td class="num">—</td><td class="num">—</td><td class="num">$762</td><td class="num">$3,060</td></tr>
+        <tr><td class="lbl">API / realtime tier</td>
+          <td class="num">$139</td><td class="num">$208</td><td class="num">$556</td><td class="num">$834</td></tr>
+        <tr><td class="lbl">Ingest hosts</td>
+          <td class="num">$74</td><td class="num">$148</td><td class="num">$222</td><td class="num">$574</td></tr>
+        <tr><td class="lbl">MQTT broker (EMQX)</td>
+          <td class="num">$157</td><td class="num">$157</td><td class="num">$444</td><td class="num">$861</td></tr>
+        <tr><td class="lbl">Redis — ElastiCache, multi-AZ</td>
+          <td class="num">$99</td><td class="num">$282</td><td class="num">$564</td><td class="num">$1,127</td></tr>
+        <tr><td class="lbl">Keycloak — nodes + its RDS database</td>
+          <td class="num">$80</td><td class="num">$94</td><td class="num">$193</td><td class="num">$332</td></tr>
+        <tr><td class="lbl">Observability — Prometheus, Grafana, Loki</td>
+          <td class="num">$106</td><td class="num">$124</td><td class="num">$248</td><td class="num">$495</td></tr>
+        <tr><td class="lbl">Backup &amp; archive — snapshots + S3</td>
+          <td class="num">$45</td><td class="num">$91</td><td class="num">$227</td><td class="num">$453</td></tr>
+        <tr><td class="lbl">Network &amp; edge — ALB, NAT, CloudFront, egress</td>
+          <td class="num">$188</td><td class="num">$253</td><td class="num">$449</td><td class="num">$774</td></tr>
+        <tr class="tot"><td class="lbl">Total per month — on-demand</td>
+          <td class="num">$1,494</td><td class="num">$2,557</td><td class="num">$6,134</td><td class="num">$13,380</td></tr>
+        <tr class="tot"><td class="lbl">Total per year — on-demand</td>
+          <td class="num">$17,928</td><td class="num">$30,679</td><td class="num">$73,607</td><td class="num">$160,554</td></tr>
+        <tr class="tot"><td class="lbl">Per year — 1-year Savings Plan (−30%)</td>
+          <td class="num">$12,550</td><td class="num">$21,475</td><td class="num">$51,525</td><td class="num">$112,388</td></tr>
+        <tr class="tot"><td class="lbl">Per year — 3-year Savings Plan (−50%)</td>
+          <td class="num">$8,964</td><td class="num">$15,340</td><td class="num">$36,804</td><td class="num">$80,277</td></tr>
+      </tbody>
+    </table>
+    <p class="src">On-demand list price, ap-south-1, August 2026, ±15%. Savings Plan discounts
+      are typical compute-plan rates and do not apply to EBS, S3 or data transfer, so the real
+      saving is a little smaller than the lines above imply. Confirm every figure in the AWS
+      Pricing Calculator before committing.</p>
+  </div>
+
+  <h3>The same bill in rupees</h3>
+  <p>Converted at <b>₹88.00 to the dollar</b>. GST is shown separately on the last line because
+    it is normally recoverable as input credit — the line above it is the figure to carry into
+    a project budget.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Indian rupees</th><th class="num">10 orgs</th><th class="num">20 orgs</th>
+        <th class="num">50 orgs</th><th class="num">100 orgs</th></tr></thead>
+      <tbody>
+        <tr><td class="lbl">Per month — on-demand</td>
+          <td class="num">₹1,31,472</td><td class="num">₹2,25,016</td>
+          <td class="num">₹5,39,792</td><td class="num">₹11,77,440</td></tr>
+        <tr><td class="lbl">Per month — 3-year commitment</td>
+          <td class="num">₹65,736</td><td class="num">₹1,12,508</td>
+          <td class="num">₹2,69,896</td><td class="num">₹5,88,720</td></tr>
+        <tr class="grp"><td colspan="5">Annual</td></tr>
+        <tr><td class="lbl">Per year — on-demand</td>
+          <td class="num">₹15,77,664</td><td class="num">₹27,00,192</td>
+          <td class="num">₹64,77,504</td><td class="num">₹1,41,29,280</td></tr>
+        <tr><td class="lbl"><span style="color:var(--ink-3)">— in lakh / crore</span></td>
+          <td class="num">15.78 L</td><td class="num">27.00 L</td>
+          <td class="num">64.78 L</td><td class="num">1.41 Cr</td></tr>
+        <tr><td class="lbl">Per year — 1-year Savings Plan</td>
+          <td class="num">₹11,04,365</td><td class="num">₹18,90,134</td>
+          <td class="num">₹45,34,253</td><td class="num">₹98,90,496</td></tr>
+        <tr><td class="lbl">Per year — 3-year Savings Plan</td>
+          <td class="num">₹7,88,832</td><td class="num">₹13,50,096</td>
+          <td class="num">₹32,38,752</td><td class="num">₹70,64,640</td></tr>
+        <tr><td class="lbl"><span style="color:var(--ink-3)">— in lakh / crore</span></td>
+          <td class="num">7.89 L</td><td class="num">13.50 L</td>
+          <td class="num">32.39 L</td><td class="num">70.65 L</td></tr>
+        <tr class="grp"><td colspan="5">Unit economics — 3-year commitment</td></tr>
+        <tr><td class="lbl">Per organization, per month</td>
+          <td class="num">₹6,574</td><td class="num">₹5,625</td>
+          <td class="num">₹5,398</td><td class="num">₹5,887</td></tr>
+        <tr><td class="lbl">Per tag, per month</td>
+          <td class="num">₹13.1</td><td class="num">₹11.3</td>
+          <td class="num">₹10.8</td><td class="num">₹11.8</td></tr>
+        <tr class="tot"><td class="lbl">Per year — 3-yr SP, with 18% GST</td>
+          <td class="num">₹9,30,822</td><td class="num">₹15,93,113</td>
+          <td class="num">₹38,21,727</td><td class="num">₹83,36,275</td></tr>
+      </tbody>
+    </table>
+    <p class="src">Every rupee figure is the corresponding dollar figure × 88. AWS India
+      publishes its own INR price list rather than converting at spot, so treat these as a
+      planning conversion and take the AISPL list price for a quotation.</p>
+  </div>
+</section>
+
+<!-- ══════════════════ 6 · EXCLUSIONS ══════════════════ -->
+<section id="excluded">
+  <div class="sec-h"><span class="sec-n">06</span><h2>What this plan does not include</h2></div>
+  <p class="lede">Stated so that nobody discovers them after the budget is approved. Several are
+    cheap; one is not.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Excluded</th><th class="num">Rough monthly impact</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td class="lbl">Disaster recovery to a second region</td>
+          <td class="num">+35–60%</td>
+          <td>Cross-region replica plus snapshot copy. The single largest omission. Decide
+            whether the RPO justifies it before sizing.</td></tr>
+        <tr><td class="lbl">Non-production environments</td>
+          <td class="num">+15–25%</td>
+          <td>Dev and staging at roughly Tier A shape, run on a schedule rather than 24/7.</td></tr>
+        <tr><td class="lbl">AWS Business Support</td>
+          <td class="num">+3–10%</td>
+          <td>Tiered on spend. Effectively mandatory for a production platform with an SLA.</td></tr>
+        <tr><td class="lbl">Tiger Cloud instead of self-managed</td>
+          <td class="num">quote required</td>
+          <td>Managed TimescaleDB. Trades cost for the operational burden of running Postgres
+            — patching, failover, backup verification, major-version upgrades. It costs more
+            than the EC2 line it replaces; <b>how much more is a vendor quote, not an estimate
+            this document should invent.</b> Worth pricing properly against one engineer's
+            time.</td></tr>
+        <tr><td class="lbl">Site-to-cloud connectivity</td>
+          <td class="num">varies</td>
+          <td>VPN or Direct Connect from each plant. Belongs to the client's network budget,
+            not this one.</td></tr>
+        <tr><td class="lbl">Licences and third-party services</td>
+          <td class="num">varies</td>
+          <td>EMQX Enterprise if the open-source edition is outgrown; SMS and email gateways
+            for notifications; certificate management.</td></tr>
+        <tr><td class="lbl">Security tooling</td>
+          <td class="num">+5–8%</td>
+          <td>GuardDuty, Security Hub, WAF, secrets rotation. Assume it is required, not
+            optional, for a platform holding customer plant data.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════ 7 · INFLECTION ══════════════════ -->
+<section id="inflection">
+  <div class="sec-h"><span class="sec-n">07</span><h2>Where this design stops scaling</h2></div>
+  <p class="lede">Tier D is the last point the current architecture reaches by growing the
+    instance. Past roughly 100 organizations at this scan rate, something has to change — and
+    the choice is a decision for the repo owner, not for a sizing document.</p>
+
+  <p>The constraint is not insert throughput. 3,333 rows per second is comfortable for
+    TimescaleDB. The constraint is that <b>one writer</b> carries every tenant's ingest, four
+    levels of continuous-aggregate refresh, the compression job, and every dashboard and report
+    query at once. Three specific pressures arrive together:</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Pressure</th><th>What it looks like at 100 orgs</th></tr></thead>
+      <tbody>
+        <tr><td class="lbl">Aggregate refresh work</td>
+          <td>The <code>_1m</code> level materialises 72 million rows a day. The refresh is
+            hierarchical and cheap per level, but the base level is not.</td></tr>
+        <tr><td class="lbl">Compression window</td>
+          <td>288 million rows a day pass the 7-day boundary daily. Compression rewrites
+            whole chunks and wants both IO and a quiet period to do it in.</td></tr>
+        <tr><td class="lbl">Migration locks</td>
+          <td>ADR 0024 measured <code>ALTER TABLE … SET (timescaledb.compress …)</code> taking
+            an ACCESS EXCLUSIVE lock on the telemetry table. The work is 10.7 ms; the wait is
+            not. Every schema change is a fleet-wide event.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="opts">
+    <div class="opt">
+      <p class="ot">Grow vertically</p>
+      <p>r7i.12xlarge or r7i.16xlarge, or the memory-dense x2iedn family. Buys perhaps another
+        2×.</p>
+      <p class="verdict">CHEAPEST · NO CODE CHANGE · CEILING MOVES, DOES NOT LIFT</p>
+    </div>
+    <div class="opt">
+      <p class="ot">Split telemetry onto its own cluster</p>
+      <p>Move the <code>telemetry</code> schema to a dedicated TimescaleDB cluster and leave
+        <code>bms.*</code> on the OLTP cluster. The API already holds separate pools per
+        database role.</p>
+      <p class="verdict">SPLITS BY TABLE, NOT BY TENANT · NEEDS AN ADR</p>
+    </div>
+    <div class="opt">
+      <p class="ot">Move to Tiger Cloud</p>
+      <p>Managed TimescaleDB on AWS, with its own scaling and read-replica story. Costs more
+        and removes the operational burden.</p>
+      <p class="verdict">HIGHEST COST · LOWEST OPERATIONAL RISK</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <p><b>The middle option does not reopen ADR 0043, and that distinction matters.</b> ADR 0043
+    rejected schema-per-tenant and database-per-tenant because both break the single hypertable,
+    the migration runner and every cross-tenant report. Splitting <em>telemetry from OLTP</em>
+    splits by table, not by tenant: the hypertable stays single, row-level security stays the
+    tenant boundary, and no tenant gets its own database. Anything that genuinely reopens ADR
+    0043 — per-tenant databases, per-tenant retention, a sharded hypertable — is the repo
+    owner's gate under AGENTS.md §10, and this document does not propose it.</p>
+  </div>
+</section>
+
+<!-- ══════════════════ 8 · DECISIONS OWED ══════════════════ -->
+<section id="decisions">
+  <div class="sec-h"><span class="sec-n">08</span><h2>Decisions this plan is waiting on</h2></div>
+  <p class="lede">Six items. The first four would replace this plan's largest assumptions with
+    facts; the last two are work the sizing exercise itself uncovered, and they belong to
+    Euphoria whatever the client answers.</p>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Question</th><th>Owner</th><th>What it changes</th></tr></thead>
+      <tbody>
+        <tr><td class="lbl">What scan interval do the plants actually need,
+            per domain?</td>
+          <td class="mono">Ion Exchange</td>
+          <td><b>Storage per organization varies 4.2× across 5 s to 60 s.</b> Electrical trending and effluent
+            compliance may not want the same rate — a per-domain answer is better than one
+            number.</td></tr>
+        <tr><td class="lbl">Is 500 tags per organization the average or the ceiling?</td>
+          <td class="mono">Ion Exchange</td>
+          <td>Everything here scales linearly in tags. A 500-tag average with a 2,000-tag
+            largest customer is a different plan from a flat 500.</td></tr>
+        <tr><td class="lbl">Does any compliance obligation need sample-level effluent data
+            beyond two years?</td>
+          <td class="mono">Ion Exchange</td>
+          <td>Already routed to the client in the E5.1 questions. A "yes" removes the 730-day
+            retention on raw and roughly doubles storage per additional year kept.</td></tr>
+        <tr><td class="lbl">Self-managed on EC2, or Tiger Cloud?</td>
+          <td class="mono">Euphoria</td>
+          <td>A cost-versus-operational-burden call, not a technical one. Both run the same
+            extension; only one of them pages someone at 3 a.m.</td></tr>
+        <tr><td class="lbl">If the scan lands at 60 s, does <code>_1m</code> stay in the
+            rollup ladder?</td>
+          <td class="mono">Euphoria</td>
+          <td><b>The one place this exercise produces a change rather than a number.</b> At a
+            60-second scan <code>_1m</code> costs 181% of raw and adds no resolution
+            (finding 02). Removing a level from the ADR 0023 ladder is a scope decision and
+            needs its own ADR at the AGENTS.md §10 gate.</td></tr>
+        <tr><td class="lbl">Correct ADR 0023's <code>_1h</code> / <code>_1d</code> per-year
+            figures</td>
+          <td class="mono">Euphoria</td>
+          <td>They read ≈35 MB and ≈22 MB per year, extrapolated from sub-megabyte tables where
+            page granularity dominated; the honest figures are roughly 13× higher (section 01).
+            These are the two levels that are never dropped, so the understatement compounds.
+            A one-paragraph correction, not a re-decision.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <div>
+    <div class="brand">Euphoria Infotech India Limited</div>
+    <p style="margin:6px 0 0">TRINETRA · IONSiTE NEXUS — Enterprise EMS for Ion Exchange (India) Ltd.</p>
+  </div>
+  <div class="fm">
+    Revision A · 2026-08-30<br>
+    Sized from ADR 0001, 0023, 0024, 0043 and migrations 0027 / 0028<br>
+    Prices are estimates — confirm in the AWS Pricing Calculator
+  </div>
+</footer>
+
+</div>
