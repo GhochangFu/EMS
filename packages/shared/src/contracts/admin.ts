@@ -575,6 +575,33 @@ export const templateMigrationRefusalReasonSchema = z.enum([
    * class this feature is built to avoid.
    */
   "point_key_already_mapped",
+  /**
+   * `F2.9` — the asset's own calc override, merged over the **target**
+   * version's declaration of the same derived point, is not a pair this engine
+   * will run (findings 31 and 34; ADR 0039 decision 2, "no blind apply").
+   *
+   * ## The same rule as the override endpoint, deliberately
+   *
+   * `AssetTemplateMigrationService` calls `validateMergedCalcOverride` — the
+   * one pure function `PUT /admin/assets/:id/calc-points/:key` validates with.
+   * An override states only the columns it sets and inherits the rest, so a new
+   * version can turn a pair that was legal when it was written into one that is
+   * not: a legal dialect-only `bms-calc-v1` override plus a target version
+   * whose formula is `bms-calc-v2` merges to a `v2` formula wearing a `v1`
+   * label, which is a formula no dialect gate reads correctly. Migrate must not
+   * be able to admit what the write path refuses, and two implementations of
+   * one rule is how the two paths drift apart.
+   *
+   * ## Why it is checked at migrate and not inside the delta
+   *
+   * `computeTemplateVersionDelta` is pure over two arrays of *template* points.
+   * It has no asset and no override, and `migration-preview` computes it from
+   * exactly those two inputs — giving it an asset would make it impure and
+   * would stop matching the preview's own inputs. The delta reports what the
+   * two versions say; this refusal is about what one asset's stored row means
+   * once the pin moves, which only the service can see.
+   */
+  "calc_override_invalid_on_target",
 ]);
 
 export const templateMigrationRefusalDtoSchema = z.object({
@@ -612,13 +639,26 @@ export const templateMeasuredChangeDtoSchema = z.object({
   toSourceDataKeyPattern: z.string().nullable(),
 });
 
-/** Which of the five calc fields moved between the two versions. */
+/**
+ * Which calc field moved between the two versions.
+ *
+ * **This is a delta vocabulary, not `keyof AssetPointCalcOverrideFields`**, and
+ * `minCoverageRatio` is the member that makes the difference load-bearing.
+ * ADR 0055 decision 11 refuses a per-asset coverage-ratio override, so the
+ * ratio is a `template_points` column only and must never join
+ * `assetPointCalcOverrideFieldsSchema` above. It still *changes between two
+ * versions*, and a migrated asset picks the new value up on its next sweep —
+ * `null` meaning "every declared member must be fresh" — so a delta that could
+ * not name it reported "no changes" about a migration that decides whether the
+ * formula computes at all (`F2.9` finding 31).
+ */
 export const templateCalcFieldSchema = z.enum([
   "formula",
   "formulaDialect",
   "calcTrigger",
   "calcIntervalSeconds",
   "maxInputAgeSeconds",
+  "minCoverageRatio",
 ]);
 
 /**
@@ -628,12 +668,24 @@ export const templateCalcFieldSchema = z.enum([
  * reader to diff: "formula unchanged, interval 60 → 300" and "both changed" are
  * different decisions for whoever confirms the migration, and a UI that
  * recomputed the comparison would be a second implementation of it.
+ *
+ * **The two ratio fields sit outside `from`/`to`, and that asymmetry is the
+ * point** (`F2.9` finding 31). Those two are `AssetPointCalcOverrideFields` —
+ * the five columns an asset may override — and ADR 0055 decision 11 refuses a
+ * per-asset `minCoverageRatio`. Widening that DTO to make this entry
+ * symmetrical would claim an override the ADR forbids, in a shape the override
+ * endpoint would then have to refuse. So the ratio is reported here, beside
+ * them, as what the two *versions* declare.
  */
 export const templateDerivedChangeDtoSchema = z.object({
   pointKey: z.string(),
   changedFields: z.array(templateCalcFieldSchema),
   from: assetPointCalcOverrideFieldsSchema,
   to: assetPointCalcOverrideFieldsSchema,
+  /** The source version's coverage ratio; `null` means "every member fresh". */
+  fromMinCoverageRatio: z.number().nullable(),
+  /** The target version's, which the asset picks up the moment the pin moves. */
+  toMinCoverageRatio: z.number().nullable(),
 });
 
 /**

@@ -152,13 +152,19 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
   // `reload()` coalesces `formula` and `formula_dialect` independently, so the
   // two can come from different places. The **write** path that produced such a
   // pair through a calc override is closed (`582ed49`: the merged pair is now
-  // parsed whenever an override states a formula *or* a dialect). A second path
-  // is still open — template migration repoints `assets.template_id` without
-  // re-validating the surviving override, because `computeTemplateVersionDelta`
-  // reports a derived point's formula/dialect change in `derivedChanged` and
-  // never in `refusals`, which is all the migrate service consumes.
-  // **Re-validating that path is ADR 0039 decision 2's "no blind apply" and is
-  // owed to PR 2**; this is not that fix and does not discharge it.
+  // parsed whenever an override states a formula *or* a dialect). The second
+  // path — template migration repointing `assets.template_id` without
+  // re-validating the surviving override — **is closed too, since `F2.9` Task
+  // 12b**: `AssetTemplateMigrationService` merges each override over the target
+  // version's point and re-runs `validateMergedCalcOverride`, refusing as
+  // `calc_override_invalid_on_target`. That was ADR 0039 decision 2's "no blind
+  // apply".
+  //
+  // **This check still earns its lines.** It does not rest on either of those
+  // write paths being closed — that is the whole point of a read-time backstop,
+  // and the two findings that produced it (33 and 34) were both cases where a
+  // guard trusted a write path it should not have. A row can still reach here
+  // from a fixture, a support SQL edit, or a path not yet written.
   //
   // What it does discharge is the damage. A self-reference compounds: `{SELF} *
   // 2` doubles its own stored value on every tick until it overflows, silently,
@@ -250,13 +256,16 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
  *    dialect);
  *  - the **one-hop** case, a formula reading the point it writes, is refused
  *    above whatever the label says (`f2f0023`);
- *  - the **migrate** path is still open. Repointing `assets.template_id` does
- *    not re-validate the surviving override, because
- *    `computeTemplateVersionDelta` reports a derived point's formula/dialect
- *    change in `derivedChanged` and never in `refusals`
- *    (`template-version-delta.ts`, plan finding 31's file). **That fix is ADR
- *    0039 decision 2's "no blind apply" and is owed to PR 2**; this does not
- *    discharge it, it only bounds the damage.
+ *  - the **migrate** path is closed since `F2.9` Task 12b. Repointing
+ *    `assets.template_id` now re-validates each surviving override against the
+ *    target version through `validateMergedCalcOverride` — the same function
+ *    the override endpoint calls, so migrate cannot admit a pair that endpoint
+ *    would refuse — and refuses as `calc_override_invalid_on_target`. That was
+ *    ADR 0039 decision 2's "no blind apply".
+ *
+ * None of that retires this check. A read-time refusal exists precisely so it
+ * does not depend on a write path holding, and findings 33 and 34 were both
+ * guards that trusted one.
  *
  * Two hops is the case the one-hop backstop misses: two `v1`-labelled points on
  * one asset referencing each other compound every tick, and nothing in PR 1

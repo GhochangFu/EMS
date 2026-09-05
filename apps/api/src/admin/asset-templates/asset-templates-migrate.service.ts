@@ -25,9 +25,17 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+// `F2.9` Task 12b — the override endpoint's own merge rules, imported rather
+// than restated. See the re-validation block in `buildPlan`.
+import { validateMergedCalcOverride } from "../asset-points/asset-point-calc-override.schema";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { MigrateAssetsBody } from "./asset-templates-migrate.schema";
-import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./template-version-delta";
+import {
+  CALC_FIELDS,
+  calcFieldsOf,
+  computeTemplateVersionDelta,
+  type StoredTemplatePoint,
+} from "./template-version-delta";
 
 /**
  * `F2.6` — moving assets from one published template version to another
@@ -69,6 +77,13 @@ import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./templat
  *   catch it because both values are valid domain codes. Migrating the pin and
  *   leaving `assets.domain` alone would make the pin and the asset disagree,
  *   which is the one thing ADR 0015's identity invariant exists to prevent.
+ * - **`F2.9` Task 12b** — a migrating asset's own calc override, merged over
+ *   the target version's declaration of the same derived point, that
+ *   `validateMergedCalcOverride` refuses. The delta is pure over two template
+ *   versions and never sees an override, so without this the pin could move
+ *   under a legal dialect-only override and leave a `bms-calc-v2` formula
+ *   wearing a `bms-calc-v1` label — a pair no code path had validated
+ *   (findings 31 and 34).
  */
 
 type TemplateRow = typeof assetTemplates.$inferSelect;
@@ -654,24 +669,43 @@ export class AssetTemplateMigrationService {
     // Refused rather than merged. `onConflictDoNothing` would report the point
     // as created while leaving a `computed` row standing in for physical
     // wiring, which is exactly the quiet wrongness this feature exists to stop.
-    const creatingAssetIds = planned.filter((a) => a.newPoints.length > 0).map((a) => a.dto.assetId);
-    if (creatingAssetIds.length > 0) {
+    //
+    // **One read, two checks** (`F2.9` Task 12b). The collision check below
+    // needs the assets that create a point; the override re-validation after it
+    // needs *every* migrating asset, and the first set is a subset of the
+    // second. Two batched reads of one table in one plan would be two round
+    // trips for the same rows, so this reads the superset once and both checks
+    // filter it in memory. The collision half is unchanged: it still iterates
+    // only `asset.newPoints`, so a migration that creates nothing still refuses
+    // nothing here.
+    const plannedAssetIds = planned.map((a) => a.dto.assetId);
+    if (plannedAssetIds.length > 0) {
       // E7.1b: `asset_points` read on `fleetDb` — FORCEd in 0047; a zero-row
       // tenantDb read would make every point look new and plan duplicate
-      // inserts. `creatingAssetIds` are the already-scoped selected assets.
+      // inserts. `plannedAssetIds` are the already-scoped selected assets.
       const existingRows = await this.fleetDb
         .select({
           assetId: assetPoints.assetId,
           pointKey: assetPoints.pointKey,
           sourceKind: assetPoints.sourceKind,
+          // The five calc override columns — ADR 0039 decision 6's coalesce
+          // reads exactly these off this table. There is no
+          // `asset_points.min_coverage_ratio` and there must not be one:
+          // ADR 0055 decision 11 refuses a per-asset coverage ratio.
+          formula: assetPoints.formula,
+          formulaDialect: assetPoints.formulaDialect,
+          calcTrigger: assetPoints.calcTrigger,
+          calcIntervalSeconds: assetPoints.calcIntervalSeconds,
+          maxInputAgeSeconds: assetPoints.maxInputAgeSeconds,
         })
         .from(assetPoints)
-        .where(inArray(assetPoints.assetId, creatingAssetIds));
+        .where(inArray(assetPoints.assetId, plannedAssetIds));
 
-      const existingByAsset = new Map<string, Map<string, string>>();
+      type ExistingPointRow = (typeof existingRows)[number];
+      const existingByAsset = new Map<string, Map<string, ExistingPointRow>>();
       for (const row of existingRows) {
-        const forAsset = existingByAsset.get(row.assetId) ?? new Map<string, string>();
-        forAsset.set(row.pointKey, row.sourceKind);
+        const forAsset = existingByAsset.get(row.assetId) ?? new Map<string, ExistingPointRow>();
+        forAsset.set(row.pointKey, row);
         existingByAsset.set(row.assetId, forAsset);
       }
 
@@ -681,7 +715,7 @@ export class AssetTemplateMigrationService {
           continue;
         }
         for (const point of asset.newPoints) {
-          const sourceKind = forAsset.get(point.pointKey);
+          const sourceKind = forAsset.get(point.pointKey)?.sourceKind;
           if (sourceKind === undefined) {
             continue;
           }
@@ -701,6 +735,89 @@ export class AssetTemplateMigrationService {
               "Remove or re-key the existing row first, or rebuild this asset from the new " +
               "version.",
           });
+        }
+      }
+
+      // --- the surviving override, re-validated (`F2.9` Task 12b) ----------
+      //
+      // ADR 0039 decision 2, "no blind apply", for the one input the delta
+      // cannot see. `computeTemplateVersionDelta` is pure over two arrays of
+      // *template* points: a derived point's formula or dialect change lands in
+      // `derivedChanged`, never in `refusals`, and an asset's override is not
+      // one of its inputs. So the pin could move under a legal override and
+      // leave a pair **no code path had ever validated** — a dialect-only
+      // `bms-calc-v1` override plus a target version whose same point carries a
+      // `bms-calc-v2` formula merges to a `v2` formula wearing a `v1` label,
+      // which is finding 34's runaway reached from the side. The read-time
+      // refusals in `toActiveDefinition` and `CalcDefinitionsService.reload()`
+      // bound the damage; they do not stop the migration that causes it.
+      //
+      // **`validateMergedCalcOverride` is the override endpoint's own
+      // function**, not a second implementation of its rules. Migrate must not
+      // be able to admit a pair `PUT /admin/assets/:id/calc-points/:key` would
+      // refuse — the two are authors for one engine, and two copies of one rule
+      // is how they drift. It inherits that function's boundary as well: an
+      // override that states neither `formula` nor `formulaDialect` does not
+      // re-parse the stored formula, because a template formula that no longer
+      // validates is `toActiveDefinition`'s counted skip to report and refusing
+      // an unrelated interval override for it would strand the asset.
+      //
+      // `declared` comes from the **target** version, since that is the
+      // declaration the merged pair will resolve against once the pin moves.
+      const targetDerived = new Map(
+        targetPoints.filter((point) => point.kind === "derived").map((point) => [point.pointKey, point]),
+      );
+      const declared = {
+        // Measured only for `v1`, every declared key for `v2` — ADR 0055
+        // decision 7, picked between by the function itself.
+        measured: targetPoints.filter((point) => point.kind === "measured").map((p) => p.pointKey),
+        all: targetPoints.map((point) => point.pointKey),
+      };
+
+      for (const asset of planned) {
+        const forAsset = existingByAsset.get(asset.dto.assetId);
+        if (!forAsset) {
+          continue;
+        }
+        for (const [pointKey, row] of forAsset) {
+          const declaredPoint = targetDerived.get(pointKey);
+          if (declaredPoint === undefined) {
+            // The target version does not declare this key as derived. Nothing
+            // merges, so there is nothing to validate — a measured collision is
+            // the loop above's refusal, and a key the version drops is the
+            // delta's.
+            continue;
+          }
+          const override = calcFieldsOf(row);
+          if (CALC_FIELDS.every((field) => override[field] === null)) {
+            // Five NULLs is exactly what "no override" means (the row survives
+            // a clear). Such an asset inherits the target version whole, which
+            // is the migration working as designed, and validating the
+            // template against itself here would refuse assets for a defect
+            // that belongs to the version author.
+            continue;
+          }
+          const problems = validateMergedCalcOverride(
+            override,
+            calcFieldsOf(declaredPoint),
+            declared,
+          );
+          if (problems.length > 0) {
+            refuse({
+              reason: "calc_override_invalid_on_target",
+              pointKey,
+              assetCount: 1,
+              message:
+                `Asset "${asset.dto.assetCode}": its calc override on derived point ` +
+                `"${pointKey}" does not survive the move to version ${target.version}. ` +
+                `${problems.join(" ")} An override states only the columns it sets and ` +
+                "inherits the rest, so a new version's formula or dialect can turn a pair " +
+                "that was legal when it was written into one this engine will not run. " +
+                "Migration refuses it rather than repointing the asset and leaving it to be " +
+                "discovered as a skipped calculation (ADR 0039 decision 2). Clear or correct " +
+                "the override first, then migrate.",
+            });
+          }
         }
       }
     }
@@ -747,6 +864,11 @@ export class AssetTemplateMigrationService {
       calcTrigger: row.calcTrigger,
       calcIntervalSeconds: row.calcIntervalSeconds,
       maxInputAgeSeconds: row.maxInputAgeSeconds,
+      // `F2.9` finding 31. Projected because the delta compares it: a version
+      // bump that moves only the ratio used to produce an empty
+      // `derivedChanged`, so `migration-preview` said "no changes" while the
+      // migrated asset picked the new value up on its next sweep.
+      minCoverageRatio: row.minCoverageRatio,
     }));
   }
 

@@ -52,10 +52,10 @@ export function collapseLatest(readings: TelemetryReading[]): TelemetryReading[]
  *    independently of `formula`, so a label can disagree with the text it
  *    labels — through a dialect-only override (closed at the write path in
  *    `582ed49`), or through a template migration that repoints
- *    `assets.template_id` without re-validating the override (still open;
- *    `template-version-delta.ts` routes a dialect change into
- *    `derivedChanged`, never `refusals`, and re-validation is owed to `F2.9`
- *    PR 2). `CalcDefinitionsService.reload()` therefore re-enforces this
+ *    `assets.template_id` without re-validating the override (closed by `F2.9`
+ *    Task 12b: migrate re-runs `validateMergedCalcOverride` against the target
+ *    version and refuses as `calc_override_invalid_on_target`).
+ *    `CalcDefinitionsService.reload()` nonetheless re-enforces this
  *    refusal at **read** time as `v1_references_derived`, and
  *    `toActiveDefinition` refuses a self-reference as `self_reference`. Step 2
  *    holds because of those, whatever a stored label claims.

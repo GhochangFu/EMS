@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertACoverageRatioOnlyChangeIsReported,
   assertDerivedChangesAreReportedNeverRefused,
   assertDifferentRowIdentitiesWithSameKeysAreNoChange,
   assertIdenticalVersionsProduceAnEmptyDelta,
@@ -34,6 +35,10 @@ describe("F2.6 — template version delta", () => {
 
   it("reports derived additions, removals and per-field changes, and never refuses them", () => {
     assertDerivedChangesAreReportedNeverRefused();
+  });
+
+  it("reports a min_coverage_ratio-only change, both directions (F2.9 finding 31)", () => {
+    assertACoverageRatioOnlyChangeIsReported();
   });
 
   it("classifies a kind flip explicitly in both directions", () => {

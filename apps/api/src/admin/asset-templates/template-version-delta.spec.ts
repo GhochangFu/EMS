@@ -23,6 +23,7 @@ function measured(pointKey: string, overrides: Partial<StoredTemplatePoint> = {}
     calcTrigger: null,
     calcIntervalSeconds: null,
     maxInputAgeSeconds: null,
+    minCoverageRatio: null,
     ...overrides,
   };
 }
@@ -39,6 +40,7 @@ function derived(pointKey: string, overrides: Partial<StoredTemplatePoint> = {})
     calcTrigger: "scheduled",
     calcIntervalSeconds: 60,
     maxInputAgeSeconds: 300,
+    minCoverageRatio: null,
     ...overrides,
   };
 }
@@ -226,6 +228,78 @@ export function assertDerivedChangesAreReportedNeverRefused(): void {
   assert(
     delta.derivedRemoved[0]?.from.formula === "{A} + {B}",
     "a derived removal must carry what is being lost",
+  );
+}
+
+/**
+ * `F2.9` Task 12b, finding 31 — a `minCoverageRatio`-only change is a change.
+ *
+ * The quiet half of the "no blind apply" gap. `min_coverage_ratio` is a
+ * `template_points` column and **not** an `AssetPointCalcOverrideFields`
+ * member — ADR 0055 decision 11 refuses a per-asset override of it — so before
+ * this case the delta's five-field comparison could not see it at all: a
+ * version bump that moved only the ratio produced an empty `derivedChanged`,
+ * `migration-preview` said "no changes", and the migrated asset picked the new
+ * ratio up on its next sweep.
+ *
+ * Both directions, because they fail in opposite ways and only one of them
+ * looks like a change. `0.5 -> null` is the dangerous one: `null` means *every*
+ * declared member must be fresh (fail closed), so a formula that was computing
+ * on half its members stops computing, with nothing raised anywhere.
+ */
+export function assertACoverageRatioOnlyChangeIsReported(): void {
+  const loosened = computeTemplateVersionDelta(
+    [derived("AGG", { minCoverageRatio: null })],
+    [derived("AGG", { minCoverageRatio: 0.5 })],
+    OPTIONS,
+  );
+  const entry = loosened.derivedChanged.find((c) => c.pointKey === "AGG");
+  assert(
+    entry !== undefined,
+    "a version bump that moves ONLY min_coverage_ratio must still be reported — an empty " +
+      "derivedChanged makes migration-preview say 'no changes' about a migration that " +
+      "changes when the formula computes at all (ADR 0055 decision 11, finding 31)",
+  );
+  assert(
+    entry?.changedFields.length === 1 && entry?.changedFields[0] === "minCoverageRatio",
+    `the ratio must be named as the field that moved, got ${String(entry?.changedFields)}. ` +
+      "The web renders `changedFields.join(', ') + ' changed'`, so an entry with an empty " +
+      "list is the same silence in a new costume.",
+  );
+  assert(
+    entry?.fromMinCoverageRatio === null && entry?.toMinCoverageRatio === 0.5,
+    `both sides of the ratio must be carried, got ${String(entry?.fromMinCoverageRatio)} -> ` +
+      `${String(entry?.toMinCoverageRatio)}. They sit OUTSIDE from/to on purpose: those two ` +
+      "are AssetPointCalcOverrideFields, and decision 11 refuses a per-asset ratio override.",
+  );
+  assert(
+    loosened.refusals.length === 0,
+    "a ratio change is reported, not refused — decision 3 refuses measured changes only",
+  );
+
+  const tightened = computeTemplateVersionDelta(
+    [derived("AGG", { minCoverageRatio: 0.5 })],
+    [derived("AGG", { minCoverageRatio: null })],
+    OPTIONS,
+  );
+  const back = tightened.derivedChanged.find((c) => c.pointKey === "AGG");
+  assert(
+    back?.fromMinCoverageRatio === 0.5 && back?.toMinCoverageRatio === null,
+    "0.5 -> null must be reported too, and it is the direction that hurts: null means every " +
+      "declared member must be fresh, so the formula stops computing rather than computing " +
+      `on fewer members. Got ${String(back?.fromMinCoverageRatio)} -> ` +
+      `${String(back?.toMinCoverageRatio)}.`,
+  );
+
+  const same = computeTemplateVersionDelta(
+    [derived("AGG", { minCoverageRatio: 0.5 })],
+    [derived("AGG", { minCoverageRatio: 0.5 })],
+    OPTIONS,
+  );
+  assert(
+    same.derivedChanged.length === 0,
+    "an unchanged ratio is not a change — without this the check above passes on a delta " +
+      "that reports every derived point on every migration",
   );
 }
 

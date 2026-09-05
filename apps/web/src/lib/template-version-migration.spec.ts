@@ -225,6 +225,10 @@ export function runDeltaLineTests(): void {
         changedFields: ["formula", "calcIntervalSeconds"],
         from: NO_CALC,
         to: NO_CALC,
+        // `F2.9` finding 31 — the ratio is reported beside `from`/`to`, never
+        // inside them: it is a template-only column (ADR 0055 decision 11).
+        fromMinCoverageRatio: null,
+        toMinCoverageRatio: null,
       },
     ],
   });

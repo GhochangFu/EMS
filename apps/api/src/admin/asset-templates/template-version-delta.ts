@@ -35,6 +35,27 @@ import type {
  * it refuses; `derived -> measured` is a derived removal and a measured
  * addition, so it does not. That asymmetry is deliberate and is asserted
  * explicitly in the spec rather than left to fall out of the implementation.
+ *
+ * ## `minCoverageRatio` is compared, and it is not one of the five (`F2.9`)
+ *
+ * `CALC_FIELDS` is the five columns an asset may **override**, and ADR 0055
+ * decision 11 refuses a per-asset coverage ratio — so `calcFieldsOf` is right
+ * to exclude it and the ratio is compared on its own, reported through
+ * `changedFields` and through the two `*MinCoverageRatio` fields that sit
+ * outside `from`/`to`. Finding 31: before this, a version bump that moved only
+ * the ratio produced an empty `derivedChanged`, `migration-preview` reported
+ * "no changes", and the migrated asset picked the new ratio up at once — which
+ * can move a formula from computing to fail-closed with no operator ever
+ * seeing it. Widening `AssetPointCalcOverrideFields` to make the diff
+ * symmetrical would have been the tidy version of the same mistake: it claims
+ * an override decision 11 forbids.
+ *
+ * **Still pure, and still blind to any asset.** This function sees two template
+ * versions, which is exactly what `migration-preview` has to show. Whether one
+ * asset's *override* survives the move is a question about a row this function
+ * has never read, and `AssetTemplateMigrationService` answers it with
+ * `validateMergedCalcOverride` (`F2.9` Task 12b, refusal
+ * `calc_override_invalid_on_target`).
  */
 
 /** The subset of a stored `template_points` row this function reads. */
@@ -50,6 +71,14 @@ export interface StoredTemplatePoint {
   calcTrigger: string | null;
   calcIntervalSeconds: number | null;
   maxInputAgeSeconds: number | null;
+  /**
+   * ADR 0055 decision 11 — `null` is **fail closed**: every declared member of
+   * a `bms-calc-v2` aggregate must be fresh, not "no limit". Required rather
+   * than optional on purpose: an optional field a caller forgot to project
+   * compares `undefined` to `undefined`, which is equal, and the ratio change
+   * goes unreported exactly as it did before finding 31.
+   */
+  minCoverageRatio: number | null;
 }
 
 export interface TemplateVersionDeltaOptions {
@@ -65,7 +94,17 @@ export interface TemplateVersionDeltaOptions {
   assetCount: number;
 }
 
-const CALC_FIELDS: readonly TemplateCalcField[] = [
+/**
+ * The five columns an asset may override — **not** every member of
+ * `TemplateCalcField`, which also names `minCoverageRatio` (decision 11 refuses
+ * a per-asset ratio, so there is no `AssetPointCalcOverrideFields` key for it).
+ * Typed as `keyof AssetPointCalcOverrideFields` so that stays true by
+ * construction rather than by comment.
+ *
+ * Exported for `AssetTemplateMigrationService`, which asks "does this asset
+ * override anything on this point at all" before it re-validates the merge.
+ */
+export const CALC_FIELDS: readonly (keyof AssetPointCalcOverrideFields)[] = [
   "formula",
   "formulaDialect",
   "calcTrigger",
@@ -73,8 +112,21 @@ const CALC_FIELDS: readonly TemplateCalcField[] = [
   "maxInputAgeSeconds",
 ];
 
-/** The five calc columns of one stored row, in the shared DTO shape. */
-function calcFieldsOf(point: StoredTemplatePoint): AssetPointCalcOverrideFields {
+/**
+ * The five calc columns of one stored row, in the shared DTO shape.
+ *
+ * Structural in its parameter, and exported, because `template_points` and
+ * `asset_points` name these five columns identically and the migration service
+ * needs the same shaping for an `asset_points` row. One function, so a template
+ * side and an asset side of the same merge cannot be built differently.
+ */
+export function calcFieldsOf(point: {
+  formula: string | null;
+  formulaDialect: string | null;
+  calcTrigger: string | null;
+  calcIntervalSeconds: number | null;
+  maxInputAgeSeconds: number | null;
+}): AssetPointCalcOverrideFields {
   return {
     formula: point.formula,
     // The DTO narrows these two to their vocabularies. A stored row predating
@@ -158,15 +210,23 @@ export function computeTemplateVersionDelta(
     }
 
     if (isDerived(before)) {
-      const changedFields = CALC_FIELDS.filter(
+      const changedFields: TemplateCalcField[] = CALC_FIELDS.filter(
         (field) => calcFieldsOf(before)[field] !== calcFieldsOf(after)[field],
       );
+      // Sixth, and last, so the five keep their existing order in the list an
+      // operator reads. Compared on its own because it is a template-only
+      // column — see this file's header and decision 11.
+      if (before.minCoverageRatio !== after.minCoverageRatio) {
+        changedFields.push("minCoverageRatio");
+      }
       if (changedFields.length > 0) {
         delta.derivedChanged.push({
           pointKey,
           changedFields,
           from: calcFieldsOf(before),
           to: calcFieldsOf(after),
+          fromMinCoverageRatio: before.minCoverageRatio,
+          toMinCoverageRatio: after.minCoverageRatio,
         });
       }
       continue;
