@@ -1,3 +1,4 @@
+import type { CalcErrorCode } from "./ast";
 import { CALC_FUNCTION_ARITY, MAX_FORMULA_DEPTH, MAX_FORMULA_LENGTH, MAX_FORMULA_POINT_REFS } from "./limits";
 
 /**
@@ -28,6 +29,12 @@ import { CALC_FUNCTION_ARITY, MAX_FORMULA_DEPTH, MAX_FORMULA_LENGTH, MAX_FORMULA
  * `dialect-superset.spec.ts` checks this entry against
  * `V1_REFUSALS_V2_ACCEPTS` by name, instead of asserting blanket `ok`
  * agreement over the whole corpus (which would be wrong for this one entry).
+ *
+ * **`sum({A})` and `avg({A})` are a second kind of exception**, added by
+ * `F2.9` and listed in `V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE`: they refuse
+ * under both dialects, with a different code on each. They are the only corpus
+ * entries whose `v1` outcome is decided inside a dialect-gated parser branch,
+ * which is why they are here — see that constant's docblock.
  */
 
 function arityProbeExpressions(): string[] {
@@ -68,6 +75,10 @@ export const V1_CORPUS: readonly string[] = [
   "",
   "   ",
   "2 + {A} * 3",
+  // `F2.9` — the two v2 aggregate keywords applied as if they were v1
+  // functions. See `V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE`.
+  "sum({A})",
+  "avg({A})",
   ...arityProbeExpressions(),
   TOO_LONG,
   TWENTY_ONE_REFS,
@@ -92,3 +103,38 @@ export const V1_CORPUS: readonly string[] = [
  * module docblock. Checked by name in `dialect-superset.spec.ts`, never by
  * blanket `ok` agreement over the whole corpus. */
 export const V1_REFUSALS_V2_ACCEPTS: readonly string[] = ["sum({kw} @site)"];
+
+/**
+ * Corpus entries that refuse under **both** dialects, with a **different code
+ * on each** — and the codes, pinned.
+ *
+ * The third and last shape a corpus entry can have, added by `F2.9` after
+ * review found the refusal half of `dialect-superset.spec.ts` proved nothing:
+ * every refusal the generator produced was `too_many_refs` or `too_long`, both
+ * decided in `parseFormula` **outside** the dialect branches, so the
+ * "identical refusal under both dialects" assertion never reached code that
+ * could branch on dialect.
+ *
+ * `sum` and `avg` are `v2` aggregate keywords and are not `v1` functions.
+ * Applied like a `v1` call they refuse under both dialects and for genuinely
+ * different reasons — `unknown_function` at the identifier under `v1`,
+ * `scope_required` at the closing paren under `v2`, because `v2` opened an
+ * aggregate and found no `@scope`. Pinning **both** codes is what makes this
+ * list a tripwire rather than bookkeeping: a `v2` branch that stopped being
+ * gated on the dialect would make `v1` refuse with `scope_required` too, and
+ * an assertion that only required the two codes to *differ* would pass on the
+ * agreement it had just lost.
+ *
+ * ADR 0055 decision 4 is directional and says nothing about a refusal, so this
+ * list asserts nothing the decision forbids. Decision 3 is the one it guards:
+ * a `v1` formula keeps its exact current meaning, and `sum({A})` meaning
+ * "unknown function" is part of that meaning.
+ */
+export const V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE: readonly {
+  readonly expression: string;
+  readonly v1Code: CalcErrorCode;
+  readonly v2Code: CalcErrorCode;
+}[] = [
+  { expression: "sum({A})", v1Code: "unknown_function", v2Code: "scope_required" },
+  { expression: "avg({A})", v1Code: "unknown_function", v2Code: "scope_required" },
+];

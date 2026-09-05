@@ -2,7 +2,7 @@ import type { CalcExpr } from "./ast";
 import { evaluate } from "./evaluate";
 import { CALC_DIALECT_V2, CALC_FUNCTION_ARITY } from "./limits";
 import { parseFormula } from "./parser";
-import { V1_CORPUS, V1_REFUSALS_V2_ACCEPTS } from "./v1-corpus";
+import { V1_CORPUS, V1_REFUSALS_V2_ACCEPTS, V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE } from "./v1-corpus";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -21,13 +21,32 @@ function assert(condition: boolean, message: string): void {
  *
  * **The property is directional.** It says nothing about a `v1` refusal — a
  * `v1` refusal becoming legal `v2` syntax is exactly what "superset" means.
- * `runDialectSupersetTests`'s generator only ever emits `v1`-grammar text
- * (never `@`, `'`, or `.`), so its refusals are v1-grammar-shaped (bad arity,
- * too many refs, too deep, …) and are asserted to refuse IDENTICALLY under
- * both dialects — a stronger check than the property requires, valid here
- * because nothing in the generator's alphabet can reach a `v2`-only branch.
- * The `v1-corpus.ts` check below is weaker and correct: it only requires
- * agreement when `v1` parses, with one named, deliberate exception.
+ * `runDialectSupersetTests`'s generator only ever emits `v1`-grammar text — no
+ * `@` and no `'`, and the only `.` it emits is the decimal point inside a
+ * number literal (`genNumber`), never inside a `{…}` body, which is where
+ * `v2`'s qualified-reference split applies. So its refusals are
+ * v1-grammar-shaped (bad arity, too many refs, too deep, …) and are asserted
+ * to refuse IDENTICALLY under both dialects.
+ *
+ * **What that identical-refusal assertion is worth, measured rather than
+ * assumed.** Replayed at this seed and `N`, the generator produces 1868
+ * acceptances and 132 refusals, and every one of those refusals is
+ * `too_many_refs` (129) or `too_long` (3). Both are decided in `parseFormula`
+ * **before and outside** the dialect branches — the length check precedes
+ * `tokenize`, and the ref count comes from the shared `collectRefEntries`
+ * walk — so the refusal half of the generated corpus, and the
+ * `refusalCount >= 100` floor beneath it, cannot catch a `v2` branch that
+ * swallows a `v1` refusal. That claim used to be made here and was false; the
+ * `ok` half (1868 expressions with AST, `refs`, `crossRefs` and evaluation
+ * equality) is what decision 4 is actually about and it is sound.
+ *
+ * The tripwire for a swallowed `v1` refusal is therefore in the `v1-corpus.ts`
+ * check below, in `V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE`, whose entries are the
+ * only corpus text whose `v1` outcome is decided inside a dialect-gated parser
+ * branch — plus the absolute `v1` assertions `parser.spec.ts` makes on the same
+ * two expressions. The corpus check is otherwise weaker than the generated one
+ * and correctly so: it only requires agreement when `v1` parses, with the
+ * named, deliberate exceptions.
  *
  * **Ref-pool scope (design decision 10; ADR 0055 Q1).** The pool below
  * includes `-`, `/` and a space — all legal `v1` point-key characters
@@ -272,11 +291,15 @@ function runV1CorpusChecks(rng: () => number): void {
   let checkedOk = 0;
   let checkedRefusal = 0;
   let checkedException = 0;
+  let checkedDifferentCode = 0;
 
   for (const expr of V1_CORPUS) {
     const v1 = parseFormula(expr);
     const v2 = parseFormula(expr, { dialect: CALC_DIALECT_V2 });
     const isException = V1_REFUSALS_V2_ACCEPTS.includes(expr);
+    const differentCode = V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE.find(
+      (entry) => entry.expression === expr,
+    );
 
     if (v1.ok) {
       checkedOk += 1;
@@ -291,6 +314,24 @@ function runV1CorpusChecks(rng: () => number): void {
     } else if (isException) {
       checkedException += 1;
       assert(v2.ok === true, `${JSON.stringify(expr)} is listed as a named v1-refusal/v2-acceptance but v2 also refused it`);
+    } else if (differentCode) {
+      // The only corpus entries whose `v1` outcome is decided inside a
+      // dialect-gated parser branch. Both codes are pinned: asserting merely
+      // that they differ would pass under exactly the mutation this exists to
+      // catch — an ungated `v2` branch makes `v1` refuse with the `v2` code,
+      // and the two then agree.
+      checkedDifferentCode += 1;
+      assert(
+        v1.errors[0].code === differentCode.v1Code,
+        `${JSON.stringify(expr)} must refuse under v1 with ${differentCode.v1Code} — decision 3 ` +
+          `freezes that meaning — got ${JSON.stringify(v1.errors[0])}`,
+      );
+      assert(
+        v2.ok === false && v2.errors[0].code === differentCode.v2Code,
+        `${JSON.stringify(expr)} must refuse under v2 with ${differentCode.v2Code}, got ${
+          v2.ok ? "ok" : JSON.stringify(v2.errors[0])
+        }`,
+      );
     } else {
       checkedRefusal += 1;
       assert(
@@ -311,6 +352,11 @@ function runV1CorpusChecks(rng: () => number): void {
   assert(
     checkedException === V1_REFUSALS_V2_ACCEPTS.length,
     "every named exception in V1_REFUSALS_V2_ACCEPTS must actually appear, refuse under v1, and be found in the corpus",
+  );
+  assert(
+    checkedDifferentCode === V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE.length,
+    `every entry in V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE must appear in the corpus and refuse ` +
+      `under v1 — ${checkedDifferentCode} of ${V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE.length} were reached`,
   );
 }
 

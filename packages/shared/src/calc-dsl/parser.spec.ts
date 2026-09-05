@@ -9,7 +9,7 @@ import {
   MAX_FORMULA_POINT_REFS,
 } from "./limits";
 import { formatCalcError, parseFormula, validateFormula, type ParseOptions } from "./parser";
-import { V1_CORPUS, V1_REFUSALS_V2_ACCEPTS } from "./v1-corpus";
+import { V1_CORPUS, V1_REFUSALS_V2_ACCEPTS, V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE } from "./v1-corpus";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -104,6 +104,22 @@ export function runParserTests(): void {
   expectOk("min(max({A}, {B}), 5)");
 
   expectFailCode("pow({A}, 2)", "unknown_function", "pow is not a whitelisted function");
+
+  // ---- the v1 guard on the two v2 aggregate keywords (ADR 0055 decision 3) ----
+  // `sum` and `avg` open an aggregate under `v2`. Under `v1` they are not
+  // functions at all, so they must reach the ordinary call path and be refused
+  // as unknown, at the identifier.
+  //
+  // This is an **absolute `v1` assertion**, not a dialect-agreement one, and
+  // that is the whole point of it: the mutation it exists to catch — dropping
+  // the `isV2` gate in `parseFactor` — makes `v1` refuse with `scope_required`
+  // exactly as `v2` does, so every agreement check in
+  // `dialect-superset.spec.ts` stays green while `v1`'s meaning has moved.
+  // `V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE` pins the same pair from the corpus
+  // side.
+  const v1Sum = expectFailCode("sum({A})", "unknown_function", "v1 guard: sum is not a v1 function");
+  assert(v1Sum.position === 0, `the unknown function must be reported at the identifier, got ${v1Sum.position}`);
+  expectFailCode("avg({A})", "unknown_function", "v1 guard: avg is not a v1 function");
   const unknownFnResult = parseFormula("pow({A}, 2)");
   assert(unknownFnResult.ok === false, "pow(...) must fail to parse");
   if (!unknownFnResult.ok) {
@@ -195,6 +211,11 @@ export function runParserTests(): void {
   assert(
     V1_REFUSALS_V2_ACCEPTS.every((expression) => V1_CORPUS.includes(expression)),
     "every V1_REFUSALS_V2_ACCEPTS entry must itself be a V1_CORPUS entry",
+  );
+  assert(
+    V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE.every((entry) => V1_CORPUS.includes(entry.expression)),
+    "every V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE entry must itself be a V1_CORPUS entry — " +
+      "an entry the corpus never holds is checked by nothing",
   );
 }
 
