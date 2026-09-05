@@ -1,11 +1,36 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import type { ParseResult } from "@bms/shared";
-import { CALC_DIALECT_V2, parseFormula } from "@bms/shared";
+/**
+ * Resolved through `createRequire` rather than a bare `import`, which is the
+ * pattern `tests/ingest-contracts.test.ts:26-29` already documents for this
+ * directory: **the `tests` project runs from the repo root, where the bundler
+ * resolver has no workspace link to `@bms/shared`.** Node's own resolution
+ * does. `typecheck:tests` runs `tsc --moduleResolution bundler`, so a static
+ * import here typechecks green locally — where a hand-repaired
+ * `node_modules/@bms/shared` symlink happens to exist — and fails CI's clean
+ * install with `TS2307: Cannot find module '@bms/shared'`. It did exactly that
+ * on PR #324.
+ *
+ * The types are declared locally for the same reason: a `import type` is still
+ * a bundler-resolved specifier. They restate only the surface this file uses,
+ * and `parseFormula`'s real signature is checked where it is defined.
+ */
+type CalcParseError = { code: string; position: number };
+type ParseResult =
+  | { ok: true; ast: unknown; refs: string[]; crossRefs: unknown[] }
+  | { ok: false; errors: CalcParseError[] };
+
+const require_ = createRequire(import.meta.url);
+const calcDsl = require_("@bms/shared") as {
+  CALC_DIALECT_V2: string;
+  parseFormula: (expression: string, options?: { dialect?: string }) => ParseResult;
+};
+const { CALC_DIALECT_V2, parseFormula } = calcDsl;
 
 /** The bare `tsc` invocation `typecheck:tests` runs over this directory has
  * no `--strict`, and without it this repo's toolchain does not narrow a
