@@ -1,6 +1,6 @@
 import { MetricsService, type CalcRuntimeSkipReason } from "../observability/metrics.service";
 
-/** Every `CalcSkipReason` (an unusable stored definition) plus the three
+/** Every `CalcSkipReason` (an unusable stored definition) plus the eight
  * runtime-only reasons (a usable definition skipped this evaluation), as a
  * `Record<CalcRuntimeSkipReason, true>` rather than a plain literal array —
  * a plain array typed as `CalcRuntimeSkipReason[]` compiles fine even when a
@@ -22,10 +22,15 @@ const ALL_REASONS_RECORD: Record<CalcRuntimeSkipReason, true> = {
   streaming_on_v2: true,
   self_reference: true,
   v1_references_derived: true,
+  coverage_ratio_out_of_range: true,
   missing_input: true,
   stale_input: true,
   non_finite: true,
-  v2_not_yet_evaluable: true,
+  dependency_cycle: true,
+  membership_unresolved: true,
+  unknown_asset_reference: true,
+  no_members: true,
+  coverage_below_floor: true,
 };
 const ALL_REASONS = Object.keys(ALL_REASONS_RECORD) as CalcRuntimeSkipReason[];
 
@@ -89,5 +94,23 @@ export async function runCalcMetricsTests(): Promise<void> {
   assert(
     metricValue(downText, "bms_api_calc_active_formulas") === 2,
     `a gauge must be settable back down, expected 2, got: ${downText}`,
+  );
+
+  // ---- ADR 0055 decision 11: excluded members accumulate; the member max is a gauge --
+
+  metrics.countCalcAggregateExcluded(2);
+  metrics.countCalcAggregateExcluded(1);
+  const excludedText = await readMetricValue(metrics, "bms_api_calc_aggregate_members_excluded_total");
+  assert(
+    metricValue(excludedText, "bms_api_calc_aggregate_members_excluded_total") === 3,
+    `expected bms_api_calc_aggregate_members_excluded_total to read 3 (2 + 1), got: ${excludedText}`,
+  );
+
+  metrics.setCalcAggregateMembersMax(12);
+  metrics.setCalcAggregateMembersMax(4);
+  const membersMaxText = await readMetricValue(metrics, "bms_api_calc_aggregate_members_max");
+  assert(
+    metricValue(membersMaxText, "bms_api_calc_aggregate_members_max") === 4,
+    `bms_api_calc_aggregate_members_max is a gauge — the last sweep's value, not a maximum over time; expected 4, got: ${membersMaxText}`,
   );
 }

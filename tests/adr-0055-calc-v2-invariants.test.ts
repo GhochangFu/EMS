@@ -50,10 +50,9 @@ function asOk(result: ParseResult): Extract<ParseResult, { ok: true }> {
  *
  * - **(a) — one builder, one topological sort: `buildCalcGraph` and
  *   `topologicalOrder` are each defined in exactly one file under
- *   `apps/api/src`, and the two files that need them import from it.** Built by
- *   Task 12. The importer list holds **two** files, not three: the scheduled
- *   sweep does not import `calc-graph` until Task 13, which owns adding it
- *   (plan correction 54).
+ *   `apps/api/src`, and the three files that need them import from it.** Built
+ *   by Task 12 with two importers; Task 13 added the scheduled sweep when it
+ *   wired it (plan correction 54).
  * - **(b) — every `derived("…")` and `expression: "…"` literal under the
  *   stock catalog parses identically under both dialects.**
  * - **(c) — no `z.literal(CALC_DIALECT)` anywhere under
@@ -372,10 +371,10 @@ describe("ADR 0055 part (d) — the qualified-code statement filters on the owne
  *
  * **The importer list is the other half, and it is not decoration.** Naming the
  * files that reach the shared builder is what makes a new local copy show up
- * here as a *missing* importer rather than as nothing at all. `F2.9` Task 13
- * adds `calc-scheduler.service.ts` to it when it wires the sweep — an obligation
- * on that task, per plan correction 54, not an optional tidy-up. It is absent
- * today because the sweep does not yet import the module.
+ * here as a *missing* importer rather than as nothing at all. The scheduled
+ * sweep is on it since `F2.9` Task 13 wired it — an obligation on that task,
+ * per plan correction 54, because an importer list that omits the sweep is how
+ * a second implementation of the builder gets written later.
  */
 const DEFINES_BUILD_GRAPH = /^export function buildCalcGraph\s*\(/m;
 const DEFINES_TOPOLOGICAL_ORDER = /^export function topologicalOrder\s*\(/m;
@@ -431,13 +430,14 @@ describe("ADR 0055 part (a) — one graph builder and one topological sort", () 
   it.each([
     "apps/api/src/calc/calc-dependency.service.ts",
     "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
+    "apps/api/src/calc/calc-scheduler.service.ts",
   ])("%s reaches the graph through calc-graph rather than its own copy", (rel) => {
     expect(apiFiles, `${rel} is not being scanned`).toContain(rel);
     const source = readFileSync(join(repoRoot, rel), "utf8");
     expect(
       IMPORTS_CALC_GRAPH.test(source),
-      `${rel} must import from calc-graph on an import line. Task 13 adds ` +
-        "apps/api/src/calc/calc-scheduler.service.ts to this list when it wires the sweep.",
+      `${rel} must import from calc-graph on an import line — the save-time detector, the ` +
+        "template save path and the scheduled sweep all reach the one builder (ADR 0055 decision 8).",
     ).toBe(true);
   });
 });

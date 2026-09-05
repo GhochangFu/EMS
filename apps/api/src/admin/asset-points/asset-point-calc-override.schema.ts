@@ -155,10 +155,13 @@ export function validateMergedCalcOverride(
     // two-member enum, so an override that sets the dialect alone **re-labels
     // the template's formula** — and `CalcDefinitionsService.reload` coalesces
     // `formula` and `formula_dialect` independently, so that relabelled pair
-    // is what the engine runs. Parsed nowhere else, a `v1` label on a `v2`
-    // formula walks past `runScheduledSweep`'s `def.dialect !== CALC_DIALECT`
-    // refusal and gets evaluated as an ordinary local formula — the runaway
-    // the plan's finding 22 exists to stop, reached around it. Decision 3
+    // is what the engine runs. Parsed nowhere at write time, a `v1` label on
+    // a `v2` formula would be parsed under `v1` by the loader and — before the
+    // sweep's cycle detector existed (`F2.9` Task 13) — evaluated as an
+    // ordinary local formula: the runaway the plan's finding 22 exists to
+    // stop, reached around it. The read-time backstops (`self_reference`,
+    // `v1_references_derived`, `dependency_cycle`) now hold that class too,
+    // and this write-time parse is what keeps them backstops. Decision 3
     // ("a `v1` formula keeps its exact current meaning, forever") is a
     // property of the merged pair, exactly as decision 10 below already is.
     //

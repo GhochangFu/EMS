@@ -81,7 +81,8 @@ import { CalcWriteService } from "./calc-write.service";
     CalcDefinitionsService,
     CalcInputsService,
     // `F2.9` Task 11 — membership resolution for `bms-calc-v2` (ADR 0055
-    // decision 12). Provided here; Task 12's detector is built on it.
+    // decision 12). Provided here; Task 12's save-time detector and Task 13's
+    // scheduled sweep are both built on it, each resolving afresh per call.
     CalcScopeService,
     CalcDependencyService,
     CalcWriteService,
