@@ -8,12 +8,19 @@
 // CI did not catch it because .github/workflows/ci.yml runs db:migrate but never
 // db:seed (tracked as F4.4 in docs/BACKLOG.md).
 //
-// Fires after any edit under packages/db/drizzle/ and asserts three invariants:
+// Fires after any edit under packages/db/drizzle/ and asserts five invariants:
 //   1. every *.sql file has a journal entry
 //   2. every journal entry has a *.sql file
 //   3. `when` timestamps strictly increase (drizzle applies only migrations
 //      newer than the newest already-applied one, so an out-of-order entry can
 //      never apply to an existing database)
+//   4. no `when` is more than one hour ahead of the wall clock (F4.94 — a
+//      future stamp sorts above a later, honestly-stamped migration, so
+//      drizzle silently skips the later one on every database that already
+//      ran the future entry)
+//   5. every `when` is a finite number (F4.94 — a string or a null `when`
+//      turns into NaN, every comparison against NaN is false, and both the
+//      ordering check and drizzle's own newer-than test go quiet)
 //
 // Exits 2 on violation so the message is fed back to Claude as advisory
 // feedback. The edit has already happened — this never undoes anything.
@@ -66,7 +73,7 @@ function readStdin() {
         problems.join('\n\n') +
         '\n\nFix meta/_journal.json (or the migration filename) before committing. ' +
         'Regenerate with `pnpm db:generate`, or hand-edit the journal keeping ' +
-        '`idx`/`tag`/`when` consistent.\n'
+        '`idx`/`tag` consistent and `when` = `Date.now()` at authoring time.\n'
     );
     process.exit(2);
   } catch {

@@ -12,14 +12,51 @@
 // what the agent just edited. The pre-commit hook passes the *staged* content,
 // because that is what the commit will actually contain — staging one half of
 // a migration pair is exactly the mistake a commit-time gate should catch.
+//
+// F4.94 added a fourth invariant: `when` must never sit ahead of the wall
+// clock. A hand-pinned future stamp (measured drift: about 6.5 days on
+// entries 0057–0062) sorts above a later, honestly-stamped migration, so
+// drizzle's `Number(lastDbMigration.created_at) < migration.folderMillis`
+// check skips the later file on every database that already ran the future
+// one — silently. `JOURNAL_CLOCK_SKEW_MS` tolerates only the gap between
+// `drizzle-kit`'s `when: +new Date()` stamp and the moment this check runs.
+//
+// That fourth invariant bounds the drift it can see; it does not eliminate it.
+// Both callers run on the same machine clock that stamped the entry, so a
+// stamp pinned inside the hour still sorts above a migration generated minutes
+// later. The check that does not share the author's clock is
+// `tests/f4.94-journal-when-not-ahead-of-clock.test.ts`, which CI runs on its
+// own machine.
+
+/** Clock-skew allowance for a freshly generated entry: drizzle-kit stamps `when: +new Date()` on the author's machine. */
+export const JOURNAL_CLOCK_SKEW_MS = 60 * 60 * 1000;
+
+/** The largest millisecond value `new Date(...)` accepts; beyond it `toISOString` throws `RangeError`. */
+const MAX_DATE_MS = 8.64e15;
 
 /**
- * @param {{ journalText: string, sqlTags: string[] }} view
+ * A readable timestamp, or the reason there is none. `new Date(w).toISOString()`
+ * throws `RangeError` past `MAX_DATE_MS`, and both callers fail OPEN on a
+ * throw — so formatting the message naively let the largest future stamp of
+ * all, the one that blocks every later migration, be the one that got through.
+ *
+ * @param {number} when
+ * @returns {string}
+ */
+function isoOrOutOfRange(when) {
+  return Number.isFinite(when) && Math.abs(when) <= MAX_DATE_MS
+    ? new Date(when).toISOString()
+    : 'out of Date range';
+}
+
+/**
+ * @param {{ journalText: string, sqlTags: string[], now?: number }} view
  *   `journalText` is the raw meta/_journal.json; `sqlTags` are the migration
- *   file names without the `.sql` suffix.
+ *   file names without the `.sql` suffix; `now` is injectable for tests and
+ *   defaults to `Date.now()`.
  * @returns {string[]} human-readable problems; empty means the view is sound.
  */
-export function journalProblems({ journalText, sqlTags }) {
+export function journalProblems({ journalText, sqlTags, now = Date.now() }) {
   let journal;
   try {
     journal = JSON.parse(journalText);
@@ -50,19 +87,49 @@ export function journalProblems({ journalText, sqlTags }) {
     );
   }
 
+  // Both remaining checks compare `when` numerically, and every comparison
+  // against NaN is false. A hand-written string date, a null or a missing
+  // `when` would therefore pass the two checks that exist to catch a hand-edited
+  // journal, in silence. So the shape is checked first and an unreadable entry
+  // is then skipped, to keep one bad entry to one clear problem.
+  const stamps = entries.map((e, i) => ({ index: i, tag: tags[i] || '?', when: e && e.when }));
+  const unreadable = stamps.filter((s) => !Number.isFinite(s.when));
+  if (unreadable.length > 0) {
+    problems.push(
+      "Journal 'when' is not a finite number (drizzle compares it numerically, so the entry " +
+        'has no defined place in the chain):\n' +
+        unreadable.map((s) => `  - ${s.tag} = ${JSON.stringify(s.when)}`).join('\n') +
+        '\n\nStamp `when` with Date.now() at authoring time - a number of milliseconds, ' +
+        'never a date string (F4.94).',
+    );
+  }
+
   // Drizzle applies only migrations newer than the newest already-applied one,
   // so an out-of-order entry can never apply to an existing database.
-  const whens = entries.map((e) => Number((e && e.when) || 0));
-  for (let i = 1; i < whens.length; i += 1) {
-    if (whens[i] <= whens[i - 1]) {
+  const readable = stamps.filter((s) => Number.isFinite(s.when));
+  for (let i = 1; i < readable.length; i += 1) {
+    const previous = readable[i - 1];
+    const current = readable[i];
+    if (current.when <= previous.when) {
       problems.push(
-        `Journal 'when' is not strictly increasing at entry ${i} ` +
-          `(${tags[i - 1] || '?'} = ${whens[i - 1]} -> ${tags[i] || '?'} = ${whens[i]}). ` +
+        `Journal 'when' is not strictly increasing at entry ${current.index} ` +
+          `(${previous.tag} = ${previous.when} -> ${current.tag} = ${current.when}). ` +
           'Drizzle applies only migrations newer than the newest applied one, ' +
           'so an out-of-order entry can never apply to an existing database.',
       );
       break;
     }
+  }
+
+  const ahead = readable.filter((s) => s.when > now + JOURNAL_CLOCK_SKEW_MS);
+  if (ahead.length > 0) {
+    problems.push(
+      `Journal 'when' is ahead of the wall clock (now = ${now}, tolerance ${JOURNAL_CLOCK_SKEW_MS} ms):\n` +
+        ahead.map((s) => `  - ${s.tag} = ${s.when} (${isoOrOutOfRange(s.when)})`).join('\n') +
+        '\n\nThe next generated migration takes Date.now(), which is SMALLER, so drizzle skips it on ' +
+        'every database that already ran this entry - silently. Stamp `when` with Date.now() at ' +
+        'authoring time; never hand-pin it ahead of the clock (F4.94).',
+    );
   }
 
   return problems;
