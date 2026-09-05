@@ -58,7 +58,7 @@ export type ScopeFixture = {
   readonly i: string;
   readonly w: string;
   readonly f: string;
-  readonly codes: { readonly y: string; readonly w: string; readonly f: string };
+  readonly codes: { readonly y: string; readonly w: string; readonly f: string; readonly i: string };
   readonly groupCode: string;
 };
 
@@ -192,7 +192,7 @@ export async function seedScopeFixture(pool: pg.Pool, fx: Fixtures): Promise<Sco
 
   return {
     ...ids,
-    codes: { y: `${TEST_CODE}-Y`, w: `${TEST_CODE}-W`, f: `${TEST_CODE}-F` },
+    codes: { y: `${TEST_CODE}-Y`, w: `${TEST_CODE}-W`, f: `${TEST_CODE}-F`, i: `${TEST_CODE}-I` },
     groupCode,
   };
 }
@@ -345,6 +345,39 @@ export async function assertQualifiedCodesAreContainedByTheOwnersLocation(
     `F's code names an asset in another organization and must resolve to null for X, got ${String(forX?.get(f))}`,
   );
   assert(forX?.get(y) === fixture.y, `Y's code is at X's location and must resolve to Y's id, got ${String(forX?.get(y))}`);
+}
+
+/**
+ * **A `{CODE.key}` naming a deactivated asset resolves to nothing** (`F2.9`
+ * PR 2 review fix 7). I is at X's own location and its template declares the
+ * key, so location and declaration are both satisfied and `active` is the only
+ * thing refusing it — the same predicate the aggregate half already carries at
+ * `assertSiteIsExactlyTheDeclarersAtTheOwnersLocation`. One decision reached
+ * through two syntaxes must not give two answers.
+ *
+ * Y in the same call is the anti-vacuity half: an active asset at the same
+ * location still resolves, so this is not "the read stopped working".
+ */
+export async function assertAQualifiedCodeDoesNotResolveToAnInactiveAsset(
+  pool: pg.Pool,
+  fixture: ScopeFixture,
+): Promise<void> {
+  const svc = new CalcScopeService(createDb(pool));
+  const { i, y } = fixture.codes;
+  const refs = crossRefsOf(`{${i}.${FIXTURE_POINT_KEY}} + {${y}.${FIXTURE_POINT_KEY}}`);
+  assert(refs.length === 2, `expected two qualified references, got ${refs.length}`);
+  const membership = await svc.resolveMembership([{ assetId: fixture.x, crossRefs: refs }]);
+  const forX = membership.qualified.get(fixture.x);
+  assert(forX?.has(i) === true, `the qualified map must carry ${i} whether or not it resolved`);
+  assert(
+    forX?.get(i) === null,
+    `I is at X's location and its template declares the key, but it is inactive, so the code must ` +
+      `resolve to null — got ${String(forX?.get(i))}`,
+  );
+  assert(
+    forX?.get(y) === fixture.y,
+    `anti-vacuity: Y is active at the same location and must still resolve, got ${String(forX?.get(y))}`,
+  );
 }
 
 // --- edges ----------------------------------------------------------------

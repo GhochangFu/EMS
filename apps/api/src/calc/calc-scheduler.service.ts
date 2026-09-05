@@ -116,12 +116,31 @@ async function readPairSamples(
 type CrossRead = { readonly ref: CalcCrossRef; readonly key: string; readonly pairs: readonly Pair[] };
 
 /**
+ * What one definition's cross references resolved to: the values keyed by
+ * `crossRefKey`, and the members every aggregate in the formula excluded.
+ *
+ * **`excluded` is carried out rather than counted here**, which is the whole
+ * point of the shape. `bms_api_calc_aggregate_members_excluded_total`'s own
+ * help text says "excluded … from a value that was still written", so the
+ * count belongs to the *write*, not to the aggregate that happened to resolve
+ * first. Counted inside the loop below it moved for a formula that then
+ * refused on a later reference — a stale `{CODE.key}` after the aggregate, a
+ * second aggregate below the coverage floor, a `non_finite` result — and the
+ * counter reported exclusions from values that were never written.
+ */
+type CrossInputs = { readonly values: Map<string, number>; readonly excluded: number };
+
+/**
  * `crossInputs` for one `v2` definition (ADR 0055 decisions 11 and 12), or
  * `null` after counting the refusal. A `{CODE.key}` whose code resolved to
  * nothing at the owner's location is `unknown_asset_reference`; a resolved one
  * is classified exactly like a local input. Each aggregate goes through
  * `resolveAggregate` over its declared members, and its exclusions are
- * counted only when a value was actually produced.
+ * **totalled and returned**, for `runScheduledSweep` to count beside
+ * `noteWritten` once the formula has actually produced a value.
+ *
+ * `null` stays the failure sentinel, so every `return refuse(…)` site below is
+ * untouched.
  */
 async function resolveCrossInputs(
   deps: CalcSchedulerDeps,
@@ -129,7 +148,7 @@ async function resolveCrossInputs(
   nowMs: number,
   membership: Membership,
   computedThisTick: ComputedThisTick,
-): Promise<Map<string, number> | null> {
+): Promise<CrossInputs | null> {
   const qualified = membership.qualified.get(def.assetId);
   const members = membership.members.get(def.assetId);
 
@@ -154,7 +173,8 @@ async function resolveCrossInputs(
   );
   const sampleOf = (pair: Pair): CalcInputSample | undefined => samples.get(inputKey(pair.assetId, pair.pointKey));
 
-  const crossInputs = new Map<string, number>();
+  const values = new Map<string, number>();
+  let excluded = 0;
   for (const { ref, key, pairs } of reads) {
     if (ref.kind === "qref") {
       const sample = sampleOf(pairs[0]);
@@ -162,20 +182,28 @@ async function resolveCrossInputs(
       if (classification !== "fresh" || !sample) {
         return refuse(deps, def, classification === "missing" ? "missing_input" : "stale_input", nowMs);
       }
-      crossInputs.set(key, sample.value);
+      values.set(key, sample.value);
       continue;
     }
     const result = resolveAggregate(ref.fn, pairs.map(sampleOf), nowMs, def.maxInputAgeSeconds, def.minCoverageRatio);
     if (!result.ok) {
       return refuse(deps, def, result.reason, nowMs);
     }
-    if (result.excluded > 0) {
-      deps.metrics.countCalcAggregateExcluded(result.excluded);
-    }
-    crossInputs.set(key, result.value);
+    // Accumulated, never counted here — see {@link CrossInputs}. A refusal from
+    // a later reference in this same loop discards the total with the map.
+    excluded += result.excluded;
+    values.set(key, result.value);
   }
-  return crossInputs;
+  return { values, excluded };
 }
+
+/**
+ * One formula's successful pass: the row to write, and the aggregate members
+ * that were excluded from it. Both, together, because the counter's meaning is
+ * "excluded from a value that was still written" — see {@link CrossInputs}.
+ * `null` remains the failure sentinel, so the refusal sites are unchanged.
+ */
+type ScheduledOutcome = { readonly write: CalcWriteInput; readonly excluded: number };
 
 async function evaluateOneScheduledFormula(
   deps: CalcSchedulerDeps,
@@ -183,7 +211,7 @@ async function evaluateOneScheduledFormula(
   nowMs: number,
   membership: Membership,
   computedThisTick: ComputedThisTick,
-): Promise<CalcWriteInput | null> {
+): Promise<ScheduledOutcome | null> {
   // Local references: the overlay first, then one batched read for the rest —
   // a `v1` formula never hits the overlay (its refs are never derived, which
   // `v1_references_derived` holds at read time), so its read is unchanged.
@@ -213,27 +241,34 @@ async function evaluateOneScheduledFormula(
   }
 
   let crossInputs: Map<string, number> | undefined;
+  let excluded = 0;
   if (def.crossRefs.length > 0) {
     const resolved = await resolveCrossInputs(deps, def, nowMs, membership, computedThisTick);
     if (resolved === null) {
       return null;
     }
-    crossInputs = resolved;
+    crossInputs = resolved.values;
+    excluded = resolved.excluded;
   }
 
   const result = evaluate(def.ast, inputs, crossInputs);
   if (!result.ok) {
+    // The last exit above the write, and the reason `excluded` is still only a
+    // number here: a `non_finite` result discards it with everything else.
     return refuse(deps, def, "non_finite", nowMs);
   }
 
   return {
-    assetId: def.assetId,
-    pointKey: def.pointKey,
-    // Tick time truncated to the formula's own interval (ADR 0037 decision
-    // 8) — a late sweep still writes its bucket's timestamp, which is what
-    // keeps a recompute a database no-op and the derived series regular.
-    time: new Date(bucketTimeMs(nowMs, def.intervalSeconds ?? 0)),
-    value: result.value,
+    write: {
+      assetId: def.assetId,
+      pointKey: def.pointKey,
+      // Tick time truncated to the formula's own interval (ADR 0037 decision
+      // 8) — a late sweep still writes its bucket's timestamp, which is what
+      // keeps a recompute a database no-op and the derived series regular.
+      time: new Date(bucketTimeMs(nowMs, def.intervalSeconds ?? 0)),
+      value: result.value,
+    },
+    excluded,
   };
 }
 
@@ -404,9 +439,17 @@ export async function runScheduledSweep(
     try {
       const outcome = await evaluateOneScheduledFormula(deps, def, nowMs, membership ?? EMPTY_MEMBERSHIP, computedThisTick);
       if (outcome) {
-        toWrite.push(outcome);
+        toWrite.push(outcome.write);
         noteWritten(deps, def, nowMs);
-        computedThisTick.set(id, { value: outcome.value, timeMs: outcome.time.getTime() });
+        // **Here, and nowhere deeper.** The counter reads "members excluded
+        // from a value that was still written", so it moves on the same branch
+        // as `noteWritten` — beside the write, not beside the aggregate that
+        // resolved. A formula that resolved one aggregate and then refused on a
+        // later reference never reaches this line.
+        if (outcome.excluded > 0) {
+          deps.metrics.countCalcAggregateExcluded(outcome.excluded);
+        }
+        computedThisTick.set(id, { value: outcome.write.value, timeMs: outcome.write.time.getTime() });
       }
     } catch (err) {
       deps.logger.warn(

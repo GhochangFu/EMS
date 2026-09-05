@@ -222,13 +222,21 @@ async function seedOverrideRow(
   fx: Fixtures,
   assetId: string,
   override: AssetPointCalcOverrideFields,
+  /**
+   * `computed` unless a case says otherwise. `manual` is the one other kind
+   * that can carry these columns and a NULL `rtu_id` —
+   * `asset_points_source_ref_check` requires an RTU for `measured` — and it
+   * stands for the whole "this row is not calc configuration" class that PR 2
+   * review fix 6 is about.
+   */
+  sourceKind: "computed" | "manual" = "computed",
 ): Promise<void> {
   await db.insert(assetPoints).values({
     assetId,
     organizationId: fx.organizationId,
     pointKey: DERIVED_KEY,
-    sourceDataKey: `computed:${DERIVED_KEY}`,
-    sourceKind: "computed",
+    sourceDataKey: sourceKind === "computed" ? `computed:${DERIVED_KEY}` : "manual",
+    sourceKind,
     rtuId: null,
     active: true,
     unit: null,
@@ -265,6 +273,26 @@ const DIALECT_ONLY_V1: AssetPointCalcOverrideFields = {
   calcTrigger: null,
   calcIntervalSeconds: null,
   maxInputAgeSeconds: null,
+};
+
+/**
+ * An override that states **one unrelated column** and nothing about the
+ * formula.
+ *
+ * This is the shape that makes PR 2 review fix 2 visible.
+ * `validateMergedCalcOverride` deliberately does not re-parse a stored formula
+ * for an override like this — a template formula that no longer validates is
+ * `toActiveDefinition`'s counted skip to report, and refusing an unrelated
+ * staleness override for it would strand the asset. So gate one cannot see the
+ * formula at all here, and whatever the target version's formula does is
+ * entirely gate two's to catch.
+ */
+const AGE_ONLY: AssetPointCalcOverrideFields = {
+  formula: null,
+  formulaDialect: null,
+  calcTrigger: null,
+  calcIntervalSeconds: null,
+  maxInputAgeSeconds: 120,
 };
 
 // --- independent SQL readers ------------------------------------------------
@@ -584,5 +612,188 @@ export async function assertARatioOnlyChangeIsReportedByPreview(
   assert(
     (await pinnedVersion(pool, asset)) === 1,
     "a preview writes nothing: the asset must still be pinned to version 1",
+  );
+}
+
+/**
+ * **PR 2 review fix 2 — migrate re-validates BOTH of the override endpoint's
+ * gates, not one of them.**
+ *
+ * `PUT /admin/assets/:id/calc-points/:key` runs `validateMergedCalcOverride`
+ * **and** `CalcDependencyService.checkCandidate`. Migrate ran only the first, so
+ * the docblocks claiming "migrate cannot admit a pair the write path would
+ * refuse" were false as written. Task 13 made `v2` evaluate, which turned that
+ * into a live failure: the asset is repointed, the merged pair is on a cycle,
+ * and the formula stops computing permanently — counted and fail closed, but
+ * stopped, and nobody was told at the moment of the decision.
+ *
+ * **The override here states `max_input_age_seconds` and nothing else**, which
+ * is what makes this case only about gate two. Gate one deliberately does not
+ * re-parse a stored formula for an override that names neither the formula nor
+ * the dialect, so it looks at this pair and finds nothing wrong — asserted
+ * below, with the same function the write path uses, before any migration runs.
+ * A refusal that could have come from either gate would prove nothing about the
+ * one being added.
+ *
+ * The cycle is the one `buildCalcGraph`'s own docblock names: `sum({SELF}
+ * @site)`. `@site` resolves to the active assets at the owner's location that
+ * declare the key, the owner declares it through the version it is pinned to,
+ * so the owner is in its own member set and the node reads itself.
+ *
+ * The control asset carries the same override onto a version whose formula is
+ * an aggregate over the **measured** key: same shape, same dialect, no cycle.
+ * Without it a bug that refused every `v2` aggregate target would pass every
+ * assertion above.
+ */
+export async function assertAnOverrideThatWouldCycleOnTheTargetVersionRefusesAndPinsNothing(
+  pool: pg.Pool,
+  svc: AssetTemplateMigrationService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const sourceDerived: DerivedSpec = { formula: `{${MEASURED_KEY}} * 2` };
+  const cycleDerived: DerivedSpec = { formula: `sum({${DERIVED_KEY}} @site)` };
+  const acyclicDerived: DerivedSpec = { formula: `sum({${MEASURED_KEY}} @site)` };
+
+  const v1 = await seedVersion(db, fx, { version: 1, derived: sourceDerived });
+  const cyclic = await seedVersion(db, fx, { version: 2, derived: cycleDerived });
+  const acyclic = await seedVersion(db, fx, { version: 3, derived: acyclicDerived });
+
+  const onCycle = await seedAsset(db, fx, "CYC", v1);
+  const control = await seedAsset(db, fx, "CYCOK", v1);
+  await seedOverrideRow(db, fx, onCycle, AGE_ONLY);
+  await seedOverrideRow(db, fx, control, AGE_ONLY);
+
+  // The fixture's own gate, twice over. The override must be legal where it
+  // sits, and — the part this case turns on — still legal under gate ONE on the
+  // target version. If gate one refused it, the 409 below would be Task 12b's
+  // refusal wearing this case's name.
+  for (const [label, derived] of [
+    ["version 1", sourceDerived],
+    ["the cyclic target", cycleDerived],
+  ] as const) {
+    const problems = validateMergedCalcOverride(AGE_ONLY, templateFieldsOf(derived), DECLARED);
+    assert(
+      problems.length === 0,
+      `fixture defect: validateMergedCalcOverride already refuses this override on ${label} ` +
+        `(${problems.join(" ")}). This case must be refused by the cycle detector alone, or it ` +
+        `does not test the gate it was written for.`,
+    );
+  }
+
+  const preview = templateMigrationPreviewResponseSchema.parse(
+    await svc.previewMigration(fx.adminJwt, cyclic, { assetIds: [onCycle] }),
+  );
+  assert(
+    preview.canApply === false,
+    "migration-preview must report canApply: false — ADR 0039 decision 2 is about the operator " +
+      "seeing this before pressing the button, not only about migrate throwing once they do",
+  );
+
+  const refusals = await expectRefusal(
+    () => svc.migrate(fx.adminJwt, cyclic, { assetIds: [onCycle] }),
+    "an override merged onto a self-referencing site aggregate",
+  );
+  const refusal = refusals.find((r) => r.reason === "calc_override_invalid_on_target");
+  assert(
+    refusal !== undefined,
+    `expected a calc_override_invalid_on_target refusal, got ` +
+      `[${refusals.map((r) => r.reason).join(", ")}]. The formula change reaches derivedChanged ` +
+      `and never refusals, and gate one does not re-parse a formula this override does not ` +
+      `state — so only the cycle detector can refuse this pair.`,
+  );
+  assert(
+    refusal?.message.includes("dependency cycle") === true,
+    `the refusal must say which gate refused it, got "${String(refusal?.message)}"`,
+  );
+  assert(
+    refusal?.message.includes(DERIVED_KEY) === true,
+    `the refusal must name the point on the cycle, got "${String(refusal?.message)}"`,
+  );
+
+  // Read back with independent SQL. A 409 with the pin moved anyway is the
+  // failure this suite exists to stop, and no response body can see it.
+  assert(
+    (await pinnedVersion(pool, onCycle)) === 1,
+    "the refused asset must still be pinned to version 1 — nothing is written when a plan is " +
+      "refused, and every fallible decision is made before the transaction opens",
+  );
+
+  await svc.migrate(fx.adminJwt, acyclic, { assetIds: [control] });
+  assert(
+    (await pinnedVersion(pool, control)) === 3,
+    "anti-vacuity: the same override migrates onto a version whose aggregate closes no cycle, " +
+      "so the refusal above is about the cycle and not about overrides, or aggregates, or v2",
+  );
+}
+
+/**
+ * **PR 2 review fix 6 — the re-validation reads `source_kind`, not an accident.**
+ *
+ * `buildPlan` iterates every `asset_points` row of every migrating asset, and
+ * used to tell a calc override from a telemetry mapping by the five calc
+ * columns all being NULL. `CalcDefinitionsService.reload()` explicitly refuses
+ * to lean on that accident and filters `source_kind = 'computed'` instead,
+ * "because the accident is one write away" — nothing stops a `manual` row from
+ * carrying a `formula_dialect`, and the moment one does, migration refuses an
+ * asset over a row that is not calc configuration at all.
+ *
+ * The two assets differ in exactly one column. The `manual` one migrates; the
+ * `computed` one is refused — which is the anti-vacuity half, and proves the
+ * fields really would have been read as an override.
+ *
+ * `manual` rather than `measured` only because `asset_points_source_ref_check`
+ * requires an RTU for `measured`; the rule under test is "not `computed`".
+ */
+export async function assertANonComputedRowIsNotReadAsACalcOverride(
+  pool: pg.Pool,
+  svc: AssetTemplateMigrationService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const targetDerived: DerivedSpec = { formula: `sum({${MEASURED_KEY}} @site)` };
+  const v1 = await seedVersion(db, fx, {
+    version: 1,
+    derived: { formula: `{${MEASURED_KEY}} * 2` },
+  });
+  const target = await seedVersion(db, fx, { version: 2, derived: targetDerived });
+
+  const mapped = await seedAsset(db, fx, "MANUAL", v1);
+  const overridden = await seedAsset(db, fx, "COMPUTED", v1);
+  await seedOverrideRow(db, fx, mapped, DIALECT_ONLY_V1, "manual");
+  await seedOverrideRow(db, fx, overridden, DIALECT_ONLY_V1);
+
+  // The fixture's gate, and the reason this case is not vacuous: read as an
+  // override, these exact fields ARE refused on the target version.
+  const problems = validateMergedCalcOverride(
+    DIALECT_ONLY_V1,
+    templateFieldsOf(targetDerived),
+    DECLARED,
+  );
+  assert(
+    problems.length > 0,
+    "fixture defect: these fields are legal on the target version, so \"the manual row " +
+      "migrated\" would say nothing about whether it was read as an override",
+  );
+
+  await svc.migrate(fx.adminJwt, target, { assetIds: [mapped] });
+  assert(
+    (await pinnedVersion(pool, mapped)) === 2,
+    "a source_kind 'manual' row is telemetry wiring, not calc configuration: its columns must " +
+      "not be merged over the target version's derived point, and the migration must apply",
+  );
+
+  const refusals = await expectRefusal(
+    () => svc.migrate(fx.adminJwt, target, { assetIds: [overridden] }),
+    "the same fields on a computed row",
+  );
+  assert(
+    refusals.some((r) => r.reason === "calc_override_invalid_on_target"),
+    `anti-vacuity: the identical fields on a source_kind 'computed' row must still refuse, got ` +
+      `[${refusals.map((r) => r.reason).join(", ")}]`,
+  );
+  assert(
+    (await pinnedVersion(pool, overridden)) === 1,
+    "the refused asset must still be pinned to version 1",
   );
 }

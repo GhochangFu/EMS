@@ -45,7 +45,10 @@ import type { AssetCode, AssetId, CrossRefKey, GraphDefinition, Membership } fro
  * template declares the key, **or** the asset has an active `asset_points`
  * row for it. A hand-created asset with a mapped `kw` has real telemetry and
  * would otherwise be silently missing from a site sum. Inactive assets are
- * never members. **The owner is in its own member set when it declares the
+ * never members — and, since the PR 2 review, never resolve a `{CODE.key}`
+ * either: both statements carry `a.active`, because one decision reached
+ * through two syntaxes must not give two answers. **The owner is in its own
+ * member set when it declares the
  * key** — that is what makes `total_kw = sum({total_kw} @site)` a one-edge
  * cycle `buildCalcGraph` can see, rather than an invisible one.
  */
@@ -207,6 +210,21 @@ export class CalcScopeService {
    * **at the owner's location**; the `WHERE` below is the whole of decision
    * 12's containment for `{CODE.key}`, since `assets.code` is globally unique
    * and the join alone would find the asset wherever it lives.
+   *
+   * **`a.active` is in the same `WHERE`, and it is the same rule statement (1)
+   * applies.** Q5 ruled inactive assets are never members of an aggregate; a
+   * qualified code naming a deactivated asset is the same asset in the same
+   * state, reached through a different syntax, and the two halves of one
+   * decision must not disagree. The reference then resolves to nothing and the
+   * sweep counts `unknown_asset_reference`, which is the honest report:
+   * deactivating an asset is an operator saying "this equipment is not
+   * reporting", and a formula that keeps reading its last stored value
+   * afterwards is decision 5's staleness rule being routed around.
+   *
+   * It lives in the `WHERE` rather than the `JOIN … ON` deliberately:
+   * `tests/adr-0055-calc-v2-invariants.test.ts` part (d) reads this statement's
+   * `WHERE` as the containment clause, and moving either predicate into the
+   * join would leave that scan looking at a clause with nothing in it.
    */
   private async readQualifiedCodes(requests: readonly CodeRequest[]): Promise<Map<string, AssetId>> {
     const out = new Map<string, AssetId>();
@@ -224,7 +242,8 @@ export class CalcScopeService {
           SELECT r.location_id, r.code, a.id AS asset_id
             FROM req r
             JOIN bms.assets a ON a.code = r.code
-           WHERE a.location_id = r.location_id`,
+           WHERE a.location_id = r.location_id
+             AND a.active`,
     );
     for (const row of result.rows) {
       out.set(codeRequestKey({ locationId: row.location_id, code: row.code }), row.asset_id);

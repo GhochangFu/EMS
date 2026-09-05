@@ -219,6 +219,63 @@ export async function assertTheCandidateReplacesItsOwnStoredNode(): Promise<void
   expect(members.map((member) => member.pointKey).sort()).toEqual(["SUB", "TOTAL"]);
 }
 
+/**
+ * **The other half of finding 30, found at the PR 2 review gate: an uncounted
+ * reload must not stamp the cache either.**
+ *
+ * `reload()` refreshes the contents *and* sets `cacheLoadedAt`, and
+ * `ensureFresh()` returns early inside the 60s TTL. So a validation read that
+ * stamped the timestamp would consume the refresh window the next sweep would
+ * have spent on a **counted** reload — and every `v2` override save would
+ * silence the following sweep's skips. The refusals still fire; what is lost is
+ * *detection*, which is the whole of ADR 0037 decision 9. The reasons only a
+ * `reload()` can count are PR 1's runaway backstops: `self_reference`,
+ * `v1_references_derived`, `streaming_on_v2` and
+ * `coverage_ratio_out_of_range`.
+ *
+ * **One instance, not two** — the opposite of the case above, and deliberately
+ * so: the defect exists only across two calls on the same cache.
+ *
+ * Three calls, because "it counted" and "the TTL still works" are both needed.
+ * The third call is the anti-vacuity half: with the stamp deleted outright
+ * rather than made conditional, every read would reload forever and the first
+ * two assertions would still pass.
+ */
+export async function assertAValidationReadDoesNotConsumeTheRefreshWindow(): Promise<void> {
+  const rows = [
+    // Unusable — `no_formula`. The row whose skip a counted reload must report.
+    row({ pointKey: "BAD", templatePointId: "tp-bad", formula: null }),
+    row({ pointKey: "OK", templatePointId: "tp-ok", formula: "{M}" }),
+  ];
+  const { metrics, skips } = recordingMetrics();
+  const defs = new CalcDefinitionsService(stubDb(rows), metrics);
+
+  // 1 — the detector's read. Uncounted, and it must leave the window alone.
+  await defs.getAllDefinitionsFresh();
+  expect(skips, "the validation read itself never counts (finding 30)").toEqual([]);
+
+  // 2 — the sweep, immediately after and well inside the 60s TTL. It must still
+  // reload and still count.
+  await defs.getScheduledDefinitions();
+  expect(
+    skips,
+    "a save-time read must not consume the sweep's refresh window: the next ensureFresh() has to " +
+      "reload and count, or an override save silences the following sweep's skips (ADR 0037 " +
+      "decision 9)",
+  ).toEqual(["no_formula"]);
+
+  // 3 — the TTL is still a TTL. The counted reload above stamped it, so a
+  // second sweep inside the window reloads nothing and counts nothing again.
+  await defs.getAllDefinitionsFresh();
+  await defs.getScheduledDefinitions();
+  expect(
+    skips,
+    "anti-vacuity: an evaluation refresh still stamps the cache, so the same skip is not " +
+      "re-counted every sweep. Deleting the stamp instead of making it conditional would make " +
+      "this list grow.",
+  ).toEqual(["no_formula"]);
+}
+
 /** A candidate that lies on no cycle reports nothing, whatever else does. */
 export async function assertACandidateOffEveryCycleReportsNothing(): Promise<void> {
   const rows = [

@@ -612,17 +612,30 @@ export const templateMigrationRefusalReasonSchema = z.enum([
    * version's declaration of the same derived point, is not a pair this engine
    * will run (findings 31 and 34; ADR 0039 decision 2, "no blind apply").
    *
-   * ## The same rule as the override endpoint, deliberately
+   * ## The same rules as the override endpoint, deliberately
    *
-   * `AssetTemplateMigrationService` calls `validateMergedCalcOverride` — the
-   * one pure function `PUT /admin/assets/:id/calc-points/:key` validates with.
-   * An override states only the columns it sets and inherits the rest, so a new
-   * version can turn a pair that was legal when it was written into one that is
-   * not: a legal dialect-only `bms-calc-v1` override plus a target version
-   * whose formula is `bms-calc-v2` merges to a `v2` formula wearing a `v1`
-   * label, which is a formula no dialect gate reads correctly. Migrate must not
-   * be able to admit what the write path refuses, and two implementations of
-   * one rule is how the two paths drift apart.
+   * This one reason covers **both** of that endpoint's gates, because both are
+   * "the merged pair does not survive the move" and an operator acts on either
+   * the same way — correct or clear the override, then migrate.
+   * `AssetTemplateMigrationService` runs `validateMergedCalcOverride`, the one
+   * pure function `PUT /admin/assets/:id/calc-points/:key` validates with, and
+   * `CalcDependencyService.checkCandidate`, the save-time cycle detector that
+   * endpoint also runs. An override states only the columns it sets and
+   * inherits the rest, so a new version can turn a pair that was legal when it
+   * was written into one that is not: a legal dialect-only `bms-calc-v1`
+   * override plus a target version whose formula is `bms-calc-v2` merges to a
+   * `v2` formula wearing a `v1` label, which is a formula no dialect gate reads
+   * correctly. Two implementations of one rule is how two paths drift apart, so
+   * both are imported rather than restated.
+   *
+   * **The claim is parity, and only parity.** Both gates resolve against the
+   * estate as it stands, exactly as the endpoint resolves them, so a merged
+   * pair migrate admits is one that endpoint would admit at this instant. It is
+   * not a promise that the post-migration graph is acyclic: definitions resolve
+   * through each asset's *current* pin, so the target version's own derived
+   * points join the graph only once the pin moves. ADR 0055 decision 8 puts
+   * that authority on the tick, which refuses such a formula as
+   * `dependency_cycle` — counted, and reported on the asset's own page.
    *
    * ## Why it is checked at migrate and not inside the delta
    *

@@ -130,6 +130,44 @@ export async function assertPairsReadReturnsTheLatestPerPair(pool: pg.Pool): Pro
 }
 
 /**
+ * **One row per pair, and it is the newest** — the assertion that holds the
+ * `LIMIT 1` inside the lateral subquery of `getLatestSamplesForPairs`.
+ *
+ * Isolated from `assertPairsReadReturnsTheLatestPerPair` above, which asks a
+ * different question (the map keys on the pair, not on the point key). Drop
+ * the `LIMIT 1` and this pair yields three rows: the map still ends up with
+ * one entry per pair, because `Map.set` overwrites — but with the **last** row
+ * of the scan rather than the newest sample, and `ORDER BY v.time DESC` inside
+ * the lateral is then the only thing standing between the engine and an
+ * arbitrarily old value. Both halves are asserted, so neither the count nor
+ * the ordering can go missing quietly.
+ */
+export async function assertPairsReadReturnsExactlyOneRowPerPair(pool: pg.Pool): Promise<void> {
+  const svc = new CalcInputsService(pool);
+  const now = new Date();
+  await insertSample(pool, "CALCIN_PAIR_ONE", 11, new Date(now.getTime() - 120_000));
+  await insertSample(pool, "CALCIN_PAIR_ONE", 22, new Date(now.getTime() - 60_000));
+  await insertSample(pool, "CALCIN_PAIR_ONE", 33, now);
+
+  const samples = await svc.getLatestSamplesForPairs([{ assetId: TEST_ASSET_ID, pointKey: "CALCIN_PAIR_ONE" }]);
+
+  assert(
+    samples.size === 1,
+    `one pair with three stored samples must produce exactly one entry, got ${samples.size}`,
+  );
+  const only = samples.get(inputKey(TEST_ASSET_ID, "CALCIN_PAIR_ONE"));
+  assert(
+    only?.value === 33,
+    `the entry must carry the newest sample (value 33), got ${only?.value} — an older row here means ` +
+      "the lateral subquery stopped ordering or stopped limiting",
+  );
+  assert(
+    only?.timeMs === now.getTime(),
+    `the entry's timestamp must be the newest sample's, got ${only?.timeMs} against ${now.getTime()}`,
+  );
+}
+
+/**
  * The same bound as `getLatestSamples`: a pair older than the 7-day read bound
  * is absent, and a pair inside it — even one older than any legal
  * `max_input_age_seconds` — is still returned for the caller to classify.

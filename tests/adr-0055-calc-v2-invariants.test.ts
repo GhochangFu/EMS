@@ -273,18 +273,29 @@ describe("ADR 0055 part (c) — no endpoint restates the calc dialect as a v1 li
  * clause" fails; with the predicate replaced by `a.active`, "must filter on
  * location_id" fails. The in-file anti-vacuity case below re-runs the second
  * of those on every run.
+ *
+ * **Both statements are scanned, not one** (`F2.9` PR 2 review fix 4). The
+ * class docblock in `calc-scope.service.ts` says "do not simplify **either**
+ * statement into a lookup without the owner's location" and names this part as
+ * the reason — while it anchored on `readQualifiedCodes` alone, which made that
+ * sentence a comment claiming a guard that did not exist. The aggregate
+ * statement is if anything the higher-value one: it is a bulk read whose
+ * *output* is the member pair list, and that list is the sole containment on
+ * the pairs read that follows it — one that runs on `TENANT_POOL` against
+ * `telemetry.point_values`, a hypertable with no RLS. Lose `location_id` there
+ * and a site sum silently totals the fleet.
  */
 const CALC_SCOPE_SERVICE = "apps/api/src/calc/calc-scope.service.ts";
 
 /**
- * The SQL template literal of `readQualifiedCodes` — the first `sql\`…\``
- * after the method's **definition**, not its call site, which is why the
- * marker carries `private async`. No backtick may appear inside the SQL, and
- * none does; a comment with one would end the literal early here as it would
- * in the compiler.
+ * The first `sql\`…\`` template literal after `marker` — the method's
+ * **definition**, not its call site, which is why every marker below carries
+ * `private async`. No backtick may appear inside the SQL, and none does; a
+ * comment with one would end the literal early here as it would in the
+ * compiler.
  */
-function qualifiedCodeStatement(source: string): string | null {
-  const definition = source.indexOf("private async readQualifiedCodes(");
+function sqlLiteralAfter(source: string, marker: string): string | null {
+  const definition = source.indexOf(marker);
   if (definition < 0) {
     return null;
   }
@@ -297,6 +308,16 @@ function qualifiedCodeStatement(source: string): string | null {
     return null;
   }
   return source.slice(open + "sql`".length, close);
+}
+
+/** Statement (2) — the qualified-code lookup. */
+function qualifiedCodeStatement(source: string): string | null {
+  return sqlLiteralAfter(source, "private async readQualifiedCodes(");
+}
+
+/** Statement (1) — the aggregate member read. */
+function scopeMemberStatement(source: string): string | null {
+  return sqlLiteralAfter(source, "private async readScopeMembers(");
 }
 
 /** Everything from the statement's first top-level `WHERE` to its end. */
@@ -355,6 +376,92 @@ describe("ADR 0055 part (d) — the qualified-code statement filters on the owne
     expect(containmentDefect(inverted)).toBe("the qualified-code statement's WHERE must filter on location_id");
     const dropped = statement.replace(/\s*WHERE[\s\S]*$/, "");
     expect(containmentDefect(dropped)).toBe("the qualified-code statement must have a WHERE clause");
+  });
+});
+
+/**
+ * The `JOIN bms.assets …` clause of `statement`, up to its `WHERE`.
+ *
+ * **The join, not the whole statement, and not the `WHERE`.** The aggregate
+ * read opens with a `req` CTE that selects `location_id` out of `unnest`, so a
+ * scan of the whole literal for the word would pass with the join predicate
+ * gone — vacuously green, which is worse than absent. The containment for
+ * statement (1) is the `ON` clause: it is what makes a member an asset at the
+ * **owner's** location rather than any asset in the fleet that declares the
+ * key.
+ */
+function assetJoinClause(statement: string): string | null {
+  const match = /\bJOIN\s+bms\.assets\b/.exec(statement);
+  if (match === null) {
+    return null;
+  }
+  const rest = statement.slice(match.index);
+  const where = /\bWHERE\b/.exec(rest);
+  return where === null ? rest : rest.slice(0, where.index);
+}
+
+/** Why `statement` fails statement (1)'s containment rule, or `null`. */
+function memberContainmentDefect(statement: string | null): string | null {
+  if (statement === null) {
+    return "the readScopeMembers statement could not be located";
+  }
+  if (!/\bbms\.assets\b/.test(statement) || !/\bunnest\b/.test(statement)) {
+    return "the located statement does not join bms.assets over an unnested request set — the scan found the wrong literal";
+  }
+  const join = assetJoinClause(statement);
+  if (join === null) {
+    return "the aggregate statement must join bms.assets";
+  }
+  if (!/\blocation_id\b/.test(join)) {
+    return "the aggregate statement's bms.assets join must name the owner's location_id";
+  }
+  return null;
+}
+
+describe("ADR 0055 part (d) — the aggregate member statement joins on the owner's location_id", () => {
+  const source = readFileSync(join(repoRoot, CALC_SCOPE_SERVICE), "utf8");
+
+  it("locates the aggregate statement, so the rule below is not silently vacuous", () => {
+    const statement = scopeMemberStatement(source);
+    expect(statement, `${CALC_SCOPE_SERVICE}: readScopeMembers and its sql template must exist`).not.toBeNull();
+    expect(statement as string).toMatch(/\bJOIN\s+bms\.assets\b/);
+  });
+
+  it("the bms.assets join names location_id (ADR 0055 decision 12)", () => {
+    const defect = memberContainmentDefect(scopeMemberStatement(source));
+    expect(
+      defect,
+      `${CALC_SCOPE_SERVICE}: ${defect ?? ""}\n\n` +
+        "An aggregate's members are the declaring assets at the OWNER's location. The member " +
+        "pair list this statement produces is then the only containment on the pairs read that " +
+        "follows it — a bulk read on TENANT_POOL against telemetry.point_values, which is a " +
+        "hypertable with no RLS. Without this predicate a site sum totals the whole fleet, " +
+        "across organizations, and nothing throws.",
+    ).toBeNull();
+  });
+
+  /**
+   * Anti-vacuity, and it carries the extra weight here. `location_id` appears
+   * four more times in this statement — in the `req` CTE, in the `unnest`
+   * cast list and in the group `EXISTS` — so a check that scanned the literal
+   * rather than the join clause would pass against the mutation below.
+   */
+  it("the analysis kills the mutation it exists to catch", () => {
+    const statement = scopeMemberStatement(source) as string;
+    const weakened = statement.replace(/ON a\.location_id = r\.location_id/, "ON true");
+    expect(weakened, "the mutation did not apply — the join shape changed").not.toBe(statement);
+    expect(memberContainmentDefect(weakened)).toBe(
+      "the aggregate statement's bms.assets join must name the owner's location_id",
+    );
+    expect(
+      /\blocation_id\b/.test(weakened),
+      "the mutated statement still mentions location_id elsewhere, which is exactly why the " +
+        "check reads the join clause and not the whole literal",
+    ).toBe(true);
+    const dropped = statement.replace(/JOIN\s+bms\.assets\b/, "JOIN bms.nothing");
+    expect(memberContainmentDefect(dropped)).toBe(
+      "the located statement does not join bms.assets over an unnested request set — the scan found the wrong literal",
+    );
   });
 });
 

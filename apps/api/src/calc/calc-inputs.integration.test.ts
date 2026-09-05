@@ -9,6 +9,7 @@ import {
   assertEmptyPointKeysReturnsEmptyMap,
   assertOldButWithinBoundSampleIsReturned,
   assertPairsReadOmitsAPairOlderThanTheBound,
+  assertPairsReadReturnsExactlyOneRowPerPair,
   assertPairsReadReturnsTheLatestPerPair,
   assertUnreportedKeyIsAbsent,
   cleanup,
@@ -67,6 +68,11 @@ describe.skipIf(!connectionString)("F2.4 — calc input reader", () => {
   it("pairs read: returns the latest sample per (asset, key) pair, not per key", async () => {
     if (!pool) throw new Error("pool required");
     await assertPairsReadReturnsTheLatestPerPair(pool);
+  });
+
+  it("pairs read: returns exactly one row per pair, and it is the newest sample", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertPairsReadReturnsExactlyOneRowPerPair(pool);
   });
 
   it("pairs read: omits a pair older than the 7-day bound and keeps one inside it", async () => {

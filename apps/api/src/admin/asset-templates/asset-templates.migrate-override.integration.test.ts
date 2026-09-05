@@ -5,6 +5,10 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import { createDb } from "@bms/db";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { CalcDefinitionsService } from "../../calc/calc-definitions.service";
+import { CalcDependencyService } from "../../calc/calc-dependency.service";
+import { CalcScopeService } from "../../calc/calc-scope.service";
+import { MetricsService } from "../../observability/metrics.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { registerFixturePointKeys } from "../../testing/integration-fixtures";
 import { asRole } from "../../testing/role-urls";
@@ -15,9 +19,11 @@ import {
   DERIVED_KEY,
   LATER_MEASURED_KEY,
   MEASURED_KEY,
+  assertANonComputedRowIsNotReadAsACalcOverride,
   assertARatioOnlyChangeIsReportedByPreview,
   assertAnOverrideMadeIllegalByTheTargetVersionRefusesAndPinsNothing,
   assertAnOverrideStillLegalOnTheTargetVersionMigrates,
+  assertAnOverrideThatWouldCycleOnTheTargetVersionRefusesAndPinsNothing,
   cleanup,
 } from "./asset-templates.migrate-override.integration.spec";
 
@@ -69,6 +75,13 @@ describe.skipIf(!connectionString)("F2.9 Task 12b — migration re-validates the
       tenantDb,
       new AccessControlService(createDb(authPool), fleetDb),
       new MasterDataAuditService(tenantDb, fleetDb),
+      // `F2.9` PR 2 review fix 2 — migrate now runs the override endpoint's
+      // cycle detector as well, so this hand-wired service needs the real one.
+      new CalcDependencyService(
+        fleetDb,
+        new CalcDefinitionsService(fleetDb, new MetricsService()),
+        new CalcScopeService(fleetDb),
+      ),
     );
     // `0057`/`0058` give both `asset_points.point_key` and
     // `template_points.point_key` a foreign key onto `point_keys(code)`. These
@@ -113,5 +126,15 @@ describe.skipIf(!connectionString)("F2.9 Task 12b — migration re-validates the
   it("reports a min_coverage_ratio-only change in migration-preview (finding 31)", async () => {
     if (!pool) throw new Error("pool required");
     await assertARatioOnlyChangeIsReportedByPreview(pool, svc, fx);
+  });
+
+  it("refuses a migration whose target version would put the override on a dependency cycle", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertAnOverrideThatWouldCycleOnTheTargetVersionRefusesAndPinsNothing(pool, svc, fx);
+  });
+
+  it("does not read a non-computed asset_points row as a calc override", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertANonComputedRowIsNotReadAsACalcOverride(pool, svc, fx);
   });
 });

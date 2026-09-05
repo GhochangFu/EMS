@@ -22,20 +22,18 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+// `F2.9` PR 2 review fix 2 — the override endpoint's *second* gate. Exported by
+// `CalcModule`, which `AdminModule` already imports.
+import { CalcDependencyService } from "../../calc/calc-dependency.service";
 import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
-// `F2.9` Task 12b — the override endpoint's own merge rules, imported rather
-// than restated. See the re-validation block in `buildPlan`.
-import { validateMergedCalcOverride } from "../asset-points/asset-point-calc-override.schema";
 import { MasterDataAuditService } from "../master-data-audit.service";
+// `F2.9` Task 12b, widened at the PR 2 review — the override endpoint's own two
+// gates, imported rather than restated. See that file's docblock.
+import { refuseOverridesThatDoNotSurvive } from "./asset-templates-migrate-calc";
 import type { MigrateAssetsBody } from "./asset-templates-migrate.schema";
-import {
-  CALC_FIELDS,
-  calcFieldsOf,
-  computeTemplateVersionDelta,
-  type StoredTemplatePoint,
-} from "./template-version-delta";
+import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./template-version-delta";
 
 /**
  * `F2.6` — moving assets from one published template version to another
@@ -78,12 +76,14 @@ import {
  *   leaving `assets.domain` alone would make the pin and the asset disagree,
  *   which is the one thing ADR 0015's identity invariant exists to prevent.
  * - **`F2.9` Task 12b** — a migrating asset's own calc override, merged over
- *   the target version's declaration of the same derived point, that
- *   `validateMergedCalcOverride` refuses. The delta is pure over two template
- *   versions and never sees an override, so without this the pin could move
- *   under a legal dialect-only override and leave a `bms-calc-v2` formula
+ *   the target version's declaration of the same derived point, that either of
+ *   the override endpoint's two gates refuses: `validateMergedCalcOverride`,
+ *   or `CalcDependencyService.checkCandidate`. The delta is pure over two
+ *   template versions and never sees an override, so without this the pin could
+ *   move under a legal dialect-only override and leave a `bms-calc-v2` formula
  *   wearing a `bms-calc-v1` label — a pair no code path had validated
- *   (findings 31 and 34).
+ *   (findings 31 and 34). `asset-templates-migrate-calc.ts` holds both, and
+ *   states exactly what parity with that endpoint does and does not claim.
  */
 
 type TemplateRow = typeof assetTemplates.$inferSelect;
@@ -174,6 +174,10 @@ export class AssetTemplateMigrationService {
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    // `F2.9` PR 2 review fix 2 — the save-time cycle detector, the same
+    // instance `AssetPointCalcOverrideService` uses. Read-only: it resolves a
+    // graph and reports, and writes nothing.
+    private readonly dependencies: CalcDependencyService,
   ) {}
 
   /**
@@ -740,86 +744,32 @@ export class AssetTemplateMigrationService {
 
       // --- the surviving override, re-validated (`F2.9` Task 12b) ----------
       //
-      // ADR 0039 decision 2, "no blind apply", for the one input the delta
-      // cannot see. `computeTemplateVersionDelta` is pure over two arrays of
-      // *template* points: a derived point's formula or dialect change lands in
-      // `derivedChanged`, never in `refusals`, and an asset's override is not
-      // one of its inputs. So the pin could move under a legal override and
-      // leave a pair **no code path had ever validated** — a dialect-only
-      // `bms-calc-v1` override plus a target version whose same point carries a
-      // `bms-calc-v2` formula merges to a `v2` formula wearing a `v1` label,
-      // which is finding 34's runaway reached from the side. The read-time
-      // refusals in `toActiveDefinition` and `CalcDefinitionsService.reload()`
-      // bound the damage; they do not stop the migration that causes it.
-      //
-      // **`validateMergedCalcOverride` is the override endpoint's own
-      // function**, not a second implementation of its rules. Migrate must not
-      // be able to admit a pair `PUT /admin/assets/:id/calc-points/:key` would
-      // refuse — the two are authors for one engine, and two copies of one rule
-      // is how they drift. It inherits that function's boundary as well: an
-      // override that states neither `formula` nor `formulaDialect` does not
-      // re-parse the stored formula, because a template formula that no longer
-      // validates is `toActiveDefinition`'s counted skip to report and refusing
-      // an unrelated interval override for it would strand the asset.
-      //
-      // `declared` comes from the **target** version, since that is the
-      // declaration the merged pair will resolve against once the pin moves.
-      const targetDerived = new Map(
-        targetPoints.filter((point) => point.kind === "derived").map((point) => [point.pointKey, point]),
-      );
-      const declared = {
-        // Measured only for `v1`, every declared key for `v2` — ADR 0055
-        // decision 7, picked between by the function itself.
-        measured: targetPoints.filter((point) => point.kind === "measured").map((p) => p.pointKey),
-        all: targetPoints.map((point) => point.pointKey),
-      };
-
-      for (const asset of planned) {
-        const forAsset = existingByAsset.get(asset.dto.assetId);
-        if (!forAsset) {
-          continue;
-        }
-        for (const [pointKey, row] of forAsset) {
-          const declaredPoint = targetDerived.get(pointKey);
-          if (declaredPoint === undefined) {
-            // The target version does not declare this key as derived. Nothing
-            // merges, so there is nothing to validate — a measured collision is
-            // the loop above's refusal, and a key the version drops is the
-            // delta's.
-            continue;
-          }
-          const override = calcFieldsOf(row);
-          if (CALC_FIELDS.every((field) => override[field] === null)) {
-            // Five NULLs is exactly what "no override" means (the row survives
-            // a clear). Such an asset inherits the target version whole, which
-            // is the migration working as designed, and validating the
-            // template against itself here would refuse assets for a defect
-            // that belongs to the version author.
-            continue;
-          }
-          const problems = validateMergedCalcOverride(
-            override,
-            calcFieldsOf(declaredPoint),
-            declared,
-          );
-          if (problems.length > 0) {
-            refuse({
-              reason: "calc_override_invalid_on_target",
-              pointKey,
-              assetCount: 1,
-              message:
-                `Asset "${asset.dto.assetCode}": its calc override on derived point ` +
-                `"${pointKey}" does not survive the move to version ${target.version}. ` +
-                `${problems.join(" ")} An override states only the columns it sets and ` +
-                "inherits the rest, so a new version's formula or dialect can turn a pair " +
-                "that was legal when it was written into one this engine will not run. " +
-                "Migration refuses it rather than repointing the asset and leaving it to be " +
-                "discovered as a skipped calculation (ADR 0039 decision 2). Clear or correct " +
-                "the override first, then migrate.",
-            });
-          }
-        }
-      }
+      // Both gates live in `asset-templates-migrate-calc.ts`, whose docblock
+      // carries the whole argument: why migrate re-runs the override
+      // endpoint's own two checks rather than restating them, and exactly
+      // what parity with that endpoint does and does not claim. Called here,
+      // before the transaction opens, like every other fallible decision.
+      await refuseOverridesThatDoNotSurvive({
+        assets: planned
+          .filter((asset) => existingByAsset.has(asset.dto.assetId))
+          .map((asset) => ({
+            assetId: asset.dto.assetId,
+            assetCode: asset.dto.assetCode,
+            rows: existingByAsset.get(asset.dto.assetId) as Map<string, ExistingPointRow>,
+          })),
+        targetPoints,
+        // Read only when some migrating asset actually carries a `computed`
+        // row. Most migrations have no override at all, and this service does
+        // not resolve what it does not need before the transaction. The empty
+        // map is not a silent skip: the gate treats a missing id as "cannot
+        // build a candidate node" and there is nothing to check anyway.
+        targetPointIdsByKey: existingRows.some((row) => row.sourceKind === "computed")
+          ? await this.pointIdsByKey(target.id)
+          : new Map<string, string>(),
+        targetVersion: target.version,
+        dependencies: this.dependencies,
+        refuse,
+      });
     }
 
     return {
@@ -842,6 +792,24 @@ export class AssetTemplateMigrationService {
       throw new NotFoundException("Asset template not found");
     }
     return row;
+  }
+
+  /**
+   * `template_points.id` by point key, for one version.
+   *
+   * A second, narrow read rather than a column on {@link loadPoints}: that
+   * projection is "the subset of a stored row `computeTemplateVersionDelta`
+   * reads", and the id is not one of them — widening it would put a field on
+   * the delta's input type that the delta never looks at. Read once per plan,
+   * on the same `fleetDb` and for the same E7.1b reason as every other
+   * `template_points` read here.
+   */
+  private async pointIdsByKey(templateId: string): Promise<Map<string, string>> {
+    const rows = await this.fleetDb
+      .select({ id: templatePoints.id, pointKey: templatePoints.pointKey })
+      .from(templatePoints)
+      .where(eq(templatePoints.templateId, templateId));
+    return new Map(rows.map((row) => [row.pointKey, row.id]));
   }
 
   private async loadPoints(templateId: string): Promise<StoredTemplatePoint[]> {

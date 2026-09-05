@@ -7,6 +7,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { registerFixturePointKeys } from "../testing/integration-fixtures";
 import {
   assertAnUnknownOwnerResolvesToNullAndEmpty,
+  assertAQualifiedCodeDoesNotResolveToAnInactiveAsset,
   assertDomainNarrowsToTheDeclarersInThatDomain,
   assertGroupResolvesAtTheOwnersLocationOnly,
   assertNoCrossRefsQueriesNothing,
@@ -91,6 +92,11 @@ describe.skipIf(!connectionString)("F2.9 — calc scope resolver", () => {
   it("a qualified code resolves at the owner's location only: W and F are null, present; Y is its id", async () => {
     if (!pool) throw new Error("pool required");
     await assertQualifiedCodesAreContainedByTheOwnersLocation(pool, fixture);
+  });
+
+  it("a qualified code naming a deactivated asset at the owner's own location resolves to null", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertAQualifiedCodeDoesNotResolveToAnInactiveAsset(pool, fixture);
   });
 
   it("an owner with no asset row resolves to null and [] with every key present", async () => {

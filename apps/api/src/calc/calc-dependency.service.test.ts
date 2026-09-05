@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertACandidateOffEveryCycleReportsNothing,
+  assertAValidationReadDoesNotConsumeTheRefreshWindow,
   assertTheCandidateReplacesItsOwnStoredNode,
   assertTheDetectorsReadDoesNotCountSkips,
 } from "./calc-dependency.service.spec";
@@ -10,6 +11,10 @@ import {
 describe("F2.9 — CalcDependencyService, the save-time cycle detector", () => {
   it("resolves without counting a skip, and still sees the stored definitions", async () => {
     await assertTheDetectorsReadDoesNotCountSkips();
+  });
+
+  it("does not consume the sweep's refresh window: the next ensureFresh() still reloads and counts", async () => {
+    await assertAValidationReadDoesNotConsumeTheRefreshWindow();
   });
 
   it("replaces the stored definition for the candidate's own key", async () => {

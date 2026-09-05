@@ -66,6 +66,33 @@ export type CalcCycleMember = { readonly assetCode: string; readonly pointKey: s
  *
  * **Only members are reported** (plan design decision 7, the owner's Q6
  * ruling): a formula *downstream* of a cycle is not on it and must save.
+ *
+ * **The two detectors share a builder and a sort, and are fed different node
+ * sets. Written down because part (a) cannot see it** (PR 2 review fix 8).
+ * Decision 8's "one builder" is machine-held by
+ * `tests/adr-0055-calc-v2-invariants.test.ts` part (a) — but that scan reads
+ * *source structure*, so it is blind to what each caller passes in. The sweep
+ * builds from `getScheduledDefinitions()`; this service builds from
+ * `getAllDefinitionsFresh()`, which is every active definition. The difference
+ * is therefore exactly the **streaming** definitions.
+ *
+ * It cannot matter today, and the reason is a conjunction rather than a
+ * coincidence: a streaming definition is `bms-calc-v1` by construction —
+ * `toActiveDefinition` refuses `streaming_on_v2` — so it carries no
+ * `crossRefs`, and its local `refs` cannot name a derived sibling either,
+ * because `referencesADerivedSiblingUnderV1` filters those out of the cache
+ * before either caller sees them. Every extra node this service holds is
+ * therefore isolated: it draws no edge in and no edge out, and cannot join,
+ * break or extend a cycle.
+ *
+ * **What would break it.** Repealing `streaming_on_v2`, or letting a `v1`
+ * formula reference a derived point, would make those nodes edge-bearing at
+ * once — and then this detector would answer a question about a graph the
+ * sweep never evaluates, in the direction that is hardest to see: it would
+ * refuse a save for a cycle that runs through a streaming node the tick would
+ * never place on one. The fix at that point is to feed both from one selector,
+ * not to widen this note. Decision 8 exists to stop precisely this drift, which
+ * is why the difference is recorded here rather than left to be rediscovered.
  */
 @Injectable()
 export class CalcDependencyService {

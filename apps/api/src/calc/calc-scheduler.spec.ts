@@ -14,12 +14,12 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-type Pair = { assetId: string; pointKey: string };
+export type Pair = { assetId: string; pointKey: string };
 
 const EMPTY_MEMBERSHIP: Membership = { qualified: new Map(), members: new Map() };
 
 /** A `Membership` from tuples — the same shape `calc-graph.spec.ts` builds. */
-function membershipOf(
+export function membershipOf(
   qualified: readonly (readonly [string, readonly (readonly [string, string | null])[]])[] = [],
   members: readonly (readonly [string, readonly (readonly [string, readonly Pair[]])[]])[] = [],
 ): Membership {
@@ -31,7 +31,7 @@ function membershipOf(
 
 /** The one aggregate a fixture formula carries, keyed by `crossRefKey` over
  * the parsed node — never hand-written (plan correction 49). */
-function aggregateKeyOf(definition: CalcDefinition): string {
+export function aggregateKeyOf(definition: CalcDefinition): string {
   const node = definition.crossRefs.find((ref) => ref.kind === "aggregate");
   if (!node) {
     throw new Error(`fixture ${definition.pointKey} must carry an aggregate`);
