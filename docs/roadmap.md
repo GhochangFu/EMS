@@ -1878,6 +1878,39 @@ Process (`AGENTS.md` §10).
   qualifier and no aggregate function, so `estimatePue()`'s cross-asset sum
   stays inexpressible as a derived tag without an ADR 0036 amendment or a
   site-level rollup asset — recorded on `F2.8`'s own `docs/BACKLOG.md` row.
+  **That amendment arrived as ADR 0055 and shipped on 2026-09-05 (`F2.9`, PRs
+  #324 and #325), so `F2.8` is startable.**
+
+### Cross-asset aggregation & balance calculations (`F2.9`, ADR 0055) — done
+
+- **Status:** merged 2026-09-05 in two PRs — #324 (`51eeca3`) and #325
+  (`65bd7ec`).
+- **What it was.** ADR 0036 decision 7 forbade a derived point referencing
+  another derived point, and `bms-calc-v1` references carry no asset
+  qualifier — so a site total, an efficiency ratio and `estimatePue()`'s
+  cross-asset sum were all inexpressible as derived tags. ADR 0055 repealed
+  that ban rather than narrowing it, for a **new** dialect, and accepted the
+  dependency-ordering and cycle-detection cost the repeal carries.
+- **Why two PRs.** The first shipped the grammar, the column and the write
+  guards while the engine **deliberately refused** to evaluate `v2`, counted
+  rather than silent. That refusal was the honest state between the two: the
+  dialect could be stored and validated before anything could compute it, and
+  a local-only `v2` formula evaluated as if it were `v1` would have compounded
+  its own value every tick. The second removed the refusal together with the
+  ordering pass, membership resolution and cycle detection — only together,
+  which is the whole reason the refusal existed.
+- **What holds it.** One graph builder feeds both detectors, held by a source
+  scan rather than by care. Membership resolves at the **owning asset's**
+  location on both reference forms: `assets.code` is globally unique, so
+  without that filter a formula would read another site's — and another
+  tenant's — telemetry and produce a plausible wrong number. A `null`
+  coverage ratio means **fail closed**, never "no limit".
+- **`v1` is frozen forever** (decision 3), and that is enforced at read time as
+  well as write time, because the failure it guards against is a stored dialect
+  label that disagrees with the formula beside it.
+- **Read the plan before touching this code.**
+  `docs/plans/f2.9-cross-asset-calc-v2.md` carries 67 numbered corrections, and
+  its body is stale wherever they correct it.
 
 ### Template authoring UI + formula editor (`F2.5`, ADR 0038) — done
 
