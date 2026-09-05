@@ -107,7 +107,8 @@ export class CalcDependencyService {
   ) {}
 
   /**
-   * The cycle `candidate` would lie on, or an empty list.
+   * The cycle each candidate would lie on — **one fleet-wide read for the whole
+   * batch**, whatever its size.
    *
    * Four steps, in this order for reasons that are not interchangeable:
    *
@@ -116,7 +117,7 @@ export class CalcDependencyService {
    *    detector would admit the very edge that closes the loop. That read is
    *    also the one that must not move `bms_api_calc_skipped_total`
    *    (finding 30) — the exemption lives in `CalcDefinitionsService`.
-   * 2. the candidate **replaces** the stored definition for its own
+   * 2. each candidate **replaces** the stored definition for its own
    *    `(assetId, pointKey)`, or is appended when none exists.
    *    `buildCalcGraph` keeps the first node it sees for an id and drops the
    *    rest, so appending beside the stored row would silently check the
@@ -126,57 +127,129 @@ export class CalcDependencyService {
    *    that can reach it back. A node the candidate merely reads, or one that
    *    merely reads the candidate, is on no cycle with it and is not reported.
    *
-   * @param candidate the formula about to be written, already parsed
-   * @returns each point on the candidate's cycle, the candidate included;
-   *   empty when the merged graph is acyclic through it
+   * **Why the batch form exists.** Steps 1 and 3 are both `O(estate)`: a
+   * fleet-wide definition reload with a parse per definition, then three
+   * fleet-wide membership queries over the whole definition set. Template
+   * migration checks one candidate per migrating asset that carries a
+   * `computed` override, so running the two per candidate makes a batch of `N`
+   * assets cost `N` fleet-wide reads — quadratic in a growing estate, not
+   * merely slow at today's size.
+   *
+   * **What is shared, and why sharing it is safe.** The definition read and the
+   * membership resolution, and nothing else.
+   *
+   * Membership is resolved over the **union** of the stored definitions and
+   * every candidate, so no candidate's own cross references are missing from
+   * the map. That union is a *superset* of what any one candidate's own
+   * resolution would produce, and a superset is consulted identically:
+   * `resolveMembership` keys its answers by owner asset and by the reference
+   * itself, and each answer is a pure function of the owner's location and that
+   * reference alone — never of which other definitions were in the input. Two
+   * definitions on one asset holding the same reference already collapse to one
+   * request there. `buildCalcGraph` then looks up only the references the node
+   * in front of it actually holds, so an entry a sibling candidate contributed
+   * is never read, and an entry this candidate needs is the same entry it would
+   * have computed alone.
+   *
+   * **What is deliberately not shared: the graph.** Each candidate is built
+   * against the stored estate plus *itself*, never plus its siblings — one
+   * graph and one sort per candidate, over the shared membership. This is not
+   * an optimization left on the table; sharing it would change the answer. Two
+   * candidates in one batch that read each other close a cycle **together**
+   * that neither closes alone, and a shared graph would refuse both — a
+   * migration refused for a loop that exists in no single write, which is the
+   * opposite of the parity `asset-templates-migrate-calc.ts` claims. The
+   * per-candidate build and sort are pure and in memory; the reads were the
+   * cost.
+   *
+   * @param candidates the formulas about to be written, already parsed
+   * @returns one entry per candidate, **in the caller's order** — each point on
+   *   that candidate's cycle, the candidate included; empty when the merged
+   *   graph is acyclic through it
    */
-  async checkCandidate(candidate: CalcCandidate): Promise<CalcCycleMember[]> {
+  async checkCandidates(candidates: readonly CalcCandidate[]): Promise<CalcCycleMember[][]> {
+    if (candidates.length === 0) {
+      // Before the read, not after. Most migrations carry no `v2` override at
+      // all, and this service does not reload the estate to answer nothing.
+      return [];
+    }
     const stored = await this.definitions.getAllDefinitionsFresh();
 
-    const candidateDefinition: GraphDefinition = {
+    const candidateDefinitions: GraphDefinition[] = candidates.map((candidate) => ({
       assetId: candidate.assetId,
       pointKey: candidate.pointKey,
       templatePointId: candidate.templatePointId,
       refs: [...candidate.localRefs],
       crossRefs: [...candidate.crossRefs],
-    };
-    const candidateId = inputKey(candidate.assetId, candidate.pointKey);
-
-    let replaced = false;
-    const defs: GraphDefinition[] = stored.map((def) => {
-      if (inputKey(def.assetId, def.pointKey) !== candidateId) {
-        return def;
-      }
-      replaced = true;
-      return candidateDefinition;
-    });
-    if (!replaced) {
-      defs.push(candidateDefinition);
-    }
-
-    const membership = await this.scope.resolveMembership(defs);
-    const graph = buildCalcGraph(defs, membership);
-    const { cyclic } = topologicalOrder(graph);
-    if (!cyclic.has(candidateId)) {
-      return [];
-    }
-
-    const reachedByCandidate = reachableFrom(candidateId, graph.dependsOn);
-    const members = graph.nodes.filter(
-      (node) =>
-        cyclic.has(node.id) &&
-        reachedByCandidate.has(node.id) &&
-        reachableFrom(node.id, graph.dependsOn).has(candidateId),
-    );
-
-    const codeByAsset = await this.readAssetCodes([...new Set(members.map((node) => node.assetId))]);
-    return members.map((node) => ({
-      // The id is the fallback only for an asset deleted between the
-      // definition read and this one — it names nothing an operator can act
-      // on, but it is not a formula and it is not silence.
-      assetCode: codeByAsset.get(node.assetId) ?? node.assetId,
-      pointKey: node.pointKey,
     }));
+    const membership = await this.scope.resolveMembership([...stored, ...candidateDefinitions]);
+
+    const membersByCandidate = candidates.map((candidate, index) => {
+      const candidateDefinition = candidateDefinitions[index];
+      const candidateId = inputKey(candidate.assetId, candidate.pointKey);
+
+      let replaced = false;
+      const defs: GraphDefinition[] = stored.map((def) => {
+        if (inputKey(def.assetId, def.pointKey) !== candidateId) {
+          return def;
+        }
+        replaced = true;
+        return candidateDefinition;
+      });
+      if (!replaced) {
+        defs.push(candidateDefinition);
+      }
+
+      const graph = buildCalcGraph(defs, membership);
+      const { cyclic } = topologicalOrder(graph);
+      if (!cyclic.has(candidateId)) {
+        return [];
+      }
+
+      const reachedByCandidate = reachableFrom(candidateId, graph.dependsOn);
+      return graph.nodes.filter(
+        (node) =>
+          cyclic.has(node.id) &&
+          reachedByCandidate.has(node.id) &&
+          reachableFrom(node.id, graph.dependsOn).has(candidateId),
+      );
+    });
+
+    // One code lookup for the batch, and still only over the assets some
+    // candidate actually reports: a batch that finds no cycle reads nothing.
+    const codeByAsset = await this.readAssetCodes([
+      ...new Set(membersByCandidate.flat().map((node) => node.assetId)),
+    ]);
+    return membersByCandidate.map((members) =>
+      members.map((node) => ({
+        // The id is the fallback only for an asset deleted between the
+        // definition read and this one — it names nothing an operator can act
+        // on, but it is not a formula and it is not silence.
+        assetCode: codeByAsset.get(node.assetId) ?? node.assetId,
+        pointKey: node.pointKey,
+      })),
+    );
+  }
+
+  /**
+   * The cycle `candidate` would lie on, or an empty list — the one-candidate
+   * form, for the write path that has exactly one.
+   *
+   * **Expressed in terms of `checkCandidates`, not written beside it.** ADR
+   * 0055 decision 8's "one builder, not two implementations" is a rule about
+   * this pair as much as about the graph: a save-time detector that drifted
+   * from the migration-time one would admit a pair migration refuses, or refuse
+   * one it admits, and neither end could see it. `PUT
+   * /admin/assets/:id/calc-points/:key` has one candidate per request, so the
+   * batch of one is the correct shape there and costs exactly what it did.
+   *
+   * @param candidate the formula about to be written, already parsed
+   * @returns each point on the candidate's cycle, the candidate included;
+   *   empty when the merged graph is acyclic through it
+   */
+  async checkCandidate(candidate: CalcCandidate): Promise<CalcCycleMember[]> {
+    const [members] = await this.checkCandidates([candidate]);
+    return members;
   }
 
   /** `bms.assets.code` for the reported members only — one batched read, and

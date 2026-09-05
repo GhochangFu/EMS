@@ -7,6 +7,7 @@ import { MetricsService } from "../observability/metrics.service";
 import type { TemplatePointCalcRow } from "./calc-definition";
 import { CalcDefinitionsService } from "./calc-definitions.service";
 import { CalcDependencyService } from "./calc-dependency.service";
+import type { CalcCandidate } from "./calc-dependency.service";
 import { CalcScopeService } from "./calc-scope.service";
 
 /**
@@ -274,6 +275,114 @@ export async function assertAValidationReadDoesNotConsumeTheRefreshWindow(): Pro
       "re-counted every sweep. Deleting the stamp instead of making it conditional would make " +
       "this list grow.",
   ).toEqual(["no_formula"]);
+}
+
+/**
+ * A detector whose two **fleet-wide** reads are counted rather than assumed.
+ *
+ * `getAllDefinitionsFresh()` reloads every derived definition in the estate and
+ * parses each one; `resolveMembership` runs three more fleet queries over that
+ * whole set. Both are `O(estate)`, and neither is visible from the outside — a
+ * caller that runs them once per candidate returns exactly the same answers as
+ * one that runs them once. So the property has to be counted at the seam.
+ *
+ * The real services underneath, with one method each wrapped: the counting must
+ * not change what is read, or a green count would say nothing about the code
+ * that ships. Same shape as `recordingMetrics` above.
+ */
+function countingDetector(rows: TemplatePointCalcRow[]): {
+  detector: CalcDependencyService;
+  counts: { definitionReads: number; membershipResolutions: number };
+} {
+  const counts = { definitionReads: 0, membershipResolutions: 0 };
+
+  const defs = new CalcDefinitionsService(stubDb(rows), recordingMetrics().metrics);
+  const readDefinitions = defs.getAllDefinitionsFresh.bind(defs);
+  defs.getAllDefinitionsFresh = async () => {
+    counts.definitionReads += 1;
+    return readDefinitions();
+  };
+
+  const scope = scopeOverNoDatabase();
+  const resolveMembership = scope.resolveMembership.bind(scope);
+  scope.resolveMembership = async (definitions) => {
+    counts.membershipResolutions += 1;
+    return resolveMembership(definitions);
+  };
+
+  return { detector: new CalcDependencyService(stubDb(rows), defs, scope), counts };
+}
+
+/**
+ * **The batch resolves once for the whole batch** — one definition read and one
+ * membership resolution for `N` candidates, not `N` of each.
+ *
+ * Template migration checks one candidate per migrating asset that carries a
+ * `computed` override. Both shared reads are `O(estate)`, so a per-candidate
+ * call makes a batch of `N` assets cost `N` fleet-wide reads: the wall clock is
+ * `O(assets × estate)`, quadratic as the estate grows. The number is tolerable
+ * at today's size and the shape is not, which is why the property held here is
+ * the count and not a duration — a timing assertion would be flaky and would
+ * still pass on the quadratic shape at a small enough estate.
+ *
+ * **Three assertions, because "it read once" is also what reading nothing looks
+ * like:**
+ *
+ *  - the counts are 1 and 1 over four candidates;
+ *  - the first candidate still finds its cycle, which it can only do by having
+ *    seen the stored definition through that single read;
+ *  - **`P` and `Q` — which read each other — each report nothing.** This is the
+ *    half a count cannot hold: the graph is deliberately *not* shared. Each
+ *    candidate is built against the stored estate plus itself alone, so `P{Q}`
+ *    finds no `Q` node and `Q{P}` finds no `P` node. Sharing one graph across
+ *    the batch would make them a two-cycle and refuse both — a migration
+ *    refused for a loop that exists in no single write, and the one
+ *    optimization on this path that changes the answer.
+ */
+export async function assertTheBatchResolvesOnceForTheWholeBatch(): Promise<void> {
+  // The stored estate: `D` reads `E`, and nothing declares `P` or `Q`.
+  const rows = [row({ pointKey: "D", templatePointId: "tp-d", formula: "{E}" })];
+  const { detector, counts } = countingDetector(rows);
+
+  const candidate = (pointKey: string, localRefs: string[]): CalcCandidate => ({
+    assetId: ASSET,
+    pointKey,
+    templatePointId: `tp-${pointKey.toLowerCase()}`,
+    dialect: CALC_DIALECT_V2,
+    localRefs,
+    crossRefs: [],
+  });
+
+  const cycles = await detector.checkCandidates([
+    // On the cycle: the stored `D` reads `E`, and this `E` reads `D` back.
+    candidate("E", ["D"]),
+    // Reads the cycle, is not on it.
+    candidate("FAR", ["D"]),
+    // A pair that is a cycle only if the two are merged into one graph.
+    candidate("P", ["Q"]),
+    candidate("Q", ["P"]),
+  ]);
+
+  expect(cycles.length, "one answer per candidate, in the caller's order").toBe(4);
+  expect(
+    cycles[0].map((member) => member.pointKey).sort(),
+    "anti-vacuity: the batch must have read the stored definition and found the cycle, or one " +
+      'read would just mean "it read nothing"',
+  ).toEqual(["D", "E"]);
+  expect(cycles[1], "a candidate that merely reads a cycle is not on it (the Q6 ruling)").toEqual([]);
+
+  expect(
+    [cycles[2], cycles[3]],
+    "the graph must NOT be shared across the batch: P and Q close a cycle only together, and " +
+      "neither closes one against the stored estate alone. Building one graph over every " +
+      "candidate would refuse a migration for a loop that exists in no single write.",
+  ).toEqual([[], []]);
+
+  expect(
+    counts,
+    "both fleet-wide reads are resolved once for the whole batch. One per candidate is " +
+      "O(assets × estate) — tolerable at today's size, quadratic as the estate grows.",
+  ).toEqual({ definitionReads: 1, membershipResolutions: 1 });
 }
 
 /** A candidate that lies on no cycle reports nothing, whatever else does. */

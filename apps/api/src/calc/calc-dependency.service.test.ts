@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertACandidateOffEveryCycleReportsNothing,
   assertAValidationReadDoesNotConsumeTheRefreshWindow,
+  assertTheBatchResolvesOnceForTheWholeBatch,
   assertTheCandidateReplacesItsOwnStoredNode,
   assertTheDetectorsReadDoesNotCountSkips,
 } from "./calc-dependency.service.spec";
@@ -23,5 +24,9 @@ describe("F2.9 — CalcDependencyService, the save-time cycle detector", () => {
 
   it("reports nothing for a candidate that only reads a cycle", async () => {
     await assertACandidateOffEveryCycleReportsNothing();
+  });
+
+  it("resolves the estate once for a whole batch, and still builds one graph per candidate", async () => {
+    await assertTheBatchResolvesOnceForTheWholeBatch();
   });
 });

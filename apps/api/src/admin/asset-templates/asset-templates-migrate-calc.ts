@@ -1,7 +1,7 @@
 import { CALC_DIALECT_V2, parseFormula } from "@bms/shared";
 import type { TemplateMigrationRefusalDto } from "@bms/shared";
 
-import type { CalcDependencyService } from "../../calc/calc-dependency.service";
+import type { CalcCandidate, CalcDependencyService } from "../../calc/calc-dependency.service";
 import { validateMergedCalcOverride } from "../asset-points/asset-point-calc-override.schema";
 import { CALC_FIELDS, calcFieldsOf, type StoredTemplatePoint } from "./template-version-delta";
 
@@ -30,8 +30,11 @@ import { CALC_FIELDS, calcFieldsOf, type StoredTemplatePoint } from "./template-
  *
  * **Two gates, because `PUT /admin/assets/:id/calc-points/:key` runs two.**
  * `validateMergedCalcOverride` is that endpoint's own function and
- * `CalcDependencyService.checkCandidate` is its own detector — imported, not
- * restated, because two copies of one rule is how they drift. Re-running one of
+ * `CalcDependencyService` is its own detector — imported, not
+ * restated, because two copies of one rule is how they drift. The endpoint
+ * calls `checkCandidate` because it has one candidate; this calls
+ * `checkCandidates` because it has a batch, and the first is written in terms
+ * of the second, so "the same detector" stays literally true. Re-running one of
  * the two would have been the more dangerous half-measure: it reads like parity
  * and is not. Task 13 made `v2` evaluate, so the missing gate had a live failure
  * mode — an asset holding a legal `v2` override, repointed onto a version that
@@ -86,10 +89,39 @@ export type OverrideSurvivalInput = {
    */
   readonly targetPointIdsByKey: ReadonlyMap<string, string>;
   readonly targetVersion: number;
-  readonly dependencies: Pick<CalcDependencyService, "checkCandidate">;
+  /**
+   * The **batch** entry point, never the single one. Every step this gate needs
+   * from the detector is fleet-wide — the definition reload and the membership
+   * resolution are each `O(estate)` — so one call per override row makes a
+   * migration cost `O(assets × estate)`. `checkCandidates` performs both once
+   * for the whole batch; see its docblock for what it shares and what it
+   * refuses to share.
+   */
+  readonly dependencies: Pick<CalcDependencyService, "checkCandidates">;
   /** `buildPlan`'s own capped collector — the count keeps rising after the list stops. */
   readonly refuse: (refusal: TemplateMigrationRefusalDto) => void;
 };
+
+/**
+ * One decision the row-order pass has already reached: a refusal ready to
+ * emit, or a candidate whose refusal waits on the batched cycle check.
+ *
+ * **Held in one ordered list rather than emitted in two passes**, because
+ * `refuse` is capped at `MAX_REPORTED_REFUSALS`: emitting every gate-one
+ * refusal first and every gate-two refusal after would change *which* refusals
+ * a capped batch reports, so the operator would read a different list for the
+ * same migration. The order here is the order the nested loop reaches them,
+ * which is the order the per-row `await` used to emit them in.
+ */
+type PlannedOutcome =
+  | { readonly kind: "refuse"; readonly refusal: TemplateMigrationRefusalDto }
+  | {
+      readonly kind: "cycle-check";
+      readonly assetCode: string;
+      readonly pointKey: string;
+      /** Index into the batch handed to `checkCandidates`, whose answers come back in order. */
+      readonly candidateIndex: number;
+    };
 
 export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInput): Promise<void> {
   const { targetPoints, targetVersion, refuse } = input;
@@ -102,6 +134,12 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
     measured: targetPoints.filter((point) => point.kind === "measured").map((p) => p.pointKey),
     all: targetPoints.map((point) => point.pointKey),
   };
+
+  // Pass one — every decision that needs no fleet read, in row order. A refusal
+  // is recorded rather than emitted, and a candidate is queued rather than
+  // checked; pass two below emits the whole list in exactly this order.
+  const planned: PlannedOutcome[] = [];
+  const candidates: CalcCandidate[] = [];
 
   for (const asset of input.assets) {
     for (const [pointKey, row] of asset.rows) {
@@ -139,18 +177,21 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
 
       const problems = validateMergedCalcOverride(override, calcFieldsOf(declaredPoint), declared);
       if (problems.length > 0) {
-        refuse({
-          reason: "calc_override_invalid_on_target",
-          pointKey,
-          assetCount: 1,
-          message:
-            `Asset "${asset.assetCode}": its calc override on derived point "${pointKey}" does ` +
-            `not survive the move to version ${targetVersion}. ${problems.join(" ")} An override ` +
-            "states only the columns it sets and inherits the rest, so a new version's formula " +
-            "or dialect can turn a pair that was legal when it was written into one this engine " +
-            "will not run. Migration refuses it rather than repointing the asset and leaving it " +
-            "to be discovered as a skipped calculation (ADR 0039 decision 2). Clear or correct " +
-            "the override first, then migrate.",
+        planned.push({
+          kind: "refuse",
+          refusal: {
+            reason: "calc_override_invalid_on_target",
+            pointKey,
+            assetCount: 1,
+            message:
+              `Asset "${asset.assetCode}": its calc override on derived point "${pointKey}" does ` +
+              `not survive the move to version ${targetVersion}. ${problems.join(" ")} An override ` +
+              "states only the columns it sets and inherits the rest, so a new version's formula " +
+              "or dialect can turn a pair that was legal when it was written into one this engine " +
+              "will not run. Migration refuses it rather than repointing the asset and leaving it " +
+              "to be discovered as a skipped calculation (ADR 0039 decision 2). Clear or correct " +
+              "the override first, then migrate.",
+          },
         });
         continue;
       }
@@ -180,7 +221,7 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
       if (!parsed.ok) {
         continue;
       }
-      const cycle = await input.dependencies.checkCandidate({
+      candidates.push({
         assetId: asset.assetId,
         pointKey,
         templatePointId,
@@ -188,22 +229,49 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
         localRefs: parsed.refs,
         crossRefs: parsed.crossRefs,
       });
-      if (cycle.length > 0) {
-        refuse({
-          reason: "calc_override_invalid_on_target",
-          pointKey,
-          assetCount: 1,
-          message:
-            `Asset "${asset.assetCode}": its calc override on derived point "${pointKey}" would ` +
-            `form a dependency cycle once merged with version ${targetVersion}: ` +
-            `${cycle.map((member) => `${member.assetCode}/${member.pointKey}`).join(" → ")}. ` +
-            "Every point on a cycle waits on another, so none of them ever computes. The " +
-            "override endpoint refuses this same pair, and migration refuses it rather than " +
-            "repointing the asset onto a formula that would stop (ADR 0055 decision 8). Break " +
-            "the loop — change the override, or the aggregate scope that draws the other points " +
-            "in — then migrate.",
-        });
-      }
+      planned.push({
+        kind: "cycle-check",
+        assetCode: asset.assetCode,
+        pointKey,
+        candidateIndex: candidates.length - 1,
+      });
     }
+  }
+
+  // **The one fleet read.** Not once per override row: the detector reloads
+  // every derived definition in the estate and resolves membership over the
+  // whole set, so a per-row call made a batch of `N` assets cost `N` fleet-wide
+  // reads. `checkCandidates` does both once and still answers each candidate
+  // against the stored estate plus *itself* alone — a batch is not a merged
+  // graph, so no asset is refused for a loop that only exists because a sibling
+  // is migrating in the same call. An empty batch reads nothing at all, which
+  // is the common migration.
+  const cycles = await input.dependencies.checkCandidates(candidates);
+
+  // Pass two — emit in the order pass one reached them, so a capped refusal
+  // list holds the same rows it held when each row was checked in place.
+  for (const item of planned) {
+    if (item.kind === "refuse") {
+      refuse(item.refusal);
+      continue;
+    }
+    const cycle = cycles[item.candidateIndex];
+    if (cycle.length === 0) {
+      continue;
+    }
+    refuse({
+      reason: "calc_override_invalid_on_target",
+      pointKey: item.pointKey,
+      assetCount: 1,
+      message:
+        `Asset "${item.assetCode}": its calc override on derived point "${item.pointKey}" would ` +
+        `form a dependency cycle once merged with version ${targetVersion}: ` +
+        `${cycle.map((member) => `${member.assetCode}/${member.pointKey}`).join(" → ")}. ` +
+        "Every point on a cycle waits on another, so none of them ever computes. The " +
+        "override endpoint refuses this same pair, and migration refuses it rather than " +
+        "repointing the asset onto a formula that would stop (ADR 0055 decision 8). Break " +
+        "the loop — change the override, or the aggregate scope that draws the other points " +
+        "in — then migrate.",
+    });
   }
 }
