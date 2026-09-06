@@ -532,7 +532,18 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
         }
       }
     }
-    while (totalBytes > maxBytes) {
+    // One turn per record that existed at entry, at most. Each turn either
+    // forgets a record or flags it out of `oldestAcrossStore`, so the flag
+    // alone would terminate the loop — but a later edit that cleared the flag
+    // on append would turn this into a hang rather than a red assertion (the
+    // review's mutation of the skip did exactly that, >120 s against a 9.5 s
+    // baseline). The counter makes termination a property of the loop, not of
+    // the flag's bookkeeping.
+    let turns = 0;
+    for (const endpoint of endpoints.values()) {
+      turns += endpoint.segments.size;
+    }
+    for (; turns > 0 && totalBytes > maxBytes; turns -= 1) {
       const oldest = oldestAcrossStore();
       if (oldest === undefined) {
         // Nothing left that the volume has not already refused. The bound
@@ -542,8 +553,7 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
       // A refused erasure keeps the record *and* flags it, so the next turn of
       // this loop chooses the next-oldest rather than the same one. Giving the
       // pass up here instead is how one stuck file lets the whole store —
-      // every endpoint — grow past `maxBytes`. The loop terminates because each
-      // turn either forgets a record or takes one out of `oldestAcrossStore`.
+      // every endpoint — grow past `maxBytes`.
       await erase(oldest.endpoint, oldest.segment, "bytes");
     }
   }
