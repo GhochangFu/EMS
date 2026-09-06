@@ -263,9 +263,13 @@ describe.skipIf(!connectionString)("F2.7 — the MAPPINGS sheet: export, preview
         .returning({ id: assets.id, code: assets.code });
       const idOf = new Map(assetRows.map((row) => [row.code, row.id]));
 
-      // Six existing rows. Every one restates cleanly through the export, which
-      // is what makes the identity test's `unchanged` count non-zero — and the
-      // retired-RTU row is the one that would break it without correction 39.
+      // Seven existing rows. Every one restates cleanly through the export, which
+      // is what makes the identity test's `unchanged` count non-zero — the
+      // retired-RTU row is the one that would break it without correction 39,
+      // and the `unit = ''` row the one that broke it on the running stack (52
+      // seeded Western Cape rows store an empty unit; the sheet shows a blank,
+      // and the snapshot must read `''` as `null` or the round trip reports a
+      // change nobody made).
       await tx.insert(assetPoints).values([
         {
           assetId: idOf.get(ASSETS.withOneRow) as string,
@@ -275,6 +279,16 @@ describe.skipIf(!connectionString)("F2.7 — the MAPPINGS sheet: export, preview
           sourceKind: "measured",
           rtuId: liveRtu.id,
           unit: "kW",
+          active: true,
+        },
+        {
+          assetId: idOf.get(ASSETS.withOneRow) as string,
+          organizationId,
+          pointKey: KEYS.temp,
+          sourceDataKey: `${ASSETS.withOneRow}_TEMP`,
+          sourceKind: "measured",
+          rtuId: liveRtu.id,
+          unit: "",
           active: true,
         },
         {

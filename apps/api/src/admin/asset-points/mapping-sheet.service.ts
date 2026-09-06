@@ -23,7 +23,7 @@ import { buildMappingSheetRows, mappingSheetToBuffer } from "./mapping-sheet-exp
 import { planMappingSheet } from "./mapping-sheet-plan";
 import type { MappingSheetPlan, PlannedCreate, PlannedUpdate } from "./mapping-sheet-plan";
 import { parseMappingSheet } from "./mapping-sheet-rows";
-import { assetPointKey, assetSourceKey } from "./mapping-sheet-snapshot";
+import { assetPointKey, assetSourceKey, storedText } from "./mapping-sheet-snapshot";
 import type {
   ExistingRow,
   PlanSnapshot,
@@ -255,7 +255,9 @@ export class MappingSheetService {
         sourceKind: row.sourceKind as PointSourceKind,
         rtuId: row.rtuId,
         sourceDataKey: row.sourceDataKey,
-        unit: row.unit,
+        // `''` reads as `null`: the seed stores empty units, the sheet cannot
+        // tell the two apart, and the round trip must not report a change.
+        unit: storedText(row.unit),
         active: row.active,
         metadata: {
           scaleMultiplier: row.scaleMultiplier,
@@ -286,7 +288,7 @@ export class MappingSheetService {
       .select({ code: pointKeys.code, unit: pointKeys.unit, active: pointKeys.active })
       .from(pointKeys);
     const catalog = new Map<string, SnapshotCatalogEntry>(
-      catalogRows.map((row) => [row.code, { unit: row.unit, active: row.active }]),
+      catalogRows.map((row) => [row.code, { unit: storedText(row.unit), active: row.active }]),
     );
 
     const templateIds = [...new Set(assetRows.flatMap((row) => (row.templateId === null ? [] : [row.templateId])))];
@@ -317,7 +319,7 @@ export class MappingSheetService {
           // `template_points_kind_check` guarantees the vocabulary, as
           // `template-point-defaults.ts` records for the same column.
           kind: row.kind as TemplatePointKind,
-          unit: row.unit,
+          unit: storedText(row.unit),
           sourceDataKeyPattern: row.sourceDataKeyPattern,
           defaults: {
             scaleMultiplier: row.scaleMultiplier,

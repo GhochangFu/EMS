@@ -93,3 +93,15 @@ export function assetPointKey(ownerId: string, pointKey: string): string {
 export function assetSourceKey(assetId: string, sourceDataKey: string): string {
   return `${assetId}|${sourceDataKey}`;
 }
+
+/**
+ * A stored nullable text column as the sheet sees it: `""` and whitespace are
+ * `null`. The seed writes `unit = ''` on 52 Western Cape asset points, the
+ * export writes a blank cell for `''` and `null` alike, and the import reads a
+ * blank as `null` — so without this the round trip reported 52 unit "changes"
+ * from `''` to `null` (found on the running stack at PR 2's step 6). Apply it
+ * to every stored text the snapshot carries that the sheet may leave blank.
+ */
+export function storedText(value: string | null): string | null {
+  return value === null || value.trim() === "" ? null : value;
+}
