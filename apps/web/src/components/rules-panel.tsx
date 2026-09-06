@@ -457,7 +457,7 @@ function RuleCard({
             Archive
           </button>
         </div>
-        {channelsOpen ? <RuleChannelsEditor ruleId={rule.id} /> : null}
+        {channelsOpen ? <RuleChannelsEditor ruleId={rule.id} action={rule.action} /> : null}
       </div>
     </article>
   );

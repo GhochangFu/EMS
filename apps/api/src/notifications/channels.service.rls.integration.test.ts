@@ -18,6 +18,7 @@ import {
   assertChannelRemoveRoutesByOrgScope,
   assertChannelWritesRouteByOrgScope,
   assertFleetChannelErrorIsRedactedForATenant,
+  assertSetRuleChannelsKeepsJoinsOutsideTheCallersScope,
   assertSetRuleChannelsRefusesCrossOrgChannel,
 } from "./channels.service.rls.integration.spec";
 
@@ -82,6 +83,11 @@ describe.skipIf(!connectionString)(
           ruleIds,
         ]);
         await ownerPool.query(`DELETE FROM bms.automation_rules WHERE id = ANY($1::uuid[])`, [
+          ruleIds,
+        ]);
+        // `rule_notifications_set` audits carry the RULE's id, not a channel's,
+        // so the channel-keyed delete below never reached them.
+        await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [
           ruleIds,
         ]);
       }
@@ -281,6 +287,28 @@ describe.skipIf(!connectionString)(
         channelBId,
         audited.globalChannelId,
         orgAdminJwt,
+      );
+
+      // --- F3.7 REVIEW FINDING: a save keeps joins the caller cannot see ---
+      // The starting state is inserted directly rather than through
+      // `setRuleChannels`, so a regression in the write path under test cannot
+      // produce a wrong starting state and let the first case pass vacuously.
+      // `channelAId` is org A's own channel (visible in that admin's picker);
+      // `audited.globalChannelId` is the NULL-org one that is not.
+      await ownerPool.query(`DELETE FROM bms.rule_notifications WHERE rule_id = $1`, [ruleId]);
+      await ownerPool.query(
+        `INSERT INTO bms.rule_notifications (rule_id, channel_id) VALUES ($1, $2), ($1, $3)`,
+        [ruleId, audited.globalChannelId, channelAId],
+      );
+
+      await assertSetRuleChannelsKeepsJoinsOutsideTheCallersScope(
+        channels,
+        fleetDb,
+        ruleId,
+        audited.globalChannelId,
+        channelAId,
+        orgAdminJwt,
+        globalAdminJwt,
       );
     }, 60_000);
   },

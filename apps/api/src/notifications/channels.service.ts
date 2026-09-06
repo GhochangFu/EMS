@@ -635,6 +635,20 @@ export class ChannelsService {
    * Returns `null` when the rule does not exist, so the caller can answer 404
    * rather than letting a foreign-key violation surface as a 500.
    *
+   * **"The whole set" is the set the caller can SEE (`F3.7` review finding,
+   * High, both reviewers; owner ruling 2026-09-06).** `list()` filters with
+   * `inArray(organizationId, writableOrgIds)`, and `inArray` never matches
+   * `NULL`, so a fleet-managed global channel — which decision 7 keeps
+   * shareable, and which `ruleChannelIds()` returns unfiltered — is absent
+   * from an `organization_admin`'s picker while being present in that rule's
+   * join list. A full replace therefore let an operator open the picker, tick
+   * nothing, press Save, and silently delete a join they were never shown; the
+   * rule stopped notifying that channel and nothing on screen said so. So an
+   * org-scoped caller's submitted set is unioned with every existing join
+   * whose channel is outside their manage scope, and only a caller with no org
+   * fence at all (`writableOrganizationIds === null`, i.e. `admin`) still
+   * replaces the whole set.
+   *
    * This lives here rather than in `RulesService` for a mundane reason worth
    * recording: that file is at 953 lines against the AGENTS.md §4.5 cap of
    * 1000, and the join is notification state, not rule state. `RulesModule`
@@ -644,7 +658,7 @@ export class ChannelsService {
   async setRuleChannels(
     ruleId: string,
     channelIds: string[],
-    actor: Pick<JwtPayload, "sub" | "email">,
+    actor: JwtPayload,
   ): Promise<string[] | null> {
     const [rule] = await this.fleetDb
       .select({ id: automationRules.id, organizationId: automationRules.organizationId })
@@ -686,22 +700,100 @@ export class ChannelsService {
         );
       }
     }
+    // Read the joins the caller cannot see BEFORE the rewrite, and on the
+    // fleet (BYPASSRLS) connection: the tenant connection runs under FORCE
+    // with the rule's org GUC, so a join to a NULL-org channel — the very row
+    // being preserved — would not come back from it at all.
+    const preserved = await this.joinsOutsideManageScope(actor, ruleId, unique);
+    // Submitted first, in the order the picker sent them, then whatever was
+    // kept for the caller. Already disjoint: `joinsOutsideManageScope` drops
+    // anything submitted.
+    const stored = [...unique, ...preserved];
+
     await withTenant(this.db, organizationId, async (tx) => {
       await tx.delete(ruleNotifications).where(eq(ruleNotifications.ruleId, ruleId));
-      if (unique.length > 0) {
+      if (stored.length > 0) {
         await tx
           .insert(ruleNotifications)
-          .values(unique.map((channelId) => ({ ruleId, channelId })));
+          .values(stored.map((channelId) => ({ ruleId, channelId })));
       }
     });
     await this.audit(actor, "rule_notifications_set", ruleId, organizationId, {
       ruleId,
+      // What the caller asked for, not what was stored — the two differ
+      // exactly when a join was kept, and `preservedChannelIds` is the
+      // difference. Recording only the union would hide the request.
       channelIds: unique,
+      preservedChannelIds: preserved,
       // The interesting case: emptying the set silences a rule, and without a
       // row that change is invisible once the rule simply stops notifying.
-      cleared: unique.length === 0,
+      // Keyed on what is STORED, because an empty submission that preserved a
+      // join has not silenced anything and must not claim to have.
+      cleared: stored.length === 0,
     });
-    return unique;
+    return stored;
+  }
+
+  /**
+   * The existing joins an org-scoped caller must not be able to delete by
+   * omitting them — the `F3.7` review finding above, in one place.
+   *
+   * Returns `[]` for a caller with no organization fence (`admin`), which is
+   * what keeps today's full replace for them: they see every channel in the
+   * picker, so an id they left out was left out on purpose.
+   *
+   * Scope is `writableOrganizationIds`, per the owner's ruling, rather than
+   * `list()`'s stricter `admin`/`organization_admin` gate. The two differ only
+   * for a `location_admin`, whose picker is empty either way
+   * (`list()` gives it `[]`, so the editor renders no Save button at all);
+   * keying on the writable set still narrows what a hand-made `PUT` from that
+   * role can delete, from every join to its own home org's.
+   *
+   * **The `catch` is not defensive padding.** `assertOperationsWriteRole(user,
+   * "configuration")` on the route admits `asset_group_admin`, which
+   * `isMasterDataRole` excludes, so `writableOrganizationIds` throws
+   * `ForbiddenException` for it — from `assertMasterDataRole`, and from
+   * nowhere else here, because the route already resolved the same user
+   * through `resolveDbUser` without throwing. Turning that into a 403 would
+   * take a working `PUT` away from a role this row was not asked to re-gate,
+   * so it is read as "manages no channel organization at all": every existing
+   * join is outside its scope and survives.
+   */
+  private async joinsOutsideManageScope(
+    actor: JwtPayload,
+    ruleId: string,
+    submitted: readonly string[],
+  ): Promise<string[]> {
+    let writableOrgIds: string[] | null;
+    try {
+      writableOrgIds = await this.accessControl.writableOrganizationIds(actor);
+    } catch (err) {
+      if (!(err instanceof ForbiddenException)) throw err;
+      writableOrgIds = [];
+    }
+    if (writableOrgIds === null) return [];
+    const manageable = new Set(writableOrgIds);
+
+    const existing = await this.fleetDb
+      .select({
+        channelId: ruleNotifications.channelId,
+        channelOrganizationId: notificationChannels.organizationId,
+      })
+      .from(ruleNotifications)
+      .innerJoin(notificationChannels, eq(notificationChannels.id, ruleNotifications.channelId))
+      .where(eq(ruleNotifications.ruleId, ruleId));
+
+    const submittedIds = new Set(submitted);
+    const kept: string[] = [];
+    for (const row of existing) {
+      if (submittedIds.has(row.channelId)) continue;
+      // A NULL org is the case that motivated this; an org outside the
+      // writable set is the same hazard reached by a corrupt or migrated row.
+      if (row.channelOrganizationId !== null && manageable.has(row.channelOrganizationId)) continue;
+      if (kept.includes(row.channelId)) continue;
+      kept.push(row.channelId);
+    }
+    return kept;
   }
 
   /** The channel ids a rule currently notifies. */

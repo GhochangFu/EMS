@@ -3,10 +3,14 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  carriesAJoinedChannelItCannotShowThroughTheSave,
+  keepsThePlainCaptionForANotifyRule,
   keepsTheOperatorsBoxesWhenTheSaveIsRefused,
   listsEveryChannelAndChecksTheJoinedOnes,
   mountsTheEditorOnlyWhenTheCardAsksForIt,
   savesTheWholeSetAndInvalidatesTheJoinQuery,
+  saysAJoinedChannelGetsNothingWhenTheActionIsNotNotify,
+  saysNothingAboutHiddenChannelsWhenThereAreNone,
   saysTheChannelListFailedRatherThanClaimingThereAreNone,
   saysThereAreNoChannelsRatherThanShowingAnEmptyList,
   showsWhatTheServerStoredAfterASuccessfulSave,
@@ -50,5 +54,21 @@ describe("F3.7 per-rule channel picker", () => {
 
   it("mounts the editor only when the card's Channels button is pressed", async () => {
     await mountsTheEditorOnlyWhenTheCardAsksForIt();
+  });
+
+  it("carries a joined channel the list does not show through the save, and names its count", async () => {
+    await carriesAJoinedChannelItCannotShowThroughTheSave();
+  });
+
+  it("says nothing about hidden channels when every joined one is listed", async () => {
+    await saysNothingAboutHiddenChannelsWhenThereAreNone();
+  });
+
+  it("says a joined channel receives nothing when the rule's action is not notify", async () => {
+    await saysAJoinedChannelGetsNothingWhenTheActionIsNotNotify();
+  });
+
+  it("keeps the plain caption for a notify rule", async () => {
+    await keepsThePlainCaptionForANotifyRule();
   });
 });

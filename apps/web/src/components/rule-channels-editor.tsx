@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import type { AutomationRuleAction } from "@bms/shared";
+
 import {
   fetchNotificationChannels,
   fetchRuleNotifications,
@@ -25,11 +27,33 @@ import {
  * nothing. The label says `(disabled)`; the box is not greyed out, because the
  * channel is re-enabled on the admin screen and the join should survive that.
  *
+ * **A joined channel this operator cannot see is carried through the save**
+ * (review finding, High; owner ruling 2026-09-06). `GET
+ * /rules/:id/notifications` applies no organization filter and
+ * `ChannelsService.list` does — `inArray(organizationId, writableOrgIds)`
+ * never matches a fleet-managed global's `NULL` — so the join list can name a
+ * channel that is not in this list. `PUT` replaces the whole set, so sending
+ * only the visible ticks would delete that join silently. The hidden ids ride
+ * along in the payload and their count is stated on screen; the server keeps
+ * them too (belt and braces, and the server's copy is the one that binds a
+ * hand-made request).
+ *
+ * **The caption follows the rule's action, not the join** (`F3.7` review,
+ * Medium). `shouldNotify` is `notify`-only, so a `trace_only` or `review` rule
+ * sends nothing however many channels are ticked, and saying "this rule
+ * notifies exactly these channels" under one of those was simply false.
+ *
  * Mounted by `RuleCard` **only while the picker is open**. 289 rules are live
  * on this database and each mounted editor issues one
  * `GET /rules/:id/notifications`.
  */
-export function RuleChannelsEditor({ ruleId }: { ruleId: string }) {
+export function RuleChannelsEditor({
+  ruleId,
+  action,
+}: {
+  ruleId: string;
+  action: AutomationRuleAction;
+}) {
   const queryClient = useQueryClient();
   /**
    * `null` until the operator touches a box: the boxes then read from the
@@ -72,6 +96,15 @@ export function RuleChannelsEditor({ ruleId }: { ruleId: string }) {
   // set an operator sees on screen is the one the request should carry.
   const channelIds = channels.filter((channel) => checked.has(channel.id)).map((c) => c.id);
 
+  /**
+   * Joined ids with no box to tick — read from the SERVER's set, never from
+   * `checked`. `selected` is rebuilt from `channels` on every toggle, so
+   * anything derived from it loses these ids at the first click, which is
+   * exactly the moment they must survive.
+   */
+  const visibleIds = new Set(channels.map((channel) => channel.id));
+  const hidden = (joinedQ.data?.channelIds ?? []).filter((id) => !visibleIds.has(id));
+
   function toggle(channelId: string): void {
     const next = new Set(checked);
     if (next.has(channelId)) {
@@ -85,6 +118,11 @@ export function RuleChannelsEditor({ ruleId }: { ruleId: string }) {
   // A save on top of a join query that never answered would write the empty set
   // over whatever is stored. It waits, or says it cannot.
   const cannotSave = saveM.isPending || joinedQ.isPending || joinedQ.isError;
+
+  const caption =
+    action.type === "notify"
+      ? "This rule notifies exactly these channels."
+      : `This rule's action is ${action.type}, so joined channels receive nothing until it is notify.`;
 
   return (
     <div className="mt-3 rounded border border-gray-200 bg-gray-50 p-3">
@@ -149,14 +187,24 @@ export function RuleChannelsEditor({ ruleId }: { ruleId: string }) {
             <button
               className="rounded bg-bms-green px-2 py-1 text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
               disabled={cannotSave}
-              onClick={() => saveM.mutate(channelIds)}
+              onClick={() => saveM.mutate([...channelIds, ...hidden])}
             >
               {saveM.isPending ? "Saving..." : "Save"}
             </button>
-            <span className="text-[11px] text-bms-muted">
-              This rule notifies exactly these channels.
-            </span>
+            <span className="text-[11px] text-bms-muted">{caption}</span>
           </div>
+          {/*
+            Inside this block on purpose: `channels` is also `[]` while the
+            list loads and after it fails, and out here every joined id would
+            count as hidden and the count would be a lie in both states.
+          */}
+          {hidden.length > 0 ? (
+            <p className="mt-1 text-[11px] text-bms-muted">
+              {hidden.length === 1
+                ? "1 joined channel outside your scope stays joined."
+                : `${hidden.length} joined channels outside your scope stay joined.`}
+            </p>
+          ) : null}
         </>
       ) : null}
     </div>
