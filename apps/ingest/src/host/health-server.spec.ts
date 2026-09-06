@@ -30,6 +30,9 @@ function endpoint(overrides: Partial<SupervisorHealth> = {}): SupervisorHealth {
     queueDepth: 0,
     droppedSamples: 0,
     writeFailures: 0,
+    buffered: 0,
+    bufferDropped: 0,
+    replayed: 0,
     samplesWritten: 42,
     lastSampleAt: FRESH,
     ...overrides,
@@ -120,6 +123,49 @@ export function runHealthRenderTests(): void {
     assert(body.includes("dropped=1204"), "dropped samples must be visible — silent loss is the bug");
     assert(body.includes("queue=9998"), "queue depth is visible");
     assert(body.includes("writeFailures=7"), "write failures are visible");
+  }
+
+  // ---- the disk buffer's three counters -----------------------------------
+
+  {
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ buffered: 12, bufferDropped: 3, replayed: 40 })] }),
+      NOW,
+    );
+    assert(
+      body.includes("buffered=12 bufferDropped=3 replayed=40"),
+      `the disk buffer's three counters must be visible:\n${body}`,
+    );
+  }
+
+  {
+    // The connection is fine and every device is fresh — only the database is
+    // down. The buffer gauge alone must degrade the host.
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ buffered: 1 })] }),
+      NOW,
+    );
+    assert(
+      body.startsWith("ingest-host degraded "),
+      `a non-empty disk buffer degrades the host even with a fresh, connected endpoint:\n${body}`,
+    );
+    assert(
+      body.includes("state=connected"),
+      `the endpoint's connection state is unaffected by buffering:\n${body}`,
+    );
+  }
+
+  {
+    // The verdict reads the gauge (`buffered`), not the lifetime counters
+    // (`bufferDropped`, `replayed`) — the same rule §4.6 applies elsewhere.
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ buffered: 0, bufferDropped: 500, replayed: 9_000 })] }),
+      NOW,
+    );
+    assert(
+      body.startsWith("ingest-host ok "),
+      `a drained buffer is ok regardless of lifetime bufferDropped/replayed totals:\n${body}`,
+    );
   }
 
   {
