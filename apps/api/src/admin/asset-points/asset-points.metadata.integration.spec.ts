@@ -290,6 +290,34 @@ export async function assertCreateRefusesATemplateDerivedKey(
     [ctx.templatedAssetId, ctx.keys.derivedDeclared],
   );
   expect(rows[0]?.count).toBe("0");
+
+  // The same door from the other side (PR 1 code review, C1): a PATCH that
+  // re-keys an existing telemetry mapping onto the derived key, carrying
+  // instrument metadata, must meet the same 409 — the row's own kind is not
+  // `computed`, so the computed guards alone would have let it through.
+  const { rows: before } = await ctx.fleetPool.query<{ asset_id: string; point_key: string }>(
+    "SELECT asset_id, point_key FROM bms.asset_points WHERE id = $1",
+    [ctx.unmappedPointId],
+  );
+  expect(before[0]?.asset_id, "the unmapped fixture point must sit on the templated asset").toBe(
+    ctx.templatedAssetId,
+  );
+  const reKey = await refusalOf(
+    () =>
+      ctx.svc.update(jwt, ctx.unmappedPointId, {
+        pointKey: ctx.keys.derivedDeclared,
+        scaleMultiplier: 0.5,
+      }),
+    "a PATCH re-keying a mapping onto a template-derived point key",
+  );
+  expect(reKey.status).toBe(409);
+  expect(reKey.message).toContain("computed point");
+  const { rows: after } = await ctx.fleetPool.query<{ point_key: string; scale_multiplier: number | null }>(
+    "SELECT point_key, scale_multiplier FROM bms.asset_points WHERE id = $1",
+    [ctx.unmappedPointId],
+  );
+  expect(after[0]?.point_key).toBe(before[0]?.point_key);
+  expect(after[0]?.scale_multiplier).toBeNull();
 }
 
 /**
@@ -320,15 +348,22 @@ export async function assertRtuIdWiresAndUnwiresOnUpdate(
 ): Promise<void> {
   expect((await rowOf(ctx.fleetPool, ctx.unmappedPointId)).source_kind).toBe("unmapped");
 
-  await ctx.svc.update(jwt, ctx.unmappedPointId, { rtuId: ctx.rtuInLocation });
+  const wiredDto = await ctx.svc.update(jwt, ctx.unmappedPointId, { rtuId: ctx.rtuInLocation });
   const wired = await rowOf(ctx.fleetPool, ctx.unmappedPointId);
   expect(wired.rtu_id).toBe(ctx.rtuInLocation);
   expect(wired.source_kind).toBe("measured");
+  // The wiring must be observable in the response, not only in the row: a
+  // client that just wired a point reads back which RTU it is on (step-6
+  // browser finding, 2026-09-06 — the DTO never carried `rtuId` before Q-H).
+  expect(wiredDto.rtuId).toBe(ctx.rtuInLocation);
+  expect(wiredDto.sourceKind).toBe("measured");
 
-  await ctx.svc.update(jwt, ctx.unmappedPointId, { rtuId: null });
+  const unwiredDto = await ctx.svc.update(jwt, ctx.unmappedPointId, { rtuId: null });
   const unwired = await rowOf(ctx.fleetPool, ctx.unmappedPointId);
   expect(unwired.rtu_id).toBeNull();
   expect(unwired.source_kind).toBe("unmapped");
+  expect(unwiredDto.rtuId).toBeNull();
+  expect(unwiredDto.sourceKind).toBe("unmapped");
 
   // An omitted `rtuId` leaves the wiring alone — the third spelling.
   await ctx.svc.update(jwt, ctx.unmappedPointId, { rtuId: ctx.rtuInLocation });

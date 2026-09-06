@@ -424,7 +424,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
             })}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={14} className="py-4 text-center text-bms-muted">
+                <td colSpan={editable ? 14 : 13} className="py-4 text-center text-bms-muted">
                   This template declares no points yet.
                 </td>
               </tr>

@@ -5,7 +5,6 @@ import {
   stockTemplatePointDtoSchema,
 } from "./admin";
 import {
-  MAX_ASSET_POINT_BULK_IDS,
   POINT_METADATA_FIELDS,
   pointMetadataFieldsSchema,
   pointMetadataShape,
@@ -71,6 +70,9 @@ const assetPoint = {
   unit: "kW",
   active: true,
   sourceKind: "measured",
+  // ADR 0018 decision 3 / ADR 0056 Q-H: a measured point names its RTU, and the
+  // DTO surfaces it since F2.7 so a wiring PATCH is observable in the response.
+  rtuId: "33333333-3333-4333-8333-333333333333",
   createdAt: "2026-09-06T00:00:00.000Z",
 };
 
@@ -122,7 +124,6 @@ export function runQualityPolicyVocabularyTests(): void {
     `the policy is two-valued (ADR 0056 Q3), got ${JSON.stringify(QUALITY_POLICIES)}`,
   );
   expectRejects(qualityPolicySchema, "clamp", "an unknown policy is refused");
-  assert(MAX_ASSET_POINT_BULK_IDS === 500, "the bulk-update ceiling is 500 ids (ADR 0056 decision 8)");
 }
 
 /** The shape names exactly the five fields, and every field is nullable with no bound. */

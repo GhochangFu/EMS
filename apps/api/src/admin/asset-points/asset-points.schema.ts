@@ -74,18 +74,5 @@ export const updateAssetPointBodySchema = z
       "manual), and omitting it leaves the wiring alone. A computed point refuses both.",
   );
 
-/**
- * The query of `GET /admin/asset-points/mapping-sheet.xlsx` (ADR 0056 decision
- * 6): one workbook covers one location, which is what makes the sheet's
- * `asset_code` column unambiguous and the export's scope check a single
- * `canManageLocation`.
- */
-export const mappingSheetQuerySchema = z
-  .object({
-    locationId: z.string().uuid(),
-  })
-  .strict();
-
 export type CreateAssetPointBody = z.infer<typeof createAssetPointBodySchema>;
 export type UpdateAssetPointBody = z.infer<typeof updateAssetPointBodySchema>;
-export type MappingSheetQuery = z.infer<typeof mappingSheetQuerySchema>;

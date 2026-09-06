@@ -106,6 +106,13 @@ export const adminAssetPointDtoSchema = z.object({
   active: z.boolean(),
   /** ADR 0018 — where this point's provenance comes from. */
   sourceKind: pointSourceKindSchema,
+  /**
+   * ADR 0018 decision 3 — the RTU this point reads from; `null` for an
+   * `unmapped`, `manual` or `computed` point. Surfaced since `F2.7` (ADR 0056
+   * decision 3, owner ruling Q-H): once the single-row routes can wire and
+   * unwire a point, the response has to show which RTU it landed on.
+   */
+  rtuId: z.string().nullable(),
   createdAt: z.string(),
   // `F2.7` / ADR 0056 decision 1 — the per-asset **override** of the five
   // metadata columns, as stored: `null` = inherit the template default. Spread,

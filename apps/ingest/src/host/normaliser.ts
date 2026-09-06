@@ -203,12 +203,15 @@ function isInEngineeringRange(value: number, target: PointTarget): boolean {
  * range test refused first would be reported as an instrument out of its band
  * rather than as arithmetic that broke.
  *
- * Two consequences of moving the quality check inside the loop, both intended:
+ * Three consequences of moving the quality check inside the loop, all intended:
  * a `good: false` sample for an **unknown device** now counts `unknownDevice`
- * rather than `badQuality`, and a counter counts a refused *write* rather than a
- * refused sample. The raw `typeof value !== "number" || !isFinite` pre-check
- * stays **outside** the loop: an unscalable value is dropped once, not once per
- * target — so a bad-quality `NaN` counts `nonFinite`.
+ * rather than `badQuality`; a counter counts a refused *write* rather than a
+ * refused sample; and a `good: false` sample with a malformed `at` now also
+ * counts `invalidTimestamp`, which used to be unreachable for it — harmless,
+ * because `invalidTimestamp` is not a drop and `droppedCount` never sums it. The
+ * raw `typeof value !== "number" || !isFinite` pre-check stays **outside** the
+ * loop: an unscalable value is dropped once, not once per target — so a
+ * bad-quality `NaN` counts `nonFinite`.
  */
 export function resolveSamples(
   samples: readonly SourceSample[],

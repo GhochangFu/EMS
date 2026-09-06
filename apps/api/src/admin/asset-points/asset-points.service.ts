@@ -278,6 +278,20 @@ export class AssetPointsAdminService {
     const template = (
       await loadTemplatePointDefaults(this.fleetDb, existing.assetId, [nextPointKey])
     ).get(nextPointKey);
+    if (nextPointKey !== existing.pointKey && template?.kind === "derived") {
+      // The same refusal `create` gives (above): a re-key onto a key the pinned
+      // template declares derived would park a `measured`/`unmapped` row, with
+      // instrument metadata, on the one row `asset_points_asset_id_point_key_unique`
+      // allows the calc-override surface — after answering 200. Found by the
+      // PR 1 code review; the existing computed guards test the *row*'s kind,
+      // not the *target key*'s.
+      throw new ConflictException(
+        `Point "${nextPointKey}" is a computed point on this asset's template: its ` +
+          "asset_points row is calc configuration, written by the calc-override endpoint. " +
+          "Set the override there rather than re-keying a telemetry mapping onto it.",
+      );
+    }
+
     const problems = validateMergedPointMetadata(nextMetadata, template?.defaults ?? NO_POINT_METADATA);
     if (problems.length > 0) {
       throw new BadRequestException(problems.join(" "));
@@ -294,7 +308,12 @@ export class AssetPointsAdminService {
           unit: body.unit !== undefined ? body.unit : (existing.unit ?? catalog.unit),
           rtuId: wiring.rtuId,
           sourceKind: wiring.sourceKind,
-          ...nextMetadata,
+          // Only the metadata fields this request states are written. `nextMetadata`
+          // above is the *resolved* row for the merged-pair check; writing all five
+          // from it would restate values read before the transaction, and two
+          // concurrent PATCHes on different fields would each undo the other's
+          // (PR 1 security review, L1).
+          ...statedPointMetadata(body),
         })
         .where(eq(assetPoints.id, id));
 
@@ -518,6 +537,9 @@ export class AssetPointsAdminService {
       // asset_points_source_kind_check guarantees this is one of the four
       // values; drizzle types the column as the column's raw varchar type.
       sourceKind: point.sourceKind as AdminAssetPointDto["sourceKind"],
+      // ADR 0018 decision 3 / ADR 0056 Q-H — the wiring, so a client that just
+      // set `rtuId` reads it back rather than inferring it from `sourceKind`.
+      rtuId: point.rtuId,
       createdAt: point.createdAt.toISOString(),
       // `F2.7` / ADR 0056 decision 1 — the per-asset override of the five
       // metadata columns, `null` = inherit the template default. Read straight
@@ -567,4 +589,21 @@ function mergedPointMetadata(
         ? body.qualityPolicy
         : (existing.qualityPolicy as QualityPolicy | null),
   };
+}
+
+/**
+ * The metadata fields a PATCH body actually states — present keys only, `null`
+ * included (a stated `null` clears the override). This is what the UPDATE
+ * writes, so an unstated field is never rewritten from a pre-transaction read;
+ * {@link mergedPointMetadata} is the resolved view the merged-pair check needs
+ * and must not be what is written back.
+ */
+function statedPointMetadata(body: UpdateAssetPointBody): Partial<PointMetadataFields> {
+  const stated: Partial<PointMetadataFields> = {};
+  if (body.scaleMultiplier !== undefined) stated.scaleMultiplier = body.scaleMultiplier;
+  if (body.scaleOffset !== undefined) stated.scaleOffset = body.scaleOffset;
+  if (body.engMin !== undefined) stated.engMin = body.engMin;
+  if (body.engMax !== undefined) stated.engMax = body.engMax;
+  if (body.qualityPolicy !== undefined) stated.qualityPolicy = body.qualityPolicy;
+  return stated;
 }

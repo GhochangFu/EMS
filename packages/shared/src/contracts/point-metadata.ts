@@ -71,9 +71,3 @@ void _everyFieldIsAShapeKey;
 type _EveryShapeKeyIsListed = Exclude<ShapeKey, FieldName> extends never ? true : never;
 const _everyShapeKeyIsListed: _EveryShapeKeyIsListed = true;
 void _everyShapeKeyIsListed;
-
-/**
- * ADR 0056 decision 8 — `POST /admin/asset-points/bulk-update` takes at most
- * this many ids. All-or-nothing, so the ceiling bounds one transaction.
- */
-export const MAX_ASSET_POINT_BULK_IDS = 500;

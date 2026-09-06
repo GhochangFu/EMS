@@ -43,12 +43,21 @@ const PAIR_QUERY = `
    LIMIT 1
 `;
 
-const TEMPLATE_QUERY = `
-  SELECT t.id
-    FROM bms.asset_templates t
-   WHERE t.organization_id = $1
-   ORDER BY t.created_at
-   LIMIT 1
+/**
+ * The fixture template, created inside the rolled-back transaction. The seed
+ * writes templates for ESKOM only, and every `ingest_enabled` RTU belongs to
+ * PHEWB — so selecting "the ingest organization's template" is green on a
+ * database someone once imported a stock template into and red on CI's fresh
+ * seed (PR 1 code review, FG1). A row the fixture owns exists everywhere.
+ */
+const TEMPLATE_INSERT = `
+  INSERT INTO bms.asset_templates (organization_id, code, version, name, asset_type, domain, status)
+  VALUES (
+    $1, 'F27-BINDINGS-FIXTURE', 1, 'F2.7 bindings fixture', 'fixture',
+    (SELECT code FROM bms.asset_domains ORDER BY code LIMIT 1),
+    'published'
+  )
+  RETURNING id
 `;
 
 async function bindingRows(client: pg.Pool | pg.PoolClient): Promise<BindingRow[]> {
@@ -106,20 +115,19 @@ export async function assertCoalescePicksEachSidePerColumn(pool: pg.Pool): Promi
     expect(pairs.length, "no ingest-bound point to test the resolution against").toBe(1);
     const pair = pairs[0];
 
-    const { rows: templates } = await client.query<{ id: string }>(TEMPLATE_QUERY, [
-      pair.organization_id,
-    ]);
-    expect(templates.length, "the seeded organization has no template to inherit from").toBe(1);
-    const templateId = templates[0].id;
-
     const baseline = await bindingRows(client);
     expect(rowFor(baseline, pair).scale_multiplier).toBeNull();
 
     await client.query("BEGIN");
     try {
-      // The seed binds no templated asset, so the fixture has to make one: pin
-      // the asset to its organization's template and give that template a point
-      // with the same key. Both writes roll back.
+      // The seed binds no templated asset, so the fixture has to make one: create
+      // a template for the asset's organization, pin the asset to it and give
+      // that template a point with the same key. All three writes roll back.
+      const { rows: inserted } = await client.query<{ id: string }>(TEMPLATE_INSERT, [
+        pair.organization_id,
+      ]);
+      expect(inserted.length, "the fixture template insert returned no id").toBe(1);
+      const templateId = inserted[0].id;
       await client.query("UPDATE bms.assets SET template_id = $2 WHERE id = $1", [
         pair.asset_id,
         templateId,
