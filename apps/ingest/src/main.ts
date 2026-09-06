@@ -12,11 +12,12 @@ import {
   type SkippedBinding,
 } from "./host/bindings.js";
 import { readHostConfig } from "./host/config.js";
+import { openDiskBufferStore } from "./host/disk-buffer.js";
 import { startHealthServer } from "./host/health-server.js";
 import { createHostLogger } from "./host/logger.js";
 import type { PointIndex } from "./host/normaliser.js";
 import { resolveSamples, writeResolved } from "./host/normaliser.js";
-import { createSupervisor, type Supervisor } from "./host/supervisor.js";
+import { createSupervisor, realScheduler, type Supervisor } from "./host/supervisor.js";
 // The ADR 0012 seam, imported from the **unmodified** pilot file (ADR 0016 §4,
 // §6). It keeps its `resolveMqttConnection` export so `rtu-config.test.js` —
 // the one ingest test CI runs today — keeps passing untouched.
@@ -51,6 +52,20 @@ async function main(): Promise<void> {
 
   const hostConfig = readHostConfig(process.env);
   const logger = createHostLogger();
+
+  // Opened before any database connection is attempted. A directory that
+  // cannot be created and written is ruling 4's "same treatment as a missing
+  // `DATABASE_URL`": this rejects, `main().catch` below logs "ingest host
+  // failed to start" with the reason, and the process exits 1 rather than
+  // starting a host that would silently drop every batch it cannot write.
+  const bufferStore = await openDiskBufferStore({
+    dir: hostConfig.bufferDir,
+    maxAgeMs: hostConfig.bufferMaxAgeMs,
+    maxBytes: hostConfig.bufferMaxBytes,
+    now: realScheduler.now,
+    logger: logger.child({ subsystem: "disk-buffer" }),
+  });
+
   const pool = new pg.Pool({
     connectionString: hostConfig.databaseUrl,
     // `withTimeout` around `writeSamples` rejects the *wait*, but it cannot
@@ -67,9 +82,10 @@ async function main(): Promise<void> {
   // A pooled connection closed by the server's idle timeout arrives here. It is
   // routine, so the process does not exit on it: doing so would restart ingest
   // on a normal event, which is the opposite of §5's "the process exits only on
-  // a genuinely process-wide fault". Sustained loss of the database shows up as
-  // `writeFailures` on the health endpoint, which is the operator-visible
-  // signal, and as an error line per failed batch.
+  // a genuinely process-wide fault". Sustained loss of the database now shows
+  // up as `buffered` and `writeFailures` on the health endpoint — the batches
+  // are spilled to disk rather than lost — and as an error line per failed
+  // batch.
   pool.on("error", (error: Error) => {
     logger.error("postgres pool error", { reason: error.message });
   });
@@ -143,6 +159,7 @@ async function main(): Promise<void> {
       factory,
       plan,
       logger: logger.child({ endpointKey: plan.endpointKey, protocol: plan.protocol }),
+      buffer: bufferStore.handle(plan.protocol, plan.endpointKey),
       writeSamples: async (samples) => {
         const index = pointIndexes.get(key) ?? plan.pointIndex;
         const { rows, counters } = resolveSamples(samples, index, new Date(), soleDeviceKey);
@@ -183,6 +200,7 @@ async function main(): Promise<void> {
     endpoints: supervisors.size,
     skipped: skipped.length,
     healthPort: health.port,
+    bufferDir: hostConfig.bufferDir,
   });
 
   const reloadTimer = setInterval(() => {

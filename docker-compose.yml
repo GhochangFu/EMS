@@ -282,6 +282,11 @@ services:
       # Setting them here would have looked like configuration while doing
       # nothing.
       INGEST_HOST_HEALTH_PORT: 9102
+      # ADR 0016 Amendment 4 ruling 4: the host refuses to start if this
+      # directory cannot be created and written, and the container's own
+      # writable layer would not survive a container replace — the named
+      # volume below is what makes the disk buffer outlive `up`/`down`.
+      INGEST_BUFFER_DIR: /var/lib/bms-ingest
     # No `command:` — ADR 0016 §6 commit 4 pointed `pnpm start` at
     # `dist/main.js`, so the image's own `CMD` is the host. The override that
     # carried the 2026-08-06 cutover is gone with the entry point it replaced,
@@ -299,6 +304,13 @@ services:
       # scrapes it, and `infra/observability/` does not know this port. Every
       # operator workflow in `docs/ingest-host.md` runs on the host itself.
       - "127.0.0.1:9102:9102"
+    # `apps/ingest/Dockerfile` sets no `USER`, so the image runs as root and
+    # this mount is writable without a `chown` step here. The first non-root
+    # `USER` line will make start-up refuse loudly over an unwritable
+    # `/var/lib/bms-ingest` — that failure is the intended direction (ruling 4
+    # again), not a regression to patch around.
+    volumes:
+      - bms-ingest-buffer:/var/lib/bms-ingest
     depends_on:
       postgres:
         condition: service_healthy
@@ -380,3 +392,4 @@ volumes:
   bms-prometheus-data:
   bms-loki-data:
   bms-grafana-data:
+  bms-ingest-buffer:
