@@ -225,8 +225,12 @@ are no longer bounded, or `bufferDropped` counting samples that are still on
 disk. From then on that record is **skipped** — by both bounds and by replay —
 so the byte bound goes on to the next-oldest segment and the endpoint's later
 segments still replay: one refused file costs that file, not the store. Its
-bytes still count and its lines still show in `buffered`, one `error` line
-names it once (a second refusal is silent), and an operator clears it.
+bytes still count and its lines still show in `buffered`, and one `error` line
+names it once (a second refusal is silent). It is cleared by an operator — or
+by an append that reaches the same file, which is a spill landing in the same
+receipt minute the refusal happened in: a record nothing offers is a record
+nothing can unlink, so without that second exit the batch that append wrote
+would sit in `buffered` and never replay.
 
 **One bad file is skipped; one bad directory refuses start-up.** The start-up
 scan measures each candidate and leaves alone, with one `warn`, any file

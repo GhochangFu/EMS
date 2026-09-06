@@ -14,14 +14,14 @@ import {
   type DiskBufferStore,
 } from "./disk-buffer.js";
 
-function assert(condition: boolean, message: string): void {
+export function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
 }
 
 /** Narrows `oldest()`'s result without an `asserts` helper — that would freeze the getters into literal types. */
-function segment(value: BufferedSegment | null, message: string): BufferedSegment {
+export function segment(value: BufferedSegment | null, message: string): BufferedSegment {
   if (value === null) {
     throw new Error(message);
   }
@@ -42,9 +42,9 @@ function makeCapturingLogger(): { logger: AdapterLogger; lines: string[] } {
 
 const ENDPOINT = "phe.thinkiot.co.in:8883";
 /** `encodeURIComponent` of the key above — `:` is illegal in a Windows path. */
-const ENCODED = "phe.thinkiot.co.in%3A8883";
-const START = new Date("2026-09-06T10:00:00.000Z");
-const MINUTE = Math.floor(START.getTime() / 60_000);
+export const ENCODED = "phe.thinkiot.co.in%3A8883";
+export const START = new Date("2026-09-06T10:00:00.000Z");
+export const MINUTE = Math.floor(START.getTime() / 60_000);
 const HOUR_MS = 3_600_000;
 const ALLOWED_KEYS = new Set(["sourceKey", "value", "deviceKey", "at", "good"]);
 
@@ -52,23 +52,23 @@ function minuteDate(minute: number): Date {
   return new Date(minute * 60_000);
 }
 
-function sample(value: number): SourceSample {
+export function sample(value: number): SourceSample {
   return { sourceKey: "flow", value, deviceKey: "RTU-1" };
 }
 
 /** The on-disk form of `sample(value)` stamped at `at` — the format decision 7 fixes. */
-function line(value: number, at: Date): string {
+export function line(value: number, at: Date): string {
   return `${JSON.stringify({ sourceKey: "flow", value, deviceKey: "RTU-1", at: at.toISOString() })}\n`;
 }
 
-function exists(path: string): Promise<boolean> {
+export function exists(path: string): Promise<boolean> {
   return access(path).then(
     () => true,
     () => false,
   );
 }
 
-async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
+export async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), "bms-ingest-buffer-"));
   try {
     await run(dir);
@@ -78,7 +78,7 @@ async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
 }
 
 /** The seven-function slice, from the real module, for a spec to poison one member of. */
-function realFs(): BufferFileSystem {
+export function realFs(): BufferFileSystem {
   return {
     mkdir: fsPromises.mkdir,
     writeFile: fsPromises.writeFile,
@@ -91,11 +91,11 @@ function realFs(): BufferFileSystem {
 }
 
 /** An errno the store branches on — `isEnoent` and the retirement rule both read `code`. */
-function errno(code: string, message: string): Error {
+export function errno(code: string, message: string): Error {
   return Object.assign(new Error(`${code}: ${message}`), { code });
 }
 
-function errorLines(harness: Harness, needle: string): string[] {
+export function errorLines(harness: Harness, needle: string): string[] {
   return harness.lines.filter((row) => row.startsWith("error") && row.includes(needle));
 }
 
@@ -103,14 +103,14 @@ function warnLines(harness: Harness, needle: string): string[] {
   return harness.lines.filter((row) => row.startsWith("warn") && row.includes(needle));
 }
 
-type Harness = {
+export type Harness = {
   clock: { now: Date };
   logger: AdapterLogger;
   lines: string[];
   options(dir: string, overrides?: Partial<DiskBufferOptions>): DiskBufferOptions;
 };
 
-function makeHarness(): Harness {
+export function makeHarness(): Harness {
   const clock = { now: START };
   const { logger, lines } = makeCapturingLogger();
   return {
@@ -132,7 +132,7 @@ async function segmentNames(dir: string): Promise<string[]> {
   return (await readdir(join(dir, "mqtt", ENCODED))).sort();
 }
 
-async function openWithHandle(
+export async function openWithHandle(
   harness: Harness,
   dir: string,
   overrides?: Partial<DiskBufferOptions>,
