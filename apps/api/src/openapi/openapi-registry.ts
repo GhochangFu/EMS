@@ -3,6 +3,7 @@ import type { ZodTypeAny } from "zod";
 import { setAssetGroupMemberRoleBodySchema } from "../admin/asset-groups/asset-groups.schema";
 import { assetPointCalcOverrideBodySchema } from "../admin/asset-points/asset-point-calc-override.schema";
 import {
+  assetPointBulkUpdateBodySchema,
   createAssetPointBodySchema,
   mappingSheetQuerySchema,
   updateAssetPointBodySchema,
@@ -141,6 +142,12 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AlarmsController_upsertEnrichment: alarmEnrichmentUpsertBodySchema,
   AssetGroupMembersAdminController_setRole: setAssetGroupMemberRoleBodySchema,
   AssetPointCalcOverrideController_set: assetPointCalcOverrideBodySchema,
+  // `F2.7` (ADR 0056 decision 8) — the bulk editor's body. Registered rather
+  // than left out for the two reasons the `F3.40` note below gives: an
+  // unregistered route reads as "no body" in the served document, and
+  // `strict-body-ledger.spec.ts` walks only what is reachable from here, so
+  // both `.strict()` objects would carry no recorded decision.
+  AssetPointsAdminController_bulkUpdate: assetPointBulkUpdateBodySchema,
   AssetPointsAdminController_create: createAssetPointBodySchema,
   // `F2.7` (ADR 0056 decision 6) — the mapping sheet's only parameter, on the
   // one of its three routes the document can describe. The download is a plain

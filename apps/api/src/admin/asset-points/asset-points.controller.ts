@@ -24,6 +24,7 @@ import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema, parseActiveFilter } from "../admin.schema";
 import {
+  assetPointBulkUpdateBodySchema,
   createAssetPointBodySchema,
   mappingSheetQuerySchema,
   updateAssetPointBodySchema,
@@ -89,6 +90,27 @@ export class AssetPointsAdminController {
   ) {
     const query = this.parseQuery(locationId);
     return this.mappingSheet.commit(user, query.locationId, this.requireFile(file));
+  }
+
+  /**
+   * `F2.7` / ADR 0056 decision 8 — one patch over a selection, all or nothing.
+   *
+   * Declared here, **before** the `:id` routes, for the reason the mapping-sheet
+   * block above states: `bulk-update` would otherwise be readable as an id.
+   * `@HttpCode(200)` because it returns the written rows in the list envelope
+   * rather than creating anything, matching `:id/deactivate` beside it.
+   */
+  @Post("bulk-update")
+  @HttpCode(HttpStatus.OK)
+  async bulkUpdate(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    try {
+      return await this.service.bulkUpdate(user, assetPointBulkUpdateBodySchema.parse(body));
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
   }
 
   @Get()

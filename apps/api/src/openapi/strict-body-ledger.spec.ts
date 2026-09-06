@@ -5,6 +5,7 @@ import type { ZodTypeAny } from "zod";
 import { setAssetGroupMemberRoleBodySchema } from "../admin/asset-groups/asset-groups.schema";
 import { assetPointCalcOverrideBodySchema } from "../admin/asset-points/asset-point-calc-override.schema";
 import {
+  assetPointBulkUpdateBodySchema,
   createAssetPointBodySchema,
   mappingSheetQuerySchema,
   updateAssetPointBodySchema,
@@ -179,6 +180,7 @@ import { REQUEST_SCHEMAS } from "./openapi-registry";
 export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   alarmAckBodySchema,
   alarmEnrichmentUpsertBodySchema,
+  assetPointBulkUpdateBodySchema,
   assetPointCalcOverrideBodySchema,
   chatBodySchema,
   closeWorkOrderBodySchema,

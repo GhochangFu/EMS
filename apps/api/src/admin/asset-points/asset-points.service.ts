@@ -16,14 +16,23 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant, type BmsTx } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import type { CreateAssetPointBody, UpdateAssetPointBody } from "./asset-points.schema";
+import type {
+  AssetPointBulkPatch,
+  AssetPointBulkUpdateBody,
+  CreateAssetPointBody,
+  UpdateAssetPointBody,
+} from "./asset-points.schema";
 import {
   hasAnyPointMetadata,
   NO_POINT_METADATA,
   validateMergedPointMetadata,
+  type PointMetadataBody,
 } from "./point-metadata.schema";
 import { resolveCatalogPointKey } from "./resolve-catalog-point-key";
-import { loadTemplatePointDefaults } from "./template-point-defaults";
+import {
+  loadTemplatePointDefaults,
+  loadTemplatePointDefaultsForAssets,
+} from "./template-point-defaults";
 
 /**
  * `F4.16` / `E7.1b` / ADR 0043 — `asset_points` (and `assets`) gain
@@ -332,6 +341,149 @@ export class AssetPointsAdminService {
     return this.fetchRow(id);
   }
 
+  /**
+   * `F2.7` / ADR 0056 decision 8 — one patch applied to a selection of asset
+   * points, **all or nothing**.
+   *
+   * The sheet (decisions 6 and 7) is deliberately the opposite: a bad row there
+   * is skipped and the rest land, because a 3,000-row workbook with two typos
+   * is still 2,998 rows of work. A selection is not that. The person ticked
+   * these rows on a screen and pressed one button, so "17 of your 20 were
+   * applied" is a state they did not ask for and cannot see — every refusal
+   * below therefore refuses the whole request and writes nothing.
+   *
+   * Order is load-bearing, and it is the order a caller can safely be told
+   * things in:
+   *
+   * 1. the master-data role, then the caller's writable locations;
+   * 2. read the rows on `fleetDb` (Amendment 2/3 — the scope filter below is
+   *    the isolation control, and it needs the rows to filter);
+   * 3. an id that names no row → 404, listing the ids;
+   * 4. rows in more than one organization → 400. One `withTenant` transaction
+   *    stamps one organization, so a mixed selection could only be written by
+   *    opening two — and `0048`'s strict `WITH CHECK` would refuse the second
+   *    half after the first was already written;
+   * 5. any row outside the caller's writable locations → 403, **before** any
+   *    decision about the rows' contents is reported;
+   * 6. a `computed` row while the patch *sets* metadata → 409 (`update`'s rule,
+   *    named per row);
+   * 7. the merged band per row against that row's own template default → 400
+   *    naming the row.
+   *
+   * Only then one transaction: a single `UPDATE … WHERE id IN (…)` — every row
+   * takes the same values, so it is one statement, not one per row — and the
+   * audit rows through `writeMany` (Q-G), inside it, so a rollback takes both.
+   */
+  async bulkUpdate(
+    jwt: JwtPayload,
+    body: AssetPointBulkUpdateBody,
+  ): Promise<{ items: AdminAssetPointDto[] }> {
+    await this.accessControl.requireMasterDataUser(jwt);
+    const writableIds = await this.accessControl.writableLocationIds(jwt);
+    // A repeated id is one row, and the audit trail must not record it twice.
+    const ids = [...new Set(body.ids)];
+
+    const rows = await this.fleetDb
+      .select({ point: assetPoints, assetCode: assets.code, locationId: assets.locationId })
+      .from(assetPoints)
+      .innerJoin(assets, eq(assetPoints.assetId, assets.id))
+      .where(inArray(assetPoints.id, ids));
+
+    const found = new Set(rows.map((row) => row.point.id));
+    const missing = ids.filter((id) => !found.has(id));
+    if (missing.length > 0) {
+      throw new NotFoundException(
+        `${missing.length} of the selected asset points no longer exist: ${missing.join(", ")}`,
+      );
+    }
+
+    const organizationIds = [...new Set(rows.map((row) => row.point.organizationId))];
+    if (organizationIds.length > 1) {
+      throw new BadRequestException(
+        "The selection spans more than one organization. One bulk edit is written in one " +
+          "organization's tenant context, so a mixed selection would write part of itself " +
+          "and refuse the rest. Select rows from a single organization.",
+      );
+    }
+    const organizationId = this.requireRowOrg(organizationIds[0] ?? null);
+
+    // `null` is the global admin: every location. Otherwise every row's asset
+    // must sit in a location this caller may manage — the same test
+    // `canManageAsset` makes one row at a time, asked once for the selection.
+    if (writableIds !== null) {
+      const outside = rows.filter(
+        (row) => !row.locationId || !writableIds.includes(row.locationId),
+      );
+      if (outside.length > 0) {
+        throw new ForbiddenException(
+          `${outside.length} of the ${rows.length} selected asset points are outside your ` +
+            "access scope",
+        );
+      }
+    }
+
+    // `hasAnyPointMetadata` reads an explicit `null` as absent (correction 17),
+    // and that is the right reading here too: clearing an override a computed
+    // row never had is a no-op, while *setting* scale or a band on a row whose
+    // value is produced by a formula is a request built on a misunderstanding.
+    if (hasAnyPointMetadata(body.patch)) {
+      const computed = rows.find((row) => row.point.sourceKind === "computed");
+      if (computed) {
+        throw new ConflictException(
+          `Point "${computed.assetCode}/${computed.point.pointKey}" is a computed point: its ` +
+            "asset_points row holds calc configuration rather than telemetry wiring, so it " +
+            "carries no instrument to scale or bound. Remove it from the selection, or set " +
+            "scale, range and quality on the measured points its formula reads.",
+        );
+      }
+    }
+
+    // One query for every selected row's template defaults, then the merged
+    // pair per row. Run for every patch, including one that states only `unit`
+    // or `active`: `update` checks the same way, and an all-or-nothing surface
+    // must not write a row it would refuse one at a time.
+    const templates = await loadTemplatePointDefaultsForAssets(
+      this.fleetDb,
+      rows.map((row) => row.point.assetId),
+      rows.map((row) => row.point.pointKey),
+    );
+    for (const row of rows) {
+      const template = templates.get(row.point.assetId)?.get(row.point.pointKey);
+      const [problem] = validateMergedPointMetadata(
+        mergedPointMetadata(row.point, body.patch),
+        template?.defaults ?? NO_POINT_METADATA,
+      );
+      if (problem) {
+        // The row is named, because "one of your 20 rows is wrong" is not a
+        // message anyone can act on.
+        throw new BadRequestException(`${row.assetCode}/${row.point.pointKey}: ${problem}`);
+      }
+    }
+
+    await withTenant(this.tenantDb, organizationId, async (tx) => {
+      await tx
+        .update(assetPoints)
+        .set(statedBulkColumns(body.patch))
+        .where(inArray(assetPoints.id, ids));
+
+      await this.audit.writeMany(
+        rows.map((row) => ({
+          actor: jwt,
+          action: "master.asset_point.bulk_update",
+          entityType: "asset_point",
+          entityId: row.point.id,
+          organizationId,
+          // The patch, not the resolved row: what this actor asked for is what
+          // the trail must say, and it is identical for every row in the batch.
+          payload: { patch: body.patch },
+        })),
+        tx,
+      );
+    });
+
+    return { items: await this.fetchRows(ids) };
+  }
+
   /** Deactivates an asset point mapping. */
   async deactivate(jwt: JwtPayload, id: string): Promise<AdminAssetPointDto> {
     // fleetDb read (Amendment 2/3): see `update`. The point's own org drives the
@@ -495,7 +647,25 @@ export class AssetPointsAdminService {
   }
 
   private async fetchRow(id: string): Promise<AdminAssetPointDto> {
-    const [row] = await this.fleetDb
+    const [row] = await this.fetchRows([id]);
+    if (!row) {
+      throw new NotFoundException("Asset point not found");
+    }
+    return row;
+  }
+
+  /**
+   * The written rows, read back through the same projection `list` returns, so
+   * a client parses one shape whatever route it called
+   * (`assetPointsListResponseSchema`). Ordered by asset then point key rather
+   * than by the order the ids arrived in: the bulk editor's caller holds a
+   * selection, not a sequence.
+   */
+  private async fetchRows(ids: readonly string[]): Promise<AdminAssetPointDto[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const rows = await this.fleetDb
       .select({
         point: assetPoints,
         assetCode: assets.code,
@@ -506,12 +676,9 @@ export class AssetPointsAdminService {
       .from(assetPoints)
       .innerJoin(assets, eq(assetPoints.assetId, assets.id))
       .leftJoin(locations, eq(assets.locationId, locations.id))
-      .where(eq(assetPoints.id, id))
-      .limit(1);
-    if (!row) {
-      throw new NotFoundException("Asset point not found");
-    }
-    return this.mapRow(row);
+      .where(inArray(assetPoints.id, [...ids]))
+      .orderBy(asc(assets.code), asc(assetPoints.pointKey));
+    return rows.map((row) => this.mapRow(row));
   }
 
   private mapRow(row: {
@@ -576,7 +743,7 @@ function pointMetadataOf(body: CreateAssetPointBody): PointMetadataFields {
  */
 function mergedPointMetadata(
   existing: typeof assetPoints.$inferSelect,
-  body: UpdateAssetPointBody,
+  body: PointMetadataBody,
 ): PointMetadataFields {
   return {
     scaleMultiplier:
@@ -598,12 +765,31 @@ function mergedPointMetadata(
  * {@link mergedPointMetadata} is the resolved view the merged-pair check needs
  * and must not be what is written back.
  */
-function statedPointMetadata(body: UpdateAssetPointBody): Partial<PointMetadataFields> {
+function statedPointMetadata(body: PointMetadataBody): Partial<PointMetadataFields> {
   const stated: Partial<PointMetadataFields> = {};
   if (body.scaleMultiplier !== undefined) stated.scaleMultiplier = body.scaleMultiplier;
   if (body.scaleOffset !== undefined) stated.scaleOffset = body.scaleOffset;
   if (body.engMin !== undefined) stated.engMin = body.engMin;
   if (body.engMax !== undefined) stated.engMax = body.engMax;
   if (body.qualityPolicy !== undefined) stated.qualityPolicy = body.qualityPolicy;
+  return stated;
+}
+
+/**
+ * The columns one bulk patch writes: {@link statedPointMetadata}'s five plus
+ * the two the bulk body adds.
+ *
+ * Same rule, same reason (PR 1 security review, L1): only the fields the
+ * request states are written, so an unstated column is never restated from a
+ * value read before the transaction — and here that matters more, because the
+ * one `UPDATE` covers up to `MAX_ASSET_POINT_BULK_IDS` rows at once.
+ */
+function statedBulkColumns(
+  patch: AssetPointBulkPatch,
+): Partial<PointMetadataFields> & { unit?: string | null; active?: boolean } {
+  const stated: Partial<PointMetadataFields> & { unit?: string | null; active?: boolean } =
+    statedPointMetadata(patch);
+  if (patch.unit !== undefined) stated.unit = patch.unit;
+  if (patch.active !== undefined) stated.active = patch.active;
   return stated;
 }

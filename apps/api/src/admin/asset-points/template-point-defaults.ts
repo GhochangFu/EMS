@@ -48,13 +48,39 @@ export async function loadTemplatePointDefaults(
   assetId: string,
   pointKeys: readonly string[],
 ): Promise<Map<string, TemplatePointDefault>> {
+  const byAsset = await loadTemplatePointDefaultsForAssets(db, [assetId], pointKeys);
+  return byAsset.get(assetId) ?? new Map();
+}
+
+/**
+ * The same defaults for **many** assets at once, keyed by `assets.id`.
+ *
+ * The bulk editor (ADR 0056 decision 8) validates every selected row against
+ * its own template before it writes anything, and a selection may span up to
+ * `MAX_ASSET_POINT_BULK_IDS` rows on as many assets. Asking per asset would be
+ * one round trip per row inside a request that must decide all-or-nothing
+ * before it opens a transaction.
+ *
+ * An asset with no template, or one whose template declares none of the wanted
+ * keys, has **no entry** — the same reading as the single-asset form: a missing
+ * entry is "nothing to inherit", never a row of nulls.
+ */
+export async function loadTemplatePointDefaultsForAssets(
+  db: BmsDb,
+  assetIds: readonly string[],
+  pointKeys: readonly string[],
+): Promise<Map<string, Map<string, TemplatePointDefault>>> {
   const wanted = [...new Set(pointKeys)];
-  if (wanted.length === 0) {
+  const wantedAssets = [...new Set(assetIds)];
+  // Both guards, and neither is decorative: `inArray` with an empty list is a
+  // SQL `in ()` — a syntax error on Postgres rather than an empty result.
+  if (wanted.length === 0 || wantedAssets.length === 0) {
     return new Map();
   }
 
   const rows = await db
     .select({
+      assetId: assets.id,
       pointKey: templatePoints.pointKey,
       kind: templatePoints.kind,
       unit: templatePoints.unit,
@@ -70,25 +96,29 @@ export async function loadTemplatePointDefaults(
     // code's newest version instead would resolve defaults the asset does not
     // have yet, which is the whole subject of the migration surface.
     .innerJoin(assets, eq(assets.templateId, templatePoints.templateId))
-    .where(and(eq(assets.id, assetId), inArray(templatePoints.pointKey, wanted)));
+    .where(and(inArray(assets.id, wantedAssets), inArray(templatePoints.pointKey, wanted)));
 
-  return new Map(
-    rows.map((row) => [
-      row.pointKey,
-      {
-        kind: row.kind,
-        unit: row.unit,
-        defaults: {
-          scaleMultiplier: row.scaleMultiplier,
-          scaleOffset: row.scaleOffset,
-          engMin: row.engMin,
-          engMax: row.engMax,
-          // `template_points_quality_policy_check` guarantees the vocabulary;
-          // drizzle types the column as its raw varchar, the same narrowing
-          // `toTemplatePointDto` makes on the way out to a DTO.
-          qualityPolicy: row.qualityPolicy as QualityPolicy | null,
-        },
+  const byAsset = new Map<string, Map<string, TemplatePointDefault>>();
+  for (const row of rows) {
+    let forAsset = byAsset.get(row.assetId);
+    if (!forAsset) {
+      forAsset = new Map<string, TemplatePointDefault>();
+      byAsset.set(row.assetId, forAsset);
+    }
+    forAsset.set(row.pointKey, {
+      kind: row.kind,
+      unit: row.unit,
+      defaults: {
+        scaleMultiplier: row.scaleMultiplier,
+        scaleOffset: row.scaleOffset,
+        engMin: row.engMin,
+        engMax: row.engMax,
+        // `template_points_quality_policy_check` guarantees the vocabulary;
+        // drizzle types the column as its raw varchar, the same narrowing
+        // `toTemplatePointDto` makes on the way out to a DTO.
+        qualityPolicy: row.qualityPolicy as QualityPolicy | null,
       },
-    ]),
-  );
+    });
+  }
+  return byAsset;
 }

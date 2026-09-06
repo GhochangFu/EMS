@@ -60,6 +60,24 @@ export const pointMetadataShape = {
 export const pointMetadataFieldsSchema = z.object(pointMetadataShape);
 
 /**
+ * `F2.7` / ADR 0056 decision 8 — how many asset points one bulk edit may carry.
+ *
+ * The bulk editor is **all-or-nothing**: every selected row is validated against
+ * its own template defaults before anything is written, and one refusal writes
+ * nothing. That makes the cost of a selection super-linear in the operator's
+ * head as well as in the transaction — a bound is what keeps "apply to the
+ * selection" a reviewable act rather than a fleet-wide edit behind one button,
+ * and it keeps the single `UPDATE … WHERE id IN (…)` and its audit insert inside
+ * one short-lived transaction.
+ *
+ * Declared here, in shared, because both ends need the same number: `apps/api`'s
+ * `assetPointBulkUpdateBodySchema` refuses a longer list, and the web page caps
+ * what it offers to send. A second literal in either place is a cap that drifts
+ * — the web would offer 600 rows to a route that refuses them.
+ */
+export const MAX_ASSET_POINT_BULK_IDS = 500;
+
+/**
  * Compile-time: `POINT_METADATA_FIELDS` and `pointMetadataShape` name the same
  * five, in both directions. A sixth column added to one and not the other
  * fails `pnpm typecheck` rather than leaving a walker that silently skips it.
