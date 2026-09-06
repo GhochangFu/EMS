@@ -10,15 +10,24 @@ import {
   NO_TARGET_MESSAGE,
   buildInstantiatePayload,
   hasTarget,
+  type InstantiateRow,
+  missingVariables,
   namedCount,
   namedRows,
+  patternsCarryingVariables,
   resolveTarget,
+  templateVariables,
 } from "./template-instantiate-form";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+/** A row literal for the tests below that do not exercise `vars` at all. */
+function row(code: string, name: string, vars: Record<string, string> = {}): InstantiateRow {
+  return { code, name, vars };
 }
 
 /**
@@ -39,7 +48,7 @@ export function runRtuWinsTests(): void {
   );
   assert(resolved?.id === "rtu-1", `must carry the RTU id, got ${resolved?.id}`);
 
-  const payload = buildInstantiatePayload(both, [{ code: "AHU-1", name: "" }]);
+  const payload = buildInstantiatePayload(both, [row("AHU-1", "")]);
   assert(payload.ok, "a target with both ids must build");
   if (!payload.ok) {
     return;
@@ -65,7 +74,7 @@ export function runSingleTargetTests(): void {
     "a location alone must resolve to it",
   );
 
-  const payload = buildInstantiatePayload({ locationId: "loc-9" }, [{ code: "A", name: "" }]);
+  const payload = buildInstantiatePayload({ locationId: "loc-9" }, [row("A", "")]);
   assert(payload.ok, "a location alone must build");
   if (payload.ok) {
     assert("locationId" in payload.input, "the body must carry locationId");
@@ -90,7 +99,7 @@ export function runNoTargetTests(): void {
     assert(resolveTarget(target) === null, `${JSON.stringify(target)} must resolve to no target`);
     assert(!hasTarget(target), `${JSON.stringify(target)} must not count as a target`);
 
-    const payload = buildInstantiatePayload(target, [{ code: "A", name: "" }]);
+    const payload = buildInstantiatePayload(target, [row("A", "")]);
     assert(!payload.ok, `${JSON.stringify(target)} must refuse`);
     if (!payload.ok) {
       assert(payload.message === NO_TARGET_MESSAGE, "the refusal must name what to do");
@@ -102,10 +111,10 @@ export function runNoTargetTests(): void {
 /** Blank rows are dropped; they are the dialog's normal trailing state. */
 export function runBlankRowTests(): void {
   const rows = [
-    { code: "AHU-1", name: "Air handler" },
-    { code: "  ", name: "ignored" },
-    { code: "", name: "" },
-    { code: "AHU-2", name: "" },
+    row("AHU-1", "Air handler"),
+    row("  ", "ignored"),
+    row("", ""),
+    row("AHU-2", ""),
   ];
   const built = namedRows(rows);
   assert(built.length === 2, `expected 2 named rows, got ${built.length}`);
@@ -118,7 +127,7 @@ export function runBlankRowTests(): void {
   // A row that is only whitespace in `code` must not be rescued by a non-empty
   // `name` — the code is what identifies the asset.
   assert(
-    namedCount([{ code: "   ", name: "Has a name" }]) === 0,
+    namedCount([row("   ", "Has a name")]) === 0,
     "a whitespace code must not build an asset",
   );
   assert(namedCount([]) === 0, "no rows means no assets");
@@ -127,9 +136,9 @@ export function runBlankRowTests(): void {
 /** Codes and names are trimmed, and an unnamed asset falls back to its code. */
 export function runTrimAndFallbackTests(): void {
   const built = namedRows([
-    { code: "  AHU-1  ", name: "  Air handler  " },
-    { code: "AHU-2", name: "   " },
-    { code: "AHU-3", name: "" },
+    row("  AHU-1  ", "  Air handler  "),
+    row("AHU-2", "   "),
+    row("AHU-3", ""),
   ]);
 
   assert(built[0].code === "AHU-1", `code must be trimmed, got "${built[0].code}"`);
@@ -155,10 +164,10 @@ export function runTrimAndFallbackTests(): void {
  */
 export function runCountMatchesPayloadTests(): void {
   const rows = [
-    { code: "A", name: "" },
-    { code: "", name: "orphan" },
-    { code: "B", name: "Bee" },
-    { code: "   ", name: "" },
+    row("A", ""),
+    row("", "orphan"),
+    row("B", "Bee"),
+    row("   ", ""),
   ];
   const payload = buildInstantiatePayload({ rtuId: "rtu-1" }, rows);
   assert(payload.ok, "must build");
@@ -169,4 +178,117 @@ export function runCountMatchesPayloadTests(): void {
     payload.input.assets.length === namedCount(rows),
     `the button promises ${namedCount(rows)} but the body carries ${payload.input.assets.length}`,
   );
+}
+
+/** A minimal template point for `templateVariables` — only the two fields it reads. */
+function point(
+  kind: "measured" | "derived",
+  sourceDataKeyPattern: string | null,
+): { kind: "measured" | "derived"; sourceDataKeyPattern: string | null } {
+  return { kind, sourceDataKeyPattern };
+}
+
+/**
+ * `templateVariables` scans only measured points, in first-appearance order,
+ * minus the reserved `asset_code` — the same vocabulary the mapping sheet and
+ * the instantiate service read (ADR 0056 decision 10, "one vocabulary, wired
+ * twice").
+ */
+export function runTemplateVariablesTests(): void {
+  const oneVar = templateVariables({
+    points: [point("measured", "{asset_code}_KW"), point("measured", "CH{unit}_T")],
+  });
+  assert(
+    oneVar.join(",") === "unit",
+    `asset_code must never be listed, got ${JSON.stringify(oneVar)}`,
+  );
+
+  // A derived point's pattern is `null`; it must not blow up and must not
+  // contribute a variable of its own.
+  const withDerived = templateVariables({
+    points: [
+      point("measured", "CH{unit}_T"),
+      point("derived", null),
+    ],
+  });
+  assert(
+    withDerived.join(",") === "unit",
+    `a derived point's null pattern must be skipped, got ${JSON.stringify(withDerived)}`,
+  );
+
+  // A repeated token across two patterns is still one variable.
+  const repeated = templateVariables({
+    points: [point("measured", "{asset_code}_{unit}_{unit}")],
+  });
+  assert(
+    repeated.length === 1 && repeated[0] === "unit",
+    `a repeated token must be listed once, got ${JSON.stringify(repeated)}`,
+  );
+}
+
+/**
+ * `patternsCarryingVariables` — what the dialog's hint line names. A pattern
+ * with only the reserved `{asset_code}` token carries no variable and must not
+ * be listed, even though it does carry a `{token}`.
+ */
+export function runPatternsCarryingVariablesTests(): void {
+  const patterns = patternsCarryingVariables({
+    points: [
+      point("measured", "{asset_code}_KW"),
+      point("measured", "CH{unit}_T"),
+      point("derived", null),
+    ],
+  });
+  assert(
+    patterns.length === 1 && patterns[0] === "CH{unit}_T",
+    `an asset_code-only pattern must not be named, got ${JSON.stringify(patterns)}`,
+  );
+}
+
+/**
+ * `namedRows` carries `sourceDataKeyVars` only when at least one var survives
+ * trimming; a row with every var blank omits the key rather than sending an
+ * empty string the server would treat as unresolved anyway.
+ */
+export function runVarsPayloadTests(): void {
+  const withVar = namedRows([row("CH-1", "Chiller 1", { unit: "01" })]);
+  assert(
+    withVar[0].sourceDataKeyVars?.unit === "01",
+    `expected sourceDataKeyVars.unit "01", got ${JSON.stringify(withVar[0].sourceDataKeyVars)}`,
+  );
+
+  // Asserted with `in`, not `=== undefined` — see `runRtuWinsTests` above: a
+  // present-but-undefined key passes the weaker check and `JSON.stringify`
+  // then drops it, so the wire would be right by accident while the object
+  // was wrong. `namedRows` must never assign the key at all here.
+  const blankVar = namedRows([row("CH-2", "Chiller 2", { unit: "   " })]);
+  assert(
+    !("sourceDataKeyVars" in blankVar[0]),
+    `an all-blank vars object must be omitted, got ${JSON.stringify(blankVar[0])}`,
+  );
+
+  const noVars = namedRows([row("CH-3", "Chiller 3")]);
+  assert(
+    !("sourceDataKeyVars" in noVars[0]),
+    "a row with no vars entry at all must omit the key",
+  );
+}
+
+/**
+ * `missingVariables` names a required variable left blank on a named row, and
+ * says nothing about a row with no code — that row is never sent, so a blank
+ * var on it is not a defect.
+ */
+export function runMissingVariablesTests(): void {
+  const rows = [
+    row("CH-1", "Chiller 1", { unit: "01" }),
+    row("CH-2", "Chiller 2", { unit: "" }),
+    row("", "", {}),
+  ];
+  const missing = missingVariables(rows, ["unit"]);
+  assert(missing.length === 1, `expected exactly one gap, got ${JSON.stringify(missing)}`);
+  assert(missing[0].row === 2, `must name row 2 (1-based), got ${JSON.stringify(missing[0])}`);
+  assert(missing[0].variable === "unit", `must name the unit variable, got ${JSON.stringify(missing[0])}`);
+
+  assert(missingVariables(rows, []).length === 0, "no required variables means no gaps");
 }

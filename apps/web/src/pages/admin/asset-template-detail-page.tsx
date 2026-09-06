@@ -81,7 +81,11 @@ import { unwritableContentKeys } from "../../lib/template-content-merge";
 import {
   buildInstantiatePayload,
   hasTarget,
+  type InstantiateRow,
+  missingVariables,
   namedCount,
+  patternsCarryingVariables,
+  templateVariables,
 } from "../../lib/template-instantiate-form";
 import { guardLifecycleAction, guardTabSwitch } from "../../lib/template-tab-guard";
 import { resolveTemplateTab, type TemplateTabId } from "../../lib/template-tabs";
@@ -511,8 +515,15 @@ function InstantiateDialog({
   const [selection, setSelection] = useState<HierarchySelection>({
     organizationId: template.organizationId,
   });
-  const [rows, setRows] = useState([{ code: "", name: "" }]);
+  const [rows, setRows] = useState<InstantiateRow[]>([{ code: "", name: "", vars: {} }]);
   const [error, setError] = useState<string | null>(null);
+  // `F4.56` (ADR 0056 decision 10) — the distinct `{token}`s this template's
+  // measured points ask for, minus the reserved `asset_code`. Read once per
+  // render off the pinned version, since a template's points cannot change
+  // while this dialog is open.
+  const variables = templateVariables(template);
+  const missing = missingVariables(rows, variables);
+  const patternsWithVariables = patternsCarryingVariables(template);
 
   const instantiateM = useMutation({
     mutationFn: () => {
@@ -559,9 +570,16 @@ function InstantiateDialog({
           syncRoutes={false}
         />
 
+        {patternsWithVariables.length > 0 ? (
+          <p className="text-[11px] text-bms-muted">
+            Pattern{patternsWithVariables.length > 1 ? "s" : ""}{" "}
+            {patternsWithVariables.join(", ")} carry a variable — fill one value per asset below.
+          </p>
+        ) : null}
+
         <div className="space-y-2">
           {rows.map((row, index) => (
-            <div key={index} className="flex gap-2">
+            <div key={index} className="flex flex-wrap gap-2">
               <input
                 value={row.code}
                 onChange={(event) =>
@@ -588,11 +606,31 @@ function InstantiateDialog({
                 aria-label={`Asset ${index + 1} name`}
                 className="flex-1 rounded border border-gray-200 px-2 py-1 text-xs"
               />
+              {variables.map((variable) => (
+                <input
+                  key={variable}
+                  value={row.vars[variable] ?? ""}
+                  onChange={(event) =>
+                    setRows((current) =>
+                      current.map((item, position) =>
+                        position === index
+                          ? { ...item, vars: { ...item.vars, [variable]: event.target.value } }
+                          : item,
+                      ),
+                    )
+                  }
+                  placeholder={variable}
+                  aria-label={`Asset ${index + 1} ${variable}`}
+                  className="w-24 rounded border border-gray-200 px-2 py-1 text-xs"
+                />
+              ))}
             </div>
           ))}
           <button
             type="button"
-            onClick={() => setRows((current) => [...current, { code: "", name: "" }])}
+            onClick={() =>
+              setRows((current) => [...current, { code: "", name: "", vars: {} }])
+            }
             className="text-xs font-semibold text-bms-green hover:underline"
           >
             Add another asset
@@ -615,7 +653,9 @@ function InstantiateDialog({
           </button>
           <button
             type="button"
-            disabled={!targetChosen || named === 0 || instantiateM.isPending}
+            disabled={
+              !targetChosen || named === 0 || missing.length > 0 || instantiateM.isPending
+            }
             onClick={() => {
               setError(null);
               instantiateM.mutate();
