@@ -4,6 +4,8 @@ import {
   assertAnUndecidedCodeStaysNull,
   assertBothPumpShapesTakeOneRole,
   assertEskomReadingsAreUnchanged,
+  assertEveryItAssetJoinsItRackAndItLoad,
+  assertNoPheDeviceJoinsItLoad,
   assertOnlyElectricalAssetsTakeARole,
   assertTheGatewayTakesNoRole,
   assertTheRulingMapsEveryPheDevice,
@@ -32,5 +34,15 @@ describe("F3.41 — demoRoleForAsset carries the owner's meter/pump ruling", () 
 
   it("leaves a code that decides nothing at NULL", () => {
     assertAnUndecidedCodeStaysNull();
+  });
+});
+
+describe("F2.8 — demoGroupCodesForAsset files every IT asset under IT_LOAD as well", () => {
+  it("gives an IT asset it-rack and IT_LOAD, and every other domain its one group", () => {
+    assertEveryItAssetJoinsItRackAndItLoad();
+  });
+
+  it("gives no PHE device an IT_LOAD membership", () => {
+    assertNoPheDeviceJoinsItLoad();
   });
 });

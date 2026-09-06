@@ -104,6 +104,9 @@ const UNIT_BY_KEY: Record<string, string> = {
   relay_trip_code: "",
   earth_fault_state: "",
   meter_comms_ok: "",
+  site_kw: "kW", // F2.8: derived, formula in electrical-feeder.ts
+  it_kw: "kW", // F2.8: derived, formula in electrical-feeder.ts
+  pue: "", // F2.8: derived, formula in electrical-feeder.ts — dimensionless ratio, spelled like pf
   // §2 transformer
   top_oil_temp_c: "°C",
   winding_temp_c: "°C",

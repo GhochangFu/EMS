@@ -34,10 +34,14 @@ import { CalcWriteService } from "./calc-write.service";
  * **Manual fixture recipe** — F2.4 ships no authoring UI (`F2.5`) and no
  * seed data of its own (`F2.4`'s ADR-gate decision: a manual recipe, not a
  * seed addition, keeps `packages/db`'s seed surface — and `migration-reviewer`'s
- * review scope — out of a diff that is otherwise pure `apps/api`). To see the
- * engine compute something end to end against the dev stack, run this SQL
- * once against `bms_app` (swap in a real org id / active location id / an
- * active catalog point key from `bms.point_keys` for that org):
+ * review scope — out of a diff that is otherwise pure `apps/api`). Since `F2.8`
+ * a seeded `bms-calc-v2` formula does exist — `packages/db/src/pue-demo-seed.ts`
+ * pins `BASELINE-ELECTRICAL-INCOMER` (`site_kw`, `it_kw`, `pue`) to each ESKOM
+ * incomer — so the dev stack computes something without this recipe; it stays
+ * for a `v1` streaming fixture. To see the engine compute something end to end
+ * against the dev stack, run this SQL once against `bms_app` (swap in a real
+ * org id / active location id / an active catalog point key from
+ * `bms.point_keys` for that org):
  *
  * ```sql
  * INSERT INTO bms.asset_templates (organization_id, code, version, name, asset_type, domain, status, published_at)

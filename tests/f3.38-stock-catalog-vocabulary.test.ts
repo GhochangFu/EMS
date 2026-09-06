@@ -370,7 +370,10 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     // redeclared.
     // 602 since E5.3 PR 2: 500 + VERTICAL_TRANSPORT_CLASS_POINT_KEYS's 102, disjoint by
     // construction.
-    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(602);
+    //
+    // 605 since `F2.8` Task 1: 602 + `ELECTRICAL_CLASS_POINT_KEYS`'s three new
+    // derived codes (site_kw, it_kw, pue).
+    expect(vocabulary.size, `no *_POINT_KEYS array parsed out of ${POINT_KEY_SOURCE_LABEL}`).toBeGreaterThanOrEqual(605);
     // 28 is 26 from `0051` plus 2 from `0060`, and both migrations are frozen,
     // so this number is stable by construction. If a LATER migration adds a
     // role code and the check below starts rejecting a legitimate

@@ -189,7 +189,9 @@ export type MeteredPumpingPointKey = (typeof METERED_PUMPING_POINT_KEYS)[number]
  * `F2.11` / ADR 0051 Amendment 6 — the electrical class point keys, 139 codes
  * across the six electrical asset classes (feeder/incomer, transformer, DG
  * set, UPS, solar PV, APFC). `F2.12` appended six more (145 total) — see the
- * "SIX DERIVED CODES PROMOTED BY `F2.12`" paragraph below.
+ * "SIX DERIVED CODES PROMOTED BY `F2.12`" paragraph below. `F2.8` appends
+ * three more (148 total) — see the "THREE DERIVED CODES PROMOTED BY `F2.8`"
+ * paragraph below.
  *
  * **Citation.** `docs/electrical-derived-taglist-v1.md` is the source, and
  * ADR 0051 Amendment 6 (Accepted 2026-09-02) is the gate that promotes it:
@@ -300,9 +302,21 @@ export type MeteredPumpingPointKey = (typeof METERED_PUMPING_POINT_KEYS)[number]
  * `kind: "derived"` template point, because `assertPointKeysActive`
  * (`asset-templates.service.ts`) checks every point's key — derived
  * included — against `bms.point_keys` where `active = true`.
+ *
+ * **THREE DERIVED CODES PROMOTED BY `F2.8`, 145 → 148.** The owner's ruling 1
+ * (`docs/plans/f2.8-pue-derived-tags.md` §2) puts PUE on the site's
+ * `incoming-supply` asset as three `bms-calc-v2` derived points appended to
+ * the end of the §1 feeder block above, each with a
+ * `// F2.8: derived, formula in electrical-feeder.ts` comment: `site_kw` —
+ * `sum({kw} @site)`, `kW`; `it_kw` — `sum({kw} @group('IT_LOAD'))`, `kW`;
+ * `pue` — `{site_kw} / {it_kw}`, dimensionless. Filed here rather than left
+ * as bare `template_points` rows for the same reason as the `F2.12` six:
+ * `assertPointKeysActive` checks a derived point's key exactly as it checks a
+ * measured one, so a v2 aggregate output needs a `bms.point_keys` row before
+ * an import can declare it, the same as every other code in this array.
  */
 export const ELECTRICAL_CLASS_POINT_KEYS = [
-  // §1 feeder / incomer — 15
+  // §1 feeder / incomer — 18
   "current_in",
   "kvah_total",
   "kvarh_total",
@@ -318,6 +332,9 @@ export const ELECTRICAL_CLASS_POINT_KEYS = [
   "relay_trip_code",
   "earth_fault_state",
   "meter_comms_ok",
+  "site_kw", // F2.8: derived, formula in electrical-feeder.ts
+  "it_kw", // F2.8: derived, formula in electrical-feeder.ts
+  "pue", // F2.8: derived, formula in electrical-feeder.ts
   // §2 transformer — 31
   "top_oil_temp_c",
   "winding_temp_c",

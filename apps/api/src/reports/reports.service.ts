@@ -11,6 +11,7 @@ import {
   bucketHours,
   levelForRange,
 } from "../telemetry/point-aggregates";
+import { windowedPueRatio } from "../telemetry/pue-ratio";
 import type { EnergyReportQuery } from "./reports.schema";
 import {
   assertFiniteCells,
@@ -143,7 +144,9 @@ export class ReportsService {
         window: "custom",
         totalKwh: 0,
         peakKw: 0,
-        pueEstimate: 1,
+        // `F2.8` ruling 4: nothing readable is `null`, not a `1` sentinel. The CSV
+        // writes the em dash for it (`reports.serialise.ts`).
+        pueEstimate: null,
         indicativeCostZar: 0,
         tariffZarPerKwh: tariff,
         asOf: new Date().toISOString(),
@@ -170,7 +173,6 @@ export class ReportsService {
     const r = await this.pool.query<{
       total_kwh: string;
       peak_kw: string;
-      avg_kw: string;
     }>(
       `
       WITH per AS (
@@ -187,8 +189,7 @@ export class ReportsService {
       )
       SELECT
         COALESCE(SUM(total_kw) * $4::float8, 0)::float8 AS total_kwh,
-        COALESCE(MAX(total_kw), 0)::float8 AS peak_kw,
-        COALESCE(AVG(total_kw), 0)::float8 AS avg_kw
+        COALESCE(MAX(total_kw), 0)::float8 AS peak_kw
       FROM agg
       `,
       [range.start, range.end, assetIds ?? null, kwhFactor],
@@ -196,12 +197,20 @@ export class ReportsService {
     const row = r.rows[0];
     const totalKwh = row ? Number(row.total_kwh) : 0;
     const peakKw = row ? Number(row.peak_kw) : 0;
-    const avgKw = row ? Number(row.avg_kw) : 0;
     return {
       window: "custom",
       totalKwh: this.round(totalKwh),
       peakKw: this.round(peakKw),
-      pueEstimate: this.estimatePue(avgKw),
+      // `F2.8` — Σ site_kw / Σ it_kw over the incomers in `assetIds`, taken over
+      // the report's own range and at the same `level` the kWh query reads, so the
+      // two numbers on the page describe one window. `avg_kw` left the query above
+      // with the fitted curve it was the only input to.
+      pueEstimate: await windowedPueRatio(this.pool, {
+        level,
+        start: range.start,
+        end: range.end,
+        assetIds: assetIds ?? null,
+      }),
       indicativeCostZar: this.round(totalKwh * tariff),
       tariffZarPerKwh: tariff,
       asOf: new Date().toISOString(),
@@ -327,14 +336,6 @@ export class ReportsService {
   private energyTariffZar(): number {
     const t = Number(process.env.ENERGY_TARIFF_ZAR_PER_KWH ?? "2.15");
     return Number.isFinite(t) && t > 0 ? t : 2.15;
-  }
-
-  private estimatePue(totalKw: number): number {
-    if (totalKw <= 0) {
-      return 1.0;
-    }
-    const raw = 1.22 + Math.min(0.45, totalKw / 12_000);
-    return Math.round(raw * 100) / 100;
   }
 
   private round(value: number): number {

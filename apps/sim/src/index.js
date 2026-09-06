@@ -99,7 +99,7 @@ function ensureElecState(assetId) {
   if (!s) {
     s = {
       v: 228 + Math.random() * 8,
-      i: 120 + Math.random() * 200,
+      i: 200 + Math.random() * 60,
       kw: 80 + Math.random() * 400,
       pf: 0.88 + Math.random() * 0.1,
     };
@@ -160,9 +160,10 @@ function ensureItState(assetId, code) {
   let s = itState.get(assetId);
   if (!s) {
     const isVideoWall = code.includes("VW");
+    const isWesternCape = code.startsWith("CR-");
     const isWarnPdu = code === "CR-VW-RACK-PDU-B";
     s = {
-      rackKw: isVideoWall ? 1.42 : 2.81,
+      rackKw: isVideoWall ? 3.2 : isWesternCape ? 6.2 : 77,
       rackTempC: isVideoWall ? 25.8 : 24.5,
       utilPct: isWarnPdu ? 88 : isVideoWall ? 72 : 64,
       outletsUsed: isVideoWall ? 11 : 18,
@@ -226,7 +227,7 @@ function stepElectrical(assetId, code = "") {
   s.v = rndWalk(profile ? 230 : s.v, 0.4, 220, 240);
   s.i = profile
     ? rndWalk(profile.current, 0.3, Math.max(0, profile.current - 1.5), profile.current + 1.5)
-    : rndWalk(s.i, 3, 40, 520);
+    : rndWalk(s.i, 3, 200, 260);
   s.pf = rndWalk(s.pf, 0.01, 0.82, 0.99);
   s.kw = profile ? rndWalk(profile.kw, 0.05, Math.max(0, profile.kw - 0.3), profile.kw + 0.3) : (s.v * s.i * s.pf) / 1000;
   const kva = (s.v * s.i) / 1000;
@@ -265,7 +266,13 @@ function stepElectrical(assetId, code = "") {
 
 function stepIt(assetId, code) {
   const s = ensureItState(assetId, code);
-  s.rackKw = rndWalk(s.rackKw, 0.04, 0.2, code.includes("NET") ? 3.1 : 2.2);
+  const isVideoWall = code.includes("VW");
+  const isWesternCape = code.startsWith("CR-");
+  s.rackKw = isVideoWall
+    ? rndWalk(s.rackKw, 0.03, 2.5, 4)
+    : isWesternCape
+      ? rndWalk(s.rackKw, 0.05, 5, 7.5)
+      : rndWalk(s.rackKw, 0.3, 70, 85);
   s.rackTempC = rndWalk(s.rackTempC, 0.08, 20, 32);
   s.utilPct = rndWalk(s.utilPct, 0.8, 20, 96);
   const t = new Date();

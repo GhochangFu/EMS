@@ -518,13 +518,19 @@ export const deferralReason = (code: StockEntryCode): string =>
   `${DEFERRAL_REASON} Deferred for ${code}: ${DEFERRED_DERIVED_CODES[code].join(", ")}.`;
 
 /**
- * The feeder is the one entry whose deferral guard is a claim about the WHOLE
- * entry rather than about a list of codes: §1 authors no derived point at all
- * and no `content.kpis`. Restated here rather than imported, because
- * `stock-catalog.spec.ts` keeps its own `FEEDER_CODE` for the transcription
- * half of the feeder block that did not move — and typing it against
- * `StockEntryCode` makes a typo a compile error rather than a guard that runs
- * over an entry the catalog does not ship.
+ * The feeder's guard **was** a claim about the WHOLE entry — §1 authored no
+ * derived point at all — and `F2.8` ended that: the incomer now carries three
+ * `bms-calc-v2` points (`site_kw`, `it_kw`, `pue`), ruling 1 of that row's gate.
+ * So the guard names the three it may author instead of counting to zero, and a
+ * fourth derived row appended without a ruling still fails here. Its six
+ * DEFERRED codes are untouched by `F2.8` — `losses_pct` is a Σ over the site's
+ * feeders, which `v2` can now *express*, but the tag list's definition needs the
+ * feeder SET, which is `F2.22`-era content.
+ *
+ * Restated here rather than imported, because `stock-catalog.spec.ts` keeps its
+ * own `FEEDER_CODE` for the transcription half of the feeder block that did not
+ * move — and typing it against `StockEntryCode` makes a typo a compile error
+ * rather than a guard that runs over an entry the catalog does not ship.
  */
 const FEEDER_CODE: StockEntryCode = "electrical-feeder";
 
@@ -632,13 +638,20 @@ export function runStockCatalogDeferralTests(): void {
     }
   }
 
-  // ---- the feeder's own guard: no derived point, no kpis ------------------
-
+  // ---- the feeder's own guard: exactly F2.8's three, and no kpis ----------
+  //
+  // The negative half — that it declares none of its six deferred codes — is the
+  // per-entry loop's above, run over `DEFERRED_DERIVED_CODES[FEEDER_CODE]` like
+  // every other entry's. This is the positive half, which only this entry has:
+  // the three `F2.8` authored and nothing else.
   const feeder = requireStockEntry(FEEDER_CODE);
-  const derived = feeder.points.filter((point) => point.kind === "derived");
+  const derived = feeder.points.filter((point) => point.kind === "derived").map((point) => point.pointKey);
   assert(
-    derived.length === 0,
-    `${FEEDER_CODE} authors ${derived.length} derived point(s): ${derived.map((p) => p.pointKey).join(", ")}. ${DEFERRAL_REASON}`,
+    derived.join(",") === "site_kw,it_kw,pue",
+    `${FEEDER_CODE} must author exactly F2.8's site_kw, it_kw and pue, in that order — got ` +
+      `${derived.join(", ") || "(none)"}. Those three are ruling 1 of F2.8's gate and the only ` +
+      `derived points this entry may carry; anything else is a deferred code or an unruled one. ` +
+      `${deferralReason(FEEDER_CODE)}`,
   );
   assert(
     !Object.hasOwn(feeder.content ?? {}, "kpis"),

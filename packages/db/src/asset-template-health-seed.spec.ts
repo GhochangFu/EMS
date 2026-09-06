@@ -134,10 +134,20 @@ export function assertTheDeclaredPointsClaimNoWiring(): void {
  * template_points.<col>)` no right-hand side and changes no asset's calc
  * configuration. A `derived` point here would silently enrol 148 assets in the
  * calc engine, and would need a formula the seed has no reason to invent.
+ *
+ * **And the engine's own outputs never become measured declarations (`F2.8`).**
+ * `CalcWriteService` creates a `source_kind = 'computed'` catalog row for
+ * `site_kw`, `it_kw` and `pue` on each incomer the first time it writes them.
+ * Without the `computed` predicate, the next `compose up` — which re-runs this
+ * seed — would read those rows back and declare the three outputs as MEASURED
+ * points on `BASELINE-ELECTRICAL`, the template the other 41 electrical assets
+ * stay pinned to. The predicate is the one thing that keeps the engine from
+ * feeding its results back into a baseline through the seed.
  */
 export function assertTheDeclaredPointsAreMeasuredAndNotDerived(): void {
   expect(HEALTH_TEMPLATE_POINTS_SQL).toContain("'measured'");
   expect(HEALTH_TEMPLATE_POINTS_SQL).not.toContain("'derived'");
+  expect(HEALTH_TEMPLATE_POINTS_SQL).toContain("ap.source_kind <> 'computed'");
 }
 
 /**

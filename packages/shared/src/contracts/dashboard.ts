@@ -123,7 +123,11 @@ export const dashboardKpisSchema = z.object({
   sitesTotal: z.number(),
   alarmsOpen: z.number(),
   alarmsCritical: z.number(),
-  pueEstimate: z.number(),
+  // Nullable since `F2.8` (owner ruling 4, 2026-09-05). PUE is Σ `site_kw` /
+  // Σ `it_kw` over the incomers in scope, so an estate where no incomer computes
+  // the two derived points has no ratio to report. There is no fallback curve
+  // and no `1` sentinel: a fabricated 1.0 reads as a perfect data centre.
+  pueEstimate: z.number().nullable(),
   asOf: z.string(),
 });
 

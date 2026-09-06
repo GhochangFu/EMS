@@ -13,6 +13,7 @@ import {
   bucketHours,
   levelForRange,
 } from "../telemetry/point-aggregates";
+import { latestPueRatio, windowedPueRatio } from "../telemetry/pue-ratio";
 
 type LocationDashboardAssetRow = LocationDashboardDto["assets"]["items"][number];
 type LocationDashboardTelemetrySample = LocationDashboardAssetRow["telemetry"][number];
@@ -415,7 +416,17 @@ export class DashboardService {
 
   /**
    * KPI row for the Executive Dashboard: sums latest kW per asset, live site count,
-   * and open alarms from `bms.alarms`.
+   * open alarms from `bms.alarms`, and the measured PUE.
+   *
+   * `F2.8` — `pueEstimate` is `number | null`. It used to be a curve fitted to
+   * `totalKw`; it is now Σ `site_kw` / Σ `it_kw` over the incomers in scope
+   * (`latestPueRatio`), and `null` where no incomer in scope computes the pair.
+   * There is no sentinel: the owner's ruling 4 of 2026-09-05 deleted the `1`
+   * this method used to return for an empty scope along with the curve itself.
+   * A configured site whose engine has written nothing for
+   * `PUE_LATEST_MAX_AGE_SECONDS` (900 s) also drops out of both sums — the
+   * owner's ruling of 2026-09-06 — so `null` here means "no fresh pair in
+   * scope", not only "nothing configured".
    */
   async kpis(assetIds?: string[] | null): Promise<{
     totalKw: number;
@@ -423,7 +434,7 @@ export class DashboardService {
     sitesTotal: number;
     alarmsOpen: number;
     alarmsCritical: number;
-    pueEstimate: number;
+    pueEstimate: number | null;
     asOf: string;
   }> {
     if (assetIds && assetIds.length === 0) {
@@ -433,7 +444,7 @@ export class DashboardService {
         sitesTotal: 0,
         alarmsOpen: 0,
         alarmsCritical: 0,
-        pueEstimate: 1,
+        pueEstimate: null,
         asOf: new Date().toISOString(),
       };
     }
@@ -473,7 +484,7 @@ export class DashboardService {
         sitesTotal: 0,
         alarmsOpen: 0,
         alarmsCritical: 0,
-        pueEstimate: 1,
+        pueEstimate: null,
         asOf: new Date().toISOString(),
       };
     }
@@ -484,7 +495,12 @@ export class DashboardService {
       sitesTotal: Number(row.sites_total),
       alarmsOpen: Number(row.alarms_open),
       alarmsCritical: Number(row.alarms_critical),
-      pueEstimate: this.estimatePue(totalKw),
+      // A second query rather than a join into the CTE above: the PUE read pairs
+      // two point keys per asset and drops the unpaired ones, which is a
+      // different shape from `kw_latest`'s per-asset sum and would obscure both.
+      // Same pool, same `$1` scope, and no freshness bound — deliberately, for
+      // parity with `kw_latest` (see `pue-ratio.ts`).
+      pueEstimate: await latestPueRatio(this.pool, assetIds ?? null),
       asOf: new Date().toISOString(),
     };
   }
@@ -536,14 +552,6 @@ export class DashboardService {
         totalKw: Number(x.total_kw),
       })),
     };
-  }
-
-  private estimatePue(totalKw: number): number {
-    if (totalKw <= 0) {
-      return 1.0;
-    }
-    const raw = 1.22 + Math.min(0.45, totalKw / 12_000);
-    return Math.round(raw * 100) / 100;
   }
 
   private round(value: number): number {
@@ -652,7 +660,7 @@ export class DashboardService {
     window: string;
     totalKwh: number;
     peakKw: number;
-    pueEstimate: number;
+    pueEstimate: number | null;
     indicativeCostZar: number;
     tariffZarPerKwh: number;
     asOf: string;
@@ -664,7 +672,7 @@ export class DashboardService {
         window: windowLabel,
         totalKwh: 0,
         peakKw: 0,
-        pueEstimate: 1,
+        pueEstimate: null,
         indicativeCostZar: 0,
         tariffZarPerKwh: this.energyTariffZar(),
         asOf: new Date().toISOString(),
@@ -691,8 +699,16 @@ export class DashboardService {
     // days, so 720 hours is the real bound, still three orders of magnitude inside
     // `_1m`'s 735-day horizon — but there is now exactly one implementation of level
     // choice, and it is the one carrying the retention guard.
+    // Hoisted out of the `levelForRange` call because `F2.8`'s PUE read needs the
+    // same instant. Note the two queries bound their windows differently and that
+    // is deliberate: the kWh query keeps `bucket > now() - $1::interval` (the
+    // **database** clock, unchanged from before this row), while `windowedPueRatio`
+    // takes `bucket >= start` off the **application** clock. The two differ by the
+    // round trip and never by a bucket at these widths, and unifying them would
+    // mean rewriting a measured ADR 0025 query for no gain.
+    const start = this.trailingStart(durationHours);
     const { level } = levelForRange({
-      start: this.trailingStart(durationHours),
+      start,
       granularity: useHourlyBuckets ? "1h" : "1m",
     });
     const kwhFactor = bucketHours(level);
@@ -700,7 +716,6 @@ export class DashboardService {
     const r = await this.pool.query<{
       total_kwh: string;
       peak_kw: string;
-      avg_kw: string;
     }>(
       `
       WITH per AS (
@@ -716,8 +731,7 @@ export class DashboardService {
       )
       SELECT
         COALESCE(SUM(total_kw) * $2::float8, 0) AS total_kwh,
-        COALESCE(MAX(total_kw), 0) AS peak_kw,
-        COALESCE(AVG(total_kw), 0) AS avg_kw
+        COALESCE(MAX(total_kw), 0) AS peak_kw
       FROM agg
       `,
       [intervalSql, kwhFactor, assetIds ?? null],
@@ -726,14 +740,20 @@ export class DashboardService {
     const row = r.rows[0];
     const totalKwh = row ? Number(row.total_kwh) : 0;
     const peakKw = row ? Number(row.peak_kw) : 0;
-    const avgKw = row ? Number(row.avg_kw) : 0;
     const tariff = this.energyTariffZar();
 
     return {
       window: windowLabel,
       totalKwh: Math.round(totalKwh * 100) / 100,
       peakKw: Math.round(peakKw * 100) / 100,
-      pueEstimate: this.estimatePue(avgKw),
+      // `avg_kw` is gone from the query above with the curve it fed — it had no
+      // other reader (`energyTopConsumers` computes its own).
+      pueEstimate: await windowedPueRatio(this.pool, {
+        level,
+        start,
+        end: new Date(),
+        assetIds: assetIds ?? null,
+      }),
       indicativeCostZar: Math.round(totalKwh * tariff * 100) / 100,
       tariffZarPerKwh: tariff,
       asOf: new Date().toISOString(),

@@ -170,6 +170,27 @@ export function runReportsSerialiseTests(): void {
   assert(negative.endsWith(",-5,-840"), `negative numbers render bare, got ${negative}`);
   assert(!negative.includes("'-"), "no apostrophe reaches a numeric cell");
 
+  // --- a null PUE (F2.8 ruling 4) --------------------------------------------
+  // `pueEstimate` is nullable from `F2.8`: the API returns `null` when no incomer
+  // in scope computes `site_kw` and `it_kw`, and there is no fallback curve and no
+  // `1` sentinel to write instead. The cell carries **U+2014**, the same glyph
+  // `KpiTile` renders for an empty tile — deliberately not U+002D, which is an ADR
+  // 0026 formula leader and would arrive apostrophe-guarded as `'-`.
+  //
+  // The row **label** is unchanged. `UNCHANGED_OUTPUT` above is ADR 0026's
+  // byte-level blast-radius proof, and renaming `PUE estimate` would force a
+  // re-pin of that golden for no product gain (plan §1).
+  const nullPueSummary = { ...preview().summary, pueEstimate: null };
+  const nullPueLine = energyCsvDocument(preview({ summary: nullPueSummary }))
+    .split("\n")
+    .find((line) => line.startsWith("PUE estimate"));
+  assert(
+    nullPueLine === "PUE estimate,—,",
+    `a null pueEstimate must render as the em dash, unquoted and unguarded, got ${JSON.stringify(
+      nullPueLine,
+    )}`,
+  );
+
   // --- structure ------------------------------------------------------------
   const doc = energyCsvDocument(preview({ topConsumers: [consumer(), consumer({ code: "CH-02" })] }));
   assert(doc.endsWith("\n"), "the document is newline-terminated");
@@ -299,5 +320,27 @@ export function runReportsSheetTests(): void {
   assert(
     energySheetRows(preview({ topConsumers: [] })).at(-1)?.[0] === "Asset code",
     "with no consumers the table header is still emitted, matching the CSV",
+  );
+
+  // --- a null PUE reaches the sheet as text, not as a number (F2.8 ruling 4) --
+  // The dash is the one metric cell that is not numeric. It must arrive as a
+  // `string` so `aoa_to_sheet` writes `t="str"` rather than a `<v>` the client
+  // computes on, and `assertFiniteCells` must let it through — that guard is
+  // typed on `number`, so a text cell is outside it by construction. Asserted
+  // rather than reasoned, because a `Number.isFinite`-style guard would 500 the
+  // xlsx route on exactly the row F2.8 makes reachable.
+  const nullPueRows = energySheetRows(
+    preview({ summary: { ...preview().summary, pueEstimate: null } }),
+  );
+  const nullPueRow = nullPueRows.find((row) => row[0] === "PUE estimate");
+  assert(
+    nullPueRow?.[1] === "—" && typeof nullPueRow[1] === "string",
+    `a null pueEstimate must reach the sheet as the string "—", got ${JSON.stringify(
+      nullPueRow?.[1],
+    )}`,
+  );
+  assert(
+    assertFiniteCells(nullPueRows).length === nullPueRows.length,
+    "the finiteness guard must pass a text cell through — it is typed on `number`",
   );
 }

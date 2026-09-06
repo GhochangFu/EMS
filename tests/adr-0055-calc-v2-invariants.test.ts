@@ -64,8 +64,12 @@ function asOk(result: ParseResult): Extract<ParseResult, { ok: true }> {
  * - **(e) — neither evaluation host calls `countCalcSkipped(` outside its own
  *   `refuse` helper**, so a refusal cannot be counted without also being
  *   recorded for the per-asset page — `Task 16`.
+ * - **(f) — the stock catalog's `bms-calc-v2` literals are `v2`, and only where
+ *   they may be** — added by `F2.8` Task 2, the row that authored the first
+ *   `v2` stock points. Part (b) says a `v1` literal means the same under both
+ *   dialects; this says the converse for the entries that are authored `v2`.
  *
- * All five parts are now present.
+ * All six parts are now present.
  */
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -75,35 +79,85 @@ const stockCatalogFiles = readdirSync(stockCatalogDir)
   .filter((name) => name.endsWith(".ts"))
   .map((name) => join(stockCatalogDir, name));
 
-/** `\s` matches newlines too, so `derived(\n  "…"` (the multi-line call shape
- * a manual grep of a single-line pattern under-counts) is still found. */
-const DERIVED_RE = /derived\(\s*"((?:[^"\\]|\\.)*)"/g;
+/**
+ * `\s` matches newlines too, so `derived(\n  "…"` (the multi-line call shape a
+ * manual grep of a single-line pattern under-counts) is still found.
+ *
+ * **Widened by `F2.8` Task 2 to capture the call's OPTION OBJECT as well**,
+ * because that object is the only thing in the source that says which dialect
+ * the literal is authored in. A `bms-calc-v2` stock formula must not be held to
+ * part (b)'s "parses under `v1`" rule; without the options this scanner cannot
+ * tell the two apart, so it would simply go red on the first `v2` stock entry
+ * and stay red.
+ *
+ * **There is deliberately no trailing `\)` anchor.** Four shipped calls are
+ * written `derived(\n  "…",\n)` — with a trailing comma — and an anchored
+ * pattern drops all four from the scan silently, which is the vacuity this file
+ * exists to prevent (measured at this task's build gate with both patterns run
+ * standalone: 40 calls unanchored, 36 anchored). The option object is bounded by
+ * `[^{}]*` rather than a lazy `[\s\S]*?` for the same reason in the other
+ * direction: `[^{}]*` cannot run past a brace into the next declaration, and a
+ * miss leaves the literal classified `v1` — where part (b) still checks it —
+ * while dropping part (f)'s count under its floor. Either way it fails loud.
+ */
+const DERIVED_RE = /derived\(\s*"((?:[^"\\]|\\.)*)"\s*(?:,\s*(\{[^{}]*\}))?/g;
+/**
+ * A literal is `v2` when its option object names the SYMBOL. Never the bare
+ * string: part (c) below is what forbids a stock surface from restating the
+ * vocabulary, so `CALC_DIALECT_V2` is the only spelling a stock entry may use.
+ * `point-fields.spec.ts` does write `formulaDialect: "bms-calc-v2"` in the
+ * `@ts-expect-error` fixtures that prove the overload's type guarantee — those
+ * are not stock authoring sites, they stay in the `v1` set, and their `{a}` /
+ * `{kw} * 2` literals parse under both dialects there like any other.
+ */
+const V2_OPTION_RE = /formulaDialect:\s*CALC_DIALECT_V2/;
 /** `expression:\s*"…"` — deliberately requires the quote, so a type
- * annotation like `expression: string;` never matches. */
+ * annotation like `expression: string;` never matches. A KPI literal takes no
+ * option object and so can never be `v2`. */
 const EXPRESSION_RE = /expression:\s*"((?:[^"\\]|\\.)*)"/g;
 
-function extractLiterals(source: string): string[] {
-  const out: string[] = [];
-  for (const re of [DERIVED_RE, EXPRESSION_RE]) {
-    re.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    // eslint-disable-next-line no-cond-assign
-    while ((match = re.exec(source))) {
-      // The captured group is JS-string-literal content; JSON.parse decodes
-      // its escapes (\", \\, …) the same way the source file's own compiler
-      // would, without hand-rolling an unescaper.
-      out.push(JSON.parse(`"${match[1]}"`) as string);
-    }
+type ScannedLiteral = { literal: string; options: string | null; v2: boolean };
+
+function extractLiterals(source: string): ScannedLiteral[] {
+  const out: ScannedLiteral[] = [];
+  // The captured group is JS-string-literal content; JSON.parse decodes its
+  // escapes (\", \\, …) the same way the source file's own compiler would,
+  // without hand-rolling an unescaper.
+  const decode = (raw: string): string => JSON.parse(`"${raw}"`) as string;
+  let match: RegExpExecArray | null;
+  DERIVED_RE.lastIndex = 0;
+  // eslint-disable-next-line no-cond-assign
+  while ((match = DERIVED_RE.exec(source))) {
+    const options = match[2] ?? null;
+    out.push({ literal: decode(match[1]), options, v2: options !== null && V2_OPTION_RE.test(options) });
+  }
+  EXPRESSION_RE.lastIndex = 0;
+  // eslint-disable-next-line no-cond-assign
+  while ((match = EXPRESSION_RE.exec(source))) {
+    out.push({ literal: decode(match[1]), options: null, v2: false });
   }
   return out;
 }
 
-const literalsByFile = stockCatalogFiles.map((file) => ({
+const scannedByFile = stockCatalogFiles.map((file) => ({
   file,
-  literals: extractLiterals(readFileSync(file, "utf8")),
+  scanned: extractLiterals(readFileSync(file, "utf8")),
+}));
+
+/** Part (b)'s set — every literal NOT authored `bms-calc-v2`. */
+const literalsByFile = scannedByFile.map(({ file, scanned }) => ({
+  file,
+  literals: scanned.filter((entry) => !entry.v2).map((entry) => entry.literal),
 }));
 
 const allLiterals = literalsByFile.flatMap((entry) => entry.literals);
+
+/** Part (f)'s set — the `v2` literals, each with the options that marked it. */
+const v2Literals = scannedByFile.flatMap(({ file, scanned }) =>
+  scanned
+    .filter((entry) => entry.v2)
+    .map((entry) => ({ file, literal: entry.literal, options: entry.options ?? "" })),
+);
 
 describe("ADR 0055 part (b) — every stock-catalog v1 formula literal parses identically under v2", () => {
   it("found stock-catalog files to scan, so the scan below is not silently empty", () => {
@@ -114,14 +168,18 @@ describe("ADR 0055 part (b) — every stock-catalog v1 formula literal parses id
    * Anti-vacuity: a scan regex that silently stops matching would let this
    * whole file pass while checking nothing — the exact failure this repo
    * keeps finding in review (see `tests/adr-0037-calc-engine-invariants.test.ts`
-   * and its own anti-vacuity case). Verified by hand at the build gate: `36`
-   * `derived("…")` calls (4 of them spanning the call across a line break)
-   * plus `7` quoted `expression: "…"` KPI literals, `43` total, all under
-   * this directory — counted with this file's own two regexes run standalone
-   * against the raw source, not estimated from a looser grep (a bare
-   * `derived\(` count also matches the helper's own declaration and doc
-   * comments in `point-fields.ts`, which is why that looser count reads
-   * higher and is not the right cross-check).
+   * and its own anti-vacuity case). Counted with this file's own regexes run
+   * standalone against the raw source at `F2.8` Task 2's build gate: **43**
+   * `derived("…")` calls (4 of them spanning the call across a line break, 4
+   * more being `point-fields.spec.ts`'s own overload fixtures) plus **7** quoted
+   * `expression: "…"` KPI literals — **50** total, of which **3** are `F2.8`'s
+   * `v2` feeder rows and belong to part (f), leaving **47** here.
+   *
+   * The old count in this docblock read `36 + 7 = 43`: it predated
+   * `point-fields.spec.ts`, which lives in the scanned directory and adds four.
+   * Never estimated from a looser grep — a bare `derived\(` count also matches
+   * the helper's own declaration and doc comments in `point-fields.ts`, which is
+   * why that count reads higher and is not the right cross-check.
    */
   it("found at least 30 formula literals", () => {
     expect(allLiterals.length).toBeGreaterThanOrEqual(30);
@@ -153,6 +211,88 @@ describe("ADR 0055 part (b) — every stock-catalog v1 formula literal parses id
         expect(v2Ok.crossRefs, `a real stock literal must carry no crossRefs under v2: ${JSON.stringify(literal)}`).toEqual([]);
       }
     }
+  });
+});
+
+// --- part (f) — the stock catalog's bms-calc-v2 literals ---------------------
+
+/**
+ * `F2.8` Task 2. The stock catalog carries its first `bms-calc-v2` points — the
+ * incomer's `site_kw`, `it_kw` and `pue` — and part (b) above must not hold them
+ * to the `v1` parser. That exemption is only safe if something else says the
+ * exempted literals really are `v2` and really are only where they may be, which
+ * is this part.
+ *
+ * **The count is the anti-vacuity control**, and it is the whole reason the
+ * scanner had to learn the option object rather than simply skipping a file.
+ *
+ * **`{site_kw} / {it_kw}` parses under BOTH dialects and carries no
+ * `crossRefs`** — correct and expected, not a hole. It is plain `v1` arithmetic
+ * over two LOCAL keys; what makes it `v2` is ADR 0055 decision 7, the permission
+ * for a derived point to reference a derived SIBLING, and a permission leaves no
+ * mark in the formula's own text. So "fails `v1`, or carries a cross-asset
+ * reference" is asserted over the two aggregates, and the ratio is asserted
+ * positively as the one literal that is `v2` by permission rather than syntax.
+ */
+describe("ADR 0055 part (f) — the stock catalog's bms-calc-v2 literals", () => {
+  it("found the three v2 literals, so nothing below is vacuous", () => {
+    expect(v2Literals.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("every v2 literal is authored in electrical-feeder.ts", () => {
+    const strays = v2Literals
+      .filter((entry) => !entry.file.endsWith("electrical-feeder.ts"))
+      .map((entry) => `${entry.file}: ${entry.literal}`);
+    expect(strays, "F2.8 ruling 1 puts the v2 points on the incomer and nowhere else").toEqual([]);
+  });
+
+  it("every v2 literal parses under bms-calc-v2 and is authored scheduled (ADR 0055 decision 10)", () => {
+    for (const entry of v2Literals) {
+      const parsed = parseFormula(entry.literal, { dialect: CALC_DIALECT_V2 });
+      if (!parsed.ok) {
+        expect.fail(`${entry.file}: ${JSON.stringify(entry.literal)} must parse under v2 — got ${JSON.stringify(asFailure(parsed).errors)}`);
+      }
+      expect(
+        entry.options,
+        `${JSON.stringify(entry.literal)} is v2, so it must be scheduled — a cross-asset formula resolves its members once per sweep`,
+      ).toMatch(/calcTrigger:\s*"scheduled"/);
+    }
+  });
+
+  it("each v2 literal either needs v2 syntax, or is v2 by decision 7 alone", () => {
+    const needsV2Syntax: string[] = [];
+    const v2ByPermission: string[] = [];
+    for (const entry of v2Literals) {
+      const v1 = parseFormula(entry.literal);
+      const v2 = parseFormula(entry.literal, { dialect: CALC_DIALECT_V2 });
+      expect(v2.ok, `${JSON.stringify(entry.literal)} must parse under v2`).toBe(true);
+      if (!v2.ok) continue;
+      const v2Ok = asOk(v2);
+      if (!v1.ok) {
+        // `v1` cannot tokenize `@site` or `@group('…')` at all, so the aggregate
+        // IS the reason this entry is v2 — and it must carry the cross-asset
+        // reference the host resolves per sweep.
+        expect(
+          v2Ok.crossRefs.length,
+          `${JSON.stringify(entry.literal)} fails v1, so it must carry a cross-asset reference`,
+        ).toBeGreaterThan(0);
+        needsV2Syntax.push(entry.literal);
+        continue;
+      }
+      // It parses under `v1` too — then decision 4 says it must MEAN the same
+      // there, and its being `v2` is a permission rather than a syntax.
+      const v1Ok = asOk(v1);
+      expect(JSON.stringify(v2Ok.ast), `AST mismatch for ${JSON.stringify(entry.literal)}`).toBe(JSON.stringify(v1Ok.ast));
+      expect(
+        v2Ok.crossRefs,
+        `${JSON.stringify(entry.literal)} parses under v1, so it can hold no cross-asset reference`,
+      ).toEqual([]);
+      v2ByPermission.push(entry.literal);
+    }
+    // Both halves floored, because a change that collapsed either one would
+    // otherwise pass: the feeder authors two aggregates and one ratio over them.
+    expect(needsV2Syntax.length, "the two @-scoped aggregates must genuinely need v2").toBeGreaterThanOrEqual(2);
+    expect(v2ByPermission, "exactly one literal — the pue ratio — is v2 by permission, not syntax").toHaveLength(1);
   });
 });
 
