@@ -6,6 +6,13 @@ import { io, type Socket } from "socket.io-client";
 import { ackAlarm, fetchAlarmsPage } from "../api/alarms";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { alarmSeverityTone, summariseAlarmSeverities } from "../lib/alarm-severity";
+import {
+  alarmLifecycleState,
+  alarmStateLabel,
+  alarmStateSearchText,
+  canAcknowledge,
+  type AlarmLifecycleState,
+} from "../lib/alarm-state";
 import { AlarmDetailsPanel } from "../components/alarm-details-panel";
 import { AlarmSummaryCard } from "../components/alarm-summary-card";
 import { AppShell } from "../layouts/app-shell";
@@ -54,11 +61,31 @@ function alarmSubsystem(alarm: AlarmListItem): AlarmSubsystem {
   return "Security";
 }
 
+/**
+ * How the State cell is drawn, per state — ADR 0057 decision 1.
+ *
+ * The *cleared* pair reads muted here as well as on the row, because the
+ * emphasis on this page is a claim about what still needs attention: an
+ * acknowledged alarm whose condition has not returned to normal is one of
+ * those, and a cleared one is not. That is the reversal `F3.10` makes, so the
+ * two cleared states are the ones that lose their weight rather than the two
+ * acknowledged ones.
+ */
+function alarmStateToneClass(state: AlarmLifecycleState): string {
+  if (state === "active") {
+    return "font-medium text-bms-ink";
+  }
+  if (state === "acknowledged") {
+    return "text-emerald-700";
+  }
+  return "text-bms-muted";
+}
+
 function matchesAlarmSearch(alarm: AlarmListItem, query: string): boolean {
   if (!query) {
     return true;
   }
-  const state = alarm.acknowledgedAt ? "acknowledged" : "open active unack";
+  const state = alarmStateSearchText(alarm);
   const searchable = [
     alarm.severity,
     alarm.assetCode,
@@ -140,7 +167,12 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
       rows.map((alarm) => alarm.severity),
       alarmSeverities,
     );
-    const active = rows.filter((alarm) => !alarm.acknowledgedAt).length;
+    // ADR 0057 decision 1 and 11: *active* is `cleared_at IS NULL`. The card
+    // therefore counts the acknowledged alarms whose condition still holds —
+    // exactly the rows the old predicate dropped, and the reason the card is
+    // no longer named "Active (Unack)". `acknowledged` keeps its own stamp; the
+    // two counts now overlap, which is the point (an alarm can be both).
+    const active = rows.filter((alarm) => !alarm.clearedAt).length;
     const acknowledged = rows.filter((alarm) => alarm.acknowledgedAt).length;
     const bySubsystem = alarmSubsystems.map((subsystem) => ({
       subsystem,
@@ -242,7 +274,16 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
           />
           <AlarmSummaryCard label="Major" value={summary.major} tone="warning" />
           <AlarmSummaryCard label="Minor" value={summary.minor} tone="info" />
-          <AlarmSummaryCard label="Active (Unack)" value={summary.active} tone="ok" />
+          {/*
+            The mockup names this card `Active (unack)` (`ESKOM_SMOC.html`,
+            `TRINETRA.html`, AGENTS.md §5). It is renamed here because the
+            parenthetical is now false: ADR 0057 decision 11 makes the card
+            count uncleared alarms, acknowledged ones included. Keeping the
+            reference's wording would have been the §5-faithful choice and the
+            wrong one — the label would name a predicate the number does not
+            use. The layout, tone and position are unchanged.
+          */}
+          <AlarmSummaryCard label="Active" value={summary.active} tone="ok" />
           <AlarmSummaryCard label="Acknowledged" value={summary.acknowledged} tone="ok" />
           {showUnrecognised ? (
             <AlarmSummaryCard label="Unrecognised" value={summary.unrecognised} tone="offline" />
@@ -336,8 +377,15 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                   filteredRows.map((a) => (
                     <tr
                       key={a.id}
+                      /*
+                        The grey now follows the clear stamp, not the
+                        acknowledgement (ADR 0057 decision 1). An acknowledged
+                        alarm whose breach still holds is active, and greying it
+                        was this page telling an operator the plant was calmer
+                        than it is — `F4.46`'s failure through a different door.
+                      */
                       className={
-                        a.acknowledgedAt
+                        a.clearedAt
                           ? "border-b border-gray-50 bg-gray-50/60 text-bms-muted"
                           : "border-b border-gray-100"
                       }
@@ -358,11 +406,9 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                       <td className="px-3 py-2 text-xs">{a.siteName}</td>
                       <td className="max-w-xs px-3 py-2 text-xs">{a.message}</td>
                       <td className="px-3 py-2 text-xs">
-                        {a.acknowledgedAt ? (
-                          <span className="text-emerald-700">Acknowledged</span>
-                        ) : (
-                          <span className="font-medium text-bms-ink">Open</span>
-                        )}
+                        <span className={alarmStateToneClass(alarmLifecycleState(a))}>
+                          {alarmStateLabel(alarmLifecycleState(a))}
+                        </span>
                       </td>
                       <td className="px-3 py-2 text-right">
                         <div className="flex justify-end gap-2">
@@ -380,7 +426,15 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                           >
                             Work order
                           </button>
-                          {!a.acknowledgedAt ? (
+                          {/*
+                            `POST /alarms/:id/ack` filters on
+                            `acknowledged_at IS NULL` and nothing else, so a
+                            cleared, unacknowledged alarm still takes the press
+                            — that press is what closes it (ADR 0057
+                            decision 1). The button follows the endpoint's own
+                            predicate rather than the row's tone.
+                          */}
+                          {canAcknowledge(a) ? (
                           <button
                             type="button"
                             className="rounded bg-bms-green px-2.5 py-1 text-xs font-semibold text-white hover:bg-bms-green-dark"

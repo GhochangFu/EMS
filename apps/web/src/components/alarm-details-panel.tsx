@@ -11,6 +11,7 @@ import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { filterAssetsByQuery, toggleAssetSelection } from "../lib/asset-picker";
 import { alarmSkillLabel, formatThresholdPairing, toLocalDateTimeInputValue } from "../lib/alarm-details";
 import { alarmSeverityTone } from "../lib/alarm-severity";
+import { alarmLifecycleState, alarmStateLabel } from "../lib/alarm-state";
 import { StatusPill } from "./status-pill";
 
 type AlarmDetailsPanelProps = {
@@ -224,10 +225,24 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                 <span className="font-semibold text-bms-ink">Triggered</span>{" "}
                 {new Date(details.raisedAt).toLocaleString()}
               </div>
+              {/*
+                One helper with the grid, so this panel and the alarm grid
+                cannot disagree about what an alarm's state is. The old
+                expression here printed `Open` for anything unacknowledged,
+                which under ADR 0057 decision 1 is wrong for a cleared alarm —
+                the condition has returned to normal and only the
+                acknowledgement is outstanding.
+              */}
               <div>
                 <span className="font-semibold text-bms-ink">State</span>{" "}
-                {details.acknowledgedAt ? "Acknowledged" : "Open"}
+                {alarmStateLabel(alarmLifecycleState(details))}
               </div>
+              {details.clearedAt ? (
+                <div>
+                  <span className="font-semibold text-bms-ink">Cleared</span>{" "}
+                  {new Date(details.clearedAt).toLocaleString()}
+                </div>
+              ) : null}
             </div>
 
             {pairing ? (
