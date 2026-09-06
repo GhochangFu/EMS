@@ -239,6 +239,25 @@ async function runComposedUpdateTest(): Promise<void> {
     merged.severity === null,
     `an update that never mentions severity must leave a null one alone, got ${String(merged.severity)}`,
   );
+
+  assert(
+    merged.clearHoldSeconds === 300,
+    `a stored clear hold must survive an update that never mentions it, got ${String(merged.clearHoldSeconds)}`,
+  );
+
+  // `F3.10` — the same seam, one column over. `clearHoldSeconds` is nullable
+  // for the same reason severity is (null means "the default, applied where
+  // the value is consumed"), so the composed path has to preserve it too.
+  // Neither `rule-mapping.spec.ts` nor the validator cases above see this
+  // pair; that is what let `F4.46` live.
+  const hold = ruleRow({ clearHoldSeconds: null });
+  const mergedHold = await validator([
+    { code: hold.assetCode, domain: hold.assetDomain },
+  ]).validateRuleDraft(mergeRuleDraft(hold, {}), undefined, null);
+  assert(
+    mergedHold.clearHoldSeconds === null,
+    `an update that never mentions the clear hold must leave a null one alone, got ${String(mergedHold.clearHoldSeconds)}`,
+  );
 }
 
 /**

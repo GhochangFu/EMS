@@ -280,6 +280,7 @@ export class RulesService {
       operator: values.operator ?? null,
       thresholdValue: values.thresholdValue ?? null,
       severity: values.severity ?? null,
+      clearHoldSeconds: values.clearHoldSeconds ?? null,
       condition: values.condition,
       action: values.action,
       lastEvaluatedAt: null,
@@ -903,6 +904,7 @@ export class RulesService {
         // (`alarm-severity-default.ts:21`) maps a null rule to `"warning"` when
         // `AlarmRaiser` raises it. One default, at the edge that needs it.
         severity: dto.severity ?? null,
+        clearHoldSeconds: dto.clearHoldSeconds ?? null,
         condition: dto.condition,
         action: dto.action,
       };
@@ -931,6 +933,7 @@ export class RulesService {
       // agrees — `weekday_energy_review` is the only time-window rule and the
       // only row with no severity.
       severity: dto.severity ?? null,
+      clearHoldSeconds: dto.clearHoldSeconds ?? null,
       condition: dto.condition,
       action: dto.action,
     };

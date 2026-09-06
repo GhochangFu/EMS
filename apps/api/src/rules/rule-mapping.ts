@@ -98,6 +98,7 @@ export function mapRuleRow(row: RuleRow): RuleListItem {
     operator: row.operator as AutomationRuleOperator | null,
     thresholdValue: row.thresholdValue,
     severity: row.severity,
+    clearHoldSeconds: row.clearHoldSeconds,
     lifecycleStatus: row.lifecycleStatus as AutomationRuleLifecycleStatus,
     condition: asCondition(row.condition),
     action: asAction(row.action),
@@ -150,6 +151,24 @@ export function ruleBodyFromRow(row: RuleRow): RuleDraftBody {
     // at compile time. This compiled only because `AutomationRuleSeverity`
     // became `string`, so nothing errored on a cast that had quietly gone false.
     severity: row.severity as AutomationRuleSeverity | null,
+    // `F3.10` / ADR 0057 decision 3, and the whole of `F4.46`'s lesson applied
+    // one column over: `clearHoldSeconds` is nullable everywhere and `null`
+    // MEANS "the default" — it is not a missing value waiting to be filled in.
+    //
+    // **No default is substituted anywhere on the write path.** Not here, not
+    // in `mergeRuleDraft` below, and not in `validateRuleDraft`'s two returns
+    // (`rules.service.ts`), which carry the value through as
+    // `dto.clearHoldSeconds ?? null` — a `?? DEFAULT_CLEAR_HOLD_SECONDS` in any
+    // of those three places would mean that saving an unrelated field froze
+    // today's default into the row, and a later change to the default would
+    // then skip every rule ever saved. That is exactly how a downgraded
+    // severity used to be written back.
+    //
+    // The one default lives where the value is CONSUMED —
+    // `DEFAULT_CLEAR_HOLD_SECONDS` in `alarms/alarm-lifecycle.ts`, applied by
+    // the sweep when it decides whether the hold has elapsed — precisely as
+    // `defaultAlarmSeverity` is the single default for a null severity.
+    clearHoldSeconds: row.clearHoldSeconds,
     condition: asCondition(row.condition),
     action: asAction(row.action),
   };
@@ -174,6 +193,8 @@ export function mergeRuleDraft(row: RuleRow, dto: RuleUpdateBody): RuleDraftBody
     thresholdValue:
       dto.thresholdValue === undefined ? current.thresholdValue : dto.thresholdValue,
     severity: dto.severity === undefined ? current.severity : dto.severity,
+    clearHoldSeconds:
+      dto.clearHoldSeconds === undefined ? current.clearHoldSeconds : dto.clearHoldSeconds,
     condition: dto.condition === undefined ? current.condition : dto.condition,
     action: dto.action === undefined ? current.action : dto.action,
   };
