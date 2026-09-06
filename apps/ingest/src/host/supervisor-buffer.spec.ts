@@ -517,6 +517,7 @@ export async function runSupervisorBufferTests(): Promise<void> {
         return false;
       },
       oldest: async () => null,
+      sweep: async () => undefined,
     };
     const rig = await makeRig(dir, { handle: refusing });
     await rig.connect();

@@ -28,16 +28,42 @@ import type { AdapterLogger } from "../adapter/types.js";
  * `commit()` and only if nothing was appended since it was read — otherwise
  * the next pass re-reads it and its head re-upserts idempotently.
  *
- * **Bounds (decision 6).** After every successful append: every segment older
- * than `maxAgeMs` by its receipt minute goes, then the oldest segment across
- * endpoints goes while the store exceeds `maxBytes`. Sizes are tracked in
- * memory from the start-up scan and updated on append and unlink; nothing
- * calls `stat`. Every erasure adds to the owning endpoint's `dropped`.
+ * **Bounds (decision 6).** After every append — successful or failed — and on
+ * every `sweep()`: every segment older than `maxAgeMs` by its receipt minute
+ * goes, then the oldest segment across endpoints goes while the store exceeds
+ * `maxBytes`. The failed-append path enforces and retries once, because a full
+ * disk is exactly the state the bounds exist to leave, and `sweep()` exists
+ * because the age bound is a rolling hour rather than a rolling hour *of
+ * appends*. Sizes are tracked in memory from the start-up scan and updated on
+ * append and unlink — `stat` is called only during that scan, never on the
+ * append path. Every erasure adds to the owning endpoint's `dropped`.
  *
- * **One serial queue.** Two loops per supervisor (drain and replay) plus
- * cross-endpoint byte enforcement touch the same files; an `appendFile`
- * racing an `unlink` on one segment is a silent loss. Every filesystem
- * operation of the store runs through one promise chain.
+ * **Unlink first, then forget.** A volume can refuse an unlink — EROFS after a
+ * remount, EPERM, a Windows lock. Dropping the record first would leave the
+ * file on disk with nothing counting its bytes, so the byte bound would stop
+ * bounding and `dropped` would count samples that are still there. The record
+ * is dropped only once the file is gone; otherwise the failure is logged at
+ * `error` and the erasure did not happen. The cost is that a segment whose
+ * unlink keeps failing is re-read (and, at `commit()`, re-replayed
+ * idempotently) on every pass until an operator or the next start-up clears
+ * it — which is the honest consequence of not lying about the byte total.
+ *
+ * **A bad file is skipped; a bad directory refuses start-up (ruling 4).** The
+ * scan `stat`s each candidate and leaves alone anything larger than `maxBytes`
+ * or unreadable, with one `warn`; one stray oversized file must not make the
+ * host unstartable for ever. A `readdir` that fails is still fatal — a subtree
+ * the store cannot enumerate is a backlog it can neither replay nor bound.
+ *
+ * **One serial queue, for every endpoint.** Two loops per supervisor (drain
+ * and replay) plus cross-endpoint byte enforcement touch the same files; an
+ * `appendFile` racing an `unlink` on one segment is a silent loss. Every
+ * filesystem operation of the store runs through one promise chain — so the
+ * *accounting* is per endpoint (decision 2) but the queue is not, and a slow
+ * append on one endpoint delays every other endpoint's spill and replay.
+ *
+ * **Modes.** Directories are created `0o700` and segments `0o600`: the buffer
+ * holds plant telemetry, so on a POSIX host only the account running the host
+ * can read it. Windows ignores both.
  *
  * The store owns no timer and reads no `process.env` — the clock is `now()`
  * and the directory is a value.
@@ -61,19 +87,43 @@ export type DiskBufferHandle = {
   append(samples: readonly SourceSample[]): Promise<boolean>;
   /** The endpoint's oldest segment, or `null` when nothing is buffered. */
   oldest(): Promise<BufferedSegment | null>;
+  /**
+   * Applies both bounds now, host-wide, without appending anything.
+   *
+   * The age bound is a rolling hour, not a rolling hour of appends: an
+   * endpoint that stops producing — the broker down, the RTU disabled — would
+   * otherwise hold its last segments for ever, because nothing else calls
+   * `enforceBounds`. The supervisor calls this once a minute while idle.
+   */
+  sweep(): Promise<void>;
 };
 
 export type DiskBufferStore = {
   readonly dir: string;
   /** Same `(protocol, endpointKey)` returns the same handle. */
   handle(protocol: IngestProtocol, endpointKey: string): DiskBufferHandle;
+  /** Applies both bounds now, across every endpoint. Same call the handles share. */
+  sweep(): Promise<void>;
 };
 
-/** The `node:fs/promises` slice used, injectable so a spec can make it fail. */
+/**
+ * The `node:fs/promises` slice used, injectable so a spec can make it fail.
+ *
+ * `readFile` and `stat` are narrowed to the one call shape the store uses
+ * rather than taken from the module's overloads: the store reads a whole
+ * segment as bytes and reads nothing from `Stats` but `size`. Narrowing says
+ * so, and it keeps a fake in a spec a plain function rather than an
+ * overload-compatible one.
+ */
 export type BufferFileSystem = Pick<
   typeof fsPromises,
-  "mkdir" | "writeFile" | "appendFile" | "readFile" | "readdir" | "unlink"
->;
+  "mkdir" | "writeFile" | "appendFile" | "readdir" | "unlink"
+> & {
+  /** One whole segment, as bytes. */
+  readFile(path: string): Promise<Buffer>;
+  /** The size of one candidate segment, in the start-up scan only. */
+  stat(path: string): Promise<{ readonly size: number }>;
+};
 
 export type DiskBufferOptions = {
   readonly dir: string;
@@ -87,6 +137,18 @@ export type DiskBufferOptions = {
 const MINUTE_MS = 60_000;
 /** A segment the store owns. Anything else in the tree is left alone and logged. */
 const SEGMENT_NAME = /^(\d+)\.jsonl$/;
+/**
+ * Consecutive non-`ENOENT` read failures before a segment is erased.
+ *
+ * Without a ceiling an unreadable segment is immortal: `oldest()` returns
+ * `null`, the replay loop retries it for ever, `buffered>0` keeps the host
+ * degraded, and nothing else in the store ever touches it. Three passes
+ * distinguishes a transient I/O error from a file that will never be read.
+ */
+const READ_FAILURES_BEFORE_ERASE = 3;
+/** POSIX modes for the tree. The buffer holds plant telemetry; Windows ignores these. */
+const DIR_MODE = 0o700;
+const FILE_MODE = 0o600;
 
 /**
  * One line, read back. Zod strips keys it does not list, so nothing an earlier
@@ -123,6 +185,8 @@ type SegmentRecord = {
   lines: number;
   /** Lines found unparseable and already added to the owner's `dropped`. */
   unparseableCounted: number;
+  /** Consecutive non-`ENOENT` read failures; reset by a read that succeeds. */
+  readFailures: number;
 };
 
 type EndpointRecord = {
@@ -170,7 +234,7 @@ async function ensureDir(fs: BufferFileSystem, target: string): Promise<void> {
   let current = target;
   for (;;) {
     try {
-      await fs.mkdir(current);
+      await fs.mkdir(current, { mode: DIR_MODE });
       break;
     } catch (error) {
       const code = errnoCode(error);
@@ -187,7 +251,7 @@ async function ensureDir(fs: BufferFileSystem, target: string): Promise<void> {
   }
   for (const path of missing.reverse()) {
     try {
-      await fs.mkdir(path);
+      await fs.mkdir(path, { mode: DIR_MODE });
     } catch (error) {
       if (errnoCode(error) !== "EEXIST") {
         throw error;
@@ -372,25 +436,39 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
     }
   }
 
-  async function unlinkSegment(endpoint: EndpointRecord, segment: SegmentRecord): Promise<void> {
-    forget(endpoint, segment);
+  /**
+   * Removes the file, then the record. **The order is the point.**
+   *
+   * Forgetting first subtracts the bytes and deletes the record even when the
+   * volume refuses the unlink, and the file then sits there uncounted: the
+   * byte bound stops bounding, and `erase` credits `dropped` with samples that
+   * are still on disk. Resolves `false` — with one `error` line — when the file
+   * stays, and every caller then treats the erasure as not having happened.
+   */
+  async function unlinkSegment(endpoint: EndpointRecord, segment: SegmentRecord): Promise<boolean> {
     try {
       await fs.unlink(segment.path);
     } catch (error) {
       if (!isEnoent(error)) {
-        // The record is gone either way — keeping it would spin the byte loop
-        // on a file it cannot remove. The next start-up scan finds the file.
-        logger.error("disk buffer segment unlink failed; the file stays until the next start-up scan", {
+        logger.error("disk buffer segment unlink failed; the record and its bytes are kept", {
           ...endpointFields(endpoint),
           segment: segment.path,
           reason: describe(error),
         });
+        return false;
       }
+      // ENOENT is the outcome asked for: the file is not there.
     }
+    forget(endpoint, segment);
+    return true;
   }
 
-  async function erase(endpoint: EndpointRecord, segment: SegmentRecord, bound: "age" | "bytes"): Promise<void> {
+  /** Counts and logs the loss **only** once the file is actually gone. */
+  async function erase(endpoint: EndpointRecord, segment: SegmentRecord, bound: "age" | "bytes"): Promise<boolean> {
     const samples = segment.lines - segment.unparseableCounted;
+    if (!(await unlinkSegment(endpoint, segment))) {
+      return false;
+    }
     endpoint.dropped += samples;
     logger.warn(`disk buffer segment erased by the ${bound} bound`, {
       ...endpointFields(endpoint),
@@ -398,7 +476,7 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
       samples,
       bound,
     });
-    await unlinkSegment(endpoint, segment);
+    return true;
   }
 
   async function enforceBounds(nowMs: number): Promise<void> {
@@ -415,7 +493,12 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
       if (oldest === undefined) {
         break;
       }
-      await erase(oldest.endpoint, oldest.segment, "bytes");
+      if (!(await erase(oldest.endpoint, oldest.segment, "bytes"))) {
+        // The record is kept when the unlink is refused, so the same segment
+        // would be chosen for ever. The bound is not held this pass; the
+        // failure is already logged and the next pass tries again.
+        break;
+      }
     }
   }
 
@@ -430,21 +513,32 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
     const bytes = Buffer.byteLength(payload, "utf8");
     try {
       await ensureDir(fs, endpoint.dir);
-      await fs.appendFile(path, payload, "utf8");
+      await fs.appendFile(path, payload, { encoding: "utf8", mode: FILE_MODE });
     } catch (error) {
-      // Decision 10: logged and counted, never thrown into the drain loop —
-      // the disk failing must not take the memory tier down with it.
-      endpoint.dropped += samples.length;
-      logger.error("disk buffer append failed; batch lost", {
-        ...endpointFields(endpoint),
-        samples: samples.length,
-        reason: describe(error),
-      });
-      return false;
+      // The bounds have to run here too. `ENOSPC` is the failure they exist to
+      // survive, and returning straight from this catch is how a full disk
+      // becomes permanent: nothing is ever evicted, so every later append
+      // fails the same way. Enforce, try once more, and only then take the
+      // loss. One retry, not a loop — a second failure is the disk, not space.
+      await enforceBounds(receivedAt.getTime());
+      try {
+        await ensureDir(fs, endpoint.dir);
+        await fs.appendFile(path, payload, { encoding: "utf8", mode: FILE_MODE });
+      } catch (retryError) {
+        // Decision 10: logged and counted, never thrown into the drain loop —
+        // the disk failing must not take the memory tier down with it.
+        endpoint.dropped += samples.length;
+        logger.error("disk buffer append failed; batch lost", {
+          ...endpointFields(endpoint),
+          samples: samples.length,
+          reason: describe(retryError),
+        });
+        return false;
+      }
     }
     let segment = endpoint.segments.get(minute);
     if (segment === undefined) {
-      segment = { path, minute, bytes: 0, lines: 0, unparseableCounted: 0 };
+      segment = { path, minute, bytes: 0, lines: 0, unparseableCounted: 0, readFailures: 0 };
       endpoint.segments.set(minute, segment);
     }
     segment.bytes += bytes;
@@ -477,14 +571,35 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
           });
           continue;
         }
-        // Not lost — left for the next pass; `buffered>0` keeps the host degraded.
+        segment.readFailures += 1;
+        if (segment.readFailures >= READ_FAILURES_BEFORE_ERASE) {
+          // Three passes is enough. Left in place it is immortal: the replay
+          // loop retries it for ever, `buffered>0` keeps the host degraded,
+          // and nothing else in the store ever reaches it. Counted as loss,
+          // because that is what it is.
+          const lines = segment.lines - segment.unparseableCounted;
+          if (!(await unlinkSegment(endpoint, segment))) {
+            return null;
+          }
+          endpoint.dropped += lines;
+          logger.error("disk buffer segment unreadable; erased", {
+            ...endpointFields(endpoint),
+            segment: segment.path,
+            lines,
+            reason: describe(error),
+          });
+          continue;
+        }
+        // Not lost yet — left for the next pass; `buffered>0` keeps the host degraded.
         logger.error("disk buffer segment read failed; retried next pass", {
           ...endpointFields(endpoint),
           segment: segment.path,
+          attempt: segment.readFailures,
           reason: describe(error),
         });
         return null;
       }
+      segment.readFailures = 0;
       const parsed = parseSegment(content.toString("utf8"));
       // Re-sync with what the read saw: the file is the truth, the record a cache.
       totalBytes += content.length - segment.bytes;
@@ -502,7 +617,12 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
       }
       if (parsed.samples.length === 0) {
         // Every line is already counted; nothing here will ever replay.
-        await unlinkSegment(endpoint, segment);
+        if (!(await unlinkSegment(endpoint, segment))) {
+          // The unlink was refused, so the record stays — and `continue` would
+          // pick the same segment, read the same file and arrive here again,
+          // for ever. Leave it for the next pass.
+          return null;
+        }
         continue;
       }
       const linesRead = segment.lines;
@@ -515,6 +635,9 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
             if (endpoint.segments.get(segment.minute) !== segment || segment.lines !== linesRead) {
               return;
             }
+            // A refused unlink keeps the record, so the next pass re-reads and
+            // re-replays this segment — idempotently, by decision 8's
+            // `ON CONFLICT DO UPDATE`. The `error` line is inside.
             await unlinkSegment(endpoint, segment);
           }),
       };
@@ -533,11 +656,65 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
       },
       append: (samples) => enqueue(() => appendBatch(endpoint, samples)),
       oldest: () => enqueue(() => readOldest(endpoint)),
+      // Host-wide, like the bounds themselves — a handle is where a caller
+      // already is, not a claim that only this endpoint is swept.
+      sweep: () => enqueue(() => enforceBounds(now().getTime())),
     };
   }
 
   function stray(path: string): void {
     logger.warn("unrecognised entry in the buffer directory; left alone", { path });
+  }
+
+  /**
+   * Takes one candidate segment into the in-memory view, or leaves it alone.
+   *
+   * A file this cannot use is **skipped, not fatal**: one oversized stray or
+   * one unreadable file would otherwise refuse start-up for ever, which is a
+   * worse outcome than running without it (ruling 4 is about a directory the
+   * host cannot buffer *into*, not about one file it cannot read). An
+   * oversized file is left where it is — erasing something the store never
+   * wrote is not the store's call — and it is not counted, so it does not
+   * distort the byte total either.
+   */
+  async function scanSegment(endpoint: EndpointRecord, path: string, minute: number): Promise<void> {
+    let size: number;
+    try {
+      size = (await fs.stat(path)).size;
+    } catch (error) {
+      logger.warn("buffer segment could not be measured at start-up; skipped", {
+        path,
+        reason: describe(error),
+      });
+      return;
+    }
+    if (size > maxBytes) {
+      logger.warn("buffer segment is larger than the byte bound; left alone and skipped", {
+        path,
+        bytes: size,
+        limit: maxBytes,
+      });
+      return;
+    }
+    let content: Buffer;
+    try {
+      content = await fs.readFile(path);
+    } catch (error) {
+      logger.warn("buffer segment could not be read at start-up; skipped", {
+        path,
+        reason: describe(error),
+      });
+      return;
+    }
+    endpoint.segments.set(minute, {
+      path,
+      minute,
+      bytes: content.length,
+      lines: splitLines(content.toString("utf8")).length,
+      unparseableCounted: 0,
+      readFailures: 0,
+    });
+    totalBytes += content.length;
   }
 
   async function scan(): Promise<void> {
@@ -561,16 +738,7 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
             stray(join(endpoint.dir, fileEntry.name));
             continue;
           }
-          const path = join(endpoint.dir, fileEntry.name);
-          const content = await fs.readFile(path);
-          endpoint.segments.set(minute, {
-            path,
-            minute,
-            bytes: content.length,
-            lines: splitLines(content.toString("utf8")).length,
-            unparseableCounted: 0,
-          });
-          totalBytes += content.length;
+          await scanSegment(endpoint, join(endpoint.dir, fileEntry.name), minute);
         }
       }
     }
@@ -589,8 +757,10 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
     try {
       await scan();
     } catch (error) {
-      // A subtree the store cannot read is a backlog it cannot replay or bound
-      // — the same silent-loss shape ruling 4 refuses, so the same treatment.
+      // Only a `readdir` reaches here — a single bad *file* is skipped inside
+      // `scanSegment`. A subtree the store cannot enumerate is a backlog it
+      // cannot replay or bound — the same silent-loss shape ruling 4 refuses,
+      // so the same treatment.
       throw new Error(`INGEST_BUFFER_DIR ${dir} cannot be scanned: ${describe(error)}`);
     }
     await enforceBounds(now().getTime());
@@ -619,5 +789,6 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
       endpoint.handle ??= makeHandle(endpoint);
       return endpoint.handle;
     },
+    sweep: () => enqueue(() => enforceBounds(now().getTime())),
   };
 }

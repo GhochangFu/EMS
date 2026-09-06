@@ -286,6 +286,10 @@ export function makeMemoryBuffer(): DiskBufferHandle & { readonly appended: Sour
       appended.push([...samples]);
       return true;
     },
+    // Nothing here is bounded by age or bytes, so there is nothing to sweep.
+    // The blocks that assert the once-a-minute sweep use a spy in
+    // `supervisor-buffer.spec.ts`.
+    sweep: async () => undefined,
     oldest: async () => {
       if (appended.length === 0) {
         return null;
