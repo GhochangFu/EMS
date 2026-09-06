@@ -293,10 +293,12 @@ export const ruleNotifications = bmsSchema.table(
 
 /**
  * One row per dispatch attempt, including every skip. History, not
- * configuration: nothing cascades into it. The two indexes the migration
- * creates — `(channel_id, attempted_at DESC)` and the partial one on
- * `dedupe_key` — are not mirrored here, following `alarmSeverities`; the
- * migration owns them.
+ * configuration: nothing cascades into it. Three indexes, none mirrored
+ * here, following `alarmSeverities` — the migrations own them:
+ * `(channel_id, attempted_at DESC)` and `(attempted_at DESC)` from `0038`,
+ * and the partial `(channel_id, dedupe_key) WHERE status = 'skipped_deduped'`
+ * from `0065`, added once `NotificationsService.hasRecordedSkip` gave
+ * `dedupe_key` its first reader (`F3.46`, 0038's own rule in reverse).
  */
 export const notificationDeliveries = bmsSchema.table("notification_deliveries", {
   id: uuid("id").primaryKey().defaultRandom(),
