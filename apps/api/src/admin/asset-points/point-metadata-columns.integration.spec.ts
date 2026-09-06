@@ -16,7 +16,11 @@ function assert(condition: boolean, message: string): void {
  * returns whatever currently sorts first, which is another suite's committed
  * fixture as often as it is the seed.
  */
-const FIXTURE_ASSET_CODE = "CH-CRAC-101";
+// `CH-CRAC-103`, not `-101`/`-102`: `tests/integration-fixture-sharing.test.ts`
+// requires every seeded code to be claimed by exactly one suite, and those two
+// belong to the reports and point-aggregates suites. Any seeded asset serves
+// here — the probe rows below live inside `BEGIN … ROLLBACK`.
+const FIXTURE_ASSET_CODE = "CH-CRAC-103";
 
 /**
  * `F2.7` Unit B — migration `0063` asserted against the database rather than
