@@ -405,12 +405,13 @@ export class NotificationsService {
    * overlapping sweep. There is deliberately no unique index — the ledger is
    * history and stays append-only.
    *
-   * The partial index (migration `0065`) is usable only while the status
-   * filter reaches the planner as a folded constant: an unnamed statement, as
-   * drizzle sends today. A `.prepare()` here can switch Postgres to a generic
-   * plan, the `$n` stays a parameter, the predicate no longer proves the
-   * index's `WHERE`, and the read silently falls back to walking the channel's
-   * ledger. Keep it unprepared.
+   * The partial index — `0065`'s `WHERE status = 'skipped_deduped'`, replaced
+   * by `0066`'s wider `(channel_id, dedupe_key) WHERE dedupe_key IS NOT NULL`
+   * — is usable only while the filters reach the planner as folded constants:
+   * an unnamed statement, as drizzle sends today. A `.prepare()` here can
+   * switch Postgres to a generic plan, the `$n` stays a parameter, the
+   * predicate no longer proves the index's `WHERE`, and the read silently
+   * falls back to walking the channel's ledger. Keep it unprepared.
    */
   private async hasRecordedSkip(
     channelId: string,
@@ -457,7 +458,7 @@ export class NotificationsService {
    * apart by nothing else.
    *
    * Served today by the leading column of
-   * `notification_deliveries_channel_time_idx`; migration `0065` adds the
+   * `notification_deliveries_channel_time_idx`; migration `0066` adds the
    * `(channel_id, dedupe_key) WHERE dedupe_key IS NOT NULL` probe (plan Q3).
    * No unique index: one loop, sweep-then-sleep, so two ticks never overlap.
    */
@@ -488,10 +489,10 @@ export class NotificationsService {
    *
    * **No index serves `alarm_id` today** — this is the column's first reader,
    * and `notification_deliveries_channel_time_idx` leads on `channel_id`, so
-   * the read is a scan of the organization's rows. PR 2's migration `0065`
-   * adds `notification_deliveries_alarm_idx ON (alarm_id) WHERE alarm_id IS
-   * NOT NULL` beside plan Q3's probe (`0038`'s rule: the reader adds the
-   * index), and the plan records it.
+   * the read is a scan of the organization's rows. PR 2's migration
+   * `0066_alarm_lifecycle.sql` adds `notification_deliveries_alarm_idx ON
+   * (alarm_id) WHERE alarm_id IS NOT NULL` beside plan Q3's probe (`0038`'s
+   * rule: the reader adds the index), and the plan records it.
    *
    * Same connection and the same reason as `isOverHourlyLimit`: a sweep read
    * with no tenant transaction, so the organization is the `WHERE`. Unlike

@@ -29,6 +29,9 @@ import {
  *    scans `0046`/`0047` only.
  * 6. The two `notification_deliveries` indexes the PR 1 readers promised
  *    exist, and `0065`'s subsumed one is gone.
+ * 7. No rule-less alarm is acknowledged and still uncleared (migration
+ *    review H2): the sweep cannot clear one and no route clears it by hand,
+ *    so it would be open for ever.
  *
  * Runs as `bms_fleet` (the gate's default, BYPASSRLS): every case here is a
  * constraint or a catalogue fact, not an RLS proof. The policies' behaviour
@@ -356,5 +359,33 @@ describe.skipIf(!connectionString)("F3.10 alarm lifecycle schema (migration 0066
       byName.has("notification_deliveries_dedupe_skip_idx"),
       "0065's notification_deliveries_dedupe_skip_idx must be dropped by 0066 — the channel-key index subsumes it",
     ).toBe(false);
+  });
+
+  it("no rule-less alarm is acknowledged and still uncleared (migration review H2)", async () => {
+    if (!pool) throw new Error("pool not initialised");
+    // Why it holds on a MIGRATED database: `0066`'s backfill stamps
+    // `cleared_at = acknowledged_at` on every acknowledged row, rule-less or
+    // not, before the index moves. Why it holds on a FRESH database: the only
+    // writer of rule-less alarms is `packages/db/src/demo-operations-seed.ts`,
+    // and since this fix its two acknowledged demo rows carry the same stamp.
+    // Why it matters: plan D4 selects `rule_id IS NOT NULL`, so the sweep can
+    // never clear a rule-less alarm, and no route clears one by hand — an
+    // acknowledged, uncleared, rule-less row is open on every dashboard for
+    // ever. `raised_at` is bounded because a concurrent suite
+    // (`metric-catalog.integration.test.ts`) plants exactly such a row at
+    // `now()` for the length of its run and removes it after; the seed's rows
+    // and the backfilled ones are days old, so the bound excludes nothing
+    // this invariant is about.
+    const stuck = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM bms.alarms
+        WHERE acknowledged_at IS NOT NULL
+          AND cleared_at IS NULL
+          AND rule_id IS NULL
+          AND raised_at < now() - interval '1 hour'`,
+    );
+    expect(
+      stuck.rows[0]?.count,
+      "an acknowledged, uncleared, rule-less alarm can never clear — re-run the 0066 backfill or fix the seed",
+    ).toBe("0");
   });
 });

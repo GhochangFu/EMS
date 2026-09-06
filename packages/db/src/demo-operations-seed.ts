@@ -33,9 +33,23 @@ export async function seedDemoAlarms(
     throw new Error("No assets available for alarm seed");
   }
 
+  // The guard is what makes a re-seed a no-op: a database that already holds
+  // alarms — including one migrated through `0066`, whose backfill stamped
+  // `cleared_at` on its two acknowledged rows — is never touched again here.
   const existingAlarms = await db.select({ id: alarms.id }).from(alarms).limit(1);
   if (existingAlarms.length === 0) {
     const day = DAY_MS;
+    // `F3.10` (ADR 0057 decision 1): an alarm is active while `cleared_at IS
+    // NULL`, and acknowledgement no longer closes it. The two acknowledged
+    // rows below are rule-less, so the lifecycle sweep (plan D4: `rule_id IS
+    // NOT NULL`) can never clear them and there is no manual clear route —
+    // seeded without `clearedAt` they would sit on every dashboard as two
+    // permanently open alarms on a fresh database. They are stamped `cleared_at
+    // = acknowledged_at`, the same instant migration `0066`'s backfill gives an
+    // acknowledged row on a migrated database, so the two paths agree. One
+    // `Date` per row, so the two stamps are equal to the millisecond.
+    const voltageAcknowledgedAt = new Date(Date.now() - 2 * day);
+    const upsAcknowledgedAt = new Date(Date.now() - 4 * day);
     await db.insert(alarms).values([
       {
         organizationId,
@@ -43,8 +57,9 @@ export async function seedDemoAlarms(
         severity: "warning",
         message: "Voltage imbalance >2% sustained 5 min (historical seed)",
         raisedAt: new Date(Date.now() - 3 * day),
-        acknowledgedAt: new Date(Date.now() - 2 * day),
+        acknowledgedAt: voltageAcknowledgedAt,
         acknowledgedBy: adminId,
+        clearedAt: voltageAcknowledgedAt,
       },
       {
         organizationId,
@@ -59,8 +74,9 @@ export async function seedDemoAlarms(
         severity: "critical",
         message: "UPS battery test failed — replace string B (historical seed)",
         raisedAt: new Date(Date.now() - 5 * day),
-        acknowledgedAt: new Date(Date.now() - 4 * day),
+        acknowledgedAt: upsAcknowledgedAt,
         acknowledgedBy: adminId,
+        clearedAt: upsAcknowledgedAt,
       },
     ]);
   }

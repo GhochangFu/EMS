@@ -145,6 +145,7 @@ export function RuleBuilderPanel({
 
   const payload = useMemo(() => buildPayload(form), [form]);
   const invalidReason = validateForm(form);
+  const clearHoldReason = clearHoldInvalidReason(form);
 
   const createM = useMutation({
     mutationFn: createRuleDraft,
@@ -187,7 +188,7 @@ export function RuleBuilderPanel({
   });
 
   const busy = createM.isPending || updateM.isPending || previewM.isPending || publishM.isPending;
-  const canSubmit = !invalidReason && !busy;
+  const canSubmit = !invalidReason && !clearHoldReason && !busy;
 
   return (
     <section className="rounded border border-gray-200 bg-white">
@@ -342,15 +343,22 @@ export function RuleBuilderPanel({
                   placeholder="3"
                 />
               </Field>
-              <Field label="Clear hold (seconds)">
-                <input
-                  className={fieldClass}
-                  inputMode="numeric"
-                  value={form.clearHoldSeconds}
-                  onChange={(e) => setForm({ ...form, clearHoldSeconds: e.target.value })}
-                  placeholder="120 (default)"
-                />
-              </Field>
+              <div>
+                <Field label="Clear hold (seconds)">
+                  <input
+                    className={fieldClass}
+                    inputMode="numeric"
+                    value={form.clearHoldSeconds}
+                    onChange={(e) => setForm({ ...form, clearHoldSeconds: e.target.value })}
+                    placeholder="120 (default)"
+                  />
+                </Field>
+                {/* A sibling of the label, not a child: inside it the text would
+                    join the field's accessible name. */}
+                {clearHoldReason ? (
+                  <p className="mt-1 text-xs text-amber-900">{clearHoldReason}</p>
+                ) : null}
+              </div>
             </div>
           </div>
         ) : (
@@ -601,6 +609,25 @@ function formFromRule(rule: RuleListItem, vocabulary: AlarmSeverityDto[]): Build
     startTime: timeCondition?.startTime ?? emptyForm.startTime,
     endTime: timeCondition?.endTime ?? emptyForm.endTime,
   };
+}
+
+/**
+ * Review 3: a non-numeric, non-blank clear hold is refused HERE, at the
+ * field. `buildPayload` would otherwise send `Number("abc")` — `NaN`, which
+ * JSON serialises as `null`, which the API reads as "use the default": the
+ * operator's typo would silently become 120 s. Blank still means the default
+ * on purpose (plan D16). Only the numeric shape is checked; the 1–86 400 s
+ * bound stays the server's, so its message reaches the screen.
+ */
+function clearHoldInvalidReason(form: BuilderForm): string | null {
+  if (form.ruleType !== "threshold") {
+    return null;
+  }
+  const raw = form.clearHoldSeconds.trim();
+  if (raw === "" || !Number.isNaN(Number(raw))) {
+    return null;
+  }
+  return "Enter the clear hold as a number of seconds, or leave it blank for the default.";
 }
 
 function validateForm(form: BuilderForm): string | null {

@@ -228,6 +228,15 @@ async function matchedAgainstLatestSample(
   loadSample: LatestSampleLoader,
   now: Date,
 ): Promise<boolean | null> {
+  // Plan D4: "normal" is defined by a threshold rule's operator and threshold,
+  // and only by those. A `time_window` rule has no sample to compare against.
+  // Gated HERE rather than trusted to the loader: `batchedLatestPointValues`
+  // happens to skip non-threshold rules today, so such a rule finds no sample
+  // and changes nothing — but that is the loader's shape, not a promise, and
+  // the sweep must not depend on it.
+  if (rule.ruleType !== "threshold") {
+    return null;
+  }
   if (!rule.assetId || !rule.pointKey || rule.thresholdValue === null) {
     return null;
   }
@@ -343,11 +352,21 @@ async function runEscalationPhase(
         );
         break;
       }
-      const channels = await loadStepChannels(step);
-      if (channels.length === 0) {
-        continue;
+      // Security M1: caught per step, `notifyCleared`'s shape. A channel read
+      // that rejects for one alarm must not abort every later alarm's steps
+      // in the tick; the next tick retries this one. §9.6: ids, the rule code
+      // and the step number — never the alarm text.
+      try {
+        const channels = await loadStepChannels(step);
+        if (channels.length === 0) {
+          continue;
+        }
+        await deps.dispatchToChannels(channels, dispatchInput);
+      } catch (err) {
+        deps.logger.warn(
+          `alarm lifecycle: escalation step ${stepNo} for alarm ${alarm.id} rule ${rule.code} failed: ${reasonOf(err)}`,
+        );
       }
-      await deps.dispatchToChannels(channels, dispatchInput);
     }
   }
 }

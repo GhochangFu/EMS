@@ -403,6 +403,36 @@ export async function theSeverityMapPutsOnlyTheMappedSeverities(): Promise<void>
   });
 }
 
+/** Review 3: a blank or non-numeric "After (minutes)" is refused at the field — never mapped to `0`. */
+export async function refusesABlankOrNonNumericStepDelay(): Promise<void> {
+  stubApi();
+  renderPage(admin);
+
+  await organizationsLoaded();
+  await userEvent.selectOptions(screen.getByLabelText("Organization"), ORG_A);
+  await userEvent.type(screen.getByLabelText("Code"), "after-hours");
+  await userEvent.type(screen.getByLabelText("Name"), "After hours");
+
+  await addStep();
+  const step = screen.getByRole("group", { name: /Step 1/ });
+  // Blank: the message is already there, and the submit is refused.
+  expect(within(step).getByText("Enter the delay in minutes.")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Add profile" }));
+  expect(api.createEscalationProfile).not.toHaveBeenCalled();
+
+  // Non-numeric: the same message, the same refusal — not `afterMinutes: 0`.
+  await userEvent.type(within(step).getByLabelText("After (minutes)"), "abc");
+  await userEvent.click(within(step).getByLabelText("Operations email"));
+  await userEvent.click(screen.getByRole("button", { name: "Add profile" }));
+  expect(within(step).getByText("Enter the delay in minutes.")).toBeInTheDocument();
+  expect(api.createEscalationProfile).not.toHaveBeenCalled();
+
+  // A number clears the message.
+  await userEvent.clear(within(step).getByLabelText("After (minutes)"));
+  await userEvent.type(within(step).getByLabelText("After (minutes)"), "15");
+  expect(within(step).queryByText("Enter the delay in minutes.")).not.toBeInTheDocument();
+}
+
 export async function showsTheServerRefusalOnCreate(): Promise<void> {
   stubApi({
     organizations: [ORGANIZATIONS[0]!],

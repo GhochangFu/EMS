@@ -145,6 +145,20 @@ export async function sendsTheParsedIntegerForANonBlankClearHold(): Promise<void
   );
 }
 
+/** Review 3: a non-numeric, non-blank hold is refused at the field — never sent as `NaN` → `null`. */
+export async function refusesANonNumericClearHold(): Promise<void> {
+  stubApi();
+  vi.spyOn(rulesApi, "createRuleDraft").mockResolvedValue(thresholdRule);
+  renderPanel();
+
+  await fillMinimalThresholdForm();
+  await userEvent.type(screen.getByPlaceholderText("120 (default)"), "abc");
+  await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+
+  expect(screen.getByText(/clear hold as a number of seconds/i)).toBeInTheDocument();
+  expect(rulesApi.createRuleDraft).not.toHaveBeenCalled();
+}
+
 export async function showsAStoredValueWhenOpeningARule(): Promise<void> {
   stubApi();
   renderPanel(thresholdRule);

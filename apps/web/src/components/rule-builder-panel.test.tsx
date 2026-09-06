@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   hidesTheFieldForATimeWindowRule,
+  refusesANonNumericClearHold,
   sendsNullForABlankClearHold,
   sendsTheParsedIntegerForANonBlankClearHold,
   showsAStoredValueWhenOpeningARule,
@@ -32,6 +33,10 @@ describe("F3.10 rule builder clear-hold field", () => {
 
   it("sends the parsed integer when a value is entered", async () => {
     await sendsTheParsedIntegerForANonBlankClearHold();
+  });
+
+  it("refuses a non-numeric clear hold at the field and does not submit", async () => {
+    await refusesANonNumericClearHold();
   });
 
   it("shows a stored value when opening a rule that has one", async () => {

@@ -360,6 +360,22 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
     });
     assert(noSteps.success, "a profile with no steps is allowed (ruling Q4)");
 
+    // Security L3: `channelIds` is bounded like every sibling array (Q2).
+    const channelIds = (count: number): string[] =>
+      Array.from({ length: count }, (_, i) => `cccccccc-0000-4000-8000-${String(i).padStart(12, "0")}`);
+    const fiftyOne = createEscalationProfileBodySchema.safeParse({
+      code: "after-hours",
+      name: "After hours",
+      steps: [{ afterMinutes: 5, channelIds: channelIds(51) }],
+    });
+    assert(!fiftyOne.success, "a step naming 51 channels is refused");
+    const fifty = createEscalationProfileBodySchema.safeParse({
+      code: "after-hours",
+      name: "After hours",
+      steps: [{ afterMinutes: 5, channelIds: channelIds(50) }],
+    });
+    assert(fifty.success, "a step naming 50 channels is accepted");
+
     const emptyPatch = updateEscalationProfileBodySchema.safeParse({});
     assert(!emptyPatch.success, "an empty PATCH is a lost edit, not a no-op");
 

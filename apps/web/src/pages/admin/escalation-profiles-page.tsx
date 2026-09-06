@@ -44,20 +44,27 @@ function formFromProfile(profile: EscalationProfileDto): ProfileForm {
 }
 
 /**
- * A blank box sends `0`, not `null`.
- *
- * Both are refused, and the difference is what the operator reads: `0` comes
- * back as "Number must be greater than or equal to 1", which names the bound,
- * where `null` comes back as a type error about the field's shape.
+ * Review 3: a blank or non-numeric delay is refused at the field, so it never
+ * reaches the payload. It used to be mapped to `0` for the server to refuse;
+ * that turned an empty box into a number that was never typed, and the
+ * message it earned ("greater than or equal to 1") described a value the
+ * operator never entered. Only the numeric shape is checked here: the
+ * 1–10 080 bound and the ladder's ordering stay the server's, so those
+ * messages reach the screen unchanged.
  */
+const STEP_DELAY_MESSAGE = "Enter the delay in minutes.";
+
+function stepDelayInvalid(step: StepForm): boolean {
+  const raw = step.afterMinutes.trim();
+  return raw === "" || Number.isNaN(Number(raw));
+}
+
+/** `cannotSave` holds every step to {@link stepDelayInvalid}, so `Number` here is never `NaN`. */
 function stepsToPayload(steps: StepForm[]): EscalationStepPayload[] {
-  return steps.map((step) => {
-    const minutes = Number.parseInt(step.afterMinutes, 10);
-    return {
-      afterMinutes: Number.isNaN(minutes) ? 0 : minutes,
-      channelIds: step.channelIds,
-    };
-  });
+  return steps.map((step) => ({
+    afterMinutes: Number(step.afterMinutes.trim()),
+    channelIds: step.channelIds,
+  }));
 }
 
 /**
@@ -257,11 +264,14 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
 
   // Deliberately narrow, and it does NOT include the ladder's own rules. A
   // client that refused an out-of-order ladder here would keep the server's
-  // message — the one that names the bound — off the screen for ever.
+  // message — the one that names the bound — off the screen for ever. The one
+  // per-step check is the numeric SHAPE of the delay (`stepDelayInvalid`): a
+  // non-number cannot be sent at all, so there is no server message to keep.
   const cannotSave =
     saveMutation.isPending ||
     organizationRefusal !== null ||
-    (editing === null && !organizationsSettled);
+    (editing === null && !organizationsSettled) ||
+    form.steps.some(stepDelayInvalid);
 
   const updateStep = (index: number, patch: Partial<StepForm>) =>
     setForm({
@@ -490,6 +500,11 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
                     onChange={(event) => updateStep(index, { afterMinutes: event.target.value })}
                   />
                 </label>
+                {/* A sibling of the label, not a child: inside it the text would
+                    join the field's accessible name. */}
+                {stepDelayInvalid(step) ? (
+                  <p className="mt-1 text-xs text-amber-900">{STEP_DELAY_MESSAGE}</p>
+                ) : null}
                 <p className="mt-2 text-xs font-semibold uppercase text-bms-muted">Channels</p>
                 {channels.length === 0 ? (
                   <p className="mt-1 text-xs text-bms-muted">

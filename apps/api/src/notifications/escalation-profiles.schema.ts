@@ -50,7 +50,9 @@ const escalationStepSchema = z
     afterMinutes: z.number().int().min(1).max(10_080),
     channelIds: z
       .array(z.string().uuid())
-      .min(1, "a step with no channel escalates to nobody"),
+      .min(1, "a step with no channel escalates to nobody")
+      // Security L3: bounded like every sibling array here (ruling Q2) — each id is resolved through `loadById`.
+      .max(50),
   })
   .strict();
 

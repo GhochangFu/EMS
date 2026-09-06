@@ -150,6 +150,8 @@ function fakeDeps(opts: {
   /** What `loadChannels` returns for any id list; defaults to the rows whose ids were asked for. */
   channels?: NotificationChannelRow[];
   writeAlarmState?: AlarmLifecycleDeps["writeAlarmState"];
+  /** Replaces the recording `loadChannels` — for the case where one read rejects. */
+  loadChannels?: AlarmLifecycleDeps["loadChannels"];
 }): { deps: AlarmLifecycleDeps; recorded: Recorded } {
   const recorded: Recorded = {
     writes: [],
@@ -208,6 +210,9 @@ function fakeDeps(opts: {
     },
     loadChannels: (ids) => {
       recorded.channelLoads.push([...ids]);
+      if (opts.loadChannels) {
+        return opts.loadChannels(ids);
+      }
       return Promise.resolve(opts.channels ?? known.filter((row) => ids.includes(row.id)));
     },
     dispatchToChannels: (channels, input) => {
@@ -545,6 +550,71 @@ async function testIncompleteOrMissingRuleIsSkipped(): Promise<void> {
   assert(missing.recorded.dispatches.length === 0, "and no escalation");
 }
 
+/** Plan D4 / review 1: the clear phase compares threshold rules only — a `time_window` rule with a fresh sample writes nothing. */
+async function testNonThresholdRuleNeverClears(): Promise<void> {
+  // Deliberately COMPLETE in the threshold shape (asset, point, operator,
+  // threshold), so only the `ruleType` gate stands between the rule and a
+  // `compare`. The sample loader happens to skip non-threshold rules today;
+  // the sweep must not depend on that.
+  const { deps, recorded } = fakeDeps({
+    alarms: [alarmRow({ normalSince: secondsBefore(600) })],
+    rules: [ruleRow({ ruleType: "time_window", condition: { days: ["mon"], startTime: "08:00", endTime: "17:00" } })],
+    sample: freshNonMatching,
+  });
+  await runLifecycleSweep(deps, NOW);
+
+  assert(recorded.writes.length === 0, `a time_window rule writes nothing, got ${JSON.stringify(recorded.writes)}`);
+  assert(recorded.dispatches.length === 0, "and dispatches nothing");
+  assert(recorded.broadcasts.length === 0, "and broadcasts nothing");
+}
+
+/** Security M1: one alarm's step failing is warned and the next alarm's step is still dispatched. */
+async function testOneStepFailingDoesNotStopTheNextAlarm(): Promise<void> {
+  // Two alarms on two severities, each mapped to its own one-step profile, so
+  // the two steps load different channel lists: the first read rejects, the
+  // second must still be dispatched.
+  const catalog: EscalationCatalog = {
+    defaults: new Map([
+      [escalationKey(ORG_A, "warning"), [{ stepNo: 1, afterMinutes: 1, channelIds: [C1.id] }]],
+      [escalationKey(ORG_A, "critical"), [{ stepNo: 1, afterMinutes: 1, channelIds: [C2.id] }]],
+    ]),
+  };
+  const { deps, recorded } = fakeDeps({
+    alarms: [
+      alarmRow({ id: "alarm-a", ruleId: "rule-a", severity: "warning", raisedAt: secondsBefore(61) }),
+      alarmRow({ id: "alarm-b", ruleId: "rule-b", severity: "critical", raisedAt: secondsBefore(61) }),
+    ],
+    rules: [
+      ruleRow({ id: "rule-a", code: "RULE-A" }),
+      ruleRow({ id: "rule-b", code: "RULE-B", severity: "critical" }),
+    ],
+    sample: freshMatching,
+    catalog,
+    loadChannels: (ids) =>
+      ids.includes(C1.id)
+        ? Promise.reject(new Error("channel read refused"))
+        : Promise.resolve([C2]),
+  });
+  await runLifecycleSweep(deps, NOW);
+
+  assert(
+    recorded.dispatches.length === 1 &&
+      recorded.dispatches[0]?.input.alarmId === "alarm-b" &&
+      recorded.dispatches[0].channels[0]?.id === C2.id,
+    `the second alarm's step is still dispatched, got ${JSON.stringify(
+      recorded.dispatches.map((d) => d.input.alarmId),
+    )}`,
+  );
+  assert(recorded.warnings.length === 1, `one warn, got ${JSON.stringify(recorded.warnings)}`);
+  const warning = recorded.warnings[0] ?? "";
+  assert(
+    warning.includes("alarm-a") && warning.includes("RULE-A") && warning.includes("step 1"),
+    `the warn names the alarm id, the rule code and the step, got "${warning}"`,
+  );
+  assert(warning.includes("channel read refused"), "and carries the cause");
+  assert(!warning.includes("Feeder overload"), "§9.6: the warn carries no alarm text");
+}
+
 /** The loop hands the tick's own `now()` to the sweep as a `Date`, and sweeps before it sleeps. */
 async function testLoopPassesTheTicksNowToTheSweep(): Promise<void> {
   const tick = 1_788_700_000_000;
@@ -588,5 +658,7 @@ export async function runAlarmLifecycleServiceTests(): Promise<void> {
   await testOneOrganizationFailingDoesNotStopTheOther();
   await testTwoBandsClearOnOneSample();
   await testIncompleteOrMissingRuleIsSkipped();
+  await testNonThresholdRuleNeverClears();
+  await testOneStepFailingDoesNotStopTheNextAlarm();
   await testLoopPassesTheTicksNowToTheSweep();
 }
