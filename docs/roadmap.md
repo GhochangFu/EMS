@@ -2316,7 +2316,8 @@ tasks, no migration, no new dependency, no new ADR — ADR 0041 decisions 1, 4,
   picker, which carries hidden ids through and names their count.
 - **What the review filed rather than fixed:** repeated sweeps grow
   `bms.notification_deliveries` with skips that neither the hourly ceiling nor
-  any retention policy bounds — `F3.46`.
+  any retention policy bounds — `F3.46`. **Closed 2026-09-06** by `F3.46`
+  (below).
 - **Verified on the running stack, all four layers.** A `pg_notify` transition
   with an email channel joined and `SMTP_HOST` unset wrote exactly one
   `skipped_unconfigured` row keyed rule:alarm:severity; the same reading again
@@ -2326,6 +2327,45 @@ tasks, no migration, no new dependency, no new ADR — ADR 0041 decisions 1, 4,
   again, *Evaluate now* on a joined rule with an open alarm recorded one
   `skipped_deduped` row, and the deliveries view showed *Skipped — already
   open*. Full suite with the database: 1998 passed.
+
+### Repeated sweeps stop growing the delivery ledger (`F3.46`, ADR 0041 Amendment 2) — done
+
+**2026-09-06, two pull requests on one plan** (`docs/plans/f3.46-dedupe-skip-growth.md`):
+PR #336, squashed `fd6117d`, and PR #339, squashed `64db1db`.
+
+- **A refusal is now recorded once per key, not once per press.**
+  `NotificationsService.dispatchToChannel` reads the delivery ledger before
+  writing a `skipped_deduped` row and writes it once per `(channel,
+  organization, dedupe_key)` for the life of the ledger; a failed read logs one
+  warn and falls back to today's plain write, and the narrow window this
+  leaves under concurrency is accepted as a growth bound rather than closed.
+- **Two owner rulings shaped it.** The on-demand sweep's refusal key is
+  `rule:no-alarm:severity`, because `AlarmRaiser` returns no alarm id either on
+  an already-open conflict or on the E7.1b organization-mismatch refusal, so
+  both share the key and suppression is per rule and severity rather than per
+  alarm. And the work shipped as two pull requests rather than one, because the
+  index belongs with `dedupe_key`'s first reader rather than gating it.
+- **Migration `0065` discharges `0038`'s own promise** — "whoever gives
+  `dedupe_key` a reader adds the index with it" — numbered `0065` rather than
+  the plan's `0064` because `F2.7`'s PR 1 (#337) took `0063` and `0064` first.
+  It is a partial index on `(channel_id, dedupe_key)` scoped `WHERE status =
+  'skipped_deduped'`, with `organization_id` deliberately left outside the key
+  since the rule id already belongs to one organization.
+- **Verified by correlation, not by counting rows in isolation.** On the
+  running stack, ledger rows were matched against `bms.rule_executions`
+  timestamps: exactly two ledger rows fell within 5 s of their own sweep
+  evaluation (the first refusal, and an acknowledged-then-re-raised
+  transition), and five further rows belonged to a parallel session's suite
+  run on the shared database — a trap worth naming for the next reader of that
+  ledger. `0065` was also proved on a cold start against a scratch database.
+- **Retention for the ledger stays deliberately unchosen.**
+- **Residual, not closed here: `F3.47`.** `POST /api/v1/rules/evaluate` still
+  writes one `bms.rule_executions` row per enabled rule per press — 289 on the
+  seeded database — with no throttle and no retention policy of its own;
+  `F3.46` bounds the delivery ledger, not the endpoint.
+- **Forward pointer.** `F3.10` (ADR 0057, PR 1 merged #338 `452c1f4`) adds
+  escalation and cleared event kinds to the same dedupe key and a wider partial
+  index in its own `0066`, which must drop or re-key `0065`'s index.
 
 ### Non-superuser table owner — makes `FORCE ROW LEVEL SECURITY` bind (`F4.16`, ADR 0043 decision 8 + ADR 0044) — done
 
