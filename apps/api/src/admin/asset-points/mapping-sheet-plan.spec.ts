@@ -402,6 +402,68 @@ export function assertAssetNameIsInformationalAndCountsAddUp(): void {
   assert(mixed.updates[0]?.row === 4 && mixed.creates[0]?.row === 6, "creates and updates carry their rows");
 }
 
+/**
+ * PR 2 code review, finding 2 — a row whose stored `rtu_id` is an RTU this
+ * location does not know (the asset was moved after it was wired) must be
+ * refused, not read as blank: blank would diff as "no change" while the commit
+ * wrote `rtu_id = NULL` and `source_kind = 'unmapped'` on any other edit,
+ * unlisted in the preview and the audit. Refused whether or not the row is
+ * otherwise edited, so the state is visible rather than silently unwired.
+ */
+export function assertAForeignStoredRtuIsRefusedNotSilentlyUnwired(): void {
+  const base = snapshot();
+  const wiredElsewhere: ExistingRow = {
+    id: pointId(9),
+    assetId: "a1",
+    pointKey: "temp",
+    sourceKind: "measured",
+    rtuId: "r-foreign",
+    sourceDataKey: "TX01_TEMP",
+    unit: null,
+    active: true,
+    metadata: FIVE_NULL,
+  };
+  const snap: PlanSnapshot = {
+    ...base,
+    existingByAssetPoint: new Map([...base.existingByAssetPoint, [assetPointKey("a1", "temp"), wiredElsewhere]]),
+    existingByAssetSource: new Map([...base.existingByAssetSource, [assetSourceKey("a1", "TX01_TEMP"), "temp"]]),
+  };
+  assert(!snap.rtuCodesById.has("r-foreign"), "the fixture RTU must be unknown to the location");
+
+  // (1) restated with the blank the export would write — refused, not unchanged.
+  const restated = planWith([row({ point_key: "temp", rtu_code: "", source_data_key: "TX01_TEMP", active: "" })], snap);
+  const message = onlyError(restated, "rtu_not_found", "rtu_code", "a row wired to an RTU outside the location");
+  assert(message.includes("outside this location"), `the message names the cause, got: ${message}`);
+  assert(restated.updates.length === 0 && restated.unchanged === 0, `nothing else is planned for it, got ${summary(restated)}`);
+
+  // (2) edited on another cell — still refused, never a silent unwire.
+  const edited = planWith([row({ point_key: "temp", rtu_code: "", source_data_key: "TX01_TEMP", active: "FALSE" })], snap);
+  onlyError(edited, "rtu_not_found", "rtu_code", "an edited row wired to an RTU outside the location");
+  assert(edited.updates.length === 0, `an edit on such a row must not plan an update, got ${summary(edited)}`);
+}
+
+/**
+ * PR 2 security review, H1 — the planner's four echoes of text that matched
+ * nothing (`asset_not_found`, `asset_inactive`, `point_key_unknown`,
+ * `rtu_not_found`) are bounded; the measured attack sent 32,767-character
+ * cells, and a message must not carry them back whole.
+ */
+export function assertUnmatchedTextIsEchoedBounded(): void {
+  const huge = "Z".repeat(32_767);
+  const notFound = plan([row({ asset_code: huge, active: "TRUE" })]);
+  const notFoundMessage = onlyError(notFound, "asset_not_found", "asset_code", "a huge unknown asset code");
+  assert(notFoundMessage.length < 300, `asset_not_found is bounded, got ${notFoundMessage.length} characters`);
+  assert(notFoundMessage.includes("more characters"), "the omitted length is stated");
+
+  const unknownKey = plan([row({ point_key: huge, source_data_key: "TX01_HUGE", active: "TRUE" })]);
+  const unknownKeyMessage = onlyError(unknownKey, "point_key_unknown", "point_key", "a huge unknown point key");
+  assert(unknownKeyMessage.length < 300, `point_key_unknown is bounded, got ${unknownKeyMessage.length} characters`);
+
+  const unknownRtu = plan([row({ rtu_code: huge, active: "TRUE" })]);
+  const unknownRtuMessage = onlyError(unknownRtu, "rtu_not_found", "rtu_code", "a huge unknown RTU code");
+  assert(unknownRtuMessage.length < 300, `rtu_not_found is bounded, got ${unknownRtuMessage.length} characters`);
+}
+
 /** A retired gateway, present in `rtuCodesById` (it is still named by the row it feeds) and absent from `rtusByCode`. */
 const R3 = "r3";
 const RETIRED_CODE = "WC-RTU-RETIRED";

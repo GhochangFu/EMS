@@ -2,6 +2,7 @@ import { MAPPING_SHEET_HEADERS } from "@bms/shared";
 import type { MappingSheetErrorDto } from "@bms/shared";
 import * as XLSX from "xlsx";
 
+import { syntheticZip } from "../../testing/synthetic-zip";
 import { MAX_IMPORT_ROWS } from "../telemetry-import/telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES, parseMappingSheet } from "./mapping-sheet-rows";
 import type { ParsedMappingRow } from "./mapping-sheet-rows";
@@ -263,6 +264,75 @@ export function assertBlankRowsKeepTheExcelNumbering(): void {
     `Excel numbering skips the blank rows, got ${JSON.stringify(result.rows.map((r) => r.rowNumber))}`,
   );
   assert(result.totalRows === 3, "blank rows are not counted");
+}
+
+/**
+ * Row numbers are Excel rows even when the used range starts below row 1 — a
+ * blank row inserted above the header shifts `!ref` to `A2:…`, the header sits
+ * on Excel row 2 and the first data row on 3 (PR 2 code review, finding 3).
+ */
+export function assertRowNumbersAreAbsoluteWhenTheRangeStartsBelowRowOne(): void {
+  const sheet = XLSX.utils.aoa_to_sheet([[]]);
+  const data = [HEADER, row({ asset_code: "A1" }), row({ asset_code: "" })];
+  XLSX.utils.sheet_add_aoa(sheet, data, { origin: "A2" });
+  sheet["!ref"] = XLSX.utils.encode_range({ s: { r: 1, c: 0 }, e: { r: 1 + data.length - 1, c: HEADER.length - 1 } });
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, "MAPPINGS");
+  const result = parseOk(XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer, "a range starting at A2");
+  // The valid row is Excel row 3; the blank-asset_code row is a parser-side
+  // error, so it lands in `errors` (not `rows`) and must name Excel row 4.
+  assert(
+    JSON.stringify(result.rows.map((r) => r.rowNumber)) === JSON.stringify([3]),
+    `the valid data row is Excel row 3, got ${JSON.stringify(result.rows.map((r) => r.rowNumber))}`,
+  );
+  assert(result.errors.length === 1, `one parser-side error, got ${result.errors.length}`);
+  assert(result.errors[0]?.row === 4, `the blank asset_code error names Excel row 4, got ${result.errors[0]?.row}`);
+  assert(result.totalRows === 2, `both non-blank data rows are counted, got ${result.totalRows}`);
+}
+
+/**
+ * PR 2 security review, H1 — a 32,767-character cell is echoed bounded. The
+ * measured attack was 6,000 duplicate rows with two such cells each: 375 MiB of
+ * `duplicate_row` messages and ~32 s of blocked event loop from a 4.8 MB file.
+ * `row`, `column` and `code` identify the cell; the text is a hint, and cut.
+ */
+export function assertEchoedCellTextIsBounded(): void {
+  const huge = "A".repeat(32_767);
+  const result = parseOk(
+    buildBuffer([HEADER, row({ asset_code: huge, point_key: huge }), row({ asset_code: huge, point_key: huge }), row({ asset_code: "TX01", active: "maybe" }), row({ asset_code: "TX02", scale_multiplier: huge })]),
+    "huge cells",
+  );
+  const duplicate = result.errors.find((e) => e.code === "duplicate_row");
+  assert(duplicate !== undefined, "the second huge row is a duplicate_row");
+  assert(duplicate!.message.length < 400, `a duplicate_row message is bounded, got ${duplicate!.message.length} characters`);
+  assert(duplicate!.message.includes("more characters"), "the omitted length is stated");
+  const active = result.errors.find((e) => e.code === "active_invalid");
+  assert(active !== undefined && active.message.length < 300, "active_invalid is bounded");
+  const numeric = result.rows.find((r) => r.cells.asset_code === "TX02")?.cellError;
+  assert(numeric?.code === "number_invalid" && numeric.message.length < 300, `number_invalid is bounded, got ${numeric?.message.length}`);
+  const total = result.errors.reduce((n, e) => n + e.message.length, 0);
+  assert(total < 2_000, `the whole error list for this file is under 2,000 characters, got ${total}`);
+}
+
+/** PR 2 security review, L3 — only a plain decimal literal is a number; `0x10`, `0b101`, `0o17` are `number_invalid`, not 16, 5 and 15. */
+export function assertOnlyDecimalLiteralsAreNumbers(): void {
+  for (const text of ["0x10", "0b101", "0o17", "1_000", " 12 34", "1e", "--1"]) {
+    const result = parseOk(buildBuffer([HEADER, row({ scale_multiplier: text })]), `non-decimal ${text}`);
+    assert(result.rows[0]?.cellError?.code === "number_invalid", `${JSON.stringify(text)} is number_invalid, got ${JSON.stringify(result.rows[0]?.cellError)}`);
+  }
+  for (const [text, value] of [["1.5", 1.5], ["-2", -2], ["+3", 3], [".5", 0.5], ["1e3", 1000], ["2.", 2]] as const) {
+    const result = parseOk(buildBuffer([HEADER, row({ scale_multiplier: text })], "csv"), `decimal ${text}`);
+    assert(result.rows[0]?.cellError === null, `${text} parses without error, got ${JSON.stringify(result.rows[0]?.cellError)}`);
+    assert(result.rows[0]?.metadata.scaleMultiplier === value, `${text} parses to ${value}, got ${result.rows[0]?.metadata.scaleMultiplier}`);
+  }
+}
+
+/** PR 2 security review, H2 — a zip declaring a 500 MiB inflation is refused before `XLSX.read` inflates anything. */
+export function assertADeclaredZipBombIsRefusedBeforeRead(): void {
+  const result = parseMappingSheet(syntheticZip([500 * 1024 * 1024]));
+  assert(!result.ok, "a declared bomb is refused");
+  assert(result.ok === false && result.error.code === "file_too_large", `refused as file_too_large, got ${result.ok === false ? result.error.code : "ok"}`);
+  assert(result.ok === false && result.error.message.includes("when unpacked"), `the message names the declared inflation, got ${result.ok === false ? result.error.message : ""}`);
 }
 
 /** Every cell is read as text before a number is parsed: a formula-looking code stays text, a CSV leading zero survives. */

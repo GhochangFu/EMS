@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 
+import { syntheticZip } from "../../testing/synthetic-zip";
 import { MAX_IMPORT_ROWS, parseWorkbook } from "./telemetry-import-rows";
 
 function assert(condition: boolean, message: string): void {
@@ -143,6 +144,15 @@ export function runTelemetryImportRowsTests(): void {
     ["asset_code", "point_key", "unit", "time"], // no value column
     ["F19-ASSET-1", "kw", "kW", "2026-08-19T10:00:00Z"],
   ]);
+  // F2.7 PR 2 security review H2 — the same `XLSX.read` shape inflated a 1.3 MB
+  // workbook to 2.5 GB RSS through `xl/sharedStrings.xml`; the declared
+  // inflation is refused from the zip directory before a byte is inflated.
+  const bombResult = parseWorkbook(syntheticZip([500 * 1024 * 1024]));
+  assert(!bombResult.ok, "a zip declaring 500 MiB of inflation must be refused before it is read");
+  if (!bombResult.ok) {
+    assert(/when unpacked/.test(bombResult.reason), `the reason names the declared inflation, got: ${bombResult.reason}`);
+  }
+
   const missingHeaderResult = parseWorkbook(missingHeader);
   assert(!missingHeaderResult.ok, "a missing required column must be a structural failure");
   if (!missingHeaderResult.ok) {

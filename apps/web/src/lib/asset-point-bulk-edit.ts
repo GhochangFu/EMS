@@ -121,7 +121,13 @@ export function draftToPatch(draft: BulkEditDraft): AssetPointBulkPatch {
   }
   for (const field of NUMBER_FIELDS) {
     if (draft[field].set) {
-      patch[field] = numberFrom(draft[field]);
+      const value = numberFrom(draft[field]);
+      // A non-finite number never leaves this function: `JSON.stringify` would
+      // send it as `null`, the explicit clear. `bulkEditProblems` refuses the
+      // draft first; this is the second lock on the same door.
+      if (value === null || Number.isFinite(value)) {
+        patch[field] = value;
+      }
     }
   }
   if (draft.qualityPolicy.set) {
@@ -149,7 +155,12 @@ export function bulkEditProblems(draft: BulkEditDraft): string[] {
   }
 
   for (const field of NUMBER_FIELDS) {
-    if (draft[field].set && Number.isNaN(numberFrom(draft[field]) ?? 0)) {
+    // `isFinite`, not `isNaN`: `Number("1e999")` and `Number("Infinity")` are
+    // `Infinity`, which `JSON.stringify` renders as `null` — and `null` on the
+    // five is the explicit clear. Under `isNaN` alone, "1e999" in a ticked
+    // field would have cleared the column on every selected row and reported
+    // success (PR 2 code review, finding 1).
+    if (draft[field].set && !Number.isFinite(numberFrom(draft[field]) ?? 0)) {
       problems.push(`${FIELD_LABELS[field]} is not a number.`);
     }
   }

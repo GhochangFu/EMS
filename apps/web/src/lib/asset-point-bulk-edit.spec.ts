@@ -90,8 +90,27 @@ export function theThreeProblemsAreNamed(): void {
   ).toHaveLength(0);
 }
 
-/** Case 5 — a ticked number field holding something that is not a number is refused, not sent. */
+/**
+ * Case 5 — a ticked number field holding something that is not a *finite*
+ * number is refused, not sent. `"abc"` is `NaN`; `"1e999"` and `"Infinity"` are
+ * `Infinity`, and `JSON.stringify(Infinity)` is `null` — the explicit clear —
+ * so an `isNaN`-only guard would have wiped the column on every selected row
+ * (PR 2 code review, finding 1).
+ */
 export function aFieldThatIsNotANumberIsRefused(): void {
-  const problems = bulkEditProblems(draftWith({ engMin: { set: true, value: "abc" } }));
-  expect(problems.some((problem) => problem.toLowerCase().includes("number"))).toBe(true);
+  for (const value of ["abc", "1e999", "Infinity", "-Infinity"]) {
+    const problems = bulkEditProblems(draftWith({ engMin: { set: true, value } }));
+    expect(
+      problems.some((problem) => problem.toLowerCase().includes("number")),
+      `${JSON.stringify(value)} must be refused as not a finite number`,
+    ).toBe(true);
+  }
+  // And the patch builder never emits a non-finite number even if asked.
+  const patch = draftToPatch(draftWith({ engMin: { set: true, value: "1e999" } }));
+  for (const [key, sent] of Object.entries(patch)) {
+    expect(
+      typeof sent !== "number" || Number.isFinite(sent),
+      `draftToPatch emitted a non-finite ${key}: ${String(sent)}`,
+    ).toBe(true);
+  }
 }

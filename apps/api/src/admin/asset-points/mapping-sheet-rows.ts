@@ -8,6 +8,7 @@ import type {
 } from "@bms/shared";
 import * as XLSX from "xlsx";
 
+import { quoteCell, zipInflationProblem } from "../spreadsheet-guard";
 import { MAX_IMPORT_ROWS } from "../telemetry-import/telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
 
@@ -139,12 +140,12 @@ function headerProblem(headers: readonly string[]): string | null {
       continue;
     }
     if (want === undefined) {
-      return `Column ${i + 1} is '${got ?? ""}'; the header must be exactly the twelve columns and this is a thirteenth`;
+      return `Column ${i + 1} is ${quoteCell(got ?? "")}; the header must be exactly the twelve columns and this is a thirteenth`;
     }
     if (got === undefined) {
       return `Column ${i + 1} is missing; expected '${want}'`;
     }
-    return `Column ${i + 1} is '${got}'; expected '${want}' (the header must be exactly: ${expected.join(", ")})`;
+    return `Column ${i + 1} is ${quoteCell(got)}; expected '${want}' (the header must be exactly: ${expected.join(", ")})`;
   }
   return null;
 }
@@ -164,10 +165,21 @@ function parseActive(text: string): boolean | null | undefined {
   return undefined;
 }
 
-/** A finite number, `null` for blank, `undefined` for text that is not a finite number. */
+/**
+ * A plain decimal literal: optional sign, digits with an optional fraction (or
+ * a bare fraction), optional exponent. `Number()` alone also accepts `0x10`,
+ * `0b101` and `0o17`, and a hex cell silently becoming a decimal scale factor
+ * is not what a sheet author means (PR 2 security review, L3).
+ */
+const DECIMAL_LITERAL = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$/;
+
+/** A finite decimal number, `null` for blank, `undefined` for text that is not one. */
 function parseNumber(text: string): number | null | undefined {
   if (text === "") {
     return null;
+  }
+  if (!DECIMAL_LITERAL.test(text)) {
+    return undefined;
   }
   const value = Number(text);
   return Number.isFinite(value) ? value : undefined;
@@ -225,7 +237,7 @@ function parseCells(
   for (const [column, field] of NUMERIC_COLUMNS) {
     const parsed = parseNumber(cells[column]);
     if (parsed === undefined) {
-      fail(column, "number_invalid", `${column} '${cells[column]}' is not a finite number`);
+      fail(column, "number_invalid", `${column} ${quoteCell(cells[column])} is not a finite decimal number`);
     } else {
       numbers[field] = parsed;
     }
@@ -244,7 +256,7 @@ function parseCells(
       fail(
         "quality_policy",
         "quality_policy_invalid",
-        `quality_policy '${cells.quality_policy}' is not one of ${QUALITY_POLICIES.join(", ")}`,
+        `quality_policy ${quoteCell(cells.quality_policy)} is not one of ${QUALITY_POLICIES.join(", ")}`,
       );
     } else {
       qualityPolicy = match;
@@ -271,6 +283,14 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
       ok: false,
       error: fileError("file_too_large", `File is ${buffer.length} bytes, more than the ${MAX_IMPORT_FILE_BYTES}-byte limit`),
     };
+  }
+
+  // Before a byte is inflated: what does the zip *declare* it will unpack to?
+  // `sheetRows` below bounds row materialisation, not the shared-string table;
+  // the PR 2 security review took the process to 2.5 GB RSS with a 1.3 MB file.
+  const inflation = zipInflationProblem(buffer);
+  if (inflation !== null) {
+    return { ok: false, error: fileError("file_too_large", inflation) };
   }
 
   let book: XLSX.WorkBook;
@@ -303,7 +323,7 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
         ok: false,
         error: fileError(
           "sheet_missing",
-          `The workbook has no sheet named ${MAPPING_SHEET_NAME} (sheets: ${book.SheetNames.join(", ")})`,
+          `The workbook has no sheet named ${MAPPING_SHEET_NAME} (sheets: ${quoteCell(book.SheetNames.join(", "))})`,
         ),
       };
     }
@@ -361,7 +381,13 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
   let totalRows = 0;
 
   for (let r = range.s.r + 1; r <= range.e.r; r += 1) {
-    const rowNumber = r - range.s.r + 1;
+    // The Excel row is the absolute row index plus one — not relative to the
+    // used range. A workbook whose `!ref` starts at A2 (a blank row inserted
+    // above the header before saving) has its header on Excel row 2 and its
+    // first data row on 3; `r - range.s.r + 1` would have said 2, and every
+    // reported row number would send the person to the wrong line (PR 2 code
+    // review, finding 3).
+    const rowNumber = r + 1;
     const texts = MAPPING_SHEET_HEADERS.map((_, c) => cellText(sheet, r, range.s.c + c));
     if (texts.every((text) => text === "")) {
       continue; // a spacer row — skipped, but it keeps its Excel number
@@ -383,7 +409,7 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
       continue;
     }
     // Step 3 — the in-sheet upsert key
-    const upsertKey = `${cells.asset_code} ${cells.point_key}`;
+    const upsertKey = `${cells.asset_code}\u0000${cells.point_key}`;
     const firstRow = firstRowOf.get(upsertKey);
     if (firstRow !== undefined) {
       errors.push(
@@ -391,7 +417,7 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
           rowNumber,
           "point_key",
           "duplicate_row",
-          `Duplicate of row ${firstRow} — the same asset_code '${cells.asset_code}' and point_key '${cells.point_key}' appear earlier in this file`,
+          `Duplicate of row ${firstRow} — the same asset_code ${quoteCell(cells.asset_code)} and point_key ${quoteCell(cells.point_key)} appear earlier in this file`,
         ),
       );
       continue;
@@ -405,7 +431,7 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
           rowNumber,
           "active",
           "active_invalid",
-          `active '${cells.active}' is not a boolean; use TRUE/FALSE, yes/no or 1/0, or leave it blank for no change`,
+          `active ${quoteCell(cells.active)} is not a boolean; use TRUE/FALSE, yes/no or 1/0, or leave it blank for no change`,
         ),
       );
       continue;

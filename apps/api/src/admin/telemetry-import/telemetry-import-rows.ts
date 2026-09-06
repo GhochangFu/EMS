@@ -1,5 +1,7 @@
 import * as XLSX from "xlsx";
 
+import { zipInflationProblem } from "../spreadsheet-guard";
+
 /**
  * Pure, DB-free CSV/Excel row parsing for telemetry bulk import (`F1.9`).
  *
@@ -127,6 +129,16 @@ function rawCellText(sheet: XLSX.WorkSheet, sheetRowIndex: number, colIndex: num
  * into a 400 without a stack trace in the response.
  */
 export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
+  // What the zip *declares* it will unpack to, read from its central directory
+  // before a byte is inflated. `sheetRows` below bounds row materialisation
+  // only; the shared-string table is inflated whole, and the F2.7 security
+  // review took the process to 2.5 GB RSS with a 1.3 MB file through this same
+  // `XLSX.read` shape (`spreadsheet-guard.ts`).
+  const inflation = zipInflationProblem(buffer);
+  if (inflation !== null) {
+    return { ok: false, reason: inflation };
+  }
+
   let book: XLSX.WorkBook;
   try {
     book = XLSX.read(buffer, {

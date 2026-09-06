@@ -12,6 +12,7 @@ import type {
   PointSourceKind,
 } from "@bms/shared";
 
+import { quoteCell } from "../spreadsheet-guard";
 import type { ParsedMappingRow } from "./mapping-sheet-rows";
 import { assetPointKey, assetSourceKey } from "./mapping-sheet-snapshot";
 import type { ExistingRow, PlanSnapshot, SnapshotAsset } from "./mapping-sheet-snapshot";
@@ -123,11 +124,14 @@ function evaluateRow(row: ParsedMappingRow, snapshot: PlanSnapshot): RowOutcome 
 
   // Step 5 — the asset, in this location and active
   const asset = snapshot.assetsByCode.get(assetCode);
+  // `assetCode` matched nothing here, so it is arbitrary sheet text — bounded
+  // before it is echoed (PR 2 security review, H1). Below this point the code
+  // names a real asset and is bounded by the column.
   if (asset === undefined) {
-    return error(row, "asset_code", "asset_not_found", `Asset '${assetCode}' is not an asset of this location`);
+    return error(row, "asset_code", "asset_not_found", `Asset ${quoteCell(assetCode)} is not an asset of this location`);
   }
   if (!asset.active) {
-    return error(row, "asset_code", "asset_inactive", `Asset '${assetCode}' is inactive; re-activate it before mapping its points`);
+    return error(row, "asset_code", "asset_inactive", `Asset ${quoteCell(assetCode)} is inactive; re-activate it before mapping its points`);
   }
 
   const existing = snapshot.existingByAssetPoint.get(assetPointKey(asset.id, pointKey));
@@ -155,7 +159,21 @@ function evaluateRow(row: ParsedMappingRow, snapshot: PlanSnapshot): RowOutcome 
       row,
       "point_key",
       "point_key_unknown",
-      `'${pointKey}' is neither an active point key in the catalog nor a point of '${assetCode}'s template`,
+      `${quoteCell(pointKey)} is neither an active point key in the catalog nor a point of '${assetCode}'s template`,
+    );
+  }
+
+  // A stored gateway this location does not know at all — the asset was moved
+  // to another location after it was wired; ADR 0018 lets `rtu_id` outlive
+  // that — would read as *blank* in the diff, so any other edit on the row
+  // would unwire it silently, unlisted in the preview and the audit (PR 2 code
+  // review, finding 2). Refused instead, whatever the sheet says in the cell.
+  if (existing?.rtuId != null && !snapshot.rtuCodesById.has(existing.rtuId)) {
+    return error(
+      row,
+      "rtu_code",
+      "rtu_not_found",
+      `'${pointKey}' on '${assetCode}' is wired to an RTU outside this location; re-wire it on the Asset Points page before importing`,
     );
   }
 
@@ -175,7 +193,7 @@ function evaluateRow(row: ParsedMappingRow, snapshot: PlanSnapshot): RowOutcome 
       rtuId = existing.rtuId;
     }
     if (rtuId === null) {
-      return error(row, "rtu_code", "rtu_not_found", `No active RTU with code '${cells.rtu_code}' in this location`);
+      return error(row, "rtu_code", "rtu_not_found", `No active RTU with code ${quoteCell(cells.rtu_code)} in this location`);
     }
   }
 

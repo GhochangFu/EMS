@@ -4,7 +4,11 @@ import {
   assertActiveSpellings,
   assertBlankRowsKeepTheExcelNumbering,
   assertCellErrorsAreDeferredInOrder,
+  assertADeclaredZipBombIsRefusedBeforeRead,
   assertCellsAreReadAsText,
+  assertEchoedCellTextIsBounded,
+  assertOnlyDecimalLiteralsAreNumbers,
+  assertRowNumbersAreAbsoluteWhenTheRangeStartsBelowRowOne,
   assertHeaderIsStrictAndNamesTheOffender,
   assertRequiredCellsAndDuplicateRows,
   assertRowCap,
@@ -43,5 +47,21 @@ describe("F2.7 — parseMappingSheet, the pure half of the import", () => {
 
   it("reads every cell as trimmed text before it parses a number", () => {
     assertCellsAreReadAsText();
+  });
+
+  it("reports absolute Excel row numbers when the used range starts below row 1", () => {
+    assertRowNumbersAreAbsoluteWhenTheRangeStartsBelowRowOne();
+  });
+
+  it("echoes a 32,767-character cell bounded, with the omitted length stated (security H1)", () => {
+    assertEchoedCellTextIsBounded();
+  });
+
+  it("accepts only plain decimal literals as numbers — 0x10 is number_invalid, not 16", () => {
+    assertOnlyDecimalLiteralsAreNumbers();
+  });
+
+  it("refuses a zip that declares a 500 MiB inflation before XLSX.read runs (security H2)", () => {
+    assertADeclaredZipBombIsRefusedBeforeRead();
   });
 });

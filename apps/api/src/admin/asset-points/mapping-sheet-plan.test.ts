@@ -2,8 +2,10 @@ import { describe, it } from "vitest";
 
 import {
   assertActiveAndMetadataDiffs,
+  assertAForeignStoredRtuIsRefusedNotSilentlyUnwired,
   assertARetiredRtuIsAcceptedOnlyWhereTheRowAlreadyPointsAtIt,
   assertAssetNameIsInformationalAndCountsAddUp,
+  assertUnmatchedTextIsEchoedBounded,
   assertBlankActiveOnANewRowIsUntouched,
   assertBlankRtuCodeFollowsTheSourceKindRule,
   assertChangedSourceKeyIsOneUpdate,
@@ -58,5 +60,13 @@ describe("F2.7 — planMappingSheet, steps 5-15 against a location snapshot (ADR
 
   it("accepts a retired RTU's code only where the existing row already points at it (correction 39)", () => {
     assertARetiredRtuIsAcceptedOnlyWhereTheRowAlreadyPointsAtIt();
+  });
+
+  it("refuses a row wired to an RTU outside the location rather than reading it as blank and unwiring it", () => {
+    assertAForeignStoredRtuIsRefusedNotSilentlyUnwired();
+  });
+
+  it("echoes unmatched sheet text bounded in asset_not_found, point_key_unknown and rtu_not_found (security H1)", () => {
+    assertUnmatchedTextIsEchoedBounded();
   });
 });
