@@ -269,7 +269,10 @@ engine still read.
   omission, so a later reader does not have to guess whether the silence was a
   decision.
 - **No `F2.8` wiring.** The PUE path in `dashboard.service.ts` and
-  `reports.service.ts` is untouched.
+  `reports.service.ts` is untouched. *(True at acceptance. `F2.8` shipped that
+  wiring on 2026-09-06 on `bms-calc-v2`: the stock incomer carries the three
+  points and both services read Σ/Σ from `pue-ratio.ts`; the fitted curve is
+  gone.)*
 
 ## Dependencies
 
@@ -294,7 +297,9 @@ derived number in prose does not stay correct.
   points. Both are `F2.8`'s decisions to make; choosing one here would be
   inventing its scope on its behalf, the trap ADR 0036 decision 7 named. This
   was discovered at `F2.4`'s ADR gate and is recorded on `F2.8`'s backlog row,
-  which did not previously say it.
+  which did not previously say it. *(Resolved: ADR 0055 took the amendment
+  path on 2026-09-04, `F2.9` built it, and `F2.8` shipped on it on
+  2026-09-06.)*
 - **A `streaming` formula inherits the `NOTIFY`-gap exposure.**
   `telemetry-listener.ts` records that `NOTIFY` has no replay: readings
   published while the listener is down "are gone from the realtime path for

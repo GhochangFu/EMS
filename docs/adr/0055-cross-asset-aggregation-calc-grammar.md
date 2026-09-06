@@ -67,7 +67,9 @@ three separate records deliberately refused to make.
   as ordinary measured points. This ADR records that ruling and drafts what
   follows.
 
-What ships today is the thing `F2.8` exists to remove. `estimatePue()` is
+*(As of 2026-09-06 it is removed — `F2.8`, PR #329; the paragraph below is the
+state this ADR was written against.)* What shipped then is the thing `F2.8`
+existed to remove. `estimatePue()` was
 duplicated three times —
 `apps/api/src/dashboard/dashboard.service.ts:541`,
 `apps/api/src/reports/reports.service.ts:332`, and
@@ -591,6 +593,8 @@ parser, and any estimate for `F2.9` must carry it.
   `🔒 needs an ADR 0036 amendment first`. The queue row is owed and is not
   written by this ADR.
 - **`F2.8` does not close until all three `estimatePue()` copies are gone.**
+  *(Closed 2026-09-06 with all three gone, held by
+  `tests/f2.8-pue-curve-is-gone.test.ts`.)*
   Replacing the API pair and leaving `apps/web/src/lib/pue-estimate.ts:2` in
   place would leave the browser showing a fitted curve while the API served a
   measured ratio — two different numbers for one KPI, which is worse than the
