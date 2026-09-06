@@ -274,6 +274,18 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
    * Without it the valve's correctness rests on two loops' microtask ordering.
    */
   let spilling = 0;
+  /**
+   * Samples lost to an `append` that **rejected**, added to the store's own
+   * `dropped` in `health()`.
+   *
+   * A second component rather than a second meaning: the store counts a batch
+   * it refused, but it cannot count one it rejected on — its counter is
+   * unreachable precisely when the call did not return. Without this
+   * `bufferDropped` under-reports against its own documented meaning ("lost to
+   * a failed append"), and `writePath=losing` would be the only trace of a
+   * batch that is gone.
+   */
+  let bufferRejected = 0;
   /** When the idle replay pass last swept the store's bounds; `null` until the first. */
   let lastSweepAtMs: number | null = null;
 
@@ -355,11 +367,15 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
    * future store, or a bug inside `enqueue` could reject, and an unhandled
    * rejection here would kill the drain loop silently and stop the endpoint
    * writing at all.
+   *
+   * The batch is counted here rather than in the store, because a store that
+   * rejected is a store whose `dropped` never moved — see `bufferRejected`.
    */
   async function appendToBuffer(batch: readonly SourceSample[]): Promise<boolean> {
     try {
       return await deps.buffer.append(stampDeviceKeys(batch));
     } catch (error) {
+      bufferRejected += batch.length;
       logger.error("disk buffer append rejected; batch lost", {
         endpointKey: plan.endpointKey,
         samples: batch.length,
@@ -554,10 +570,23 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         // per-batch log. Attempting each batch would cost `writeTimeoutMs` per
         // batch and starve the memory queue into drop-oldest — loss by another
         // route, with `dropped=` rising while `writeFailures=` explained it.
-        // A failed append is counted in `bufferDropped` inside the store and
-        // never thrown here (decision 10) — but it is still a lost batch, so
-        // it has to reach the health line as one.
-        writePath = (await appendToBuffer(batch)) ? "buffering" : "losing";
+        // A failed append is counted in `bufferDropped` inside the store — or
+        // by `appendToBuffer` when the store rejected — and never thrown here
+        // (decision 10), but it is still a lost batch, so it has to reach the
+        // health line as one.
+        //
+        // `spilling` is raised here for the same reason the `catch` path below
+        // raises it, and its absence here was a hole: once the breaker is open
+        // *this* is the branch that appends, and a bound that erased the whole
+        // backlog leaves `buffered` at 0 while the append is still in flight.
+        // The valve then shuts the breaker under the drain loop, and the next
+        // batch spends `writeTimeoutMs` on a database that is still down.
+        spilling += 1;
+        try {
+          writePath = (await appendToBuffer(batch)) ? "buffering" : "losing";
+        } finally {
+          spilling -= 1;
+        }
         continue;
       }
       try {
@@ -635,6 +664,12 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         // on its own — otherwise an endpoint whose backlog aged out would
         // spill for ever without attempting the database again.
         buffering = false;
+        // A recovery, so the probe backoff starts again — the same reason
+        // `superviseLoop` resets on a successful connect. Without this, an
+        // endpoint whose backlog aged out at the 60 s ceiling meets the next
+        // outage with the last one's delay, and its first probe waits a minute
+        // instead of a second.
+        attempt = 0;
         if (writePath === "buffering") {
           // The breaker is shut; "while the breaker is open" is no longer
           // true, and leaving it would degrade the host for ever on an
@@ -812,7 +847,9 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         samplesWritten,
         buffered: deps.buffer.buffered,
         writePath,
-        bufferDropped: deps.buffer.dropped,
+        // The store's losses plus the ones only the supervisor saw: a batch
+        // whose `append` rejected never reached the store's counter.
+        bufferDropped: deps.buffer.dropped + bufferRejected,
         replayed,
       };
     },

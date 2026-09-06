@@ -193,7 +193,9 @@ type SegmentRecord = {
   readFailures: number;
   /**
    * Non-`ENOENT` unlink refusals for this record; `>0` means every bound and
-   * `oldest()` skip it. Reset by an unlink that succeeds.
+   * `oldest()` skip it. Reset by an unlink that succeeds — and by an append
+   * that reaches the same file, which is the only other evidence the store
+   * ever gets that the file is not stuck (see `appendBatch`).
    */
   unlinkFailures: number;
 };
@@ -205,8 +207,11 @@ type SegmentRecord = {
  * would choose it on every pass, so the byte loop would erase nothing at all
  * for any endpoint, and `lowestSegment` would offer it on every pass, so no
  * later segment of that endpoint would ever replay. Its bytes stay counted and
- * its lines stay in `buffered` — the total is honest, the file is still there —
- * and an operator clears it.
+ * its lines stay in `buffered` — the total is honest, the file is still there.
+ * It is cleared by an operator, or by an append that reaches the same file:
+ * a record nothing offers is a record nothing can unlink, so without that
+ * second exit an append into the refused minute is buffered for ever
+ * (`appendBatch`).
  */
 function unlinkRefused(segment: SegmentRecord): boolean {
   return segment.unlinkFailures > 0;
@@ -533,12 +538,15 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
       }
     }
     // One turn per record that existed at entry, at most. Each turn either
-    // forgets a record or flags it out of `oldestAcrossStore`, so the flag
-    // alone would terminate the loop — but a later edit that cleared the flag
-    // on append would turn this into a hang rather than a red assertion (the
-    // review's mutation of the skip did exactly that, >120 s against a 9.5 s
-    // baseline). The counter makes termination a property of the loop, not of
-    // the flag's bookkeeping.
+    // forgets a record or flags it out of `oldestAcrossStore` — but the flag
+    // alone does **not** terminate this loop any more, because `appendBatch`
+    // now clears it (the post-merge review: a flagged record is offered by
+    // nothing, so nothing can ever unlink it). The counter is what makes
+    // termination a property of the loop rather than of the flag's
+    // bookkeeping, and it is load-bearing: the review's mutation of the skip
+    // ran >120 s against a 9.5 s baseline before it was added. Nothing inside
+    // this loop appends, and the reset runs once per `appendBatch` *before*
+    // this is called, so one call sees one fixed flag set.
     let turns = 0;
     for (const endpoint of endpoints.values()) {
       turns += endpoint.segments.size;
@@ -604,6 +612,22 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
         unlinkFailures: 0,
       };
       endpoint.segments.set(minute, segment);
+    } else if (unlinkRefused(segment)) {
+      // The one way out of a refusal that is not an operator. The flag takes
+      // the record out of `lowestSegment`, out of `oldestAcrossStore` and out
+      // of the age loop, so a record nothing offers is a record nothing can
+      // ever unlink — and an append into the *same* minute then grows a file
+      // that can never be read back. That is the drain loop spilling while the
+      // replay loop's `commit()` of the current minute was refused, and
+      // `buffered` would count those lines for the rest of the hour with not
+      // one of them reaching the database. An `appendFile` that succeeded is
+      // fresh evidence the file is reachable, which is exactly what the flag
+      // recorded the absence of, so it is cleared here.
+      //
+      // A later refusal on this record logs again — correctly: it is a new
+      // refusal on new content, and it is bounded to the ≤60 s this minute is
+      // current, not one line per pass for ever.
+      segment.unlinkFailures = 0;
     }
     segment.bytes += bytes;
     segment.lines += samples.length;

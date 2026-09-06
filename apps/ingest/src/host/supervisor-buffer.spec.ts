@@ -39,14 +39,14 @@ import {
  * gated scheduler, the same scripted adapter and the same plan.
  */
 
-function assert(condition: boolean, message: string): void {
+export function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
 }
 
 /** `makePlan()`'s key, and the store's `encodeURIComponent` of it. */
-const ENDPOINT = "phe.thinkiot.co.in:8883";
+export const ENDPOINT = "phe.thinkiot.co.in:8883";
 const ENCODED = "phe.thinkiot.co.in%3A8883";
 const START = new Date("2026-09-06T10:00:00.000Z");
 const MINUTE_MS = 60_000;
@@ -78,7 +78,7 @@ const TIMINGS: Partial<SupervisorTimings> = {
  * the bound is what keeps a broken expectation a fast failure rather than a
  * hang.
  */
-async function settle(predicate: () => boolean, message: string): Promise<void> {
+export async function settle(predicate: () => boolean, message: string): Promise<void> {
   for (let turn = 0; turn < 5_000; turn += 1) {
     if (predicate()) {
       return;
@@ -114,7 +114,7 @@ async function pump(
   }
 }
 
-async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
+export async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), "bms-ingest-supervisor-"));
   try {
     await run(dir);
@@ -134,7 +134,7 @@ async function seedSegment(dir: string, minute: number, values: readonly number[
   await writeFile(join(endpointDir, `${minute}.jsonl`), `${body}\n`, "utf8");
 }
 
-type Rig = {
+export type Rig = {
   readonly fake: ReturnType<typeof makeFakeScheduler>;
   readonly scripted: ScriptedAdapter;
   readonly supervisor: Supervisor;
@@ -153,7 +153,7 @@ type Rig = {
   connect(): Promise<void>;
 };
 
-type RigOptions = {
+export type RigOptions = {
   readonly timings?: Partial<SupervisorTimings>;
   readonly maxAgeMs?: number;
   readonly maxBytes?: number;
@@ -164,7 +164,7 @@ type RigOptions = {
   readonly plan?: EndpointPlan;
 };
 
-async function makeRig(dir: string, options: RigOptions = {}): Promise<Rig> {
+export async function makeRig(dir: string, options: RigOptions = {}): Promise<Rig> {
   const fake = makeFakeScheduler();
   const clock = { at: new Date(START) };
   // The store and the supervisor share one clock, so a segment's minute and the
@@ -840,12 +840,23 @@ export async function runSupervisorBufferTests(): Promise<void> {
       rig.supervisor.health().writePath === "losing",
       `a rejection is treated as a failed append, got ${rig.supervisor.health().writePath}`,
     );
+    // And it is counted. `bufferDropped` says "lost to a failed append", and a
+    // rejection is one — but the store's own counter is unreachable *because*
+    // the store rejected, so the supervisor keeps its own component.
+    assert(
+      rig.supervisor.health().bufferDropped === 1,
+      `the rejected batch is counted as lost, got ${rig.supervisor.health().bufferDropped}`,
+    );
 
     // Both loops are still running: the drain loop takes the next batch and
     // the replay loop is still asking.
     rig.scripted.emit([sample(2)]);
     await rig.fake.flush(1);
     await settle(() => rig.attempted.length === 2, "the drain loop survived the rejection");
+    await settle(
+      () => rig.supervisor.health().bufferDropped === 2,
+      `and so is the second, got ${rig.supervisor.health().bufferDropped}`,
+    );
 
     await stopSupervisor(rig.supervisor, rig.fake);
     assert(
