@@ -6,6 +6,7 @@ import { createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import {
+  assertNotifyRuleDispatchesOnRaiseOnly,
   assertRaisesUnscopedButReturnsScoped,
   assertStaleSampleMatchesButDoesNotRaise,
 } from "./evaluate-enabled-rules.integration.spec";
@@ -62,6 +63,16 @@ describe.skipIf(!connectionString)("F3.6 — evaluateEnabledRules against a real
     "matches but does not raise for a sample older than the raise-freshness bound",
     async () => {
       await assertStaleSampleMatchesButDoesNotRaise(db);
+    },
+    30_000,
+  );
+
+  // `F3.7`. Two sweeps of every enabled+published rule, not one, so this is the
+  // slowest assertion in the file — and it still fits the siblings' budget.
+  it(
+    "dispatches a notify rule's raise, records the second sweep's refusal, and leaves a trace_only rule silent",
+    async () => {
+      await assertNotifyRuleDispatchesOnRaiseOnly(db);
     },
     30_000,
   );

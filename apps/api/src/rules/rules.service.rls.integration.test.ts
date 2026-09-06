@@ -10,6 +10,7 @@ import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 import { AlarmRaiser } from "../alarms/alarm-raise.service";
 import type { AlarmsGateway } from "../alarms/alarms.gateway";
 import { withTenant } from "../database/tenant-context";
+import type { NotificationsService } from "../notifications/notifications.service";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
@@ -264,8 +265,19 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
     const decoyRuleId = await seedRule(organizationId, decoyAssetId, `${PREFIX}READC`);
     const decoyExecutionId = await seedExecution(organizationId, decoyRuleId);
 
+    // `F3.7`: no assertion in this suite reaches `evaluateEnabledRules`, the
+    // one method that dispatches, so the fifth slot is an inert stand-in.
+    const notifications = {
+      dispatch: () => Promise.resolve([]),
+    } as unknown as NotificationsService;
     const makeService = (t: BmsDb, f: BmsDb): RulesService =>
-      new RulesService(t, f, new VocabulariesService(f), new AlarmRaiser(t, stubGateway()));
+      new RulesService(
+        t,
+        f,
+        new VocabulariesService(f),
+        new AlarmRaiser(t, stubGateway()),
+        notifications,
+      );
     ctx = {
       service: makeService(tenantDb, fleetDb),
       tenantDb,

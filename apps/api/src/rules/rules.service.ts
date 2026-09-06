@@ -28,8 +28,10 @@ import {
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
+import { NotificationsService } from "../notifications/notifications.service";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { alarmMessageFieldsFromCondition } from "./alarm-message";
+import { notifyOnRaise } from "./rule-actions";
 // The three modules extracted for AGENTS.md §4.5 (1000-line cap). Each holds
 // pure logic — no database, no clock — which is why it sits outside the service
 // and carries its own spec instead of needing one here.
@@ -82,6 +84,11 @@ export class RulesService {
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly vocabularies: VocabulariesService,
     private readonly alarmRaiser: AlarmRaiser,
+    // `F3.7`: APPENDED, never reordered — `fleet-read-wiring.spec.ts` pins slots
+    // 0 and 1 by position, and a reorder would move a decision-1 read onto the
+    // wrong pool while still compiling. `rules.module.ts:15` already imports
+    // `NotificationsModule` (acyclic, checked there), so no module edit is owed.
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Lists Sprint D automation rules with optional asset context. */
@@ -656,6 +663,19 @@ export class RulesService {
               { recordTrace: false },
             );
             raisedAlarmId = raised.alarmId;
+            // F3.7 (ADR 0041 decisions 1, 4, 7): every ATTEMPTED raise
+            // dispatches and `raised` passes through, so a second sweep against
+            // an unchanged plant records one `skipped_deduped` row per joined
+            // channel and sends nothing — which answers "I pressed Evaluate
+            // now, why was nobody told?" (owner ruling Q2, 2026-09-06). The
+            // streaming engine is the asymmetric half. Fire-and-forget:
+            // `notifyOnRaise` neither awaits nor throws, so a hanging SMTP
+            // server cannot delay the next rule or this response.
+            notifyOnRaise(
+              { notifications: this.notifications, logger: this.logger },
+              { id: row.id, code: row.code, organizationId: ruleOrg, action: row.action },
+              raised,
+            );
           }
         }
       }

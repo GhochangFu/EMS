@@ -6,6 +6,7 @@ import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 import type { BmsDb } from "@bms/db";
 
 import type { AlarmRaiser } from "../alarms/alarm-raise.service";
+import type { NotificationsService } from "../notifications/notifications.service";
 import type { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { mergeRuleDraft } from "./rule-mapping";
 import { ruleRow } from "./rule-mapping.spec";
@@ -81,7 +82,19 @@ function validator(rows: unknown[] = []): ValidateAccess {
   // `validateRuleDraft` never raises — F3.6's addition to the constructor,
   // untouched by anything this file exercises.
   const alarmRaiser = {} as unknown as AlarmRaiser;
-  return new RulesService(db, db, vocabularies, alarmRaiser) as unknown as ValidateAccess;
+  // `F3.7`: nothing this file exercises raises, so nothing dispatches — the
+  // stand-in resolves rather than being `{}`, so a regression that started
+  // calling it here would fail on the assertion rather than on a TypeError.
+  const notifications = {
+    dispatch: () => Promise.resolve([]),
+  } as unknown as NotificationsService;
+  return new RulesService(
+    db,
+    db,
+    vocabularies,
+    alarmRaiser,
+    notifications,
+  ) as unknown as ValidateAccess;
 }
 
 const HVAC_ASSET = [{ code: "AHU-1", domain: "hvac" }];
