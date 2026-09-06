@@ -5,15 +5,9 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { asc, desc, eq, inArray, or } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 
-import {
-  assets,
-  auditLog,
-  automationRules,
-  ruleExecutions,
-  users,
-} from "@bms/db";
+import { assets, auditLog, automationRules, ruleExecutions } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   AssetDomain,
@@ -34,8 +28,10 @@ import {
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
+import { NotificationsService } from "../notifications/notifications.service";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { alarmMessageFieldsFromCondition } from "./alarm-message";
+import { notifyOnRaise } from "./rule-actions";
 // The three modules extracted for AGENTS.md §4.5 (1000-line cap). Each holds
 // pure logic — no database, no clock — which is why it sits outside the service
 // and carries its own spec instead of needing one here.
@@ -45,7 +41,7 @@ import {
   unsupportedRuleType,
   type LatestSampleLoader,
 } from "./rule-evaluation";
-import { insertRuleAuditLog } from "./rule-audit";
+import { insertRuleAuditLog, resolveActorId } from "./rule-audit";
 import { assertRuleCodeAvailable, nextRuleCode } from "./rule-codes";
 import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
 import { resolveAssetOrgOrNull, resolveWriteOrg } from "./rule-org";
@@ -88,6 +84,11 @@ export class RulesService {
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly vocabularies: VocabulariesService,
     private readonly alarmRaiser: AlarmRaiser,
+    // `F3.7`: APPENDED, never reordered — `fleet-read-wiring.spec.ts` pins slots
+    // 0 and 1 by position, and a reorder would move a decision-1 read onto the
+    // wrong pool while still compiling. `rules.module.ts:15` already imports
+    // `NotificationsModule` (acyclic, checked there), so no module edit is owed.
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Lists Sprint D automation rules with optional asset context. */
@@ -153,7 +154,7 @@ export class RulesService {
     // both branches, so this is the same value the old order would have used.
     const organizationId = await resolveWriteOrg(this.fleetDb, dto.assetId ?? null, dto.ruleType);
     const values = await this.validateRuleDraft(dto, undefined, organizationId);
-    const actorId = await this.resolveActorId(actor);
+    const actorId = await resolveActorId(this.fleetDb, actor);
     const code = values.code ?? (await nextRuleCode(this.fleetDb, dto.name));
     const now = new Date();
 
@@ -214,7 +215,7 @@ export class RulesService {
     // validateRuleDraft so its E7.1c code check can be scoped to it.
     const organizationId = this.requireRuleOrg(current);
     const values = await this.validateRuleDraft(merged, id, organizationId);
-    const actorId = await this.resolveActorId(actor);
+    const actorId = await resolveActorId(this.fleetDb, actor);
     const now = new Date();
 
     const updated = await withTenant(this.db, organizationId, async (tx) => {
@@ -255,7 +256,7 @@ export class RulesService {
     // there is no org to scope the code-uniqueness check to — it is skipped
     // here and left to the authoritative check in `createDraft`.
     const values = await this.validateRuleDraft(dto, dto.id, null);
-    const actorId = await this.resolveActorId(actor);
+    const actorId = await resolveActorId(this.fleetDb, actor);
     const result = await this.evaluateRule({
       id: dto.id ?? "00000000-0000-0000-0000-000000000000",
       code: values.code ?? "DRAFT",
@@ -405,7 +406,7 @@ export class RulesService {
     // The copy inherits the source rule's tenant. `duplicateRule` bypasses
     // `validateRuleDraft`, so it carries its own `organizationId` stamp.
     const organizationId = this.requireRuleOrg(current);
-    const actorId = await this.resolveActorId(actor);
+    const actorId = await resolveActorId(this.fleetDb, actor);
     const now = new Date();
     const code = await nextRuleCode(this.fleetDb, `${current.code}-COPY`);
 
@@ -541,7 +542,7 @@ export class RulesService {
       throw new BadRequestException("Only published rules can be enabled or disabled");
     }
     const organizationId = this.requireRuleOrg(current);
-    const actorId = await this.resolveActorId(actor);
+    const actorId = await resolveActorId(this.fleetDb, actor);
     const now = new Date();
 
     const updated = await withTenant(this.db, organizationId, async (tx) => {
@@ -662,6 +663,19 @@ export class RulesService {
               { recordTrace: false },
             );
             raisedAlarmId = raised.alarmId;
+            // F3.7 (ADR 0041 decisions 1, 4, 7): every ATTEMPTED raise
+            // dispatches and `raised` passes through, so a second sweep against
+            // an unchanged plant records one `skipped_deduped` row per joined
+            // channel and sends nothing — which answers "I pressed Evaluate
+            // now, why was nobody told?" (owner ruling Q2, 2026-09-06). The
+            // streaming engine is the asymmetric half. Fire-and-forget:
+            // `notifyOnRaise` neither awaits nor throws, so a hanging SMTP
+            // server cannot delay the next rule or this response.
+            notifyOnRaise(
+              { notifications: this.notifications, logger: this.logger },
+              { id: row.id, code: row.code, organizationId: ruleOrg, action: row.action },
+              raised,
+            );
           }
         }
       }
@@ -958,7 +972,7 @@ export class RulesService {
     }>,
     organizationId: string,
   ): Promise<RuleRow> {
-    const actorId = await this.resolveActorId(actor);
+    const actorId = await resolveActorId(this.fleetDb, actor);
     return withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(automationRules)
@@ -976,17 +990,5 @@ export class RulesService {
 
       return this.getRuleRowTx(tx, id); // E7.1c: read back on the write's tenant GUC
     });
-  }
-
-  private async resolveActorId(
-    actor: Pick<JwtPayload, "sub" | "email">,
-  ): Promise<string | null> {
-    // fleetDb: a pre-tenant identity read (pre-empts the Task-4 actor-loss).
-    const [actorRow] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
-      .limit(1);
-    return actorRow?.id ?? null;
   }
 }

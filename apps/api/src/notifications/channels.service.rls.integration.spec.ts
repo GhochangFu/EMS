@@ -194,7 +194,7 @@ export async function assertSetRuleChannelsRefusesCrossOrgChannel(
   ruleIdInOrgA: string,
   channelIdInOrgB: string,
   globalChannelId: string,
-  actor: Pick<JwtPayload, "sub" | "email">,
+  actor: JwtPayload,
 ): Promise<void> {
   await expect(
     channels.setRuleChannels(ruleIdInOrgA, [channelIdInOrgB], actor),
@@ -204,6 +204,112 @@ export async function assertSetRuleChannelsRefusesCrossOrgChannel(
   // above is about ANOTHER organization's channel, not about a NULL-org one.
   const wired = await channels.setRuleChannels(ruleIdInOrgA, [globalChannelId], actor);
   expect(wired).toEqual([globalChannelId]);
+}
+
+/**
+ * `F3.7` REVIEW FINDING (High, both reviewers; owner ruling 2026-09-06),
+ * closed: a per-rule save must not delete a join the caller was never shown.
+ *
+ * `list()` filters with `inArray(organizationId, writableOrgIds)` and
+ * `inArray` never matches `NULL`, so a fleet-managed global channel is absent
+ * from an `organization_admin`'s picker — while `ruleChannelIds()`, which is
+ * unfiltered, still reports it as joined. `setRuleChannels` replaced the whole
+ * set, so ticking nothing and pressing Save silently unjoined a channel the
+ * operator could not see and was not told about.
+ *
+ * Only a real database can make this claim: the preserved row is found by
+ * joining `rule_notifications` to `notification_channels` for a `NULL`
+ * `organization_id`, which is a fact about what the fleet (BYPASSRLS)
+ * connection returns under FORCE — the tenant connection, on the rule's org
+ * GUC, cannot see that channel row at all. A fake `BmsDb` proves nothing here.
+ *
+ * All three cases are load-bearing and each fails a different wrong
+ * implementation:
+ *
+ * 1. an org-scoped caller PUTs `[]` — the global join SURVIVES and the org
+ *    join is gone. Fails the pre-fix full replace, and fails a fix that
+ *    preserves everything indiscriminately (the org join must still go).
+ * 2. the same caller PUTs `[orgChannel]` — both are joined. Fails a fix that
+ *    drops the preserved id once anything is submitted.
+ * 3. a **global** caller PUTs `[]` — both are gone. Fails a fix that keeps a
+ *    `NULL`-org join for every caller, which would make a fleet admin unable
+ *    to unjoin their own channel.
+ *
+ * The audit assertions are the ruling's other half: `preservedChannelIds`
+ * names what was kept, and `cleared` must be keyed on what is STORED — an
+ * empty submission that preserved a join has silenced nothing and must not
+ * claim to have. Both directions are read back, so a hard-coded `[]` fails
+ * case 1 and a hard-coded non-empty value fails case 3.
+ */
+export async function assertSetRuleChannelsKeepsJoinsOutsideTheCallersScope(
+  channels: ChannelsService,
+  fleetDb: BmsDb,
+  ruleId: string,
+  globalChannelId: string,
+  orgChannelId: string,
+  orgAdminJwt: JwtPayload,
+  globalAdminJwt: JwtPayload,
+): Promise<void> {
+  // Every read is filtered by the fixture's rule id — this database is shared
+  // with the other integration suites in the run.
+  const joined = async (): Promise<string[]> =>
+    (await channels.ruleChannelIds(ruleId)).slice().sort();
+  const bothSorted = [globalChannelId, orgChannelId].slice().sort();
+
+  expect(
+    await joined(),
+    "fixture: the rule starts joined to the global channel AND its own org's channel",
+  ).toEqual(bothSorted);
+
+  // --- 1. the picker shows only the org channel; the operator unticks it ----
+  const afterEmpty = await channels.setRuleChannels(ruleId, [], orgAdminJwt);
+  expect(
+    afterEmpty,
+    "the PUT answers with what is STORED, so the response carries the kept join",
+  ).toEqual([globalChannelId]);
+  expect(
+    await joined(),
+    "an org-scoped caller's empty save keeps the global join and drops the org one",
+  ).toEqual([globalChannelId]);
+
+  const keptAudit = await fleetDb.execute(
+    sql`SELECT payload FROM bms.audit_log
+         WHERE action = 'rule_notifications_set' AND entity_id = ${ruleId}
+           AND payload -> 'preservedChannelIds' = ${JSON.stringify([globalChannelId])}::jsonb
+           AND payload ->> 'cleared' = 'false'`,
+  );
+  expect(
+    keptAudit.rows.length,
+    "the audit names the kept join, and does NOT call an empty submission `cleared` when something survived it",
+  ).toBe(1);
+
+  // --- 2. the same caller ticks the one channel it can see -----------------
+  const afterOrgOnly = await channels.setRuleChannels(ruleId, [orgChannelId], orgAdminJwt);
+  // `?? []` only for the type — a `null` here means "no such rule" and would
+  // fail the comparison rather than pass it.
+  expect((afterOrgOnly ?? []).slice().sort(), "the submitted id and the kept one, together").toEqual(
+    bothSorted,
+  );
+  expect(await joined(), "both joins are stored").toEqual(bothSorted);
+
+  // --- 3. a global caller still replaces the whole set ---------------------
+  const afterGlobalEmpty = await channels.setRuleChannels(ruleId, [], globalAdminJwt);
+  expect(
+    afterGlobalEmpty,
+    "`admin` has no organization fence, so nothing is outside its scope to keep",
+  ).toEqual([]);
+  expect(await joined(), "a global caller's empty save really does empty the set").toEqual([]);
+
+  const clearedAudit = await fleetDb.execute(
+    sql`SELECT payload FROM bms.audit_log
+         WHERE action = 'rule_notifications_set' AND entity_id = ${ruleId}
+           AND payload -> 'preservedChannelIds' = '[]'::jsonb
+           AND payload ->> 'cleared' = 'true'`,
+  );
+  expect(
+    clearedAudit.rows.length,
+    "a genuinely emptied set is still audited as cleared, with an empty preserved list",
+  ).toBe(1);
 }
 
 /**

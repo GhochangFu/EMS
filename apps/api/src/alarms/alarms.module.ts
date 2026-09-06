@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { TelemetryModule } from "../telemetry/telemetry.module";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 
@@ -13,7 +14,10 @@ import { AlarmsGateway } from "./alarms.gateway";
 import { AlarmsService } from "./alarms.service";
 
 @Module({
-  imports: [TelemetryModule, VocabulariesModule],
+  // `F3.7`: `NotificationsModule` imports nothing from alarms or rules and
+  // declares no `imports` at all, so this edge is acyclic — checked before
+  // adding it, not assumed, the same way `rules.module.ts` checked its own.
+  imports: [TelemetryModule, VocabulariesModule, NotificationsModule],
   controllers: [AlarmsController],
   providers: [
     AlarmsService,

@@ -20,6 +20,7 @@ import {
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { labelFor, toneClass, toneFor } from "../lib/vocabulary";
 import { RuleBuilderPanel } from "./rule-builder-panel";
+import { RuleChannelsEditor } from "./rule-channels-editor";
 
 type RuleFilter = AutomationRuleCategory | "all";
 type StatusFilter = "all" | "enabled" | "disabled";
@@ -356,6 +357,13 @@ function RuleCard({
 }) {
   const canToggle = rule.lifecycleStatus === "published";
   const canArchive = rule.lifecycleStatus !== "archived";
+  /**
+   * `F3.7` — the picker is mounted only while it is open, and that is the
+   * point of the state rather than a nicety. `RuleChannelsEditor` issues one
+   * `GET /rules/:id/notifications` per mount, and 289 published rules are live
+   * on this database.
+   */
+  const [channelsOpen, setChannelsOpen] = useState(false);
   return (
     <article className="flex items-start gap-3 px-4 py-3">
       <button
@@ -429,6 +437,12 @@ function RuleCard({
             Edit in builder
           </button>
           <button
+            className="rounded border border-gray-300 px-2 py-1 text-[11px] font-semibold text-bms-muted"
+            onClick={() => setChannelsOpen((open) => !open)}
+          >
+            Channels
+          </button>
+          <button
             className="rounded border border-gray-300 px-2 py-1 text-[11px] font-semibold text-bms-muted disabled:opacity-50"
             disabled={lifecyclePending}
             onClick={onDuplicate}
@@ -443,6 +457,7 @@ function RuleCard({
             Archive
           </button>
         </div>
+        {channelsOpen ? <RuleChannelsEditor ruleId={rule.id} action={rule.action} /> : null}
       </div>
     </article>
   );
