@@ -2,9 +2,10 @@
 
 ## Status
 
-Proposed — drafted 2026-09-06 at `F2.7`'s start gate. **Acceptance is the
-repository owner's step-2 gate (AGENTS.md §10)**; this record does not accept
-itself.
+Accepted — 2026-09-06, by the repository owner, the same day it was drafted at
+`F2.7`'s start gate (AGENTS.md §10 step 2). The record was written as
+*Proposed* and flipped here on the owner's word; nothing in it changed between
+the two states.
 
 The seven design questions below were ruled by the repository owner on
 2026-09-06, in the gating conversation that produced this draft, before a line
