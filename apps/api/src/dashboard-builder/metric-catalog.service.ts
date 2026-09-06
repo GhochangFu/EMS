@@ -310,16 +310,16 @@ const datasetValue = (
 };
 
 /**
- * An active alarm is one that has not been acknowledged.
+ * An active alarm is one that has not been cleared.
  *
- * `bms.alarms` carries no cleared/resolved column — `acknowledged_at IS NULL` is the whole
- * definition, and `alarms.service.ts:215` uses the same predicate to acknowledge one. Stated
- * here rather than assumed, because "active" reads like it should have a lifecycle behind it.
+ * ADR 0057 decision 1: active = `cleared_at IS NULL`, since migration `0066`. An acknowledged
+ * alarm is still active — acknowledgement only annotates who is handling it, and clearing is
+ * the sole predicate this file counts against.
  */
 const activeAlarmWhere = (organizationId: string, scope: readonly string[]) =>
   and(
     eq(alarms.organizationId, organizationId),
-    isNull(alarms.acknowledgedAt),
+    isNull(alarms.clearedAt),
     scopedTo(alarms.assetId, scope),
   );
 

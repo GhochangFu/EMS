@@ -83,6 +83,9 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
 
   const ALARMS_AT_A = 2;
   const ALARMS_AT_B = 3;
+  // The acknowledged-but-uncleared alarm on A counts under ADR 0057 decision 1; the
+  // cleared-but-unacknowledged one does not — so A's active total is ALARMS_AT_A + 1, not + 2.
+  const ACTIVE_AT_A = ALARMS_AT_A + 1;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -171,7 +174,7 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
     );
     const severityCode = severity.rows[0]?.code ?? "critical";
 
-    // Unacknowledged: `acknowledged_at IS NULL` is the whole definition of active.
+    // Uncleared: `cleared_at IS NULL` is the whole definition of active (ADR 0057 decision 1).
     for (let i = 0; i < ALARMS_AT_A; i += 1) {
       await superuserPool.query(
         `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at)
@@ -186,11 +189,19 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
         [orgId, assetB, severityCode, `F3.35 B${i} ${RUN}`],
       );
     }
-    // One ACKNOWLEDGED alarm on A, so "active" is doing work rather than meaning "all".
+    // One ACKNOWLEDGED-but-UNCLEARED alarm on A. ADR 0057 decision 1: an acknowledged alarm is
+    // still active — acknowledgement only annotates it — so this one COUNTS, unlike before U12.
     await superuserPool.query(
       `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at, acknowledged_at)
        VALUES ($1, $2, $3, $4, now(), now())`,
       [orgId, assetA, severityCode, `F3.35 acked ${RUN}`],
+    );
+    // One CLEARED-but-UNACKNOWLEDGED alarm on A. It must NOT count: clearing, not
+    // acknowledging, is the sole predicate `activeAlarmWhere` (and its SQL siblings) test.
+    await superuserPool.query(
+      `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at, cleared_at)
+       VALUES ($1, $2, $3, $4, now(), now())`,
+      [orgId, assetA, severityCode, `F3.35 cleared ${RUN}`],
     );
 
     /** A dashboard with one `value_tile` bound to one catalog entry. */
@@ -270,13 +281,13 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
       scopedDashboardId,
       wideDashboardId,
       [assetA, assetB],
-      ALARMS_AT_A,
-      ALARMS_AT_A + ALARMS_AT_B,
+      ACTIVE_AT_A,
+      ACTIVE_AT_A + ALARMS_AT_B,
     );
   });
 
   it("intersects the caller's readable assets with the dashboard's scope", async () => {
-    await assertCallerScopeIntersects(service, orgId, wideDashboardId, [assetA], ALARMS_AT_A);
+    await assertCallerScopeIntersects(service, orgId, wideDashboardId, [assetA], ACTIVE_AT_A);
   });
 
   it("resolves a dataset to its declared columns, clamped and flagged", async () => {
