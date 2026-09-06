@@ -8,6 +8,7 @@ import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmEngineService } from "./alarm-engine.service";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
+import { AlarmLifecycleService } from "./alarm-lifecycle.service";
 import { AlarmRaiser } from "./alarm-raise.service";
 import { AlarmsController } from "./alarms.controller";
 import { AlarmsGateway } from "./alarms.gateway";
@@ -26,6 +27,11 @@ import { AlarmsService } from "./alarms.service";
     AlarmRaiser,
     AlarmDetailsService,
     AlarmEnrichmentService,
+    // `F3.10` (ADR 0057 decision 4): the 30 s lifecycle sweep — the one
+    // writer of `cleared_at` / `normal_since`. Needs both pools, the two
+    // notification services this module already imports, and the gateway
+    // for the `cleared` broadcast; all resolvable here today.
+    AlarmLifecycleService,
     JwtAuthGuard,
   ],
   // `RulesModule` (F3.6 task 5) needs `AlarmRaiser` so the on-demand evaluator
