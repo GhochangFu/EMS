@@ -38,6 +38,13 @@ type BuilderForm = {
   operator: AutomationRuleOperator;
   thresholdValue: string;
   /**
+   * Seconds an alarm must stay clear before it self-clears (`F3.10`, `D16`).
+   * Blank means "use the 120 s default" — the same null discipline `F4.46`
+   * uses for severity, and the same reason: no default is substituted here,
+   * only on the read path that consumes the stored value.
+   */
+  clearHoldSeconds: string;
+  /**
    * Nullable since `F4.46`. A rule may have no severity — the API stores one
    * that way today — and a non-nullable form field could not hold that, so
    * opening such a rule silently promoted it to `warning` and saving wrote the
@@ -71,6 +78,7 @@ const emptyForm: BuilderForm = {
   pointKey: "",
   operator: "gt",
   thresholdValue: "",
+  clearHoldSeconds: "",
   severity: "warning",
   actionType: "notify",
   actionTarget: "Operations",
@@ -334,6 +342,15 @@ export function RuleBuilderPanel({
                   placeholder="3"
                 />
               </Field>
+              <Field label="Clear hold (seconds)">
+                <input
+                  className={fieldClass}
+                  inputMode="numeric"
+                  value={form.clearHoldSeconds}
+                  onChange={(e) => setForm({ ...form, clearHoldSeconds: e.target.value })}
+                  placeholder="120 (default)"
+                />
+              </Field>
             </div>
           </div>
         ) : (
@@ -552,6 +569,7 @@ function buildPayload(form: BuilderForm): RuleDraftPayload & {
     operator: form.operator,
     thresholdValue: Number(form.thresholdValue),
     severity: form.severity,
+    clearHoldSeconds: form.clearHoldSeconds.trim() === "" ? null : Number(form.clearHoldSeconds),
     condition: { window: "latest" },
     action: { type: form.actionType, target: form.actionTarget },
   };
@@ -575,6 +593,7 @@ function formFromRule(rule: RuleListItem, vocabulary: AlarmSeverityDto[]): Build
     pointKey: rule.pointKey ?? "",
     operator: rule.operator ?? "gt",
     thresholdValue: rule.thresholdValue === null ? "" : String(rule.thresholdValue),
+    clearHoldSeconds: rule.clearHoldSeconds === null ? "" : String(rule.clearHoldSeconds),
     severity: severityFromRule(rule.severity, vocabulary),
     actionType: rule.action.type,
     actionTarget: rule.action.target,
