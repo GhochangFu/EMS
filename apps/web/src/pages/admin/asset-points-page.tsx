@@ -2,10 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { QUALITY_POLICIES } from "@bms/shared";
 import type {
   AdminAssetPointDto,
   AssetPointCalcConfigDto,
   MasterDataActiveFilter,
+  QualityPolicy,
 } from "@bms/shared";
 
 import {
@@ -17,6 +19,7 @@ import {
   reactivateAdminAssetPoint,
   setAdminAssetPointCalcOverride,
   updateAdminAssetPoint,
+  type UpdateAdminAssetPointInput,
 } from "../../api/admin/asset-points";
 import { fetchAdminAssetSummary } from "../../api/admin/assets";
 import { fetchAdminPointKeys } from "../../api/admin/point-keys";
@@ -27,6 +30,8 @@ import {
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
+import { AssetPointBulkEditPanel } from "../../components/assets/asset-point-bulk-edit-panel";
+import { MappingSheetPanel } from "../../components/assets/mapping-sheet-panel";
 import { PointCalcOverridePanel } from "../../components/assets/point-calc-override-panel";
 import { SectionCard } from "../../components/section-card";
 import { apiErrorMessage } from "../../lib/api-error-message";
@@ -62,6 +67,96 @@ function CalcRuntimePill({ runtime }: { runtime: AssetPointCalcConfigDto["runtim
   return <span className={`rounded px-2 py-0.5 font-semibold ${tone}`}>{label}</span>;
 }
 
+/**
+ * `F2.7` / ADR 0056 decision 1 — the five metadata fields as the Add/Edit form
+ * holds them: text, because an `<input type="number">` reports an empty box as
+ * `""` and that is the state the five need a spelling for.
+ */
+type MetadataForm = {
+  scaleMultiplier: string;
+  scaleOffset: string;
+  engMin: string;
+  engMax: string;
+  qualityPolicy: QualityPolicy | "";
+};
+
+const EMPTY_METADATA_FORM: MetadataForm = {
+  scaleMultiplier: "",
+  scaleOffset: "",
+  engMin: "",
+  engMax: "",
+  qualityPolicy: "",
+};
+
+/** The four numeric ones, so the walkers below cannot skip one silently. */
+const METADATA_NUMBER_FIELDS = ["scaleMultiplier", "scaleOffset", "engMin", "engMax"] as const;
+
+type MetadataWrite = Pick<
+  UpdateAdminAssetPointInput,
+  "scaleMultiplier" | "scaleOffset" | "engMin" | "engMax" | "qualityPolicy"
+>;
+
+/** The five as the row stores them, for the Edit form. `null` (inherit) reads as an empty box. */
+function metadataFormFrom(item: AdminAssetPointDto): MetadataForm {
+  return {
+    scaleMultiplier: item.scaleMultiplier === null ? "" : String(item.scaleMultiplier),
+    scaleOffset: item.scaleOffset === null ? "" : String(item.scaleOffset),
+    engMin: item.engMin === null ? "" : String(item.engMin),
+    engMax: item.engMax === null ? "" : String(item.engMax),
+    qualityPolicy: item.qualityPolicy ?? "",
+  };
+}
+
+/**
+ * The five as a write.
+ *
+ * The two modes differ by exactly one thing and it matters: an empty box is
+ * **omitted** on a create (there is nothing to clear, and the request keeps the
+ * shape it had before `F2.7`) and **`null`** on an edit, which is the explicit
+ * clear that puts the row back on its template default. One shared payload
+ * cannot say both, and both typecheck — so they are built separately.
+ *
+ * A box holding something that is not a finite number is omitted rather than
+ * sent: `JSON.stringify(NaN)` is `null`, which would read as a clear nobody
+ * asked for.
+ */
+function metadataWriteFrom(form: MetadataForm, mode: "create" | "edit"): MetadataWrite {
+  const write: MetadataWrite = {};
+  for (const field of METADATA_NUMBER_FIELDS) {
+    const text = form[field].trim();
+    if (text === "") {
+      if (mode === "edit") write[field] = null;
+      continue;
+    }
+    const value = Number(text);
+    if (Number.isFinite(value)) write[field] = value;
+  }
+  if (form.qualityPolicy !== "") {
+    write.qualityPolicy = form.qualityPolicy;
+  } else if (mode === "edit") {
+    write.qualityPolicy = null;
+  }
+  return write;
+}
+
+/** `×1.5 +2` — the stored scaling, or a dash where the row follows its template. */
+function scaleCell(item: AdminAssetPointDto): string {
+  const parts: string[] = [];
+  if (item.scaleMultiplier !== null) parts.push(`×${item.scaleMultiplier}`);
+  if (item.scaleOffset !== null) {
+    parts.push(item.scaleOffset < 0 ? `−${Math.abs(item.scaleOffset)}` : `+${item.scaleOffset}`);
+  }
+  return parts.length > 0 ? parts.join(" ") : "—";
+}
+
+/** `0 – 100`, or one bound alone, or a dash. */
+function rangeCell(item: AdminAssetPointDto): string {
+  if (item.engMin !== null && item.engMax !== null) return `${item.engMin} – ${item.engMax}`;
+  if (item.engMin !== null) return `≥ ${item.engMin}`;
+  if (item.engMax !== null) return `≤ ${item.engMax}`;
+  return "—";
+}
+
 type AssetPointsAdminPageProps = { user: AuthUser };
 
 /** Admin screen for asset point mappings with asset drill-down. */
@@ -79,8 +174,12 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     sourceDataKey: "",
     sensorCode: "",
     unit: "",
+    ...EMPTY_METADATA_FORM,
   });
   const [error, setError] = useState<string | null>(null);
+  // `F2.7` / ADR 0056 decision 8 — the rows "Edit selected" applies to.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
 
   const assetSummaryQ = useQuery({
     queryKey: ["admin", "asset-summary", assetId],
@@ -175,20 +274,56 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     );
   }, [listQ.data?.items, search]);
 
+  /**
+   * The selection is cleared whenever the row set under it changes — the filter
+   * bar, the active filter and the search box all narrow `filtered`, and
+   * select-all runs over `filtered`. A selection that survived a search would
+   * send ids that are no longer on screen.
+   */
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setBulkOpen(false);
+  }, [activeFilter, search, selection.locationId, selection.assetId]);
+
+  // Derived from `filtered`, never from the raw id set: a row that leaves the
+  // list must leave the count and the request with it.
+  const selectedRows = useMemo(
+    () => filtered.filter((item) => selectedIds.has(item.id)),
+    [filtered, selectedIds],
+  );
+  const allFilteredSelected = filtered.length > 0 && selectedRows.length === filtered.length;
+
+  function toggleRow(id: string, checked: boolean): void {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  }
+
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const payload = {
+      if (editing) {
+        return updateAdminAssetPoint(editing.id, {
+          pointKey: form.pointKey,
+          sourceDataKey: form.sourceDataKey,
+          sensorCode: form.sensorCode || undefined,
+          unit: form.unit || undefined,
+          ...metadataWriteFrom(form, "edit"),
+        });
+      }
+      return createAdminAssetPoint({
         assetId: form.assetId,
         pointKey: form.pointKey,
         sourceDataKey: form.sourceDataKey,
         sensorCode: form.sensorCode || undefined,
         unit: form.unit || undefined,
-      };
-      if (editing) {
-        const { assetId: _assetId, ...updatePayload } = payload;
-        return updateAdminAssetPoint(editing.id, updatePayload);
-      }
-      return createAdminAssetPoint(payload);
+        ...metadataWriteFrom(form, "create"),
+      });
     },
     onSuccess: async () => {
       setModalOpen(false);
@@ -234,6 +369,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   sourceDataKey: "",
                   sensorCode: "",
                   unit: "",
+                  ...EMPTY_METADATA_FORM,
                 });
                 setModalOpen(true);
               }}
@@ -258,15 +394,51 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
+          {/* `F2.7` / ADR 0056 decision 8. The count comes from the rows still
+              on screen, so it cannot promise an edit to a row the filter
+              dropped. */}
+          <button
+            type="button"
+            className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-50"
+            disabled={selectedRows.length === 0}
+            onClick={() => setBulkOpen(true)}
+          >
+            Edit selected ({selectedRows.length})
+          </button>
         </div>
+        {bulkOpen && selectedRows.length > 0 ? (
+          <AssetPointBulkEditPanel
+            ids={selectedRows.map((item) => item.id)}
+            onApplied={() => {
+              setBulkOpen(false);
+              setSelectedIds(new Set());
+            }}
+            onCancel={() => setBulkOpen(false)}
+          />
+        ) : null}
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b text-left text-xs uppercase text-bms-muted">
+              <th className="px-2 py-2">
+                <input
+                  type="checkbox"
+                  aria-label="Select all rows"
+                  checked={allFilteredSelected}
+                  onChange={(event) =>
+                    setSelectedIds(
+                      event.target.checked ? new Set(filtered.map((item) => item.id)) : new Set(),
+                    )
+                  }
+                />
+              </th>
               <th className="px-2 py-2">Asset</th>
               <th className="px-2 py-2">Point key</th>
               <th className="px-2 py-2">Source key</th>
               <th className="px-2 py-2">Sensor</th>
               <th className="px-2 py-2">Unit</th>
+              <th className="px-2 py-2">Scale</th>
+              <th className="px-2 py-2">Range</th>
+              <th className="px-2 py-2">Quality</th>
               <th className="px-2 py-2">Status</th>
               <th className="px-2 py-2">Actions</th>
             </tr>
@@ -274,11 +446,26 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
           <tbody>
             {filtered.map((item) => (
               <tr key={item.id} className="border-b border-gray-100">
+                <td className="px-2 py-2">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${item.assetCode} ${item.pointKey}`}
+                    checked={selectedIds.has(item.id)}
+                    onChange={(event) => toggleRow(item.id, event.target.checked)}
+                  />
+                </td>
                 <td className="px-2 py-2">{item.assetCode}</td>
                 <td className="px-2 py-2 font-mono">{item.pointKey}</td>
                 <td className="px-2 py-2 font-mono">{item.sourceDataKey}</td>
                 <td className="px-2 py-2">{item.sensorCode ?? "—"}</td>
                 <td className="px-2 py-2">{item.unit ?? "—"}</td>
+                {/* The three metadata columns show what this row **stores**, not
+                    what it resolves to: a dash means the row follows its
+                    template default (§"Deferred" item 3 owns the effective
+                    value, which needs a `template_points` join in `list()`). */}
+                <td className="px-2 py-2 text-xs">{scaleCell(item)}</td>
+                <td className="px-2 py-2 text-xs">{rangeCell(item)}</td>
+                <td className="px-2 py-2 text-xs">{item.qualityPolicy ?? "—"}</td>
                 <td className="px-2 py-2">
                   <StatusPill
                     label={item.active ? "Active" : "Inactive"}
@@ -298,6 +485,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                           sourceDataKey: item.sourceDataKey,
                           sensorCode: item.sensorCode ?? "",
                           unit: item.unit ?? "",
+                          ...metadataFormFrom(item),
                         });
                         setModalOpen(true);
                       }}
@@ -317,7 +505,16 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             ))}
           </tbody>
         </table>
+        <p className="text-xs text-bms-muted">
+          Scale, Range and Quality show what each point stores. A dash means the point follows its
+          asset template&apos;s default.
+        </p>
       </SectionCard>
+
+      {/* `F2.7` (ADR 0056 decisions 6 and 7): the sheet is a location document
+          — one location's assets, one workbook — so it appears only once a
+          location is chosen. */}
+      {selection.locationId ? <MappingSheetPanel locationId={selection.locationId} /> : null}
 
       {/* `F2.6` (ADR 0039 decision 8): overrides live on the asset, per point.
           Only rendered on the asset drill-down — an override belongs to one
@@ -454,6 +651,80 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   onChange={(event) => setForm({ ...form, unit: event.target.value })}
                 />
               </label>
+              {/* `F2.7` / ADR 0056 decision 1 — the per-asset override of the
+                  five. Empty means "follow the template", which is an omitted
+                  field on a create and an explicit `null` on an edit
+                  (`metadataWriteFrom`). */}
+              <p className="text-[11px] text-bms-muted">
+                Leave a field below empty to follow this asset&apos;s template default. Clearing one
+                on an existing mapping puts it back on the template.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block text-xs font-semibold text-bms-muted">
+                  Scale multiplier
+                  <input
+                    type="number"
+                    step="any"
+                    aria-label="Scale multiplier"
+                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    value={form.scaleMultiplier}
+                    onChange={(event) => setForm({ ...form, scaleMultiplier: event.target.value })}
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-bms-muted">
+                  Scale offset
+                  <input
+                    type="number"
+                    step="any"
+                    aria-label="Scale offset"
+                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    value={form.scaleOffset}
+                    onChange={(event) => setForm({ ...form, scaleOffset: event.target.value })}
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-bms-muted">
+                  Engineering minimum
+                  <input
+                    type="number"
+                    step="any"
+                    aria-label="Engineering minimum"
+                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    value={form.engMin}
+                    onChange={(event) => setForm({ ...form, engMin: event.target.value })}
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-bms-muted">
+                  Engineering maximum
+                  <input
+                    type="number"
+                    step="any"
+                    aria-label="Engineering maximum"
+                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    value={form.engMax}
+                    onChange={(event) => setForm({ ...form, engMax: event.target.value })}
+                  />
+                </label>
+                <label className="block text-xs font-semibold text-bms-muted">
+                  Quality policy
+                  <select
+                    aria-label="Quality policy"
+                    className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                    value={form.qualityPolicy}
+                    onChange={(event) =>
+                      setForm({ ...form, qualityPolicy: event.target.value as QualityPolicy | "" })
+                    }
+                  >
+                    {/* The two policies are `packages/shared`'s vocabulary,
+                        never a second list of options (§4.8). */}
+                    <option value="">Follow the template</option>
+                    {QUALITY_POLICIES.map((policy) => (
+                      <option key={policy} value={policy}>
+                        {policy}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             </div>
             {error ? <div className="mt-2 text-xs text-red-700">{error}</div> : null}
             <div className="mt-4 flex justify-end gap-2">
