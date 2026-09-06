@@ -20,9 +20,11 @@ import { AlarmsGateway } from "./alarms.gateway";
  * rule type through the same shared engine, so the same decision has to be
  * made explicitly here instead.
  *
- * A time-window rule matching its schedule is not itself an alarm condition —
- * it is a fact `F3.7`'s notification actions will read — so `matched` alone is
- * not sufficient; `ruleType` must also be `threshold`.
+ * A time-window rule matching its schedule is not itself an alarm condition,
+ * and nothing downstream reads the match either: `F3.7`'s notification
+ * actions key on an alarm *opening* (ADR 0041 decision 7), which only a
+ * threshold rule can do. So `matched` alone is not sufficient; `ruleType` must
+ * also be `threshold`.
  */
 export function shouldRaise(
   rule: Pick<RuleRow, "ruleType">,
@@ -105,6 +107,17 @@ export type AlarmRaiseResult = {
   /** `false` when the rule is already open for this asset — the dedupe fired. */
   raised: boolean;
   alarmId: string | null;
+  /**
+   * `F3.7` (plan D1): what `bms.alarms.severity` / `message` hold, or would
+   * have — computed before any write, so they are reported on a dedupe and on
+   * a refused raise too. The callers build the notification from these rather
+   * than recomputing `defaultAlarmSeverity` / `composeAlarmMessage`, so the
+   * notification text is the alarm text by construction and the dedupe key
+   * carries the *defaulted* severity. This widens the raiser's report, not its
+   * input (ADR 0041 decision 9); the raiser still notifies nobody.
+   */
+  severity: string;
+  message: string;
 };
 
 /**
@@ -156,6 +169,11 @@ export class AlarmRaiser {
     value: number,
     opts: { recordTrace?: boolean } = {},
   ): Promise<AlarmRaiseResult> {
+    // Above the guard, not below it: both are pure and both are part of the
+    // result on every path (F3.7 D1), refused or deduped included.
+    const severity = defaultAlarmSeverity(rule.severity);
+    const message = composeAlarmMessage(rule, value);
+
     // E7.1b: a threshold rule must watch an asset in its own tenant. The assets
     // service permits a cross-org relocation, so an asset can move out from
     // under a rule still pointing at it — at which point alarms.org (the asset,
@@ -168,11 +186,8 @@ export class AlarmRaiser {
         `alarm raise skipped for rule ${rule.id} on asset ${assetId}: rule org ` +
           `${rule.organizationId} != asset org ${organizationId}`,
       );
-      return { raised: false, alarmId: null };
+      return { raised: false, alarmId: null, severity, message };
     }
-
-    const severity = defaultAlarmSeverity(rule.severity);
-    const message = composeAlarmMessage(rule, value);
 
     // One tenant transaction: the dedupe insert, the read-back and the trace all
     // run inside withTenant(asset org) so every write satisfies the 0047 policy.
@@ -263,6 +278,6 @@ export class AlarmRaiser {
       });
     }
 
-    return { raised: outcome.raised, alarmId: outcome.alarmId };
+    return { raised: outcome.raised, alarmId: outcome.alarmId, severity, message };
   }
 }

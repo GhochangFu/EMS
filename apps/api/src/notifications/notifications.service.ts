@@ -40,10 +40,10 @@ export type DispatchInput = {
    * `E7.1c` (decision 7, `0048`): `notification_deliveries.organization_id`
    * is `NOT NULL`, and a dispatch's only source for it is the rule —
    * `automation_rules.organization_id` has been `NOT NULL` since `0047`, so
-   * this is never `null` in practice. `dispatch` has no production caller
-   * today (measured — only `sendTest` writes a ledger row in production); the
-   * two callers that build a `DispatchInput` are
-   * `storm-control.integration.spec.ts` and `notifications.service.spec.ts`.
+   * this is never `null` in practice. `F3.7`'s `toDispatchInput`
+   * (`rules/rule-actions.ts`) is where production builds one, for both raise
+   * paths, and it builds nothing for a rule with no organization rather than
+   * invent one.
    */
   organizationId: string;
   alarmId: string | null;
