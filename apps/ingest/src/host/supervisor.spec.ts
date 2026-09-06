@@ -8,7 +8,16 @@ import type {
   IngestAdapterFactory,
 } from "../adapter/types.js";
 import type { EndpointPlan } from "./bindings.js";
+import type { DiskBufferHandle } from "./disk-buffer.js";
 import { createSupervisor, type Scheduler } from "./supervisor.js";
+
+/**
+ * The harness below is exported for `supervisor-buffer.spec.ts`, which runs the
+ * `F1.10` disk-tier blocks against the real store over a temp directory. Both
+ * files are excluded from `tsconfig.build.json` and from coverage, so the
+ * import costs nothing in `dist`; splitting them keeps each under §4.5's
+ * 1000-line whole-file cap.
+ */
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -17,7 +26,7 @@ function assert(condition: boolean, message: string): void {
 }
 
 /** Lets pending microtasks and the fake scheduler's resolutions settle. */
-function nextTick(): Promise<void> {
+export function nextTick(): Promise<void> {
   return new Promise((resolve) => {
     setImmediate(resolve);
   });
@@ -32,7 +41,7 @@ function nextTick(): Promise<void> {
  * Gating each sleep makes the sequence of *requested* delays the observable,
  * which is exactly what the §5 table specifies.
  */
-function makeFakeScheduler(): {
+export function makeFakeScheduler(): {
   scheduler: Scheduler;
   delays: number[];
   flush(rounds?: number): Promise<void>;
@@ -82,7 +91,7 @@ function makeFakeScheduler(): {
   };
 }
 
-type ScriptedAdapter = {
+export type ScriptedAdapter = {
   adapter: IngestAdapter;
   /** Resolves the pending `connect()`. */
   finishConnect(): void;
@@ -100,7 +109,7 @@ type ScriptedAdapter = {
   readonly contexts: AdapterContext<unknown, unknown>[];
 };
 
-function makeScriptedAdapter(mode: "push" | "poll", options: { hangDisconnect?: boolean } = {}): ScriptedAdapter {
+export function makeScriptedAdapter(mode: "push" | "poll", options: { hangDisconnect?: boolean } = {}): ScriptedAdapter {
   let resolveConnect: (() => void) | null = null;
   let rejectConnect: ((error: Error) => void) | null = null;
   let sink: ((samples: readonly SourceSample[]) => void) | null = null;
@@ -179,7 +188,7 @@ function makeScriptedAdapter(mode: "push" | "poll", options: { hangDisconnect?: 
   };
 }
 
-function makePlan(): EndpointPlan {
+export function makePlan(): EndpointPlan {
   return {
     protocol: "mqtt",
     endpointKey: "phe.thinkiot.co.in:8883",
@@ -194,7 +203,7 @@ function makePlan(): EndpointPlan {
 }
 
 /** An endpoint serving exactly one device — the case that may omit `deviceKey`. */
-function makeSoleDevicePlan(): EndpointPlan {
+export function makeSoleDevicePlan(): EndpointPlan {
   return {
     ...makePlan(),
     bindings: [
@@ -203,7 +212,7 @@ function makeSoleDevicePlan(): EndpointPlan {
   };
 }
 
-function makeFactory(instances: ScriptedAdapter[]): IngestAdapterFactory {
+export function makeFactory(instances: ScriptedAdapter[]): IngestAdapterFactory {
   let index = 0;
   return {
     protocol: "mqtt",
@@ -219,7 +228,7 @@ function makeFactory(instances: ScriptedAdapter[]): IngestAdapterFactory {
   };
 }
 
-const silentLogger = {
+export const silentLogger = {
   info: () => undefined,
   warn: () => undefined,
   error: () => undefined,
@@ -238,7 +247,7 @@ const silentLogger = {
  * unconditionally, which is exactly what a hung `pg` write would have done to
  * the real process on shutdown.
  */
-async function stopSupervisor(
+export async function stopSupervisor(
   supervisor: { stop(): Promise<void> },
   fake: { flush(rounds?: number): Promise<void> },
 ): Promise<void> {
@@ -247,8 +256,51 @@ async function stopSupervisor(
   await stopping;
 }
 
-function sample(value: number, deviceKey = "RTU-1"): SourceSample {
+export function sample(value: number, deviceKey = "RTU-1"): SourceSample {
   return { sourceKey: "flow", value, deviceKey };
+}
+
+/**
+ * The disk tier, in memory, for the blocks that are not about the disk.
+ *
+ * `buffer` is a required dependency (Amendment 4 ruling 4: a host that cannot
+ * buffer does not start), so every block needs one. This one keeps the same
+ * contract the real store gives — `append` resolves `true`, `oldest()` hands
+ * back what has been appended so far, and `commit()` removes only the batches
+ * that call read — without touching a filesystem. `supervisor-buffer.spec.ts`
+ * runs the real store for the blocks where the disk is the subject.
+ */
+export function makeMemoryBuffer(): DiskBufferHandle & { readonly appended: SourceSample[][] } {
+  const appended: SourceSample[][] = [];
+  return {
+    protocol: "mqtt",
+    endpointKey: "phe.thinkiot.co.in:8883",
+    appended,
+    get buffered() {
+      return appended.reduce((total, batch) => total + batch.length, 0);
+    },
+    get dropped() {
+      return 0;
+    },
+    append: async (samples) => {
+      appended.push([...samples]);
+      return true;
+    },
+    oldest: async () => {
+      if (appended.length === 0) {
+        return null;
+      }
+      const read = appended.length;
+      return {
+        samples: appended.flat(),
+        // Only what this read saw is removed — the same rule the real store's
+        // line-count check enforces when a segment grew after it was read.
+        commit: async () => {
+          appended.splice(0, read);
+        },
+      };
+    },
+  };
 }
 
 /** Per-endpoint supervision, ADR 0016 §5. */
@@ -263,6 +315,7 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([scripted]),
       plan: makePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
       writeSamples: async (samples) => {
@@ -353,6 +406,7 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([scripted]),
       plan: makePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
       writeSamples: async () => {},
@@ -392,6 +446,7 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([scripted]),
       plan: makeSoleDevicePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
       writeSamples: async () => {},
@@ -423,6 +478,7 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([first, second]),
       plan: makePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
       writeSamples: async () => undefined,
@@ -458,6 +514,7 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([failing]),
       plan: makePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
       // A short connect timeout keeps the delay list readable; the ratio is
@@ -489,6 +546,7 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([scripted]),
       plan: makePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
       // Every other cadence is given a distinctive value so that a 1000 in the
@@ -535,6 +593,7 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([scripted]),
       plan: makePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
       writeSamples: async () => undefined,
@@ -575,6 +634,7 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([scripted]),
       plan: makePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
       writeSamples: async () => undefined,
@@ -620,6 +680,7 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([scripted]),
       plan: makePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
       writeSamples: async () => undefined,
@@ -642,7 +703,7 @@ export async function runSupervisorTests(): Promise<void> {
     await stopSupervisor(supervisor, fake);
   }
 
-  // ---- a write failure is counted, not retried forever --------------------
+  // ---- a write failure spills to disk and is probed, not retried in a loop -
 
   {
     const scripted = makeScriptedAdapter("push");
@@ -652,8 +713,12 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([scripted]),
       plan: makePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
+      // Every other cadence is distinctive, so a 1000 in the delay list can
+      // only be the §5 backoff — `healthPollMs` is 1000 by default.
+      timings: { connectTimeoutMs: 10, healthPollMs: 7, drainIdleMs: 3 },
       writeSamples: async () => {
         attempts += 1;
         throw new Error("database unreachable");
@@ -665,15 +730,32 @@ export async function runSupervisorTests(): Promise<void> {
     scripted.finishConnect();
     await nextTick();
     scripted.emit([sample(1)]);
-    await fake.flush(2);
+    await fake.flush(1);
 
-    assert(supervisor.health().writeFailures >= 1, "a failed write is counted");
+    assert(supervisor.health().writeFailures === 1, "a failed write is counted");
     assert(
       attempts === 1,
-      `a failed batch must not be retried in a tight loop, got ${attempts} attempts. ` +
-        `Durable buffering across an outage is F1.10.`,
+      `a failed batch must not be retried in a tight loop, got ${attempts} attempts`,
+    );
+    assert(
+      supervisor.health().buffered === 1,
+      `the failed batch is on the disk tier, not lost: buffered ${supervisor.health().buffered}`,
     );
     assert(supervisor.health().samplesWritten === 0, "a failed batch is not counted as written");
+
+    // The retry is the replay loop's probe, one §5 backoff later — and it is a
+    // real write of the buffered batch, not a separate liveness query
+    // (Amendment 4 decision 4).
+    await fake.flush(1);
+    assert(
+      fake.delays.includes(1_000),
+      `the probe must wait the §5 base delay, saw ${fake.delays.join(",")}`,
+    );
+    assert(attempts === 2, `the probe must be a real write, got ${attempts} attempts`);
+    assert(
+      supervisor.health().buffered === 1,
+      "a failed probe leaves the segment on disk, uncommitted",
+    );
     await stopSupervisor(supervisor, fake);
   }
 
@@ -686,6 +768,7 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([scripted]),
       plan: makePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
       timings: { queueCapacity: 10 },
@@ -709,7 +792,13 @@ export async function runSupervisorTests(): Promise<void> {
     );
     assert(
       health.droppedSamples > 0,
-      "dropped samples must be counted — silent loss is what F1.10 exists to fix",
+      "dropped samples must be counted — the memory tier's own loss, which the " +
+        "disk tier does not cover: a write that never settles never throws, so " +
+        "nothing spills",
+    );
+    assert(
+      health.buffered === 0,
+      `a write that hangs is not a write that failed — nothing spills, got buffered ${health.buffered}`,
     );
     await stopSupervisor(supervisor, fake);
   }
@@ -724,6 +813,7 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([scripted]),
       plan: makePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
       writeSamples: async (samples) => {
@@ -763,6 +853,7 @@ export async function runSupervisorTests(): Promise<void> {
       factory: makeFactory([scripted]),
       plan: makePlan(),
       logger: silentLogger,
+      buffer: makeMemoryBuffer(),
       scheduler: fake.scheduler,
       random: () => 0.5,
       writeSamples: async () => undefined,

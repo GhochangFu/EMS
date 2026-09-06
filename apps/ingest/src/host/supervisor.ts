@@ -3,6 +3,7 @@ import type { IngestProtocol, SourceSample } from "@bms/shared/ingest";
 import type { AdapterLogger, IngestAdapter, IngestAdapterFactory } from "../adapter/types.js";
 import { backoffDelayMs, DEFAULT_BACKOFF, type BackoffPolicy } from "@bms/shared/ingest";
 import type { EndpointPlan } from "./bindings.js";
+import type { DiskBufferHandle } from "./disk-buffer.js";
 import { createSampleQueue, DEFAULT_QUEUE_CAPACITY, type SampleQueue } from "./sample-queue.js";
 
 /**
@@ -125,6 +126,18 @@ export type SupervisorHealth = {
   readonly droppedSamples: number;
   readonly writeFailures: number;
   readonly samplesWritten: number;
+  /** Samples on disk for this endpoint — a gauge, and `buffered>0` degrades the host. */
+  readonly buffered: number;
+  /** Samples erased by a bound, unparseable, or lost to a failed append — a counter. */
+  readonly bufferDropped: number;
+  /**
+   * Samples written *from disk* since start — a counter.
+   *
+   * It can exceed the number of distinct samples that were buffered: a write
+   * failure part-way through a segment abandons it uncommitted, so the head of
+   * that segment is written again on the next pass (idempotently, decision 8).
+   */
+  readonly replayed: number;
 };
 
 export type Supervisor = {
@@ -146,9 +159,19 @@ export type SupervisorDeps = {
   readonly random?: () => number;
   readonly timings?: Partial<SupervisorTimings>;
   /**
-   * Writes one batch. Throwing means the batch is lost and counted — durable
-   * buffering across a database outage is `F1.10`, explicitly out of scope here
-   * (§5, "Disk buffering — out of scope").
+   * The endpoint's disk tier (ADR 0016 Amendment 4 decision 2).
+   *
+   * Required, not optional: ruling 4 says a host that cannot buffer does not
+   * start, so an optional "no buffer" branch would be a production-unreachable
+   * path keeping the old loss route alive with nothing covering it.
+   */
+  readonly buffer: DiskBufferHandle;
+  /**
+   * Writes one batch. Throwing means the batch is appended to `buffer` and the
+   * endpoint enters *buffering* — every later batch goes to disk without a
+   * database attempt until a replay probe succeeds (Amendment 4 decision 3).
+   * The batch is lost only when the disk append fails too, and that loss is
+   * counted in `bufferDropped`.
    */
   writeSamples(samples: readonly SourceSample[]): Promise<void>;
 };
@@ -202,6 +225,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
   let stopped = false;
   let running: Promise<void> | null = null;
   let draining: Promise<void> | null = null;
+  let replaying: Promise<void> | null = null;
 
   let state: SupervisorHealth["state"] = "disconnected";
   let detail: string | undefined;
@@ -210,6 +234,19 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
   let consecutivePollFailures = 0;
   let writeFailures = 0;
   let samplesWritten = 0;
+  let replayed = 0;
+  /**
+   * The breaker (decision 3): while set, the drain loop spills without touching
+   * the database. Written by both loops — the drain loop sets it after a
+   * successful spill, the replay loop clears it on a successful probe.
+   */
+  let buffering = false;
+  /**
+   * Spills in flight, so the replay loop's safety valve below cannot clear the
+   * breaker in the window between a write failing and its batch reaching disk.
+   * Without it the valve's correctness rests on two loops' microtask ordering.
+   */
+  let spilling = 0;
 
   /** The adapter instance currently supervised, and the controller that aborts it. */
   let current: { adapter: IngestAdapter; controller: AbortController } | null = null;
@@ -414,6 +451,16 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         await scheduler.sleep(timings.drainIdleMs, stopController.signal);
         continue;
       }
+      if (buffering) {
+        // Decision 3: no database attempt while the breaker is open, and no
+        // per-batch log. Attempting each batch would cost `writeTimeoutMs` per
+        // batch and starve the memory queue into drop-oldest — loss by another
+        // route, with `dropped=` rising while `writeFailures=` explained it.
+        // A failed append is counted in `bufferDropped` inside the store and
+        // never thrown here (decision 10).
+        await deps.buffer.append(batch);
+        continue;
+      }
       try {
         await withTimeout(
           deps.writeSamples(batch),
@@ -423,15 +470,108 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         );
         samplesWritten += batch.length;
       } catch (error) {
-        // The batch is lost. `F1.10` owns making that survivable with a disk
-        // buffer; until then the honest thing is to count it and say so rather
-        // than retry forever behind a queue that is already bounded.
         writeFailures += 1;
-        logger.error("sample batch write failed", {
+        logger.error("sample batch write failed; spilling to disk", {
           endpointKey: plan.endpointKey,
           samples: batch.length,
           reason: error instanceof Error ? error.message : "unknown",
         });
+        // The breaker opens only once the batch is actually on disk. If the
+        // append failed there is nothing to replay, so no probe would ever
+        // fire and the endpoint would sit buffering with an empty buffer.
+        spilling += 1;
+        try {
+          if (await deps.buffer.append(batch)) {
+            buffering = true;
+          }
+        } finally {
+          spilling -= 1;
+        }
+      }
+    }
+  }
+
+  /**
+   * The disk tier's replay, one loop for the life of the supervisor (decisions
+   * 4, 5 and 8).
+   *
+   * There is no separate probe query: the next real write *is* the probe, on
+   * the same §5 backoff the connect path uses. Progress is per segment — a
+   * segment is unlinked only after every one of its lines is written, so a
+   * failure part-way re-replays at most one minute, idempotently. Between
+   * batches it yields `drainIdleMs` so live telemetry is never queued behind an
+   * hour of backlog.
+   */
+  async function replayLoop(): Promise<void> {
+    let attempt = 0;
+    while (!stopped) {
+      if (spilling === 0 && deps.buffer.buffered === 0) {
+        // The safety valve. Both bounds erase segments the supervisor never
+        // sees, so "the buffer is empty" has to be able to close the breaker
+        // on its own — otherwise an endpoint whose backlog aged out would
+        // spill for ever without attempting the database again.
+        buffering = false;
+        await scheduler.sleep(timings.drainIdleMs, stopController.signal);
+        continue;
+      }
+      const segment = await deps.buffer.oldest();
+      if (segment === null) {
+        // `oldest()` never rejects: it resolves `null` when a read failed and
+        // kept the segment for the next pass. Sleeping here rather than
+        // continuing straight on is what keeps that case from spinning the
+        // disk — `buffered` is still non-zero, so the next pass would re-read
+        // immediately.
+        await scheduler.sleep(timings.drainIdleMs, stopController.signal);
+        continue;
+      }
+      let abandoned = false;
+      for (let start = 0; start < segment.samples.length; start += timings.drainBatchSize) {
+        if (stopped) {
+          abandoned = true;
+          break;
+        }
+        const batch = segment.samples.slice(start, start + timings.drainBatchSize);
+        try {
+          await withTimeout(
+            deps.writeSamples(batch),
+            timings.writeTimeoutMs,
+            scheduler,
+            "writeSamples()",
+          );
+        } catch (error) {
+          // A probe is a rejected `writeSamples` like any other, so it counts:
+          // `writeFailures` is the signal that an outage is costing telemetry,
+          // and a counter frozen at 1 for an hour would not carry it.
+          writeFailures += 1;
+          buffering = true;
+          const delay = backoffDelayMs(attempt, random, timings.backoff);
+          attempt += 1;
+          logger.warn("replay write failed; probing after backoff", {
+            endpointKey: plan.endpointKey,
+            delayMs: delay,
+            attempt,
+            buffered: deps.buffer.buffered,
+            reason: error instanceof Error ? error.message : "unknown",
+          });
+          await scheduler.sleep(delay, stopController.signal);
+          abandoned = true;
+          break;
+        }
+        replayed += batch.length;
+        if (buffering) {
+          logger.info("database write path recovered; replaying backlog", {
+            endpointKey: plan.endpointKey,
+            buffered: deps.buffer.buffered,
+          });
+          buffering = false;
+        }
+        attempt = 0;
+        // Live before backlog (decision 5): the drain loop takes this yield to
+        // write what is arriving now.
+        await scheduler.sleep(timings.drainIdleMs, stopController.signal);
+      }
+      if (!abandoned && !stopped) {
+        await segment.commit();
       }
     }
   }
@@ -445,7 +585,15 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         return;
       }
       running = superviseLoop();
+      // The drain loop is started **before** the replay loop, and the order is
+      // load-bearing: both wait on the same scheduler, so the one that
+      // registered first resumes first, and decision 5 wants the live batch
+      // written before the next segment of backlog. Do not swap these two.
       draining = drainLoop();
+      // Started with the rest, not on the first spill: a host restarted during
+      // an outage has a backlog on disk and no broker connection yet, and
+      // decision 8 says that restart loses nothing.
+      replaying = replayLoop();
     },
 
     async stop() {
@@ -459,7 +607,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
       // Bounded, for the same reason `disconnect()` is: a drain loop blocked on
       // a write that never settles must not hold shutdown open forever. The
       // loops observe `stopped` and unwind on their own once unblocked.
-      const settle = Promise.allSettled([running, draining]);
+      const settle = Promise.allSettled([running, draining, replaying]);
       const abandon = new AbortController();
       await Promise.race([
         settle.then(() => {
@@ -476,6 +624,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
       ]);
       running = null;
       draining = null;
+      replaying = null;
       state = "disconnected";
     },
 
@@ -503,6 +652,9 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         droppedSamples: queue.dropped,
         writeFailures,
         samplesWritten,
+        buffered: deps.buffer.buffered,
+        bufferDropped: deps.buffer.dropped,
+        replayed,
       };
     },
   };
