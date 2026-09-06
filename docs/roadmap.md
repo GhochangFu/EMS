@@ -2273,6 +2273,55 @@ Nine plan units, all four §4.6 layers, one migration adding four tables.
   `package.json` in the repository declares `engines`, which is the general
   defect behind the jsdom failure.
 
+### Execute rule actions (`F3.7`, ADR 0041 Amendment 1) — done
+
+**2026-09-06, PR #331, merged as `11ef0a8`.** The half of `F3.6` that was
+still missing: rules had stored a `notify` action since `F3.6`, `F3.8` built
+the service on the other end, and nothing in production called it. Five plan
+tasks, no migration, no new dependency, no new ADR — ADR 0041 decisions 1, 4,
+7, 9 and 11 had already ruled the shape.
+
+- **One reader of a rule's action.** `rules/rule-actions.ts` holds
+  `shouldNotify`, `toDispatchInput` and the fire-and-forget `notifyOnRaise`;
+  both raise paths call it and nothing else. `review` is inert by ruling.
+  `AlarmRaiser` stays ADR 0033's sole writer of `bms.alarms` and does not
+  notify; its *result* widened by `severity` and `message`, so the notification
+  text is the alarm text by construction rather than a second computation.
+- **The two paths are deliberately asymmetric.** The on-demand sweep dispatches
+  on every attempted raise, so a second press of *Evaluate now* against an
+  unchanged plant records one `skipped_deduped` row per joined channel — the
+  ledger answers "why was nobody told?". The streaming engine dispatches only
+  on a transition: it re-observes every open alarm five times a minute, and a
+  row per observation would be 35,400 rows an hour per channel into a table
+  with no retention policy.
+- **The sweep's dispatch is cross-organization, and stays so.** The security
+  review named it: ADR 0033 decision 2 makes `POST /rules/evaluate` evaluate
+  every tenant's rules, and the new dispatch follows every raise, so a
+  `configuration`-role user in one organization can pick the moment another
+  organization's real alarm is notified. Content never crosses. The owner kept
+  it as built — gating the send would open alarms nobody is told about that the
+  streaming path can then never notify — and ADR 0041 Amendment 1 records it.
+- **The per-rule channel picker shipped inside the row**, on the `F3.8`
+  precedent that an item closed with its browser layer N/A is not closed. Its
+  review found the defect worth that precedent: `ChannelsService.list` hides a
+  fleet-global channel from an org-scoped caller while the join list includes
+  it, and the `PUT` replaced the whole set, so a Save with nothing ticked
+  silently silenced the rule. Fixed on the server — a save keeps joins outside
+  the caller's manage scope and audits `preservedChannelIds` — and in the
+  picker, which carries hidden ids through and names their count.
+- **What the review filed rather than fixed:** repeated sweeps grow
+  `bms.notification_deliveries` with skips that neither the hourly ceiling nor
+  any retention policy bounds — `F3.46`.
+- **Verified on the running stack, all four layers.** A `pg_notify` transition
+  with an email channel joined and `SMTP_HOST` unset wrote exactly one
+  `skipped_unconfigured` row keyed rule:alarm:severity; the same reading again
+  wrote nothing; a `trace_only` rule's fresh transition wrote nothing. The
+  container booted on the new image with the new module edge resolved. In the
+  browser, the picker persisted a join across a hard reload and removed it
+  again, *Evaluate now* on a joined rule with an open alarm recorded one
+  `skipped_deduped` row, and the deliveries view showed *Skipped — already
+  open*. Full suite with the database: 1998 passed.
+
 ### Non-superuser table owner — makes `FORCE ROW LEVEL SECURITY` bind (`F4.16`, ADR 0043 decision 8 + ADR 0044) — done
 
 **2026-08-24, PR #151.** `bms_app` (the database owner) stopped being the

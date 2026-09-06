@@ -284,3 +284,58 @@ same fields `alarmMessageFieldsFromCondition` already produces).
   webhook egress rules.
 - **`docs/roadmap.md`** — flip the `F3.8` row when it lands.
 - Neither edit belongs in the `F3.8` feature commit (§9.10).
+
+## Amendment 1 — `F3.7` built: both raise paths dispatch, asymmetrically, and the sweep's dispatch is cross-organization (2026-09-06)
+
+**Status: Accepted — 2026-09-06.** Ruled by the repository owner at `F3.7`'s
+step-2 and step-5 gates; recorded here in the `chore(agents):` sweep after PR
+#331 merged as `11ef0a8`.
+
+Decision 9 said `F3.7` would wire `action.type === 'notify'` to `dispatch` in
+both callers. It did — `rules/rule-actions.ts` is the one reader of a rule's
+stored `action`, and `RulesService.evaluateEnabledRules` and
+`AlarmEngineService` both call its `notifyOnRaise` and nothing else — and the
+build and its reviews forced five rulings this ADR had not made:
+
+1. **The two paths are asymmetric.** The on-demand sweep dispatches on every
+   *attempted* raise and passes `raised` through, so a repeat sweep against an
+   unchanged plant writes one `skipped_deduped` row per joined channel —
+   decision 4 as written. The streaming engine dispatches **only when the raise
+   opened an alarm**. Decision 4 read literally for the streaming loop means one
+   skip row per open alarm per batch: five batches a minute against 118 open
+   alarms on the seeded database is 35,400 rows an hour per channel, into a
+   table no retention policy touches. A streaming engine re-observing an open
+   alarm is not an attempt to tell anyone anything; a human pressing *Evaluate
+   now* is, and that human deserves the ledger's answer.
+2. **The sweep's dispatch is cross-organization, like the sweep.** ADR 0033
+   decision 2 makes the sweep evaluate every tenant's rules on the fleet role,
+   and only the returned trace is scoped to the caller. The dispatch follows
+   every raise, so a `configuration`-role user of one organization can choose
+   the moment another organization's real alarm is notified. Content never
+   crosses: the alarm text goes to that organization's own channels, stamped
+   with its organization id, and the alarm itself opens whoever pressed the
+   button. The owner kept it as built rather than gate the send on the caller's
+   scope, because a gated send opens an alarm nobody is told about and, the
+   alarm being open, the streaming path never sends for it afterwards. Scoping
+   the sweep itself would amend ADR 0033 and is not this ADR's to rule.
+3. **`review` is inert.** `ruleActionSchema` still accepts it; `shouldNotify`
+   is `type === "notify"` only; the rules card says so on a `review` or
+   `trace_only` rule. Its meaning, if it ever has one, is a later decision.
+4. **A per-rule save keeps joins the caller cannot see.** Decision 7 lets a
+   fleet-global channel (`organization_id IS NULL`) be joined to any rule, and
+   `ChannelsService.list` hides it from an org-scoped caller while
+   `ruleChannelIds` returns it — so a full-replace `PUT` from the new picker
+   silently unjoined it. `setRuleChannels` now preserves joins outside an
+   org-scoped caller's manage scope and audits `preservedChannelIds`; a global
+   caller keeps the full replace.
+5. **The per-rule channel picker is `F3.7`'s**, on decision 10's own
+   precedent: an item closed with its browser layer N/A is not closed.
+
+**Left open, filed as `F3.46`:** repeated sweeps grow
+`bms.notification_deliveries` with `skipped_deduped` rows that the dedupe
+branch writes *before* the hourly ceiling, keyed by a forensic (non-unique)
+`dedupe_key`, into a table no retention policy touches.
+
+**Consequences for this ADR's text.** Decision 4 ("a row for every attempt")
+now has one reading per path, stated in ruling 1; decision 9's "`F3.7` becomes
+buildable" is discharged. Nothing else moves.
