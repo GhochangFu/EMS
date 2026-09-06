@@ -51,6 +51,11 @@ const ROW: TemplatePointRow = {
   calcIntervalSeconds: null,
   maxInputAgeSeconds: null,
   minCoverageRatio: null,
+  scaleMultiplier: null,
+  scaleOffset: null,
+  engMin: null,
+  engMax: null,
+  qualityPolicy: null,
   required: true,
   sortOrder: 4,
   meta: { tier: "core" },
@@ -79,9 +84,7 @@ export function runTemplatePointDtoTests(): void {
       sortOrder: 4,
       meta: { tier: "core" },
       createdAt: "2026-09-06T10:00:00.000Z",
-      // ADR 0056 decision 1: `null` = inherit / today's behaviour. The columns
-      // land with migration `0063` (Unit B), which is where these start reading
-      // the row; until then `null` is the truthful value for every row.
+      // ADR 0056 decision 1: `null` = inherit / today's behaviour.
       scaleMultiplier: null,
       scaleOffset: null,
       engMin: null,
@@ -89,6 +92,24 @@ export function runTemplatePointDtoTests(): void {
       qualityPolicy: null,
     },
     "a measured row maps field for field as `mapPoint` did, plus the five as null",
+  );
+
+  const withMetadata = toTemplatePointDto({
+    ...ROW,
+    scaleMultiplier: 0.1,
+    engMax: 100,
+    qualityPolicy: "accept_bad",
+  });
+  sameObject(
+    {
+      scaleMultiplier: withMetadata.scaleMultiplier,
+      scaleOffset: withMetadata.scaleOffset,
+      engMin: withMetadata.engMin,
+      engMax: withMetadata.engMax,
+      qualityPolicy: withMetadata.qualityPolicy,
+    },
+    { scaleMultiplier: 0.1, scaleOffset: null, engMin: null, engMax: 100, qualityPolicy: "accept_bad" },
+    "a row with scaleMultiplier: 0.1, engMax: 100, qualityPolicy: accept_bad maps to a DTO carrying exactly those",
   );
 
   const derived = toTemplatePointDto({
@@ -133,6 +154,11 @@ export function runTemplatePointInsertFromBodyTests(): void {
     calcIntervalSeconds: null,
     maxInputAgeSeconds: null,
     minCoverageRatio: null,
+    scaleMultiplier: null,
+    scaleOffset: null,
+    engMin: null,
+    engMax: null,
+    qualityPolicy: null,
     required: true,
     sortOrder: 3,
     meta: {},
@@ -184,11 +210,53 @@ export function runTemplatePointInsertFromBodyTests(): void {
       calcIntervalSeconds: null,
       maxInputAgeSeconds: 900,
       minCoverageRatio: null,
+      scaleMultiplier: null,
+      scaleOffset: null,
+      engMin: null,
+      engMax: null,
+      qualityPolicy: null,
       required: false,
       sortOrder: 9,
       meta: { tier: "extended" },
     },
     "a full body is carried field for field; an explicit sortOrder beats the index",
+  );
+
+  // ADR 0056 decision 1 / Correction 1 — a body carrying the five inserts
+  // them. `templatePointBodySchema` does not gain the five until Unit C2 of
+  // the same plan, so a parsed body has no such keys yet; the cast reaches
+  // the same code path a Unit-C2 body will reach unchanged.
+  sameObject(
+    toTemplatePointInsert(
+      { ...full, scaleMultiplier: 0.1, engMax: 100, qualityPolicy: "accept_bad" } as TemplatePointBody,
+      "t-2",
+      "o-2",
+      0,
+    ),
+    {
+      templateId: "t-2",
+      organizationId: "o-2",
+      pointKey: "eff",
+      label: "Efficiency",
+      unit: "%",
+      kind: "derived",
+      sourceDataKeyPattern: null,
+      formula: "{out} / {in}",
+      formulaDialect: "bms-calc-v1",
+      calcTrigger: "streaming",
+      calcIntervalSeconds: null,
+      maxInputAgeSeconds: 900,
+      minCoverageRatio: null,
+      scaleMultiplier: 0.1,
+      scaleOffset: null,
+      engMin: null,
+      engMax: 100,
+      qualityPolicy: "accept_bad",
+      required: false,
+      sortOrder: 9,
+      meta: { tier: "extended" },
+    },
+    "a body with the five inserts them",
   );
 
   assert(
@@ -239,6 +307,11 @@ export function runTemplatePointInsertFromRowTests(): void {
       calcIntervalSeconds: 60,
       maxInputAgeSeconds: null,
       minCoverageRatio: 0.75,
+      scaleMultiplier: null,
+      scaleOffset: null,
+      engMin: null,
+      engMax: null,
+      qualityPolicy: null,
       required: false,
       sortOrder: 2,
       meta: {},

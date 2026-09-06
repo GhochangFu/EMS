@@ -337,6 +337,21 @@ export const assetPoints = bmsSchema.table("asset_points", {
   calcTrigger: varchar("calc_trigger", { length: 16 }),
   calcIntervalSeconds: integer("calc_interval_seconds"),
   maxInputAgeSeconds: integer("max_input_age_seconds"),
+  // ADR 0056 decision 1 (`F2.7`, migration 0063): this asset's override of the
+  // five point-metadata columns its pinned template version declares —
+  // scaling, engineering plausibility range, quality policy — mirroring
+  // `templatePoints` column for column, the same pattern as the calc-config
+  // columns above. NULL means "inherit"; a resolved NULL across all five is
+  // today's behaviour (multiplier 1, offset 0, no range test, discard_bad).
+  // The three within-row CHECKs (`eng_min < eng_max`, `scale_multiplier <> 0`,
+  // the quality_policy enum) live on the column, migration 0063's DO block;
+  // the merged pair (an override beside an inherited bound) is apps/api's
+  // Zod layer alone, per ADR 0056 decision 2.
+  scaleMultiplier: doublePrecision("scale_multiplier"),
+  scaleOffset: doublePrecision("scale_offset"),
+  engMin: doublePrecision("eng_min"),
+  engMax: doublePrecision("eng_max"),
+  qualityPolicy: varchar("quality_policy", { length: 16 }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -500,6 +515,19 @@ export const templatePoints = bmsSchema.table("template_points", {
   // (`asset-templates.schema.ts`), not by a DB CHECK — the same split
   // migrations 0035/0036 use for this table's formula/calcTrigger columns.
   minCoverageRatio: doublePrecision("min_coverage_ratio"),
+  // ADR 0056 decision 1 (`F2.7`, migration 0063): the class default for the
+  // five point-metadata columns — scaling, engineering plausibility range,
+  // quality policy — that `assetPoints` above may override per asset. NULL
+  // means "inherit / today's behaviour" (multiplier 1, offset 0, no range
+  // test, discard_bad), the same reading as every other nullable column on
+  // this table. The three within-row CHECKs live on the column, migration
+  // 0063's DO block; the merged pair (an asset override beside an inherited
+  // bound) is apps/api's Zod layer alone, per ADR 0056 decision 2.
+  scaleMultiplier: doublePrecision("scale_multiplier"),
+  scaleOffset: doublePrecision("scale_offset"),
+  engMin: doublePrecision("eng_min"),
+  engMax: doublePrecision("eng_max"),
+  qualityPolicy: varchar("quality_policy", { length: 16 }),
   required: boolean("required").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
   meta: jsonb("meta").notNull().default({}),

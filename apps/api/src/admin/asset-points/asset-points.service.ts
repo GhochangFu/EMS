@@ -10,7 +10,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { assetPoints, assets, locations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AdminAssetPointDto, JwtPayload } from "@bms/shared";
+import type { AdminAssetPointDto, JwtPayload, QualityPolicy } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
@@ -365,14 +365,13 @@ export class AssetPointsAdminService {
       sourceKind: point.sourceKind as AdminAssetPointDto["sourceKind"],
       createdAt: point.createdAt.toISOString(),
       // `F2.7` / ADR 0056 decision 1 — the per-asset override of the five
-      // metadata columns, `null` = inherit the template default. Read off the
-      // row once migration `0063` (Unit B) gives `asset_points` the columns;
-      // until then no column exists and `null` is the truthful value.
-      scaleMultiplier: null,
-      scaleOffset: null,
-      engMin: null,
-      engMax: null,
-      qualityPolicy: null,
+      // metadata columns, `null` = inherit the template default. Read straight
+      // off the row.
+      scaleMultiplier: point.scaleMultiplier,
+      scaleOffset: point.scaleOffset,
+      engMin: point.engMin,
+      engMax: point.engMax,
+      qualityPolicy: point.qualityPolicy as QualityPolicy | null,
     };
   }
 }

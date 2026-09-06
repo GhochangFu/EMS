@@ -435,6 +435,13 @@
       "when": 1788546783386,
       "tag": "0062_template_point_min_coverage_ratio",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1788691325055,
+      "tag": "0063_point_metadata",
+      "breakpoints": true
     }
   ]
 }
