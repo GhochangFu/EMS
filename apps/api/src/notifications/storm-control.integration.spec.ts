@@ -1,11 +1,13 @@
+import { loadEnabledChannelsByIds } from "./channel-reads";
 import { ChannelsService } from "./channels.service";
+import { buildDedupeKey } from "./dedupe-key";
 import type {
   DeliveryResult,
   NotificationMessage,
   NotificationTransport,
 } from "./notification-transport";
 import { buildConfig } from "./notifications.config";
-import { NotificationsService } from "./notifications.service";
+import { NotificationsService, type DispatchInput } from "./notifications.service";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -21,6 +23,8 @@ type Deps = ConstructorParameters<typeof NotificationsService>;
 type Db = Deps[0];
 
 const CHANNEL_CODE = "f3-8-storm-control";
+/** The one alarm row `F3.10`'s event proof attributes its deliveries to; found and removed by this text. */
+const FIXTURE_ALARM_MESSAGE = "F3.10 storm-control event fixture";
 
 /**
  * `F3.8` U6 — storm control against the real database.
@@ -34,6 +38,10 @@ const CHANNEL_CODE = "f3-8-storm-control";
  *
  * The rule count is read from the database rather than hard-coded: a test that
  * fails because somebody added a rule is a test people delete.
+ *
+ * `F3.10` U2 adds the event proof at the end: an escalation step and a cleared
+ * message each send once per `(channel, organization, dedupe key)` against the
+ * real `WHERE` of `hasRecordedDelivery`, which the unit spec's fake cannot see.
  *
  * Everything it writes, it removes.
  */
@@ -218,6 +226,113 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       (await countDeliveries(pool, channelId as string, "skipped_rate_limited")) === 1,
       "the rate-limited attempt is recorded",
     );
+
+    // --- `F3.10`: an event is sent once per (channel, organization, key) ----
+    //
+    // ADR 0057 decision 10. The sweep asks the ledger before it sends a step
+    // or a cleared message, and the unit spec's fake answers that read from a
+    // queue — so this is the only place `hasRecordedDelivery`'s WHERE (this
+    // channel, this organization, this key, any status) meets a real Postgres.
+    // The channel set comes through `loadEnabledChannelsByIds` and
+    // `toChannelRow`, the way the sweep will build it, so that read's WHERE
+    // is exercised here too.
+    //
+    // The alarm is a fixture with `rule_id` NULL: `alarms_open_per_rule_uidx`
+    // is partial on `rule_id IS NOT NULL` under both its predicates (the
+    // `0032` one and `0065`'s), so a rule-less row can never collide with an
+    // alarm this database already holds for the rule's asset. The dedupe key
+    // carries the rule id from the input, not from the alarm row, which is
+    // what the sweep does as well (plan D12: the rule is the input's source).
+    const alarmId = await insertFixtureAlarm(pool, first.id, first.organization_id);
+    const stored = await loadEnabledChannelsByIds(db, [channelId as string]);
+    assert(
+      stored.length === 1 && stored[0]?.code === CHANNEL_CODE,
+      `loadEnabledChannelsByIds must return the enabled suite channel, got ${stored.length}`,
+    );
+    assert(
+      (await loadEnabledChannelsByIds(db, [])).length === 0,
+      "an empty id list loads nothing",
+    );
+    const channel = channels.toChannelRow(stored[0] as (typeof stored)[number]);
+
+    const step: DispatchInput = {
+      ruleId: first.id,
+      ruleCode: first.code,
+      organizationId: first.organization_id,
+      alarmId,
+      severity: "warning",
+      message: FIXTURE_ALARM_MESSAGE,
+      raised: true,
+      event: { kind: "escalation", step: 1 },
+    };
+    const sentBeforeStep = sent.length;
+    const firstStep = await service.dispatchToChannels([channel], step);
+    const secondStep = await service.dispatchToChannels([channel], step);
+    assert(
+      firstStep[0]?.status === "sent",
+      `the first step sends, got ${String(firstStep[0]?.status)}`,
+    );
+    assert(
+      secondStep[0]?.status === "skipped_deduped",
+      `the same step on the next tick is answered from the ledger, got ${String(
+        secondStep[0]?.status,
+      )}`,
+    );
+    assert(
+      sent.length === sentBeforeStep + 1,
+      `two ticks of one step must reach the transport once, got ${sent.length - sentBeforeStep}`,
+    );
+    assert(
+      (await countByKey(pool, channelId as string, buildDedupeKey(step))) === 1,
+      "exactly one row holds the step's key — the second tick wrote nothing",
+    );
+
+    // Decision 9 / ruling Q5: the cleared message goes to whoever holds a
+    // `sent` row for the alarm. The step above is that row.
+    const recipients = await service.sentChannelIdsForAlarm(alarmId, first.organization_id);
+    assert(
+      recipients.length === 1 && recipients[0] === channelId,
+      `the step's channel is the cleared recipient, got [${recipients.join(",")}]`,
+    );
+
+    const cleared: DispatchInput = { ...step, event: { kind: "cleared" } };
+    const sentBeforeClear = sent.length;
+    await service.dispatchToChannels([channel], cleared);
+    const secondClear = await service.dispatchToChannels([channel], cleared);
+    assert(
+      secondClear[0]?.status === "skipped_deduped",
+      `a second cleared message is answered from the ledger, got ${String(
+        secondClear[0]?.status,
+      )}`,
+    );
+    assert(
+      sent.length === sentBeforeClear + 1,
+      `two ticks of one clear must reach the transport once, got ${sent.length - sentBeforeClear}`,
+    );
+    assert(
+      (await countByKey(pool, channelId as string, buildDedupeKey(cleared))) === 1,
+      "exactly one row holds the cleared key",
+    );
+    assert(
+      (await service.sentChannelIdsForAlarm(alarmId, first.organization_id)).length === 1,
+      "two sent rows for one channel are still one recipient",
+    );
+
+    // The other direction of `loadEnabledChannelsByIds`: a disabled channel is
+    // absent, not returned disabled.
+    await pool.query(`UPDATE bms.notification_channels SET enabled = false WHERE id = $1`, [
+      channelId,
+    ]);
+    try {
+      assert(
+        (await loadEnabledChannelsByIds(db, [channelId as string])).length === 0,
+        "a disabled channel must not be loaded for a step",
+      );
+    } finally {
+      await pool.query(`UPDATE bms.notification_channels SET enabled = true WHERE id = $1`, [
+        channelId,
+      ]);
+    }
   } finally {
     await cleanup(pool);
   }
@@ -232,13 +347,50 @@ async function countDeliveries(pool: Pool, channelId: string, status: string): P
   return Number(res.rows[0]?.count ?? "0");
 }
 
+async function countByKey(pool: Pool, channelId: string, dedupeKey: string): Promise<number> {
+  const res = await pool.query<{ count: string }>(
+    `SELECT count(*)::text AS count FROM bms.notification_deliveries
+      WHERE channel_id = $1 AND dedupe_key = $2`,
+    [channelId, dedupeKey],
+  );
+  return Number(res.rows[0]?.count ?? "0");
+}
+
+/**
+ * One open, rule-less alarm in the rule's organization, against the rule's
+ * asset (or, for a rule with none, the organization's first asset), so that
+ * `notification_deliveries.alarm_id` has a real row to reference. The pool is
+ * the fleet role (`BYPASSRLS`), so no GUC is needed for the insert.
+ */
+async function insertFixtureAlarm(pool: Pool, ruleId: string, organizationId: string): Promise<string> {
+  const res = await pool.query<{ id: string }>(
+    `INSERT INTO bms.alarms (organization_id, asset_id, severity, message)
+     VALUES (
+       $1,
+       COALESCE(
+         (SELECT asset_id FROM bms.automation_rules WHERE id = $2),
+         (SELECT id FROM bms.assets WHERE organization_id = $1 ORDER BY code LIMIT 1)
+       ),
+       'warning',
+       $3
+     )
+     RETURNING id`,
+    [organizationId, ruleId, FIXTURE_ALARM_MESSAGE],
+  );
+  const id = res.rows[0]?.id;
+  assert(id !== undefined, "the fixture alarm was not created");
+  return id as string;
+}
+
 /** Removes everything this suite writes, in foreign-key order. */
 async function cleanup(pool: Pool): Promise<void> {
   await pool.query(
     `DELETE FROM bms.notification_deliveries
-      WHERE channel_id IN (SELECT id FROM bms.notification_channels WHERE code = $1)`,
-    [CHANNEL_CODE],
+      WHERE channel_id IN (SELECT id FROM bms.notification_channels WHERE code = $1)
+         OR alarm_id IN (SELECT id FROM bms.alarms WHERE message = $2)`,
+    [CHANNEL_CODE, FIXTURE_ALARM_MESSAGE],
   );
+  await pool.query(`DELETE FROM bms.alarms WHERE message = $1`, [FIXTURE_ALARM_MESSAGE]);
   await pool.query(
     `DELETE FROM bms.rule_notifications
       WHERE channel_id IN (SELECT id FROM bms.notification_channels WHERE code = $1)`,

@@ -6,7 +6,7 @@ import { notificationDeliveries } from "@bms/db";
 
 import { FLEET_DRIZZLE } from "../database/database.tokens";
 import { ChannelsService } from "./channels.service";
-import { buildDedupeKey } from "./dedupe-key";
+import { buildDedupeKey, type DispatchEvent } from "./dedupe-key";
 import { EmailTransport } from "./email.transport";
 import { LogTransport } from "./log.transport";
 import type {
@@ -17,19 +17,30 @@ import type {
 import { NOTIFICATIONS_CONFIG, type NotificationsConfig } from "./notifications.config";
 import { WebhookTransport } from "./webhook.transport";
 
+export type { DispatchEvent } from "./dedupe-key";
+
 /**
- * `F3.8` — the one entry point that turns a raised alarm into deliveries
- * (ADR 0041).
+ * `F3.8` — the service that turns an alarm into deliveries (ADR 0041), and
+ * since `F3.10` the one the alarm lifecycle sweep sends through as well (ADR
+ * 0057 decision 9).
  *
- * **There is exactly one public method.** The caller loop — over the rules a
- * sweep evaluated — belongs to `F3.7`, not here. A second entry point taking a
- * list would be a second place for the dedupe to be forgotten, and the dedupe
- * is the whole storm control.
+ * **Two entry points, one per-channel path.** `dispatch(input)` is the raise
+ * path's: it loads the channels joined to the rule and hands them on.
+ * `dispatchToChannels(channels, input)` is the sweep's: an escalation step
+ * names its own channels, and a cleared message goes to whoever holds a `sent`
+ * row for the alarm (`sentChannelIdsForAlarm`), so the caller supplies the
+ * list. Both funnel into `dispatchToChannel`, and **both dedupes live inside
+ * it** — the raise path's once-recorded refusal (`F3.46`) and the event's
+ * once-per-key ledger read (decision 10). `F3.8` refused a second entry point
+ * because it would be a second place for the dedupe to be forgotten; the
+ * answer here is that neither entry point holds a dedupe to forget.
  *
- * **`dispatch` never rejects** (decision 1). It is called fire-and-forget from
- * the alarm raise path, so a rejection would surface as an unhandled promise
- * rather than in front of anyone. Every failure becomes a `failed` delivery row
- * with a bounded `error`, and the promise resolves.
+ * **Neither entry point rejects** (ADR 0041 decision 1). `dispatch` is called
+ * fire-and-forget from the alarm raise path, so a rejection would surface as
+ * an unhandled promise rather than in front of anyone; `dispatchToChannels` is
+ * called from a sweep whose one warn line would hide which channel failed.
+ * Every failure becomes a `failed` result — recorded as a row, except the one
+ * case D3 keeps out of the ledger — and the promise resolves.
  */
 
 /** What a caller knows at the moment a rule raised (or did not raise) an alarm. */
@@ -56,6 +67,15 @@ export type DispatchInput = {
    * again.
    */
   raised: boolean;
+  /**
+   * `F3.10` (ADR 0057 decision 9). Absent on the raise path. The alarm
+   * lifecycle sweep sets it for an escalation step or the cleared message; the
+   * kind rides in the dedupe key (`:escalation:<n>` / `:cleared`) and the
+   * subject line, never in a column. When it is set, `raised` is not
+   * consulted: an event is not a transition, and its dedupe is the ledger read
+   * in `dispatchToChannel`, not the raise path's refusal.
+   */
+  event?: DispatchEvent;
 };
 
 /** How much of a transport's failure text is stored. */
@@ -112,7 +132,23 @@ export class NotificationsService {
       );
       return [];
     }
+    return this.dispatchToChannels(channels, input);
+  }
 
+  /**
+   * `F3.10` — sends one input to an explicit channel set (ADR 0057 decision
+   * 9). The alarm lifecycle sweep's entry point: a step's channels come from
+   * its profile, a cleared message's from `sentChannelIdsForAlarm`, and
+   * neither is the rule's `rule_notifications` join that `dispatch` loads.
+   *
+   * Returns one `DeliveryResult` per channel, **in the order given** — the
+   * caller chose the order, and `loadEnabledChannelsByIds` already sorts by
+   * code. Never rejects, for the reason the class header gives.
+   */
+  async dispatchToChannels(
+    channels: readonly NotificationChannelRow[],
+    input: DispatchInput,
+  ): Promise<DeliveryResult[]> {
     const dedupeKey = buildDedupeKey(input);
     const results: DeliveryResult[] = [];
 
@@ -128,15 +164,49 @@ export class NotificationsService {
     channel: NotificationChannelRow,
     dedupeKey: string,
   ): Promise<DeliveryResult> {
-    // 1. The transition dedupe. The skip is still RECORDED: "we chose not to
-    //    send" and "nothing happened" must not look the same in the ledger
-    //    (decision 4). `F3.46`: but only ONCE per (channel, organization,
-    //    dedupe key) — read the ledger before writing, and let the row that is
-    //    already there answer the second and every later press. Decision 4
-    //    asks that the refusal be visible, not that it be re-stated; ADR 0041
-    //    Amendment 1 ruling 1 left the growth of that restatement open, and
-    //    this is where it is closed.
-    if (!input.raised) {
+    // 0. `F3.10` — event idempotency (ADR 0057 decision 10), and it comes
+    //    FIRST. An escalation step or a cleared message is sent once per
+    //    (channel, organization, dedupe key), for the life of the ledger; the
+    //    read is for ANY status, so a `skipped_rate_limited` step stays
+    //    answered too (owner ruling Q7). A row that exists is the record —
+    //    nothing is written. `raised` is not consulted on this path: an event
+    //    is not a transition, and had the raise-path refusal below run first
+    //    it would have written a `skipped_deduped` row under the event's key
+    //    and made the event unsendable forever.
+    if (input.event !== undefined) {
+      let alreadyRecorded: boolean;
+      try {
+        alreadyRecorded = await this.hasRecordedDelivery(
+          channel.id,
+          input.organizationId,
+          dedupeKey,
+        );
+      } catch (err) {
+        // Plan D3: no row and no send. Writing a row would poison this key for
+        // every later tick — the read above would then answer "already sent"
+        // from a row that records nothing was sent — and sending would risk
+        // the duplicate the read exists to prevent. The next tick retries.
+        // This is the opposite of the raise path's fallback in step 1, on
+        // purpose: there, the write is bounded and a duplicate row is the
+        // cost; here, the write would be permanent and silence is the cost.
+        // §9.6: codes and a reason, never the alarm text or a recipient.
+        this.logger.warn(
+          `delivery ledger read failed for channel=${channel.code} rule=${input.ruleCode}: ${reasonOf(err)}`,
+        );
+        return { status: "failed", error: "delivery ledger read failed" };
+      }
+      if (alreadyRecorded) {
+        return { status: "skipped_deduped", error: null };
+      }
+    } else if (!input.raised) {
+      // 1. The transition dedupe. The skip is still RECORDED: "we chose not to
+      //    send" and "nothing happened" must not look the same in the ledger
+      //    (decision 4). `F3.46`: but only ONCE per (channel, organization,
+      //    dedupe key) — read the ledger before writing, and let the row that
+      //    is already there answer the second and every later press. Decision
+      //    4 asks that the refusal be visible, not that it be re-stated; ADR
+      //    0041 Amendment 1 ruling 1 left the growth of that restatement open,
+      //    and this is where it is closed.
       const skip: DeliveryResult = { status: "skipped_deduped", error: null };
       let alreadyRecorded: boolean;
       try {
@@ -179,7 +249,7 @@ export class NotificationsService {
     let result: DeliveryResult;
     try {
       result = await transport.send({
-        subject: `${input.severity ?? "alarm"}: ${input.ruleCode}`,
+        subject: subjectFor(input),
         body: input.message,
         ruleId: input.ruleId,
         ruleCode: input.ruleCode,
@@ -290,6 +360,71 @@ export class NotificationsService {
   }
 
   /**
+   * `F3.10`: `true` when this channel, for THIS organization, already holds a
+   * row of ANY status under this key — the event (an escalation step, a
+   * cleared message) has been answered once and is not sent again (ADR 0057
+   * decision 10; owner ruling Q7 for the rate-limited case).
+   *
+   * Same connection and the same reason as `isOverHourlyLimit`: a read with no
+   * tenant transaction to run under — the sweep spans every tenant with no
+   * JWT — so the organization filter is the `WHERE` clause, not the
+   * connection. Projection `{ status }`, on purpose distinct from
+   * `hasRecordedSkip`'s `{ id }`: the unit spec's fake tells the two reads
+   * apart by nothing else.
+   *
+   * Served today by the leading column of
+   * `notification_deliveries_channel_time_idx`; migration `0065` adds the
+   * `(channel_id, dedupe_key) WHERE dedupe_key IS NOT NULL` probe (plan Q3).
+   * No unique index: one loop, sweep-then-sleep, so two ticks never overlap.
+   */
+  private async hasRecordedDelivery(
+    channelId: string,
+    organizationId: string,
+    dedupeKey: string,
+  ): Promise<boolean> {
+    const rows = await this.fleetDb
+      .select({ status: notificationDeliveries.status })
+      .from(notificationDeliveries)
+      .where(
+        and(
+          eq(notificationDeliveries.channelId, channelId),
+          eq(notificationDeliveries.organizationId, organizationId),
+          eq(notificationDeliveries.dedupeKey, dedupeKey),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * `F3.10` — the cleared message's recipients (ADR 0057 decision 9, owner
+   * ruling Q5): every channel that holds a `sent` row for this alarm in this
+   * organization — the raise or any step — and nobody else. Distinct, in
+   * first-seen order, de-duplicated here rather than in SQL so the read stays
+   * the one index-friendly shape.
+   *
+   * Same connection and the same reason as `isOverHourlyLimit`: a sweep read
+   * with no tenant transaction, so the organization is the `WHERE`. Unlike
+   * the two dispatch entry points this read is not fire-and-forget and does
+   * reject on a failed read: the sweep loop warns and the next tick retries,
+   * and a cleared message sent to "nobody" because the read failed would be
+   * the silent-loss shape §4.6 names.
+   */
+  async sentChannelIdsForAlarm(alarmId: string, organizationId: string): Promise<string[]> {
+    const rows = await this.fleetDb
+      .select({ channelId: notificationDeliveries.channelId })
+      .from(notificationDeliveries)
+      .where(
+        and(
+          eq(notificationDeliveries.alarmId, alarmId),
+          eq(notificationDeliveries.organizationId, organizationId),
+          eq(notificationDeliveries.status, "sent"),
+        ),
+      );
+    return [...new Set(rows.map((row) => row.channelId))];
+  }
+
+  /**
    * Sends one message through a channel's real transport and records it like
    * any other attempt.
    *
@@ -388,6 +523,19 @@ export class NotificationsService {
     return result;
   }
 
+}
+
+/**
+ * The subject line, by event (plan D14): a raise is `severity: RULE`, a step
+ * is `escalation n · severity: RULE`, a clear is `cleared · severity: RULE`.
+ * String composition, no template — the body stays the caller's message.
+ */
+function subjectFor(input: DispatchInput): string {
+  const base = `${input.severity ?? "alarm"}: ${input.ruleCode}`;
+  if (input.event === undefined) return base;
+  return input.event.kind === "escalation"
+    ? `escalation ${input.event.step} · ${base}`
+    : `cleared · ${base}`;
 }
 
 function reasonOf(err: unknown): string {

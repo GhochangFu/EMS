@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, Logger } from "@nestjs/common";
 
 import { buildDedupeKey } from "./dedupe-key";
 import type {
@@ -8,7 +8,11 @@ import type {
   NotificationTransport,
 } from "./notification-transport";
 import { buildConfig } from "./notifications.config";
-import { NotificationsService, type DispatchInput } from "./notifications.service";
+import {
+  NotificationsService,
+  type DispatchEvent,
+  type DispatchInput,
+} from "./notifications.service";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -57,38 +61,55 @@ type Recorded = {
   channelId: string;
   dedupeKey: string;
   organizationId: string;
+  alarmId: string | null;
 };
 
 /**
  * A fake `BmsDb` narrow enough for this service: it answers the rate-limit
- * SELECT with a settable count, answers `F3.46`'s existence SELECT from a queue
- * of booleans, and records every delivery INSERT.
+ * SELECT with a settable count, answers each existence SELECT from its own
+ * queue of booleans, answers the cleared-recipient SELECT from a settable row
+ * list, and records every delivery INSERT.
  *
- * **The two SELECTs are told apart by their projection, not by their `WHERE`.**
+ * **The SELECTs are told apart by their projection, not by their `WHERE`.**
  * Drizzle hands the fake an opaque SQL object for the `WHERE`, so it can see
  * nothing of it: the rate-limit read asks for `{ count }` and ends at
- * `.where()`, `hasRecordedSkip` asks for `{ id }` and adds `.limit(1)`. That
- * the real `WHERE` names this channel, this organization, this key and
- * `skipped_deduped` is proven against Postgres in
- * `storm-control.integration.spec.ts`, which is where it can be.
+ * `.where()`; `hasRecordedSkip` asks for `{ id }` and adds `.limit(1)`;
+ * `F3.10`'s `hasRecordedDelivery` asks for `{ status }` and adds `.limit(1)`;
+ * `sentChannelIdsForAlarm` asks for `{ channelId }` and ends at `.where()`.
+ * Each projection has its own queue and counter, so a read that reached the
+ * wrong branch shows up as the wrong counter moving — the `F3.46` lesson: a
+ * fake that fed one boolean queue to two reads passed for the wrong reason.
+ * An unknown projection throws rather than answer from anyone's queue. That
+ * the real `WHERE` of each read names this channel, this organization, this
+ * key (and, for the skip, `skipped_deduped`; for the recipients, this alarm
+ * and `sent`) is proven against Postgres in `storm-control.integration.spec.ts`,
+ * which is where it can be.
  */
 function fakeDb(sentInLastHour = 0): {
   db: ConstructorParameters<typeof NotificationsService>[0];
   recorded: Recorded[];
   /** Per-fake call counters — not a lifetime statistic (§4.6). */
-  reads: { rateLimit: number; skipExists: number };
+  reads: { rateLimit: number; skipExists: number; deliveryExists: number; sentChannels: number };
   setCount: (n: number) => void;
-  /** Answers for the next existence reads, in dispatch order. Empty = `false`. */
+  /** Answers for the next `{ id }` (skip) existence reads, in dispatch order. Empty = `false`. */
   setSkipRecorded: (...values: boolean[]) => void;
   failSkipReads: (fail: boolean) => void;
+  /** Answers for the next `{ status }` (event) existence reads, in dispatch order. Empty = `false`. */
+  setDeliveryRecorded: (...values: boolean[]) => void;
+  failDeliveryReads: (fail: boolean) => void;
+  /** The rows every `{ channelId }` read returns, duplicates and all. */
+  setSentChannels: (...channelIds: string[]) => void;
   failInserts: (fail: boolean) => void;
 } {
   const recorded: Recorded[] = [];
-  const reads = { rateLimit: 0, skipExists: 0 };
+  const reads = { rateLimit: 0, skipExists: 0, deliveryExists: 0, sentChannels: 0 };
   const skipQueue: boolean[] = [];
+  const deliveryQueue: boolean[] = [];
+  const sentChannels: string[] = [];
   let count = sentInLastHour;
   let insertsFail = false;
   let skipReadsFail = false;
+  let deliveryReadsFail = false;
 
   const db = {
     select: (projection: Record<string, unknown>) => {
@@ -102,17 +123,43 @@ function fakeDb(sentInLastHour = 0): {
           }),
         };
       }
-      return {
-        from: () => ({
-          where: () => ({
-            limit: () => {
-              reads.skipExists += 1;
-              if (skipReadsFail) return Promise.reject(new Error("ledger unavailable"));
-              return Promise.resolve(skipQueue.shift() === true ? [{ id: "x" }] : []);
+      if ("id" in projection) {
+        return {
+          from: () => ({
+            where: () => ({
+              limit: () => {
+                reads.skipExists += 1;
+                if (skipReadsFail) return Promise.reject(new Error("ledger unavailable"));
+                return Promise.resolve(skipQueue.shift() === true ? [{ id: "x" }] : []);
+              },
+            }),
+          }),
+        };
+      }
+      if ("status" in projection) {
+        return {
+          from: () => ({
+            where: () => ({
+              limit: () => {
+                reads.deliveryExists += 1;
+                if (deliveryReadsFail) return Promise.reject(new Error("ledger unavailable"));
+                return Promise.resolve(deliveryQueue.shift() === true ? [{ status: "sent" }] : []);
+              },
+            }),
+          }),
+        };
+      }
+      if ("channelId" in projection) {
+        return {
+          from: () => ({
+            where: () => {
+              reads.sentChannels += 1;
+              return Promise.resolve(sentChannels.map((channelId) => ({ channelId })));
             },
           }),
-        }),
-      };
+        };
+      }
+      throw new Error(`fakeDb: no queue for projection {${Object.keys(projection).join(", ")}}`);
     },
     insert: () => ({
       values: (row: Recorded) => {
@@ -123,6 +170,7 @@ function fakeDb(sentInLastHour = 0): {
           channelId: row.channelId,
           dedupeKey: row.dedupeKey,
           organizationId: row.organizationId,
+          alarmId: row.alarmId,
         });
         return Promise.resolve();
       },
@@ -143,10 +191,44 @@ function fakeDb(sentInLastHour = 0): {
     failSkipReads: (fail) => {
       skipReadsFail = fail;
     },
+    setDeliveryRecorded: (...values) => {
+      deliveryQueue.length = 0;
+      deliveryQueue.push(...values);
+    },
+    failDeliveryReads: (fail) => {
+      deliveryReadsFail = fail;
+    },
+    setSentChannels: (...channelIds) => {
+      sentChannels.length = 0;
+      sentChannels.push(...channelIds);
+    },
     failInserts: (fail) => {
       insertsFail = fail;
     },
   };
+}
+
+/**
+ * Runs `run` with `Logger.prototype.warn` captured, and restores it after.
+ *
+ * The service builds its own `Logger` (no injection seam, on purpose — the
+ * constructor is the module's), so the one way to see a warn line from a spec
+ * is the prototype. Scoped to the call and restored in `finally`, so a failing
+ * assertion inside `run` cannot leave the next case deaf.
+ */
+async function captureWarnings<T>(
+  run: () => Promise<T>,
+): Promise<{ result: T; warnings: string[] }> {
+  const warnings: string[] = [];
+  const original = Logger.prototype.warn;
+  Logger.prototype.warn = function warn(message: unknown): void {
+    warnings.push(String(message));
+  };
+  try {
+    return { result: await run(), warnings };
+  } finally {
+    Logger.prototype.warn = original;
+  }
 }
 
 function fakeTransport(kind: string, behaviour: () => Promise<DeliveryResult>) {
@@ -192,7 +274,9 @@ function serviceWith(options: {
 
 /**
  * `F3.8` U6 — dedupe, the hourly ceiling, and the promise `dispatch` always
- * keeps. The database and every transport are fakes; no socket, no Postgres.
+ * keeps; `F3.10` U2 — the explicit-channel entry point, the two event kinds
+ * and their once-per-key ledger read. The database and every transport are
+ * fakes; no socket, no Postgres.
  */
 export async function runNotificationsServiceTests(): Promise<void> {
   // --- the transition dedupe ----------------------------------------------
@@ -564,5 +648,246 @@ export async function runNotificationsServiceTests(): Promise<void> {
       buildDedupeKey({ ruleId: "x".repeat(400), alarmId: null, severity: null }).length <= 255,
       "the key is clamped to the column width",
     );
+  }
+
+  // =========================================================================
+  // `F3.10` U2 (ADR 0057 decisions 9 and 10)
+  // =========================================================================
+
+  const channelA = channelRow({ id: "aaaaaaaa-0000-0000-0000-000000000001", code: "a" });
+  const channelB = channelRow({ id: "aaaaaaaa-0000-0000-0000-000000000002", code: "b" });
+  const eventInput = (event: DispatchEvent, overrides: Partial<DispatchInput> = {}) =>
+    input({ ruleCode: "RULE-1", severity: "warning", raised: true, event, ...overrides });
+
+  // --- 2. `dispatchToChannels` never asks for the rule's channels ----------
+  //
+  // The sweep hands it the step's channels (or the cleared recipients); a
+  // `loadForRule` here would send an escalation to the rule's raise channels
+  // instead of the step's. Results come back one per channel, in the order
+  // given, not code order.
+  {
+    const { db, recorded } = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    let loads = 0;
+    const service = serviceWith({
+      db,
+      channels: () => {
+        loads += 1;
+        return Promise.resolve([channelRow()]);
+      },
+      webhook: webhook.transport,
+    });
+
+    const results = await service.dispatchToChannels([channelB, channelA], input());
+    assert(loads === 0, `dispatchToChannels must not call loadForRule, got ${loads} calls`);
+    assert(results.length === 2, `two channels, two results, got ${results.length}`);
+    assert(
+      results.every((r) => r.status === "sent"),
+      `both sent, got ${results.map((r) => r.status).join(",")}`,
+    );
+    assert(
+      recorded.map((r) => r.channelId).join(",") === `${channelB.id},${channelA.id}`,
+      "one row per channel, in the order the caller gave",
+    );
+    assert(recorded.every((r) => r.organizationId === ORG_ID), "stamped with the rule's org");
+    // And the raise path still goes through the loader: same input, one load.
+    await service.dispatch(input());
+    assert(loads === 1, `dispatch still loads the rule's channels, got ${loads} loads`);
+  }
+
+  // --- 3. An event already in the ledger is answered from it ---------------
+  //
+  // Decision 10: the read comes before the send, and the original row IS the
+  // record — nothing is written, nothing is sent.
+  {
+    const { db, recorded, reads, setDeliveryRecorded } = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+
+    setDeliveryRecorded(true);
+    const results = await service.dispatchToChannels(
+      [channelRow()],
+      eventInput({ kind: "escalation", step: 1 }),
+    );
+    assert(
+      results.length === 1 && results[0]?.status === "skipped_deduped",
+      `an already-sent step is skipped_deduped, got ${results.map((r) => r.status).join(",")}`,
+    );
+    assert(results[0]?.error === null, "an answered event is not an error");
+    assert(recorded.length === 0, `the original row is the record; got ${recorded.length} new rows`);
+    assert(webhook.sent.length === 0, "an already-sent step must not reach the transport");
+    assert(reads.deliveryExists === 1, `one ledger read, got ${reads.deliveryExists}`);
+  }
+
+  // --- 4. A step not yet in the ledger is sent, keyed and attributed -------
+  {
+    const { db, recorded, reads, setDeliveryRecorded } = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+
+    setDeliveryRecorded(false);
+    const step = eventInput({ kind: "escalation", step: 1 });
+    const results = await service.dispatchToChannels([channelRow()], step);
+    assert(results[0]?.status === "sent", `a new step sends, got ${String(results[0]?.status)}`);
+    assert(reads.deliveryExists === 1, `the ledger was asked first, got ${reads.deliveryExists}`);
+    assert(
+      webhook.sent[0]?.subject === "escalation 1 · warning: RULE-1",
+      `the subject names the step, got ${String(webhook.sent[0]?.subject)}`,
+    );
+    assert(webhook.sent[0]?.body === step.message, "the body is the caller's message, untouched");
+    assert(webhook.sent[0]?.alarmId === step.alarmId, "the transport sees the alarm");
+    assert(recorded.length === 1 && recorded[0]?.status === "sent", "one sent row");
+    assert(
+      recorded[0]?.dedupeKey === buildDedupeKey(step) && recorded[0].dedupeKey.endsWith(":escalation:1"),
+      `the row's key carries the step, got ${String(recorded[0]?.dedupeKey)}`,
+    );
+    assert(recorded[0]?.alarmId === step.alarmId, "the row is attributed to the alarm");
+  }
+
+  // --- 5. The cleared message -------------------------------------------------
+  {
+    const { db, recorded } = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+
+    const cleared = eventInput({ kind: "cleared" });
+    const results = await service.dispatchToChannels([channelRow()], cleared);
+    assert(results[0]?.status === "sent", "the cleared message sends");
+    assert(
+      webhook.sent[0]?.subject === "cleared · warning: RULE-1",
+      `the subject says cleared, got ${String(webhook.sent[0]?.subject)}`,
+    );
+    assert(
+      recorded[0]?.dedupeKey.endsWith(":cleared") === true,
+      `the row's key says cleared, got ${String(recorded[0]?.dedupeKey)}`,
+    );
+  }
+
+  // --- 6. An unreadable ledger on an event: no row, no send, one warn ------
+  //
+  // D3: writing a row would poison the key for every later tick; sending
+  // would risk the duplicate the read exists to prevent. The failure is
+  // reported and the next tick retries. This is the opposite of the raise
+  // path's fallback (case `F3.46` D2 above), and deliberately so.
+  {
+    const { db, recorded, reads, failDeliveryReads } = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+
+    failDeliveryReads(true);
+    const step = eventInput({ kind: "escalation", step: 2 });
+    const { result: results, warnings } = await captureWarnings(() =>
+      service.dispatchToChannels([channelRow({ code: "ops-webhook" })], step),
+    );
+    assert(reads.deliveryExists === 1, `the read was attempted, got ${reads.deliveryExists}`);
+    assert(
+      results.length === 1 && results[0]?.status === "failed",
+      `an unreadable ledger fails the event, got ${results.map((r) => r.status).join(",")}`,
+    );
+    assert(
+      results[0]?.error === "delivery ledger read failed",
+      `the reason is named, got ${String(results[0]?.error)}`,
+    );
+    assert(recorded.length === 0, `no row on a failed event read, got ${recorded.length}`);
+    assert(webhook.sent.length === 0, "a failed event read must never become a send");
+    assert(warnings.length === 1, `exactly one warn line, got ${warnings.length}`);
+    const warned = warnings[0] ?? "";
+    assert(
+      warned.includes("channel=ops-webhook") && warned.includes("rule=RULE-1"),
+      `the warn names the channel and rule codes, got: ${warned}`,
+    );
+    assert(!warned.includes(step.message), "§9.6: the warn never carries the alarm text");
+  }
+
+  // --- 7. An event still meets the hourly ceiling ---------------------------
+  //
+  // ADR 0041 decision 7 applies to every send; a step is a send. Recorded as
+  // `skipped_rate_limited` under the event's key — which, by owner ruling Q7,
+  // is then in the ledger and answers every later tick.
+  {
+    const { db, recorded, setCount, setDeliveryRecorded } = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    const service = serviceWith({
+      db,
+      channels: [],
+      webhook: webhook.transport,
+      env: { NOTIFY_RATE_LIMIT_PER_HOUR: "1" },
+    });
+
+    setDeliveryRecorded(false);
+    setCount(1);
+    const results = await service.dispatchToChannels(
+      [channelRow()],
+      eventInput({ kind: "escalation", step: 1 }),
+    );
+    assert(
+      results[0]?.status === "skipped_rate_limited",
+      `at the ceiling an event skips, got ${String(results[0]?.status)}`,
+    );
+    assert(webhook.sent.length === 0, "the rate-limited step must not reach the transport");
+    assert(
+      recorded.length === 1 &&
+        recorded[0]?.status === "skipped_rate_limited" &&
+        recorded[0].dedupeKey.endsWith(":escalation:1"),
+      "the rate-limited skip is recorded under the event's key",
+    );
+  }
+
+  // --- 8. The event branch comes first; `raised` is not consulted ----------
+  //
+  // `raised: false` with an event set is not an input production builds. The
+  // order still matters: if the raise-path refusal ran first, an event would
+  // read the skip ledger, find nothing, and write a `skipped_deduped` row
+  // under the event's key — after which decision 10 would never send it.
+  {
+    const { db, recorded, reads } = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+
+    const results = await service.dispatchToChannels(
+      [channelRow()],
+      eventInput({ kind: "escalation", step: 1 }, { raised: false }),
+    );
+    assert(reads.skipExists === 0, `an event must not read the skip ledger, got ${reads.skipExists}`);
+    assert(reads.deliveryExists === 1, `an event reads its own ledger, got ${reads.deliveryExists}`);
+    assert(
+      results[0]?.status === "sent" && recorded[0]?.status === "sent",
+      `an event with no row sends whatever \`raised\` says, got ${String(results[0]?.status)}`,
+    );
+  }
+
+  // --- 9. The cleared recipients: every channel with a `sent` row, once ----
+  {
+    const { db, reads, setSentChannels } = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+
+    setSentChannels(channelA.id, channelB.id, channelA.id);
+    const ids = await service.sentChannelIdsForAlarm(input().alarmId as string, ORG_ID);
+    assert(
+      ids.join(",") === `${channelA.id},${channelB.id}`,
+      `distinct channel ids in first-seen order, got ${ids.join(",")}`,
+    );
+    assert(reads.sentChannels === 1, `one read, got ${reads.sentChannels}`);
+
+    setSentChannels();
+    const none = await service.sentChannelIdsForAlarm(input().alarmId as string, ORG_ID);
+    assert(none.length === 0, "an alarm nobody was told about clears to nobody");
   }
 }

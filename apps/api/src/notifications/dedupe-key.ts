@@ -10,9 +10,12 @@
  * message carries the reading. Keying on the text would defeat the dedupe on
  * exactly the storm it exists to stop.
  *
- * The alarm is included rather than the rule alone: when an alarm is
- * acknowledged and the condition trips again, a new `bms.alarms` row exists,
- * and that genuinely is a new event the operator wants to hear about.
+ * The alarm is included rather than the rule alone: when an alarm **clears**
+ * (ADR 0057 decision 1 — `cleared_at`, stamped by the lifecycle sweep) and the
+ * condition breaches again, a new `bms.alarms` row exists, and that genuinely
+ * is a new event the operator wants to hear about. Acknowledgement is not that
+ * boundary any more: since ADR 0057 decision 2 an acknowledged alarm whose
+ * condition still holds stays the same row, so it stays the same key.
  *
  * **Since `F3.46` the key has a reader, not only a writer.** Before a refusal
  * is recorded, `NotificationsService.hasRecordedSkip` looks this key up on the
@@ -27,19 +30,43 @@
  * the row exists to give, *"already open"*, is the same for every episode of
  * it, and `bms.rule_executions` still records that the sweep reached the rule.
  *
+ * **`F3.10` — the event suffix (ADR 0057 decision 9).** An escalation step or
+ * a cleared message for the same alarm is a different event from its raise, so
+ * it gets a different key: `:escalation:<n>` or `:cleared` appended to the
+ * raise key. The kind lives here and nowhere else — no column was added — and
+ * `NotificationsService.hasRecordedDelivery` reads the key back before a step
+ * or a clear is sent, which is what makes decision 10's "once per channel"
+ * a ledger read instead of a timer. The suffix goes at the end so that the
+ * raise key is a strict prefix of every event key for that alarm and never
+ * equal to one: the raise row is already in the ledger when the sweep asks
+ * about step 1, and an equal key would make every step look already sent.
+ *
  * Bounded to the column width — `dedupe_key varchar(255)` in migration 0038 —
- * so a long rule id can never make the insert fail. Two uuids and a severity
- * are far short of it; the clamp is there for the case nobody predicted.
+ * so a long rule id can never make the insert fail. Two uuids, a severity and
+ * the longest suffix are far short of it; the clamp is there for the case
+ * nobody predicted.
  */
 const MAX_DEDUPE_KEY_LENGTH = 255;
 
+/**
+ * Which lifecycle event a dispatch is for (ADR 0057 decision 9). Absent on the
+ * raise path; set by the alarm lifecycle sweep.
+ */
+export type DispatchEvent = { kind: "escalation"; step: number } | { kind: "cleared" };
+
+/** The key for one notification: `rule:alarm:severity`, plus the event suffix when there is one. */
 export function buildDedupeKey(input: {
   ruleId: string;
   alarmId: string | null;
   severity: string | null;
+  event?: DispatchEvent;
 }): string {
-  const key = [input.ruleId, input.alarmId ?? "no-alarm", input.severity ?? "no-severity"].join(
-    ":",
-  );
+  const parts = [input.ruleId, input.alarmId ?? "no-alarm", input.severity ?? "no-severity"];
+  if (input.event?.kind === "escalation") {
+    parts.push("escalation", String(input.event.step));
+  } else if (input.event?.kind === "cleared") {
+    parts.push("cleared");
+  }
+  const key = parts.join(":");
   return key.length > MAX_DEDUPE_KEY_LENGTH ? key.slice(0, MAX_DEDUPE_KEY_LENGTH) : key;
 }
