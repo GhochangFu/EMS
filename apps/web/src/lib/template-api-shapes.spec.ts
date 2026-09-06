@@ -64,6 +64,14 @@ const MEASURED_POINT = {
   sortOrder: 0,
   meta: null,
   createdAt: "2026-08-10T09:00:00.000Z",
+  // `F2.7` / ADR 0056 decision 1 — the five metadata defaults, read-side,
+  // required-nullable on the DTO. Non-null on this measured point on purpose:
+  // a `null` fixture passes whether the field is carried or discarded.
+  scaleMultiplier: 0.1,
+  scaleOffset: -40,
+  engMin: 0,
+  engMax: 100,
+  qualityPolicy: "accept_bad",
 };
 
 /**
@@ -96,6 +104,13 @@ const DERIVED_POINT = {
   sortOrder: 1,
   meta: { tier: "extended" },
   createdAt: "2026-08-10T09:00:00.000Z",
+  // A derived point has no instrument to scale — `null` is the only honest
+  // value on it (ADR 0056 decision 3).
+  scaleMultiplier: null,
+  scaleOffset: null,
+  engMin: null,
+  engMax: null,
+  qualityPolicy: null,
 };
 
 /**

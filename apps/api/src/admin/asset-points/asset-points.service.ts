@@ -364,6 +364,15 @@ export class AssetPointsAdminService {
       // values; drizzle types the column as the column's raw varchar type.
       sourceKind: point.sourceKind as AdminAssetPointDto["sourceKind"],
       createdAt: point.createdAt.toISOString(),
+      // `F2.7` / ADR 0056 decision 1 — the per-asset override of the five
+      // metadata columns, `null` = inherit the template default. Read off the
+      // row once migration `0063` (Unit B) gives `asset_points` the columns;
+      // until then no column exists and `null` is the truthful value.
+      scaleMultiplier: null,
+      scaleOffset: null,
+      engMin: null,
+      engMax: null,
+      qualityPolicy: null,
     };
   }
 }

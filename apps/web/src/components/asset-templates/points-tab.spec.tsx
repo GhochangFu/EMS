@@ -56,6 +56,13 @@ function point(index: number, meta: unknown): unknown {
     sortOrder: index - 1,
     meta,
     createdAt: "2026-09-04T00:00:00.000Z",
+    // `F2.7` / ADR 0056 decision 1 — the five metadata defaults, read-side,
+    // `null` = none set. Required on the DTO, so the parse below forces them.
+    scaleMultiplier: null,
+    scaleOffset: null,
+    engMin: null,
+    engMax: null,
+    qualityPolicy: null,
   };
 }
 

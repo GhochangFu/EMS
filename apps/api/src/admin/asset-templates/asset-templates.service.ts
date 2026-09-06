@@ -24,14 +24,10 @@ import {
 import type {
   AdminAssetTemplateDto,
   AdminAssetTemplateSummaryDto,
-  AdminTemplatePointDto,
   AssetTemplateStatus,
-  CalcDialect,
-  CalcTrigger,
   JwtPayload,
   TemplateDraftRequiredVerb,
   TemplateLifecycleStatus,
-  TemplatePointKind,
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
@@ -49,6 +45,9 @@ import {
   crossRefPointKeys,
   type CrossRefCandidatePoint,
 } from "./asset-templates-cross-refs";
+// `F2.7` design decision 11 — the two row mappers this service held inline
+// moved to a pure sibling when it stood at 998 of §4.5's 1000 lines.
+import { toTemplatePointDto, toTemplatePointInsert } from "./asset-templates-point-rows";
 import type {
   CreateAssetTemplateBody,
   TemplatePointBody,
@@ -850,34 +849,11 @@ export class AssetTemplatesAdminService {
     if (points.length === 0) {
       return;
     }
+    // Every field re-stamped with `??` onto its column default — the version
+    // bump is why (`createDraftFrom` copies the parent's `PointRow`s through
+    // here); see `toTemplatePointInsert`. Held by the lifecycle integration suite.
     await tx.insert(templatePoints).values(
-      points.map((point, index) => ({
-        templateId,
-        organizationId,
-        pointKey: point.pointKey,
-        label: point.label ?? null,
-        unit: point.unit ?? null,
-        kind: point.kind ?? "measured",
-        sourceDataKeyPattern: point.sourceDataKeyPattern ?? null,
-        formula: point.formula ?? null,
-        formulaDialect: point.formulaDialect ?? null,
-        calcTrigger: point.calcTrigger ?? null,
-        calcIntervalSeconds: point.calcIntervalSeconds ?? null,
-        maxInputAgeSeconds: point.maxInputAgeSeconds ?? null,
-        // ADR 0055 decision 11 (`F2.9`). Re-stamped like every other point
-        // field, and the *version bump* is why: `createDraftFrom` copies the
-        // parent's `PointRow`s through here, so omitting it would silently
-        // reset a published ratio to NULL on the next version — which decision
-        // 11 reads as fail closed, so the formula would stop computing with no
-        // error and no edit. Held by the lifecycle integration suite.
-        minCoverageRatio: point.minCoverageRatio ?? null,
-        required: point.required ?? true,
-        sortOrder: point.sortOrder ?? index,
-        // F2.13 / ADR 0052 decision 2 — the tier marking, re-stamped on every
-        // write exactly like every other point field. `{}` for a point with
-        // no provenance, matching the column's own DB default.
-        meta: point.meta ?? {},
-      })),
+      points.map((point, index) => toTemplatePointInsert(point, templateId, organizationId, index)),
     );
   }
 
@@ -936,7 +912,7 @@ export class AssetTemplatesAdminService {
       .orderBy(asc(templatePoints.sortOrder), asc(templatePoints.pointKey));
     return {
       ...this.mapTemplate(template, organizationCode, organizationName),
-      points: points.map((point) => this.mapPoint(point)),
+      points: points.map(toTemplatePointDto),
     };
   }
 
@@ -966,33 +942,6 @@ export class AssetTemplatesAdminService {
       stockVersion: template.stockVersion,
       createdAt: template.createdAt.toISOString(),
       updatedAt: template.updatedAt.toISOString(),
-    };
-  }
-
-  private mapPoint(point: PointRow): AdminTemplatePointDto {
-    return {
-      id: point.id,
-      templateId: point.templateId,
-      pointKey: point.pointKey,
-      label: point.label,
-      unit: point.unit,
-      kind: point.kind as TemplatePointKind,
-      sourceDataKeyPattern: point.sourceDataKeyPattern,
-      formula: point.formula,
-      formulaDialect: point.formulaDialect as CalcDialect | null,
-      calcTrigger: point.calcTrigger as CalcTrigger | null,
-      calcIntervalSeconds: point.calcIntervalSeconds,
-      maxInputAgeSeconds: point.maxInputAgeSeconds,
-      // ADR 0055 decision 11 (`F2.9`). Read straight off the row: the column is
-      // on `template_points` only, so there is nothing to coalesce an override
-      // against. `null` means fail closed, not "no limit".
-      minCoverageRatio: point.minCoverageRatio,
-      required: point.required,
-      sortOrder: point.sortOrder,
-      // F2.13 / ADR 0052 decision 2. `point.meta` is jsonb — cast rather than
-      // trusted, the same reason `mapTemplate` casts `content`.
-      meta: point.meta as AdminTemplatePointDto["meta"],
-      createdAt: point.createdAt.toISOString(),
     };
   }
 }

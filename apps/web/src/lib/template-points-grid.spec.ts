@@ -50,6 +50,14 @@ function point(overrides: Record<string, unknown> = {}) {
     sortOrder: 0,
     meta: null,
     createdAt: "2026-08-21T00:00:00.000Z",
+    // `F2.7` / ADR 0056 decision 1 — the five metadata defaults, read-side,
+    // `null` = none set. Required on the DTO, so `template()`'s parse forces
+    // them; the grid carries them from this commit and edits them in Unit E.
+    scaleMultiplier: null,
+    scaleOffset: null,
+    engMin: null,
+    engMax: null,
+    qualityPolicy: null,
     ...overrides,
   };
 }

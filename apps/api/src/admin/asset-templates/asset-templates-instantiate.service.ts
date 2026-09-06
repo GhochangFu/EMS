@@ -19,6 +19,7 @@ import {
   templatePoints,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import { SOURCE_KEY_RESERVED_VAR, substituteSourceKeyPattern } from "@bms/shared";
 import type { AssetInstantiationResultDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
@@ -47,15 +48,13 @@ type TemplateRow = typeof assetTemplates.$inferSelect;
 type PointRow = typeof templatePoints.$inferSelect;
 
 /**
- * Always substituted from the asset's own `code`, never from
- * `sourceDataKeyVars`. Letting a caller override it would let two assets in one
- * batch resolve to the same `source_data_key` while carrying different codes —
- * silently aliasing two pieces of equipment onto one telemetry stream.
+ * The `{token}` grammar and the reserved `asset_code` variable used to be this
+ * service's private constants. `F2.7` (ADR 0056 decision 10) moved them to
+ * `@bms/shared`'s `source-key-pattern` module, because the mapping sheet's
+ * pre-fill and the instantiate dialog read the same grammar — one vocabulary,
+ * wired twice, declared once. `resolveSourceDataKey` below keeps its behaviour
+ * byte for byte over the shared `substituteSourceKeyPattern`.
  */
-const INSTANTIATE_RESERVED_VAR = "asset_code";
-
-/** `{token}` in a `source_data_key_pattern`. */
-const PATTERN_TOKEN = /\{([a-zA-Z0-9_]+)\}/g;
 
 /** `bms.asset_points.source_data_key` is `varchar(128)`. */
 const SOURCE_DATA_KEY_MAX = 128;
@@ -528,31 +527,23 @@ export class AssetTemplateInstantiationService {
    * has no pattern or any token is unsupplied — never a partially substituted
    * key, which would be a plausible-looking string pointing at nothing.
    *
-   * `vars` is prototype-free on purpose. A plain object literal resolves
-   * inherited members, so a pattern containing `{constructor}` or `{toString}`
-   * would find a value, skip the unresolved branch, and stringify a function
-   * into `source_data_key` — defeating exactly the guarantee above.
+   * `asset_code` is always the asset's own `code`, spread **last** so a caller's
+   * `sourceDataKeyVars` cannot override it — two assets in one batch resolving
+   * to the same `source_data_key` would silently alias two pieces of equipment
+   * onto one telemetry stream. The prototype guard (`{constructor}` must not
+   * resolve to a function) lives in `substituteSourceKeyPattern`, which reads
+   * `vars` by own-property only.
    */
   private resolveSourceDataKey(point: PointRow, entry: InstantiateAssetBody): string | null {
     const pattern = point.sourceDataKeyPattern;
     if (!pattern) {
       return null;
     }
-    const vars = Object.assign(Object.create(null) as Record<string, string>, {
+    const { key, unresolved } = substituteSourceKeyPattern(pattern, {
       ...(entry.sourceDataKeyVars ?? {}),
-      [INSTANTIATE_RESERVED_VAR]: entry.code,
+      [SOURCE_KEY_RESERVED_VAR]: entry.code,
     });
-
-    let unresolved = false;
-    const resolved = pattern.replace(PATTERN_TOKEN, (_match, name: string) => {
-      const value = vars[name];
-      if (typeof value !== "string") {
-        unresolved = true;
-        return "";
-      }
-      return value;
-    });
-    return unresolved || resolved.length === 0 ? null : resolved;
+    return unresolved.length > 0 || key === "" ? null : key;
   }
 
   /** Backstop for a code taken between the pre-check and the insert. */

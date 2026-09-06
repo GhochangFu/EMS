@@ -1,5 +1,10 @@
 import { CALC_DIALECT, CALC_DIALECTS, parseFormula } from "@bms/shared";
-import type { AdminAssetTemplateDto, AdminTemplatePointDto, CalcDialect } from "@bms/shared";
+import type {
+  AdminAssetTemplateDto,
+  AdminTemplatePointDto,
+  CalcDialect,
+  QualityPolicy,
+} from "@bms/shared";
 
 import type { TemplatePointInput, TemplatePointTier } from "../api/admin/asset-templates";
 
@@ -106,6 +111,22 @@ export type TemplatePointRow = {
    */
   minCoverageRatio: number | null;
   meta: { tier: TemplatePointTier } | null;
+  /**
+   * `F2.7` / ADR 0056 decision 1 — the five point-metadata template defaults,
+   * `null` = none set (inherit / today's behaviour). Carried on the row from the
+   * first commit for the reason the calc fields are: the server replaces the
+   * whole point set from whichever tab saves. The inputs that edit them, the
+   * grid rules, and their place in `buildPointsPayload` arrive with the Points
+   * tab work (Unit E) once `templatePointBodySchema` — `.strict()` — accepts
+   * them (Unit C); a payload that sent them earlier would 400 every save.
+   * `setPointKind` to `derived` clears them: a computed value has no instrument
+   * to scale or to bound.
+   */
+  scaleMultiplier: number | null;
+  scaleOffset: number | null;
+  engMin: number | null;
+  engMax: number | null;
+  qualityPolicy: QualityPolicy | null;
 };
 
 /** Seeds the grid from the loaded template, in the order the server returned. */
@@ -125,6 +146,11 @@ export function pointRowsFrom(template: AdminAssetTemplateDto): TemplatePointRow
     maxInputAgeSeconds: point.maxInputAgeSeconds,
     minCoverageRatio: point.minCoverageRatio,
     meta: point.meta?.tier ? { tier: point.meta.tier } : null,
+    scaleMultiplier: point.scaleMultiplier,
+    scaleOffset: point.scaleOffset,
+    engMin: point.engMin,
+    engMax: point.engMax,
+    qualityPolicy: point.qualityPolicy,
   }));
 }
 
@@ -146,6 +172,11 @@ export function blankPointRow(rows: readonly TemplatePointRow[]): TemplatePointR
     maxInputAgeSeconds: null,
     minCoverageRatio: null,
     meta: null,
+    scaleMultiplier: null,
+    scaleOffset: null,
+    engMin: null,
+    engMax: null,
+    qualityPolicy: null,
   };
 }
 
@@ -173,6 +204,12 @@ export function blankPointRow(rows: readonly TemplatePointRow[]): TemplatePointR
  * decide ADR 0037's write policy from a tab the ADR gives no say in it,
  * silently, in a field the author never sees. `pointGridErrors` names what is
  * owed instead.
+ *
+ * **measured → derived also clears the five metadata defaults** (`F2.7`, ADR
+ * 0056 decision 3: "a derived value has no instrument to scale"). Same reason
+ * as the pattern — the write side refuses them on a derived point, so leaving
+ * them would turn a kind change into a 400 naming a field the author never
+ * touched.
  */
 export function setPointKind(
   row: TemplatePointRow,
@@ -197,7 +234,16 @@ export function setPointKind(
       minCoverageRatio: null,
     };
   }
-  return { ...row, kind, sourceDataKeyPattern: "" };
+  return {
+    ...row,
+    kind,
+    sourceDataKeyPattern: "",
+    scaleMultiplier: null,
+    scaleOffset: null,
+    engMin: null,
+    engMax: null,
+    qualityPolicy: null,
+  };
 }
 
 /**

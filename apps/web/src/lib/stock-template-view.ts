@@ -113,6 +113,15 @@ export function stockEntryAsTemplate(entry: StockAssetTemplateDto): AdminAssetTe
       // admin read shape is `{ tier? } | null`.
       meta: point.meta ?? null,
       createdAt: STOCK_VIEW_TIMESTAMP,
+      // `F2.7` / ADR 0056 decision 9 — the five metadata defaults a stock entry
+      // may declare. The same bridge as `meta`: optional on the write shape,
+      // required-nullable on the read shape, and an entry that says nothing
+      // reads as `null` (inherit / today's behaviour).
+      scaleMultiplier: point.scaleMultiplier ?? null,
+      scaleOffset: point.scaleOffset ?? null,
+      engMin: point.engMin ?? null,
+      engMax: point.engMax ?? null,
+      qualityPolicy: point.qualityPolicy ?? null,
     })),
   };
 }

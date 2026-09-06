@@ -34,6 +34,7 @@ import type * as He from "./contracts/health";
 import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
+import type * as PM from "./contracts/point-metadata";
 import type * as Te from "./contracts/telemetry-entry";
 import type * as Ti from "./contracts/telemetry-import";
 import { TELEMETRY_POINT_REF_SEP } from "./constants";
@@ -61,6 +62,13 @@ export * from "./contracts";
  * `exports` map, so the barrel is the only route its main consumer typechecks
  * through. */
 export * from "./calc-dsl";
+
+/**
+ * The `{token}` grammar of `source_data_key_pattern` (`F2.7`, ADR 0056
+ * decision 10) — pure, zod-free, and re-exported through the barrel for the
+ * same node10 reason `./calc-dsl` is.
+ */
+export * from "./source-key-pattern";
 
 // ---------------------------------------------------------------------------
 // Auth and access scope
@@ -336,6 +344,12 @@ export type AdminLocationDto = z.infer<typeof A.adminLocationDtoSchema>;
 export type AdminRtuDto = z.infer<typeof A.adminRtuDtoSchema>;
 export type AdminAssetDto = z.infer<typeof A.adminAssetDtoSchema>;
 export type AdminAssetPointDto = z.infer<typeof A.adminAssetPointDtoSchema>;
+/**
+ * `F2.7` / ADR 0056 decision 1 — the five point-metadata fields as one object:
+ * a template default, an asset override, or the resolved value. `QualityPolicy`
+ * itself is `./ingest`'s, re-exported below with the rest of that module.
+ */
+export type PointMetadataFields = z.infer<typeof PM.pointMetadataFieldsSchema>;
 /** `F3.37` (ADR 0049) — one `bms.asset_groups` row for the admin surface. */
 export type AdminAssetGroupDto = z.infer<typeof A.adminAssetGroupDtoSchema>;
 export type AdminAssetGroupListResponse = z.infer<

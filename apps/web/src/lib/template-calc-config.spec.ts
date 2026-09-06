@@ -47,6 +47,12 @@ function derived(overrides: Partial<TemplatePointRow> = {}): TemplatePointRow {
     maxInputAgeSeconds: null,
     minCoverageRatio: null,
     meta: null,
+    // `F2.7` — a derived row carries no instrument metadata.
+    scaleMultiplier: null,
+    scaleOffset: null,
+    engMin: null,
+    engMax: null,
+    qualityPolicy: null,
     ...overrides,
   };
 }
