@@ -256,7 +256,10 @@ Process (`AGENTS.md` §10).
   protocol.
 - **Highlights:** EMQX with TLS + ACL, `apps/ingest/mqtt` first, then
   one adapter per protocol; gateway model + `bms.gateways` filled in;
-  buffer + backpressure rules from `docs/AGENTS.production.md` §7.
+  buffer + backpressure rules from `docs/AGENTS.production.md` §7 — **the
+  host side of those rules shipped 2026-09-06 (`F1.10`, ADR 0016 Amendment
+  4)**: reconnect backoff since `F1.1`, and now a disk tier that spills a
+  failed database write to a 1 h / 256 MiB buffer and replays it.
 
 #### Phase 2 Sprint 0 — Real ingestion readiness
 - **Status:** complete — Path B selected for now
@@ -1113,9 +1116,11 @@ Process (`AGENTS.md` §10).
   precisely the strangler failure mode Resolved decision 4 named.
 - **Known limits carried forward:** reload refreshes point *mappings* only (a
   new RTU or a changed endpoint needs a restart); RTUs sharing an endpoint share
-  credentials until `F1.7`; a batch lost to a failed write is gone until `F1.10`
-  adds disk buffering; telemetry authenticity rests entirely on broker ACLs,
-  which `F1.7` should carry in its scope.
+  credentials until `F1.7`; ~~a batch lost to a failed write is gone until `F1.10`
+  adds disk buffering~~ ✅ **`F1.10` (2026-09-06)** — a failed write now spills
+  the batch to a disk tier under the supervisor and replays it when the
+  database returns, bounded at 1 h and 256 MiB; telemetry authenticity rests
+  entirely on broker ACLs, which `F1.7` should carry in its scope.
 - ~~**Owed:** the AGENTS.md promotion (ADR 0016 Resolved decision 8)~~ ✅
   **cleared** — the §2 *Ingest adapters* and *Real ingestion* rows, the §3 tree,
   §6 and the §8 "also promoted" paragraph now describe the host, and §6 gained a
