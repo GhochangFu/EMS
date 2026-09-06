@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertActiveAndMetadataDiffs,
+  assertARetiredRtuIsAcceptedOnlyWhereTheRowAlreadyPointsAtIt,
   assertAssetNameIsInformationalAndCountsAddUp,
   assertBlankActiveOnANewRowIsUntouched,
   assertBlankRtuCodeFollowsTheSourceKindRule,
@@ -53,5 +54,9 @@ describe("F2.7 — planMappingSheet, steps 5-15 against a location snapshot (ADR
 
   it("treats asset_name as informational and lands every row in exactly one bucket", () => {
     assertAssetNameIsInformationalAndCountsAddUp();
+  });
+
+  it("accepts a retired RTU's code only where the existing row already points at it (correction 39)", () => {
+    assertARetiredRtuIsAcceptedOnlyWhereTheRowAlreadyPointsAtIt();
   });
 });

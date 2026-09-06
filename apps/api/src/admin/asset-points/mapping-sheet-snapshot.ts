@@ -72,7 +72,9 @@ export type ExportSnapshot = {
 
 /**
  * What the planner needs on top of the export's picture: the **active** RTUs
- * by code (step 9 resolves `rtu_code` against these) and every existing row's
+ * by code (step 9 resolves `rtu_code` against these, falling back to
+ * `rtuCodesById` for the one case correction 39 admits — a retired gateway the
+ * existing row is already wired to) and every existing row's
  * `pointKey` by `(assetId, sourceDataKey)` (step 14's check against the
  * location's stored keys). A `PlanSnapshot` is an `ExportSnapshot`, so one
  * value serves both — which is what `assertExportedRowsPlanAsIdentity` relies on.

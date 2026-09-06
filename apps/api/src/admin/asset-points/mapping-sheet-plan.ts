@@ -159,10 +159,21 @@ function evaluateRow(row: ParsedMappingRow, snapshot: PlanSnapshot): RowOutcome 
     );
   }
 
-  // Step 9 — rtu_code resolves to an active RTU of this location
+  // Step 9 — rtu_code resolves to an active RTU of this location, or (correction
+  // 39) to the RETIRED one this very row is already wired to.
+  //
+  // `rtusByCode` is the active set and `rtuCodesById` is every RTU of the
+  // location, so a row whose gateway was deactivated after it was mapped still
+  // *exports* that code and would fail this step on re-import — decision 7's
+  // round trip broken for a row nobody edited. The exception is scoped as
+  // narrowly as it can be: the code must resolve to the id already stored on
+  // this row, which admits "no change" and refuses both a create and a re-wire.
   let rtuId: string | null = null;
   if (cells.rtu_code !== "") {
     rtuId = snapshot.rtusByCode.get(cells.rtu_code) ?? null;
+    if (rtuId === null && existing?.rtuId != null && snapshot.rtuCodesById.get(existing.rtuId) === cells.rtu_code) {
+      rtuId = existing.rtuId;
+    }
     if (rtuId === null) {
       return error(row, "rtu_code", "rtu_not_found", `No active RTU with code '${cells.rtu_code}' in this location`);
     }

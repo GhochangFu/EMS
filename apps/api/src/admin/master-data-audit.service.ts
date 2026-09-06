@@ -7,7 +7,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 
-type AuditInput = {
+export type AuditInput = {
   actor: Pick<JwtPayload, "sub" | "email">;
   action: string;
   entityType: string;
@@ -55,6 +55,9 @@ type AuditInput = {
   reason?: string;
   payload?: Record<string, unknown>;
 };
+
+/** Rows per `INSERT` in {@link MasterDataAuditService.writeMany} — see its docblock for the parameter arithmetic. */
+const AUDIT_INSERT_CHUNK = 500;
 
 /** Writes audit rows for master-data mutations. */
 @Injectable()
@@ -120,5 +123,79 @@ export class MasterDataAuditService {
       reason: input.reason ?? null,
       payload: input.payload ?? null,
     });
+  }
+
+  /**
+   * `F2.7` (Q-G) — many audit rows for one request: **one** actor lookup and
+   * one multi-row insert per chunk.
+   *
+   * The mapping-sheet commit writes a row per sheet line, and ADR 0056 decision
+   * 7 asks for the same per-row audit trail the single-row routes leave. Calling
+   * {@link write} in a loop would do that at two round trips per row — 6,000 for
+   * a 3,000-row sheet, half of them re-resolving an actor that cannot change
+   * inside one request.
+   *
+   * Everything {@link write}'s docblock says about `executor` and
+   * `organizationId` holds here unchanged, and applies to every input at once:
+   * pass the enclosing `withTenant` transaction, and stamp it with that
+   * transaction's own organization. A caller mixing organizations in one array
+   * would have every row past the first refused by `0048`'s strict `WITH CHECK`,
+   * so the actor guard below is the only extra rule this method adds.
+   *
+   * **An empty array writes nothing and never touches the database** — a commit
+   * of a sheet that changes nothing (the identity round trip) is exactly that
+   * case, and `insert().values([])` is a runtime error rather than a no-op.
+   */
+  async writeMany(inputs: readonly AuditInput[], executor: BmsDb = this.db): Promise<void> {
+    const [first] = inputs;
+    if (first === undefined) {
+      return;
+    }
+
+    // One request has one actor. Resolving from the first input and asserting
+    // the rest match is what makes the single lookup safe: a caller batching two
+    // actors would otherwise have every row attributed to whichever came first,
+    // silently and in the audit trail of all places.
+    const mixed = inputs.find(
+      (input) => input.actor.sub !== first.actor.sub || input.actor.email !== first.actor.email,
+    );
+    if (mixed !== undefined) {
+      throw new Error(
+        "MasterDataAuditService.writeMany resolves one actor for the whole batch; " +
+          "these inputs name more than one. Split them, or use write().",
+      );
+    }
+
+    const [actorRow] = await this.fleetDb
+      .select({ id: users.id })
+      .from(users)
+      .where(or(eq(users.id, first.actor.sub), eq(users.email, first.actor.email)))
+      .limit(1);
+    const actorId = actorRow?.id ?? null;
+
+    // Chunked: `pg` binds one parameter per column per row, and Postgres refuses
+    // a statement with more than 65,535 of them. Seven columns × 20,000 rows
+    // (`MAX_IMPORT_ROWS`) is 140,000, so an unchunked insert would fail on a
+    // large sheet only — the worst size for a defect to appear at.
+    //
+    // The row mapping stays **at the insert**, not hoisted above the loop:
+    // `tests/e7.1c-audit-log-organization-population.test.ts` reads the 600
+    // characters after every `insert(auditLog).values(` and demands
+    // `organizationId` among them, and hoisting would put this method's stamp
+    // out of its view — a structural gate reporting a real omission it could no
+    // longer see.
+    for (let i = 0; i < inputs.length; i += AUDIT_INSERT_CHUNK) {
+      await executor.insert(auditLog).values(
+        inputs.slice(i, i + AUDIT_INSERT_CHUNK).map((input) => ({
+          organizationId: input.organizationId,
+          actorId,
+          action: input.action,
+          entityType: input.entityType,
+          entityId: input.entityId,
+          reason: input.reason ?? null,
+          payload: input.payload ?? null,
+        })),
+      );
+    }
   }
 }

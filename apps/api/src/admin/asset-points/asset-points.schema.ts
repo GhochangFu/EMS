@@ -76,3 +76,29 @@ export const updateAssetPointBodySchema = z
 
 export type CreateAssetPointBody = z.infer<typeof createAssetPointBodySchema>;
 export type UpdateAssetPointBody = z.infer<typeof updateAssetPointBodySchema>;
+
+/**
+ * `F2.7` / ADR 0056 decisions 6 and 7 — the one parameter all three
+ * mapping-sheet routes take. The sheet is a **location** document: the export
+ * lists one location's assets, the preview and commit resolve every
+ * `asset_code` against that location's own set, and the whole scope check is
+ * `canManageLocation` on this id.
+ *
+ * `.strict()`, so a caller who spells it `location_id` or sends `assetId`
+ * beside it gets a 400 rather than a whole-location export they did not ask
+ * for. The two `POST` routes carry the file in a multipart part and this in the
+ * query string, so this schema is parsed from `{ locationId }` rather than from
+ * a body — there is no body to be strict about.
+ *
+ * Declared here, in the schema file, because ADR 0029's registry can only see
+ * schemas that live in a `*.schema.ts` (`tests/adr-0029-openapi-contract.test.ts`
+ * enforces it), and because `F2.7`'s PR 1 compliance review removed an earlier
+ * copy of it: it belongs with the route it validates, not ahead of it.
+ */
+export const mappingSheetQuerySchema = z
+  .object({
+    locationId: z.string().uuid(),
+  })
+  .strict();
+
+export type MappingSheetQuery = z.infer<typeof mappingSheetQuerySchema>;

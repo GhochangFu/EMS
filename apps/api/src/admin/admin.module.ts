@@ -7,6 +7,7 @@ import { AssetPointCalcOverrideController } from "./asset-points/asset-point-cal
 import { AssetPointCalcOverrideService } from "./asset-points/asset-point-calc-override.service";
 import { AssetPointsAdminController } from "./asset-points/asset-points.controller";
 import { AssetPointsAdminService } from "./asset-points/asset-points.service";
+import { MappingSheetService } from "./asset-points/mapping-sheet.service";
 import { AssetTemplateInstantiationService } from "./asset-templates/asset-templates-instantiate.service";
 import { AssetTemplateMigrationService } from "./asset-templates/asset-templates-migrate.service";
 import { AssetTemplatesStockService } from "./asset-templates/asset-templates-stock.service";
@@ -93,6 +94,7 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     AssetGroupsAdminService,
     AssetsAdminService,
     AssetPointsAdminService,
+    MappingSheetService,
     AssetPointCalcOverrideService,
     PointKeysAdminService,
     AssetRolesAdminService,

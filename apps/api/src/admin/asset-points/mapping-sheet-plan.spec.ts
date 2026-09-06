@@ -131,6 +131,11 @@ function plan(dataRows: Cell[][]): MappingSheetPlan {
   return planMappingSheet(parsed(dataRows), snapshot());
 }
 
+/** The same parse, against a snapshot the caller has varied — used by the retired-RTU cases. */
+function planWith(dataRows: Cell[][], snap: PlanSnapshot): MappingSheetPlan {
+  return planMappingSheet(parsed(dataRows), snap);
+}
+
 function summary(p: MappingSheetPlan): string {
   return JSON.stringify({
     creates: p.creates.length,
@@ -395,4 +400,78 @@ export function assertAssetNameIsInformationalAndCountsAddUp(): void {
   assert(JSON.stringify(mixed.errors.map((e) => e.row)) === JSON.stringify([2, 7]), `errors in row order, got ${summary(mixed)}`);
   assert(mixed.previewCreates.length === mixed.creates.length && mixed.previewUpdates.length === mixed.updates.length, "the preview lists mirror the write lists");
   assert(mixed.updates[0]?.row === 4 && mixed.creates[0]?.row === 6, "creates and updates carry their rows");
+}
+
+/** A retired gateway, present in `rtuCodesById` (it is still named by the row it feeds) and absent from `rtusByCode`. */
+const R3 = "r3";
+const RETIRED_CODE = "WC-RTU-RETIRED";
+
+/**
+ * The base snapshot plus a retired RTU and one existing `measured` row wired to
+ * it — varied locally rather than in the shared fixture, so the counts every
+ * other case asserts do not move.
+ */
+function retiredRtuSnapshot(): PlanSnapshot {
+  const base = snapshot();
+  const wiredToRetired: ExistingRow = {
+    id: pointId(8),
+    assetId: "a1",
+    pointKey: "temp",
+    sourceKind: "measured",
+    rtuId: R3,
+    sourceDataKey: "TX01_TEMP",
+    unit: null,
+    active: true,
+    metadata: FIVE_NULL,
+  };
+  return {
+    ...base,
+    // Every RTU of the location, retired ones included — this is what lets the
+    // export still name the gateway the row is actually wired to.
+    rtuCodesById: new Map([...base.rtuCodesById, [R3, RETIRED_CODE]]),
+    // `rtusByCode` stays the ACTIVE set: step 9's own wording.
+    existingByAssetPoint: new Map([...base.existingByAssetPoint, [assetPointKey("a1", "temp"), wiredToRetired]]),
+    existingByAssetSource: new Map([...base.existingByAssetSource, [assetSourceKey("a1", "TX01_TEMP"), "temp"]]),
+  };
+}
+
+/**
+ * Correction 39 — a retired RTU's code stands where the row already points at
+ * it, and nowhere else.
+ *
+ * `rtusByCode` holds only active RTUs (step 9's wording) while `rtuCodesById`
+ * holds every one, so an existing row wired to a gateway that was later
+ * deactivated **exports its code** and, without this rule, fails step 9 on
+ * re-import — breaking decision 7's round trip for that row through no edit of
+ * the author's. The conventional default: accept the code as "no change", and
+ * refuse it for a create or a re-wire, where it would newly bind live telemetry
+ * to a gateway somebody retired on purpose.
+ */
+export function assertARetiredRtuIsAcceptedOnlyWhereTheRowAlreadyPointsAtIt(): void {
+  const snap = retiredRtuSnapshot();
+
+  // (1) the row that already points at it, restated — unchanged, no error.
+  const restated = planWith(
+    [row({ point_key: "temp", rtu_code: RETIRED_CODE, source_data_key: "TX01_TEMP", active: "" })],
+    snap,
+  );
+  assert(
+    restated.unchanged === 1 && restated.errors.length === 0 && restated.updates.length === 0 && restated.creates.length === 0,
+    `a row restating its own retired gateway is unchanged, got ${summary(restated)}`,
+  );
+
+  // (2) a create naming the same code — refused. `active` is TRUE on purpose:
+  // a blank one would stop at step 7 as an untouched suggestion and report
+  // nothing at all, which would make this case vacuous.
+  const created = planWith(
+    [row({ asset_code: "TX02", asset_name: "Transformer 2", point_key: "temp", rtu_code: RETIRED_CODE, source_data_key: "TX02_TEMP", active: "TRUE" })],
+    snap,
+  );
+  const createMessage = onlyError(created, "rtu_not_found", "rtu_code", "a create naming a retired RTU");
+  assert(createMessage.includes(RETIRED_CODE), `the refusal names the code, got '${createMessage}'`);
+
+  // (3) a re-wire of a row that points at a LIVE gateway — refused too, so the
+  // exception is scoped to "this row already had it" and not to the code.
+  const rewired = planWith([row({ point_key: "kw", rtu_code: RETIRED_CODE, source_data_key: "TX01_KW" })], snap);
+  onlyError(rewired, "rtu_not_found", "rtu_code", "a re-wire onto a retired RTU");
 }
