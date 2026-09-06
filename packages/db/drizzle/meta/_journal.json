@@ -456,6 +456,13 @@
       "when": 1788705366591,
       "tag": "0065_notification_deliveries_dedupe_index",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1788708536104,
+      "tag": "0066_alarm_lifecycle",
+      "breakpoints": true
     }
   ]
 }

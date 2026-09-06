@@ -25,13 +25,16 @@ import { bytea } from "./column-types";
  * Detection and response: automation rules, the alarms they raise, and the
  * notifications those alarms send.
  *
- * **Why these ten tables are one module and not three.** They form a cycle that
- * cannot be cut by domain. `alarms.rule_id` references
+ * **Why these fourteen tables are one module and not three.** They form a cycle
+ * that cannot be cut by domain. `alarms.rule_id` references
  * `automation_rules.id` (ADR 0032), and `notification_deliveries.alarm_id`
  * references `alarms.id` — so rules depend on alarms and alarms depend on
  * rules. Drizzle's `() =>` callbacks are lazy, so splitting them would compile
  * and would run; it would also leave two modules importing each other, which is
  * a hazard the next person has to re-derive. One module states the cycle once.
+ * The four `alarm_escalation_*` tables (ADR 0057 decision 7, migration `0066`)
+ * sit at the end of the file: they reference `notification_channels` and
+ * `alarm_severities`, and nothing references them back.
  *
  * Every reference OUT of this module points at `bms-schema.ts`, never back.
  * That is what keeps the split acyclic at module level.
@@ -67,11 +70,24 @@ export const alarms = bmsSchema.table("alarms", {
     .defaultNow(),
   acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
   acknowledgedBy: uuid("acknowledged_by").references(() => users.id),
+  // ADR 0057 decision 1 (F3.10, migration 0066). An alarm is ACTIVE while
+  // `cleared_at IS NULL`; acknowledgement is an annotation, not a closure. The
+  // lifecycle sweep is the one writer of both stamps (ADR 0033 keeps
+  // `AlarmRaiser` the one raiser). `0066` backfilled `cleared_at =
+  // acknowledged_at` on every row acknowledged under the old predicate.
+  clearedAt: timestamp("cleared_at", { withTimezone: true }),
+  // Decision 5: NULL while the latest sample matches (or is stale); the moment
+  // the samples first went non-matching otherwise. `cleared_at` is stamped
+  // once `now() - normal_since` reaches the rule's hold.
+  normalSince: timestamp("normal_since", { withTimezone: true }),
   // ADR 0033 / F3.6, migration 0032. Nullable — a historical alarm raised
   // before this column existed, or by the pre-merge hardcoded ladder, cannot
   // always be attributed to a rule. `alarms_open_per_rule_uidx` (partial,
-  // `WHERE acknowledged_at IS NULL AND rule_id IS NOT NULL`) is what makes the
-  // alarm-raise dedupe a constraint instead of a SELECT-then-INSERT race.
+  // `WHERE cleared_at IS NULL AND rule_id IS NOT NULL` since `0066` — it was
+  // `acknowledged_at IS NULL` from `0032` to `0065`) is what makes the
+  // alarm-raise dedupe a constraint instead of a SELECT-then-INSERT race: an
+  // acknowledged alarm whose condition still holds does not re-raise; a new
+  // row opens only after the previous one clears.
   ruleId: uuid("rule_id").references(() => automationRules.id),
 });
 
@@ -92,8 +108,8 @@ export const alarmSkills = bmsSchema.table("alarm_skills", {
 
 /**
  * ADR 0034 (`E2.1`) — one row per alarm, a companion table to `bms.alarms`
- * rather than new columns on it, so F3.10's pending `cleared_at` addition and
- * this one never touch the same table in parallel.
+ * rather than new columns on it, so F3.10's `cleared_at` addition (which
+ * landed in `0066`) and this one never touched the same table in parallel.
  *
  * `alarmId` is UNIQUE: exactly one enrichment per alarm instance, not a
  * history of edits — an edit overwrites the row; `updatedBy`/`updatedAt`
@@ -193,6 +209,11 @@ export const automationRules = bmsSchema.table("automation_rules", {
   // about — and a nullable foreign key permits exactly that, since NULL is not
   // checked against the referenced table.
   severity: varchar("severity", { length: 64 }).references(() => alarmSeverities.code),
+  // ADR 0057 decision 3 (F3.10, migration 0066). Nullable on purpose, the
+  // `F4.46` null discipline: NULL means the 120 s default, substituted where
+  // the value is consumed (`DEFAULT_CLEAR_HOLD_SECONDS`), never on the write
+  // path. No CHECK — the 1..86 400 bound is the Zod schema's (0062's split).
+  clearHoldSeconds: integer("clear_hold_seconds"),
   condition: jsonb("condition").notNull().default({}),
   action: jsonb("action").notNull().default({}),
   lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }),
@@ -293,12 +314,17 @@ export const ruleNotifications = bmsSchema.table(
 
 /**
  * One row per dispatch attempt, including every skip. History, not
- * configuration: nothing cascades into it. Three indexes, none mirrored
+ * configuration: nothing cascades into it. Four indexes, none mirrored
  * here, following `alarmSeverities` — the migrations own them:
- * `(channel_id, attempted_at DESC)` and `(attempted_at DESC)` from `0038`,
- * and the partial `(channel_id, dedupe_key) WHERE status = 'skipped_deduped'`
- * from `0065`, added once `NotificationsService.hasRecordedSkip` gave
- * `dedupe_key` its first reader (`F3.46`, 0038's own rule in reverse).
+ * `(channel_id, attempted_at DESC)` and `(attempted_at DESC)` from `0038`;
+ * the partial `(channel_id, dedupe_key) WHERE dedupe_key IS NOT NULL`
+ * (`notification_deliveries_channel_key_idx`) and the partial `(alarm_id)
+ * WHERE alarm_id IS NOT NULL` (`notification_deliveries_alarm_idx`) from
+ * `0066`, for `eventDeliveryBlocked` and `sentChannelIdsForAlarm` (`F3.10`,
+ * 0038's own rule: the reader adds the index). `0065`'s
+ * `(channel_id, dedupe_key) WHERE status = 'skipped_deduped'`, added for
+ * `hasRecordedSkip` (`F3.46`), was dropped by `0066`: the channel-key index
+ * has the same key columns and serves that read too.
  */
 export const notificationDeliveries = bmsSchema.table("notification_deliveries", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -328,4 +354,94 @@ export const notificationDeliveries = bmsSchema.table("notification_deliveries",
   attemptedAt: timestamp("attempted_at", { withTimezone: true }).notNull().defaultNow(),
   error: text("error"),
 });
+
+/**
+ * F3.10 escalation profiles (ADR 0057 decision 7) — mirrors migration
+ * `0066_alarm_lifecycle.sql`. The migration is the source of truth; this is
+ * the typed view of it. Read that file for the policy legs (a parent leg on
+ * `defaults.profile_id`, none on `step_channels.channel_id`) and the
+ * foreign-key actions; constraint names below are the migration's, so a
+ * service can translate a 23503/23505 by name.
+ *
+ * A profile is an ordered list of steps, attached by severity per
+ * organization. Tenant-scoped with an own-column policy; unique per
+ * organization and code (`alarm_escalation_profiles_org_code_key`).
+ */
+export const alarmEscalationProfiles = bmsSchema.table(
+  "alarm_escalation_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    code: varchar("code", { length: 64 }).notNull(),
+    name: varchar("name", { length: 128 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique("alarm_escalation_profiles_org_code_key").on(table.organizationId, table.code)],
+);
+
+/**
+ * One step of a profile: after `afterMinutes` unacknowledged, notify the
+ * step's channels once. Junction-shaped (no `organization_id`): its policy
+ * reads through the profile, and it cascades with it — configuration follows
+ * its parent, as `ruleNotifications` does.
+ */
+export const alarmEscalationSteps = bmsSchema.table(
+  "alarm_escalation_steps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => alarmEscalationProfiles.id, { onDelete: "cascade" }),
+    stepNo: integer("step_no").notNull(),
+    afterMinutes: integer("after_minutes").notNull(),
+  },
+  (table) => [unique("alarm_escalation_steps_profile_step_key").on(table.profileId, table.stepNo)],
+);
+
+/**
+ * Which channels a step notifies — the `ruleNotifications` join shape.
+ * Cascades with the step; `channelId` is NO ACTION, so a channel a step still
+ * names cannot be deleted (0038's reasoning). The channel's organization is
+ * NOT in the policy: a fleet-wide NULL-org channel is a legitimate target,
+ * and the service gates channel scope in code.
+ */
+export const alarmEscalationStepChannels = bmsSchema.table(
+  "alarm_escalation_step_channels",
+  {
+    stepId: uuid("step_id")
+      .notNull()
+      .references(() => alarmEscalationSteps.id, { onDelete: "cascade" }),
+    channelId: uuid("channel_id")
+      .notNull()
+      .references(() => notificationChannels.id),
+  },
+  (table) => [primaryKey({ columns: [table.stepId, table.channelId] })],
+);
+
+/**
+ * The per-organization severity map: which profile a severity escalates
+ * through. `severity` references `alarm_severities.code`, so the database
+ * validates it and `NotificationsModule` needs no `VocabulariesModule` import
+ * (the edge stays acyclic). `profileId` is NO ACTION: a profile a severity
+ * still maps to cannot be deleted. Own-column policy plus a parent leg on
+ * `profileId` — a foreign key is checked with row security off.
+ */
+export const alarmEscalationDefaults = bmsSchema.table(
+  "alarm_escalation_defaults",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    severity: varchar("severity", { length: 64 })
+      .notNull()
+      .references(() => alarmSeverities.code),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => alarmEscalationProfiles.id),
+  },
+  (table) => [primaryKey({ columns: [table.organizationId, table.severity] })],
+);
 

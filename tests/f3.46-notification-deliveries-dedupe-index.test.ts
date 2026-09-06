@@ -109,7 +109,7 @@ describe("F3.46 notification_deliveries dedupe skip index (ADR 0041 Amendment 2)
     const body = service.slice(start, end);
     expect(
       body.includes("eq(notificationDeliveries.dedupeKey"),
-      "hasRecordedSkip no longer filters on dedupe_key, so 0065's index has no reader",
+      "hasRecordedSkip no longer filters on dedupe_key, the reader 0065's index was added for",
     ).toBe(true);
     expect(
       body.includes('eq(notificationDeliveries.status, "skipped_deduped")'),
