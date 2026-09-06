@@ -442,6 +442,13 @@
       "when": 1788691325055,
       "tag": "0063_point_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1788701172268,
+      "tag": "0064_point_metadata_finite_check",
+      "breakpoints": true
     }
   ]
 }

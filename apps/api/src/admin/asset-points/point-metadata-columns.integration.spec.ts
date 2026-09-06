@@ -219,7 +219,7 @@ async function assertInsertRefused(
 /** A seeded template to hang a probe `template_points` row off. */
 async function seededTemplate(pool: pg.Pool): Promise<{ id: string; organizationId: string }> {
   const { rows } = await pool.query<{ id: string; organization_id: string }>(
-    `SELECT id, organization_id FROM bms.asset_templates LIMIT 1`,
+    `SELECT id, organization_id FROM bms.asset_templates ORDER BY code, version LIMIT 1`,
   );
   assert(rows.length === 1, "bms.asset_templates is empty. Run `pnpm db:seed` before this suite.");
   return { id: rows[0].id, organizationId: rows[0].organization_id };
@@ -300,27 +300,77 @@ export async function assertAssetPointsChecksRefuseBadRows(pool: pg.Pool): Promi
 }
 
 /**
- * No pre-existing row changed meaning, and the check is not vacuous. On the
- * seeded database every `template_points` and `asset_points` row reads `NULL`
- * across the five, and both tables have more than zero rows.
+ * The suite is not vacuous: both tables have rows. **Nothing here asserts that
+ * every row reads `NULL` across the five** — an earlier draft did, and the PR 1
+ * reviews showed why it cannot: the feature this migration serves *writes*
+ * those columns, so the first template default set through the Points tab
+ * would have made this suite permanently red on every real database while CI,
+ * seeding a fresh database per run, stayed green. Additivity is already the
+ * `column_default IS NULL` assertion in
+ * {@link assertPointMetadataColumnsExistAndAreNullable}.
  */
-export async function assertExistingRowsReadNullAndAreNonVacuous(pool: pg.Pool): Promise<void> {
-  const predicate = POINT_METADATA_COLUMNS.map((c) => `${c.name} IS NOT NULL`).join(" OR ");
+export async function assertBothTablesAreNonVacuous(pool: pg.Pool): Promise<void> {
   for (const table of ["template_points", "asset_points"] as const) {
-    const { rows } = await pool.query<{ total: string; violations: string }>(
-      `SELECT count(*) AS total, count(*) FILTER (WHERE ${predicate}) AS violations
-         FROM bms.${table}`,
-    );
+    const { rows } = await pool.query<{ total: string }>(`SELECT count(*) AS total FROM bms.${table}`);
     const [row] = rows;
     assert(row !== undefined, `count query on bms.${table} returned no row`);
     assert(
       Number(row.total) > 0,
       `bms.${table} is empty, so this suite proved nothing. Run \`pnpm db:seed\` before this suite.`,
     );
-    assert(
-      Number(row.violations) === 0,
-      `${row.violations} of ${row.total} bms.${table} rows carry a point-metadata value. ` +
-        "Migration 0063 must be additive — NULL means inherit / no override.",
-    );
   }
+}
+
+/**
+ * Migration `0064` — the four numeric columns refuse `NaN` and both infinities
+ * on both tables. Postgres sorts `NaN` above every float8, so `0063`'s
+ * `eng_min < eng_max` and `scale_multiplier <> 0` both *accept* `NaN`; only the
+ * API's `.finite()` kept it out until `0064` closed the door for direct writers
+ * (the `0031` precedent for `telemetry.point_values`). Probed in both
+ * directions here: `NaN` and `Infinity` refused with the constraint's own name.
+ */
+export async function assertFiniteChecksRefuseNonFiniteValues(pool: pg.Pool): Promise<void> {
+  const { rows: constraints } = await pool.query<{ conname: string; table: string }>(
+    `SELECT conname, conrelid::regclass::text AS table
+       FROM pg_constraint
+      WHERE conname IN ('template_points_point_metadata_finite_check', 'asset_points_point_metadata_finite_check')
+      ORDER BY conname`,
+  );
+  assert(
+    constraints.length === 2,
+    `expected both point_metadata_finite_check constraints, found ${JSON.stringify(constraints)}`,
+  );
+
+  const template = await seededTemplate(pool);
+  const asset = await seededAsset(pool);
+  const prefix = `f27-finite-${randomUUID().slice(0, 8)}`;
+
+  await assertInsertRefused(
+    pool,
+    `INSERT INTO bms.template_points (organization_id, template_id, point_key, scale_multiplier)
+     VALUES ($1, $2, $3, 'NaN'::float8)`,
+    [template.organizationId, template.id, `${prefix}-nan`],
+    "template_points_point_metadata_finite_check",
+  );
+  await assertInsertRefused(
+    pool,
+    `INSERT INTO bms.template_points (organization_id, template_id, point_key, eng_min, eng_max)
+     VALUES ($1, $2, $3, 0, 'Infinity'::float8)`,
+    [template.organizationId, template.id, `${prefix}-inf`],
+    "template_points_point_metadata_finite_check",
+  );
+  await assertInsertRefused(
+    pool,
+    `INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key, scale_offset)
+     VALUES ($1, $2, $3, $4, '-Infinity'::float8)`,
+    [asset.organizationId, asset.id, `${prefix}-neg`, `${prefix}-neg-key`],
+    "asset_points_point_metadata_finite_check",
+  );
+  await assertInsertRefused(
+    pool,
+    `INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key, eng_max)
+     VALUES ($1, $2, $3, $4, 'NaN'::float8)`,
+    [asset.organizationId, asset.id, `${prefix}-nan`, `${prefix}-nan-key`],
+    "asset_points_point_metadata_finite_check",
+  );
 }

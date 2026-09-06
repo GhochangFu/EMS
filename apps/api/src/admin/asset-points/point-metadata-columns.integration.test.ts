@@ -5,8 +5,9 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import {
   assertAssetPointsChecksRefuseBadRows,
+  assertBothTablesAreNonVacuous,
   assertColumnsMirrorAcrossTables,
-  assertExistingRowsReadNullAndAreNonVacuous,
+  assertFiniteChecksRefuseNonFiniteValues,
   assertPointMetadataColumnsExistAndAreNullable,
   assertSixCheckConstraintsExist,
   assertTemplatePointsChecksRefuseBadRows,
@@ -56,7 +57,11 @@ describe.skipIf(!connectionString)("bms.template_points / bms.asset_points point
     await assertAssetPointsChecksRefuseBadRows(pool as pg.Pool);
   });
 
-  it("leaves every pre-existing row reading NULL across all five, non-vacuously", async () => {
-    await assertExistingRowsReadNullAndAreNonVacuous(pool as pg.Pool);
+  it("runs against a seeded database — both tables have rows", async () => {
+    await assertBothTablesAreNonVacuous(pool as pg.Pool);
+  });
+
+  it("refuses NaN and both infinities on the four numeric columns of both tables (migration 0064)", async () => {
+    await assertFiniteChecksRefuseNonFiniteValues(pool as pg.Pool);
   });
 });

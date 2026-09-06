@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -152,5 +152,74 @@ describe("F2.7 point-metadata columns and CHECKs (ADR 0056 decisions 1, 2)", () 
         `the ${tableName} drizzle table has no qualityPolicy column`,
       ).toBe(true);
     }
+  });
+});
+
+/**
+ * Migration `0064` — the fourth within-row rule the PR 1 reviews asked for: the
+ * four numeric metadata columns are finite. Postgres sorts `NaN` above every
+ * float8, so `0063`'s `eng_min < eng_max` and `scale_multiplier <> 0` both
+ * admit `NaN`; the `0031` range form (`> '-Infinity' AND < 'Infinity'`) is
+ * the one that refuses it, and both infinities with it.
+ */
+describe("F2.7 point-metadata finite CHECKs (migration 0064, ADR 0056 decision 2)", () => {
+  const FINITE_MIGRATION_REL = "packages/db/drizzle/0064_point_metadata_finite_check.sql";
+  const FINITE_CONSTRAINTS = [
+    { table: "template_points", name: "template_points_point_metadata_finite_check" },
+    { table: "asset_points", name: "asset_points_point_metadata_finite_check" },
+  ] as const;
+  const NUMERIC_COLUMNS = ["scale_multiplier", "scale_offset", "eng_min", "eng_max"] as const;
+
+  it("0064_point_metadata_finite_check.sql is present in packages/db/drizzle", () => {
+    expect(existsSync(join(repoRoot, FINITE_MIGRATION_REL)), `${FINITE_MIGRATION_REL} is missing.`).toBe(true);
+  });
+
+  it("guards each of the two constraint names inside an IF NOT EXISTS ... conrelid check", () => {
+    const sql = sqlOnly(read(FINITE_MIGRATION_REL));
+    for (const { table, name } of FINITE_CONSTRAINTS) {
+      const guard = new RegExp(
+        `IF NOT EXISTS \\([^)]*conname = '${name}'[^)]*conrelid = 'bms\\.${table}'::regclass[^)]*\\)`,
+        "s",
+      );
+      expect(guard.test(sql), `constraint ${name} on bms.${table} is not guarded by conname AND conrelid.`).toBe(true);
+      expect(sql.split(`ADD CONSTRAINT ${name}`).length - 1, `${name} must be added exactly once.`).toBe(1);
+    }
+  });
+
+  it("bounds every numeric column on both tables with the 0031 range form, NULL-permissive", () => {
+    const sql = sqlOnly(read(FINITE_MIGRATION_REL));
+    for (const column of NUMERIC_COLUMNS) {
+      const clause = new RegExp(
+        `\\(${column} IS NULL OR \\(${column} > '-Infinity'::float8 AND ${column} < 'Infinity'::float8\\)\\)`,
+        "g",
+      );
+      const occurrences = (sql.match(clause) ?? []).length;
+      expect(
+        occurrences,
+        `the finite clause for ${column} must appear once per table (2), found ${occurrences}. ` +
+          "A `col = col` guard would be a no-op: PostgreSQL defines NaN = NaN as TRUE.",
+      ).toBe(2);
+    }
+    expect(/quality_policy\s*[<>]/.test(sql), "quality_policy is a varchar and has no finite rule.").toBe(false);
+    expect(/\bDEFAULT\b/.test(sql), "migration 0064 must not add a DEFAULT.").toBe(false);
+  });
+
+  it("takes the SET ROLE bms_owner / RESET ROLE bracket", () => {
+    const sql = sqlOnly(read(FINITE_MIGRATION_REL));
+    expect(sql.includes("SET ROLE bms_owner;"), "migration 0064 has no SET ROLE bms_owner.").toBe(true);
+    expect(sql.includes("RESET ROLE;"), "migration 0064 has no RESET ROLE.").toBe(true);
+  });
+
+  it("journals migration 0064 with a tag equalling the filename stem, and a when strictly greater than 0063's", () => {
+    const journal = JSON.parse(read(JOURNAL_REL)) as {
+      entries: ReadonlyArray<{ idx: number; when: number; tag: string }>;
+    };
+    const entry63 = journal.entries.find((e) => e.idx === 63);
+    expect(entry63, "journal entry idx 63 (0063_point_metadata) not found").toBeDefined();
+    const stem = FINITE_MIGRATION_REL.split("/").pop()!.replace(/\.sql$/, "");
+    const entry64 = journal.entries.find((e) => e.tag === stem);
+    expect(entry64, `no journal entry with tag "${stem}".`).toBeDefined();
+    expect(entry64?.idx).toBe(64);
+    expect(entry64?.when, "0064's when must be strictly greater than 0063's").toBeGreaterThan(entry63!.when);
   });
 });
