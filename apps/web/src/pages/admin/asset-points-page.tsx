@@ -387,6 +387,13 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             levels={["organization", "location", "rtu", "asset"]}
             selection={selection}
             onNavigate={setSelection}
+            // The bar's default drills *down* the master-data routes: choosing an
+            // organization left this page for its locations list, and choosing
+            // a location for its RTUs — so the location-scoped mapping sheet and
+            // the download button below were unreachable by clicking (PR 2
+            // step 6). This page filters in place, as the template detail and
+            // manual-readings pages already do.
+            syncRoutes={false}
           />
           <input
             className="rounded border px-3 py-1.5 text-sm"
