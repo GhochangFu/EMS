@@ -93,6 +93,10 @@ export const alarmListItemSchema = z.object({
   raisedAt: z.string(),
   acknowledgedAt: z.string().nullable(),
   acknowledgedBy: z.string().nullable(),
+  // F3.10 / ADR 0057 decision 1. Null while the alarm is active; set once the
+  // 30 s sweep observes the condition holding normal for the rule's
+  // `clearHoldSeconds`. Acknowledgement no longer closes an alarm — this does.
+  clearedAt: z.string().nullable(),
   assetCode: z.string(),
   assetName: z.string(),
   siteName: z.string(),
@@ -102,6 +106,7 @@ export const alarmListItemSchema = z.object({
 export const alarmSocketEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("created"), alarm: alarmListItemSchema }),
   z.object({ type: z.literal("acknowledged"), alarm: alarmListItemSchema }),
+  z.object({ type: z.literal("cleared"), alarm: alarmListItemSchema }),
 ]);
 
 // ---------------------------------------------------------------------------
@@ -511,6 +516,8 @@ export const alarmDetailsResponseSchema = z.object({
   raisedAt: z.string(),
   acknowledgedAt: z.string().nullable(),
   acknowledgedBy: z.string().nullable(),
+  // F3.10 / ADR 0057 decision 11: the alarm response gains `clearedAt`.
+  clearedAt: z.string().nullable(),
   ruleId: z.string().nullable(),
   thresholdOperator: automationRuleOperatorSchema.nullable(),
   thresholdValue: z.number().nullable(),
@@ -585,6 +592,11 @@ export const ruleListItemSchema = z.object({
   operator: automationRuleOperatorSchema.nullable(),
   thresholdValue: z.number().nullable(),
   severity: z.string().nullable(),
+  // F3.10 / ADR 0057 decision 16 (D16). `null` means the 120 s default;
+  // the default is applied where the value is consumed
+  // (`DEFAULT_CLEAR_HOLD_SECONDS` in `alarm-lifecycle.ts`), never substituted
+  // on the write path — the same null discipline `F4.46` uses for severity.
+  clearHoldSeconds: z.number().int().nullable(),
   lifecycleStatus: automationRuleLifecycleStatusSchema,
   condition: automationRuleConditionSchema,
   action: automationRuleActionSchema,

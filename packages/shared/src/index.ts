@@ -30,6 +30,7 @@ import type * as D from "./contracts/dashboard";
 import type * as Db from "./contracts/dashboard-builder";
 import type * as Dt from "./contracts/dashboard-templates";
 import type * as E from "./contracts/envelopes";
+import type * as Esc from "./contracts/escalation";
 import type * as He from "./contracts/health";
 import type * as Ms from "./contracts/mapping-sheet";
 import type * as N from "./contracts/notifications";
@@ -613,6 +614,26 @@ export type NotificationChannelDeletedResponse = z.infer<
 >;
 /** `GET` and `PUT /rules/:id/notifications` (plan D1). */
 export type RuleNotificationsResponse = z.infer<typeof E.ruleNotificationsResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// Alarm escalation profiles (`F3.10`, ADR 0057)
+// ---------------------------------------------------------------------------
+/** One escalation step: after N minutes unacknowledged, notify these channels. */
+export type EscalationStepDto = z.infer<typeof Esc.escalationStepDtoSchema>;
+/** One organisation's named escalation profile — an ordered list of steps. */
+export type EscalationProfileDto = z.infer<typeof Esc.escalationProfileDtoSchema>;
+/** Which profile an organisation maps a given alarm severity to. */
+export type EscalationDefaultDto = z.infer<typeof Esc.escalationDefaultDtoSchema>;
+export type EscalationProfilesListResponse = z.infer<
+  typeof E.escalationProfilesListResponseSchema
+>;
+export type EscalationProfileResponse = z.infer<typeof E.escalationProfileResponseSchema>;
+export type EscalationProfileDeletedResponse = z.infer<
+  typeof E.escalationProfileDeletedResponseSchema
+>;
+export type EscalationDefaultsResponse = z.infer<typeof E.escalationDefaultsResponseSchema>;
+// `AlarmLifecycleState` deliberately not here — it is a web derivation (U9),
+// not a response contract.
 
 // ---------------------------------------------------------------------------
 // Re-exported sibling modules
