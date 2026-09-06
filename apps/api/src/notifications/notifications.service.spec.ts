@@ -287,7 +287,7 @@ export async function runNotificationsServiceTests(): Promise<void> {
   // already recorded this". The fallback is today's write — bounded by today's
   // growth — never a send, and never a rejection out of `dispatch`.
   {
-    const { db, recorded, failSkipReads } = fakeDb();
+    const { db, recorded, reads, failSkipReads } = fakeDb();
     const webhook = fakeTransport("webhook", () =>
       Promise.resolve({ status: "sent", error: null }),
     );
@@ -295,6 +295,12 @@ export async function runNotificationsServiceTests(): Promise<void> {
 
     failSkipReads(true);
     const results = await service.dispatch(input({ raised: false }));
+    // Without this line the case passes against a service that never reads:
+    // the flag would do nothing and every assertion below would still hold.
+    assert(
+      reads.skipExists === 1,
+      `the ledger read must have been attempted, got ${reads.skipExists}`,
+    );
     assert(
       results.length === 1 && results[0]?.status === "skipped_deduped",
       `an unreadable ledger still reports the refusal, got ${results

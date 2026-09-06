@@ -156,16 +156,16 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       sent.length === 0,
       `a second sweep over the same unchanged plant sent ${sent.length} notifications`,
     );
+    // This count is the whole claim. A read that failed and fell back to the
+    // write (D2) records a second `skipped_deduped` row, not a `failed` one, so
+    // a fallback on this sweep shows up here as `2 × rules` — there is no other
+    // status to check for it.
     const dedupedAgain = await countDeliveries(pool, channelId as string, "skipped_deduped");
     assert(
       dedupedAgain === rules.rows.length,
       `a second sweep must add no rows: expected still ${rules.rows.length} skipped_deduped ` +
-        `rows, found ${dedupedAgain} — the once-per-key suppression is not holding`,
-    );
-    assert(
-      (await countDeliveries(pool, channelId as string, "failed")) === 0,
-      "no refusal fell back to the write-on-unreadable-ledger path, so the count above is the " +
-        "suppression and not a failed read",
+        `rows, found ${dedupedAgain} — the once-per-key suppression is not holding, or a ` +
+        `ledger read failed and fell back to the write`,
     );
 
     // --- the positive direction ---------------------------------------------
