@@ -671,18 +671,26 @@ export async function runSupervisorBufferTests(): Promise<void> {
     await stopSupervisor(rig.supervisor, rig.fake);
   });
 
-  // ---- J. an idle endpoint sweeps the bounds once a minute ----------------
+  // ---- J. the bounds are swept once a minute, empty buffer or not ----------
 
   await withTempDir(async (dir) => {
     // The age bound is a rolling hour, not a rolling hour of appends. Nothing
     // else calls `enforceBounds` on an endpoint that has stopped producing, so
     // its last segments would sit on the volume for ever.
+    //
+    // And the outage the sweep exists for is not an *idle* endpoint: it is the
+    // broker down **and** the database down. Then `buffered > 0` and nothing
+    // appends, so a sweep that runs only on the drained branch never runs in
+    // the one outage that needs it — the segments age past `maxAgeMs` and are
+    // replayed instead of erased. The sweep therefore runs at the top of every
+    // pass, whatever the buffer holds.
     let sweeps = 0;
+    const state = { buffered: 0 };
     const idle: DiskBufferHandle = {
       protocol: "mqtt",
       endpointKey: ENDPOINT,
       get buffered() {
-        return 0;
+        return state.buffered;
       },
       get dropped() {
         return 0;
@@ -696,19 +704,22 @@ export async function runSupervisorBufferTests(): Promise<void> {
     const rig = await makeRig(dir, { handle: idle, failing: false });
     await rig.connect();
 
-    await settle(() => sweeps === 1, "the first idle pass sweeps");
+    await settle(() => sweeps === 1, "the first pass sweeps");
     await rig.fake.flush(2);
     assert(sweeps === 1, `and no later pass sweeps until a minute has passed, got ${sweeps}`);
 
+    // The broker is down and the database with it: a backlog on disk, nothing
+    // appending to it, and nothing the replay loop can hand the database.
+    state.buffered = 3;
     rig.advanceMs(61_000);
     await rig.fake.flush(1);
-    await settle(() => sweeps === 2, "a minute later, one more sweep");
+    await settle(() => sweeps === 2, "a minute later the sweep still runs, with a non-empty buffer");
     await rig.fake.flush(2);
     assert(sweeps === 2, `still one per minute, got ${sweeps}`);
 
     rig.advanceMs(61_000);
     await rig.fake.flush(1);
-    await settle(() => sweeps === 3, "and again on the next minute");
+    await settle(() => sweeps === 3, "and again on the next minute, still not drained");
 
     await stopSupervisor(rig.supervisor, rig.fake);
   });
@@ -719,9 +730,11 @@ export async function runSupervisorBufferTests(): Promise<void> {
     // The window between a write failing and its batch reaching disk. The
     // replay loop's safety valve reads `buffered === 0` and would close the
     // breaker inside it; `spilling` is what says "a batch is on its way".
-    // Deleting `spilling === 0 &&` from the valve makes this block red: the
-    // loop takes the idle branch, never calls `oldest()`, and the only delay
-    // it ever asks for is `drainIdleMs`.
+    // Deleting `spilling === 0 &&` from the valve makes this block red on
+    // `oldestCalls`: the loop takes the drained branch and never asks the
+    // buffer for a segment. `oldestCalls` is the *only* discriminator — both
+    // branches sleep `drainIdleMs` here, which is the point of the second
+    // assertion below.
     let release: ((landed: boolean) => void) | null = null;
     let oldestCalls = 0;
     const deferring: DiskBufferHandle = {
@@ -763,9 +776,18 @@ export async function runSupervisorBufferTests(): Promise<void> {
       "while a spill is in flight the replay loop must not treat the endpoint as " +
         "drained — it asks the buffer for its oldest segment instead",
     );
+    // A spill in flight is not an unreadable segment. `oldest()` resolving
+    // `null` with an empty buffer is the ordinary window, and counting it as a
+    // failed read escalates the §5 backoff meant for one — so the first real
+    // unreadable pass after a busy hour of spills would wait the ceiling
+    // rather than a second.
     assert(
-      rig.fake.delays.includes(1_000),
-      `and it backs off rather than spinning on drainIdleMs: ${rig.fake.delays.join(",")}`,
+      !rig.fake.delays.includes(1_000),
+      `the spill window must not escalate the unreadable backoff: ${rig.fake.delays.join(",")}`,
+    );
+    assert(
+      rig.fake.delays.includes(3),
+      `it yields drainIdleMs and comes round again: ${rig.fake.delays.join(",")}`,
     );
 
     landed(true);

@@ -618,6 +618,17 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
      */
     let unreadableAttempts = 0;
     while (!stopped) {
+      // Above the branch, not inside it. The age bound is a rolling hour, not
+      // a rolling hour of appends, and the outage it exists for is the broker
+      // down *and* the database down: then `buffered > 0`, nothing appends, and
+      // a sweep that only ran on the drained branch would never run at all —
+      // the segments would age past `maxAgeMs` and be replayed rather than
+      // erased. One pass over an in-memory map, once a minute, either way.
+      const sweepAtMs = scheduler.now().getTime();
+      if (lastSweepAtMs === null || sweepAtMs - lastSweepAtMs >= BUFFER_SWEEP_INTERVAL_MS) {
+        lastSweepAtMs = sweepAtMs;
+        await sweepBuffer();
+      }
       if (spilling === 0 && deps.buffer.buffered === 0) {
         // The safety valve. Both bounds erase segments the supervisor never
         // sees, so "the buffer is empty" has to be able to close the breaker
@@ -631,38 +642,36 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
           // — only a write or an append can clear that.
           writePath = "ok";
         }
-        // The age bound is a rolling hour, not a rolling hour of appends. An
-        // endpoint that stops producing — its broker down, its RTU disabled —
-        // holds its last segments until something calls `enforceBounds`, and
-        // on an idle host nothing else does.
-        const nowMs = scheduler.now().getTime();
-        if (lastSweepAtMs === null || nowMs - lastSweepAtMs >= BUFFER_SWEEP_INTERVAL_MS) {
-          lastSweepAtMs = nowMs;
-          await sweepBuffer();
-        }
         await scheduler.sleep(timings.drainIdleMs, stopController.signal);
         continue;
       }
       const segment = await readOldestSegment();
       if (segment === null) {
-        // `oldest()` resolves `null` when a read failed and kept the segment
-        // for the next pass. `drainIdleMs` here was five error lines a second
-        // for as long as the segment stayed unreadable, so this rides the same
-        // §5 backoff the probe does. The store retires a segment it has failed
-        // to read three times, so this is bounded from both ends.
+        if (deps.buffer.buffered === 0) {
+          // The ordinary window between a write failing and its batch reaching
+          // disk: `spilling` held the branch above open, and there is nothing
+          // to replay yet. Nothing is unreadable, so this must neither warn nor
+          // touch the backoff — counting it would escalate the §5 delay on
+          // every spill, and the first genuinely unreadable pass after a busy
+          // hour would then wait the ceiling instead of a second.
+          await scheduler.sleep(timings.drainIdleMs, stopController.signal);
+          continue;
+        }
+        // `oldest()` resolves `null` with a segment still on disk when a read
+        // failed and kept it for the next pass. `drainIdleMs` here was five
+        // error lines a second for as long as the segment stayed unreadable, so
+        // this rides the same §5 backoff the probe does. The store retires a
+        // segment it has failed to read three times, so this is bounded from
+        // both ends — except for a segment the volume refuses to unlink, which
+        // is skipped, logged once by the store, and waits for an operator.
         const delay = backoffDelayMs(unreadableAttempts, random, timings.backoff);
         unreadableAttempts += 1;
-        if (deps.buffer.buffered > 0) {
-          // `null` with an empty buffer is the ordinary window between a write
-          // failing and its batch reaching disk — nothing is unreadable, so
-          // saying so would be a false alarm on every spill.
-          logger.warn("oldest segment unreadable; retrying after backoff", {
-            endpointKey: plan.endpointKey,
-            delayMs: delay,
-            attempt: unreadableAttempts,
-            buffered: deps.buffer.buffered,
-          });
-        }
+        logger.warn("oldest segment unreadable; retrying after backoff", {
+          endpointKey: plan.endpointKey,
+          delayMs: delay,
+          attempt: unreadableAttempts,
+          buffered: deps.buffer.buffered,
+        });
         await scheduler.sleep(delay, stopController.signal);
         continue;
       }

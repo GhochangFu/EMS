@@ -549,48 +549,65 @@ export async function runDiskBufferTests(): Promise<void> {
     assert(handle.buffered === 2, `both appended lines are counted, got ${handle.buffered}`);
   });
 
-  // ---- 15. a refused unlink keeps the record, its bytes and its samples -------
+  // ---- 15. a refused unlink is skipped: the bound bounds, replay goes on ------
 
   await withTempDir(async (dir) => {
     // EROFS after a remount, EPERM, a Windows lock: the file stays. Forgetting
     // it first would subtract its bytes, so the byte bound would stop bounding
     // the file that is still there, and `dropped` would count samples that
-    // never went anywhere.
+    // never went anywhere. The record is kept — and, from then on, *skipped*.
+    // Re-picking it is worse than dropping it: the byte loop would choose the
+    // same record every pass and stop erasing anything at all, `oldest()`
+    // would keep offering the one segment the store cannot get rid of so no
+    // later segment would replay, and the log would carry one `error` line per
+    // pass for as long as the volume refuses.
     const harness = makeHarness();
     const endpointDir = join(dir, "mqtt", ENCODED);
     await mkdir(endpointDir, { recursive: true });
-    const preexisting = `${line(1, START)}${line(2, START)}`;
-    const oldPath = join(endpointDir, `${MINUTE - 5}.jsonl`);
-    await writeFile(oldPath, preexisting);
-    let unlinkAttempts = 0;
+    const refusedPath = join(endpointDir, `${MINUTE - 5}.jsonl`);
+    const nextPath = join(endpointDir, `${MINUTE - 4}.jsonl`);
+    await writeFile(refusedPath, `${line(1, START)}${line(2, START)}`);
+    await writeFile(nextPath, line(3, START));
+    const attempts: string[] = [];
     const fs: BufferFileSystem = {
       ...realFs(),
-      // The probe at open must still work; only a segment is refused.
+      // The probe at open must still work; only one segment is refused.
       unlink: async (path) => {
         if (!String(path).endsWith(".jsonl")) {
           return fsPromises.unlink(path);
         }
-        unlinkAttempts += 1;
-        throw errno("EPERM", "operation not permitted, unlink");
+        attempts.push(String(path));
+        if (String(path) === refusedPath) {
+          throw errno("EPERM", "operation not permitted, unlink");
+        }
+        return fsPromises.unlink(path);
       },
     };
-    const maxBytes = Buffer.byteLength(preexisting) + Buffer.byteLength(line(3, START)) - 1;
+    const attemptsOn = (path: string): number => attempts.filter((row) => row === path).length;
+    // Three lines' worth: the append below takes the store to four, and
+    // erasing the *next-oldest* alone brings it back under.
+    const maxBytes = 3 * Buffer.byteLength(line(1, START));
     const { handle } = await openWithHandle(harness, dir, { fs, maxBytes });
+    assert(handle.buffered === 3, `the scan counted both segments, got ${handle.buffered}`);
 
-    assert(await handle.append([sample(3)]), "the append itself succeeds");
-    assert(unlinkAttempts === 1, `the byte bound tried to erase the oldest segment, got ${unlinkAttempts}`);
-    assert(await exists(oldPath), "the file the volume refused to unlink is still there");
+    assert(await handle.append([sample(4)]), "the append itself succeeds");
+    assert(attemptsOn(refusedPath) === 1, `the bound tried the store's oldest once, got ${attemptsOn(refusedPath)}`);
     assert(
-      handle.dropped === 0,
-      `nothing was dropped — the samples are still on disk, got ${handle.dropped}`,
+      attemptsOn(nextPath) === 1,
+      "and then went on to the next-oldest instead of giving the pass up — a " +
+        "refused unlink must not take the byte bound down with it",
     );
+    assert(await exists(refusedPath), "the file the volume refused to unlink is still there");
+    assert(!(await exists(nextPath)), "the segment the volume did release is gone");
+    assert(handle.dropped === 1, `only the segment that actually went is counted, got ${handle.dropped}`);
     assert(
       handle.buffered === 3,
-      `the kept record's lines still count as buffered, got ${handle.buffered}`,
+      `the kept record's lines still count as buffered, plus the new one, got ${handle.buffered}`,
     );
+    const erased = warnLines(harness, '"bound":"bytes"');
     assert(
-      warnLines(harness, '"bound":"bytes"').length === 0,
-      `an erasure that did not happen must not be logged as one:\n${harness.lines.join("\n")}`,
+      erased.length === 1 && erased[0].includes(`${MINUTE - 4}.jsonl`),
+      `only the erasure that happened is logged as one:\n${harness.lines.join("\n")}`,
     );
     const failures = errorLines(harness, "unlink failed");
     assert(failures.length === 1, `one error line for the refusal:\n${harness.lines.join("\n")}`);
@@ -599,13 +616,131 @@ export async function runDiskBufferTests(): Promise<void> {
       `the error names the segment and the reason: ${failures[0]}`,
     );
 
-    // The bytes are still counted, so the store is still over the cap — which
-    // is the whole point: a second append tries again rather than sailing past
-    // a bound it can no longer see.
-    assert(await handle.append([sample(4)]), "a second append still succeeds");
-    assert(unlinkAttempts === 2, `the bound is still trying, got ${unlinkAttempts} attempts`);
-    assert(errorLines(harness, "unlink failed").length === 2, "each refusal is logged");
-    assert(handle.dropped === 0 && handle.buffered === 4, "still nothing dropped, everything counted");
+    // Replay steps over it. Stalling on the refused record is how one stuck
+    // file holds an endpoint's whole later backlog off the database.
+    const replayed = segment(await handle.oldest(), "replay must not stall on the refused segment");
+    assert(
+      replayed.samples.map((one) => one.value).join(",") === "4",
+      `the segment after the refused one replays, got ${replayed.samples.map((one) => one.value).join(",")}`,
+    );
+    await replayed.commit();
+    assert((await handle.oldest()) === null, "and nothing but the refused record is left to read");
+
+    // Two more appends, and the refusal is still named once: a second refusal
+    // on the same record is silent, or a volume that refuses for ever writes
+    // one `error` line per pass for ever.
+    harness.clock.now = minuteDate(MINUTE + 1);
+    assert(await handle.append([sample(5)]), "a later append still succeeds");
+    harness.clock.now = minuteDate(MINUTE + 2);
+    assert(await handle.append([sample(6)]), "and so does the one that goes over the cap again");
+    assert(
+      attemptsOn(refusedPath) === 1,
+      `the refused record is skipped, not retried, got ${attemptsOn(refusedPath)} attempts`,
+    );
+    assert(errorLines(harness, "unlink failed").length === 1, "and it is named at error exactly once");
+    assert(handle.dropped === 2, `the bound kept bounding around it, got ${handle.dropped}`);
+
+    // The age loop skips it too. Without that it re-attempts the unlink on
+    // every sweep — silently, now that the refusal is logged once per record.
+    harness.clock.now = new Date(START.getTime() + HOUR_MS + 3 * 60_000);
+    await handle.sweep();
+    assert(
+      attemptsOn(refusedPath) === 1,
+      `the age bound skips the refused record too, got ${attemptsOn(refusedPath)} attempts`,
+    );
+    assert(await exists(refusedPath), "and leaves the file for an operator to clear");
+  });
+
+  // ---- 15b. one endpoint's stuck record does not stop another's byte bound ---
+
+  await withTempDir(async (dir) => {
+    // The byte bound is host-wide, so the store's oldest record can belong to
+    // an endpoint that is not the one appending. If a refusal there ended the
+    // pass, one stuck file on one endpoint would let the whole store grow past
+    // `maxBytes` — the failure the bound exists to prevent.
+    const harness = makeHarness();
+    const stuckDir = join(dir, "mqtt", "a.example%3A1883");
+    await mkdir(stuckDir, { recursive: true });
+    const stuck = join(stuckDir, `${MINUTE - 9}.jsonl`);
+    await writeFile(stuck, line(1, START));
+    const attempts: string[] = [];
+    const fs: BufferFileSystem = {
+      ...realFs(),
+      unlink: async (path) => {
+        if (!String(path).endsWith(".jsonl")) {
+          return fsPromises.unlink(path);
+        }
+        attempts.push(String(path));
+        if (String(path) === stuck) {
+          throw errno("EROFS", "read-only file system, unlink");
+        }
+        return fsPromises.unlink(path);
+      },
+    };
+    const unit = Buffer.byteLength(line(1, START));
+    const store = await openDiskBufferStore(harness.options(dir, { fs, maxBytes: 3 * unit }));
+    const b = store.handle("mqtt", "b.example:1883");
+    const bDir = join(dir, "mqtt", "b.example%3A1883");
+    for (const [offset, value] of [
+      [-2, 2],
+      [-1, 3],
+      [0, 4],
+    ] as const) {
+      harness.clock.now = minuteDate(MINUTE + offset);
+      assert(await b.append([sample(value)]), `B's append at minute ${offset} succeeds`);
+    }
+
+    assert(attempts.filter((row) => row === stuck).length === 1, "the store's oldest is A's stuck segment, tried once");
+    assert(await exists(stuck), "which stays where it is");
+    assert(
+      !(await exists(join(bDir, `${MINUTE - 2}.jsonl`))),
+      "and B's own oldest is erased rather than nothing at all",
+    );
+    assert(b.dropped === 1, `B pays for the bound it went over, got ${b.dropped}`);
+    assert(b.buffered === 2, `B keeps the rest, got ${b.buffered}`);
+  });
+
+  // ---- 15c. the second refusal on one record is silent -----------------------
+
+  await withTempDir(async (dir) => {
+    // A `commit()` closure is taken before the record is flagged, and its guard
+    // is the record's identity and line count — neither of which a refusal
+    // changes. So the supervisor finishing a replayed batch is a *second*
+    // `unlink` of a record the volume has already refused, and it must not log
+    // again: an endpoint replaying around a stuck file would otherwise write an
+    // `error` line per segment, for ever, and bury the one that names it.
+    const harness = makeHarness();
+    const endpointDir = join(dir, "mqtt", ENCODED);
+    await mkdir(endpointDir, { recursive: true });
+    const refusedPath = join(endpointDir, `${MINUTE - 5}.jsonl`);
+    await writeFile(refusedPath, `${line(1, START)}${line(2, START)}`);
+    const fs: BufferFileSystem = {
+      ...realFs(),
+      unlink: async (path) => {
+        if (String(path) === refusedPath) {
+          throw errno("EPERM", "operation not permitted, unlink");
+        }
+        return fsPromises.unlink(path);
+      },
+    };
+    // Two lines' worth: the scan is exactly at the cap, the append below is over.
+    const maxBytes = 2 * Buffer.byteLength(line(1, START));
+    const { handle } = await openWithHandle(harness, dir, { fs, maxBytes });
+    const failures = (): string[] => errorLines(harness, "unlink failed");
+
+    const held = segment(await handle.oldest(), "the segment is read before anything refuses it");
+    assert(held.samples.length === 2, `both lines replay, got ${held.samples.length}`);
+    assert(failures().length === 0, "nothing has been refused yet");
+
+    assert(await handle.append([sample(3)]), "the append that goes over the cap succeeds");
+    assert(failures().length === 1, `the bound's refusal is logged once:\n${harness.lines.join("\n")}`);
+
+    await held.commit();
+    assert(
+      failures().length === 1,
+      `a second refusal on the same record is silent:\n${harness.lines.join("\n")}`,
+    );
+    assert(await exists(refusedPath), "and the file is still there for an operator");
   });
 
   // ---- 16. a segment that cannot be read three times is retired --------------
@@ -800,4 +935,7 @@ export async function runDiskBufferTests(): Promise<void> {
       `a readdir failure must still refuse start-up with the path, got: ${message}`,
     );
   });
+
+  // The file modes are gated in `disk-buffer-modes.spec.ts` — §4.5's 1000-line
+  // cap, and that block needs a recording filesystem rather than these fakes.
 }

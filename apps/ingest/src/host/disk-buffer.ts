@@ -43,10 +43,12 @@ import type { AdapterLogger } from "../adapter/types.js";
  * file on disk with nothing counting its bytes, so the byte bound would stop
  * bounding and `dropped` would count samples that are still there. The record
  * is dropped only once the file is gone; otherwise the failure is logged at
- * `error` and the erasure did not happen. The cost is that a segment whose
- * unlink keeps failing is re-read (and, at `commit()`, re-replayed
- * idempotently) on every pass until an operator or the next start-up clears
- * it — which is the honest consequence of not lying about the byte total.
+ * `error` — once — and the erasure did not happen. That record is then
+ * **skipped** by both bounds and by `oldest()`, so the byte bound goes on to
+ * the next-oldest segment and the endpoint's later segments still replay: one
+ * refused file costs that file, not the host's byte bound, and not the
+ * backlog behind it. Its bytes stay counted and its lines stay in `buffered`
+ * — the honest total — until an operator or the next start-up clears it.
  *
  * **A bad file is skipped; a bad directory refuses start-up (ruling 4).** The
  * scan `stat`s each candidate and leaves alone anything larger than `maxBytes`
@@ -93,7 +95,9 @@ export type DiskBufferHandle = {
    * The age bound is a rolling hour, not a rolling hour of appends: an
    * endpoint that stops producing — the broker down, the RTU disabled — would
    * otherwise hold its last segments for ever, because nothing else calls
-   * `enforceBounds`. The supervisor calls this once a minute while idle.
+   * `enforceBounds`. The supervisor's replay loop calls this once a minute,
+   * whether or not the buffer is empty — the broker down *and* the database
+   * down is a non-empty buffer that nothing appends to.
    */
   sweep(): Promise<void>;
 };
@@ -187,7 +191,26 @@ type SegmentRecord = {
   unparseableCounted: number;
   /** Consecutive non-`ENOENT` read failures; reset by a read that succeeds. */
   readFailures: number;
+  /**
+   * Non-`ENOENT` unlink refusals for this record; `>0` means every bound and
+   * `oldest()` skip it. Reset by an unlink that succeeds.
+   */
+  unlinkFailures: number;
 };
+
+/**
+ * A record the volume refused to unlink — skipped by both bounds and by replay.
+ *
+ * Re-picking it is what makes one refusal host-wide damage: `oldestAcrossStore`
+ * would choose it on every pass, so the byte loop would erase nothing at all
+ * for any endpoint, and `lowestSegment` would offer it on every pass, so no
+ * later segment of that endpoint would ever replay. Its bytes stay counted and
+ * its lines stay in `buffered` — the total is honest, the file is still there —
+ * and an operator clears it.
+ */
+function unlinkRefused(segment: SegmentRecord): boolean {
+  return segment.unlinkFailures > 0;
+}
 
 type EndpointRecord = {
   readonly protocol: IngestProtocol;
@@ -405,6 +428,9 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
   function lowestSegment(endpoint: EndpointRecord): SegmentRecord | undefined {
     let lowest: SegmentRecord | undefined;
     for (const segment of endpoint.segments.values()) {
+      if (unlinkRefused(segment)) {
+        continue;
+      }
       if (lowest === undefined || segment.minute < lowest.minute) {
         lowest = segment;
       }
@@ -416,6 +442,9 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
     let oldest: { endpoint: EndpointRecord; segment: SegmentRecord } | undefined;
     for (const endpoint of endpoints.values()) {
       for (const segment of endpoint.segments.values()) {
+        if (unlinkRefused(segment)) {
+          continue;
+        }
         if (
           oldest === undefined ||
           segment.minute < oldest.segment.minute ||
@@ -444,21 +473,30 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
    * byte bound stops bounding, and `erase` credits `dropped` with samples that
    * are still on disk. Resolves `false` — with one `error` line — when the file
    * stays, and every caller then treats the erasure as not having happened.
+   *
+   * The refusal is recorded on the record, which takes it out of both bounds
+   * and out of replay (`unlinkRefused`), and it is logged **once**: a volume
+   * that refuses for ever would otherwise write one `error` line per pass, for
+   * ever, and that log is what an operator reads to find the file.
    */
   async function unlinkSegment(endpoint: EndpointRecord, segment: SegmentRecord): Promise<boolean> {
     try {
       await fs.unlink(segment.path);
     } catch (error) {
       if (!isEnoent(error)) {
-        logger.error("disk buffer segment unlink failed; the record and its bytes are kept", {
-          ...endpointFields(endpoint),
-          segment: segment.path,
-          reason: describe(error),
-        });
+        segment.unlinkFailures += 1;
+        if (segment.unlinkFailures === 1) {
+          logger.error("disk buffer segment unlink failed; the record is kept and skipped", {
+            ...endpointFields(endpoint),
+            segment: segment.path,
+            reason: describe(error),
+          });
+        }
         return false;
       }
       // ENOENT is the outcome asked for: the file is not there.
     }
+    segment.unlinkFailures = 0;
     forget(endpoint, segment);
     return true;
   }
@@ -482,6 +520,12 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
   async function enforceBounds(nowMs: number): Promise<void> {
     for (const endpoint of endpoints.values()) {
       for (const segment of [...endpoint.segments.values()]) {
+        // A record the volume refused is not tried again — silently, since the
+        // refusal is logged once, so a sweep every minute would otherwise be a
+        // `unlink` syscall a minute on a file that is not going anywhere.
+        if (unlinkRefused(segment)) {
+          continue;
+        }
         // Strict, like staleness: a segment exactly `maxAgeMs` old is kept.
         if (nowMs - segment.minute * MINUTE_MS > maxAgeMs) {
           await erase(endpoint, segment, "age");
@@ -491,14 +535,16 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
     while (totalBytes > maxBytes) {
       const oldest = oldestAcrossStore();
       if (oldest === undefined) {
+        // Nothing left that the volume has not already refused. The bound
+        // cannot be held this pass; every refusal is already logged.
         break;
       }
-      if (!(await erase(oldest.endpoint, oldest.segment, "bytes"))) {
-        // The record is kept when the unlink is refused, so the same segment
-        // would be chosen for ever. The bound is not held this pass; the
-        // failure is already logged and the next pass tries again.
-        break;
-      }
+      // A refused erasure keeps the record *and* flags it, so the next turn of
+      // this loop chooses the next-oldest rather than the same one. Giving the
+      // pass up here instead is how one stuck file lets the whole store —
+      // every endpoint — grow past `maxBytes`. The loop terminates because each
+      // turn either forgets a record or takes one out of `oldestAcrossStore`.
+      await erase(oldest.endpoint, oldest.segment, "bytes");
     }
   }
 
@@ -538,7 +584,15 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
     }
     let segment = endpoint.segments.get(minute);
     if (segment === undefined) {
-      segment = { path, minute, bytes: 0, lines: 0, unparseableCounted: 0, readFailures: 0 };
+      segment = {
+        path,
+        minute,
+        bytes: 0,
+        lines: 0,
+        unparseableCounted: 0,
+        readFailures: 0,
+        unlinkFailures: 0,
+      };
       endpoint.segments.set(minute, segment);
     }
     segment.bytes += bytes;
@@ -579,7 +633,9 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
           // because that is what it is.
           const lines = segment.lines - segment.unparseableCounted;
           if (!(await unlinkSegment(endpoint, segment))) {
-            return null;
+            // Refused, so the record is flagged and no longer chosen here; its
+            // lines stay counted and this pass moves on to the next segment.
+            continue;
           }
           endpoint.dropped += lines;
           logger.error("disk buffer segment unreadable; erased", {
@@ -617,12 +673,13 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
       }
       if (parsed.samples.length === 0) {
         // Every line is already counted; nothing here will ever replay.
-        if (!(await unlinkSegment(endpoint, segment))) {
-          // The unlink was refused, so the record stays — and `continue` would
-          // pick the same segment, read the same file and arrive here again,
-          // for ever. Leave it for the next pass.
-          return null;
-        }
+        // A refused unlink keeps the record and flags it, so `lowestSegment`
+        // will not choose it again — without that flag this `continue` would
+        // read the same file and arrive here again, for ever. An
+        // all-unparseable segment (a crash-truncated single line) plus one
+        // EPERM is an ordinary pair, and it must not hold the endpoint's later
+        // segments off the database.
+        await unlinkSegment(endpoint, segment);
         continue;
       }
       const linesRead = segment.lines;
@@ -713,6 +770,7 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
       lines: splitLines(content.toString("utf8")).length,
       unparseableCounted: 0,
       readFailures: 0,
+      unlinkFailures: 0,
     });
     totalBytes += content.length;
   }
