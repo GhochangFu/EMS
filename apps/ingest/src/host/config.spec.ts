@@ -255,6 +255,25 @@ export function runHostConfigTests(): void {
     "the buffer directory is overridable, and trimmed",
   );
   assert(
+    readHostConfig({ ...BASE, INGEST_BUFFER_DIR: "/var/lib/x" }).bufferDir === "/var/lib/x",
+    "an absolute path is accepted as given",
+  );
+
+  // A relative value resolves against the container's working directory
+  // (`/app/apps/ingest`), so the buffer lands on the writable layer, the named
+  // volume mounted at `/var/lib/bms-ingest` is never touched, and the backlog
+  // is destroyed by the next container replace — with `disk buffer opened`
+  // logged as though everything were well. Nothing downstream can see it, so
+  // it has to be refused here.
+  expectThrow(
+    () => readHostConfig({ ...BASE, INGEST_BUFFER_DIR: "data/buffer" }),
+    "a relative INGEST_BUFFER_DIR must be rejected",
+  );
+  expectThrow(
+    () => readHostConfig({ ...BASE, INGEST_BUFFER_DIR: "  ./buffer  " }),
+    "a relative INGEST_BUFFER_DIR is still relative after trimming",
+  );
+  assert(
     readHostConfig({ ...BASE, INGEST_BUFFER_MAX_AGE_MS: "60000" }).bufferMaxAgeMs === 60_000,
     "the buffer max age is overridable",
   );

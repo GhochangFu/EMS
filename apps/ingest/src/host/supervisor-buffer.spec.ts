@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { SourceSample } from "@bms/shared/ingest";
 
 import type { AdapterLogger } from "../adapter/types.js";
+import type { EndpointPlan } from "./bindings.js";
 import { openDiskBufferStore, type DiskBufferHandle } from "./disk-buffer.js";
 import {
   createSupervisor,
@@ -17,6 +18,7 @@ import {
   makeFakeScheduler,
   makePlan,
   makeScriptedAdapter,
+  makeSoleDevicePlan,
   nextTick,
   sample,
   stopSupervisor,
@@ -146,6 +148,7 @@ type Rig = {
   writtenValues(): string;
   setFailing(failing: boolean): void;
   advanceMinutes(minutes: number): void;
+  advanceMs(ms: number): void;
   /** `start()` plus a resolved `connect()`. */
   connect(): Promise<void>;
 };
@@ -155,8 +158,10 @@ type RigOptions = {
   readonly maxAgeMs?: number;
   readonly maxBytes?: number;
   readonly failing?: boolean;
-  /** Overrides the real store's handle — only block G needs this. */
+  /** Overrides the real store's handle, for the blocks whose subject is the supervisor's half. */
   readonly handle?: DiskBufferHandle;
+  /** Defaults to the two-binding plan; block H needs the sole-binding one. */
+  readonly plan?: EndpointPlan;
 };
 
 async function makeRig(dir: string, options: RigOptions = {}): Promise<Rig> {
@@ -193,7 +198,7 @@ async function makeRig(dir: string, options: RigOptions = {}): Promise<Rig> {
 
   const supervisor = createSupervisor({
     factory: makeFactory([scripted]),
-    plan: makePlan(),
+    plan: options.plan ?? makePlan(),
     logger,
     buffer: handle,
     scheduler,
@@ -222,6 +227,9 @@ async function makeRig(dir: string, options: RigOptions = {}): Promise<Rig> {
     },
     advanceMinutes: (minutes) => {
       clock.at = new Date(clock.at.getTime() + minutes * MINUTE_MS);
+    },
+    advanceMs: (ms) => {
+      clock.at = new Date(clock.at.getTime() + ms);
     },
     async connect() {
       supervisor.start();
@@ -265,6 +273,10 @@ export async function runSupervisorBufferTests(): Promise<void> {
     );
     assert(health.writeFailures === 1, `one write failed, counted once, got ${health.writeFailures}`);
     assert(health.buffered === 4, `all four batches are on disk, got ${health.buffered}`);
+    assert(
+      health.writePath === "buffering",
+      `an open breaker with everything on disk is buffering, not losing, got ${health.writePath}`,
+    );
     assert(health.samplesWritten === 0, "nothing reached the database");
     assert(
       health.queueDepth === 0,
@@ -530,6 +542,13 @@ export async function runSupervisorBufferTests(): Promise<void> {
     assert(first.buffered === 0, `nothing reached the disk, got ${first.buffered}`);
     assert(first.bufferDropped === 1, `the lost batch is counted, got ${first.bufferDropped}`);
     assert(first.state === "connected", "a failed append is not a connection fault");
+    // The state the gauge alone cannot carry: nothing on disk, every endpoint
+    // connected, every RTU fresh — and the batch is gone. Without `writePath`
+    // the host reports `ok` through exactly this.
+    assert(
+      first.writePath === "losing",
+      `neither written nor spilled is losing, got ${first.writePath}`,
+    );
 
     rig.scripted.emit([sample(2)]);
     await rig.fake.flush(1);
@@ -542,7 +561,274 @@ export async function runSupervisorBufferTests(): Promise<void> {
     );
     assert(second.writeFailures === 2, `both failures count, got ${second.writeFailures}`);
     assert(second.bufferDropped === 2, `both lost batches count, got ${second.bufferDropped}`);
+    assert(second.writePath === "losing", `still losing, got ${second.writePath}`);
+
+    // And it clears itself. `writePath` is a state, not a counter: the host
+    // must stop being degraded once the database takes a batch again, or the
+    // verdict would be stuck on something that happened an hour ago.
+    rig.setFailing(false);
+    rig.scripted.emit([sample(3)]);
+    await rig.fake.flush(1);
+    await settle(() => rig.written.length === 1, "the next batch reaches the database");
+    assert(
+      rig.supervisor.health().writePath === "ok",
+      `a successful write clears it, got ${rig.supervisor.health().writePath}`,
+    );
 
     await stopSupervisor(rig.supervisor, rig.fake);
+  });
+
+  // ---- H. the sole binding's deviceKey is stamped before the spill ---------
+
+  await withTempDir(async (dir) => {
+    // An endpoint with exactly one binding may omit `deviceKey`
+    // (`SourceSample`), and the live path resolves it from the plan. The spill
+    // kept the raw sample — so enable a second RTU on that endpoint and
+    // restart during the outage, and every replayed line resolves
+    // `ambiguousDevice`. `writeResolved` returns `rowsWritten: 0` **without
+    // throwing**, so the replay loop counts the segment replayed and unlinks
+    // it: an hour of backlog gone with `bufferDropped` still 0.
+    const rig = await makeRig(dir, { plan: makeSoleDevicePlan() });
+    await rig.connect();
+
+    rig.scripted.emit([{ sourceKey: "flow", value: 5 }]);
+    await rig.fake.flush(1);
+    await settle(() => rig.handle.buffered === 1, "the batch spilled");
+
+    const minute = Math.floor(START.getTime() / MINUTE_MS);
+    const body = await readFile(join(dir, "mqtt", ENCODED, `${minute}.jsonl`), "utf8");
+    const parsed = JSON.parse(body.trim()) as Record<string, unknown>;
+    assert(
+      parsed.deviceKey === "RTU-1",
+      `the line on disk must carry the plan's sole deviceKey, got ${JSON.stringify(parsed)}`,
+    );
+    assert(parsed.value === 5, "and it is still the sample that was emitted");
+
+    await stopSupervisor(rig.supervisor, rig.fake);
+  });
+
+  await withTempDir(async (dir) => {
+    // The other half: on a multi-binding endpoint there is nothing to stamp
+    // with, and inventing one would attribute a reading to the wrong RTU.
+    const rig = await makeRig(dir);
+    await rig.connect();
+
+    rig.scripted.emit([{ sourceKey: "flow", value: 6 }]);
+    await rig.fake.flush(1);
+    await settle(() => rig.handle.buffered === 1, "the batch spilled");
+
+    const minute = Math.floor(START.getTime() / MINUTE_MS);
+    const body = await readFile(join(dir, "mqtt", ENCODED, `${minute}.jsonl`), "utf8");
+    const parsed = JSON.parse(body.trim()) as Record<string, unknown>;
+    assert(
+      parsed.deviceKey === undefined,
+      `an ambiguous sample must not be given a deviceKey, got ${JSON.stringify(parsed)}`,
+    );
+
+    await stopSupervisor(rig.supervisor, rig.fake);
+  });
+
+  // ---- I. an unreadable oldest segment backs off, it does not spin ---------
+
+  await withTempDir(async (dir) => {
+    // `oldest()` resolving `null` with a non-empty buffer is the store keeping
+    // a segment it could not read. Sleeping `drainIdleMs` on that was five
+    // passes a second — and five log lines a second — for as long as the
+    // segment stayed unreadable. It rides the §5 backoff instead.
+    const unreadable: DiskBufferHandle = {
+      protocol: "mqtt",
+      endpointKey: ENDPOINT,
+      get buffered() {
+        return 3;
+      },
+      get dropped() {
+        return 0;
+      },
+      append: async () => true,
+      oldest: async () => null,
+      sweep: async () => undefined,
+    };
+    const rig = await makeRig(dir, { handle: unreadable, failing: false });
+    await rig.connect();
+
+    const backoffs = (): number[] => rig.fake.delays.filter((ms) => ms === 1_000 || ms === 2_000);
+    await settle(() => backoffs().length >= 1, "the first unreadable pass backs off");
+    await rig.fake.flush(1);
+    await settle(() => backoffs().length >= 2, "the second waits twice as long");
+
+    assert(
+      backoffs().slice(0, 2).join(",") === "1000,2000",
+      `the §5 backoff, base 1 s doubling — with healthPollMs 7 and drainIdleMs 3 ` +
+        `nothing else can produce those numbers: saw ${rig.fake.delays.join(",")}`,
+    );
+    const warned = rig.logs.filter((line) => line.startsWith("warn oldest segment unreadable"));
+    assert(warned.length >= 2, `logged once per attempt: ${rig.logs.join(" | ")}`);
+    assert(
+      warned[0].includes('"attempt":1') && warned[0].includes('"delayMs":1000'),
+      `the warning carries the attempt and the delay: ${warned[0]}`,
+    );
+
+    await stopSupervisor(rig.supervisor, rig.fake);
+  });
+
+  // ---- J. an idle endpoint sweeps the bounds once a minute ----------------
+
+  await withTempDir(async (dir) => {
+    // The age bound is a rolling hour, not a rolling hour of appends. Nothing
+    // else calls `enforceBounds` on an endpoint that has stopped producing, so
+    // its last segments would sit on the volume for ever.
+    let sweeps = 0;
+    const idle: DiskBufferHandle = {
+      protocol: "mqtt",
+      endpointKey: ENDPOINT,
+      get buffered() {
+        return 0;
+      },
+      get dropped() {
+        return 0;
+      },
+      append: async () => true,
+      oldest: async () => null,
+      sweep: async () => {
+        sweeps += 1;
+      },
+    };
+    const rig = await makeRig(dir, { handle: idle, failing: false });
+    await rig.connect();
+
+    await settle(() => sweeps === 1, "the first idle pass sweeps");
+    await rig.fake.flush(2);
+    assert(sweeps === 1, `and no later pass sweeps until a minute has passed, got ${sweeps}`);
+
+    rig.advanceMs(61_000);
+    await rig.fake.flush(1);
+    await settle(() => sweeps === 2, "a minute later, one more sweep");
+    await rig.fake.flush(2);
+    assert(sweeps === 2, `still one per minute, got ${sweeps}`);
+
+    rig.advanceMs(61_000);
+    await rig.fake.flush(1);
+    await settle(() => sweeps === 3, "and again on the next minute");
+
+    await stopSupervisor(rig.supervisor, rig.fake);
+  });
+
+  // ---- K. a spill in flight is not an empty buffer ------------------------
+
+  await withTempDir(async (dir) => {
+    // The window between a write failing and its batch reaching disk. The
+    // replay loop's safety valve reads `buffered === 0` and would close the
+    // breaker inside it; `spilling` is what says "a batch is on its way".
+    // Deleting `spilling === 0 &&` from the valve makes this block red: the
+    // loop takes the idle branch, never calls `oldest()`, and the only delay
+    // it ever asks for is `drainIdleMs`.
+    let release: ((landed: boolean) => void) | null = null;
+    let oldestCalls = 0;
+    const deferring: DiskBufferHandle = {
+      protocol: "mqtt",
+      endpointKey: ENDPOINT,
+      get buffered() {
+        return 0;
+      },
+      get dropped() {
+        return 0;
+      },
+      append: () =>
+        new Promise<boolean>((resolve) => {
+          release = resolve;
+        }),
+      oldest: async () => {
+        oldestCalls += 1;
+        return null;
+      },
+      sweep: async () => undefined,
+    };
+    const rig = await makeRig(dir, { handle: deferring });
+    await rig.connect();
+
+    rig.scripted.emit([sample(1)]);
+    for (let round = 0; round < 6 && release === null; round += 1) {
+      await rig.fake.flush(1);
+    }
+    const landed: ((ok: boolean) => void) | null = release;
+    if (landed === null) {
+      throw new Error("the drain loop never reached the append");
+    }
+
+    for (let round = 0; round < 6 && oldestCalls === 0; round += 1) {
+      await rig.fake.flush(1);
+    }
+    assert(
+      oldestCalls > 0,
+      "while a spill is in flight the replay loop must not treat the endpoint as " +
+        "drained — it asks the buffer for its oldest segment instead",
+    );
+    assert(
+      rig.fake.delays.includes(1_000),
+      `and it backs off rather than spinning on drainIdleMs: ${rig.fake.delays.join(",")}`,
+    );
+
+    landed(true);
+    await settle(
+      () => rig.supervisor.health().writePath === "buffering",
+      "the breaker opens once the batch is actually on disk",
+    );
+
+    await stopSupervisor(rig.supervisor, rig.fake);
+  });
+
+  // ---- L. a buffer that rejects kills neither loop ------------------------
+
+  await withTempDir(async (dir) => {
+    // The store's contract is that `append` and `oldest` resolve rather than
+    // reject. A contract is not a guarantee, and an unhandled rejection in
+    // either loop would stop that endpoint writing with nothing said.
+    const rejecting: DiskBufferHandle = {
+      protocol: "mqtt",
+      endpointKey: ENDPOINT,
+      get buffered() {
+        return 2;
+      },
+      get dropped() {
+        return 0;
+      },
+      append: async () => {
+        throw new Error("store queue collapsed");
+      },
+      oldest: async () => {
+        throw new Error("store read collapsed");
+      },
+      sweep: async () => undefined,
+    };
+    const rig = await makeRig(dir, { handle: rejecting });
+    await rig.connect();
+
+    rig.scripted.emit([sample(1)]);
+    await rig.fake.flush(1);
+    await settle(() => rig.supervisor.health().writeFailures >= 1, "the write failed");
+    await settle(
+      () => rig.logs.some((line) => line.startsWith("error disk buffer append rejected")),
+      "a rejected append is logged, not swallowed",
+    );
+    await settle(
+      () => rig.logs.some((line) => line.startsWith("error disk buffer read rejected")),
+      "and so is a rejected read",
+    );
+    assert(
+      rig.supervisor.health().writePath === "losing",
+      `a rejection is treated as a failed append, got ${rig.supervisor.health().writePath}`,
+    );
+
+    // Both loops are still running: the drain loop takes the next batch and
+    // the replay loop is still asking.
+    rig.scripted.emit([sample(2)]);
+    await rig.fake.flush(1);
+    await settle(() => rig.attempted.length === 2, "the drain loop survived the rejection");
+
+    await stopSupervisor(rig.supervisor, rig.fake);
+    assert(
+      !rig.logs.some((line) => line.includes("supervisor shutdown abandoned")),
+      `and both loops still settle at stop(): ${rig.logs.join(" | ")}`,
+    );
   });
 }

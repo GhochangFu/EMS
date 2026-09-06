@@ -109,6 +109,7 @@ export type ScriptedAdapter = {
   readonly contexts: AdapterContext<unknown, unknown>[];
 };
 
+/** An adapter whose connect, poll, emit and health are driven by the test, not by time. */
 export function makeScriptedAdapter(mode: "push" | "poll", options: { hangDisconnect?: boolean } = {}): ScriptedAdapter {
   let resolveConnect: (() => void) | null = null;
   let rejectConnect: ((error: Error) => void) | null = null;
@@ -188,6 +189,7 @@ export function makeScriptedAdapter(mode: "push" | "poll", options: { hangDiscon
   };
 }
 
+/** The two-binding MQTT endpoint every block starts from — the PHE broker's shape. */
 export function makePlan(): EndpointPlan {
   return {
     protocol: "mqtt",
@@ -212,6 +214,7 @@ export function makeSoleDevicePlan(): EndpointPlan {
   };
 }
 
+/** A factory handing out the scripted instances in order, then repeating the last — one per restart. */
 export function makeFactory(instances: ScriptedAdapter[]): IngestAdapterFactory {
   let index = 0;
   return {
@@ -256,6 +259,7 @@ export async function stopSupervisor(
   await stopping;
 }
 
+/** One well-formed `SourceSample`; the value is the identity an assertion reads back. */
 export function sample(value: number, deviceKey = "RTU-1"): SourceSample {
   return { sourceKey: "flow", value, deviceKey };
 }
@@ -789,20 +793,40 @@ export async function runSupervisorTests(): Promise<void> {
     for (let i = 0; i < 100; i += 1) {
       scripted.emit([sample(i)]);
     }
+    const filling = supervisor.health();
+    assert(
+      filling.queueDepth <= 10,
+      `the queue must stay bounded, got depth ${filling.queueDepth}`,
+    );
+    assert(
+      filling.droppedSamples === 90,
+      `the ninety samples the ring dropped are counted — the memory tier's own ` +
+        `loss, before anything reaches the write path, got ${filling.droppedSamples}`,
+    );
+
+    // The old assertion here read `buffered === 0` from a snapshot taken with
+    // no intervening flush, so it could not fail, and the comment beside it —
+    // "a write that never settles never throws, so nothing spills" — was
+    // false. `withTimeout` rejects after `writeTimeoutMs` and the batch spills
+    // like any other failure. Flushing past the timeout is what makes this an
+    // assertion: the memory tier's loss is the 90 the ring dropped, and what
+    // the drain loop did manage to take is on disk, not lost.
+    for (let round = 0; round < 10 && supervisor.health().writeFailures === 0; round += 1) {
+      await fake.flush(1);
+    }
     const health = supervisor.health();
     assert(
-      health.queueDepth <= 10,
-      `the queue must stay bounded, got depth ${health.queueDepth}`,
+      health.writeFailures === 1,
+      `the hung write fails once, on the writeTimeoutMs ceiling, got ${health.writeFailures}`,
     );
     assert(
-      health.droppedSamples > 0,
-      "dropped samples must be counted — the memory tier's own loss, which the " +
-        "disk tier does not cover: a write that never settles never throws, so " +
-        "nothing spills",
+      health.buffered === 10,
+      `the batch the drain loop took spills whole — the ten the ring still ` +
+        `held — got buffered ${health.buffered}`,
     );
     assert(
-      health.buffered === 0,
-      `a write that hangs is not a write that failed — nothing spills, got buffered ${health.buffered}`,
+      health.droppedSamples === 90,
+      `and the spill adds nothing to the memory tier's loss, got ${health.droppedSamples}`,
     );
     await stopSupervisor(supervisor, fake);
   }

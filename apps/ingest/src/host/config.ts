@@ -10,6 +10,8 @@
  * ordinary `config` and `credentials` values.
  */
 
+import { isAbsolute } from "node:path";
+
 export type HostConfig = {
   readonly databaseUrl: string;
   /**
@@ -141,6 +143,29 @@ function positiveInt(
   return value;
 }
 
+/**
+ * The buffer directory, trimmed, defaulted, and **required to be absolute**.
+ *
+ * A relative value resolves against the process working directory — `/app/apps/
+ * ingest` in the image — so the buffer would land on the container's writable
+ * layer, the named volume mounted at `/var/lib/bms-ingest` would sit unused,
+ * and every spilled segment would vanish with the next `docker compose up`.
+ * Nothing in the store can detect that: the directory it is handed is created
+ * and written perfectly well. Ruling 4 says a host that cannot buffer refuses
+ * to start; a host that buffers into a place nothing preserves is the same
+ * failure with a `disk buffer opened` line in front of it.
+ */
+function readBufferDir(raw: string | undefined): string {
+  const trimmed = raw === undefined ? "" : raw.trim();
+  if (trimmed === "") {
+    return DEFAULT_BUFFER_DIR;
+  }
+  if (!isAbsolute(trimmed)) {
+    throw new Error(`INGEST_BUFFER_DIR must be an absolute path, got "${trimmed}"`);
+  }
+  return trimmed;
+}
+
 /** Pure over its input, so the parsing rules are testable without mutating `process.env`. */
 export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   const databaseUrl = env.DATABASE_URL;
@@ -190,10 +215,7 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
       // reinterpreted.
       rejectUnauthorized: env.MQTT_TLS_REJECT_UNAUTHORIZED !== "false",
     },
-    bufferDir:
-      env.INGEST_BUFFER_DIR === undefined || env.INGEST_BUFFER_DIR.trim() === ""
-        ? DEFAULT_BUFFER_DIR
-        : env.INGEST_BUFFER_DIR.trim(),
+    bufferDir: readBufferDir(env.INGEST_BUFFER_DIR),
     bufferMaxAgeMs: positiveInt(
       env.INGEST_BUFFER_MAX_AGE_MS,
       DEFAULT_BUFFER_MAX_AGE_MS,

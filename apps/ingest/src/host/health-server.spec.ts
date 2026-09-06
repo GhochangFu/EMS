@@ -31,6 +31,7 @@ function endpoint(overrides: Partial<SupervisorHealth> = {}): SupervisorHealth {
     droppedSamples: 0,
     writeFailures: 0,
     buffered: 0,
+    writePath: "ok",
     bufferDropped: 0,
     replayed: 0,
     samplesWritten: 42,
@@ -156,16 +157,53 @@ export function runHealthRenderTests(): void {
   }
 
   {
-    // The verdict reads the gauge (`buffered`), not the lifetime counters
-    // (`bufferDropped`, `replayed`) — the same rule §4.6 applies elsewhere.
+    // The verdict reads the gauges (`buffered`, `writePath`), not the lifetime
+    // counters (`bufferDropped`, `replayed`) — the same rule §4.6 applies
+    // elsewhere. `writePath` is set explicitly here: a host that lost its last
+    // batch is not `ok`, and this case must be about the counters alone.
     const body = renderHealth(
-      snapshot({ endpoints: [endpoint({ buffered: 0, bufferDropped: 500, replayed: 9_000 })] }),
+      snapshot({
+        endpoints: [endpoint({ buffered: 0, bufferDropped: 500, replayed: 9_000, writePath: "ok" })],
+      }),
       NOW,
     );
     assert(
       body.startsWith("ingest-host ok "),
       `a drained buffer is ok regardless of lifetime bufferDropped/replayed totals:\n${body}`,
     );
+  }
+
+  // ---- writePath: the state `buffered` alone cannot see ---------------------
+
+  {
+    // The batch failed to write **and** failed to spill. Nothing is on disk,
+    // the connection is fine, every RTU is fresh — and the samples are gone.
+    // Before `writePath` this rendered `ingest-host ok`.
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ buffered: 0, writePath: "losing", bufferDropped: 3 })] }),
+      NOW,
+    );
+    assert(
+      body.includes("state=connected writePath=losing"),
+      `writePath is rendered on the endpoint line, next to the state:\n${body}`,
+    );
+    assert(
+      body.startsWith("ingest-host degraded "),
+      `losing the write path degrades the host even with buffered=0 and a connected endpoint:\n${body}`,
+    );
+    assert(body.includes("buffered=0"), `and the gauge that cannot see it still reads 0:\n${body}`);
+  }
+
+  {
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ buffered: 7, writePath: "buffering" })] }),
+      NOW,
+    );
+    assert(
+      body.includes("writePath=buffering"),
+      `an open breaker is rendered as buffering:\n${body}`,
+    );
+    assert(body.startsWith("ingest-host degraded "), "and it degrades the host");
   }
 
   {

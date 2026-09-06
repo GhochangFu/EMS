@@ -76,6 +76,11 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
   const unhealthy = snapshot.endpoints.filter((e) => e.state !== "connected");
   const stale = staleDevices(snapshot, now);
   const buffered = snapshot.endpoints.reduce((n, e) => n + e.buffered, 0);
+  // `buffered` cannot see the worst case: a batch that fails to write *and*
+  // fails to spill leaves the gauge at 0 with the samples destroyed. `losing`
+  // is that state, and `buffering` is the ordinary one — both degrade, and
+  // both clear on their own, which a lifetime counter would not.
+  const everyWritePathOk = snapshot.endpoints.every((e) => e.writePath === "ok");
 
   const lines: string[] = [];
   lines.push(
@@ -84,7 +89,11 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
     // every RTU is fine — the database, not the broker, is the thing down.
     // Reporting `ok` with a mapped RTU publishing nothing is exactly what let
     // three silent PHE stations go unnoticed — see `stale rtu=` below.
-    `ingest-host ${unhealthy.length === 0 && stale.length === 0 && buffered === 0 ? "ok" : "degraded"} ` +
+    `ingest-host ${
+      unhealthy.length === 0 && stale.length === 0 && buffered === 0 && everyWritePathOk
+        ? "ok"
+        : "degraded"
+    } ` +
       `endpoints=${snapshot.endpoints.length} rtus=${devices} stale=${stale.length} ` +
       // `notify=on` is a literal since ADR 0016 §6 commit 4 deleted the switch.
       // Kept for continuity — an operator or check matching on the token still
@@ -102,7 +111,9 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
       // that fails to write is not lost, it is spilled to disk, so
       // `writeFailures` alone can no longer answer "is telemetry being kept".
       // `buffered>0` is what degrades the host (see above) — the gauge, not
-      // the lifetime `bufferDropped` counter.
+      // the lifetime `bufferDropped` counter. `writePath=` on the endpoint
+      // line is the second gauge, for the case the first cannot see: nothing
+      // on disk because nothing could be put there.
       `skipped=${snapshot.skipped.length} notify=on ` +
       `uptime=${uptimeSeconds}s`,
   );
@@ -110,7 +121,8 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
   for (const endpoint of snapshot.endpoints) {
     lines.push(
       `endpoint protocol=${endpoint.protocol} key=${endpoint.endpointKey} ` +
-        `state=${endpoint.state} rtus=${endpoint.devices.map((d) => d.rtuCode).join("|")} ` +
+        `state=${endpoint.state} writePath=${endpoint.writePath} ` +
+        `rtus=${endpoint.devices.map((d) => d.rtuCode).join("|")} ` +
         `restarts=${endpoint.restarts} pollFailures=${endpoint.consecutivePollFailures} ` +
         `queue=${endpoint.queueDepth} dropped=${endpoint.droppedSamples} ` +
         `written=${endpoint.samplesWritten} writeFailures=${endpoint.writeFailures} ` +
