@@ -18,6 +18,8 @@ import {
   pointRowsFrom,
   pointsHaveChanged,
   setPointKind,
+  setPointNumber,
+  setPointQuality,
   setPointTier,
   type TemplatePointRow,
 } from "./template-points-grid";
@@ -162,9 +164,10 @@ export function runCalcFieldsSurviveARoundTripTests(): void {
   const sent = Object.keys(derived).sort().join(",");
   assert(
     sent ===
-      "calcIntervalSeconds,calcTrigger,formula,formulaDialect,kind,label,maxInputAgeSeconds," +
-        "minCoverageRatio,pointKey,required,sortOrder,sourceDataKeyPattern,unit",
-    `the payload must carry all thirteen fields — got ${sent}`,
+      "calcIntervalSeconds,calcTrigger,engMax,engMin,formula,formulaDialect,kind,label," +
+        "maxInputAgeSeconds,minCoverageRatio,pointKey,qualityPolicy,required,scaleMultiplier," +
+        "scaleOffset,sortOrder,sourceDataKeyPattern,unit",
+    `the payload must carry all eighteen fields — got ${sent}`,
   );
 
   // An untouched grid round-trips to exactly what the server holds.
@@ -660,5 +663,116 @@ export function runTierAuthoringTests(): void {
   assert(
     pointGridErrors([setPointTier(rows[0], ""), rows[1]]).length === 0,
     "clearing the tier is not a validation problem either",
+  );
+}
+
+/**
+ * `F2.7` / ADR 0056 decision 9 — the Points tab edits the five template
+ * defaults on a draft.
+ *
+ * `setPointNumber` and `setPointQuality` are `setPointTier`'s shape applied to
+ * the other four fields plus the policy select: a raw DOM string in, the
+ * row's value out, `""` meaning "clear it". `pointGridErrors`'s three new
+ * rules mirror `point-metadata.schema.ts`'s `refinePointMetadata` and
+ * `templatePointBodySchema`'s derived-point refusal, worded for the author.
+ */
+export function runPointMetadataAuthoringTests(): void {
+  const rows = pointRowsFrom(template([point(), derivedPoint()]));
+
+  // `setPointNumber` — the empty box clears, a real value parses, and a
+  // non-finite result is refused by leaving the row untouched.
+  const cleared = setPointNumber(
+    { ...rows[0], scaleMultiplier: 2 },
+    "scaleMultiplier",
+    "",
+  );
+  assert(cleared.scaleMultiplier === null, `an emptied box clears — got ${cleared.scaleMultiplier}`);
+  const set = setPointNumber(rows[0], "engMax", "0.5");
+  assert(set.engMax === 0.5, `"0.5" parses — got ${set.engMax}`);
+  const refused = setPointNumber({ ...rows[0], engMin: 10 }, "engMin", "abc");
+  assert(refused.engMin === 10, `a non-finite result leaves the previous value — got ${refused.engMin}`);
+
+  // `setPointQuality` — the empty option inherits, a known value is set, and
+  // an unknown one (unreachable through the select, but defensive) is a no-op.
+  assert(
+    setPointQuality(rows[0], "").qualityPolicy === null,
+    "the empty option clears the quality policy",
+  );
+  assert(
+    setPointQuality(rows[0], "accept_bad").qualityPolicy === "accept_bad",
+    "a known policy is set",
+  );
+  const beforeUnknown = { ...rows[0], qualityPolicy: "discard_bad" as const };
+  assert(
+    setPointQuality(beforeUnknown, "bogus").qualityPolicy === "discard_bad",
+    "an unrecognised value is left unchanged",
+  );
+
+  // `pointGridErrors` — the three new row rules.
+  const zeroMultiplier = pointGridErrors([{ ...rows[0], scaleMultiplier: 0 }]);
+  assert(
+    zeroMultiplier.some((problem) => problem.row === 0 && problem.field === "scaleMultiplier"),
+    `a zero multiplier is refused — got ${JSON.stringify(zeroMultiplier)}`,
+  );
+  assert(
+    zeroMultiplier[0].message === "A scale multiplier of 0 would zero every reading",
+    `the message must match exactly — got ${zeroMultiplier[0].message}`,
+  );
+
+  const emptyRange = pointGridErrors([{ ...rows[0], engMin: 100, engMax: 100 }]);
+  assert(
+    emptyRange.some((problem) => problem.row === 0 && problem.field === "engMin"),
+    `engMin >= engMax is refused — got ${JSON.stringify(emptyRange)}`,
+  );
+  const validRange = pointGridErrors([{ ...rows[0], engMin: 10, engMax: 100 }]);
+  assert(
+    !validRange.some((problem) => problem.field === "engMin"),
+    "engMin below engMax is not a problem",
+  );
+  // One bound alone is a legitimate half-band — the merged-pair check is the
+  // server's alone (`validateMergedPointMetadata`), invisible to this grid.
+  const halfBand = pointGridErrors([{ ...rows[0], engMin: 10, engMax: null }]);
+  assert(!halfBand.some((problem) => problem.field === "engMin"), "a lone bound is not a problem here");
+
+  const derivedWithValue = pointGridErrors([{ ...rows[1], engMax: 100 }]);
+  assert(
+    derivedWithValue.some((problem) => problem.row === 0 && problem.field === "scaleMultiplier"),
+    `a derived row carrying a value is refused — got ${JSON.stringify(derivedWithValue)}`,
+  );
+  // Correction 17: an explicit `null` on a derived row — what `setPointKind`
+  // itself sends — must not be refused. `derivedPoint()` already carries the
+  // five as `null`, so the plain fixture is the anti-vacuity case.
+  const derivedWithNulls = pointGridErrors([rows[1]]);
+  assert(
+    !derivedWithNulls.some((problem) => problem.field === "scaleMultiplier"),
+    `a derived row carrying only nulls must not be refused — got ${JSON.stringify(derivedWithNulls)}`,
+  );
+
+  // `buildPointsPayload` carries all five.
+  const withMetadata = {
+    ...rows[0],
+    scaleMultiplier: 1.5,
+    scaleOffset: -2,
+    engMin: 0,
+    engMax: 100,
+    qualityPolicy: "accept_bad" as const,
+  };
+  const [sent] = buildPointsPayload([withMetadata]);
+  assert(sent.scaleMultiplier === 1.5, "scaleMultiplier is sent");
+  assert(sent.scaleOffset === -2, "scaleOffset is sent");
+  assert(sent.engMin === 0, "engMin is sent");
+  assert(sent.engMax === 100, "engMax is sent");
+  assert(sent.qualityPolicy === "accept_bad", "qualityPolicy is sent");
+
+  // `setPointKind(row, "derived")` clears them — carried since Unit A, pinned
+  // here against the authoring surface this unit adds.
+  const promoted = setPointKind(withMetadata, "derived");
+  assert(
+    promoted.scaleMultiplier === null &&
+      promoted.scaleOffset === null &&
+      promoted.engMin === null &&
+      promoted.engMax === null &&
+      promoted.qualityPolicy === null,
+    `measured → derived must clear all five — got ${JSON.stringify(promoted)}`,
   );
 }

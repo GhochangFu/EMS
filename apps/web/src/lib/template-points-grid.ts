@@ -1,4 +1,4 @@
-import { CALC_DIALECT, CALC_DIALECTS, parseFormula } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECTS, QUALITY_POLICIES, parseFormula } from "@bms/shared";
 import type {
   AdminAssetTemplateDto,
   AdminTemplatePointDto,
@@ -113,14 +113,15 @@ export type TemplatePointRow = {
   meta: { tier: TemplatePointTier } | null;
   /**
    * `F2.7` / ADR 0056 decision 1 — the five point-metadata template defaults,
-   * `null` = none set (inherit / today's behaviour). Carried on the row from the
-   * first commit for the reason the calc fields are: the server replaces the
-   * whole point set from whichever tab saves. The inputs that edit them, the
-   * grid rules, and their place in `buildPointsPayload` arrive with the Points
-   * tab work (Unit E) once `templatePointBodySchema` — `.strict()` — accepts
-   * them (Unit C); a payload that sent them earlier would 400 every save.
-   * `setPointKind` to `derived` clears them: a computed value has no instrument
-   * to scale or to bound.
+   * `null` = none set (inherit / today's behaviour). Carried on the row since
+   * the first commit for the reason the calc fields are: the server replaces
+   * the whole point set from whichever tab saves. `setPointKind` to `derived`
+   * clears them: a computed value has no instrument to scale or to bound.
+   *
+   * Authorable since Unit E: `setPointNumber`/`setPointQuality` turn a
+   * control's raw string into the value the same way `setPointTier` does, and
+   * `buildPointsPayload` sends them (`null` when blank), mirroring `label` and
+   * `unit`.
    */
   scaleMultiplier: number | null;
   scaleOffset: number | null;
@@ -299,6 +300,54 @@ export function setPointTier(row: TemplatePointRow, raw: string): TemplatePointR
   return { ...row, meta: tier ? { tier } : null };
 }
 
+/**
+ * The four numeric metadata fields (`scaleMultiplier`, `scaleOffset`,
+ * `engMin`, `engMax`) from a `type="number"` input's raw string.
+ *
+ * `""` (the box emptied) becomes `null` — "no default, inherit" — matching
+ * every other optional box on this row. Anything else is parsed with
+ * `Number`, whose one surprise is `Number("")` reading as `0`; excluding it
+ * above is why the empty check comes first rather than folding into the
+ * `Number.isFinite` guard below.
+ *
+ * A non-finite result (`Number("abc")` is `NaN`; `Number("1e400")` is
+ * `Infinity`) is refused by returning the **previous** value rather than
+ * storing something `pointMetadataBodyShape`'s `.finite()` would 400 on save
+ * with nothing in the row to say which keystroke did it — the DOM's own
+ * `type="number"` mostly prevents this, but a pasted value can still reach
+ * `onChange` before the browser rejects it.
+ */
+export function setPointNumber(
+  row: TemplatePointRow,
+  field: "scaleMultiplier" | "scaleOffset" | "engMin" | "engMax",
+  raw: string,
+): TemplatePointRow {
+  if (raw.trim() === "") {
+    return { ...row, [field]: null };
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    return row;
+  }
+  return { ...row, [field]: value };
+}
+
+/**
+ * `qualityPolicy` from the select's raw string value.
+ *
+ * `""` is the "inherit" option and becomes `null`, matching the empty option
+ * `setPointTier` gives the tier. Anything outside `QUALITY_POLICIES` — which
+ * should not be reachable through the `<select>` this feeds — leaves the row
+ * unchanged rather than storing a value `qualityPolicySchema` would refuse.
+ */
+export function setPointQuality(row: TemplatePointRow, raw: string): TemplatePointRow {
+  if (raw === "") {
+    return { ...row, qualityPolicy: null };
+  }
+  const policy = QUALITY_POLICIES.find((candidate) => candidate === raw);
+  return policy ? { ...row, qualityPolicy: policy } : row;
+}
+
 /** One problem, addressed to a row. `row: null` means the grid as a whole. */
 export type PointGridProblem = {
   row: number | null;
@@ -363,6 +412,45 @@ export function pointGridErrors(rows: readonly TemplatePointRow[]): PointGridPro
         row: index,
         field: "kind",
         message: "A measured point must not carry a formula.",
+      });
+    }
+  });
+
+  rows.forEach((row, index) => {
+    // Mirrors `refinePointMetadata`'s first rule (`point-metadata.schema.ts`).
+    if (row.scaleMultiplier === 0) {
+      problems.push({
+        row: index,
+        field: "scaleMultiplier",
+        message: "A scale multiplier of 0 would zero every reading",
+      });
+    }
+    // Mirrors `refinePointMetadata`'s second rule.
+    if (row.engMin !== null && row.engMax !== null && row.engMin >= row.engMax) {
+      problems.push({
+        row: index,
+        field: "engMin",
+        message: `The engineering range is empty: engMin ${row.engMin} is not below engMax ${row.engMax}.`,
+      });
+    }
+    // Mirrors `templatePointBodySchema`'s derived-point refusal
+    // (ADR 0056 decision 3's last sentence) — a computed value has no
+    // instrument to scale or to bound. Correction 17: only a **value**
+    // is refused, never an explicit `null` (which `setPointKind` sends).
+    if (
+      row.kind === "derived" &&
+      (row.scaleMultiplier !== null ||
+        row.scaleOffset !== null ||
+        row.engMin !== null ||
+        row.engMax !== null ||
+        row.qualityPolicy !== null)
+    ) {
+      problems.push({
+        row: index,
+        field: "scaleMultiplier",
+        message:
+          "A derived point has no instrument to scale or to bound: scaleMultiplier, " +
+          "scaleOffset, engMin, engMax and qualityPolicy describe a measured signal.",
       });
     }
   });
@@ -499,6 +587,15 @@ export function buildPointsPayload(rows: readonly TemplatePointRow[]): TemplateP
     calcIntervalSeconds: row.calcIntervalSeconds,
     maxInputAgeSeconds: row.maxInputAgeSeconds,
     minCoverageRatio: row.minCoverageRatio,
+    // `F2.7` / ADR 0056 decision 1 — the five metadata defaults. Sent as the
+    // row holds them, `null` meaning "no default, inherit" — never omitted,
+    // unlike `meta`: `templatePointBodySchema`'s fields are `.nullish()`, not
+    // optional-and-closed, so there is no wire distinction to preserve.
+    scaleMultiplier: row.scaleMultiplier,
+    scaleOffset: row.scaleOffset,
+    engMin: row.engMin,
+    engMax: row.engMax,
+    qualityPolicy: row.qualityPolicy,
     // Omitted, not nulled, for a point with no tier — see the module docblock.
     ...(row.meta ? { meta: row.meta } : {}),
   }));
