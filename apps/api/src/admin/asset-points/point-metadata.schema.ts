@@ -55,6 +55,20 @@ export const pointMetadataBodyShape = {
 };
 
 /**
+ * The five, all unset — what an asset with **no** template inherits, and what
+ * a template that declares the point but sets no default contributes. Merging
+ * against it returns the override itself, which is the correct reading of "no
+ * class default": the asset's own columns are then the whole value.
+ */
+export const NO_POINT_METADATA: PointMetadataFields = {
+  scaleMultiplier: null,
+  scaleOffset: null,
+  engMin: null,
+  engMax: null,
+  qualityPolicy: null,
+};
+
+/**
  * The five as a body carries them — every field optional, and `null` distinct
  * from absent. Structural rather than `z.infer` of one schema, so the one
  * refinement below can serve every body that spreads the shape, whatever else
