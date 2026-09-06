@@ -2,13 +2,13 @@
 
 ## Status
 
-**Proposed** — drafted 2026-09-06 for `F3.10` (Track D, P1, Wave 1,
-`Depends: F3.6 ✅, F3.8 ✅`). Five design rulings were taken by the repository
-owner in chat on 2026-09-06, all as recommended, and the four design sections
-below were approved one by one the same day. The ADR waits on the owner's
-step-2 acceptance (AGENTS.md §10) before `plan-architect` writes the plan; no
-implementation code exists. Effort is re-set from `4–6` to **`8–10`**
-(decision 12).
+**Accepted** — 2026-09-06, by the repository owner, the same day it was
+drafted, for `F3.10` (Track D, P1, Wave 1, `Depends: F3.6 ✅, F3.8 ✅`). Five
+design rulings were taken by the owner in chat on 2026-09-06, all as
+recommended, the four design sections below were approved one by one, and the
+record was accepted as drafted ("Accept"). `plan-architect` writes the plan
+next; no implementation code exists at acceptance. Effort is re-set from
+`4–6` to **`8–10`** (decision 12).
 
 ## Context
 
